@@ -1,0 +1,17 @@
+[package]
+name = "telio-lana"
+version = "0.1.0"
+edition = "2018"
+license = "GPL-3.0-only"
+repository = "https://github.com/NordSecurity/libtelio"
+
+[dependencies]
+log = {version = "0.4.14", features = ["release_max_level_info"]}
+telio-utils = { path = "../telio-utils" }
+serde_json = "1.0"
+thiserror = "1.0.30"
+serde = { version = "1.0", features = ["derive"] }
+time = { version = "0.3.9", features = ["formatting"] }
+
+[features]
+moose = []

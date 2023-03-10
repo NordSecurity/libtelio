@@ -1,0 +1,17 @@
+[package]
+name = "telio-firewall"
+version = "0.1.0"
+edition = "2018"
+license = "GPL-3.0-only"
+repository = "https://github.com/NordSecurity/libtelio"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ipnetwork = "0.18"
+log = {version = "0.4.14", features = ["release_max_level_info"]}
+lru_time_cache = "0.11.11"
+pnet_packet = "0.28.0"
+
+telio-crypto = { path = "../telio-crypto" }
+telio-utils = { path = "../telio-utils" }

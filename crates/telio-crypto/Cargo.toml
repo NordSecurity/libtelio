@@ -1,0 +1,17 @@
+[package]
+name = "telio-crypto"
+version = "0.1.0"
+edition = "2018"
+license = "GPL-3.0-only"
+repository = "https://github.com/NordSecurity/libtelio"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+base64 = "0.13.0"
+crypto_box = "0.7.0"
+hex = "0.4.3"
+rand = { version = "0.8.4", features = ["std", "std_rng"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_with = "1.10"
+thiserror = "1.0"

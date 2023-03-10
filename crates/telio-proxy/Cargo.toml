@@ -1,0 +1,30 @@
+[package]
+name = "telio-proxy"
+version = "0.1.0"
+edition = "2018"
+license = "GPL-3.0-only"
+repository = "https://github.com/NordSecurity/libtelio"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+crypto_box = "0.7.0"
+futures = "0.3.13"
+tokio = { version = ">=1.22", features = ["net", "sync"] }
+ntest = "0.7"
+slog = "2.7"
+async-trait = "0.1.51"
+thiserror = "1.0"
+telio-task = { path = "../telio-task"}
+telio-crypto = { path = "../telio-crypto" }
+telio-utils = { path = "../telio-utils" }
+telio-model = { path = "../telio-model" }
+telio-sockets = { path = "../telio-sockets" }
+log = {version = "0.4.14", features = ["release_max_level_info"]}
+telio-proto = { path = "../telio-proto" }
+socket2 = "0.4.7"
+
+[dev-dependencies]
+telio-test = { version = "1.0.0", path = "../telio-test" }
+telio-task = { features = ["test-util"], path = "../telio-task" }
+tokio = { version = ">=1.22", features = ["macros", "rt-multi-thread", "time"] }

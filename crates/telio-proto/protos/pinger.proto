@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+message Pinger {
+    enum Type {
+        PING = 0;
+        PONG = 1;
+    }
+    Type message_type = 1;
+    uint64 session = 2;
+    uint64 start_timestamp = 3;
+}

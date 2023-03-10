@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+message Heartbeat {
+    enum Type {
+        REQUEST = 0;
+        RESPONSE = 1;
+    }
+    Type message_type = 1;
+
+    bytes meshnet_id = 2;
+
+    string node_fingerprint = 3;
+
+    message Status {
+        bytes node = 1;
+        uint32 connection_state = 2;
+    }
+    repeated Status statuses = 4;
+}

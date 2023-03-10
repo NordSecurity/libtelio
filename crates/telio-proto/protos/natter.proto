@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+message CallMeMaybeDeprecated {
+    enum Type {
+        INITIATOR = 0;
+        RESPONDER = 1;
+    }
+    Type i_am = 1;
+    repeated string my_addresses = 2;
+    uint32 my_peer_id = 3;
+    fixed64 session = 4;
+}
+
+message CallMeMaybe {
+    enum Type {
+        INITIATOR = 0;
+        RESPONDER = 1;
+    }
+    Type i_am = 1;
+    repeated string my_addresses = 2;
+    fixed64 session = 4;
+}

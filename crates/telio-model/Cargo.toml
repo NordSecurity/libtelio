@@ -1,0 +1,22 @@
+[package]
+name = "telio-model"
+version = "0.1.0"
+edition = "2018"
+license = "GPL-3.0-only"
+repository = "https://github.com/NordSecurity/libtelio"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_with = "1.10"
+serde_json = "1.0"
+strum = { version = "0.24.0", features = ["derive"] }
+strum_macros = "0.24"
+ipnetwork = "0.18"
+modifier = "0.1.0"
+
+telio-crypto = { version = "0.1.0", path = "../telio-crypto" }
+telio-wg = { version = "0.1.0", path = "../telio-wg" }
+telio-relay = { version = "0.1.0", path = "../telio-relay" }
+
+[dev-dependencies]
+pretty_assertions = "0.7.2"

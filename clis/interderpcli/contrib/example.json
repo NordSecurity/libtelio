@@ -1,0 +1,26 @@
+{
+	"private_key_1": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+	"private_key_2": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+	"servers": [
+		"https://de1025.nordvpn.com:8765",
+		"https://de1047.nordvpn.com:8765",
+		"https://de1.napps-6.com:8765",
+		"https://nl2.napps-6.com:8765",
+		"https://fr1.napps-6.com:8765",
+		"https://uk1.napps-6.com:8765",
+		"https://uk1837.nordvpn.com:8765",
+		"https://us5485.nordvpn.com:8765",
+		"https://us9336.nordvpn.com:8765",
+		"https://us1.napps-6.com:8765",
+		"https://us3.napps-6.com:8765",
+		"https://us2.napps-6.com:8765",
+		"https://us8791.nordvpn.com:8765",
+		"https://us8798.nordvpn.com:8765",
+		"https://us9284.nordvpn.com:8765",
+		"https://us1.napps-6.com:8765",
+		"https://jp571.nordvpn.com:8765",
+		"https://sg1.napps-6.com:8765",
+		"https://sg483.nordvpn.com:8765",
+		"https://au732.nordvpn.com:8765"
+	]
+}

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+# For CSharp change TELIO_BLA_BLA_* into BlaBla*
+
+read symbol
+nsymbol=$(echo $symbol | sed -r 's/[A-Z]+_//' | sed -r 's/([A-Z])([A-Z]+)(_|$)/\U\1\L\2/g')
+echo $nsymbol

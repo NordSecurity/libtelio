@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euxo pipefail
+
+# This forces export of needed binding for Java
+LINKER=$(basename $0)
+LINKER=${LINKER#"d-"}
+ARGS=$@
+
+while (( "$#" )); do
+	if [[ $1 == *"-Wl,--version-script="* ]]; then
+		VERSION=${1#"-Wl,--version-script="}
+		sed -i 's/global:/global:\n    Java*;/' $VERSION
+		break
+	fi
+
+	shift
+done
+
+exec $LINKER $ARGS

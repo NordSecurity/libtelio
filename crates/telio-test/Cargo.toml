@@ -1,0 +1,9 @@
+[package]
+name = "telio-test"
+version = "1.0.0"
+edition = "2018"
+license = "GPL-3.0-only"
+repository = "https://github.com/NordSecurity/libtelio"
+
+[dependencies]
+telio-crypto = { path = "../telio-crypto" }

@@ -1,0 +1,38 @@
+[build]
+rustflags = [ "-Aunknown_lints" ]
+
+[target.'cfg(unix)']
+runner = './test_runner.sh'
+
+[net]
+git-fetch-with-cli = true
+
+[target.x86_64-unknown-linux-gnu]
+linker = "x86_64-linux-gnu-gcc"
+
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
+
+[target.armv7-unknown-linux-gnueabihf]
+linker = "arm-linux-gnueabihf-gcc"
+
+[target.arm-unknown-linux-gnueabi]
+linker = "arm-linux-gnueabi-gcc"
+
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"
+
+[target.i686-pc-windows-gnu]
+linker = "i686-w64-mingw32-gcc"
+
+[target.aarch64-linux-android]
+linker = "linkers/d-aarch64-linux-android21-clang"
+
+[target.armv7-linux-androideabi]
+linker = "linkers/d-armv7a-linux-androideabi21-clang"
+
+[target.x86_64-linux-android]
+linker = "linkers/d-x86_64-linux-android21-clang"
+
+[target.i686-linux-android]
+linker = "linkers/d-i686-linux-android21-clang"

@@ -1,0 +1,17 @@
+[package]
+name = "telio-proto"
+version = "0.1.0"
+edition = "2018"
+license = "GPL-3.0-only"
+repository = "https://github.com/NordSecurity/libtelio"
+
+[dependencies]
+bytes = "1"
+protobuf = "2"
+strum = { version = "0.24.0", features = ["derive"] }
+thiserror = "1.0"
+
+[build-dependencies]
+protobuf-codegen-pure = "2"
+
+[dev-dependencies]

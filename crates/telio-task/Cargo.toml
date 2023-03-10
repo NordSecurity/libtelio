@@ -1,0 +1,22 @@
+[package]
+name = "telio-task"
+version = "0.1.0"
+edition = "2018"
+license = "GPL-3.0-only"
+repository = "https://github.com/NordSecurity/libtelio"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+default = []
+# Compile task crate for testing
+test-util = []
+
+[dependencies]
+telio-utils = { path = "../telio-utils" }
+
+async-trait = "0.1.51"
+futures = "0.3"
+log = {version = "0.4.14", features = ["release_max_level_info"]}
+thiserror = "1.0.32"
+tokio = { version = ">=1.22", features = ["full"] }
