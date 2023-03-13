@@ -2,9 +2,9 @@
 
 //! Common crypto primitives.
 //!
-//! This crate should be used then any crate needs to work with Secret and Public keys.
+//! This crate should be used when any crate needs to work with Secret and Public keys.
 //!
-//! SecretKey and PublicKey is from [Eliptic Curve 25519][ec] cryptography.
+//! SecretKey and PublicKey are from [Eliptic Curve 25519][ec] cryptography.
 //!
 //! [ec]: https://en.wikipedia.org/wiki/Curve25519
 //!
@@ -25,7 +25,7 @@ use std::{convert::TryInto, fmt};
 use rand::prelude::*;
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 
-/// Secret/Public key size in bytes.
+/// Secret/Public key size in bytes
 pub const KEY_SIZE: usize = 32;
 
 /// Secret key type
@@ -55,7 +55,7 @@ pub enum KeyDecodeError {
 }
 
 impl SecretKey {
-    /// Generate a new random SecretKey.
+    /// Generates a new random SecretKey.
     /// # Examples
     ///
     /// ```
@@ -75,7 +75,7 @@ impl SecretKey {
         key
     }
 
-    /// Calculate PublicKey
+    /// Calculates the corresponding PublicKey.
     /// # Examples
     ///
     /// ```
