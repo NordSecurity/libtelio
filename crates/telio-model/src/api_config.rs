@@ -39,7 +39,7 @@ pub struct FeatureLana {
 }
 
 /// Configurable features for exit Dns
-#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 pub struct FeatureExitDns {
     /// Controls if it is allowed to reconfigure DNS peer when exit node is
     /// (dis)connected.
@@ -71,7 +71,7 @@ pub struct FeaturePaths {
     pub force: Option<PathType>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 /// Encompasses all of the possible features that can be enabled
 pub struct Features {
     /// Nurse features that can be configured for QoS

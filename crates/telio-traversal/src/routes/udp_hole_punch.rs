@@ -406,7 +406,7 @@ impl State {
                     if d >= CALL_ME_MAYBE_TIMEOUT {
                         telio_log_debug!("({}) Disconnected entry: {}", Self::NAME, entry);
 
-                        let _ = entry.disconnect_route(&self.events_tx)?;
+                        entry.disconnect_route(&self.events_tx)?;
                     }
                 }
                 (AbsRouteState::PingingByPing(_), d) => {
@@ -415,7 +415,7 @@ impl State {
                         {
                             telio_log_debug!("({}) Disconnecting entry: {}", Self::NAME, entry);
 
-                            let _ = entry.disconnect_route(&self.events_tx)?;
+                            entry.disconnect_route(&self.events_tx)?;
                         }
                     }
                 }
@@ -567,7 +567,7 @@ impl State {
         let entry = self.db.get_mut_entry_by_pid(msg.get_peer_id())?;
         let sock = self.udp_socket.clone();
 
-        return match PingerMsgDeprecated::pong(&msg, entry.get_tx_peer_id()?).map(|a| {
+        match PingerMsgDeprecated::pong(&msg, entry.get_tx_peer_id()?).map(|a| {
             a.encode()
                 .map(|buf| async move { sock.send_to(&buf, &src_addr).await })
         }) {
@@ -592,7 +592,7 @@ impl State {
 
                 Ok(())
             }
-        };
+        }
     }
 
     async fn handle_rx_data_packet(

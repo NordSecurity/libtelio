@@ -122,7 +122,7 @@ pub mod moose {
     }
 
     /// Logger result
-    #[derive(Debug, PartialEq)]
+    #[derive(Debug, PartialEq, Eq)]
     pub enum Result {
         Success,
         AlreadyInitiated,
