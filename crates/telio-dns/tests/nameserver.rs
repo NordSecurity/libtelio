@@ -14,6 +14,8 @@ use std::{
 };
 use telio_crypto::SecretKey;
 use telio_dns::{LocalNameServer, NameServer, Records};
+use tokio::sync::RwLock;
+use tokio::time::sleep;
 use tokio::{
     self,
     time::{timeout, Duration},
@@ -233,6 +235,15 @@ async fn dns_test(query: &str, test_type: DnsTestType, local_records: Option<(St
         .await
         .expect("Failed to create a LocalNameServer");
 
+    dns_test_with_server(query, test_type, local_records, nameserver).await;
+}
+
+async fn dns_test_with_server(
+    query: &str,
+    test_type: DnsTestType,
+    local_records: Option<(String, Records)>,
+    nameserver: Arc<RwLock<LocalNameServer>>,
+) {
     if let Some((zone, records)) = local_records {
         nameserver
             .upsert(&zone, &records)
@@ -308,6 +319,30 @@ async fn dns_request_forward() {
     )
     .await
     .expect("Test timeout");
+}
+
+#[tokio::test]
+async fn dns_request_forward_to_slow_server() {
+    let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))])
+        .await
+        .unwrap();
+
+    // Start a query that will run for several seconds
+    tokio::spawn(dns_test_with_server(
+        "google.com",
+        DnsTestType::Correct,
+        None,
+        nameserver.clone(),
+    ));
+
+    // Let it reach the state where we are waiting for external
+    // server reply.
+    sleep(Duration::from_millis(500)).await;
+
+    // Verify that we still have write access to nameserver
+    assert!(timeout(Duration::from_millis(100), nameserver.write())
+        .await
+        .is_ok());
 }
 
 #[tokio::test]

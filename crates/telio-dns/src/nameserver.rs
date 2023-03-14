@@ -1,6 +1,6 @@
 use crate::{
     resolver::Resolver,
-    zone::{AuthoritativeZone, ForwardZone, Records, Zones},
+    zone::{AuthoritativeZone, ClonableZones, ForwardZone, Records, Zones},
 };
 use async_trait::async_trait;
 use boringtun::noise::{Tunn, TunnResult};
@@ -48,7 +48,7 @@ pub trait NameServer {
 
 /// Local name server.
 pub struct LocalNameServer {
-    zones: Zones,
+    zones: Arc<ClonableZones>,
     task_handle: Option<JoinHandle<()>>,
 }
 
@@ -59,34 +59,39 @@ impl LocalNameServer {
         let mut zones = Zones::new();
         let forwarding = ForwardZone::new(".", forward_ips).await?;
         zones.upsert(LowerName::from_str(".")?, Box::new(Arc::new(forwarding)));
+
         Ok(Arc::new(RwLock::new(LocalNameServer {
-            zones,
+            zones: Arc::new(ClonableZones::new(zones)),
             task_handle: None,
         })))
     }
 
-    async fn lookup(&self, request: &Request, resolver: Resolver) {
-        self.zones.lookup(request, None, resolver).await;
+    fn zones(&self) -> Arc<ClonableZones> {
+        self.zones.clone()
+    }
+
+    fn zones_mut(&mut self) -> &mut ClonableZones {
+        // No need to clone zones if there is no one holding a copy of Arc
+        // pointing to our zones.
+        Arc::make_mut(&mut self.zones)
     }
 }
 
 #[async_trait]
 impl NameServer for Arc<RwLock<LocalNameServer>> {
     async fn upsert(&self, zone: &str, records: &Records) -> Result<(), String> {
-        let authoritative = AuthoritativeZone::new(zone, records).await?;
-        let mut ns = self.write().await;
-        ns.zones.upsert(
+        self.write().await.zones_mut().upsert(
             LowerName::from_str(zone)?,
-            Box::new(Arc::new(authoritative)),
+            Box::new(Arc::new(AuthoritativeZone::new(zone, records).await?)),
         );
         Ok(())
     }
 
     async fn forward(&self, to: &[IpAddr]) -> Result<(), String> {
-        let forwarding = ForwardZone::new(".", to).await?;
-        let mut ns = self.write().await;
-        ns.zones
-            .upsert(LowerName::from_str(".")?, Box::new(Arc::new(forwarding)));
+        self.write().await.zones_mut().upsert(
+            LowerName::from_str(".")?,
+            Box::new(Arc::new(ForwardZone::new(".", to).await?)),
+        );
         Ok(())
     }
 
@@ -223,7 +228,7 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
                                 };
 
                             let resolver = Resolver::new();
-                            let nameserver = nameserver.read().await;
+                            let zones = nameserver.read().await.zones();
                             let dns_request = Request::new(
                                 dns_request,
                                 SocketAddr::new(
@@ -232,7 +237,7 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
                                 ),
                                 Protocol::Udp,
                             );
-                            nameserver.lookup(&dns_request, resolver.clone()).await;
+                            zones.lookup(&dns_request, resolver.clone()).await;
 
                             telio_log_debug!("dns request :{:?}", &dns_request);
 
@@ -345,7 +350,7 @@ mod tests {
         let request = dns_request(entry_name.clone());
         let ns = nameserver.read().await;
         let resolver = Resolver::new();
-        ns.lookup(&request, resolver.clone()).await;
+        ns.zones().lookup(&request, resolver.clone()).await;
         let buf = resolver.0.lock().await;
         let mut decoder = BinDecoder::new(&buf);
         let answers = Message::read(&mut decoder).unwrap().take_answers();
@@ -356,5 +361,32 @@ mod tests {
                 .find(|&answer| answer.name().to_string() == entry_name),
             None
         );
+    }
+
+    #[tokio::test]
+    async fn zones_are_lazily_copied_on_write_access() {
+        let name1 = "test.nord.".to_owned();
+        let mut records = Records::new();
+        records.insert(name1.clone(), Ipv4Addr::new(100, 69, 69, 69));
+        let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])
+            .await
+            .unwrap();
+        let raw_read_ptr1 = Arc::as_ptr(&nameserver.read().await.zones());
+        nameserver.upsert("nord", &records).await.unwrap();
+        let raw_read_ptr2 = Arc::as_ptr(&nameserver.read().await.zones());
+        assert_eq!(raw_read_ptr1, raw_read_ptr2);
+
+        let name2 = "test.nord2.".to_owned();
+        let mut records = Records::new();
+        records.insert(name2.clone(), Ipv4Addr::new(100, 69, 69, 69));
+
+        let read_ptr3 = nameserver.read().await.zones();
+        nameserver.upsert("nord2", &records).await.unwrap();
+        let raw_read_ptr4 = Arc::as_ptr(&nameserver.read().await.zones());
+        assert_ne!(Arc::as_ptr(&read_ptr3), raw_read_ptr4);
+
+        let zones = nameserver.read().await.zones();
+        assert!(zones.contains(&LowerName::from_str("nord").unwrap()));
+        assert!(zones.contains(&LowerName::from_str("nord2").unwrap()));
     }
 }

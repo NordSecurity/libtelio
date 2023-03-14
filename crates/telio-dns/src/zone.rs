@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     net::{IpAddr, Ipv4Addr},
     str::FromStr,
 };
@@ -8,9 +8,10 @@ use trust_dns_client::rr::{rdata::SOA, DNSClass, LowerName, Name, RData, Record,
 use trust_dns_resolver::config::{NameServerConfigGroup, ResolverOpts};
 use trust_dns_server::{
     authority::{
-        Authority, Catalog, LookupError, LookupOptions, MessageRequest, UpdateResult, ZoneType,
+        Authority, AuthorityObject, Catalog, LookupError, LookupOptions, MessageRequest,
+        UpdateResult, ZoneType,
     },
-    server::RequestInfo,
+    server::{Request, RequestInfo, ResponseHandler, ResponseInfo},
     store::{forwarder::ForwardConfig, in_memory::InMemoryAuthority},
 };
 
@@ -197,5 +198,53 @@ impl Authority for ForwardZone {
         lookup_options: LookupOptions,
     ) -> Result<Self::Lookup, LookupError> {
         self.zone.get_nsec_records(name, lookup_options).await
+    }
+}
+
+pub(crate) struct ClonableZones {
+    zones: Zones,
+    names: HashSet<LowerName>,
+}
+
+impl ClonableZones {
+    pub fn new(zones: Zones) -> Self {
+        Self {
+            zones,
+            names: Default::default(),
+        }
+    }
+
+    pub fn upsert(&mut self, name: LowerName, authority: Box<dyn AuthorityObject>) {
+        self.zones.upsert(name.clone(), authority);
+        self.names.insert(name);
+    }
+
+    pub async fn lookup<R: ResponseHandler>(
+        &self,
+        request: &Request,
+        response_handle: R,
+    ) -> ResponseInfo {
+        self.zones.lookup(request, None, response_handle).await
+    }
+
+    #[cfg(test)]
+    pub fn contains(&self, name: &LowerName) -> bool {
+        self.names.contains(name) && self.zones.find(name).is_some()
+    }
+}
+
+impl Clone for ClonableZones {
+    fn clone(&self) -> Self {
+        Self {
+            zones: self
+                .names
+                .iter()
+                .flat_map(|name| self.zones.find(name).map(|auth| (name, auth)))
+                .fold(Zones::new(), |mut zone, (name, auth)| {
+                    zone.upsert(name.clone(), auth.box_clone());
+                    zone
+                }),
+            names: self.names.clone(),
+        }
     }
 }
