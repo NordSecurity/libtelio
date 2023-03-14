@@ -274,4 +274,4 @@ For information about how to contribute, please see [CONTRIBUTING.md](CONTRIBUTI
 
 ## License
 
-[This project is licensed under the terms of the GNU General Public License v3.0 only](LICENSE.md)
+[This project is licensed under the terms of the GNU General Public License v3.0 only](LICENSE)
