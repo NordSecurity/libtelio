@@ -27,7 +27,7 @@ use protobuf::{Message, RepeatedField};
 pub struct CallMeMaybeMsg(CallMeMaybe);
 
 impl CallMeMaybeMsg {
-    /// Returns new msg [`CallMeMaybe`].
+    /// Returns new msg [`CallMeMaybeMsg`].
     pub fn new<T: Iterator<Item = SocketAddr>>(
         initiator: bool,
         addrs: T,
@@ -138,7 +138,7 @@ impl std::fmt::Display for CallMeMaybeMsg {
 pub struct CallMeMaybeMsgDeprecated(CallMeMaybeDeprecated);
 
 impl CallMeMaybeMsgDeprecated {
-    /// Returns new msg [`CallMeMaybeDeprecated`].
+    /// Returns new msg [`CallMeMaybeMsgDeprecated`].
     pub fn new<T: Iterator<Item = SocketAddr>>(
         initiator: bool,
         addrs: T,

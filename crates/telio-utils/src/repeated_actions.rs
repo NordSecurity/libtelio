@@ -8,7 +8,7 @@ use futures::{
 };
 use tokio::time::{interval, Duration, Interval};
 
-/// Posible [UdpHolePunch] errors.
+/// Possible [RepeatedAction] errors.
 #[derive(ThisError, Debug)]
 pub enum Error {
     /// Action is already added

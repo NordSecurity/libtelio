@@ -87,7 +87,7 @@ impl<T> RuntimeExt for T where T: Runtime {}
 ///
 /// It takes care of:
 ///   * Gracefull stop. (On drop or with stop)
-///   * Wait entry to wait for outside trigers. (Like [io::Rx], sockets, timers etc)
+///   * Wait entry to wait for outside trigers. (Like [Rx], sockets, timers etc)
 ///   * Ability to execute mutation on state without requiring mutex'es
 pub struct Task<S: Runtime> {
     stop: Arc<Notify>,

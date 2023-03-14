@@ -3,7 +3,7 @@ use tokio::time::Duration;
 
 use telio_crypto::PublicKey;
 
-/// Posible [Codec] trait errors.
+/// Possible [Route] trait errors.
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     /// Length of bytes being parrsed is invalid.
