@@ -13,5 +13,5 @@ libtelio-build-pipeline:
 
   trigger:
     project: $LIBTELIO_BUILD_PROJECT_PATH
-    branch: master
+    branch: libtelio-oss
     strategy: depend
