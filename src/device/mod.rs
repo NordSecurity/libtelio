@@ -20,7 +20,7 @@ use telio_traversal::{
     cross_ping_check::{CrossPingCheck, CrossPingCheckTrait, Io as CpcIo},
     endpoint_providers::{
         self, local::LocalInterfacesEndpointProvider, stun::StunEndpointProvider, stun::StunServer,
-        EndpointProvider,
+        upnp::Upnp as UpnpEndpointProvider, EndpointProvider,
     },
     ping_pong_handler::PingPongHandler,
     SessionKeeper, UpgradeRequestChangeEvent, UpgradeSync, WireGuardEndpointCandidateChangeEvent,
@@ -242,6 +242,7 @@ pub struct DirectEntities {
     // Endpoint providers
     local_interfaces_endpoint_provider: Option<Arc<LocalInterfacesEndpointProvider>>,
     stun_endpoint_provider: Option<Arc<StunEndpointProvider>>,
+    upnp_endpoint_provider: Option<Arc<UpnpEndpointProvider>>,
 
     // dyn EndpointProvider vector for ease of use
     endpoint_providers: Vec<Arc<dyn EndpointProvider>>,
@@ -873,6 +874,29 @@ impl Runtime {
                 None
             };
 
+            // Create Upnp Endpoint Provider
+            let upnp_endpoint_provider = if has_provider(Upnp) {
+                let ep = Arc::new(UpnpEndpointProvider::start(
+                    socket_pool
+                        .new_external_udp((Ipv4Addr::UNSPECIFIED, 0), None)
+                        .await?,
+                    wireguard_interface.clone(),
+                    ExponentialBackoffBounds {
+                        initial: Duration::from_secs(
+                            direct
+                                .endpoint_interval_secs
+                                .unwrap_or(DEFAULT_ENDPOINT_POLL_INTERVAL_SECS),
+                        ),
+                        maximal: Some(Duration::from_secs(120)),
+                    },
+                    ping_pong_tracker.clone(),
+                )?);
+                endpoint_providers.push(ep.clone());
+                Some(ep)
+            } else {
+                None
+            };
+
             // Subscribe to endpoint providers' events
             for endpoint_provider in &endpoint_providers {
                 endpoint_provider
@@ -911,6 +935,7 @@ impl Runtime {
             Some(DirectEntities {
                 local_interfaces_endpoint_provider,
                 stun_endpoint_provider,
+                upnp_endpoint_provider,
                 endpoint_providers,
                 cross_ping_check,
                 upgrade_sync,
@@ -1560,6 +1585,9 @@ impl TaskRuntime for Runtime {
             }
             if let Some(stun) = direct.stun_endpoint_provider {
                 stop_arc_entity!(stun, "StunEndpointProvider");
+            }
+            if let Some(upnp) = direct.upnp_endpoint_provider {
+                stop_arc_entity!(upnp, "UpnpEndpointProvider");
             }
 
             stop_arc_entity!(direct.session_keeper, "SessionKeeper");

@@ -147,6 +147,8 @@ pub enum EndpointProvider {
     Local,
     /// Use stun and wg-stun results as possible endpoints
     Stun,
+    /// Use IGD and upnp to generate endpoints
+    Upnp,
 }
 
 /// Endpoint polling interval

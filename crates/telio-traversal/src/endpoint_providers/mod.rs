@@ -1,5 +1,6 @@
 pub mod local;
 pub mod stun;
+pub mod upnp;
 
 use async_trait::async_trait;
 use enum_map::Enum;
@@ -30,10 +31,14 @@ pub enum Error {
     PongRxedPublishError(#[from] tokio::sync::mpsc::error::SendError<PongEvent>),
     #[error(transparent)]
     WireGuardError(#[from] telio_wg::Error),
+    #[error(transparent)]
+    AddressParseError(#[from] std::net::AddrParseError),
     #[error("WireGuard listening port is missing")]
     NoWGListenPort,
     #[error(transparent)]
     PacketParserError(#[from] telio_proto::CodecError),
+    #[error(transparent)]
+    UpnpError(#[from] rupnp::Error),
     #[error("Failed to build pong packet")]
     FailedToBuildPongPacket,
     /// Stun codec error
@@ -52,6 +57,12 @@ pub enum Error {
     BadStunPeer,
     #[error("Encryption failed: {0}")]
     EncryptionFailed(#[from] encryption::Error),
+    /// Failed to get upnp service
+    #[error("Failed to get upnp service")]
+    FailedToGetUpnpService,
+    /// Did not find matching endpoint with the IGD subnet
+    #[error("No endpoint with matching subnet to IGD")]
+    NoMatchingLocalEndpoint,
 }
 
 #[derive(PartialEq, Eq, Hash, Debug, Copy, Clone, Enum)]
