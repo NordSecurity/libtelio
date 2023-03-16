@@ -3,8 +3,12 @@
 * LLT-3004: JNI FindClass calls from callbacks
 * LLT-2968: Add contributor guidelines
 * NVA-3645: Fix Nurse execution.
+<<<<<<< HEAD
 * LLT-3324: Fix magic dns being stuck for several seconds
 * NVA-3634: Fix broken JNI_OnLoad binding
+=======
+* LLT-3174: Allow apps to control PersistentKeepalive parameter of libtelio
+>>>>>>> 20aa301e ([LLT-3174] Add "meshnet" feature)
 
 ### Changelog
 * LLT-2893: Expose ffi version and tag

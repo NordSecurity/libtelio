@@ -6,6 +6,26 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumCount;
 
+/// Configurable persistent keepalive periods for different types of peers
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+pub struct FeaturePersistentKeepalive {
+    /// Persistent keepalive period given for VPN peers (in seconds)
+    pub vpn: Option<u32>,
+
+    /// Persistent keepalive period for direct peers (in seconds)
+    pub direct: Option<u32>,
+
+    /// Persistent keepalive period for relayed peers (in seconds)
+    pub relayed: Option<u32>,
+}
+
+/// Configurable features for Meshnet nodes
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+pub struct FeatureMeshnet {
+    /// Configurable persistent keepalive periods for meshnet peers
+    pub persistent_keepalive: Option<FeaturePersistentKeepalive>,
+}
+
 #[serde_with::serde_as]
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 /// QoS configuration options
@@ -101,6 +121,8 @@ pub struct FeatureDirect {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 /// Encompasses all of the possible features that can be enabled
 pub struct Features {
+    /// Additional meshnet configuration
+    pub meshnet: Option<FeatureMeshnet>,
     /// Nurse features that can be configured for QoS
     pub nurse: Option<FeatureNurse>,
     /// Event logging configurable features
@@ -248,6 +270,7 @@ mod tests {
         }"#;
 
         let full_features = Features {
+            meshnet: None,
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
                 qos: Some(FeatureQoS {
@@ -265,6 +288,7 @@ mod tests {
         };
 
         let empty_qos_features = Features {
+            meshnet: None,
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
                 qos: Some(FeatureQoS {
@@ -282,6 +306,7 @@ mod tests {
         };
 
         let no_qos_features = Features {
+            meshnet: None,
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
                 qos: None,
@@ -321,6 +346,7 @@ mod tests {
         }"#;
 
         let full_features = Features {
+            meshnet: None,
             nurse: None,
             lana: None,
             paths: None,
@@ -331,6 +357,7 @@ mod tests {
         };
 
         let empty_features = Features {
+            meshnet: None,
             nurse: None,
             lana: None,
             paths: None,
@@ -354,6 +381,13 @@ mod tests {
     fn test_json_to_feature_set() {
         let json = r#"
         {
+            "meshnet":
+            {
+                "persistent_keepalive": {
+                    "relayed": 25,
+                    "direct": 5
+                }
+            },
             "nurse":
             {
                 "fingerprint": "fingerprint_test"
@@ -373,6 +407,13 @@ mod tests {
         }"#;
 
         let features = Features {
+            meshnet: Some(FeatureMeshnet {
+                persistent_keepalive: Some(FeaturePersistentKeepalive {
+                    vpn: None,
+                    direct: Some(5),
+                    relayed: Some(25),
+                }),
+            }),
             nurse: Some(FeatureNurse {
                 fingerprint: "fingerprint_test".to_string(),
                 qos: None,
@@ -400,6 +441,7 @@ mod tests {
     #[test]
     fn test_default_features() {
         let expected_defaults = Features {
+            meshnet: None,
             nurse: None,
             lana: None,
             paths: None,

@@ -147,6 +147,41 @@ pub struct Device {
     features: Features,
 }
 
+pub const DEFAULT_PROXYING_PERSISTENT_KEEPALIVE: u32 = 25;
+pub const DEFAULT_DIRECT_PERSISTENT_KEEPALIVE: u32 = 5;
+pub const DEFAULT_VPN_PERSISTENT_KEEPALIVE: u32 = 15;
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct KeepalivePeriods {
+    pub(crate) direct: u32,
+    pub(crate) relayed: u32,
+    pub(crate) vpn: u32,
+}
+
+impl Default for KeepalivePeriods {
+    fn default() -> Self {
+        Self {
+            direct: DEFAULT_DIRECT_PERSISTENT_KEEPALIVE,
+            relayed: DEFAULT_PROXYING_PERSISTENT_KEEPALIVE,
+            vpn: DEFAULT_VPN_PERSISTENT_KEEPALIVE,
+        }
+    }
+}
+
+impl From<Features> for KeepalivePeriods {
+    fn from(features: Features) -> Self {
+        features
+            .meshnet
+            .and_then(|m| m.persistent_keepalive)
+            .map(|pk| KeepalivePeriods {
+                direct: pk.direct.unwrap_or(DEFAULT_DIRECT_PERSISTENT_KEEPALIVE),
+                relayed: pk.relayed.unwrap_or(DEFAULT_PROXYING_PERSISTENT_KEEPALIVE),
+                vpn: pk.vpn.unwrap_or(DEFAULT_VPN_PERSISTENT_KEEPALIVE),
+            })
+            .unwrap_or_default()
+    }
+}
+
 #[derive(Default)]
 pub struct RequestedState {
     // WireGuard interface configuration
@@ -169,6 +204,9 @@ pub struct RequestedState {
 
     // Wireguard stun server that should be currently used
     pub wg_stun_server: Option<WgStunServer>,
+
+    // Requested keepalive periods
+    pub(crate) keepalive_periods: KeepalivePeriods,
 }
 
 pub struct Entities {
@@ -725,6 +763,7 @@ impl Runtime {
 
         let requested_state = RequestedState {
             device_config: config.clone(),
+            keepalive_periods: features.clone().into(),
             ..Default::default()
         };
 

@@ -1,4 +1,4 @@
-use super::{Entities, RequestedState, Result};
+use super::{Entities, KeepalivePeriods, RequestedState, Result};
 use ipnetwork::IpNetwork;
 use std::collections::HashMap;
 use std::collections::{BTreeMap, HashSet};
@@ -20,8 +20,6 @@ use telio_wg::{uapi::Peer, WireGuard};
 use thiserror::Error as TError;
 use tokio::sync::Mutex;
 
-pub const DEFAULT_PROXYING_PERSISTENT_KEEPALIVE: u32 = 25;
-pub const DEFAULT_DIRECT_PERSISTENT_KEEPALIVE: u32 = 5;
 pub const DEFAULT_PEER_UPGRADE_WINDOW: u64 = 15;
 
 #[derive(Debug, TError)]
@@ -200,7 +198,7 @@ async fn consolidate_wg_peers<
                             requested_peer
                                 .peer
                                 .persistent_keepalive_interval
-                                .unwrap_or(DEFAULT_PROXYING_PERSISTENT_KEEPALIVE)
+                                .unwrap_or(requested_state.keepalive_periods.relayed)
                                 .into(),
                         ),
                     )
@@ -296,7 +294,7 @@ async fn build_requested_peers_list<
             // Exit node is a fresh node, therefore - insert create new peer
             let public_key = exit_node.public_key;
             let endpoint = exit_node.endpoint;
-            let persistent_keepalive_interval = Some(DEFAULT_PROXYING_PERSISTENT_KEEPALIVE);
+            let persistent_keepalive_interval = Some(requested_state.keepalive_periods.vpn);
             let allowed_ips = vec![IpNetwork::V4("0.0.0.0/0".parse()?)];
             requested_peers.insert(
                 exit_node.public_key,
@@ -334,7 +332,7 @@ async fn build_requested_peers_list<
     if let Some(wg_stun_server) = &requested_state.wg_stun_server {
         let public_key = wg_stun_server.public_key;
         let endpoint = SocketAddr::new(IpAddr::V4(wg_stun_server.ipv4), wg_stun_server.stun_port);
-        let persistent_keepalive_interval = Some(DEFAULT_PROXYING_PERSISTENT_KEEPALIVE);
+        let persistent_keepalive_interval = Some(requested_state.keepalive_periods.relayed);
         let allowed_ips = vec![IpNetwork::V4("100.64.0.4/32".parse()?)];
         requested_peers.insert(
             public_key,
@@ -384,7 +382,7 @@ async fn build_requested_meshnet_peers_list<
         .map(|p| {
             // Retreive public key
             let public_key = p.base.public_key;
-            let persistent_keepalive_interval = Some(DEFAULT_PROXYING_PERSISTENT_KEEPALIVE);
+            let persistent_keepalive_interval = Some(requested_state.keepalive_periods.relayed);
             let endpoint = proxy_endpoints.get(&public_key).cloned();
 
             // Retreive node's meshnet IP from config, and convert it into `/32` network type
@@ -445,6 +443,7 @@ async fn build_requested_meshnet_peers_list<
             time_since_last_rx.as_ref(),
             time_since_last_endpoint_change.as_ref(),
             proxy_endpoint,
+            requested_state.keepalive_periods,
         );
 
         // If we are in direct state, tell cross ping check about it
@@ -475,9 +474,9 @@ async fn build_requested_meshnet_peers_list<
         // Decrease the keepalive period for peers which has established direct connection
         requested_peer.peer.persistent_keepalive_interval =
             if is_peer_proxying(&requested_peer.peer, proxy_endpoints) {
-                Some(DEFAULT_PROXYING_PERSISTENT_KEEPALIVE)
+                Some(requested_state.keepalive_periods.relayed)
             } else {
-                Some(DEFAULT_DIRECT_PERSISTENT_KEEPALIVE)
+                Some(requested_state.keepalive_periods.direct)
             };
     }
 
@@ -597,11 +596,12 @@ fn peer_state(
     time_since_last_rx: Option<&Duration>,
     time_since_last_endpoint_change: Option<&Duration>,
     proxy_endpoint: Option<&SocketAddr>,
+    keepalive_periods: KeepalivePeriods,
 ) -> PeerState {
     // Define some useful constants
     let keepalive_period = peer
         .and_then(|p| p.persistent_keepalive_interval)
-        .unwrap_or(DEFAULT_PROXYING_PERSISTENT_KEEPALIVE);
+        .unwrap_or(keepalive_periods.relayed);
     let peer_connectivity_timeout = Duration::from_secs((keepalive_period * 3) as u64);
     let peer_upgrade_window = Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW);
 
@@ -654,7 +654,10 @@ fn firewall_upsert_node<F: Firewall>(firewall: &F, node: &Node) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::device::{DeviceConfig, DNS};
+    use crate::device::{
+        DeviceConfig, DEFAULT_DIRECT_PERSISTENT_KEEPALIVE, DEFAULT_PROXYING_PERSISTENT_KEEPALIVE,
+        DNS,
+    };
     use mockall::predicate::{self, eq};
     use std::net::{Ipv4Addr, SocketAddrV4};
     use telio_crypto::SecretKey;
