@@ -873,7 +873,7 @@ mod tests {
         // Rx packet from peer --> Connect
         // Timeout packet --> Disconnect
 
-        let mut state = State::Idle;
+        let mut state = State::WaitingConnect;
         let our_rx_peer_id = PeerId(9);
         let our_tx_peer_id = PeerId(1);
 
@@ -914,8 +914,6 @@ mod tests {
             ))
             .await
             .expect("Cannot send CallMeMaybeMsgDeprecated request");
-
-        state = State::WaitingConnect;
 
         // Runtime
         let _ = tokio::spawn(async move {
@@ -961,7 +959,7 @@ mod tests {
         // Wait for no-data-timeout
         // Receive 'Disconnect' event
 
-        let mut state = State::Idle;
+        let mut state = State::WaitingCMM;
         let our_rx_peer_id = PeerId(9);
         let our_tx_peer_id = PeerId(1);
 
@@ -985,8 +983,6 @@ mod tests {
             .set_nodes(pubkey_list.clone())
             .await
             .expect("Cannot set nodes: ");
-
-        state = State::WaitingCMM;
 
         // Runtime
         let _ = tokio::spawn(async move {
@@ -1155,7 +1151,7 @@ mod tests {
         // Send CMM as initiator
         // Receive init Ping
 
-        let mut state = State::Idle;
+        let state = State::WaitingPings;
         let our_rx_peer_id = PeerId(9);
 
         let (
@@ -1193,8 +1189,6 @@ mod tests {
             ))
             .await
             .expect("Cannot send CallMeMaybeMsgDeprecated request");
-
-        state = State::WaitingPings;
 
         // Runtime
         let _ = tokio::spawn(async move {
@@ -1260,7 +1254,7 @@ mod tests {
         }
 
         let mut phase = Phase::IgnoreCMM;
-        let mut state = State::Idle;
+        let mut state = State::WaitingCMM;
         let our_rx_peer_id = PeerId(9);
         let our_tx_peer_id = PeerId(1);
 
@@ -1284,8 +1278,6 @@ mod tests {
             .set_nodes(pubkey_list.clone())
             .await
             .expect("Cannot set nodes: ");
-
-        state = State::WaitingCMM;
 
         // Runtime
         let _ = tokio::spawn(async move {
@@ -1404,7 +1396,7 @@ mod tests {
         // Send Ping, expect Pong
         // Send DataMsg, expect data on other end
 
-        let mut state = State::Idle;
+        let mut state = State::WaitingCMM;
         let our_rx_peer_id = PeerId(9);
         let our_tx_peer_id = PeerId(1);
 
@@ -1433,8 +1425,6 @@ mod tests {
         let payload = DataMsg::with_generation(&[0u8; 16], Generation(1u8), our_tx_peer_id)
             .encode()
             .expect("Cannot encode DataMsg: ");
-
-        state = State::WaitingCMM;
 
         // Runtime
         let _ = tokio::spawn(async move {
@@ -1573,7 +1563,7 @@ mod tests {
         // Receive data from non existent address
         // Receive data from non disconnected address
 
-        let mut state = State::Idle;
+        let state = State::WaitingConnect;
         let our_tx_peer_id = PeerId(1);
         let our_rx_peer_id = PeerId(9);
         let mut rx_buff = [0; MAX_PACKET];
@@ -1645,8 +1635,6 @@ mod tests {
             .await
             .expect("Cannot create 2nd UdpSocket: ");
 
-        state = State::WaitingConnect;
-
         // Runtime
         let _ = tokio::spawn(async move {
             let timeout = time::sleep(NO_DATA_TIMEOUT * 4);
@@ -1689,7 +1677,7 @@ mod tests {
     async fn stunner_fails_at_init() {
         // Add peer, stunner fails 4 times at start, suceeds at 5
 
-        let mut state = State::Idle;
+        let state = State::WaitingCMM;
         let our_tx_peer_id = PeerId(1);
 
         let (punch, punch_addr, mut events_rx, mut data_us, mut control_us, our_sock, _, _pool) =
@@ -1703,8 +1691,6 @@ mod tests {
             .set_nodes(pubkey_list.clone())
             .await
             .expect("Cannot set nodes: ");
-
-        state = State::WaitingCMM;
 
         // Runtime
         let _ = tokio::spawn(async move {
@@ -1765,7 +1751,7 @@ mod tests {
         let network_delay = Duration::from_millis(5);
         let our_rx_peer_id = PeerId(9);
         let our_tx_peer_id = PeerId(1);
-        let mut state = State::Idle;
+        let mut state = State::WaitingConnect;
 
         let (punch, punch_addr, mut events_rx, mut data_us, mut control_us, our_sock, our_addr, _) =
             prepare_udp_hole_punch(0).await;
@@ -1804,8 +1790,6 @@ mod tests {
             .send_to(&payload, punch_addr)
             .await
             .expect("Cannot send payload: ");
-
-        state = State::WaitingConnect;
 
         // Runtime
         let _ = tokio::spawn(async move {
