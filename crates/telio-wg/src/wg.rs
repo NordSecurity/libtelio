@@ -86,13 +86,13 @@ struct State {
 
 const POLL_MILLIS: u64 = 1000;
 
-#[cfg(windows)]
+#[cfg(all(not(test), windows))]
 const DEFAULT_NAME: &str = "NordLynx";
 
-#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[cfg(all(not(test), any(target_os = "macos", target_os = "ios")))]
 const DEFAULT_NAME: &str = "utun10";
 
-#[cfg(any(target_os = "linux", target_os = "android"))]
+#[cfg(all(not(test), any(target_os = "linux", target_os = "android")))]
 const DEFAULT_NAME: &str = "nlx0";
 
 impl DynamicWg {
@@ -539,7 +539,6 @@ mod tests {
         event: Rx<Box<Event>>,
         adapter: Arc<Mutex<MockAdapter>>,
         wg: DynamicWg,
-        cfg: Config,
     }
 
     async fn setup() -> Env {
@@ -573,18 +572,12 @@ mod tests {
             event: chan.rx,
             adapter,
             wg,
-            cfg: Config::default(),
         }
     }
 
     #[tokio::test(start_paused = true)]
     async fn wg_setup() {
-        let Env {
-            adapter,
-            wg,
-            mut event,
-            ..
-        } = setup().await;
+        let Env { adapter, wg, .. } = setup().await;
 
         adapter.lock().await.expect_stop().return_once(|| ());
         wg.stop().await;
@@ -592,12 +585,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn wg_gets_interface() {
-        let Env {
-            adapter,
-            wg,
-            mut event,
-            ..
-        } = setup().await;
+        let Env { adapter, wg, .. } = setup().await;
         assert_eq!(Some(Interface::default()), wg.get_interface().await);
 
         adapter.lock().await.expect_stop().return_once(|| ());
@@ -854,7 +842,7 @@ mod tests {
         let Env {
             adapter,
             wg,
-            mut event,
+            event: _event,
             ..
         } = setup().await;
         let mut iface = Interface::default();
@@ -915,7 +903,7 @@ mod tests {
         let Env {
             adapter,
             wg,
-            mut event,
+            event: _event,
             ..
         } = setup().await;
         let mut iface = Interface::default();
