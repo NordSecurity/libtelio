@@ -137,6 +137,7 @@ impl Default for AdapterType {
     }
 }
 
+#[cfg(not(test))]
 pub(crate) fn start(
     adapter: AdapterType,
     name: &str,

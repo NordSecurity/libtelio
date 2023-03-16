@@ -44,6 +44,7 @@ pub enum Error {
 }
 
 impl LinuxNativeWg {
+    #[cfg(not(test))]
     pub fn start(name: &str, _tun: Option<NativeTun>) -> Result<Self, AdapterError> {
         let mut rtsocket = RouteSocket::connect().map_err(Error::from)?;
 
