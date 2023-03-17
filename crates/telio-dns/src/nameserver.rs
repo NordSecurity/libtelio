@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use tokio::net::UdpSocket;
-use tokio::sync::{RwLock, Semaphore};
+use tokio::sync::{RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, Semaphore};
 use tokio::task::JoinHandle;
 use trust_dns_client::rr::LowerName;
 use trust_dns_proto::serialize::binary::BinDecodable;
@@ -65,22 +65,29 @@ impl LocalNameServer {
             task_handle: None,
         })))
     }
+}
 
-    fn zones(&self) -> Arc<ClonableZones> {
-        self.zones.clone()
+#[async_trait]
+trait WithZones {
+    async fn zones(&self) -> Arc<ClonableZones>;
+    async fn zones_mut(&self) -> RwLockMappedWriteGuard<ClonableZones>;
+}
+
+#[async_trait]
+impl WithZones for Arc<RwLock<LocalNameServer>> {
+    async fn zones(&self) -> Arc<ClonableZones> {
+        self.read().await.zones.clone()
     }
 
-    fn zones_mut(&mut self) -> &mut ClonableZones {
-        // No need to clone zones if there is no one holding a copy of Arc
-        // pointing to our zones.
-        Arc::make_mut(&mut self.zones)
+    async fn zones_mut(&self) -> RwLockMappedWriteGuard<ClonableZones> {
+        RwLockWriteGuard::map(self.write().await, |this| Arc::make_mut(&mut this.zones))
     }
 }
 
 #[async_trait]
 impl NameServer for Arc<RwLock<LocalNameServer>> {
     async fn upsert(&self, zone: &str, records: &Records) -> Result<(), String> {
-        self.write().await.zones_mut().upsert(
+        self.zones_mut().await.upsert(
             LowerName::from_str(zone)?,
             Box::new(Arc::new(AuthoritativeZone::new(zone, records).await?)),
         );
@@ -88,7 +95,7 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
     }
 
     async fn forward(&self, to: &[IpAddr]) -> Result<(), String> {
-        self.write().await.zones_mut().upsert(
+        self.zones_mut().await.upsert(
             LowerName::from_str(".")?,
             Box::new(Arc::new(ForwardZone::new(".", to).await?)),
         );
@@ -228,7 +235,7 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
                                 };
 
                             let resolver = Resolver::new();
-                            let zones = nameserver.read().await.zones();
+                            let zones = nameserver.zones().await;
                             let dns_request = Request::new(
                                 dns_request,
                                 SocketAddr::new(
@@ -348,9 +355,12 @@ mod tests {
             .unwrap();
         nameserver.upsert("nord", &records).await.unwrap();
         let request = dns_request(entry_name.clone());
-        let ns = nameserver.read().await;
         let resolver = Resolver::new();
-        ns.zones().lookup(&request, resolver.clone()).await;
+        nameserver
+            .zones()
+            .await
+            .lookup(&request, resolver.clone())
+            .await;
         let buf = resolver.0.lock().await;
         let mut decoder = BinDecoder::new(&buf);
         let answers = Message::read(&mut decoder).unwrap().take_answers();
@@ -371,21 +381,21 @@ mod tests {
         let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])
             .await
             .unwrap();
-        let raw_read_ptr1 = Arc::as_ptr(&nameserver.read().await.zones());
+        let raw_read_ptr1 = Arc::as_ptr(&nameserver.zones().await);
         nameserver.upsert("nord", &records).await.unwrap();
-        let raw_read_ptr2 = Arc::as_ptr(&nameserver.read().await.zones());
+        let raw_read_ptr2 = Arc::as_ptr(&nameserver.zones().await);
         assert_eq!(raw_read_ptr1, raw_read_ptr2);
 
         let name2 = "test.nord2.".to_owned();
         let mut records = Records::new();
         records.insert(name2.clone(), Ipv4Addr::new(100, 69, 69, 69));
 
-        let read_ptr3 = nameserver.read().await.zones();
+        let read_ptr3 = nameserver.zones().await;
         nameserver.upsert("nord2", &records).await.unwrap();
-        let raw_read_ptr4 = Arc::as_ptr(&nameserver.read().await.zones());
+        let raw_read_ptr4 = Arc::as_ptr(&nameserver.zones().await);
         assert_ne!(Arc::as_ptr(&read_ptr3), raw_read_ptr4);
 
-        let zones = nameserver.read().await.zones();
+        let zones = nameserver.zones().await;
         assert!(zones.contains(&LowerName::from_str("nord").unwrap()));
         assert!(zones.contains(&LowerName::from_str("nord2").unwrap()));
     }
