@@ -3,6 +3,7 @@
 * LLT-3004: JNI FindClass calls from callbacks
 * LLT-2968: Add contributor guidelines
 * NVA-3645: Fix Nurse execution.
+* LLT-3324: Fix magic dns being stuck for several seconds
 
 ### Changelog
 * LLT-2893: Expose ffi version and tag
