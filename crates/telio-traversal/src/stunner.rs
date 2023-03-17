@@ -42,7 +42,9 @@ use telio_task::{
     },
     task_exec, BoxAction, Runtime, Task,
 };
-use telio_utils::{telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn, PinnedSleep};
+use telio_utils::{
+    telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn, Hidden, PinnedSleep,
+};
 
 #[cfg(test)]
 use mockall::{automock, predicate::*};
@@ -158,7 +160,7 @@ impl LocalEndpointsImpl {
 
 #[derive(Clone, Default)]
 pub struct Results {
-    pub remote: Option<SocketAddr>,
+    pub remote: Option<Hidden<SocketAddr>>,
     pub local: Option<Vec<SocketAddr>>,
 }
 
@@ -170,19 +172,19 @@ impl Results {
         }
     }
 
-    pub fn to_vec(&self) -> Result<Vec<SocketAddr>> {
+    pub fn to_vec(&self) -> Result<Vec<Hidden<SocketAddr>>> {
         if self.is_empty() {
             return Err(Error::NoResults);
         }
 
-        let mut v: Vec<SocketAddr> = vec![];
+        let mut v: Vec<Hidden<SocketAddr>> = vec![];
 
         if let Some(remote) = self.remote {
             v.push(remote);
         }
 
         if let Some(local) = &self.local {
-            v.extend(local);
+            v.extend(local.iter().copied().map(Hidden));
         }
 
         Ok(v)
@@ -450,7 +452,7 @@ impl Interface {
         payload: &[u8],
         src_addr: &SocketAddr,
         socket: Arc<External<UdpSocket>>,
-    ) -> Poll<Result<(SocketAddr, TransactionId)>> {
+    ) -> Poll<Result<(Hidden<SocketAddr>, TransactionId)>> {
         if let Some(expected_addr) = self.addr() {
             if *src_addr != expected_addr {
                 // Not from (requested) STUN server
@@ -632,7 +634,7 @@ impl Interface {
     }
 
     /// Decode reflexive endpoint from STUN response
-    fn decode_reflexive_endpoint(buf: &[u8]) -> Result<(SocketAddr, TransactionId)> {
+    fn decode_reflexive_endpoint(buf: &[u8]) -> Result<(Hidden<SocketAddr>, TransactionId)> {
         let mut decoder = MessageDecoder::<Attribute>::new();
         let decoded = decoder
             .decode_from_bytes(
@@ -656,7 +658,7 @@ impl Interface {
             .map(|x| x.address());
         let addr = x_m_addr.or(m_addr).ok_or(Error::StunFailed)?;
 
-        Ok((addr, tid))
+        Ok((Hidden(addr), tid))
     }
 }
 

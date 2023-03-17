@@ -667,7 +667,7 @@ impl Cli {
                                         break;
                                     },
                                     Ok(endpoints) = &mut fetcher => {
-                                        cli_res!(res; (i "got endpoints: {:?}", endpoints.unwrap().to_vec().unwrap()));
+                                        cli_res!(res; (i "got endpoints: {:?}", endpoints.unwrap().to_vec().unwrap().into_iter().map(|e| e.0).collect::<Vec<_>>()));
                                         break;
                                     }
                                 };

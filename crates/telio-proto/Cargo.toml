@@ -12,6 +12,7 @@ strum = { version = "0.24.0", features = ["derive"] }
 thiserror = "1.0"
 
 telio-crypto = { path = "../telio-crypto" }
+telio-utils = { path = "../telio-utils" }
 
 [build-dependencies]
 protobuf-codegen-pure = "2"

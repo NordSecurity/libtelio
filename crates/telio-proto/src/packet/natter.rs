@@ -1,4 +1,4 @@
-use std::iter::IntoIterator;
+use std::iter::{FromIterator, IntoIterator};
 use std::net::SocketAddr;
 
 use super::PeerId;
@@ -8,6 +8,7 @@ use crate::{
 };
 use bytes::BufMut;
 use protobuf::{Message, RepeatedField};
+use telio_utils::Hidden;
 
 /// Packet encapsulating containing WG packets
 /// ```rust
@@ -139,7 +140,7 @@ pub struct CallMeMaybeMsgDeprecated(CallMeMaybeDeprecated);
 
 impl CallMeMaybeMsgDeprecated {
     /// Returns new msg [`CallMeMaybeMsgDeprecated`].
-    pub fn new<T: Iterator<Item = SocketAddr>>(
+    pub fn new<T: Iterator<Item = Hidden<SocketAddr>>>(
         initiator: bool,
         addrs: T,
         session: Session,
@@ -151,8 +152,8 @@ impl CallMeMaybeMsgDeprecated {
             } else {
                 CallMeMaybeDeprecated_Type::RESPONDER
             },
-            my_addresses: RepeatedField::from_vec(
-                addrs.into_iter().map(|addr| addr.to_string()).collect(),
+            my_addresses: RepeatedField::from_iter(
+                addrs.into_iter().map(|addr| addr.0.to_string()),
             ),
             my_peer_id: peer_id.0 as u32,
             session,
@@ -161,12 +162,13 @@ impl CallMeMaybeMsgDeprecated {
     }
 
     /// Get list of endpoints
-    pub fn get_addrs(&self) -> Vec<SocketAddr> {
+    pub fn get_addrs(&self) -> Vec<Hidden<SocketAddr>> {
         self.0
             .my_addresses
             .to_vec()
             .iter()
             .flat_map(|s| s.parse())
+            .map(Hidden)
             .collect()
     }
 
@@ -294,7 +296,10 @@ mod tests {
         assert_eq!(data.packet_type(), PacketType::CallMeMaybeDeprecated);
         assert_eq!(data.get_session(), 1);
         assert_eq!(data.get_peer_id().0, 1);
-        assert_eq!(data.get_addrs()[0], "10.0.0.15:443".parse().unwrap());
+        assert_eq!(
+            data.get_addrs()[0],
+            "10.0.0.15:443".parse::<SocketAddr>().unwrap()
+        );
     }
 
     #[test]
