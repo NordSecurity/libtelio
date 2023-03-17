@@ -9,7 +9,7 @@ ARGS=$@
 while (( "$#" )); do
 	if [[ $1 == *"-Wl,--version-script="* ]]; then
 		VERSION=${1#"-Wl,--version-script="}
-		sed -i 's/global:/global:\n    Java*;/' $VERSION
+		sed -i 's/global:/global:\n    Java*;\n    JNI_OnLoad;\n/' $VERSION
 		break
 	fi
 
