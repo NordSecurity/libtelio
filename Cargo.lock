@@ -2478,6 +2478,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ef03e0a2b150c7a90d01faf6254c9c48a41e95fb2a8c2ac1c6f0d2b9aefc342"
 
 [[package]]
+name = "rustc-hash"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
+
+[[package]]
 name = "rustc_version"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3093,6 +3099,7 @@ dependencies = [
  "modifier",
  "ntest",
  "num_cpus",
+ "parking_lot 0.12.1",
  "pretty_assertions",
  "serde",
  "serde_json",
@@ -3414,6 +3421,8 @@ dependencies = [
  "futures",
  "log",
  "mockall",
+ "parking_lot 0.12.1",
+ "rustc-hash",
  "serde",
  "telio-test",
  "thiserror",
@@ -4318,9 +4327,9 @@ dependencies = [
 
 [[package]]
 name = "xsalsa20poly1305"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "472c385ee974833d7e59979eeb74175d56774be3768b5bcc581337e21396bda3"
+checksum = "02a6dad357567f81cd78ee75f7c61f1b30bb2fe4390be8fb7c69e2ac8dffb6c7"
 dependencies = [
  "aead",
  "poly1305",

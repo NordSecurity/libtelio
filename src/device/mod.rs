@@ -54,7 +54,10 @@ use std::{
 };
 
 use telio_utils::{
-    commit_sha, exponential_backoff::ExponentialBackoffBounds, telio_log_debug, telio_log_info,
+    commit_sha,
+    exponential_backoff::ExponentialBackoffBounds,
+    telio_log_debug, telio_log_info,
+    tokio::{Monitor, ThreadTracker},
     version_tag,
 };
 
@@ -338,11 +341,31 @@ impl Device {
             init_lana(lana.event_path.clone(), version_tag.to_string(), lana.prod)?;
         }
 
+        let thread_tracker = Arc::new(parking_lot::Mutex::new(ThreadTracker::default()));
+
         let art = Builder::new_multi_thread()
             .worker_threads(num_cpus::get())
             .enable_io()
             .enable_time()
+            .on_thread_start({
+                let thread_tracker = thread_tracker.clone();
+                move || thread_tracker.lock().on_thread_start()
+            })
+            .on_thread_stop({
+                let thread_tracker = thread_tracker.clone();
+                move || thread_tracker.lock().on_thread_stop()
+            })
+            .on_thread_park({
+                let thread_tracker = thread_tracker.clone();
+                move || thread_tracker.lock().on_thread_park()
+            })
+            .on_thread_unpark({
+                let thread_tracker = thread_tracker.clone();
+                move || thread_tracker.lock().on_thread_unpark()
+            })
             .build()?;
+
+        thread_tracker.start();
 
         let (event_tx, mut event_rx) = tokio::sync::broadcast::channel(256);
         art.spawn(async move {
