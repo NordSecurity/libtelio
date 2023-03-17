@@ -56,7 +56,9 @@ use std::{
 use telio_utils::{telio_log_debug, telio_log_info};
 
 use telio_model::{
-    api_config::{Features, PathType, DEFAULT_ENDPOINT_POLL_INTERVAL_SECS},
+    api_config::{
+        FeaturePersistentKeepalive, Features, PathType, DEFAULT_ENDPOINT_POLL_INTERVAL_SECS,
+    },
     config::{Config, Peer},
     event::{Event, Set},
     mesh::{ExitNode, Node},
@@ -147,41 +149,6 @@ pub struct Device {
     features: Features,
 }
 
-pub const DEFAULT_PROXYING_PERSISTENT_KEEPALIVE: u32 = 25;
-pub const DEFAULT_DIRECT_PERSISTENT_KEEPALIVE: u32 = 5;
-pub const DEFAULT_VPN_PERSISTENT_KEEPALIVE: u32 = 15;
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct KeepalivePeriods {
-    pub(crate) direct: u32,
-    pub(crate) relayed: u32,
-    pub(crate) vpn: u32,
-}
-
-impl Default for KeepalivePeriods {
-    fn default() -> Self {
-        Self {
-            direct: DEFAULT_DIRECT_PERSISTENT_KEEPALIVE,
-            relayed: DEFAULT_PROXYING_PERSISTENT_KEEPALIVE,
-            vpn: DEFAULT_VPN_PERSISTENT_KEEPALIVE,
-        }
-    }
-}
-
-impl From<Features> for KeepalivePeriods {
-    fn from(features: Features) -> Self {
-        features
-            .meshnet
-            .and_then(|m| m.persistent_keepalive)
-            .map(|pk| KeepalivePeriods {
-                direct: pk.direct.unwrap_or(DEFAULT_DIRECT_PERSISTENT_KEEPALIVE),
-                relayed: pk.relayed.unwrap_or(DEFAULT_PROXYING_PERSISTENT_KEEPALIVE),
-                vpn: pk.vpn.unwrap_or(DEFAULT_VPN_PERSISTENT_KEEPALIVE),
-            })
-            .unwrap_or_default()
-    }
-}
-
 #[derive(Default)]
 pub struct RequestedState {
     // WireGuard interface configuration
@@ -206,7 +173,7 @@ pub struct RequestedState {
     pub wg_stun_server: Option<WgStunServer>,
 
     // Requested keepalive periods
-    pub(crate) keepalive_periods: KeepalivePeriods,
+    pub(crate) keepalive_periods: FeaturePersistentKeepalive,
 }
 
 pub struct Entities {
@@ -763,7 +730,7 @@ impl Runtime {
 
         let requested_state = RequestedState {
             device_config: config.clone(),
-            keepalive_periods: features.clone().into(),
+            keepalive_periods: features.meshnet.persistent_keepalive.clone(),
             ..Default::default()
         };
 

@@ -6,24 +6,59 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumCount;
 
+/// Default keepalive period for most kind of peers
+pub const DEFAULT_PERSISTENT_KEEPALIVE_PERIOD: u32 = 25;
+
+/// Default keepalive period for direct peers
+pub const DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD: u32 = 5;
+
 /// Configurable persistent keepalive periods for different types of peers
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct FeaturePersistentKeepalive {
-    /// Persistent keepalive period given for VPN peers (in seconds)
+    /// Persistent keepalive period given for VPN peers (in seconds) [default 15s]
+    #[serde(default = "FeaturePersistentKeepalive::get_default_keepalive_period")]
     pub vpn: Option<u32>,
 
-    /// Persistent keepalive period for direct peers (in seconds)
-    pub direct: Option<u32>,
+    /// Persistent keepalive period for direct peers (in seconds) [default 5s]
+    #[serde(default = "FeaturePersistentKeepalive::get_default_direct_keepalive_period")]
+    pub direct: u32,
 
-    /// Persistent keepalive period for relayed peers (in seconds)
-    pub relayed: Option<u32>,
+    /// Persistent keepalive period for proxying peers (in seconds) [default 25s]
+    #[serde(default = "FeaturePersistentKeepalive::get_default_keepalive_period")]
+    pub proxying: Option<u32>,
+
+    /// Persistent keepalive period for stun peers (in seconds) [default 25s]
+    #[serde(default = "FeaturePersistentKeepalive::get_default_keepalive_period")]
+    pub stun: Option<u32>,
+}
+
+impl FeaturePersistentKeepalive {
+    fn get_default_keepalive_period() -> Option<u32> {
+        Some(DEFAULT_PERSISTENT_KEEPALIVE_PERIOD)
+    }
+
+    fn get_default_direct_keepalive_period() -> u32 {
+        DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD
+    }
+}
+
+impl Default for FeaturePersistentKeepalive {
+    fn default() -> Self {
+        Self {
+            vpn: Some(DEFAULT_PERSISTENT_KEEPALIVE_PERIOD),
+            direct: DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
+            proxying: Some(DEFAULT_PERSISTENT_KEEPALIVE_PERIOD),
+            stun: Some(DEFAULT_PERSISTENT_KEEPALIVE_PERIOD),
+        }
+    }
 }
 
 /// Configurable features for Meshnet nodes
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 pub struct FeatureMeshnet {
     /// Configurable persistent keepalive periods for meshnet peers
-    pub persistent_keepalive: Option<FeaturePersistentKeepalive>,
+    #[serde(default)]
+    pub persistent_keepalive: FeaturePersistentKeepalive,
 }
 
 #[serde_with::serde_as]
@@ -122,7 +157,8 @@ pub struct FeatureDirect {
 /// Encompasses all of the possible features that can be enabled
 pub struct Features {
     /// Additional meshnet configuration
-    pub meshnet: Option<FeatureMeshnet>,
+    #[serde(default)]
+    pub meshnet: FeatureMeshnet,
     /// Nurse features that can be configured for QoS
     pub nurse: Option<FeatureNurse>,
     /// Event logging configurable features
@@ -270,7 +306,7 @@ mod tests {
         }"#;
 
         let full_features = Features {
-            meshnet: None,
+            meshnet: Default::default(),
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
                 qos: Some(FeatureQoS {
@@ -288,7 +324,7 @@ mod tests {
         };
 
         let empty_qos_features = Features {
-            meshnet: None,
+            meshnet: Default::default(),
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
                 qos: Some(FeatureQoS {
@@ -306,7 +342,7 @@ mod tests {
         };
 
         let no_qos_features = Features {
-            meshnet: None,
+            meshnet: Default::default(),
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
                 qos: None,
@@ -346,7 +382,7 @@ mod tests {
         }"#;
 
         let full_features = Features {
-            meshnet: None,
+            meshnet: Default::default(),
             nurse: None,
             lana: None,
             paths: None,
@@ -357,7 +393,7 @@ mod tests {
         };
 
         let empty_features = Features {
-            meshnet: None,
+            meshnet: Default::default(),
             nurse: None,
             lana: None,
             paths: None,
@@ -384,8 +420,8 @@ mod tests {
             "meshnet":
             {
                 "persistent_keepalive": {
-                    "relayed": 25,
-                    "direct": 5
+                    "vpn": null,
+                    "stun": 50
                 }
             },
             "nurse":
@@ -407,13 +443,14 @@ mod tests {
         }"#;
 
         let features = Features {
-            meshnet: Some(FeatureMeshnet {
-                persistent_keepalive: Some(FeaturePersistentKeepalive {
+            meshnet: FeatureMeshnet {
+                persistent_keepalive: FeaturePersistentKeepalive {
                     vpn: None,
-                    direct: Some(5),
-                    relayed: Some(25),
-                }),
-            }),
+                    direct: 5,
+                    proxying: Some(25),
+                    stun: Some(50),
+                },
+            },
             nurse: Some(FeatureNurse {
                 fingerprint: "fingerprint_test".to_string(),
                 qos: None,
@@ -441,7 +478,7 @@ mod tests {
     #[test]
     fn test_default_features() {
         let expected_defaults = Features {
-            meshnet: None,
+            meshnet: Default::default(),
             nurse: None,
             lana: None,
             paths: None,
