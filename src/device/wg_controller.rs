@@ -12,8 +12,8 @@ use telio_model::EndpointMap;
 use telio_model::{mesh::Node, SocketAddr};
 use telio_proxy::Proxy;
 use telio_traversal::{
-    cross_ping_check::CrossPingCheckTrait, endpoint_providers::stun, SessionKeeperTrait,
-    UpgradeSyncTrait, WireGuardEndpointCandidateChangeEvent,
+    cross_ping_check::CrossPingCheckTrait, SessionKeeperTrait, UpgradeSyncTrait,
+    WireGuardEndpointCandidateChangeEvent,
 };
 use telio_utils::{telio_log_debug, telio_log_info};
 use telio_wg::{uapi::Peer, WireGuard};
@@ -61,7 +61,6 @@ pub async fn consolidate_wg_state(requested_state: &RequestedState, entities: &E
         &*entities.firewall,
     )
     .await?;
-    consolidate_stun_endpoint_provider(requested_state, entities).await?;
     Ok(())
 }
 
@@ -235,26 +234,6 @@ async fn consolidate_firewall<W: WireGuard, F: Firewall>(
         firewall_upsert_node(firewall, &node.into());
     }
 
-    Ok(())
-}
-
-/// Configures stun endpoint provider to have needed information
-async fn consolidate_stun_endpoint_provider(
-    requested_state: &RequestedState,
-    entities: &Entities,
-) -> Result {
-    if let Some(stun_ep) = entities.stun_endpoint_provider() {
-        let config = requested_state
-            .wg_stun_server
-            .as_ref()
-            .cloned()
-            .map(|s| stun::Config {
-                stun_peer: s.public_key,
-                plaintext_stun_port: s.stun_plaintext_port,
-                wg_stun_port: Some(s.stun_port),
-            });
-        stun_ep.configure(config).await;
-    }
     Ok(())
 }
 

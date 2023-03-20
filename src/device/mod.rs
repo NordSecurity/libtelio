@@ -1,6 +1,7 @@
 mod wg_controller;
 
 use async_trait::async_trait;
+use futures::Future;
 use telio_crypto::{PublicKey, SecretKey};
 use telio_firewall::firewall::{Firewall, StatefullFirewall};
 use telio_lana::*;
@@ -20,10 +21,10 @@ use telio_traversal::{
     connectivity_check,
     cross_ping_check::{CrossPingCheck, CrossPingCheckTrait, Io as CpcIo},
     endpoint_providers::{
-        self, local::LocalInterfacesEndpointProvider, stun::StunEndpointProvider, EndpointProvider,
+        self, local::LocalInterfacesEndpointProvider, stun::StunEndpointProvider, stun::StunServer,
+        EndpointProvider,
     },
     ping_pong_handler::PingPongHandler,
-    wg_stun_controller::{WgStunController, WgStunServer},
     SessionKeeper, UpgradeRequestChangeEvent, UpgradeSync, WireGuardEndpointCandidateChangeEvent,
 };
 
@@ -46,7 +47,6 @@ use wg::uapi::{self, PeerState};
 
 use std::{
     collections::HashSet,
-    future::Future,
     io::{Error as IoError, ErrorKind},
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
@@ -173,7 +173,7 @@ pub struct RequestedState {
     pub upstream_servers: Option<Vec<IpAddr>>,
 
     // Wireguard stun server that should be currently used
-    pub wg_stun_server: Option<WgStunServer>,
+    pub wg_stun_server: Option<StunServer>,
 
     // Requested keepalive periods
     pub(crate) keepalive_periods: FeaturePersistentKeepalive,
@@ -208,12 +208,6 @@ pub struct Entities {
 }
 
 impl Entities {
-    pub fn wg_stun_controller(&self) -> Option<&Arc<WgStunController>> {
-        self.direct
-            .as_ref()
-            .and_then(|d| d.wg_stun_controller.as_ref())
-    }
-
     pub fn cross_ping_check(&self) -> Option<&Arc<CrossPingCheck>> {
         self.direct.as_ref().map(|d| &d.cross_ping_check)
     }
@@ -232,12 +226,6 @@ impl Entities {
     pub fn upgrade_sync(&self) -> Option<&Arc<UpgradeSync>> {
         self.direct.as_ref().map(|d| &d.upgrade_sync)
     }
-
-    fn stun_endpoint_provider(&self) -> Option<&Arc<StunEndpointProvider>> {
-        self.direct
-            .as_ref()
-            .and_then(|d| d.stun_endpoint_provider.as_ref())
-    }
 }
 
 pub struct DirectEntities {
@@ -254,8 +242,6 @@ pub struct DirectEntities {
     // Meshnet WG Connection upgrade synchronization
     upgrade_sync: Arc<UpgradeSync>,
 
-    wg_stun_controller: Option<Arc<WgStunController<DynamicWg>>>,
-
     // Keepalive sender
     session_keeper: Arc<SessionKeeper>,
 }
@@ -265,7 +251,7 @@ pub struct EventListeners {
     wg_event_subscriber: chan::Rx<Box<WGEvent>>,
     derp_event_subscriber: mc_chan::Rx<Box<DerpServer>>,
     endpoint_upgrade_event_subscriber: chan::Rx<UpgradeRequestChangeEvent>,
-    wg_stun_server_subscriber: chan::Rx<Option<WgStunServer>>,
+    stun_server_subscriber: chan::Rx<Option<StunServer>>,
 }
 
 pub struct EventPublishers {
@@ -760,7 +746,7 @@ impl Runtime {
         let pong_rxed_events = Chan::default();
         let wg_endpoint_publish_events = Chan::default();
         let wg_upgrade_sync = Chan::default();
-        let wg_stun_server_events = Chan::default();
+        let stun_server_events = Chan::default();
         let direct = if let Some(direct) = &features.direct {
             // Create endpoint providers
             let has_provider = |provider| {
@@ -813,18 +799,10 @@ impl Runtime {
                             .unwrap_or(DEFAULT_ENDPOINT_POLL_INTERVAL_SECS),
                     ),
                     ping_pong_tracker.clone(),
+                    stun_server_events.tx,
                 ));
                 endpoint_providers.push(ep.clone());
                 Some(ep)
-            } else {
-                None
-            };
-            let wg_stun_controller = if has_provider(Stun) {
-                Some(Arc::new(WgStunController::new(
-                    wg_stun_server_events.tx,
-                    wireguard_interface.clone(),
-                    Duration::from_secs(5),
-                )))
             } else {
                 None
             };
@@ -870,7 +848,6 @@ impl Runtime {
                 endpoint_providers,
                 cross_ping_check,
                 upgrade_sync,
-                wg_stun_controller,
                 session_keeper,
             })
         } else {
@@ -896,7 +873,7 @@ impl Runtime {
                 wg_event_subscriber: wg_events.rx,
                 derp_event_subscriber: derp_events.rx,
                 endpoint_upgrade_event_subscriber: wg_upgrade_sync.rx,
-                wg_stun_server_subscriber: wg_stun_server_events.rx,
+                stun_server_subscriber: stun_server_events.rx,
             },
             event_publishers: EventPublishers {
                 libtelio_event_publisher: libtelio_wide_event_publisher,
@@ -945,14 +922,6 @@ impl Runtime {
                 ..c
             }))
             .await;
-
-        if let Some(wsc) = self.entities.wg_stun_controller() {
-            wsc.configure(wsc.get_config().await.map(|c| DerpConfig {
-                secret_key: *private_key,
-                ..c
-            }))
-            .await;
-        }
 
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities).await?;
         Ok(())
@@ -1109,9 +1078,11 @@ impl Runtime {
                 .configure(Some(derp_config.clone()))
                 .await;
 
-            // Update wg_stun_controll configuration
-            if let Some(wsc) = self.entities.wg_stun_controller() {
-                wsc.configure(Some(derp_config)).await;
+            // Refresh the lists of servers for STUN endpoint provider
+            if let Some(direct) = self.entities.direct.as_ref() {
+                if let Some(stun_ep) = direct.stun_endpoint_provider.as_ref() {
+                    stun_ep.configure(derp_config.servers).await;
+                }
             }
 
             self.upsert_dns_peers().await?;
@@ -1127,8 +1098,12 @@ impl Runtime {
             self.upsert_dns_peers().await?;
 
             self.entities.derp.configure(None).await;
-            if let Some(wsc) = self.entities.wg_stun_controller() {
-                wsc.configure(None).await;
+
+            // Refresh the lists of servers for STUN endpoint provider
+            if let Some(direct) = self.entities.direct.as_ref() {
+                if let Some(stun_ep) = direct.stun_endpoint_provider.as_ref() {
+                    stun_ep.configure(vec![]).await;
+                }
             }
         }
 
@@ -1422,7 +1397,7 @@ impl TaskRuntime for Runtime {
                 Ok(())
             },
 
-            Some(wg_stun_server) = self.event_listeners.wg_stun_server_subscriber.recv() => {
+            Some(wg_stun_server) = self.event_listeners.stun_server_subscriber.recv() => {
                 self.requested_state.wg_stun_server = wg_stun_server;
 
                 wg_controller::consolidate_wg_state(&self.requested_state, &self.entities)
@@ -1490,10 +1465,6 @@ impl TaskRuntime for Runtime {
                 stop_arc_entity!(stun, "StunEndpointProvider");
             }
 
-            // No Arc deppendencies
-            if let Some(wsc) = direct.wg_stun_controller {
-                stop_arc_entity!(wsc, "WgStunController");
-            }
             stop_arc_entity!(direct.upgrade_sync, "UpgradeSync");
         }
 

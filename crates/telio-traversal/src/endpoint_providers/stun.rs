@@ -7,6 +7,7 @@ use futures::Future;
 use stun_codec::TransactionId;
 use telio_crypto::PublicKey;
 use telio_proto::{Session, WGPort};
+use telio_relay::Server;
 use telio_sockets::{native::AsNativeSocket, External};
 use telio_task::{io::chan, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn, PinnedSleep};
@@ -21,24 +22,15 @@ use crate::{endpoint_providers::EndpointProviderType, ping_pong_handler::PingPon
 
 use super::{EndpointCandidate, EndpointCandidatesChangeEvent, EndpointProvider, Error, PongEvent};
 
+pub type StunServer = telio_relay::derp::Server;
+
 #[cfg(not(test))]
 const STUN_TIMEOUT: Duration = Duration::from_secs(5);
 #[cfg(test)]
 const STUN_TIMEOUT: Duration = Duration::from_millis(300);
 
 const MAX_PACKET_SIZE: usize = 1500;
-const DEFAULT_STUN_PORT: u16 = 3478;
 const STUN_SOFTWARE: &str = "tailnode";
-
-#[derive(Default, PartialEq, Eq)]
-pub struct Config {
-    // Peer in wireguard to be used for stunning.
-    pub stun_peer: PublicKey,
-    // Port of plaintext stun
-    pub plaintext_stun_port: u16,
-    // Port of wg stun's inner port
-    pub wg_stun_port: Option<u16>,
-}
 
 pub struct StunEndpointProvider<Wg: WireGuard = DynamicWg> {
     task: Task<State<Wg>>,
@@ -57,6 +49,7 @@ impl<Wg: WireGuard> StunEndpointProvider<Wg> {
         wg: Arc<Wg>,
         poll_interval: Duration,
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
+        stun_peer_publisher: chan::Tx<Option<StunServer>>,
     ) -> Self {
         telio_log_info!("Starting stun endpoint provider");
         telio_log_debug!(
@@ -66,7 +59,8 @@ impl<Wg: WireGuard> StunEndpointProvider<Wg> {
         );
         Self {
             task: Task::start(State {
-                config: None,
+                servers: vec![],
+                server_num: 0,
                 tun_socket,
                 ext_socket,
                 wg,
@@ -76,19 +70,20 @@ impl<Wg: WireGuard> StunEndpointProvider<Wg> {
                 stun_interval: interval(poll_interval),
                 last_candidates: Vec::new(),
                 ping_pong_tracker: ping_pong_handler,
+                stun_peer_publisher,
             }),
         }
     }
 
-    pub async fn configure(&self, config: Option<Config>) {
+    pub async fn configure(&self, servers: Vec<Server>) {
         let _ = task_exec!(&self.task, async move |s| {
-            if s.config == config {
-                return Ok(());
+            if s.servers != servers {
+                s.servers = servers;
+                s.server_num = 0;
+                s.stun_session = None;
+                let _ = s.start_stun_session().await;
             }
 
-            s.config = config;
-            s.stun_session = None;
-            let _ = s.start_stun_session().await;
             Ok(())
         })
         .await;
@@ -139,7 +134,9 @@ impl<Wg: WireGuard> EndpointProvider for StunEndpointProvider<Wg> {
 }
 
 struct State<Wg: WireGuard> {
-    config: Option<Config>,
+    servers: Vec<Server>,
+    server_num: usize,
+
     tun_socket: UdpSocket,
     ext_socket: External<UdpSocket>,
     wg: Arc<Wg>,
@@ -151,6 +148,8 @@ struct State<Wg: WireGuard> {
     stun_session: Option<StunSession>,
     stun_interval: Interval,
     last_candidates: Vec<EndpointCandidate>,
+
+    stun_peer_publisher: chan::Tx<Option<StunServer>>,
 }
 
 impl<Wg: WireGuard> State<Wg> {
@@ -195,14 +194,28 @@ impl<Wg: WireGuard> State<Wg> {
         }
     }
 
+    async fn next_server(&mut self) -> Result<(), Error> {
+        let server = if !self.servers.is_empty() {
+            self.server_num = (self.server_num + 1) % self.servers.len();
+            self.servers.get(self.server_num)
+        } else {
+            None
+        };
+
+        self.stun_peer_publisher
+            .send(server.cloned())
+            .await
+            .map_err(|e| e.into())
+    }
+
     /// Get endpoint's for stuns (WgStun, PlaintextStun)
-    async fn get_stun_endpoints(&self) -> Result<(SocketAddr, SocketAddr), Error> {
-        if let Some(config) = &self.config {
+    async fn get_stun_endpoints(&mut self) -> Result<(SocketAddr, SocketAddr), Error> {
+        if let Some(server) = self.servers.get(self.server_num) {
             let interface = self.wg.get_interface().await?;
 
             let stun_peer = interface
                 .peers
-                .get(&config.stun_peer)
+                .get(&server.public_key)
                 .ok_or(Error::NoStunPeer)?;
 
             let wg_ip = stun_peer
@@ -214,11 +227,11 @@ impl<Wg: WireGuard> State<Wg> {
             let udp_ip = stun_peer.endpoint.ok_or(Error::BadStunPeer)?.ip();
 
             Ok((
-                (wg_ip, config.wg_stun_port.unwrap_or(DEFAULT_STUN_PORT)).into(),
-                (udp_ip, config.plaintext_stun_port).into(),
+                (wg_ip, server.stun_port).into(),
+                (udp_ip, server.stun_plaintext_port).into(),
             ))
         } else {
-            Err(Error::NotConfigured)
+            Err(Error::NoStunPeer)
         }
     }
 
@@ -317,6 +330,9 @@ impl<Wg: WireGuard> Runtime for State<Wg> {
             // Stun session timeout
             _ = timeout => {
                 self.stun_session = None;
+
+                let _ = self.next_server().await;
+
                 if !self.last_candidates.is_empty() {
                     self.last_candidates.clear();
                     if let Some(ce) = &self.change_event {
@@ -532,13 +548,7 @@ mod tests {
     async fn collect_stun_endpoints_on_configure() {
         let mut env = prepare_test_env().await;
 
-        env.stun_provider
-            .configure(Some(Config {
-                stun_peer: env.stun_pk,
-                plaintext_stun_port: env.stun_sock.local_addr().unwrap().port(),
-                wg_stun_port: Some(env.peer_sock.local_addr().unwrap().port()),
-            }))
-            .await;
+        configure_env(&mut env).await;
 
         let udp_endpoint = SocketAddr::new([1, 1, 1, 1].into(), 11111);
         let wg_endpoint = SocketAddr::new([2, 2, 2, 2].into(), 22222);
@@ -565,13 +575,7 @@ mod tests {
     async fn collect_stun_endpoints_on_change() {
         let mut env = prepare_test_env().await;
 
-        env.stun_provider
-            .configure(Some(Config {
-                stun_peer: env.stun_pk,
-                plaintext_stun_port: env.stun_sock.local_addr().unwrap().port(),
-                wg_stun_port: Some(env.peer_sock.local_addr().unwrap().port()),
-            }))
-            .await;
+        configure_env(&mut env).await;
 
         // Triggered by configuration
         let udp_endpoint = SocketAddr::new([1, 1, 1, 1].into(), 11111);
@@ -642,13 +646,7 @@ mod tests {
         let mut env = prepare_test_env().await;
         let mut buf = [0; MAX_PACKET_SIZE];
 
-        env.stun_provider
-            .configure(Some(Config {
-                stun_peer: env.stun_pk,
-                plaintext_stun_port: env.stun_sock.local_addr().unwrap().port(),
-                wg_stun_port: Some(env.peer_sock.local_addr().unwrap().port()),
-            }))
-            .await;
+        configure_env(&mut env).await;
 
         // Timeout at first, no reporting as init state is assumed [];
 
@@ -763,13 +761,7 @@ mod tests {
         assert_eq!(pong.addr, ping_addr);
 
         // Configure and reply to stun
-        env.stun_provider
-            .configure(Some(Config {
-                stun_peer: env.stun_pk,
-                plaintext_stun_port: env.stun_sock.local_addr().unwrap().port(),
-                wg_stun_port: Some(env.peer_sock.local_addr().unwrap().port()),
-            }))
-            .await;
+        configure_env(&mut env).await;
 
         let udp_endpoint = SocketAddr::new([1, 1, 1, 1].into(), 11111);
         let wg_endpoint = SocketAddr::new([2, 2, 2, 2].into(), 22222);
@@ -828,7 +820,7 @@ mod tests {
 
     #[tokio::test]
     async fn provider_replies_to_ping() {
-        let env = prepare_test_env().await;
+        let mut env = prepare_test_env().await;
 
         let wg_port = WGPort(123);
         let session_id = 456;
@@ -870,13 +862,7 @@ mod tests {
         assert_eq!(pong.get_wg_port(), WGPort(0));
         assert_eq!(pong.get_session(), session_id);
 
-        env.stun_provider
-            .configure(Some(Config {
-                stun_peer: env.stun_pk,
-                plaintext_stun_port: env.stun_sock.local_addr().unwrap().port(),
-                wg_stun_port: Some(env.peer_sock.local_addr().unwrap().port()),
-            }))
-            .await;
+        configure_env(&mut env).await;
 
         let udp_endpoint = SocketAddr::new([1, 1, 1, 1].into(), 11111);
         let wg_endpoint = SocketAddr::new([2, 2, 2, 2].into(), 22222);
@@ -972,6 +958,8 @@ mod tests {
         ping_sock: UdpSocket,
         local_sk: SecretKey,
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
+
+        stun_peer_subscriber: chan::Rx<Option<StunServer>>,
     }
 
     async fn prepare_test_env() -> Env {
@@ -1031,6 +1019,11 @@ mod tests {
             })
         });
 
+        let Chan {
+            rx: stun_peer_subscriber,
+            tx: stun_peer_publisher,
+        } = Chan::default();
+
         let secret_key = SecretKey::gen();
         let ping_pong_handler = Arc::new(Mutex::new(PingPongHandler::new(secret_key)));
         let stun_provider = StunEndpointProvider::start(
@@ -1039,6 +1032,7 @@ mod tests {
             Arc::new(wg),
             Duration::from_secs(10000),
             ping_pong_handler.clone(),
+            stun_peer_publisher,
         );
 
         let candidates_channel = Chan::<EndpointCandidatesChangeEvent>::default();
@@ -1069,7 +1063,21 @@ mod tests {
             ping_sock,
             local_sk: secret_key,
             ping_pong_handler,
+
+            stun_peer_subscriber,
         }
+    }
+
+    async fn configure_env(env: &mut Env) {
+        env.stun_provider
+            .configure(vec![Server {
+                name: "The only server".to_string(),
+                stun_port: env.peer_sock.local_addr().unwrap().port(),
+                stun_plaintext_port: env.stun_sock.local_addr().unwrap().port(),
+                public_key: env.stun_pk,
+                ..Default::default()
+            }])
+            .await;
     }
 
     async fn stun_reply<A: Into<rfc5389::Attribute>>(sock: &UdpSocket, attribute: A) {
