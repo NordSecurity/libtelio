@@ -25,7 +25,7 @@ pub enum Error {
         #[from] tokio::sync::mpsc::error::SendError<EndpointCandidatesChangeEvent>,
     ),
     #[error(transparent)]
-    StunServerPublishError(#[from] tokio::sync::mpsc::error::SendError<Option<Server>>),
+    StunServerPublishError(#[from] tokio::sync::mpsc::error::TrySendError<Option<Server>>),
     #[error(transparent)]
     PongRxedPublishError(#[from] tokio::sync::mpsc::error::SendError<PongEvent>),
     #[error(transparent)]
