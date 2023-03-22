@@ -664,7 +664,9 @@ mod tests {
         DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD, DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
     };
     use telio_model::config::{Config, PeerBase};
+    use telio_model::mesh::ExitNode;
     use telio_proxy::MockProxy;
+    use telio_relay::Server;
     use telio_traversal::cross_ping_check::MockCrossPingCheckTrait;
     use telio_traversal::{MockSessionKeeperTrait, MockUpgradeSyncTrait, UpgradeRequest};
     use telio_wg::uapi::Interface;
@@ -1085,7 +1087,7 @@ mod tests {
                 .returning(move || Ok(map.clone()));
         }
 
-        fn then_add_peer(&mut self, input: Vec<(PublicKey, SocketAddr, u32, AllowedIps)>) {
+        fn then_add_peer(&mut self, input: Vec<(PublicKey, SocketAddr, u32, Vec<IpNetwork>)>) {
             for i in input {
                 self.wireguard_interface
                     .expect_add_peer()
@@ -1094,7 +1096,7 @@ mod tests {
                         public_key: i.0,
                         endpoint: Some(i.1.into()),
                         persistent_keepalive_interval: Some(i.2),
-                        allowed_ips: i.3.into_iter().map(|ip| ip.into()).collect(),
+                        allowed_ips: i.3,
                         rx_bytes: None,
                         tx_bytes: None,
                         time_since_last_handshake: None,
@@ -1193,6 +1195,9 @@ mod tests {
         let mapped_port = 18;
         let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
 
+        let proxying_keepalive_time = 1234;
+        f.requested_state.keepalive_periods.proxying = Some(proxying_keepalive_time);
+
         f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
         f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
         f.when_current_peers(vec![]);
@@ -1204,8 +1209,8 @@ mod tests {
         f.then_add_peer(vec![(
             pub_key,
             proxy_endpoint,
-            DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
-            allowed_ips,
+            proxying_keepalive_time,
+            allowed_ips.into_iter().map(|ip| ip.into()).collect(),
         )]);
 
         f.consolidate_peers().await;
@@ -1223,6 +1228,9 @@ mod tests {
         let mapped_port = 12;
         let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
 
+        let direct_keepalive_period = 1234;
+        f.requested_state.keepalive_periods.direct = direct_keepalive_period;
+
         f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
         f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
         f.when_current_peers(vec![(
@@ -1239,14 +1247,10 @@ mod tests {
         f.then_add_peer(vec![(
             pub_key,
             remote_wg_endpoint,
-            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
-            allowed_ips,
+            direct_keepalive_period,
+            allowed_ips.into_iter().map(|ip| ip.into()).collect(),
         )]);
-        f.then_keeper_add_node(vec![(
-            pub_key,
-            ip1,
-            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
-        )]);
+        f.then_keeper_add_node(vec![(pub_key, ip1, direct_keepalive_period)]);
 
         f.consolidate_peers().await;
     }
@@ -1264,6 +1268,9 @@ mod tests {
         let mapped_port = 12;
         let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
 
+        let direct_keepalive_period = 1234;
+        f.requested_state.keepalive_periods.direct = direct_keepalive_period;
+
         f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
         f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
         f.when_current_peers(vec![(
@@ -1284,15 +1291,11 @@ mod tests {
         f.then_add_peer(vec![(
             pub_key,
             remote_wg_endpoint,
-            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
-            allowed_ips,
+            direct_keepalive_period,
+            allowed_ips.into_iter().map(|ip| ip.into()).collect(),
         )]);
         f.then_request_upgrade(vec![(pub_key, remote_wg_endpoint, local_wg_endpoint)]);
-        f.then_keeper_add_node(vec![(
-            pub_key,
-            ip1,
-            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
-        )]);
+        f.then_keeper_add_node(vec![(pub_key, ip1, direct_keepalive_period)]);
 
         f.consolidate_peers().await;
     }
@@ -1310,6 +1313,9 @@ mod tests {
         let mapped_port = 12;
         let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
 
+        let proxying_keepalive_period = 1234;
+        f.requested_state.keepalive_periods.proxying = Some(proxying_keepalive_period);
+
         f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
         f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
         f.when_current_peers(vec![]);
@@ -1325,8 +1331,8 @@ mod tests {
         f.then_add_peer(vec![(
             pub_key,
             proxy_endpoint,
-            DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
-            allowed_ips,
+            proxying_keepalive_period,
+            allowed_ips.into_iter().map(|ip| ip.into()).collect(),
         )]);
 
         f.consolidate_peers().await;
@@ -1400,6 +1406,9 @@ mod tests {
         let wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
         let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
 
+        let proxying_keepalive_period = 1234;
+        f.requested_state.keepalive_periods.proxying = Some(proxying_keepalive_period);
+
         f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
         f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
         f.when_current_peers(vec![(
@@ -1416,8 +1425,8 @@ mod tests {
         f.then_add_peer(vec![(
             pub_key,
             proxy_endpoint,
-            DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
-            allowed_ips,
+            proxying_keepalive_period,
+            allowed_ips.into_iter().map(|ip| ip.into()).collect(),
         )]);
         f.then_notify_failed_wg_connection(vec![pub_key]);
         f.then_keeper_remove_node(vec![pub_key]);
@@ -1449,6 +1458,80 @@ mod tests {
         f.when_upgrade_requests(vec![]);
 
         f.then_notify_successfull_wg_connection_upgrade(vec![pub_key]);
+
+        f.consolidate_peers().await;
+    }
+
+    #[tokio::test]
+    async fn when_vpn_peer_is_added() {
+        let mut f = Fixture::new();
+
+        let public_key = SecretKey::gen().public();
+        let allowed_ips = vec![IpNetwork::new(IpAddr::from([0, 0, 0, 0]), 0).unwrap()];
+
+        let endpoint_raw = SocketAddr::from(([192, 168, 0, 1], 13));
+        let endpoint = Some(endpoint_raw);
+
+        let vpn_persistent_keepalive = 4321;
+        f.requested_state.keepalive_periods.vpn = Some(vpn_persistent_keepalive);
+        f.requested_state.exit_node = Some(ExitNode {
+            public_key,
+            allowed_ips: None,
+            endpoint,
+        });
+
+        f.when_requested_meshnet_config(vec![]);
+        f.when_proxy_mapping(vec![]);
+        f.when_current_peers(vec![]);
+        f.when_time_since_last_rx(vec![]);
+        f.when_time_since_last_endpoint_change(vec![]);
+        f.when_cross_check_validated_endpoints(vec![]);
+        f.when_upgrade_requests(vec![]);
+
+        f.then_add_peer(vec![(
+            public_key,
+            endpoint_raw,
+            vpn_persistent_keepalive,
+            allowed_ips,
+        )]);
+
+        f.consolidate_peers().await;
+    }
+
+    #[tokio::test]
+    async fn when_stun_peer_is_added() {
+        let mut f = Fixture::new();
+
+        let public_key = SecretKey::gen().public();
+        let allowed_ips = vec![IpNetwork::new(IpAddr::from([100, 64, 0, 4]), 32).unwrap()];
+
+        let stun_port = 1234;
+        let endpoint_ip = Ipv4Addr::from([100, 10, 0, 17]);
+        let endpoint_raw = SocketAddr::from((endpoint_ip, stun_port));
+
+        let stun_persistent_keepalive = 4321;
+        f.requested_state.keepalive_periods.stun = Some(stun_persistent_keepalive);
+        f.requested_state.wg_stun_server = Some(Server {
+            ipv4: endpoint_ip,
+            stun_port,
+            public_key,
+            ..Default::default()
+        });
+
+        f.when_requested_meshnet_config(vec![]);
+        f.when_proxy_mapping(vec![]);
+        f.when_current_peers(vec![]);
+        f.when_time_since_last_rx(vec![]);
+        f.when_time_since_last_endpoint_change(vec![]);
+        f.when_cross_check_validated_endpoints(vec![]);
+        f.when_upgrade_requests(vec![]);
+
+        f.then_add_peer(vec![(
+            public_key,
+            endpoint_raw,
+            stun_persistent_keepalive,
+            allowed_ips,
+        )]);
 
         f.consolidate_peers().await;
     }
