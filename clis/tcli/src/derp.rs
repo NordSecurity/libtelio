@@ -129,6 +129,7 @@ impl DerpClient {
                             }
                         }
                     });
+                    // This will not work on mac/win due to not provided tunnel interface to socketpool
                     let relay = rt.block_on(async move {
                         let relay = DerpRelay::start_with(
                             rpacket,

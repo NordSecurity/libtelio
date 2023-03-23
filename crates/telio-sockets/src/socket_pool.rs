@@ -16,7 +16,7 @@ use tokio::{
 
 #[cfg(unix)]
 use boringtun::device::MakeExternalBoringtun;
-use telio_utils::telio_log_debug;
+use telio_utils::{telio_log_debug, telio_log_warn};
 
 use crate::{
     native::{AsNativeSocket, NativeSocket},
@@ -206,7 +206,10 @@ impl SocketPool {
 
         telio_log_debug!("Creating internal udp socket: {}", sock.as_native_socket());
 
-        self.make_internal(sock.as_native_socket())?;
+        if let Err(err) = self.make_internal(sock.as_native_socket()) {
+            telio_log_warn!("Failed to make udp socket internal: {}", err)
+        }
+
         Ok(sock)
     }
 
@@ -233,10 +236,10 @@ impl SocketPool {
         let _ = self.protect.make_external(socket.as_native_socket());
     }
 
-    /// binds socket to tun interface on mac and iOS
+    /// binds socket to tunnel interface on mac and iOS
     pub fn make_internal(&self, _socket: NativeSocket) -> io::Result<()> {
         #[cfg(any(target_os = "macos", target_os = "ios"))]
-        let _ = self.protect.make_internal(_socket)?;
+        self.protect.make_internal(_socket)?;
         Ok(())
     }
 
@@ -261,7 +264,21 @@ impl SocketPool {
 
 impl Default for SocketPool {
     fn default() -> Self {
-        Self::new(NativeProtector::new().expect("Native protect"))
+        #[cfg(not(target_os = "linux"))]
+        if !cfg!(test) {
+            log::warn!(
+                "SocketPool::default() used for non-test code. If you see this \
+                message in app logs, report to developers. Device::get_socket_pool() \
+                should be used where possible."
+            );
+        }
+        Self::new(
+            NativeProtector::new(
+                #[cfg(target_os = "macos")]
+                Some(false),
+            )
+            .expect("Native protect"),
+        )
     }
 }
 

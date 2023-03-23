@@ -125,19 +125,27 @@ fn spawn_monitor(sockets: Arc<Mutex<Sockets>>) -> io::Result<JoinHandle<()>> {
         let mut on = true;
         loop {
             let (ready, update) = {
-                let sockets = sockets.lock().expect("Lock currupted");
-                (
-                    sockets.tunnel_interface != None && !sockets.sockets.is_empty(),
-                    sockets.notify.clone(),
-                )
+                if let Ok(sockets) = sockets.lock() {
+                    (
+                        sockets.tunnel_interface != None && !sockets.sockets.is_empty(),
+                        sockets.notify.clone(),
+                    )
+                } else {
+                    telio_log_error!("Lock corrupted");
+                    break;
+                }
             };
 
             tokio::select! {
                 iface_rx = iface_rx.recv(), if on && ready => {
                     if let Some(iface_rx) = iface_rx {
-                        let mut socks = sockets.lock().expect("Lock corrupted");
                         if iface_rx.index != 0 {
-                            socks.rebind(false);
+                            if let Ok(mut socks) = sockets.lock() {
+                                socks.rebind(false);
+                            } else {
+                                telio_log_error!("Lock corrupted");
+                                break;
+                            }
                         }
                     } else {
                         telio_log_error!("Interface watcher died.");
@@ -145,11 +153,18 @@ fn spawn_monitor(sockets: Arc<Mutex<Sockets>>) -> io::Result<JoinHandle<()>> {
                     }
                 }
                 _ = update.notified() => {
-                    let mut socks = sockets.lock().expect("Lock corrupted");
-                    socks.rebind(true);
+                    if let Some(mut socks) = sockets.lock() {
+                        socks.rebind(true);
+                    } else {
+                        telio_log_error!("Lock corrupted");
+                        break;
+                    }
                 }
             }
         }
+
+        telio_log_warn!("Sockets monitor returned early");
+        Ok(())
     }))
 }
 

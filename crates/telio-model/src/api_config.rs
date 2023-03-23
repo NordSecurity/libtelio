@@ -111,6 +111,8 @@ pub struct Features {
     pub exit_dns: Option<FeatureExitDns>,
     /// Configure options for direct WG connections
     pub direct: Option<FeatureDirect>,
+    /// Should only be set for macos sideload
+    pub macos_sideload: Option<bool>,
 }
 
 impl FeaturePaths {
@@ -262,6 +264,7 @@ mod tests {
             paths: None,
             direct: None,
             exit_dns: None,
+            macos_sideload: None,
         };
 
         let empty_qos_features = Features {
@@ -279,6 +282,7 @@ mod tests {
             paths: None,
             direct: None,
             exit_dns: None,
+            macos_sideload: None,
         };
 
         let no_qos_features = Features {
@@ -290,6 +294,7 @@ mod tests {
             paths: None,
             direct: None,
             exit_dns: None,
+            macos_sideload: None,
         };
 
         assert_eq!(
@@ -328,6 +333,7 @@ mod tests {
             exit_dns: Some(FeatureExitDns {
                 auto_switch_dns_ips: Some(true),
             }),
+            macos_sideload: None,
         };
 
         let empty_features = Features {
@@ -338,6 +344,7 @@ mod tests {
             exit_dns: Some(FeatureExitDns {
                 auto_switch_dns_ips: None,
             }),
+            macos_sideload: None,
         };
 
         assert_eq!(
@@ -369,7 +376,9 @@ mod tests {
                 "force": "relay"
             },
             "direct": {},
-            "exit_dns": {}
+            "exit_dns": {},
+
+            "macos_sideload": true
         }"#;
 
         let features = Features {
@@ -392,6 +401,7 @@ mod tests {
             exit_dns: Some(FeatureExitDns {
                 auto_switch_dns_ips: None,
             }),
+            macos_sideload: Some(true),
         };
 
         assert_eq!(serde_json::from_str::<Features>(json).unwrap(), features);
@@ -405,6 +415,7 @@ mod tests {
             paths: None,
             exit_dns: None,
             direct: None,
+            macos_sideload: None,
         };
 
         assert_eq!(Features::default(), expected_defaults);
