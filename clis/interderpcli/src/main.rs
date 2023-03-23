@@ -9,7 +9,7 @@ use telio_relay::{
     derp::Config as DerpConfig,
     http::{connect_http_and_start, DerpConnection},
 };
-use telio_sockets::SocketPool;
+use telio_sockets::{NativeProtector, SocketPool};
 use tokio::{net::lookup_host, time::timeout};
 use url::{Host, Url};
 
@@ -102,7 +102,10 @@ async fn connect_client(
 ) -> Result<DerpConnection> {
     log::debug!("Connecting to {:?} ({:?})", hostname, addr);
 
-    let pool = Arc::new(SocketPool::default());
+    let pool = Arc::new(SocketPool::new(NativeProtector::new(
+        #[cfg(target_os = "macos")]
+        Some(false),
+    )?));
     let conn = match connect_http_and_start(
         pool,
         &hostname,

@@ -289,6 +289,7 @@ mod tests {
         SecretKey,
     };
     use telio_proto::{CodecError, PartialPongerMsg, PingerMsg, MAX_PACKET_SIZE};
+    use telio_sockets::NativeProtector;
     use telio_sockets::SocketPool;
     use telio_task::io::Chan;
     use telio_wg::{uapi::Interface, MockWireGuard};
@@ -320,7 +321,7 @@ mod tests {
                 last_endpoint_candidates_event: vec![],
                 poll_timer: interval_at(tokio::time::Instant::now(), Duration::from_secs(10)),
                 wireguard_interface: Arc::new(wg_mock),
-                udp_socket: SocketPool::default()
+                udp_socket: SocketPool::new(NativeProtector::new().unwrap())
                     .new_external_udp((Ipv4Addr::LOCALHOST, 0), None)
                     .await
                     .unwrap(),
@@ -345,8 +346,8 @@ mod tests {
         SecretKey,
         Arc<Mutex<PingPongHandler>>,
     ) {
-        let socket_pool = SocketPool::default();
         let secret_key = SecretKey::gen();
+        let socket_pool = SocketPool::new(NativeProtector::new().unwrap());
 
         async fn create_localhost_socket(pool: &SocketPool) -> (External<UdpSocket>, SocketAddr) {
             let socket = pool
@@ -650,7 +651,7 @@ mod tests {
         let (state, remote_sk, ping_pong_handler) =
             prepare_state_test(wg_mock, get_if_addrs_mock).await;
 
-        let socket_pool = SocketPool::default();
+        let socket_pool = SocketPool::new(NativeProtector::new().unwrap());
 
         let (provider_socket, provider_addr) = create_localhost_socket(&socket_pool).await;
         let ping = PingerMsg::ping(WGPort(wg_port), 2, 3);
@@ -707,7 +708,7 @@ mod tests {
         let (state, remote_sk, ping_pong_handler) =
             prepare_state_test(wg_mock, get_if_addrs_mock).await;
 
-        let socket_pool = SocketPool::default();
+        let socket_pool = SocketPool::new(NativeProtector::new().unwrap());
 
         let (provider_socket, provider_addr) = create_localhost_socket(&socket_pool).await;
         let ping = PingerMsg::ping(WGPort(wg_port), 2, 3);

@@ -1,9 +1,10 @@
 use libc;
+use parking_lot::Mutex;
 use parking_lot::RwLock;
 use std::result::Result;
 use std::{
-    io::{self},
-    sync::{Arc, Mutex, Weak},
+    io,
+    sync::{Arc, Weak},
 };
 use system_configuration::{
     self,
@@ -82,12 +83,10 @@ impl Drop for NativeProtector {
 impl Protector for NativeProtector {
     fn make_external(&self, socket: NativeSocket) -> io::Result<()> {
         if let Some(ref sw) = self.socket_watcher {
-            if let Ok(mut socks) = sw.sockets.lock() {
-                socks.sockets.push(socket);
-                socks.rebind(socket, true);
-            }
+            let mut socks = sw.sockets.lock();
+            socks.sockets.push(socket);
+            socks.rebind(socket, true);
         }
-
         Ok(())
     }
 
@@ -101,10 +100,9 @@ impl Protector for NativeProtector {
 
     fn clean(&self, socket: NativeSocket) {
         if let Some(ref sw) = self.socket_watcher {
-            if let Ok(mut socks) = sw.sockets.lock() {
-                socks.sockets.retain(|s| s != &socket);
-                socks.notify.notify_waiters();
-            }
+            let mut socks = sw.sockets.lock();
+            socks.sockets.retain(|s| s != &socket);
+            socks.notify.notify_waiters();
         }
     }
 
@@ -112,10 +110,9 @@ impl Protector for NativeProtector {
         *self.tunnel_interface.write() = Some(interface);
 
         if let Some(ref sw) = self.socket_watcher {
-            if let Ok(mut socks) = sw.sockets.lock() {
-                socks.tunnel_interface = Some(interface);
-                socks.notify.notify_waiters();
-            }
+            let mut socks = sw.sockets.lock();
+            socks.tunnel_interface = Some(interface);
+            socks.notify.notify_waiters();
         }
     }
 }
@@ -205,21 +202,13 @@ fn spawn_monitor(sockets: Arc<Mutex<Sockets>>) -> JoinHandle<io::Result<()>> {
     tokio::spawn(async move {
         loop {
             let update = {
-                if let Ok(sockets) = sockets.lock() {
-                    sockets.notify.clone()
-                } else {
-                    telio_log_error!("Lock corrupted");
-                    break;
-                }
+                let sockets = sockets.lock();
+                sockets.notify.clone()
             };
 
             update.notified().await;
-            if let Ok(mut sockets) = sockets.lock() {
-                sockets.rebind_all(true);
-            } else {
-                telio_log_error!("Lock corrupted");
-                break;
-            }
+            let mut sockets = sockets.lock();
+            sockets.rebind_all(true);
         }
 
         telio_log_warn!("Sockets monitor returned early");
@@ -290,7 +279,7 @@ fn dynamic_store_callback(
     context: &mut Context,
 ) {
     if let Some(sockets) = context.sockets.upgrade() {
-        sockets.lock().expect("Lock corrupted").rebind_all(false);
+        sockets.lock().rebind_all(false);
     }
 }
 

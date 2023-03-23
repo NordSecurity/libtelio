@@ -551,6 +551,7 @@ mod tests {
     };
     use telio_model::mesh::IpNetwork;
     use telio_proto::{CodecError, Packet, PartialPongerMsg, PingerMsg};
+    use telio_sockets::NativeProtector;
     use telio_sockets::SocketPool;
     use telio_task::io::Chan;
     use telio_test::await_timeout;
@@ -1088,7 +1089,7 @@ mod tests {
         let mut wg = MockWg::default();
         let wg_port = 12345;
 
-        let socket_pool = SocketPool::default();
+        let socket_pool = SocketPool::new(NativeProtector::new().unwrap());
 
         let provider_ext_socket = socket_pool
             .new_external_udp((Ipv4Addr::LOCALHOST, 0), None)

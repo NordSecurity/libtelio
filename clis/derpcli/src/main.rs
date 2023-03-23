@@ -55,6 +55,7 @@
 mod conf;
 mod metrics;
 
+use anyhow::Result;
 use lazy_static::lazy_static;
 use prometheus::{Encoder, TextEncoder};
 use std::{
@@ -72,7 +73,7 @@ use telio_relay::{
     derp::Config,
     http::{connect_http_and_start, DerpConnection},
 };
-use telio_sockets::SocketPool;
+use telio_sockets::{NativeProtector, SocketPool};
 use tokio::net::lookup_host;
 use url::{Host, Url};
 use warp::Filter;
@@ -265,7 +266,7 @@ async fn connect_client(
     });
 }
 
-async fn run_with_clients_config(config: conf::Config) {
+async fn run_with_clients_config(config: conf::Config) -> Result<()> {
     config.print_clients();
 
     let clients_config = match config.clients_config {
@@ -279,7 +280,7 @@ async fn run_with_clients_config(config: conf::Config) {
     let mut client_count = 0;
 
     let mut addrs = Vec::new();
-    let pool = Arc::new(SocketPool::default());
+    let pool = Arc::new(SocketPool::new(NativeProtector::new()?));
 
     for client in clients_config.clients.iter() {
         if futs.len() == 0 {
@@ -291,7 +292,7 @@ async fn run_with_clients_config(config: conf::Config) {
                         client.private_key.public(),
                         e
                     );
-                    return;
+                    return Ok(());
                 }
             };
         }
@@ -314,10 +315,11 @@ async fn run_with_clients_config(config: conf::Config) {
             );
         }
     }
+    Ok(())
 }
 
 #[allow(mpsc_blocking_send)]
-async fn run_without_clients_config(config: conf::Config) {
+async fn run_without_clients_config(config: conf::Config) -> Result<()> {
     config.print();
 
     let addrs = match resolve_domain_name(config.get_server_address(), config.verbose).await {
@@ -326,7 +328,7 @@ async fn run_without_clients_config(config: conf::Config) {
     };
 
     let DerpConnection { mut comms, .. } = match connect_http_and_start(
-        Arc::new(SocketPool::default()),
+        Arc::new(SocketPool::new(NativeProtector::new()?)),
         config.get_server_address(),
         addrs[0],
         Config {
@@ -350,7 +352,7 @@ async fn run_without_clients_config(config: conf::Config) {
         Ok(tup) => tup,
         Err(err) => {
             println!("CONNECT ERROR: {}", err);
-            return;
+            return Ok(());
         }
     };
 
@@ -425,6 +427,7 @@ async fn run_without_clients_config(config: conf::Config) {
             }
         }
     }
+    Ok(())
 }
 
 pub async fn metrics_handler() -> Result<impl warp::Reply + Clone, warp::Rejection> {
@@ -455,7 +458,7 @@ pub async fn metrics_handler() -> Result<impl warp::Reply + Clone, warp::Rejecti
 
 // Executable tool, panics should be transformed into human readable errors, (expect or anyhow)
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     // parse command line params and create config struct
     let config = conf::Config::new().unwrap_or_else(|e| {
         println!("{}", e);
@@ -478,7 +481,7 @@ async fn main() {
         })
         .expect("Error setting Ctrl-C handler");
 
-        run_with_clients_config(config).await;
+        run_with_clients_config(config).await?;
 
         tokio::spawn(async move {
             let metrics_route = warp::path!("metrics").and_then(metrics_handler);
@@ -499,8 +502,9 @@ async fn main() {
             .to_owned()
             .flush_metrics_to_file(log_file);
     } else {
-        run_without_clients_config(config).await;
+        run_without_clients_config(config).await?;
     }
 
     println!("DERP CLI FINISHED");
+    Ok(())
 }
