@@ -54,10 +54,10 @@ impl Default for FeaturePersistentKeepalive {
     }
 }
 
-/// Configurable features for Meshnet nodes
+/// Configurable features for Wireguard peers
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
-pub struct FeatureMeshnet {
-    /// Configurable persistent keepalive periods for meshnet peers
+pub struct FeatureWireguard {
+    /// Configurable persistent keepalive periods for wireguard peers
     #[serde(default)]
     pub persistent_keepalive: FeaturePersistentKeepalive,
 }
@@ -157,9 +157,9 @@ pub struct FeatureDirect {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 /// Encompasses all of the possible features that can be enabled
 pub struct Features {
-    /// Additional meshnet configuration
+    /// Additional wireguard configuration
     #[serde(default)]
-    pub meshnet: FeatureMeshnet,
+    pub wireguard: FeatureWireguard,
     /// Nurse features that can be configured for QoS
     pub nurse: Option<FeatureNurse>,
     /// Event logging configurable features
@@ -307,7 +307,7 @@ mod tests {
         }"#;
 
         let full_features = Features {
-            meshnet: Default::default(),
+            wireguard: Default::default(),
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
                 qos: Some(FeatureQoS {
@@ -325,7 +325,7 @@ mod tests {
         };
 
         let empty_qos_features = Features {
-            meshnet: Default::default(),
+            wireguard: Default::default(),
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
                 qos: Some(FeatureQoS {
@@ -343,7 +343,7 @@ mod tests {
         };
 
         let no_qos_features = Features {
-            meshnet: Default::default(),
+            wireguard: Default::default(),
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
                 qos: None,
@@ -383,7 +383,7 @@ mod tests {
         }"#;
 
         let full_features = Features {
-            meshnet: Default::default(),
+            wireguard: Default::default(),
             nurse: None,
             lana: None,
             paths: None,
@@ -394,7 +394,7 @@ mod tests {
         };
 
         let empty_features = Features {
-            meshnet: Default::default(),
+            wireguard: Default::default(),
             nurse: None,
             lana: None,
             paths: None,
@@ -418,7 +418,7 @@ mod tests {
     fn test_json_to_feature_set() {
         let json = r#"
         {
-            "meshnet":
+            "wireguard":
             {
                 "persistent_keepalive": {
                     "vpn": null,
@@ -444,7 +444,7 @@ mod tests {
         }"#;
 
         let features = Features {
-            meshnet: FeatureMeshnet {
+            wireguard: FeatureWireguard {
                 persistent_keepalive: FeaturePersistentKeepalive {
                     vpn: None,
                     direct: 5,
@@ -479,7 +479,7 @@ mod tests {
     #[test]
     fn test_default_features() {
         let expected_defaults = Features {
-            meshnet: Default::default(),
+            wireguard: Default::default(),
             nurse: None,
             lana: None,
             paths: None,

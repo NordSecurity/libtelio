@@ -730,7 +730,7 @@ impl Runtime {
 
         let requested_state = RequestedState {
             device_config: config.clone(),
-            keepalive_periods: features.meshnet.persistent_keepalive.clone(),
+            keepalive_periods: features.wireguard.persistent_keepalive.clone(),
             ..Default::default()
         };
 
