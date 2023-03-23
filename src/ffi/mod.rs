@@ -759,6 +759,7 @@ pub extern "C" fn telio_get_last_error(_dev: &telio) -> *mut c_char {
     std::ptr::null_mut()
 }
 
+#[allow(clippy::panic)]
 #[no_mangle]
 /// For testing only.
 pub extern "C" fn __telio_generate_stack_panic(dev: &telio) -> telio_result {

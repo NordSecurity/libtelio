@@ -1229,6 +1229,7 @@ impl Runtime {
         Ok(())
     }
 
+    #[allow(clippy::panic)]
     async fn _panic(&mut self) -> Result {
         let _ = tokio::spawn(async {
             panic!("runtime_panic_test");

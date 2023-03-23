@@ -4,6 +4,7 @@ mod mc;
 use std::future::Future;
 
 use async_trait::async_trait;
+use futures::stream::ReuniteError;
 use futures::{sink::SinkExt, stream::StreamExt};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::PollSender;
@@ -60,9 +61,13 @@ impl Multiplexer {
     pub async fn get_channel<T: AnyPacket + 'static>(&self) -> Result<Chan<(PublicKey, T)>, Error> {
         task_exec!(&self.task, async move |s| {
             let mc = match s.multi_channel.joined() {
-                Some(mc) => mc,
-                None => {
+                Ok(Some(mc)) => mc,
+                Ok(None) => {
                     telio_log_error!("Failed to join multi_channel");
+                    return Err(());
+                }
+                Err(e) => {
+                    telio_log_error!("Failed to join multi_channel: {}", e);
                     return Err(());
                 }
             };
