@@ -4,6 +4,7 @@ libtelio-build-pipeline:
     LIBTELIO_COMMIT_REF_NAME: $CI_COMMIT_REF_NAME
     LIBTELIO_PROJECT_NAME: $CI_PROJECT_NAME
     LIBTELIO_PROJECT_PATH: $CI_PROJECT_PATH
+    LIBTELIO_DEFAULT_BRANCH: $CI_DEFAULT_BRANCH
 
     # Don't checkout libtelio submodule when using GIT_SUBMODULE_STRATEGY.
     # This ensures that all jobs that use `libtelio` submodule are calling
