@@ -19,7 +19,6 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ctrlc = "3.2.2"
 lazy_static = "1.4.0"
-warp = "0.3.2"
 scoped-tls = "=1.0.0"
 futures = "0.3.23"
 

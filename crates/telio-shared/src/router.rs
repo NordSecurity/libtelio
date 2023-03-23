@@ -3,17 +3,16 @@
 
 use std::{net::IpAddr, process::Command};
 
-use interfaces::{Interface, InterfacesError};
-
 use crate::executable_command::{ExecutableCommand, ExecuteError};
+use nix::{self, errno::Errno};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CleanupInterfaceError {
     #[error("ip link del: {0}")]
     IpLinkDel(ExecuteError),
 
-    #[error("Interface::get_by_name(): {0}")]
-    GetInterfaces(InterfacesError),
+    #[error("nix::ifaddrs::getifaddrs(): {0}")]
+    GetInterfaces(Errno),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -35,10 +34,7 @@ pub enum SetupRoutesError {
 }
 
 pub fn cleanup_interface(interface_name: &str) -> Result<(), CleanupInterfaceError> {
-    if Interface::get_by_name(interface_name)
-        .map_err(CleanupInterfaceError::GetInterfaces)?
-        .is_some()
-    {
+    if interface_exists(interface_name)? {
         Command::new("ip")
             .args(&["link", "del", "dev", interface_name, "type", "wireguard"])
             .execute()
@@ -83,6 +79,13 @@ fn address_to_string(address: &IpAddr) -> Result<String, SetupInterfaceError> {
         Err(SetupInterfaceError::AddressNotIpv4)
     }
 }
+
+fn interface_exists(if_name: &str) -> Result<bool, CleanupInterfaceError> {
+    Ok(nix::ifaddrs::getifaddrs()
+        .map_err(CleanupInterfaceError::GetInterfaces)?
+        .any(|ifaddr| ifaddr.interface_name == if_name))
+}
+
 #[cfg(target_os = "linux")]
 #[cfg(test)]
 mod tests {
@@ -113,17 +116,17 @@ mod tests {
         // Using TunSocket to create tun instead of 'ip link', because the latter
         // fails on CI due to Docker container privilege limitations. Why TunSocket
         // works on CI is a mystery.
-        let _tun = if Interface::get_by_name(INTERFACE_NAME).unwrap().is_none() {
-            Some(TunSocket::new(INTERFACE_NAME).unwrap())
-        } else {
+        let _tun = if interface_exists(INTERFACE_NAME).unwrap() {
             None
+        } else {
+            Some(TunSocket::new(INTERFACE_NAME).unwrap())
         };
 
-        assert!(Interface::get_by_name(INTERFACE_NAME).unwrap().is_some());
+        assert!(interface_exists(INTERFACE_NAME).unwrap());
 
         cleanup_interface(INTERFACE_NAME).unwrap();
 
-        assert!(Interface::get_by_name(INTERFACE_NAME).unwrap().is_none());
+        assert!(!interface_exists(INTERFACE_NAME).unwrap());
 
         // Should succeed when interface is not available
         cleanup_interface(INTERFACE_NAME).unwrap();
