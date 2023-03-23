@@ -48,13 +48,18 @@ telio-lana = { version = "0.1.0", path = "./crates/telio-lana" }
 telio-firewall = { version = "0.1.0", path = "./crates/telio-firewall" }
 
 [dev-dependencies]
-mockall = "0.10.2"
+mockall = "0.11.3"
 ntest = "0.7"
 pretty_assertions = "0.7.2"
 slog-async = "2.7"
 slog-term = "2.8"
 telio-test = { version = "1.0.0", path = "./crates/telio-test" }
 telio-shared = { path = "./crates/telio-shared" }
+telio-wg = { features = ["mockall"], path = "./crates/telio-wg" }
+telio-dns = { features = ["mockall"], path = "./crates/telio-dns" }
+telio-firewall = { features = ["mockall"], path = "./crates/telio-firewall" }
+telio-proxy = { features = ["mockall"], path = "./crates/telio-proxy" }
+telio-traversal = { features = ["mockall"], path = "./crates/telio-traversal" }
 
 [build-dependencies]
 cc = "1.0"

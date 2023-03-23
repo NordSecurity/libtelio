@@ -100,7 +100,7 @@ impl DerpClient {
                 }
 
                 if let Some(inst) = &mut self.inst {
-                    inst.rt.block_on(inst.relay.set_config(config));
+                    inst.rt.block_on(inst.relay.configure(Some(config)));
                 } else {
                     let rt = Runtime::new().expect("build runtime");
                     let (lpacket, rpacket) = Chan::pipe();
@@ -130,12 +130,13 @@ impl DerpClient {
                         }
                     });
                     let relay = rt.block_on(async move {
-                        DerpRelay::start_with(
+                        let relay = DerpRelay::start_with(
                             rpacket,
                             Arc::new(SocketPool::default()),
-                            config,
                             event_tx,
-                        )
+                        );
+                        relay.configure(Some(config)).await;
+                        relay
                     });
                     self.inst = Some(Instance {
                         rt,

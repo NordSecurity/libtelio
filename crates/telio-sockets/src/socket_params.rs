@@ -1,14 +1,18 @@
-use std::{io::Error, time::Duration};
+use std::{
+    io::Error,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    time::Duration,
+};
 
 use telio_utils::{telio_log_trace, telio_log_warn};
-
-use socket2::Socket;
 
 #[cfg(windows)]
 use {std::os::windows::io::AsRawSocket, windows::Win32::Networking::WinSock};
 
 #[cfg(not(windows))]
 use std::os::unix::io::AsRawFd;
+
+use socket2::Socket;
 
 #[cfg(any(target_os = "macos", target_os = "ios", doc))]
 /// time after which tcp retransmissions will be stopped and the connection will be dropped
@@ -38,8 +42,11 @@ impl TcpParams {
     pub fn apply(&self, socket: &Socket) {
         let sock = socket.as_raw_fd();
         let val_len: libc::socklen_t = 4;
+
+        // For logging
+        let default = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
+        let addr = socket.local_addr().unwrap_or_else(|_| default.into());
         let mut kp_enabled: bool = false;
-        let addr = socket.local_addr();
 
         // Setting TCP nodelay
         if let Some(nodelay_enable) = self.nodelay_enable {
@@ -228,8 +235,11 @@ impl TcpParams {
     pub fn apply(&self, socket: &Socket) {
         let sock = WinSock::SOCKET(socket.as_raw_socket() as usize);
         let val_len: libc::c_int = 4;
+
+        // For logging
+        let default = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
+        let addr = socket.local_addr().unwrap_or_else(|_| default.into());
         let mut kp_enabled: bool = false;
-        let addr = socket.local_addr();
 
         // Setting TCP nodelay
         if let Some(nodelay_enable) = self.nodelay_enable {

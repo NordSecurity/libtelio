@@ -21,6 +21,7 @@ use tokio::{
     net::{TcpSocket, TcpStream},
     task::JoinHandle,
     time,
+    time::timeout,
 };
 use tokio_rustls::{
     rustls::{
@@ -117,7 +118,7 @@ pub async fn connect_http_and_start(
         false,
     )?;
 
-    let stream = socket.connect_timeout(ip, derp_config.timeout).await?;
+    let stream = timeout(derp_config.timeout, socket.connect(ip)).await??;
 
     let addr = PairAddr {
         local: stream.local_addr()?,

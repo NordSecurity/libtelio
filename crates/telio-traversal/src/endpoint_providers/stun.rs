@@ -1,36 +1,36 @@
-use std::{
-    future::pending,
-    net::SocketAddr,
-    sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::{future::pending, net::SocketAddr, sync::Arc, time::Duration};
+
+use std::ops::Deref;
 
 use async_trait::async_trait;
 use futures::Future;
 use stun_codec::TransactionId;
 use telio_crypto::PublicKey;
-use telio_proto::{Codec, Packet, PingType, PingerMsg, Session, Timestamp, WGPort};
-use telio_sockets::External;
+use telio_proto::{Session, WGPort};
+use telio_sockets::{native::AsNativeSocket, External};
 use telio_task::{io::chan, task_exec, BoxAction, Runtime, Task};
-use telio_utils::{telio_log_debug, telio_log_warn, PinnedSleep};
-use telio_wg::WireGuard;
+use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn, PinnedSleep};
+use telio_wg::{DynamicWg, WireGuard};
 use tokio::{
     net::UdpSocket,
+    sync::Mutex,
     time::{interval, Interval},
 };
+
+use crate::{endpoint_providers::EndpointProviderType, ping_pong_handler::PingPongHandler};
 
 use super::{EndpointCandidate, EndpointCandidatesChangeEvent, EndpointProvider, Error, PongEvent};
 
 #[cfg(not(test))]
 const STUN_TIMEOUT: Duration = Duration::from_secs(5);
 #[cfg(test)]
-const STUN_TIMEOUT: Duration = Duration::from_millis(200);
+const STUN_TIMEOUT: Duration = Duration::from_millis(300);
 
 const MAX_PACKET_SIZE: usize = 1500;
 const DEFAULT_STUN_PORT: u16 = 3478;
 const STUN_SOFTWARE: &str = "tailnode";
 
-#[derive(Default)]
+#[derive(Default, PartialEq, Eq)]
 pub struct Config {
     // Peer in wireguard to be used for stunning.
     pub stun_peer: PublicKey,
@@ -40,7 +40,7 @@ pub struct Config {
     pub wg_stun_port: Option<u16>,
 }
 
-pub struct StunEndpointProvider<Wg: WireGuard> {
+pub struct StunEndpointProvider<Wg: WireGuard = DynamicWg> {
     task: Task<State<Wg>>,
 }
 
@@ -56,7 +56,14 @@ impl<Wg: WireGuard> StunEndpointProvider<Wg> {
         ext_socket: External<UdpSocket>,
         wg: Arc<Wg>,
         poll_interval: Duration,
+        ping_pong_handler: Arc<Mutex<PingPongHandler>>,
     ) -> Self {
+        telio_log_info!("Starting stun endpoint provider");
+        telio_log_debug!(
+            "tun_socket: {:?}, ext_socket: {}",
+            tun_socket.as_native_socket(),
+            ext_socket.deref().as_native_socket()
+        );
         Self {
             task: Task::start(State {
                 config: None,
@@ -68,16 +75,20 @@ impl<Wg: WireGuard> StunEndpointProvider<Wg> {
                 stun_session: None,
                 stun_interval: interval(poll_interval),
                 last_candidates: Vec::new(),
+                ping_pong_tracker: ping_pong_handler,
             }),
         }
     }
 
     pub async fn configure(&self, config: Option<Config>) {
         let _ = task_exec!(&self.task, async move |s| {
+            if s.config == config {
+                return Ok(());
+            }
+
             s.config = config;
             s.stun_session = None;
             let _ = s.start_stun_session().await;
-
             Ok(())
         })
         .await;
@@ -116,11 +127,12 @@ impl<Wg: WireGuard> EndpointProvider for StunEndpointProvider<Wg> {
     async fn send_ping(
         &self,
         addr: SocketAddr,
-        wg_port: WGPort,
         session_id: Session,
+        public_key: PublicKey,
     ) -> Result<(), Error> {
+        telio_log_info!("stun send ping");
         task_exec!(&self.task, async move |s| Ok(s
-            .send_ping(addr, wg_port, session_id)
+            .send_ping(addr, session_id, &public_key)
             .await))
         .await?
     }
@@ -131,6 +143,7 @@ struct State<Wg: WireGuard> {
     tun_socket: UdpSocket,
     ext_socket: External<UdpSocket>,
     wg: Arc<Wg>,
+    ping_pong_tracker: Arc<Mutex<PingPongHandler>>,
 
     change_event: Option<chan::Tx<EndpointCandidatesChangeEvent>>,
     pong_event: Option<chan::Tx<PongEvent>>,
@@ -156,38 +169,40 @@ impl<Wg: WireGuard> State<Wg> {
     async fn send_ping(
         &self,
         addr: SocketAddr,
-        wg_port: WGPort,
         session_id: Session,
+        public_key: &PublicKey,
     ) -> Result<(), Error> {
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_micros() as u64;
-
-        telio_log_debug!("Sending ping to {:?}", addr);
-        let ping = PingerMsg::ping(wg_port, session_id, ts);
-        let buf = ping.encode()?;
-        self.ext_socket.send_to(&buf, addr).await?;
-        Ok(())
+        self.ping_pong_tracker
+            .lock()
+            .await
+            .send_ping(
+                addr,
+                self.get_wg_port(),
+                &*self.ext_socket,
+                session_id,
+                public_key,
+            )
+            .await
     }
 
-    async fn get_wg_port(&self) -> Result<u16, Error> {
-        if let Some(wg_port) = self.wg.get_interface().await.and_then(|i| i.listen_port) {
-            Ok(wg_port)
+    /// Get wg port identified by stun
+    fn get_wg_port(&self) -> WGPort {
+        if let Some(wg_port) = self.last_candidates.first().map(|c| c.wg.port()) {
+            WGPort(wg_port)
         } else {
-            telio_log_warn!("Skipping local interfaces poll due to missing wg_port");
-            Err(Error::NoWGListenPort)
+            telio_log_warn!("Trying to get WGPort before stun.");
+            Default::default()
         }
     }
 
     /// Get endpoint's for stuns (WgStun, PlaintextStun)
     async fn get_stun_endpoints(&self) -> Result<(SocketAddr, SocketAddr), Error> {
         if let Some(config) = &self.config {
-            let interface = self.wg.get_interface().await;
+            let interface = self.wg.get_interface().await?;
 
             let stun_peer = interface
-                .as_ref()
-                .and_then(|wgi| wgi.peers.get(&config.stun_peer))
+                .peers
+                .get(&config.stun_peer)
                 .ok_or(Error::NoStunPeer)?;
 
             let wg_ip = stun_peer
@@ -229,7 +244,9 @@ impl<Wg: WireGuard> State<Wg> {
                         let candidates = vec![candidate];
                         if self.last_candidates != candidates {
                             self.last_candidates = candidates.clone();
-                            change_event.send(candidates).await?;
+                            change_event
+                                .send((EndpointProviderType::Stun, candidates))
+                                .await?;
                         }
                     } else {
                         telio_log_warn!("{} does not have endpoint provider sender.", Self::NAME)
@@ -248,44 +265,23 @@ impl<Wg: WireGuard> State<Wg> {
         Ok(false)
     }
 
-    async fn handle_ping_rx(&mut self, payload: &[u8], src_addr: &SocketAddr) -> Result<(), Error> {
-        if let Packet::Pinger(packet) = Packet::decode(payload)? {
-            match packet.get_message_type() {
-                PingType::PING => {
-                    // Respond with pong
-                    telio_log_debug!("Received ping from {:?}, responding", src_addr);
-                    let wg_port = self.get_wg_port().await?;
-                    let pong = packet
-                        .pong(WGPort(wg_port))
-                        .ok_or(Error::FailedToBuildPongPacket)?;
-                    let buf = pong.encode()?;
-                    self.ext_socket.send_to(&buf, src_addr).await?;
-                }
-                PingType::PONG => {
-                    if let Some(pong_event) = self.pong_event.as_ref() {
-                        telio_log_debug!("Received pong from {:?}, notifying", src_addr);
-                        let ts = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_micros() as Timestamp;
-                        pong_event
-                            .send(PongEvent {
-                                addr: *src_addr,
-                                rtt: Duration::from_millis(ts - packet.get_start_timestamp()),
-                                msg: packet.clone(),
-                            })
-                            .await?;
-                    } else {
-                        telio_log_warn!(
-                            "Received pong from {:?}, No one subscribed for notifications",
-                            src_addr
-                        );
-                    }
-                }
-            }
-        }
-
-        Ok(())
+    async fn handle_ping_rx(
+        &mut self,
+        encrypted_buf: &[u8],
+        addr: &SocketAddr,
+    ) -> Result<(), Error> {
+        let wg_port = self.get_wg_port();
+        self.ping_pong_tracker
+            .lock()
+            .await
+            .handle_rx_packet(
+                encrypted_buf,
+                addr,
+                wg_port,
+                &self.ext_socket,
+                &self.pong_event,
+            )
+            .await
     }
 }
 
@@ -324,7 +320,7 @@ impl<Wg: WireGuard> Runtime for State<Wg> {
                 if !self.last_candidates.is_empty() {
                     self.last_candidates.clear();
                     if let Some(ce) = &self.change_event {
-                        let _ = ce.send(vec![]).await;
+                        let _ = ce.send((EndpointProviderType::Stun, vec![])).await;
                     }
                 }
             }
@@ -372,6 +368,16 @@ impl StunSession {
     ) -> Result<Self, Error> {
         let wg_stun = stun_msg::new_request()?;
         let udp_stun = stun_msg::new_request()?;
+        telio_log_debug!(
+            "Sending stun: {} for ses: {:?}",
+            &udp,
+            udp_stun.0.as_bytes()
+        );
+        telio_log_debug!(
+            "Sending wg-stun: {} for ses: {:?}",
+            &wg,
+            wg_stun.0.as_bytes(),
+        );
 
         socket_via_wg.send_to(&wg_stun.1, wg).await?;
         socket_via_ext.send_to(&udp_stun.1, udp).await?;
@@ -409,7 +415,7 @@ impl StunRequest {
         let sa = match self {
             StunRequest::Waiting(addr, tid) => {
                 if addr != src_addr {
-                    // packet is not for this sun request
+                    // packet is not for this stun request
                     return Ok(false);
                 }
 
@@ -419,6 +425,12 @@ impl StunRequest {
                     telio_log_warn!("Unexpected stun packet from {}", src_addr);
                     return Ok(false);
                 }
+                telio_log_debug!(
+                    "Got stun response from {} for sesion {:?} -> {}",
+                    src_addr,
+                    tid.as_bytes(),
+                    &sa,
+                );
 
                 sa
             }
@@ -439,7 +451,7 @@ mod stun_msg {
     use rand::Rng;
     use stun_codec::{
         rfc5389::{
-            attributes::{MappedAddress, Software, XorMappedAddress},
+            attributes::{Fingerprint, MappedAddress, Software, XorMappedAddress},
             methods::BINDING,
             Attribute,
         },
@@ -451,9 +463,12 @@ mod stun_msg {
     pub fn new_request() -> bytecodec::Result<(TransactionId, Vec<u8>)> {
         let tid = TransactionId::new(rand::thread_rng().gen::<[u8; 12]>());
         let mut msg = Message::<Attribute>::new(MessageClass::Request, BINDING, tid);
+
         msg.add_attribute(Attribute::Software(Software::new(
             STUN_SOFTWARE.to_string(),
         )?));
+
+        msg.add_attribute(Attribute::Fingerprint(Fingerprint::new(&msg)?));
 
         let packet = MessageEncoder::new().encode_into_bytes(msg)?;
 
@@ -484,14 +499,19 @@ mod stun_msg {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use maplit::hashmap;
     use mockall::mock;
     use std::net::{Ipv4Addr, SocketAddr};
     use stun_codec::rfc5389::{
         self,
         attributes::{MappedAddress, XorMappedAddress},
     };
-    use telio_crypto::{PublicKey, SecretKey};
+    use telio_crypto::{
+        encryption::{decrypt_request, decrypt_response, encrypt_request, encrypt_response},
+        PublicKey, SecretKey,
+    };
     use telio_model::mesh::IpNetwork;
+    use telio_proto::{CodecError, Packet, PartialPongerMsg, PingerMsg};
     use telio_sockets::SocketPool;
     use telio_task::io::Chan;
     use telio_test::await_timeout;
@@ -499,7 +519,7 @@ mod tests {
         uapi::{Interface, Peer},
         Error,
     };
-    use tokio::time::{self, timeout};
+    use tokio::time::{self, sleep, timeout};
 
     #[tokio::test]
     async fn collect_stun_endpoints_on_configure() {
@@ -522,13 +542,15 @@ mod tests {
         ));
         await_timeout!(stun_reply(&env.peer_sock, MappedAddress::new(wg_endpoint)));
 
-        let candidates = await_timeout!(env.change_event.recv());
+        let event = await_timeout!(env.change_event.recv());
+        let (provider, candidates) = event.expect("got event");
+        assert_eq!(provider, EndpointProviderType::Stun);
         assert_eq!(
             candidates,
-            Some(vec![EndpointCandidate {
+            vec![EndpointCandidate {
                 udp: udp_endpoint,
                 wg: wg_endpoint,
-            }])
+            }]
         );
     }
 
@@ -554,13 +576,15 @@ mod tests {
         ));
         await_timeout!(stun_reply(&env.peer_sock, MappedAddress::new(wg_endpoint)));
 
-        let candidates = await_timeout!(env.change_event.recv());
+        let event = await_timeout!(env.change_event.recv());
+        let (provider, candidates) = event.expect("got event");
+        assert_eq!(provider, EndpointProviderType::Stun);
         assert_eq!(
             candidates,
-            Some(vec![EndpointCandidate {
+            vec![EndpointCandidate {
                 udp: udp_endpoint,
                 wg: wg_endpoint,
-            }])
+            }]
         );
 
         // Trigger for same env does not send
@@ -594,18 +618,19 @@ mod tests {
         ));
         await_timeout!(stun_reply(&env.peer_sock, MappedAddress::new(wg_endpoint)));
 
-        let candidates = await_timeout!(env.change_event.recv());
+        let event = await_timeout!(env.change_event.recv());
+        let (provider, candidates) = event.expect("got event");
+        assert_eq!(provider, EndpointProviderType::Stun);
         assert_eq!(
             candidates,
-            Some(vec![EndpointCandidate {
+            vec![EndpointCandidate {
                 udp: udp_endpoint,
                 wg: wg_endpoint,
-            }])
+            }]
         );
     }
 
     #[tokio::test]
-    #[ignore = "Flacky"]
     async fn report_empty_candidate_list_on_stun_failure() {
         let mut env = prepare_test_env().await;
         let mut buf = [0; MAX_PACKET_SIZE];
@@ -648,13 +673,15 @@ mod tests {
         ));
         await_timeout!(stun_reply(&env.peer_sock, MappedAddress::new(wg_endpoint)));
 
-        let candidates = await_timeout!(env.change_event.recv());
+        let event = await_timeout!(env.change_event.recv());
+        let (provider, candidates) = event.expect("got event");
+        assert_eq!(provider, EndpointProviderType::Stun);
         assert_eq!(
             candidates,
-            Some(vec![EndpointCandidate {
+            vec![EndpointCandidate {
                 udp: udp_endpoint,
                 wg: wg_endpoint,
-            }])
+            }]
         );
 
         // Trigger again and receive timeout
@@ -672,44 +699,124 @@ mod tests {
         time::advance(STUN_TIMEOUT * 2).await;
         time::resume();
 
-        let candidates = await_timeout!(env.change_event.recv());
-        assert_eq!(candidates, Some(vec![]));
+        let event = await_timeout!(env.change_event.recv());
+        let (provider, candidates) = event.expect("got event");
+        assert_eq!(provider, EndpointProviderType::Stun);
+        assert_eq!(candidates, vec![]);
     }
 
     #[tokio::test]
     async fn pongs_propagated_through_the_channel() {
         let mut env = prepare_test_env().await;
 
-        let wg_port = WGPort(123);
         let session_id = 456;
-        let peer_addr = env.peer_sock.local_addr().expect("local_addr");
+        let ping_addr = env.ping_sock.local_addr().expect("local_addr");
 
+        let remote_sk = SecretKey::gen();
+        let remote_pk = remote_sk.public();
+
+        env.ping_pong_handler
+            .lock()
+            .await
+            .configure(hashmap! { session_id => remote_pk });
         env.stun_provider
-            .send_ping(peer_addr, wg_port, session_id)
+            .send_ping(ping_addr, session_id, remote_pk)
             .await
             .unwrap();
 
         let mut buf = [0u8; MAX_PACKET_SIZE];
-        let (len, addr) = env.peer_sock.recv_from(&mut buf).await.unwrap();
-        if let Packet::Pinger(msg) = Packet::decode(&buf[..len]).unwrap() {
-            if msg.get_message_type() == PingType::PING {
-                let resp = msg.pong(msg.get_wg_port()).unwrap();
-                let buf = resp.encode().unwrap();
-                env.peer_sock.send_to(&buf, addr).await.unwrap();
-            } else {
-                panic!("Incorrect message type inside Pinger message");
-            }
+        let (len, addr) = await_timeout!(env.ping_sock.recv_from(&mut buf)).unwrap();
+        let decrypt_transform = |_packet_type, b: &[u8]| {
+            Ok(decrypt_request(b, &remote_sk, |_| true)
+                .map(|(buf, pk)| (buf, Some(pk)))
+                .unwrap())
+        };
+        if let (Packet::Pinger(msg), _) =
+            Packet::decode_and_decrypt(&buf[..len], decrypt_transform).unwrap()
+        {
+            let resp = msg.pong(msg.get_wg_port(), &addr.ip()).unwrap();
+
+            let mut rng = rand::thread_rng();
+            let encrypt_transform = |b: &[u8]| {
+                Ok(encrypt_response(b, &mut rng, &remote_sk, &env.local_sk.public()).unwrap())
+            };
+
+            let buf = resp.encode_and_encrypt(encrypt_transform).unwrap();
+            env.ping_sock.send_to(&buf, addr).await.unwrap();
         } else {
             panic!("Incorrect packet type in place of ping");
         }
 
-        let pong = env.pong_event.recv().await;
+        let pong = await_timeout!(env.pong_event.recv());
         assert!(pong.is_some());
         let pong = pong.unwrap();
-        assert_eq!(pong.msg.get_message_type(), PingType::PONG);
-        assert_eq!(pong.msg.get_wg_port(), wg_port);
+        // Stun peer not configured and no stun info yet defaulting to 0
+        assert_eq!(pong.msg.get_wg_port(), WGPort(0));
         assert_eq!(pong.msg.get_session(), session_id);
-        assert_eq!(pong.addr, peer_addr);
+        assert_eq!(pong.addr, ping_addr);
+
+        // Configure and reply to stun
+        env.stun_provider
+            .configure(Some(Config {
+                stun_peer: env.stun_pk,
+                plaintext_stun_port: env.stun_sock.local_addr().unwrap().port(),
+                wg_stun_port: Some(env.peer_sock.local_addr().unwrap().port()),
+            }))
+            .await;
+
+        let udp_endpoint = SocketAddr::new([1, 1, 1, 1].into(), 11111);
+        let wg_endpoint = SocketAddr::new([2, 2, 2, 2].into(), 22222);
+
+        await_timeout!(stun_reply(
+            &env.stun_sock,
+            XorMappedAddress::new(udp_endpoint)
+        ));
+        await_timeout!(stun_reply(&env.peer_sock, MappedAddress::new(wg_endpoint)));
+
+        // Give time for provider to recieve and sore local endpoints
+        sleep(Duration::from_millis(100)).await;
+
+        let session_id = 789;
+
+        env.ping_pong_handler
+            .lock()
+            .await
+            .configure(hashmap! { session_id => remote_pk });
+
+        env.stun_provider
+            .send_ping(ping_addr, session_id, remote_pk)
+            .await
+            .unwrap();
+
+        let (len, addr) = await_timeout!(env.ping_sock.recv_from(&mut buf)).unwrap();
+        let decrypt_transform = |_packet_type, b: &[u8]| {
+            Ok(decrypt_request(b, &remote_sk, |_| true)
+                .map(|(buf, pk)| (buf, Some(pk)))
+                .unwrap())
+        };
+        if let (Packet::Pinger(msg), _) =
+            Packet::decode_and_decrypt(&buf[..len], decrypt_transform).unwrap()
+        {
+            let resp = msg.pong(msg.get_wg_port(), &addr.ip()).unwrap();
+
+            let mut rng = rand::thread_rng();
+            let encrypt_transform = |b: &[u8]| {
+                Ok(encrypt_response(b, &mut rng, &remote_sk, &env.local_sk.public()).unwrap())
+            };
+
+            let buf = resp.encode_and_encrypt(encrypt_transform).unwrap();
+            env.ping_sock.send_to(&buf, addr).await.unwrap();
+        } else {
+            panic!("Incorrect packet type in place of ping");
+        }
+
+        let pong = await_timeout!(env.pong_event.recv());
+        assert!(pong.is_some());
+        let pong = pong.unwrap();
+        // Stun peer not configured and no stun info yet defaulting to 0
+        assert_eq!(pong.msg.get_wg_port(), WGPort(22222));
+        assert_eq!(pong.msg.get_session(), session_id);
+        assert_eq!(pong.addr, ping_addr);
     }
 
     #[tokio::test]
@@ -720,22 +827,97 @@ mod tests {
         let session_id = 456;
 
         let ping = PingerMsg::ping(wg_port, session_id, 6969);
-        env.peer_sock
-            .send_to(&ping.encode().expect("encode"), env.provider_ext_addr)
+        let local_sk = SecretKey::gen();
+        let remote_sk = env.local_sk;
+        let transform = |b: &[u8]| {
+            Ok(
+                encrypt_request(b, &mut rand::thread_rng(), &local_sk, &remote_sk.public())
+                    .unwrap(),
+            )
+        };
+        let encrypted_buf = ping.clone().encode_and_encrypt(transform).unwrap();
+
+        env.ping_pong_handler
+            .lock()
+            .await
+            .configure(hashmap! { session_id => local_sk.public() });
+
+        env.ping_sock
+            .send_to(&encrypted_buf, env.provider_ext_addr)
             .await
             .expect("ping");
 
         let mut buf = [0u8; MAX_PACKET_SIZE];
-        let (len, addr) = env.peer_sock.recv_from(&mut buf).await.unwrap();
+        let (len, addr) = env.ping_sock.recv_from(&mut buf).await.unwrap();
+        assert_eq!(addr, env.provider_ext_addr);
+
+        let pong = PartialPongerMsg::decode_and_decrypt(&buf[..len], |_, b| Ok((b.to_vec(), None)))
+            .unwrap();
+        let decrypt_transform = |b: &[u8]| {
+            decrypt_response(b, &local_sk, &remote_sk.public())
+                .map_err(|_| CodecError::DecodeFailed)
+        };
+        let pong = pong.decrypt(decrypt_transform).unwrap();
+
+        // When ping is send before stun response it default to 0
+        assert_eq!(pong.get_wg_port(), WGPort(0));
+        assert_eq!(pong.get_session(), session_id);
+
+        env.stun_provider
+            .configure(Some(Config {
+                stun_peer: env.stun_pk,
+                plaintext_stun_port: env.stun_sock.local_addr().unwrap().port(),
+                wg_stun_port: Some(env.peer_sock.local_addr().unwrap().port()),
+            }))
+            .await;
+
+        let udp_endpoint = SocketAddr::new([1, 1, 1, 1].into(), 11111);
+        let wg_endpoint = SocketAddr::new([2, 2, 2, 2].into(), 22222);
+
+        await_timeout!(stun_reply(
+            &env.stun_sock,
+            XorMappedAddress::new(udp_endpoint)
+        ));
+        await_timeout!(stun_reply(&env.peer_sock, MappedAddress::new(wg_endpoint)));
+
+        // Give time for provider to recieve and sore local endpoints
+        sleep(Duration::from_millis(100)).await;
+
+        let session_id = 789;
+
+        env.ping_pong_handler
+            .lock()
+            .await
+            .configure(hashmap! { session_id => local_sk.public() });
+
+        let ping = PingerMsg::ping(wg_port, session_id, 6969);
+        let encrypt_transform = |b: &[u8]| {
+            Ok(
+                encrypt_request(b, &mut rand::thread_rng(), &local_sk, &remote_sk.public())
+                    .unwrap(),
+            )
+        };
+        let encrypted_buf = ping.clone().encode_and_encrypt(encrypt_transform).unwrap();
+
+        env.ping_sock
+            .send_to(&encrypted_buf, env.provider_ext_addr)
+            .await
+            .expect("ping");
+
+        let (len, addr) = await_timeout!(env.ping_sock.recv_from(&mut buf)).unwrap();
 
         assert_eq!(addr, env.provider_ext_addr);
-        if let Packet::Pinger(pong) = Packet::decode(&buf[..len]).unwrap() {
-            assert_eq!(pong.get_message_type(), PingType::PONG);
-            assert_eq!(pong.get_wg_port(), WGPort(env.wg_port));
-            assert_eq!(pong.get_session(), session_id);
-        } else {
-            panic!("Incorect packet type in place of ping");
-        }
+
+        let pong = PartialPongerMsg::decode_and_decrypt(&buf[..len], |_, b| Ok((b.to_vec(), None)))
+            .unwrap();
+        let decrypt_transform = |b: &[u8]| {
+            decrypt_response(b, &local_sk, &remote_sk.public())
+                .map_err(|_| CodecError::DecodeFailed)
+        };
+        let pong = pong.decrypt(decrypt_transform).unwrap();
+
+        assert_eq!(pong.get_wg_port(), WGPort(22222));
+        assert_eq!(pong.get_session(), session_id);
     }
 
     // Test helpers
@@ -744,14 +926,17 @@ mod tests {
         Wg {}
         #[async_trait]
         impl WireGuard for Wg {
-            async fn get_interface(&self) -> Option<Interface>;
-            async fn get_adapter_luid(&self) -> u64;
+            async fn get_interface(&self) -> Result<Interface, Error>;
+            async fn get_adapter_luid(&self) -> Result<u64, Error>;
+            async fn wait_for_listen_port(&self, d: Duration) -> Result<u16, Error>;
             async fn get_wg_socket(&self, ipv6: bool) -> Result<Option<i32>, Error>;
-            async fn set_secret_key(&self, key: SecretKey);
-            async fn set_fwmark(&self, fwmark: u32) -> bool;
-            async fn add_peer(&self, peer: Peer);
-            async fn del_peer(&self, key: PublicKey);
-            async fn drop_connected_sockets(&self);
+            async fn set_secret_key(&self, key: SecretKey) -> Result<(), Error>;
+            async fn set_fwmark(&self, fwmark: u32) -> Result<(), Error>;
+            async fn add_peer(&self, peer: Peer) -> Result<(), Error>;
+            async fn del_peer(&self, key: PublicKey) -> Result<(), Error>;
+            async fn drop_connected_sockets(&self) -> Result<(), Error>;
+            async fn time_since_last_rx(&self, public_key: PublicKey) -> Result<Option<Duration>, Error>;
+            async fn time_since_last_endpoint_change(&self, public_key: PublicKey) -> Result<Option<Duration>, Error>;
             async fn stop(self);
         }
     }
@@ -777,6 +962,9 @@ mod tests {
         peer_sock: UdpSocket,
         wg_port: u16,
         stun_pk: PublicKey,
+        ping_sock: UdpSocket,
+        local_sk: SecretKey,
+        ping_pong_handler: Arc<Mutex<PingPongHandler>>,
     }
 
     async fn prepare_test_env() -> Env {
@@ -790,12 +978,14 @@ mod tests {
             .await
             .expect("Cannot create UdpSocket");
         let provider_ext_addr = provider_ext_socket.local_addr().expect("provider ext addr");
+        println!("ext_sock: {}", provider_ext_addr);
 
         let provider_tun_socket = socket_pool
             .new_internal_udp((Ipv4Addr::LOCALHOST, 0), None)
             .await
             .expect("crate tun socket");
         let provider_tun_addr = provider_tun_socket.local_addr().expect("provider tun addr");
+        println!("tun_sock: {}", provider_tun_addr);
 
         let peer_sock = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
             .await
@@ -807,29 +997,41 @@ mod tests {
             .expect("stun sock");
         println!("stun: {}", stun_sock.local_addr().unwrap());
 
+        let ping_sock = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("ping sock");
+        println!("ping: {}", ping_sock.local_addr().unwrap());
+
         // Stun peer can be locked
         let stun_pk = SecretKey::gen().public();
-        let stun_peer = Peer {
-            public_key: stun_pk,
-            // Allowed ip is used to get ip of remote peer, in this case the fake it to be 127.0.0.1
-            // since we don't provide entire wirguard tunnel for testing.
-            allowed_ips: vec![IpNetwork::new(peer_sock.local_addr().unwrap().ip(), 32).unwrap()],
-            // Endpoint would be peer's public ip and wg listen_port that we fake here.
-            endpoint: Some((stun_sock.local_addr().unwrap().ip(), 55555).into()),
-            ..Default::default()
-        };
+        let allowed_ip = IpNetwork::new(peer_sock.local_addr().unwrap().ip(), 32).unwrap();
+        let endpoint: SocketAddr = (stun_sock.local_addr().unwrap().ip(), 55555).into();
+        wg.expect_get_interface().returning(move || {
+            let stun_peer = Peer {
+                public_key: stun_pk,
+                // Allowed ip is used to get ip of remote peer, in this case the fake it to be 127.0.0.1
+                // since we don't provide entire wirguard tunnel for testing.
+                allowed_ips: vec![allowed_ip],
+                // Endpoint would be peer's public ip and wg listen_port that we fake here.
+                endpoint: Some(endpoint),
+                ..Default::default()
+            };
 
-        wg.expect_get_interface().return_const(Interface {
-            listen_port: Some(wg_port),
-            peers: vec![(stun_pk, stun_peer)].into_iter().collect(),
-            ..Default::default()
+            Ok(Interface {
+                listen_port: Some(wg_port),
+                peers: vec![(stun_pk, stun_peer)].into_iter().collect(),
+                ..Default::default()
+            })
         });
 
+        let secret_key = SecretKey::gen();
+        let ping_pong_handler = Arc::new(Mutex::new(PingPongHandler::new(secret_key)));
         let stun_provider = StunEndpointProvider::start(
             provider_tun_socket,
             provider_ext_socket,
             Arc::new(wg),
             Duration::from_secs(10000),
+            ping_pong_handler.clone(),
         );
 
         let candidates_channel = Chan::<EndpointCandidatesChangeEvent>::default();
@@ -857,6 +1059,9 @@ mod tests {
             pong_event: pongs_channel.rx,
             peer_sock,
             stun_sock,
+            ping_sock,
+            local_sk: secret_key,
+            ping_pong_handler,
         }
     }
 

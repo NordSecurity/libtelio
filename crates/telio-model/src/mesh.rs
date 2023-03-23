@@ -3,7 +3,7 @@
 use super::EndpointMap as RelayEndpointMap;
 
 use crate::api_config::PathType;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::HashMap;
 use telio_crypto::PublicKey;
 
@@ -13,17 +13,6 @@ use super::config::{Config, Peer, PeerBase};
 
 pub use ipnetwork::IpNetwork;
 pub use std::net::{Ipv4Addr, SocketAddr};
-
-/// Mesh network endpoint of a Node
-#[derive(Debug, Clone, PartialEq, Deserialize, Eq, Serialize)]
-#[serde(from = "SocketAddr")]
-pub struct Endpoint {
-    #[serde(rename = "address")]
-    /// Ip address and port number of the endpoint
-    pub sockaddr: SocketAddr,
-    /// Is this endpoint a relay
-    pub primary: bool,
-}
 
 /// Description of a Node
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
@@ -38,8 +27,8 @@ pub struct Node {
     pub is_vpn: bool,
     /// List of Ip's which can connect to the Node
     pub allowed_ips: Vec<IpNetwork>,
-    /// List of endpoints connected to the Node
-    pub endpoints: Vec<Endpoint>,
+    /// Endpoint used by node
+    pub endpoint: Option<SocketAddr>,
     /// Hostname of the node
     pub hostname: Option<String>,
     /// Flag to control whether the Node allows incoming connections
@@ -74,44 +63,6 @@ pub struct Map {
     pub nodes: HashMap<PublicKey, Node>,
 }
 
-impl std::ops::Deref for Endpoint {
-    type Target = SocketAddr;
-
-    fn deref(&self) -> &Self::Target {
-        &self.sockaddr
-    }
-}
-
-impl std::ops::DerefMut for Endpoint {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.sockaddr
-    }
-}
-
-impl Default for Endpoint {
-    fn default() -> Self {
-        Self {
-            sockaddr: ([0, 0, 0, 0], 0).into(),
-            primary: false,
-        }
-    }
-}
-
-impl<A: Into<SocketAddr>> From<(A, bool)> for Endpoint {
-    fn from(data: (A, bool)) -> Self {
-        Self {
-            sockaddr: data.0.into(),
-            primary: data.1,
-        }
-    }
-}
-
-impl From<SocketAddr> for Endpoint {
-    fn from(addr: SocketAddr) -> Self {
-        (addr, false).into()
-    }
-}
-
 impl From<&ExitNode> for Node {
     fn from(other: &ExitNode) -> Self {
         #[allow(unwrap_check)]
@@ -125,10 +76,7 @@ impl From<&ExitNode> for Node {
                 .as_ref()
                 .cloned()
                 .unwrap_or_else(|| vec![address]),
-            endpoints: other
-                .endpoint
-                .map(|e| vec![(e, true).into()])
-                .unwrap_or_default(),
+            endpoint: other.endpoint,
             ..Default::default()
         }
     }
@@ -143,7 +91,6 @@ impl From<&PeerBase> for Node {
                 .as_ref()
                 .map(|ips| ips.iter().map(|a| (*a).into()).collect())
                 .unwrap_or_default(),
-            endpoints: vec![],
             hostname: Some(peer.hostname.to_owned()),
             ..Default::default()
         }
@@ -159,7 +106,6 @@ impl From<&Peer> for Node {
                 .as_ref()
                 .map(|ips| ips.iter().map(|a| (*a).into()).collect())
                 .unwrap_or_default(),
-            endpoints: vec![],
             hostname: Some(peer.hostname.to_owned()),
             allow_incoming_connections: peer.allow_incoming_connections,
             ..Default::default()
@@ -174,7 +120,7 @@ impl Map {
             // TODO: check if endpoint already contains primary, assume it should stay primary
             //      think, how to check for old derp endpoint.
             if let Some(node) = self.nodes.get_mut(&key) {
-                node.endpoints = vec![(endpoint, true).into()];
+                node.endpoint = Some(endpoint);
             }
         }
     }
@@ -209,10 +155,7 @@ impl From<&UapiPeer> for Node {
         Self {
             public_key: other.public_key,
             allowed_ips: other.allowed_ips.clone(),
-            endpoints: other
-                .endpoint
-                .map(|e| vec![(e, true).into()])
-                .unwrap_or_default(),
+            endpoint: other.endpoint,
             ..Default::default()
         }
     }
@@ -224,11 +167,7 @@ impl From<&PeerEvent> for Node {
             public_key: other.peer.public_key,
             state: Some(other.state),
             allowed_ips: other.peer.allowed_ips.clone(),
-            endpoints: other
-                .peer
-                .endpoint
-                .map(|e| vec![(e, true).into()])
-                .unwrap_or_default(),
+            endpoint: other.peer.endpoint,
             ..Default::default()
         }
     }
@@ -239,11 +178,7 @@ impl From<&Node> for UapiPeer {
         UapiPeer {
             public_key: other.public_key,
             allowed_ips: other.allowed_ips.clone(),
-            endpoint: other
-                .endpoints
-                .iter()
-                .find(|e| e.primary)
-                .map(|e| e.sockaddr),
+            endpoint: other.endpoint,
             persistent_keepalive_interval: Some(25),
             ..Default::default()
         }

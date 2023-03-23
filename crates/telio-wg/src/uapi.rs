@@ -241,6 +241,19 @@ impl Peer {
             .map_or(false, |d| d < REJECT_AFTER_TIME + REKEY_TIMEOUT_JITTER)
     }
 
+    pub fn state(&self) -> PeerState {
+        if self.connected() {
+            PeerState::Connected
+        } else {
+            PeerState::Connecting
+        }
+    }
+
+    pub fn is_same_event(&self, other: &Self) -> bool {
+        (&self.public_key, &self.endpoint, &self.allowed_ips)
+            == (&self.public_key, &other.endpoint, &other.allowed_ips)
+    }
+
     #[cfg(not(test))]
     fn get_unix_time() -> Result<Duration, SystemTimeError> {
         SystemTime::now().duration_since(UNIX_EPOCH)

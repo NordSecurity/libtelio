@@ -226,10 +226,7 @@ mod tests {
             is_exit: true,
             is_vpn: true,
             allowed_ips: Vec::from(["127.0.0.1".parse().unwrap()]),
-            endpoints: Vec::from([Endpoint {
-                sockaddr: SocketAddr::new("127.0.0.1".parse().unwrap(), 8080),
-                primary: true,
-            }]),
+            endpoint: Some(SocketAddr::new("127.0.0.1".parse().unwrap(), 8080)),
             hostname: Some(String::from("example.com")),
             allow_incoming_connections: false,
             path: crate::api_config::PathType::Relay,
@@ -278,7 +275,7 @@ mod tests {
             r#""body":"#,
             r#"{"public_key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","state":"connected","#,
             r#""is_exit":true,"is_vpn":true,"allowed_ips":["127.0.0.1/32"],"#,
-            r#""endpoints":[{"address":"127.0.0.1:8080","primary":true}],"hostname":"example.com","#,
+            r#""endpoint":"127.0.0.1:8080","hostname":"example.com","#,
             r#""allow_incoming_connections":false,"#,
             r#""path":"relay""#,
             r#"}}"#

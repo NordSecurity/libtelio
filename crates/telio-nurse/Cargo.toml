@@ -18,7 +18,7 @@ log = "0.4.14"
 crypto_box = { version = "0.7.2" }
 bitflags = { version = "1.3.2" }
 uuid =  { version = "1.1.2", features = ["v4"] }
-surge-ping = "0.7.3"
+surge-ping = { git = "https://github.com/matislovas/surge-ping.git", rev = "251242a" }
 rand = "0.8.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

@@ -1,0 +1,1444 @@
+use super::{Entities, RequestedState, Result};
+use ipnetwork::IpNetwork;
+use std::collections::HashMap;
+use std::collections::{BTreeMap, HashSet};
+use std::net::IpAddr;
+use std::sync::Arc;
+use std::time::Duration;
+use telio_crypto::PublicKey;
+use telio_dns::DnsResolver;
+use telio_firewall::firewall::Firewall;
+use telio_model::EndpointMap;
+use telio_model::{mesh::Node, SocketAddr};
+use telio_proxy::Proxy;
+use telio_traversal::{
+    cross_ping_check::CrossPingCheckTrait, endpoint_providers::stun, SessionKeeperTrait,
+    UpgradeSyncTrait, WireGuardEndpointCandidateChangeEvent,
+};
+use telio_utils::{telio_log_debug, telio_log_info};
+use telio_wg::{uapi::Peer, WireGuard};
+use thiserror::Error as TError;
+use tokio::sync::Mutex;
+
+pub const DEFAULT_PROXYING_PERSISTENT_KEEPALIVE: u32 = 25;
+pub const DEFAULT_DIRECT_PERSISTENT_KEEPALIVE: u32 = 5;
+pub const DEFAULT_PEER_UPGRADE_WINDOW: u64 = 15;
+
+#[derive(Debug, TError)]
+pub enum Error {
+    #[error("Peer not found error")]
+    PeerNotFound,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PeerState {
+    Disconnected,
+    Proxying,
+    Upgrading,
+    Direct,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct RequestedPeer {
+    peer: Peer,
+    local_direct_endpoint: Option<SocketAddr>,
+}
+
+pub async fn consolidate_wg_state(requested_state: &RequestedState, entities: &Entities) -> Result {
+    consolidate_wg_private_key(requested_state, &*entities.wireguard_interface).await?;
+    consolidate_wg_fwmark(requested_state, &*entities.wireguard_interface).await?;
+    consolidate_wg_peers(
+        requested_state,
+        &*entities.wireguard_interface,
+        &*entities.proxy,
+        entities.cross_ping_check(),
+        entities.upgrade_sync(),
+        entities.session_keeper(),
+        &*entities.dns,
+    )
+    .await?;
+    consolidate_firewall(
+        requested_state,
+        &*entities.wireguard_interface,
+        &*entities.firewall,
+    )
+    .await?;
+    consolidate_stun_endpoint_provider(requested_state, entities).await?;
+    Ok(())
+}
+
+async fn consolidate_wg_private_key<W: WireGuard>(
+    requested_state: &RequestedState,
+    wireguard_interface: &W,
+) -> Result {
+    let private_key = requested_state.device_config.private_key;
+    let actual_private_key = wireguard_interface.get_interface().await?.private_key;
+
+    if actual_private_key != Some(private_key) {
+        wireguard_interface.set_secret_key(private_key).await?;
+    }
+
+    Ok(())
+}
+
+async fn consolidate_wg_fwmark<W: WireGuard>(
+    requested_state: &RequestedState,
+    wireguard_interface: &W,
+) -> Result {
+    let actual_fwmark = wireguard_interface.get_interface().await?.fwmark;
+    let requested_fwmark = requested_state.device_config.fwmark.unwrap_or(0);
+    if actual_fwmark != requested_fwmark {
+        wireguard_interface.set_fwmark(requested_fwmark).await?;
+    }
+    Ok(())
+}
+
+async fn consolidate_wg_peers<
+    W: WireGuard,
+    P: Proxy,
+    C: CrossPingCheckTrait,
+    U: UpgradeSyncTrait,
+    S: SessionKeeperTrait,
+    D: DnsResolver,
+>(
+    requested_state: &RequestedState,
+    wireguard_interface: &W,
+    proxy: &P,
+    cross_ping_check: Option<&Arc<C>>,
+    upgrade_sync: Option<&Arc<U>>,
+    session_keeper: Option<&Arc<S>>,
+    dns: &Mutex<crate::device::DNS<D>>,
+) -> Result {
+    let proxy_endpoints = proxy.get_endpoint_map().await?;
+    let requested_peers = build_requested_peers_list(
+        requested_state,
+        wireguard_interface,
+        cross_ping_check,
+        upgrade_sync,
+        dns,
+        &proxy_endpoints,
+    )
+    .await?;
+
+    let actual_peers = wireguard_interface.get_interface().await?.peers;
+
+    // Calculate diff between requesed and actual list of peers
+    let requested_keys: HashSet<&PublicKey> = requested_peers.keys().collect();
+    let actual_keys: HashSet<&PublicKey> = actual_peers.keys().collect();
+    let delete_keys = &actual_keys - &requested_keys;
+    let insert_keys = &requested_keys - &actual_keys;
+    let update_keys = &requested_keys & &actual_keys;
+
+    for key in delete_keys {
+        telio_log_info!("Removing peer: {:?}", actual_peers.get(key));
+        wireguard_interface.del_peer(*key).await?;
+    }
+
+    for key in insert_keys {
+        telio_log_info!("Inserting peer: {:?}", requested_peers.get(key));
+        let peer = requested_peers.get(key).ok_or(Error::PeerNotFound)?;
+        wireguard_interface.add_peer(peer.peer.clone()).await?;
+    }
+
+    for key in update_keys {
+        let requested_peer = requested_peers.get(key).ok_or(Error::PeerNotFound)?;
+        let actual_peer = actual_peers.get(key).ok_or(Error::PeerNotFound)?;
+
+        // Check if anything of importance has changed and update if needed
+        if !compare_peers(&requested_peer.peer, actual_peer) {
+            // Update peer
+            telio_log_info!(
+                "Peer updated: {:?} -> {:?}",
+                actual_peers.get(key),
+                requested_peers.get(key)
+            );
+            wireguard_interface
+                .add_peer(requested_peer.peer.clone())
+                .await?;
+        }
+
+        match (
+            is_peer_proxying(actual_peer, &proxy_endpoints),
+            is_peer_proxying(&requested_peer.peer, &proxy_endpoints),
+        ) {
+            (false, true) => {
+                // We have downgraded the connection. Notify cross ping check about that.
+                if let Some(cpc) = cross_ping_check {
+                    cpc.notify_failed_wg_connection(requested_peer.peer.public_key)
+                        .await?;
+                }
+
+                if let Some(sk) = session_keeper {
+                    sk.remove_node(&requested_peer.peer.public_key).await?;
+                }
+            }
+
+            (true, false) => {
+                // We have upgraded the connection. If the upgrade happened because we have
+                // selected a new direct endpoint candidate -> notify the other node about our own
+                // local side endpoint, such that the other node can do this upgrade too.
+                let public_key = requested_peer.peer.public_key;
+                if let (Some(remote_endpoint), Some(local_direct_endpoint)) = (
+                    requested_peer.peer.endpoint,
+                    requested_peer.local_direct_endpoint,
+                ) {
+                    if let Some(us) = upgrade_sync {
+                        us.request_upgrade(&public_key, remote_endpoint, local_direct_endpoint)
+                            .await?;
+                    }
+                }
+
+                // Initiate session keeper to start sending data between peers connected directly
+                if let (Some(sk), Some(mesh_ip)) =
+                    (session_keeper, requested_peer.peer.allowed_ips.first())
+                {
+                    // Start persistent keepalives
+                    sk.add_node(
+                        &requested_peer.peer.public_key,
+                        mesh_ip.ip(),
+                        Duration::from_secs(
+                            requested_peer
+                                .peer
+                                .persistent_keepalive_interval
+                                .unwrap_or(DEFAULT_PROXYING_PERSISTENT_KEEPALIVE)
+                                .into(),
+                        ),
+                    )
+                    .await?;
+                }
+            }
+
+            (_, _) => {}
+        }
+    }
+
+    Ok(())
+}
+
+async fn consolidate_firewall<W: WireGuard, F: Firewall>(
+    requested_state: &RequestedState,
+    wireguard_interface: &W,
+    firewall: &F,
+) -> Result {
+    let from_peers = wireguard_interface.get_interface().await?.peers;
+    let from_keys: HashSet<PublicKey> = from_peers.keys().copied().collect();
+    let to_peers: Vec<&telio_model::config::Peer> = requested_state
+        .meshnet_config
+        .iter()
+        .flat_map(|c| c.peers.iter())
+        .flatten()
+        .collect();
+    let to_keys: HashSet<PublicKey> = to_peers.iter().map(|p| p.public_key).collect();
+    let delete_keys = &from_keys - &to_keys;
+    for key in &delete_keys {
+        firewall_remove(firewall, &from_peers[key].allowed_ips);
+    }
+    for node in to_peers {
+        firewall_upsert_node(firewall, &node.into());
+    }
+
+    Ok(())
+}
+
+/// Configures stun endpoint provider to have needed information
+async fn consolidate_stun_endpoint_provider(
+    requested_state: &RequestedState,
+    entities: &Entities,
+) -> Result {
+    if let Some(stun_ep) = entities.stun_endpoint_provider() {
+        let config = requested_state
+            .wg_stun_server
+            .as_ref()
+            .cloned()
+            .map(|s| stun::Config {
+                stun_peer: s.public_key,
+                plaintext_stun_port: s.stun_plaintext_port,
+                wg_stun_port: Some(s.stun_port),
+            });
+        stun_ep.configure(config).await;
+    }
+    Ok(())
+}
+
+// Builds a full list of WG peers according to current requested state (config) and entities state
+async fn build_requested_peers_list<
+    W: WireGuard,
+    C: CrossPingCheckTrait,
+    U: UpgradeSyncTrait,
+    D: DnsResolver,
+>(
+    requested_state: &RequestedState,
+    wireguard_interface: &W,
+    cross_ping_check: Option<&Arc<C>>,
+    upgrade_sync: Option<&Arc<U>>,
+    dns: &Mutex<crate::device::DNS<D>>,
+    proxy_endpoints: &EndpointMap,
+) -> Result<BTreeMap<PublicKey, RequestedPeer>> {
+    // Build a list of meshnet peers
+    let mut requested_peers = build_requested_meshnet_peers_list(
+        requested_state,
+        wireguard_interface,
+        cross_ping_check,
+        upgrade_sync,
+        proxy_endpoints,
+    )
+    .await?;
+    let mut exit_node_exists = false;
+
+    // Add or promote exit node peer
+    if let Some(exit_node) = &requested_state.exit_node {
+        if let Some(meshnet_peer) = requested_peers.get_mut(&exit_node.public_key) {
+            // Exit node is meshnet peer, so just promote already existing node to be exit node
+            // with allowed ips change
+            meshnet_peer.peer.allowed_ips = vec![IpNetwork::V4("0.0.0.0/0".parse()?)];
+            exit_node_exists = true;
+        } else {
+            // Exit node is a fresh node, therefore - insert create new peer
+            let public_key = exit_node.public_key;
+            let endpoint = exit_node.endpoint;
+            let persistent_keepalive_interval = Some(DEFAULT_PROXYING_PERSISTENT_KEEPALIVE);
+            let allowed_ips = vec![IpNetwork::V4("0.0.0.0/0".parse()?)];
+            requested_peers.insert(
+                exit_node.public_key,
+                RequestedPeer {
+                    peer: telio_wg::uapi::Peer {
+                        public_key,
+                        endpoint,
+                        persistent_keepalive_interval,
+                        allowed_ips,
+                        ..Default::default()
+                    },
+                    local_direct_endpoint: None,
+                },
+            );
+        }
+    }
+
+    // Add DNS peer if enabled
+    let dns = dns.lock().await;
+    if let (Some(_), Some(resolver)) = (&requested_state.upstream_servers, &dns.resolver) {
+        let dns_allowed_ips = if exit_node_exists {
+            resolver.get_exit_connected_dns_allowed_ips()
+        } else {
+            resolver.get_default_dns_allowed_ips()
+        };
+        let dns_peer = resolver.get_peer(dns_allowed_ips);
+        let dns_peer_public_key = dns_peer.public_key;
+        let requested_peer = RequestedPeer {
+            peer: dns_peer,
+            local_direct_endpoint: None,
+        };
+        requested_peers.insert(dns_peer_public_key, requested_peer);
+    }
+
+    if let Some(wg_stun_server) = &requested_state.wg_stun_server {
+        let public_key = wg_stun_server.public_key;
+        let endpoint = SocketAddr::new(IpAddr::V4(wg_stun_server.ipv4), wg_stun_server.stun_port);
+        let persistent_keepalive_interval = Some(DEFAULT_PROXYING_PERSISTENT_KEEPALIVE);
+        let allowed_ips = vec![IpNetwork::V4("100.64.0.4/32".parse()?)];
+        requested_peers.insert(
+            public_key,
+            RequestedPeer {
+                peer: telio_wg::uapi::Peer {
+                    public_key,
+                    endpoint: Some(endpoint),
+                    persistent_keepalive_interval,
+                    allowed_ips,
+                    ..Default::default()
+                },
+                local_direct_endpoint: None,
+            },
+        );
+    }
+
+    Ok(requested_peers)
+}
+
+// Builds a list of peers for meshnet, not taking into account any exit node, DNS, etc. peers
+async fn build_requested_meshnet_peers_list<
+    W: WireGuard,
+    C: CrossPingCheckTrait,
+    U: UpgradeSyncTrait,
+>(
+    requested_state: &RequestedState,
+    wireguard_interface: &W,
+    cross_ping_check: Option<&Arc<C>>,
+    upgrade_sync: Option<&Arc<U>>,
+    proxy_endpoints: &EndpointMap,
+) -> Result<BTreeMap<PublicKey, RequestedPeer>> {
+    // Retreive meshnet config. If it is not set, no peers are requested
+    let meshnet_config = match &requested_state.meshnet_config {
+        None => return Ok(BTreeMap::new()),
+        Some(cfg) => cfg,
+    };
+
+    // Retreive peer list from meshnet config. If it is not set, no peers are requested
+    let requested_peers = match &meshnet_config.peers {
+        None => return Ok(BTreeMap::new()),
+        Some(peers) => peers,
+    };
+
+    // map config peers into wg interface peers. Taking endpoint addresses from proxy state
+    let mut requested_peers: BTreeMap<PublicKey, RequestedPeer> = requested_peers
+        .iter()
+        .map(|p| {
+            // Retreive public key
+            let public_key = p.base.public_key;
+            let persistent_keepalive_interval = Some(DEFAULT_PROXYING_PERSISTENT_KEEPALIVE);
+            let endpoint = proxy_endpoints.get(&public_key).cloned();
+
+            // Retreive node's meshnet IP from config, and convert it into `/32` network type
+            let allowed_ips = p.base.ip_addresses.clone().map_or(vec![], |ips| {
+                ips.iter()
+                    .map(|ip| IpNetwork::new(*ip, 32))
+                    .filter_map(|ip_res| ip_res.ok())
+                    .collect()
+            });
+
+            // Build telio_wg::uapi::Peer struct
+            (
+                public_key,
+                RequestedPeer {
+                    peer: telio_wg::uapi::Peer {
+                        public_key,
+                        endpoint,
+                        persistent_keepalive_interval,
+                        allowed_ips,
+                        ..Default::default()
+                    },
+                    local_direct_endpoint: None,
+                },
+            )
+        })
+        .collect();
+
+    // Retreive actual list of peers
+    let actual_peers = wireguard_interface.get_interface().await?.peers;
+    let checked_endpoints = if let Some(cpc) = cross_ping_check {
+        cpc.get_validated_endpoints().await?
+    } else {
+        Default::default()
+    };
+    let upgrade_request_endpoints = if let Some(us) = upgrade_sync {
+        us.get_upgrade_requests().await?
+    } else {
+        Default::default()
+    };
+
+    // See which peers can be upgraded to direct connection
+    for (public_key, requested_peer) in requested_peers.iter_mut() {
+        // Gather required information
+        let actual_peer = actual_peers.get(public_key);
+        let time_since_last_rx = wireguard_interface.time_since_last_rx(*public_key).await?;
+        let time_since_last_endpoint_change = wireguard_interface
+            .time_since_last_endpoint_change(*public_key)
+            .await?;
+        let checked_endpoint = checked_endpoints.get(public_key);
+        let proxy_endpoint = proxy_endpoints.get(public_key);
+        let upgrade_request_endpoint = upgrade_request_endpoints
+            .get(public_key)
+            .map(|ur| ur.endpoint);
+
+        // Compute the current endpoint state
+        let peer_state = peer_state(
+            actual_peer,
+            time_since_last_rx.as_ref(),
+            time_since_last_endpoint_change.as_ref(),
+            proxy_endpoint,
+        );
+
+        // If we are in direct state, tell cross ping check about it
+        if peer_state == PeerState::Direct {
+            if let Some(cpc) = cross_ping_check {
+                cpc.notify_successfull_wg_connection_upgrade(*public_key)
+                    .await?;
+            }
+        }
+
+        // Select actual endpoint
+        let (selected_remote_endpoint, selected_local_endpoint) = select_endpoint_for_peer(
+            public_key,
+            &actual_peer.cloned(),
+            &time_since_last_rx,
+            peer_state,
+            &checked_endpoint.cloned(),
+            &proxy_endpoint.cloned(),
+            &upgrade_request_endpoint,
+        )
+        .await?;
+
+        // Apply the selected endpoints, and save local endpoint because we may need to share it
+        // with the other end
+        requested_peer.peer.endpoint = selected_remote_endpoint;
+        requested_peer.local_direct_endpoint = selected_local_endpoint;
+
+        // Decrease the keepalive period for peers which has established direct connection
+        requested_peer.peer.persistent_keepalive_interval =
+            if is_peer_proxying(&requested_peer.peer, proxy_endpoints) {
+                Some(DEFAULT_PROXYING_PERSISTENT_KEEPALIVE)
+            } else {
+                Some(DEFAULT_DIRECT_PERSISTENT_KEEPALIVE)
+            };
+    }
+
+    Ok(requested_peers)
+}
+
+// Select endpoint for peer
+async fn select_endpoint_for_peer<'a>(
+    public_key: &PublicKey,
+    actual_peer: &Option<Peer>,
+    time_since_last_rx: &Option<Duration>,
+    peer_state: PeerState,
+    checked_endpoint: &Option<WireGuardEndpointCandidateChangeEvent>,
+    proxy_endpoint: &Option<SocketAddr>,
+    upgrade_request_endpoint: &Option<SocketAddr>,
+) -> Result<(Option<SocketAddr>, Option<SocketAddr>)> {
+    // Retrieve some helper information
+    let actual_endpoint = actual_peer.clone().and_then(|p| p.endpoint);
+
+    // Use match statemet to cover all possible variants
+    match (upgrade_request_endpoint, peer_state, checked_endpoint) {
+        // If the other side has requested us to upgrade endpoint -> do that
+        (Some(upgrade_request_endpoint), _, _) => {
+            telio_log_debug!(
+                "Upgrading peer's {:?} endpoint to {:?} due to request from the other side",
+                public_key,
+                upgrade_request_endpoint
+            );
+            Ok((Some(*upgrade_request_endpoint), None))
+        }
+
+        // Connection is dead-> always force proxy. Note that we may enter this state in direct
+        // mode and after changing to proxied connections -> recover the connection in proxying
+        // mode.
+        (None, PeerState::Disconnected, _) => {
+            telio_log_debug!(
+                "Connections seems to be dead, forcing proxied EP: {:?} {:?}",
+                public_key,
+                time_since_last_rx,
+            );
+            Ok((*proxy_endpoint, None))
+        }
+
+        // Just proxying, nothing to upgrade to...
+        (None, PeerState::Proxying, None) => {
+            telio_log_debug!(
+                "Keeping proxied EP: {:?} {:?}",
+                public_key,
+                time_since_last_rx,
+            );
+            Ok((*proxy_endpoint, None))
+        }
+
+        // Proxying, but we have something to upgrade to. Lets try to upgrade.
+        (None, PeerState::Proxying, Some(checked_endpoint)) => {
+            telio_log_debug!(
+                "Selecting checked EP: {:?} {:?}",
+                public_key,
+                time_since_last_rx,
+            );
+            Ok((
+                Some(checked_endpoint.remote_endpoint),
+                Some(checked_endpoint.local_endpoint), // << This endpoint will be advertised to the other side
+            ))
+        }
+
+        // Upgrading, means that we have some direct endpoint within WG. Keep it.
+        (None, PeerState::Upgrading, _) => {
+            telio_log_debug!(
+                "Selecting current Direct EP: {:?} {:?}",
+                public_key,
+                time_since_last_rx,
+            );
+            Ok((actual_endpoint, None))
+        }
+
+        // Direct connection is alive -> just keep it.
+        (None, PeerState::Direct, _) => {
+            telio_log_debug!(
+                "Selecting current Direct EP: {:?} {:?}",
+                public_key,
+                time_since_last_rx,
+            );
+            Ok((actual_endpoint, None))
+        }
+    }
+}
+
+// Convenience function to check whether peers are equal or not. Note that this function compares
+// peers only in a sense what a controller would consider peers to be equal, therefore various
+// status fields, like handshake timestamps, tx'ed or rx'ed data or similar is *not* compared. What
+// is more, "None" peer will always compare _false_ to anything
+fn compare_peers(a: &telio_wg::uapi::Peer, b: &telio_wg::uapi::Peer) -> bool {
+    a.public_key == b.public_key
+        && a.endpoint == b.endpoint
+        && a.persistent_keepalive_interval == b.persistent_keepalive_interval
+        && a.allowed_ips == b.allowed_ips
+}
+
+fn is_peer_proxying(
+    peer: &telio_wg::uapi::Peer,
+    proxy_endpoints: &HashMap<PublicKey, SocketAddr>,
+) -> bool {
+    // If proxy has no knowledge of the public key -> the node definately does not proxy
+    let proxy_endpoint = if let Some(proxy_endpoint) = proxy_endpoints.get(&peer.public_key) {
+        proxy_endpoint
+    } else {
+        return false;
+    };
+
+    // Otherwise, we are only proxying if peer endpoint matches proxy endpoint
+    peer.endpoint == Some(*proxy_endpoint)
+}
+
+fn peer_state(
+    peer: Option<&telio_wg::uapi::Peer>,
+    time_since_last_rx: Option<&Duration>,
+    time_since_last_endpoint_change: Option<&Duration>,
+    proxy_endpoint: Option<&SocketAddr>,
+) -> PeerState {
+    // Define some useful constants
+    let keepalive_period = peer
+        .and_then(|p| p.persistent_keepalive_interval)
+        .unwrap_or(DEFAULT_PROXYING_PERSISTENT_KEEPALIVE);
+    let peer_connectivity_timeout = Duration::from_secs((keepalive_period * 3) as u64);
+    let peer_upgrade_window = Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW);
+
+    // If peer is none -> disconnected
+    let peer = match peer {
+        Some(peer) => peer,
+        None => return PeerState::Disconnected,
+    };
+
+    // At least one endpoint change is required for peer to be able to be connected
+    let time_since_last_endpoint_change = match time_since_last_endpoint_change {
+        Some(time_since_last_endpoint_change) => time_since_last_endpoint_change,
+        None => return PeerState::Disconnected,
+    };
+
+    // At least one packet rx is required for peer to be able to be connected
+    let time_since_last_rx = match time_since_last_rx {
+        Some(time_since_last_rx) => time_since_last_rx,
+        None => return PeerState::Disconnected,
+    };
+
+    let has_contact = time_since_last_rx < &peer_connectivity_timeout;
+    let is_proxying = peer.endpoint.as_ref() == proxy_endpoint;
+    let is_in_upgrade_window = time_since_last_endpoint_change < &peer_upgrade_window;
+
+    match (has_contact, is_proxying, is_in_upgrade_window) {
+        (false, _, _) => PeerState::Disconnected,
+        (true, true, _) => PeerState::Proxying,
+        (true, false, true) => PeerState::Upgrading,
+        (true, false, false) => PeerState::Direct,
+    }
+}
+
+fn firewall_remove<F: Firewall>(firewall: &F, allowed_ips: &[IpNetwork]) {
+    for ip in allowed_ips {
+        firewall.remove_from_network_whitelist(*ip);
+    }
+}
+
+fn firewall_upsert_node<F: Firewall>(firewall: &F, node: &Node) {
+    if node.allow_incoming_connections {
+        for ip in &node.allowed_ips {
+            firewall.add_to_network_whitelist(*ip);
+        }
+    } else {
+        firewall_remove(firewall, &node.allowed_ips);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::device::{DeviceConfig, DNS};
+    use mockall::predicate::{self, eq};
+    use std::net::{Ipv4Addr, SocketAddrV4};
+    use telio_crypto::SecretKey;
+    use telio_dns::MockDnsResolver;
+    use telio_firewall::firewall::MockFirewall;
+    use telio_model::config::{Config, PeerBase};
+    use telio_proxy::MockProxy;
+    use telio_traversal::cross_ping_check::MockCrossPingCheckTrait;
+    use telio_traversal::{MockSessionKeeperTrait, MockUpgradeSyncTrait, UpgradeRequest};
+    use telio_wg::uapi::Interface;
+    use telio_wg::MockWireGuard;
+    use tokio::time::Instant;
+
+    type AllowIncomingConnections = bool;
+    type AllowedIps = Vec<IpAddr>;
+
+    #[tokio::test]
+    async fn update_wg_private_key_when_changed() {
+        let mut wg_mock = MockWireGuard::new();
+        let secret_key_a = SecretKey::gen();
+        let secret_key_b = SecretKey::gen();
+
+        wg_mock.expect_get_interface().returning(move || {
+            Ok(Interface {
+                private_key: Some(secret_key_a),
+                ..Default::default()
+            })
+        });
+
+        wg_mock
+            .expect_set_secret_key()
+            .with(predicate::eq(secret_key_b))
+            .returning(|_| Ok(()));
+
+        let requested_state = RequestedState {
+            device_config: DeviceConfig {
+                private_key: secret_key_b,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        consolidate_wg_private_key(&requested_state, &wg_mock)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn do_not_update_wg_private_key_when_not_changed() {
+        let mut wg_mock = MockWireGuard::new();
+        let secret_key_a = SecretKey::gen();
+        let secret_key_a_cpy = secret_key_a.clone();
+
+        wg_mock.expect_get_interface().returning(move || {
+            Ok(Interface {
+                private_key: Some(secret_key_a_cpy),
+                ..Default::default()
+            })
+        });
+
+        let requested_state = RequestedState {
+            device_config: DeviceConfig {
+                private_key: secret_key_a,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        consolidate_wg_private_key(&requested_state, &wg_mock)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn update_fwmark_when_changed() {
+        let mut wg_mock = MockWireGuard::new();
+
+        let old = 15;
+        let new = 16;
+
+        wg_mock.expect_get_interface().returning(move || {
+            Ok(Interface {
+                fwmark: old,
+                ..Default::default()
+            })
+        });
+
+        wg_mock
+            .expect_set_fwmark()
+            .with(predicate::eq(new))
+            .returning(|_| Ok(()));
+
+        let requested_state = RequestedState {
+            device_config: DeviceConfig {
+                fwmark: Some(new),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        consolidate_wg_fwmark(&requested_state, &wg_mock)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn do_not_update_fwmark_when_not_changed() {
+        let mut wg_mock = MockWireGuard::new();
+
+        let old = 15;
+
+        wg_mock.expect_get_interface().returning(move || {
+            Ok(Interface {
+                fwmark: old,
+                ..Default::default()
+            })
+        });
+
+        let requested_state = RequestedState {
+            device_config: DeviceConfig {
+                fwmark: Some(old),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        consolidate_wg_fwmark(&requested_state, &wg_mock)
+            .await
+            .unwrap();
+    }
+
+    fn create_requested_state(
+        input: Vec<(PublicKey, AllowedIps, AllowIncomingConnections)>,
+    ) -> RequestedState {
+        let mut requested_state = RequestedState::default();
+
+        let mut meshnet_config = Config {
+            peers: Some(vec![]),
+            ..Default::default()
+        };
+
+        if let Some(peers) = meshnet_config.peers.as_mut() {
+            for i in input {
+                let peer = telio_model::config::Peer {
+                    base: PeerBase {
+                        public_key: i.0,
+                        ip_addresses: Some(i.1),
+                        ..Default::default()
+                    },
+                    allow_incoming_connections: i.2,
+                    ..Default::default()
+                };
+                peers.push(peer);
+            }
+        }
+
+        requested_state.meshnet_config = Some(meshnet_config);
+
+        requested_state
+    }
+
+    fn create_wireguard_interface(input: Vec<(PublicKey, AllowedIps)>) -> Interface {
+        let mut interface = Interface::default();
+
+        for i in input {
+            let peer = telio_wg::uapi::Peer {
+                public_key: i.0,
+                allowed_ips: i.1.into_iter().map(|ip| ip.into()).collect(),
+                ..Default::default()
+            };
+            interface.peers.insert(i.0, peer);
+        }
+
+        interface
+    }
+
+    #[tokio::test]
+    async fn add_currently_allowed_ips_to_firewall() {
+        let mut wireguard_interface = MockWireGuard::new();
+        let mut firewall = MockFirewall::new();
+
+        let pub_key = SecretKey::gen().public();
+        let ip1 = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+        let ip2 = IpAddr::V4(Ipv4Addr::new(5, 6, 7, 8));
+
+        let requested_state = create_requested_state(vec![(pub_key, vec![ip1, ip2], true)]);
+
+        let interface = create_wireguard_interface(vec![(pub_key, vec![ip1])]);
+
+        wireguard_interface
+            .expect_get_interface()
+            .return_once(move || Ok(interface));
+        firewall
+            .expect_add_to_network_whitelist()
+            .once()
+            .with(eq(IpNetwork::from(ip1)))
+            .return_const(());
+        firewall
+            .expect_add_to_network_whitelist()
+            .once()
+            .with(eq(IpNetwork::from(ip2)))
+            .return_const(());
+
+        consolidate_firewall(&requested_state, &wireguard_interface, &firewall)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn remove_old_ips_from_firewall() {
+        let mut wireguard_interface = MockWireGuard::new();
+        let mut firewall = MockFirewall::new();
+
+        let pub_key = SecretKey::gen().public();
+        let ip1 = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+        let ip2 = IpAddr::V4(Ipv4Addr::new(5, 6, 7, 8));
+
+        let requested_state = create_requested_state(vec![]);
+
+        let interface = create_wireguard_interface(vec![(pub_key, vec![ip1.clone(), ip2.clone()])]);
+
+        wireguard_interface
+            .expect_get_interface()
+            .return_once(move || Ok(interface));
+        firewall
+            .expect_remove_from_network_whitelist()
+            .once()
+            .with(eq(IpNetwork::from(ip1)))
+            .return_const(());
+        firewall
+            .expect_remove_from_network_whitelist()
+            .once()
+            .with(eq(IpNetwork::from(ip2)))
+            .return_const(());
+
+        consolidate_firewall(&requested_state, &wireguard_interface, &firewall)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn remove_ips_from_firewall_when_no_longer_incoming_allowed() {
+        let mut wireguard_interface = MockWireGuard::new();
+        let mut firewall = MockFirewall::new();
+
+        let pub_key = SecretKey::gen().public();
+        let ip1 = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+        let ip2 = IpAddr::V4(Ipv4Addr::new(5, 6, 7, 8));
+
+        let requested_state =
+            create_requested_state(vec![(pub_key, vec![ip1.clone(), ip2.clone()], false)]);
+
+        let interface = create_wireguard_interface(vec![(pub_key, vec![ip1.clone(), ip2.clone()])]);
+
+        wireguard_interface
+            .expect_get_interface()
+            .return_once(move || Ok(interface));
+        firewall
+            .expect_remove_from_network_whitelist()
+            .once()
+            .with(eq(IpNetwork::from(ip1)))
+            .return_const(());
+        firewall
+            .expect_remove_from_network_whitelist()
+            .once()
+            .with(eq(IpNetwork::from(ip2)))
+            .return_const(());
+
+        consolidate_firewall(&requested_state, &wireguard_interface, &firewall)
+            .await
+            .unwrap();
+    }
+
+    struct Fixture {
+        requested_state: RequestedState,
+        wireguard_interface: MockWireGuard,
+        proxy: MockProxy,
+        cross_ping_check: MockCrossPingCheckTrait,
+        upgrade_sync: MockUpgradeSyncTrait,
+        session_keeper: MockSessionKeeperTrait,
+        dns: Mutex<DNS<MockDnsResolver>>,
+    }
+
+    impl Fixture {
+        fn new() -> Self {
+            Self {
+                requested_state: RequestedState::default(),
+                wireguard_interface: MockWireGuard::new(),
+                proxy: MockProxy::new(),
+                cross_ping_check: MockCrossPingCheckTrait::new(),
+                upgrade_sync: MockUpgradeSyncTrait::new(),
+                session_keeper: MockSessionKeeperTrait::new(),
+                dns: Mutex::new(DNS {
+                    resolver: Some(MockDnsResolver::new()),
+                    virtual_host_tun_fd: None,
+                }),
+            }
+        }
+
+        fn when_requested_meshnet_config(&mut self, input: Vec<(PublicKey, AllowedIps)>) {
+            let meshnet_config = Config {
+                peers: Some(
+                    input
+                        .iter()
+                        .map(|i| telio_model::config::Peer {
+                            base: PeerBase {
+                                public_key: i.0,
+                                ip_addresses: Some(i.1.clone()),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        })
+                        .collect(),
+                ),
+                ..Default::default()
+            };
+
+            self.requested_state.meshnet_config = Some(meshnet_config);
+        }
+
+        fn when_proxy_mapping(&mut self, input: Vec<(PublicKey, u16)>) {
+            let proxy_endpoint_map: EndpointMap = input
+                .iter()
+                .map(|i| {
+                    (
+                        i.0,
+                        SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, i.1)),
+                    )
+                })
+                .collect();
+
+            self.proxy
+                .expect_get_endpoint_map()
+                .returning(move || Ok(proxy_endpoint_map.clone()));
+        }
+
+        fn when_current_peers(&mut self, input: Vec<(PublicKey, SocketAddr, u32, AllowedIps)>) {
+            let peers: BTreeMap<PublicKey, Peer> = input
+                .into_iter()
+                .map(|i| {
+                    (
+                        i.0,
+                        Peer {
+                            public_key: i.0,
+                            endpoint: Some(i.1),
+                            persistent_keepalive_interval: Some(i.2),
+                            allowed_ips: i.3.into_iter().map(|ip| ip.into()).collect(),
+                            ..Default::default()
+                        },
+                    )
+                })
+                .collect();
+
+            self.wireguard_interface
+                .expect_get_interface()
+                .returning(move || {
+                    Ok(Interface {
+                        peers: peers.clone(),
+                        ..Default::default()
+                    })
+                });
+        }
+
+        fn when_time_since_last_rx(&mut self, input: Vec<(PublicKey, u64)>) {
+            self.wireguard_interface
+                .expect_time_since_last_rx()
+                .returning(move |pk| {
+                    input
+                        .iter()
+                        .find(|i| i.0 == pk)
+                        .map_or(Ok(None), |i| Ok(Some(Duration::from_secs(i.1))))
+                });
+        }
+
+        fn when_time_since_last_endpoint_change(&mut self, input: Vec<(PublicKey, u64)>) {
+            self.wireguard_interface
+                .expect_time_since_last_endpoint_change()
+                .returning(move |pk| {
+                    input
+                        .iter()
+                        .find(|i| i.0 == pk)
+                        .map_or(Ok(None), |i| Ok(Some(Duration::from_secs(i.1))))
+                });
+        }
+
+        fn when_cross_check_validated_endpoints(
+            &mut self,
+            input: Vec<(PublicKey, SocketAddr, SocketAddr)>,
+        ) {
+            let map: HashMap<PublicKey, WireGuardEndpointCandidateChangeEvent> = input
+                .iter()
+                .map(|i| {
+                    (
+                        i.0,
+                        WireGuardEndpointCandidateChangeEvent {
+                            public_key: i.0,
+                            remote_endpoint: i.1,
+                            local_endpoint: i.2,
+                        },
+                    )
+                })
+                .collect();
+
+            self.cross_ping_check
+                .expect_get_validated_endpoints()
+                .returning(move || Ok(map.clone()));
+        }
+
+        fn when_upgrade_requests(&mut self, input: Vec<(PublicKey, SocketAddr, Instant)>) {
+            let map: HashMap<PublicKey, UpgradeRequest> = input
+                .iter()
+                .map(|i| {
+                    (
+                        i.0,
+                        UpgradeRequest {
+                            endpoint: i.1,
+                            requested_at: i.2,
+                        },
+                    )
+                })
+                .collect();
+
+            self.upgrade_sync
+                .expect_get_upgrade_requests()
+                .returning(move || Ok(map.clone()));
+        }
+
+        fn then_add_peer(&mut self, input: Vec<(PublicKey, SocketAddr, u32, AllowedIps)>) {
+            for i in input {
+                self.wireguard_interface
+                    .expect_add_peer()
+                    .once()
+                    .with(eq(Peer {
+                        public_key: i.0,
+                        endpoint: Some(i.1.into()),
+                        persistent_keepalive_interval: Some(i.2),
+                        allowed_ips: i.3.into_iter().map(|ip| ip.into()).collect(),
+                        rx_bytes: None,
+                        tx_bytes: None,
+                        time_since_last_handshake: None,
+                    }))
+                    .return_once(|_| Ok(()));
+            }
+        }
+
+        fn then_del_peer(&mut self, input: Vec<PublicKey>) {
+            for i in input {
+                self.wireguard_interface
+                    .expect_del_peer()
+                    .once()
+                    .with(eq(i))
+                    .return_once(|_| Ok(()));
+            }
+        }
+
+        fn then_notify_failed_wg_connection(&mut self, input: Vec<PublicKey>) {
+            for i in input {
+                self.cross_ping_check
+                    .expect_notify_failed_wg_connection()
+                    .once()
+                    .with(eq(i))
+                    .return_once(|_| Ok(()));
+            }
+        }
+
+        fn then_request_upgrade(&mut self, input: Vec<(PublicKey, SocketAddr, SocketAddr)>) {
+            for i in input {
+                self.upgrade_sync
+                    .expect_request_upgrade()
+                    .once()
+                    .with(eq(i.0), eq(i.1), eq(i.2))
+                    .return_once(|_, _, _| Ok(()));
+            }
+        }
+
+        fn then_keeper_add_node(&mut self, input: Vec<(PublicKey, IpAddr, u32)>) {
+            for i in input {
+                self.session_keeper
+                    .expect_add_node()
+                    .once()
+                    .with(eq(i.0), eq(i.1), eq(Duration::from_secs(i.2.into())))
+                    .return_once(|_, _, _| Ok(()));
+            }
+        }
+
+        fn then_keeper_remove_node(&mut self, input: Vec<PublicKey>) {
+            for i in input {
+                self.session_keeper
+                    .expect_remove_node()
+                    .once()
+                    .with(eq(i))
+                    .return_once(|_| Ok(()));
+            }
+        }
+
+        fn then_notify_successfull_wg_connection_upgrade(&mut self, input: Vec<PublicKey>) {
+            for i in input {
+                self.cross_ping_check
+                    .expect_notify_successfull_wg_connection_upgrade()
+                    .once()
+                    .with(eq(i))
+                    .return_once(|_| Ok(()));
+            }
+        }
+
+        async fn consolidate_peers(self) {
+            let cross_ping_check = Arc::new(self.cross_ping_check);
+            let upgrade_sync = Arc::new(self.upgrade_sync);
+            let session_keeper = Arc::new(self.session_keeper);
+
+            consolidate_wg_peers(
+                &self.requested_state,
+                &self.wireguard_interface,
+                &self.proxy,
+                Some(&cross_ping_check),
+                Some(&upgrade_sync),
+                Some(&session_keeper),
+                &self.dns,
+            )
+            .await
+            .unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn when_fresh_start_then_proxy_enpoint_is_added() {
+        let mut f = Fixture::new();
+
+        let pub_key = SecretKey::gen().public();
+        let ip1 = IpAddr::from([1, 2, 3, 4]);
+        let ip2 = IpAddr::from([5, 6, 7, 8]);
+        let allowed_ips = vec![ip1, ip2];
+        let mapped_port = 18;
+        let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
+
+        f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
+        f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
+        f.when_current_peers(vec![]);
+        f.when_time_since_last_rx(vec![]);
+        f.when_time_since_last_endpoint_change(vec![]);
+        f.when_cross_check_validated_endpoints(vec![]);
+        f.when_upgrade_requests(vec![]);
+
+        f.then_add_peer(vec![(
+            pub_key,
+            proxy_endpoint,
+            DEFAULT_PROXYING_PERSISTENT_KEEPALIVE,
+            allowed_ips,
+        )]);
+
+        f.consolidate_peers().await;
+    }
+
+    #[tokio::test]
+    async fn when_upgrade_requested_by_peer_then_upgrade() {
+        let mut f = Fixture::new();
+
+        let pub_key = SecretKey::gen().public();
+        let ip1 = IpAddr::from([1, 2, 3, 4]);
+        let ip2 = IpAddr::from([5, 6, 7, 8]);
+        let allowed_ips = vec![ip1, ip2];
+        let remote_wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
+        let mapped_port = 12;
+        let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
+
+        f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
+        f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
+        f.when_current_peers(vec![(
+            pub_key,
+            proxy_endpoint,
+            DEFAULT_PROXYING_PERSISTENT_KEEPALIVE,
+            allowed_ips.clone(),
+        )]);
+        f.when_time_since_last_rx(vec![(pub_key, 5)]);
+        f.when_time_since_last_endpoint_change(vec![(pub_key, 5)]);
+        f.when_cross_check_validated_endpoints(vec![]);
+        f.when_upgrade_requests(vec![(pub_key, remote_wg_endpoint, Instant::now())]);
+
+        f.then_add_peer(vec![(
+            pub_key,
+            remote_wg_endpoint,
+            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE,
+            allowed_ips,
+        )]);
+        f.then_keeper_add_node(vec![(pub_key, ip1, DEFAULT_DIRECT_PERSISTENT_KEEPALIVE)]);
+
+        f.consolidate_peers().await;
+    }
+
+    #[tokio::test]
+    async fn when_cross_check_vailidated_then_upgrade() {
+        let mut f = Fixture::new();
+
+        let pub_key = SecretKey::gen().public();
+        let ip1 = IpAddr::from([1, 2, 3, 4]);
+        let ip2 = IpAddr::from([5, 6, 7, 8]);
+        let allowed_ips = vec![ip1, ip2];
+        let remote_wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
+        let local_wg_endpoint = SocketAddr::from(([192, 168, 0, 2], 15));
+        let mapped_port = 12;
+        let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
+
+        f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
+        f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
+        f.when_current_peers(vec![(
+            pub_key,
+            proxy_endpoint,
+            DEFAULT_PROXYING_PERSISTENT_KEEPALIVE,
+            allowed_ips.clone(),
+        )]);
+        f.when_time_since_last_rx(vec![(pub_key, 5)]);
+        f.when_time_since_last_endpoint_change(vec![(pub_key, 5)]);
+        f.when_cross_check_validated_endpoints(vec![(
+            pub_key,
+            remote_wg_endpoint,
+            local_wg_endpoint,
+        )]);
+        f.when_upgrade_requests(vec![]);
+
+        f.then_add_peer(vec![(
+            pub_key,
+            remote_wg_endpoint,
+            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE,
+            allowed_ips,
+        )]);
+        f.then_request_upgrade(vec![(pub_key, remote_wg_endpoint, local_wg_endpoint)]);
+        f.then_keeper_add_node(vec![(pub_key, ip1, DEFAULT_DIRECT_PERSISTENT_KEEPALIVE)]);
+
+        f.consolidate_peers().await;
+    }
+
+    #[tokio::test]
+    async fn when_cross_check_vailidated_but_connection_dead_then_do_not_upgrade() {
+        let mut f = Fixture::new();
+
+        let pub_key = SecretKey::gen().public();
+        let ip1 = IpAddr::from([1, 2, 3, 4]);
+        let ip2 = IpAddr::from([5, 6, 7, 8]);
+        let allowed_ips = vec![ip1, ip2];
+        let remote_wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
+        let local_wg_endpoint = SocketAddr::from(([192, 168, 0, 2], 15));
+        let mapped_port = 12;
+        let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
+
+        f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
+        f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
+        f.when_current_peers(vec![]);
+        f.when_time_since_last_rx(vec![(pub_key, 100)]);
+        f.when_time_since_last_endpoint_change(vec![(pub_key, 100)]);
+        f.when_cross_check_validated_endpoints(vec![(
+            pub_key,
+            remote_wg_endpoint,
+            local_wg_endpoint,
+        )]);
+        f.when_upgrade_requests(vec![]);
+
+        f.then_add_peer(vec![(
+            pub_key,
+            proxy_endpoint,
+            DEFAULT_PROXYING_PERSISTENT_KEEPALIVE,
+            allowed_ips,
+        )]);
+
+        f.consolidate_peers().await;
+    }
+
+    #[tokio::test]
+    async fn when_peers_removed_from_config_then_del_peer() {
+        let mut f = Fixture::new();
+
+        let pub_key = SecretKey::gen().public();
+        let ip1 = IpAddr::from([1, 2, 3, 4]);
+        let ip2 = IpAddr::from([5, 6, 7, 8]);
+        let mapped_port = 12;
+        let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
+
+        f.when_requested_meshnet_config(vec![]);
+        f.when_proxy_mapping(vec![]);
+        f.when_current_peers(vec![(
+            pub_key,
+            proxy_endpoint,
+            DEFAULT_PROXYING_PERSISTENT_KEEPALIVE,
+            vec![ip1, ip2],
+        )]);
+        f.when_time_since_last_rx(vec![]);
+        f.when_time_since_last_endpoint_change(vec![]);
+        f.when_cross_check_validated_endpoints(vec![]);
+        f.when_upgrade_requests(vec![]);
+
+        f.then_del_peer(vec![pub_key]);
+
+        f.consolidate_peers().await;
+    }
+
+    #[tokio::test]
+    async fn when_no_change_in_peers_then_no_update() {
+        let mut f = Fixture::new();
+
+        let pub_key = SecretKey::gen().public();
+        let ip1 = IpAddr::from([1, 2, 3, 4]);
+        let ip2 = IpAddr::from([5, 6, 7, 8]);
+        let allowed_ips = vec![ip1, ip2];
+        let mapped_port = 12;
+        let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
+
+        f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
+        f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
+        f.when_current_peers(vec![(
+            pub_key,
+            proxy_endpoint,
+            DEFAULT_PROXYING_PERSISTENT_KEEPALIVE,
+            allowed_ips,
+        )]);
+        f.when_time_since_last_rx(vec![(pub_key, 4)]);
+        f.when_time_since_last_endpoint_change(vec![(pub_key, 4)]);
+        f.when_cross_check_validated_endpoints(vec![]);
+        f.when_upgrade_requests(vec![]);
+
+        // then nothing happens
+
+        f.consolidate_peers().await;
+    }
+
+    #[tokio::test]
+    async fn when_connection_timedout_then_downgrade() {
+        let mut f = Fixture::new();
+
+        let pub_key = SecretKey::gen().public();
+        let ip1 = IpAddr::from([1, 2, 3, 4]);
+        let allowed_ips = vec![ip1];
+        let mapped_port = 12;
+        let wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
+        let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
+
+        f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
+        f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
+        f.when_current_peers(vec![(
+            pub_key,
+            wg_endpoint,
+            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE,
+            allowed_ips.clone(),
+        )]);
+        f.when_time_since_last_rx(vec![(pub_key, 100)]);
+        f.when_time_since_last_endpoint_change(vec![(pub_key, 5)]);
+        f.when_cross_check_validated_endpoints(vec![]);
+        f.when_upgrade_requests(vec![]);
+
+        f.then_add_peer(vec![(
+            pub_key,
+            proxy_endpoint,
+            DEFAULT_PROXYING_PERSISTENT_KEEPALIVE,
+            allowed_ips,
+        )]);
+        f.then_notify_failed_wg_connection(vec![pub_key]);
+        f.then_keeper_remove_node(vec![pub_key]);
+
+        f.consolidate_peers().await;
+    }
+
+    #[tokio::test]
+    async fn when_direct_connection_becomes_stable() {
+        let mut f = Fixture::new();
+
+        let pub_key = SecretKey::gen().public();
+        let ip1 = IpAddr::from([1, 2, 3, 4]);
+        let allowed_ips = vec![ip1];
+        let mapped_port = 12;
+        let wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
+
+        f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
+        f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
+        f.when_current_peers(vec![(
+            pub_key,
+            wg_endpoint,
+            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE,
+            allowed_ips.clone(),
+        )]);
+        f.when_time_since_last_rx(vec![(pub_key, 5)]);
+        f.when_time_since_last_endpoint_change(vec![(pub_key, DEFAULT_PEER_UPGRADE_WINDOW)]);
+        f.when_cross_check_validated_endpoints(vec![]);
+        f.when_upgrade_requests(vec![]);
+
+        f.then_notify_successfull_wg_connection_upgrade(vec![pub_key]);
+
+        f.consolidate_peers().await;
+    }
+}

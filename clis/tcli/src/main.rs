@@ -5,6 +5,7 @@ mod derp;
 mod nord;
 
 use clap::Parser;
+use dirs::home_dir;
 use regex::Regex;
 use std::io::Write;
 use telio_model::{api_config::Features, event::Event as DevEvent};
@@ -21,12 +22,14 @@ struct Args {
 fn main() {
     let args = Args::parse();
 
+    let token = std::env::var("NORD_TOKEN").ok();
+
     let features: Features = args
         .features
         .map(|s| serde_json::from_str(&s).expect("Invalid json"))
         .unwrap_or_default();
 
-    let mut cli = cli::Cli::new(features);
+    let mut cli = cli::Cli::new(features, token);
     let mut stdout = std::io::stdout();
 
     let less_spam = args.less_spam;
@@ -36,17 +39,23 @@ fn main() {
         println!("write 'help' to see all comands.\n");
     }
 
-    let r = std::io::stdin();
-    let mut cmd = String::new();
+    let config = rustyline::config::Builder::new()
+        .auto_add_history(true)
+        .build();
+    let mut rl = rustyline::DefaultEditor::with_config(config).unwrap();
+
+    let history_file_path = home_dir().map(|hp| hp.join(".tcli_history.txt"));
+    if let Some(path) = history_file_path.as_ref() {
+        let _ = rl.load_history(path).is_err();
+    } else {
+        println!("Home directory could not be found - the history won't be loaded and saved.\n");
+    }
+
+    let prompt = if less_spam { "" } else { ">>> " };
+
     loop {
-        cmd.clear();
-        if !less_spam {
-            print!(">>> ");
-        }
         stdout.flush().unwrap();
-        if r.read_line(&mut cmd).is_err() {
-            return;
-        }
+        let mut cmd = rl.readline(prompt).unwrap_or("quit".to_string());
 
         let mut message_idx: Option<&str> = None;
         let re = Regex::new(r"^MESSAGE_ID=(\d+) (.*)").unwrap();
@@ -88,6 +97,13 @@ fn main() {
                     if message_idx.is_some() {
                         println!("MESSAGE_DONE={}", message_idx.unwrap());
                     }
+
+                    if let Some(path) = history_file_path.as_ref() {
+                        if let Err(err) = rl.save_history(path) {
+                            println!("TCLI history could not be saved: {}", err);
+                        }
+                    }
+
                     return;
                 }
             }

@@ -24,7 +24,7 @@ use telio_utils::{
     telio_err_with_log, telio_log_debug, telio_log_error, telio_log_info, telio_log_trace,
     telio_log_warn,
 };
-use tokio::time::sleep;
+use tokio::{task::JoinHandle, time::sleep};
 
 use crypto_box::{
     aead::{Aead, AeadCore, Error, Nonce, Payload},
@@ -65,7 +65,7 @@ struct State {
     /// Channel, that communicates with upper multiplexer module
     channel: Chan<(PublicKey, Packet)>,
     /// Derp configuration
-    config: Config,
+    config: Option<Config>,
     /// Connection object
     conn: Option<DerpConnection>,
     /// Event Tx
@@ -76,6 +76,8 @@ struct State {
     rng: StdRng,
     /// Used to get external sockets
     socket_pool: Arc<SocketPool>,
+
+    connecting: Option<JoinHandle<(Server, DerpConnection)>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -143,19 +145,77 @@ impl Default for Config {
 
 impl State {
     async fn disconnect(&mut self) {
+        // Stop attenpts to connect
+        if let Some(c) = self.connecting.take() {
+            c.abort();
+        }
         // Stop current connection
-        if let Some(c) = &self.conn {
+        if let Some(c) = self.conn.take() {
             c.stop();
         }
-
-        // This will start new connect cycle
-        self.conn = None;
-        if let Some(mut server) = self.server.clone() {
+        // kill server
+        if let Some(mut server) = self.server.take() {
+            telio_log_debug!("({}) Disconnected from DERP server!", Self::NAME);
             server.conn_state = RelayState::Disconnected;
             let _ = self.event.send(Box::new(server));
         }
         self.server = None;
-        telio_log_debug!("({}) Disconnected from DERP server!", Self::NAME);
+    }
+
+    fn start_connecting(&self, mut config: Config) -> JoinHandle<(Server, DerpConnection)> {
+        let event = self.event.clone();
+        let socket_pool = self.socket_pool.clone();
+
+        let connection = async move {
+            let mut sleep_time = 1f64;
+            loop {
+                let mut server = match config.get_server() {
+                    Some(server) => {
+                        telio_log_debug!(
+                            "({}) Trying to connect to DERP server: {}",
+                            Self::NAME,
+                            &server.get_address()
+                        );
+                        server
+                    }
+                    None => {
+                        telio_log_info!(
+                            "({}) Server list exhausted sleeping for: {}",
+                            Self::NAME,
+                            sleep_time
+                        );
+                        config.reset();
+                        sleep(Duration::from_secs_f64(sleep_time)).await;
+                        sleep_time = (sleep_time * 2f64).min(60f64);
+                        continue;
+                    }
+                };
+
+                server.conn_state = RelayState::Connecting;
+                let _ = event.send(Box::new(server.clone()));
+
+                // Try to establish connection
+                match connect_http_and_start(
+                    socket_pool.clone(),
+                    &server.get_address(),
+                    SocketAddr::new(IpAddr::V4(server.ipv4), server.relay_port),
+                    config.clone(),
+                )
+                .await
+                {
+                    Ok(conn) => {
+                        telio_log_info!("({}) Connected to {}", Self::NAME, server.get_address());
+                        server.conn_state = RelayState::Connected;
+                        break (server, conn);
+                    }
+                    Err(err) => {
+                        telio_log_warn!("({}) Failed to connect: {}", Self::NAME, err);
+                        continue;
+                    }
+                }
+            }
+        };
+        tokio::spawn(connection)
     }
 }
 
@@ -217,30 +277,27 @@ impl DerpRelay {
     pub fn start_with(
         channel: Chan<(PublicKey, Packet)>,
         socket_pool: Arc<SocketPool>,
-        config: Config,
         event: Tx<Box<Server>>,
     ) -> Self {
-        let mut config = config;
-        config.reset();
-
         // generate random number used to encrypt control messages
         let rng = StdRng::from_entropy();
 
         Self {
             task: Task::start(State {
                 channel,
-                config,
+                config: None,
                 conn: None,
                 event,
                 server: None,
                 rng,
                 socket_pool,
+                connecting: None,
             }),
         }
     }
 
     /// Change DERP config
-    pub async fn set_config(&self, config: Config) {
+    pub async fn configure(&self, config: Option<Config>) {
         let _ = task_exec!(&self.task, async move |s| {
             if s.config == config {
                 // Nothing todo here
@@ -250,20 +307,29 @@ impl DerpRelay {
             s.config = config;
 
             // Prepare new config
-            s.config.reset();
+            if let Some(config) = s.config.as_mut() {
+                config.reset();
 
-            // Restart connection
-            match s.server.as_ref() {
-                Some(server) => {
-                    // Current server not found in new config
-                    if !s.config.servers.contains(server) {
+                // TODO: This logic should most likely linked with wg_stun_controll
+                // Restart connection
+                match s.server.as_ref() {
+                    Some(server) => {
+                        // Current server not found in new config or server no config
+                        if !config.servers.contains(server) {
+                            telio_log_info!("Currently active server is no longer available in config - reconnecting.");
+                            s.disconnect().await;
+                        }
+                    }
+                    None => {
+                        // Disconnect and start from the top of the list
+                        telio_log_info!("No active relay server. Reconnecting.");
                         s.disconnect().await;
                     }
                 }
-                None => {
-                    // Disconnect and start from the top of the list
-                    s.disconnect().await;
-                }
+            } else {
+                // No config diconnect
+                telio_log_info!("Config disabled relaying - Disconnecting");
+                s.disconnect().await
             }
 
             Ok(())
@@ -271,10 +337,11 @@ impl DerpRelay {
         .await;
     }
 
-    pub async fn get_config(&self) -> Config {
-        task_exec!(&self.task, async move |s| Ok(s.config.clone()))
+    pub async fn get_config(&self) -> Option<Config> {
+        task_exec!(&self.task, async move |s| Ok(s.config.as_ref().cloned()))
             .await
-            .unwrap_or_default()
+            .ok()
+            .flatten()
     }
 
     /// Get current connection state (connected/diconnected)
@@ -295,6 +362,7 @@ impl DerpRelay {
     /// Try reconnect
     pub async fn reconnect(&self) {
         let _ = task_exec!(&self.task, async move |s| {
+            telio_log_info!("Explicit relay reconnect requested");
             s.disconnect().await;
             Ok(())
         })
@@ -369,7 +437,7 @@ impl DerpRelay {
     /// public_key : foreign public key
     /// secret_key : node private key
     /// data       : received encrypted message
-    ///   
+    ///
     /// return the plain text
 
     fn decrypt_if_needed(
@@ -442,8 +510,24 @@ impl Runtime for State {
     where
         F: Future<Output = BoxAction<Self, Result<(), Self::Err>>> + Send,
     {
+        // Only react to updates without config
+        let event = &self.event;
+        let socket_pool = &self.socket_pool;
+        let mut config = match self.config.as_mut() {
+            Some(c) => c,
+            None => {
+                telio_log_info!("Disconnecting from DERP server due to empty config");
+                self.disconnect().await;
+                return (update.await)(self).await;
+            }
+        };
+
         match &mut self.conn {
             Some(c) => {
+                if let Some(connecting) = self.connecting.take() {
+                    connecting.abort();
+                }
+
                 let upper_read = self.channel.rx.recv();
                 let derp_read = c.comms.rx.recv();
                 let conn_join = select_all([&mut c.join_sender, &mut c.join_receiver]);
@@ -451,6 +535,7 @@ impl Runtime for State {
                 tokio::select! {
                     // Connection returned, reconnect
                     (_, _, _) = conn_join => {
+                        telio_log_info!("Disconnecting from DERP server, due to transmission tasks error");
                         self.disconnect().await;
                         Ok(())
                     },
@@ -461,7 +546,7 @@ impl Runtime for State {
                             telio_log_trace!("({}) Tx --> DERP, pubkey: {:?}, packet type: {:?}", Self::NAME, pk, msg.packet_type());
                             match msg.encode() {
                                 Ok(buf) => {
-                                    match DerpRelay::encrypt_if_needed(self.config.secret_key, pk, &mut self.rng, &buf) {
+                                    match DerpRelay::encrypt_if_needed(config.secret_key, pk, &mut self.rng, &buf) {
                                         Ok(cipher_text) => {
                                             let _ = permit.send((pk, cipher_text));
                                         },
@@ -477,20 +562,21 @@ impl Runtime for State {
                             Ok(())
                         }
                         Some((_, None)) => {
-                            telio_log_debug!("({}) Tx --> Derp closed", Self::NAME);
+                            telio_log_debug!("Disconnecting from DERP server due to closed rx channel");
                             self.disconnect().await;
                             Ok(())
                         }
                         // If forwarding fails, disconnect
                         None => {
+                            telio_log_info!("Disconnecting from DERP server");
                             self.disconnect().await;
                             Ok(())
                         }
                     },
                     // Received payload from DERP stream, forward it to upper relay
                     Some((permit, Some((pk, buf)))) = wait_for_tx(&self.channel.tx, derp_read) => {
-                        if self.config.allowed_pk.contains(&pk) {
-                            match DerpRelay::decrypt_if_needed(self.config.secret_key,pk, &buf){
+                        if config.allowed_pk.contains(&pk) {
+                            match DerpRelay::decrypt_if_needed(config.secret_key,pk, &buf){
                                 Ok(plain_text)=>{
                                     match Packet::decode(&plain_text) {
                                         Ok(msg) => {
@@ -518,71 +604,33 @@ impl Runtime for State {
                 }
             }
             None => {
-                let connection = async {
-                    let mut sleep_time = 1f64;
-                    loop {
-                        let mut server = match self.config.get_server() {
-                            Some(server) => {
-                                telio_log_debug!(
-                                    "({}) Trying to connect to DERP server: {}",
-                                    Self::NAME,
-                                    &server.get_address()
-                                );
-                                server
-                            }
-                            None => {
-                                telio_log_info!(
-                                    "({}) Server list exhausted sleeping for: {}",
-                                    Self::NAME,
-                                    sleep_time
-                                );
-                                self.config.reset();
-                                sleep(Duration::from_secs_f64(sleep_time)).await;
-                                sleep_time = (sleep_time * 2f64).min(60f64);
-                                continue;
-                            }
-                        };
-
-                        server.conn_state = RelayState::Connecting;
-                        let _ = self.event.send(Box::new(server.clone()));
-
-                        // Try to establish connection
-                        match connect_http_and_start(
-                            self.socket_pool.clone(),
-                            &server.get_address(),
-                            SocketAddr::new(IpAddr::V4(server.ipv4), server.relay_port),
-                            self.config.clone(),
-                        )
-                        .await
-                        {
-                            Ok(conn) => {
-                                telio_log_info!(
-                                    "({}) Connected to {}",
-                                    Self::NAME,
-                                    server.get_address()
-                                );
-                                server.conn_state = RelayState::Connected;
-                                self.server = Some(server);
-                                break conn;
-                            }
-                            Err(err) => {
-                                telio_log_warn!("({}) Failed to connect: {}", Self::NAME, err);
-                                continue;
-                            }
-                        }
-                    }
+                let connecting = if let Some(connecting) = &mut self.connecting {
+                    connecting
+                } else {
+                    let config = config.clone();
+                    let connection = self.start_connecting(config);
+                    self.connecting.insert(connection)
                 };
 
+                tokio::pin!(connecting);
+
                 tokio::select! {
-                    conn = connection => {
-                        self.conn = Some(conn);
-                        if let Some(server) = self.server.clone() {
-                            let _ = self.event.send(Box::new(server));
+                    res = connecting => {
+                        match res {
+                            Ok((server, conn)) => {
+                                self.server = Some(server);
+                                self.conn = Some(conn);
+                                if let Some(server) = self.server.clone() {
+                                    let _ = self.event.send(Box::new(server));
+                                }
+                            }
+                            Err(err) => {
+                                telio_log_warn!("({}) connecting task failed {}", Self::NAME, err)
+                            }
                         }
                     }
                     update = update => update(self).await?,
                 }
-                self.config.reset();
                 Ok(())
             }
         }
@@ -590,6 +638,7 @@ impl Runtime for State {
 
     async fn stop(mut self) {
         // Abort the connection tasks
+        telio_log_info!("Stopping relay");
         self.disconnect().await;
     }
 }
@@ -708,12 +757,9 @@ mod tests {
 
         let (_derp_outter_ch, derp_inner_ch) = Chan::pipe();
 
-        let test_derp = DerpRelay::start_with(
-            derp_inner_ch,
-            Arc::new(SocketPool::default()),
-            config,
-            devent_tx,
-        );
+        let test_derp =
+            DerpRelay::start_with(derp_inner_ch, Arc::new(SocketPool::default()), devent_tx);
+        test_derp.configure(Some(config)).await;
 
         let derp_event = timeout(Duration::from_secs(1), devent_rx.recv())
             .await
@@ -758,12 +804,9 @@ mod tests {
 
         let (_derp_outter_ch, derp_inner_ch) = Chan::pipe();
 
-        let test_derp = DerpRelay::start_with(
-            derp_inner_ch,
-            Arc::new(SocketPool::default()),
-            config,
-            devent_tx,
-        );
+        let test_derp =
+            DerpRelay::start_with(derp_inner_ch, Arc::new(SocketPool::default()), devent_tx);
+        test_derp.configure(Some(config)).await;
 
         let derp_event = timeout(Duration::from_secs(1), devent_rx.recv())
             .await
@@ -797,12 +840,9 @@ mod tests {
 
         let (mut derp_outter_ch, derp_inner_ch) = Chan::pipe();
 
-        let test_derp = DerpRelay::start_with(
-            derp_inner_ch,
-            Arc::new(SocketPool::default()),
-            config,
-            devent_tx,
-        );
+        let test_derp =
+            DerpRelay::start_with(derp_inner_ch, Arc::new(SocketPool::default()), devent_tx);
+        test_derp.configure(Some(config)).await;
 
         let derp_event = await_timeout!(devent_rx.recv()).unwrap();
         assert_eq!(RelayState::Connected, derp_event.conn_state);

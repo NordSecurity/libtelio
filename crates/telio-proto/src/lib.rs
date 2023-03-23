@@ -19,6 +19,5 @@ pub use messages::nurse::Heartbeat_Status as HeartbeatStatus;
 pub use messages::nurse::Heartbeat_Type as HeartbeatType;
 
 pub use messages::natter::CallMeMaybe_Type as CallMeMaybeType;
-pub use messages::pinger::Pinger_Type as PingType;
 
 pub use messages::natter::CallMeMaybeDeprecated_Type as CallMeMaybeDeprecatedType;

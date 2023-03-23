@@ -294,6 +294,7 @@ pub extern "C" fn telio_start(
         dev.start(&DeviceConfig {
             private_key,
             adapter: adapter.into(),
+            fwmark: None,
             name: None,
             tun: None,
         })
@@ -322,6 +323,7 @@ pub extern "C" fn telio_start_named(
         dev.start(&DeviceConfig {
             private_key,
             adapter: adapter.into(),
+            fwmark: None,
             name: Some(name),
             tun: None,
         })
@@ -354,6 +356,7 @@ pub extern "C" fn telio_start_with_tun(
         dev.start(&DeviceConfig {
             private_key,
             adapter: adapter.into(),
+            fwmark: None,
             name: None,
             tun: Some(tun),
         })

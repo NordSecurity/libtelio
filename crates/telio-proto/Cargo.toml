@@ -11,6 +11,8 @@ protobuf = "2"
 strum = { version = "0.24.0", features = ["derive"] }
 thiserror = "1.0"
 
+telio-crypto = { path = "../telio-crypto" }
+
 [build-dependencies]
 protobuf-codegen-pure = "2"
 

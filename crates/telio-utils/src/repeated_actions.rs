@@ -1,4 +1,8 @@
-use std::collections::{hash_map, HashMap};
+use std::{
+    collections::{hash_map, HashMap},
+    hash::Hash,
+    sync::Arc,
+};
 use thiserror::Error as ThisError;
 
 use futures::{
@@ -6,7 +10,7 @@ use futures::{
     stream::{FuturesUnordered, StreamExt},
     FutureExt,
 };
-use tokio::time::{interval, Duration, Interval};
+use tokio::time::{interval, interval_at, Duration, Instant, Interval};
 
 /// Possible [RepeatedAction] errors.
 #[derive(ThisError, Debug)]
@@ -23,22 +27,28 @@ pub enum Error {
 }
 
 /// Single aaction type
-pub type RepeatedAction<V, R> = for<'a> fn(&'a mut V) -> BoxFuture<'a, R>;
-type Action<C, R> = (String, (Interval, RepeatedAction<C, R>));
+pub type RepeatedAction<V, R> = Arc<dyn for<'a> Fn(&'a mut V) -> BoxFuture<'a, R> + Sync + Send>;
+type Action<K, C, R> = (K, (Interval, RepeatedAction<C, R>));
 type Result<T> = std::result::Result<T, Error>;
 
 /// Main struct container, that hold all actions
-pub struct RepeatedActions<C, R> {
-    actions: HashMap<String, (Interval, RepeatedAction<C, R>)>,
+pub struct RepeatedActions<K, C, R> {
+    actions: HashMap<K, (Interval, RepeatedAction<C, R>)>,
 }
 
-impl<C, R> Default for RepeatedActions<C, R> {
+impl<K, C, R> Default for RepeatedActions<K, C, R>
+where
+    K: Eq + Hash + Send + Sync,
+{
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<C, R> RepeatedActions<C, R> {
+impl<K, C, R> RepeatedActions<K, C, R>
+where
+    K: Eq + Hash + Send + Sync,
+{
     /// Container's constructor
     pub fn new() -> Self {
         Self {
@@ -46,14 +56,14 @@ impl<C, R> RepeatedActions<C, R> {
         }
     }
 
-    /// Add single action
+    /// Add single action (first tick is immediate)
     pub fn add_action(
         &mut self,
-        name: String,
+        key: K,
         dur: Duration,
         action: RepeatedAction<C, R>,
     ) -> Result<()> {
-        if let hash_map::Entry::Vacant(e) = self.actions.entry(name) {
+        if let hash_map::Entry::Vacant(e) = self.actions.entry(key) {
             e.insert((interval(dur), action));
             return Ok(());
         }
@@ -61,16 +71,31 @@ impl<C, R> RepeatedActions<C, R> {
         Err(Error::DuplicateRepeatedAction)
     }
 
-    #[allow(dead_code)]
     /// Remove single action
-    pub fn remove_action(&mut self, name: String) -> Result<()> {
+    pub fn remove_action(&mut self, key: &K) -> Result<()> {
         self.actions
-            .remove(&name)
+            .remove(key)
             .map_or_else(|| Err(Error::RepeatedActionNotFound), |_| Ok(()))
     }
 
+    /// Update interval (first tick is now() + dur)
+    pub fn update_interval(&mut self, key: &K, dur: Duration) -> Result<()> {
+        self.actions.get_mut(key).map_or_else(
+            || Err(Error::RepeatedActionNotFound),
+            |a| {
+                a.0 = interval_at(Instant::now() + dur, dur);
+                Ok(())
+            },
+        )
+    }
+
+    /// Check if it contains action
+    pub fn contains_action(&mut self, key: &K) -> bool {
+        self.actions.contains_key(key)
+    }
+
     /// Returns future (action), that will soon 'tick()'
-    pub async fn select_action(&mut self) -> Result<(String, RepeatedAction<C, R>)> {
+    pub async fn select_action(&mut self) -> Result<(&K, RepeatedAction<C, R>)> {
         if self.actions.is_empty() {
             return Err(Error::ListEmpty);
         }
@@ -79,25 +104,27 @@ impl<C, R> RepeatedActions<C, R> {
         let a = self
             .actions
             .iter_mut()
-            .map(|(name, (interval, action))| (name, interval.tick(), action));
+            .map(|(key, (interval, action))| (key, interval.tick(), action));
 
-        // Transform futures to `Output = (name, action)`
-        #[allow(clippy::type_complexity)]
+        // Transform futures to `Output = (key, action)`
         let mut b: FuturesUnordered<_> = a
-            .map(|(name, interval, action)| interval.map(move |_| (name.clone(), action)).boxed())
+            .map(|(key, interval, action)| interval.map(move |_| (key, action)).boxed())
             .into_iter()
             .collect();
 
         b.next()
             .await
             .ok_or(Error::RepeatedActionNotFound)
-            .map(|(s, f)| (s, *f))
+            .map(|(s, f)| (s, f.clone()))
     }
 }
 
-impl<C, R, const N: usize> From<[Action<C, R>; N]> for RepeatedActions<C, R> {
-    fn from(arr: [Action<C, R>; N]) -> Self {
-        RepeatedActions::<C, R> {
+impl<K, C, R, const N: usize> From<[Action<K, C, R>; N]> for RepeatedActions<K, C, R>
+where
+    K: Eq + Hash + Send + Sync,
+{
+    fn from(arr: [Action<K, C, R>; N]) -> Self {
+        RepeatedActions::<K, C, R> {
             actions: HashMap::from(arr),
         }
     }
@@ -106,36 +133,20 @@ impl<C, R, const N: usize> From<[Action<C, R>; N]> for RepeatedActions<C, R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Instant;
+    use telio_test::assert_elapsed;
     use tokio::time;
 
     type Result = std::result::Result<(), ()>;
 
-    /// Calculates elapsed time with defined rounding
-    macro_rules! assert_elapsed {
-        ($start:expr, $dur:expr, $round:expr) => {{
-            let elapsed = $start.elapsed();
-            let lower: std::time::Duration = $dur;
-            let round: std::time::Duration = $round;
-
-            assert!(
-                elapsed >= lower - round && elapsed <= lower + round,
-                "actual = {:?}, expected = {:?}",
-                elapsed,
-                lower,
-            );
-        }};
-    }
-
     pub struct Context {
-        actions: RepeatedActions<Self, Result>,
+        actions: RepeatedActions<String, Self, Result>,
         test: String,
     }
 
     impl Context {
         pub fn new(test: String) -> Self {
             Self {
-                actions: RepeatedActions::<Self, Result>::new(),
+                actions: RepeatedActions::<String, Self, Result>::new(),
                 test,
             }
         }
@@ -146,8 +157,7 @@ mod tests {
             Ok(())
         }
 
-        pub async fn change(&mut self, delay: Duration, str: String) -> Result {
-            time::sleep(delay).await;
+        pub async fn change(&mut self, str: String) -> Result {
             self.test = str;
             Ok(())
         }
@@ -159,86 +169,161 @@ mod tests {
 
         let _ = ctx
             .actions
-            .add_action("action_0".to_owned(), Duration::from_secs(1), |s| {
-                Box::pin(async move { s.print(Duration::from_millis(100)).await })
-            })
+            .add_action(
+                "action_0".to_owned(),
+                Duration::from_secs(1),
+                Arc::new(|s: _| Box::pin(async move { s.print(Duration::from_millis(100)).await })),
+            )
             .unwrap();
 
-        let dup = ctx
-            .actions
-            .add_action("action_0".to_owned(), Duration::from_secs(1), |s| {
-                Box::pin(async move { s.print(Duration::from_millis(100)).await })
-            });
+        let dup = ctx.actions.add_action(
+            "action_0".to_owned(),
+            Duration::from_secs(1),
+            Arc::new(|s: _| Box::pin(async move { s.print(Duration::from_millis(100)).await })),
+        );
 
         assert!(dup.is_err());
+        assert!(ctx.actions.contains_action(&"action_0".to_owned()));
 
-        let remove = ctx.actions.remove_action("action_0".to_owned());
+        let remove = ctx.actions.remove_action(&"action_0".to_owned());
 
         assert!(remove.is_ok());
+        assert!(!ctx.actions.contains_action(&"action_0".to_owned()));
     }
 
-    #[tokio::test]
-    #[ignore = "flaky test (time measure)"]
+    #[tokio::test(start_paused = true)]
     async fn execute_actions() {
         let mut ctx = Context::new("test".to_owned());
 
         ctx.actions
-            .add_action("action_0".to_owned(), Duration::from_millis(100), |s| {
-                Box::pin(async move {
-                    s.change(Duration::from_millis(1), "change_0".to_owned())
-                        .await
-                })
-            })
+            .add_action(
+                "action_0".to_owned(),
+                Duration::from_millis(100),
+                Arc::new(|s: _| Box::pin(async move { s.change("change_0".to_owned()).await })),
+            )
             .unwrap();
 
         ctx.actions
-            .add_action("action_1".to_owned(), Duration::from_millis(150), |s| {
-                Box::pin(async move {
-                    s.change(Duration::from_millis(1), "change_1".to_owned())
-                        .await
-                })
-            })
+            .add_action(
+                "action_1".to_owned(),
+                Duration::from_millis(150),
+                Arc::new(|s: _| Box::pin(async move { s.change("change_1".to_owned()).await })),
+            )
             .unwrap();
 
         let mut cnt = 0;
+
         // Start positions with some error tollerance
-        let mut start_0 = Instant::now();
-        let mut start_1 = Instant::now();
+        let mut start_0 = time::Instant::now();
+        let mut start_1 = time::Instant::now();
 
         // First ticks immediatelly
         let _ = ctx.actions.select_action().await.unwrap();
         let _ = ctx.actions.select_action().await.unwrap();
 
-        loop {
-            let (name, action) = ctx.actions.select_action().await.unwrap();
-            let _ = action(&mut ctx).await;
+        let _ = tokio::spawn(async move {
+            loop {
+                if cnt == 0 {
+                    time::advance(Duration::from_millis(100)).await;
+                }
 
-            if cnt % 2 == 0 {
-                assert_eq!(ctx.test, "change_0".to_owned());
-                assert_eq!(name, "action_0".to_owned());
-                assert_elapsed!(
-                    start_0,
-                    Duration::from_millis(100),
-                    Duration::from_millis(10)
-                );
-                start_0 = Instant::now();
-            } else {
-                assert_eq!(ctx.test, "change_1".to_owned());
-                assert_eq!(name, "action_1".to_owned());
-                assert_elapsed!(
-                    start_1,
-                    Duration::from_millis(150),
-                    Duration::from_millis(10)
-                );
-                start_1 = Instant::now();
+                let (key, action) = ctx.actions.select_action().await.unwrap();
+                let key = key.clone();
+                let _ = action(&mut ctx).await;
+
+                if cnt % 2 == 0 {
+                    assert_eq!(ctx.test, "change_0".to_owned());
+                    assert_eq!(*key, "action_0".to_owned());
+                    assert_elapsed!(
+                        start_0,
+                        Duration::from_millis(100),
+                        Duration::from_millis(10)
+                    );
+                    start_0 = time::Instant::now();
+                    time::advance(Duration::from_millis(50)).await;
+                } else {
+                    assert_eq!(ctx.test, "change_1".to_owned());
+                    assert_eq!(*key, "action_1".to_owned());
+                    assert_elapsed!(
+                        start_1,
+                        Duration::from_millis(150),
+                        Duration::from_millis(10)
+                    );
+                    start_1 = time::Instant::now();
+                    time::advance(Duration::from_millis(50)).await;
+                }
+
+                cnt += 1;
+
+                // We'll test just 4 iterations
+                if cnt > 3 {
+                    break;
+                }
             }
+        })
+        .await
+        .unwrap();
+    }
 
-            cnt += 1;
+    #[tokio::test(start_paused = true)]
+    async fn update_action_interval() {
+        let mut ctx = Context::new("test".to_owned());
 
-            // We'll test just 4 iterations
-            if cnt > 3 {
-                break;
+        ctx.actions
+            .add_action(
+                "action_0".to_owned(),
+                Duration::from_millis(100),
+                Arc::new(|s: _| Box::pin(async move { s.change("change_0".to_owned()).await })),
+            )
+            .unwrap();
+
+        let mut cnt = 0;
+        // Start positions with some error tollerance
+        let mut start_0 = time::Instant::now();
+
+        // First ticks immediatelly
+        let _ = ctx.actions.select_action().await.unwrap();
+
+        let _ = tokio::spawn(async move {
+            loop {
+                if cnt == 0 {
+                    time::advance(Duration::from_millis(100)).await;
+                }
+
+                let (key, action) = ctx.actions.select_action().await.unwrap();
+                let key = key.clone();
+                let _ = action(&mut ctx).await;
+
+                if cnt == 0 {
+                    assert_eq!(ctx.test, "change_0".to_owned());
+                    assert_eq!(*key, "action_0".to_owned());
+                    assert_elapsed!(
+                        start_0,
+                        Duration::from_millis(100),
+                        Duration::from_millis(10)
+                    );
+
+                    ctx.actions
+                        .update_interval(&key, Duration::from_millis(200))
+                        .unwrap();
+
+                    start_0 = time::Instant::now();
+                    time::advance(Duration::from_millis(200)).await;
+                } else {
+                    assert_eq!(*key, "action_0".to_owned());
+                    assert_elapsed!(
+                        start_0,
+                        Duration::from_millis(200),
+                        Duration::from_millis(10)
+                    );
+
+                    break;
+                }
+
+                cnt += 1;
             }
-        }
+        })
+        .await
+        .unwrap();
     }
 }

@@ -9,6 +9,12 @@
 ### Changelog
 * LLT-2893: Expose ffi version and tag
 
+### v3.4.2
+### **Pastel de nata**
+---
+### Changelog
+* Remove log_nat to avoid race in DerpRelay
+
 <br>
 
 ### v3.4.1

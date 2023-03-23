@@ -41,7 +41,8 @@ pub struct DnsConfig {
 
 /// Rust representation of [meshnet map]
 /// A network map of all the Peers and the servers
-#[derive(Clone, Debug, PartialEq, Deserialize)]
+/// [meshnet map]: https://docs.nordvpn.com/client-api/#get-map
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 pub struct Config {
     #[serde(flatten)]
     /// Description of the local peer

@@ -25,6 +25,7 @@ fn main() -> Result<()> {
             "protos/nurse.proto",
             "protos/natter.proto",
             "protos/pinger.proto",
+            "protos/upgrade.proto",
         ])
         .out_dir(out_dir)
         .run()

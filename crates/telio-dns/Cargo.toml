@@ -21,6 +21,7 @@ lazy_static = "1.4.0"
 log = {version = "0.4.14", features = ["release_max_level_info"]}
 libc = "0.2.99"
 ipnetwork = "0.18"
+mockall = { version = "0.11.3", optional = true }
 
 telio-crypto = { path = "../telio-crypto" }
 telio-utils = { path = "../telio-utils" }
@@ -29,3 +30,4 @@ telio-model = { path = "../telio-model" }
 
 [dev-dependencies]
 dns-parser = "0.8.0"
+mockall = "0.11.3"
