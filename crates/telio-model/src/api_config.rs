@@ -6,7 +6,8 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumCount;
 
-/// Default keepalive period for most kind of peers
+/// Default keepalive period used for proxying peers,
+/// STUN servers and VPN servers
 pub const DEFAULT_PERSISTENT_KEEPALIVE_PERIOD: u32 = 25;
 
 /// Default keepalive period for direct peers
