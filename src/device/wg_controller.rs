@@ -332,6 +332,7 @@ async fn build_requested_peers_list<
     if let Some(wg_stun_server) = &requested_state.wg_stun_server {
         let public_key = wg_stun_server.public_key;
         let endpoint = SocketAddr::new(IpAddr::V4(wg_stun_server.ipv4), wg_stun_server.stun_port);
+        telio_log_debug!("Configuring wg-stun peer: {}, at {}", public_key, endpoint);
         let persistent_keepalive_interval = requested_state.keepalive_periods.stun;
         let allowed_ips = vec![IpNetwork::V4("100.64.0.4/32".parse()?)];
         requested_peers.insert(
@@ -347,6 +348,8 @@ async fn build_requested_peers_list<
                 local_direct_endpoint: None,
             },
         );
+    } else {
+        telio_log_debug!("wg-stun peer not configured");
     }
 
     Ok(requested_peers)

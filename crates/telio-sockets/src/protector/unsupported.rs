@@ -1,4 +1,4 @@
-use std::{io, sync::Mutex};
+use std::io;
 
 use crate::native::NativeSocket;
 
@@ -13,7 +13,7 @@ impl NativeProtector {
 }
 
 impl Protector for NativeProtector {
-    fn make_external(&self, socket: NativeSocket) -> io::Result<()> {
+    fn make_external(&self, _socket: NativeSocket) -> io::Result<()> {
         Ok(())
     }
 

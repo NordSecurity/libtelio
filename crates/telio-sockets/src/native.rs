@@ -9,6 +9,9 @@ pub type NativeSocket = RawFd;
 #[cfg(windows)]
 pub type NativeSocket = RawSocket;
 
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+use std::io;
+
 pub trait AsNativeSocket {
     fn as_native_socket(&self) -> NativeSocket;
 }
@@ -34,16 +37,23 @@ where
 }
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
-pub fn interface_index_from_name(name: &str) -> std::io::Result<u64> {
-    let index = unsafe { libc::if_nametoindex(name.as_ptr() as *const i8) };
-    if index == 0 {
-        return Err(std::io::Error::last_os_error());
+pub fn interface_index_from_name(name: &str) -> io::Result<u64> {
+    use std::ffi::CString;
+
+    match CString::new(name) {
+        Ok(cstr) => {
+            let index = unsafe { libc::if_nametoindex(cstr.as_ptr() as *const i8) };
+            if index == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(index as u64)
+        }
+        Err(_) => Err(io::Error::from(io::ErrorKind::InvalidInput)),
     }
-    Ok(index as u64)
 }
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
-pub fn interface_index_from_tun(tun_fd: RawFd) -> std::io::Result<u64> {
+pub fn interface_index_from_tun(tun_fd: RawFd) -> io::Result<u64> {
     let index = unsafe {
         let mut name = [0 as libc::c_char; libc::IFNAMSIZ + 1];
         let mut len = libc::IFNAMSIZ as libc::socklen_t;
@@ -55,12 +65,12 @@ pub fn interface_index_from_tun(tun_fd: RawFd) -> std::io::Result<u64> {
             &mut len as *mut libc::socklen_t,
         ) != 0
         {
-            return Err(std::io::Error::last_os_error());
+            return Err(io::Error::last_os_error());
         }
         libc::if_nametoindex(name.as_ptr()) as i32
     };
     if index == 0 {
-        return Err(std::io::Error::last_os_error());
+        return Err(io::Error::last_os_error());
     }
     Ok(index as u64)
 }

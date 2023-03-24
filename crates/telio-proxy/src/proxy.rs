@@ -83,7 +83,7 @@ pub struct Config {
 struct StateIngress {
     sockets: SocketMap,
     output: Tx<(PublicKey, DataMsg)>,
-    read_buf: [u8; MAX_PACKET_SIZE],
+    read_buf: Box<[u8; MAX_PACKET_SIZE]>,
 }
 
 struct StateEgress {
@@ -99,7 +99,7 @@ impl UdpProxy {
             task_ingress: Task::start(StateIngress {
                 sockets: HashMap::new(),
                 output: io.relay.tx,
-                read_buf: [0u8; MAX_PACKET_SIZE],
+                read_buf: Box::new([0u8; MAX_PACKET_SIZE]),
             }),
             task_egress: Task::start(StateEgress {
                 sockets: HashMap::new(),
@@ -229,7 +229,7 @@ impl Runtime for StateIngress {
         if let Some((permit, ((pk, socket), _, _))) =
             wait_for_tx(&self.output, select_all(futures)).await
         {
-            if let Ok(n) = socket.try_recv(&mut self.read_buf) {
+            if let Ok(n) = socket.try_recv(self.read_buf.as_mut_slice()) {
                 let msg = DataMsg::new(&self.read_buf[..n]);
                 let _ = permit.send((pk, msg));
             }
