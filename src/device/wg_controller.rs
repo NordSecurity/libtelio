@@ -1538,4 +1538,50 @@ mod tests {
 
         f.consolidate_peers().await;
     }
+
+    #[tokio::test]
+    async fn when_connection_timeout_changed_during_upgrade() {
+        let mut f = Fixture::new();
+
+        let pub_key = SecretKey::gen().public();
+        let ip1 = IpAddr::from([1, 2, 3, 4]);
+        let ip2 = IpAddr::from([5, 6, 7, 8]);
+        let allowed_ips = vec![ip1, ip2];
+        let remote_wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
+        let local_wg_endpoint = SocketAddr::from(([192, 168, 0, 2], 15));
+        let mapped_port = 12;
+        let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
+
+        f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
+        f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
+        f.when_current_peers(vec![(
+            pub_key,
+            proxy_endpoint,
+            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
+            allowed_ips.clone(),
+        )]);
+        f.when_time_since_last_rx(vec![(pub_key, 20)]);
+        f.when_time_since_last_endpoint_change(vec![(pub_key, 100)]);
+        f.when_cross_check_validated_endpoints(vec![(
+            pub_key,
+            remote_wg_endpoint,
+            local_wg_endpoint,
+        )]);
+        f.when_upgrade_requests(vec![(pub_key, remote_wg_endpoint, Instant::now())]);
+
+        f.then_add_peer(vec![(
+            pub_key,
+            remote_wg_endpoint,
+            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
+            allowed_ips.into_iter().map(|ip| ip.into()).collect(),
+        )]);
+
+        f.then_keeper_add_node(vec![(
+            pub_key,
+            ip1,
+            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
+        )]);
+
+        f.consolidate_peers().await;
+    }
 }
