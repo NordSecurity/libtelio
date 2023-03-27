@@ -55,17 +55,18 @@
 mod conf;
 mod metrics;
 
-use anyhow::Result;
+use anyhow::{anyhow, bail, Context, Result};
 use lazy_static::lazy_static;
+use parking_lot::Mutex;
 use prometheus::{Encoder, TextEncoder};
 use std::{
-    io::{self, Error, Write},
+    io::{self, Write},
     net::SocketAddr,
     path::{Path, PathBuf},
     process,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        Arc,
     },
     time::Duration,
 };
@@ -82,11 +83,11 @@ lazy_static! {
     static ref METRICS: Mutex<metrics::Metrics> = Mutex::new(metrics::Metrics::new());
 }
 
-async fn resolve_domain_name(domain: &str, verbose: u64) -> Result<Vec<SocketAddr>, Error> {
-    let url = Url::parse(domain).unwrap();
+async fn resolve_domain_name(domain: &str, verbose: u64) -> Result<Vec<SocketAddr>> {
+    let url = Url::parse(domain)?;
     let hostname = match url.host() {
         None => {
-            panic!("Failed to parse URL domain: {}", domain);
+            bail!("Failed to parse URL domain: {}", domain);
         }
         Some(hostname) => match hostname {
             Host::Domain(hostname) => String::from(hostname),
@@ -105,13 +106,10 @@ async fn resolve_domain_name(domain: &str, verbose: u64) -> Result<Vec<SocketAdd
     if verbose >= 1 {
         println!("Resolving {}", hostport);
     }
-    let addrs = lookup_host(hostport)
-        .await
-        .unwrap()
-        .collect::<Vec<SocketAddr>>();
+    let addrs = lookup_host(hostport).await?.collect::<Vec<SocketAddr>>();
 
     if addrs.is_empty() {
-        panic!("Failed to resolve domain: {}", domain);
+        bail!("Failed to resolve domain: {}", domain);
     }
 
     Ok(addrs)
@@ -124,7 +122,7 @@ async fn connect_client(
     verbosity: u64,
     addrs: Vec<SocketAddr>,
     ca_pem_path: PathBuf,
-) {
+) -> Result<()> {
     let verbose = verbosity >= 1;
     let DerpConnection { mut comms, .. } = match connect_http_and_start(
         pool,
@@ -155,14 +153,11 @@ async fn connect_client(
                 client.private_key.public(),
                 &err
             );
-            return;
+            bail!("{}", err)
         }
     };
 
-    METRICS
-        .lock()
-        .unwrap()
-        .add_client(client.private_key.public());
+    METRICS.lock().add_client(client.private_key.public())?;
 
     let _ = tokio::spawn({
         let client = client.clone();
@@ -192,11 +187,12 @@ async fn connect_client(
                             rc
                         );
                         process::exit(1);
-                    } else {
-                        METRICS
-                            .lock()
-                            .unwrap()
-                            .inc_peer_ping_counter(client.private_key.public(), (*peer).public());
+                    } else if let Err(e) = METRICS
+                        .lock()
+                        .inc_peer_ping_counter(client.private_key.public(), (*peer).public())
+                    {
+                        println!("Failed to increment peer ping counter: {}", e);
+                        return;
                     }
                 }
                 tokio::time::sleep(Duration::from_millis(client.period.into())).await;
@@ -215,7 +211,7 @@ async fn connect_client(
             }
             loop {
                 match comms.rx.recv().await {
-                    Some((public_key, buf)) => match buf.get(0) {
+                    Some((public_key, buf)) => match buf.first() {
                         Some(1) => {
                             if verbose {
                                 println!(
@@ -224,10 +220,13 @@ async fn connect_client(
                                     public_key
                                 );
                             }
-                            METRICS
+                            if let Err(e) = METRICS
                                 .lock()
-                                .unwrap()
-                                .inc_peer_pong_counter(client.private_key.public(), public_key);
+                                .inc_peer_pong_counter(client.private_key.public(), public_key)
+                            {
+                                println!("failed to increment peer pong counter: {}", e);
+                                return;
+                            }
                             continue;
                         }
                         Some(0) => {
@@ -264,15 +263,17 @@ async fn connect_client(
             }
         }
     });
+
+    Ok(())
 }
 
 async fn run_with_clients_config(config: conf::Config) -> Result<()> {
-    config.print_clients();
+    config.print_clients()?;
 
     let clients_config = match config.clients_config {
         Some(conf) => conf,
         None => {
-            panic!("No config provided");
+            bail!("No config provided");
         }
     };
 
@@ -283,7 +284,7 @@ async fn run_with_clients_config(config: conf::Config) -> Result<()> {
     let pool = Arc::new(SocketPool::new(NativeProtector::new()?));
 
     for client in clients_config.clients.iter() {
-        if futs.len() == 0 {
+        if futs.is_empty() {
             addrs = match resolve_domain_name(&client.derp_server, config.verbose).await {
                 Ok(addrs) => addrs,
                 Err(e) => {
@@ -304,7 +305,13 @@ async fn run_with_clients_config(config: conf::Config) -> Result<()> {
             addrs.clone(),
             config.ca_pem_path.clone(),
         ));
-        if futs.len() == 30 || client == clients_config.clients.last().unwrap() {
+        if futs.len() == 30
+            || client
+                == clients_config
+                    .clients
+                    .last()
+                    .ok_or_else(|| anyhow!("no clients"))?
+        {
             client_count += futs.len();
             println!("Adding {} clients", futs.len());
             futures::future::join_all(futs.drain(..futs.len())).await;
@@ -322,10 +329,7 @@ async fn run_with_clients_config(config: conf::Config) -> Result<()> {
 async fn run_without_clients_config(config: conf::Config) -> Result<()> {
     config.print();
 
-    let addrs = match resolve_domain_name(config.get_server_address(), config.verbose).await {
-        Ok(addrs) => addrs,
-        Err(e) => panic!("{}", e),
-    };
+    let addrs = resolve_domain_name(config.get_server_address(), config.verbose).await?;
 
     let DerpConnection { mut comms, .. } = match connect_http_and_start(
         Arc::new(SocketPool::new(NativeProtector::new()?)),
@@ -363,11 +367,15 @@ async fn run_without_clients_config(config: conf::Config) -> Result<()> {
         }
 
         loop {
-            let (public_key, data) = comms.rx.recv().await.unwrap();
+            let (public_key, data) = comms
+                .rx
+                .recv()
+                .await
+                .ok_or_else(|| anyhow!("rx receive failed"))?;
             match config.verbose {
                 v if v == 1 => {
                     print!(".");
-                    io::stdout().flush().unwrap();
+                    io::stdout().flush()?;
                 }
                 v if v > 1 => {
                     println!(
@@ -400,7 +408,7 @@ async fn run_without_clients_config(config: conf::Config) -> Result<()> {
 
             if config.verbose == 1 {
                 print!(".");
-                io::stdout().flush().unwrap();
+                io::stdout().flush()?;
             } else if config.verbose > 2 {
                 println!(
                     "SENDING: [{}] -> [{}] -> [{}]",
@@ -434,7 +442,7 @@ pub async fn metrics_handler() -> Result<impl warp::Reply + Clone, warp::Rejecti
     let encoder = TextEncoder::new();
 
     let mut buffer = Vec::new();
-    let clients = METRICS.lock().unwrap().to_owned().clients;
+    let clients = METRICS.lock().to_owned().clients;
 
     for (_, counters) in clients.iter() {
         let mut tmp_buff = Vec::new();
@@ -479,7 +487,7 @@ async fn main() -> Result<()> {
         ctrlc::set_handler(move || {
             r.store(false, Ordering::SeqCst);
         })
-        .expect("Error setting Ctrl-C handler");
+        .context("Error setting Ctrl-C handler")?;
 
         run_with_clients_config(config).await?;
 
@@ -493,14 +501,10 @@ async fn main() -> Result<()> {
         }
 
         if verbose >= 1 {
-            METRICS.lock().unwrap().to_owned().print_metrics();
+            METRICS.lock().to_owned().print_metrics()?;
         }
 
-        METRICS
-            .lock()
-            .unwrap()
-            .to_owned()
-            .flush_metrics_to_file(log_file);
+        METRICS.lock().to_owned().flush_metrics_to_file(log_file)?;
     } else {
         run_without_clients_config(config).await?;
     }

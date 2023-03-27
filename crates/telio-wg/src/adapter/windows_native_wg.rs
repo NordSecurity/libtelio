@@ -180,9 +180,9 @@ impl WindowsNativeWg {
 #[cfg(windows)]
 #[async_trait::async_trait]
 impl Adapter for WindowsNativeWg {
-    async fn send_uapi_cmd(&self, cmd: &Cmd) -> Response {
+    async fn send_uapi_cmd(&self, cmd: &Cmd) -> Result<Response, AdapterError> {
         match cmd {
-            Get => self.get_config_uapi(),
+            Get => Ok(self.get_config_uapi()),
             Set(set_cfg) => match self.adapter.set_config_uapi(set_cfg) {
                 Ok(()) => {
                     // Remember last successfully set configuration
@@ -192,12 +192,12 @@ impl Adapter for WindowsNativeWg {
                         interface_watcher.set_last_known_configuration(set_cfg);
                     }
 
-                    self.get_config_uapi()
+                    Ok(self.get_config_uapi())
                 }
-                Err(_err) => Response {
+                Err(_err) => Ok(Response {
                     errno: 1,
                     interface: None,
-                },
+                }),
             },
         }
     }

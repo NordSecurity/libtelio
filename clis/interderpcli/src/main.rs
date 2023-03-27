@@ -61,10 +61,10 @@ impl Config {
 
 #[allow(unwrap_check)]
 async fn resolve_domain_name(domain: &str) -> Result<Vec<SocketAddr>> {
-    let url = Url::parse(domain).unwrap();
+    let url = Url::parse(domain)?;
     let hostname = match url.host() {
         None => {
-            panic!("Failed to parse URL domain: {}", domain);
+            return Err(anyhow!("Failed to parse URL domain: {}", domain));
         }
         Some(hostname) => match hostname {
             Host::Domain(hostname) => String::from(hostname),
@@ -81,12 +81,9 @@ async fn resolve_domain_name(domain: &str) -> Result<Vec<SocketAddr>> {
     };
     let hostport = format!("{}:{}", hostname, port);
     log::debug!("Resolving {}", hostname);
-    let addrs = lookup_host(hostport)
-        .await
-        .unwrap()
-        .collect::<Vec<SocketAddr>>();
+    let addrs = lookup_host(hostport).await?.collect::<Vec<SocketAddr>>();
 
-    if addrs.len() <= 0 {
+    if addrs.is_empty() {
         return Err(anyhow!(format!("Empty response for domain {}", hostname)));
     }
 
@@ -156,7 +153,7 @@ async fn ping_each_other(
                 .rx
                 .recv()
                 .await
-                .ok_or(anyhow!("Receiving channel closed (auth problems?)"))?;
+                .ok_or_else(|| anyhow!("Receiving channel closed (auth problems?)"))?;
             if rx_msg1 == (key_2.public(), tx_msg2.clone()) {
                 break Ok::<(), anyhow::Error>(());
             }
@@ -172,7 +169,7 @@ async fn ping_each_other(
                 .rx
                 .recv()
                 .await
-                .ok_or(anyhow!("Receiving channel closed (auth problems?)"))?;
+                .ok_or_else(|| anyhow!("Receiving channel closed (auth problems?)"))?;
             if rx_msg2 == (key_1.public(), tx_msg1.clone()) {
                 break Ok::<(), anyhow::Error>(());
             }
@@ -213,9 +210,9 @@ async fn test_pair(
 // Executable tool, panics should be transformed into human readable errors, (expect or anyhow)
 #[tokio::main]
 #[allow(unwrap_check)]
-async fn main() {
+async fn main() -> Result<()> {
     // parse command line params and create config struct
-    let (config, verbose) = Config::new().expect("Invalid CLI arguments");
+    let (config, verbose) = Config::new().context("Invalid CLI arguments")?;
     env_logger::init(); // remove?
 
     println!("Derp connection tester starting");
@@ -223,9 +220,9 @@ async fn main() {
     for pair in config.servers.iter().combinations_with_replacement(2) {
         match test_pair(
             pair[0].clone(),
-            config.private_key_1.clone(),
+            config.private_key_1,
             pair[1].clone(),
-            config.private_key_2.clone(),
+            config.private_key_2,
         )
         .await
         {
@@ -238,10 +235,14 @@ async fn main() {
                         "❌ {:?} <-> {:?}. Error: {:?}",
                         pair[0],
                         pair[1],
-                        e.to_string().lines().next().unwrap()
+                        e.to_string()
+                            .lines()
+                            .next()
+                            .ok_or_else(|| anyhow!("empty error"))?
                     );
                 }
             }
         }
     }
+    Ok(())
 }

@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Context};
 use clap::{Arg, Command};
 use crypto_box::PublicKey as BoxPublicKey;
 use serde::{Deserialize, Serialize};
@@ -8,7 +9,7 @@ use std::{
 };
 use telio_crypto::{SecretKey, KEY_SIZE};
 
-#[derive(Debug, Default, PartialEq, Deserialize, Serialize, Clone)]
+#[derive(Debug, Default, PartialEq, Eq, Deserialize, Serialize, Clone)]
 pub struct ClientConfig {
     pub private_key: SecretKey,
     pub derp_server: String,
@@ -16,7 +17,7 @@ pub struct ClientConfig {
     pub period: u32,
 }
 
-#[derive(Debug, Default, PartialEq, Deserialize, Serialize, Clone)]
+#[derive(Debug, Default, PartialEq, Eq, Deserialize, Serialize, Clone)]
 pub struct Clients {
     pub clients: Vec<ClientConfig>,
 }
@@ -96,17 +97,17 @@ impl Config {
         println!("PubKey1/e64 {}", self.get_pub_key1_b64());
         println!("PubKey2/e64 {}", self.get_pub_key2_b64());
     }
+
     #[allow(unwrap_check)]
-    pub fn print_clients(&self) {
+    pub fn print_clients(&self) -> anyhow::Result<()> {
         if let Some(config) = &self.clients_config {
-            println!(
-                "Clients config:\n{}",
-                serde_json::to_string_pretty(config).unwrap()
-            );
+            println!("Clients config:\n{}", serde_json::to_string_pretty(config)?);
         }
+
+        Ok(())
     }
 
-    pub fn new() -> Result<Self, String> {
+    pub fn new() -> anyhow::Result<Self> {
         // initialize command line params parser
         let matches = Command::new("DERP cli")
             .about("Command line utility to perform DERP tests")
@@ -253,24 +254,13 @@ impl Config {
             .unwrap_or_default()
             .to_string();
         let config_path = matches.value_of("config").unwrap_or_default().to_string();
-        let clients_config: Option<Clients> = if config_path != "" {
-            match fs::File::open(config_path) {
-                Ok(file) => {
-                    let conf = match serde_json::from_reader(file) {
-                        Ok(conf) => Some(conf),
-                        Err(e) => {
-                            return Err(String::from(format!(
-                                "Error reading config file -> {}",
-                                e
-                            )));
-                        }
-                    };
-                    conf
-                }
-                Err(e) => {
-                    return Err(String::from(format!("Error reading config file -> {}", e)));
-                }
-            }
+        let clients_config: Option<Clients> = if !config_path.is_empty() {
+            Some(
+                fs::File::open(&config_path)
+                    .map(serde_json::from_reader)
+                    .with_context(|| format!("failed to open '{}'", config_path))?
+                    .with_context(|| format!("failed to parse as json '{}'", config_path))?,
+            )
         } else {
             None
         };
@@ -286,7 +276,7 @@ impl Config {
         if mykey_str.chars().count() > 0 {
             let mykey_bytes = base64::decode(mykey_str).unwrap_or_default();
             if mykey_bytes.len() != 32 {
-                return Err(String::from(
+                return Err(anyhow!(
                     "My private key size must be 32 bytes encoded into base64!",
                 ));
             }
@@ -296,7 +286,7 @@ impl Config {
         if targetkey_str.chars().count() > 0 {
             let tkey_bytes = base64::decode(targetkey_str).unwrap_or_default();
             if tkey_bytes.len() != 32 {
-                return Err(String::from(
+                return Err(anyhow!(
                     "Target private key size must be 32 bytes encoded into base64!",
                 ));
             }

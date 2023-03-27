@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use boringtun::crypto::x25519::{X25519PublicKey, X25519SecretKey};
 use boringtun::noise::Tunn;
 use ipnetwork::IpNetwork;
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::{net::SocketAddr, sync::Arc};
 use telio_crypto::{PublicKey, SecretKey};
 use telio_wg::uapi::Peer;
@@ -145,7 +145,6 @@ impl DnsResolver for LocalDnsResolver {
         self.secret_key.public()
     }
 
-    #[allow(unwrap_check)]
     fn get_peer(&self, allowed_ips: Vec<IpNetwork>) -> Peer {
         Peer {
             public_key: self.public_key(),
@@ -158,21 +157,61 @@ impl DnsResolver for LocalDnsResolver {
         }
     }
 
-    #[allow(unwrap_check)]
     fn get_default_dns_allowed_ips(&self) -> Vec<IpNetwork> {
         vec![
-            "100.64.0.2/32".parse().unwrap(),
-            "100.64.0.3/32".parse().unwrap(),
+            IpAddr::V4(Ipv4Addr::new(100, 64, 0, 2)).into(),
+            IpAddr::V4(Ipv4Addr::new(100, 64, 0, 3)).into(),
         ]
     }
 
     #[allow(unwrap_check)]
     fn get_exit_connected_dns_allowed_ips(&self) -> Vec<IpNetwork> {
-        vec!["100.64.0.2/32".parse().unwrap()]
+        vec![IpAddr::V4(Ipv4Addr::new(100, 64, 0, 2)).into()]
     }
 
     #[allow(unwrap_check)]
     fn get_default_dns_servers(&self) -> Vec<IpAddr> {
-        vec!["100.64.0.3".parse().unwrap()]
+        vec![IpAddr::V4(Ipv4Addr::new(100, 64, 0, 3))]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_get_default_dns_allowed_ips() {
+        let resolver = LocalDnsResolver::new(&SecretKey::gen().public(), 42, &[], None, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            vec![
+                "100.64.0.2/32".parse::<IpNetwork>().unwrap(),
+                "100.64.0.3/32".parse().unwrap(),
+            ],
+            resolver.get_default_dns_allowed_ips()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_exit_connected_dns_allowed_ips() {
+        let resolver = LocalDnsResolver::new(&SecretKey::gen().public(), 42, &[], None, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            vec!["100.64.0.2/32".parse::<IpNetwork>().unwrap()],
+            resolver.get_exit_connected_dns_allowed_ips()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_default_dns_servers() {
+        let resolver = LocalDnsResolver::new(&SecretKey::gen().public(), 42, &[], None, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            vec!["100.64.0.3".parse::<IpAddr>().unwrap()],
+            resolver.get_default_dns_servers()
+        );
     }
 }

@@ -4,7 +4,7 @@ use reqwest::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use telio::crypto::{PublicKey, SecretKey};
+use telio::crypto::{KeyDecodeError, PublicKey, SecretKey};
 use telio_model::mesh::ExitNode;
 use thiserror::Error;
 
@@ -31,6 +31,14 @@ pub enum Error {
     Api(String, String, String),
     #[error(transparent)]
     Rewquest(#[from] reqwest::Error),
+    #[error("Invalid oauth string")]
+    InvalidOauthString(std::str::Utf8Error),
+    #[error("Missing oauth challange")]
+    MissingOauthChallenge,
+    #[error("No public key with id {0}")]
+    NoPublicKeyWithId(i32),
+    #[error("Register has no identifier")]
+    RegisterHasNoIdentifier,
 }
 
 pub struct Nord {
@@ -101,7 +109,9 @@ impl Nord {
 
     pub fn finish_login(auth: OAuth) -> Result<Self, Error> {
         let client = Client::new();
-        let verifier = std::str::from_utf8(auth.chalenge.as_ref().unwrap()).unwrap();
+        let verifier =
+            std::str::from_utf8(auth.chalenge.as_ref().ok_or(Error::MissingOauthChallenge)?)
+                .map_err(Error::InvalidOauthString)?;
         let login: LoginInfo = client
             .get(&format!("{}/users/oauth/token", API_BASE))
             .query(&[("attempt", &*auth.attempt), ("verifier", verifier)])
@@ -165,8 +175,8 @@ impl Nord {
         })
     }
 
-    pub fn get_private_key(&self) -> SecretKey {
-        self.creds.nordlynx_private_key.parse().unwrap()
+    pub fn get_private_key(&self) -> Result<SecretKey, KeyDecodeError> {
+        self.creds.nordlynx_private_key.parse()
     }
 
     pub fn find_server(&self) -> Result<ExitNode, Error> {
@@ -185,8 +195,14 @@ impl Nord {
         let public_key: PublicKey = server[0]
             .technologies
             .iter()
-            .find_map(|t| (t.id == 35).then(|| t.metadata.first().unwrap().value.parse().unwrap()))
-            .unwrap();
+            .find_map(|t| {
+                if t.id == 35 {
+                    t.metadata.first().and_then(|m| m.value.parse().ok())
+                } else {
+                    None
+                }
+            })
+            .ok_or(Error::NoPublicKeyWithId(35))?;
         Ok(ExitNode {
             public_key,
             endpoint: Some(endpoint),
@@ -208,14 +224,14 @@ impl Nord {
                 public_key: *public_key,
                 hardware_identifier: Some(format!("{}.{}", public_key, name)),
                 os: OS_NAME.to_owned(),
-                os_version: format!("{} tcli", OS_NAME).to_owned(),
+                os_version: format!("{} tcli", OS_NAME),
                 ..Default::default()
             })
             .send()?
             .checked()?
             .json()?;
 
-        Ok(register.identifier.unwrap())
+        register.identifier.ok_or(Error::RegisterHasNoIdentifier)
     }
 
     pub fn get_meshmap(&self, id: &str) -> Result<String, Error> {

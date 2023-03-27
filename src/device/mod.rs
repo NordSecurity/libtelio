@@ -46,6 +46,7 @@ use wg::uapi::{self, PeerState};
 
 use std::{
     collections::HashSet,
+    convert::TryInto,
     future::Future,
     io::{Error as IoError, ErrorKind},
     net::{IpAddr, Ipv4Addr},
@@ -1161,7 +1162,7 @@ impl Runtime {
     }
 
     async fn connect_exit_node(&mut self, exit_node: &ExitNode) -> Result {
-        let mut node: Node = exit_node.into();
+        let mut node: Node = exit_node.try_into()?;
 
         // dns socket for macos should only be bound to tunnel interface when connected to exit,
         // otherwise with no exit dns peer will try to forward packets through tunnel and fail

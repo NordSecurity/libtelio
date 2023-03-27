@@ -6,12 +6,14 @@ license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 
 [dependencies]
+anyhow = "1"
 base64 = "0.13"
 clap = { version = "3.1", features = ["derive"] }
 crypto_box = "0.7.0"
 dirs = "4.0.0"
 hex = "0.4.3"
 ipnetwork = "0.18"
+parking_lot = "0.12"
 rand = { version = "0.8.4", features = ["std", "std_rng"] }
 reqwest = { version = "0.11.13", default-features = false, features = [
     "json",
@@ -31,6 +33,7 @@ flexi_logger = "0.22.0"
 rustyline = "11.0.0"
 
 telio = { path = "../.." }
+telio-crypto = { path = "../../crates/telio-crypto" }
 telio-utils = { path = "../../crates/telio-utils" }
 telio-shared = { path = "../../crates/telio-shared" }
 telio-model = { path = "../../crates/telio-model" }

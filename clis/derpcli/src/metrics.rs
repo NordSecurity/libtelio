@@ -1,4 +1,5 @@
 #![allow(unwrap_check)]
+use anyhow::Result;
 use prometheus::{CounterVec, Encoder, GaugeVec, Opts, Registry, TextEncoder};
 use std::{
     collections::HashMap,
@@ -28,7 +29,7 @@ impl Metrics {
         Metrics { clients }
     }
 
-    pub fn add_client(&mut self, client_public_key: PublicKey) {
+    pub fn add_client(&mut self, client_public_key: PublicKey) -> Result<()> {
         let counters = Counters {
             ping_counter: CounterVec::new(
                 Opts::new(
@@ -36,16 +37,14 @@ impl Metrics {
                     format!("client {} ping_counter", client_public_key,),
                 ),
                 &["client", "peer"],
-            )
-            .unwrap(),
+            )?,
             pong_counter: CounterVec::new(
                 Opts::new(
                     "pong_counter",
                     format!("client {} pong_counter", client_public_key,),
                 ),
                 &["client", "peer"],
-            )
-            .unwrap(),
+            )?,
             rtt: GaugeVec::new(
                 Opts::new(
                     "rtt",
@@ -55,44 +54,37 @@ impl Metrics {
                     ),
                 ),
                 &["client", "peer"],
-            )
-            .unwrap(),
+            )?,
             ping_time: GaugeVec::new(
                 Opts::new(
                     "ping_time",
                     format!("client {} ping time (ms)", client_public_key,),
                 ),
                 &["client", "peer"],
-            )
-            .unwrap(),
+            )?,
             registry: Registry::new(),
         };
 
         counters
             .registry
-            .register(Box::new(counters.ping_counter.clone()))
-            .unwrap();
+            .register(Box::new(counters.ping_counter.clone()))?;
         counters
             .registry
-            .register(Box::new(counters.pong_counter.clone()))
-            .unwrap();
+            .register(Box::new(counters.pong_counter.clone()))?;
+        counters.registry.register(Box::new(counters.rtt.clone()))?;
         counters
             .registry
-            .register(Box::new(counters.rtt.clone()))
-            .unwrap();
-        counters
-            .registry
-            .register(Box::new(counters.ping_time.clone()))
-            .unwrap();
+            .register(Box::new(counters.ping_time.clone()))?;
 
         self.clients.insert(client_public_key, counters);
+        Ok(())
     }
 
     pub fn inc_peer_ping_counter(
         &mut self,
         client_public_key: PublicKey,
         peer_public_key: PublicKey,
-    ) {
+    ) -> Result<()> {
         if let Some(counter) = self.clients.get_mut(&client_public_key) {
             counter
                 .ping_counter
@@ -107,20 +99,16 @@ impl Metrics {
                     &format!("{}", client_public_key),
                     &format!("{}", peer_public_key),
                 ])
-                .set(
-                    SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis() as f64,
-                );
+                .set(SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as f64);
         }
+        Ok(())
     }
 
     pub fn inc_peer_pong_counter(
         &mut self,
         client_public_key: PublicKey,
         peer_public_key: PublicKey,
-    ) {
+    ) -> Result<()> {
         if let Some(counter) = self.clients.get_mut(&client_public_key) {
             counter
                 .pong_counter
@@ -136,10 +124,7 @@ impl Metrics {
                     &format!("{}", peer_public_key),
                 ])
                 .set(
-                    SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis() as f64
+                    SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as f64
                         - counter
                             .ping_time
                             .with_label_values(&[
@@ -149,37 +134,39 @@ impl Metrics {
                             .get(),
                 );
         }
+        Ok(())
     }
 
-    pub fn print_metrics(&mut self) {
+    pub fn print_metrics(&mut self) -> Result<()> {
         for (_, counters) in self.clients.iter() {
             let mut buffer = vec![];
             let encoder = TextEncoder::new();
             let metric_families = counters.registry.gather();
-            encoder.encode(&metric_families, &mut buffer).unwrap();
-            println!("{}", String::from_utf8(buffer).unwrap());
+            encoder.encode(&metric_families, &mut buffer)?;
+            println!("{}", String::from_utf8(buffer)?);
         }
+        Ok(())
     }
 
-    pub fn flush_metrics_to_file(&mut self, path: String) {
-        if path != "" {
+    pub fn flush_metrics_to_file(&mut self, path: String) -> Result<()> {
+        if !path.is_empty() {
             let mut file = if std::path::Path::new(&path).exists() {
                 fs::OpenOptions::new()
                     .write(true)
                     .append(true)
-                    .open(&path)
-                    .unwrap()
+                    .open(&path)?
             } else {
-                fs::File::create(&path).unwrap()
+                fs::File::create(&path)?
             };
 
             for (_, counters) in self.clients.iter() {
                 let mut buffer = vec![];
                 let encoder = TextEncoder::new();
                 let metric_families = counters.registry.gather();
-                encoder.encode(&metric_families, &mut buffer).unwrap();
+                encoder.encode(&metric_families, &mut buffer)?;
                 let _ = file.write_all(&buffer);
             }
         }
+        Ok(())
     }
 }

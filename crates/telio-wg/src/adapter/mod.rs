@@ -48,7 +48,7 @@ pub(crate) trait Adapter: Send + Sync {
     /// Send uapi command, and receive response.
     /// Look at [Cross-Platfrom Userspace Interface](https://www.wireguard.com/xplatform/) for
     /// details.
-    async fn send_uapi_cmd(&self, cmd: &Cmd) -> Response;
+    async fn send_uapi_cmd(&self, cmd: &Cmd) -> Result<Response, Error>;
 
     /// Get WireGuard adapter file descriptor. Overridable
     fn get_wg_socket(&self, _ipv6: bool) -> Result<Option<i32>, Error> {
@@ -127,6 +127,10 @@ pub enum Error {
     /// Error executing task
     #[error("Runtime error occured within WireGuard wrapper {0}")]
     ExecError(#[from] telio_task::ExecError),
+
+    /// Uapi error
+    #[error("Uapi error: {0}")]
+    UapiFailed(#[from] uapi::Error),
 }
 
 /// Enumeration of types for `Adapter` struct

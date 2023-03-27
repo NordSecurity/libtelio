@@ -1,5 +1,4 @@
-#![allow(unwrap_check)]
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use std::{
     collections::HashSet,
     env,
@@ -9,8 +8,8 @@ use std::{
     path::Path,
 };
 
-fn build() -> cc::Build {
-    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+fn build() -> Result<cc::Build> {
+    let target_os = env::var("CARGO_CFG_TARGET_OS")?;
 
     let mut build = cc::Build::new();
     if target_os == "windows" {
@@ -21,7 +20,7 @@ fn build() -> cc::Build {
     } else {
         build.flag("-D_FORTIFY_SOURCE=2");
     }
-    build
+    Ok(build)
 }
 
 fn lines_from_file(filename: &str) -> io::Result<Vec<String>> {
@@ -41,7 +40,7 @@ fn compile_and_enforce_bindings_export(target_os: &str, lang_wrapper: &str) -> R
         lang_wrapper = lang_wrapper
     );
     println!("cargo:rerun-if-changed={}", &path);
-    build().file(&path).compile(lang_wrapper);
+    build()?.file(&path).compile(lang_wrapper);
 
     // For Microsoft link.exe, each exported function must be specified via /export: option.
     // For GNU LD, a structured list of exported functions must be passed in a file via --dynamic-list= option.
@@ -69,7 +68,10 @@ fn compile_and_enforce_bindings_export(target_os: &str, lang_wrapper: &str) -> R
         if Path::new(&exports_list_gnuld).exists() {
             println!(
                 "cargo:rustc-link-arg=-Wl,--dynamic-list={}",
-                abspath(&exports_list_gnuld).unwrap()
+                abspath(&exports_list_gnuld).ok_or_else(|| anyhow!(
+                    "failed to get absolute path for '{}'",
+                    exports_list_gnuld
+                ))?
             );
         }
     }
@@ -84,7 +86,7 @@ fn compile_and_enforce_bindings_export(target_os: &str, lang_wrapper: &str) -> R
 }
 
 fn main() -> Result<()> {
-    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+    let target_os = env::var("CARGO_CFG_TARGET_OS")?;
 
     let langs: HashSet<&str> = HashSet::from_iter(["GO", "JAVA", "CS"].iter().copied());
     let ffis = env::var("FFI").unwrap_or_default();
@@ -121,11 +123,11 @@ fn main() -> Result<()> {
         println!("cargo:rerun-if-changed={}", &path);
         // The culprit for breaking the MSVC build is "-Werror", because cl.exe requires a numeric parameter.
         if cfg!(target_env = "msvc") {
-            build()
+            build()?
                 .file(path)
                 .compile("suppressSourceFortificationCheck");
         } else {
-            build()
+            build()?
                 .file(path)
                 .flag("-Werror")
                 .flag("-O3")

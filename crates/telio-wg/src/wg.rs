@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use futures::{future::pending, FutureExt};
 use slog::{o, Drain, Logger, Never};
 use std::{collections::HashMap, net::SocketAddr};
-use telio_sockets::SocketPool;
+use telio_sockets::{NativeProtector, SocketPool};
 use telio_utils::{telio_err_with_log, telio_log_debug, telio_log_trace, telio_log_warn};
 use thiserror::Error as TError;
 use tokio::time::{self, sleep, Instant, Interval};
@@ -326,14 +326,16 @@ struct DiffKeys {
 }
 
 impl State {
-    async fn sync(&mut self) {
-        if let Some(to) = self.uapi_request(&uapi::Cmd::Get).await.interface {
+    async fn sync(&mut self) -> Result<(), Error> {
+        if let Some(to) = self.uapi_request(&uapi::Cmd::Get).await?.interface {
             let _ = self.update(&to, false).await;
         }
+
+        Ok(())
     }
 
-    async fn uapi_request(&mut self, cmd: &Cmd) -> Response {
-        let ret = self.adapter.send_uapi_cmd(cmd).await;
+    async fn uapi_request(&mut self, cmd: &Cmd) -> Result<Response, Error> {
+        let ret = self.adapter.send_uapi_cmd(cmd).await?;
         telio_log_debug!("UAPI request: {}, response: {}", &cmd.to_string(), &ret);
 
         // Count continuous adapter failures.
@@ -350,7 +352,7 @@ impl State {
             // TODO: check failure count threshold, cleanup network config, destroy adapter, notify app
         }
 
-        ret
+        Ok(ret)
     }
 
     fn update_calculate_changes(&self, to: &uapi::Interface) -> DiffKeys {
@@ -527,7 +529,11 @@ impl State {
         if push {
             let dev = self.update_construct_set_device(to, &diff_keys);
             // mut self required here
-            success = self.uapi_request(&Cmd::Set(dev)).await.errno == 0;
+            success = self
+                .uapi_request(&Cmd::Set(dev))
+                .await
+                .map(|r| r.errno == 0)
+                .unwrap_or_default();
         } else {
             // If we are pulling data from WG - update last rx timestamps
             let peers: HashSet<PublicKey> = to.peers.keys().cloned().collect();
@@ -597,10 +603,7 @@ impl Runtime for State {
 
     async fn wait(&mut self) -> WaitResponse<'_, Self::Err> {
         let _ = self.interval.tick().await;
-        Self::guard(async move {
-            self.sync().await;
-            Ok(())
-        })
+        Self::guard(self.sync())
     }
 
     async fn stop(self) {
@@ -629,7 +632,7 @@ mod tests {
     use telio_task::io::Chan;
 
     use super::*;
-    use crate::adapter::MockAdapter;
+    use crate::adapter::{Error as AdapterError, MockAdapter};
 
     lazy_static! {
         pub(super) static ref RUNTIME_ADAPTER: StdMutex<Option<Box<dyn Adapter>>> =
@@ -651,7 +654,7 @@ mod tests {
 
     #[async_trait]
     impl Adapter for Arc<Mutex<MockAdapter>> {
-        async fn send_uapi_cmd(&self, cmd: &Cmd) -> Response {
+        async fn send_uapi_cmd(&self, cmd: &Cmd) -> Result<Response, AdapterError> {
             self.lock().await.send_uapi_cmd(cmd).await
         }
 
@@ -689,9 +692,11 @@ mod tests {
             .expect_send_uapi_cmd()
             .with(predicate::eq(Cmd::Get))
             .times(1)
-            .return_const(Response {
-                errno: 0,
-                interface: Some(Interface::default()),
+            .returning(|_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: Some(Interface::default()),
+                })
             });
         let wg = DynamicWg::start_with(
             Io {
@@ -744,9 +749,11 @@ mod tests {
             .await
             .expect_send_uapi_cmd()
             .times(1)
-            .return_const(Response {
-                errno: 0,
-                interface: None,
+            .returning(|_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: None,
+                })
             });
         wg.set_secret_key(sks).await;
         adapter.lock().await.checkpoint();
@@ -769,9 +776,11 @@ mod tests {
             .await
             .expect_send_uapi_cmd()
             .times(1)
-            .return_const(Response {
-                errno: 0,
-                interface: None,
+            .returning(|_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: None,
+                })
             });
         wg.set_fwmark(ifa.fwmark).await;
         adapter.lock().await.checkpoint();
@@ -805,9 +814,11 @@ mod tests {
             .await
             .expect_send_uapi_cmd()
             .times(1)
-            .return_const(Response {
-                errno: 0,
-                interface: None,
+            .returning(|_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: None,
+                })
             });
         wg.add_peer(peer.clone()).await;
         assert_eq!(
@@ -848,9 +859,11 @@ mod tests {
             .await
             .expect_send_uapi_cmd()
             .times(1)
-            .return_const(Response {
-                errno: 0,
-                interface: None,
+            .returning(|_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: None,
+                })
             });
         wg.add_peer(peer.clone()).await;
         assert_eq!(
@@ -872,9 +885,11 @@ mod tests {
             .expect_send_uapi_cmd()
             .with(predicate::eq(Cmd::Get))
             .times(1)
-            .return_const(Response {
-                errno: 0,
-                interface: Some(ifa.clone()),
+            .returning(move |_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: Some(ifa.clone()),
+                })
             });
         assert_eq!(
             Some(Box::new(Event {
@@ -912,9 +927,11 @@ mod tests {
             .await
             .expect_send_uapi_cmd()
             .times(1)
-            .return_const(Response {
-                errno: 0,
-                interface: None,
+            .returning(|_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: None,
+                })
             });
         wg.add_peer(peer.clone()).await;
         assert_eq!(
@@ -936,9 +953,14 @@ mod tests {
             .expect_send_uapi_cmd()
             .with(predicate::eq(Cmd::Get))
             .times(1)
-            .return_const(Response {
-                errno: 0,
-                interface: Some(ifa.clone()),
+            .returning({
+                let ifa = ifa.clone();
+                move |_| {
+                    Ok(Response {
+                        errno: 0,
+                        interface: Some(ifa.clone()),
+                    })
+                }
             });
         assert_eq!(
             Some(Box::new(Event {
@@ -957,9 +979,11 @@ mod tests {
             .expect_send_uapi_cmd()
             .with(predicate::eq(Cmd::Get))
             .times(1)
-            .return_const(Response {
-                errno: 0,
-                interface: Some(ifa.clone()),
+            .returning(move |_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: Some(ifa.clone()),
+                })
             });
 
         assert_eq!(
@@ -999,9 +1023,11 @@ mod tests {
             .expect_send_uapi_cmd()
             .with(predicate::eq(cmd_set_device1))
             .times(1)
-            .return_const(Response {
-                errno: 0,
-                interface: None,
+            .returning(|_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: None,
+                })
             });
         wg.add_peer(peer.clone()).await;
         adapter.lock().await.checkpoint();
@@ -1019,9 +1045,11 @@ mod tests {
             .expect_send_uapi_cmd()
             .with(predicate::eq(cmd_set_device2))
             .times(1)
-            .return_const(Response {
-                errno: 0,
-                interface: None,
+            .returning(|_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: None,
+                })
             });
         wg.del_peer(pubkey).await;
         adapter.lock().await.checkpoint();
@@ -1062,9 +1090,11 @@ mod tests {
             .expect_send_uapi_cmd()
             .with(predicate::eq(cmd_set_device1))
             .times(1)
-            .return_const(Response {
-                errno: 0,
-                interface: None,
+            .returning(|_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: None,
+                })
             });
         wg.add_peer(peer.clone()).await;
         adapter.lock().await.checkpoint();
@@ -1086,9 +1116,11 @@ mod tests {
             .expect_send_uapi_cmd()
             .with(predicate::eq(cmd_set_device2))
             .times(1)
-            .return_const(Response {
-                errno: 0,
-                interface: None,
+            .returning(|_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: None,
+                })
             });
         wg.add_peer(peer.clone()).await;
         adapter.lock().await.checkpoint();
@@ -1121,9 +1153,11 @@ mod tests {
             .await
             .expect_send_uapi_cmd()
             .times(1)
-            .return_const(Response {
-                errno: 0,
-                interface: None,
+            .returning(|_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: None,
+                })
             });
         wg.add_peer(peer.clone()).await.unwrap();
         adapter.lock().await.checkpoint();
@@ -1164,9 +1198,11 @@ mod tests {
             .await
             .expect_send_uapi_cmd()
             .times(1)
-            .return_const(Response {
-                errno: 0,
-                interface: None,
+            .returning(|_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: None,
+                })
             });
 
         let peer = Peer {
@@ -1200,9 +1236,11 @@ mod tests {
             .await
             .expect_send_uapi_cmd()
             .times(1)
-            .return_const(Response {
-                errno: 0,
-                interface: None,
+            .returning(|_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: None,
+                })
             });
         let peer = Peer {
             public_key: pkc,
@@ -1228,9 +1266,11 @@ mod tests {
             .await
             .expect_send_uapi_cmd()
             .times(1)
-            .return_const(Response {
-                errno: 0,
-                interface: None,
+            .returning(|_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: None,
+                })
             });
         wg.del_peer(pkc).await.unwrap();
         adapter.lock().await.checkpoint();
