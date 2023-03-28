@@ -77,13 +77,7 @@ impl<Wg: WireGuard> StunEndpointProvider<Wg> {
 
     pub async fn configure(&self, mut servers: Vec<Server>) {
         let _ = task_exec!(&self.task, async move |s| {
-            servers.sort_by(|a, b| {
-                if a.weight != b.weight {
-                    a.weight.cmp(&b.weight)
-                } else {
-                    a.name.cmp(&b.name)
-                }
-            });
+            servers.sort_by_key(|s| (s.weight, s.public_key));
 
             if s.servers != servers {
                 s.servers = servers;
@@ -224,7 +218,7 @@ impl<Wg: WireGuard> State<Wg> {
     }
 
     /// Get endpoint's for stuns (WgStun, PlaintextStun)
-    async fn get_stun_endpoints(&mut self) -> Result<(SocketAddr, SocketAddr), Error> {
+    async fn get_stun_endpoints(&self) -> Result<(SocketAddr, SocketAddr), Error> {
         if let Some(server) = self.servers.get(self.server_num) {
             let interface = self.wg.get_interface().await?;
 
