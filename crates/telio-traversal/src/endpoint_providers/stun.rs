@@ -1,4 +1,4 @@
-use std::{future::pending, net::SocketAddr, sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use std::ops::Deref;
 
@@ -10,13 +10,12 @@ use telio_proto::{Session, WGPort};
 use telio_relay::Server;
 use telio_sockets::{native::AsNativeSocket, External};
 use telio_task::{io::chan, task_exec, BoxAction, Runtime, Task};
-use telio_utils::{telio_log_debug, telio_log_error, telio_log_info, telio_log_warn, PinnedSleep};
-use telio_wg::{DynamicWg, WireGuard};
-use tokio::{
-    net::UdpSocket,
-    sync::Mutex,
-    time::{interval, Interval},
+use telio_utils::{
+    exponential_backoff::{BackoffTrait, ExponentialBackoff, ExponentialBackoffBounds},
+    telio_log_debug, telio_log_error, telio_log_info, telio_log_warn, PinnedSleep,
 };
+use telio_wg::{DynamicWg, WireGuard};
+use tokio::{net::UdpSocket, sync::Mutex};
 
 use crate::{endpoint_providers::EndpointProviderType, ping_pong_handler::PingPongHandler};
 
@@ -32,8 +31,8 @@ const STUN_TIMEOUT: Duration = Duration::from_millis(300);
 const MAX_PACKET_SIZE: usize = 1500;
 const STUN_SOFTWARE: &str = "tailnode";
 
-pub struct StunEndpointProvider<Wg: WireGuard = DynamicWg> {
-    task: Task<State<Wg>>,
+pub struct StunEndpointProvider<Wg: WireGuard = DynamicWg, E: BackoffTrait = ExponentialBackoff> {
+    task: Task<State<Wg, E>>,
 }
 
 impl<Wg: WireGuard> StunEndpointProvider<Wg> {
@@ -42,22 +41,47 @@ impl<Wg: WireGuard> StunEndpointProvider<Wg> {
     /// - `tun_socket` - udp socket bound to tun interface
     /// - `ext_socket` - udp socket bound to external interface
     /// - `wg` - wireguard controll
-    /// - `poll_interval` - Duration to recheck for stun changes
+    /// - `exponential_backoff_bounds` - Config for exponential backoff
+    ///   controlling intervals between consequtive queries to the STUN server
     pub fn start(
         tun_socket: UdpSocket,
         ext_socket: External<UdpSocket>,
         wg: Arc<Wg>,
-        poll_interval: Duration,
+        exponential_backoff_bounds: ExponentialBackoffBounds,
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
         stun_peer_publisher: chan::Tx<Option<StunServer>>,
-    ) -> Self {
+    ) -> Result<Self, Error> {
+        Self::start_with_exp_backoff(
+            tun_socket,
+            ext_socket,
+            wg,
+            ExponentialBackoff::new(exponential_backoff_bounds)?,
+            ping_pong_handler,
+            stun_peer_publisher,
+        )
+    }
+
+    pub async fn stop(self) {
+        let _ = self.task.stop().await.resume_unwind();
+    }
+}
+
+impl<Wg: WireGuard, E: BackoffTrait> StunEndpointProvider<Wg, E> {
+    fn start_with_exp_backoff(
+        tun_socket: UdpSocket,
+        ext_socket: External<UdpSocket>,
+        wg: Arc<Wg>,
+        exponential_backoff: E,
+        ping_pong_handler: Arc<Mutex<PingPongHandler>>,
+        stun_peer_publisher: chan::Tx<Option<StunServer>>,
+    ) -> Result<Self, Error> {
         telio_log_info!("Starting stun endpoint provider");
         telio_log_debug!(
             "tun_socket: {:?}, ext_socket: {}",
             tun_socket.as_native_socket(),
             ext_socket.deref().as_native_socket()
         );
-        Self {
+        Ok(Self {
             task: Task::start(State {
                 servers: vec![],
                 current_server_index: 0,
@@ -67,12 +91,12 @@ impl<Wg: WireGuard> StunEndpointProvider<Wg> {
                 change_event: None,
                 pong_event: None,
                 stun_session: None,
-                stun_interval: interval(poll_interval),
+                exponential_backoff,
                 last_candidates: Vec::new(),
                 ping_pong_tracker: ping_pong_handler,
                 stun_peer_publisher,
             }),
-        }
+        })
     }
 
     pub async fn configure(&self, mut servers: Vec<Server>) {
@@ -100,14 +124,10 @@ impl<Wg: WireGuard> StunEndpointProvider<Wg> {
         })
         .await;
     }
-
-    pub async fn stop(self) {
-        let _ = self.task.stop().await.resume_unwind();
-    }
 }
 
 #[async_trait]
-impl<Wg: WireGuard> EndpointProvider for StunEndpointProvider<Wg> {
+impl<Wg: WireGuard, E: BackoffTrait + 'static> EndpointProvider for StunEndpointProvider<Wg, E> {
     async fn subscribe_for_pong_events(&self, tx: chan::Tx<PongEvent>) {
         let _ = task_exec!(&self.task, async move |s| {
             s.pong_event = Some(tx);
@@ -145,7 +165,7 @@ impl<Wg: WireGuard> EndpointProvider for StunEndpointProvider<Wg> {
     }
 }
 
-struct State<Wg: WireGuard> {
+struct State<Wg: WireGuard, E: BackoffTrait> {
     servers: Vec<Server>,
     current_server_index: usize,
 
@@ -158,13 +178,13 @@ struct State<Wg: WireGuard> {
     pong_event: Option<chan::Tx<PongEvent>>,
 
     stun_session: Option<StunSession>,
-    stun_interval: Interval,
+    exponential_backoff: E,
     last_candidates: Vec<EndpointCandidate>,
 
     stun_peer_publisher: chan::Tx<Option<StunServer>>,
 }
 
-impl<Wg: WireGuard> State<Wg> {
+impl<Wg: WireGuard, E: BackoffTrait> State<Wg, E> {
     async fn start_stun_session(&mut self) -> Result<(), Error> {
         if self.stun_session.is_none() {
             let (wg, udp) = self.get_stun_endpoints().await?;
@@ -277,6 +297,8 @@ impl<Wg: WireGuard> State<Wg> {
                                 .send((EndpointProviderType::Stun, candidates))
                                 .await?;
                         }
+
+                        self.exponential_backoff.reset();
                     } else {
                         telio_log_warn!("{} does not have endpoint provider sender.", Self::NAME)
                     }
@@ -315,7 +337,7 @@ impl<Wg: WireGuard> State<Wg> {
 }
 
 #[async_trait]
-impl<Wg: WireGuard> Runtime for State<Wg> {
+impl<Wg: WireGuard, E: BackoffTrait> Runtime for State<Wg, E> {
     const NAME: &'static str = "StunEndpointProvider";
 
     type Err = ();
@@ -325,10 +347,12 @@ impl<Wg: WireGuard> Runtime for State<Wg> {
         F: Future<Output = BoxAction<Self, Result<(), Self::Err>>> + Send,
     {
         let session = &mut self.stun_session;
+        let backoff = self.exponential_backoff.get_backoff();
+
         let timeout = async move {
             match session {
                 Some(ses) => (&mut ses.timeout).await,
-                _ => pending().await,
+                _ => tokio::time::sleep(backoff).await,
             }
         };
 
@@ -343,21 +367,20 @@ impl<Wg: WireGuard> Runtime for State<Wg> {
                 // We will not pinging through wireguard.
                 let _ = self.try_handle_stun_rx(&tun_buf[..size], &src_addr).await;
             }
-            // Stun session timeout
+            // We are waiting either for stun session to timeout, or for the end of penalty
             _ = timeout => {
-                self.stun_session = None;
-
-                self.next_server();
-
-                if !self.last_candidates.is_empty() {
-                    self.last_candidates.clear();
-                    if let Some(ce) = &self.change_event {
-                        let _ = ce.send((EndpointProviderType::Stun, vec![])).await;
+                if self.stun_session.take().is_some() {
+                    self.next_server();
+                    if !self.last_candidates.is_empty() {
+                        self.last_candidates.clear();
+                        if let Some(ce) = &self.change_event {
+                            let _ = ce.send((EndpointProviderType::Stun, vec![])).await;
+                        }
                     }
+                } else {
+                    self.exponential_backoff.next_backoff();
+                    let _  = self.start_stun_session().await;
                 }
-            }
-            _ = self.stun_interval.tick() => {
-                let _  = self.start_stun_session().await;
             }
             update = updated => {
                 return update(self).await;
@@ -540,7 +563,11 @@ mod tests {
     use super::*;
     use maplit::hashmap;
     use mockall::mock;
-    use std::net::{Ipv4Addr, SocketAddr};
+    use std::{
+        cell::RefCell,
+        net::{Ipv4Addr, SocketAddr},
+        rc::Rc,
+    };
     use stun_codec::rfc5389::{
         self,
         attributes::{MappedAddress, XorMappedAddress},
@@ -555,15 +582,19 @@ mod tests {
     use telio_sockets::SocketPool;
     use telio_task::io::Chan;
     use telio_test::await_timeout;
+    use telio_utils::exponential_backoff::MockBackoffTrait;
     use telio_wg::{
         uapi::{Interface, Peer},
         Error,
     };
-    use tokio::time::{self, sleep, timeout};
+    use tokio::{
+        task,
+        time::{self, sleep, timeout},
+    };
 
     #[tokio::test]
     async fn collect_stun_endpoints_on_configure() {
-        let mut env = prepare_test_env().await;
+        let mut env = prepare_test_env(None).await;
 
         env.configure_env().await;
 
@@ -593,7 +624,7 @@ mod tests {
 
     #[tokio::test]
     async fn collect_stun_endpoints_on_change() {
-        let mut env = prepare_test_env().await;
+        let mut env = prepare_test_env(None).await;
 
         env.configure_env().await;
 
@@ -672,7 +703,7 @@ mod tests {
 
     #[tokio::test]
     async fn report_empty_candidate_list_on_stun_failure() {
-        let mut env = prepare_test_env().await;
+        let mut env = prepare_test_env(None).await;
         let mut buf = [0; MAX_PACKET_SIZE];
 
         env.configure_env().await;
@@ -761,7 +792,7 @@ mod tests {
 
     #[tokio::test]
     async fn pongs_propagated_through_the_channel() {
-        let mut env = prepare_test_env().await;
+        let mut env = prepare_test_env(None).await;
 
         let session_id = 456;
         let ping_addr = env.peers[0].ping_sock.local_addr().expect("local_addr");
@@ -872,7 +903,7 @@ mod tests {
 
     #[tokio::test]
     async fn provider_replies_to_ping() {
-        let env = prepare_test_env().await;
+        let env = prepare_test_env(None).await;
 
         let wg_port = WGPort(123);
         let session_id = 456;
@@ -972,7 +1003,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn server_changed_when_current_connection_is_broken() {
-        let mut env = prepare_test_env_with_server_weights(vec![100, 200, 10]).await;
+        let mut env = prepare_test_env_with_server_weights(None, vec![100, 200, 10]).await;
         let poll_interval = Duration::from_secs(10000);
 
         env.configure_env().await;
@@ -998,8 +1029,8 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn server_maintained_when_current_connection_is_active() {
-        let mut env = prepare_test_env_with_server_weights(vec![100, 200, 10]).await;
-        let poll_interval = Duration::from_secs(10000);
+        let mut env = prepare_test_env_with_server_weights(None, vec![100, 200, 10]).await;
+        let poll_interval = Duration::from_millis(10000);
 
         env.configure_env().await;
 
@@ -1026,6 +1057,47 @@ mod tests {
         env.stun_peer_subscriber
             .try_recv()
             .expect_err("Should not happen!");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn exponential_backoff() {
+        // We need to prepare some more complex mock to test if it is used properly
+        let backoff_array = [4000, 12000, 44444, 7654, 10000, 765432];
+        let env = prepare_test_env(Some(backoff_array)).await;
+
+        env.configure_env().await;
+
+        task::yield_now().await;
+
+        let expect_successful_receive = |msg| {
+            let mut buf = [0; MAX_PACKET_SIZE];
+            env.peers[0].peer_sock.try_recv(&mut buf).expect(msg);
+        };
+
+        let expect_receive_failure = |msg| {
+            let mut buf = [0; MAX_PACKET_SIZE];
+            env.peers[0].peer_sock.try_recv(&mut buf).expect_err(msg);
+        };
+
+        expect_successful_receive("First receive should be successful");
+
+        for backoff in backoff_array.iter() {
+            // Exceed the timeout to start the penalty
+            time::advance(STUN_TIMEOUT).await;
+            task::yield_now().await;
+
+            expect_receive_failure("Shouldn't receive immediately after timeout");
+
+            time::advance(Duration::from_millis(backoff - 1)).await;
+            task::yield_now().await;
+
+            expect_receive_failure("The penalty should be not over yet");
+
+            time::advance(Duration::from_millis(2)).await;
+            task::yield_now().await;
+
+            expect_successful_receive("Next request should be already sent");
+        }
     }
 
     // Test helpers
@@ -1067,7 +1139,7 @@ mod tests {
         // Tested system
         provider_tun_addr: SocketAddr,
         provider_ext_addr: SocketAddr,
-        stun_provider: StunEndpointProvider<MockWg>,
+        stun_provider: StunEndpointProvider<MockWg, MockBackoffTrait>,
 
         // External behavior
         stun_peer_subscriber: chan::Rx<Option<StunServer>>,
@@ -1081,11 +1153,14 @@ mod tests {
         local_sk: SecretKey,
     }
 
-    async fn prepare_test_env() -> Env {
-        prepare_test_env_with_server_weights(vec![100]).await
+    async fn prepare_test_env(backoff_array: Option<[u64; 6]>) -> Env {
+        prepare_test_env_with_server_weights(backoff_array, vec![100]).await
     }
 
-    async fn prepare_test_env_with_server_weights(server_weights: Vec<u32>) -> Env {
+    async fn prepare_test_env_with_server_weights(
+        backoff_array: Option<[u64; 6]>,
+        server_weights: Vec<u32>,
+    ) -> Env {
         let mut wg = MockWg::default();
         let wg_port = 12345;
 
@@ -1171,14 +1246,33 @@ mod tests {
 
         let secret_key = SecretKey::gen();
         let ping_pong_handler = Arc::new(Mutex::new(PingPongHandler::new(secret_key)));
-        let stun_provider = StunEndpointProvider::start(
+
+        let backoff_array = backoff_array.unwrap_or([10000, 10000, 10000, 10000, 10000, 10000]);
+
+        let stun_provider = StunEndpointProvider::start_with_exp_backoff(
             provider_tun_socket,
             provider_ext_socket,
             Arc::new(wg),
-            Duration::from_secs(10000),
+            {
+                let mut result = MockBackoffTrait::default();
+                let backoff_array_idx = Rc::new(RefCell::new(0));
+                let backoff_array_idx_a = backoff_array_idx.clone();
+                result.expect_get_backoff().returning_st(move || {
+                    Duration::from_millis(backoff_array[*backoff_array_idx_a.borrow()])
+                });
+                let backoff_array_idx_b = backoff_array_idx.clone();
+                result.expect_next_backoff().returning_st(move || {
+                    backoff_array_idx_b.replace_with(|idx| *idx + 1);
+                });
+                result.expect_reset().returning_st(move || {
+                    backoff_array_idx.replace(0);
+                });
+                result
+            },
             ping_pong_handler.clone(),
             stun_peer_publisher,
-        );
+        )
+        .unwrap();
 
         let candidates_channel = Chan::<EndpointCandidatesChangeEvent>::default();
         let pongs_channel = Chan::<PongEvent>::default();
@@ -1293,6 +1387,8 @@ mod tests {
                 MappedAddress::new(wg_endpoint)
             ));
 
+            // Two yields are needed to handle both packages
+            tokio::task::yield_now().await;
             tokio::task::yield_now().await;
         }
     }
