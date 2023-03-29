@@ -198,7 +198,7 @@ where
 
     /// Stop task
     pub async fn stop(mut self) -> StopResult<S::Err> {
-        self.stop.notify_waiters();
+        self.stop.notify_one();
         let join = match self.join.take() {
             Some(v) => v,
             None => return StopResult::Ok,
