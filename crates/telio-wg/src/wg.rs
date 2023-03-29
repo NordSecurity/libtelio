@@ -1,10 +1,11 @@
 use async_trait::async_trait;
 use futures::{future::pending, FutureExt};
 use slog::{o, Drain, Logger, Never};
+use std::{collections::HashMap, net::SocketAddr};
 use telio_sockets::SocketPool;
-use telio_utils::telio_log_debug;
+use telio_utils::{telio_err_with_log, telio_log_debug, telio_log_trace, telio_log_warn};
 use thiserror::Error as TError;
-use tokio::time::{self, Interval};
+use tokio::time::{self, sleep, Instant, Interval};
 use wireguard_uapi::xplatform::set;
 
 use telio_crypto::{PublicKey, SecretKey};
@@ -13,9 +14,6 @@ use telio_task::{
     io::mc_chan,
     task_exec, Runtime, RuntimeExt, StopResult, Task, WaitResponse,
 };
-
-#[cfg(test)]
-use mockall::automock;
 
 use crate::{
     adapter::{self, Adapter, AdapterType, Error, Tun},
@@ -26,25 +24,34 @@ use crate::{
 use std::{collections::HashSet, future::Future, io, sync::Arc, time::Duration};
 
 /// WireGuard adapter interface
-#[cfg_attr(test, automock)]
+#[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
 #[async_trait]
 pub trait WireGuard: Send + Sync + 'static {
     /// Get adapter handle, returns `None` on fail
-    async fn get_interface(&self) -> Option<Interface>;
+    async fn get_interface(&self) -> Result<Interface, Error>;
     /// Get adapter luid (local identifier) if supported by platform, `zero` otherwise
-    async fn get_adapter_luid(&self) -> u64;
+    async fn get_adapter_luid(&self) -> Result<u64, Error>;
+    /// wait for listen port to be assigned by the WireGuard implementation, and return it afterwards
+    async fn wait_for_listen_port(&self, d: Duration) -> Result<u16, Error>;
     /// Get adapter file descriptor if supported by platform, `None` otherwise
     async fn get_wg_socket(&self, ipv6: bool) -> Result<Option<i32>, Error>;
     /// Set secret key for adapter
-    async fn set_secret_key(&self, key: SecretKey);
+    async fn set_secret_key(&self, key: SecretKey) -> Result<(), Error>;
     /// Set adapter fwmark, unix only
-    async fn set_fwmark(&self, fwmark: u32) -> bool;
+    async fn set_fwmark(&self, fwmark: u32) -> Result<(), Error>;
     /// Add Peer to adapter
-    async fn add_peer(&self, peer: Peer);
+    async fn add_peer(&self, peer: Peer) -> Result<(), Error>;
     /// Remove Peer from adapter
-    async fn del_peer(&self, key: PublicKey);
+    async fn del_peer(&self, key: PublicKey) -> Result<(), Error>;
     /// Disconnect from all peers, implemented only in Boringtun
-    async fn drop_connected_sockets(&self);
+    async fn drop_connected_sockets(&self) -> Result<(), Error>;
+    /// Retrieve time since last RXed (and accepted) packet
+    async fn time_since_last_rx(&self, public_key: PublicKey) -> Result<Option<Duration>, Error>;
+    /// Retrieve time since last endpoint (either roamed or manual) change
+    async fn time_since_last_endpoint_change(
+        &self,
+        public_key: PublicKey,
+    ) -> Result<Option<Duration>, Error>;
     /// Stop adapter
     async fn stop(self);
 }
@@ -76,6 +83,8 @@ struct State {
     interval: Interval,
     interface: Interface,
     event: Tx<Box<Event>>,
+    last_rx_timestamp: HashMap<PublicKey, (Instant, u64)>,
+    last_endpoint_change: HashMap<PublicKey, Instant>,
     analytics_tx: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
 
     // Detecting unexpected driver failures, such as a malicious removal
@@ -118,6 +127,8 @@ impl DynamicWg {
                 interval,
                 interface: Default::default(),
                 event: io.events,
+                last_rx_timestamp: Default::default(),
+                last_endpoint_change: Default::default(),
                 analytics_tx: io.analytics_tx,
                 uapi_failed_last_call: false,
                 uapi_fail_counter: 0,
@@ -151,17 +162,30 @@ impl DynamicWg {
 
 #[async_trait]
 impl WireGuard for DynamicWg {
-    async fn get_interface(&self) -> Option<Interface> {
-        task_exec!(&self.task, async move |s| Ok(s.interface.clone()))
-            .await
-            .ok()
+    async fn get_interface(&self) -> Result<Interface, Error> {
+        Ok(task_exec!(&self.task, async move |s| Ok(s.interface.clone())).await?)
     }
 
-    async fn get_adapter_luid(&self) -> u64 {
-        task_exec!(&self.task, async move |s| Ok(s.adapter.get_adapter_luid()))
-            .await
-            .ok()
-            .unwrap_or(0)
+    async fn get_adapter_luid(&self) -> Result<u64, Error> {
+        Ok(task_exec!(&self.task, async move |s| Ok(s.adapter.get_adapter_luid())).await?)
+    }
+
+    async fn wait_for_listen_port(&self, d: Duration) -> Result<u16, Error> {
+        let start = std::time::SystemTime::now();
+        loop {
+            if let Some(port) = self.get_interface().await?.listen_port {
+                if port > 0 {
+                    telio_log_trace!("Wireguard using port:{:?}", &port.to_string());
+                    break Ok(port);
+                }
+            }
+            let elapsed_time = start.elapsed()?;
+            if elapsed_time > d {
+                break telio_err_with_log!(Error::PortAssignmentTimeoutError);
+            }
+
+            sleep(Duration::from_millis(10)).await;
+        }
     }
 
     async fn get_wg_socket(&self, ipv6: bool) -> Result<Option<i32>, Error> {
@@ -170,59 +194,97 @@ impl WireGuard for DynamicWg {
             .unwrap_or(Ok(None))
     }
 
-    async fn set_secret_key(&self, key: SecretKey) {
-        let _ = task_exec!(&self.task, async move |s| {
+    async fn set_secret_key(&self, key: SecretKey) -> Result<(), Error> {
+        Ok(task_exec!(&self.task, async move |s| {
             let mut to = s.interface.clone();
             to.private_key = Some(key);
             s.update(&to, true).await;
             Ok(())
         })
-        .await;
+        .await?)
     }
 
-    async fn set_fwmark(&self, fwmark: u32) -> bool {
-        task_exec!(&self.task, async move |s| {
+    async fn set_fwmark(&self, fwmark: u32) -> Result<(), Error> {
+        Ok(task_exec!(&self.task, async move |s| {
             let mut to = s.interface.clone();
             to.fwmark = fwmark;
-            Ok(s.update(&to, true).await)
-        })
-        .await
-        .unwrap_or(false)
-    }
-
-    async fn add_peer(&self, mut peer: Peer) {
-        let _ = task_exec!(&self.task, async move |s| {
-            let mut to = s.interface.clone();
-
-            if let Some(old_peer) = to.peers.get(&peer.public_key) {
-                peer.time_since_last_handshake = old_peer.time_since_last_handshake;
-                peer.rx_bytes = old_peer.rx_bytes;
-                peer.tx_bytes = old_peer.tx_bytes;
-            }
-
-            to.peers.insert(peer.public_key, peer);
             s.update(&to, true).await;
             Ok(())
         })
-        .await;
+        .await?)
     }
 
-    async fn del_peer(&self, key: PublicKey) {
-        let _ = task_exec!(&self.task, async move |s| {
+    async fn add_peer(&self, mut new_peer: Peer) -> Result<(), Error> {
+        Ok(task_exec!(&self.task, async move |s| {
+            let mut to = s.interface.clone();
+
+            // Check if there are any overlapping allowed IPs
+            if to
+                .peers
+                .values()
+                .filter(|peer| peer.public_key != new_peer.public_key)
+                .any(|peer| {
+                    new_peer
+                        .allowed_ips
+                        .iter()
+                        .any(|candidate_allowed_ip| peer.allowed_ips.contains(candidate_allowed_ip))
+                })
+            {
+                telio_log_warn!(
+                    "Dublicate Allowed IPs detected for peer {:?}, dumping interface state: {:?}",
+                    new_peer,
+                    to
+                );
+                return Err(Error::DuplicateAllowedIPsError);
+            }
+
+            if let Some(old_peer) = to.peers.get(&new_peer.public_key) {
+                new_peer.time_since_last_handshake = old_peer.time_since_last_handshake;
+                new_peer.rx_bytes = old_peer.rx_bytes;
+                new_peer.tx_bytes = old_peer.tx_bytes;
+            }
+
+            to.peers.insert(new_peer.public_key, new_peer);
+            s.update(&to, true).await;
+            Ok(())
+        })
+        .await?)
+    }
+
+    async fn del_peer(&self, key: PublicKey) -> Result<(), Error> {
+        Ok(task_exec!(&self.task, async move |s| {
             let mut to = s.interface.clone();
             to.peers.remove(&key);
             s.update(&to, true).await;
             Ok(())
         })
-        .await;
+        .await?)
     }
 
-    async fn drop_connected_sockets(&self) {
-        let _ = task_exec!(&self.task, async move |s| {
+    async fn drop_connected_sockets(&self) -> Result<(), Error> {
+        Ok(task_exec!(&self.task, async move |s| {
             s.adapter.drop_connected_sockets().await;
             Ok(())
         })
-        .await;
+        .await?)
+    }
+
+    async fn time_since_last_rx(&self, public_key: PublicKey) -> Result<Option<Duration>, Error> {
+        Ok(task_exec!(&self.task, async move |s| Ok(
+            s.time_since_last_rx(public_key)
+        ))
+        .await?)
+    }
+
+    async fn time_since_last_endpoint_change(
+        &self,
+        public_key: PublicKey,
+    ) -> Result<Option<Duration>, Error> {
+        Ok(task_exec!(&self.task, async move |s| Ok(s
+            .last_endpoint_change
+            .get(&public_key)
+            .map(|t| Instant::now() - *t)))
+        .await?)
     }
 
     async fn stop(mut self) {
@@ -257,7 +319,7 @@ impl Config {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct DiffKeys {
     pub delete_keys: HashSet<PublicKey>,
     pub insert_keys: HashSet<PublicKey>,
@@ -316,6 +378,12 @@ impl State {
         diff_keys
     }
 
+    fn time_since_last_rx(&self, public_key: PublicKey) -> Option<Duration> {
+        self.last_rx_timestamp
+            .get(&public_key)
+            .map(|v| Instant::now() - v.0)
+    }
+
     #[allow(mpsc_blocking_send)]
     async fn update_send_notification_events(
         &self,
@@ -355,14 +423,15 @@ impl State {
         // Check for updates, and notify
         for key in &diff_keys.update_keys {
             let old = &from.peers[key];
+            let old_state = old.state();
             let new = &to.peers[key];
-            if old.connected() && !new.connected() {
-                if !try_send(Connecting, new.clone()).await {
+            let new_state = new.state();
+
+            #[allow(clippy::collapsible_if)]
+            if !old.is_same_event(new) || old_state != new_state {
+                if !try_send(new_state, new.clone()).await {
                     return false;
                 }
-            } else if !old.connected() && new.connected() && !try_send(Connected, new.clone()).await
-            {
-                return false;
             }
         }
 
@@ -404,6 +473,30 @@ impl State {
         }
     }
 
+    fn update_endpoint_change_timestamps(&mut self, diff_keys: &DiffKeys, to: &uapi::Interface) {
+        for key in diff_keys
+            .insert_keys
+            .iter()
+            .chain(diff_keys.update_keys.iter())
+        {
+            let old_endpoint = self.interface.peers.get(key).map(|p| p.endpoint);
+            let new_endpoint = to.peers.get(key).map(|p| p.endpoint);
+
+            if old_endpoint != new_endpoint {
+                telio_log_debug!(
+                    "Endpoint change detected {:?} -> {:?}",
+                    old_endpoint,
+                    new_endpoint
+                );
+                self.last_endpoint_change.insert(*key, Instant::now());
+            }
+        }
+
+        for key in diff_keys.delete_keys.iter() {
+            let _ = self.last_endpoint_change.remove(key);
+        }
+    }
+
     #[allow(mpsc_blocking_send)]
     async fn update(&mut self, to: &uapi::Interface, push: bool) -> bool {
         // Diff and report events
@@ -425,6 +518,8 @@ impl State {
 
         let diff_keys = self.update_calculate_changes(to);
 
+        self.update_endpoint_change_timestamps(&diff_keys, to);
+
         if !self.update_send_notification_events(to, &diff_keys).await {
             return false;
         }
@@ -434,6 +529,33 @@ impl State {
             let dev = self.update_construct_set_device(to, &diff_keys);
             // mut self required here
             success = self.uapi_request(&Cmd::Set(dev)).await.errno == 0;
+        } else {
+            // If we are pulling data from WG - update last rx timestamps
+            let peers: HashSet<PublicKey> = to.peers.keys().cloned().collect();
+            self.last_rx_timestamp.retain(|pk, _| peers.contains(pk));
+            for peer in peers {
+                let old_rxed_bytes: Option<u64> = self.last_rx_timestamp.get(&peer).map(|ts| ts.1);
+                let new_rxed_bytes: Option<u64> = to.peers.get(&peer).and_then(|p| p.rx_bytes);
+
+                if old_rxed_bytes != new_rxed_bytes {
+                    match new_rxed_bytes {
+                        Some(new_rxed_bytes) if new_rxed_bytes > 0 => {
+                            telio_log_debug!(
+                                "updating peer last rx timestamp {:?} {:?}",
+                                peer,
+                                new_rxed_bytes
+                            );
+                            self.last_rx_timestamp
+                                .insert(peer, (Instant::now(), new_rxed_bytes));
+                        }
+                        _ => {
+                            if self.last_rx_timestamp.remove(&peer).is_some() {
+                                telio_log_debug!("removed peer last rx timestamp {:?}", peer);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         if let Some(analytics_tx) = &self.analytics_tx {
@@ -494,10 +616,12 @@ impl Runtime for State {
 #[cfg(test)]
 mod tests {
     use std::{
+        net::{Ipv4Addr, SocketAddrV4},
         sync::{Arc, Mutex as StdMutex},
         time::{SystemTime, UNIX_EPOCH},
     };
 
+    use boringtun::device::peer::Endpoint;
     use lazy_static::lazy_static;
     use mockall::predicate;
     use tokio::{runtime::Handle, sync::Mutex, task, time::sleep};
@@ -586,7 +710,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn wg_gets_interface() {
         let Env { adapter, wg, .. } = setup().await;
-        assert_eq!(Some(Interface::default()), wg.get_interface().await);
+        assert_eq!(Interface::default(), wg.get_interface().await.unwrap());
 
         adapter.lock().await.expect_stop().return_once(|| ());
         wg.stop().await;
@@ -613,7 +737,7 @@ mod tests {
             });
         wg.set_secret_key(sks).await;
         adapter.lock().await.checkpoint();
-        assert_eq!(Some(ifa.clone()), wg.get_interface().await);
+        assert_eq!(ifa.clone(), wg.get_interface().await.unwrap());
 
         adapter.lock().await.expect_stop().return_once(|| ());
         wg.stop().await;
@@ -638,7 +762,7 @@ mod tests {
             });
         wg.set_fwmark(ifa.fwmark).await;
         adapter.lock().await.checkpoint();
-        assert_eq!(Some(ifa.clone()), wg.get_interface().await);
+        assert_eq!(ifa.clone(), wg.get_interface().await.unwrap());
 
         adapter.lock().await.expect_stop().return_once(|| ());
         wg.stop().await;
@@ -681,7 +805,7 @@ mod tests {
             event.recv().await
         );
         adapter.lock().await.checkpoint();
-        assert_eq!(Some(ifa.clone()), wg.get_interface().await);
+        assert_eq!(ifa.clone(), wg.get_interface().await.unwrap());
 
         adapter.lock().await.expect_stop().return_once(|| ());
         wg.stop().await;
@@ -724,7 +848,7 @@ mod tests {
             event.recv().await
         );
         adapter.lock().await.checkpoint();
-        assert_eq!(Some(ifa.clone()), wg.get_interface().await);
+        assert_eq!(ifa.clone(), wg.get_interface().await.unwrap());
 
         // Connect
         peer.time_since_last_handshake = Some(Duration::from_secs(15));
@@ -788,7 +912,7 @@ mod tests {
             event.recv().await
         );
         adapter.lock().await.checkpoint();
-        assert_eq!(Some(ifa.clone()), wg.get_interface().await);
+        assert_eq!(ifa.clone(), wg.get_interface().await.unwrap());
 
         // Connects
         peer.time_since_last_handshake = Some(Duration::from_secs(94));
@@ -869,7 +993,7 @@ mod tests {
         wg.add_peer(peer.clone()).await;
         adapter.lock().await.checkpoint();
 
-        assert_eq!(Some(iface.clone()), wg.get_interface().await);
+        assert_eq!(iface.clone(), wg.get_interface().await.unwrap());
 
         let cmd_set_device_param2 = set::Device {
             peers: vec![set::Peer::from_public_key(peer.public_key.0).remove(true)],
@@ -891,7 +1015,7 @@ mod tests {
 
         iface.peers.remove(&pubkey);
 
-        assert_eq!(Some(iface.clone()), wg.get_interface().await);
+        assert_eq!(iface.clone(), wg.get_interface().await.unwrap());
 
         adapter.lock().await.expect_stop().return_once(|| ());
         wg.stop().await;
@@ -932,7 +1056,7 @@ mod tests {
         wg.add_peer(peer.clone()).await;
         adapter.lock().await.checkpoint();
 
-        assert_eq!(Some(iface.clone()), wg.get_interface().await);
+        assert_eq!(iface.clone(), wg.get_interface().await.unwrap());
 
         peer.endpoint = Some(([1, 1, 1, 1], 124).into());
 
@@ -956,7 +1080,148 @@ mod tests {
         wg.add_peer(peer.clone()).await;
         adapter.lock().await.checkpoint();
 
-        assert_eq!(Some(iface.clone()), wg.get_interface().await);
+        assert_eq!(iface.clone(), wg.get_interface().await.unwrap());
+
+        adapter.lock().await.expect_stop().return_once(|| ());
+        wg.stop().await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn last_endpoint_change() {
+        let Env {
+            adapter,
+            wg,
+            mut event,
+            ..
+        } = setup().await;
+
+        let pkc = SecretKey::gen().public();
+        let peer = Peer {
+            public_key: pkc,
+            endpoint: Some(([1, 1, 1, 1], 123).into()),
+            persistent_keepalive_interval: Some(25),
+            ..Default::default()
+        };
+
+        adapter
+            .lock()
+            .await
+            .expect_send_uapi_cmd()
+            .times(1)
+            .return_const(Response {
+                errno: 0,
+                interface: None,
+            });
+        wg.add_peer(peer.clone()).await.unwrap();
+        adapter.lock().await.checkpoint();
+
+        assert_eq!(
+            wg.time_since_last_endpoint_change(pkc)
+                .await
+                .unwrap()
+                .unwrap(),
+            Duration::from_millis(0)
+        );
+
+        time::advance(Duration::from_millis(100)).await;
+        assert_eq!(
+            wg.time_since_last_endpoint_change(pkc)
+                .await
+                .unwrap()
+                .unwrap(),
+            Duration::from_millis(100)
+        );
+
+        // Add the same peer again - endpoint is the same,
+        // so it shouldn't change the time
+        wg.add_peer(peer.clone()).await.unwrap();
+        adapter.lock().await.checkpoint();
+        assert_eq!(
+            wg.time_since_last_endpoint_change(pkc)
+                .await
+                .unwrap()
+                .unwrap(),
+            Duration::from_millis(100)
+        );
+
+        // Add a peer with different key, it shouldn't change the
+        // time since last endpoint change
+        adapter
+            .lock()
+            .await
+            .expect_send_uapi_cmd()
+            .times(1)
+            .return_const(Response {
+                errno: 0,
+                interface: None,
+            });
+
+        let peer = Peer {
+            public_key: SecretKey::gen().public(),
+            ..peer
+        };
+        wg.add_peer(peer).await.unwrap();
+        adapter.lock().await.checkpoint();
+        assert_eq!(
+            wg.time_since_last_endpoint_change(pkc)
+                .await
+                .unwrap()
+                .unwrap(),
+            Duration::from_millis(100)
+        );
+
+        // Check if the time is still properly updated
+        time::advance(Duration::from_millis(100)).await;
+        assert_eq!(
+            wg.time_since_last_endpoint_change(pkc)
+                .await
+                .unwrap()
+                .unwrap(),
+            Duration::from_millis(200)
+        );
+
+        // Let's add a peer with the same pubkey and other endpoint
+        // in order to check if it resets the last endpoint change time
+        adapter
+            .lock()
+            .await
+            .expect_send_uapi_cmd()
+            .times(1)
+            .return_const(Response {
+                errno: 0,
+                interface: None,
+            });
+        let peer = Peer {
+            public_key: pkc,
+            endpoint: Some(([2, 2, 2, 2], 123).into()),
+            persistent_keepalive_interval: Some(25),
+            ..Default::default()
+        };
+        wg.add_peer(peer).await.unwrap();
+        adapter.lock().await.checkpoint();
+        assert_eq!(
+            wg.time_since_last_endpoint_change(pkc)
+                .await
+                .unwrap()
+                .unwrap(),
+            Duration::from_millis(0)
+        );
+
+        // And in the end let's check if the time of the last
+        // endpoint change is removed if the corresponding
+        // endpoint is removed
+        adapter
+            .lock()
+            .await
+            .expect_send_uapi_cmd()
+            .times(1)
+            .return_const(Response {
+                errno: 0,
+                interface: None,
+            });
+        wg.del_peer(pkc).await.unwrap();
+        adapter.lock().await.checkpoint();
+        assert_eq!(wg.time_since_last_endpoint_change(pkc).await.unwrap(), None);
 
         adapter.lock().await.expect_stop().return_once(|| ());
         wg.stop().await;

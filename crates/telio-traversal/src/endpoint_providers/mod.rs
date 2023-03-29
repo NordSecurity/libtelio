@@ -2,12 +2,14 @@ pub mod local;
 pub mod stun;
 
 use async_trait::async_trait;
+use enum_map::Enum;
 use ipnet::PrefixLenError;
 use std::time::Duration;
+use telio_crypto::{encryption, PublicKey};
 use thiserror::Error as TError;
 
 use telio_model::SocketAddr;
-use telio_proto::{PingerMsg, Session, WGPort};
+use telio_proto::{PlaintextPongerMsg, Session};
 use telio_task::io::chan;
 use telio_wg;
 
@@ -45,6 +47,15 @@ pub enum Error {
     /// Stun peer is missconfigured (no allowed_ip or endpoint)
     #[error("Stun peer is misconfigured")]
     BadStunPeer,
+    #[error("Encryption failed: {0}")]
+    EncryptionFailed(#[from] encryption::Error),
+}
+
+#[derive(PartialEq, Eq, Hash, Debug, Copy, Clone, Enum)]
+pub enum EndpointProviderType {
+    LocalInterfaces,
+    Stun,
+    Upnp,
 }
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
@@ -53,17 +64,18 @@ pub struct EndpointCandidate {
     pub udp: SocketAddr,
 }
 
-pub type EndpointCandidatesChangeEvent = Vec<EndpointCandidate>;
+pub type EndpointCandidatesChangeEvent = (EndpointProviderType, Vec<EndpointCandidate>);
 
 #[derive(Debug, Clone)]
 pub struct PongEvent {
     pub addr: SocketAddr,
     pub rtt: Duration,
-    pub msg: PingerMsg,
+    pub msg: PlaintextPongerMsg,
 }
 
+#[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
 #[async_trait]
-pub trait EndpointProvider {
+pub trait EndpointProvider: Sync + Send + 'static {
     async fn subscribe_for_pong_events(&self, tx: chan::Tx<PongEvent>);
     async fn subscribe_for_endpoint_candidates_change_events(
         &self,
@@ -74,7 +86,7 @@ pub trait EndpointProvider {
     async fn send_ping(
         &self,
         addr: SocketAddr,
-        peer_id: WGPort,
         session_id: Session,
+        public_key: PublicKey,
     ) -> Result<(), Error>;
 }

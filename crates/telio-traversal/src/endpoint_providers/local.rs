@@ -1,17 +1,23 @@
-use super::{EndpointCandidate, EndpointCandidatesChangeEvent, EndpointProvider, Error, PongEvent};
+use crate::ping_pong_handler::PingPongHandler;
+
+use super::{
+    EndpointCandidate, EndpointCandidatesChangeEvent, EndpointProvider, EndpointProviderType,
+    Error, PongEvent,
+};
 use async_trait::async_trait;
 use futures::Future;
 use ipnet::Ipv4Net;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use telio_proto::{Codec, Packet, PingType, PingerMsg, Session, Timestamp, WGPort};
+use std::time::Duration;
+use telio_crypto::PublicKey;
+use telio_proto::{Session, WGPort};
 use telio_sockets::External;
-use telio_task::BoxAction;
-use telio_task::{io::chan, task_exec, Runtime, Task};
+use telio_task::{io::chan, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn};
-use telio_wg::WireGuard;
+use telio_wg::{DynamicWg, WireGuard};
 use tokio::net::UdpSocket;
+use tokio::sync::Mutex;
 use tokio::time::{interval_at, Interval};
 
 #[cfg(test)]
@@ -30,17 +36,21 @@ impl GetIfAddrs for SystemGetIfAddrs {
     }
 }
 
-pub struct LocalInterfacesEndpointProvider<T: WireGuard, G: GetIfAddrs = SystemGetIfAddrs> {
+pub struct LocalInterfacesEndpointProvider<
+    T: WireGuard = DynamicWg,
+    G: GetIfAddrs = SystemGetIfAddrs,
+> {
     task: Task<State<T, G>>,
 }
 
 pub struct State<T: WireGuard, G: GetIfAddrs> {
     endpoint_candidates_change_publisher: Option<chan::Tx<EndpointCandidatesChangeEvent>>,
     pong_publisher: Option<chan::Tx<PongEvent>>,
-    last_endpoint_candidates_event: EndpointCandidatesChangeEvent,
+    last_endpoint_candidates_event: Vec<EndpointCandidate>,
     poll_timer: Interval,
     wireguard_interface: Arc<T>,
     udp_socket: External<UdpSocket>,
+    ping_pong_handler: Arc<Mutex<PingPongHandler>>,
     get_if_addr: G,
 }
 
@@ -77,11 +87,11 @@ impl<T: WireGuard, G: GetIfAddrs> EndpointProvider for LocalInterfacesEndpointPr
     async fn send_ping(
         &self,
         addr: SocketAddr,
-        wg_port: WGPort,
         session_id: Session,
+        public_key: PublicKey,
     ) -> Result<(), Error> {
         task_exec!(&self.task, async move |s| {
-            Ok(s.send_ping(addr, wg_port, session_id).await)
+            Ok(s.send_ping(addr, session_id, &public_key).await)
         })
         .await?
     }
@@ -92,21 +102,24 @@ impl<T: WireGuard> LocalInterfacesEndpointProvider<T> {
         udp_socket: External<UdpSocket>,
         wireguard_interface: Arc<T>,
         poll_interval: Duration,
+        ping_pong_handler: Arc<Mutex<PingPongHandler>>,
     ) -> Self {
-        LocalInterfacesEndpointProvider::new_with_get_if_addrs(
+        LocalInterfacesEndpointProvider::new_with(
             udp_socket,
             wireguard_interface,
             poll_interval,
+            ping_pong_handler,
             SystemGetIfAddrs::default(),
         )
     }
 }
 
 impl<T: WireGuard, G: GetIfAddrs> LocalInterfacesEndpointProvider<T, G> {
-    pub fn new_with_get_if_addrs(
+    pub fn new_with(
         udp_socket: External<UdpSocket>,
         wireguard_interface: Arc<T>,
         poll_interval: Duration,
+        ping_pong_handler: Arc<Mutex<PingPongHandler>>,
         get_if_addr: G,
     ) -> Self {
         telio_log_info!("Starting local interfaces endpoint provider");
@@ -118,6 +131,7 @@ impl<T: WireGuard, G: GetIfAddrs> LocalInterfacesEndpointProvider<T, G> {
                 poll_timer: interval_at(tokio::time::Instant::now(), poll_interval),
                 wireguard_interface,
                 udp_socket,
+                ping_pong_handler,
                 get_if_addr,
             }),
         }
@@ -134,6 +148,7 @@ impl<T: WireGuard, G: GetIfAddrs> State<T, G> {
             .wireguard_interface
             .get_interface()
             .await
+            .ok()
             .and_then(|i| i.listen_port)
         {
             Ok(wg_port)
@@ -172,7 +187,7 @@ impl<T: WireGuard, G: GetIfAddrs> State<T, G> {
 
             let itfs = self.gather_local_interfaces()?;
 
-            let candidates: EndpointCandidatesChangeEvent = itfs
+            let candidates: Vec<_> = itfs
                 .iter()
                 .map(|itf| EndpointCandidate {
                     wg: SocketAddr::new(itf.addr.ip(), wg_port),
@@ -183,7 +198,7 @@ impl<T: WireGuard, G: GetIfAddrs> State<T, G> {
             if self.last_endpoint_candidates_event != candidates {
                 telio_log_debug!("published candidates: {:?}", &candidates);
                 candidates_publisher
-                    .send(candidates.clone())
+                    .send((EndpointProviderType::LocalInterfaces, candidates.clone()))
                     .await
                     .map(|_| {
                         self.last_endpoint_candidates_event = candidates;
@@ -200,64 +215,30 @@ impl<T: WireGuard, G: GetIfAddrs> State<T, G> {
     async fn send_ping(
         &self,
         addr: SocketAddr,
-        wg_port: WGPort,
         session_id: Session,
+        public_key: &PublicKey,
     ) -> Result<(), Error> {
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_micros() as u64;
-
-        telio_log_debug!("Sending ping to {:?}", addr);
-        let ping = PingerMsg::ping(wg_port, session_id, ts);
-        let buf = ping.encode()?;
-        self.udp_socket.send_to(&buf, addr).await?;
-        Ok(())
+        let wg_port = WGPort(self.get_wg_port().await?);
+        self.ping_pong_handler
+            .lock()
+            .await
+            .send_ping(addr, wg_port, &*self.udp_socket, session_id, public_key)
+            .await
     }
 
-    async fn handle_rx_packet(&self, buf: &[u8], addr: &SocketAddr) -> Result<(), Error> {
-        match Packet::decode(buf)? {
-            Packet::Pinger(packet) => {
-                match packet.get_message_type() {
-                    PingType::PING => {
-                        // Respond with pong
-                        telio_log_debug!("Received ping from {:?}, responding", addr);
-                        let wg_port = self.get_wg_port().await?;
-                        let pong = packet
-                            .pong(WGPort(wg_port))
-                            .ok_or(Error::FailedToBuildPongPacket)?;
-                        let buf = pong.encode()?;
-                        self.udp_socket.send_to(&buf, addr).await?;
-                    }
-                    PingType::PONG => {
-                        if let Some(pong_publisher) = self.pong_publisher.as_ref() {
-                            telio_log_debug!("Received pong from {:?}, notifying", addr);
-                            let ts = SystemTime::now()
-                                .duration_since(UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_micros() as Timestamp;
-                            pong_publisher
-                                .send(PongEvent {
-                                    addr: *addr,
-                                    rtt: Duration::from_millis(ts - packet.get_start_timestamp()),
-                                    msg: packet.clone(),
-                                })
-                                .await?;
-                        } else {
-                            telio_log_warn!(
-                                "Received pong from {:?}, No one subscribed for notifications",
-                                addr
-                            );
-                        }
-                    }
-                }
-            }
-            p => {
-                telio_log_warn!("Received unknown packet on local endpoint provider {:?}", p);
-            }
-        }
-
-        Ok(())
+    async fn handle_rx_packet(&self, encrypted_buf: &[u8], addr: &SocketAddr) -> Result<(), Error> {
+        let wg_port = WGPort(self.get_wg_port().await?);
+        self.ping_pong_handler
+            .lock()
+            .await
+            .handle_rx_packet(
+                encrypted_buf,
+                addr,
+                wg_port,
+                &self.udp_socket,
+                &self.pong_publisher,
+            )
+            .await
     }
 }
 
@@ -271,7 +252,7 @@ impl<T: WireGuard, G: GetIfAddrs> Runtime for State<T, G> {
         F: Future<Output = BoxAction<Self, std::result::Result<(), Self::Err>>> + Send,
     {
         const MAX_SUPPORTED_PACKET_SIZE: usize = 1500;
-        let mut rx_buff = [0u8; MAX_SUPPORTED_PACKET_SIZE];
+        let mut rx_buff = vec![0u8; MAX_SUPPORTED_PACKET_SIZE];
         tokio::select! {
             Ok((len, addr)) = self.udp_socket.recv_from(&mut rx_buff) => {
                 let buf = &rx_buff[..len];
@@ -299,65 +280,73 @@ impl<T: WireGuard, G: GetIfAddrs> Runtime for State<T, G> {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
-    use mockall::mock;
+    use maplit::hashmap;
     use std::net::Ipv6Addr;
-    use telio_crypto::{PublicKey, SecretKey};
-    use telio_proto::MAX_PACKET_SIZE;
+    use telio_crypto::{
+        encryption::{decrypt_request, decrypt_response, encrypt_request, encrypt_response},
+        SecretKey,
+    };
+    use telio_proto::{CodecError, PartialPongerMsg, PingerMsg, MAX_PACKET_SIZE};
     use telio_sockets::SocketPool;
     use telio_task::io::Chan;
-    use telio_wg::{
-        uapi::{Interface, Peer},
-        Error,
-    };
+    use telio_wg::{uapi::Interface, MockWireGuard};
+    use tokio::time::timeout;
 
-    mock! {
-        WG {}
-        #[async_trait]
-        impl WireGuard for WG {
-            async fn get_interface(&self) -> Option<Interface>;
-            async fn get_adapter_luid(&self) -> u64;
-            async fn get_wg_socket(&self, ipv6: bool) -> Result<Option<i32>, Error>;
-            async fn set_secret_key(&self, key: SecretKey);
-            async fn set_fwmark(&self, fwmark: u32) -> bool;
-            async fn add_peer(&self, peer: Peer);
-            async fn del_peer(&self, key: PublicKey);
-            async fn drop_connected_sockets(&self);
-            async fn stop(self);
-        }
+    async fn create_localhost_socket(pool: &SocketPool) -> (External<UdpSocket>, SocketAddr) {
+        let socket = pool
+            .new_external_udp((Ipv4Addr::LOCALHOST, 0), None)
+            .await
+            .expect("Cannot create UdpSocket");
+        let addr = socket.local_addr().unwrap();
+        (socket, addr)
     }
 
     async fn prepare_state_test(
-        wg_mock: MockWG,
+        wg_mock: MockWireGuard,
         get_if_addrs_mock: MockGetIfAddrs,
-    ) -> State<MockWG, MockGetIfAddrs> {
-        State {
-            endpoint_candidates_change_publisher: None,
-            pong_publisher: None,
-            last_endpoint_candidates_event: vec![],
-            poll_timer: interval_at(tokio::time::Instant::now(), Duration::from_secs(10)),
-            wireguard_interface: Arc::new(wg_mock),
-            udp_socket: SocketPool::default()
-                .new_external_udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)), None)
-                .await
-                .unwrap(),
-            get_if_addr: get_if_addrs_mock,
-        }
+    ) -> (
+        State<MockWireGuard, MockGetIfAddrs>,
+        SecretKey,
+        Arc<Mutex<PingPongHandler>>,
+    ) {
+        let secret_key = SecretKey::gen();
+        let ping_pong_handler = Arc::new(Mutex::new(PingPongHandler::new(secret_key)));
+        (
+            State {
+                endpoint_candidates_change_publisher: None,
+                pong_publisher: None,
+                last_endpoint_candidates_event: vec![],
+                poll_timer: interval_at(tokio::time::Instant::now(), Duration::from_secs(10)),
+                wireguard_interface: Arc::new(wg_mock),
+                udp_socket: SocketPool::default()
+                    .new_external_udp((Ipv4Addr::LOCALHOST, 0), None)
+                    .await
+                    .unwrap(),
+                ping_pong_handler: ping_pong_handler.clone(),
+                get_if_addr: get_if_addrs_mock,
+            },
+            secret_key,
+            ping_pong_handler,
+        )
     }
 
     async fn prepare_local_provider_test(
-        wg_mock: MockWG,
+        wg_mock: MockWireGuard,
         get_if_addrs_mock: MockGetIfAddrs,
     ) -> (
-        LocalInterfacesEndpointProvider<MockWG, MockGetIfAddrs>,
+        LocalInterfacesEndpointProvider<MockWireGuard, MockGetIfAddrs>,
         chan::Rx<EndpointCandidatesChangeEvent>,
         chan::Rx<PongEvent>,
         telio_sockets::External<tokio::net::UdpSocket>,
         SocketAddr,
         SocketAddr,
-        SocketPool,
+        SecretKey,
+        Arc<Mutex<PingPongHandler>>,
     ) {
         let socket_pool = SocketPool::default();
+        let secret_key = SecretKey::gen();
 
         async fn create_localhost_socket(pool: &SocketPool) -> (External<UdpSocket>, SocketAddr) {
             let socket = pool
@@ -371,10 +360,12 @@ mod tests {
         let (provider_socket, provider_addr) = create_localhost_socket(&socket_pool).await;
         let (peer_socket, peer_addr) = create_localhost_socket(&socket_pool).await;
 
-        let local_provider = LocalInterfacesEndpointProvider::new_with_get_if_addrs(
+        let ping_pong_handler = Arc::new(Mutex::new(PingPongHandler::new(secret_key)));
+        let local_provider = LocalInterfacesEndpointProvider::new_with(
             provider_socket,
             Arc::new(wg_mock),
             Duration::from_secs(10000),
+            ping_pong_handler.clone(),
             get_if_addrs_mock,
         );
 
@@ -395,13 +386,14 @@ mod tests {
             peer_socket,
             peer_addr,
             provider_addr,
-            socket_pool,
+            secret_key,
+            ping_pong_handler,
         )
     }
 
     #[tokio::test]
     async fn gather_local_interfaces_filtering() {
-        let wg_mock = MockWG::new();
+        let wg_mock = MockWireGuard::new();
         let mut get_if_addrs_mock = MockGetIfAddrs::new();
         get_if_addrs_mock.expect_get().return_once(|| {
             Ok(vec![
@@ -442,7 +434,7 @@ mod tests {
 
         let state = prepare_state_test(wg_mock, get_if_addrs_mock).await;
 
-        let interfaces = state.gather_local_interfaces().unwrap();
+        let interfaces = state.0.gather_local_interfaces().unwrap();
         assert!(interfaces.len() == 1);
         assert!(interfaces[0].name == "correct");
     }
@@ -460,9 +452,9 @@ mod tests {
 
     #[tokio::test]
     async fn candidates_propagated_through_the_channel_when_changed() {
-        let mut wg_mock = MockWG::new();
+        let mut wg_mock = MockWireGuard::new();
         wg_mock.expect_get_interface().returning(|| {
-            Some(Interface {
+            Ok(Interface {
                 listen_port: Some(12345),
                 ..Default::default()
             })
@@ -486,14 +478,15 @@ mod tests {
         expect_get_once(&mut seq, &mut get_if_addrs_mock, 3);
         expect_get_once(&mut seq, &mut get_if_addrs_mock, 3);
 
-        let (local_provider, mut candidates_rx, _, _, _, provider_addr, _) =
+        let (local_provider, mut candidates_rx, _, _, _, provider_addr, _, _) =
             prepare_local_provider_test(wg_mock, get_if_addrs_mock).await;
 
         for i in 1..4 {
             let msg = candidates_rx.recv().await;
             assert!(msg.is_some());
 
-            let candidates = msg.unwrap();
+            let (provider, candidates) = msg.unwrap();
+            assert_eq!(provider, EndpointProviderType::LocalInterfaces);
             assert!(candidates.len() == 1);
             assert!(
                 candidates[0].udp
@@ -522,9 +515,9 @@ mod tests {
 
     #[tokio::test]
     async fn pongs_propagated_through_the_channel() {
-        let mut wg_mock = MockWG::new();
+        let mut wg_mock = MockWireGuard::new();
         wg_mock.expect_get_interface().returning(|| {
-            Some(Interface {
+            Ok(Interface {
                 listen_port: Some(12345),
                 ..Default::default()
             })
@@ -535,39 +528,208 @@ mod tests {
             .expect_get()
             .returning(|| generate_fake_local_interface(1));
 
-        let (local_provider, _, mut pong_rx, peer_socket, peer_addr, _, _) =
-            prepare_local_provider_test(wg_mock, get_if_addrs_mock).await;
+        let (
+            local_provider,
+            _,
+            mut pong_rx,
+            peer_socket,
+            peer_addr,
+            _,
+            local_sk,
+            ping_pong_handler,
+        ) = prepare_local_provider_test(wg_mock, get_if_addrs_mock).await;
 
-        let wg_port = WGPort(123);
         let session_id = 456;
+        let remote_sk = SecretKey::gen();
+        let remote_pk = remote_sk.public();
+
+        ping_pong_handler
+            .lock()
+            .await
+            .configure(hashmap! { 456 => remote_pk });
 
         local_provider
-            .send_ping(peer_addr, wg_port, session_id)
+            .send_ping(peer_addr, session_id, remote_pk)
             .await
             .unwrap();
 
         let mut buf = [0u8; MAX_PACKET_SIZE];
         let (len, addr) = peer_socket.recv_from(&mut buf).await.unwrap();
-        if let Packet::Pinger(msg) = Packet::decode(&buf[..len]).unwrap() {
-            if msg.get_message_type() == PingType::PING {
-                let resp = msg.pong(msg.get_wg_port()).unwrap();
-                let buf = resp.encode().unwrap();
-                peer_socket.send_to(&buf, addr).await.unwrap();
-            } else {
-                panic!("Incorect message type inside Pinger message");
-            }
-        } else {
-            panic!("Incorect packet type in place of ping");
-        }
+        let decrypt_transform = |_packet_type, b: &[u8]| {
+            Ok(decrypt_request(b, &remote_sk, |_| true)
+                .map(|(buf, pk)| (buf, Some(pk)))
+                .unwrap())
+        };
+        let (msg, _) = PingerMsg::decode_and_decrypt(&buf[..len], decrypt_transform).unwrap();
+        let resp = msg.pong(msg.get_wg_port(), &addr.ip()).unwrap();
+        let mut rng = rand::thread_rng();
+        let encrypt_transform =
+            |b: &[u8]| Ok(encrypt_response(b, &mut rng, &remote_sk, &local_sk.public()).unwrap());
+
+        let buf = resp.encode_and_encrypt(encrypt_transform).unwrap();
+        peer_socket.send_to(&buf, addr).await.unwrap();
 
         let pong = pong_rx.recv().await;
         assert!(pong.is_some());
         let pong = pong.unwrap();
-        assert!(pong.msg.get_message_type() == PingType::PONG);
-        assert!(pong.msg.get_wg_port() == wg_port);
+        // Port is allways recieved from actual interface
+        assert_eq!(pong.msg.get_wg_port(), WGPort(12345));
         assert!(pong.msg.get_session() == session_id);
         assert!(pong.addr == peer_addr);
 
         local_provider.stop().await;
+    }
+
+    #[tokio::test]
+    async fn unexpected_pong_is_not_propagated_through_the_channel() {
+        let mut wg_mock = MockWireGuard::new();
+        wg_mock.expect_get_interface().returning(|| {
+            Ok(Interface {
+                listen_port: Some(12345),
+                ..Default::default()
+            })
+        });
+
+        let mut get_if_addrs_mock = MockGetIfAddrs::new();
+        get_if_addrs_mock
+            .expect_get()
+            .returning(|| generate_fake_local_interface(1));
+
+        let (local_provider, _, mut pong_rx, peer_socket, peer_addr, _, local_sk, _) =
+            prepare_local_provider_test(wg_mock, get_if_addrs_mock).await;
+
+        let session_id = 456;
+        let remote_sk = SecretKey::gen();
+        let remote_pk = remote_sk.public();
+
+        local_provider
+            .send_ping(peer_addr, session_id, remote_pk)
+            .await
+            .unwrap();
+
+        let mut buf = [0u8; MAX_PACKET_SIZE];
+        let (len, addr) = peer_socket.recv_from(&mut buf).await.unwrap();
+        let decrypt_transform = |_packet_type, b: &[u8]| {
+            Ok(decrypt_request(b, &remote_sk, |_| true)
+                .map(|(buf, pk)| (buf, Some(pk)))
+                .unwrap())
+        };
+        let (msg, _) = PingerMsg::decode_and_decrypt(&buf[..len], decrypt_transform).unwrap();
+        let resp = msg.pong(msg.get_wg_port(), &addr.ip()).unwrap();
+        let mut rng = rand::thread_rng();
+        let encrypt_transform =
+            |b: &[u8]| Ok(encrypt_response(b, &mut rng, &remote_sk, &local_sk.public()).unwrap());
+
+        let buf = resp.encode_and_encrypt(encrypt_transform).unwrap();
+        peer_socket.send_to(&buf, addr).await.unwrap();
+
+        let pong = timeout(Duration::from_secs(2), pong_rx.recv()).await;
+        assert!(pong.is_err());
+        local_provider.stop().await;
+    }
+
+    #[tokio::test]
+    async fn handling_of_received_ping_from_allowed_peer() {
+        let wg_port = 12345;
+        let mut wg_mock = MockWireGuard::new();
+        wg_mock.expect_get_interface().returning({
+            let wg_port = wg_port;
+            move || {
+                Ok(Interface {
+                    listen_port: Some(wg_port),
+                    ..Default::default()
+                })
+            }
+        });
+
+        let mut get_if_addrs_mock = MockGetIfAddrs::new();
+        get_if_addrs_mock
+            .expect_get()
+            .returning(|| generate_fake_local_interface(1));
+
+        let (state, remote_sk, ping_pong_handler) =
+            prepare_state_test(wg_mock, get_if_addrs_mock).await;
+
+        let socket_pool = SocketPool::default();
+
+        let (provider_socket, provider_addr) = create_localhost_socket(&socket_pool).await;
+        let ping = PingerMsg::ping(WGPort(wg_port), 2, 3);
+        let local_sk = SecretKey::gen();
+        let encrypt_transform = |b: &[u8]| {
+            Ok(
+                encrypt_request(b, &mut rand::thread_rng(), &local_sk, &remote_sk.public())
+                    .unwrap(),
+            )
+        };
+        let encrypted_buf = ping.clone().encode_and_encrypt(encrypt_transform).unwrap();
+
+        tokio::spawn(async move {
+            ping_pong_handler
+                .lock()
+                .await
+                .configure(hashmap! { 456 => local_sk.public() });
+            state.handle_rx_packet(&encrypted_buf, &provider_addr).await
+        });
+
+        let mut output = vec![0u8; MAX_PACKET_SIZE];
+        let len = provider_socket.recv(&mut output).await.unwrap();
+        let pong =
+            PartialPongerMsg::decode_and_decrypt(&output[..len], |_, b| Ok((b.to_vec(), None)))
+                .unwrap();
+        let decrypt_transform = |b: &[u8]| {
+            decrypt_response(b, &local_sk, &remote_sk.public())
+                .map_err(|_| CodecError::DecodeFailed)
+        };
+        let pong = pong.decrypt(decrypt_transform).unwrap();
+        assert_eq!(pong.get_wg_port(), WGPort(wg_port));
+        assert_eq!(pong.get_ping_source_address().unwrap(), provider_addr.ip());
+    }
+
+    #[tokio::test]
+    async fn handling_of_received_ping_from_disallowed_peer() {
+        let wg_port = 12345;
+        let mut wg_mock = MockWireGuard::new();
+        wg_mock.expect_get_interface().returning({
+            let wg_port = wg_port;
+            move || {
+                Ok(Interface {
+                    listen_port: Some(wg_port),
+                    ..Default::default()
+                })
+            }
+        });
+
+        let mut get_if_addrs_mock = MockGetIfAddrs::new();
+        get_if_addrs_mock
+            .expect_get()
+            .returning(|| generate_fake_local_interface(1));
+
+        let (state, remote_sk, ping_pong_handler) =
+            prepare_state_test(wg_mock, get_if_addrs_mock).await;
+
+        let socket_pool = SocketPool::default();
+
+        let (provider_socket, provider_addr) = create_localhost_socket(&socket_pool).await;
+        let ping = PingerMsg::ping(WGPort(wg_port), 2, 3);
+        let local_sk = SecretKey::gen();
+        let encrypt_transform = |b: &[u8]| {
+            Ok(
+                encrypt_request(b, &mut rand::thread_rng(), &local_sk, &remote_sk.public())
+                    .unwrap(),
+            )
+        };
+        let encrypted_buf = ping.clone().encode_and_encrypt(encrypt_transform).unwrap();
+
+        tokio::spawn(async move {
+            ping_pong_handler.lock().await.configure(Default::default());
+            state.handle_rx_packet(&encrypted_buf, &provider_addr).await
+        });
+
+        let mut output = vec![0u8; MAX_PACKET_SIZE];
+        assert!(
+            timeout(Duration::from_secs(2), provider_socket.recv(&mut output))
+                .await
+                .is_err()
+        );
     }
 }

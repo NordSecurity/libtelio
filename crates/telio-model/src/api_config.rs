@@ -1,6 +1,8 @@
 //! Object descriptions of various
 //! telio configurable features via API
 
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumCount;
 
@@ -54,6 +56,8 @@ pub enum PathType {
     Relay,
     /// Nodes connected directly via hole punching
     UdpHolePunch,
+    /// Nodes connected directly via WG
+    Direct,
 }
 
 impl Default for PathType {
@@ -61,6 +65,7 @@ impl Default for PathType {
         PathType::Relay
     }
 }
+
 /// Enable wanted paths for telio
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 pub struct FeaturePaths {
@@ -71,6 +76,28 @@ pub struct FeaturePaths {
     pub force: Option<PathType>,
 }
 
+/// Available Endpoint Providers for meshnet direct connections
+#[derive(Clone, Copy, Debug, EnumCount, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum EndpointProvider {
+    /// Use local interface ips as possible endpoints
+    Local,
+    /// Use stun and wg-stun results as possible endpoints
+    Stun,
+}
+
+/// Endpoint polling interval
+pub const DEFAULT_ENDPOINT_POLL_INTERVAL_SECS: u64 = 10;
+
+/// Enable meshent direct connection
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+pub struct FeatureDirect {
+    /// Endpoint providers [default all]
+    pub providers: Option<HashSet<EndpointProvider>>,
+    /// Polling interval for endpoints [default 10s]
+    pub endpoint_interval_secs: Option<u64>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 /// Encompasses all of the possible features that can be enabled
 pub struct Features {
@@ -78,10 +105,12 @@ pub struct Features {
     pub nurse: Option<FeatureNurse>,
     /// Event logging configurable features
     pub lana: Option<FeatureLana>,
-    /// Configure meshnet connection path type
+    /// Deprecated by direct since 4.0.0
     pub paths: Option<FeaturePaths>,
     /// Configure options for exit dns
     pub exit_dns: Option<FeatureExitDns>,
+    /// Configure options for direct WG connections
+    pub direct: Option<FeatureDirect>,
 }
 
 impl FeaturePaths {
@@ -107,6 +136,43 @@ impl FeaturePaths {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_json_direct_feature_set() {
+        let full_json = r#"
+        {
+            "providers": ["local", "stun"],
+            "endpoint_interval_secs": 30
+        }"#;
+
+        let partial_json = r#"
+        {
+            "providers": ["local"]
+        }"#;
+
+        let full_features = FeatureDirect {
+            providers: Some(
+                vec![EndpointProvider::Local, EndpointProvider::Stun]
+                    .into_iter()
+                    .collect(),
+            ),
+            endpoint_interval_secs: Some(30),
+        };
+
+        let partial_features = FeatureDirect {
+            providers: Some(vec![EndpointProvider::Local].into_iter().collect()),
+            endpoint_interval_secs: None,
+        };
+
+        assert_eq!(
+            serde_json::from_str::<FeatureDirect>(full_json).unwrap(),
+            full_features
+        );
+        assert_eq!(
+            serde_json::from_str::<FeatureDirect>(partial_json).unwrap(),
+            partial_features
+        );
+    }
 
     #[test]
     fn test_json_to_qos_feature_set() {
@@ -194,6 +260,7 @@ mod tests {
             }),
             lana: None,
             paths: None,
+            direct: None,
             exit_dns: None,
         };
 
@@ -210,6 +277,7 @@ mod tests {
             }),
             lana: None,
             paths: None,
+            direct: None,
             exit_dns: None,
         };
 
@@ -220,6 +288,7 @@ mod tests {
             }),
             lana: None,
             paths: None,
+            direct: None,
             exit_dns: None,
         };
 
@@ -255,6 +324,7 @@ mod tests {
             nurse: None,
             lana: None,
             paths: None,
+            direct: None,
             exit_dns: Some(FeatureExitDns {
                 auto_switch_dns_ips: Some(true),
             }),
@@ -264,6 +334,7 @@ mod tests {
             nurse: None,
             lana: None,
             paths: None,
+            direct: None,
             exit_dns: Some(FeatureExitDns {
                 auto_switch_dns_ips: None,
             }),
@@ -297,6 +368,7 @@ mod tests {
                 "priority": ["relay", "udp-hole-punch"],
                 "force": "relay"
             },
+            "direct": {},
             "exit_dns": {}
         }"#;
 
@@ -313,6 +385,10 @@ mod tests {
                 priority: vec![PathType::Relay, PathType::UdpHolePunch],
                 force: Some(PathType::Relay),
             }),
+            direct: Some(FeatureDirect {
+                providers: None,
+                endpoint_interval_secs: None,
+            }),
             exit_dns: Some(FeatureExitDns {
                 auto_switch_dns_ips: None,
             }),
@@ -328,6 +404,7 @@ mod tests {
             lana: None,
             paths: None,
             exit_dns: None,
+            direct: None,
         };
 
         assert_eq!(Features::default(), expected_defaults);

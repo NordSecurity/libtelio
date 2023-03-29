@@ -15,3 +15,7 @@ pub use sleep::*;
 /// Timed, repeated actions
 pub mod repeated_actions;
 pub use repeated_actions::*;
+
+/// Exponential backoff helper
+pub mod exponential_backoff;
+pub use exponential_backoff::*;

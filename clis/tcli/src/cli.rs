@@ -8,9 +8,9 @@ use telio::crypto::{PublicKey, SecretKey};
 use telio::device::{Device, DeviceConfig};
 use telio_model::api_config::Features;
 use telio_model::{config::Config as MeshMap, event::Event as DevEvent, mesh::ExitNode};
-use telio_proto::{Codec, CodecError, Packet, PingType};
+use telio_proto::{CodecError, PacketType};
 use telio_sockets::SocketPool;
-use telio_traversal::routes::stunner::{Config as StunConfig, Stunner};
+use telio_traversal::stunner::{Config as StunConfig, Stunner};
 use telio_wg::AdapterType;
 use thiserror::Error;
 use tokio::{
@@ -192,6 +192,8 @@ enum MeshCmd {
     /// Turn mesnet on
     On {
         name: String,
+        #[clap(possible_values = &["boringtun", "wireguard-go", "wireguard-nt", "linux-native", ""], default_value ="")]
+        adapter: String,
     },
     /// Register to mesh as with some name
     Register {
@@ -293,7 +295,7 @@ fn custom_format(
 
 impl Cli {
     #[allow(unwrap_check)]
-    pub fn new(features: Features) -> Self {
+    pub fn new(features: Features, token: Option<String>) -> Self {
         let base_name = "tcli";
         let suffix = "log";
         if let Ok(logger) = Logger::try_with_str("debug") {
@@ -317,16 +319,34 @@ impl Cli {
 
         let telio = Device::new(
             features,
-            move |e: Box<DevEvent>| sender.send(Resp::Event(e)).unwrap(),
+            {
+                let sender = sender.clone();
+                move |e: Box<DevEvent>| sender.send(Resp::Event(e)).unwrap()
+            },
             None,
         )
         .unwrap();
+
+        let nord = token.and_then(|token| match Nord::token_login(&token) {
+            Ok(nord) => {
+                sender
+                    .send(Resp::Info("Logged in using NORD_TOKEN".to_string()))
+                    .unwrap();
+                Some(nord)
+            }
+            Err(_) => {
+                sender
+                    .send(Resp::Info("Failed to log in using NORD_TOKEN".to_string()))
+                    .unwrap();
+                None
+            }
+        });
 
         Cli {
             telio,
             resp,
             auth: None,
-            nord: None,
+            nord,
             conf: None,
             derp_client: DerpClient::new(),
         }
@@ -337,15 +357,17 @@ impl Cli {
         let mut args = cli_try![shellwords::split(cmd)];
         args.insert(0, "tcli".to_owned());
 
-        match Cmd::try_parse_from(&args) {
+        let parse_try_result = Cmd::try_parse_from(&args);
+
+        match parse_try_result {
             Ok(cmd) => cli_res!(res; (j self.exec_cmd(cmd))),
-            Err(err) => {
-                if err.kind() == clap::ErrorKind::DisplayHelp {
+            Err(err) => match err.kind() {
+                clap::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+                | clap::ErrorKind::DisplayHelp => {
                     cli_res!(res; (i "{}", err));
-                } else {
-                    cli_res!(res; (e Error::Parser(err.kind())));
                 }
-            }
+                e => cli_res!(res; (e Error::Parser(e))),
+            },
         }
         res
     }
@@ -403,14 +425,7 @@ impl Cli {
                 name,
                 private_key,
             } => {
-                let adapter = match adapter.as_ref() {
-                    "boringtun" => AdapterType::BoringTun,
-                    "wireguard-go" => AdapterType::WireguardGo,
-                    "linux-native" => AdapterType::LinuxNativeWg,
-                    "wireguard-nt" => AdapterType::WindowsNativeWg,
-                    "" => AdapterType::default(),
-                    _ => unreachable!(),
-                };
+                let adapter = str_to_adapter(&adapter);
 
                 let private_key = cli_try!(res; private_key
                     .or_else(|| self.nord.as_ref().map(|n| n.get_private_key())).ok_or(Error::NeedsLogin));
@@ -503,7 +518,7 @@ impl Cli {
         let mut res = Vec::new();
         use MeshCmd::*;
         match cmd {
-            On { name } => {
+            On { name, adapter } => {
                 let conf = if let Some(conf) = self.conf.as_ref().cloned() {
                     conf
                 } else {
@@ -517,7 +532,7 @@ impl Cli {
                 let meshmap: MeshMap = cli_try!(res; serde_json::from_str(&meshmap_str));
 
                 let private_key = conf.sk;
-                cli_try!(res; self.start_telio(name, private_key, AdapterType::default(), &mut res));
+                cli_try!(res; self.start_telio(name, private_key, str_to_adapter(&adapter), &mut res));
                 cli_try!(res; self.telio.set_config(&Some(meshmap)));
                 cli_res!(res; (i "started meshnet"));
             }
@@ -565,29 +580,18 @@ impl Cli {
                     let mut rx_buff = [0u8; MAX_PACKET];
                     loop {
                         tokio::select! {
-                                Ok((len, _src_addr)) = udp_socket.recv_from(&mut rx_buff) => {
-                                    match Packet::decode(&rx_buff[..len]) {
-                                        Ok(Packet::PingerDeprecated(pinger_msg)) => {
-                                           // Check if message is PING or PONG type
-                                           if pinger_msg.get_message_type() == PingType::PING {
-                                               cli_res!(res; (i "Pinger message received"));
-                                           } else if pinger_msg.get_message_type() == PingType::PONG {
-                                               cli_res!(res; (i "Ponger message received"));
-                                           }
-                                           break;
-                                        }
-                                        Err(err) => {
-                                             cli_res!(res; (i "Error parsing PingerMsgDeprecated {}", err));
-                                             break;
-                                        }
-                                        _ => {}
-                                    }
-                                },
-
-                                () = &mut sleep => {
-                                    cli_res!(res; (i "timeout"));
-                                    break;
-                                },
+                            Ok((_len, _src_addr)) = udp_socket.recv_from(&mut rx_buff) => {
+                                match rx_buff.get(0).map(|b| PacketType::from(*b)) {
+                                    Some(PacketType::Pinger) => cli_res!(res; (i "Pinger message received")),
+                                    Some(PacketType::Ponger) => cli_res!(res; (i "Ponger message received")),
+                                    other => cli_res!(res; (i "Unexpected packet: {:?}", other)),
+                                }
+                                break;
+                            },
+                            () = &mut sleep => {
+                                cli_res!(res; (i "timeout"));
+                                break;
+                            },
 
                         }
                     }
@@ -756,6 +760,18 @@ impl Cli {
     }
 }
 
+fn str_to_adapter(adapter: &str) -> AdapterType {
+    let adapter = match adapter {
+        "boringtun" => AdapterType::BoringTun,
+        "wireguard-go" => AdapterType::WireguardGo,
+        "linux-native" => AdapterType::LinuxNativeWg,
+        "wireguard-nt" => AdapterType::WindowsNativeWg,
+        "" => AdapterType::default(),
+        _ => unreachable!(),
+    };
+    adapter
+}
+
 impl Report for Cli {
     #[allow(unwrap_check)]
     fn report(&self, cmd: StatusCmd) -> Vec<Resp> {
@@ -772,14 +788,14 @@ impl Report for Cli {
                 Simple => {
                     cli_res!(res;
                         (i "telio running."),
-                        (i "telio nodes: {}", serde_json::to_string(&self.telio.nodes().unwrap()).unwrap()),
+                        (i "telio nodes: {}", serde_json::to_string(&self.telio.external_nodes().unwrap()).unwrap()),
                         (i "derp status: {}", serde_json::to_string(&self.telio.get_derp_server().unwrap()).unwrap())
                     );
                 }
                 Pretty => {
                     cli_res!(res;
                         (i "telio running."),
-                        (i "telio nodes:\n{}", serde_json::to_string_pretty(&self.telio.nodes().unwrap()).unwrap()),
+                        (i "telio nodes:\n{}", serde_json::to_string_pretty(&self.telio.external_nodes().unwrap()).unwrap()),
                         (i "derp status:\n{}", serde_json::to_string_pretty(&self.telio.get_derp_server().unwrap()).unwrap())
                     );
                 }

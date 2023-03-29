@@ -13,6 +13,7 @@ use pnet_packet::{
 };
 use std::collections::HashSet;
 use std::net::Ipv4Addr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, RwLock};
 use std::time::Duration;
 
@@ -28,6 +29,47 @@ const ICMP_BLOCK_TYPES_MASK: u32 = 1 << IcmpTypes::EchoRequest.0
     | 1 << IcmpTypes::InformationRequest.0
     | 1 << IcmpTypes::AddressMaskRequest.0;
 
+/// Firewall trait.
+#[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
+pub trait Firewall {
+    /// Clears the whitelist
+    fn clear_network_whitelist(&self);
+
+    /// Add network range to whitelist
+    fn add_to_network_whitelist(&self, ip_net: IpNetwork);
+
+    /// Remove network range from whitelist
+    fn remove_from_network_whitelist(&self, ip_net: IpNetwork);
+
+    /// Returns a whitelist network ranges
+    #[cfg(test)]
+    fn get_network_whitelist(&self) -> HashSet<IpNetwork>;
+
+    /// Clears the whitelist
+    fn clear_peer_whitelist(&self);
+
+    /// Add network range to whitelist
+    fn add_to_peer_whitelist(&self, peer: PublicKey);
+
+    /// Remove network range from whitelist
+    fn remove_from_peer_whitelist(&self, peer: PublicKey);
+
+    /// Returns a whitelist network ranges
+    #[cfg(test)]
+    fn get_peer_whitelist(&self) -> HashSet<PublicKey>;
+
+    /// For new connections it opens a pinhole for incoming connection
+    /// If connection is already cached, it resets its timer and extends its lifetime
+    /// Only returns false for invalid or not ipv4 packets
+    fn process_outbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool;
+
+    /// Checks if incoming packet should be accepted.
+    /// Does not extend pinhole lifetime on success
+    /// Adds new connection to cache only if ip is whitelisted
+    /// Allows all icmp packets except for request types
+    fn process_inbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool;
+}
+
 #[derive(Default)]
 struct Whitelist {
     /// List of whitelisted networks addresses
@@ -35,10 +77,13 @@ struct Whitelist {
 
     /// List of whitelisted peers identified by public key
     peer_whitelist: HashSet<PublicKey>,
+
+    /// Optimization: skip locks when 0.0.0.0 is whitelisted
+    allow_any_ip: AtomicBool,
 }
 
 /// Statefull packet-filter firewall.
-pub struct Firewall {
+pub struct StatefullFirewall {
     /// Recent udp connections
     udp: Mutex<LruCache<IpConnWithPort, ConnectionInfo>>,
     /// Recent tcp connections
@@ -94,10 +139,10 @@ macro_rules! unwrap_lock_or_return {
     };
 }
 
-impl Firewall {
+impl StatefullFirewall {
     /// Constructs firewall with default timeout (2 mins) and capacity (4096 entries).
     pub fn new() -> Self {
-        Firewall::new_custom(LRU_CAPACITY, LRU_TIMEOUT)
+        StatefullFirewall::new_custom(LRU_CAPACITY, LRU_TIMEOUT)
     }
 
     /// Constructs firewall with custom capacity and timeout in ms (for testing only).
@@ -106,139 +151,10 @@ impl Firewall {
         Self {
             tcp: Mutex::new(LruCache::with_expiry_duration_and_capacity(ttl, capacity)),
             udp: Mutex::new(LruCache::with_expiry_duration_and_capacity(ttl, capacity)),
-            whitelist: RwLock::new(Default::default()),
-        }
-    }
-
-    /// Clears the whitelist
-    pub fn clear_network_whitelist(&self) {
-        telio_log_info!("Clearing firewall network whitelist");
-        unwrap_lock_or_return!(self.whitelist.write())
-            .network_whitelist
-            .clear();
-    }
-
-    /// Add network range to whitelist
-    pub fn add_to_network_whitelist(&self, ip_net: IpNetwork) {
-        telio_log_info!("Adding {:?} network to firewall whitelist", ip_net);
-        unwrap_lock_or_return!(self.whitelist.write())
-            .network_whitelist
-            .insert(ip_net);
-    }
-
-    /// Remove network range from whitelist
-    pub fn remove_from_network_whitelist(&self, ip_net: IpNetwork) {
-        telio_log_info!("Removing {:?} network from firewall whitelist", ip_net);
-        unwrap_lock_or_return!(self.whitelist.write())
-            .network_whitelist
-            .remove(&ip_net);
-    }
-
-    /// Returns a whitelist network ranges
-    pub fn get_network_whitelist(&self) -> HashSet<IpNetwork> {
-        unwrap_lock_or_return!(self.whitelist.write(), Default::default())
-            .network_whitelist
-            .clone()
-    }
-
-    /// Clears the whitelist
-    pub fn clear_peer_whitelist(&self) {
-        telio_log_info!("Clearing firewall peer whitelist");
-        unwrap_lock_or_return!(self.whitelist.write())
-            .peer_whitelist
-            .clear();
-    }
-
-    /// Add network range to whitelist
-    pub fn add_to_peer_whitelist(&self, peer: PublicKey) {
-        telio_log_info!("Adding {:?} peer to firewall whitelist", peer);
-        unwrap_lock_or_return!(self.whitelist.write())
-            .peer_whitelist
-            .insert(peer);
-    }
-
-    /// Remove network range from whitelist
-    pub fn remove_from_peer_whitelist(&self, peer: PublicKey) {
-        telio_log_info!("Removing {:?} peer from firewall whitelist", peer);
-        unwrap_lock_or_return!(self.whitelist.write())
-            .peer_whitelist
-            .remove(&peer);
-    }
-
-    /// Returns a whitelist network ranges
-    pub fn get_peer_whitelist(&self) -> HashSet<PublicKey> {
-        unwrap_lock_or_return!(self.whitelist.write(), Default::default())
-            .peer_whitelist
-            .clone()
-    }
-
-    /// For new connections it opens a pinhole for incoming connection
-    /// If connection is already cached, it resets its timer and extends its lifetime
-    /// Only returns false for invalid or not ipv4 packets
-    pub fn process_outbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool {
-        let ip = unwrap_option_or_return!(Ipv4Packet::new(buffer), false);
-        let peer: PublicKey = public_key.into();
-        {
-            // whitelist read-lock scope
-            let whitelist = unwrap_lock_or_return!(self.whitelist.read(), false);
-
-            // Fasttrack, if peer is whitelisted - skip any conntrack and allow immediately
-            if whitelist.peer_whitelist.contains(&peer) {
-                telio_log_trace!(
-                    "Outbound IP packet is for whitelisted peer, forwarding: {:?}",
-                    ip
-                );
-                return true;
-            }
-        }
-
-        if !check_valid(&ip) {
-            telio_log_trace!("Outbound IP packet is not valid, dropping: {:?}", ip);
-            return false;
-        }
-
-        match ip.get_next_level_protocol() {
-            IpNextHeaderProtocols::Udp => {
-                self.handle_outbound_udp(&ip, buffer);
-            }
-            IpNextHeaderProtocols::Tcp => {
-                self.handle_outbound_tcp(&ip, buffer);
-            }
-            _ => (),
-        };
-
-        telio_log_trace!("Accepting packet {:?} {:?}", ip, peer);
-        true
-    }
-
-    /// Checks if incoming packet should be accepted.
-    /// Does not extend pinhole lifetime on success
-    /// Adds new connection to cache only if ip is whitelisted
-    /// Allows all icmp packets except for request types
-    pub fn process_inbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool {
-        let ip = unwrap_option_or_return!(Ipv4Packet::new(buffer), false);
-        let peer: PublicKey = public_key.into();
-        let whitelist = unwrap_lock_or_return!(self.whitelist.read(), false);
-
-        // Fasttrack, if peer is whitelisted - skip any conntrack and allow immediately
-        if whitelist.peer_whitelist.contains(&peer) {
-            telio_log_trace!(
-                "Inbound IP packet is for whitelisted peer, forwarding: {:?}",
-                ip
-            );
-            return true;
-        }
-
-        if !check_valid(&ip) {
-            telio_log_trace!("Inbound IP packet is not valid, dropping: {:?}", ip);
-            return false;
-        }
-
-        match ip.get_next_level_protocol() {
-            IpNextHeaderProtocols::Udp => self.handle_inbound_udp(&whitelist, &peer, &ip, buffer),
-            IpNextHeaderProtocols::Tcp => self.handle_inbound_tcp(&whitelist, &peer, &ip, buffer),
-            IpNextHeaderProtocols::Icmp => self.handle_inbound_icmp(&whitelist, &peer, &ip, buffer),
-            _ => false,
+            whitelist: RwLock::new(Whitelist {
+                allow_any_ip: AtomicBool::new(false),
+                ..Default::default()
+            }),
         }
     }
 
@@ -326,6 +242,7 @@ impl Firewall {
             );
             if connection_info.conn_remote_initiated
                 && !Self::is_whitelisted(whitelist, peer, ip.get_source())
+                && !whitelist.allow_any_ip.load(Ordering::Relaxed)
             {
                 telio_log_trace!("Removing UDP conntrack entry {:?}", key);
                 udp_cache.remove(&key);
@@ -337,7 +254,9 @@ impl Firewall {
         }
 
         // no value in cache, insert and allow only if ip is whitelisted
-        if !Self::is_whitelisted(whitelist, peer, ip.get_source()) {
+        if !whitelist.allow_any_ip.load(Ordering::Relaxed)
+            && !Self::is_whitelisted(whitelist, peer, ip.get_source())
+        {
             telio_log_trace!("Dropping UDP packet {:?} {:?}", key, peer);
             return false;
         }
@@ -386,6 +305,7 @@ impl Firewall {
             );
             if connection_info.conn_remote_initiated
                 && !Self::is_whitelisted(whitelist, peer, ip.get_source())
+                && !whitelist.allow_any_ip.load(Ordering::Relaxed)
             {
                 telio_log_trace!("Removing TCP conntrack entry {:?}", key);
                 tcp_cache.remove(&key);
@@ -410,7 +330,9 @@ impl Firewall {
             return true;
         }
 
-        if !Self::is_whitelisted(whitelist, peer, ip.get_source()) {
+        if !whitelist.allow_any_ip.load(Ordering::Relaxed)
+            && !Self::is_whitelisted(whitelist, peer, ip.get_source())
+        {
             telio_log_trace!("Dropping TCP packet {:?} {:?}", key, peer);
             return false;
         }
@@ -448,6 +370,7 @@ impl Firewall {
             unwrap_option_or_return!(IcmpPacket::new(&buffer[ip_header_len_bytes..]), false);
 
         if (1 << icmp_packet.get_icmp_type().0) & ICMP_BLOCK_TYPES_MASK != 0
+            && !whitelist.allow_any_ip.load(Ordering::Relaxed)
             && !Self::is_whitelisted(whitelist, peer, ip.get_source())
         {
             telio_log_trace!("Dropping ICMP packet {:?} {:?}", ip, peer);
@@ -458,10 +381,20 @@ impl Firewall {
         true
     }
 
+    fn is_any_whitelisted(whitelist: &Whitelist) -> bool {
+        for ip_net in whitelist.network_whitelist.iter() {
+            if ip_net.prefix() == 0u8 {
+                return true;
+            }
+        }
+        false
+    }
+
     fn is_whitelisted(whitelist: &Whitelist, peer: &PublicKey, ip: Ipv4Addr) -> bool {
         if whitelist.peer_whitelist.contains(peer) {
             return true;
         }
+
         for ip_net in whitelist.network_whitelist.iter() {
             if ip_net.contains(std::net::IpAddr::V4(ip)) {
                 return true;
@@ -471,8 +404,143 @@ impl Firewall {
     }
 }
 
+impl Firewall for StatefullFirewall {
+    fn clear_network_whitelist(&self) {
+        telio_log_info!("Clearing firewall network whitelist");
+        let mut whitelist = unwrap_lock_or_return!(self.whitelist.write());
+        whitelist.network_whitelist.clear();
+        whitelist.allow_any_ip.swap(false, Ordering::Relaxed);
+    }
+
+    fn add_to_network_whitelist(&self, ip_net: IpNetwork) {
+        telio_log_info!("Adding {:?} network to firewall whitelist", ip_net);
+
+        let mut whitelist = unwrap_lock_or_return!(self.whitelist.write());
+
+        if whitelist.network_whitelist.insert(ip_net) {
+            whitelist
+                .allow_any_ip
+                .swap(Self::is_any_whitelisted(&whitelist), Ordering::Relaxed);
+        }
+    }
+
+    fn remove_from_network_whitelist(&self, ip_net: IpNetwork) {
+        telio_log_info!("Removing {:?} network from firewall whitelist", ip_net);
+
+        let mut whitelist = unwrap_lock_or_return!(self.whitelist.write());
+
+        if whitelist.network_whitelist.remove(&ip_net) {
+            whitelist
+                .allow_any_ip
+                .swap(Self::is_any_whitelisted(&whitelist), Ordering::Relaxed);
+        }
+    }
+
+    #[cfg(test)]
+    fn get_network_whitelist(&self) -> HashSet<IpNetwork> {
+        unwrap_lock_or_return!(self.whitelist.write(), Default::default())
+            .network_whitelist
+            .clone()
+    }
+
+    fn clear_peer_whitelist(&self) {
+        telio_log_info!("Clearing firewall peer whitelist");
+        unwrap_lock_or_return!(self.whitelist.write())
+            .peer_whitelist
+            .clear();
+    }
+
+    fn add_to_peer_whitelist(&self, peer: PublicKey) {
+        telio_log_info!("Adding {:?} peer to firewall whitelist", peer);
+        unwrap_lock_or_return!(self.whitelist.write())
+            .peer_whitelist
+            .insert(peer);
+    }
+
+    fn remove_from_peer_whitelist(&self, peer: PublicKey) {
+        telio_log_info!("Removing {:?} peer from firewall whitelist", peer);
+        unwrap_lock_or_return!(self.whitelist.write())
+            .peer_whitelist
+            .remove(&peer);
+    }
+
+    #[cfg(test)]
+    fn get_peer_whitelist(&self) -> HashSet<PublicKey> {
+        unwrap_lock_or_return!(self.whitelist.write(), Default::default())
+            .peer_whitelist
+            .clone()
+    }
+
+    fn process_outbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool {
+        let ip = unwrap_option_or_return!(Ipv4Packet::new(buffer), false);
+        let peer: PublicKey = public_key.into();
+        {
+            // whitelist read-lock scope
+            let whitelist = unwrap_lock_or_return!(self.whitelist.read(), false);
+
+            // Fasttrack, if peer is whitelisted - skip any conntrack and allow immediately
+            if whitelist.peer_whitelist.contains(&peer) {
+                telio_log_trace!(
+                    "Outbound IP packet is for whitelisted peer, forwarding: {:?}",
+                    ip
+                );
+                return true;
+            }
+        }
+
+        if !check_valid(&ip) {
+            telio_log_trace!("Outbound IP packet is not valid, dropping: {:?}", ip);
+            return false;
+        }
+
+        match ip.get_next_level_protocol() {
+            IpNextHeaderProtocols::Udp => {
+                self.handle_outbound_udp(&ip, buffer);
+            }
+            IpNextHeaderProtocols::Tcp => {
+                self.handle_outbound_tcp(&ip, buffer);
+            }
+            _ => (),
+        };
+
+        telio_log_trace!("Accepting packet {:?} {:?}", ip, peer);
+        true
+    }
+
+    /// Checks if incoming packet should be accepted.
+    /// Does not extend pinhole lifetime on success
+    /// Adds new connection to cache only if ip is whitelisted
+    /// Allows all icmp packets except for request types
+    fn process_inbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool {
+        let ip = unwrap_option_or_return!(Ipv4Packet::new(buffer), false);
+        let peer: PublicKey = public_key.into();
+        let whitelist = unwrap_lock_or_return!(self.whitelist.read(), false);
+
+        // Fasttrack, if peer is whitelisted - skip any conntrack and allow immediately
+        if whitelist.peer_whitelist.contains(&peer) {
+            telio_log_trace!(
+                "Inbound IP packet is for whitelisted peer, forwarding: {:?}",
+                ip
+            );
+            return true;
+        }
+
+        if !check_valid(&ip) {
+            telio_log_trace!("Inbound IP packet is not valid, dropping: {:?}", ip);
+            return false;
+        }
+
+        match ip.get_next_level_protocol() {
+            IpNextHeaderProtocols::Udp => self.handle_inbound_udp(&whitelist, &peer, &ip, buffer),
+            IpNextHeaderProtocols::Tcp => self.handle_inbound_tcp(&whitelist, &peer, &ip, buffer),
+            IpNextHeaderProtocols::Icmp => self.handle_inbound_icmp(&whitelist, &peer, &ip, buffer),
+            _ => false,
+        }
+    }
+}
+
 /// The default initialization of Firewall object
-impl Default for Firewall {
+impl Default for StatefullFirewall {
     fn default() -> Self {
         Self::new()
     }
@@ -651,7 +719,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn firewall_udp() {
-        let fw = Firewall::new_custom(3, LRU_TIMEOUT);
+        let fw = StatefullFirewall::new_custom(3, LRU_TIMEOUT);
 
         // Should FAIL (no matching outgoing connections yet)
         assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp("8.8.8.8:8888", "127.0.0.1:1111")), false);
@@ -689,7 +757,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn firewall_tcp() {
-        let fw = Firewall::new_custom(3, LRU_TIMEOUT);
+        let fw = StatefullFirewall::new_custom(3, LRU_TIMEOUT);
 
         // Should FAIL (no matching outgoing connections yet)
         assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp("8.8.8.8:8888", "127.0.0.1:1111", TcpFlags::SYN)), false);
@@ -727,7 +795,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn firewall_tcp_states() {
-        let fw = Firewall::new_custom(3, LRU_TIMEOUT);
+        let fw = StatefullFirewall::new_custom(3, LRU_TIMEOUT);
 
         let us = "127.0.0.1:1111";
         let them = "8.8.8.8:8888";
@@ -767,7 +835,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn firewall_icmp() {
-        let fw = Firewall::new_custom(3, LRU_TIMEOUT);
+        let fw = StatefullFirewall::new_custom(3, LRU_TIMEOUT);
 
         // Should FAIL (should always block request type icmp, unless whitelisted)
         assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp("8.8.8.8", "127.0.0.1", &IcmpTypes::EchoRequest)), false);
@@ -801,7 +869,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn firewall_pinhole_timeout() {
-        let fw = Firewall::new_custom(3, 100);
+        let fw = StatefullFirewall::new_custom(3, 100);
 
         assert_eq!(fw.process_outbound_packet(&make_peer(), &make_udp("127.0.0.1:1111", "8.8.8.8:8888")), true);
         assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp("8.8.8.8:8888", "127.0.0.1:1111")), true);
@@ -813,7 +881,7 @@ mod tests {
     #[test]
     #[ignore]
     fn firewall_pinhole_timeout_extending() {
-        let fw = Firewall::new_custom(3, 20);
+        let fw = StatefullFirewall::new_custom(3, 20);
 
         // Should PASS (adds 1111)
         assert_eq!(fw.process_outbound_packet(&make_peer(), &make_udp("127.0.0.1:1111", "8.8.8.8:8888")), true);
@@ -835,7 +903,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn firewall_whitelist_crud() {
-        let fw = Firewall::new();
+        let fw = StatefullFirewall::new();
         assert!(fw.get_network_whitelist().is_empty());
 
         fw.add_to_network_whitelist("100.1.1.1/32".parse().unwrap());
@@ -852,7 +920,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn firewall_whitelist() {
-        let fw = Firewall::new();
+        let fw = StatefullFirewall::new();
 
         assert!(fw.get_network_whitelist().is_empty());
 
@@ -879,7 +947,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn firewall_whitelist_allow_all() {
-        let fw = Firewall::new();
+        let fw = StatefullFirewall::new();
         assert!(fw.get_network_whitelist().is_empty());
 
         assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp("100.100.100.100:1234", "127.0.0.1:1111",)), false);
@@ -907,7 +975,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn firewall_whitelist_change_icmp() {
-        let fw = Firewall::new();
+        let fw = StatefullFirewall::new();
 
         let us = "127.0.0.1";
         let them = "8.8.8.8";
@@ -923,7 +991,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn firewall_whitelist_change_udp_allow() {
-        let fw = Firewall::new();
+        let fw = StatefullFirewall::new();
 
         let us = "127.0.0.1:1111";
         let them = "8.8.8.8:8888";
@@ -945,7 +1013,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn firewall_whitelist_change_udp_block() {
-        let fw = Firewall::new();
+        let fw = StatefullFirewall::new();
 
         let us = "127.0.0.1:1111";
         let them = "8.8.8.8:8888";
@@ -967,7 +1035,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn firewall_whitelist_change_tcp_allow() {
-        let fw = Firewall::new();
+        let fw = StatefullFirewall::new();
 
         let us = "127.0.0.1:1111";
         let them = "8.8.8.8:8888";
@@ -989,7 +1057,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn firewall_whitelist_change_tcp_block() {
-        let fw = Firewall::new();
+        let fw = StatefullFirewall::new();
 
         let us = "127.0.0.1:1111";
         let them = "8.8.8.8:8888";
@@ -1011,7 +1079,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn firewall_whitelist_peer() {
-        let fw = Firewall::new();
+        let fw = StatefullFirewall::new();
         assert!(fw.get_network_whitelist().is_empty());
         assert!(fw.get_peer_whitelist().is_empty());
 

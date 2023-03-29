@@ -3,13 +3,21 @@ mod generation;
 mod natter;
 mod nurse;
 mod pinger;
+mod upgrade;
 
 use crate::{Codec, CodecError, CodecResult};
+use telio_crypto::PublicKey;
 
 pub use self::{
-    data::DataMsg, generation::Generation, natter::CallMeMaybeMsg,
-    natter::CallMeMaybeMsgDeprecated, nurse::HeartbeatMessage, pinger::PingerMsg,
-    pinger::PingerMsgDeprecated, pinger::Timestamp,
+    data::DataMsg,
+    generation::Generation,
+    natter::CallMeMaybeMsg,
+    natter::CallMeMaybeMsgDeprecated,
+    nurse::HeartbeatMessage,
+    pinger::PingerMsg,
+    pinger::Timestamp,
+    pinger::{PartialPongerMsg, PlaintextPongerMsg},
+    upgrade::UpgradeMsg,
 };
 
 use std::convert::TryFrom;
@@ -53,14 +61,19 @@ pub enum PacketType {
     Heartbeat = 0x02,
     /// CallMeMaybe messages from/to natter
     CallMeMaybeDeprecated = 0x03,
-    /// Pinger packets (oneway, ping_latency, simple pings ...)
-    PingerDeprecated = 0x04,
+
+    /// PingerDeprecated = 0x04,
+
     /// Encrypted package which is not Data type
     Encrypted = 0x05,
     /// CallMeMaybe messages from/to natter
     CallMeMaybe = 0x06,
     /// Pinger packets (oneway, ping_latency, simple pings ...)
     Pinger = 0x07,
+    /// Message used for requesting an WireGuard endpoint upgrade
+    Upgrade = 0x08,
+    /// Ponger packet
+    Ponger = 0x09,
     /// Reserved for future, in case we use all byte values for types.
     Reserved = 0xfe,
 
@@ -83,12 +96,59 @@ pub enum Packet {
     Heartbeat(HeartbeatMessage),
     /// Deprecated for natter <--> natter communications
     CallMeMaybeDeprecated(CallMeMaybeMsgDeprecated),
-    /// Deprecated pinging and checking the remote endpoints
-    PingerDeprecated(PingerMsgDeprecated),
     /// For natter <--> natter communications
     CallMeMaybe(CallMeMaybeMsg),
     /// Pinging and checking the remote endpoints
     Pinger(PingerMsg),
+    /// Reply to the Pinger
+    Ponger(PartialPongerMsg),
+    /// Upgrading connection
+    Upgrade(UpgradeMsg),
+}
+
+impl Packet {
+    /// Decode and decrypt `bytes` using `decrypt` function.
+    ///
+    /// Some messages are sent (partialy) encrypted and in such cases decryption is needed. Otherwise
+    /// this function bahaves just like `Codec::decode`.
+    pub fn decode_and_decrypt(
+        bytes: &[u8],
+        decrypt: impl FnOnce(PacketType, &[u8]) -> CodecResult<(Vec<u8>, Option<PublicKey>)>,
+    ) -> CodecResult<(Self, Option<PublicKey>)>
+    where
+        Self: Sized,
+    {
+        use PacketType::*;
+
+        if bytes.is_empty() {
+            return Err(CodecError::InvalidLength);
+        }
+
+        Ok((
+            match PacketType::from(bytes[0]) {
+                Data | GenData => Self::Data(DataMsg::decode(bytes)?),
+                Heartbeat => Self::Heartbeat(HeartbeatMessage::decode(bytes)?),
+                CallMeMaybe => Self::CallMeMaybe(CallMeMaybeMsg::decode(bytes)?),
+                Pinger => {
+                    let (msg, public_key) = PingerMsg::decode_and_decrypt(bytes, decrypt)?;
+                    return Ok((Self::Pinger(msg), public_key));
+                }
+                Ponger => {
+                    return Ok((
+                        Self::Ponger(PartialPongerMsg::decode_and_decrypt(bytes, decrypt)?),
+                        None,
+                    ))
+                }
+                CallMeMaybeDeprecated => {
+                    Self::CallMeMaybeDeprecated(CallMeMaybeMsgDeprecated::decode(bytes)?)
+                }
+                Upgrade => Self::Upgrade(UpgradeMsg::decode(bytes)?),
+                // At this point a package already should be decrypted if is not Data
+                Reserved | Invalid | Encrypted => return Err(CodecError::DecodeFailed),
+            },
+            None,
+        ))
+    }
 }
 
 impl Codec for Packet {
@@ -97,9 +157,10 @@ impl Codec for Packet {
         PacketType::GenData,
         PacketType::Heartbeat,
         PacketType::CallMeMaybeDeprecated,
-        PacketType::PingerDeprecated,
         PacketType::CallMeMaybe,
         PacketType::Pinger,
+        PacketType::Upgrade,
+        PacketType::Ponger,
     ];
 
     fn decode(bytes: &[u8]) -> CodecResult<Self>
@@ -117,10 +178,11 @@ impl Codec for Packet {
             Heartbeat => Ok(Self::Heartbeat(HeartbeatMessage::decode(bytes)?)),
             CallMeMaybe => Ok(Self::CallMeMaybe(CallMeMaybeMsg::decode(bytes)?)),
             Pinger => Ok(Self::Pinger(PingerMsg::decode(bytes)?)),
+            Ponger => Ok(Self::Ponger(PartialPongerMsg::decode(bytes)?)),
             CallMeMaybeDeprecated => Ok(Self::CallMeMaybeDeprecated(
                 CallMeMaybeMsgDeprecated::decode(bytes)?,
             )),
-            PingerDeprecated => Ok(Self::PingerDeprecated(PingerMsgDeprecated::decode(bytes)?)),
+            Upgrade => Ok(Self::Upgrade(UpgradeMsg::decode(bytes)?)),
             // At this point a package already should be decrypted if is not Data
             Reserved | Invalid | Encrypted => Err(CodecError::DecodeFailed),
         }
@@ -132,8 +194,9 @@ impl Codec for Packet {
             Self::Heartbeat(msg) => msg.encode(),
             Self::CallMeMaybe(msg) => msg.encode(),
             Self::Pinger(msg) => msg.encode(),
+            Self::Ponger(msg) => msg.encode(),
             Self::CallMeMaybeDeprecated(msg) => msg.encode(),
-            Self::PingerDeprecated(msg) => msg.encode(),
+            Self::Upgrade(msg) => msg.encode(),
         }
     }
 
@@ -143,8 +206,9 @@ impl Codec for Packet {
             Self::Heartbeat(msg) => msg.packet_type(),
             Self::CallMeMaybe(msg) => msg.packet_type(),
             Self::Pinger(msg) => msg.packet_type(),
+            Self::Ponger(msg) => msg.packet_type(),
             Self::CallMeMaybeDeprecated(msg) => msg.packet_type(),
-            Self::PingerDeprecated(msg) => msg.packet_type(),
+            Self::Upgrade(msg) => msg.packet_type(),
         }
     }
 }
@@ -193,21 +257,33 @@ impl From<DataMsg> for Packet {
     }
 }
 
+impl From<CallMeMaybeMsg> for Packet {
+    fn from(other: CallMeMaybeMsg) -> Self {
+        Self::CallMeMaybe(other)
+    }
+}
+
 impl From<CallMeMaybeMsgDeprecated> for Packet {
     fn from(other: CallMeMaybeMsgDeprecated) -> Self {
         Self::CallMeMaybeDeprecated(other)
     }
 }
 
-impl From<PingerMsgDeprecated> for Packet {
-    fn from(other: PingerMsgDeprecated) -> Self {
-        Self::PingerDeprecated(other)
-    }
-}
-
 impl From<HeartbeatMessage> for Packet {
     fn from(other: HeartbeatMessage) -> Self {
         Self::Heartbeat(other)
+    }
+}
+
+impl From<UpgradeMsg> for Packet {
+    fn from(other: UpgradeMsg) -> Self {
+        Self::Upgrade(other)
+    }
+}
+
+impl From<PartialPongerMsg> for Packet {
+    fn from(other: PartialPongerMsg) -> Self {
+        Self::Ponger(other)
     }
 }
 
@@ -218,14 +294,15 @@ mod test {
 
     #[test]
     fn all_packet_types_are_covered() {
+        let skip = [
+            PacketType::Reserved,
+            PacketType::Encrypted,
+            PacketType::Invalid,
+        ];
         assert_eq!(
             Packet::TYPES,
             &PacketType::iter()
-                .filter(|pt| {
-                    (pt != &PacketType::Reserved)
-                        && (pt != &PacketType::Encrypted)
-                        && (pt != &PacketType::Invalid)
-                })
+                .filter(|pt| !skip.contains(pt))
                 .collect::<Vec<_>>()
         )
     }

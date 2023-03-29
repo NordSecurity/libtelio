@@ -41,15 +41,21 @@ pub enum Error {
     Send(#[from] SendTimeoutError<(PublicKey, DataMsg)>),
 }
 
+/// Proxy links incoming and outgoing WG Packets to
+/// separate endpoints and by those endpoints identifies public key.
+#[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
+#[async_trait]
+pub trait Proxy {
+    /// Get currently mapped sockets
+    async fn get_endpoint_map(&self) -> Result<EndpointMap, Error>;
+}
+
 /// `UdpProxy` struct wrapping its state in Task runtime
 /// --
 /// State contains:
 /// * Io channel
 /// * WG address
 /// * `HashMap` of all Sockets and their associated Public Keys
-///
-/// Proxy links incoming and outgoing WG Packets to
-/// separate endpoints and by those endpoints identifies public key.
 ///
 /// WG Packet becomes [DataMsg] payload, and then is sent to and from IO.relay.
 pub struct UdpProxy {
@@ -118,18 +124,20 @@ impl UdpProxy {
         .await?
     }
 
-    /// Get currently mapped sockets
-    pub async fn get_endpoint_map(&self) -> Result<EndpointMap, Error> {
-        task_exec!(&self.task_ingress, async move |state| {
-            Ok(state.get_endpoints_map().await)
-        })
-        .await?
-    }
-
     /// Stop proxy
     pub async fn stop(self) {
         let _ = self.task_egress.stop().await.resume_unwind();
         let _ = self.task_ingress.stop().await.resume_unwind();
+    }
+}
+
+#[async_trait]
+impl Proxy for UdpProxy {
+    async fn get_endpoint_map(&self) -> Result<EndpointMap, Error> {
+        task_exec!(&self.task_ingress, async move |state| {
+            Ok(state.get_endpoints_map().await)
+        })
+        .await?
     }
 }
 

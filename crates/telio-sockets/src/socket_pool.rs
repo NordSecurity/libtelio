@@ -16,17 +16,12 @@ use tokio::{
 
 #[cfg(unix)]
 use boringtun::device::MakeExternalBoringtun;
+use telio_utils::telio_log_debug;
 
-#[cfg(windows)]
-use std::os::windows::io::{FromRawSocket, IntoRawSocket};
-
-#[cfg(not(windows))]
-use std::os::unix::io::{FromRawFd, IntoRawFd};
-
-#[cfg(unix)]
-use crate::native::NativeSocket;
-
-use crate::{native::AsNativeSocket, NativeProtector, Protector, TcpParams, UdpParams};
+use crate::{
+    native::{AsNativeSocket, NativeSocket},
+    NativeProtector, Protector, TcpParams, UdpParams,
+};
 
 pub struct External<T: AsNativeSocket> {
     /// Optional so TcpSocket could be transformed into TcpStream
@@ -48,42 +43,6 @@ impl External<TcpSocket> {
                 Ok(sock) => Ok(External {
                     inner: Some((sock, p)),
                 }),
-                Err(e) => {
-                    p.clean(native);
-                    Err(e)
-                }
-            }
-        } else {
-            panic!("Attempt to use dropped value!");
-        }
-    }
-
-    pub async fn connect_timeout(
-        mut self,
-        addr: SocketAddr,
-        timeout: std::time::Duration,
-    ) -> io::Result<External<TcpStream>> {
-        // This function should be called from async runtime, because of `TcpStream::from_std`, that's why - `pub fn async`
-        if let Some((sock, p)) = self.inner.take() {
-            let native = sock.as_native_socket();
-
-            // TODO maybe we should drop the attachment to tokio::TcpSocket type, and stick to more `flexible` socket2::Socket ..?
-            #[cfg(not(windows))]
-            let socket2 = unsafe { Socket::from_raw_fd(sock.into_raw_fd()) };
-
-            #[cfg(windows)]
-            let socket2 = unsafe { Socket::from_raw_socket(sock.into_raw_socket()) };
-
-            match socket2.connect_timeout(&addr.into(), timeout) {
-                Ok(_) => {
-                    // Socket comes out in blocking mode from `connect_timeout` call ...
-                    socket2.set_nonblocking(true)?;
-                    let inner_stream = TcpStream::from_std(std::net::TcpStream::from(socket2))?;
-
-                    Ok(External {
-                        inner: Some((inner_stream, p)),
-                    })
-                }
                 Err(e) => {
                     p.clean(native);
                     Err(e)
@@ -212,6 +171,11 @@ impl SocketPool {
             params.apply(&socket2_socket);
         }
 
+        telio_log_debug!(
+            "Creating external tcp_v4 socket: {}",
+            socket2_socket.as_native_socket()
+        );
+
         self.new_external(
             TcpSocket::from_std_stream(socket2_socket.into()),
             #[cfg(target_os = "macos")]
@@ -240,9 +204,9 @@ impl SocketPool {
     ) -> io::Result<UdpSocket> {
         let sock = Self::new_udp(addr, params).await?;
 
-        #[cfg(any(target_os = "macos", target_os = "ios"))]
-        self.protect.make_internal(sock.as_native_socket())?;
+        telio_log_debug!("Creating internal udp socket: {}", sock.as_native_socket());
 
+        self.make_internal(sock.as_native_socket())?;
         Ok(sock)
     }
 
@@ -251,8 +215,14 @@ impl SocketPool {
         addr: A,
         params: Option<UdpParams>,
     ) -> io::Result<External<UdpSocket>> {
+        let socket = Self::new_udp(addr, params).await?;
+
+        telio_log_debug!(
+            "Creating external udp socket: {}",
+            socket.as_native_socket()
+        );
         self.new_external(
-            Self::new_udp(addr, params).await?,
+            socket,
             #[cfg(target_os = "macos")]
             true,
         )
@@ -261,6 +231,13 @@ impl SocketPool {
     /// wraps protect() on android, fmark on linux and interface binding for others
     pub fn make_external<T: AsNativeSocket>(&self, socket: T) {
         let _ = self.protect.make_external(socket.as_native_socket());
+    }
+
+    /// binds socket to tun interface on mac and iOS
+    pub fn make_internal(&self, _socket: NativeSocket) -> io::Result<()> {
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        let _ = self.protect.make_internal(_socket)?;
+        Ok(())
     }
 
     fn new_external<T: AsNativeSocket>(

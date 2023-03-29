@@ -17,6 +17,12 @@ pub enum Error {
     /// Encoder received malformed data.
     #[error("Failed to encode message")]
     Encode,
+    /// Encryption failed
+    #[error("Encryption failed: {0}")]
+    EncryptionFailed(String),
+    /// Decryption failed
+    #[error("Decryption failed: {0}")]
+    DecryptionFailed(String),
 }
 
 /// Result wrapper for implementations.

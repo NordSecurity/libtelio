@@ -1,0 +1,5 @@
+syntax = "proto3";
+
+message Upgrade {
+	string endpoint = 1;
+}

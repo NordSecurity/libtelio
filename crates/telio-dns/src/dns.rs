@@ -16,6 +16,7 @@ use telio_model::api_config::FeatureExitDns;
 use telio_utils::{telio_log_debug, telio_log_error};
 
 /// A trait for managing dns resolver server instance.
+#[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
 #[async_trait]
 pub trait DnsResolver {
     /// Start the server.
@@ -63,8 +64,8 @@ impl LocalDnsResolver {
         let socket = UdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
             .await
             .map_err(|e| {
-                telio_log_error!("Failed to bind socket: {:?}", e);
-                format!("Failed to bind socket: {:?}", e)
+                telio_log_error!("Failed to bind dns socket: {:?}", e);
+                format!("Failed to bind dns socket: {:?}", e)
             })?;
 
         let socket_port = socket

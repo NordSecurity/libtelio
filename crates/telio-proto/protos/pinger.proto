@@ -1,11 +1,19 @@
 syntax = "proto3";
 
 message Pinger {
-    enum Type {
-        PING = 0;
-        PONG = 1;
+    uint64 start_timestamp = 1;
+    uint32 wg_port = 2; // should be 16 bits
+    oneof ping_source_address {
+        fixed32 v4 = 3;
+        bytes v6 = 4;
     }
-    Type message_type = 1;
-    uint64 session = 2;
-    uint64 start_timestamp = 3;
+}
+
+message Ponger {
+    uint64 start_timestamp = 1;
+    uint32 wg_port = 2;
+    oneof ping_source_address {
+        fixed32 v4 = 3;
+        bytes v6 = 4;
+    }
 }

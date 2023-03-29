@@ -20,6 +20,8 @@
 //! # }
 //! ```
 
+pub mod encryption;
+
 use std::{convert::TryInto, fmt};
 
 use rand::prelude::*;
@@ -65,8 +67,11 @@ impl SecretKey {
     /// assert_ne!(secret_key_a, secret_key_b);
     /// ```
     pub fn gen() -> Self {
+        Self::gen_with(&mut rand::rngs::StdRng::from_entropy())
+    }
+
+    pub(crate) fn gen_with(rng: &mut (impl RngCore + CryptoRng)) -> Self {
         let mut key = SecretKey([0u8; KEY_SIZE]);
-        let mut rng = rand::rngs::StdRng::from_entropy();
         rng.fill_bytes(&mut key.0);
         // Key clamping
         key[0] &= 248;

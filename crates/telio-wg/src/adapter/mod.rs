@@ -107,6 +107,26 @@ pub enum Error {
     /// Failed to restart adapter error
     #[error("Failed to restart internal adapter")]
     RestartFailed,
+
+    /// Port assignment timeout error
+    #[error("Timeout while waiting for port to be assigned")]
+    PortAssignmentTimeoutError,
+
+    /// Unsupported operation errro
+    #[error("Unsupported operation error")]
+    UnsupportedOperationError,
+
+    /// Dublicate Allowed IPs error
+    #[error("Dublicate AllowedIPs Error")]
+    DuplicateAllowedIPsError,
+
+    /// Error retreiving system time
+    #[error("Failed to retreive system time")]
+    SystemTimeError(#[from] std::time::SystemTimeError),
+
+    /// Error executing task
+    #[error("Runtime error occured within WireGuard wrapper {0}")]
+    ExecError(#[from] telio_task::ExecError),
 }
 
 /// Enumeration of types for `Adapter` struct
