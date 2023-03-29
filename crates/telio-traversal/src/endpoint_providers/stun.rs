@@ -557,7 +557,7 @@ mod tests {
     async fn collect_stun_endpoints_on_configure() {
         let mut env = prepare_test_env().await;
 
-        configure_env(&mut env).await;
+        env.configure_env().await;
 
         let udp_endpoint = SocketAddr::new([1, 1, 1, 1].into(), 11111);
         let wg_endpoint = SocketAddr::new([2, 2, 2, 2].into(), 22222);
@@ -587,7 +587,7 @@ mod tests {
     async fn collect_stun_endpoints_on_change() {
         let mut env = prepare_test_env().await;
 
-        configure_env(&env).await;
+        env.configure_env().await;
 
         // Triggered by configuration
         let udp_endpoint = SocketAddr::new([1, 1, 1, 1].into(), 11111);
@@ -667,7 +667,7 @@ mod tests {
         let mut env = prepare_test_env().await;
         let mut buf = [0; MAX_PACKET_SIZE];
 
-        configure_env(&env).await;
+        env.configure_env().await;
 
         // Timeout at first, no reporting as init state is assumed [];
 
@@ -802,7 +802,7 @@ mod tests {
         assert_eq!(pong.addr, ping_addr);
 
         // Configure and reply to stun
-        configure_env(&env).await;
+        env.configure_env().await;
 
         let udp_endpoint = SocketAddr::new([1, 1, 1, 1].into(), 11111);
         let wg_endpoint = SocketAddr::new([2, 2, 2, 2].into(), 22222);
@@ -907,7 +907,7 @@ mod tests {
         assert_eq!(pong.get_wg_port(), WGPort(0));
         assert_eq!(pong.get_session(), session_id);
 
-        configure_env(&env).await;
+        env.configure_env().await;
 
         let udp_endpoint = SocketAddr::new([1, 1, 1, 1].into(), 11111);
         let wg_endpoint = SocketAddr::new([2, 2, 2, 2].into(), 22222);
@@ -967,7 +967,7 @@ mod tests {
         let mut env = prepare_test_env_with_server_weights(vec![100, 200, 10]).await;
         let poll_interval = Duration::from_secs(10000);
 
-        configure_env(&env).await;
+        env.configure_env().await;
 
         tokio::task::yield_now().await;
 
@@ -977,15 +977,15 @@ mod tests {
             .expect("Some server should be published just after configure");
         assert!(received == Some(env.stun_servers[2].clone()));
 
-        expect_server_after_session_timeout(&mut env, 0).await;
+        env.expect_server_after_session_timeout(0).await;
 
         jump_to_next_session_start(poll_interval).await;
 
-        expect_server_after_session_timeout(&mut env, 1).await;
+        env.expect_server_after_session_timeout(1).await;
 
         jump_to_next_session_start(poll_interval).await;
 
-        expect_server_after_session_timeout(&mut env, 2).await;
+        env.expect_server_after_session_timeout(2).await;
     }
 
     #[tokio::test(start_paused = true)]
@@ -993,7 +993,7 @@ mod tests {
         let mut env = prepare_test_env_with_server_weights(vec![100, 200, 10]).await;
         let poll_interval = Duration::from_secs(10000);
 
-        configure_env(&env).await;
+        env.configure_env().await;
 
         tokio::task::yield_now().await;
 
@@ -1003,7 +1003,7 @@ mod tests {
             .expect("Some server should be published just after configure");
         assert!(received == Some(env.stun_servers[2].clone()));
 
-        reply_on_both_sockets(&env, 2).await;
+        env.reply_on_both_sockets(2).await;
 
         jump_to_next_session_start(poll_interval).await;
 
@@ -1011,7 +1011,7 @@ mod tests {
             .try_recv()
             .expect_err("Should not happen!");
 
-        reply_on_both_sockets(&env, 2).await;
+        env.reply_on_both_sockets(2).await;
 
         jump_to_next_session_start(poll_interval).await;
 
@@ -1203,10 +1203,6 @@ mod tests {
         }
     }
 
-    async fn configure_env(env: &Env) {
-        env.stun_provider.configure(env.stun_servers.clone()).await;
-    }
-
     async fn stun_reply<A: Into<rfc5389::Attribute>>(sock: &UdpSocket, attribute: A) {
         use bytecodec::{DecodeExt, EncodeExt};
         use stun_codec::{
@@ -1247,20 +1243,6 @@ mod tests {
         sock.send_to(&packet, addr).await.expect("ok");
     }
 
-    async fn expect_server_after_session_timeout(env: &mut Env, server_num: usize) {
-        // Jupm to the session timeout
-        tokio::time::advance(Duration::from_millis(301)).await;
-
-        // Timeout session
-        tokio::task::yield_now().await;
-
-        let received = env
-            .stun_peer_subscriber
-            .try_recv()
-            .expect("Should receive a STUN peer");
-        assert!(received == Some(env.stun_servers[server_num].clone()));
-    }
-
     async fn jump_to_next_session_start(poll_interval: Duration) {
         // Jump to penalty timeout
         tokio::time::advance(poll_interval + Duration::from_millis(1)).await;
@@ -1269,19 +1251,41 @@ mod tests {
         tokio::task::yield_now().await;
     }
 
-    async fn reply_on_both_sockets(env: &Env, server_num: usize) {
-        let udp_endpoint = SocketAddr::new([1, 1, 1, 1].into(), 11111);
-        let wg_endpoint = SocketAddr::new([2, 2, 2, 2].into(), 22222);
+    impl Env {
+        async fn configure_env(&self) {
+            self.stun_provider
+                .configure(self.stun_servers.clone())
+                .await;
+        }
 
-        await_timeout!(stun_reply(
-            &env.peers[server_num].stun_sock,
-            XorMappedAddress::new(udp_endpoint)
-        ));
-        await_timeout!(stun_reply(
-            &env.peers[server_num].peer_sock,
-            MappedAddress::new(wg_endpoint)
-        ));
+        async fn expect_server_after_session_timeout(&mut self, server_num: usize) {
+            // Jupm to the session timeout
+            tokio::time::advance(Duration::from_millis(301)).await;
 
-        tokio::task::yield_now().await;
+            // Timeout session
+            tokio::task::yield_now().await;
+
+            let received = self
+                .stun_peer_subscriber
+                .try_recv()
+                .expect("Should receive a STUN peer");
+            assert!(received == Some(self.stun_servers[server_num].clone()));
+        }
+
+        async fn reply_on_both_sockets(&self, server_num: usize) {
+            let udp_endpoint = SocketAddr::new([1, 1, 1, 1].into(), 11111);
+            let wg_endpoint = SocketAddr::new([2, 2, 2, 2].into(), 22222);
+
+            await_timeout!(stun_reply(
+                &self.peers[server_num].stun_sock,
+                XorMappedAddress::new(udp_endpoint)
+            ));
+            await_timeout!(stun_reply(
+                &self.peers[server_num].peer_sock,
+                MappedAddress::new(wg_endpoint)
+            ));
+
+            tokio::task::yield_now().await;
+        }
     }
 }
