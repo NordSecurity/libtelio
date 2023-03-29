@@ -106,10 +106,13 @@ impl Sockets {
 
         // TODO: dont rebind all sockets if new socket is added
         for sock in &self.sockets {
-            self.default_interface.as_ref().map(|i| {
-                telio_log_debug!("Binding relay socket to default interface: {}", i.index);
-                let _ = i.bind(*sock, AF_INET as u16);
-            });
+            if let Some(interface) = self.default_interface.as_ref() {
+                telio_log_debug!(
+                    "Binding relay socket to default interface: {}",
+                    interface.index
+                );
+                let _ = interface.bind(*sock, AF_INET as u16);
+            }
         }
     }
 }
@@ -179,10 +182,10 @@ pub struct Interface {
 
 impl Default for Interface {
     fn default() -> Self {
-        return Interface {
+        Interface {
             index: 0,
             ip: Ipv4Addr::new(0, 0, 0, 0),
-        };
+        }
     }
 }
 
@@ -211,7 +214,7 @@ impl Interface {
         let ip_unicast_if = 31;
         let level = if family == AF_INET6 as u16 { 41 } else { 0 };
         let array: [i8; 4] = unsafe { std::mem::transmute(self.index.to_be()) };
-        return unsafe {
+        unsafe {
             setsockopt(
                 socket as usize,
                 level,
@@ -219,7 +222,7 @@ impl Interface {
                 &array as *const i8,
                 4,
             )
-        };
+        }
     }
 
     pub fn get_luid(&self) -> u64 {
@@ -228,7 +231,7 @@ impl Interface {
         {
             return 0;
         }
-        return interface_luid.Value;
+        interface_luid.Value
     }
 }
 
@@ -245,8 +248,10 @@ unsafe extern "system" fn global_route_callback(
         return;
     }
 
-    let mut interface: Interface = Interface::default();
-    interface.index = (*Row).InterfaceIndex;
+    let interface: Interface = Interface {
+        index: (*Row).InterfaceIndex,
+        ..Default::default()
+    };
 
     let _ = (CallerContext as *mut Sender<Interface>)
         .as_ref()
@@ -267,8 +272,10 @@ unsafe extern "system" fn global_iface_callback(
         return;
     }
 
-    let mut interface: Interface = Interface::default();
-    interface.index = (*Row).InterfaceIndex;
+    let interface: Interface = Interface {
+        index: (*Row).InterfaceIndex,
+        ..Default::default()
+    };
 
     let _ = (CallerContext as *mut Sender<Interface>)
         .as_ref()
@@ -349,17 +356,17 @@ pub fn get_default_interface(tunnel_interface: u64) -> Result<Interface> {
         if row.InterfaceIndex == 0u32 {
             continue;
         }
-
         if row.DestinationPrefix.PrefixLength != 0u8 {
             continue;
         }
 
-        let mut ifrow: MIB_IF_ROW2 = MIB_IF_ROW2::default();
-        ifrow.InterfaceLuid = row.InterfaceLuid;
+        let mut ifrow: MIB_IF_ROW2 = MIB_IF_ROW2 {
+            InterfaceLuid: row.InterfaceLuid,
+            ..Default::default()
+        };
         if unsafe { GetIfEntry2(&mut ifrow as PMIB_IF_ROW2) } != NO_ERROR {
             return Err(std::io::Error::last_os_error());
         }
-
         if ifrow.OperStatus != IfOperStatusUp {
             telio_log_debug!(
                 "Interface {} is not up (Status: {}) -> skip",
@@ -373,9 +380,12 @@ pub fn get_default_interface(tunnel_interface: u64) -> Result<Interface> {
             continue;
         }
 
-        let mut iface: MIB_IPINTERFACE_ROW = MIB_IPINTERFACE_ROW::default();
-        iface.InterfaceLuid = row.InterfaceLuid;
-        iface.Family = AF_INET as u16;
+        let mut iface: MIB_IPINTERFACE_ROW = MIB_IPINTERFACE_ROW {
+            InterfaceLuid: row.InterfaceLuid,
+            Family: AF_INET as u16,
+            ..Default::default()
+        };
+
         let err = unsafe { GetIpInterfaceEntry(&mut iface as PMIB_IPINTERFACE_ROW) };
         if err != NO_ERROR {
             return Err(std::io::Error::last_os_error());
@@ -427,7 +437,7 @@ pub fn get_default_interface(tunnel_interface: u64) -> Result<Interface> {
         return Err(std::io::Error::last_os_error());
     }
 
-    let mut p_adapter: *mut IP_ADAPTER_INFO = unsafe { std::mem::transmute(&raw_adapter_mem) };
+    let mut p_adapter: *mut IP_ADAPTER_INFO = raw_adapter_mem.as_mut_ptr() as *mut IP_ADAPTER_INFO;
 
     let mut default_interface = Interface {
         index,
@@ -440,7 +450,7 @@ pub fn get_default_interface(tunnel_interface: u64) -> Result<Interface> {
         let adapter_index = unsafe { (*p_adapter).Index };
 
         if index == adapter_index {
-            let addr = std::str::from_utf8(unsafe {
+            default_interface.ip = std::str::from_utf8(unsafe {
                 &*((&address.IpAddress.String) as *const [i8] as *const [u8])
             })
             .unwrap()
@@ -448,7 +458,6 @@ pub fn get_default_interface(tunnel_interface: u64) -> Result<Interface> {
             .parse::<Ipv4Addr>()
             .unwrap();
 
-            default_interface.ip = Ipv4Addr::from(addr);
             interface_found = true;
             break;
         }

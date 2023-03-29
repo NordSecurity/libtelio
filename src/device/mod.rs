@@ -514,7 +514,7 @@ impl Device {
     pub fn connect_exit_node(&self, node: &ExitNode) -> Result {
         self.art()?.block_on(async {
             let node = node.clone();
-            let wireguard_interface: Arc<DynamicWg> = task_exec!(self.rt()?, async move |rt| {
+            let _wireguard_interface: Arc<DynamicWg> = task_exec!(self.rt()?, async move |rt| {
                 rt.connect_exit_node(&node).await?;
                 Ok(rt.entities.wireguard_interface.clone())
             })
@@ -523,7 +523,7 @@ impl Device {
 
             // TODO: delete this as sockets are protected from within boringtun itself
             #[cfg(not(windows))]
-            self.protect_from_vpn(&*wireguard_interface).await?;
+            self.protect_from_vpn(&*_wireguard_interface).await?;
 
             Ok(())
         })

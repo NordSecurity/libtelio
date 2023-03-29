@@ -58,26 +58,16 @@ struct WireGuardUapiSetDevice {
 
 impl WireGuardUapiSetDevice {
     pub fn new(config: &wireguard_uapi::xplatform::set::Device) -> Self {
-        let mut me: Self = WireGuardUapiSetDevice::default();
-
         // Create a local copy of the configuration
-        // Workaround: wireguard_uapi::xplatform::set::Device does not implement Clone
-        me.config = wireguard_uapi::xplatform::set::Device::default();
-        if let Some(private_key) = config.private_key.as_ref() {
-            me.config.private_key = Some(private_key.clone());
+        WireGuardUapiSetDevice {
+            config: wireguard_uapi::xplatform::set::Device {
+                private_key: config.private_key,
+                listen_port: config.listen_port,
+                fwmark: config.fwmark,
+                replace_peers: config.replace_peers,
+                peers: config.peers.clone(),
+            },
         }
-        if let Some(listen_port) = config.listen_port {
-            me.config.listen_port = Some(listen_port);
-        }
-        if let Some(fwmark) = config.fwmark {
-            me.config.fwmark = Some(fwmark);
-        }
-        if let Some(replace_peers) = config.replace_peers {
-            me.config.replace_peers = Some(replace_peers);
-        }
-        me.config.peers = config.peers.clone();
-
-        me
     }
 }
 
@@ -172,7 +162,7 @@ impl InterfaceWatcher {
             // iw.watchdog.Reset(time.Minute)
 
             watched_adapter.luid = luid;
-            watched_adapter.adapter = Some(adapter.clone());
+            watched_adapter.adapter = Some(adapter);
 
             watched_adapter.last_known_config = None;
 
@@ -251,7 +241,7 @@ impl InterfaceWatcher {
             telio_log_info!("Monitoring MTU of default routes for {}", family_str);
             let arc_mtu_monitor =
                 Arc::new(Mutex::new(MtuMonitor::new(watched_adapter.luid, family)));
-            if let Ok(mut mtu_monitor) = arc_mtu_monitor.clone().lock() {
+            if let Ok(mut mtu_monitor) = arc_mtu_monitor.lock() {
                 match unsafe { mtu_monitor.start_monitoring() } {
                     Ok(_) => {
                         watched_adapter.mtu_monitor.push(arc_mtu_monitor.clone());
@@ -261,7 +251,7 @@ impl InterfaceWatcher {
                         // iw.errors <- interfaceWatcherError{services.ErrorMonitorMTUChanges, err}
                     }
                 }
-            }
+            };
         }
 
         if let Some(last_known_config) = &watched_adapter.last_known_config {
@@ -349,7 +339,7 @@ impl InterfaceWatcher {
         );
 
         let self_ptr = CallerContext as *mut InterfaceWatcher;
-        if let Ok(_) = (*self_ptr).iface_cb_handle.clone().lock() {
+        if (*self_ptr).iface_cb_handle.clone().lock().is_ok() {
             if NotificationType == MibAddInstance {
                 (*self_ptr).mib_add_instance(Row);
             };

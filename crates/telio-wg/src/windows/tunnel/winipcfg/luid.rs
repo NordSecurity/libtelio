@@ -68,9 +68,10 @@ impl InterfaceLuid {
     /// get_interface method retrieves information for the specified adapter on the local computer.
     /// https://docs.microsoft.com/en-us/windows/desktop/api/netioapi/nf-netioapi-getifentry2
     pub unsafe fn get_interface(&self) -> Result<MIB_IF_ROW2, NETIO_STATUS> {
-        let mut row = MIB_IF_ROW2::default();
-
-        row.InterfaceLuid = self.luid;
+        let mut row = MIB_IF_ROW2 {
+            InterfaceLuid: self.luid,
+            ..MIB_IF_ROW2::default()
+        };
 
         let result = GetIfEntry2(&mut row);
         if NO_ERROR == result {
