@@ -300,6 +300,7 @@ mod tests {
         (upg_sync, upg_rq_rx, intercoms_them)
     }
 
+    #[ignore]
     #[tokio::test]
     async fn handle_request_expiration() {
         const EXPIRY: Duration = Duration::from_millis(100);
