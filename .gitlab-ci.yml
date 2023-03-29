@@ -14,5 +14,5 @@ libtelio-build-pipeline:
 
   trigger:
     project: $LIBTELIO_BUILD_PROJECT_PATH
-    branch: direct_wireguard_meshnet
+    branch: libtelio-oss
     strategy: depend
