@@ -15,7 +15,7 @@ pub struct WgStunController<T: WireGuard = DynamicWg> {
 }
 
 struct State<T: WireGuard> {
-    wg_stun_peer_publisher: chan::Tx<WgStunServer>,
+    wg_stun_peer_publisher: chan::Tx<Option<WgStunServer>>,
     wireguard_interface: Arc<T>,
     config: Option<WgStunConfig>,
     current_server: Option<WgStunServer>,
@@ -24,7 +24,7 @@ struct State<T: WireGuard> {
 
 impl<T: WireGuard> WgStunController<T> {
     pub fn new(
-        wg_stun_peer_publisher: chan::Tx<WgStunServer>,
+        wg_stun_peer_publisher: chan::Tx<Option<WgStunServer>>,
         wireguard_interface: Arc<T>,
         poll_interval: Duration,
     ) -> Self {
@@ -69,6 +69,7 @@ impl<T: WireGuard> WgStunController<T> {
 }
 
 impl<T: WireGuard> State<T> {
+    #[allow(mpsc_blocking_send)]
     async fn configure(&mut self, config: Option<WgStunConfig>) {
         if self.config == config {
             return;
@@ -77,6 +78,13 @@ impl<T: WireGuard> State<T> {
         self.config = config;
         if let Some(c) = self.config.as_mut() {
             c.reset();
+        } else {
+            self.wg_stun_peer_publisher
+                .send(None)
+                .await
+                .unwrap_or_else(|e| {
+                    telio_log_error!("Error: {}", e);
+                });
         }
         self.next().await;
     }
@@ -123,7 +131,7 @@ impl<T: WireGuard> State<T> {
             self.current_server = self.get_next_server();
             if let Some(next_server) = &self.current_server {
                 self.wg_stun_peer_publisher
-                    .send(next_server.clone())
+                    .send(Some(next_server.clone()))
                     .await
                     .unwrap_or_else(|e| {
                         telio_log_error!("Error: {}", e);
@@ -197,7 +205,7 @@ mod tests {
             .expect_time_since_last_rx()
             .returning(|_| Ok(Some(Duration::from_secs(40))));
 
-        let mut wg_stun_peer_channel = Chan::<WgStunServer>::default();
+        let mut wg_stun_peer_channel = Chan::<Option<WgStunServer>>::default();
         let controller = WgStunController::new(
             wg_stun_peer_channel.tx.clone(),
             Arc::new(wg_mock),
@@ -208,22 +216,22 @@ mod tests {
         controller.configure(Some(config.clone())).await;
 
         let received = wg_stun_peer_channel.rx.recv().await.unwrap();
-        assert!(received == config.servers[2]);
+        assert!(received == Some(config.servers[2].clone()));
 
         controller.tick().await;
 
         let received = wg_stun_peer_channel.rx.recv().await.unwrap();
-        assert!(received == config.servers[0]);
+        assert!(received == Some(config.servers[0].clone()));
 
         controller.tick().await;
 
         let received = wg_stun_peer_channel.rx.recv().await.unwrap();
-        assert!(received == config.servers[1]);
+        assert!(received == Some(config.servers[1].clone()));
 
         controller.tick().await;
 
         let received = wg_stun_peer_channel.rx.recv().await.unwrap();
-        assert!(received == config.servers[2]);
+        assert!(received == Some(config.servers[2].clone()));
     }
 
     #[tokio::test]
@@ -233,7 +241,7 @@ mod tests {
             .expect_time_since_last_rx()
             .returning(|_| Ok(Some(Duration::from_secs(25))));
 
-        let mut wg_stun_peer_channel = Chan::<WgStunServer>::default();
+        let mut wg_stun_peer_channel = Chan::<Option<WgStunServer>>::default();
         let controller = WgStunController::new(
             wg_stun_peer_channel.tx.clone(),
             Arc::new(wg_mock),
@@ -244,7 +252,7 @@ mod tests {
         controller.configure(Some(config.clone())).await;
 
         let received = wg_stun_peer_channel.rx.recv().await.unwrap();
-        assert!(received == config.servers[2]);
+        assert!(received == Some(config.servers[2].clone()));
 
         controller.tick().await;
         wg_stun_peer_channel

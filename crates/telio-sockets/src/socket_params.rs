@@ -48,6 +48,14 @@ impl TcpParams {
         let addr = socket.local_addr().unwrap_or_else(|_| default.into());
         let mut kp_enabled: bool = false;
 
+        // Setting linger=0 so tcp sockets would close immediately
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        {
+            if let Err(err) = socket.set_linger(Some(Duration::from_secs(0))) {
+                telio_log_warn!("Failed to set so_linger on tcp socket: {}", err);
+            }
+        }
+
         // Setting TCP nodelay
         if let Some(nodelay_enable) = self.nodelay_enable {
             let enable = nodelay_enable as u32;

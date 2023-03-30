@@ -262,7 +262,7 @@ pub struct EventListeners {
     wg_event_subscriber: chan::Rx<Box<WGEvent>>,
     derp_event_subscriber: mc_chan::Rx<Box<DerpServer>>,
     endpoint_upgrade_event_subscriber: chan::Rx<UpgradeRequestChangeEvent>,
-    wg_stun_server_subscriber: chan::Rx<WgStunServer>,
+    wg_stun_server_subscriber: chan::Rx<Option<WgStunServer>>,
 }
 
 pub struct EventPublishers {
@@ -1406,7 +1406,8 @@ impl TaskRuntime for Runtime {
             },
 
             Some(wg_stun_server) = self.event_listeners.wg_stun_server_subscriber.recv() => {
-                self.requested_state.wg_stun_server = Some(wg_stun_server);
+                self.requested_state.wg_stun_server = wg_stun_server;
+
                 wg_controller::consolidate_wg_state(&self.requested_state, &self.entities)
                     .await
                     .unwrap_or_else(

@@ -379,8 +379,15 @@ impl StunSession {
             wg_stun.0.as_bytes(),
         );
 
-        socket_via_wg.send_to(&wg_stun.1, wg).await?;
-        socket_via_ext.send_to(&udp_stun.1, udp).await?;
+        if let Err(err) = socket_via_wg.send_to(&wg_stun.1, wg).await {
+            telio_log_debug!("wg stun send_to error");
+            return Err(Error::IOError(err));
+        }
+
+        if let Err(err) = socket_via_ext.send_to(&udp_stun.1, udp).await {
+            telio_log_debug!("plain stun send_to error");
+            return Err(Error::IOError(err));
+        }
 
         Ok(Self {
             wg: StunRequest::Waiting(wg, wg_stun.0),
