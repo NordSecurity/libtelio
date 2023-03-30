@@ -19,3 +19,7 @@ pub use repeated_actions::*;
 /// Exponential backoff helper
 pub mod exponential_backoff;
 pub use exponential_backoff::*;
+
+/// Preventing sensitive information from apearing in logs in release mode.
+pub mod hidden;
+pub use hidden::*;
