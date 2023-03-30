@@ -59,6 +59,7 @@ impl Nurse {
         relay_multiplexer: &Multiplexer,
         wg_analytics_channel: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
         config_update_channel: Option<mc_chan::Tx<Box<MeshConfigUpdateEvent>>>,
+        collection_trigger_channel: Option<mc_chan::Tx<Box<()>>>,
     ) -> Self {
         let meshnet_id = Self::meshnet_id();
 
@@ -67,6 +68,8 @@ impl Nurse {
 
         // If Nurse start is called config_update_channel exists for sure
         let config_update_channel = config_update_channel.unwrap_or_else(|| McChan::default().tx);
+        let collection_trigger_channel =
+            collection_trigger_channel.unwrap_or_else(|| McChan::default().tx);
 
         // Heartbeat component
         let heartbeat_io = HeartbeatIo {
@@ -78,6 +81,7 @@ impl Nurse {
             wg_event_channel: wg_event_channel.subscribe(),
             config_update_channel: config_update_channel.subscribe(),
             analytics_channel: analytics_channel.tx.clone(),
+            collection_trigger_channel: collection_trigger_channel.subscribe(),
         };
 
         let heartbeat = HeartbeatAnalytics::new(

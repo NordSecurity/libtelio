@@ -283,6 +283,9 @@ struct Runtime {
     /// Used to send local nodes to nurse component when there is a config update
     config_update_ch: Option<Tx<Box<MeshConfigUpdateEvent>>>,
 
+    /// Used to manually trigger an event collection
+    collection_trigger_ch: Option<Tx<Box<()>>>,
+
     /// All device Entities
     ///
     /// Entities represents any component which may need some controlling. And may or may not have
@@ -608,6 +611,12 @@ impl Device {
             Err(no_data) => Err(Error::FailedNatInfoRecover(no_data)),
         }
     }
+
+    pub fn trigger_analytics_event(&self) -> Result<()> {
+        self.art()?.block_on(async {
+            task_exec!(self.rt()?, async move |rt| Ok(rt.trigger_analytics_event().await)).await?
+        })
+    }
 }
 
 impl Drop for Device {
@@ -690,10 +699,15 @@ impl Runtime {
             derp_events.tx.clone(),
         ));
 
-        let (analytics_ch, config_update_ch) = if features.nurse.is_some() {
-            (Some(McChan::default().tx), Some(McChan::default().tx))
+
+        let (analytics_ch, config_update_ch, collection_trigger_ch) = if features.nurse.is_some() {
+            (
+                Some(McChan::default().tx),
+                Some(McChan::default().tx),
+                Some(McChan::default().tx),
+            )
         } else {
-            (None, None)
+            (None, None, None)
         };
 
         let wg_events = Chan::default();
@@ -857,6 +871,7 @@ impl Runtime {
             features,
             requested_state,
             config_update_ch,
+            collection_trigger_ch,
             entities: Entities {
                 wireguard_interface,
                 dns,
@@ -1342,6 +1357,15 @@ impl Runtime {
                 })
             }
             _ => None,
+        }
+    }
+
+    async fn trigger_analytics_event(&self) -> Result<()> {
+        if let Some(collection_trigger_ch) = &self.collection_trigger_ch {
+            let _ = collection_trigger_ch.send(Box::new(()));
+            Ok(())
+        } else {
+            Err(Error::NotStarted)
         }
     }
 }
