@@ -3,19 +3,23 @@ use std::{io::Result, os};
 use crate::native::NativeSocket;
 use telio_utils::{telio_log_debug, telio_log_error};
 
-pub(crate) fn bind_to_tun(sock: NativeSocket, tunnel_interface: Option<u64>) {
-    if let Some(index) = tunnel_interface {
-        telio_log_debug!("Binding socket {} to tunnel interface: {}", sock, index);
-        let res = bind(index as u32, sock, libc::AF_INET);
-        if let Err(e) = res {
-            telio_log_error!(
-                "failed to bind socket {} to tunnel interface: {}: {}",
-                sock,
-                index,
-                e
-            );
-        }
+pub(crate) fn bind_to_tun(sock: NativeSocket, tunnel_interface: u64) -> Result<()> {
+    telio_log_debug!(
+        "Binding socket {} to tunnel interface: {}",
+        sock,
+        tunnel_interface
+    );
+    let res = bind(tunnel_interface as u32, sock, libc::AF_INET);
+    if let Err(e) = &res {
+        telio_log_error!(
+            "failed to bind socket {} to tunnel interface: {}: {}",
+            sock,
+            tunnel_interface,
+            e
+        );
     }
+
+    res
 }
 
 pub(crate) fn bind(interface_index: u32, socket: i32, family: i32) -> Result<()> {

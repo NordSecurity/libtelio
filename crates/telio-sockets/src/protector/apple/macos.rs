@@ -1,9 +1,10 @@
+use libc;
+use parking_lot::RwLock;
+use std::result::Result;
 use std::{
-    io::{self, Result},
+    io::{self},
     sync::{Arc, Mutex, Weak},
 };
-
-use libc;
 use system_configuration::{
     self,
     core_foundation::{
@@ -25,56 +26,96 @@ use common::{bind, bind_to_tun};
 use crate::native::interface_index_from_name;
 use crate::native::NativeSocket;
 use crate::Protector;
-use telio_utils::{telio_log_debug, telio_log_error};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn};
 
-pub struct NativeProtector {
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("Macos must provide sideload option in features")]
+    SideloadOptionMissing,
+}
+
+pub struct SocketWatcher {
     sockets: Arc<Mutex<Sockets>>,
-    monitor: JoinHandle<Result<()>>,
+    monitor: JoinHandle<io::Result<()>>,
+}
+pub struct NativeProtector {
+    /// This is used to bind sockets to external interface
+    /// It will save provided sockets and rebind them when network changes
+    socket_watcher: Option<SocketWatcher>,
+
+    /// This is used to bind sockets to tunnel interface
+    /// This is needed for macos/ios appstore apps as apple's Network Extension seems to
+    /// exclude all sockets created by tunnel process, via setting NECP rules
+    tunnel_interface: RwLock<Option<u64>>,
 }
 
 impl NativeProtector {
-    pub fn new() -> io::Result<Self> {
-        let sockets = Arc::new(Mutex::new(Sockets::new()));
-        Ok(Self {
-            sockets: sockets.clone(),
-            monitor: spawn_monitor(sockets)?,
-        })
+    pub fn new(macos_sideload: Option<bool>) -> Result<Self, Error> {
+        match macos_sideload {
+            Some(true) => {
+                let sockets = Arc::new(Mutex::new(Sockets::new()));
+                Ok(Self {
+                    socket_watcher: Some(SocketWatcher {
+                        sockets: sockets.clone(),
+                        monitor: spawn_monitor(sockets),
+                    }),
+                    tunnel_interface: RwLock::new(None),
+                })
+            }
+            Some(false) => Ok(Self {
+                socket_watcher: None,
+                tunnel_interface: RwLock::new(None),
+            }),
+            None => Err(Error::SideloadOptionMissing),
+        }
     }
 }
 
 impl Drop for NativeProtector {
     fn drop(&mut self) {
-        self.monitor.abort();
+        if let Some(ref sw) = self.socket_watcher {
+            sw.monitor.abort();
+        }
     }
 }
 
 impl Protector for NativeProtector {
     fn make_external(&self, socket: NativeSocket) -> io::Result<()> {
-        if let Ok(mut socks) = self.sockets.lock() {
-            socks.sockets.push(socket);
-            socks.rebind(socket, true);
+        if let Some(ref sw) = self.socket_watcher {
+            if let Ok(mut socks) = sw.sockets.lock() {
+                socks.sockets.push(socket);
+                socks.rebind(socket, true);
+            }
         }
+
         Ok(())
     }
 
     fn make_internal(&self, socket: NativeSocket) -> io::Result<()> {
-        if let Ok(socks) = self.sockets.lock() {
-            bind_to_tun(socket, socks.tunnel_interface);
+        if let Some(index) = *self.tunnel_interface.read() {
+            return bind_to_tun(socket, index);
         }
+
         Ok(())
     }
 
     fn clean(&self, socket: NativeSocket) {
-        if let Ok(mut socks) = self.sockets.lock() {
-            socks.sockets.retain(|s| s != &socket);
-            socks.notify.notify_waiters();
+        if let Some(ref sw) = self.socket_watcher {
+            if let Ok(mut socks) = sw.sockets.lock() {
+                socks.sockets.retain(|s| s != &socket);
+                socks.notify.notify_waiters();
+            }
         }
     }
 
     fn set_tunnel_interface(&self, interface: u64) {
-        if let Ok(mut socks) = self.sockets.lock() {
-            socks.tunnel_interface = Some(interface);
-            socks.notify.notify_waiters();
+        *self.tunnel_interface.write() = Some(interface);
+
+        if let Some(ref sw) = self.socket_watcher {
+            if let Ok(mut socks) = sw.sockets.lock() {
+                socks.tunnel_interface = Some(interface);
+                socks.notify.notify_waiters();
+            }
         }
     }
 }
@@ -159,19 +200,31 @@ impl Sockets {
     }
 }
 
-fn spawn_monitor(sockets: Arc<Mutex<Sockets>>) -> io::Result<JoinHandle<Result<()>>> {
+fn spawn_monitor(sockets: Arc<Mutex<Sockets>>) -> JoinHandle<io::Result<()>> {
     spawn_dynamic_store_loop(Arc::downgrade(&sockets));
-    Ok(tokio::spawn(async move {
+    tokio::spawn(async move {
         loop {
             let update = {
-                let sockets = sockets.lock().expect("Lock currupted");
-                sockets.notify.clone()
+                if let Ok(sockets) = sockets.lock() {
+                    sockets.notify.clone()
+                } else {
+                    telio_log_error!("Lock corrupted");
+                    break;
+                }
             };
 
             update.notified().await;
-            sockets.lock().expect("Lock corrupted").rebind_all(true);
+            if let Ok(mut sockets) = sockets.lock() {
+                sockets.rebind_all(true);
+            } else {
+                telio_log_error!("Lock corrupted");
+                break;
+            }
         }
-    }))
+
+        telio_log_warn!("Sockets monitor returned early");
+        Ok(())
+    })
 }
 
 fn get_service_order(store: &SCDynamicStore) -> Option<Vec<String>> {

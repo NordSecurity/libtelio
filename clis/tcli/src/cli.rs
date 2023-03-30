@@ -9,7 +9,6 @@ use telio::device::{Device, DeviceConfig};
 use telio_model::api_config::Features;
 use telio_model::{config::Config as MeshMap, event::Event as DevEvent, mesh::ExitNode};
 use telio_proto::{CodecError, PacketType};
-use telio_sockets::SocketPool;
 use telio_traversal::stunner::{Config as StunConfig, Stunner};
 use telio_wg::AdapterType;
 use thiserror::Error;
@@ -609,7 +608,7 @@ impl Cli {
                 let rt = Runtime::new().unwrap();
 
                 rt.block_on(async {
-                    let spool = SocketPool::default();
+                    let spool = telio_sockets::SocketPool::default();
                     match spool.new_external_udp(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)), None).await {
                         Ok(udp_socket) => {
                             let udp_socket = Arc::new(udp_socket);

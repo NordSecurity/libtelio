@@ -125,6 +125,9 @@ pub enum Error {
     SessionKeeperError(#[from] telio_traversal::session_keeper::Error),
     #[error("Session keeper error")]
     UpgradeSyncError(#[from] telio_traversal::upgrade_sync::Error),
+    #[cfg(target_os = "macos")]
+    #[error("Socket pool error")]
+    SocketPoolError(#[from] telio_sockets::protector::platform::Error),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -607,6 +610,13 @@ impl Device {
         })
     }
 
+    /// Retrieves a reference to SocketPool. Use this instead of SocketPool::default() when possible
+    pub fn get_socket_pool(&self) -> Result<Arc<SocketPool>> {
+        self.art()?.block_on(async {
+            task_exec!(self.rt()?, async move |rt| Ok(rt.get_socket_pool().await)).await?
+        })
+    }
+
     pub fn get_nat(&self, ip: String) -> Result<NatData> {
         match self.art()?.block_on(retrieve_single_nat(ip)) {
             Ok(data) => Ok(data),
@@ -671,7 +681,10 @@ impl Runtime {
             if let Some(protect) = protect.clone() {
                 SocketPool::new(protect)
             } else {
-                SocketPool::new(NativeProtector::new()?)
+                SocketPool::new(NativeProtector::new(
+                    #[cfg(target_os = "macos")]
+                    features.macos_sideload,
+                )?)
             }
         });
 
@@ -1256,6 +1269,10 @@ impl Runtime {
 
     async fn get_derp_config(&self) -> Result<DerpConfig> {
         Ok(self.entities.derp.get_config().await.unwrap_or_default())
+    }
+
+    async fn get_socket_pool(&self) -> Result<Arc<SocketPool>> {
+        Ok(self.entities.socket_pool.clone())
     }
 
     async fn peer_to_node(&self, peer: &uapi::Peer, state: Option<PeerState>) -> Option<Node> {
