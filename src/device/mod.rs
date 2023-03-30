@@ -1,7 +1,6 @@
 mod wg_controller;
 
 use async_trait::async_trait;
-use futures::Future;
 use telio_crypto::{PublicKey, SecretKey};
 use telio_firewall::firewall::{Firewall, StatefullFirewall};
 use telio_lana::*;
@@ -47,6 +46,7 @@ use wg::uapi::{self, PeerState};
 
 use std::{
     collections::HashSet,
+    future::Future,
     io::{Error as IoError, ErrorKind},
     net::{IpAddr, Ipv4Addr},
     sync::Arc,

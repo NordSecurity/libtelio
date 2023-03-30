@@ -60,7 +60,7 @@ impl<Wg: WireGuard> StunEndpointProvider<Wg> {
         Self {
             task: Task::start(State {
                 servers: vec![],
-                server_num: 0,
+                current_server_index: 0,
                 tun_socket,
                 ext_socket,
                 wg,
@@ -81,11 +81,11 @@ impl<Wg: WireGuard> StunEndpointProvider<Wg> {
 
             if s.servers != servers {
                 s.servers = servers;
-                s.server_num = 0;
+                s.current_server_index = 0;
                 s.stun_session = None;
 
                 if s.stun_peer_publisher
-                    .try_send(s.servers.get(s.server_num).cloned())
+                    .try_send(s.servers.get(s.current_server_index).cloned())
                     .is_err()
                 {
                     telio_log_error!("Could not publish the STUN peer");
@@ -147,7 +147,7 @@ impl<Wg: WireGuard> EndpointProvider for StunEndpointProvider<Wg> {
 
 struct State<Wg: WireGuard> {
     servers: Vec<Server>,
-    server_num: usize,
+    current_server_index: usize,
 
     tun_socket: UdpSocket,
     ext_socket: External<UdpSocket>,
@@ -204,22 +204,29 @@ impl<Wg: WireGuard> State<Wg> {
         }
     }
 
-    fn next_server(&mut self) -> Result<(), Error> {
-        let server = if !self.servers.is_empty() {
-            self.server_num = (self.server_num + 1) % self.servers.len();
-            self.servers.get(self.server_num)
+    fn next_server(&mut self) {
+        let last_server_index = self.current_server_index;
+        self.current_server_index = if !self.servers.is_empty() {
+            (self.current_server_index + 1) % self.servers.len()
         } else {
-            None
+            0
         };
 
-        self.stun_peer_publisher
-            .try_send(server.cloned())
-            .map_err(|e| e.into())
+        if self
+            .stun_peer_publisher
+            .try_send(self.servers.get(self.current_server_index).cloned())
+            .is_err()
+        {
+            telio_log_warn!("Sending new server failed");
+
+            // When sending the new server fails we fallback to the old one
+            self.current_server_index = last_server_index;
+        }
     }
 
     /// Get endpoint's for stuns (WgStun, PlaintextStun)
     async fn get_stun_endpoints(&self) -> Result<(SocketAddr, SocketAddr), Error> {
-        if let Some(server) = self.servers.get(self.server_num) {
+        if let Some(server) = self.servers.get(self.current_server_index) {
             let interface = self.wg.get_interface().await?;
 
             let stun_peer = interface
@@ -340,7 +347,7 @@ impl<Wg: WireGuard> Runtime for State<Wg> {
             _ = timeout => {
                 self.stun_session = None;
 
-                let _ = self.next_server();
+                self.next_server();
 
                 if !self.last_candidates.is_empty() {
                     self.last_candidates.clear();
@@ -1260,7 +1267,7 @@ mod tests {
 
         async fn expect_server_after_session_timeout(&mut self, server_num: usize) {
             // Jupm to the session timeout
-            tokio::time::advance(Duration::from_millis(301)).await;
+            tokio::time::advance(STUN_TIMEOUT + Duration::from_millis(1)).await;
 
             // Timeout session
             tokio::task::yield_now().await;
