@@ -56,7 +56,9 @@ use std::{
 use telio_utils::{telio_log_debug, telio_log_info};
 
 use telio_model::{
-    api_config::{Features, PathType, DEFAULT_ENDPOINT_POLL_INTERVAL_SECS},
+    api_config::{
+        FeaturePersistentKeepalive, Features, PathType, DEFAULT_ENDPOINT_POLL_INTERVAL_SECS,
+    },
     config::{Config, Peer},
     event::{Event, Set},
     mesh::{ExitNode, Node},
@@ -169,6 +171,9 @@ pub struct RequestedState {
 
     // Wireguard stun server that should be currently used
     pub wg_stun_server: Option<WgStunServer>,
+
+    // Requested keepalive periods
+    pub(crate) keepalive_periods: FeaturePersistentKeepalive,
 }
 
 pub struct Entities {
@@ -725,6 +730,7 @@ impl Runtime {
 
         let requested_state = RequestedState {
             device_config: config.clone(),
+            keepalive_periods: features.wireguard.persistent_keepalive.clone(),
             ..Default::default()
         };
 

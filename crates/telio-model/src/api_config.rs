@@ -6,6 +6,62 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumCount;
 
+/// Default keepalive period used for proxying peers,
+/// STUN servers and VPN servers
+pub const DEFAULT_PERSISTENT_KEEPALIVE_PERIOD: u32 = 25;
+
+/// Default keepalive period for direct peers
+pub const DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD: u32 = 5;
+
+/// Configurable persistent keepalive periods for different types of peers
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct FeaturePersistentKeepalive {
+    /// Persistent keepalive period given for VPN peers (in seconds) [default 15s]
+    #[serde(default = "FeaturePersistentKeepalive::get_default_keepalive_period")]
+    pub vpn: Option<u32>,
+
+    /// Persistent keepalive period for direct peers (in seconds) [default 5s]
+    #[serde(default = "FeaturePersistentKeepalive::get_default_direct_keepalive_period")]
+    pub direct: u32,
+
+    /// Persistent keepalive period for proxying peers (in seconds) [default 25s]
+    #[serde(default = "FeaturePersistentKeepalive::get_default_keepalive_period")]
+    pub proxying: Option<u32>,
+
+    /// Persistent keepalive period for stun peers (in seconds) [default 25s]
+    #[serde(default = "FeaturePersistentKeepalive::get_default_keepalive_period")]
+    pub stun: Option<u32>,
+}
+
+impl FeaturePersistentKeepalive {
+    fn get_default_keepalive_period() -> Option<u32> {
+        Some(DEFAULT_PERSISTENT_KEEPALIVE_PERIOD)
+    }
+
+    fn get_default_direct_keepalive_period() -> u32 {
+        DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD
+    }
+}
+
+impl Default for FeaturePersistentKeepalive {
+    fn default() -> Self {
+        Self {
+            vpn: Some(DEFAULT_PERSISTENT_KEEPALIVE_PERIOD),
+            direct: DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
+            proxying: Some(DEFAULT_PERSISTENT_KEEPALIVE_PERIOD),
+            stun: Some(DEFAULT_PERSISTENT_KEEPALIVE_PERIOD),
+        }
+    }
+}
+
+/// Configurable features for Wireguard peers
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+pub struct FeatureWireguard {
+    /// Configurable persistent keepalive periods for wireguard peers
+    #[serde(default)]
+    pub persistent_keepalive: FeaturePersistentKeepalive,
+}
+
 #[serde_with::serde_as]
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 /// QoS configuration options
@@ -101,6 +157,9 @@ pub struct FeatureDirect {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 /// Encompasses all of the possible features that can be enabled
 pub struct Features {
+    /// Additional wireguard configuration
+    #[serde(default)]
+    pub wireguard: FeatureWireguard,
     /// Nurse features that can be configured for QoS
     pub nurse: Option<FeatureNurse>,
     /// Event logging configurable features
@@ -248,6 +307,7 @@ mod tests {
         }"#;
 
         let full_features = Features {
+            wireguard: Default::default(),
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
                 qos: Some(FeatureQoS {
@@ -265,6 +325,7 @@ mod tests {
         };
 
         let empty_qos_features = Features {
+            wireguard: Default::default(),
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
                 qos: Some(FeatureQoS {
@@ -282,6 +343,7 @@ mod tests {
         };
 
         let no_qos_features = Features {
+            wireguard: Default::default(),
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
                 qos: None,
@@ -321,6 +383,7 @@ mod tests {
         }"#;
 
         let full_features = Features {
+            wireguard: Default::default(),
             nurse: None,
             lana: None,
             paths: None,
@@ -331,6 +394,7 @@ mod tests {
         };
 
         let empty_features = Features {
+            wireguard: Default::default(),
             nurse: None,
             lana: None,
             paths: None,
@@ -354,6 +418,13 @@ mod tests {
     fn test_json_to_feature_set() {
         let json = r#"
         {
+            "wireguard":
+            {
+                "persistent_keepalive": {
+                    "vpn": null,
+                    "stun": 50
+                }
+            },
             "nurse":
             {
                 "fingerprint": "fingerprint_test"
@@ -373,6 +444,14 @@ mod tests {
         }"#;
 
         let features = Features {
+            wireguard: FeatureWireguard {
+                persistent_keepalive: FeaturePersistentKeepalive {
+                    vpn: None,
+                    direct: 5,
+                    proxying: Some(25),
+                    stun: Some(50),
+                },
+            },
             nurse: Some(FeatureNurse {
                 fingerprint: "fingerprint_test".to_string(),
                 qos: None,
@@ -400,6 +479,7 @@ mod tests {
     #[test]
     fn test_default_features() {
         let expected_defaults = Features {
+            wireguard: Default::default(),
             nurse: None,
             lana: None,
             paths: None,

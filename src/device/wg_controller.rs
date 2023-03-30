@@ -20,8 +20,6 @@ use telio_wg::{uapi::Peer, WireGuard};
 use thiserror::Error as TError;
 use tokio::sync::Mutex;
 
-pub const DEFAULT_PROXYING_PERSISTENT_KEEPALIVE: u32 = 25;
-pub const DEFAULT_DIRECT_PERSISTENT_KEEPALIVE: u32 = 5;
 pub const DEFAULT_PEER_UPGRADE_WINDOW: u64 = 15;
 
 #[derive(Debug, TError)]
@@ -200,7 +198,7 @@ async fn consolidate_wg_peers<
                             requested_peer
                                 .peer
                                 .persistent_keepalive_interval
-                                .unwrap_or(DEFAULT_PROXYING_PERSISTENT_KEEPALIVE)
+                                .unwrap_or(requested_state.keepalive_periods.direct)
                                 .into(),
                         ),
                     )
@@ -296,7 +294,7 @@ async fn build_requested_peers_list<
             // Exit node is a fresh node, therefore - insert create new peer
             let public_key = exit_node.public_key;
             let endpoint = exit_node.endpoint;
-            let persistent_keepalive_interval = Some(DEFAULT_PROXYING_PERSISTENT_KEEPALIVE);
+            let persistent_keepalive_interval = requested_state.keepalive_periods.vpn;
             let allowed_ips = vec![IpNetwork::V4("0.0.0.0/0".parse()?)];
             requested_peers.insert(
                 exit_node.public_key,
@@ -334,7 +332,7 @@ async fn build_requested_peers_list<
     if let Some(wg_stun_server) = &requested_state.wg_stun_server {
         let public_key = wg_stun_server.public_key;
         let endpoint = SocketAddr::new(IpAddr::V4(wg_stun_server.ipv4), wg_stun_server.stun_port);
-        let persistent_keepalive_interval = Some(DEFAULT_PROXYING_PERSISTENT_KEEPALIVE);
+        let persistent_keepalive_interval = requested_state.keepalive_periods.stun;
         let allowed_ips = vec![IpNetwork::V4("100.64.0.4/32".parse()?)];
         requested_peers.insert(
             public_key,
@@ -384,7 +382,7 @@ async fn build_requested_meshnet_peers_list<
         .map(|p| {
             // Retreive public key
             let public_key = p.base.public_key;
-            let persistent_keepalive_interval = Some(DEFAULT_PROXYING_PERSISTENT_KEEPALIVE);
+            let persistent_keepalive_interval = requested_state.keepalive_periods.proxying;
             let endpoint = proxy_endpoints.get(&public_key).cloned();
 
             // Retreive node's meshnet IP from config, and convert it into `/32` network type
@@ -445,6 +443,7 @@ async fn build_requested_meshnet_peers_list<
             time_since_last_rx.as_ref(),
             time_since_last_endpoint_change.as_ref(),
             proxy_endpoint,
+            requested_state,
         );
 
         // If we are in direct state, tell cross ping check about it
@@ -475,9 +474,9 @@ async fn build_requested_meshnet_peers_list<
         // Decrease the keepalive period for peers which has established direct connection
         requested_peer.peer.persistent_keepalive_interval =
             if is_peer_proxying(&requested_peer.peer, proxy_endpoints) {
-                Some(DEFAULT_PROXYING_PERSISTENT_KEEPALIVE)
+                requested_state.keepalive_periods.proxying
             } else {
-                Some(DEFAULT_DIRECT_PERSISTENT_KEEPALIVE)
+                Some(requested_state.keepalive_periods.direct)
             };
     }
 
@@ -597,11 +596,12 @@ fn peer_state(
     time_since_last_rx: Option<&Duration>,
     time_since_last_endpoint_change: Option<&Duration>,
     proxy_endpoint: Option<&SocketAddr>,
+    requested_state: &RequestedState,
 ) -> PeerState {
     // Define some useful constants
     let keepalive_period = peer
         .and_then(|p| p.persistent_keepalive_interval)
-        .unwrap_or(DEFAULT_PROXYING_PERSISTENT_KEEPALIVE);
+        .unwrap_or(requested_state.keepalive_periods.direct);
     let peer_connectivity_timeout = Duration::from_secs((keepalive_period * 3) as u64);
     let peer_upgrade_window = Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW);
 
@@ -660,8 +660,13 @@ mod tests {
     use telio_crypto::SecretKey;
     use telio_dns::MockDnsResolver;
     use telio_firewall::firewall::MockFirewall;
+    use telio_model::api_config::{
+        DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD, DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
+    };
     use telio_model::config::{Config, PeerBase};
+    use telio_model::mesh::ExitNode;
     use telio_proxy::MockProxy;
+    use telio_relay::Server;
     use telio_traversal::cross_ping_check::MockCrossPingCheckTrait;
     use telio_traversal::{MockSessionKeeperTrait, MockUpgradeSyncTrait, UpgradeRequest};
     use telio_wg::uapi::Interface;
@@ -1082,7 +1087,7 @@ mod tests {
                 .returning(move || Ok(map.clone()));
         }
 
-        fn then_add_peer(&mut self, input: Vec<(PublicKey, SocketAddr, u32, AllowedIps)>) {
+        fn then_add_peer(&mut self, input: Vec<(PublicKey, SocketAddr, u32, Vec<IpNetwork>)>) {
             for i in input {
                 self.wireguard_interface
                     .expect_add_peer()
@@ -1091,7 +1096,7 @@ mod tests {
                         public_key: i.0,
                         endpoint: Some(i.1.into()),
                         persistent_keepalive_interval: Some(i.2),
-                        allowed_ips: i.3.into_iter().map(|ip| ip.into()).collect(),
+                        allowed_ips: i.3,
                         rx_bytes: None,
                         tx_bytes: None,
                         time_since_last_handshake: None,
@@ -1190,6 +1195,9 @@ mod tests {
         let mapped_port = 18;
         let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
 
+        let proxying_keepalive_time = 1234;
+        f.requested_state.keepalive_periods.proxying = Some(proxying_keepalive_time);
+
         f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
         f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
         f.when_current_peers(vec![]);
@@ -1201,8 +1209,8 @@ mod tests {
         f.then_add_peer(vec![(
             pub_key,
             proxy_endpoint,
-            DEFAULT_PROXYING_PERSISTENT_KEEPALIVE,
-            allowed_ips,
+            proxying_keepalive_time,
+            allowed_ips.into_iter().map(|ip| ip.into()).collect(),
         )]);
 
         f.consolidate_peers().await;
@@ -1220,12 +1228,15 @@ mod tests {
         let mapped_port = 12;
         let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
 
+        let direct_keepalive_period = 1234;
+        f.requested_state.keepalive_periods.direct = direct_keepalive_period;
+
         f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
         f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
         f.when_current_peers(vec![(
             pub_key,
             proxy_endpoint,
-            DEFAULT_PROXYING_PERSISTENT_KEEPALIVE,
+            DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 5)]);
@@ -1236,10 +1247,10 @@ mod tests {
         f.then_add_peer(vec![(
             pub_key,
             remote_wg_endpoint,
-            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE,
-            allowed_ips,
+            direct_keepalive_period,
+            allowed_ips.into_iter().map(|ip| ip.into()).collect(),
         )]);
-        f.then_keeper_add_node(vec![(pub_key, ip1, DEFAULT_DIRECT_PERSISTENT_KEEPALIVE)]);
+        f.then_keeper_add_node(vec![(pub_key, ip1, direct_keepalive_period)]);
 
         f.consolidate_peers().await;
     }
@@ -1257,12 +1268,15 @@ mod tests {
         let mapped_port = 12;
         let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
 
+        let direct_keepalive_period = 1234;
+        f.requested_state.keepalive_periods.direct = direct_keepalive_period;
+
         f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
         f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
         f.when_current_peers(vec![(
             pub_key,
             proxy_endpoint,
-            DEFAULT_PROXYING_PERSISTENT_KEEPALIVE,
+            DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 5)]);
@@ -1277,11 +1291,11 @@ mod tests {
         f.then_add_peer(vec![(
             pub_key,
             remote_wg_endpoint,
-            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE,
-            allowed_ips,
+            direct_keepalive_period,
+            allowed_ips.into_iter().map(|ip| ip.into()).collect(),
         )]);
         f.then_request_upgrade(vec![(pub_key, remote_wg_endpoint, local_wg_endpoint)]);
-        f.then_keeper_add_node(vec![(pub_key, ip1, DEFAULT_DIRECT_PERSISTENT_KEEPALIVE)]);
+        f.then_keeper_add_node(vec![(pub_key, ip1, direct_keepalive_period)]);
 
         f.consolidate_peers().await;
     }
@@ -1299,6 +1313,9 @@ mod tests {
         let mapped_port = 12;
         let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
 
+        let proxying_keepalive_period = 1234;
+        f.requested_state.keepalive_periods.proxying = Some(proxying_keepalive_period);
+
         f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
         f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
         f.when_current_peers(vec![]);
@@ -1314,8 +1331,8 @@ mod tests {
         f.then_add_peer(vec![(
             pub_key,
             proxy_endpoint,
-            DEFAULT_PROXYING_PERSISTENT_KEEPALIVE,
-            allowed_ips,
+            proxying_keepalive_period,
+            allowed_ips.into_iter().map(|ip| ip.into()).collect(),
         )]);
 
         f.consolidate_peers().await;
@@ -1336,7 +1353,7 @@ mod tests {
         f.when_current_peers(vec![(
             pub_key,
             proxy_endpoint,
-            DEFAULT_PROXYING_PERSISTENT_KEEPALIVE,
+            DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
             vec![ip1, ip2],
         )]);
         f.when_time_since_last_rx(vec![]);
@@ -1365,7 +1382,7 @@ mod tests {
         f.when_current_peers(vec![(
             pub_key,
             proxy_endpoint,
-            DEFAULT_PROXYING_PERSISTENT_KEEPALIVE,
+            DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips,
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 4)]);
@@ -1389,12 +1406,15 @@ mod tests {
         let wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
         let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
 
+        let proxying_keepalive_period = 1234;
+        f.requested_state.keepalive_periods.proxying = Some(proxying_keepalive_period);
+
         f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
         f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
         f.when_current_peers(vec![(
             pub_key,
             wg_endpoint,
-            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE,
+            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 100)]);
@@ -1405,8 +1425,8 @@ mod tests {
         f.then_add_peer(vec![(
             pub_key,
             proxy_endpoint,
-            DEFAULT_PROXYING_PERSISTENT_KEEPALIVE,
-            allowed_ips,
+            proxying_keepalive_period,
+            allowed_ips.into_iter().map(|ip| ip.into()).collect(),
         )]);
         f.then_notify_failed_wg_connection(vec![pub_key]);
         f.then_keeper_remove_node(vec![pub_key]);
@@ -1429,7 +1449,7 @@ mod tests {
         f.when_current_peers(vec![(
             pub_key,
             wg_endpoint,
-            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE,
+            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 5)]);
@@ -1438,6 +1458,80 @@ mod tests {
         f.when_upgrade_requests(vec![]);
 
         f.then_notify_successfull_wg_connection_upgrade(vec![pub_key]);
+
+        f.consolidate_peers().await;
+    }
+
+    #[tokio::test]
+    async fn when_vpn_peer_is_added() {
+        let mut f = Fixture::new();
+
+        let public_key = SecretKey::gen().public();
+        let allowed_ips = vec![IpNetwork::new(IpAddr::from([0, 0, 0, 0]), 0).unwrap()];
+
+        let endpoint_raw = SocketAddr::from(([192, 168, 0, 1], 13));
+        let endpoint = Some(endpoint_raw);
+
+        let vpn_persistent_keepalive = 4321;
+        f.requested_state.keepalive_periods.vpn = Some(vpn_persistent_keepalive);
+        f.requested_state.exit_node = Some(ExitNode {
+            public_key,
+            allowed_ips: None,
+            endpoint,
+        });
+
+        f.when_requested_meshnet_config(vec![]);
+        f.when_proxy_mapping(vec![]);
+        f.when_current_peers(vec![]);
+        f.when_time_since_last_rx(vec![]);
+        f.when_time_since_last_endpoint_change(vec![]);
+        f.when_cross_check_validated_endpoints(vec![]);
+        f.when_upgrade_requests(vec![]);
+
+        f.then_add_peer(vec![(
+            public_key,
+            endpoint_raw,
+            vpn_persistent_keepalive,
+            allowed_ips,
+        )]);
+
+        f.consolidate_peers().await;
+    }
+
+    #[tokio::test]
+    async fn when_stun_peer_is_added() {
+        let mut f = Fixture::new();
+
+        let public_key = SecretKey::gen().public();
+        let allowed_ips = vec![IpNetwork::new(IpAddr::from([100, 64, 0, 4]), 32).unwrap()];
+
+        let stun_port = 1234;
+        let endpoint_ip = Ipv4Addr::from([100, 10, 0, 17]);
+        let endpoint_raw = SocketAddr::from((endpoint_ip, stun_port));
+
+        let stun_persistent_keepalive = 4321;
+        f.requested_state.keepalive_periods.stun = Some(stun_persistent_keepalive);
+        f.requested_state.wg_stun_server = Some(Server {
+            ipv4: endpoint_ip,
+            stun_port,
+            public_key,
+            ..Default::default()
+        });
+
+        f.when_requested_meshnet_config(vec![]);
+        f.when_proxy_mapping(vec![]);
+        f.when_current_peers(vec![]);
+        f.when_time_since_last_rx(vec![]);
+        f.when_time_since_last_endpoint_change(vec![]);
+        f.when_cross_check_validated_endpoints(vec![]);
+        f.when_upgrade_requests(vec![]);
+
+        f.then_add_peer(vec![(
+            public_key,
+            endpoint_raw,
+            stun_persistent_keepalive,
+            allowed_ips,
+        )]);
 
         f.consolidate_peers().await;
     }

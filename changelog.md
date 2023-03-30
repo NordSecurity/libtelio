@@ -5,6 +5,7 @@
 * NVA-3645: Fix Nurse execution.
 * LLT-3324: Fix magic dns being stuck for several seconds
 * NVA-3634: Fix broken JNI_OnLoad binding
+* LLT-3174: Allow apps to control PersistentKeepalive parameter of libtelio
 
 ### Changelog
 * LLT-2893: Expose ffi version and tag
