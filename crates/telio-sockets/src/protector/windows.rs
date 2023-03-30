@@ -153,7 +153,7 @@ fn spawn_monitor(sockets: Arc<Mutex<Sockets>>) -> io::Result<JoinHandle<()>> {
                     }
                 }
                 _ = update.notified() => {
-                    if let Some(mut socks) = sockets.lock() {
+                    if let Ok(mut socks) = sockets.lock() {
                         socks.rebind(true);
                     } else {
                         telio_log_error!("Lock corrupted");
@@ -164,7 +164,6 @@ fn spawn_monitor(sockets: Arc<Mutex<Sockets>>) -> io::Result<JoinHandle<()>> {
         }
 
         telio_log_warn!("Sockets monitor returned early");
-        Ok(())
     }))
 }
 
