@@ -682,6 +682,7 @@ mod tests {
     use std::time::Duration;
     use telio_crypto::PublicKey;
     use telio_proto::DataMsg;
+    use telio_sockets::NativeProtector;
     use telio_task::io::McChan;
     use telio_test::await_timeout;
     use tokio::time::timeout;
@@ -790,8 +791,11 @@ mod tests {
 
         let (_derp_outter_ch, derp_inner_ch) = Chan::pipe();
 
-        let test_derp =
-            DerpRelay::start_with(derp_inner_ch, Arc::new(SocketPool::default()), devent_tx);
+        let test_derp = DerpRelay::start_with(
+            derp_inner_ch,
+            Arc::new(SocketPool::new(NativeProtector::new().unwrap())),
+            devent_tx,
+        );
         test_derp.configure(Some(config)).await;
 
         let derp_event = timeout(Duration::from_secs(1), devent_rx.recv())
@@ -837,8 +841,11 @@ mod tests {
 
         let (_derp_outter_ch, derp_inner_ch) = Chan::pipe();
 
-        let test_derp =
-            DerpRelay::start_with(derp_inner_ch, Arc::new(SocketPool::default()), devent_tx);
+        let test_derp = DerpRelay::start_with(
+            derp_inner_ch,
+            Arc::new(SocketPool::new(NativeProtector::new().unwrap())),
+            devent_tx,
+        );
         test_derp.configure(Some(config)).await;
 
         let derp_event = timeout(Duration::from_secs(1), devent_rx.recv())
@@ -873,8 +880,11 @@ mod tests {
 
         let (mut derp_outter_ch, derp_inner_ch) = Chan::pipe();
 
-        let test_derp =
-            DerpRelay::start_with(derp_inner_ch, Arc::new(SocketPool::default()), devent_tx);
+        let test_derp = DerpRelay::start_with(
+            derp_inner_ch,
+            Arc::new(SocketPool::new(NativeProtector::new().unwrap())),
+            devent_tx,
+        );
         test_derp.configure(Some(config)).await;
 
         let derp_event = await_timeout!(devent_rx.recv()).unwrap();

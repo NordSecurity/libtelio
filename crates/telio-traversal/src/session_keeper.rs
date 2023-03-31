@@ -185,6 +185,7 @@ impl Runtime for State {
 mod tests {
     use super::*;
     use std::net::{IpAddr, Ipv4Addr};
+    use telio_sockets::NativeProtector;
     use telio_test::assert_elapsed;
     use tokio::time;
 
@@ -193,7 +194,7 @@ mod tests {
     async fn send_keepalives() {
         const PERIOD: Duration = Duration::from_millis(100);
 
-        let socket_pool = Arc::new(SocketPool::default());
+        let socket_pool = Arc::new(SocketPool::new(NativeProtector::new().unwrap()));
         let sess_keep = SessionKeeper::start(socket_pool).unwrap();
 
         let pk = "REjdn4zY2TFx2AMujoNGPffo9vDiRDXpGG4jHPtx2AY="

@@ -61,7 +61,6 @@ pub struct DynamicWg {
     task: Task<State>,
 }
 
-#[derive(Default)]
 pub struct Config {
     pub adapter: AdapterType,
     pub name: Option<String>,
@@ -624,6 +623,7 @@ mod tests {
     use boringtun::device::peer::Endpoint;
     use lazy_static::lazy_static;
     use mockall::predicate;
+    use telio_sockets::NativeProtector;
     use tokio::{runtime::Handle, sync::Mutex, task, time::sleep};
 
     use telio_task::io::Chan;
@@ -634,6 +634,19 @@ mod tests {
     lazy_static! {
         pub(super) static ref RUNTIME_ADAPTER: StdMutex<Option<Box<dyn Adapter>>> =
             StdMutex::new(None);
+    }
+
+    impl Config {
+        fn new() -> std::io::Result<Self> {
+            Ok(Self {
+                adapter: Default::default(),
+                name: Default::default(),
+                tun: Default::default(),
+                socket_pool: Arc::new(SocketPool::new(NativeProtector::new()?)),
+                firewall_process_inbound_callback: Default::default(),
+                firewall_process_outbound_callback: Default::default(),
+            })
+        }
     }
 
     #[async_trait]
@@ -687,7 +700,7 @@ mod tests {
             },
             Box::new(adapter.clone()),
             #[cfg(unix)]
-            Config::default(),
+            Config::new().unwrap(),
         );
         time::advance(Duration::from_millis(0)).await;
         adapter.lock().await.checkpoint();

@@ -20,12 +20,23 @@ use telio_utils::{telio_log_debug, telio_log_warn};
 
 use crate::{
     native::{AsNativeSocket, NativeSocket},
-    NativeProtector, Protector, TcpParams, UdpParams,
+    Protector, TcpParams, UdpParams,
 };
 
+struct SocketGuard {
+    socket: NativeSocket,
+    protector: ArcProtector,
+}
+
+impl Drop for SocketGuard {
+    fn drop(&mut self) {
+        self.protector.clean(self.socket)
+    }
+}
+
 pub struct External<T: AsNativeSocket> {
-    /// Optional so TcpSocket could be transformed into TcpStream
-    inner: Option<(T, ArcProtector)>,
+    socket: T,
+    guard: SocketGuard,
 }
 
 #[derive(Clone)]
@@ -36,21 +47,10 @@ pub struct SocketPool {
 type ArcProtector = Arc<dyn Protector>;
 
 impl External<TcpSocket> {
-    pub async fn connect(mut self, addr: SocketAddr) -> io::Result<External<TcpStream>> {
-        if let Some((sock, p)) = self.inner.take() {
-            let native = sock.as_native_socket();
-            match sock.connect(addr).await {
-                Ok(sock) => Ok(External {
-                    inner: Some((sock, p)),
-                }),
-                Err(e) => {
-                    p.clean(native);
-                    Err(e)
-                }
-            }
-        } else {
-            panic!("Attempt to use dropped value!");
-        }
+    pub async fn connect(self, addr: SocketAddr) -> io::Result<External<TcpStream>> {
+        let Self { guard, socket } = self;
+        let socket = socket.connect(addr).await?;
+        Ok(External { socket, guard })
     }
 }
 
@@ -58,15 +58,13 @@ impl<T: AsNativeSocket> Deref for External<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        // Value is constructed with Some, only None case is Extern<TcpSocket>.connect
-        &self.inner.as_ref().expect("Used after drop!").0
+        &self.socket
     }
 }
 
 impl<T: AsNativeSocket> DerefMut for External<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        // Value is constructed with Some, only None case is Extern<TcpSocket>.connect
-        &mut self.inner.as_mut().expect("Used after drop!").0
+        &mut self.socket
     }
 }
 
@@ -79,11 +77,7 @@ where
         cx: &mut std::task::Context<'_>,
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        if let Some((inner, _)) = self.inner.as_mut() {
-            Pin::new(inner).poll_read(cx, buf)
-        } else {
-            Poll::Pending
-        }
+        Pin::new(&mut self.socket).poll_read(cx, buf)
     }
 }
 
@@ -96,42 +90,21 @@ where
         cx: &mut std::task::Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
-        if let Some((inner, _)) = self.inner.as_mut() {
-            Pin::new(inner).poll_write(cx, buf)
-        } else {
-            Poll::Pending
-        }
+        Pin::new(&mut self.socket).poll_write(cx, buf)
     }
 
     fn poll_flush(
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> Poll<Result<(), io::Error>> {
-        if let Some((inner, _)) = self.inner.as_mut() {
-            Pin::new(inner).poll_flush(cx)
-        } else {
-            Poll::Pending
-        }
+        Pin::new(&mut self.socket).poll_flush(cx)
     }
 
     fn poll_shutdown(
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> Poll<Result<(), io::Error>> {
-        if let Some((inner, _)) = self.inner.as_mut() {
-            Pin::new(inner).poll_shutdown(cx)
-        } else {
-            Poll::Pending
-        }
-    }
-}
-
-impl<T: AsNativeSocket> Drop for External<T> {
-    fn drop(&mut self) {
-        if let Some((sock, p)) = self.inner.take() {
-            let native = sock.as_native_socket();
-            p.clean(native);
-        }
+        Pin::new(&mut self.socket).poll_shutdown(cx)
     }
 }
 
@@ -257,28 +230,12 @@ impl SocketPool {
         self.protect.make_external(socket.as_native_socket())?;
 
         Ok(External {
-            inner: Some((socket, self.protect.clone())),
+            guard: SocketGuard {
+                protector: self.protect.clone(),
+                socket: socket.as_native_socket(),
+            },
+            socket,
         })
-    }
-}
-
-impl Default for SocketPool {
-    fn default() -> Self {
-        #[cfg(not(target_os = "linux"))]
-        if !cfg!(test) {
-            log::warn!(
-                "SocketPool::default() used for non-test code. If you see this \
-                message in app logs, report to developers. Device::get_socket_pool() \
-                should be used where possible."
-            );
-        }
-        Self::new(
-            NativeProtector::new(
-                #[cfg(target_os = "macos")]
-                Some(false),
-            )
-            .expect("Native protect"),
-        )
     }
 }
 
@@ -291,7 +248,10 @@ impl MakeExternalBoringtun for SocketPool {
 
 #[cfg(test)]
 mod tests {
-    use std::{net::Ipv4Addr, sync::Mutex};
+    use std::{
+        net::{Ipv4Addr, SocketAddrV4},
+        sync::Mutex,
+    };
 
     use mockall::mock;
 
@@ -309,6 +269,30 @@ mod tests {
             #[cfg(any(target_os = "macos", windows))]
             fn set_tunnel_interface(&self, interface: u64);
         }
+    }
+
+    #[tokio::test]
+    async fn test_external_drops_protector() {
+        let mut protect = MockProtector::default();
+
+        protect.expect_make_external().returning(|_| Ok(()));
+        protect.expect_clean().return_const(());
+
+        let pool = SocketPool::new(protect);
+
+        let tcp = pool
+            .new_external_tcp_v4(
+                None,
+                #[cfg(target_os = "macos")]
+                true,
+            )
+            .expect("tcp");
+        let _ = tcp
+            .connect(SocketAddr::V4(SocketAddrV4::new(
+                Ipv4Addr::new(0, 0, 0, 0),
+                9999,
+            )))
+            .await;
     }
 
     #[tokio::test]

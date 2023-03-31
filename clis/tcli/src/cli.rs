@@ -9,6 +9,7 @@ use telio::device::{Device, DeviceConfig};
 use telio_model::api_config::Features;
 use telio_model::{config::Config as MeshMap, event::Event as DevEvent, mesh::ExitNode};
 use telio_proto::{CodecError, PacketType};
+use telio_sockets::{NativeProtector, SocketPool};
 use telio_traversal::stunner::{Config as StunConfig, Stunner};
 use telio_wg::AdapterType;
 use thiserror::Error;
@@ -79,6 +80,10 @@ pub enum Error {
 
     #[error(transparent)]
     Codec(#[from] CodecError),
+
+    #[cfg(target_os = "macos")]
+    #[error(transparent)]
+    Sideload(#[from] telio_sockets::protector::platform::Error),
 }
 
 pub struct Cli {
@@ -608,7 +613,16 @@ impl Cli {
                 let rt = Runtime::new().unwrap();
 
                 rt.block_on(async {
-                    let spool = telio_sockets::SocketPool::default();
+                    let protector = match NativeProtector::new(
+                        #[cfg(target_os = "macos")]
+                        Some(false)) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            cli_res!(res; (i "failed to create NativeProtector: {}", e));
+                            return
+                        }
+                    };
+                    let spool = SocketPool::new(protector);
                     match spool.new_external_udp(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)), None).await {
                         Ok(udp_socket) => {
                             let udp_socket = Arc::new(udp_socket);

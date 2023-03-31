@@ -838,7 +838,7 @@ mod tests {
     use super::*;
     use telio_crypto::{PublicKey, SecretKey};
     use telio_relay::derp::Server as DerpServer;
-    use telio_sockets::SocketPool;
+    use telio_sockets::{NativeProtector, SocketPool};
     use tokio::time;
 
     async fn prepare_test_setup<T: LocalEndpoints + 'static>(
@@ -851,7 +851,7 @@ mod tests {
         UdpSocket,
         SocketPool,
     ) {
-        let socket_pool = SocketPool::default();
+        let socket_pool = SocketPool::new(NativeProtector::new().unwrap());
         let stunner_sock = Arc::new(
             socket_pool
                 .new_external_udp(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)), None)

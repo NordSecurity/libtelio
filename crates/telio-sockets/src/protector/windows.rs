@@ -1,8 +1,9 @@
 use libc::setsockopt;
+use parking_lot::Mutex;
 use std::io::{self, Result};
 use std::net::Ipv4Addr;
 use std::os::windows::io::RawSocket;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn};
 use tokio::sync::mpsc::{self, Sender};
 use tokio::sync::Notify;
@@ -45,25 +46,22 @@ impl Drop for NativeProtector {
 
 impl Protector for NativeProtector {
     fn make_external(&self, socket: NativeSocket) -> io::Result<()> {
-        if let Ok(mut socks) = self.sockets.lock() {
-            socks.sockets.push(socket);
-            socks.rebind(true);
-        }
+        let mut socks = self.sockets.lock();
+        socks.sockets.push(socket);
+        socks.rebind(true);
         Ok(())
     }
 
     fn clean(&self, socket: NativeSocket) {
-        if let Ok(mut socks) = self.sockets.lock() {
-            socks.sockets.retain(|s| s != &socket);
-            socks.notify.notify_waiters();
-        }
+        let mut socks = self.sockets.lock();
+        socks.sockets.retain(|s| s != &socket);
+        socks.notify.notify_waiters();
     }
 
     fn set_tunnel_interface(&self, interface: u64) {
-        if let Ok(mut socks) = self.sockets.lock() {
-            socks.tunnel_interface = Some(interface);
-            socks.notify.notify_waiters();
-        }
+        let mut socks = self.sockets.lock();
+        socks.tunnel_interface = Some(interface);
+        socks.notify.notify_waiters();
     }
 }
 
@@ -128,27 +126,19 @@ fn spawn_monitor(sockets: Arc<Mutex<Sockets>>) -> io::Result<JoinHandle<()>> {
         let mut on = true;
         loop {
             let (ready, update) = {
-                if let Ok(sockets) = sockets.lock() {
-                    (
-                        sockets.tunnel_interface != None && !sockets.sockets.is_empty(),
-                        sockets.notify.clone(),
-                    )
-                } else {
-                    telio_log_error!("Lock corrupted");
-                    break;
-                }
+                let sockets = sockets.lock();
+                (
+                    sockets.tunnel_interface != None && !sockets.sockets.is_empty(),
+                    sockets.notify.clone(),
+                )
             };
 
             tokio::select! {
                 iface_rx = iface_rx.recv(), if on && ready => {
                     if let Some(iface_rx) = iface_rx {
                         if iface_rx.index != 0 {
-                            if let Ok(mut socks) = sockets.lock() {
-                                socks.rebind(false);
-                            } else {
-                                telio_log_error!("Lock corrupted");
-                                break;
-                            }
+                            let mut socks = sockets.lock();
+                            socks.rebind(false);
                         }
                     } else {
                         telio_log_error!("Interface watcher died.");
@@ -156,12 +146,8 @@ fn spawn_monitor(sockets: Arc<Mutex<Sockets>>) -> io::Result<JoinHandle<()>> {
                     }
                 }
                 _ = update.notified() => {
-                    if let Ok(mut socks) = sockets.lock() {
-                        socks.rebind(true);
-                    } else {
-                        telio_log_error!("Lock corrupted");
-                        break;
-                    }
+                    let mut socks = sockets.lock();
+                    socks.rebind(true);
                 }
             }
         }

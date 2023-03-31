@@ -10,7 +10,7 @@ use telio::crypto::SecretKey;
 use telio_model::PublicKey;
 use telio_proto::{Codec, Packet};
 use telio_relay::{DerpRelay, Server};
-use telio_sockets::SocketPool;
+use telio_sockets::{NativeProtector, SocketPool};
 use telio_task::io::{chan::Tx, Chan, McChan};
 use telio_utils::telio_log_debug;
 use tokio::{runtime::Runtime, task::JoinHandle};
@@ -130,23 +130,27 @@ impl DerpClient {
                         }
                     });
                     // This will not work on mac/win due to not provided tunnel interface to socketpool
-                    let relay = rt.block_on(async move {
-                        let relay = DerpRelay::start_with(
-                            rpacket,
-                            Arc::new(SocketPool::default()),
-                            event_tx,
-                        );
-                        relay.configure(Some(config)).await;
-                        relay
-                    });
-                    self.inst = Some(Instance {
-                        rt,
-                        events,
-                        packets,
-                        send,
-                        collect,
-                        relay,
-                    })
+                    match NativeProtector::new(
+                        #[cfg(target_os = "macos")]
+                        Some(false),
+                    ) {
+                        Ok(protector) => {
+                            let relay = DerpRelay::start_with(
+                                rpacket,
+                                Arc::new(SocketPool::new(protector)),
+                                event_tx,
+                            );
+                            self.inst = Some(Instance {
+                                rt,
+                                events,
+                                packets,
+                                send,
+                                collect,
+                                relay,
+                            });
+                        }
+                        Err(e) => res.push(Resp::Error(Box::new(e.into()))),
+                    };
                 }
             }
             Send { public_key, bytes } => {
