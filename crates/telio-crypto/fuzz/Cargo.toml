@@ -1,0 +1,42 @@
+[package]
+name = "telio-crypto-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2018"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+once_cell = "1"
+rand = "0.8"
+crypto_box = "0.7"
+
+[dependencies.telio-crypto]
+path = ".."
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "decrypt_request"
+path = "fuzz_targets/decrypt_request.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "decrypt_response"
+path = "fuzz_targets/decrypt_response.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "decrypt_request_inner"
+path = "fuzz_targets/decrypt_request_inner.rs"
+test = false
+doc = false
