@@ -24,6 +24,7 @@ use telio_utils::{
     telio_err_with_log, telio_log_debug, telio_log_error, telio_log_info, telio_log_trace,
     telio_log_warn,
 };
+use tokio::sync::mpsc::OwnedPermit;
 use tokio::{task::JoinHandle, time::sleep};
 
 use crypto_box::{
@@ -500,6 +501,77 @@ impl DerpRelay {
     }
 }
 
+impl State {
+    async fn handle_outcoming_payload(
+        permit: OwnedPermit<(PublicKey, Vec<u8>)>,
+        pk: PublicKey,
+        msg: Packet,
+        config: &Config,
+        rng: &mut StdRng,
+    ) {
+        // TODO add custom task's log format macro
+        telio_log_trace!(
+            "({}) Tx --> DERP, pubkey: {:?}, packet type: {:?}",
+            Self::NAME,
+            pk,
+            msg.packet_type()
+        );
+        match msg.encode() {
+            Ok(buf) => match DerpRelay::encrypt_if_needed(config.secret_key, pk, rng, &buf) {
+                Ok(cipher_text) => {
+                    let _ = permit.send((pk, cipher_text));
+                }
+                Err(error) => {
+                    telio_log_debug!("({}) Encryption failed: {}", Self::NAME, error);
+                }
+            },
+            Err(e) => {
+                telio_log_debug!("({}) Failed to encode packet: {}", Self::NAME, e);
+            }
+        }
+    }
+
+    async fn handle_incoming_payload(
+        permit: OwnedPermit<(PublicKey, Packet)>,
+        pk: PublicKey,
+        buf: Vec<u8>,
+        config: &Config,
+    ) {
+        if config.allowed_pk.contains(&pk) {
+            match DerpRelay::decrypt_if_needed(config.secret_key, pk, &buf) {
+                Ok(plain_text) => match Packet::decode(&plain_text) {
+                    Ok(msg) => {
+                        telio_log_trace!(
+                            "({}) DERP --> Rx, pubkey: {:?}, len: {}, packet type: {:?}",
+                            Self::NAME,
+                            pk,
+                            buf.len(),
+                            msg.packet_type()
+                        );
+                        permit.send((pk, msg));
+                    }
+                    Err(e) => {
+                        telio_log_debug!(
+                            "({}) DERP --> Rx, failed to parse packet: ({})",
+                            Self::NAME,
+                            e
+                        );
+                    }
+                },
+                Err(error) => {
+                    telio_log_debug!("Decryption failed: {}", error);
+                }
+            }
+        } else {
+            telio_log_debug!(
+                "({}) DERP --> Rx, received a packet with unknown pubkey: {}",
+                Self::NAME,
+                pk
+            );
+        }
+    }
+}
+
 #[async_trait]
 impl Runtime for State {
     const NAME: &'static str = "DerpRelay";
@@ -537,71 +609,32 @@ impl Runtime for State {
                     (_, _, _) = conn_join => {
                         telio_log_info!("Disconnecting from DERP server, due to transmission tasks error");
                         self.disconnect().await;
-                        Ok(())
                     },
                     // Received payload from upper relay, forward it to DERP stream
                     res = wait_for_tx(&c.comms.tx, upper_read) => match res {
                         Some((permit, Some((pk, msg)))) => {
-                            // TODO add custom task's log format macro
-                            telio_log_trace!("({}) Tx --> DERP, pubkey: {:?}, packet type: {:?}", Self::NAME, pk, msg.packet_type());
-                            match msg.encode() {
-                                Ok(buf) => {
-                                    match DerpRelay::encrypt_if_needed(config.secret_key, pk, &mut self.rng, &buf) {
-                                        Ok(cipher_text) => {
-                                            let _ = permit.send((pk, cipher_text));
-                                        },
-                                        Err(error) => {
-                                            telio_log_debug!("({}) Encryption failed: {}", Self::NAME, error);
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    telio_log_debug!("({}) Failed to encode packet: {}", Self::NAME, e);
-                                }
-                            }
-                            Ok(())
-                        }
+                            Self::handle_outcoming_payload(permit, pk, msg, config, &mut self.rng).await;
+                        },
                         Some((_, None)) => {
                             telio_log_debug!("Disconnecting from DERP server due to closed rx channel");
                             self.disconnect().await;
-                            Ok(())
                         }
                         // If forwarding fails, disconnect
                         None => {
                             telio_log_info!("Disconnecting from DERP server");
                             self.disconnect().await;
-                            Ok(())
                         }
                     },
                     // Received payload from DERP stream, forward it to upper relay
                     Some((permit, Some((pk, buf)))) = wait_for_tx(&self.channel.tx, derp_read) => {
-                        if config.allowed_pk.contains(&pk) {
-                            match DerpRelay::decrypt_if_needed(config.secret_key,pk, &buf){
-                                Ok(plain_text)=>{
-                                    match Packet::decode(&plain_text) {
-                                        Ok(msg) => {
-                                            telio_log_trace!("({}) DERP --> Rx, pubkey: {:?}, len: {}, packet type: {:?}", Self::NAME, pk, buf.len(), msg.packet_type());
-                                            permit.send((pk, msg));
-                                        },
-                                        Err(e) => {
-                                            telio_log_debug!("({}) DERP --> Rx, failed to parse packet: ({})", Self::NAME, e);
-                                        }
-                                    }
-                                },
-                                Err(error) =>{
-                                    telio_log_debug!("Decryption failed: {}", error);
-                                }
-                            }
-                        } else {
-                            telio_log_debug!("({}) DERP --> Rx, received a packet with unknown pubkey: {}", Self::NAME, pk);
-                        }
-
-                        Ok(())
+                        Self::handle_incoming_payload(permit, pk, buf, config).await;
                     },
-                    update = update => update(self).await,
+                    update = update => return update(self).await,
 
-                    else => Ok(()),
+                    else => (),
                 }
+
+                Ok(())
             }
             None => {
                 let connecting = if let Some(connecting) = &mut self.connecting {
@@ -618,10 +651,10 @@ impl Runtime for State {
                     res = connecting => {
                         match res {
                             Ok((server, conn)) => {
-                                self.server = Some(server);
+                                self.server = Some(server.clone());
                                 self.conn = Some(conn);
-                                if let Some(server) = self.server.clone() {
-                                    let _ = self.event.send(Box::new(server));
+                                if let Err(err) = self.event.send(Box::new(server)) {
+                                    telio_log_warn!("({}) sending new server info failed {}", Self::NAME, err)
                                 }
                             }
                             Err(err) => {
