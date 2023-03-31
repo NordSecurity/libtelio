@@ -69,14 +69,14 @@ impl DowncastPacket for UpgradeMsg {
     }
 }
 
-#[cfg(tests)]
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn decode_packet() {
         let upgrade_bytes = &[
-            6, 10, 14, 49, 50, 55, 46, 48, 46, 48, 46, 49, 58, 49, 50, 51, 52,
+            8, 10, 14, 49, 50, 55, 46, 48, 46, 48, 46, 49, 58, 49, 50, 51, 52,
         ];
         let upgrade_msg = UpgradeMsg::decode(upgrade_bytes).expect("Failed to parse upgrade msg");
         assert_eq!(upgrade_msg.endpoint, "127.0.0.1:1234".parse().unwrap());
@@ -102,7 +102,7 @@ mod tests {
             endpoint: "127.0.0.1:1234".parse().unwrap(),
         };
         let expected_upgrade_bytes: &[u8] = &[
-            6, 10, 14, 49, 50, 55, 46, 48, 46, 48, 46, 49, 58, 49, 50, 51, 52,
+            8, 10, 14, 49, 50, 55, 46, 48, 46, 48, 46, 49, 58, 49, 50, 51, 52,
         ];
         let actual_upgrade_bytes = upgrade_msg.encode().unwrap();
         assert_eq!(expected_upgrade_bytes, actual_upgrade_bytes);
