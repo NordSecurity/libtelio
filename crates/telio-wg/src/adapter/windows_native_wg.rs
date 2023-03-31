@@ -77,13 +77,13 @@ impl WindowsNativeWg {
                 Ok(wg_dll) => {
                     // Someone to watch over me while I sleep
                     let watcher = Arc::new(Mutex::new(InterfaceWatcher::new()));
-                    if let Ok(mut watcher) = watcher.clone().lock() {
+                    if let Ok(mut watcher) = watcher.lock() {
                         if let Err(monitoring_err) = watcher.start_monitoring() {
                             return Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
                                 "Failed to start watcher with err {}",
                                 monitoring_err
                             ))));
-                        };
+                        }
                     } else {
                         return Err(AdapterError::WindowsNativeWg(Error::Fail(
                             "error obtaining lock".into(),
@@ -97,13 +97,13 @@ impl WindowsNativeWg {
                             let adapter = Arc::new(raw_adapter);
                             let luid = adapter.get_luid();
                             let wgnt = WindowsNativeWg::new(&adapter, luid, &watcher);
-                            if let Ok(mut watcher) = watcher.clone().lock() {
+                            if let Ok(mut watcher) = watcher.lock() {
                                 watcher.configure(wgnt.adapter.clone(), luid);
                                 Ok(wgnt)
                             } else {
-                                return Err(AdapterError::WindowsNativeWg(Error::Fail(
+                                Err(AdapterError::WindowsNativeWg(Error::Fail(
                                     "error obtaining lock".into(),
-                                )));
+                                )))
                             }
                         }
                         Err((e, _)) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(

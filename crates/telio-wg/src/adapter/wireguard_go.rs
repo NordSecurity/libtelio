@@ -100,8 +100,7 @@ impl Adapter for WireguardGo {
     }
 
     fn get_adapter_luid(&self) -> u64 {
-        let luid = unsafe { wg_go_get_adapter_luid(self.handle) };
-        luid
+        unsafe { wg_go_get_adapter_luid(self.handle) }
     }
 
     async fn stop(&self) {

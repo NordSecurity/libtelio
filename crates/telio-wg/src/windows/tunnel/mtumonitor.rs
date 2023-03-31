@@ -135,7 +135,7 @@ impl MtuMonitor {
         );
 
         let self_ptr = CallerContext as *mut MtuMonitor;
-        if let Ok(_) = (*self_ptr).route_cb_handle.clone().lock() {
+        if (*self_ptr).route_cb_handle.clone().lock().is_ok() {
             if 0 == (*Row).DestinationPrefix.PrefixLength {
                 // Result can be ignored
                 match (*self_ptr).do_it() {
@@ -171,7 +171,7 @@ impl MtuMonitor {
         );
 
         let self_ptr = CallerContext as *mut MtuMonitor;
-        if let Ok(_) = (*self_ptr).iface_cb_handle.clone().lock() {
+        if (*self_ptr).iface_cb_handle.clone().lock().is_ok() {
             if NotificationType == MibParameterNotification {
                 // Result can be ignored
                 match (*self_ptr).do_it() {
