@@ -13,7 +13,6 @@ anyhow = "1"
 crypto_box = "0.7.0"
 tokio = { version = ">=1.22", features = ["io-util", "net", "sync", "macros", "rt-multi-thread", "io-std", "time"] }
 env_logger = "0.9.0"
-hex = "0.3.0"
 clap = { version = "3.1", features = ["derive"] }
 base64 = "0.13.0"
 url = "2.2.2"
@@ -32,6 +31,5 @@ telio-relay = { path = "../../crates/telio-relay" }
 telio-sockets = { path = "../../crates/telio-sockets" }
 
 [dev-dependencies]
-hex = "0.3.0"
 tokio = { version = ">=1.22", features = ["macros", "rt-multi-thread", "io-std"] }
 env_logger = "0.9.0"

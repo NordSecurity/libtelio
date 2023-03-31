@@ -1,3 +1,6 @@
+[package.metadata.cargo-udeps.ignore]
+normal = ["serde_json"]
+
 [package]
 name = "telio-lana"
 version = "0.1.0"
@@ -8,9 +11,9 @@ repository = "https://github.com/NordSecurity/libtelio"
 [dependencies]
 log = {version = "0.4.14", features = ["release_max_level_info"]}
 telio-utils = { path = "../telio-utils" }
-serde_json = "1.0"
 thiserror = "1.0.30"
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 time = { version = "0.3.9", features = ["formatting"] }
 
 [build-dependencies]

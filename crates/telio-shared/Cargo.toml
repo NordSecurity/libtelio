@@ -12,5 +12,5 @@ thiserror = "1.0"
 nix = "0.26.2"
 
 [dev-dependencies]
-boringtun = { git = "https://github.com/NordSecurity/boringtun.git", tag = "v1.1.0" }
+boringtun = { git = "https://github.com/NordSecurity/boringtun.git", tag = "v1.1.1" }
 pnet = "0.28.0"

@@ -11,7 +11,6 @@ repository = "https://github.com/NordSecurity/libtelio"
 crypto_box = "0.7.0"
 futures = "0.3.13"
 tokio = { version = ">=1.22", features = ["net", "sync"] }
-ntest = "0.7"
 slog = "2.7"
 async-trait = "0.1.51"
 thiserror = "1.0"

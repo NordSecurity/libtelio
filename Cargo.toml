@@ -27,7 +27,6 @@ serde_with = "1.10"
 serde_json = "1.0"
 thiserror = "1.0"
 tokio = { version = ">=1.22", features = ["full"] }
-stun = "0.3"
 async-trait = "0.1.51"
 crypto_box = "0.7.0"
 uuid =  { version = "1.1.2", features = ["v4"] }
