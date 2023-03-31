@@ -1,18 +1,14 @@
-use std::{
-    io::Error,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    time::Duration,
-};
+use std::{io::Error, time::Duration};
 
 use telio_utils::{telio_log_trace, telio_log_warn};
+
+use socket2::Socket;
 
 #[cfg(windows)]
 use {std::os::windows::io::AsRawSocket, windows::Win32::Networking::WinSock};
 
-#[cfg(not(windows))]
+#[cfg(any(target_os = "macos", target_os = "ios", doc))]
 use std::os::unix::io::AsRawFd;
-
-use socket2::Socket;
 
 #[cfg(any(target_os = "macos", target_os = "ios", doc))]
 /// time after which tcp retransmissions will be stopped and the connection will be dropped
@@ -38,15 +34,80 @@ pub struct SocketBufSizes {
 pub struct UdpParams(pub SocketBufSizes);
 
 impl TcpParams {
-    #[cfg(not(windows))]
-    pub fn apply(&self, socket: &Socket) {
-        let sock = socket.as_raw_fd();
-        let val_len: libc::socklen_t = 4;
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    fn set_tcp_timeout(&self, socket: &Socket) -> Result<(), Error> {
+        socket.set_tcp_user_timeout(self.user_timeout)
+    }
 
-        // For logging
-        let default = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
-        let addr = socket.local_addr().unwrap_or_else(|_| default.into());
-        let mut kp_enabled: bool = false;
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    fn set_tcp_timeout(&self, socket: &Socket) -> Result<(), Error> {
+        // Setting TCP timeout (darwin)
+        if let Some(user_timeout) = self.user_timeout {
+            let user_timeout = user_timeout.as_secs() as u32;
+            let err = unsafe {
+                libc::setsockopt(
+                    socket.as_raw_fd(),
+                    libc::IPPROTO_TCP as libc::c_int,
+                    TCP_RXT_CONNDROPTIME as libc::c_int,
+                    &user_timeout as *const u32 as *const libc::c_void,
+                    4, /* value length */
+                )
+            };
+            if err != 0 {
+                return Err(Error::from_raw_os_error(err));
+            }
+        }
+
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    fn set_tcp_timeout(&self, socket: &Socket) -> Result<(), Error> {
+        if let Some(user_timeout) = self.user_timeout {
+            let err = unsafe {
+                WinSock::setsockopt(
+                    WinSock::SOCKET(socket.as_raw_socket() as usize),
+                    WinSock::IPPROTO_TCP.0 as i32,
+                    WinSock::TCP_MAXRT as i32,
+                    String::from_utf8_unchecked(
+                        (user_timeout.as_secs() as u32).to_ne_bytes().to_vec(),
+                    ),
+                    4, /* value length */
+                )
+            };
+            if err != 0 {
+                return Err(Error::from_raw_os_error(err));
+            }
+        }
+
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    // Unfortunately socket2 does not support this option on Windows
+    fn set_tcp_keepalive_cnt(&self, socket: &Socket) -> Result<(), Error> {
+        if let Some(keepalive_cnt) = self.keepalive_cnt {
+            let err = unsafe {
+                WinSock::setsockopt(
+                    WinSock::SOCKET(socket.as_raw_socket() as usize),
+                    WinSock::IPPROTO_TCP.0 as i32,
+                    WinSock::TCP_MAXRT as i32,
+                    String::from_utf8_unchecked((keepalive_cnt as u32).to_ne_bytes().to_vec()),
+                    4, /* value length */
+                )
+            };
+            if err != 0 {
+                return Err(Error::from_raw_os_error(err));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn apply(&self, socket: &Socket) {
+        use socket2::TcpKeepalive;
+
+        let addr = socket.local_addr();
 
         // Setting linger=0 so tcp sockets would close immediately
         #[cfg(any(target_os = "macos", target_os = "ios"))]
@@ -58,209 +119,7 @@ impl TcpParams {
 
         // Setting TCP nodelay
         if let Some(nodelay_enable) = self.nodelay_enable {
-            let enable = nodelay_enable as u32;
-
-            if unsafe {
-                libc::setsockopt(
-                    sock,
-                    libc::IPPROTO_TCP as libc::c_int,
-                    libc::TCP_NODELAY as libc::c_int,
-                    &enable as *const u32 as *const libc::c_void,
-                    val_len,
-                )
-            } != 0
-            {
-                telio_log_warn!(
-                    "Cannot set TCP_NODELAY={} for {:?} socket: {}",
-                    nodelay_enable,
-                    addr,
-                    Error::last_os_error().to_string(),
-                );
-            }
-        }
-
-        // Setting TCP timeout (darwin)
-        #[cfg(any(target_os = "macos", target_os = "ios"))]
-        if let Some(user_timeout) = self.user_timeout {
-            let user_timeout = user_timeout.as_secs() as u32;
-
-            if unsafe {
-                libc::setsockopt(
-                    sock,
-                    libc::IPPROTO_TCP as libc::c_int,
-                    TCP_RXT_CONNDROPTIME as libc::c_int,
-                    &user_timeout as *const u32 as *const libc::c_void,
-                    val_len,
-                )
-            } != 0
-            {
-                telio_log_warn!(
-                    "Cannot set TCP_RXT_CONNDROPTIME={} for {:?} socket: {}",
-                    user_timeout,
-                    addr,
-                    Error::last_os_error().to_string(),
-                );
-            }
-        }
-
-        // Setting TCP timeout (linux, android)
-        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
-        if let Some(user_timeout) = self.user_timeout {
-            let user_timeout = user_timeout.as_millis() as u32;
-
-            if unsafe {
-                libc::setsockopt(
-                    sock,
-                    libc::IPPROTO_TCP as libc::c_int,
-                    libc::TCP_USER_TIMEOUT as libc::c_int,
-                    &user_timeout as *const u32 as *const libc::c_void,
-                    val_len,
-                )
-            } != 0
-            {
-                telio_log_warn!(
-                    "Cannot set TCP_USER_TIMEOUT={} for {:?} socket: {}",
-                    user_timeout,
-                    addr,
-                    Error::last_os_error().to_string(),
-                );
-            }
-        }
-
-        // Enabling/disabling TCP keepalive
-        if let Some(keepalive_enable) = self.keepalive_enable {
-            kp_enabled = keepalive_enable;
-            let enable = keepalive_enable as u32;
-
-            if unsafe {
-                libc::setsockopt(
-                    sock,
-                    libc::SOL_SOCKET as libc::c_int,
-                    libc::SO_KEEPALIVE as libc::c_int,
-                    &enable as *const u32 as *const libc::c_void,
-                    val_len,
-                )
-            } != 0
-            {
-                telio_log_warn!(
-                    "Cannot set SO_KEEPALIVE={} for {:?} socket: {}",
-                    keepalive_enable,
-                    addr,
-                    Error::last_os_error().to_string(),
-                );
-            }
-        }
-
-        if kp_enabled {
-            // Setting TCP keepalive idle time
-            if let Some(keepalive_idle) = self.keepalive_idle {
-                let idle = keepalive_idle.as_secs() as u32;
-
-                #[cfg(not(any(target_os = "macos", target_os = "ios")))]
-                let idle_nam = libc::TCP_KEEPIDLE as libc::c_int;
-                #[cfg(any(target_os = "macos", target_os = "ios"))]
-                let idle_nam = libc::TCP_KEEPALIVE as libc::c_int;
-
-                if unsafe {
-                    libc::setsockopt(
-                        sock,
-                        libc::IPPROTO_TCP as libc::c_int,
-                        idle_nam,
-                        &idle as *const u32 as *const libc::c_void,
-                        val_len,
-                    )
-                } != 0
-                {
-                    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
-                    telio_log_warn!(
-                        "Cannot set TCP_KEEPIDLE={} for {:?} socket: {}",
-                        idle,
-                        addr,
-                        Error::last_os_error().to_string(),
-                    );
-
-                    #[cfg(any(target_os = "macos", target_os = "ios"))]
-                    telio_log_warn!(
-                        "Cannot set TCP_KEEPALIVE={} for {:?} socket: {}",
-                        idle,
-                        addr,
-                        Error::last_os_error().to_string(),
-                    );
-                }
-            }
-
-            // Setting TCP keepalive interval time
-            if let Some(keepalive_intvl) = self.keepalive_intvl {
-                let intvl = keepalive_intvl.as_secs() as u32;
-
-                if unsafe {
-                    libc::setsockopt(
-                        sock,
-                        libc::IPPROTO_TCP as libc::c_int,
-                        libc::TCP_KEEPINTVL as libc::c_int,
-                        &intvl as *const u32 as *const libc::c_void,
-                        val_len,
-                    )
-                } != 0
-                {
-                    telio_log_warn!(
-                        "Cannot set TCP_KEEPINTVL={} for {:?} socket: {}",
-                        intvl,
-                        addr,
-                        Error::last_os_error().to_string()
-                    );
-                }
-            }
-
-            // Setting TCP keepalive probe count
-            if let Some(keepalive_cnt) = self.keepalive_cnt {
-                let cnt = keepalive_cnt;
-
-                if unsafe {
-                    libc::setsockopt(
-                        sock,
-                        libc::IPPROTO_TCP as libc::c_int,
-                        libc::TCP_KEEPCNT as libc::c_int,
-                        &cnt as *const u32 as *const libc::c_void,
-                        val_len,
-                    )
-                } != 0
-                {
-                    telio_log_warn!(
-                        "Cannot set TCP_KEEPCNT={} for {:?} socket: {}",
-                        cnt,
-                        addr,
-                        Error::last_os_error().to_string()
-                    );
-                }
-            }
-        }
-
-        self.buf_size.apply(socket);
-    }
-
-    #[cfg(windows)]
-    pub fn apply(&self, socket: &Socket) {
-        let sock = WinSock::SOCKET(socket.as_raw_socket() as usize);
-        let val_len: libc::c_int = 4;
-
-        // For logging
-        let default = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
-        let addr = socket.local_addr().unwrap_or_else(|_| default.into());
-        let mut kp_enabled: bool = false;
-
-        // Setting TCP nodelay
-        if let Some(nodelay_enable) = self.nodelay_enable {
-            if unsafe {
-                WinSock::setsockopt(
-                    sock,
-                    WinSock::IPPROTO_TCP.0 as i32,
-                    WinSock::TCP_NODELAY as i32,
-                    String::from_utf8_unchecked((nodelay_enable as u32).to_ne_bytes().to_vec()),
-                    val_len,
-                )
-            } != 0
-            {
+            if socket.set_nodelay(nodelay_enable).is_err() {
                 telio_log_warn!(
                     "Cannot set TCP_NODELAY={} for {:?} socket: {}",
                     nodelay_enable,
@@ -271,117 +130,45 @@ impl TcpParams {
         }
 
         // Setting TCP timeout
-        if let Some(user_timeout) = self.user_timeout {
-            if unsafe {
-                WinSock::setsockopt(
-                    sock,
-                    WinSock::IPPROTO_TCP.0 as i32,
-                    WinSock::TCP_MAXRT as i32,
-                    String::from_utf8_unchecked(
-                        (user_timeout.as_secs() as u32).to_ne_bytes().to_vec(),
-                    ),
-                    val_len,
-                )
-            } != 0
-            {
+        if self.set_tcp_timeout(socket).is_err() {
+            telio_log_warn!(
+                "Cannot set TCP user timeout: {:?} for {:?} socket: {}",
+                self.user_timeout,
+                socket.local_addr(),
+                Error::last_os_error().to_string(),
+            );
+        }
+
+        // Setting TCP keepalive options
+        if let Some(true) = self.keepalive_enable {
+            let mut keepalive = TcpKeepalive::new();
+            if let Some(idle) = self.keepalive_idle {
+                keepalive = keepalive.with_time(idle);
+            }
+            if let Some(interval) = self.keepalive_intvl {
+                keepalive = keepalive.with_interval(interval);
+            }
+            #[cfg(not(windows))]
+            if let Some(count) = self.keepalive_cnt {
+                keepalive = keepalive.with_retries(count);
+            }
+            if socket.set_tcp_keepalive(&keepalive).is_err() {
                 telio_log_warn!(
-                    "Cannot set TCP_MAXRT={} for {:?} socket: {}",
-                    user_timeout.as_secs(),
+                    "Cannot set TCP keepalive options {:?} for {:?} socket: {}",
+                    keepalive,
                     addr,
                     Error::last_os_error().to_string(),
                 );
             }
-        }
 
-        // Enabling/disabling TCP keepalive
-        if let Some(keepalive_enable) = self.keepalive_enable {
-            kp_enabled = keepalive_enable;
-            if unsafe {
-                WinSock::setsockopt(
-                    sock,
-                    WinSock::SOL_SOCKET as i32,
-                    WinSock::SO_KEEPALIVE as i32,
-                    String::from_utf8_unchecked((keepalive_enable as u32).to_ne_bytes().to_vec()),
-                    val_len,
-                )
-            } != 0
-            {
-                telio_log_warn!(
-                    "Cannot set SO_KEEPALIVE={} for {:?} socket: {}",
-                    keepalive_enable,
-                    addr,
-                    Error::last_os_error().to_string(),
-                );
-            }
-        }
-
-        if kp_enabled {
-            if let Some(keepalive_idle) = self.keepalive_idle {
-                // Setting TCP keepalive idle time
-                if unsafe {
-                    WinSock::setsockopt(
-                        sock,
-                        WinSock::IPPROTO_TCP.0 as i32,
-                        WinSock::TCP_KEEPIDLE as i32,
-                        String::from_utf8_unchecked(
-                            (keepalive_idle.as_secs() as u32).to_ne_bytes().to_vec(),
-                        ),
-                        val_len,
-                    )
-                } != 0
-                {
-                    telio_log_warn!(
-                        "Cannot set TCP_KEEPIDLE={} for {:?} socket: {}",
-                        keepalive_idle.as_secs(),
-                        addr,
-                        Error::last_os_error().to_string(),
-                    );
-                }
-            }
-
-            // Setting TCP keepalive interval time
-            if let Some(keepalive_intvl) = self.keepalive_intvl {
-                if unsafe {
-                    WinSock::setsockopt(
-                        sock,
-                        WinSock::IPPROTO_TCP.0 as i32,
-                        WinSock::TCP_KEEPINTVL as i32,
-                        String::from_utf8_unchecked(
-                            (keepalive_intvl.as_secs() as u32).to_ne_bytes().to_vec(),
-                        ),
-                        val_len,
-                    )
-                } != 0
-                {
-                    telio_log_warn!(
-                        "Cannot set TCP_KEEPINTVL={} for {:?} socket: {}",
-                        keepalive_intvl.as_secs(),
-                        addr,
-                        Error::last_os_error().to_string(),
-                    );
-                }
-            }
-
-            // Setting TCP keepalive probe count
-            if let Some(keepalive_cnt) = self.keepalive_cnt {
-                if unsafe {
-                    WinSock::setsockopt(
-                        sock,
-                        WinSock::IPPROTO_TCP.0 as i32,
-                        WinSock::TCP_KEEPCNT as i32,
-                        String::from_utf8_unchecked((keepalive_cnt as u32).to_ne_bytes().to_vec()),
-                        val_len,
-                    )
-                } != 0
-                {
-                    telio_log_warn!(
-                        "Cannot set TCP_KEEPCNT={} for {:?} socket: {}",
-                        keepalive_cnt,
-                        addr,
-                        Error::last_os_error().to_string(),
-                    );
-                }
-            }
+            #[cfg(windows)]
+            self.set_tcp_keepalive_cnt(socket);
+        } else if socket.set_keepalive(false).is_err() {
+            telio_log_warn!(
+                "Cannot diable TCP keepalive for {:?} socket: {}",
+                addr,
+                Error::last_os_error().to_string(),
+            );
         }
 
         self.buf_size.apply(socket);
