@@ -124,8 +124,22 @@ impl Stream for MultiChannel {
     }
 }
 
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum SinkError {
+    #[error("start_send called without poll_ready being called first")]
+    StartSendBeforePollReady,
+    #[error("Sending value to sink failed")]
+    SendingFailed,
+    #[error("poll_ready failed")]
+    PollReadyFailed,
+    #[error("Packet type {0:?} not in mapping")]
+    MissingPacketType(PacketType),
+    #[error("No channel for packet type {0:?} and id {1}")]
+    MissingChannel(PacketType, usize),
+}
+
 impl Sink<(PublicKey, Packet)> for MultiChannel {
-    type Error = ();
+    type Error = SinkError;
 
     fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         // Ensure all channels are ready for send
@@ -151,19 +165,27 @@ impl Sink<(PublicKey, Packet)> for MultiChannel {
     }
 
     fn start_send(mut self: Pin<&mut Self>, item: (PublicKey, Packet)) -> Result<(), Self::Error> {
-        let i = self.mapping.get(&item.1.packet_type()).copied().ok_or(())?;
-        let chan = self.channels.get_mut(&i).ok_or(())?;
+        let i = self
+            .mapping
+            .get(&item.1.packet_type())
+            .copied()
+            .ok_or_else(|| SinkError::MissingPacketType(item.1.packet_type()))?;
+        let chan = self
+            .channels
+            .get_mut(&i)
+            .ok_or_else(|| SinkError::MissingChannel(item.1.packet_type(), i))?;
 
         let res = chan
             .tx_result
             .take()
-            .expect("start_send called without poll_ready being called first.");
+            .ok_or(SinkError::StartSendBeforePollReady)?;
         if res.is_err() {
             self.cleanup();
-            return Err(());
+            return Err(SinkError::PollReadyFailed);
         }
         chan.tx.start_send_unpin(item).map_err(|_| {
             self.cleanup();
+            SinkError::SendingFailed
         })
     }
 
@@ -241,13 +263,13 @@ mod tests {
         {
             let _ = mc.pipe::<DataMsg>().expect("Failed to pipe data");
         }
-        assert_eq!(Err(()), mc.send((pk1, DataMsg::new(b"noooo").into())).await,);
+        assert!(mc.send((pk1, DataMsg::new(b"noooo").into())).await.is_err());
 
         // Due to not piped type
-        assert_eq!(
-            Err(()),
-            mc.send((pk1, HeartbeatMessage::request().into())).await,
-        );
+        assert!(mc
+            .send((pk1, HeartbeatMessage::request().into()))
+            .await
+            .is_err());
     }
 
     #[tokio::test]

@@ -510,22 +510,29 @@ impl Analytics {
         self.meshnet_id = {
             // Then find the value with the biggest amount of repetitions
             // This cannot fail as we are guaranteed to have at least one element in the map at the time of checking
-            let max_value = id_heatmap
-                .iter()
-                .max_by(|o, t| o.1.cmp(t.1))
-                .expect("oops, bad")
-                .0;
+            let id_with_max_value = match id_heatmap.iter().max_by(|o, t| o.1.cmp(t.1)) {
+                Some((o, _)) => o,
+                None => {
+                    telio_log_warn!("id_heatmap empty");
+                    return;
+                }
+            };
 
             // Since we can have more than one meshnet ID having the most amount of repetitions, we need to resolve this in a
             // predictable way, so we filter out the entries that share this maximum value and then sort them again by
             // the public key, from which the ID initially came from
-            *self
+            match self
                 .collected_meshnet_ids
                 .iter()
-                .filter(|(_k, v)| max_value == *v)
+                .filter(|(_k, v)| id_with_max_value == *v)
                 .max_by(|o, t| o.0.cmp(t.0))
-                .expect("oops, bad")
-                .1
+            {
+                Some((_, t)) => *t,
+                None => {
+                    telio_log_warn!("collected_meshnet_ids is missing {}", id_with_max_value);
+                    return;
+                }
+            }
         };
 
         let mut heartbeat_info = HeartbeatInfo {

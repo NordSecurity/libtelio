@@ -29,7 +29,4 @@ fn main() -> Result<()> {
         ])
         .out_dir(out_dir)
         .run()
-        .expect("Oops, something went wrong!");
-
-    Ok(())
 }

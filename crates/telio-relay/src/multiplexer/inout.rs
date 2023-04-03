@@ -1,7 +1,7 @@
 use std::mem::replace;
 
 use futures::{
-    stream::{SplitSink, SplitStream},
+    stream::{ReuniteError, SplitSink, SplitStream},
     Sink, Stream, StreamExt,
 };
 
@@ -34,12 +34,12 @@ where
     }
 
     /// Get refrence to joined type
-    pub fn joined(&mut self) -> Option<&mut T> {
-        self.in_place(Self::into_joined);
-        match &mut self.0 {
+    pub fn joined(&mut self) -> Result<Option<&mut T>, ReuniteError<T, I>> {
+        self.try_in_place(Self::into_joined)?;
+        Ok(match &mut self.0 {
             Joined(j) => Some(j),
             _ => None,
-        }
+        })
     }
 
     fn into_split(self) -> Self {
@@ -52,16 +52,24 @@ where
         }
     }
 
-    fn into_joined(self) -> Self {
-        match self {
-            Self(Split(tx, rx)) => Self(Joined(tx.reunite(rx).expect("Was built from same type."))),
+    fn into_joined(self) -> Result<Self, ReuniteError<T, I>> {
+        Ok(match self {
+            Self(Split(tx, rx)) => Self(Joined(tx.reunite(rx)?)),
             v => v,
-        }
+        })
     }
 
     #[inline(always)]
     fn in_place(&mut self, map: impl FnOnce(Self) -> Self) {
-        let new = map(replace(self, Self(Empty)));
-        let _ = replace(self, new);
+        *self = map(replace(self, Self(Empty)));
+    }
+
+    #[inline(always)]
+    fn try_in_place(
+        &mut self,
+        map: impl FnOnce(Self) -> Result<Self, ReuniteError<T, I>>,
+    ) -> Result<(), ReuniteError<T, I>> {
+        *self = map(replace(self, Self(Empty)))?;
+        Ok(())
     }
 }

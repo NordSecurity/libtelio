@@ -1,4 +1,5 @@
 #![allow(unwrap_check)]
+use anyhow::{Context, Result};
 use std::{
     collections::HashSet,
     env,
@@ -33,7 +34,7 @@ fn abspath(path: &str) -> Option<String> {
 }
 
 // Compile bindings file and enforce bindings export
-fn compile_and_enforce_bindings_export(target_os: &str, lang_wrapper: &str) {
+fn compile_and_enforce_bindings_export(target_os: &str, lang_wrapper: &str) -> Result<()> {
     let path = format!(
         "ffi/bindings/{target_os}/wrap/{lang_wrapper}.c",
         target_os = target_os,
@@ -51,8 +52,8 @@ fn compile_and_enforce_bindings_export(target_os: &str, lang_wrapper: &str) {
             lang_wrapper = lang_wrapper
         );
         if Path::new(&exports_list_msvc).exists() {
-            let err_msg = format!("Could not find {}", exports_list_msvc);
-            let exported_symbols = lines_from_file(&exports_list_msvc).expect(&err_msg);
+            let exported_symbols = lines_from_file(&exports_list_msvc)
+                .with_context(|| format!("Could not find {}", exports_list_msvc))?;
             for export_sym in exported_symbols {
                 println!("cargo:rustc-link-arg=/export:{}", export_sym);
             }
@@ -79,9 +80,10 @@ fn compile_and_enforce_bindings_export(target_os: &str, lang_wrapper: &str) {
             lang_wrapper
         );
     }
+    Ok(())
 }
 
-fn main() {
+fn main() -> Result<()> {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
 
     let langs: HashSet<&str> = HashSet::from_iter(["GO", "JAVA", "CS"].iter().copied());
@@ -105,13 +107,13 @@ fn main() {
 
     #[cfg(not(tarpaulin))] // GO FFI fails to compile for tarpaulin (its not needed)
     if ffi.contains(&"GO") {
-        compile_and_enforce_bindings_export(&target_os, "go_wrap");
+        compile_and_enforce_bindings_export(&target_os, "go_wrap")?;
     }
     if ffi.contains(&"JAVA") {
-        compile_and_enforce_bindings_export(&target_os, "java_wrap");
+        compile_and_enforce_bindings_export(&target_os, "java_wrap")?;
     }
     if ffi.contains(&"CS") {
-        compile_and_enforce_bindings_export(&target_os, "csharp_wrap");
+        compile_and_enforce_bindings_export(&target_os, "csharp_wrap")?;
     }
 
     {
@@ -130,4 +132,5 @@ fn main() {
                 .compile("suppressSourceFortificationCheck");
         }
     }
+    Ok(())
 }
