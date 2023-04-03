@@ -79,8 +79,6 @@ pub enum Error {
     AdapterConfig(String),
     #[error("Private key does not match meshnet config's public key.")]
     BadPrivateKey,
-    #[error("Duplicate allowed ips.")]
-    BadAllowedIps,
     #[error("Invalid node configuration")]
     InvalidNode,
     #[error("Dublicate exit node")]
@@ -1193,8 +1191,7 @@ impl Runtime {
         }
 
         self.requested_state.exit_node = Some(exit_node.clone());
-        wg_controller::consolidate_wg_state(&self.requested_state, &self.entities).await?;
-        Ok(())
+        wg_controller::consolidate_wg_state(&self.requested_state, &self.entities).await
     }
 
     async fn disconnect_exit_node(&mut self, node_key: &PublicKey) -> Result {
@@ -1517,6 +1514,7 @@ fn set_tunnel_interface(socket_pool: &Arc<SocketPool>, config: &DeviceConfig) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ipnetwork::IpNetwork;
     use telio_model::config::{Peer, PeerBase};
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1574,10 +1572,12 @@ mod tests {
 
         let features = Features::default();
 
+        let private_key = SecretKey::gen();
+
         let mut rt = Runtime::start(
             sender,
             &DeviceConfig {
-                private_key: SecretKey::gen(),
+                private_key,
                 adapter: AdapterType::BoringTun,
                 name: None,
                 tun: None,
@@ -1589,36 +1589,50 @@ mod tests {
         .await
         .unwrap();
 
-        let node1 = ExitNode {
-            identifier: "".to_owned(),
-            public_key: SecretKey::gen().public(),
-            allowed_ips: Some(vec![
-                "100.0.0.0/8".parse().unwrap(),
-                "1.1.1.1/32".parse().unwrap(),
+        let first_ip_network = IpNetwork::from(IpAddr::from(Ipv4Addr::new(1, 2, 3, 4)));
+        let second_ip_network = IpNetwork::from(IpAddr::from(Ipv4Addr::new(4, 3, 2, 1)));
+
+        let config = Config {
+            this: PeerBase {
+                identifier: "identifier".to_owned(),
+                public_key: private_key.public(),
+                hostname: "hostname".to_owned(),
+                ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
+            },
+            peers: Some(vec![
+                Peer {
+                    base: PeerBase {
+                        public_key: SecretKey::gen().public(),
+                        ip_addresses: Some(vec![first_ip_network.ip()]),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                Peer {
+                    base: PeerBase {
+                        public_key: SecretKey::gen().public(),
+                        ip_addresses: Some(vec![second_ip_network.ip()]),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
             ]),
-            endpoint: None,
+            derp_servers: None,
+            dns: None,
         };
 
-        let node2 = ExitNode {
-            identifier: "".to_owned(),
+        let vpn_node = ExitNode {
             public_key: SecretKey::gen().public(),
-            allowed_ips: Some(vec!["100.0.0.0/16".parse().unwrap()]),
-            endpoint: None,
+            allowed_ips: Some(vec![first_ip_network]),
+            ..Default::default()
         };
 
-        let node3 = ExitNode {
-            identifier: "".to_owned(),
-            public_key: SecretKey::gen().public(),
-            allowed_ips: Some(vec!["1.1.1.1/32".parse().unwrap()]),
-            endpoint: None,
-        };
-
-        matches!(rt.connect_exit_node(&node1).await, Ok(()));
-        matches!(rt.connect_exit_node(&node2).await, Ok(()));
-        matches!(
-            rt.connect_exit_node(&node3).await,
-            Err(Error::BadAllowedIps)
-        );
+        assert!(matches!(rt.set_config(&Some(config)).await, Ok(())));
+        let _expected_error: super::Error = wg_controller::Error::BadAllowedIps.into();
+        assert!(matches!(
+            rt.connect_exit_node(&vpn_node).await,
+            Err(_expected_error)
+        ));
     }
 
     #[tokio::test(flavor = "multi_thread")]
