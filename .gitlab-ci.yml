@@ -12,7 +12,19 @@ libtelio-build-pipeline:
     # checkout the correct libtelio REF.
     GIT_SUBMODULE_PATHS: ':(exclude)libtelio'
 
+  rules:
+    - if: $GITHUB_SHA != ''
+      variables:
+        LIBTELIO_COMMIT_REF_NAME: $GITHUB_REF_NAME
+        LIBTELIO_COMMIT_SHA: $GITHUB_SHA
+    - if: $GITHUB_REF_TYPE == 'tag'
+      variables:
+        LIBTELIO_COMMIT_TAG: $GITHUB_REF_NAME
+    - when: always
+
   trigger:
     project: $LIBTELIO_BUILD_PROJECT_PATH
     branch: main
     strategy: depend
+    forward:
+      pipeline_variables: true
