@@ -1,5 +1,9 @@
-### Unreleased
-* LLT-3305 Skip firewall for VPN nodes
+### v4.0.0
+### **Bruschetta**
+---
+### Changelog
+* LLT-2732: Support direct connections for meshnet.
+* LLT-3305: Skip firewall for VPN nodes
 * LLT-3004: JNI FindClass calls from callbacks
 * LLT-2968: Add contributor guidelines
 * NVA-3645: Fix Nurse execution.
@@ -7,9 +11,24 @@
 * NVA-3634: Fix broken JNI_OnLoad binding
 * LLT-3174: Allow apps to control PersistentKeepalive parameter of libtelio
 * LLT-3340: Hide reflexive IPs from logs
-
-### Changelog
 * LLT-2893: Expose ffi version and tag
+* Breaking changes 3.x -> 4.x:
+  * Feature paths field is deprecated and has no influence in libtelio.
+  * Feature "direct" was added egz:
+    1. `{"direct": {}}`: Will enable all direct connection logic.
+    2. `{"direct": { "providers": ["local", "stun"], "endpoint_interval_secs": 10 }`: equivalent to 1..
+      Providers can be removed to limit nat traversal strategies, `endpoint_interval_secs` - specifies how often telio will try to look for endpoint changes.
+  * Supported providers:
+    * `local`: Retrieves endpoint by local interfaces
+    * `stun`: Uses stun and wg-stun on derp servers to resolve public ip address for node.
+    
+  * Node's `endpoints` field was replaced by `endpoint` field reporting singular endpoint wireguard is actually using.
+  * Node's `path_type` field now will either be `"relay"` or `"direct"`, vpn nodes `path_type` is always `"direct"`.
+  * Communication between versions:
+    * 4.x <-> 3.x can communicate only using `relay` path.
+    * 3.x <-> 3.x can aditionaly communicate using `udp-hole-puch` path.
+    * 4.x <-> 4.x can also communicate using `direct` path
+
 
 ### v3.4.2
 ### **Pastel de nata**
