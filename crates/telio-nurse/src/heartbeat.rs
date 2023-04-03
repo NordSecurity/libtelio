@@ -611,7 +611,9 @@ impl Analytics {
             index_map.entry(**pk).or_insert(i as u8);
 
             // By the same token, we can just insert the respective fingerprint into the list of sorted fingerprints
-            internal_sorted_fingerprints.push(self.node_fingerprints[pk].clone());
+            if **pk != self.public_key {
+                internal_sorted_fingerprints.push(self.node_fingerprints[pk].clone());
+            }
             heartbeat_info.internal_sorted_public_keys.push(**pk);
         }
 
@@ -692,6 +694,10 @@ impl Analytics {
         // External links
         let mut external_links = String::new();
         for key in external_sorted_public_keys {
+            if *key == self.public_key {
+                continue;
+            }
+
             let node = self.local_nodes.entry(*key).or_default();
 
             let (meshnet_id, fingerprint, connection_state) = match node {
