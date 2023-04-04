@@ -33,15 +33,15 @@ typedef void* swig_type_1;
 typedef void* swig_type_2;
 typedef void* swig_type_3;
 typedef void* swig_type_4;
-typedef void* swig_type_5;
-typedef void* swig_type_6;
+typedef _gostring_ swig_type_5;
+typedef _gostring_ swig_type_6;
 typedef _gostring_ swig_type_7;
 typedef _gostring_ swig_type_8;
 typedef _gostring_ swig_type_9;
 typedef _gostring_ swig_type_10;
-typedef _gostring_ swig_type_11;
+typedef long long swig_type_11;
 typedef _gostring_ swig_type_12;
-typedef long long swig_type_13;
+typedef _gostring_ swig_type_13;
 typedef _gostring_ swig_type_14;
 typedef _gostring_ swig_type_15;
 typedef _gostring_ swig_type_16;
@@ -57,68 +57,65 @@ typedef _gostring_ swig_type_25;
 typedef _gostring_ swig_type_26;
 typedef _gostring_ swig_type_27;
 typedef _gostring_ swig_type_28;
-extern void _wrap_Swig_free_teliogo_690882cc72b80b62(uintptr_t arg1);
-extern uintptr_t _wrap_Swig_malloc_teliogo_690882cc72b80b62(swig_intgo arg1);
-extern swig_intgo _wrap_TELIOADAPTERBORINGTUN_teliogo_690882cc72b80b62(void);
-extern swig_intgo _wrap_TELIOADAPTERLINUXNATIVETUN_teliogo_690882cc72b80b62(void);
-extern swig_intgo _wrap_TELIOADAPTERWIREGUARDGOTUN_teliogo_690882cc72b80b62(void);
-extern swig_intgo _wrap_TELIOADAPTERWINDOWSNATIVETUN_teliogo_690882cc72b80b62(void);
-extern swig_intgo _wrap_TELIOLOGCRITICAL_teliogo_690882cc72b80b62(void);
-extern swig_intgo _wrap_TELIOLOGERROR_teliogo_690882cc72b80b62(void);
-extern swig_intgo _wrap_TELIOLOGWARNING_teliogo_690882cc72b80b62(void);
-extern swig_intgo _wrap_TELIOLOGINFO_teliogo_690882cc72b80b62(void);
-extern swig_intgo _wrap_TELIOLOGDEBUG_teliogo_690882cc72b80b62(void);
-extern swig_intgo _wrap_TELIOLOGTRACE_teliogo_690882cc72b80b62(void);
-extern swig_intgo _wrap_TELIORESOK_teliogo_690882cc72b80b62(void);
-extern swig_intgo _wrap_TELIORESERROR_teliogo_690882cc72b80b62(void);
-extern swig_intgo _wrap_TELIORESINVALIDKEY_teliogo_690882cc72b80b62(void);
-extern swig_intgo _wrap_TELIORESBADCONFIG_teliogo_690882cc72b80b62(void);
-extern swig_intgo _wrap_TELIORESLOCKERROR_teliogo_690882cc72b80b62(void);
-extern swig_intgo _wrap_TELIORESINVALIDSTRING_teliogo_690882cc72b80b62(void);
-extern swig_intgo _wrap_TELIORESALREADYSTARTED_teliogo_690882cc72b80b62(void);
-extern void _wrap_TelioEventCb_Ctx_set_teliogo_690882cc72b80b62(uintptr_t arg1, uintptr_t arg2);
-extern uintptr_t _wrap_TelioEventCb_Ctx_get_teliogo_690882cc72b80b62(uintptr_t arg1);
-extern void _wrap_TelioEventCb_Cb_set_teliogo_690882cc72b80b62(uintptr_t arg1, swig_type_1 arg2);
-extern swig_type_2 _wrap_TelioEventCb_Cb_get_teliogo_690882cc72b80b62(uintptr_t arg1);
-extern uintptr_t _wrap_new_TelioEventCb_teliogo_690882cc72b80b62(void);
-extern void _wrap_delete_TelioEventCb_teliogo_690882cc72b80b62(uintptr_t arg1);
-extern void _wrap_TelioLoggerCb_Ctx_set_teliogo_690882cc72b80b62(uintptr_t arg1, uintptr_t arg2);
-extern uintptr_t _wrap_TelioLoggerCb_Ctx_get_teliogo_690882cc72b80b62(uintptr_t arg1);
-extern void _wrap_TelioLoggerCb_Cb_set_teliogo_690882cc72b80b62(uintptr_t arg1, swig_type_3 arg2);
-extern swig_type_4 _wrap_TelioLoggerCb_Cb_get_teliogo_690882cc72b80b62(uintptr_t arg1);
-extern uintptr_t _wrap_new_TelioLoggerCb_teliogo_690882cc72b80b62(void);
-extern void _wrap_delete_TelioLoggerCb_teliogo_690882cc72b80b62(uintptr_t arg1);
-extern void _wrap_TelioProtectCb_Ctx_set_teliogo_690882cc72b80b62(uintptr_t arg1, uintptr_t arg2);
-extern uintptr_t _wrap_TelioProtectCb_Ctx_get_teliogo_690882cc72b80b62(uintptr_t arg1);
-extern void _wrap_TelioProtectCb_Cb_set_teliogo_690882cc72b80b62(uintptr_t arg1, swig_type_5 arg2);
-extern swig_type_6 _wrap_TelioProtectCb_Cb_get_teliogo_690882cc72b80b62(uintptr_t arg1);
-extern uintptr_t _wrap_new_TelioProtectCb_teliogo_690882cc72b80b62(void);
-extern void _wrap_delete_TelioProtectCb_teliogo_690882cc72b80b62(uintptr_t arg1);
-extern swig_intgo _wrap_Telio_GetDefaultAdapter_teliogo_690882cc72b80b62(void);
-extern uintptr_t _wrap_new_Telio_teliogo_690882cc72b80b62(swig_type_7 arg1, telio_event_cb arg2, swig_intgo arg3, telio_logger_cb arg4);
-extern void _wrap_delete_Telio_teliogo_690882cc72b80b62(uintptr_t arg1);
-extern swig_intgo _wrap_Telio_Start_teliogo_690882cc72b80b62(uintptr_t arg1, swig_type_8 arg2, swig_intgo arg3);
-extern swig_intgo _wrap_Telio_StartNamed_teliogo_690882cc72b80b62(uintptr_t arg1, swig_type_9 arg2, swig_intgo arg3, swig_type_10 arg4);
-extern swig_intgo _wrap_Telio_StartWithTun_teliogo_690882cc72b80b62(uintptr_t arg1, swig_type_11 arg2, swig_intgo arg3, swig_intgo arg4);
-extern swig_intgo _wrap_Telio_EnableMagicDns_teliogo_690882cc72b80b62(uintptr_t arg1, swig_type_12 arg2);
-extern swig_intgo _wrap_Telio_DisableMagicDns_teliogo_690882cc72b80b62(uintptr_t arg1);
-extern swig_intgo _wrap_Telio_Stop_teliogo_690882cc72b80b62(uintptr_t arg1);
-extern swig_type_13 _wrap_Telio_GetAdapterLuid_teliogo_690882cc72b80b62(uintptr_t arg1);
-extern swig_intgo _wrap_Telio_SetPrivateKey_teliogo_690882cc72b80b62(uintptr_t arg1, swig_type_14 arg2);
-extern swig_type_15 _wrap_Telio_GetPrivateKey_teliogo_690882cc72b80b62(uintptr_t arg1);
-extern swig_intgo _wrap_Telio_SetFwmark_teliogo_690882cc72b80b62(uintptr_t arg1, swig_intgo arg2);
-extern swig_intgo _wrap_Telio_NotifyNetworkChange_teliogo_690882cc72b80b62(uintptr_t arg1, swig_type_16 arg2);
-extern swig_intgo _wrap_Telio_ConnectToExitNode_teliogo_690882cc72b80b62(uintptr_t arg1, swig_type_17 arg2, swig_type_18 arg3, swig_type_19 arg4);
-extern swig_intgo _wrap_Telio_DisconnectFromExitNode_teliogo_690882cc72b80b62(uintptr_t arg1, swig_type_20 arg2);
-extern swig_intgo _wrap_Telio_DisconnectFromExitNodes_teliogo_690882cc72b80b62(uintptr_t arg1);
-extern swig_intgo _wrap_Telio_SetMeshnet_teliogo_690882cc72b80b62(uintptr_t arg1, swig_type_21 arg2);
-extern swig_intgo _wrap_Telio_SetMeshnetOff_teliogo_690882cc72b80b62(uintptr_t arg1);
-extern swig_type_22 _wrap_Telio_GenerateSecretKey_teliogo_690882cc72b80b62(uintptr_t arg1);
-extern swig_type_23 _wrap_Telio_GeneratePublicKey_teliogo_690882cc72b80b62(uintptr_t arg1, swig_type_24 arg2);
-extern swig_type_25 _wrap_Telio_GetStatusMap_teliogo_690882cc72b80b62(uintptr_t arg1);
-extern swig_type_26 _wrap_Telio_GetLastError_teliogo_690882cc72b80b62(uintptr_t arg1);
-extern swig_type_27 _wrap_Telio_GetVersionTag_teliogo_690882cc72b80b62(void);
-extern swig_type_28 _wrap_Telio_GetCommitSha_teliogo_690882cc72b80b62(void);
+typedef _gostring_ swig_type_29;
+typedef _gostring_ swig_type_30;
+extern void _wrap_Swig_free_teliogo_9a5d0d120faf5ade(uintptr_t arg1);
+extern uintptr_t _wrap_Swig_malloc_teliogo_9a5d0d120faf5ade(swig_intgo arg1);
+extern swig_intgo _wrap_TELIOADAPTERBORINGTUN_teliogo_9a5d0d120faf5ade(void);
+extern swig_intgo _wrap_TELIOADAPTERLINUXNATIVETUN_teliogo_9a5d0d120faf5ade(void);
+extern swig_intgo _wrap_TELIOADAPTERWIREGUARDGOTUN_teliogo_9a5d0d120faf5ade(void);
+extern swig_intgo _wrap_TELIOADAPTERWINDOWSNATIVETUN_teliogo_9a5d0d120faf5ade(void);
+extern swig_intgo _wrap_TELIOLOGCRITICAL_teliogo_9a5d0d120faf5ade(void);
+extern swig_intgo _wrap_TELIOLOGERROR_teliogo_9a5d0d120faf5ade(void);
+extern swig_intgo _wrap_TELIOLOGWARNING_teliogo_9a5d0d120faf5ade(void);
+extern swig_intgo _wrap_TELIOLOGINFO_teliogo_9a5d0d120faf5ade(void);
+extern swig_intgo _wrap_TELIOLOGDEBUG_teliogo_9a5d0d120faf5ade(void);
+extern swig_intgo _wrap_TELIOLOGTRACE_teliogo_9a5d0d120faf5ade(void);
+extern swig_intgo _wrap_TELIORESOK_teliogo_9a5d0d120faf5ade(void);
+extern swig_intgo _wrap_TELIORESERROR_teliogo_9a5d0d120faf5ade(void);
+extern swig_intgo _wrap_TELIORESINVALIDKEY_teliogo_9a5d0d120faf5ade(void);
+extern swig_intgo _wrap_TELIORESBADCONFIG_teliogo_9a5d0d120faf5ade(void);
+extern swig_intgo _wrap_TELIORESLOCKERROR_teliogo_9a5d0d120faf5ade(void);
+extern swig_intgo _wrap_TELIORESINVALIDSTRING_teliogo_9a5d0d120faf5ade(void);
+extern swig_intgo _wrap_TELIORESALREADYSTARTED_teliogo_9a5d0d120faf5ade(void);
+extern void _wrap_TelioEventCb_Ctx_set_teliogo_9a5d0d120faf5ade(uintptr_t arg1, uintptr_t arg2);
+extern uintptr_t _wrap_TelioEventCb_Ctx_get_teliogo_9a5d0d120faf5ade(uintptr_t arg1);
+extern void _wrap_TelioEventCb_Cb_set_teliogo_9a5d0d120faf5ade(uintptr_t arg1, swig_type_1 arg2);
+extern swig_type_2 _wrap_TelioEventCb_Cb_get_teliogo_9a5d0d120faf5ade(uintptr_t arg1);
+extern uintptr_t _wrap_new_TelioEventCb_teliogo_9a5d0d120faf5ade(void);
+extern void _wrap_delete_TelioEventCb_teliogo_9a5d0d120faf5ade(uintptr_t arg1);
+extern void _wrap_TelioLoggerCb_Ctx_set_teliogo_9a5d0d120faf5ade(uintptr_t arg1, uintptr_t arg2);
+extern uintptr_t _wrap_TelioLoggerCb_Ctx_get_teliogo_9a5d0d120faf5ade(uintptr_t arg1);
+extern void _wrap_TelioLoggerCb_Cb_set_teliogo_9a5d0d120faf5ade(uintptr_t arg1, swig_type_3 arg2);
+extern swig_type_4 _wrap_TelioLoggerCb_Cb_get_teliogo_9a5d0d120faf5ade(uintptr_t arg1);
+extern uintptr_t _wrap_new_TelioLoggerCb_teliogo_9a5d0d120faf5ade(void);
+extern void _wrap_delete_TelioLoggerCb_teliogo_9a5d0d120faf5ade(uintptr_t arg1);
+extern swig_intgo _wrap_Telio_GetDefaultAdapter_teliogo_9a5d0d120faf5ade(void);
+extern uintptr_t _wrap_new_Telio_teliogo_9a5d0d120faf5ade(swig_type_5 arg1, telio_event_cb arg2, swig_intgo arg3, telio_logger_cb arg4);
+extern void _wrap_delete_Telio_teliogo_9a5d0d120faf5ade(uintptr_t arg1);
+extern swig_intgo _wrap_Telio_Start_teliogo_9a5d0d120faf5ade(uintptr_t arg1, swig_type_6 arg2, swig_intgo arg3);
+extern swig_intgo _wrap_Telio_StartNamed_teliogo_9a5d0d120faf5ade(uintptr_t arg1, swig_type_7 arg2, swig_intgo arg3, swig_type_8 arg4);
+extern swig_intgo _wrap_Telio_StartWithTun_teliogo_9a5d0d120faf5ade(uintptr_t arg1, swig_type_9 arg2, swig_intgo arg3, swig_intgo arg4);
+extern swig_intgo _wrap_Telio_EnableMagicDns_teliogo_9a5d0d120faf5ade(uintptr_t arg1, swig_type_10 arg2);
+extern swig_intgo _wrap_Telio_DisableMagicDns_teliogo_9a5d0d120faf5ade(uintptr_t arg1);
+extern swig_intgo _wrap_Telio_Stop_teliogo_9a5d0d120faf5ade(uintptr_t arg1);
+extern swig_type_11 _wrap_Telio_GetAdapterLuid_teliogo_9a5d0d120faf5ade(uintptr_t arg1);
+extern swig_intgo _wrap_Telio_SetPrivateKey_teliogo_9a5d0d120faf5ade(uintptr_t arg1, swig_type_12 arg2);
+extern swig_type_13 _wrap_Telio_GetPrivateKey_teliogo_9a5d0d120faf5ade(uintptr_t arg1);
+extern swig_intgo _wrap_Telio_SetFwmark_teliogo_9a5d0d120faf5ade(uintptr_t arg1, swig_intgo arg2);
+extern swig_intgo _wrap_Telio_NotifyNetworkChange_teliogo_9a5d0d120faf5ade(uintptr_t arg1, swig_type_14 arg2);
+extern swig_intgo _wrap_Telio_ConnectToExitNode_teliogo_9a5d0d120faf5ade(uintptr_t arg1, swig_type_15 arg2, swig_type_16 arg3, swig_type_17 arg4);
+extern swig_intgo _wrap_Telio_ConnectToExitNodeWithId_teliogo_9a5d0d120faf5ade(uintptr_t arg1, swig_type_18 arg2, swig_type_19 arg3, swig_type_20 arg4, swig_type_21 arg5);
+extern swig_intgo _wrap_Telio_DisconnectFromExitNode_teliogo_9a5d0d120faf5ade(uintptr_t arg1, swig_type_22 arg2);
+extern swig_intgo _wrap_Telio_DisconnectFromExitNodes_teliogo_9a5d0d120faf5ade(uintptr_t arg1);
+extern swig_intgo _wrap_Telio_SetMeshnet_teliogo_9a5d0d120faf5ade(uintptr_t arg1, swig_type_23 arg2);
+extern swig_intgo _wrap_Telio_SetMeshnetOff_teliogo_9a5d0d120faf5ade(uintptr_t arg1);
+extern swig_type_24 _wrap_Telio_GenerateSecretKey_teliogo_9a5d0d120faf5ade(uintptr_t arg1);
+extern swig_type_25 _wrap_Telio_GeneratePublicKey_teliogo_9a5d0d120faf5ade(uintptr_t arg1, swig_type_26 arg2);
+extern swig_type_27 _wrap_Telio_GetStatusMap_teliogo_9a5d0d120faf5ade(uintptr_t arg1);
+extern swig_type_28 _wrap_Telio_GetLastError_teliogo_9a5d0d120faf5ade(uintptr_t arg1);
+extern swig_type_29 _wrap_Telio_GetVersionTag_teliogo_9a5d0d120faf5ade(void);
+extern swig_type_30 _wrap_Telio_GetCommitSha_teliogo_9a5d0d120faf5ade(void);
 #undef intgo
 */
 import "C"
@@ -153,41 +150,41 @@ func swigCopyString(s string) string {
 
 func Swig_free(arg1 uintptr) {
 	_swig_i_0 := arg1
-	C._wrap_Swig_free_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0))
+	C._wrap_Swig_free_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0))
 }
 
 func Swig_malloc(arg1 int) (_swig_ret uintptr) {
 	var swig_r uintptr
 	_swig_i_0 := arg1
-	swig_r = (uintptr)(C._wrap_Swig_malloc_teliogo_690882cc72b80b62(C.swig_intgo(_swig_i_0)))
+	swig_r = (uintptr)(C._wrap_Swig_malloc_teliogo_9a5d0d120faf5ade(C.swig_intgo(_swig_i_0)))
 	return swig_r
 }
 
 type Enum_SS_telio_adapter_type int
 func _swig_getTELIOADAPTERBORINGTUN() (_swig_ret Enum_SS_telio_adapter_type) {
 	var swig_r Enum_SS_telio_adapter_type
-	swig_r = (Enum_SS_telio_adapter_type)(C._wrap_TELIOADAPTERBORINGTUN_teliogo_690882cc72b80b62())
+	swig_r = (Enum_SS_telio_adapter_type)(C._wrap_TELIOADAPTERBORINGTUN_teliogo_9a5d0d120faf5ade())
 	return swig_r
 }
 
 var TELIOADAPTERBORINGTUN Enum_SS_telio_adapter_type = _swig_getTELIOADAPTERBORINGTUN()
 func _swig_getTELIOADAPTERLINUXNATIVETUN() (_swig_ret Enum_SS_telio_adapter_type) {
 	var swig_r Enum_SS_telio_adapter_type
-	swig_r = (Enum_SS_telio_adapter_type)(C._wrap_TELIOADAPTERLINUXNATIVETUN_teliogo_690882cc72b80b62())
+	swig_r = (Enum_SS_telio_adapter_type)(C._wrap_TELIOADAPTERLINUXNATIVETUN_teliogo_9a5d0d120faf5ade())
 	return swig_r
 }
 
 var TELIOADAPTERLINUXNATIVETUN Enum_SS_telio_adapter_type = _swig_getTELIOADAPTERLINUXNATIVETUN()
 func _swig_getTELIOADAPTERWIREGUARDGOTUN() (_swig_ret Enum_SS_telio_adapter_type) {
 	var swig_r Enum_SS_telio_adapter_type
-	swig_r = (Enum_SS_telio_adapter_type)(C._wrap_TELIOADAPTERWIREGUARDGOTUN_teliogo_690882cc72b80b62())
+	swig_r = (Enum_SS_telio_adapter_type)(C._wrap_TELIOADAPTERWIREGUARDGOTUN_teliogo_9a5d0d120faf5ade())
 	return swig_r
 }
 
 var TELIOADAPTERWIREGUARDGOTUN Enum_SS_telio_adapter_type = _swig_getTELIOADAPTERWIREGUARDGOTUN()
 func _swig_getTELIOADAPTERWINDOWSNATIVETUN() (_swig_ret Enum_SS_telio_adapter_type) {
 	var swig_r Enum_SS_telio_adapter_type
-	swig_r = (Enum_SS_telio_adapter_type)(C._wrap_TELIOADAPTERWINDOWSNATIVETUN_teliogo_690882cc72b80b62())
+	swig_r = (Enum_SS_telio_adapter_type)(C._wrap_TELIOADAPTERWINDOWSNATIVETUN_teliogo_9a5d0d120faf5ade())
 	return swig_r
 }
 
@@ -195,42 +192,42 @@ var TELIOADAPTERWINDOWSNATIVETUN Enum_SS_telio_adapter_type = _swig_getTELIOADAP
 type Enum_SS_telio_log_level int
 func _swig_getTELIOLOGCRITICAL() (_swig_ret Enum_SS_telio_log_level) {
 	var swig_r Enum_SS_telio_log_level
-	swig_r = (Enum_SS_telio_log_level)(C._wrap_TELIOLOGCRITICAL_teliogo_690882cc72b80b62())
+	swig_r = (Enum_SS_telio_log_level)(C._wrap_TELIOLOGCRITICAL_teliogo_9a5d0d120faf5ade())
 	return swig_r
 }
 
 var TELIOLOGCRITICAL Enum_SS_telio_log_level = _swig_getTELIOLOGCRITICAL()
 func _swig_getTELIOLOGERROR() (_swig_ret Enum_SS_telio_log_level) {
 	var swig_r Enum_SS_telio_log_level
-	swig_r = (Enum_SS_telio_log_level)(C._wrap_TELIOLOGERROR_teliogo_690882cc72b80b62())
+	swig_r = (Enum_SS_telio_log_level)(C._wrap_TELIOLOGERROR_teliogo_9a5d0d120faf5ade())
 	return swig_r
 }
 
 var TELIOLOGERROR Enum_SS_telio_log_level = _swig_getTELIOLOGERROR()
 func _swig_getTELIOLOGWARNING() (_swig_ret Enum_SS_telio_log_level) {
 	var swig_r Enum_SS_telio_log_level
-	swig_r = (Enum_SS_telio_log_level)(C._wrap_TELIOLOGWARNING_teliogo_690882cc72b80b62())
+	swig_r = (Enum_SS_telio_log_level)(C._wrap_TELIOLOGWARNING_teliogo_9a5d0d120faf5ade())
 	return swig_r
 }
 
 var TELIOLOGWARNING Enum_SS_telio_log_level = _swig_getTELIOLOGWARNING()
 func _swig_getTELIOLOGINFO() (_swig_ret Enum_SS_telio_log_level) {
 	var swig_r Enum_SS_telio_log_level
-	swig_r = (Enum_SS_telio_log_level)(C._wrap_TELIOLOGINFO_teliogo_690882cc72b80b62())
+	swig_r = (Enum_SS_telio_log_level)(C._wrap_TELIOLOGINFO_teliogo_9a5d0d120faf5ade())
 	return swig_r
 }
 
 var TELIOLOGINFO Enum_SS_telio_log_level = _swig_getTELIOLOGINFO()
 func _swig_getTELIOLOGDEBUG() (_swig_ret Enum_SS_telio_log_level) {
 	var swig_r Enum_SS_telio_log_level
-	swig_r = (Enum_SS_telio_log_level)(C._wrap_TELIOLOGDEBUG_teliogo_690882cc72b80b62())
+	swig_r = (Enum_SS_telio_log_level)(C._wrap_TELIOLOGDEBUG_teliogo_9a5d0d120faf5ade())
 	return swig_r
 }
 
 var TELIOLOGDEBUG Enum_SS_telio_log_level = _swig_getTELIOLOGDEBUG()
 func _swig_getTELIOLOGTRACE() (_swig_ret Enum_SS_telio_log_level) {
 	var swig_r Enum_SS_telio_log_level
-	swig_r = (Enum_SS_telio_log_level)(C._wrap_TELIOLOGTRACE_teliogo_690882cc72b80b62())
+	swig_r = (Enum_SS_telio_log_level)(C._wrap_TELIOLOGTRACE_teliogo_9a5d0d120faf5ade())
 	return swig_r
 }
 
@@ -238,49 +235,49 @@ var TELIOLOGTRACE Enum_SS_telio_log_level = _swig_getTELIOLOGTRACE()
 type Enum_SS_telio_result int
 func _swig_getTELIORESOK() (_swig_ret Enum_SS_telio_result) {
 	var swig_r Enum_SS_telio_result
-	swig_r = (Enum_SS_telio_result)(C._wrap_TELIORESOK_teliogo_690882cc72b80b62())
+	swig_r = (Enum_SS_telio_result)(C._wrap_TELIORESOK_teliogo_9a5d0d120faf5ade())
 	return swig_r
 }
 
 var TELIORESOK Enum_SS_telio_result = _swig_getTELIORESOK()
 func _swig_getTELIORESERROR() (_swig_ret Enum_SS_telio_result) {
 	var swig_r Enum_SS_telio_result
-	swig_r = (Enum_SS_telio_result)(C._wrap_TELIORESERROR_teliogo_690882cc72b80b62())
+	swig_r = (Enum_SS_telio_result)(C._wrap_TELIORESERROR_teliogo_9a5d0d120faf5ade())
 	return swig_r
 }
 
 var TELIORESERROR Enum_SS_telio_result = _swig_getTELIORESERROR()
 func _swig_getTELIORESINVALIDKEY() (_swig_ret Enum_SS_telio_result) {
 	var swig_r Enum_SS_telio_result
-	swig_r = (Enum_SS_telio_result)(C._wrap_TELIORESINVALIDKEY_teliogo_690882cc72b80b62())
+	swig_r = (Enum_SS_telio_result)(C._wrap_TELIORESINVALIDKEY_teliogo_9a5d0d120faf5ade())
 	return swig_r
 }
 
 var TELIORESINVALIDKEY Enum_SS_telio_result = _swig_getTELIORESINVALIDKEY()
 func _swig_getTELIORESBADCONFIG() (_swig_ret Enum_SS_telio_result) {
 	var swig_r Enum_SS_telio_result
-	swig_r = (Enum_SS_telio_result)(C._wrap_TELIORESBADCONFIG_teliogo_690882cc72b80b62())
+	swig_r = (Enum_SS_telio_result)(C._wrap_TELIORESBADCONFIG_teliogo_9a5d0d120faf5ade())
 	return swig_r
 }
 
 var TELIORESBADCONFIG Enum_SS_telio_result = _swig_getTELIORESBADCONFIG()
 func _swig_getTELIORESLOCKERROR() (_swig_ret Enum_SS_telio_result) {
 	var swig_r Enum_SS_telio_result
-	swig_r = (Enum_SS_telio_result)(C._wrap_TELIORESLOCKERROR_teliogo_690882cc72b80b62())
+	swig_r = (Enum_SS_telio_result)(C._wrap_TELIORESLOCKERROR_teliogo_9a5d0d120faf5ade())
 	return swig_r
 }
 
 var TELIORESLOCKERROR Enum_SS_telio_result = _swig_getTELIORESLOCKERROR()
 func _swig_getTELIORESINVALIDSTRING() (_swig_ret Enum_SS_telio_result) {
 	var swig_r Enum_SS_telio_result
-	swig_r = (Enum_SS_telio_result)(C._wrap_TELIORESINVALIDSTRING_teliogo_690882cc72b80b62())
+	swig_r = (Enum_SS_telio_result)(C._wrap_TELIORESINVALIDSTRING_teliogo_9a5d0d120faf5ade())
 	return swig_r
 }
 
 var TELIORESINVALIDSTRING Enum_SS_telio_result = _swig_getTELIORESINVALIDSTRING()
 func _swig_getTELIORESALREADYSTARTED() (_swig_ret Enum_SS_telio_result) {
 	var swig_r Enum_SS_telio_result
-	swig_r = (Enum_SS_telio_result)(C._wrap_TELIORESALREADYSTARTED_teliogo_690882cc72b80b62())
+	swig_r = (Enum_SS_telio_result)(C._wrap_TELIORESALREADYSTARTED_teliogo_9a5d0d120faf5ade())
 	return swig_r
 }
 
@@ -297,38 +294,38 @@ func (p SwigcptrTelioEventCb) SwigIsTelioEventCb() {
 func (arg1 SwigcptrTelioEventCb) SetCtx(arg2 uintptr) {
 	_swig_i_0 := arg1
 	_swig_i_1 := arg2
-	C._wrap_TelioEventCb_Ctx_set_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0), C.uintptr_t(_swig_i_1))
+	C._wrap_TelioEventCb_Ctx_set_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0), C.uintptr_t(_swig_i_1))
 }
 
 func (arg1 SwigcptrTelioEventCb) GetCtx() (_swig_ret uintptr) {
 	var swig_r uintptr
 	_swig_i_0 := arg1
-	swig_r = (uintptr)(C._wrap_TelioEventCb_Ctx_get_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0)))
+	swig_r = (uintptr)(C._wrap_TelioEventCb_Ctx_get_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0)))
 	return swig_r
 }
 
 func (arg1 SwigcptrTelioEventCb) SetCb(arg2 _swig_fnptr) {
 	_swig_i_0 := arg1
 	_swig_i_1 := arg2
-	C._wrap_TelioEventCb_Cb_set_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0), C.swig_type_1(_swig_i_1))
+	C._wrap_TelioEventCb_Cb_set_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0), C.swig_type_1(_swig_i_1))
 }
 
 func (arg1 SwigcptrTelioEventCb) GetCb() (_swig_ret _swig_fnptr) {
 	var swig_r _swig_fnptr
 	_swig_i_0 := arg1
-	swig_r = (_swig_fnptr)(C._wrap_TelioEventCb_Cb_get_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0)))
+	swig_r = (_swig_fnptr)(C._wrap_TelioEventCb_Cb_get_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0)))
 	return swig_r
 }
 
 func NewTelioEventCb() (_swig_ret TelioEventCb) {
 	var swig_r TelioEventCb
-	swig_r = (TelioEventCb)(SwigcptrTelioEventCb(C._wrap_new_TelioEventCb_teliogo_690882cc72b80b62()))
+	swig_r = (TelioEventCb)(SwigcptrTelioEventCb(C._wrap_new_TelioEventCb_teliogo_9a5d0d120faf5ade()))
 	return swig_r
 }
 
 func DeleteTelioEventCb(arg1 TelioEventCb) {
 	_swig_i_0 := arg1.Swigcptr()
-	C._wrap_delete_TelioEventCb_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0))
+	C._wrap_delete_TelioEventCb_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0))
 }
 
 type TelioEventCb interface {
@@ -352,98 +349,43 @@ func (p SwigcptrTelioLoggerCb) SwigIsTelioLoggerCb() {
 func (arg1 SwigcptrTelioLoggerCb) SetCtx(arg2 uintptr) {
 	_swig_i_0 := arg1
 	_swig_i_1 := arg2
-	C._wrap_TelioLoggerCb_Ctx_set_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0), C.uintptr_t(_swig_i_1))
+	C._wrap_TelioLoggerCb_Ctx_set_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0), C.uintptr_t(_swig_i_1))
 }
 
 func (arg1 SwigcptrTelioLoggerCb) GetCtx() (_swig_ret uintptr) {
 	var swig_r uintptr
 	_swig_i_0 := arg1
-	swig_r = (uintptr)(C._wrap_TelioLoggerCb_Ctx_get_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0)))
+	swig_r = (uintptr)(C._wrap_TelioLoggerCb_Ctx_get_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0)))
 	return swig_r
 }
 
 func (arg1 SwigcptrTelioLoggerCb) SetCb(arg2 _swig_fnptr) {
 	_swig_i_0 := arg1
 	_swig_i_1 := arg2
-	C._wrap_TelioLoggerCb_Cb_set_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0), C.swig_type_3(_swig_i_1))
+	C._wrap_TelioLoggerCb_Cb_set_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0), C.swig_type_3(_swig_i_1))
 }
 
 func (arg1 SwigcptrTelioLoggerCb) GetCb() (_swig_ret _swig_fnptr) {
 	var swig_r _swig_fnptr
 	_swig_i_0 := arg1
-	swig_r = (_swig_fnptr)(C._wrap_TelioLoggerCb_Cb_get_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0)))
+	swig_r = (_swig_fnptr)(C._wrap_TelioLoggerCb_Cb_get_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0)))
 	return swig_r
 }
 
 func NewTelioLoggerCb() (_swig_ret TelioLoggerCb) {
 	var swig_r TelioLoggerCb
-	swig_r = (TelioLoggerCb)(SwigcptrTelioLoggerCb(C._wrap_new_TelioLoggerCb_teliogo_690882cc72b80b62()))
+	swig_r = (TelioLoggerCb)(SwigcptrTelioLoggerCb(C._wrap_new_TelioLoggerCb_teliogo_9a5d0d120faf5ade()))
 	return swig_r
 }
 
 func DeleteTelioLoggerCb(arg1 TelioLoggerCb) {
 	_swig_i_0 := arg1.Swigcptr()
-	C._wrap_delete_TelioLoggerCb_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0))
+	C._wrap_delete_TelioLoggerCb_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0))
 }
 
 type TelioLoggerCb interface {
 	Swigcptr() uintptr
 	SwigIsTelioLoggerCb()
-	SetCtx(arg2 uintptr)
-	GetCtx() (_swig_ret uintptr)
-	SetCb(arg2 _swig_fnptr)
-	GetCb() (_swig_ret _swig_fnptr)
-}
-
-type SwigcptrTelioProtectCb uintptr
-
-func (p SwigcptrTelioProtectCb) Swigcptr() uintptr {
-	return (uintptr)(p)
-}
-
-func (p SwigcptrTelioProtectCb) SwigIsTelioProtectCb() {
-}
-
-func (arg1 SwigcptrTelioProtectCb) SetCtx(arg2 uintptr) {
-	_swig_i_0 := arg1
-	_swig_i_1 := arg2
-	C._wrap_TelioProtectCb_Ctx_set_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0), C.uintptr_t(_swig_i_1))
-}
-
-func (arg1 SwigcptrTelioProtectCb) GetCtx() (_swig_ret uintptr) {
-	var swig_r uintptr
-	_swig_i_0 := arg1
-	swig_r = (uintptr)(C._wrap_TelioProtectCb_Ctx_get_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0)))
-	return swig_r
-}
-
-func (arg1 SwigcptrTelioProtectCb) SetCb(arg2 _swig_fnptr) {
-	_swig_i_0 := arg1
-	_swig_i_1 := arg2
-	C._wrap_TelioProtectCb_Cb_set_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0), C.swig_type_5(_swig_i_1))
-}
-
-func (arg1 SwigcptrTelioProtectCb) GetCb() (_swig_ret _swig_fnptr) {
-	var swig_r _swig_fnptr
-	_swig_i_0 := arg1
-	swig_r = (_swig_fnptr)(C._wrap_TelioProtectCb_Cb_get_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0)))
-	return swig_r
-}
-
-func NewTelioProtectCb() (_swig_ret TelioProtectCb) {
-	var swig_r TelioProtectCb
-	swig_r = (TelioProtectCb)(SwigcptrTelioProtectCb(C._wrap_new_TelioProtectCb_teliogo_690882cc72b80b62()))
-	return swig_r
-}
-
-func DeleteTelioProtectCb(arg1 TelioProtectCb) {
-	_swig_i_0 := arg1.Swigcptr()
-	C._wrap_delete_TelioProtectCb_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0))
-}
-
-type TelioProtectCb interface {
-	Swigcptr() uintptr
-	SwigIsTelioProtectCb()
 	SetCtx(arg2 uintptr)
 	GetCtx() (_swig_ret uintptr)
 	SetCb(arg2 _swig_fnptr)
@@ -507,7 +449,7 @@ func (p SwigcptrTelio) SwigIsTelio() {
 
 func TelioGetDefaultAdapter() (_swig_ret Enum_SS_telio_adapter_type) {
 	var swig_r Enum_SS_telio_adapter_type
-	swig_r = (Enum_SS_telio_adapter_type)(C._wrap_Telio_GetDefaultAdapter_teliogo_690882cc72b80b62())
+	swig_r = (Enum_SS_telio_adapter_type)(C._wrap_Telio_GetDefaultAdapter_teliogo_9a5d0d120faf5ade())
 	return swig_r
 }
 
@@ -535,7 +477,7 @@ func NewTelio(arg1 string, arg2 func(string), arg3 Enum_SS_telio_log_level, arg4
         loggerCallbacks[index] = arg4
         _swig_i_3 = cb
 }
-	swig_r = (Telio)(SwigcptrTelio(C._wrap_new_Telio_teliogo_690882cc72b80b62(*(*C.swig_type_7)(unsafe.Pointer(&_swig_i_0)), C.telio_event_cb(_swig_i_1), C.swig_intgo(_swig_i_2), C.telio_logger_cb(_swig_i_3))))
+	swig_r = (Telio)(SwigcptrTelio(C._wrap_new_Telio_teliogo_9a5d0d120faf5ade(*(*C.swig_type_5)(unsafe.Pointer(&_swig_i_0)), C.telio_event_cb(_swig_i_1), C.swig_intgo(_swig_i_2), C.telio_logger_cb(_swig_i_3))))
 	if Swig_escape_always_false {
 		Swig_escape_val = arg1
 	}
@@ -552,7 +494,7 @@ func NewTelio(arg1 string, arg2 func(string), arg3 Enum_SS_telio_log_level, arg4
 
 func DeleteTelio(arg1 Telio) {
 	_swig_i_0 := arg1.Swigcptr()
-	C._wrap_delete_Telio_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0))
+	C._wrap_delete_Telio_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0))
 }
 
 func (arg1 SwigcptrTelio) Start(arg2 string, arg3 Enum_SS_telio_adapter_type) (_swig_ret Enum_SS_telio_result) {
@@ -560,7 +502,7 @@ func (arg1 SwigcptrTelio) Start(arg2 string, arg3 Enum_SS_telio_adapter_type) (_
 	_swig_i_0 := arg1
 	_swig_i_1 := arg2
 	_swig_i_2 := arg3
-	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_Start_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0), *(*C.swig_type_8)(unsafe.Pointer(&_swig_i_1)), C.swig_intgo(_swig_i_2)))
+	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_Start_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0), *(*C.swig_type_6)(unsafe.Pointer(&_swig_i_1)), C.swig_intgo(_swig_i_2)))
 	if Swig_escape_always_false {
 		Swig_escape_val = arg2
 	}
@@ -573,7 +515,7 @@ func (arg1 SwigcptrTelio) StartNamed(arg2 string, arg3 Enum_SS_telio_adapter_typ
 	_swig_i_1 := arg2
 	_swig_i_2 := arg3
 	_swig_i_3 := arg4
-	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_StartNamed_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0), *(*C.swig_type_9)(unsafe.Pointer(&_swig_i_1)), C.swig_intgo(_swig_i_2), *(*C.swig_type_10)(unsafe.Pointer(&_swig_i_3))))
+	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_StartNamed_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0), *(*C.swig_type_7)(unsafe.Pointer(&_swig_i_1)), C.swig_intgo(_swig_i_2), *(*C.swig_type_8)(unsafe.Pointer(&_swig_i_3))))
 	if Swig_escape_always_false {
 		Swig_escape_val = arg2
 	}
@@ -589,7 +531,7 @@ func (arg1 SwigcptrTelio) StartWithTun(arg2 string, arg3 Enum_SS_telio_adapter_t
 	_swig_i_1 := arg2
 	_swig_i_2 := arg3
 	_swig_i_3 := arg4
-	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_StartWithTun_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0), *(*C.swig_type_11)(unsafe.Pointer(&_swig_i_1)), C.swig_intgo(_swig_i_2), C.swig_intgo(_swig_i_3)))
+	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_StartWithTun_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0), *(*C.swig_type_9)(unsafe.Pointer(&_swig_i_1)), C.swig_intgo(_swig_i_2), C.swig_intgo(_swig_i_3)))
 	if Swig_escape_always_false {
 		Swig_escape_val = arg2
 	}
@@ -600,7 +542,7 @@ func (arg1 SwigcptrTelio) EnableMagicDns(arg2 string) (_swig_ret Enum_SS_telio_r
 	var swig_r Enum_SS_telio_result
 	_swig_i_0 := arg1
 	_swig_i_1 := arg2
-	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_EnableMagicDns_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0), *(*C.swig_type_12)(unsafe.Pointer(&_swig_i_1))))
+	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_EnableMagicDns_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0), *(*C.swig_type_10)(unsafe.Pointer(&_swig_i_1))))
 	if Swig_escape_always_false {
 		Swig_escape_val = arg2
 	}
@@ -610,21 +552,21 @@ func (arg1 SwigcptrTelio) EnableMagicDns(arg2 string) (_swig_ret Enum_SS_telio_r
 func (arg1 SwigcptrTelio) DisableMagicDns() (_swig_ret Enum_SS_telio_result) {
 	var swig_r Enum_SS_telio_result
 	_swig_i_0 := arg1
-	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_DisableMagicDns_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0)))
+	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_DisableMagicDns_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0)))
 	return swig_r
 }
 
 func (arg1 SwigcptrTelio) Stop() (_swig_ret Enum_SS_telio_result) {
 	var swig_r Enum_SS_telio_result
 	_swig_i_0 := arg1
-	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_Stop_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0)))
+	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_Stop_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0)))
 	return swig_r
 }
 
 func (arg1 SwigcptrTelio) GetAdapterLuid() (_swig_ret uint64) {
 	var swig_r uint64
 	_swig_i_0 := arg1
-	swig_r = (uint64)(C._wrap_Telio_GetAdapterLuid_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0)))
+	swig_r = (uint64)(C._wrap_Telio_GetAdapterLuid_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0)))
 	return swig_r
 }
 
@@ -632,7 +574,7 @@ func (arg1 SwigcptrTelio) SetPrivateKey(arg2 string) (_swig_ret Enum_SS_telio_re
 	var swig_r Enum_SS_telio_result
 	_swig_i_0 := arg1
 	_swig_i_1 := arg2
-	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_SetPrivateKey_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0), *(*C.swig_type_14)(unsafe.Pointer(&_swig_i_1))))
+	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_SetPrivateKey_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0), *(*C.swig_type_12)(unsafe.Pointer(&_swig_i_1))))
 	if Swig_escape_always_false {
 		Swig_escape_val = arg2
 	}
@@ -642,7 +584,7 @@ func (arg1 SwigcptrTelio) SetPrivateKey(arg2 string) (_swig_ret Enum_SS_telio_re
 func (arg1 SwigcptrTelio) GetPrivateKey() (_swig_ret string) {
 	var swig_r string
 	_swig_i_0 := arg1
-	swig_r_p := C._wrap_Telio_GetPrivateKey_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0))
+	swig_r_p := C._wrap_Telio_GetPrivateKey_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0))
 	swig_r = *(*string)(unsafe.Pointer(&swig_r_p))
 	var swig_r_1 string
  swig_r_1 = swigCopyString(swig_r) 
@@ -653,7 +595,7 @@ func (arg1 SwigcptrTelio) SetFwmark(arg2 uint) (_swig_ret Enum_SS_telio_result) 
 	var swig_r Enum_SS_telio_result
 	_swig_i_0 := arg1
 	_swig_i_1 := arg2
-	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_SetFwmark_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0), C.swig_intgo(_swig_i_1)))
+	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_SetFwmark_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0), C.swig_intgo(_swig_i_1)))
 	return swig_r
 }
 
@@ -661,7 +603,7 @@ func (arg1 SwigcptrTelio) NotifyNetworkChange(arg2 string) (_swig_ret Enum_SS_te
 	var swig_r Enum_SS_telio_result
 	_swig_i_0 := arg1
 	_swig_i_1 := arg2
-	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_NotifyNetworkChange_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0), *(*C.swig_type_16)(unsafe.Pointer(&_swig_i_1))))
+	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_NotifyNetworkChange_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0), *(*C.swig_type_14)(unsafe.Pointer(&_swig_i_1))))
 	if Swig_escape_always_false {
 		Swig_escape_val = arg2
 	}
@@ -674,7 +616,7 @@ func (arg1 SwigcptrTelio) ConnectToExitNode(arg2 string, arg3 string, arg4 strin
 	_swig_i_1 := arg2
 	_swig_i_2 := arg3
 	_swig_i_3 := arg4
-	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_ConnectToExitNode_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0), *(*C.swig_type_17)(unsafe.Pointer(&_swig_i_1)), *(*C.swig_type_18)(unsafe.Pointer(&_swig_i_2)), *(*C.swig_type_19)(unsafe.Pointer(&_swig_i_3))))
+	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_ConnectToExitNode_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0), *(*C.swig_type_15)(unsafe.Pointer(&_swig_i_1)), *(*C.swig_type_16)(unsafe.Pointer(&_swig_i_2)), *(*C.swig_type_17)(unsafe.Pointer(&_swig_i_3))))
 	if Swig_escape_always_false {
 		Swig_escape_val = arg2
 	}
@@ -687,11 +629,34 @@ func (arg1 SwigcptrTelio) ConnectToExitNode(arg2 string, arg3 string, arg4 strin
 	return swig_r
 }
 
+func (arg1 SwigcptrTelio) ConnectToExitNodeWithId(arg2 string, arg3 string, arg4 string, arg5 string) (_swig_ret Enum_SS_telio_result) {
+	var swig_r Enum_SS_telio_result
+	_swig_i_0 := arg1
+	_swig_i_1 := arg2
+	_swig_i_2 := arg3
+	_swig_i_3 := arg4
+	_swig_i_4 := arg5
+	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_ConnectToExitNodeWithId_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0), *(*C.swig_type_18)(unsafe.Pointer(&_swig_i_1)), *(*C.swig_type_19)(unsafe.Pointer(&_swig_i_2)), *(*C.swig_type_20)(unsafe.Pointer(&_swig_i_3)), *(*C.swig_type_21)(unsafe.Pointer(&_swig_i_4))))
+	if Swig_escape_always_false {
+		Swig_escape_val = arg2
+	}
+	if Swig_escape_always_false {
+		Swig_escape_val = arg3
+	}
+	if Swig_escape_always_false {
+		Swig_escape_val = arg4
+	}
+	if Swig_escape_always_false {
+		Swig_escape_val = arg5
+	}
+	return swig_r
+}
+
 func (arg1 SwigcptrTelio) DisconnectFromExitNode(arg2 string) (_swig_ret Enum_SS_telio_result) {
 	var swig_r Enum_SS_telio_result
 	_swig_i_0 := arg1
 	_swig_i_1 := arg2
-	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_DisconnectFromExitNode_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0), *(*C.swig_type_20)(unsafe.Pointer(&_swig_i_1))))
+	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_DisconnectFromExitNode_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0), *(*C.swig_type_22)(unsafe.Pointer(&_swig_i_1))))
 	if Swig_escape_always_false {
 		Swig_escape_val = arg2
 	}
@@ -701,7 +666,7 @@ func (arg1 SwigcptrTelio) DisconnectFromExitNode(arg2 string) (_swig_ret Enum_SS
 func (arg1 SwigcptrTelio) DisconnectFromExitNodes() (_swig_ret Enum_SS_telio_result) {
 	var swig_r Enum_SS_telio_result
 	_swig_i_0 := arg1
-	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_DisconnectFromExitNodes_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0)))
+	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_DisconnectFromExitNodes_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0)))
 	return swig_r
 }
 
@@ -709,7 +674,7 @@ func (arg1 SwigcptrTelio) SetMeshnet(arg2 string) (_swig_ret Enum_SS_telio_resul
 	var swig_r Enum_SS_telio_result
 	_swig_i_0 := arg1
 	_swig_i_1 := arg2
-	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_SetMeshnet_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0), *(*C.swig_type_21)(unsafe.Pointer(&_swig_i_1))))
+	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_SetMeshnet_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0), *(*C.swig_type_23)(unsafe.Pointer(&_swig_i_1))))
 	if Swig_escape_always_false {
 		Swig_escape_val = arg2
 	}
@@ -719,14 +684,14 @@ func (arg1 SwigcptrTelio) SetMeshnet(arg2 string) (_swig_ret Enum_SS_telio_resul
 func (arg1 SwigcptrTelio) SetMeshnetOff() (_swig_ret Enum_SS_telio_result) {
 	var swig_r Enum_SS_telio_result
 	_swig_i_0 := arg1
-	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_SetMeshnetOff_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0)))
+	swig_r = (Enum_SS_telio_result)(C._wrap_Telio_SetMeshnetOff_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0)))
 	return swig_r
 }
 
 func (arg1 SwigcptrTelio) GenerateSecretKey() (_swig_ret string) {
 	var swig_r string
 	_swig_i_0 := arg1
-	swig_r_p := C._wrap_Telio_GenerateSecretKey_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0))
+	swig_r_p := C._wrap_Telio_GenerateSecretKey_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0))
 	swig_r = *(*string)(unsafe.Pointer(&swig_r_p))
 	var swig_r_1 string
  swig_r_1 = swigCopyString(swig_r) 
@@ -737,7 +702,7 @@ func (arg1 SwigcptrTelio) GeneratePublicKey(arg2 string) (_swig_ret string) {
 	var swig_r string
 	_swig_i_0 := arg1
 	_swig_i_1 := arg2
-	swig_r_p := C._wrap_Telio_GeneratePublicKey_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0), *(*C.swig_type_24)(unsafe.Pointer(&_swig_i_1)))
+	swig_r_p := C._wrap_Telio_GeneratePublicKey_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0), *(*C.swig_type_26)(unsafe.Pointer(&_swig_i_1)))
 	swig_r = *(*string)(unsafe.Pointer(&swig_r_p))
 	if Swig_escape_always_false {
 		Swig_escape_val = arg2
@@ -750,7 +715,7 @@ func (arg1 SwigcptrTelio) GeneratePublicKey(arg2 string) (_swig_ret string) {
 func (arg1 SwigcptrTelio) GetStatusMap() (_swig_ret string) {
 	var swig_r string
 	_swig_i_0 := arg1
-	swig_r_p := C._wrap_Telio_GetStatusMap_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0))
+	swig_r_p := C._wrap_Telio_GetStatusMap_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0))
 	swig_r = *(*string)(unsafe.Pointer(&swig_r_p))
 	var swig_r_1 string
  swig_r_1 = swigCopyString(swig_r) 
@@ -760,7 +725,7 @@ func (arg1 SwigcptrTelio) GetStatusMap() (_swig_ret string) {
 func (arg1 SwigcptrTelio) GetLastError() (_swig_ret string) {
 	var swig_r string
 	_swig_i_0 := arg1
-	swig_r_p := C._wrap_Telio_GetLastError_teliogo_690882cc72b80b62(C.uintptr_t(_swig_i_0))
+	swig_r_p := C._wrap_Telio_GetLastError_teliogo_9a5d0d120faf5ade(C.uintptr_t(_swig_i_0))
 	swig_r = *(*string)(unsafe.Pointer(&swig_r_p))
 	var swig_r_1 string
  swig_r_1 = swigCopyString(swig_r) 
@@ -769,7 +734,7 @@ func (arg1 SwigcptrTelio) GetLastError() (_swig_ret string) {
 
 func TelioGetVersionTag() (_swig_ret string) {
 	var swig_r string
-	swig_r_p := C._wrap_Telio_GetVersionTag_teliogo_690882cc72b80b62()
+	swig_r_p := C._wrap_Telio_GetVersionTag_teliogo_9a5d0d120faf5ade()
 	swig_r = *(*string)(unsafe.Pointer(&swig_r_p))
 	var swig_r_1 string
  swig_r_1 = swigCopyString(swig_r) 
@@ -778,7 +743,7 @@ func TelioGetVersionTag() (_swig_ret string) {
 
 func TelioGetCommitSha() (_swig_ret string) {
 	var swig_r string
-	swig_r_p := C._wrap_Telio_GetCommitSha_teliogo_690882cc72b80b62()
+	swig_r_p := C._wrap_Telio_GetCommitSha_teliogo_9a5d0d120faf5ade()
 	swig_r = *(*string)(unsafe.Pointer(&swig_r_p))
 	var swig_r_1 string
  swig_r_1 = swigCopyString(swig_r) 
@@ -800,6 +765,7 @@ type Telio interface {
 	SetFwmark(arg2 uint) (_swig_ret Enum_SS_telio_result)
 	NotifyNetworkChange(arg2 string) (_swig_ret Enum_SS_telio_result)
 	ConnectToExitNode(arg2 string, arg3 string, arg4 string) (_swig_ret Enum_SS_telio_result)
+	ConnectToExitNodeWithId(arg2 string, arg3 string, arg4 string, arg5 string) (_swig_ret Enum_SS_telio_result)
 	DisconnectFromExitNode(arg2 string) (_swig_ret Enum_SS_telio_result)
 	DisconnectFromExitNodes() (_swig_ret Enum_SS_telio_result)
 	SetMeshnet(arg2 string) (_swig_ret Enum_SS_telio_result)

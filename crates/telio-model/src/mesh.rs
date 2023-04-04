@@ -17,6 +17,9 @@ pub use std::net::{Ipv4Addr, SocketAddr};
 /// Description of a Node
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
 pub struct Node {
+    /// An identifier for a node
+    /// Makes it possible to distinguish different nodes in the presence of key reuse
+    pub identifier: String,
     /// Public key of the Node
     pub public_key: PublicKey,
     /// State of the node (Connecting, connected, or disconnected)
@@ -41,6 +44,9 @@ pub struct Node {
 /// It is the gateway node to the internet
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct ExitNode {
+    /// An identifier for an exit node
+    /// Makes it possible to distinguish different exit nodes in the presence of key reuse
+    pub identifier: String,
     /// The public key of the exit node
     pub public_key: PublicKey,
     /// List of all allowed Ip's for the Exit Node
@@ -68,6 +74,7 @@ impl From<&ExitNode> for Node {
         #[allow(unwrap_check)]
         let address = "0.0.0.0/0".parse().unwrap();
         Self {
+            identifier: other.identifier.clone(),
             public_key: other.public_key,
             is_exit: true,
             is_vpn: other.endpoint.is_some(),
@@ -85,6 +92,7 @@ impl From<&ExitNode> for Node {
 impl From<&PeerBase> for Node {
     fn from(peer: &PeerBase) -> Self {
         Self {
+            identifier: peer.identifier.clone(),
             public_key: peer.public_key,
             allowed_ips: peer
                 .ip_addresses

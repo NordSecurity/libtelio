@@ -111,8 +111,11 @@ typedef struct telio_logger_cb {
   telio_logger_fn cb;
 } telio_logger_cb;
 
+#if defined(__ANDROID__)
 typedef void (*telio_protect_fn)(void*, int32_t);
+#endif
 
+#if defined(__ANDROID__)
 /**
  * Android protect fd from VPN callback
  */
@@ -127,6 +130,7 @@ typedef struct telio_protect_cb {
    */
   telio_protect_fn cb;
 } telio_protect_cb;
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -148,6 +152,7 @@ enum telio_result telio_new(struct telio **dev,
                             enum telio_log_level log_level,
                             struct telio_logger_cb logger);
 
+#if defined(__ANDROID__)
 /**
  * Create new telio library instance
  * # Parameters
@@ -163,6 +168,7 @@ enum telio_result telio_new_with_protect(struct telio **dev,
                                          enum telio_log_level log_level,
                                          struct telio_logger_cb logger,
                                          struct telio_protect_cb protect);
+#endif
 
 /**
  * Completely stop and uninit telio lib.
@@ -260,11 +266,20 @@ enum telio_result telio_set_fwmark(const struct telio *dev, unsigned int fwmark)
 enum telio_result telio_notify_network_change(const struct telio *dev, const char *network_info);
 
 /**
+ * Wrapper for `telio_connect_to_exit_node_with_id` that doesn't take an identifier
+ */
+enum telio_result telio_connect_to_exit_node(const struct telio *dev,
+                                             const char *public_key,
+                                             const char *allowed_ips,
+                                             const char *endpoint);
+
+/**
  * Connects to an exit node. (VPN if endpoint is not NULL, Peer if endpoint is NULL)
  *
  * Routing should be set by the user accordingly.
  *
  * # Parameters
+ * - `identifier`: String that identifies the exit node, will be generated if null is passed.
  * - `public_key`: Base64 encoded WireGuard public key for an exit node.
  * - `allowed_ips`: Semicolon separated list of subnets which will be routed to the exit node.
  *                  Can be NULL, same as "0.0.0.0/0".
@@ -274,21 +289,24 @@ enum telio_result telio_notify_network_change(const struct telio *dev, const cha
  *
  * ```c
  * // Connects to VPN exit node.
- * telio_connect_to_exit_node(
+ * telio_connect_to_exit_node_with_id(
+ *     "5e0009e1-75cf-4406-b9ce-0cbb4ea50366",
  *     "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=",
  *     "0.0.0.0/0", // Equivalent
- *     "82.23.13.55:51820"
+ *     "1.2.3.4:5678"
  * );
  *
  * // Connects to VPN exit node, with specified allowed_ips.
- * telio_connect_to_exit_node(
+ * telio_connect_to_exit_node_with_id(
+ *     "5e0009e1-75cf-4406-b9ce-0cbb4ea50366",
  *     "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=",
  *     "100.100.0.0/16;10.10.23.0/24",
- *     "82.23.13.55:51820"
+ *     "1.2.3.4:5678"
  * );
  *
  * // Connect to exit peer via DERP
- * telio_connect_to_exit_node(
+ * telio_connect_to_exit_node_with_id(
+ *     "5e0009e1-75cf-4406-b9ce-0cbb4ea50366",
  *     "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=",
  *     "0.0.0.0/0",
  *     NULL
@@ -296,10 +314,11 @@ enum telio_result telio_notify_network_change(const struct telio *dev, const cha
  * ```
  *
  */
-enum telio_result telio_connect_to_exit_node(const struct telio *dev,
-                                             const char *public_key,
-                                             const char *allowed_ips,
-                                             const char *endpoint);
+enum telio_result telio_connect_to_exit_node_with_id(const struct telio *dev,
+                                                     const char *identifier,
+                                                     const char *public_key,
+                                                     const char *allowed_ips,
+                                                     const char *endpoint);
 
 /**
  * Enables magic DNS if it was not enabled yet,
