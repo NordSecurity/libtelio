@@ -109,8 +109,11 @@ typedef struct telio_logger_cb {
   telio_logger_fn cb;
 } telio_logger_cb;
 
+#if defined(__ANDROID__)
 typedef void (*telio_protect_fn)(void*, int32_t);
+#endif
 
+#if defined(__ANDROID__)
 /**
  * Android protect fd from VPN callback
  */
@@ -125,6 +128,7 @@ typedef struct telio_protect_cb {
    */
   telio_protect_fn cb;
 } telio_protect_cb;
+#endif
 
 #ifdef __cplusplus
 extern "C" {

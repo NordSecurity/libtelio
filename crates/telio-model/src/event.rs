@@ -221,6 +221,7 @@ mod tests {
     #[test]
     fn validate_to_json() {
         let node = Node {
+            identifier: "f2b18d10-82ed-49a3-8b50-3356685ec5fa".to_owned(),
             public_key: PublicKey([1_u8; KEY_SIZE]),
             state: Some(NodeState::Connected),
             is_exit: true,
@@ -273,7 +274,8 @@ mod tests {
         let node_json = String::from(concat!(
             r#"{"type":"node","#,
             r#""body":"#,
-            r#"{"public_key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","state":"connected","#,
+            r#"{"identifier":"f2b18d10-82ed-49a3-8b50-3356685ec5fa","#,
+            r#""public_key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","state":"connected","#,
             r#""is_exit":true,"is_vpn":true,"allowed_ips":["127.0.0.1/32"],"#,
             r#""endpoint":"127.0.0.1:8080","hostname":"example.com","#,
             r#""allow_incoming_connections":false,"#,

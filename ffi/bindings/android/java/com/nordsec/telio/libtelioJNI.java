@@ -36,6 +36,7 @@ public class libtelioJNI {
   public final static native String Telio_getPrivateKey(long jarg1, Telio jarg1_);
   public final static native int Telio_notifyNetworkChange(long jarg1, Telio jarg1_, String jarg2);
   public final static native int Telio_connectToExitNode(long jarg1, Telio jarg1_, String jarg2, String jarg3, String jarg4);
+  public final static native int Telio_connectToExitNodeWithId(long jarg1, Telio jarg1_, String jarg2, String jarg3, String jarg4, String jarg5);
   public final static native int Telio_disconnectFromExitNode(long jarg1, Telio jarg1_, String jarg2);
   public final static native int Telio_disconnectFromExitNodes(long jarg1, Telio jarg1_);
   public final static native int Telio_setMeshnet(long jarg1, Telio jarg1_, String jarg2);

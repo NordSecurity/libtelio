@@ -1457,6 +1457,7 @@ mod tests {
         let vpn_persistent_keepalive = 4321;
         f.requested_state.keepalive_periods.vpn = Some(vpn_persistent_keepalive);
         f.requested_state.exit_node = Some(ExitNode {
+            identifier: "".to_owned(),
             public_key,
             allowed_ips: None,
             endpoint,

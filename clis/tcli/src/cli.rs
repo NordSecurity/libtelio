@@ -445,6 +445,7 @@ impl Cli {
                     cli_res!(res; (e Error::NotStarted));
                 }
                 let node = ExitNode {
+                    identifier: "tcli".to_owned(),
                     public_key,
                     endpoint,
                     allowed_ips: if allowed_ips.is_empty() {

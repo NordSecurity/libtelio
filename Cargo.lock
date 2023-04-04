@@ -3425,6 +3425,7 @@ dependencies = [
  "telio-wg",
  "thiserror",
  "tokio",
+ "uuid",
  "winapi 0.3.9",
 ]
 

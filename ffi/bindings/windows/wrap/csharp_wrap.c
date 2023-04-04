@@ -494,6 +494,26 @@ SWIGEXPORT int SWIGSTDCALL CSharp_NordSecfTelio_Telio_ConnectToExitNode___(void 
 }
 
 
+SWIGEXPORT int SWIGSTDCALL CSharp_NordSecfTelio_Telio_ConnectToExitNodeWithId___(void * jarg1, char * jarg2, char * jarg3, char * jarg4, char * jarg5) {
+  int jresult ;
+  struct telio *arg1 = (struct telio *) 0 ;
+  char *arg2 = (char *) 0 ;
+  char *arg3 = (char *) 0 ;
+  char *arg4 = (char *) 0 ;
+  char *arg5 = (char *) 0 ;
+  enum telio_result result;
+  
+  arg1 = (struct telio *)jarg1; 
+  arg2 = (char *)jarg2; 
+  arg3 = (char *)jarg3; 
+  arg4 = (char *)jarg4; 
+  arg5 = (char *)jarg5; 
+  result = (enum telio_result)telio_connect_to_exit_node_with_id(arg1,(char const *)arg2,(char const *)arg3,(char const *)arg4,(char const *)arg5);
+  jresult = (int)result; 
+  return jresult;
+}
+
+
 SWIGEXPORT int SWIGSTDCALL CSharp_NordSecfTelio_Telio_DisconnectFromExitNode___(void * jarg1, char * jarg2) {
   int jresult ;
   struct telio *arg1 = (struct telio *) 0 ;

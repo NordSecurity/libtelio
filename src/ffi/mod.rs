@@ -15,11 +15,13 @@ use libc::c_uint;
 use libc::c_int;
 #[cfg(target_os = "android")]
 use telio_sockets::Protect;
+use uuid::Uuid;
 
 use std::{
     ffi::{CStr, CString},
     net::{IpAddr, SocketAddr},
     panic,
+    ptr::null,
     sync::{Mutex, Once},
     time::Duration,
 };
@@ -462,11 +464,23 @@ pub extern "C" fn telio_notify_network_change(
 }
 
 #[no_mangle]
+/// Wrapper for `telio_connect_to_exit_node_with_id` that doesn't take an identifier
+pub extern "C" fn telio_connect_to_exit_node(
+    dev: &telio,
+    public_key: *const c_char,
+    allowed_ips: *const c_char,
+    endpoint: *const c_char,
+) -> telio_result {
+    telio_connect_to_exit_node_with_id(dev, null(), public_key, allowed_ips, endpoint)
+}
+
+#[no_mangle]
 /// Connects to an exit node. (VPN if endpoint is not NULL, Peer if endpoint is NULL)
 ///
 /// Routing should be set by the user accordingly.
 ///
 /// # Parameters
+/// - `identifier`: String that identifies the exit node, will be generated if null is passed.
 /// - `public_key`: Base64 encoded WireGuard public key for an exit node.
 /// - `allowed_ips`: Semicolon separated list of subnets which will be routed to the exit node.
 ///                  Can be NULL, same as "0.0.0.0/0".
@@ -476,35 +490,48 @@ pub extern "C" fn telio_notify_network_change(
 ///
 /// ```c
 /// // Connects to VPN exit node.
-/// telio_connect_to_exit_node(
+/// telio_connect_to_exit_node_with_id(
+///     "5e0009e1-75cf-4406-b9ce-0cbb4ea50366",
 ///     "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=",
 ///     "0.0.0.0/0", // Equivalent
 ///     "1.2.3.4:5678"
 /// );
 ///
 /// // Connects to VPN exit node, with specified allowed_ips.
-/// telio_connect_to_exit_node(
+/// telio_connect_to_exit_node_with_id(
+///     "5e0009e1-75cf-4406-b9ce-0cbb4ea50366",
 ///     "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=",
 ///     "100.100.0.0/16;10.10.23.0/24",
 ///     "1.2.3.4:5678"
 /// );
 ///
 /// // Connect to exit peer via DERP
-/// telio_connect_to_exit_node(
+/// telio_connect_to_exit_node_with_id(
+///     "5e0009e1-75cf-4406-b9ce-0cbb4ea50366",
 ///     "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=",
 ///     "0.0.0.0/0",
 ///     NULL
 /// );
 /// ```
 ///
-pub extern "C" fn telio_connect_to_exit_node(
+pub extern "C" fn telio_connect_to_exit_node_with_id(
     dev: &telio,
+    identifier: *const c_char,
     public_key: *const c_char,
     allowed_ips: *const c_char,
     endpoint: *const c_char,
 ) -> telio_result {
     ffi_catch_panic!({
         let dev = ffi_try!(dev.0.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
+        let identifier = if !identifier.is_null() {
+            let cstr = ffi_try!(unsafe { CStr::from_ptr(identifier) }
+                .to_str()
+                .map_err(|_| TELIO_RES_INVALID_STRING));
+            cstr.to_owned()
+        } else {
+            Uuid::new_v4().to_string()
+        };
+
         let public_key = if !public_key.is_null() {
             let cstr = ffi_try!(unsafe { CStr::from_ptr(public_key) }
                 .to_str()
@@ -546,6 +573,7 @@ pub extern "C" fn telio_connect_to_exit_node(
         };
 
         let node = ExitNode {
+            identifier,
             public_key,
             allowed_ips,
             endpoint,

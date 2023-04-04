@@ -245,6 +245,7 @@ When you have it, setting up the VPN connection is fairly simple:
 ```
 let (public_key, endpoint) = find_server();
 let exit_node = ExitNode {
+    identifier: "fa5bbe9b-338b-4bd2-8c97-166ceee65790".to_owned(),
     public_key,
     allowed_ips: Some(vec![IpNetwork::new(
         IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),

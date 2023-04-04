@@ -15,4 +15,5 @@ style = "both"
 [defines]
 "target_os = linux" = "__linux__"
 "target_os = windows" = "_WIN32"
+"target_os = android" = "__ANDROID__"
 "windows" = "_WIN32"

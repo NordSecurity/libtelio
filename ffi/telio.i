@@ -104,6 +104,11 @@ struct telio {};
                                            const char *allowed_ips,
                                            const char *endpoint);
 
+    enum telio_result connect_to_exit_node_with_id(const char *identifier,
+                                                   const char *public_key,
+                                                   const char *allowed_ips,
+                                                   const char *endpoint);
+
     enum telio_result disconnect_from_exit_node(const char *public_key);
 
     enum telio_result disconnect_from_exit_nodes();

@@ -1316,6 +1316,7 @@ impl Runtime {
             (Some(meshnet_peer), exit_node) => {
                 // Meshnet peer
                 Some(Node {
+                    identifier: meshnet_peer.base.identifier,
                     public_key: meshnet_peer.base.public_key,
                     state: state.or_else(|| Some(peer.state())),
                     is_exit: exit_node.is_some(),
@@ -1330,6 +1331,7 @@ impl Runtime {
             (None, Some(exit_node)) => {
                 // Exit node
                 Some(Node {
+                    identifier: exit_node.identifier,
                     public_key: exit_node.public_key,
                     state: state.or_else(|| Some(peer.state())),
                     is_exit: true,
@@ -1588,6 +1590,7 @@ mod tests {
         .unwrap();
 
         let node1 = ExitNode {
+            identifier: "".to_owned(),
             public_key: SecretKey::gen().public(),
             allowed_ips: Some(vec![
                 "100.0.0.0/8".parse().unwrap(),
@@ -1597,12 +1600,14 @@ mod tests {
         };
 
         let node2 = ExitNode {
+            identifier: "".to_owned(),
             public_key: SecretKey::gen().public(),
             allowed_ips: Some(vec!["100.0.0.0/16".parse().unwrap()]),
             endpoint: None,
         };
 
         let node3 = ExitNode {
+            identifier: "".to_owned(),
             public_key: SecretKey::gen().public(),
             allowed_ips: Some(vec!["1.1.1.1/32".parse().unwrap()]),
             endpoint: None,
