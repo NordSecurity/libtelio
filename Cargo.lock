@@ -283,12 +283,12 @@ dependencies = [
 [[package]]
 name = "boringtun"
 version = "0.3.0"
-source = "git+https://github.com/NordSecurity/boringtun.git?tag=v1.1.0#0ee0d8809f27fdf69cd784b1dd12d0dcb21b9e7a"
+source = "git+https://github.com/NordSecurity/boringtun.git?tag=v1.1.1#0d586bfaafb92c172e6656c510cd63133b24b7ab"
 dependencies = [
  "base64 0.13.1",
  "clap 2.34.0",
  "daemonize",
- "hex 0.4.3",
+ "hex",
  "ip_network",
  "ip_network_table",
  "jni",
@@ -1286,12 +1286,6 @@ name = "hermit-abi"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fed44880c466736ef9a5c5b5facefb5ed0785676d0c02d612db14e54f0d84286"
-
-[[package]]
-name = "hex"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "805026a5d0141ffc30abb3be3173848ad46a1b1664fe632428479619a3644d77"
 
 [[package]]
 name = "hex"
@@ -3102,7 +3096,7 @@ version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af341b2be485d647b5dc4cfb2da99efac35b5c95748a08fb7233480fedc5ead3"
 dependencies = [
- "hex 0.4.3",
+ "hex",
  "parking_lot 0.12.1",
  "pnet_packet 0.33.0",
  "rand",
@@ -3188,7 +3182,7 @@ dependencies = [
  "crypto_box",
  "dirs",
  "flexi_logger",
- "hex 0.4.3",
+ "hex",
  "ipnetwork",
  "log",
  "parking_lot 0.12.1",
@@ -3272,7 +3266,7 @@ dependencies = [
  "base64 0.13.1",
  "bstr",
  "crypto_box",
- "hex 0.4.3",
+ "hex",
  "log",
  "rand",
  "serde",
@@ -3432,7 +3426,7 @@ dependencies = [
  "env_logger",
  "futures",
  "generic-array",
- "hex 0.3.2",
+ "hex",
  "httparse",
  "libc",
  "log",
@@ -3525,7 +3519,6 @@ dependencies = [
  "log",
  "maplit",
  "mockall",
- "mockall_double",
  "ntest",
  "num_enum",
  "pnet_packet 0.28.0",
@@ -3540,6 +3533,7 @@ dependencies = [
  "telio-relay",
  "telio-sockets",
  "telio-task",
+ "telio-test",
  "telio-utils",
  "telio-wg",
  "thiserror",
@@ -3567,7 +3561,7 @@ dependencies = [
  "boringtun",
  "cc",
  "futures",
- "hex 0.4.3",
+ "hex",
  "ipnet",
  "ipnetwork",
  "lazy_static",
@@ -4537,7 +4531,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b54c36be149d93d2a6506d0a6374110b44980fa651e5f2763bced41ac5e022c"
 dependencies = [
  "derive_builder",
- "hex 0.4.3",
+ "hex",
  "libc",
  "neli",
  "take-until",

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2018"
 license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
+publish = false
 
 [dependencies]
 boringtun = { git = "https://github.com/NordSecurity/boringtun.git", tag = "v1.1.1" }
@@ -15,6 +16,7 @@ telio-utils = { path = "../telio-utils" }
 telio-sockets = { path = "../telio-sockets" }
 telio-model = { path = "../telio-model" }
 telio-wg = { path = "../telio-wg" }
+telio-test = { path = "../telio-test" }
 
 async-trait = "0.1.56"
 base64 = "0.13.0"

@@ -4,8 +4,7 @@ version = "0.1.0"
 edition = "2018"
 license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+publish = false
 
 [dependencies]
 crypto_box = "0.7.2"
@@ -42,7 +41,7 @@ static_assertions = "1.1.0"
 [dev-dependencies]
 async-std = { version = "1.5", features = ["attributes"] }
 env_logger = "0.9.0"
-hex = "0.3.0"
+hex = "0.4.3"
 ntest = "0.7"
 rstest = "0.11.0"
 telio-test = { version = "1.0.0", path = "../telio-test" }

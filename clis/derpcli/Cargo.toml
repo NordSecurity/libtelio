@@ -6,8 +6,6 @@ authors = ["nord <info@nordsec.com>"]
 license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 anyhow = "1"
 crypto_box = "0.7.0"
