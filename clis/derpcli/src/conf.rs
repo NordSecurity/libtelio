@@ -1,7 +1,7 @@
-use anyhow::{anyhow, Context};
+use anyhow::anyhow;
 use clap::{Arg, Command};
 use crypto_box::PublicKey as BoxPublicKey;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -9,17 +9,42 @@ use std::{
 };
 use telio_crypto::{SecretKey, KEY_SIZE};
 
-#[derive(Debug, Default, PartialEq, Eq, Deserialize, Serialize, Clone)]
+#[derive(Clone)]
 pub struct ClientConfig {
     pub private_key: SecretKey,
     pub derp_server: String,
     pub peers: Vec<SecretKey>,
-    pub period: u32,
 }
 
-#[derive(Debug, Default, PartialEq, Eq, Deserialize, Serialize, Clone)]
-pub struct Clients {
-    pub clients: Vec<ClientConfig>,
+#[derive(Deserialize)]
+pub struct StressConfig {
+    /// Clients to generate (for this app instance), must be even, generated in pairs
+    pub client_count: usize,
+    /// Interval in seconds lower bound for random
+    pub interval_min: usize,
+    /// Interval in seconds upper bound for random
+    /// If max<=min then min is used, no randomness
+    pub interval_max: usize,
+    /// Payload size in bytes, lower bound for random
+    pub payload_min: usize,
+    /// Payload size in bytes, upper bound for random
+    /// If max<=min then min is used, no randomness
+    pub payload_max: usize,
+    /// Should client1 (from pair) send packets
+    pub client1_pinger: bool,
+    /// Should client2 (from pair) send packets
+    pub client2_pinger: bool,
+    /// Derp for client1 is selected by incrementing the index of the prev pair client1
+    /// 0 => client1 (from pair) will use 0 (first derp) from derps list
+    /// 1 => client1 (from pair) will use 0,1,2,.. form derps list (ring)
+    /// 2 => client1 (from pair) will use 0,2,4,.. form derps list (ring)
+    pub derp1_increment: usize,
+    /// Client2 derp index := client1 derp index + derp2_offset
+    pub derp2_offset: usize,
+    /// Derp list/ring
+    pub derps: Vec<String>,
+    /// Add RTT from 0=none, 1=every, 2=every 2nd, 3=every 3rd, ... packet into statistics
+    pub stats_take_every: usize,
 }
 
 pub struct Config {
@@ -45,12 +70,28 @@ pub struct Config {
     pub send_size_enabled: bool,
     // verbose output
     pub verbose: u64,
-    // clients config
-    pub clients_config: Option<Clients>,
-    // logs output file
-    pub logs_path: String,
     // CA pem file path
     pub ca_pem_path: PathBuf,
+    // path to config file used for stress-test
+    pub stress_cfg_path: PathBuf,
+}
+
+impl StressConfig {
+    pub fn new() -> Self {
+        Self {
+            client_count: 2,
+            interval_min: 1000,
+            interval_max: 2000,
+            payload_min: 128,
+            payload_max: 386,
+            client1_pinger: true,
+            client2_pinger: false,
+            derp1_increment: 0,
+            derp2_offset: 0,
+            derps: vec![],
+            stats_take_every: 1,
+        }
+    }
 }
 
 impl Config {
@@ -96,15 +137,6 @@ impl Config {
         );
         println!("PubKey1/e64 {}", self.get_pub_key1_b64());
         println!("PubKey2/e64 {}", self.get_pub_key2_b64());
-    }
-
-    #[allow(unwrap_check)]
-    pub fn print_clients(&self) -> anyhow::Result<()> {
-        if let Some(config) = &self.clients_config {
-            println!("Clients config:\n{}", serde_json::to_string_pretty(config)?);
-        }
-
-        Ok(())
     }
 
     pub fn new() -> anyhow::Result<Self> {
@@ -248,24 +280,14 @@ impl Config {
             .parse::<u16>()
             .unwrap_or_default();
 
-        let logs_path = matches.value_of("output").unwrap_or_default().to_string();
         let ca_pem_path = matches
             .value_of("certificate_authority")
             .unwrap_or_default()
             .to_string();
-        let config_path = matches.value_of("config").unwrap_or_default().to_string();
-        let clients_config: Option<Clients> = if !config_path.is_empty() {
-            Some(
-                fs::File::open(&config_path)
-                    .map(serde_json::from_reader)
-                    .with_context(|| format!("failed to open '{}'", config_path))?
-                    .with_context(|| format!("failed to parse as json '{}'", config_path))?,
-            )
-        } else {
-            None
-        };
 
-        // keys for peer identification
+        let stress_cfg_path = matches.value_of("config").unwrap_or_default().to_string();
+
+        // keys for peer identification in manual mode
         let mut secret_key1 = [0_u8; KEY_SIZE];
         let mut secret_key2 = [1_u8; KEY_SIZE];
 
@@ -310,9 +332,19 @@ impl Config {
             send_size: if data_size > 8000 { 8000 } else { data_size },
             send_size_enabled: matches.is_present("size"),
             verbose: matches.occurrences_of("verbose"),
-            clients_config,
-            logs_path,
+            stress_cfg_path: Path::new(&stress_cfg_path).to_path_buf(),
             ca_pem_path: Path::new(&ca_pem_path).to_path_buf(),
         })
+    }
+
+    pub fn load_stress_config(path: &str) -> Option<StressConfig> {
+        if let Ok(file) = fs::File::open(path) {
+            let updated: serde_json::Result<StressConfig> = serde_json::from_reader(file);
+            match updated {
+                Ok(x) => return Some(x),
+                Err(e) => println!("ERROR: {}", e),
+            }
+        }
+        None
     }
 }
