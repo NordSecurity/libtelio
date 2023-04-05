@@ -4,6 +4,7 @@
 ### Changelog
 * LLT-3423: Add identifier to `Node` and `ExitNode`, and telio function to supply an identifier when connecting to an exit node
 * LLT-3404: Add github PR template
+* LLT-3468: Separate Heartbeat collection from QoS so heartbeat collection can be alone enabled.
 
 ### v4.0.0
 ### **Bruschetta**

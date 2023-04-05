@@ -24,6 +24,22 @@ use crate::qos::Analytics as QoSAnalytics;
 use crate::qos::Io as QoSIo;
 use crate::qos::OutputData as QoSData;
 
+/// Input/output channels for Nurse
+pub struct NurseIo<'a> {
+    /// Event channel to gather derp events
+    pub derp_event_channel: &'a mc_chan::Tx<Box<Server>>,
+    /// Event channel to gather wg events
+    pub wg_event_channel: &'a mc_chan::Tx<Box<Event>>,
+    /// Relay multiplexer to be able to communicate with other nodes
+    pub relay_multiplexer: &'a Multiplexer,
+    /// Event channel to gather wg data
+    pub wg_analytics_channel: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
+    /// Event channel to gather meshnet config update
+    pub config_update_channel: Option<mc_chan::Tx<Box<MeshConfigUpdateEvent>>>,
+    /// Event channel to manual trigger a collection
+    pub collection_trigger_channel: Option<mc_chan::Tx<Box<()>>>,
+}
+
 /// Nurse struct, combines meshnet health data from different sources
 /// --
 /// State contains:
@@ -43,42 +59,34 @@ impl Nurse {
     ///
     /// * `public_key` - Used for heartbeat requests.
     /// * `config` - Contains configuration for heartbeats and QoS.
-    /// * `derp_event_channel` - Used by heartbeat to get derp events.
-    /// * `wg_event_channel` - Used by heartbeat to get Wireguard events.
-    /// * `relay_multiplexer` - Used by heartbeat to get heartbeat messages.
-    /// * `wg_analytics_channel` - Used by QoS to get Wireguard events.
+    /// * `io` - Nurse io channels.
     ///
     /// # Returns
     ///
     /// A Nurse instance.
-    pub async fn new(
-        public_key: PublicKey,
-        config: Config,
-        derp_event_channel: &mc_chan::Tx<Box<Server>>,
-        wg_event_channel: &mc_chan::Tx<Box<Event>>,
-        relay_multiplexer: &Multiplexer,
-        wg_analytics_channel: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
-        config_update_channel: Option<mc_chan::Tx<Box<MeshConfigUpdateEvent>>>,
-        collection_trigger_channel: Option<mc_chan::Tx<Box<()>>>,
-    ) -> Self {
+    pub async fn new<'a>(public_key: PublicKey, config: Config, io: NurseIo<'a>) -> Self {
         let meshnet_id = Self::meshnet_id();
 
         // Analytics channel
         let analytics_channel = Chan::default();
 
         // If Nurse start is called config_update_channel exists for sure
-        let config_update_channel = config_update_channel.unwrap_or_else(|| McChan::default().tx);
-        let collection_trigger_channel =
-            collection_trigger_channel.unwrap_or_else(|| McChan::default().tx);
+        let config_update_channel = io
+            .config_update_channel
+            .unwrap_or_else(|| McChan::default().tx);
+        let collection_trigger_channel = io
+            .collection_trigger_channel
+            .unwrap_or_else(|| McChan::default().tx);
 
         // Heartbeat component
         let heartbeat_io = HeartbeatIo {
-            chan: relay_multiplexer
+            chan: io
+                .relay_multiplexer
                 .get_channel::<HeartbeatMessage>()
                 .await
                 .unwrap_or_default(),
-            derp_event_channel: derp_event_channel.subscribe(),
-            wg_event_channel: wg_event_channel.subscribe(),
+            derp_event_channel: io.derp_event_channel.subscribe(),
+            wg_event_channel: io.wg_event_channel.subscribe(),
             config_update_channel: config_update_channel.subscribe(),
             analytics_channel: analytics_channel.tx.clone(),
             collection_trigger_channel: collection_trigger_channel.subscribe(),
@@ -92,18 +100,19 @@ impl Nurse {
         );
 
         // Qos component
-        let qos_config = config.qos_config;
-        let qos = wg_analytics_channel
-            .as_ref()
-            .map(|ch| {
-                QoSAnalytics::new(
-                    qos_config,
-                    QoSIo {
-                        wg_channel: ch.subscribe(),
-                    },
-                )
-            })
-            .map(Task::start);
+        let qos = if let Some(qos_config) = config.qos_config {
+            let wg_channel = io
+                .wg_analytics_channel
+                .unwrap_or_else(|| McChan::default().tx)
+                .subscribe();
+
+            Some(Task::start(QoSAnalytics::new(
+                qos_config,
+                QoSIo { wg_channel },
+            )))
+        } else {
+            None
+        };
 
         Nurse {
             analytics_channel: analytics_channel.rx,

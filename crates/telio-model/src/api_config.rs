@@ -74,8 +74,6 @@ pub struct FeatureQoS {
     pub rtt_types: Option<Vec<String>>,
     /// Number of buckets used for rtt and throughput. Default value is 5.
     pub buckets: Option<u32>,
-    /// Heartbeat interval in seconds. Default value is 3600.
-    pub heartbeat_interval: Option<u32>,
 }
 
 /// Configurable features for Nurse module
@@ -83,6 +81,8 @@ pub struct FeatureQoS {
 pub struct FeatureNurse {
     /// The unique identifier of the device, used for meshnet ID
     pub fingerprint: String,
+    /// Heartbeat interval in seconds. Default value is 3600.
+    pub heartbeat_interval: Option<u32>,
     /// QoS configuration for Nurse
     pub qos: Option<FeatureQoS>,
 }
@@ -242,8 +242,7 @@ mod tests {
             "rtt_interval": 3600,
             "rtt_tries": 5,
             "rtt_types": ["Ping"],
-            "buckets": 5,
-            "heartbeat_interval": 3600
+            "buckets": 5
         }"#;
 
         let partial_json = r#"
@@ -256,7 +255,6 @@ mod tests {
             rtt_tries: Some(5),
             rtt_types: Some(vec![String::from("Ping")]),
             buckets: Some(5),
-            heartbeat_interval: Some(3600),
         };
 
         let partial_features = FeatureQoS {
@@ -264,7 +262,6 @@ mod tests {
             rtt_tries: None,
             rtt_types: None,
             buckets: None,
-            heartbeat_interval: None,
         };
 
         assert_eq!(
@@ -283,12 +280,12 @@ mod tests {
         {
             "nurse": {
                 "fingerprint": "fingerprint_test",
+                "heartbeat_interval": 3600,
                 "qos": {
                     "rtt_interval": 3600,
                     "rtt_tries": 5,
                     "rtt_types": ["Ping"],
-                    "buckets": 5,
-                    "heartbeat_interval": 3600
+                    "buckets": 5
                 }
             }
         }"#;
@@ -312,12 +309,12 @@ mod tests {
             wireguard: Default::default(),
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
+                heartbeat_interval: Some(3600),
                 qos: Some(FeatureQoS {
                     rtt_interval: Some(3600),
                     rtt_tries: Some(5),
                     rtt_types: Some(vec![String::from("Ping")]),
                     buckets: Some(5),
-                    heartbeat_interval: Some(3600),
                 }),
             }),
             lana: None,
@@ -331,12 +328,12 @@ mod tests {
             wireguard: Default::default(),
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
+                heartbeat_interval: None,
                 qos: Some(FeatureQoS {
                     rtt_interval: None,
                     rtt_tries: None,
                     rtt_types: None,
                     buckets: None,
-                    heartbeat_interval: None,
                 }),
             }),
             lana: None,
@@ -350,6 +347,7 @@ mod tests {
             wireguard: Default::default(),
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
+                heartbeat_interval: None,
                 qos: None,
             }),
             lana: None,
@@ -463,6 +461,7 @@ mod tests {
             },
             nurse: Some(FeatureNurse {
                 fingerprint: "fingerprint_test".to_string(),
+                heartbeat_interval: None,
                 qos: None,
             }),
             lana: Some(FeatureLana {

@@ -24,3 +24,4 @@ mod qos;
 mod rtt;
 
 pub use nurse::Nurse;
+pub use nurse::NurseIo;
