@@ -2,6 +2,7 @@ use super::{Entities, RequestedState, Result};
 use ipnetwork::IpNetwork;
 use std::collections::HashMap;
 use std::collections::{BTreeMap, HashSet};
+use std::iter::FromIterator;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -24,6 +25,8 @@ pub const DEFAULT_PEER_UPGRADE_WINDOW: u64 = 15;
 
 #[derive(Debug, TError)]
 pub enum Error {
+    #[error("Duplicate allowed ips.")]
+    BadAllowedIps,
     #[error("Peer not found error")]
     PeerNotFound,
 }
@@ -116,6 +119,8 @@ async fn consolidate_wg_peers<
         &proxy_endpoints,
     )
     .await?;
+
+    check_allowed_ips_correctness(&requested_peers)?;
 
     let actual_peers = wireguard_interface.get_interface().await?.peers;
 
@@ -212,6 +217,25 @@ async fn consolidate_wg_peers<
     Ok(())
 }
 
+fn check_allowed_ips_correctness(peers: &BTreeMap<PublicKey, RequestedPeer>) -> Result {
+    peers
+        .iter()
+        .map(|(_, p)| HashSet::from_iter(&p.peer.allowed_ips))
+        .fold(Some(HashSet::new()), |result, peer_allowed_ips| {
+            result.and_then(|all_allowed_ips| {
+                if all_allowed_ips.is_disjoint(&peer_allowed_ips) {
+                    Some(HashSet::from_iter(
+                        all_allowed_ips.union(&peer_allowed_ips).cloned(),
+                    ))
+                } else {
+                    None
+                }
+            })
+        })
+        .map(|_| ())
+        .ok_or_else(|| Error::BadAllowedIps.into())
+}
+
 async fn consolidate_firewall<W: WireGuard, F: Firewall>(
     requested_state: &RequestedState,
     wireguard_interface: &W,
@@ -264,17 +288,21 @@ async fn build_requested_peers_list<
 
     // Add or promote exit node peer
     if let Some(exit_node) = &requested_state.exit_node {
+        let allowed_ips = exit_node
+            .allowed_ips
+            .clone()
+            .unwrap_or(vec![IpNetwork::V4("0.0.0.0/0".parse()?)]);
+
         if let Some(meshnet_peer) = requested_peers.get_mut(&exit_node.public_key) {
             // Exit node is meshnet peer, so just promote already existing node to be exit node
             // with allowed ips change
-            meshnet_peer.peer.allowed_ips = vec![IpNetwork::V4("0.0.0.0/0".parse()?)];
+            meshnet_peer.peer.allowed_ips = allowed_ips;
             exit_node_exists = true;
         } else {
             // Exit node is a fresh node, therefore - insert create new peer
             let public_key = exit_node.public_key;
             let endpoint = exit_node.endpoint;
             let persistent_keepalive_interval = requested_state.keepalive_periods.vpn;
-            let allowed_ips = vec![IpNetwork::V4("0.0.0.0/0".parse()?)];
             requested_peers.insert(
                 exit_node.public_key,
                 RequestedPeer {
@@ -1449,7 +1477,7 @@ mod tests {
         let mut f = Fixture::new();
 
         let public_key = SecretKey::gen().public();
-        let allowed_ips = vec![IpNetwork::new(IpAddr::from([0, 0, 0, 0]), 0).unwrap()];
+        let allowed_ips = vec![IpNetwork::new(IpAddr::from([7, 6, 5, 4]), 23).unwrap()];
 
         let endpoint_raw = SocketAddr::from(([192, 168, 0, 1], 13));
         let endpoint = Some(endpoint_raw);
@@ -1459,7 +1487,7 @@ mod tests {
         f.requested_state.exit_node = Some(ExitNode {
             identifier: "".to_owned(),
             public_key,
-            allowed_ips: None,
+            allowed_ips: Some(allowed_ips.clone()),
             endpoint,
         });
 
