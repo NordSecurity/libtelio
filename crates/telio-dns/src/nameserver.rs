@@ -250,9 +250,10 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
 
                             let dns_response = resolver.0.lock().await;
                             let length = IP_HEADER + UDP_HEADER + dns_response.len();
+
+                            if let Some(mut ip_response) =
+                                MutableIpv4Packet::new(&mut receiving_buffer)
                             {
-                                let mut ip_response =
-                                    MutableIpv4Packet::new(&mut receiving_buffer).unwrap();
                                 ip_response.set_version(4);
                                 ip_response.set_header_length((IP_HEADER / 4) as u8);
                                 ip_response.set_dscp(ip_request.get_dscp());
@@ -268,14 +269,16 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
                                 ip_response.set_checksum(checksum(&ip_response.to_immutable()));
 
                                 telio_log_debug!("Ip response: {:?}", &ip_response);
+                            } else {
+                                telio_log_debug!("Failed to create mutable IPv4 packet");
+                                return;
                             }
 
                             telio_log_debug!("nameserver response: {:?}", &dns_response);
 
+                            if let Some(mut udp_response) =
+                                MutableUdpPacket::new(&mut receiving_buffer[IP_HEADER..length])
                             {
-                                let mut udp_response =
-                                    MutableUdpPacket::new(&mut receiving_buffer[IP_HEADER..length])
-                                        .unwrap();
                                 udp_response.set_source(udp_request.get_destination());
                                 udp_response.set_destination(udp_request.get_source());
                                 udp_response.set_length((UDP_HEADER + dns_response.len()) as u16);
@@ -287,6 +290,9 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
                                 ));
 
                                 telio_log_debug!("usp response:  : {:?}", &udp_response);
+                            } else {
+                                telio_log_debug!("Failed to create mutable UDP packet");
+                                return;
                             }
                             match peer.encapsulate(&receiving_buffer[..length], &mut sending_buffer)
                             {

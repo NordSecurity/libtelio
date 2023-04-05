@@ -13,5 +13,8 @@ thiserror = "1.0.30"
 serde = { version = "1.0", features = ["derive"] }
 time = { version = "0.3.9", features = ["formatting"] }
 
+[build-dependencies]
+anyhow = "1"
+
 [features]
 moose = []

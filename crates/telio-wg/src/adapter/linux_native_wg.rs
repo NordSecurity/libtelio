@@ -61,8 +61,8 @@ impl LinuxNativeWg {
 
 #[async_trait::async_trait]
 impl Adapter for LinuxNativeWg {
-    async fn send_uapi_cmd(&self, cmd: &Cmd) -> Response {
-        match cmd {
+    async fn send_uapi_cmd(&self, cmd: &Cmd) -> Result<Response, AdapterError> {
+        Ok(match cmd {
             Get => {
                 let dev = self.get_wg_data(&self.ifname).await;
                 Response {
@@ -74,7 +74,7 @@ impl Adapter for LinuxNativeWg {
                 errno: self.set_wg_data(&self.ifname, device).await,
                 interface: None,
             },
-        }
+        })
     }
 
     fn get_adapter_luid(&self) -> u64 {

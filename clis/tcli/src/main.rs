@@ -4,6 +4,7 @@ mod cli;
 mod derp;
 mod nord;
 
+use anyhow::{anyhow, Result};
 use clap::Parser;
 use dirs::home_dir;
 use regex::Regex;
@@ -19,17 +20,18 @@ struct Args {
     less_spam: bool,
 }
 
-fn main() {
+fn main() -> Result<()> {
     let args = Args::parse();
 
     let token = std::env::var("NORD_TOKEN").ok();
 
     let features: Features = args
         .features
-        .map(|s| serde_json::from_str(&s).expect("Invalid json"))
+        .map(|s| serde_json::from_str(&s))
+        .transpose()?
         .unwrap_or_default();
 
-    let mut cli = cli::Cli::new(features, token);
+    let mut cli = cli::Cli::new(features, token)?;
     let mut stdout = std::io::stdout();
 
     let less_spam = args.less_spam;
@@ -42,7 +44,7 @@ fn main() {
     let config = rustyline::config::Builder::new()
         .auto_add_history(true)
         .build();
-    let mut rl = rustyline::DefaultEditor::with_config(config).unwrap();
+    let mut rl = rustyline::DefaultEditor::with_config(config)?;
 
     let history_file_path = home_dir().map(|hp| hp.join(".tcli_history.txt"));
     if let Some(path) = history_file_path.as_ref() {
@@ -54,15 +56,24 @@ fn main() {
     let prompt = if less_spam { "" } else { ">>> " };
 
     loop {
-        stdout.flush().unwrap();
-        let mut cmd = rl.readline(prompt).unwrap_or("quit".to_string());
+        stdout.flush()?;
+        let mut cmd = rl.readline(prompt).unwrap_or_else(|_| "quit".to_string());
 
         let mut message_idx: Option<&str> = None;
-        let re = Regex::new(r"^MESSAGE_ID=(\d+) (.*)").unwrap();
+        let re = Regex::new(r"^MESSAGE_ID=(\d+) (.*)")?;
         let temp = cmd.clone();
         if let Some(captures) = re.captures(&temp) {
-            message_idx = Some(captures.get(1).unwrap().as_str());
-            cmd = captures.get(2).unwrap().as_str().to_string();
+            message_idx = Some(
+                captures
+                    .get(1)
+                    .ok_or_else(|| anyhow!("missing message idx"))?
+                    .as_str(),
+            );
+            cmd = captures
+                .get(2)
+                .ok_or_else(|| anyhow!("missing cmd"))?
+                .as_str()
+                .to_string();
         }
 
         for resp in cli.exec(&cmd) {
@@ -70,23 +81,19 @@ fn main() {
             match resp {
                 Info(i) => println!("- {}", i),
                 Event(e) => match *e {
-                    DevEvent::Node { body } => {
-                        if let Some(b) = body {
-                            println!(
-                                "event node: {:?}:{};  Path = {:?}",
-                                b.state.unwrap(),
-                                b.public_key,
-                                b.path
-                            );
-                        }
+                    DevEvent::Node { body: Some(b) } => {
+                        println!(
+                            "event node: {:?}:{};  Path = {:?}",
+                            b.state.ok_or_else(|| anyhow!("empty state"))?,
+                            b.public_key,
+                            b.path
+                        );
                     }
-                    DevEvent::Relay { body } => {
-                        if let Some(b) = body {
-                            println!(
-                                "event relay: {}",
-                                serde_json::to_string(&b).unwrap_or("".to_string())
-                            );
-                        }
+                    DevEvent::Relay { body: Some(b) } => {
+                        println!(
+                            "event relay: {}",
+                            serde_json::to_string(&b).unwrap_or_else(|_| "".to_string())
+                        );
                     }
                     _ => (),
                 },
@@ -94,8 +101,8 @@ fn main() {
                     println!("error: {}", e)
                 }
                 Quit => {
-                    if message_idx.is_some() {
-                        println!("MESSAGE_DONE={}", message_idx.unwrap());
+                    if let Some(idx) = message_idx {
+                        println!("MESSAGE_DONE={}", idx);
                     }
 
                     if let Some(path) = history_file_path.as_ref() {
@@ -104,13 +111,13 @@ fn main() {
                         }
                     }
 
-                    return;
+                    return Ok(());
                 }
             }
         }
 
-        if message_idx.is_some() {
-            println!("MESSAGE_DONE={}", message_idx.unwrap());
+        if let Some(idx) = message_idx {
+            println!("MESSAGE_DONE={}", idx);
         }
     }
 }

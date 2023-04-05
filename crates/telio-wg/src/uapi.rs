@@ -1,6 +1,6 @@
-use ipnetwork::IpNetwork;
+use ipnetwork::{IpNetwork, IpNetworkError};
 use serde::{Deserialize, Serialize};
-use telio_crypto::{PublicKey, SecretKey};
+use telio_crypto::{KeyDecodeError, PublicKey, SecretKey};
 use telio_utils::telio_log_warn;
 use wireguard_uapi::{get, xplatform::set};
 
@@ -8,12 +8,19 @@ use std::{
     collections::BTreeMap,
     fmt::{self, Display, Formatter},
     io::{BufRead, BufReader, Read},
-    net::SocketAddr,
+    net::{AddrParseError, SocketAddr},
+    num::ParseIntError,
     panic,
     str::FromStr,
     sync::Arc,
     time::{Duration, Instant, SystemTime, SystemTimeError, UNIX_EPOCH},
 };
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum Error {
+    #[error("Parsing of '{0}' failed: {1}")]
+    ParsingError(&'static str, String),
+}
 
 /// telio implementation of wireguard::Peer
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
@@ -315,12 +322,12 @@ impl Default for PeerState {
     }
 }
 
-pub(super) fn response_from_str(string: &str) -> Response {
+pub(super) fn response_from_str(string: &str) -> Result<Response, Error> {
     response_from_read(string.as_bytes())
 }
 
 #[allow(unwrap_check)]
-pub(super) fn response_from_read<R: Read>(reader: R) -> Response {
+pub(super) fn response_from_read<R: Read>(reader: R) -> Result<Response, Error> {
     let mut reader = BufReader::new(reader);
     let mut interface = Interface::default();
     let mut inited = false;
@@ -330,37 +337,47 @@ pub(super) fn response_from_read<R: Read>(reader: R) -> Response {
     while reader.read_line(&mut cmd).is_ok() {
         cmd.pop(); // remove newline if any
         if cmd.is_empty() {
-            return Response {
+            return Ok(Response {
                 errno,
                 interface: if inited { Some(interface) } else { None },
-            }; // Done
+            }); // Done
         }
         {
             let parsed: Vec<&str> = cmd.splitn(2, '=').collect();
-            assert_eq!(parsed.len(), 2);
+            if parsed.len() != 2 {
+                return Err(Error::ParsingError("cmd", "not in A=B format".to_owned()));
+            }
             let (key, val) = (parsed[0], parsed[1]);
 
             match key {
                 "private_key" => {
                     inited = true;
-                    interface.private_key = Some(val.parse().unwrap());
+                    interface.private_key = Some(val.parse().map_err(|e: KeyDecodeError| {
+                        Error::ParsingError("private_key", e.to_string())
+                    })?);
                 }
                 "listen_port" => {
                     inited = true;
-                    let port = val.parse().unwrap();
+                    let port = val.parse().map_err(|e: ParseIntError| {
+                        Error::ParsingError("listen_port", e.to_string())
+                    })?;
                     if port > 0 {
                         interface.listen_port = Some(port);
                     }
                 }
                 "fwmark" => {
                     inited = true;
-                    interface.fwmark = val.parse().unwrap();
+                    interface.fwmark = val
+                        .parse()
+                        .map_err(|e: ParseIntError| Error::ParsingError("fwmark", e.to_string()))?;
                 }
                 "public_key" => {
                     inited = true;
-                    let mut public = val.parse().unwrap();
+                    let mut public = val.parse().map_err(|e: KeyDecodeError| {
+                        Error::ParsingError("public_key", e.to_string())
+                    })?;
                     loop {
-                        let (peer, next, err) = parse_peer(public, &mut reader);
+                        let (peer, next, err) = parse_peer(public, &mut reader)?;
                         let _ = interface.peers.insert(peer.public_key, peer);
                         if let Some(err) = err {
                             errno = err;
@@ -373,24 +390,28 @@ pub(super) fn response_from_read<R: Read>(reader: R) -> Response {
                         }
                     }
                 }
-                "errno" => errno = val.parse().unwrap(),
+                "errno" => {
+                    errno = val
+                        .parse()
+                        .map_err(|e: ParseIntError| Error::ParsingError("errno", e.to_string()))?
+                }
                 _ => (),
             }
         }
         cmd.clear();
     }
 
-    Response {
+    Ok(Response {
         errno,
         interface: if inited { Some(interface) } else { None },
-    }
+    })
 }
 
 #[allow(unwrap_check)]
 fn parse_peer<R: Read>(
     public_key: PublicKey,
     reader: &mut BufReader<R>,
-) -> (Peer, Option<PublicKey>, Option<i32>) {
+) -> Result<(Peer, Option<PublicKey>, Option<i32>), Error> {
     let mut cmd = String::new();
 
     let mut peer = Peer {
@@ -399,61 +420,98 @@ fn parse_peer<R: Read>(
     };
 
     let mut last_handshake_time = None;
-    let mut resp = loop {
-        if reader.read_line(&mut cmd).is_err() {
-            break (peer, None, None);
-        }
-
-        cmd.pop(); // remove newline if any
-        if cmd.is_empty() {
-            break (peer, None, None);
-        }
-
-        let parsed: Vec<&str> = cmd.splitn(2, '=').collect();
-        assert_eq!(parsed.len(), 2);
-        let (key, val) = (parsed[0], parsed[1]);
-
-        match key {
-            "endpoint" => peer.endpoint = Some(val.parse().unwrap()),
-            "persistent_keepalive_interval" => {
-                peer.persistent_keepalive_interval = Some(val.parse().unwrap())
+    let mut resp =
+        loop {
+            if reader.read_line(&mut cmd).is_err() {
+                break (peer, None, None);
             }
-            "allowed_ip" => peer.allowed_ips.push(val.parse().unwrap()),
-            "rx_bytes" => peer.rx_bytes = Some(val.parse().unwrap()),
-            "tx_bytes" => peer.tx_bytes = Some(val.parse().unwrap()),
-            "last_handshake_time_nsec" => {
-                let nsec = Duration::from_nanos(val.parse().unwrap());
-                if let Some(ref mut timestamp) = last_handshake_time {
-                    *timestamp += nsec;
-                } else {
-                    last_handshake_time = Some(nsec);
+
+            cmd.pop(); // remove newline if any
+            if cmd.is_empty() {
+                break (peer, None, None);
+            }
+
+            let parsed: Vec<&str> = cmd.splitn(2, '=').collect();
+            if parsed.len() != 2 {
+                return Err(Error::ParsingError("cmd", "not in A=B format".to_owned()));
+            }
+            let (key, val) = (parsed[0], parsed[1]);
+
+            match key {
+                "endpoint" => {
+                    peer.endpoint = Some(val.parse().map_err(|e: AddrParseError| {
+                        Error::ParsingError("endpoint", e.to_string())
+                    })?)
                 }
-            }
-            "last_handshake_time_sec" => {
-                let sec = Duration::from_secs(val.parse().unwrap());
-                if let Some(ref mut timestamp) = last_handshake_time {
-                    *timestamp += sec;
-                } else {
-                    last_handshake_time = Some(sec);
+                "persistent_keepalive_interval" => {
+                    peer.persistent_keepalive_interval =
+                        Some(val.parse().map_err(|e: ParseIntError| {
+                            Error::ParsingError("persistent_keepalive_interval", e.to_string())
+                        })?);
                 }
+                "allowed_ip" => {
+                    peer.allowed_ips
+                        .push(val.parse().map_err(|e: IpNetworkError| {
+                            Error::ParsingError("allowed_ip", e.to_string())
+                        })?)
+                }
+                "rx_bytes" => {
+                    peer.rx_bytes = Some(val.parse().map_err(|e: ParseIntError| {
+                        Error::ParsingError("rx_bytes", e.to_string())
+                    })?)
+                }
+                "tx_bytes" => {
+                    peer.tx_bytes = Some(val.parse().map_err(|e: ParseIntError| {
+                        Error::ParsingError("tx_bytes", e.to_string())
+                    })?)
+                }
+                "last_handshake_time_nsec" => {
+                    let nsec = Duration::from_nanos(val.parse().map_err(|e: ParseIntError| {
+                        Error::ParsingError("last_handshake_time_nsec", e.to_string())
+                    })?);
+                    if let Some(ref mut timestamp) = last_handshake_time {
+                        *timestamp += nsec;
+                    } else {
+                        last_handshake_time = Some(nsec);
+                    }
+                }
+                "last_handshake_time_sec" => {
+                    let sec = Duration::from_secs(val.parse().map_err(|e: ParseIntError| {
+                        Error::ParsingError("last_handshake_time_sec", e.to_string())
+                    })?);
+                    if let Some(ref mut timestamp) = last_handshake_time {
+                        *timestamp += sec;
+                    } else {
+                        last_handshake_time = Some(sec);
+                    }
+                }
+                "public_key" => {
+                    break (
+                        peer,
+                        Some(val.parse().map_err(|e: KeyDecodeError| {
+                            Error::ParsingError("public_key", e.to_string())
+                        })?), // Indicate next peer's public
+                        None,
+                    );
+                }
+                "errno" => {
+                    break (
+                        peer,
+                        None,
+                        Some(val.parse().map_err(|e: ParseIntError| {
+                            Error::ParsingError("errno", e.to_string())
+                        })?),
+                    )
+                }
+                _ => (),
             }
-            "public_key" => {
-                break (
-                    peer,
-                    Some(val.parse().unwrap()), // Indicate next peer's public
-                    None,
-                );
-            }
-            "errno" => break (peer, None, Some(val.parse().unwrap())),
-            _ => (),
-        }
-        cmd.clear();
-    };
+            cmd.clear();
+        };
 
     resp.0.time_since_last_handshake =
         Peer::calculate_time_since_last_handshake(last_handshake_time);
 
-    resp
+    Ok(resp)
 }
 
 #[cfg(test)]
@@ -473,7 +531,7 @@ mod tests {
     }
 
     #[test]
-    fn bytes_data_overflow() {
+    fn bytes_data_overflow() -> Result<(), Error> {
         let base_string = "\
 private_key=aa920dc47dc5ed30e586263e83f387bc110f421b52377935012e480c04b054a3
 listen_port=12912
@@ -501,11 +559,9 @@ errno=0
             .replace("RXBYTES", "100")
             .replace("TXBYTES", "1000000000000"); // more than 4gb sent in total
 
-        let result = panic::catch_unwind(|| {
-            response_from_str(&received_bytes_overflow_string);
-            response_from_str(&sent_bytes_overflow_string);
-        });
-        assert!(result.is_ok());
+        response_from_str(&received_bytes_overflow_string)?;
+        response_from_str(&sent_bytes_overflow_string)?;
+        Ok(())
     }
 
     #[test]
@@ -518,6 +574,6 @@ errno=0
             errno: 0,
             interface: Some(Interface::default()),
         };
-        assert_eq!(response_from_str(&resp_str), resp);
+        assert_eq!(response_from_str(&resp_str), Ok(resp));
     }
 }

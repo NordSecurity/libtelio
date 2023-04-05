@@ -1,10 +1,7 @@
-use std::{
-    net::Ipv4Addr,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{net::Ipv4Addr, sync::Arc, time::Duration};
 
 use clap::Parser;
+use parking_lot::Mutex;
 use serde::Deserialize;
 use telio::crypto::SecretKey;
 use telio_model::PublicKey;
@@ -52,7 +49,7 @@ pub struct Serv {
 
 struct Instance {
     rt: Runtime,
-    events: Arc<Mutex<Vec<Box<Server>>>>,
+    events: Arc<Mutex<Vec<Server>>>,
     packets: Arc<Mutex<Vec<(PublicKey, Packet)>>>,
     send: Tx<(PublicKey, Packet)>,
     collect: JoinHandle<()>,
@@ -73,8 +70,10 @@ impl DerpClient {
                 servers,
                 allowed_pk,
             } => {
-                let mut config = telio_relay::Config::default();
-                config.secret_key = secret_key;
+                let mut config = telio_relay::Config {
+                    secret_key,
+                    ..Default::default()
+                };
 
                 telio_log_debug!("Secret Key: {:?}", secret_key);
 
@@ -94,22 +93,22 @@ impl DerpClient {
                     };
                     config.servers.push(server);
                 }
-                let keys = allowed_pk.split(" ");
+                let keys = allowed_pk.split(' ');
                 for key in keys {
-                    config.allowed_pk.insert(key.parse().unwrap());
+                    config.allowed_pk.insert(cli_try!(res; key.parse()));
                 }
 
                 if let Some(inst) = &mut self.inst {
                     inst.rt.block_on(inst.relay.configure(Some(config)));
                 } else {
-                    let rt = Runtime::new().expect("build runtime");
+                    let rt = cli_try!(res; Runtime::new());
                     let (lpacket, rpacket) = Chan::pipe();
                     let McChan {
                         rx: mut event_rx,
                         tx: event_tx,
-                    } = McChan::default();
+                    }: McChan<Box<Server>> = McChan::default();
                     let send = lpacket.tx;
-                    let events = Arc::new(Mutex::new(Vec::new()));
+                    let events: Arc<Mutex<Vec<Server>>> = Arc::new(Mutex::new(Vec::new()));
                     let packets = Arc::new(Mutex::new(Vec::new()));
                     let collect = rt.spawn({
                         let events = events.clone();
@@ -119,10 +118,10 @@ impl DerpClient {
                             loop {
                                 tokio::select! {
                                     Some(msg) = packet_rx.recv() => {
-                                        packets.lock().expect("locked").push(msg);
+                                        packets.lock().push(msg);
                                     }
                                     Ok(ev) = event_rx.recv() => {
-                                        events.lock().expect("locked").push(ev);
+                                        events.lock().push(*ev);
                                     }
                                     else => return,
                                 }
@@ -161,7 +160,7 @@ impl DerpClient {
             }
             Recv => {
                 if let Some(inst) = &mut self.inst {
-                    for (pk, packet) in inst.packets.lock().expect("lock").drain(..) {
+                    for (pk, packet) in inst.packets.lock().drain(..) {
                         // TODO: Improve printing form personal needs.
                         cli_res!(res; (i "{}: {:?}", pk, packet))
                     }
@@ -169,7 +168,7 @@ impl DerpClient {
             }
             Events => {
                 if let Some(inst) = &mut self.inst {
-                    for event in inst.events.lock().expect("lock").drain(..) {
+                    for event in inst.events.lock().drain(..) {
                         // TODO: Improve printing form personal needs. json could be used
                         cli_res!(res; (i "{:?}", event))
                     }

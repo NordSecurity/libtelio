@@ -3,8 +3,9 @@
 use super::EndpointMap as RelayEndpointMap;
 
 use crate::api_config::PathType;
+use ipnetwork::IpNetworkError;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::{collections::HashMap, convert::TryFrom};
 use telio_crypto::PublicKey;
 
 use telio_wg::uapi::{Event as PeerEvent, Peer as UapiPeer, PeerState};
@@ -69,12 +70,12 @@ pub struct Map {
     pub nodes: HashMap<PublicKey, Node>,
 }
 
-impl From<&ExitNode> for Node {
-    fn from(other: &ExitNode) -> Self {
-        #[allow(unwrap_check)]
-        let address = "0.0.0.0/0".parse().unwrap();
-        Self {
-            identifier: other.identifier.clone(),
+impl TryFrom<&ExitNode> for Node {
+    type Error = IpNetworkError;
+
+    fn try_from(other: &ExitNode) -> Result<Self, IpNetworkError> {
+        let address = "0.0.0.0/0".parse()?;
+        Ok(Self {
             public_key: other.public_key,
             is_exit: true,
             is_vpn: other.endpoint.is_some(),
@@ -85,7 +86,7 @@ impl From<&ExitNode> for Node {
                 .unwrap_or_else(|| vec![address]),
             endpoint: other.endpoint,
             ..Default::default()
-        }
+        })
     }
 }
 
@@ -186,24 +187,6 @@ impl From<&Node> for UapiPeer {
         UapiPeer {
             public_key: other.public_key,
             allowed_ips: other.allowed_ips.clone(),
-            endpoint: other.endpoint,
-            persistent_keepalive_interval: Some(25),
-            ..Default::default()
-        }
-    }
-}
-
-impl From<&ExitNode> for UapiPeer {
-    fn from(other: &ExitNode) -> UapiPeer {
-        #[allow(unwrap_check)]
-        let address = "0.0.0.0/0".parse().unwrap();
-        UapiPeer {
-            public_key: other.public_key,
-            allowed_ips: other
-                .allowed_ips
-                .as_ref()
-                .cloned()
-                .unwrap_or_else(|| vec![address]),
             endpoint: other.endpoint,
             persistent_keepalive_interval: Some(25),
             ..Default::default()

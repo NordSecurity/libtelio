@@ -94,9 +94,9 @@ impl WireguardGo {
 
 #[async_trait]
 impl Adapter for WireguardGo {
-    async fn send_uapi_cmd(&self, cmd: &Cmd) -> Response {
+    async fn send_uapi_cmd(&self, cmd: &Cmd) -> Result<Response, AdapterError> {
         let res = self.send_uapi_cmd_str(&cmd.to_string()).await;
-        uapi::response_from_str(&res)
+        Ok(uapi::response_from_str(&res)?)
     }
 
     fn get_adapter_luid(&self) -> u64 {

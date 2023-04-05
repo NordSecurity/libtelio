@@ -859,6 +859,7 @@ dependencies = [
  "futures",
  "hex 0.3.2",
  "lazy_static",
+ "parking_lot 0.12.1",
  "prometheus",
  "scoped-tls",
  "serde",
@@ -3348,6 +3349,7 @@ checksum = "f764005d11ee5f36500a149ace24e00e3da98b0158b3e2d53a7495660d3f4d60"
 name = "tcli"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "base64 0.13.1",
  "clap 3.2.23",
  "crypto_box",
@@ -3356,6 +3358,7 @@ dependencies = [
  "hex 0.4.3",
  "ipnetwork",
  "log",
+ "parking_lot 0.12.1",
  "rand",
  "regex",
  "reqwest",
@@ -3366,6 +3369,7 @@ dependencies = [
  "sha2 0.9.9",
  "shellwords",
  "telio",
+ "telio-crypto",
  "telio-model",
  "telio-nat-detect",
  "telio-proto",
@@ -3488,6 +3492,7 @@ dependencies = [
 name = "telio-lana"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "log",
  "serde",
  "serde_json",
