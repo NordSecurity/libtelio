@@ -124,7 +124,7 @@ fn spawn_monitor(sockets: Arc<Mutex<Sockets>>) -> io::Result<JoinHandle<()>> {
     Ok(tokio::spawn(async move {
         let _watcher = _watcher;
         let mut on = true;
-        loop {
+        while on {
             let (ready, update) = {
                 let sockets = sockets.lock();
                 (
@@ -151,8 +151,6 @@ fn spawn_monitor(sockets: Arc<Mutex<Sockets>>) -> io::Result<JoinHandle<()>> {
                 }
             }
         }
-
-        telio_log_warn!("Sockets monitor returned early");
     }))
 }
 
