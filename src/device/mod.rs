@@ -20,7 +20,7 @@ use telio_traversal::{
     cross_ping_check::{CrossPingCheck, CrossPingCheckTrait, Io as CpcIo},
     endpoint_providers::{
         self, local::LocalInterfacesEndpointProvider, stun::StunEndpointProvider, stun::StunServer,
-        upnp::Upnp as UpnpEndpointProvider, EndpointProvider,
+        upnp::UpnpEndpointProvider, EndpointProvider,
     },
     ping_pong_handler::PingPongHandler,
     SessionKeeper, UpgradeRequestChangeEvent, UpgradeSync, WireGuardEndpointCandidateChangeEvent,

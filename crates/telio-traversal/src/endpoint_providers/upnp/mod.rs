@@ -26,11 +26,15 @@ use tokio::{net::UdpSocket, sync::Mutex};
 const MAX_SUPPORTED_PACKET_SIZE: usize = 1500;
 const UPNP_INTERVAL: Duration = Duration::from_secs(60);
 
-pub struct Upnp<Wg: WireGuard = DynamicWg, I: IgdCommands = Igd, E: Backoff = ExponentialBackoff> {
+pub struct UpnpEndpointProvider<
+    Wg: WireGuard = DynamicWg,
+    I: IgdCommands = Igd,
+    E: Backoff = ExponentialBackoff,
+> {
     task: Task<State<Wg, I, E>>,
 }
 
-impl<Wg: WireGuard> Upnp<Wg> {
+impl<Wg: WireGuard> UpnpEndpointProvider<Wg> {
     pub fn start(
         udp_socket: External<UdpSocket>,
         wg: Arc<Wg>,
@@ -47,7 +51,7 @@ impl<Wg: WireGuard> Upnp<Wg> {
     }
 }
 
-impl<Wg: WireGuard, I: IgdCommands, E: Backoff> Upnp<Wg, I, E> {
+impl<Wg: WireGuard, I: IgdCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E> {
     pub fn start_with(
         udp_socket: External<UdpSocket>,
         wg: Arc<Wg>,
@@ -116,11 +120,7 @@ impl<Wg: WireGuard, I: IgdCommands, E: Backoff> Upnp<Wg, I, E> {
                     .await;
                 let _ = s
                     .igd
-                    .igd_service_command(
-                        ServiceCmdType::DeleteRoute,
-                        s.proxy_port_mapping,
-                        dummy_ip,
-                    )
+                    .igd_service_command(ServiceCmdType::DeleteRoute, s.wg_port_mapping, dummy_ip)
                     .await;
             };
             Ok(())
@@ -131,7 +131,7 @@ impl<Wg: WireGuard, I: IgdCommands, E: Backoff> Upnp<Wg, I, E> {
 }
 
 #[async_trait]
-impl<Wg: WireGuard> EndpointProvider for Upnp<Wg> {
+impl<Wg: WireGuard> EndpointProvider for UpnpEndpointProvider<Wg> {
     async fn subscribe_for_pong_events(&self, tx: Tx<PongEvent>) {
         task_exec!(&self.task, async move |s| {
             s.pong_events_tx = Some(tx);
@@ -381,16 +381,41 @@ impl<Wg: WireGuard, I: IgdCommands, E: Backoff> Runtime for State<Wg, I, E> {
 
 #[cfg(test)]
 mod tests {
-    use super::Upnp;
+    use super::*;
     use crate::endpoint_providers::upnp::igd::{MockIgdCommands, PortMapping, ServiceCmdType};
     use crate::endpoint_providers::{EndpointCandidate, Error};
-    use crate::ping_pong_handler::PingPongHandler;
     use lazy_static::lazy_static;
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use mockall::mock;
+    use std::cell::RefCell;
+    use std::rc::Rc;
     use std::sync::Arc;
+    use std::time::Duration;
+    use telio_crypto::PublicKey;
     use telio_crypto::SecretKey;
     use telio_sockets::{NativeProtector, SocketPool};
+    use telio_utils::exponential_backoff::MockBackoff;
+    use telio_wg::uapi::{Interface, Peer};
+    use telio_wg::Error as wgError;
     use tokio::sync::Mutex;
+
+    mock! {
+        pub Wg {}
+        #[async_trait]
+        impl WireGuard for Wg {
+            async fn get_interface(&self) -> Result<Interface, wgError>;
+            async fn get_adapter_luid(&self) -> Result<u64, wgError>;
+            async fn wait_for_listen_port(&self, d: Duration) -> Result<u16, wgError>;
+            async fn get_wg_socket(&self, ipv6: bool) -> Result<Option<i32>, wgError>;
+            async fn set_secret_key(&self, key: SecretKey) -> Result<(), wgError>;
+            async fn set_fwmark(&self, fwmark: u32) -> Result<(), wgError>;
+            async fn add_peer(&self, peer: Peer) -> Result<(), wgError>;
+            async fn del_peer(&self, key: PublicKey) -> Result<(), wgError>;
+            async fn drop_connected_sockets(&self) -> Result<(), wgError>;
+            async fn time_since_last_rx(&self, public_key: PublicKey) -> Result<Option<Duration>, wgError>;
+            async fn time_since_last_endpoint_change(&self, public_key: PublicKey) -> Result<Option<Duration>, wgError>;
+            async fn stop(self);
+        }
+    }
 
     lazy_static! {
         static ref ENDPOINT: Mutex<EndpointCandidate> = Mutex::new(EndpointCandidate {
@@ -433,14 +458,29 @@ mod tests {
         Ok(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)))
     }
 
-    pub async fn prepare_test_setup() -> Upnp<MockIgdCommands> {
+    pub async fn prepare_test_setup() -> UpnpEndpointProvider<MockWg, MockIgdCommands, MockBackoff>
+    {
         let spool = SocketPool::new(NativeProtector::new().unwrap());
         let udp_socket = spool
             .new_external_udp((Ipv4Addr::UNSPECIFIED, 0), None)
             .await
             .unwrap();
 
+        // These are not properly used yet, just dummy variables
+        let mut wg = MockWg::default();
+        let wg_port = 12345;
+        let wg_peers = Vec::<(PublicKey, Peer)>::new();
+        let backoff_array = [4000, 12000, 44444, 7654, 10000, 765432];
+
         let mut mock = MockIgdCommands::new();
+        wg.expect_get_interface().returning(move || {
+            Ok(Interface {
+                listen_port: Some(wg_port),
+                peers: wg_peers.clone().into_iter().collect(),
+                ..Default::default()
+            })
+        });
+
         mock.expect_add_endpoint()
             .returning(move |_, proxy_port, wg_port| Box::pin(add_endpoint(proxy_port, wg_port)));
         mock.expect_igd_service_command()
@@ -451,11 +491,27 @@ mod tests {
             .return_once(move |_| Box::pin(get_igd()));
         mock.expect_get_wg_interface_port()
             .returning(move |_| Box::pin(get_wg_port()));
-        Upnp::start_with(
+
+        UpnpEndpointProvider::start_with(
             udp_socket,
-            None,
+            Arc::new(wg),
+            {
+                let mut result = MockBackoff::default();
+                let backoff_array_idx = Rc::new(RefCell::new(0));
+                let backoff_array_idx_a = backoff_array_idx.clone();
+                result.expect_get_backoff().returning_st(move || {
+                    Duration::from_millis(backoff_array[*backoff_array_idx_a.borrow()])
+                });
+                let backoff_array_idx_b = backoff_array_idx.clone();
+                result.expect_next_backoff().returning_st(move || {
+                    backoff_array_idx_b.replace_with(|idx| *idx + 1);
+                });
+                result.expect_reset().returning_st(move || {
+                    backoff_array_idx.replace(0);
+                });
+                result
+            },
             Arc::new(Mutex::new(PingPongHandler::new(SecretKey::gen()))),
-            std::time::Duration::from_secs(1),
             mock,
         )
     }
