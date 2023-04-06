@@ -162,10 +162,10 @@ impl TcpParams {
             }
 
             #[cfg(windows)]
-            self.set_tcp_keepalive_cnt(socket);
+            let _ = self.set_tcp_keepalive_cnt(socket);
         } else if socket.set_keepalive(false).is_err() {
             telio_log_warn!(
-                "Cannot diable TCP keepalive for {:?} socket: {}",
+                "Cannot disable TCP keepalive for {:?} socket: {}",
                 addr,
                 Error::last_os_error().to_string(),
             );
