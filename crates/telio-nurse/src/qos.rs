@@ -133,6 +133,8 @@ impl OutputData {
         let mut result = String::new();
         if a.is_empty() {
             result.push_str(&b);
+        } else if b.is_empty() {
+            result.push_str(&a);
         } else {
             result.push_str(&a);
             result.push(',');

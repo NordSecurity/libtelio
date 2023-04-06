@@ -64,7 +64,7 @@ impl Nurse {
     /// # Returns
     ///
     /// A Nurse instance.
-    pub async fn new<'a>(public_key: PublicKey, config: Config, io: NurseIo<'a>) -> Self {
+    pub async fn new(public_key: PublicKey, config: Config, io: NurseIo<'_>) -> Self {
         let meshnet_id = Self::meshnet_id();
 
         // Analytics channel

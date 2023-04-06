@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use bitflags::bitflags;
 use std::fmt::Write;
+use std::iter::FromIterator;
 use std::{
     collections::{HashMap, HashSet},
     convert::{TryFrom, TryInto},
@@ -25,8 +26,6 @@ use crate::data::{AnalyticsMessage, HeartbeatInfo, MeshConfigUpdateEvent};
 /// Approximately 30 years worth of time, used to pause timers and periods
 const FAR_FUTURE: Duration = Duration::from_secs(86400 * 365 * 30);
 
-const DEFAULT_NODE_FINGERPRINT: &str = "null";
-
 #[derive(PartialEq, Eq)]
 enum RuntimeState {
     Monitoring,
@@ -42,7 +41,7 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct MeshLink {
     pub connection_state: MeshConnectionState,
 }
@@ -82,20 +81,80 @@ enum NodeInfo {
     },
 }
 
-impl NodeInfo {
-    fn mesh_link(&self) -> MeshLink {
-        match self {
-            NodeInfo::Vpn { mesh_link, .. } | NodeInfo::Node { mesh_link, .. } => mesh_link.clone(),
-        }
-    }
-}
-
 impl Default for NodeInfo {
     fn default() -> Self {
         NodeInfo::Node {
             mesh_link: MeshLink::default(),
             meshnet_id: None,
         }
+    }
+}
+
+#[derive(Default)]
+struct Collection {
+    pub meshnet_ids: HashMap<PublicKey, Uuid>,
+    pub fingerprints: HashMap<PublicKey, String>,
+    pub links: HashMap<(PublicKey, PublicKey), MeshLink>,
+}
+
+impl Collection {
+    pub fn add_default_link(&mut self, lpk: PublicKey, rpk: PublicKey) {
+        self.links.entry((lpk, rpk)).or_default();
+        self.links.entry((rpk, lpk)).or_default();
+    }
+
+    pub fn add_unidirectional_link(&mut self, lpk: PublicKey, rpk: PublicKey, link: MeshLink) {
+        *self.links.entry((lpk, rpk)).or_default() = link;
+    }
+
+    pub fn add_meshnet_id(&mut self, pk: PublicKey, id: Uuid) {
+        *self.meshnet_ids.entry(pk).or_default() = id;
+    }
+
+    pub fn add_fingerprint(&mut self, pk: PublicKey, fp: String) {
+        *self.fingerprints.entry(pk).or_default() = fp;
+    }
+
+    pub fn resolve_current_meshnet_id(&self, config_local_nodes: &HashSet<PublicKey>) -> Uuid {
+        // Figure out what meshnet id we should use, based on all of the collected data
+        // Start off by generating a heatmap of the received ID's
+        let mut id_heatmap: HashMap<Uuid, u32> = HashMap::new();
+        self.meshnet_ids.iter().for_each(|(pk, id)| {
+            if config_local_nodes.contains(pk) {
+                *id_heatmap.entry(*id).or_default() += 1;
+            }
+        });
+
+        // Then find the ids with the biggest amount of repetitions
+        let max_value = id_heatmap
+            .iter()
+            .max_by(|l, r| l.1.cmp(r.1))
+            .map(|(_, value)| value)
+            .unwrap_or(&0);
+        let maximal_ids = id_heatmap
+            .iter()
+            .filter(|(_, value)| max_value == *value)
+            .map(|(id, _)| *id)
+            .collect::<Vec<Uuid>>();
+
+        // Since we can have more than one meshnet ID having the most amount of repetitions, we need to resolve this in a
+        // predictable way, so we filter out the entries that share this maximum value and then sort them again by
+        // the public key, from which the ID initially came from
+        self.meshnet_ids
+            .iter()
+            .filter(|(_, id)| maximal_ids.contains(*id))
+            .min_by(|l, r| l.0.cmp(r.0))
+            .map(|(_, id)| *id)
+            .unwrap_or_else(Uuid::new_v4)
+    }
+
+    pub fn clear(&mut self) {
+        // Clear collected meshnet ids
+        self.meshnet_ids.clear();
+        // Clear collected fingerprints
+        self.fingerprints.clear();
+        // Clear collected links
+        self.links.clear();
     }
 }
 
@@ -127,9 +186,7 @@ pub struct Analytics {
     pub cached_private_key: Option<SecretKey>,
 
     public_key: PublicKey,
-    external_links: HashMap<(PublicKey, PublicKey), MeshLink>,
-    collected_meshnet_ids: HashMap<PublicKey, Uuid>,
-    node_fingerprints: HashMap<PublicKey, String>,
+    collection: Collection,
 
     // All the nodes we have a connection with according to wireguard
     local_nodes: HashMap<PublicKey, NodeInfo>,
@@ -215,9 +272,7 @@ impl Analytics {
             cached_config: None,
             cached_private_key: None,
             public_key,
-            external_links: HashMap::new(),
-            collected_meshnet_ids: HashMap::new(),
-            node_fingerprints: HashMap::new(),
+            collection: Collection::default(),
             local_nodes: HashMap::new(),
             config_local_nodes,
             derp_connection: false,
@@ -239,25 +294,6 @@ impl Analytics {
 
                 self.config_local_nodes.remove(&old_public_key);
                 self.config_local_nodes.insert(self.public_key);
-
-                // Since the private key and therefore the public key changes, we need to update the
-                // external links, since they will be pointing to a public key that no longer exists
-
-                // It's a slightly more involved process with the external links, as we only need to update the entries
-                // that reference this node directly
-                self.external_links = self
-                    .external_links
-                    .iter()
-                    .map(|e| {
-                        // If the connection references this node, we need to update it,
-                        // otherwise we leave it untouched
-                        if e.0 .1 == old_public_key {
-                            ((e.0 .0, self.public_key), e.1.clone())
-                        } else {
-                            (*e.0, e.1.clone())
-                        }
-                    })
-                    .collect();
             }
         }
     }
@@ -271,12 +307,6 @@ impl Analytics {
             if let Some((new_nodes, removed_nodes)) = &self.cached_config.take() {
                 // First clear the nodes that were removed from the meshnet from all of the containers
                 for node in removed_nodes {
-                    self.external_links
-                        .retain(|&k, _| (*node != k.0 && *node != k.1));
-
-                    // Also remove the node from the fingerprint map, we don't need to worry about `meshnet_id`'s, since they get cleared on each collection cycle
-                    self.node_fingerprints.remove_entry(node);
-
                     // Remove local node
                     self.local_nodes.remove(node);
                 }
@@ -319,32 +349,16 @@ impl Analytics {
     }
 
     async fn handle_config_update_event(&mut self, event: MeshConfigUpdateEvent) {
-        for node in &event.local_nodes {
-            if !self.config_local_nodes.contains(node) {
-                self.config_local_nodes.insert(*node);
-            }
-        }
+        self.config_local_nodes = HashSet::from_iter(event.local_nodes.iter().cloned());
     }
 
     async fn handle_collection(&mut self) {
-        // Clear all of the external links before sending, to get rid of the stale links in case we don't get any data back from a node that previously was online
-        self.external_links.clear();
-
-        // Also clear the previous cycles collected meshnet ID's and push own current key in to simplify the resolution
-        self.collected_meshnet_ids.clear();
-        self.collected_meshnet_ids
-            .insert(self.public_key, self.meshnet_id);
+        // Clear everything from the previous collection
+        self.collection.clear();
 
         for pk in self.local_nodes.keys() {
-            // Insert an empty fingerprint entry, if it doesn't exist yet,
-            // we'll set the the actual fingerprints when and if we receive a message from the node
-            self.node_fingerprints
-                .entry(*pk)
-                .or_insert_with(|| DEFAULT_NODE_FINGERPRINT.to_string());
-
             let heartbeat = HeartbeatMessage::request();
 
-            #[allow(mpsc_blocking_send)]
             if self.io.chan.tx.send((*pk, heartbeat)).await.is_err() {
                 telio_log_warn!(
                     "Failed to send Nurse mesh Heartbeat request to node :{:?}",
@@ -366,17 +380,17 @@ impl Analytics {
         let pk = data.0;
 
         // Since we already got a message from the other node, we can assume that the derp connection is functioning from them to us
-        self.external_links
-            .entry((pk, self.public_key))
-            .or_default()
-            .connection_state
-            .set(MeshConnectionState::DERP, true);
-
-        // By the same token, if we got a message from the node, we can also assume that the connection is working as it should
         match self.local_nodes.entry(pk).or_default() {
-            NodeInfo::Vpn { mesh_link, .. } | NodeInfo::Node { mesh_link, .. } => mesh_link
-                .connection_state
-                .set(MeshConnectionState::DERP, true),
+            NodeInfo::Vpn { mesh_link, .. } | NodeInfo::Node { mesh_link, .. } => {
+                mesh_link
+                    .connection_state
+                    .set(MeshConnectionState::DERP, true);
+
+                self.collection
+                    .add_unidirectional_link(pk, self.public_key, *mesh_link);
+                self.collection
+                    .add_unidirectional_link(self.public_key, pk, *mesh_link);
+            }
         }
 
         let heartbeat_message = data.1;
@@ -427,7 +441,6 @@ impl Analytics {
             &links,
         );
 
-        #[allow(mpsc_blocking_send)]
         if self.io.chan.tx.send((pk, heartbeat)).await.is_err() {
             telio_log_warn!(
                 "Failed to send Nurse mesh heartbeat message to node :{:?}",
@@ -437,11 +450,13 @@ impl Analytics {
     }
 
     async fn handle_response_message(&mut self, pk: PublicKey, message: &HeartbeatMessage) {
+        // Add the received fingerprint to the collection
+        self.collection
+            .add_fingerprint(pk, message.get_node_fingerprint().to_string());
+
         if let Ok(received_meshnet_id) = Uuid::from_slice(message.get_meshnet_id()) {
-            // Add the received key to the list of keys
-            self.collected_meshnet_ids
-                .entry(pk)
-                .or_insert(received_meshnet_id);
+            // Add the received meshnet_id to the collection
+            self.collection.add_meshnet_id(pk, received_meshnet_id);
 
             // Update node's meshnet_id
             match self.local_nodes.entry(pk).or_default() {
@@ -452,94 +467,53 @@ impl Analytics {
             telio_log_warn!("Failed to parse meshnet ID from Heartbeat message");
         }
 
-        // Once we get a repose message from the node, update the fingerprint under the given public key
-        *self
-            .node_fingerprints
-            .entry(pk)
-            .or_insert_with(|| "".to_string()) = message.get_node_fingerprint().to_string();
-
-        let connections: Vec<(PublicKey, PublicKey, MeshLink)> = message
-            .get_statuses()
-            .iter()
-            .filter_map(|status| {
-                let connection_state;
-                if let Some(state) = MeshConnectionState::from_bits(status.connection_state) {
-                    connection_state = state;
-                } else {
+        message.get_statuses().iter().for_each(|status| {
+            let mut should_skip = false;
+            let link_state = MeshConnectionState::from_bits(status.connection_state)
+                .map(|connection_state| MeshLink { connection_state })
+                .unwrap_or_else(|| {
                     telio_log_warn!(
                         "Failed to parse Nurse mesh heartbeat connection state, invalid data"
                     );
-                    return None;
-                }
+                    should_skip = true;
+                    MeshLink::default()
+                });
 
-                let other_key;
-                if let Ok(key) = status.node.clone().try_into() {
-                    other_key = key;
-                } else {
-                    telio_log_debug!(
-                        "Could not parse link public key ({:?}) from a node response message",
-                        status.node
-                    );
-                    return None;
-                }
+            let other_key: PublicKey = status.node.clone().try_into().unwrap_or_else(|_| {
+                telio_log_debug!(
+                    "Could not parse link public key ({:?}) from a node response message",
+                    status.node
+                );
+                should_skip = true;
+                PublicKey::default()
+            });
 
-                let link = MeshLink { connection_state };
+            if should_skip {
+                return;
+            }
 
-                Some((pk, other_key, link))
-            })
-            .collect();
-
-        for connection in connections {
-            let entry = self
-                .external_links
-                .entry((connection.0, connection.1))
-                .or_default();
-            *entry = connection.2;
-        }
+            self.collection
+                .add_unidirectional_link(pk, other_key, link_state);
+        });
     }
 
     async fn handle_aggregation(&mut self) {
         // Transition to the aggregation state
         self.state = RuntimeState::Aggregating;
 
-        // Figure out what meshnet id we should use, based on all of the collected data
-        // Start off by generating a heatmap of the received ID's
-        let mut id_heatmap: HashMap<Uuid, u32> = HashMap::new();
-        for (pk, mesh_id) in &self.collected_meshnet_ids {
-            // Consider only local nodes according to mesh config and self
-            // self.config_local_nodes will always contain at least current node's public key
-            if self.config_local_nodes.contains(pk) {
-                *id_heatmap.entry(*mesh_id).or_default() += 1;
+        // Add our temporary meshnet_id to collection before we try to resolve it
+        self.collection
+            .add_meshnet_id(self.public_key, self.meshnet_id);
+        self.meshnet_id = self
+            .collection
+            .resolve_current_meshnet_id(&self.config_local_nodes);
+
+        // All local nodes will have the same meshnet id
+        for pk in self.config_local_nodes.iter() {
+            if let NodeInfo::Node { meshnet_id, .. } = self.local_nodes.entry(*pk).or_default() {
+                *meshnet_id = Some(self.meshnet_id);
             }
         }
-
-        self.meshnet_id = {
-            // Then find the value with the biggest amount of repetitions
-            // This cannot fail as we are guaranteed to have at least one element in the map at the time of checking
-            let id_with_max_value = match id_heatmap.iter().max_by(|o, t| o.1.cmp(t.1)) {
-                Some((o, _)) => o,
-                None => {
-                    telio_log_warn!("id_heatmap empty");
-                    return;
-                }
-            };
-
-            // Since we can have more than one meshnet ID having the most amount of repetitions, we need to resolve this in a
-            // predictable way, so we filter out the entries that share this maximum value and then sort them again by
-            // the public key, from which the ID initially came from
-            match self
-                .collected_meshnet_ids
-                .iter()
-                .filter(|(_k, v)| id_with_max_value == *v)
-                .max_by(|o, t| o.0.cmp(t.0))
-            {
-                Some((_, t)) => *t,
-                None => {
-                    telio_log_warn!("collected_meshnet_ids is missing {}", id_with_max_value);
-                    return;
-                }
-            }
-        };
 
         let mut heartbeat_info = HeartbeatInfo {
             meshnet_id: self.meshnet_id.to_string(),
@@ -547,140 +521,94 @@ impl Analytics {
             ..Default::default()
         };
 
-        // Update the local link DERP connection state with current derp connection state, in case something changed from the last time we recieved a node message
-        // or in case we didn't get a message from another node, even though our DERP connection is active
-        let state_of_derp_connection = self.derp_connection;
-        self.local_nodes
-            .iter_mut()
-            .for_each(|(_key, node)| match node {
-                NodeInfo::Vpn { mesh_link, .. } | NodeInfo::Node { mesh_link, .. } => mesh_link
-                    .connection_state
-                    .set(MeshConnectionState::DERP, state_of_derp_connection),
-            });
-
-        // Include own fingerprint in the fingerprint map, in case it wasn't there before
-        let fingerprint = self.config.fingerprint.clone();
-        self.node_fingerprints
-            .entry(self.public_key)
-            .or_insert_with(|| fingerprint);
-
-        let internal_sorted_public_keys = self
-            .node_fingerprints
+        let mut internal_sorted_public_keys = self
+            .collection
+            .fingerprints
             .iter()
             .map(|x| *x.0)
+            .filter(|pk| self.is_local(*pk))
             .collect::<Vec<_>>();
 
-        let external_sorted_public_keys = internal_sorted_public_keys.clone();
-
-        let mut internal_sorted_public_keys = internal_sorted_public_keys
+        let mut external_sorted_public_keys = self
+            .collection
+            .fingerprints
             .iter()
-            .filter(|&&key| match self.local_nodes.entry(key).or_default() {
-                NodeInfo::Node { meshnet_id, .. } => meshnet_id
-                    .map(|meshnet_id| meshnet_id == self.meshnet_id)
-                    .unwrap_or(false),
-                _ => false,
-            })
-            .collect::<Vec<_>>();
-
-        let mut external_sorted_public_keys = external_sorted_public_keys
-            .iter()
-            .filter(|&&key| match self.local_nodes.entry(key).or_default() {
-                NodeInfo::Node { meshnet_id, .. } => meshnet_id
-                    .map(|meshnet_id| meshnet_id != self.meshnet_id)
-                    .unwrap_or(true),
-                _ => true,
-            })
+            .map(|x| *x.0)
+            .filter(|pk| !self.is_local(*pk))
             .collect::<Vec<_>>();
 
         // Sort out the public keys, according to Rust docs "Strings are ordered lexicographically by their byte values."
         // we sort public keys, instead of sorting by fingerprints, since fingerprints can be empty or null, resulting in
         // multiple same values, which make having a consistent layout for each node awkward to implement
-        internal_sorted_public_keys.sort();
-        external_sorted_public_keys.sort();
+        internal_sorted_public_keys.sort_by(|l, r| l.to_string().cmp(&r.to_string()));
+        external_sorted_public_keys.sort_by(|l, r| l.to_string().cmp(&r.to_string()));
 
-        // TODO: Make it better
-        external_sorted_public_keys.iter().for_each(|&&key| {
-            heartbeat_info.external_sorted_public_keys.push(key);
-        });
+        heartbeat_info.internal_sorted_public_keys = internal_sorted_public_keys.clone();
+        heartbeat_info.external_sorted_public_keys = external_sorted_public_keys.clone();
 
         // Map node public keys to indices for the connectivity matrix alonside creating a sorted fingerprint list
         let mut index_map: HashMap<PublicKey, u8> = HashMap::new();
         let mut internal_sorted_fingerprints: Vec<String> = Vec::new();
+        // Add self on position 0
+        index_map.entry(self.public_key).or_insert(0);
+
         for (i, pk) in internal_sorted_public_keys.iter().enumerate() {
             // Since the public key array is already sorted, we can just insert the index from the `enumerate` iterator here
-            index_map.entry(**pk).or_insert(i as u8);
+            index_map.entry(*pk).or_insert(i as u8 + 1);
 
             // By the same token, we can just insert the respective fingerprint into the list of sorted fingerprints
-            if **pk != self.public_key {
-                internal_sorted_fingerprints.push(self.node_fingerprints[pk].clone());
-            }
-            heartbeat_info.internal_sorted_public_keys.push(**pk);
+            internal_sorted_fingerprints.push(self.collection.fingerprints[pk].clone());
         }
 
         // Construct a string containing all of the sorted fingerprints to send to moose
-        let mut fingerprints_string = internal_sorted_fingerprints
+        heartbeat_info.fingerprints = internal_sorted_fingerprints
             .iter()
             .fold(String::new(), |o, t| o + t.as_str() + ",");
-        fingerprints_string.pop();
-
-        heartbeat_info.fingerprints = fingerprints_string;
+        if !heartbeat_info.fingerprints.is_empty() {
+            heartbeat_info.fingerprints.pop();
+        }
 
         // Fill in the missing external links, in case we haven't gotten a response from some nodes
         for i in index_map.keys() {
             for j in index_map.keys() {
                 if i != &self.public_key && i != j {
-                    self.external_links.entry((*i, *j)).or_default();
+                    self.collection.add_default_link(*i, *j);
                 }
             }
         }
 
-        let local_links = internal_sorted_public_keys
-            .iter()
-            .map(|&&key| {
-                let node = self.local_nodes.entry(key).or_default();
-
-                ((self.public_key, key), node.mesh_link())
-            })
-            .collect::<HashMap<_, _>>();
-
-        let combined_map: HashMap<&(PublicKey, PublicKey), &MeshLink> = local_links
-            .iter()
-            .chain(self.external_links.iter())
-            .collect();
-
-        telio_log_trace!(
-            "ID heatmap: {:?}\nnominated ID: {:?}",
-            id_heatmap,
-            self.meshnet_id
-        );
-
         let mut connectivity_matrix = String::new();
-        let default_state = MeshConnectionState::WG | MeshConnectionState::DERP;
         // Loop over all of the possible combinations of links, assuming that the directionality of the connection does not matter
         for i in index_map.iter() {
             for j in index_map.iter() {
-                if i.1 > j.1 {
-                    break;
+                if i.1 >= j.1 {
+                    continue;
                 }
 
-                if i.1 != j.1 {
-                    // We take both directions of the link at the same time
-                    let link1 = combined_map[&(*i.0, *j.0)];
-                    let link2 = combined_map[&(*j.0, *i.0)];
+                // We take both directions of the link at the same time
+                let link1 = self
+                    .collection
+                    .links
+                    .get(&(*i.0, *j.0))
+                    .cloned()
+                    .unwrap_or_default();
+                let link2 = self
+                    .collection
+                    .links
+                    .get(&(*j.0, *i.0))
+                    .cloned()
+                    .unwrap_or_default();
 
-                    // And only output the minimum, or the worst reported connection from the pair as the representing connection
-                    let min = link1.min(link2);
+                // And only output the minimum, or the worst reported connection from the pair as the representing connection
+                let min = link1.min(link2);
 
-                    // And if this state differs from the default state of the matrix, we add this to the final output
-                    if min.connection_state != default_state {
-                        write!(
-                            connectivity_matrix,
-                            "{}:{}:{},",
-                            i.1, j.1, min.connection_state.bits
-                        )
-                        .expect("no");
-                    }
-                }
+                // And if this state differs from the default state of the matrix, we add this to the final output
+                write!(
+                    connectivity_matrix,
+                    "{}:{}:{},",
+                    i.1, j.1, min.connection_state.bits
+                )
+                .expect("no");
             }
         }
 
@@ -694,11 +622,7 @@ impl Analytics {
         // External links
         let mut external_links = String::new();
         for key in external_sorted_public_keys {
-            if *key == self.public_key {
-                continue;
-            }
-
-            let node = self.local_nodes.entry(*key).or_default();
+            let node = self.local_nodes.entry(key).or_default();
 
             let (meshnet_id, fingerprint, connection_state) = match node {
                 NodeInfo::Vpn {
@@ -722,10 +646,14 @@ impl Analytics {
                         telio_log_warn!("Node with pk: {:?} has no meshnet id", key);
                         String::from("no-mesh-id")
                     }),
-                    self.node_fingerprints.get(key).cloned().unwrap_or_else(|| {
-                        telio_log_warn!("Node with pk: {:?} has no fingerprint", key);
-                        String::from("no-fingerprint")
-                    }),
+                    self.collection
+                        .fingerprints
+                        .get(&key)
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            telio_log_warn!("Node with pk: {:?} has no fingerprint", key);
+                            String::from("no-fingerprint")
+                        }),
                     mesh_link.connection_state.bits,
                 ),
             };
@@ -744,7 +672,6 @@ impl Analytics {
         heartbeat_info.external_links = external_links;
 
         // Send heartbeat info to Nurse
-        #[allow(mpsc_blocking_send)]
         if self
             .io
             .analytics_channel
@@ -766,5 +693,15 @@ impl Analytics {
         // In case we got a config update while aggregating data, attempt to update the state
         self.update_public_key().await;
         self.update_nodes().await;
+    }
+
+    fn is_local(&self, pk: PublicKey) -> bool {
+        match self.local_nodes.get(&pk) {
+            Some(NodeInfo::Node { meshnet_id, .. }) => meshnet_id
+                .as_ref()
+                .map(|meshnet_id| *meshnet_id == self.meshnet_id)
+                .unwrap_or(false),
+            _ => false,
+        }
     }
 }
