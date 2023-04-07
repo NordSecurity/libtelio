@@ -1,0 +1,19 @@
+name: Trigger GitLab pipeline
+on:
+  pull_request_target:
+    branches: [main]
+    types: [labeled]
+  push:
+    branches: [main]
+permissions: {}
+jobs:
+  trigger-gitlab-pipeline:
+    runs-on: [self-hosted, libtelio]
+    if: ${{ github.event_name == 'push' || (github.event_name == 'pull_request_target' && contains(github.event.pull_request.labels.*.name, 'run tests')) }}
+    steps:
+      - uses: NordSecurity/trigger-gitlab-pipeline@v1
+        with:
+          ci-api-v4-url: ${{ secrets.CI_API_V4_URL }}
+          project-id: ${{ secrets.PROJECT_ID }}
+          ref: ${{ secrets.REF }}
+          token: ${{ secrets.TOKEN }}
