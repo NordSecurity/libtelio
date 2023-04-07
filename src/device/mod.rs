@@ -581,20 +581,6 @@ impl Device {
         })
     }
 
-    /// Retreives currently connected derp server information
-    pub fn get_derp_server(&self) -> Result<Option<DerpServer>> {
-        self.art()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt.get_derp_server().await)).await?
-        })
-    }
-
-    /// Retreives currently configured derp server information
-    pub fn get_derp_config(&self) -> Result<DerpConfig> {
-        self.art()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt.get_derp_config().await)).await?
-        })
-    }
-
     /// Retrieves a reference to SocketPool. Use this instead of SocketPool::default() when possible
     pub fn get_socket_pool(&self) -> Result<Arc<SocketPool>> {
         self.art()?.block_on(async {
@@ -1142,20 +1128,18 @@ impl Runtime {
 
     /// Logs NAT type of derp server in info log
     async fn log_nat(&self) {
-        if let Ok(config) = self.get_derp_config().await {
+        if let Some(server) = self.requested_state.meshnet_config.as_ref().and_then(|c| {
+            c.derp_servers
+                .as_ref()
+                .and_then(|servers| servers.iter().min_by_key(|server| server.weight))
+        }) {
             // Copy the lowest weight server to log nat in a separate future
-            if let Some(server) = config
-                .servers
-                .iter()
-                .min_by_key(|server| server.weight)
-                .cloned()
-            {
-                tokio::spawn(async move {
-                    if let Ok(data) = retrieve_single_nat(server.ipv4.to_string()).await {
-                        telio_log_info!("Nat Type - {:?}", data.nat_type)
-                    }
-                });
-            }
+            let stun_server_ip = server.ipv4.to_string();
+            tokio::spawn(async move {
+                if let Ok(data) = retrieve_single_nat(stun_server_ip).await {
+                    telio_log_info!("Nat Type - {:?}", data.nat_type)
+                }
+            });
         }
     }
 
@@ -1235,14 +1219,6 @@ impl Runtime {
         .await;
 
         Ok(())
-    }
-
-    async fn get_derp_server(&self) -> Result<Option<DerpServer>> {
-        Ok(self.entities.derp.get_connected_server().await)
-    }
-
-    async fn get_derp_config(&self) -> Result<DerpConfig> {
-        Ok(self.entities.derp.get_config().await.unwrap_or_default())
     }
 
     async fn get_socket_pool(&self) -> Result<Arc<SocketPool>> {

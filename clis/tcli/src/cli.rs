@@ -3,12 +3,14 @@ use clap::Parser;
 use flexi_logger::{DeferredNow, FileSpec, Logger, Record, WriteMode};
 use ipnetwork::IpNetwork;
 use log::error;
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use telio::crypto::{PublicKey, SecretKey};
 use telio::device::{Device, DeviceConfig};
 use telio_model::api_config::Features;
 use telio_model::{config::Config as MeshMap, event::Event as DevEvent, mesh::ExitNode};
 use telio_proto::{CodecError, PacketType};
+use telio_relay::Server;
 use telio_wg::AdapterType;
 use thiserror::Error;
 use tokio::{
@@ -39,10 +41,6 @@ const DEFAULT_TUNNEL_NAME: &str = "nlx0";
 
 #[cfg(target_os = "macos")]
 const DEFAULT_TUNNEL_NAME: &str = "utun10";
-
-trait Report {
-    fn report(&self, cmd: StatusCmd) -> Vec<Resp>;
-}
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -100,6 +98,7 @@ pub struct Cli {
     nord: Option<Nord>,
     conf: Option<MeshConf>,
     derp_client: DerpClient,
+    derp_server: Arc<RwLock<Option<Server>>>,
 }
 
 pub enum Resp {
@@ -303,7 +302,11 @@ fn custom_format(
 }
 
 impl Cli {
-    pub fn new(features: Features, token: Option<String>) -> anyhow::Result<Self> {
+    pub fn new(
+        features: Features,
+        token: Option<String>,
+        derp_server: Arc<RwLock<Option<Server>>>,
+    ) -> anyhow::Result<Self> {
         let base_name = "tcli";
         let suffix = "log";
         if let Ok(logger) = Logger::try_with_str("debug") {
@@ -358,6 +361,7 @@ impl Cli {
             nord,
             conf: None,
             derp_client: DerpClient::new(),
+            derp_server,
         })
     }
 
@@ -692,20 +696,7 @@ impl Cli {
         }
         Ok(())
     }
-}
 
-fn str_to_adapter(adapter: &str) -> AdapterType {
-    match adapter {
-        "boringtun" => AdapterType::BoringTun,
-        "wireguard-go" => AdapterType::WireguardGo,
-        "linux-native" => AdapterType::LinuxNativeWg,
-        "wireguard-nt" => AdapterType::WindowsNativeWg,
-        "" => AdapterType::default(),
-        _ => unreachable!(),
-    }
-}
-
-impl Report for Cli {
     fn report(&self, cmd: StatusCmd) -> Vec<Resp> {
         use StatusCmd::*;
         let mut res = Vec::new();
@@ -717,7 +708,10 @@ impl Report for Cli {
 
         if self.telio.is_running() {
             let telio_nodes = cli_try!(res; self.telio.external_nodes());
-            let derp_status = cli_try!(res; self.telio.get_derp_server());
+            let derp_status = {
+                let derp_server_guard = self.derp_server.read();
+                (*derp_server_guard).clone()
+            };
             match cmd {
                 Simple => {
                     let telio_nodes = cli_try!(res; serde_json::to_string(&telio_nodes));
@@ -742,5 +736,16 @@ impl Report for Cli {
             cli_res!(res; (i "stopped."));
         }
         res
+    }
+}
+
+fn str_to_adapter(adapter: &str) -> AdapterType {
+    match adapter {
+        "boringtun" => AdapterType::BoringTun,
+        "wireguard-go" => AdapterType::WireguardGo,
+        "linux-native" => AdapterType::LinuxNativeWg,
+        "wireguard-nt" => AdapterType::WindowsNativeWg,
+        "" => AdapterType::default(),
+        _ => unreachable!(),
     }
 }

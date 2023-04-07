@@ -7,9 +7,11 @@ mod nord;
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use dirs::home_dir;
+use parking_lot::RwLock;
 use regex::Regex;
-use std::io::Write;
+use std::{io::Write, sync::Arc};
 use telio_model::{api_config::Features, event::Event as DevEvent};
+use telio_relay::Server;
 
 #[derive(Parser)]
 struct Args {
@@ -31,7 +33,9 @@ fn main() -> Result<()> {
         .transpose()?
         .unwrap_or_default();
 
-    let mut cli = cli::Cli::new(features, token)?;
+    let derp_server = Arc::new(RwLock::<Option<Server>>::new(None));
+
+    let mut cli = cli::Cli::new(features, token, derp_server.clone())?;
     let mut stdout = std::io::stdout();
 
     let less_spam = args.less_spam;
@@ -87,11 +91,16 @@ fn main() -> Result<()> {
                             serde_json::to_string(&b).unwrap_or_else(|_| "".to_string())
                         );
                     }
-                    DevEvent::Relay { body: Some(b) } => {
-                        println!(
-                            "event relay: {}",
-                            serde_json::to_string(&b).unwrap_or_else(|_| "".to_string())
-                        );
+                    DevEvent::Relay { body } => {
+                        if let Some(b) = body.as_ref() {
+                            println!(
+                                "event relay: {}",
+                                serde_json::to_string(&b).unwrap_or_else(|_| "".to_string())
+                            );
+                        }
+
+                        let mut derp_server_guard = derp_server.write();
+                        *derp_server_guard = body;
                     }
                     _ => (),
                 },
