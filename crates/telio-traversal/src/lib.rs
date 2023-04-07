@@ -5,7 +5,6 @@ pub mod endpoint_providers;
 pub mod error;
 pub mod ping_pong_handler;
 pub mod session_keeper;
-pub mod stunner;
 pub mod upgrade_sync;
 
 pub use connectivity_check::*;

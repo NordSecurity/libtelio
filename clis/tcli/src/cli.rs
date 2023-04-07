@@ -9,8 +9,6 @@ use telio::device::{Device, DeviceConfig};
 use telio_model::api_config::Features;
 use telio_model::{config::Config as MeshMap, event::Event as DevEvent, mesh::ExitNode};
 use telio_proto::{CodecError, PacketType};
-use telio_sockets::{NativeProtector, SocketPool};
-use telio_traversal::stunner::{Config as StunConfig, Stunner};
 use telio_wg::AdapterType;
 use thiserror::Error;
 use tokio::{
@@ -90,12 +88,6 @@ pub enum Error {
 
     #[error("Data local dir unknown")]
     NoDataLocalDir,
-
-    #[error("No endpoints")]
-    NoEndpoints,
-
-    #[error(transparent)]
-    StunnerError(#[from] telio_traversal::stunner::Error),
 
     #[error(transparent)]
     KeyDecodeError(#[from] telio_crypto::KeyDecodeError),
@@ -220,8 +212,6 @@ enum MeshCmd {
     },
     ///Pinger tes
     Ping {},
-    /// Stun test
-    Stun {},
     /// Manually set json config
     Config {
         mesh_config: String,
@@ -621,101 +611,6 @@ impl Cli {
                         }
                     }
                 })
-            }
-            // Stunner test
-            Stun {} => {
-                let servers_config = cli_try!(res; self.telio.get_derp_config());
-
-                let rt = cli_try!(res; Runtime::new());
-
-                rt.block_on(async {
-                    let protector = match NativeProtector::new(
-                        #[cfg(target_os = "macos")]
-                        Some(false)) {
-                        Ok(p) => p,
-                        Err(e) => {
-                            cli_res!(res; (i "failed to create NativeProtector: {}", e));
-                            return
-                        }
-                    };
-                    let spool = SocketPool::new(protector);
-                    match spool.new_external_udp(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)), None).await {
-                        Ok(udp_socket) => {
-                            let udp_socket = Arc::new(udp_socket);
-
-                            let (stunner, packet_tx) = Stunner::start(
-                                udp_socket.clone(),
-                                Some(StunConfig {
-                                        plain_text_fallback: true,
-                                        servers: servers_config,
-                                    })
-                                );
-
-                            // SocketRx -> Stunner forwarder
-                            let mut forwarder = tokio::spawn(async move {
-                                const MAX_PACKET: usize = 65536;
-                                let mut rx_buff = [0u8; MAX_PACKET];
-
-                                while let Ok((len, src_addr)) =
-                                    udp_socket.recv_from(&mut rx_buff).await
-                                {
-                                    #[allow(mpsc_blocking_send)]
-                                    if packet_tx.send((rx_buff[..len].to_vec(), src_addr)).await.is_err()
-                                    {
-                                        return;
-                                    }
-                                }
-                            });
-
-                            let mut fetcher = tokio::spawn(async move {
-                                let _ = stunner.do_stun().await;
-
-                                loop {
-                                    sleep(Duration::from_secs(1)).await;
-
-                                    if let Ok(endpoints) = stunner.fetch_endpoints().await {
-                                        return Ok(endpoints);
-                                    }
-                                }
-
-                                #[allow(unreachable_code)]
-                                Err(())
-                            });
-
-                            // Timeout for stunner
-                            let sleep = sleep(Duration::from_secs(60));
-                            tokio::pin!(sleep);
-
-                            loop {
-                                tokio::select! {
-                                    () = &mut sleep => {
-                                        cli_res!(res; (i "timeout"));
-                                        break;
-                                    },
-                                    Ok(()) = &mut forwarder => {
-                                        break;
-                                    },
-                                    Ok(endpoints) = &mut fetcher => {
-                                        let endpoints = match endpoints.map_err(|_| Error::NoEndpoints) {
-                                            Ok(endpoints) => endpoints,
-                                            Err(e) => { res.push(Resp::Error(Box::new(e))); break; }
-                                        };
-                                        let endpoints = match endpoints.to_vec() {
-                                            Ok(endpoints) => endpoints,
-                                            Err(e) => {
-                                                res.push(Resp::Error(Box::new(e.into())));
-                                                break;
-                                            }
-                                        };
-                                        cli_res!(res; (i "got endpoints: {:?}", endpoints.into_iter().map(|e| e.0).collect::<Vec<_>>()));
-                                        break;
-                                    }
-                                };
-                            }
-                        }
-                        Err(_) => cli_res!(res; (i "udp socket init error")),
-                    }
-                });
             }
             Config { mesh_config } => {
                 let meshmap: MeshMap = cli_try!(serde_json::from_str(&mesh_config));
