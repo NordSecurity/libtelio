@@ -1,5 +1,7 @@
 # libtelio
 
+![CI status](https://github.com/NordSecurity/libtelio/actions/workflows/gitlab.yml/badge.svg?branch=main)
+
 ## Overview
 Libtelio (pronounced 'lɪbtælɪɔ') is a client-side library for creating encrypted networks (called Meshnet) on the user's nodes.
 It supports a number of features, including:
