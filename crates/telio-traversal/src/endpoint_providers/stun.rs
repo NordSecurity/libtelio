@@ -6,8 +6,8 @@ use async_trait::async_trait;
 use futures::Future;
 use stun_codec::TransactionId;
 use telio_crypto::PublicKey;
+use telio_model::config::Server;
 use telio_proto::{Session, WGPort};
-use telio_relay::Server;
 use telio_sockets::{native::AsNativeSocket, External};
 use telio_task::{io::chan, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
@@ -21,7 +21,7 @@ use crate::{endpoint_providers::EndpointProviderType, ping_pong_handler::PingPon
 
 use super::{EndpointCandidate, EndpointCandidatesChangeEvent, EndpointProvider, Error, PongEvent};
 
-pub type StunServer = telio_relay::derp::Server;
+pub type StunServer = telio_model::config::Server;
 
 #[cfg(not(test))]
 const STUN_TIMEOUT: Duration = Duration::from_secs(5);

@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 use telio_crypto::{PublicKey, SecretKey};
 use telio_lana::*;
-use telio_model::event::Event;
+use telio_model::{config::Server, event::Event};
 use telio_proto::HeartbeatMessage;
-use telio_relay::{multiplexer::Multiplexer, Server};
+use telio_relay::multiplexer::Multiplexer;
 use telio_task::{
     io::{chan, mc_chan, Chan, McChan},
     task_exec, Runtime, RuntimeExt, Task, WaitResponse,

@@ -1,11 +1,13 @@
 //! Description of a network configuration map
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-use std::{net::IpAddr, ops::Deref};
+use std::{
+    net::{IpAddr, Ipv4Addr},
+    ops::Deref,
+};
 
 use telio_crypto::PublicKey;
-use telio_relay::derp::Server as DerpServer;
 
 /// Characterstics descriping a peer
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
@@ -39,6 +41,98 @@ pub struct DnsConfig {
     pub dns_servers: Option<Vec<IpAddr>>,
 }
 
+/// The currrent state of our connection to derp server
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RelayState {
+    /// Disconnected from the Derp server
+    Disconnected,
+    /// Connecting to the Derp server
+    Connecting,
+    /// Connected to the Derp server
+    Connected,
+}
+
+impl Default for RelayState {
+    fn default() -> RelayState {
+        RelayState::Disconnected
+    }
+}
+
+/// Representation of a server, which might be used
+/// both as a Relay server and Stun Server
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Server {
+    /// Server region code
+    pub region_code: String,
+    /// Short name for the server
+    pub name: String,
+    /// Hostname of the server
+    pub hostname: String,
+    /// IP address of the server
+    pub ipv4: Ipv4Addr,
+    /// Port on which server listens to relay requests
+    pub relay_port: u16,
+    /// Port on which server listens to stun requests
+    pub stun_port: u16,
+    /// Port on which server listens for unencrypted stun requests
+    pub stun_plaintext_port: u16,
+    /// Server public key
+    pub public_key: PublicKey,
+    /// Determines in which order the client tries to connect to the derp servers
+    pub weight: u32,
+    /// When enabled the connection to servers is not encrypted
+    pub use_plain_text: bool,
+
+    /// Status of the connection with the server
+    #[serde(default)]
+    pub conn_state: RelayState,
+}
+
+impl Server {
+    /// Returns the full address of the server
+    pub fn get_address(&self) -> String {
+        if self.use_plain_text {
+            format!("http://{}:{}", self.hostname, self.relay_port)
+        } else {
+            format!("https://{}:{}", self.hostname, self.relay_port)
+        }
+    }
+}
+
+impl PartialEq for Server {
+    // Ignore fields used by DerpRelay itself only
+    fn eq(&self, other: &Self) -> bool {
+        self.region_code == other.region_code
+            && self.name == other.name
+            && self.hostname == other.hostname
+            && self.ipv4 == other.ipv4
+            && self.relay_port == other.relay_port
+            && self.stun_port == other.stun_port
+            && self.public_key == other.public_key
+        // Do not compare weights, priority for connection persistence
+        // && self.weight == other.weight
+    }
+}
+
+impl Default for Server {
+    fn default() -> Self {
+        Self {
+            region_code: "".to_string(),
+            name: "".to_string(),
+            hostname: "".to_string(),
+            ipv4: Ipv4Addr::new(0, 0, 0, 0),
+            relay_port: 0,
+            stun_port: 0,
+            stun_plaintext_port: 0,
+            public_key: PublicKey::default(),
+            weight: 0,
+            use_plain_text: false,
+            conn_state: RelayState::Disconnected,
+        }
+    }
+}
+
 /// Rust representation of [meshnet map]
 /// A network map of all the Peers and the servers
 /// [meshnet map]: https://docs.nordvpn.com/client-api/#get-map
@@ -50,7 +144,7 @@ pub struct Config {
     /// List of connected peers
     pub peers: Option<Vec<Peer>>,
     /// List of available derp servers
-    pub derp_servers: Option<Vec<DerpServer>>,
+    pub derp_servers: Option<Vec<Server>>,
     /// Dns configuration
     pub dns: Option<DnsConfig>,
 }
@@ -75,7 +169,6 @@ impl Deref for Config {
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
-    use telio_relay::derp::RelayState;
 
     #[test]
     fn json_to_config() {
@@ -129,8 +222,10 @@ mod tests {
                   "ipv4": "190.2.149.19",
                   "relay_port": 8765,
                   "stun_port": 3479,
+                  "stun_plaintext_port": 3480,
                   "public_key": "ilHv1Nl6nszdnELcn2uFYs1yVDsSkzhvY2/sSEh3Zlg=",
-                  "weight": 1
+                  "weight": 1,
+                  "conn_state": "connecting"
                 }
               ]
             }
@@ -156,14 +251,14 @@ mod tests {
                 is_local: true,
                 allow_incoming_connections: true,
             }]),
-            derp_servers: Some(vec![DerpServer {
+            derp_servers: Some(vec![Server {
                 region_code: "lt".to_owned(),
                 name: "lt123".to_owned(),
                 hostname: "relayserver.example.com".to_owned(),
                 ipv4: "190.2.149.19".parse().unwrap(),
                 relay_port: 8765,
                 stun_port: 3479,
-                stun_plaintext_port: Default::default(),
+                stun_plaintext_port: 3480,
                 public_key: "ilHv1Nl6nszdnELcn2uFYs1yVDsSkzhvY2/sSEh3Zlg="
                     .parse()
                     .unwrap(),
