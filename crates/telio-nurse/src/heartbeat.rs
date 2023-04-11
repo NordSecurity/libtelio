@@ -572,8 +572,8 @@ impl Analytics {
         // Sort out the public keys, according to Rust docs "Strings are ordered lexicographically by their byte values."
         // we sort public keys, instead of sorting by fingerprints, since fingerprints can be empty or null, resulting in
         // multiple same values, which make having a consistent layout for each node awkward to implement
-        internal_sorted_public_keys.sort();
-        external_sorted_public_keys.sort();
+        internal_sorted_public_keys.sort_by_key(|k| k.to_string());
+        external_sorted_public_keys.sort_by_key(|k| k.to_string());
 
         // TODO: Make it better
         external_sorted_public_keys.iter().for_each(|&&key| {
