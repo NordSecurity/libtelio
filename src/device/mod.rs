@@ -50,7 +50,10 @@ use std::{
     time::Duration,
 };
 
-use telio_utils::{exponential_backoff::ExponentialBackoffBounds, telio_log_debug, telio_log_info};
+use telio_utils::{
+    commit_sha, exponential_backoff::ExponentialBackoffBounds, telio_log_debug, telio_log_info,
+    version_tag,
+};
 
 use telio_model::{
     api_config::{
@@ -319,8 +322,8 @@ impl Device {
         event_cb: F,
         protect: Option<Protect>,
     ) -> Result<Self> {
-        let version_tag = option_env!("CI_COMMIT_TAG").unwrap_or("dev");
-        let commit_sha = option_env!("CI_COMMIT_SHA").unwrap_or("dev");
+        let version_tag = version_tag();
+        let commit_sha = commit_sha();
         telio_log_info!("Created libtelio instance {}, {}", version_tag, commit_sha);
 
         if let Some(lana) = &features.lana {

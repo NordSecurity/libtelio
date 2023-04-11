@@ -9,6 +9,7 @@
 * LLT-3504: Enable nurse component. Its start has been accidentally removed during merges.
 * NVA-3705: Configure Android SONAME
 * LLT-3496: Fix is_exit flag when disconnecting from exit node
+* LLT-3499: Fix missing libtelio tag version
 
 ### v4.0.0
 ### **Bruschetta**

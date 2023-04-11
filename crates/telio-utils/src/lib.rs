@@ -22,3 +22,7 @@ pub mod exponential_backoff;
 /// Preventing sensitive information from apearing in logs in release mode.
 pub mod hidden;
 pub use hidden::*;
+
+/// Functions for dealing with git.
+pub mod git;
+pub use git::*;
