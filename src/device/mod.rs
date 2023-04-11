@@ -258,6 +258,12 @@ pub struct EventListeners {
 
 pub struct EventPublishers {
     libtelio_event_publisher: mc_chan::Tx<Box<Event>>,
+
+    /// Used to send local nodes to nurse component when there is a config update
+    nurse_config_update_publisher: Option<Tx<Box<MeshConfigUpdateEvent>>>,
+
+    /// Used to manually trigger a nurse event collection
+    nurse_collection_trigger_publisher: Option<Tx<Box<()>>>,
 }
 
 // All of the instances and state required to run local DNS resolver for NordNames
@@ -282,12 +288,6 @@ struct Runtime {
     /// therefore this state may be different from reality even though the controllers will "try"
     /// their best to ensure that requested and actual state matches
     requested_state: RequestedState,
-
-    /// Used to send local nodes to nurse component when there is a config update
-    config_update_ch: Option<Tx<Box<MeshConfigUpdateEvent>>>,
-
-    /// Used to manually trigger an event collection
-    collection_trigger_ch: Option<Tx<Box<()>>>,
 
     /// All device Entities
     ///
@@ -903,8 +903,6 @@ impl Runtime {
         Ok(Runtime {
             features,
             requested_state,
-            config_update_ch,
-            collection_trigger_ch,
             entities: Entities {
                 wireguard_interface,
                 dns,
@@ -925,6 +923,8 @@ impl Runtime {
             },
             event_publishers: EventPublishers {
                 libtelio_event_publisher: libtelio_wide_event_publisher,
+                nurse_config_update_publisher: config_update_ch,
+                nurse_collection_trigger_publisher: collection_trigger_ch,
             },
             polling_interval: interval_at(tokio::time::Instant::now(), Duration::from_secs(5)),
         })
@@ -1174,7 +1174,7 @@ impl Runtime {
 
         self.log_nat().await;
 
-        match (&self.config_update_ch, config) {
+        match (&self.event_publishers.nurse_config_update_publisher, config) {
             (Some(ch), Some(config)) => {
                 let event = MeshConfigUpdateEvent::from(config);
                 if ch.send(Box::new(event)).is_err() {
@@ -1399,8 +1399,8 @@ impl Runtime {
     }
 
     async fn trigger_analytics_event(&self) -> Result<()> {
-        if let Some(collection_trigger_ch) = &self.collection_trigger_ch {
-            let _ = collection_trigger_ch.send(Box::new(()));
+        if let Some(ch) = &self.event_publishers.nurse_collection_trigger_publisher {
+            let _ = ch.send(Box::new(()));
             Ok(())
         } else {
             Err(Error::NotStarted)
