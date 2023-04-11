@@ -351,6 +351,7 @@ impl Analytics {
         for pk in self.local_nodes.keys() {
             let heartbeat = HeartbeatMessage::request();
 
+            #[allow(mpsc_blocking_send)]
             if self.io.chan.tx.send((*pk, heartbeat)).await.is_err() {
                 telio_log_warn!(
                     "Failed to send Nurse mesh Heartbeat request to node :{:?}",
@@ -433,6 +434,7 @@ impl Analytics {
             &links,
         );
 
+        #[allow(mpsc_blocking_send)]
         if self.io.chan.tx.send((pk, heartbeat)).await.is_err() {
             telio_log_warn!(
                 "Failed to send Nurse mesh heartbeat message to node :{:?}",
@@ -532,7 +534,7 @@ impl Analytics {
         // Sort out the public keys, according to Rust docs "Strings are ordered lexicographically by their byte values."
         // we sort public keys, instead of sorting by fingerprints, since fingerprints can be empty or null, resulting in
         // multiple same values, which make having a consistent layout for each node awkward to implement
-        internal_sorted_public_keys.sort_by_key(|k,| k.to_string());
+        internal_sorted_public_keys.sort_by_key(|k| k.to_string());
         external_sorted_public_keys.sort_by_key(|k| k.to_string());
 
         heartbeat_info.internal_sorted_public_keys = internal_sorted_public_keys.clone();
@@ -664,6 +666,7 @@ impl Analytics {
         heartbeat_info.external_links = external_links;
 
         // Send heartbeat info to Nurse
+        #[allow(mpsc_blocking_send)]
         if self
             .io
             .analytics_channel
