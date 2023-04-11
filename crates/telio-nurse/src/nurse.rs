@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use std::collections::HashSet;
 use telio_crypto::{PublicKey, SecretKey};
 use telio_lana::*;
 use telio_model::event::Event;
@@ -40,19 +39,47 @@ pub struct NurseIo<'a> {
     pub collection_trigger_channel: Option<mc_chan::Tx<Box<()>>>,
 }
 
+/// Nurse entity
+pub struct Nurse {
+    task: Task<State>,
+}
+
+impl Nurse {
+    /// Nurse's constructor
+    pub async fn start_with(public_key: PublicKey, config: Config, io: NurseIo<'_>) -> Self {
+        Self {
+            task: Task::start(State::new(public_key, config, io).await),
+        }
+    }
+
+    /// Update private key
+    pub async fn set_private_key(&self, private_key: SecretKey) {
+        let _ = task_exec!(&self.task, async move |state| {
+            state.set_private_key(private_key).await;
+            Ok(())
+        })
+        .await;
+    }
+
+    /// Stop nurse
+    pub async fn stop(self) {
+        let _ = self.task.stop().await;
+    }
+}
+
 /// Nurse struct, combines meshnet health data from different sources
 /// --
 /// State contains:
 /// * Analytics channel
 /// * Heartbeat component
 /// * QoS component
-pub struct Nurse {
+pub struct State {
     analytics_channel: chan::Rx<AnalyticsMessage>,
     heartbeat: Task<HeartbeatAnalytics>,
     qos: Option<Task<QoSAnalytics>>,
 }
 
-impl Nurse {
+impl State {
     /// Start Nurse
     ///
     /// # Arguments
@@ -114,33 +141,11 @@ impl Nurse {
             None
         };
 
-        Nurse {
+        State {
             analytics_channel: analytics_channel.rx,
             heartbeat: Task::start(heartbeat),
             qos,
         }
-    }
-
-    /// Set node endpoints from which data will be collected
-    ///
-    /// # Arguments
-    ///
-    /// * `new_nodes` - Set of nodes that have been added to the meshnet.
-    /// * `removed_nodes` - Set of nodes that have been removed from the meshnet.
-    pub async fn set_nodes(
-        &self,
-        new_nodes: HashSet<PublicKey>,
-        removed_nodes: HashSet<PublicKey>,
-    ) {
-        let _ = task_exec!(&self.heartbeat, async move |state| {
-            // Cache state and attempt to update it if possible
-            state.cached_config = Some((new_nodes, removed_nodes));
-            state.update_nodes().await;
-            telio_log_debug!("Updated node cache to: {:?}", &state.cached_config);
-
-            Ok(())
-        })
-        .await;
     }
 
     /// Inform Nurse of the private key changing.
@@ -152,6 +157,7 @@ impl Nurse {
         let _ = task_exec!(&self.heartbeat, async move |state| {
             state.cached_private_key = Some(private_key);
             state.update_public_key().await;
+            telio_log_debug!("Updated private key");
 
             Ok(())
         })
@@ -233,7 +239,7 @@ impl Nurse {
 }
 
 #[async_trait]
-impl Runtime for Nurse {
+impl Runtime for State {
     const NAME: &'static str = "Nurse";
 
     type Err = Error;

@@ -6,6 +6,7 @@
 * LLT-3404: Add github PR template
 * LLT-3468: Separate Heartbeat collection from QoS so heartbeat collection can be alone enabled.
 * LLT-3502: Refactor telio-nurse. Fix meshnet members list, conectivity matrix, external links data.
+* LLT-3504: Enable nurse component. Its start has been accidentally removed during merges.
 
 ### v4.0.0
 ### **Bruschetta**
