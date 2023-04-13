@@ -196,12 +196,12 @@ impl State {
                 let _ = event.send(Box::new(server.clone()));
 
                 // Try to establish connection
-                match connect_http_and_start(
+                match Box::pin(connect_http_and_start(
                     socket_pool.clone(),
                     &server.get_address(),
                     SocketAddr::new(IpAddr::V4(server.ipv4), server.relay_port),
                     config.clone(),
-                )
+                ))
                 .await
                 {
                     Ok(conn) => {

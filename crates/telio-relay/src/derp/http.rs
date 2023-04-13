@@ -126,7 +126,15 @@ pub async fn connect_http_and_start(
     };
 
     match u.scheme() {
-        "http" => connect_and_start(stream, addr, derp_config.secret_key, &hostport).await,
+        "http" => {
+            Box::pin(connect_and_start(
+                stream,
+                addr,
+                derp_config.secret_key,
+                &hostport,
+            ))
+            .await
+        }
         _ => {
             let mut config = ClientConfig::new();
             config
@@ -164,7 +172,7 @@ async fn connect_and_start<RW: AsyncRead + AsyncWrite + Send + 'static>(
 ) -> Result<DerpConnection, Error> {
     let (mut reader, mut writer) = split(stream);
 
-    let leftovers = connect_http(&mut reader, &mut writer, host).await?;
+    let leftovers = Box::pin(connect_http(&mut reader, &mut writer, host)).await?;
 
     let mut reader = Cursor::new(leftovers).chain(reader);
 
