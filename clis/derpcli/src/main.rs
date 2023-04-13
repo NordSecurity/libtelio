@@ -124,7 +124,7 @@ async fn connect_client(
     ca_pem_path: PathBuf,
 ) -> Result<()> {
     let verbose = verbosity >= 1;
-    let DerpConnection { mut comms, .. } = match connect_http_and_start(
+    let DerpConnection { mut comms, .. } = match Box::pin(connect_http_and_start(
         pool,
         &client.derp_server,
         addrs[0],
@@ -143,7 +143,7 @@ async fn connect_client(
             },
             ..Default::default()
         },
-    )
+    ))
     .await
     {
         Ok(tup) => tup,
@@ -331,7 +331,7 @@ async fn run_without_clients_config(config: conf::Config) -> Result<()> {
 
     let addrs = resolve_domain_name(config.get_server_address(), config.verbose).await?;
 
-    let DerpConnection { mut comms, .. } = match connect_http_and_start(
+    let DerpConnection { mut comms, .. } = match Box::pin(connect_http_and_start(
         Arc::new(SocketPool::new(NativeProtector::new()?)),
         config.get_server_address(),
         addrs[0],
@@ -350,7 +350,7 @@ async fn run_without_clients_config(config: conf::Config) -> Result<()> {
             },
             ..Default::default()
         },
-    )
+    ))
     .await
     {
         Ok(tup) => tup,
@@ -506,7 +506,7 @@ async fn main() -> Result<()> {
 
         METRICS.lock().to_owned().flush_metrics_to_file(log_file)?;
     } else {
-        run_without_clients_config(config).await?;
+        Box::pin(run_without_clients_config(config)).await?;
     }
 
     println!("DERP CLI FINISHED");

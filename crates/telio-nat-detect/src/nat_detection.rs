@@ -35,7 +35,7 @@ pub struct NatData {
 pub async fn retrieve_single_nat(stun_sever_ip: String) -> Result<NatData, Error> {
     let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0);
 
-    match nat_detect(address, &stun_sever_ip).await {
+    match Box::pin(nat_detect(address, &stun_sever_ip)).await {
         Ok(data) => {
             // converting the result in a better
             // way to show
