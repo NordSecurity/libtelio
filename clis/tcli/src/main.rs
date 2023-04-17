@@ -7,7 +7,7 @@ mod nord;
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use dirs::home_dir;
-use parking_lot::RwLock;
+use parking_lot::Mutex;
 use regex::Regex;
 use std::{io::Write, sync::Arc};
 use telio_model::{api_config::Features, event::Event as DevEvent};
@@ -33,7 +33,7 @@ fn main() -> Result<()> {
         .transpose()?
         .unwrap_or_default();
 
-    let derp_server = Arc::new(RwLock::<Option<Server>>::new(None));
+    let derp_server = Arc::new(Mutex::<Option<Server>>::new(None));
 
     let mut cli = cli::Cli::new(features, token, derp_server.clone())?;
     let mut stdout = std::io::stdout();
@@ -98,9 +98,6 @@ fn main() -> Result<()> {
                                 serde_json::to_string(&b).unwrap_or_else(|_| "".to_string())
                             );
                         }
-
-                        let mut derp_server_guard = derp_server.write();
-                        *derp_server_guard = body;
                     }
                     _ => (),
                 },

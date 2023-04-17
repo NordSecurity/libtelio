@@ -3,14 +3,14 @@ use clap::Parser;
 use flexi_logger::{DeferredNow, FileSpec, Logger, Record, WriteMode};
 use ipnetwork::IpNetwork;
 use log::error;
-use parking_lot::RwLock;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use telio::crypto::{PublicKey, SecretKey};
 use telio::device::{Device, DeviceConfig};
 use telio_model::api_config::Features;
 use telio_model::{config::Config as MeshMap, event::Event as DevEvent, mesh::ExitNode};
 use telio_proto::{CodecError, PacketType};
-use telio_relay::Server;
+use telio_relay::{RelayState, Server};
 use telio_wg::AdapterType;
 use thiserror::Error;
 use tokio::{
@@ -21,6 +21,7 @@ use tokio::{
 
 use crate::nord::{Error as NordError, Nord, OAuth};
 
+use std::str::FromStr;
 use std::{
     fs,
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -89,6 +90,9 @@ pub enum Error {
 
     #[error(transparent)]
     KeyDecodeError(#[from] telio_crypto::KeyDecodeError),
+
+    #[error(transparent)]
+    WgAdapterError(#[from] telio_wg::Error),
 }
 
 pub struct Cli {
@@ -98,7 +102,7 @@ pub struct Cli {
     nord: Option<Nord>,
     conf: Option<MeshConf>,
     derp_client: DerpClient,
-    derp_server: Arc<RwLock<Option<Server>>>,
+    derp_server: Arc<Mutex<Option<Server>>>,
 }
 
 pub enum Resp {
@@ -305,7 +309,7 @@ impl Cli {
     pub fn new(
         features: Features,
         token: Option<String>,
-        derp_server: Arc<RwLock<Option<Server>>>,
+        derp_server: Arc<Mutex<Option<Server>>>,
     ) -> anyhow::Result<Self> {
         let base_name = "tcli";
         let suffix = "log";
@@ -328,13 +332,20 @@ impl Cli {
 
         let (sender, resp) = mpsc::channel();
 
+        let derp_server_lambda = derp_server.clone();
         let telio = Device::new(
             features,
             {
                 let sender = sender.clone();
                 #[allow(unwrap_check)]
                 #[allow(clippy::unwrap_used)]
-                move |e: Box<DevEvent>| sender.send(Resp::Event(e)).unwrap()
+                move |e: Box<DevEvent>| {
+                    if let DevEvent::Relay { body } = *e.clone() {
+                        *derp_server_lambda.lock() =
+                            body.filter(|s| s.conn_state != RelayState::Disconnected);
+                    }
+                    sender.send(Resp::Event(e)).unwrap()
+                }
             },
             None,
         )?;
@@ -438,7 +449,7 @@ impl Cli {
                 name,
                 private_key,
             } => {
-                let adapter = str_to_adapter(&adapter);
+                let adapter = cli_try!(res; AdapterType::from_str(&adapter));
 
                 let private_key = cli_try!(res; private_key
                     .or_else(|| self.nord.as_ref().and_then(|n| n.get_private_key().ok())).ok_or(Error::NeedsLogin));
@@ -543,9 +554,10 @@ impl Cli {
                 let meshmap_str = cli_try!(res; nord.get_meshmap(&conf.id));
                 cli_res!(res; (i "got config:\n{}", &meshmap_str));
                 let meshmap: MeshMap = cli_try!(res; serde_json::from_str(&meshmap_str));
+                let adapter_type = cli_try!(res; AdapterType::from_str(&adapter));
 
                 let private_key = conf.sk;
-                cli_try!(res; self.start_telio(name, private_key, str_to_adapter(&adapter), &mut res));
+                cli_try!(res; self.start_telio(name, private_key, adapter_type, &mut res));
                 cli_try!(res; self.telio.set_config(&Some(meshmap)));
                 cli_res!(res; (i "started meshnet"));
             }
@@ -708,10 +720,7 @@ impl Cli {
 
         if self.telio.is_running() {
             let telio_nodes = cli_try!(res; self.telio.external_nodes());
-            let derp_status = {
-                let derp_server_guard = self.derp_server.read();
-                (*derp_server_guard).clone()
-            };
+            let derp_status = (*self.derp_server.lock()).clone();
             match cmd {
                 Simple => {
                     let telio_nodes = cli_try!(res; serde_json::to_string(&telio_nodes));
@@ -736,16 +745,5 @@ impl Cli {
             cli_res!(res; (i "stopped."));
         }
         res
-    }
-}
-
-fn str_to_adapter(adapter: &str) -> AdapterType {
-    match adapter {
-        "boringtun" => AdapterType::BoringTun,
-        "wireguard-go" => AdapterType::WireguardGo,
-        "linux-native" => AdapterType::LinuxNativeWg,
-        "wireguard-nt" => AdapterType::WindowsNativeWg,
-        "" => AdapterType::default(),
-        _ => unreachable!(),
     }
 }
