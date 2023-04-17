@@ -551,7 +551,9 @@ impl Analytics {
             index_map.entry(*pk).or_insert(i as u8 + 1);
 
             // By the same token, we can just insert the respective fingerprint into the list of sorted fingerprints
-            internal_sorted_fingerprints.push(self.collection.fingerprints[pk].clone());
+            if let Some(fp) = self.collection.fingerprints.get(pk).cloned() {
+                internal_sorted_fingerprints.push(fp);
+            }
         }
 
         // Construct a string containing all of the sorted fingerprints to send to moose
