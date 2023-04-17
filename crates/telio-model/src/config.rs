@@ -170,7 +170,6 @@ mod tests {
                 use_plain_text: false,
                 weight: 1,
                 conn_state: RelayState::Disconnected,
-                used: false,
             }]),
             dns: Some(DnsConfig {
                 dns_servers: Some(vec!["1.1.1.1".parse().unwrap()]),

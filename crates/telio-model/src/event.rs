@@ -247,7 +247,6 @@ mod tests {
             weight: 1,
             conn_state: RelayState::Connecting,
             use_plain_text: true,
-            used: false,
         };
 
         let err_json = String::from(
@@ -266,8 +265,7 @@ mod tests {
             r#""public_key":"SPB77H13eXlOdWc+PGrX6oAQfCvz2me1fvAB0lrxN0Y=","#,
             r#""weight":1,"#,
             r#""conn_state":"connecting","#,
-            r#""use_plain_text":true,"#,
-            r#""used":false"#,
+            r#""use_plain_text":true"#,
             r#"}}"#
         ));
 
