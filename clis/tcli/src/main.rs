@@ -83,10 +83,8 @@ fn main() -> Result<()> {
                 Event(e) => match *e {
                     DevEvent::Node { body: Some(b) } => {
                         println!(
-                            "event node: {:?}:{};  Path = {:?}",
-                            b.state.ok_or_else(|| anyhow!("empty state"))?,
-                            b.public_key,
-                            b.path
+                            "event node: {:?}",
+                            serde_json::to_string(&b).unwrap_or_else(|_| "".to_string())
                         );
                     }
                     DevEvent::Relay { body: Some(b) } => {
