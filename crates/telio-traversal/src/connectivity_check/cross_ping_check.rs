@@ -163,8 +163,8 @@ impl<E: BackoffTrait> CrossPingCheck<E> {
         poll_period: Duration,
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
         exponential_backoff_helper_provider: ExponentialBackoffProvider<E>,
-    ) -> Result<Self, Error> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             task: Task::start(State {
                 io,
                 endpoint_providers,
@@ -175,7 +175,7 @@ impl<E: BackoffTrait> CrossPingCheck<E> {
                 ping_pong_handler,
                 exponential_backoff_helper_provider,
             }),
-        })
+        }
     }
 }
 
@@ -186,7 +186,7 @@ impl CrossPingCheck {
         poll_period: Duration,
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
         exponential_backoff_bounds: ExponentialBackoffBounds,
-    ) -> Result<Self, Error> {
+    ) -> Self {
         telio_log_info!("Starting cross ping check");
 
         Self::start_with_backoff_provider(
@@ -823,7 +823,7 @@ mod tests {
             Duration::from_secs(2),
             Arc::new(Mutex::new(PingPongHandler::new(SecretKey::gen()))),
             ExponentialBackoffBounds::default(),
-        )?;
+        );
 
         let channels = TestChannels {
             endpoint_change_subscriber: endpoint_change_subscriber.tx,

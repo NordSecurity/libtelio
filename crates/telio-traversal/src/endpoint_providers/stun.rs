@@ -51,14 +51,14 @@ impl<Wg: WireGuard> StunEndpointProvider<Wg> {
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
         stun_peer_publisher: chan::Tx<Option<StunServer>>,
     ) -> Result<Self, Error> {
-        Self::start_with_exp_backoff(
+        Ok(Self::start_with_exp_backoff(
             tun_socket,
             ext_socket,
             wg,
             ExponentialBackoff::new(exponential_backoff_bounds)?,
             ping_pong_handler,
             stun_peer_publisher,
-        )
+        ))
     }
 
     pub async fn stop(self) {
@@ -74,14 +74,14 @@ impl<Wg: WireGuard, E: BackoffTrait> StunEndpointProvider<Wg, E> {
         exponential_backoff: E,
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
         stun_peer_publisher: chan::Tx<Option<StunServer>>,
-    ) -> Result<Self, Error> {
+    ) -> Self {
         telio_log_info!("Starting stun endpoint provider");
         telio_log_debug!(
             "tun_socket: {:?}, ext_socket: {}",
             tun_socket.as_native_socket(),
             ext_socket.deref().as_native_socket()
         );
-        Ok(Self {
+        Self {
             task: Task::start(State {
                 servers: vec![],
                 current_server_index: 0,
@@ -92,11 +92,12 @@ impl<Wg: WireGuard, E: BackoffTrait> StunEndpointProvider<Wg, E> {
                 pong_event: None,
                 stun_session: None,
                 exponential_backoff,
+                current_timeout: PinnedSleep::new(STUN_TIMEOUT, ()),
                 last_candidates: Vec::new(),
                 ping_pong_tracker: ping_pong_handler,
                 stun_peer_publisher,
             }),
-        })
+        }
     }
 
     pub async fn configure(&self, mut servers: Vec<Server>) {
@@ -179,6 +180,7 @@ struct State<Wg: WireGuard, E: BackoffTrait> {
 
     stun_session: Option<StunSession>,
     exponential_backoff: E,
+    current_timeout: PinnedSleep<()>,
     last_candidates: Vec<EndpointCandidate>,
 
     stun_peer_publisher: chan::Tx<Option<StunServer>>,
@@ -190,6 +192,7 @@ impl<Wg: WireGuard, E: BackoffTrait> State<Wg, E> {
             let (wg, udp) = self.get_stun_endpoints().await?;
             self.stun_session =
                 Some(StunSession::start(&self.tun_socket, wg, &self.ext_socket, udp).await?);
+            self.current_timeout = PinnedSleep::new(STUN_TIMEOUT, ());
         }
 
         Ok(())
@@ -346,16 +349,6 @@ impl<Wg: WireGuard, E: BackoffTrait> Runtime for State<Wg, E> {
     where
         F: Future<Output = BoxAction<Self, Result<(), Self::Err>>> + Send,
     {
-        let session = &mut self.stun_session;
-        let backoff = self.exponential_backoff.get_backoff();
-
-        let timeout = async move {
-            match session {
-                Some(ses) => (&mut ses.timeout).await,
-                _ => tokio::time::sleep(backoff).await,
-            }
-        };
-
         let mut ext_buf = vec![0u8; MAX_PACKET_SIZE];
         let mut tun_buf = vec![0u8; MAX_PACKET_SIZE];
         tokio::select! {
@@ -368,8 +361,9 @@ impl<Wg: WireGuard, E: BackoffTrait> Runtime for State<Wg, E> {
                 let _ = self.try_handle_stun_rx(&tun_buf[..size], &src_addr).await;
             }
             // We are waiting either for stun session to timeout, or for the end of penalty
-            _ = timeout => {
+            _ = &mut self.current_timeout => {
                 if self.stun_session.take().is_some() {
+                    self.current_timeout = PinnedSleep::new(self.exponential_backoff.get_backoff(), ());
                     self.next_server();
                     if !self.last_candidates.is_empty() {
                         self.last_candidates.clear();
@@ -398,7 +392,6 @@ impl<Wg: WireGuard, E: BackoffTrait> Runtime for State<Wg, E> {
 struct StunSession {
     wg: StunRequest,
     udp: StunRequest,
-    timeout: PinnedSleep<()>,
 }
 
 #[derive(Debug)]
@@ -447,7 +440,6 @@ impl StunSession {
         Ok(Self {
             wg: StunRequest::Waiting(wg, wg_stun.0),
             udp: StunRequest::Waiting(udp, udp_stun.0),
-            timeout: PinnedSleep::new(STUN_TIMEOUT, ()),
         })
     }
 
@@ -1271,8 +1263,7 @@ mod tests {
             },
             ping_pong_handler.clone(),
             stun_peer_publisher,
-        )
-        .unwrap();
+        );
 
         let candidates_channel = Chan::<EndpointCandidatesChangeEvent>::default();
         let pongs_channel = Chan::<PongEvent>::default();

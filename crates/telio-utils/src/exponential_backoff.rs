@@ -5,6 +5,8 @@ use std::time::Duration;
 
 use thiserror::Error as TError;
 
+const EXPONENTIAL_BACKOFF_MULTIPLIER: u32 = 2;
+
 /// Enumeration of `Error` types for the exponential backoff implementiation
 #[derive(Debug, TError)]
 pub enum Error {
@@ -86,7 +88,7 @@ impl BackoffTrait for ExponentialBackoff {
     }
 
     fn next_backoff(&mut self) {
-        self.current_backoff *= 2;
+        self.current_backoff *= EXPONENTIAL_BACKOFF_MULTIPLIER;
 
         if let Some(maximal) = self.bounds.maximal {
             if self.current_backoff > maximal {

@@ -845,7 +845,7 @@ impl Runtime {
                 Duration::from_secs(2),
                 ping_pong_tracker,
                 Default::default(),
-            )?);
+            ));
 
             // Create WireGuard connection upgrade synchronizer
             let upgrade_sync = Arc::new(UpgradeSync::new(
