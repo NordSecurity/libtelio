@@ -280,7 +280,7 @@ struct Runtime {
     /// various libtelio calls, e.g. libtelio.set_config, libtelio.enable_magic_dns,
     /// libtelio.connect_to_exit_node etc. Note that this is desired state and not actual state,
     /// therefore this state may be different from reality even though the controllers will "try"
-    /// their best to ensure that requested and actual state matches
+    /// their best to ensure that requested and actual states match
     requested_state: RequestedState,
 
     /// Used to send local nodes to nurse component when there is a config update
