@@ -44,7 +44,7 @@ impl Default for ExponentialBackoffBounds {
 
 /// Exponential backoff helper interface
 #[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
-pub trait BackoffTrait: Sync + Send + Debug + 'static {
+pub trait Backoff: Sync + Send + Debug + 'static {
     /// Returns the current backoff
     fn get_backoff(&self) -> Duration;
 
@@ -82,7 +82,7 @@ impl ExponentialBackoff {
     }
 }
 
-impl BackoffTrait for ExponentialBackoff {
+impl Backoff for ExponentialBackoff {
     fn get_backoff(&self) -> Duration {
         self.current_backoff
     }

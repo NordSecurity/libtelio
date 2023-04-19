@@ -18,7 +18,7 @@ use telio_model::{config::Config, SocketAddr};
 use telio_proto::{CallMeMaybeMsg, CallMeMaybeType, Session};
 use telio_task::{io::chan, io::Chan, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
-    exponential_backoff::{BackoffTrait, ExponentialBackoff, ExponentialBackoffBounds},
+    exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
     telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn,
 };
 use tokio::sync::Mutex;
@@ -83,7 +83,7 @@ pub trait CrossPingCheckTrait {
     ) -> Result<(), Error>;
 }
 
-pub struct CrossPingCheck<E: BackoffTrait = ExponentialBackoff> {
+pub struct CrossPingCheck<E: Backoff = ExponentialBackoff> {
     task: Task<State<E>>,
 }
 
@@ -114,7 +114,7 @@ pub struct Io {
 
 type ExponentialBackoffProvider<E> = Box<dyn Fn() -> Result<E, Error> + Send>;
 
-pub struct State<E: BackoffTrait> {
+pub struct State<E: Backoff> {
     /// Input and output channels
     io: Io,
 
@@ -156,7 +156,7 @@ pub struct State<E: BackoffTrait> {
     exponential_backoff_helper_provider: ExponentialBackoffProvider<E>,
 }
 
-impl<E: BackoffTrait> CrossPingCheck<E> {
+impl<E: Backoff> CrossPingCheck<E> {
     fn start_with_backoff_provider(
         io: Io,
         endpoint_providers: Vec<Arc<dyn EndpointProvider>>,
@@ -281,7 +281,7 @@ impl CrossPingCheckTrait for CrossPingCheck {
     }
 }
 
-impl<E: BackoffTrait> State<E> {
+impl<E: Backoff> State<E> {
     fn get_connectivty_check_state<'a>(
         ep_connectivity_state: &'a mut HashMap<Session, EndpointConnectivityCheckState<E>>,
         session_id: &Session,
@@ -510,7 +510,7 @@ impl<E: BackoffTrait> State<E> {
 }
 
 #[async_trait]
-impl<E: BackoffTrait> Runtime for State<E> {
+impl<E: Backoff> Runtime for State<E> {
     const NAME: &'static str = "UdpHolePunch";
 
     type Err = Error;
@@ -584,7 +584,7 @@ impl<E: BackoffTrait> Runtime for State<E> {
 
 /// The State processing of each (endpoint, remote node) pair.
 #[derive(Debug)]
-pub struct EndpointConnectivityCheckState<E: BackoffTrait> {
+pub struct EndpointConnectivityCheckState<E: Backoff> {
     public_key: PublicKey,
     local_endpoint_candidate: EndpointCandidate,
     state: EndpointState::Variant,
@@ -593,7 +593,7 @@ pub struct EndpointConnectivityCheckState<E: BackoffTrait> {
     exponential_backoff: E,
 }
 
-impl<E: BackoffTrait> EndpointConnectivityCheckState<E> {
+impl<E: Backoff> EndpointConnectivityCheckState<E> {
     async fn send_call_me_maybe_request(
         &mut self,
         session: Session,
@@ -786,7 +786,7 @@ mod tests {
     use telio_proto::{PingerMsg, WGPort};
 
     use telio_task::io::Chan;
-    use telio_utils::exponential_backoff::MockBackoffTrait;
+    use telio_utils::exponential_backoff::MockBackoff;
 
     use super::*;
     use crate::{
@@ -880,7 +880,7 @@ mod tests {
     fn prepare_test_session_in_state(
         state: EndpointState::Variant,
         endpoint: SocketAddr,
-    ) -> EndpointConnectivityCheckState<MockBackoffTrait> {
+    ) -> EndpointConnectivityCheckState<MockBackoff> {
         EndpointConnectivityCheckState {
             public_key: PublicKey::default(),
             local_endpoint_candidate: EndpointCandidate {
@@ -890,7 +890,7 @@ mod tests {
             state,
             last_state_transition: Instant::now(),
             last_validated_enpoint: None,
-            exponential_backoff: MockBackoffTrait::default(),
+            exponential_backoff: MockBackoff::default(),
         }
     }
 

@@ -11,7 +11,7 @@ use telio_relay::Server;
 use telio_sockets::{native::AsNativeSocket, External};
 use telio_task::{io::chan, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
-    exponential_backoff::{BackoffTrait, ExponentialBackoff, ExponentialBackoffBounds},
+    exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
     telio_log_debug, telio_log_error, telio_log_info, telio_log_warn, PinnedSleep,
 };
 use telio_wg::{DynamicWg, WireGuard};
@@ -31,7 +31,7 @@ const STUN_TIMEOUT: Duration = Duration::from_millis(300);
 const MAX_PACKET_SIZE: usize = 1500;
 const STUN_SOFTWARE: &str = "tailnode";
 
-pub struct StunEndpointProvider<Wg: WireGuard = DynamicWg, E: BackoffTrait = ExponentialBackoff> {
+pub struct StunEndpointProvider<Wg: WireGuard = DynamicWg, E: Backoff = ExponentialBackoff> {
     task: Task<State<Wg, E>>,
 }
 
@@ -66,7 +66,7 @@ impl<Wg: WireGuard> StunEndpointProvider<Wg> {
     }
 }
 
-impl<Wg: WireGuard, E: BackoffTrait> StunEndpointProvider<Wg, E> {
+impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
     fn start_with_exp_backoff(
         tun_socket: UdpSocket,
         ext_socket: External<UdpSocket>,
@@ -128,7 +128,7 @@ impl<Wg: WireGuard, E: BackoffTrait> StunEndpointProvider<Wg, E> {
 }
 
 #[async_trait]
-impl<Wg: WireGuard, E: BackoffTrait + 'static> EndpointProvider for StunEndpointProvider<Wg, E> {
+impl<Wg: WireGuard, E: Backoff + 'static> EndpointProvider for StunEndpointProvider<Wg, E> {
     async fn subscribe_for_pong_events(&self, tx: chan::Tx<PongEvent>) {
         let _ = task_exec!(&self.task, async move |s| {
             s.pong_event = Some(tx);
@@ -166,7 +166,7 @@ impl<Wg: WireGuard, E: BackoffTrait + 'static> EndpointProvider for StunEndpoint
     }
 }
 
-struct State<Wg: WireGuard, E: BackoffTrait> {
+struct State<Wg: WireGuard, E: Backoff> {
     servers: Vec<Server>,
     current_server_index: usize,
 
@@ -186,7 +186,7 @@ struct State<Wg: WireGuard, E: BackoffTrait> {
     stun_peer_publisher: chan::Tx<Option<StunServer>>,
 }
 
-impl<Wg: WireGuard, E: BackoffTrait> State<Wg, E> {
+impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
     async fn start_stun_session(&mut self) -> Result<(), Error> {
         if self.stun_session.is_none() {
             let (wg, udp) = self.get_stun_endpoints().await?;
@@ -340,7 +340,7 @@ impl<Wg: WireGuard, E: BackoffTrait> State<Wg, E> {
 }
 
 #[async_trait]
-impl<Wg: WireGuard, E: BackoffTrait> Runtime for State<Wg, E> {
+impl<Wg: WireGuard, E: Backoff> Runtime for State<Wg, E> {
     const NAME: &'static str = "StunEndpointProvider";
 
     type Err = ();
@@ -574,7 +574,7 @@ mod tests {
     use telio_sockets::SocketPool;
     use telio_task::io::Chan;
     use telio_test::await_timeout;
-    use telio_utils::exponential_backoff::MockBackoffTrait;
+    use telio_utils::exponential_backoff::MockBackoff;
     use telio_wg::{
         uapi::{Interface, Peer},
         Error,
@@ -1131,7 +1131,7 @@ mod tests {
         // Tested system
         provider_tun_addr: SocketAddr,
         provider_ext_addr: SocketAddr,
-        stun_provider: StunEndpointProvider<MockWg, MockBackoffTrait>,
+        stun_provider: StunEndpointProvider<MockWg, MockBackoff>,
 
         // External behavior
         stun_peer_subscriber: chan::Rx<Option<StunServer>>,
@@ -1246,7 +1246,7 @@ mod tests {
             provider_ext_socket,
             Arc::new(wg),
             {
-                let mut result = MockBackoffTrait::default();
+                let mut result = MockBackoff::default();
                 let backoff_array_idx = Rc::new(RefCell::new(0));
                 let backoff_array_idx_a = backoff_array_idx.clone();
                 result.expect_get_backoff().returning_st(move || {

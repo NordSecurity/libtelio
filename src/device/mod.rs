@@ -367,12 +367,12 @@ impl Device {
 
         self.rt = Some(self.art()?.block_on(async {
             let t = Task::start(
-                Runtime::start(
+                Box::pin(Runtime::start(
                     self.event.clone(),
                     config,
                     self.features.clone(),
                     self.protect.clone(),
-                )
+                ))
                 .await?,
             );
             Ok::<Task<Runtime>, Error>(t)
