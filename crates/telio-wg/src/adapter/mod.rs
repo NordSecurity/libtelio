@@ -18,7 +18,7 @@ mod windows_native_wg;
 use async_trait::async_trait;
 #[cfg(test)]
 use mockall::automock;
-use std::{io, sync::Arc};
+use std::{io, str::FromStr, sync::Arc};
 use telio_sockets::{Protect, SocketPool};
 use thiserror::Error as TError;
 
@@ -131,6 +131,10 @@ pub enum Error {
     /// Uapi error
     #[error("Uapi error: {0}")]
     UapiFailed(#[from] uapi::Error),
+
+    /// Parsing AdapterType from string failed
+    #[error("Parsing AdapterType from string failed")]
+    AdapterTypeParsingError,
 }
 
 /// Enumeration of types for `Adapter` struct
@@ -157,6 +161,21 @@ impl Default for AdapterType {
         } else {
             // TODO: Use AdapterType::WindowsNativeWg on Windows
             AdapterType::WireguardGo
+        }
+    }
+}
+
+impl FromStr for AdapterType {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "boringtun" => Ok(AdapterType::BoringTun),
+            "wireguard-go" => Ok(AdapterType::WireguardGo),
+            "linux-native" => Ok(AdapterType::LinuxNativeWg),
+            "wireguard-nt" => Ok(AdapterType::WindowsNativeWg),
+            "" => Ok(AdapterType::default()),
+            _ => Err(Error::AdapterTypeParsingError),
         }
     }
 }
