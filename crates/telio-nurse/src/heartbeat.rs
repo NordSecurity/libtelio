@@ -154,7 +154,7 @@ impl Runtime for Analytics {
             Ok(event) = self.io.derp_event_channel.recv(), if self.state == RuntimeState::Monitoring =>
                 Self::guard(async move { self.handle_derp_event(*event).await; telio_log_trace!("tokio::select! self.io.derp_event_channel.recv() branch");Ok(()) }),
 
-            // MeshConfigUpdate event, only in the `Monitoring` state
+            // MeshConfigUpdate event
             Ok(event) = self.io.config_update_channel.recv() =>
                 Self::guard(async move { self.handle_config_update_event(*event).await; telio_log_trace!("tokio::select! self.io.config_update_channel.recv() branch");Ok(()) }),
 
