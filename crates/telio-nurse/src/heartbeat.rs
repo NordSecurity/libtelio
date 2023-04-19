@@ -121,8 +121,8 @@ pub struct Analytics {
     meshnet_id: Uuid,
     state: RuntimeState,
 
-    pub cached_config: Option<(HashSet<PublicKey>, HashSet<PublicKey>)>,
     pub cached_private_key: Option<SecretKey>,
+    cached_config: Option<MeshConfigUpdateEvent>,
 
     public_key: PublicKey,
     external_links: HashMap<(PublicKey, PublicKey), MeshLink>,
@@ -154,8 +154,8 @@ impl Runtime for Analytics {
             Ok(event) = self.io.derp_event_channel.recv(), if self.state == RuntimeState::Monitoring =>
                 Self::guard(async move { self.handle_derp_event(*event).await; telio_log_trace!("tokio::select! self.io.derp_event_channel.recv() branch");Ok(()) }),
 
-            // MeshConfigUpdate event, only in the `Monitoring` state
-            Ok(event) = self.io.config_update_channel.recv(), if self.state == RuntimeState::Monitoring =>
+            // MeshConfigUpdate event
+            Ok(event) = self.io.config_update_channel.recv() =>
                 Self::guard(async move { self.handle_config_update_event(*event).await; telio_log_trace!("tokio::select! self.io.config_update_channel.recv() branch");Ok(()) }),
 
             // Time to send a data request to other nodes, only update in the `Monitoring` state
@@ -206,8 +206,8 @@ impl Analytics {
             io,
             meshnet_id,
             state: RuntimeState::Monitoring,
-            cached_config: None,
             cached_private_key: None,
+            cached_config: None,
             public_key,
             external_links: HashMap::new(),
             collected_meshnet_ids: HashMap::new(),
@@ -256,30 +256,9 @@ impl Analytics {
         }
     }
 
-    /// Update the nodes with added and removed nodes from `cached_config`.
-    ///
-    /// Will only do something if the node is in a monitoring state.
-    pub async fn update_nodes(&mut self) {
-        // We should only update the state of the links if we're in the monitoring state
-        if self.state == RuntimeState::Monitoring {
-            if let Some((new_nodes, removed_nodes)) = &self.cached_config.take() {
-                // First clear the nodes that were removed from the meshnet from all of the containers
-                for node in removed_nodes {
-                    self.external_links
-                        .retain(|&k, _| (*node != k.0 && *node != k.1));
-
-                    // Also remove the node from the fingerprint map, we don't need to worry about `meshnet_id`'s, since they get cleared on each collection cycle
-                    self.node_fingerprints.remove_entry(node);
-
-                    // Remove local node
-                    self.local_nodes.remove(node);
-                }
-
-                // Then insert all of the new nodes in the local links
-                for node in new_nodes {
-                    self.local_nodes.entry(*node).or_default();
-                }
-            }
+    async fn update_config(&mut self) {
+        if let Some(cached_config) = self.cached_config.take() {
+            self.handle_config_update_event(cached_config).await;
         }
     }
 
@@ -313,10 +292,14 @@ impl Analytics {
     }
 
     async fn handle_config_update_event(&mut self, event: MeshConfigUpdateEvent) {
-        for node in &event.local_nodes {
-            if !self.config_local_nodes.contains(node) {
-                self.config_local_nodes.insert(*node);
+        if self.state == RuntimeState::Monitoring {
+            for node in &event.local_nodes {
+                if !self.config_local_nodes.contains(node) {
+                    self.config_local_nodes.insert(*node);
+                }
             }
+        } else {
+            self.cached_config = Some(event);
         }
     }
 
@@ -589,8 +572,8 @@ impl Analytics {
         // Sort out the public keys, according to Rust docs "Strings are ordered lexicographically by their byte values."
         // we sort public keys, instead of sorting by fingerprints, since fingerprints can be empty or null, resulting in
         // multiple same values, which make having a consistent layout for each node awkward to implement
-        internal_sorted_public_keys.sort();
-        external_sorted_public_keys.sort();
+        internal_sorted_public_keys.sort_by_key(|k| k.to_string());
+        external_sorted_public_keys.sort_by_key(|k| k.to_string());
 
         // TODO: Make it better
         external_sorted_public_keys.iter().for_each(|&&key| {
@@ -753,6 +736,6 @@ impl Analytics {
 
         // In case we got a config update while aggregating data, attempt to update the state
         self.update_public_key().await;
-        self.update_nodes().await;
+        self.update_config().await;
     }
 }

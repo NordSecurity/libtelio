@@ -30,7 +30,7 @@ use telio_traversal::{
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 use telio_sockets::native;
 
-use telio_nurse::data::MeshConfigUpdateEvent;
+use telio_nurse::{config::Config as NurseConfig, data::MeshConfigUpdateEvent, Nurse};
 use telio_wg as wg;
 use thiserror::Error as TError;
 use tokio::{
@@ -204,6 +204,9 @@ pub struct Entities {
     // It is handy whenever sockets needs to be bind'ed to some interface, fwmark'ed or just
     // receive/send buffers adjusted
     socket_pool: Arc<SocketPool>,
+
+    // Nurse
+    nurse: Option<Arc<Nurse>>,
 }
 
 impl Entities {
@@ -718,6 +721,29 @@ impl Runtime {
             .set_secret_key(config.private_key)
             .await?;
 
+        let nurse = if telio_lana::is_lana_initialized() {
+            if let Some(nurse_features) = &features.nurse {
+                Some(Arc::new(
+                    Nurse::start_with(
+                        config.private_key.public(),
+                        NurseConfig::new(nurse_features),
+                        &derp_events.tx,
+                        &libtelio_wide_event_publisher,
+                        multiplexer.as_ref(),
+                        analytics_ch,
+                        config_update_ch.clone(),
+                    )
+                    .await,
+                ))
+            } else {
+                telio_log_debug!("nurse not configured");
+                None
+            }
+        } else {
+            telio_log_debug!("lana not initialized");
+            None
+        };
+
         #[cfg(windows)]
         {
             let adapter_luid = wireguard_interface.get_adapter_luid().await?;
@@ -866,6 +892,7 @@ impl Runtime {
                 proxy,
                 direct,
                 socket_pool,
+                nurse,
             },
             event_listeners: EventListeners {
                 wg_endpoint_publish_event_subscriber: wg_endpoint_publish_events.rx,
@@ -921,6 +948,10 @@ impl Runtime {
                 ..c
             }))
             .await;
+
+        if let Some(nurse) = &self.entities.nurse {
+            nurse.set_private_key(*private_key).await;
+        }
 
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities).await?;
         Ok(())
@@ -1473,6 +1504,10 @@ impl TaskRuntime for Runtime {
         stop_arc_entity!(self.entities.multiplexer, "Multiplexer");
         stop_arc_entity!(self.entities.derp, "Derp");
         stop_arc_entity!(self.entities.proxy, "UdpProxy");
+
+        if let Some(nurse) = self.entities.nurse {
+            stop_arc_entity!(nurse, "Nurse");
+        }
 
         self.requested_state = Default::default();
     }
