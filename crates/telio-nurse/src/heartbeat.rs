@@ -335,9 +335,7 @@ impl Analytics {
     async fn handle_config_update_event(&mut self, event: MeshConfigUpdateEvent) {
         if self.state == RuntimeState::Monitoring {
             for node in &event.local_nodes {
-                if !self.config_local_nodes.contains(node) {
-                    self.config_local_nodes.insert(*node);
-                }
+                self.config_local_nodes.insert(*node);
             }
         } else {
             self.cached_config = Some(event);
@@ -462,32 +460,26 @@ impl Analytics {
         }
 
         message.get_statuses().iter().for_each(|status| {
-            let mut should_skip = false;
             let link_state = MeshConnectionState::from_bits(status.connection_state)
-                .map(|connection_state| MeshLink { connection_state })
-                .unwrap_or_else(|| {
+                .map(|connection_state| MeshLink { connection_state });
+
+            let other_key = status.node.clone().try_into();
+
+            if let Ok(other_key) = other_key {
+                if let Some(link_state) = link_state {
+                    self.collection
+                        .add_unidirectional_link(pk, other_key, link_state);
+                } else {
                     telio_log_warn!(
                         "Failed to parse Nurse mesh heartbeat connection state, invalid data"
                     );
-                    should_skip = true;
-                    MeshLink::default()
-                });
-
-            let other_key: PublicKey = status.node.clone().try_into().unwrap_or_else(|_| {
+                }
+            } else {
                 telio_log_debug!(
                     "Could not parse link public key ({:?}) from a node response message",
                     status.node
                 );
-                should_skip = true;
-                PublicKey::default()
-            });
-
-            if should_skip {
-                return;
             }
-
-            self.collection
-                .add_unidirectional_link(pk, other_key, link_state);
         });
     }
 

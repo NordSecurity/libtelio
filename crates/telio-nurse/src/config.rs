@@ -17,7 +17,7 @@ impl Config {
     pub fn new(features: &FeatureNurse) -> Self {
         Self {
             heartbeat_config: HeartbeatConfig::new(features),
-            qos_config: QoSConfig::new(&features.qos),
+            qos_config: features.qos.as_ref().map(QoSConfig::new),
         }
     }
 }
@@ -87,44 +87,42 @@ impl QoSConfig {
     const DEFAULT_BUCKETS: u32 = 5;
 
     /// Create a new QoS config
-    fn new(qos_features: &Option<FeatureQoS>) -> Option<Self> {
-        qos_features.as_ref().map(|features| {
-            let rtt_interval = features
-                .rtt_interval
-                .map(|x| Duration::from_secs(x.into()))
-                .unwrap_or_else(|| Self::DEFAULT_RTT_COLLECT_INTERVAL);
+    fn new(features: &FeatureQoS) -> Self {
+        let rtt_interval = features
+            .rtt_interval
+            .map(|x| Duration::from_secs(x.into()))
+            .unwrap_or_else(|| Self::DEFAULT_RTT_COLLECT_INTERVAL);
 
-            let rtt_tries = features.rtt_tries.unwrap_or(Self::DEFAULT_RTT_TRIES);
+        let rtt_tries = features.rtt_tries.unwrap_or(Self::DEFAULT_RTT_TRIES);
 
-            let rtt_types = features
-                .rtt_types
-                .as_ref()
-                .map(|types| {
-                    let mut v = Vec::new();
+        let rtt_types = features
+            .rtt_types
+            .as_ref()
+            .map(|types| {
+                let mut v = Vec::new();
 
-                    for ty in types {
-                        if let Ok(t) = serde_json::from_str::<RttType>(ty) {
-                            v.push(t);
-                        }
+                for ty in types {
+                    if let Ok(t) = serde_json::from_str::<RttType>(ty) {
+                        v.push(t);
                     }
+                }
 
-                    if v.is_empty() {
-                        vec![RttType::Ping]
-                    } else {
-                        v
-                    }
-                })
-                .unwrap_or_else(|| vec![RttType::Ping]);
+                if v.is_empty() {
+                    vec![RttType::Ping]
+                } else {
+                    v
+                }
+            })
+            .unwrap_or_else(|| vec![RttType::Ping]);
 
-            let buckets = features.buckets.unwrap_or(Self::DEFAULT_BUCKETS);
+        let buckets = features.buckets.unwrap_or(Self::DEFAULT_BUCKETS);
 
-            Self {
-                rtt_interval,
-                rtt_tries,
-                rtt_types,
-                buckets,
-            }
-        })
+        Self {
+            rtt_interval,
+            rtt_tries,
+            rtt_types,
+            buckets,
+        }
     }
 }
 
