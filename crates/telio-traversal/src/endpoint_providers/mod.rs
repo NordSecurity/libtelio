@@ -6,6 +6,7 @@ use enum_map::Enum;
 use ipnet::PrefixLenError;
 use std::time::Duration;
 use telio_crypto::{encryption, PublicKey};
+use telio_utils::exponential_backoff;
 use thiserror::Error as TError;
 
 use telio_model::SocketAddr;
@@ -23,6 +24,8 @@ pub enum Error {
     EndpointCandidatePublishError(
         #[from] tokio::sync::mpsc::error::SendError<EndpointCandidatesChangeEvent>,
     ),
+    #[error(transparent)]
+    ExponentialBackoffError(#[from] exponential_backoff::Error),
     #[error(transparent)]
     PongRxedPublishError(#[from] tokio::sync::mpsc::error::SendError<PongEvent>),
     #[error(transparent)]

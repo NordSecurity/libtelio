@@ -54,7 +54,7 @@ use std::{
     time::Duration,
 };
 
-use telio_utils::{telio_log_debug, telio_log_info};
+use telio_utils::{exponential_backoff::ExponentialBackoffBounds, telio_log_debug, telio_log_info};
 
 use telio_model::{
     api_config::{
@@ -367,12 +367,12 @@ impl Device {
 
         self.rt = Some(self.art()?.block_on(async {
             let t = Task::start(
-                Runtime::start(
+                Box::pin(Runtime::start(
                     self.event.clone(),
                     config,
                     self.features.clone(),
                     self.protect.clone(),
-                )
+                ))
                 .await?,
             );
             Ok::<Task<Runtime>, Error>(t)
@@ -804,14 +804,17 @@ impl Runtime {
                         .new_external_udp((Ipv4Addr::UNSPECIFIED, 0), None)
                         .await?,
                     wireguard_interface.clone(),
-                    Duration::from_secs(
-                        direct
-                            .endpoint_interval_secs
-                            .unwrap_or(DEFAULT_ENDPOINT_POLL_INTERVAL_SECS),
-                    ),
+                    ExponentialBackoffBounds {
+                        initial: Duration::from_secs(
+                            direct
+                                .endpoint_interval_secs
+                                .unwrap_or(DEFAULT_ENDPOINT_POLL_INTERVAL_SECS),
+                        ),
+                        maximal: Some(Duration::from_secs(120)),
+                    },
                     ping_pong_tracker.clone(),
                     stun_server_events.tx,
-                ));
+                )?);
                 endpoint_providers.push(ep.clone());
                 Some(ep)
             } else {
@@ -842,7 +845,7 @@ impl Runtime {
                 Duration::from_secs(2),
                 ping_pong_tracker,
                 Default::default(),
-            )?);
+            ));
 
             // Create WireGuard connection upgrade synchronizer
             let upgrade_sync = Arc::new(UpgradeSync::new(

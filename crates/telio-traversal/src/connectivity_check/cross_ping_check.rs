@@ -9,7 +9,6 @@ use crate::{
 use async_trait::async_trait;
 use enum_map::EnumMap;
 use futures::Future;
-use mockall_double::double;
 use sm::sm;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -18,10 +17,9 @@ use telio_crypto::PublicKey;
 use telio_model::{config::Config, SocketAddr};
 use telio_proto::{CallMeMaybeMsg, CallMeMaybeType, Session};
 use telio_task::{io::chan, io::Chan, task_exec, BoxAction, Runtime, Task};
-#[double]
-use telio_utils::ExponentialBackoffHelper;
 use telio_utils::{
-    telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn, ExponentialBackoffBounds,
+    exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
+    telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn,
 };
 use tokio::sync::Mutex;
 use tokio::time::{interval_at, Instant, Interval};
@@ -85,8 +83,8 @@ pub trait CrossPingCheckTrait {
     ) -> Result<(), Error>;
 }
 
-pub struct CrossPingCheck {
-    task: Task<State>,
+pub struct CrossPingCheck<E: Backoff = ExponentialBackoff> {
+    task: Task<State<E>>,
 }
 
 pub struct Io {
@@ -114,7 +112,9 @@ pub struct Io {
     pub intercoms: Chan<(PublicKey, CallMeMaybeMsg)>,
 }
 
-pub struct State {
+type ExponentialBackoffProvider<E> = Box<dyn Fn() -> Result<E, Error> + Send>;
+
+pub struct State<E: Backoff> {
     /// Input and output channels
     io: Io,
 
@@ -129,7 +129,7 @@ pub struct State {
     /// of this pair gets their own session ID, which uniquely maps to it. Session IDs are
     /// exchanged either through ping or CallMeMaybe messages. As each session involves exchanging
     /// a few messages - we have to track the state of that
-    endpoint_connectivity_check_state: HashMap<Session, EndpointConnectivityCheckState>,
+    endpoint_connectivity_check_state: HashMap<Session, EndpointConnectivityCheckState<E>>,
 
     /// Cache of the all known nodes
     node_cache: HashSet<PublicKey>,
@@ -150,11 +150,33 @@ pub struct State {
     /// is responsible for configuring it with allowed sessions and public keys.
     ping_pong_handler: Arc<Mutex<PingPongHandler>>,
 
-    /// Failure penalty bounds
+    /// Exponential backoff helper provider
     ///
-    /// A struct containing initial and maximal failure penalties, which are used in the exponential
-    /// backoffs on the failing connection attempts.
-    exponential_backoff_bounds: ExponentialBackoffBounds,
+    /// A closure which produces exponential backoff helpers for the cross ping check sessions.
+    exponential_backoff_helper_provider: ExponentialBackoffProvider<E>,
+}
+
+impl<E: Backoff> CrossPingCheck<E> {
+    fn start_with_backoff_provider(
+        io: Io,
+        endpoint_providers: Vec<Arc<dyn EndpointProvider>>,
+        poll_period: Duration,
+        ping_pong_handler: Arc<Mutex<PingPongHandler>>,
+        exponential_backoff_helper_provider: ExponentialBackoffProvider<E>,
+    ) -> Self {
+        Self {
+            task: Task::start(State {
+                io,
+                endpoint_providers,
+                endpoint_connectivity_check_state: Default::default(),
+                node_cache: Default::default(),
+                local_endpoint_cache: Default::default(),
+                poll_timer: interval_at(tokio::time::Instant::now(), poll_period),
+                ping_pong_handler,
+                exponential_backoff_helper_provider,
+            }),
+        }
+    }
 }
 
 impl CrossPingCheck {
@@ -164,21 +186,18 @@ impl CrossPingCheck {
         poll_period: Duration,
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
         exponential_backoff_bounds: ExponentialBackoffBounds,
-    ) -> Result<Self, Error> {
+    ) -> Self {
         telio_log_info!("Starting cross ping check");
 
-        Ok(Self {
-            task: Task::start(State {
-                io,
-                endpoint_providers,
-                endpoint_connectivity_check_state: Default::default(),
-                node_cache: Default::default(),
-                local_endpoint_cache: Default::default(),
-                poll_timer: interval_at(tokio::time::Instant::now(), poll_period),
-                ping_pong_handler,
-                exponential_backoff_bounds,
+        Self::start_with_backoff_provider(
+            io,
+            endpoint_providers,
+            poll_period,
+            ping_pong_handler,
+            Box::new(move || {
+                ExponentialBackoff::new(exponential_backoff_bounds).map_err(Error::from)
             }),
-        })
+        )
     }
 
     pub async fn stop(self) {
@@ -262,11 +281,11 @@ impl CrossPingCheckTrait for CrossPingCheck {
     }
 }
 
-impl State {
+impl<E: Backoff> State<E> {
     fn get_connectivty_check_state<'a>(
-        ep_connectivity_state: &'a mut HashMap<Session, EndpointConnectivityCheckState>,
+        ep_connectivity_state: &'a mut HashMap<Session, EndpointConnectivityCheckState<E>>,
         session_id: &Session,
-    ) -> Result<&'a mut EndpointConnectivityCheckState, Error> {
+    ) -> Result<&'a mut EndpointConnectivityCheckState<E>, Error> {
         ep_connectivity_state
             .get_mut(session_id)
             .ok_or(Error::UnkownSessionForRxedPongPacket)
@@ -324,9 +343,7 @@ impl State {
                     state: Machine::new(Disconnected).as_enum(),
                     last_state_transition: Instant::now(),
                     last_validated_enpoint: None,
-                    exponential_backoff: ExponentialBackoffHelper::new(
-                        self.exponential_backoff_bounds,
-                    )?,
+                    exponential_backoff: (self.exponential_backoff_helper_provider)()?,
                 };
                 let session_id = rand::random::<Session>();
 
@@ -386,9 +403,7 @@ impl State {
                     state: Machine::new(Disconnected).as_enum(),
                     last_state_transition: Instant::now(),
                     last_validated_enpoint: None,
-                    exponential_backoff: ExponentialBackoffHelper::new(
-                        self.exponential_backoff_bounds,
-                    )?,
+                    exponential_backoff: (self.exponential_backoff_helper_provider)()?,
                 };
                 let session_id = rand::random::<Session>();
 
@@ -495,7 +510,7 @@ impl State {
 }
 
 #[async_trait]
-impl Runtime for State {
+impl<E: Backoff> Runtime for State<E> {
     const NAME: &'static str = "UdpHolePunch";
 
     type Err = Error;
@@ -569,16 +584,16 @@ impl Runtime for State {
 
 /// The State processing of each (endpoint, remote node) pair.
 #[derive(Debug)]
-pub struct EndpointConnectivityCheckState {
+pub struct EndpointConnectivityCheckState<E: Backoff> {
     public_key: PublicKey,
     local_endpoint_candidate: EndpointCandidate,
     state: EndpointState::Variant,
     last_state_transition: Instant,
     last_validated_enpoint: Option<SocketAddr>,
-    exponential_backoff: ExponentialBackoffHelper,
+    exponential_backoff: E,
 }
 
-impl EndpointConnectivityCheckState {
+impl<E: Backoff> EndpointConnectivityCheckState<E> {
     async fn send_call_me_maybe_request(
         &mut self,
         session: Session,
@@ -771,7 +786,7 @@ mod tests {
     use telio_proto::{PingerMsg, WGPort};
 
     use telio_task::io::Chan;
-    use telio_utils::MockExponentialBackoffHelper;
+    use telio_utils::exponential_backoff::MockBackoff;
 
     use super::*;
     use crate::{
@@ -808,7 +823,7 @@ mod tests {
             Duration::from_secs(2),
             Arc::new(Mutex::new(PingPongHandler::new(SecretKey::gen()))),
             ExponentialBackoffBounds::default(),
-        )?;
+        );
 
         let channels = TestChannels {
             endpoint_change_subscriber: endpoint_change_subscriber.tx,
@@ -865,7 +880,7 @@ mod tests {
     fn prepare_test_session_in_state(
         state: EndpointState::Variant,
         endpoint: SocketAddr,
-    ) -> EndpointConnectivityCheckState {
+    ) -> EndpointConnectivityCheckState<MockBackoff> {
         EndpointConnectivityCheckState {
             public_key: PublicKey::default(),
             local_endpoint_candidate: EndpointCandidate {
@@ -875,7 +890,7 @@ mod tests {
             state,
             last_state_transition: Instant::now(),
             last_validated_enpoint: None,
-            exponential_backoff: MockExponentialBackoffHelper::default(),
+            exponential_backoff: MockBackoff::default(),
         }
     }
 
@@ -891,10 +906,6 @@ mod tests {
         let original_pub_key = PublicKey(*b"ABBBBBBBBBBBBBBBBBBBAAAAAAAAAAAA");
         peer.base.public_key = original_pub_key;
 
-        let context = MockExponentialBackoffHelper::new_context();
-        context
-            .expect()
-            .returning(|_| Ok(MockExponentialBackoffHelper::default()));
         checker
             .configure(Some(Config {
                 this: PeerBase::default(),
@@ -921,10 +932,6 @@ mod tests {
         let original_pub_key = PublicKey(*b"ABBBBBBBBBBBBBBBBBBBAAAAAAAAAAAA");
         peer.base.public_key = original_pub_key;
 
-        let context = MockExponentialBackoffHelper::new_context();
-        context
-            .expect()
-            .returning(|_| Ok(MockExponentialBackoffHelper::default()));
         checker
             .configure(Some(Config {
                 this: PeerBase::default(),

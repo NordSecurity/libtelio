@@ -1,8 +1,11 @@
 //! A simple tool for making exponential backoffs easier
 
+use std::fmt::Debug;
 use std::time::Duration;
 
 use thiserror::Error as TError;
+
+const EXPONENTIAL_BACKOFF_MULTIPLIER: u32 = 2;
 
 /// Enumeration of `Error` types for the exponential backoff implementiation
 #[derive(Debug, TError)]
@@ -39,17 +42,30 @@ impl Default for ExponentialBackoffBounds {
     }
 }
 
+/// Exponential backoff helper interface
+#[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
+pub trait Backoff: Sync + Send + Debug + 'static {
+    /// Returns the current backoff
+    fn get_backoff(&self) -> Duration;
+
+    /// Moves to the next backoff
+    fn next_backoff(&mut self);
+
+    /// Resets exponential backoff - the next backoff value will be again
+    /// the initial one
+    fn reset(&mut self);
+}
+
 /// Exponential backoff helper
 ///
 /// Returns consequtive backoffs growing exponentially
 #[derive(Clone, Debug)]
-pub struct ExponentialBackoffHelper {
+pub struct ExponentialBackoff {
     bounds: ExponentialBackoffBounds,
     current_backoff: Duration,
 }
 
-#[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
-impl ExponentialBackoffHelper {
+impl ExponentialBackoff {
     /// Given the bounds for exponential backoff returns an instance of
     /// ExponentialBackofHelper
     pub fn new(bounds: ExponentialBackoffBounds) -> Result<Self, Error> {
@@ -64,15 +80,15 @@ impl ExponentialBackoffHelper {
             })
         }
     }
+}
 
-    /// Returns the current backoff
-    pub fn get_backoff(&self) -> Duration {
+impl Backoff for ExponentialBackoff {
+    fn get_backoff(&self) -> Duration {
         self.current_backoff
     }
 
-    /// Moves to the next backoff
-    pub fn next_backoff(&mut self) {
-        self.current_backoff *= 2;
+    fn next_backoff(&mut self) {
+        self.current_backoff *= EXPONENTIAL_BACKOFF_MULTIPLIER;
 
         if let Some(maximal) = self.bounds.maximal {
             if self.current_backoff > maximal {
@@ -81,9 +97,7 @@ impl ExponentialBackoffHelper {
         }
     }
 
-    /// Resets exponential backoff - the next backoff value will be again
-    /// the initial one
-    pub fn reset(&mut self) {
+    fn reset(&mut self) {
         self.current_backoff = self.bounds.initial;
     }
 }
@@ -92,11 +106,11 @@ impl ExponentialBackoffHelper {
 mod tests {
     use std::time::Duration;
 
-    use crate::ExponentialBackoffHelper;
+    use super::*;
 
     #[tokio::test]
     async fn exponential_backoff_basic_usage() {
-        let mut backoff_instance = ExponentialBackoffHelper::new(crate::ExponentialBackoffBounds {
+        let mut backoff_instance = ExponentialBackoff::new(ExponentialBackoffBounds {
             initial: Duration::from_millis(100),
             maximal: Some(Duration::from_millis(700)),
         })
