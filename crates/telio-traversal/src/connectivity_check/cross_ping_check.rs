@@ -511,7 +511,7 @@ impl<E: Backoff> State<E> {
 
 #[async_trait]
 impl<E: Backoff> Runtime for State<E> {
-    const NAME: &'static str = "UdpHolePunch";
+    const NAME: &'static str = "CrossPingCheck";
 
     type Err = Error;
 

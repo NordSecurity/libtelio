@@ -12,7 +12,7 @@ use tokio::{
     time::{interval_at, Instant, Interval},
 };
 
-/// Posible [UdpHolePunch] errors.
+/// Possible [UpgradeSync] errors.
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     /// Channel error
