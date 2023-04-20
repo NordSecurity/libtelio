@@ -6,6 +6,7 @@
 * LLT-3404: Add github PR template
 * LLT-3420: Box large futures
 * LLT-3504: Enable nurse component. Its start has been accidentally removed during merges.
+* LLT-3496: Fix is_exit flag when disconnecting from exit node
 
 ### v4.0.0
 ### **Bruschetta**
