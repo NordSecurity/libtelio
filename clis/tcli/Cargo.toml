@@ -35,7 +35,6 @@ rustyline = "11.0.0"
 telio = { path = "../.." }
 telio-crypto = { path = "../../crates/telio-crypto" }
 telio-utils = { path = "../../crates/telio-utils" }
-telio-shared = { path = "../../crates/telio-shared" }
 telio-model = { path = "../../crates/telio-model" }
 telio-wg = { path = "../../crates/telio-wg" }
 telio-proto = { path = "../../crates/telio-proto" }

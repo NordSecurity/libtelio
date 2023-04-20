@@ -42,7 +42,7 @@ version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d52a9bb7ec0cf484c551830a7ce27bd20d67eac647e1befb56b0be4ee39a55d2"
 dependencies = [
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -135,7 +135,7 @@ dependencies = [
  "polling",
  "rustix 0.37.5",
  "slab",
- "socket2",
+ "socket2 0.4.9",
  "waker-fn",
 ]
 
@@ -176,28 +176,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "async-stream"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad445822218ce64be7a341abfb0b1ea43b5c23aa83902542a4542e78309d8e5e"
-dependencies = [
- "async-stream-impl",
- "futures-core",
- "pin-project-lite",
-]
-
-[[package]]
-name = "async-stream-impl"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4655ae1a7b0cdf149156f780c5bf3f1352bc53cbd9e0a361a7ef7b22947e965"
-dependencies = [
- "proc-macro2 1.0.54",
- "quote 1.0.26",
- "syn 1.0.109",
-]
-
-[[package]]
 name = "async-task"
 version = "4.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -228,7 +206,7 @@ checksum = "d9b39be18770d11421cdb1b9947a45dd3f37e93092cbf377614828a319d5fee8"
 dependencies = [
  "hermit-abi 0.1.19",
  "libc",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -305,12 +283,12 @@ dependencies = [
 [[package]]
 name = "boringtun"
 version = "0.3.0"
-source = "git+https://github.com/NordSecurity/boringtun.git?tag=v1.1.0#0ee0d8809f27fdf69cd784b1dd12d0dcb21b9e7a"
+source = "git+https://github.com/NordSecurity/boringtun.git?tag=v1.1.1#0d586bfaafb92c172e6656c510cd63133b24b7ab"
 dependencies = [
  "base64 0.13.1",
  "clap 2.34.0",
  "daemonize",
- "hex 0.4.3",
+ "hex",
  "ip_network",
  "ip_network_table",
  "jni",
@@ -501,7 +479,7 @@ checksum = "7191c27c2357d9b7ef96baac1773290d4ca63b24205b82a3fd8a0637afcf0362"
 dependencies = [
  "error-code",
  "str-buf",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -512,7 +490,7 @@ checksum = "b3616f750b84d8f0de8a58bda93e08e2a81ad3f523089b05f1dffecab48c6cbd"
 dependencies = [
  "atty",
  "lazy_static",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -570,21 +548,6 @@ checksum = "d663548de7f5cca343f1e0a48d14dcfb0e9eb4e079ec58883b7251539fa10aeb"
 dependencies = [
  "build_const",
 ]
-
-[[package]]
-name = "crc"
-version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49fc9a695bca7f35f5f4c15cddc84415f66a74ea78eef08e90c5024f2b540e23"
-dependencies = [
- "crc-catalog",
-]
-
-[[package]]
-name = "crc-catalog"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ccaeedb56da03b09f598226e25e80088cb4cd25f316e6e4df7d695f0feeb1403"
 
 [[package]]
 name = "crossbeam-channel"
@@ -646,7 +609,7 @@ version = "3.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbcf33c2a618cbe41ee43ae6e9f2e48368cd9f9db2896f10167d8d762679f639"
 dependencies = [
- "nix 0.26.2",
+ "nix",
  "windows-sys",
 ]
 
@@ -694,16 +657,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "darling"
-version = "0.14.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b750cb3417fd1b327431a470f388520309479ab0bf5e323505daf0290cd3850"
-dependencies = [
- "darling_core 0.14.4",
- "darling_macro 0.14.4",
-]
-
-[[package]]
 name = "darling_core"
 version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -722,20 +675,6 @@ name = "darling_core"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "859d65a907b6852c9361e3185c862aae7fafd2887876799fa55f5f99dc40d610"
-dependencies = [
- "fnv",
- "ident_case",
- "proc-macro2 1.0.54",
- "quote 1.0.26",
- "strsim 0.10.0",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "darling_core"
-version = "0.14.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "109c1ca6e6b7f82cc233a97004ea8ed7ca123a9af07a8230878fcfda9b158bf0"
 dependencies = [
  "fnv",
  "ident_case",
@@ -768,17 +707,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "darling_macro"
-version = "0.14.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4aab4dbc9f7611d8b55048a3a16d2d010c2c8334e46304b40ac1cc14bf3b48e"
-dependencies = [
- "darling_core 0.14.4",
- "quote 1.0.26",
- "syn 1.0.109",
-]
-
-[[package]]
 name = "data-encoding"
 version = "2.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -790,16 +718,7 @@ version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d13202debe11181040ae9063d739fa32cfcaaebe2275fe387703460ae2365b30"
 dependencies = [
- "derive_builder_macro 0.10.2",
-]
-
-[[package]]
-name = "derive_builder"
-version = "0.11.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d07adf7be193b71cc36b193d0f5fe60b918a3a9db4dad0449f57bcfd519704a3"
-dependencies = [
- "derive_builder_macro 0.11.2",
+ "derive_builder_macro",
 ]
 
 [[package]]
@@ -815,34 +734,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "derive_builder_core"
-version = "0.11.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f91d4cfa921f1c05904dc3c57b4a32c38aed3340cce209f3a6fd1478babafc4"
-dependencies = [
- "darling 0.14.4",
- "proc-macro2 1.0.54",
- "quote 1.0.26",
- "syn 1.0.109",
-]
-
-[[package]]
 name = "derive_builder_macro"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "58a94ace95092c5acb1e97a7e846b310cfbd499652f72297da7493f618a98d73"
 dependencies = [
- "derive_builder_core 0.10.2",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "derive_builder_macro"
-version = "0.11.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f0314b72bed045f3a68671b3c86328386762c93f82d98c65c3cb5e5f573dd68"
-dependencies = [
- "derive_builder_core 0.11.2",
+ "derive_builder_core",
  "syn 1.0.109",
 ]
 
@@ -857,7 +754,6 @@ dependencies = [
  "ctrlc",
  "env_logger",
  "futures",
- "hex 0.3.2",
  "lazy_static",
  "parking_lot 0.12.1",
  "prometheus",
@@ -930,7 +826,7 @@ checksum = "1b1d1d91c932ef41c0f2663aa8b0ca0342d444d842c06914aa0a7e352d0bada6"
 dependencies = [
  "libc",
  "redox_users",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -941,7 +837,7 @@ checksum = "4ebda144c4fe02d1f7ea1a7d9641b6fc6b580adcfa024ae48797ecdeb6825b4d"
 dependencies = [
  "libc",
  "redox_users",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -1034,7 +930,7 @@ checksum = "f639046355ee4f37944e44f60642c6f3a7efa3cf6b78c78a0d989a8ce6c396a1"
 dependencies = [
  "errno-dragonfly",
  "libc",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -1393,12 +1289,6 @@ checksum = "fed44880c466736ef9a5c5b5facefb5ed0785676d0c02d612db14e54f0d84286"
 
 [[package]]
 name = "hex"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "805026a5d0141ffc30abb3be3173848ad46a1b1664fe632428479619a3644d77"
-
-[[package]]
-name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
@@ -1426,7 +1316,7 @@ checksum = "3c731c3e10504cc8ed35cfe2f1db4c9274c3d35fa486e3b31df46f068ef3e867"
 dependencies = [
  "libc",
  "match_cfg",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -1486,7 +1376,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2",
+ "socket2 0.4.9",
  "tokio",
  "tower-service",
  "tracing",
@@ -1540,7 +1430,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cbc0fa01ffc752e9dbc72818cdb072cd028b86be5e09dd04c5a643704fe101a9"
 dependencies = [
  "libc",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -1570,14 +1460,10 @@ dependencies = [
  "base64 0.13.1",
  "clap 3.2.23",
  "crypto_box",
- "ctrlc",
  "env_logger",
  "futures",
- "hex 0.3.2",
  "itertools",
- "lazy_static",
  "log",
- "scoped-tls",
  "serde",
  "serde_json",
  "telio-crypto",
@@ -1626,9 +1512,9 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "723519edce41262b05d4143ceb95050e4c614f483e78e9fd9e39a8275a84ad98"
 dependencies = [
- "socket2",
+ "socket2 0.4.9",
  "widestring 0.5.1",
- "winapi 0.3.9",
+ "winapi",
  "winreg 0.7.0",
 ]
 
@@ -1719,7 +1605,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b67380fd3b2fbe7527a606e18729d21c6f3951633d0500574c4dc22d2d638b9f"
 dependencies = [
  "cfg-if",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -1794,17 +1680,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2532096657941c2fea9c289d370a250971c689d4f143798ff67113ec042024a5"
 
 [[package]]
-name = "md-5"
-version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b5a279bb9607f9f53c22d496eade00d138d1bdcccd07d74650387cf94942a15"
-dependencies = [
- "block-buffer 0.9.0",
- "digest 0.9.0",
- "opaque-debug",
-]
-
-[[package]]
 name = "md5"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1815,15 +1690,6 @@ name = "memchr"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2dffe52ecf27772e601905b7522cb4ef790d2cc203488bbd0e2fe85fcb74566d"
-
-[[package]]
-name = "memoffset"
-version = "0.6.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5aa361d4faea93603064a027415f07bd8e1d5c88c9fbf68bf56a285428fd79ce"
-dependencies = [
- "autocfg",
-]
 
 [[package]]
 name = "memoffset"
@@ -1905,11 +1771,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41f5c9112cb662acd3b204077e0de5bc66305fa8df65c8019d5adb10e9ab6e58"
 
 [[package]]
-name = "multi-map"
-version = "1.3.0"
-source = "git+https://github.com/rust-embedded-community/multi-map.git?rev=9f686b4#9f686b494853da68d232c1bb2801ba1cfdede6cd"
-
-[[package]]
 name = "multipart"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1964,19 +1825,6 @@ dependencies = [
 
 [[package]]
 name = "nix"
-version = "0.22.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4916f159ed8e5de0082076562152a76b7a1f64a01fd9d1e0fea002c37624faf"
-dependencies = [
- "bitflags",
- "cc",
- "cfg-if",
- "libc",
- "memoffset 0.6.5",
-]
-
-[[package]]
-name = "nix"
 version = "0.26.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bfdda3d196821d6af13126e40375cdf7da646a96114af134d5f417a9a1dc8e1a"
@@ -1984,7 +1832,7 @@ dependencies = [
  "bitflags",
  "cfg-if",
  "libc",
- "memoffset 0.7.1",
+ "memoffset",
  "pin-utils",
  "static_assertions",
 ]
@@ -2124,7 +1972,7 @@ version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "628223faebab4e3e40667ee0b2336d34a5b960ff60ea743ddfdbcf7770bcfb66"
 dependencies = [
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -2165,7 +2013,7 @@ dependencies = [
  "libc",
  "redox_syscall",
  "smallvec",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -2241,9 +2089,9 @@ checksum = "25488cd551a753dcaaa6fffc9f69a7610a412dd8954425bf7ffad5f7d1156fb8"
 
 [[package]]
 name = "pnet_base"
-version = "0.31.0"
+version = "0.33.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9d3a993d49e5fd5d4d854d6999d4addca1f72d86c65adf224a36757161c02b6"
+checksum = "872e46346144ebf35219ccaa64b1dffacd9c6f188cd7d012bd6977a2a838f42e"
 dependencies = [
  "no-std-net",
 ]
@@ -2258,7 +2106,7 @@ dependencies = [
  "libc",
  "pnet_base 0.28.0",
  "pnet_sys",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -2275,9 +2123,9 @@ dependencies = [
 
 [[package]]
 name = "pnet_macros"
-version = "0.31.0"
+version = "0.33.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48dd52a5211fac27e7acb14cfc9f30ae16ae0e956b7b779c8214c74559cef4c3"
+checksum = "2a780e80005c2e463ec25a6e9f928630049a10b43945fea83207207d4a7606f4"
 dependencies = [
  "proc-macro2 1.0.54",
  "quote 1.0.26",
@@ -2296,11 +2144,11 @@ dependencies = [
 
 [[package]]
 name = "pnet_macros_support"
-version = "0.31.0"
+version = "0.33.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89de095dc7739349559913aed1ef6a11e73ceade4897dadc77c5e09de6740750"
+checksum = "e6d932134f32efd7834eb8b16d42418dac87086347d1bc7d142370ef078582bc"
 dependencies = [
- "pnet_base 0.31.0",
+ "pnet_base 0.33.0",
 ]
 
 [[package]]
@@ -2317,14 +2165,14 @@ dependencies = [
 
 [[package]]
 name = "pnet_packet"
-version = "0.31.0"
+version = "0.33.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc3b5111e697c39c8b9795b9fdccbc301ab696699e88b9ea5a4e4628978f495f"
+checksum = "8bde678bbd85cb1c2d99dc9fc596e57f03aa725f84f3168b0eaf33eeccb41706"
 dependencies = [
  "glob",
- "pnet_base 0.31.0",
- "pnet_macros 0.31.0",
- "pnet_macros_support 0.31.0",
+ "pnet_base 0.33.0",
+ "pnet_macros 0.33.0",
+ "pnet_macros_support 0.33.0",
 ]
 
 [[package]]
@@ -2334,7 +2182,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9a3f32b0df45515befd19eed04616f6b56a488da92afc61164ef455e955f07f"
 dependencies = [
  "libc",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -2635,7 +2483,7 @@ version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3acd125665422973a33ac9d3dd2df85edad0f4ae9b00dafb1a05e43a9f5ef8e7"
 dependencies = [
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -2699,7 +2547,7 @@ dependencies = [
  "spin",
  "untrusted",
  "web-sys",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -2821,13 +2669,13 @@ dependencies = [
  "libc",
  "log",
  "memchr",
- "nix 0.26.2",
+ "nix",
  "radix_trie",
  "scopeguard",
  "unicode-segmentation",
  "unicode-width",
  "utf8parse",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -3045,7 +2893,7 @@ dependencies = [
  "colored",
  "log",
  "time",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -3143,7 +2991,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64a4a911eed85daf18834cfaa86a79b7d266ff93ff5ba14005426219480ed662"
 dependencies = [
  "libc",
- "winapi 0.3.9",
+ "winapi",
+]
+
+[[package]]
+name = "socket2"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc8d618c6641ae355025c449427f9e96b98abf99a772be3cef6708d15c77147a"
+dependencies = [
+ "libc",
+ "windows-sys",
 ]
 
 [[package]]
@@ -3199,26 +3057,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "stun"
-version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7baeb717b2bcbbbab73ee059f9e0a801c718ddbf9aca75f305f5be937a1b0367"
-dependencies = [
- "anyhow",
- "base64 0.13.1",
- "crc 2.1.0",
- "lazy_static",
- "md-5",
- "rand",
- "ring",
- "subtle",
- "thiserror",
- "tokio",
- "url",
- "webrtc-util",
-]
-
-[[package]]
 name = "stun_codec"
 version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3226,7 +3064,7 @@ checksum = "00241c5479b10c738408a263970fa46ea10924c8851bf45e8c24b306083b5a60"
 dependencies = [
  "bytecodec",
  "byteorder",
- "crc 1.8.1",
+ "crc",
  "hmac-sha1",
  "md5",
  "trackable 0.2.24",
@@ -3240,7 +3078,7 @@ checksum = "96fd9176bd066bb85e05ad67ef2ad7a6933b67502074df58de36fff29f58a5f8"
 dependencies = [
  "bytecodec",
  "byteorder",
- "crc 1.8.1",
+ "crc",
  "hmac-sha1",
  "md5",
  "trackable 0.2.24",
@@ -3254,14 +3092,15 @@ checksum = "6bdef32e8150c2a081110b42772ffe7d7c9032b606bc226c8260fd97e0976601"
 
 [[package]]
 name = "surge-ping"
-version = "0.7.4"
-source = "git+https://github.com/matislovas/surge-ping.git?rev=251242a#251242ad7f1f7bae1ddff48a1cf536828abcc23c"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af341b2be485d647b5dc4cfb2da99efac35b5c95748a08fb7233480fedc5ead3"
 dependencies = [
- "hex 0.4.3",
+ "hex",
  "parking_lot 0.12.1",
- "pnet_packet 0.31.0",
+ "pnet_packet 0.33.0",
  "rand",
- "socket2",
+ "socket2 0.5.1",
  "thiserror",
  "tokio",
  "tracing",
@@ -3343,7 +3182,7 @@ dependencies = [
  "crypto_box",
  "dirs",
  "flexi_logger",
- "hex 0.4.3",
+ "hex",
  "ipnetwork",
  "log",
  "parking_lot 0.12.1",
@@ -3362,7 +3201,6 @@ dependencies = [
  "telio-nat-detect",
  "telio-proto",
  "telio-relay",
- "telio-shared",
  "telio-sockets",
  "telio-task",
  "telio-traversal",
@@ -3397,7 +3235,6 @@ dependencies = [
  "serde_with",
  "slog-async",
  "slog-term",
- "stun",
  "telio-crypto",
  "telio-dns",
  "telio-firewall",
@@ -3418,7 +3255,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "uuid",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -3429,7 +3266,7 @@ dependencies = [
  "base64 0.13.1",
  "bstr",
  "crypto_box",
- "hex 0.4.3",
+ "hex",
  "log",
  "rand",
  "serde",
@@ -3512,7 +3349,6 @@ version = "0.1.0"
 dependencies = [
  "log",
  "nat-detect",
- "telio-utils",
  "tokio",
 ]
 
@@ -3526,7 +3362,6 @@ dependencies = [
  "futures",
  "histogram",
  "log",
- "ntest",
  "protobuf-codegen-pure",
  "rand",
  "serde",
@@ -3568,7 +3403,6 @@ dependencies = [
  "futures",
  "log",
  "mockall",
- "ntest",
  "slog",
  "telio-crypto",
  "telio-model",
@@ -3586,18 +3420,16 @@ name = "telio-relay"
 version = "0.1.0"
 dependencies = [
  "async-std",
- "async-stream",
  "async-trait",
  "bytes",
  "crypto_box",
  "env_logger",
  "futures",
  "generic-array",
- "hex 0.3.2",
+ "hex",
  "httparse",
  "libc",
  "log",
- "mockall",
  "ntest",
  "num_enum",
  "rand",
@@ -3627,7 +3459,7 @@ name = "telio-shared"
 version = "1.0.0"
 dependencies = [
  "boringtun",
- "nix 0.26.2",
+ "nix",
  "pnet",
  "thiserror",
 ]
@@ -3636,20 +3468,18 @@ dependencies = [
 name = "telio-sockets"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "boringtun",
  "futures",
- "ipnet",
  "libc",
  "log",
  "mockall",
  "parking_lot 0.12.1",
- "socket2",
+ "socket2 0.4.9",
  "system-configuration",
  "telio-utils",
  "thiserror",
  "tokio",
- "winapi 0.3.9",
+ "winapi",
  "windows",
 ]
 
@@ -3681,7 +3511,6 @@ dependencies = [
  "base64 0.13.1",
  "boringtun",
  "bytecodec",
- "derive_builder 0.11.2",
  "enum-map",
  "env_logger",
  "futures",
@@ -3690,7 +3519,6 @@ dependencies = [
  "log",
  "maplit",
  "mockall",
- "multi-map",
  "ntest",
  "num_enum",
  "pnet_packet 0.28.0",
@@ -3702,7 +3530,6 @@ dependencies = [
  "telio-crypto",
  "telio-model",
  "telio-proto",
- "telio-proxy",
  "telio-relay",
  "telio-sockets",
  "telio-task",
@@ -3734,7 +3561,7 @@ dependencies = [
  "boringtun",
  "cc",
  "futures",
- "hex 0.4.3",
+ "hex",
  "ipnet",
  "ipnetwork",
  "lazy_static",
@@ -3756,7 +3583,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "wg-go-rust-wrapper",
- "winapi 0.3.9",
+ "winapi",
  "wireguard-nt",
  "wireguard-uapi",
 ]
@@ -3772,7 +3599,7 @@ dependencies = [
  "libc",
  "redox_syscall",
  "remove_dir_all",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -3783,7 +3610,7 @@ checksum = "c59df8ac95d96ff9bede18eb7300b0fda5e5d8d90960e76f8e14ae765eedbf1f"
 dependencies = [
  "dirs-next",
  "rustversion",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -3893,7 +3720,7 @@ dependencies = [
  "parking_lot 0.12.1",
  "pin-project-lite",
  "signal-hook-registry",
- "socket2",
+ "socket2 0.4.9",
  "tokio-macros",
  "windows-sys",
 ]
@@ -4330,7 +4157,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "808cf2735cd4b6866113f648b791c6adc5714537bc222d9347bb203386ffda56"
 dependencies = [
  "same-file",
- "winapi 0.3.9",
+ "winapi",
  "winapi-util",
 ]
 
@@ -4496,28 +4323,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "webrtc-util"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa7615c96b7546f61e7a355009ee6af05383ca781c2d60d4a7c32eb5ddc2ea76"
-dependencies = [
- "anyhow",
- "async-trait",
- "bitflags",
- "bytes",
- "cc",
- "ipnet",
- "lazy_static",
- "libc",
- "log",
- "nix 0.22.3",
- "rand",
- "thiserror",
- "tokio",
- "winapi 0.2.8",
-]
-
-[[package]]
 name = "wg-go-rust-wrapper"
 version = "1.0.0"
 dependencies = [
@@ -4536,12 +4341,6 @@ name = "widestring"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "17882f045410753661207383517a6f62ec3dbeb6a4ed2acce01f0728238d1983"
-
-[[package]]
-name = "winapi"
-version = "0.2.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "167dc9d6949a9b857f3451275e911c3f44255842c1f7a76f33c55103a909087a"
 
 [[package]]
 name = "winapi"
@@ -4565,7 +4364,7 @@ version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70ec6ce85bb158151cae5e5c87f95a8e97d2c0c4b001223f33a334e3ce5de178"
 dependencies = [
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -4698,7 +4497,7 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0120db82e8a1e0b9fb3345a539c478767c0048d842860994d96113d5b667bd69"
 dependencies = [
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -4707,7 +4506,7 @@ version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80d0f4e272c85def139476380b12f9ac60926689dd2e01d4923222f40580869d"
 dependencies = [
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -4721,7 +4520,7 @@ dependencies = [
  "log",
  "rand",
  "widestring 0.4.3",
- "winapi 0.3.9",
+ "winapi",
  "wireguard-uapi",
 ]
 
@@ -4731,8 +4530,8 @@ version = "2.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b54c36be149d93d2a6506d0a6374110b44980fa651e5f2763bced41ac5e022c"
 dependencies = [
- "derive_builder 0.10.2",
- "hex 0.4.3",
+ "derive_builder",
+ "hex",
  "libc",
  "neli",
  "take-until",
