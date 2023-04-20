@@ -159,6 +159,9 @@ pub struct RequestedState {
     // A configuration as requested by libtelio.set_config(...) call, no modifications
     pub meshnet_config: Option<Config>,
 
+    // An old meshnet configuration
+    pub old_meshnet_config: Option<Config>,
+
     // The latest exit node passed by libtelio.connected_to_exit(...)
     pub exit_node: Option<ExitNode>,
 
@@ -1044,6 +1047,7 @@ impl Runtime {
     }
 
     async fn set_config(&mut self, config: &Option<Config>) -> Result {
+        self.requested_state.old_meshnet_config = self.requested_state.meshnet_config.clone();
         self.requested_state.meshnet_config = config.clone();
 
         let wg_itf = self.entities.wireguard_interface.get_interface().await?;
@@ -1273,7 +1277,7 @@ impl Runtime {
 
         // Find a peer with matching public key in meshnet_config and retreive the needed
         // information about it from there
-        let meshnet_peer: Option<Peer> = self
+        let meshnet_peer: Option<Peer> = match self
             .requested_state
             .meshnet_config
             .as_ref()
@@ -1286,7 +1290,23 @@ impl Runtime {
                     .collect::<Vec<Peer>>()
                     .first()
                     .cloned()
-            });
+            }) {
+            Some(peer) => Some(peer),
+            None => self
+                .requested_state
+                .old_meshnet_config
+                .as_ref()
+                .and_then(|config| config.peers.clone())
+                .and_then(|config_peers| {
+                    config_peers
+                        .iter()
+                        .cloned()
+                        .filter(|config_peer| config_peer.base.public_key == peer.public_key)
+                        .collect::<Vec<Peer>>()
+                        .first()
+                        .cloned()
+                }),
+        };
 
         // Resolve what type of path is used
         let path_type = {
