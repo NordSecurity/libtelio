@@ -1327,7 +1327,7 @@ impl Runtime {
                     identifier: meshnet_peer.base.identifier,
                     public_key: meshnet_peer.base.public_key,
                     state: state.or_else(|| Some(peer.state())),
-                    is_exit: exit_node.is_some(),
+                    is_exit: self.requested_state.exit_node.filter(|node| node.public_key == peer.public_key).is_some(),
                     is_vpn: false,
                     allowed_ips: peer.allowed_ips.clone(),
                     endpoint,
