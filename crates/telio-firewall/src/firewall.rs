@@ -18,7 +18,7 @@ use std::sync::{Mutex, RwLock};
 use std::time::Duration;
 
 use telio_crypto::PublicKey;
-use telio_utils::{telio_log_info, telio_log_trace};
+use telio_utils::{telio_log_debug, telio_log_trace};
 
 const LRU_CAPACITY: usize = 4096; // Max entries to keep (sepatately for TCP, UDP, and others)
 const LRU_TIMEOUT: u64 = 120_000; // 2min (https://datatracker.ietf.org/doc/html/rfc4787#section-4.3)
@@ -406,14 +406,14 @@ impl StatefullFirewall {
 
 impl Firewall for StatefullFirewall {
     fn clear_network_whitelist(&self) {
-        telio_log_info!("Clearing firewall network whitelist");
+        telio_log_debug!("Clearing firewall network whitelist");
         let mut whitelist = unwrap_lock_or_return!(self.whitelist.write());
         whitelist.network_whitelist.clear();
         whitelist.allow_any_ip.swap(false, Ordering::Relaxed);
     }
 
     fn add_to_network_whitelist(&self, ip_net: IpNetwork) {
-        telio_log_info!("Adding {:?} network to firewall whitelist", ip_net);
+        telio_log_debug!("Adding {:?} network to firewall whitelist", ip_net);
 
         let mut whitelist = unwrap_lock_or_return!(self.whitelist.write());
 
@@ -425,7 +425,7 @@ impl Firewall for StatefullFirewall {
     }
 
     fn remove_from_network_whitelist(&self, ip_net: IpNetwork) {
-        telio_log_info!("Removing {:?} network from firewall whitelist", ip_net);
+        telio_log_debug!("Removing {:?} network from firewall whitelist", ip_net);
 
         let mut whitelist = unwrap_lock_or_return!(self.whitelist.write());
 
@@ -444,21 +444,21 @@ impl Firewall for StatefullFirewall {
     }
 
     fn clear_peer_whitelist(&self) {
-        telio_log_info!("Clearing firewall peer whitelist");
+        telio_log_debug!("Clearing firewall peer whitelist");
         unwrap_lock_or_return!(self.whitelist.write())
             .peer_whitelist
             .clear();
     }
 
     fn add_to_peer_whitelist(&self, peer: PublicKey) {
-        telio_log_info!("Adding {:?} peer to firewall whitelist", peer);
+        telio_log_debug!("Adding {:?} peer to firewall whitelist", peer);
         unwrap_lock_or_return!(self.whitelist.write())
             .peer_whitelist
             .insert(peer);
     }
 
     fn remove_from_peer_whitelist(&self, peer: PublicKey) {
-        telio_log_info!("Removing {:?} peer from firewall whitelist", peer);
+        telio_log_debug!("Removing {:?} peer from firewall whitelist", peer);
         unwrap_lock_or_return!(self.whitelist.write())
             .peer_whitelist
             .remove(&peer);

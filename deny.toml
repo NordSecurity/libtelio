@@ -1,0 +1,64 @@
+
+targets = []
+
+
+[advisories]
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+vulnerability = "deny"
+unmaintained = "warn"
+yanked = "warn"
+notice = "warn"
+ignore = []
+
+
+[licenses]
+unlicensed = "deny"
+allow = [
+    "BSD-2-Clause",
+    "MPL-2.0",
+    "Unicode-DFS-2016",
+    "OpenSSL",
+]
+deny = []
+copyleft = "deny"
+allow-osi-fsf-free = "both"
+default = "deny"
+confidence-threshold = 0.8
+exceptions = [
+    { allow = ["GPL-3.0"], name = "telio", version = "*" },
+]
+
+[licenses.private]
+ignore = true
+registries = []
+
+[[licenses.clarify]]
+name = "ring"
+version = "*"
+expression = "MIT AND ISC AND OpenSSL"
+license-files = [
+    { path = "LICENSE", hash = 0xbd0eed23 },
+]
+
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+allow = []
+deny = []
+skip = []
+skip-tree = []
+
+
+[sources]
+unknown-registry = "warn"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+
+[sources.allow-org]
+github = ["NordSecurity"]
+gitlab = []
+bitbucket = []

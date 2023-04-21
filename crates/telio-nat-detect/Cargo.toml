@@ -4,12 +4,9 @@ version = "0.1.0"
 edition = "2018"
 license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+publish = false
 
 [dependencies]
 tokio = { version = ">=1.22", features = ["full"] }
 nat-detect = "0.1.7"
 log = {version = "0.4.14", features = ["release_max_level_info"]}
-
-telio-utils = { version = "0.1.0", path = "../telio-utils" }

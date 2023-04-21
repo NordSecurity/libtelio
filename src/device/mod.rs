@@ -54,7 +54,7 @@ use std::{
     time::Duration,
 };
 
-use telio_utils::{telio_log_debug, telio_log_info};
+use telio_utils::{exponential_backoff::ExponentialBackoffBounds, telio_log_debug, telio_log_info};
 
 use telio_model::{
     api_config::{
@@ -158,6 +158,9 @@ pub struct RequestedState {
 
     // A configuration as requested by libtelio.set_config(...) call, no modifications
     pub meshnet_config: Option<Config>,
+
+    // An old meshnet configuration
+    pub old_meshnet_config: Option<Config>,
 
     // The latest exit node passed by libtelio.connected_to_exit(...)
     pub exit_node: Option<ExitNode>,
@@ -367,12 +370,12 @@ impl Device {
 
         self.rt = Some(self.art()?.block_on(async {
             let t = Task::start(
-                Runtime::start(
+                Box::pin(Runtime::start(
                     self.event.clone(),
                     config,
                     self.features.clone(),
                     self.protect.clone(),
-                )
+                ))
                 .await?,
             );
             Ok::<Task<Runtime>, Error>(t)
@@ -804,14 +807,17 @@ impl Runtime {
                         .new_external_udp((Ipv4Addr::UNSPECIFIED, 0), None)
                         .await?,
                     wireguard_interface.clone(),
-                    Duration::from_secs(
-                        direct
-                            .endpoint_interval_secs
-                            .unwrap_or(DEFAULT_ENDPOINT_POLL_INTERVAL_SECS),
-                    ),
+                    ExponentialBackoffBounds {
+                        initial: Duration::from_secs(
+                            direct
+                                .endpoint_interval_secs
+                                .unwrap_or(DEFAULT_ENDPOINT_POLL_INTERVAL_SECS),
+                        ),
+                        maximal: Some(Duration::from_secs(120)),
+                    },
                     ping_pong_tracker.clone(),
                     stun_server_events.tx,
-                ));
+                )?);
                 endpoint_providers.push(ep.clone());
                 Some(ep)
             } else {
@@ -842,7 +848,7 @@ impl Runtime {
                 Duration::from_secs(2),
                 ping_pong_tracker,
                 Default::default(),
-            )?);
+            ));
 
             // Create WireGuard connection upgrade synchronizer
             let upgrade_sync = Arc::new(UpgradeSync::new(
@@ -1041,6 +1047,7 @@ impl Runtime {
     }
 
     async fn set_config(&mut self, config: &Option<Config>) -> Result {
+        self.requested_state.old_meshnet_config = self.requested_state.meshnet_config.clone();
         self.requested_state.meshnet_config = config.clone();
 
         let wg_itf = self.entities.wireguard_interface.get_interface().await?;
@@ -1270,7 +1277,7 @@ impl Runtime {
 
         // Find a peer with matching public key in meshnet_config and retreive the needed
         // information about it from there
-        let meshnet_peer: Option<Peer> = self
+        let meshnet_peer: Option<Peer> = match self
             .requested_state
             .meshnet_config
             .as_ref()
@@ -1283,7 +1290,23 @@ impl Runtime {
                     .collect::<Vec<Peer>>()
                     .first()
                     .cloned()
-            });
+            }) {
+            Some(peer) => Some(peer),
+            None => self
+                .requested_state
+                .old_meshnet_config
+                .as_ref()
+                .and_then(|config| config.peers.clone())
+                .and_then(|config_peers| {
+                    config_peers
+                        .iter()
+                        .cloned()
+                        .filter(|config_peer| config_peer.base.public_key == peer.public_key)
+                        .collect::<Vec<Peer>>()
+                        .first()
+                        .cloned()
+                }),
+        };
 
         // Resolve what type of path is used
         let path_type = {
@@ -1323,7 +1346,7 @@ impl Runtime {
                 Some(Node {
                     identifier: meshnet_peer.base.identifier,
                     public_key: meshnet_peer.base.public_key,
-                    state: state.or_else(|| Some(peer.state())),
+                    state: state.unwrap_or_else(|| peer.state()),
                     is_exit: exit_node.is_some(),
                     is_vpn: false,
                     allowed_ips: peer.allowed_ips.clone(),
@@ -1338,7 +1361,7 @@ impl Runtime {
                 Some(Node {
                     identifier: exit_node.identifier,
                     public_key: exit_node.public_key,
-                    state: state.or_else(|| Some(peer.state())),
+                    state: state.unwrap_or_else(|| peer.state()),
                     is_exit: true,
                     is_vpn: exit_node.endpoint.is_some(),
                     allowed_ips: peer.allowed_ips.clone(),
