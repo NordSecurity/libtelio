@@ -264,26 +264,24 @@ impl Analytics {
 
     async fn handle_wg_event(&mut self, event: Event) {
         if let Event::Node { body: Some(node) } = event {
-            if let Some(state) = node.state {
-                let mut mesh_link = MeshLink::default();
-                mesh_link
-                    .connection_state
-                    .set(MeshConnectionState::WG, state == NodeState::Connected);
+            let mut mesh_link = MeshLink::default();
+            mesh_link
+                .connection_state
+                .set(MeshConnectionState::WG, node.state == NodeState::Connected);
 
-                let node_info = if node.is_vpn {
-                    NodeInfo::Vpn {
-                        mesh_link,
-                        hostname: node.hostname,
-                    }
-                } else {
-                    NodeInfo::Node {
-                        mesh_link,
-                        meshnet_id: None,
-                    }
-                };
+            let node_info = if node.is_vpn {
+                NodeInfo::Vpn {
+                    mesh_link,
+                    hostname: node.hostname,
+                }
+            } else {
+                NodeInfo::Node {
+                    mesh_link,
+                    meshnet_id: None,
+                }
+            };
 
-                self.local_nodes.entry(node.public_key).or_insert(node_info);
-            }
+            self.local_nodes.entry(node.public_key).or_insert(node_info);
         }
     }
 

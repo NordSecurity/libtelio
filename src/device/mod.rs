@@ -1346,7 +1346,7 @@ impl Runtime {
                 Some(Node {
                     identifier: meshnet_peer.base.identifier,
                     public_key: meshnet_peer.base.public_key,
-                    state: state.or_else(|| Some(peer.state())),
+                    state: state.unwrap_or_else(|| peer.state()),
                     is_exit: exit_node.is_some(),
                     is_vpn: false,
                     allowed_ips: peer.allowed_ips.clone(),
@@ -1361,7 +1361,7 @@ impl Runtime {
                 Some(Node {
                     identifier: exit_node.identifier,
                     public_key: exit_node.public_key,
-                    state: state.or_else(|| Some(peer.state())),
+                    state: state.unwrap_or_else(|| peer.state()),
                     is_exit: true,
                     is_vpn: exit_node.endpoint.is_some(),
                     allowed_ips: peer.allowed_ips.clone(),
