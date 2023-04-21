@@ -223,7 +223,7 @@ mod tests {
         let node = Node {
             identifier: "f2b18d10-82ed-49a3-8b50-3356685ec5fa".to_owned(),
             public_key: PublicKey([1_u8; KEY_SIZE]),
-            state: Some(NodeState::Connected),
+            state: NodeState::Connected,
             is_exit: true,
             is_vpn: true,
             allowed_ips: Vec::from(["127.0.0.1".parse().unwrap()]),
