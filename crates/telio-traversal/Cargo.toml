@@ -16,7 +16,6 @@ telio-utils = { path = "../telio-utils" }
 telio-sockets = { path = "../telio-sockets" }
 telio-model = { path = "../telio-model" }
 telio-wg = { path = "../telio-wg" }
-telio-test = { path = "../telio-test" }
 
 async-trait = "0.1.56"
 base64 = "0.13.0"
@@ -26,7 +25,6 @@ if-addrs = "0.7.0"
 ipnet = "2.3.1"
 num_enum = "0.5.4"
 log = { version = "0.4.17", features = ["release_max_level_info"] }
-pnet_packet = "0.28.0"
 rand = "0.8.4"
 stun_codec = "0.1.13"
 thiserror = "1.0.30"
@@ -43,7 +41,8 @@ ntest = "0.7"
 maplit = "1"
 mockall = "0.11.3"
 env_logger = "0.9.0"
-telio-task = { features = ["test-util"], path = "../telio-task" }
 tokio = { version = ">=1.22", features = ["test-util"] }
 telio-wg = { features = ["mockall"], path = "../telio-wg" }
+telio-task = { features = ["test-util"], path = "../telio-task" }
+telio-test = { path = "../telio-test" }
 telio-utils = { features = ["mockall"], path = "../telio-utils" }
