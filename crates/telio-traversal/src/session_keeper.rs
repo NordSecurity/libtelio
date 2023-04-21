@@ -15,7 +15,7 @@ use telio_utils::{
 
 const PING_PAYLOAD_SIZE: usize = 56;
 
-/// Posible [UdpHolePunch] errors.
+/// Possible [SessionKeeper] errors.
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     /// `UdpProxy` `IoError`
