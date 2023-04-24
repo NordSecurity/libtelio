@@ -3556,6 +3556,7 @@ dependencies = [
  "slog",
  "slog-stdlog",
  "telio-crypto",
+ "telio-firewall",
  "telio-sockets",
  "telio-task",
  "telio-test",
