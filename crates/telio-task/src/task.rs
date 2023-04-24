@@ -166,6 +166,8 @@ where
             }
         }));
 
+        println!("task started - {}", S::NAME);
+
         Self {
             stop,
             execute,
@@ -198,6 +200,7 @@ where
 
     /// Stop task
     pub async fn stop(mut self) -> StopResult<S::Err> {
+        println!("task stopped - {}", S::NAME);
         self.stop.notify_one();
         let join = match self.join.take() {
             Some(v) => v,

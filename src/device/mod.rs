@@ -1501,6 +1501,7 @@ impl TaskRuntime for Runtime {
                 stop_arc_entity!(stun, "StunEndpointProvider");
             }
 
+            stop_arc_entity!(direct.session_keeper, "SessionKeeper");
             stop_arc_entity!(direct.upgrade_sync, "UpgradeSync");
         }
 
