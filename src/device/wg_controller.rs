@@ -124,7 +124,7 @@ async fn consolidate_wg_peers<
 
     let actual_peers = wireguard_interface.get_interface().await?.peers;
 
-    // Calculate diff between requesed and actual list of peers
+    // Calculate diff between requested and actual list of peers
     let requested_keys: HashSet<&PublicKey> = requested_peers.keys().collect();
     let actual_keys: HashSet<&PublicKey> = actual_peers.keys().collect();
     let delete_keys = &actual_keys - &requested_keys;

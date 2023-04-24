@@ -24,7 +24,7 @@ pub struct Node {
     /// Public key of the Node
     pub public_key: PublicKey,
     /// State of the node (Connecting, connected, or disconnected)
-    pub state: Option<NodeState>,
+    pub state: NodeState,
     /// Is the node exit node
     pub is_exit: bool,
     /// Is the node is a vpn server.
@@ -174,7 +174,7 @@ impl From<&PeerEvent> for Node {
     fn from(other: &PeerEvent) -> Node {
         Self {
             public_key: other.peer.public_key,
-            state: Some(other.state),
+            state: other.state,
             allowed_ips: other.peer.allowed_ips.clone(),
             endpoint: other.peer.endpoint,
             ..Default::default()
