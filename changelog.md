@@ -4,6 +4,7 @@
 ### Changelog
 * LLT-3423: Add identifier to `Node` and `ExitNode`, and telio function to supply an identifier when connecting to an exit node
 * LLT-3404: Add github PR template
+* LLT-2948: Improve derpcli for large scale stress-testing
 * LLT-3420: Box large futures
 * LLT-3504: Enable nurse component. Its start has been accidentally removed during merges.
 * NVA-3705: Configure Android SONAME
