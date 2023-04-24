@@ -16,6 +16,7 @@ use telio_task::{
     Runtime, RuntimeExt, WaitResponse,
 };
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
+use telio_wg::uapi::PeerState;
 use tokio::time::{interval_at, sleep, Duration, Instant, Interval, Sleep};
 use uuid::Uuid;
 
@@ -254,7 +255,7 @@ impl Analytics {
         let start_time = if let Some(initial_timeout) = config.initial_collect_interval {
             Instant::now() + initial_timeout
         } else {
-            Instant::now() + config.collect_interval
+            Instant::now() + config.collect_interval - config.collect_answer_timeout
         };
 
         let mut config_local_nodes = HashSet::new();
@@ -306,24 +307,32 @@ impl Analytics {
     async fn handle_wg_event(&mut self, event: Event) {
         if let Event::Node { body: Some(node) } = event {
             if let Some(state) = node.state {
-                let mut mesh_link = MeshLink::default();
-                mesh_link
-                    .connection_state
-                    .set(MeshConnectionState::WG, state == NodeState::Connected);
-
-                let node_info = if node.is_vpn {
-                    NodeInfo::Vpn {
-                        mesh_link,
-                        hostname: node.hostname,
-                    }
+                if state == PeerState::Disconnected {
+                    let _ = self.local_nodes.remove(&node.public_key);
                 } else {
-                    NodeInfo::Node {
-                        mesh_link,
-                        meshnet_id: None,
-                    }
-                };
+                    let mut mesh_link = MeshLink::default();
+                    mesh_link
+                        .connection_state
+                        .set(MeshConnectionState::WG, state == NodeState::Connected);
 
-                self.local_nodes.entry(node.public_key).or_insert(node_info);
+                    let node_info = if node.is_vpn {
+                        NodeInfo::Vpn {
+                            mesh_link,
+                            hostname: node.hostname.as_ref().cloned().or_else(|| {
+                                node.endpoint.map(|endpoint| {
+                                    format!("{:x}", md5::compute(endpoint.to_string().as_bytes()))
+                                })
+                            }),
+                        }
+                    } else {
+                        NodeInfo::Node {
+                            mesh_link,
+                            meshnet_id: None,
+                        }
+                    };
+
+                    *self.local_nodes.entry(node.public_key).or_default() = node_info;
+                }
             }
         }
     }
@@ -334,6 +343,7 @@ impl Analytics {
 
     async fn handle_config_update_event(&mut self, event: MeshConfigUpdateEvent) {
         if self.state == RuntimeState::Monitoring {
+            self.config_local_nodes.clear();
             for node in &event.local_nodes {
                 self.config_local_nodes.insert(*node);
             }
@@ -507,6 +517,16 @@ impl Analytics {
             ..Default::default()
         };
 
+        self.collection
+            .fingerprints
+            .insert(self.public_key, self.config.fingerprint.clone());
+        for node in self.config_local_nodes.iter() {
+            self.collection
+                .fingerprints
+                .entry(*node)
+                .or_insert_with(|| String::from("null"));
+        }
+
         let mut internal_sorted_public_keys = self
             .collection
             .fingerprints
@@ -523,6 +543,12 @@ impl Analytics {
             .filter(|pk| !self.is_local(*pk))
             .collect::<Vec<_>>();
 
+        self.local_nodes.iter().for_each(|(pk, node_info)| {
+            if let NodeInfo::Vpn { .. } = node_info {
+                external_sorted_public_keys.push(*pk);
+            }
+        });
+
         // Sort out the public keys, according to Rust docs "Strings are ordered lexicographically by their byte values."
         // we sort public keys, instead of sorting by fingerprints, since fingerprints can be empty or null, resulting in
         // multiple same values, which make having a consistent layout for each node awkward to implement
@@ -535,12 +561,10 @@ impl Analytics {
         // Map node public keys to indices for the connectivity matrix alonside creating a sorted fingerprint list
         let mut index_map: HashMap<PublicKey, u8> = HashMap::new();
         let mut internal_sorted_fingerprints: Vec<String> = Vec::new();
-        // Add self on position 0
-        index_map.entry(self.public_key).or_insert(0);
 
         for (i, pk) in internal_sorted_public_keys.iter().enumerate() {
             // Since the public key array is already sorted, we can just insert the index from the `enumerate` iterator here
-            index_map.entry(*pk).or_insert(i as u8 + 1);
+            index_map.entry(*pk).or_insert(i as u8);
 
             // By the same token, we can just insert the respective fingerprint into the list of sorted fingerprints
             if let Some(fp) = self.collection.fingerprints.get(pk).cloned() {
@@ -589,6 +613,9 @@ impl Analytics {
 
                 // And only output the minimum, or the worst reported connection from the pair as the representing connection
                 let min = link1.min(link2);
+                if min == MeshLink::default() {
+                    continue;
+                }
 
                 // And if this state differs from the default state of the matrix, we add this to the final output
                 write!(
@@ -620,7 +647,7 @@ impl Analytics {
                     String::from("vpn"),
                     hostname.clone().unwrap_or_else(|| {
                         telio_log_warn!("Node with pk: {:?} has no fingerprint", key);
-                        String::from("no-fingerprint")
+                        String::from("null")
                     }),
                     mesh_link.connection_state.bits,
                 ),
@@ -640,7 +667,7 @@ impl Analytics {
                         .cloned()
                         .unwrap_or_else(|| {
                             telio_log_warn!("Node with pk: {:?} has no fingerprint", key);
-                            String::from("no-fingerprint")
+                            String::from("null")
                         }),
                     mesh_link.connection_state.bits,
                 ),
@@ -685,6 +712,10 @@ impl Analytics {
     }
 
     fn is_local(&self, pk: PublicKey) -> bool {
+        if self.public_key == pk {
+            return true;
+        }
+
         match self.local_nodes.get(&pk) {
             Some(NodeInfo::Node { meshnet_id, .. }) => meshnet_id
                 .as_ref()

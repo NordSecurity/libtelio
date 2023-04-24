@@ -193,10 +193,12 @@ impl State {
         let external_sorted_public_keys = info.external_sorted_public_keys;
         let (internal_qos_data, external_qos_data) = if let Some(qos) = self.qos.as_ref() {
             task_exec!(qos, async move |state| {
-                Ok((
+                let result = (
                     state.get_data(&internal_sorted_public_keys),
                     state.get_data(&external_sorted_public_keys),
-                ))
+                );
+                state.reset_cached_data();
+                Ok(result)
             })
             .await
             .unwrap_or_default()

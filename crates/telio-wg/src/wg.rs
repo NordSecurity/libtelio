@@ -570,8 +570,10 @@ impl State {
                     let rx_bytes = peer.rx_bytes.unwrap_or_default();
                     let peer_state = if diff_keys.delete_keys.contains(pubkey) {
                         PeerState::Disconnected
-                    } else {
+                    } else if peer.connected() {
                         PeerState::Connected
+                    } else {
+                        PeerState::Connecting
                     };
 
                     let event = AnalyticsEvent {
