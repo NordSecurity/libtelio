@@ -3502,7 +3502,6 @@ dependencies = [
  "mockall",
  "ntest",
  "num_enum",
- "pnet_packet 0.28.0",
  "rand",
  "sm",
  "strum",
