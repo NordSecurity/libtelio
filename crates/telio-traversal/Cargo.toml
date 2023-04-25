@@ -9,7 +9,6 @@ publish = false
 [dependencies]
 boringtun = { git = "https://github.com/NordSecurity/boringtun.git", tag = "v1.1.1" }
 telio-crypto = { path = "../telio-crypto" }
-telio-relay = { path = "../telio-relay" }
 telio-task = { path = "../telio-task" }
 telio-proto = { path = "../telio-proto" }
 telio-utils = { path = "../telio-utils" }
@@ -23,7 +22,6 @@ bytecodec = "0.4.15"
 enum-map = "1.1.1"
 if-addrs = "0.7.0"
 ipnet = "2.3.1"
-num_enum = "0.5.4"
 log = { version = "0.4.17", features = ["release_max_level_info"] }
 rand = "0.8.4"
 stun_codec = "0.1.13"
