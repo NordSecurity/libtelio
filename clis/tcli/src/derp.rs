@@ -6,10 +6,10 @@ use serde::Deserialize;
 use telio::crypto::SecretKey;
 use telio_model::PublicKey;
 use telio_proto::{Codec, Packet};
-use telio_relay::{DerpRelay, Server};
+use telio_relay::{DerpRelay, Server, SortedServers};
 use telio_sockets::{NativeProtector, SocketPool};
 use telio_task::io::{chan::Tx, Chan, McChan};
-use telio_utils::telio_log_debug;
+use telio_utils::{telio_log_debug, telio_log_warn};
 use tokio::{runtime::Runtime, task::JoinHandle};
 
 use crate::{cli::Resp, cli_res, cli_try};
@@ -77,22 +77,28 @@ impl DerpClient {
 
                 telio_log_debug!("Secret Key: {:?}", secret_key);
 
-                for server in servers {
-                    let server: Serv = cli_try!(serde_json::from_str(&server));
+                config.servers = SortedServers::new(
+                    servers
+                        .into_iter()
+                        .flat_map(|str_serv| {
+                            if let Ok(server) = serde_json::from_str::<Serv>(&str_serv) {
+                                telio_log_debug!("public Key (DERP SERVER): {:?}", &server.pk);
+                                telio_log_debug!("port: {:?}", &server.port);
+                                Some(Server {
+                                    public_key: server.pk,
+                                    ipv4: server.ipv4,
+                                    hostname: server.host,
+                                    relay_port: server.port,
+                                    ..Default::default()
+                                })
+                            } else {
+                                telio_log_warn!("Could not parse JSON as a Server");
+                                None
+                            }
+                        })
+                        .collect(),
+                );
 
-                    telio_log_debug!("public Key (DERP SERVER): {:?}", &server.pk);
-                    telio_log_debug!("port: {:?}", &server.port);
-
-                    let server = Server {
-                        public_key: server.pk,
-                        ipv4: server.ipv4,
-                        hostname: server.host,
-                        relay_port: server.port,
-                        use_plain_text: true,
-                        ..Default::default()
-                    };
-                    config.servers.push(server);
-                }
                 let keys = allowed_pk.split(' ');
                 for key in keys {
                     config.allowed_pk.insert(cli_try!(res; key.parse()));
