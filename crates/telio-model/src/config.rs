@@ -81,7 +81,9 @@ pub struct Server {
     pub public_key: PublicKey,
     /// Determines in which order the client tries to connect to the derp servers
     pub weight: u32,
+
     /// When enabled the connection to servers is not encrypted
+    #[serde(default)]
     pub use_plain_text: bool,
 
     /// Status of the connection with the server

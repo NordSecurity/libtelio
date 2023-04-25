@@ -266,8 +266,8 @@ mod tests {
             r#""stun_plaintext_port":3478,"#,
             r#""public_key":"SPB77H13eXlOdWc+PGrX6oAQfCvz2me1fvAB0lrxN0Y=","#,
             r#""weight":1,"#,
-            r#""conn_state":"connecting","#,
-            r#""use_plain_text":true"#,
+            r#""use_plain_text":true,"#,
+            r#""conn_state":"connecting""#,
             r#"}}"#
         ));
 
