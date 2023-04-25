@@ -3320,7 +3320,6 @@ dependencies = [
  "strum",
  "strum_macros",
  "telio-crypto",
- "telio-relay",
  "telio-wg",
 ]
 
@@ -3420,6 +3419,7 @@ dependencies = [
  "static_assertions",
  "strum",
  "telio-crypto",
+ "telio-model",
  "telio-proto",
  "telio-sockets",
  "telio-task",
@@ -3501,7 +3501,6 @@ dependencies = [
  "maplit",
  "mockall",
  "ntest",
- "num_enum",
  "rand",
  "sm",
  "strum",
@@ -3510,7 +3509,6 @@ dependencies = [
  "telio-crypto",
  "telio-model",
  "telio-proto",
- "telio-relay",
  "telio-sockets",
  "telio-task",
  "telio-test",

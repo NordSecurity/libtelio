@@ -16,6 +16,7 @@ use futures::{future::select_all, Future};
 use generic_array::typenum::Unsigned;
 use serde::{Deserialize, Serialize};
 use telio_crypto::{PublicKey, SecretKey};
+use telio_model::config::{RelayState, Server};
 use telio_proto::{Codec, Packet, PacketType};
 use telio_sockets::SocketPool;
 use telio_task::io::{wait_for_tx, Chan};
@@ -76,24 +77,6 @@ impl PartialEq for SortedServers {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum RelayState {
-    Disconnected,
-    Connecting,
-    Connected,
-}
-
-impl Default for RelayState {
-    fn default() -> RelayState {
-        RelayState::Disconnected
-    }
-}
-
-pub struct Event {
-    pub server: Option<Server>,
-}
-
 pub struct DerpRelay {
     task: Task<State>,
 }
@@ -125,43 +108,6 @@ pub struct Config {
     pub timeout: Duration,
     pub ca_pem_path: Option<PathBuf>,
     pub mesh_ip: IpAddr,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Server {
-    pub region_code: String,
-    pub name: String,
-    pub hostname: String,
-    pub ipv4: Ipv4Addr,
-    pub relay_port: u16,
-    pub stun_port: u16,
-    #[serde(default)]
-    pub stun_plaintext_port: u16,
-    pub public_key: PublicKey,
-    pub weight: u32,
-
-    #[serde(default)]
-    pub conn_state: RelayState,
-
-    #[serde(default)]
-    pub use_plain_text: bool,
-}
-
-impl PartialEq for Server {
-    // Ignore fields used by DerpRelay itself only
-    fn eq(&self, other: &Self) -> bool {
-        self.region_code == other.region_code
-            && self.name == other.name
-            && self.hostname == other.hostname
-            && self.ipv4 == other.ipv4
-            && self.relay_port == other.relay_port
-            && self.stun_port == other.stun_port
-            && self.stun_plaintext_port == other.stun_plaintext_port
-            && self.public_key == other.public_key
-            && self.use_plain_text == other.use_plain_text
-        // Do not compare weights, priority for connection persistence
-        // && self.weight == other.weight
-    }
 }
 
 impl Default for Config {
@@ -252,34 +198,6 @@ impl State {
     }
 }
 
-impl Server {
-    pub fn get_address(&self) -> String {
-        if self.use_plain_text {
-            format!("http://{}:{}", self.hostname, self.relay_port)
-        } else {
-            format!("https://{}:{}", self.hostname, self.relay_port)
-        }
-    }
-}
-
-impl Default for Server {
-    fn default() -> Self {
-        Self {
-            region_code: "".to_string(),
-            name: "".to_string(),
-            hostname: "".to_string(),
-            ipv4: Ipv4Addr::new(0, 0, 0, 0),
-            relay_port: 0,
-            stun_port: 0,
-            stun_plaintext_port: 0,
-            public_key: PublicKey::default(),
-            use_plain_text: false,
-            weight: 0,
-            conn_state: RelayState::Disconnected,
-        }
-    }
-}
-
 impl DerpRelay {
     /// Relay's constructor
     pub fn start_with(
@@ -332,10 +250,6 @@ impl DerpRelay {
                         s.disconnect().await;
                     }
                 }
-            } else {
-                // No config diconnect
-                telio_log_info!("Config disabled relaying - Disconnecting");
-                s.disconnect().await
             }
 
             Ok(())

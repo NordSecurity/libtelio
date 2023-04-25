@@ -4,8 +4,9 @@ use super::mesh::Node;
 use modifier::Modifier;
 use serde::Serialize;
 
+use crate::config::Server as Relay;
+
 pub use modifier::Set;
-use telio_relay::derp::Server as Relay;
 
 /// Macro used to report events
 /// # Arguments
@@ -213,10 +214,11 @@ impl Set for Event {}
 
 #[cfg(test)]
 mod tests {
+    use crate::config::{RelayState, Server};
+
     use super::super::mesh::*;
     use super::*;
     use telio_crypto::{PublicKey, KEY_SIZE};
-    use telio_relay::derp::{RelayState, Server};
 
     #[test]
     fn validate_to_json() {
@@ -264,8 +266,8 @@ mod tests {
             r#""stun_plaintext_port":3478,"#,
             r#""public_key":"SPB77H13eXlOdWc+PGrX6oAQfCvz2me1fvAB0lrxN0Y=","#,
             r#""weight":1,"#,
-            r#""conn_state":"connecting","#,
-            r#""use_plain_text":true"#,
+            r#""use_plain_text":true,"#,
+            r#""conn_state":"connecting""#,
             r#"}}"#
         ));
 
