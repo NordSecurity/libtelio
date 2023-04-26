@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use bitflags::bitflags;
+use std::collections::BTreeSet;
 use std::fmt::Write;
 use std::{
     collections::{HashMap, HashSet},
@@ -527,13 +528,16 @@ impl Analytics {
                 .or_insert_with(|| String::from("null"));
         }
 
-        let mut internal_sorted_public_keys = self
+        // Use BTreeSet to sort out the public keys
+        // We sort public keys, instead of sorting by fingerprints, since fingerprints can be empty or null, resulting in
+        // multiple same values, which make having a consistent layout for each node awkward to implement
+        let internal_sorted_public_keys = self
             .collection
             .fingerprints
             .iter()
             .map(|x| *x.0)
             .filter(|pk| self.is_local(*pk))
-            .collect::<Vec<_>>();
+            .collect::<BTreeSet<_>>();
 
         let mut external_sorted_public_keys = self
             .collection
@@ -541,19 +545,13 @@ impl Analytics {
             .iter()
             .map(|x| *x.0)
             .filter(|pk| !self.is_local(*pk))
-            .collect::<Vec<_>>();
+            .collect::<BTreeSet<_>>();
 
         self.local_nodes.iter().for_each(|(pk, node_info)| {
             if let NodeInfo::Vpn { .. } = node_info {
-                external_sorted_public_keys.push(*pk);
+                external_sorted_public_keys.insert(*pk);
             }
         });
-
-        // Sort out the public keys, according to Rust docs "Strings are ordered lexicographically by their byte values."
-        // we sort public keys, instead of sorting by fingerprints, since fingerprints can be empty or null, resulting in
-        // multiple same values, which make having a consistent layout for each node awkward to implement
-        internal_sorted_public_keys.sort_by_key(|k| k.to_string());
-        external_sorted_public_keys.sort_by_key(|k| k.to_string());
 
         heartbeat_info.internal_sorted_public_keys = internal_sorted_public_keys.clone();
         heartbeat_info.external_sorted_public_keys = external_sorted_public_keys.clone();
@@ -576,9 +574,7 @@ impl Analytics {
         heartbeat_info.fingerprints = internal_sorted_fingerprints
             .iter()
             .fold(String::new(), |o, t| o + t.as_str() + ",");
-        if !heartbeat_info.fingerprints.is_empty() {
-            heartbeat_info.fingerprints.pop();
-        }
+        heartbeat_info.fingerprints.pop();
 
         // Fill in the missing external links, in case we haven't gotten a response from some nodes
         for i in index_map.keys() {
@@ -626,11 +622,8 @@ impl Analytics {
                 .expect("no");
             }
         }
-
-        // Shave off the uneeded comma, if we have anything in the matrix to begin with
-        if !connectivity_matrix.is_empty() {
-            connectivity_matrix.pop();
-        }
+        // Shave off the uneeded comma
+        connectivity_matrix.pop();
 
         heartbeat_info.connectivity_matrix = connectivity_matrix;
 

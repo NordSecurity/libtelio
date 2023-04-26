@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use histogram::Histogram;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::net::IpAddr;
 use std::time::Instant;
 
@@ -216,8 +216,12 @@ impl Analytics {
     }
 
     /// Wrapper function around `Analytics::get_data_from_nodes_hashmap`.
-    pub fn get_data(&mut self, sorted_public_keys: &[PublicKey]) -> OutputData {
-        Analytics::get_data_from_nodes_hashmap(&mut self.nodes, self.buckets, sorted_public_keys)
+    pub fn get_data(&mut self, sorted_public_keys_set: &BTreeSet<PublicKey>) -> OutputData {
+        Analytics::get_data_from_nodes_hashmap(
+            &mut self.nodes,
+            self.buckets,
+            sorted_public_keys_set,
+        )
     }
 
     /// Get QoS data from the specified nodes in the meshnet.
@@ -234,7 +238,7 @@ impl Analytics {
     pub fn get_data_from_nodes_hashmap(
         nodes: &mut HashMap<PublicKey, NodeInfo>,
         buckets: u32,
-        sorted_public_keys: &[PublicKey],
+        sorted_public_keys: &BTreeSet<PublicKey>,
     ) -> OutputData {
         let mut output = OutputData::default();
 
@@ -424,11 +428,11 @@ mod tests {
         let output = Analytics::get_data_from_nodes_hashmap(
             &mut hashmap,
             5,
-            &[
+            &BTreeSet::<PublicKey>::from([
                 a_public_key,
                 PublicKey(*b"ABBBBBBBBBBBBBBBBBBBAAAAAAAAAAAA"),
                 b_public_key,
-            ],
+            ]),
         );
 
         let expected_output = OutputData {

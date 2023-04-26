@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use telio_crypto::PublicKey;
 use telio_model::config::Config;
 
@@ -11,9 +12,9 @@ pub struct HeartbeatInfo {
     /// Connectivity matrix of the meshnet
     pub connectivity_matrix: String,
     /// Public keys of internal nodes
-    pub internal_sorted_public_keys: Vec<PublicKey>,
+    pub internal_sorted_public_keys: BTreeSet<PublicKey>,
     /// Public keys of external nodes
-    pub external_sorted_public_keys: Vec<PublicKey>,
+    pub external_sorted_public_keys: BTreeSet<PublicKey>,
     /// How often to send heartbeats
     pub heartbeat_interval: i32,
     /// String with comma-separated list of `meshnet_id:fingerprint:connection_state` for all external nodes
