@@ -1,3 +1,5 @@
+//! API to convert WireGuard components <=> telio components
+
 use ipnetwork::{IpNetwork, IpNetworkError};
 use serde::{Deserialize, Serialize};
 use telio_crypto::{KeyDecodeError, PublicKey, SecretKey};
@@ -16,9 +18,11 @@ use std::{
     time::{Duration, Instant, SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
+/// Error types from uapi responses
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum Error {
     #[error("Parsing of '{0}' failed: {1}")]
+    /// Error is a parsing error
     ParsingError(&'static str, String),
 }
 
@@ -171,33 +175,50 @@ pub enum Cmd {
     Set(set::Device),
 }
 
+/// Response type of [UAPI](https://www.wireguard.com/xplatform/) requests
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Response {
+    /// The error code of the response. '0' denotes no error
     pub errno: i32,
+    /// Contains an interface if there is no error, otherwise 'None'
     pub interface: Option<Interface>,
 }
 
+/// Connection state of the peer
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PeerState {
+    /// Peer is disconnected
     Disconnected,
+    /// Trying to connect to the Peer
     Connecting,
+    /// Peer is connected
     Connected,
 }
 
+/// Peer information to transmit
 #[derive(Debug, PartialEq, Eq)]
 pub struct Event {
+    /// The state of the Peer
     pub state: PeerState,
+    /// Details regarding the Peer
     pub peer: Peer,
 }
 
+/// Analytics information to be conveyed
 #[derive(Clone, Debug)]
 pub struct AnalyticsEvent {
+    /// Public key of the Peer
     pub public_key: PublicKey,
+    /// IP address and port number of the socket
     pub endpoint: SocketAddr,
+    /// Number of transmitted bytes
     pub tx_bytes: u64,
+    /// Number of recieved bytes
     pub rx_bytes: u64,
+    /// State of the Peer
     pub peer_state: PeerState,
+    /// Timestamp of the event
     pub timestamp: Instant,
 }
 
@@ -206,7 +227,10 @@ impl Peer {
     #[cfg(test)]
     const MOCK_UNIX_TIME: Duration = Duration::from_secs(1646405984);
 
-    pub fn connected(&self) -> bool {
+    /// Checks whether the Peer is still connected.
+    /// Returns 'false' if there has been no response from
+    /// Peer for some time.
+    pub fn is_connected(&self) -> bool {
         // https://web.archive.org/web/20200603205723/https://www.wireguard.com/papers/wireguard.pdf
         // 6.1
         const REJECT_AFTER_TIME: Duration = Duration::from_secs(180);
@@ -248,14 +272,16 @@ impl Peer {
             .map_or(false, |d| d < REJECT_AFTER_TIME + REKEY_TIMEOUT_JITTER)
     }
 
+    /// Returns the current state of the peer
     pub fn state(&self) -> PeerState {
-        if self.connected() {
+        if self.is_connected() {
             PeerState::Connected
         } else {
             PeerState::Connecting
         }
     }
 
+    /// Detects changes in endpoints and allowed ips
     pub fn is_same_event(&self, other: &Self) -> bool {
         (&self.public_key, &self.endpoint, &self.allowed_ips)
             == (&self.public_key, &other.endpoint, &other.allowed_ips)

@@ -39,6 +39,8 @@ wireguard-uapi = { version = "2.0.4", features = ["xplatform"]}
 pretty_assertions = "0.7.2"
 tokio = { version = ">=1.22", features = ["test-util"] }
 ntest = "0.7"
+
+telio-firewall = { path = "../telio-firewall" }
 telio-task = { features = ["test-util"], path = "../telio-task" }
 telio-test = { version = "1.0.0", path = "../telio-test" }
 mockall = "0.11.3"

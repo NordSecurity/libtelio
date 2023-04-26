@@ -26,8 +26,8 @@ OPTIONS:
     -s, --server <server>          Server address [default: http://localhost:1234]
     -z, --size <size>              Data text size to generate and send
     -k, --targetkey <targetkey>    Target peer private key base64 encoded
+    -C, --CA <path>                Path to CA.pem file [default: ""]
     -f, --config <path>            Path to config file
-    -o, --output <output>          Path to logs output file [default: ""]
 ```
 
 ## Derpcli for large scale testing
@@ -35,141 +35,88 @@ OPTIONS:
 ### Providing config file
 **Example**  
 ```
-derpcli -f config.json -o output -vv
+derpcli --config config.json -C ca.pem -vv
 ```
 
 ### Config file
+
+Clients are created in pairs on the same instance of `derpcli`. Client count
+should be even (if no error occured). Timestamp and first DERP name is put
+into payload to measure RTT routed to some DERP. Clients can be assigned
+to different DERP servers, by manipulating `derp1_increment` and `derp2_offset`.
+The first DERP NR for the first client is always NR 0. On every next client pair
+assign for one client the next DERP will be selected by incrementing prev NR by
+`derp1_increment`. Second client DERP is chosen by `derp2_offset` from first
+client.
+
+The following config will assign pair clients to the same DERP.
+
 ```
 {
-    "clients": [
-        {
-            // clients private key
-            "private_key": "IDv2SVTGIHar8c1zYEAHf8wQQwvSNZct9bRzSSYiA0Q=",
-
-            // derp server
-            "derp_server": "http://10.0.10.1:8765",
-
-            // peers private key list
-            "peers": [
-                "qP2k8RKIAPFS0LAoA1MDQidOxImcYwGCsUqvmMqL21A="
-            ],
-
-            // period (ms)
-            "period": 1000
-        }
-    ]
+  "client_count": 4,
+  "interval_min": 1000,
+  "interval_max": 2000,
+  "payload_min": 128,
+  "payload_max": 386,
+  "client1_pinger": true,
+  "client2_pinger": false,
+  "derp1_increment": 1,
+  "derp2_offset": 0,
+  "derps": [
+    "https://derp-a:8765",
+    "https://derp-b:8765"
+  ],
+  "stats_take_every": 1
 }
 ```
 
-- Running multiple clients on one instance.
+  ### Output
 
-    **Example**  
-        Running following config will create multiple clients on one instance. Clients will be pinging all of their peers. Config file:
-    ```
-    {
-        "clients": [
-            {
-                // clients private key
-                "private_key": "IDv2SVTGIHar8c1zYEAHf8wQQwvSNZct9bRzSSYiA0Q=",
+  ```
+[2023-02-24 13:28:05]  Clients: 0, GOAL: 4
+* Adding 2 client pairs
+* Resolving derp-a:8765
+* Resolving derp-b:8765
+DERPS resolved: [[10.0.10.1:8765], [10.0.10.2:8765]]
+* Adding clients => 4
+* [RD0R] -> TX START
+* [RD0R] -> RX START
+* [DQeL] -> TX START
+* [DQeL] -> RX START
+* [RD0R] -> Send 357b via [derp-a] to [DQeL], after 0.000s
+* [kbcB] -> TX START
+* [kbcB] -> RX START
+* [kbcB] -> Send 249b via [derp-b] to [f3Fo], after 0.000s
+* [DQeL] -> Recv 357b from [RD0R], RTT: 99ms
+* [f3Fo] -> TX START
+* [f3Fo] -> RX START
+* [kbcB] -> Send 202b via [derp-b] to [f3Fo], after 1.217s
+* [f3Fo] -> Recv 202b from [kbcB], RTT: 93ms
+* [RD0R] -> Send 245b via [derp-a] to [DQeL], after 1.867s
+* [DQeL] -> Recv 245b from [RD0R], RTT: 100ms
 
-                // derp server
-                "derp_server": "http://10.0.10.1:8765",
+13:28:07 Clients: 4
+* Avg. RTT via [derp-b]: 93.00 ms
+* Avg. RTT via [derp-a]: 99.50 ms
 
-                // peers private key list
-                "peers": [
-                    "qP2k8RKIAPFS0LAoA1MDQidOxImcYwGCsUqvmMqL21A="
-                ],
+* [kbcB] -> Send 330b via [derp-b] to [f3Fo], after 1.171s
+* [f3Fo] -> Recv 330b from [kbcB], RTT: 113ms
+* [RD0R] -> Send 292b via [derp-a] to [DQeL], after 1.649s
+* [DQeL] -> Recv 292b from [RD0R], RTT: 91ms
 
-                // period (ms)
-                "period": 1000
-            },
-            {
-                // clients private key
-                "private_key": "qP2k8RKIAPFS0LAoA1MDQidOxImcYwGCsUqvmMqL21A=",
+13:28:09 Clients: 4
+* Avg. RTT via [derp-a]: 95.50 ms
+* Avg. RTT via [derp-b]: 103.00 ms
 
-                // derp server
-                "derp_server": "http://10.0.10.1:8765",
+* [kbcB] -> Send 219b via [derp-b] to [f3Fo], after 1.756s
+* [f3Fo] -> Recv 219b from [kbcB], RTT: 203ms
+* [RD0R] -> Send 239b via [derp-a] to [DQeL], after 1.897s
+* [DQeL] -> Recv 239b from [RD0R], RTT: 93ms
+* [kbcB] -> Send 364b via [derp-b] to [f3Fo], after 1.729s
+* [f3Fo] -> Recv 364b from [kbcB], RTT: 93ms
 
-                // peers private key list
-                "peers": [
-                    "IDv2SVTGIHar8c1zYEAHf8wQQwvSNZct9bRzSSYiA0Q="
-                ],
+13:28:11 Clients: 4
+* Avg. RTT via [derp-a]: 92.00 ms
+* Avg. RTT via [derp-b]: 148.00 ms
 
-                // period (ms)
-                "period": 200
-            }
-        ]
-    }
-    ```
-- Running clients on different instances
-    **Example**  
-        Run following configs on different instances. Clients will be pinging all of their peers. Config files:
-    **Config1.json**
-    ```
-    {
-        "clients": [
-            {
-                // clients private key
-                "private_key": "IDv2SVTGIHar8c1zYEAHf8wQQwvSNZct9bRzSSYiA0Q=",
-
-                // derp server
-                "derp_server": "http://10.0.10.1:8765",
-
-                // peers private key list
-                "peers": [
-                    "qP2k8RKIAPFS0LAoA1MDQidOxImcYwGCsUqvmMqL21A="
-                ],
-
-                // period (ms)
-                "period": 1000
-            }
-        ]
-    }
-    ```  
-    **Config2.json**
-    ```
-    {
-        "clients": [
-            {
-                // clients private key
-                "private_key": "qP2k8RKIAPFS0LAoA1MDQidOxImcYwGCsUqvmMqL21A=",
-
-                // derp server
-                "derp_server": "http://10.0.10.1:8765",
-
-                // peers private key list
-                "peers": [
-                    "IDv2SVTGIHar8c1zYEAHf8wQQwvSNZct9bRzSSYiA0Q="
-                ],
-
-                // period (ms)
-                "period": 200
-            }
-        ]
-    }
-    ```
-
-    ### Output file
-    Running first example (multiple clients on one instance) will provide the following output file.
-    **output**
-    ```
-    # HELP ping_counter client uVDathXVXVe5+HuGZMyUziuykj47m9ooLgOcwAg6wVE= peer 6/3sTTnOkWLb3TTk4CEcGldlZC83fEGbW0qMqTOF+hg= ping_counter
-    # TYPE ping_counter counter
-    ping_counter 7
-    # HELP pong_counter client uVDathXVXVe5+HuGZMyUziuykj47m9ooLgOcwAg6wVE= peer 6/3sTTnOkWLb3TTk4CEcGldlZC83fEGbW0qMqTOF+hg= pong_counter
-    # TYPE pong_counter counter
-    pong_counter 7
-    # HELP rtt client uVDathXVXVe5+HuGZMyUziuykj47m9ooLgOcwAg6wVE= peer 6/3sTTnOkWLb3TTk4CEcGldlZC83fEGbW0qMqTOF+hg= last ping pong round trip time (ms)
-    # TYPE rtt gauge
-    rtt 1
-    # HELP ping_counter client 6/3sTTnOkWLb3TTk4CEcGldlZC83fEGbW0qMqTOF+hg= peer uVDathXVXVe5+HuGZMyUziuykj47m9ooLgOcwAg6wVE= ping_counter
-    # TYPE ping_counter counter
-    ping_counter 35
-    # HELP pong_counter client 6/3sTTnOkWLb3TTk4CEcGldlZC83fEGbW0qMqTOF+hg= peer uVDathXVXVe5+HuGZMyUziuykj47m9ooLgOcwAg6wVE= pong_counter
-    # TYPE pong_counter counter
-    pong_counter 35
-    # HELP rtt client 6/3sTTnOkWLb3TTk4CEcGldlZC83fEGbW0qMqTOF+hg= peer uVDathXVXVe5+HuGZMyUziuykj47m9ooLgOcwAg6wVE= last ping pong round trip time (ms)
-    # TYPE rtt gauge
-    rtt 2
-
-    ```
+  ```

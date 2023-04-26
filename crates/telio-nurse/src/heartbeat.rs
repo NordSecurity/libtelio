@@ -8,9 +8,9 @@ use std::{
     pin::Pin,
 };
 use telio_crypto::{PublicKey, SecretKey};
+use telio_model::config::{RelayState, Server};
 use telio_model::{event::Event, mesh::NodeState};
 use telio_proto::{HeartbeatMessage, HeartbeatStatus, HeartbeatType};
-use telio_relay::{RelayState, Server};
 use telio_task::{
     io::{chan, mc_chan, Chan},
     Runtime, RuntimeExt, WaitResponse,

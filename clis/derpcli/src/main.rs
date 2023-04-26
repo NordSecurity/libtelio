@@ -23,64 +23,90 @@
 //!     -s, --server <server>          Server address [default: http://localhost:1234]
 //!     -z, --size <size>              Data text size to generate and send
 //!     -k, --targetkey <targetkey>    Target peer private key base64 encoded
-//!     -f, --config <path>            Path to config file
-//!     -o, --output <path>            Path to logs output file [default: ""]
 //!     -C, --CA <path>                Path to CA.pem file [default: ""]
-//!     {
-//!         "clients": [
-//!             {
-//!                 "private_key": "IDv2SVTGIHar8c1zYEAHf8wQQwvSNZct9bRzSSYiA0Q=",
-//!                 "derp_server": "de1047.nordvpn.com:8765",
-//!                 "peers": [
-//!                     "UBZoCQW06xiFHQLvVgkNYC6pqDluteitq6fLfD4Nc34=",
-//!                     "qASVNSYfZTM1AAHHycE3tIGhNs6WP5SU5e6jRaDDzXk="
-//!                 ],
-//!                 "period": 1000
-//!             },
-//!         ]
-//!     }
+//!     -f, --config <path>            Path to config file, it is reloaded in runtime
 //!
+//!
+//! #1 Manual test example:
 //!
 //! example cli to run as receiving client:
-//!
-//! derpcli -s http://myderp:3340 -m MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMQo= -k MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMgo= -t
+//! $ derpcli -s http://myderp:3340 -m MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMQo= -k MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMgo= -t
 //!
 //! example cli to run as sending client:
+//! $ derpcli -s http://myderp:3340 -m MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMQo= -k MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMgo= -c 20 -d 500
 //!
-//! derpcli -s http://myderp:3340 -m MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMQo= -k MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMgo= -c 20 -d 500
+//!
+//! #2 Stress-test example:
+//!
+//! $ derpcli --config <path_to_cfg> -C <ca.pem> -v
+//!
+//! Config file example:
+//!     {
+//!       "client_count": 4,
+//!       "interval_min": 1000,
+//!       "interval_max": 2000,
+//!       "payload_min": 128,
+//!       "payload_max": 386,
+//!       "client1_pinger": true,
+//!       "client2_pinger": false,
+//!       "derp1_increment": 1,
+//!       "derp2_offset": 0,
+//!       "derps": [
+//!         "https://derp-a:8765",
+//!         "https://derp-b:8765"
+//!       ],
+//!       "stats_take_every": 1
+//!     }
 //!
 //! ```
 
+#![allow(unknown_lints)]
 #![allow(unwrap_check)]
+
 mod conf;
 mod metrics;
 
-use anyhow::{anyhow, bail, Context, Result};
-use lazy_static::lazy_static;
-use parking_lot::Mutex;
-use prometheus::{Encoder, TextEncoder};
+use anyhow::{anyhow, bail, Result};
+use atomic_counter::{AtomicCounter, RelaxedCounter};
+use conf::StressConfig;
+use metrics::Metrics;
+use rand::{thread_rng, Rng};
 use std::{
     io::{self, Write},
     net::SocketAddr,
     path::{Path, PathBuf},
-    process,
+    process::exit as process_exit,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    time::Duration,
 };
+use telio_crypto::SecretKey;
 use telio_relay::{
     derp::Config,
     http::{connect_http_and_start, DerpConnection},
 };
 use telio_sockets::{NativeProtector, SocketPool};
-use tokio::net::lookup_host;
-use url::{Host, Url};
-use warp::Filter;
+use tokio::{
+    net::lookup_host,
+    sync::{Mutex, RwLock},
+    time::Duration,
+};
 
-lazy_static! {
-    static ref METRICS: Mutex<metrics::Metrics> = Mutex::new(metrics::Metrics::new());
+use url::{Host, Url};
+
+fn get_client_debug_key(client: &conf::ClientConfig) -> String {
+    client.private_key.public().to_string()[0..4].to_string()
+}
+
+fn get_mtime(path: &str) -> u64 {
+    fn get_mtime_aux(path: &str) -> Option<u64> {
+        let meta = std::fs::metadata(path).ok()?;
+        let ftime = meta.modified().ok()?;
+        let elapsed = ftime.duration_since(std::time::UNIX_EPOCH).ok()?;
+        Some(elapsed.as_millis() as u64)
+    }
+    get_mtime_aux(path).unwrap_or_default()
 }
 
 async fn resolve_domain_name(domain: &str, verbose: u64) -> Result<Vec<SocketAddr>> {
@@ -104,24 +130,29 @@ async fn resolve_domain_name(domain: &str, verbose: u64) -> Result<Vec<SocketAdd
     };
     let hostport = format!("{}:{}", hostname, port);
     if verbose >= 1 {
-        println!("Resolving {}", hostport);
+        println!("* Resolving {}", hostport);
     }
     let addrs = lookup_host(hostport).await?.collect::<Vec<SocketAddr>>();
 
     if addrs.is_empty() {
-        bail!("Failed to resolve domain: {}", domain);
+        bail!("ERROR: Failed to resolve domain: {}", domain);
     }
 
     Ok(addrs)
 }
 
+#[allow(clippy::too_many_arguments)]
 #[allow(mpsc_blocking_send)]
 async fn connect_client(
     pool: Arc<SocketPool>,
-    client: &conf::ClientConfig,
+    client: conf::ClientConfig,
     verbosity: u64,
     addrs: Vec<SocketAddr>,
     ca_pem_path: PathBuf,
+    stress_cfg: Arc<RwLock<conf::StressConfig>>,
+    metrics: Arc<Mutex<Metrics>>,
+    pinger: bool,
+    rx_packet_counter: Arc<RelaxedCounter>,
 ) -> Result<()> {
     let verbose = verbosity >= 1;
     let DerpConnection { mut comms, .. } = match Box::pin(connect_http_and_start(
@@ -134,7 +165,7 @@ async fn connect_client(
             ca_pem_path: match ca_pem_path != Path::new("").to_path_buf() {
                 true => match ca_pem_path.exists() {
                     false => {
-                        println!("{:?} - does not exist", ca_pem_path);
+                        println!("ERROR: {:?} - does not exist", ca_pem_path);
                         None
                     }
                     true => Some(ca_pem_path),
@@ -149,53 +180,87 @@ async fn connect_client(
         Ok(tup) => tup,
         Err(err) => {
             println!(
-                "[{}] -> Failed to connect to derp server -> {}",
-                client.private_key.public(),
+                "ERROR: [{}] -> Failed to connect to derp server -> {}",
+                get_client_debug_key(&client),
                 &err
             );
             bail!("{}", err)
         }
     };
 
-    METRICS.lock().add_client(client.private_key.public())?;
+    metrics.lock().await.inc_clients();
+    let stats_take_every = stress_cfg.read().await.stats_take_every;
 
     let _ = tokio::spawn({
         let client = client.clone();
         let comm_tx = comms.tx.clone();
         async move {
             if verbose {
-                println!(
-                    "[{}] -> Start pinging peers with period {} msec",
-                    client.private_key.public(),
-                    client.period
-                );
+                println!("* [{}] -> TX START", get_client_debug_key(&client),);
             }
+            let mut prev_interval = 0.0;
+
             loop {
+                if !pinger {
+                    tokio::time::sleep(Duration::from_millis(1000)).await;
+                    continue;
+                }
+
+                let (interval_len, payload_len) = {
+                    let s = stress_cfg.read().await;
+                    let mut rng = thread_rng();
+                    let interval_len = if s.interval_min < s.interval_max {
+                        rng.gen_range(s.interval_min..s.interval_max)
+                    } else {
+                        s.interval_min
+                    };
+                    let payload_len = if s.payload_min < s.payload_max {
+                        rng.gen_range(s.payload_min..s.payload_max)
+                    } else {
+                        s.payload_min
+                    };
+                    (interval_len as u64, payload_len)
+                };
+
                 for peer in client.peers.iter() {
                     if verbose {
+                        let receiver_pub_key: telio_crypto::PublicKey = peer.public();
                         println!(
-                            "[{}] -> Pinging peer {}",
-                            client.private_key.public(),
-                            peer.public()
+                            "* [{}] -> Send {}b via [{}] to [{}], after {:.3}s",
+                            get_client_debug_key(&client),
+                            payload_len,
+                            client.derp_server.get(8..15).unwrap_or_default(),
+                            &receiver_pub_key.to_string()[0..4],
+                            prev_interval,
                         );
                     }
                     let public_key = peer.public();
-                    if let Err(rc) = comm_tx.send((public_key, vec![0])).await {
+                    let timestamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    let mut payload = vec![0; payload_len];
+                    if payload_len > 7 {
+                        // Write 8 bytes Timestamp (ms) into payload
+                        payload[0..8].clone_from_slice(&timestamp.to_ne_bytes());
+                    }
+                    if payload_len > 16 {
+                        // Write 7 chars of first derp name (after https://<7chars>) into payload
+                        payload[8..15].clone_from_slice(&client.derp_server.as_bytes()[8..15]);
+                    }
+
+                    if let Err(rc) = comm_tx.send((public_key, payload)).await {
                         println!(
-                            "[{}] -> Error on sending: {}",
-                            client.private_key.public(),
+                            "* [{}] -> Error on sending: {}",
+                            get_client_debug_key(&client),
                             rc
                         );
-                        process::exit(1);
-                    } else if let Err(e) = METRICS
-                        .lock()
-                        .inc_peer_ping_counter(client.private_key.public(), (*peer).public())
-                    {
-                        println!("Failed to increment peer ping counter: {}", e);
-                        return;
+                        process_exit(1);
                     }
                 }
-                tokio::time::sleep(Duration::from_millis(client.period.into())).await;
+
+                tokio::time::sleep(Duration::from_millis(interval_len)).await;
+                prev_interval = interval_len as f64 / 1000.0;
             }
         }
     });
@@ -204,59 +269,53 @@ async fn connect_client(
         let client = client.clone();
         async move {
             if verbose {
-                println!(
-                    "[{}] -> Start receiving pings and responding with pongs",
-                    client.private_key.public()
-                );
+                println!("* [{}] -> RX START", get_client_debug_key(&client),);
             }
             loop {
                 match comms.rx.recv().await {
-                    Some((public_key, buf)) => match buf.first() {
-                        Some(1) => {
-                            if verbose {
-                                println!(
-                                    "[{}] -> Received pong from {}",
-                                    client.private_key.public(),
-                                    public_key
-                                );
-                            }
-                            if let Err(e) = METRICS
-                                .lock()
-                                .inc_peer_pong_counter(client.private_key.public(), public_key)
-                            {
-                                println!("failed to increment peer pong counter: {}", e);
-                                return;
-                            }
-                            continue;
-                        }
-                        Some(0) => {
-                            if verbose {
-                                println!(
-                                    "[{}] -> Received ping from {}, sending pong back",
-                                    client.private_key.public(),
-                                    public_key
-                                );
-                            }
-                            if let Err(rc) = comms.tx.send((public_key, vec![1])).await {
-                                println!(
-                                    "[{}] -> Error on sending: {}",
-                                    client.private_key.public(),
-                                    rc
-                                );
-                                process::exit(1);
+                    Some((sender_pub_key, payload)) => {
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64;
+                        let payload_len = payload.len();
+                        let rtt = if payload_len > 7 {
+                            // Read 8 byte Timestamp (ms) from payload
+                            let mut send_time = [0u8; 8];
+                            send_time[..8].copy_from_slice(&payload[..8]);
+                            now - u64::from_ne_bytes(send_time)
+                        } else {
+                            0
+                        };
+
+                        let first_derp = if payload_len > 16 {
+                            // Read 7 chars of first derp name from payload
+                            String::from_utf8(payload[8..15].to_vec()).unwrap_or_default()
+                        } else {
+                            "unknown".to_string()
+                        };
+
+                        if stats_take_every > 0 {
+                            let counter = (*rx_packet_counter).inc();
+                            if counter % stats_take_every == 0 {
+                                metrics.lock().await.add_rtt(now, rtt as u16, first_derp);
                             }
                         }
-                        _ => {
-                            if verbose {
-                                println!(
-                                "[{}] -> Received something other than ping / pong -> buf: {:?}",
-                                client.private_key.public(),
-                                buf
+
+                        if verbose {
+                            println!(
+                                "* [{}] -> Recv {}b from [{}], RTT: {}ms",
+                                get_client_debug_key(&client),
+                                payload_len,
+                                &sender_pub_key.to_string()[0..4],
+                                rtt
                             );
-                            }
                         }
-                    },
+                    }
                     None => {
+                        if verbose {
+                            println!("WARNING: Received unknown packet, ignoring");
+                        }
                         continue;
                     }
                 }
@@ -264,64 +323,6 @@ async fn connect_client(
         }
     });
 
-    Ok(())
-}
-
-async fn run_with_clients_config(config: conf::Config) -> Result<()> {
-    config.print_clients()?;
-
-    let clients_config = match config.clients_config {
-        Some(conf) => conf,
-        None => {
-            bail!("No config provided");
-        }
-    };
-
-    let mut futs = vec![];
-    let mut client_count = 0;
-
-    let mut addrs = Vec::new();
-    let pool = Arc::new(SocketPool::new(NativeProtector::new()?));
-
-    for client in clients_config.clients.iter() {
-        if futs.is_empty() {
-            addrs = match resolve_domain_name(&client.derp_server, config.verbose).await {
-                Ok(addrs) => addrs,
-                Err(e) => {
-                    println!(
-                        "[{}] -> Failed to resolve domain name -> {}",
-                        client.private_key.public(),
-                        e
-                    );
-                    return Ok(());
-                }
-            };
-        }
-
-        futs.push(connect_client(
-            pool.clone(),
-            client,
-            config.verbose,
-            addrs.clone(),
-            config.ca_pem_path.clone(),
-        ));
-        if futs.len() == 30
-            || client
-                == clients_config
-                    .clients
-                    .last()
-                    .ok_or_else(|| anyhow!("no clients"))?
-        {
-            client_count += futs.len();
-            println!("Adding {} clients", futs.len());
-            futures::future::join_all(futs.drain(..futs.len())).await;
-            println!(
-                "Added {} clients. Total connected clients {}",
-                futs.len(),
-                client_count
-            );
-        }
-    }
     Ok(())
 }
 
@@ -341,7 +342,7 @@ async fn run_without_clients_config(config: conf::Config) -> Result<()> {
             ca_pem_path: match config.ca_pem_path != Path::new("").to_path_buf() {
                 true => match config.ca_pem_path.exists() {
                     false => {
-                        println!("{:?} - does not exist", config.ca_pem_path);
+                        println!("ERROR: {:?} - does not exist", config.ca_pem_path);
                         None
                     }
                     true => Some(config.ca_pem_path.clone()),
@@ -355,7 +356,7 @@ async fn run_without_clients_config(config: conf::Config) -> Result<()> {
     {
         Ok(tup) => tup,
         Err(err) => {
-            println!("CONNECT ERROR: {}", err);
+            println!("ERROR: Connect to DERP -> {}", err);
             return Ok(());
         }
     };
@@ -363,7 +364,7 @@ async fn run_without_clients_config(config: conf::Config) -> Result<()> {
     if config.is_target {
         // if running as target - just wait for incomming messages
         if config.verbose > 0 {
-            println!("waiting for messages...")
+            println!("Waiting for messages...")
         }
 
         loop {
@@ -421,7 +422,7 @@ async fn run_without_clients_config(config: conf::Config) -> Result<()> {
             if let Err(rc) = comms.tx.send((pkey, str.as_bytes().to_vec())).await {
                 // error handling
                 println!("Error on sending: {}", rc);
-                process::exit(1);
+                process_exit(1);
             }
 
             tokio::time::sleep(config.send_delay).await;
@@ -438,77 +439,210 @@ async fn run_without_clients_config(config: conf::Config) -> Result<()> {
     Ok(())
 }
 
-pub async fn metrics_handler() -> Result<impl warp::Reply + Clone, warp::Rejection> {
-    let encoder = TextEncoder::new();
-
-    let mut buffer = Vec::new();
-    let clients = METRICS.lock().to_owned().clients;
-
-    for (_, counters) in clients.iter() {
-        let mut tmp_buff = Vec::new();
-        if let Err(e) = encoder.encode(&counters.registry.gather(), &mut tmp_buff) {
-            eprintln!("could not encode custom metrics: {}", e);
-        };
-        buffer.append(&mut tmp_buff);
-    }
-
-    let res = match String::from_utf8(buffer.clone()) {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("custom metrics could not be from_utf8'd: {}", e);
-            String::default()
-        }
-    };
-    buffer.clear();
-
-    Ok(res)
-}
-
-// Executable tool, panics should be transformed into human readable errors, (expect or anyhow)
 #[tokio::main]
 async fn main() -> Result<()> {
     // parse command line params and create config struct
     let config = conf::Config::new().unwrap_or_else(|e| {
         println!("{}", e);
-        process::exit(1);
+        process_exit(1);
     });
 
-    env_logger::init(); // remove?
-
-    println!("DERP CLI START");
-
-    let verbose = config.verbose;
-    let log_file = config.logs_path.clone();
-
-    if config.clients_config.is_some() {
-        let running = Arc::new(AtomicBool::new(true));
-        let r = running.clone();
-
-        ctrlc::set_handler(move || {
-            r.store(false, Ordering::SeqCst);
-        })
-        .context("Error setting Ctrl-C handler")?;
-
-        run_with_clients_config(config).await?;
-
-        tokio::spawn(async move {
-            let metrics_route = warp::path!("metrics").and_then(metrics_handler);
-            warp::serve(metrics_route).run(([0, 0, 0, 0], 8080)).await;
-        });
-
-        while running.load(Ordering::SeqCst) {
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
-
-        if verbose >= 1 {
-            METRICS.lock().to_owned().print_metrics()?;
-        }
-
-        METRICS.lock().to_owned().flush_metrics_to_file(log_file)?;
+    if config.stress_cfg_path.exists() {
+        run_stress_test(config).await;
     } else {
         Box::pin(run_without_clients_config(config)).await?;
     }
 
-    println!("DERP CLI FINISHED");
+    Ok(())
+}
+
+async fn run_stress_test(config: conf::Config) {
+    let app_is_running = Arc::new(AtomicBool::new(true));
+    let r = app_is_running.clone();
+    ctrlc::set_handler(move || {
+        r.store(false, Ordering::SeqCst);
+    })
+    .expect("Error setting Ctrl-C handler");
+
+    let stress_cfg_path: String = String::from(config.stress_cfg_path.to_string_lossy());
+    let metrics = Arc::new(Mutex::new(Metrics::new()));
+    let rx_packet_counter = Arc::new(RelaxedCounter::new(0));
+    let stress_cfg = Arc::new(RwLock::new(StressConfig::new()));
+    let mut last_mtime = 0;
+
+    while app_is_running.load(Ordering::SeqCst) {
+        let mtime = get_mtime(&stress_cfg_path);
+        if last_mtime == 0 || last_mtime != mtime {
+            if let Some(stress_cfg_updated) = conf::Config::load_stress_config(&stress_cfg_path) {
+                *stress_cfg.write().await = stress_cfg_updated;
+                last_mtime = mtime;
+            }
+        }
+
+        let res = run_with_clients_config(
+            stress_cfg.clone(),
+            metrics.clone(),
+            app_is_running.clone(),
+            config.ca_pem_path.clone(),
+            config.verbose,
+            rx_packet_counter.clone(),
+        )
+        .await;
+
+        if let Err(e) = res {
+            println!("ERROR: {}", e);
+        }
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+}
+
+async fn run_with_clients_config(
+    stress_cfg: Arc<RwLock<conf::StressConfig>>,
+    metrics: Arc<Mutex<Metrics>>,
+    running: Arc<AtomicBool>,
+    ca_pem_path: PathBuf,
+    verbose: u64,
+    rx_packet_counter: Arc<RelaxedCounter>,
+) -> Result<()> {
+    let (client_count_goal, derps, stats_take_every) = {
+        let c = stress_cfg.read().await;
+        (c.client_count, c.derps.clone(), c.stats_take_every)
+    };
+    let initial_client_count = metrics.lock().await.get_clients();
+    let client_pair_delta = (client_count_goal as isize - initial_client_count as isize) / 2;
+
+    if derps.len() == 0 {
+        println!("WARNING: No DERPs defined");
+        return Ok(());
+    }
+
+    if client_pair_delta == 0 {
+        println!(
+            "{} Clients: {}",
+            chrono::Local::now().format("%H:%M:%S"),
+            initial_client_count
+        );
+        if stats_take_every > 0 {
+            metrics.lock().await.print_rtts();
+        }
+        return Ok(()); // Expected client count not changed, no action is required
+    };
+
+    println!(
+        "[{}]  Clients: {}, GOAL: {}",
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+        initial_client_count,
+        client_count_goal
+    );
+
+    if client_pair_delta < 0 {
+        println!("WARNING: Client deletion not implemented");
+        return Ok(());
+    }
+
+    println!("* Adding {} client pairs", client_pair_delta);
+
+    // Resolving DEPRs
+    let derps_resolved = {
+        let mut resolved = vec![];
+        for derp in &derps {
+            let addrs = match resolve_domain_name(&derp, verbose).await {
+                Ok(addrs) => addrs,
+                Err(e) => {
+                    println!("Failed to resolve derp name {} -> {}", derp, e);
+                    return Err(e);
+                }
+            };
+            resolved.push(addrs);
+        }
+        resolved
+    };
+    println!("DERPS resolved: {:?}", derps_resolved);
+    if derps_resolved.len() == 0 {
+        println!("WARNING: No DERPs resolved");
+        return Ok(());
+    }
+
+    // Add client pairs
+    let pool = Arc::new(SocketPool::new(NativeProtector::new()?));
+
+    let mut additional_client_count = 0;
+    let mut remaining_pairs_to_add = client_pair_delta;
+    while running.load(Ordering::SeqCst) {
+        let pairs_to_add_now = std::cmp::min(remaining_pairs_to_add, 250);
+
+        let mut futs = vec![];
+        for _pair_nr in 0..pairs_to_add_now {
+            let (client1_pinger, client2_pinger, derp1_increment, derp2_offset) = {
+                let s = stress_cfg.read().await;
+                (
+                    s.client1_pinger,
+                    s.client2_pinger,
+                    s.derp1_increment,
+                    s.derp2_offset,
+                )
+            };
+
+            let last_client_pair = (initial_client_count + additional_client_count) / 2;
+            let derp1_nr = (last_client_pair * derp1_increment) % derps.len();
+            let derp2_nr = (derp1_nr + derp2_offset) % derps.len();
+            let key1 = SecretKey::gen();
+            let key2 = SecretKey::gen();
+            let derps1 = derps[derp1_nr].to_string();
+            let derps2 = derps[derp2_nr].to_string();
+            let derps_resolved1 = derps_resolved[derp1_nr].clone();
+            let derps_resolved2 = derps_resolved[derp2_nr].clone();
+            let client1 = conf::ClientConfig {
+                private_key: key1,
+                derp_server: derps1,
+                peers: vec![key2],
+            };
+            let client2 = conf::ClientConfig {
+                private_key: key2,
+                derp_server: derps2,
+                peers: vec![key1],
+            };
+            futs.push(connect_client(
+                pool.clone(),
+                client1,
+                verbose,
+                derps_resolved1.clone(),
+                ca_pem_path.clone(),
+                stress_cfg.clone(),
+                metrics.clone(),
+                client1_pinger,
+                rx_packet_counter.clone(),
+            ));
+            futs.push(connect_client(
+                pool.clone(),
+                client2,
+                verbose,
+                derps_resolved2.clone(),
+                ca_pem_path.clone(),
+                stress_cfg.clone(),
+                metrics.clone(),
+                client2_pinger,
+                rx_packet_counter.clone(),
+            ));
+
+            additional_client_count += 2;
+
+            if futs.len() == 20 {
+                println!("* Adding clients => {}", additional_client_count);
+                futures::future::join_all(futs.drain(..)).await;
+            }
+        }
+
+        println!("* Adding clients => {}", additional_client_count);
+        futures::future::join_all(futs.drain(..)).await;
+
+        remaining_pairs_to_add -= pairs_to_add_now;
+        if remaining_pairs_to_add > 0 {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        } else {
+            break;
+        }
+    }
     Ok(())
 }

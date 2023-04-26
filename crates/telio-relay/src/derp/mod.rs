@@ -16,6 +16,7 @@ use futures::{future::select_all, Future};
 use generic_array::typenum::Unsigned;
 use serde::{Deserialize, Serialize};
 use telio_crypto::{PublicKey, SecretKey};
+use telio_model::config::{RelayState, Server};
 use telio_proto::{Codec, Packet, PacketType};
 use telio_sockets::SocketPool;
 use telio_task::io::{wait_for_tx, Chan};
@@ -40,22 +41,40 @@ use self::{http::connect_http_and_start, http::DerpConnection, http::Protect};
 
 pub use self::{proto::Error as DerpError, proto::FrameChannel};
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum RelayState {
-    Disconnected,
-    Connecting,
-    Connected,
+#[derive(Clone, Debug, Default)]
+pub struct SortedServers {
+    servers: Vec<Server>,
+    current_server_num: usize,
 }
 
-impl Default for RelayState {
-    fn default() -> RelayState {
-        RelayState::Disconnected
+impl SortedServers {
+    pub fn new(mut servers: Vec<Server>) -> Self {
+        servers.sort_by(|a, b| a.weight.cmp(&b.weight));
+        Self {
+            servers,
+            current_server_num: 0,
+        }
+    }
+
+    fn get_next(&mut self) -> Option<Server> {
+        if (self.current_server_num < self.servers.len()) {
+            let result = self.servers.get(self.current_server_num).cloned();
+            self.current_server_num += 1;
+            result
+        } else {
+            None
+        }
+    }
+
+    fn contains(&self, server: &Server) -> bool {
+        self.servers.contains(server)
     }
 }
 
-pub struct Event {
-    pub server: Option<Server>,
+impl PartialEq for SortedServers {
+    fn eq(&self, other: &Self) -> bool {
+        self.servers == other.servers
+    }
 }
 
 pub struct DerpRelay {
@@ -84,51 +103,11 @@ struct State {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     pub secret_key: SecretKey,
-    pub servers: Vec<Server>,
+    pub servers: SortedServers,
     pub allowed_pk: HashSet<PublicKey>,
     pub timeout: Duration,
     pub ca_pem_path: Option<PathBuf>,
     pub mesh_ip: IpAddr,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Server {
-    pub region_code: String,
-    pub name: String,
-    pub hostname: String,
-    pub ipv4: Ipv4Addr,
-    pub relay_port: u16,
-    pub stun_port: u16,
-    #[serde(default)]
-    pub stun_plaintext_port: u16,
-    pub public_key: PublicKey,
-    pub weight: u32,
-
-    #[serde(default)]
-    pub conn_state: RelayState,
-
-    #[serde(default)]
-    pub use_plain_text: bool,
-
-    #[serde(default)]
-    pub used: bool,
-}
-
-impl PartialEq for Server {
-    // Ignore fields used by DerpRelay itself only
-    fn eq(&self, other: &Self) -> bool {
-        self.region_code == other.region_code
-            && self.name == other.name
-            && self.hostname == other.hostname
-            && self.ipv4 == other.ipv4
-            && self.relay_port == other.relay_port
-            && self.stun_port == other.stun_port
-            && self.stun_plaintext_port == other.stun_plaintext_port
-            && self.public_key == other.public_key
-            && self.use_plain_text == other.use_plain_text
-        // Do not compare weights, priority for connection persistence
-        // && self.weight == other.weight
-    }
 }
 
 impl Default for Config {
@@ -170,7 +149,7 @@ impl State {
         let connection = async move {
             let mut sleep_time = 1f64;
             loop {
-                let mut server = match config.get_server() {
+                let mut server = match config.servers.get_next() {
                     Some(server) => {
                         telio_log_debug!(
                             "({}) Trying to connect to DERP server: {}",
@@ -185,7 +164,6 @@ impl State {
                             Self::NAME,
                             sleep_time
                         );
-                        config.reset();
                         sleep(Duration::from_secs_f64(sleep_time)).await;
                         sleep_time = (sleep_time * 2f64).min(60f64);
                         continue;
@@ -217,59 +195,6 @@ impl State {
             }
         };
         tokio::spawn(connection)
-    }
-}
-
-impl Config {
-    pub fn reset(&mut self) {
-        // Sort server list by weights
-        self.servers.sort_by(|a, b| a.weight.cmp(&b.weight));
-
-        // Reset used indicator
-        for mut server in &mut self.servers {
-            server.used = false;
-        }
-    }
-
-    pub fn get_server(&mut self) -> Option<Server> {
-        // Get first unused server address
-        for mut server in &mut self.servers {
-            if !server.used {
-                server.used = true;
-                return Some(server.clone());
-            }
-        }
-
-        None
-    }
-}
-
-impl Server {
-    pub fn get_address(&self) -> String {
-        if self.use_plain_text {
-            format!("http://{}:{}", self.hostname, self.relay_port)
-        } else {
-            format!("https://{}:{}", self.hostname, self.relay_port)
-        }
-    }
-}
-
-impl Default for Server {
-    fn default() -> Self {
-        Self {
-            region_code: "".to_string(),
-            name: "".to_string(),
-            hostname: "".to_string(),
-            ipv4: Ipv4Addr::new(0, 0, 0, 0),
-            relay_port: 0,
-            stun_port: 0,
-            stun_plaintext_port: 0,
-            public_key: PublicKey::default(),
-            use_plain_text: false,
-            weight: 0,
-            used: false,
-            conn_state: RelayState::Disconnected,
-        }
     }
 }
 
@@ -309,8 +234,6 @@ impl DerpRelay {
 
             // Prepare new config
             if let Some(config) = s.config.as_mut() {
-                config.reset();
-
                 // TODO: This logic should most likely linked with wg_stun_controll
                 // Restart connection
                 match s.server.as_ref() {
@@ -327,10 +250,6 @@ impl DerpRelay {
                         s.disconnect().await;
                     }
                 }
-            } else {
-                // No config diconnect
-                telio_log_info!("Config disabled relaying - Disconnecting");
-                s.disconnect().await
             }
 
             Ok(())
@@ -585,7 +504,7 @@ impl Runtime for State {
         // Only react to updates without config
         let event = &self.event;
         let socket_pool = &self.socket_pool;
-        let mut config = match self.config.as_mut() {
+        let config = match self.config.as_ref() {
             Some(c) => c,
             None => {
                 telio_log_info!("Disconnecting from DERP server due to empty config");
@@ -640,8 +559,7 @@ impl Runtime for State {
                 let connecting = if let Some(connecting) = &mut self.connecting {
                     connecting
                 } else {
-                    let config = config.clone();
-                    let connection = self.start_connecting(config);
+                    let connection = self.start_connecting(config.clone());
                     self.connecting.insert(connection)
                 };
 
@@ -743,17 +661,15 @@ mod tests {
 
         let mut config = Config {
             secret_key: test_conf.private_key,
-            servers: vec![third.clone(), first.clone(), second.clone()],
+            servers: SortedServers::new(vec![third.clone(), first.clone(), second.clone()]),
             ..Default::default()
         };
 
-        config.reset();
-
         // Compare only wights, because of the 'weight' field
-        assert_eq!(first.weight, config.get_server().unwrap().weight);
-        assert_eq!(second.weight, config.get_server().unwrap().weight);
-        assert_eq!(third.weight, config.get_server().unwrap().weight);
-        assert_eq!(None, config.get_server());
+        assert_eq!(first.weight, config.servers.get_next().unwrap().weight);
+        assert_eq!(second.weight, config.servers.get_next().unwrap().weight);
+        assert_eq!(third.weight, config.servers.get_next().unwrap().weight);
+        assert_eq!(None, config.servers.get_next());
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -763,7 +679,7 @@ mod tests {
 
         let mut config = Config {
             secret_key: test_conf.private_key,
-            servers: vec![
+            servers: SortedServers::new(vec![
                 // Should NOT work
                 Server {
                     hostname: "ab1234.notnordvpn.com".into(),
@@ -778,11 +694,9 @@ mod tests {
                     weight: 7,
                     ..Default::default()
                 },
-            ],
+            ]),
             ..Default::default()
         };
-
-        config.reset();
 
         let McChan {
             rx: mut devent_rx,
@@ -813,7 +727,7 @@ mod tests {
 
         let mut config = Config {
             secret_key: test_conf.private_key,
-            servers: vec![
+            servers: SortedServers::new(vec![
                 // Should NOT work
                 Server {
                     hostname: "ab1234.nordvpn.com".into(),
@@ -828,11 +742,9 @@ mod tests {
                     weight: 2,
                     ..Default::default()
                 },
-            ],
+            ]),
             ..Default::default()
         };
-
-        config.reset();
 
         let McChan {
             rx: mut devent_rx,
@@ -868,15 +780,13 @@ mod tests {
 
         let mut config = Config {
             secret_key: test_conf.private_key,
-            servers: vec![Server {
+            servers: SortedServers::new(vec![Server {
                 hostname: "de1047.nordvpn.com".into(),
                 relay_port: 8765,
                 ..Default::default()
-            }],
+            }]),
             ..Default::default()
         };
-
-        config.reset();
 
         let (mut derp_outter_ch, derp_inner_ch) = Chan::pipe();
 

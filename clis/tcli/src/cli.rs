@@ -8,9 +8,9 @@ use serde::{Deserialize, Serialize};
 use telio::crypto::{PublicKey, SecretKey};
 use telio::device::{Device, DeviceConfig};
 use telio_model::api_config::Features;
+use telio_model::config::{RelayState, Server};
 use telio_model::{config::Config as MeshMap, event::Event as DevEvent, mesh::ExitNode};
 use telio_proto::{CodecError, PacketType};
-use telio_relay::{RelayState, Server};
 use telio_wg::AdapterType;
 use thiserror::Error;
 use tokio::{

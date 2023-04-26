@@ -673,10 +673,9 @@ mod tests {
     use telio_model::api_config::{
         DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD, DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
     };
-    use telio_model::config::{Config, PeerBase};
+    use telio_model::config::{Config, PeerBase, Server};
     use telio_model::mesh::ExitNode;
     use telio_proxy::MockProxy;
-    use telio_relay::Server;
     use telio_traversal::cross_ping_check::MockCrossPingCheckTrait;
     use telio_traversal::{MockSessionKeeperTrait, MockUpgradeSyncTrait, UpgradeRequest};
     use telio_wg::uapi::Interface;

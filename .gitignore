@@ -1,13 +1,10 @@
 Cargo.lock
 tcli.log
-.build
-.pc
-.idea
-.vscode
-.DS_Store #macOs folder cache
+.*
 *.pyc
 *.box
 *.deb
+*.nix
 /3rd-party/boringtun
 /3rd-party/ci-helper-scripts/
 /3rd-party/libmoose
@@ -35,7 +32,6 @@ target/
 /nat-lab/*.log
 /nat-lab/.vagrant
 /nat-lab/bin/wireguard-go
-/.vagrant
 /ffi/bindings/android/csharp
 /ffi/bindings/android/go
 /ffi/bindings/android/wrap/csharp_wrap.c

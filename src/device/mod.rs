@@ -6,11 +6,7 @@ use telio_firewall::firewall::{Firewall, StatefullFirewall};
 use telio_lana::*;
 use telio_nat_detect::nat_detection::{retrieve_single_nat, NatData};
 use telio_proxy::{Config as ProxyConfig, Io as ProxyIo, Proxy, UdpProxy};
-use telio_relay::{
-    derp::{Config as DerpConfig, Server as DerpServer},
-    multiplexer::Multiplexer,
-    DerpRelay,
-};
+use telio_relay::{derp::Config as DerpConfig, multiplexer::Multiplexer, DerpRelay, SortedServers};
 use telio_sockets::{NativeProtector, Protect, SocketPool};
 use telio_task::{
     io::{chan, mc_chan, mc_chan::Tx, Chan, McChan},
@@ -60,7 +56,7 @@ use telio_model::{
     api_config::{
         FeaturePersistentKeepalive, Features, PathType, DEFAULT_ENDPOINT_POLL_INTERVAL_SECS,
     },
-    config::{Config, Peer},
+    config::{Config, Peer, Server as DerpServer},
     event::{Event, Set},
     mesh::{ExitNode, Node},
 };
@@ -1086,25 +1082,24 @@ impl Runtime {
             };
             self.entities.proxy.configure(proxy_config).await?;
 
-            // Update configuration for DERP client
             let derp_config = DerpConfig {
                 secret_key,
-                servers: config.derp_servers.clone().unwrap_or_default(),
+                servers: SortedServers::new(config.derp_servers.clone().unwrap_or_default()),
                 allowed_pk: peers,
                 timeout: Duration::from_secs(10), //TODO: make configurable
                 ca_pem_path: None,
                 mesh_ip,
             };
 
-            self.entities
-                .derp
-                .configure(Some(derp_config.clone()))
-                .await;
+            // Update configuration for DERP client
+            self.entities.derp.configure(Some(derp_config)).await;
 
             // Refresh the lists of servers for STUN endpoint provider
             if let Some(direct) = self.entities.direct.as_ref() {
                 if let Some(stun_ep) = direct.stun_endpoint_provider.as_ref() {
-                    stun_ep.configure(derp_config.servers).await;
+                    stun_ep
+                        .configure(config.derp_servers.clone().unwrap_or_default())
+                        .await;
                 }
             }
 
