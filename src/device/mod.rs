@@ -1341,7 +1341,7 @@ impl Runtime {
         // or VPN peers. Others (like DNS, or anycast) are considered to be "internal" ones
         // and will not be reported via libtelio events.
         match (meshnet_peer, exit_node) {
-            (Some(meshnet_peer), _exit_node) => {
+            (Some(meshnet_peer), _) => {
                 // Meshnet peer
                 Some(Node {
                     identifier: meshnet_peer.base.identifier,
