@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use telio_crypto::PublicKey;
 use telio_model::config::Config;
 
@@ -33,19 +33,18 @@ pub enum AnalyticsMessage {
 /// Represents an update to the meshnet config
 #[derive(Clone, Default)]
 pub struct MeshConfigUpdateEvent {
-    /// All local nodes from the config passed to telio library.
-    pub local_nodes: Vec<PublicKey>,
+    /// All the nodes (public_key, is_local) from the config passed to telio library.
+    pub nodes: HashMap<PublicKey, bool>,
 }
 
 impl From<&Config> for MeshConfigUpdateEvent {
     fn from(config: &Config) -> Self {
         if let Some(peers) = &config.peers {
-            let local_nodes = peers
+            let nodes = peers
                 .iter()
-                .filter(|p| p.is_local)
-                .map(|p| p.public_key)
-                .collect::<Vec<_>>();
-            MeshConfigUpdateEvent { local_nodes }
+                .map(|p| (p.public_key, p.is_local))
+                .collect::<HashMap<_, _>>();
+            MeshConfigUpdateEvent { nodes }
         } else {
             MeshConfigUpdateEvent::default()
         }

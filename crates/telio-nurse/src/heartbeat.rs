@@ -192,8 +192,8 @@ pub struct Analytics {
     // All the nodes we have a connection with according to wireguard
     local_nodes: HashMap<PublicKey, NodeInfo>,
 
-    // All the local nodes according to config updates
-    config_local_nodes: HashSet<PublicKey>,
+    // All the nodes (public_key, is_local) according to config updates
+    config_nodes: HashMap<PublicKey, bool>,
 
     derp_connection: bool,
 }
@@ -259,9 +259,9 @@ impl Analytics {
             Instant::now() + config.collect_interval - config.collect_answer_timeout
         };
 
-        let mut config_local_nodes = HashSet::new();
-        // Add self in config_local_nodes hashset
-        config_local_nodes.insert(public_key);
+        let mut config_nodes = HashMap::new();
+        // Add self in config_nodes hashset
+        config_nodes.insert(public_key, true);
 
         Self {
             task_interval: interval_at(start_time, config.collect_interval),
@@ -275,7 +275,7 @@ impl Analytics {
             public_key,
             collection: Collection::default(),
             local_nodes: HashMap::new(),
-            config_local_nodes,
+            config_nodes,
             derp_connection: false,
         }
     }
@@ -293,8 +293,8 @@ impl Analytics {
 
                 self.public_key = private_key.public();
 
-                self.config_local_nodes.remove(&old_public_key);
-                self.config_local_nodes.insert(self.public_key);
+                self.config_nodes.remove(&old_public_key);
+                self.config_nodes.insert(self.public_key, true);
             }
         }
     }
@@ -344,10 +344,9 @@ impl Analytics {
 
     async fn handle_config_update_event(&mut self, event: MeshConfigUpdateEvent) {
         if self.state == RuntimeState::Monitoring {
-            self.config_local_nodes.clear();
-            for node in &event.local_nodes {
-                self.config_local_nodes.insert(*node);
-            }
+            self.config_nodes = event.nodes;
+            // Add self to config nodes
+            self.config_nodes.insert(self.public_key, true);
         } else {
             self.cached_config = Some(event);
         }
@@ -501,12 +500,18 @@ impl Analytics {
         // Add our temporary meshnet_id to collection before we try to resolve it
         self.collection
             .add_meshnet_id(self.public_key, self.meshnet_id);
+        let config_local_nodes = self
+            .config_nodes
+            .iter()
+            .filter(|(_, is_local)| **is_local)
+            .map(|(pk, _)| *pk)
+            .collect::<HashSet<_>>();
         self.meshnet_id = self
             .collection
-            .resolve_current_meshnet_id(&self.config_local_nodes);
+            .resolve_current_meshnet_id(&config_local_nodes);
 
         // All local nodes will have the same meshnet id
-        for pk in self.config_local_nodes.iter() {
+        for pk in config_local_nodes.iter() {
             if let NodeInfo::Node { meshnet_id, .. } = self.local_nodes.entry(*pk).or_default() {
                 *meshnet_id = Some(self.meshnet_id);
             }
@@ -521,7 +526,9 @@ impl Analytics {
         self.collection
             .fingerprints
             .insert(self.public_key, self.config.fingerprint.clone());
-        for node in self.config_local_nodes.iter() {
+
+        // Insert all the nodes from the config
+        for (node, _) in self.config_nodes.iter() {
             self.collection
                 .fingerprints
                 .entry(*node)
@@ -707,6 +714,12 @@ impl Analytics {
     fn is_local(&self, pk: PublicKey) -> bool {
         if self.public_key == pk {
             return true;
+        }
+
+        if let Some(is_local) = self.config_nodes.get(&pk) {
+            if *is_local {
+                return true;
+            }
         }
 
         match self.local_nodes.get(&pk) {
