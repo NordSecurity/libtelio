@@ -31,7 +31,9 @@ use crate::device::{Device, DeviceConfig, Result as DevResult};
 use telio_model::{config::Config, event::*, mesh::ExitNode};
 
 // debug tools
-use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
+use telio_utils::{
+    commit_sha, telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn, version_tag,
+};
 
 const DEFAULT_PANIC_MSG: &str = "libtelio panicked";
 
@@ -735,16 +737,12 @@ pub extern "C" fn telio_generate_public_key(_dev: &telio, secret: *const c_char)
 
 #[no_mangle]
 pub extern "C" fn telio_get_version_tag() -> *mut c_char {
-    bytes_to_zero_terminated_unmanaged_bytes(
-        option_env!("CI_COMMIT_TAG").unwrap_or("dev").as_bytes(),
-    )
+    bytes_to_zero_terminated_unmanaged_bytes(version_tag().as_bytes())
 }
 
 #[no_mangle]
 pub extern "C" fn telio_get_commit_sha() -> *mut c_char {
-    bytes_to_zero_terminated_unmanaged_bytes(
-        option_env!("CI_COMMIT_SHA").unwrap_or("dev").as_bytes(),
-    )
+    bytes_to_zero_terminated_unmanaged_bytes(commit_sha().as_bytes())
 }
 
 #[no_mangle]
