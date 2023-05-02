@@ -6,11 +6,7 @@ use telio_firewall::firewall::{Firewall, StatefullFirewall};
 use telio_lana::*;
 use telio_nat_detect::nat_detection::{retrieve_single_nat, NatData};
 use telio_proxy::{Config as ProxyConfig, Io as ProxyIo, Proxy, UdpProxy};
-use telio_relay::{
-    derp::{Config as DerpConfig, Server as DerpServer},
-    multiplexer::Multiplexer,
-    DerpRelay,
-};
+use telio_relay::{derp::Config as DerpConfig, multiplexer::Multiplexer, DerpRelay, SortedServers};
 use telio_sockets::{NativeProtector, Protect, SocketPool};
 use telio_task::{
     io::{chan, mc_chan, mc_chan::Tx, Chan, McChan},
@@ -54,13 +50,13 @@ use std::{
     time::Duration,
 };
 
-use telio_utils::{telio_log_debug, telio_log_info};
+use telio_utils::{exponential_backoff::ExponentialBackoffBounds, telio_log_debug, telio_log_info};
 
 use telio_model::{
     api_config::{
         FeaturePersistentKeepalive, Features, PathType, DEFAULT_ENDPOINT_POLL_INTERVAL_SECS,
     },
-    config::{Config, Peer},
+    config::{Config, Peer, Server as DerpServer},
     event::{Event, Set},
     mesh::{ExitNode, Node},
 };
@@ -158,6 +154,9 @@ pub struct RequestedState {
 
     // A configuration as requested by libtelio.set_config(...) call, no modifications
     pub meshnet_config: Option<Config>,
+
+    // An old meshnet configuration
+    pub old_meshnet_config: Option<Config>,
 
     // The latest exit node passed by libtelio.connected_to_exit(...)
     pub exit_node: Option<ExitNode>,
@@ -286,7 +285,7 @@ struct Runtime {
     /// various libtelio calls, e.g. libtelio.set_config, libtelio.enable_magic_dns,
     /// libtelio.connect_to_exit_node etc. Note that this is desired state and not actual state,
     /// therefore this state may be different from reality even though the controllers will "try"
-    /// their best to ensure that requested and actual state matches
+    /// their best to ensure that requested and actual states match
     requested_state: RequestedState,
 
     /// All device Entities
@@ -370,12 +369,12 @@ impl Device {
 
         self.rt = Some(self.art()?.block_on(async {
             let t = Task::start(
-                Runtime::start(
+                Box::pin(Runtime::start(
                     self.event.clone(),
                     config,
                     self.features.clone(),
                     self.protect.clone(),
-                )
+                ))
                 .await?,
             );
             Ok::<Task<Runtime>, Error>(t)
@@ -584,20 +583,6 @@ impl Device {
     pub fn _panic(&self) -> Result {
         self.art()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| Ok(rt._panic().await)).await?
-        })
-    }
-
-    /// Retreives currently connected derp server information
-    pub fn get_derp_server(&self) -> Result<Option<DerpServer>> {
-        self.art()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt.get_derp_server().await)).await?
-        })
-    }
-
-    /// Retreives currently configured derp server information
-    pub fn get_derp_config(&self) -> Result<DerpConfig> {
-        self.art()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt.get_derp_config().await)).await?
         })
     }
 
@@ -839,14 +824,17 @@ impl Runtime {
                         .new_external_udp((Ipv4Addr::UNSPECIFIED, 0), None)
                         .await?,
                     wireguard_interface.clone(),
-                    Duration::from_secs(
-                        direct
-                            .endpoint_interval_secs
-                            .unwrap_or(DEFAULT_ENDPOINT_POLL_INTERVAL_SECS),
-                    ),
+                    ExponentialBackoffBounds {
+                        initial: Duration::from_secs(
+                            direct
+                                .endpoint_interval_secs
+                                .unwrap_or(DEFAULT_ENDPOINT_POLL_INTERVAL_SECS),
+                        ),
+                        maximal: Some(Duration::from_secs(120)),
+                    },
                     ping_pong_tracker.clone(),
                     stun_server_events.tx,
-                ));
+                )?);
                 endpoint_providers.push(ep.clone());
                 Some(ep)
             } else {
@@ -877,7 +865,7 @@ impl Runtime {
                 Duration::from_secs(2),
                 ping_pong_tracker,
                 Default::default(),
-            )?);
+            ));
 
             // Create WireGuard connection upgrade synchronizer
             let upgrade_sync = Arc::new(UpgradeSync::new(
@@ -1077,6 +1065,7 @@ impl Runtime {
     }
 
     async fn set_config(&mut self, config: &Option<Config>) -> Result {
+        self.requested_state.old_meshnet_config = self.requested_state.meshnet_config.clone();
         self.requested_state.meshnet_config = config.clone();
 
         let wg_itf = self.entities.wireguard_interface.get_interface().await?;
@@ -1115,25 +1104,24 @@ impl Runtime {
             };
             self.entities.proxy.configure(proxy_config).await?;
 
-            // Update configuration for DERP client
             let derp_config = DerpConfig {
                 secret_key,
-                servers: config.derp_servers.clone().unwrap_or_default(),
+                servers: SortedServers::new(config.derp_servers.clone().unwrap_or_default()),
                 allowed_pk: peers,
                 timeout: Duration::from_secs(10), //TODO: make configurable
                 ca_pem_path: None,
                 mesh_ip,
             };
 
-            self.entities
-                .derp
-                .configure(Some(derp_config.clone()))
-                .await;
+            // Update configuration for DERP client
+            self.entities.derp.configure(Some(derp_config)).await;
 
             // Refresh the lists of servers for STUN endpoint provider
             if let Some(direct) = self.entities.direct.as_ref() {
                 if let Some(stun_ep) = direct.stun_endpoint_provider.as_ref() {
-                    stun_ep.configure(derp_config.servers).await;
+                    stun_ep
+                        .configure(config.derp_servers.clone().unwrap_or_default())
+                        .await;
                 }
             }
 
@@ -1195,20 +1183,18 @@ impl Runtime {
 
     /// Logs NAT type of derp server in info log
     async fn log_nat(&self) {
-        if let Ok(config) = self.get_derp_config().await {
+        if let Some(server) = self.requested_state.meshnet_config.as_ref().and_then(|c| {
+            c.derp_servers
+                .as_ref()
+                .and_then(|servers| servers.iter().min_by_key(|server| server.weight))
+        }) {
             // Copy the lowest weight server to log nat in a separate future
-            if let Some(server) = config
-                .servers
-                .iter()
-                .min_by_key(|server| server.weight)
-                .cloned()
-            {
-                tokio::spawn(async move {
-                    if let Ok(data) = retrieve_single_nat(server.ipv4.to_string()).await {
-                        telio_log_info!("Nat Type - {:?}", data.nat_type)
-                    }
-                });
-            }
+            let stun_server_ip = server.ipv4.to_string();
+            tokio::spawn(async move {
+                if let Ok(data) = retrieve_single_nat(stun_server_ip).await {
+                    telio_log_info!("Nat Type - {:?}", data.nat_type)
+                }
+            });
         }
     }
 
@@ -1290,14 +1276,6 @@ impl Runtime {
         Ok(())
     }
 
-    async fn get_derp_server(&self) -> Result<Option<DerpServer>> {
-        Ok(self.entities.derp.get_connected_server().await)
-    }
-
-    async fn get_derp_config(&self) -> Result<DerpConfig> {
-        Ok(self.entities.derp.get_config().await.unwrap_or_default())
-    }
-
     async fn get_socket_pool(&self) -> Result<Arc<SocketPool>> {
         Ok(self.entities.socket_pool.clone())
     }
@@ -1316,7 +1294,7 @@ impl Runtime {
 
         // Find a peer with matching public key in meshnet_config and retreive the needed
         // information about it from there
-        let meshnet_peer: Option<Peer> = self
+        let meshnet_peer: Option<Peer> = match self
             .requested_state
             .meshnet_config
             .as_ref()
@@ -1329,7 +1307,23 @@ impl Runtime {
                     .collect::<Vec<Peer>>()
                     .first()
                     .cloned()
-            });
+            }) {
+            Some(peer) => Some(peer),
+            None => self
+                .requested_state
+                .old_meshnet_config
+                .as_ref()
+                .and_then(|config| config.peers.clone())
+                .and_then(|config_peers| {
+                    config_peers
+                        .iter()
+                        .cloned()
+                        .filter(|config_peer| config_peer.base.public_key == peer.public_key)
+                        .collect::<Vec<Peer>>()
+                        .first()
+                        .cloned()
+                }),
+        };
 
         // Resolve what type of path is used
         let path_type = {
@@ -1369,7 +1363,7 @@ impl Runtime {
                 Some(Node {
                     identifier: meshnet_peer.base.identifier,
                     public_key: meshnet_peer.base.public_key,
-                    state: state.or_else(|| Some(peer.state())),
+                    state: state.unwrap_or_else(|| peer.state()),
                     is_exit: exit_node.is_some(),
                     is_vpn: false,
                     allowed_ips: peer.allowed_ips.clone(),
@@ -1384,7 +1378,7 @@ impl Runtime {
                 Some(Node {
                     identifier: exit_node.identifier,
                     public_key: exit_node.public_key,
-                    state: state.or_else(|| Some(peer.state())),
+                    state: state.unwrap_or_else(|| peer.state()),
                     is_exit: true,
                     is_vpn: exit_node.endpoint.is_some(),
                     allowed_ips: peer.allowed_ips.clone(),
@@ -1528,6 +1522,7 @@ impl TaskRuntime for Runtime {
                 stop_arc_entity!(stun, "StunEndpointProvider");
             }
 
+            stop_arc_entity!(direct.session_keeper, "SessionKeeper");
             stop_arc_entity!(direct.upgrade_sync, "UpgradeSync");
         }
 

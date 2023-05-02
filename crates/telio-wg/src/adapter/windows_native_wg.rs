@@ -3,6 +3,7 @@ use crate::uapi::{Cmd, Cmd::Get, Cmd::Set, Interface, Peer, Response};
 #[cfg(windows)]
 use crate::windows::tunnel::interfacewatcher::InterfaceWatcher;
 use async_trait::async_trait;
+#[cfg(windows)]
 use sha2::{Digest, Sha256};
 use std::slice::Windows;
 use std::sync::{Arc, Mutex, MutexGuard};

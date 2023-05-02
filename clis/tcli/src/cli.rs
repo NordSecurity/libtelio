@@ -3,14 +3,14 @@ use clap::Parser;
 use flexi_logger::{DeferredNow, FileSpec, Logger, Record, WriteMode};
 use ipnetwork::IpNetwork;
 use log::error;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use telio::crypto::{PublicKey, SecretKey};
 use telio::device::{Device, DeviceConfig};
 use telio_model::api_config::Features;
+use telio_model::config::{RelayState, Server};
 use telio_model::{config::Config as MeshMap, event::Event as DevEvent, mesh::ExitNode};
 use telio_proto::{CodecError, PacketType};
-use telio_sockets::{NativeProtector, SocketPool};
-use telio_traversal::stunner::{Config as StunConfig, Stunner};
 use telio_wg::AdapterType;
 use thiserror::Error;
 use tokio::{
@@ -21,6 +21,7 @@ use tokio::{
 
 use crate::nord::{Error as NordError, Nord, OAuth};
 
+use std::str::FromStr;
 use std::{
     fs,
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -41,10 +42,6 @@ const DEFAULT_TUNNEL_NAME: &str = "nlx0";
 
 #[cfg(target_os = "macos")]
 const DEFAULT_TUNNEL_NAME: &str = "utun10";
-
-trait Report {
-    fn report(&self, cmd: StatusCmd) -> Vec<Resp>;
-}
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -91,14 +88,11 @@ pub enum Error {
     #[error("Data local dir unknown")]
     NoDataLocalDir,
 
-    #[error("No endpoints")]
-    NoEndpoints,
-
-    #[error(transparent)]
-    StunnerError(#[from] telio_traversal::stunner::Error),
-
     #[error(transparent)]
     KeyDecodeError(#[from] telio_crypto::KeyDecodeError),
+
+    #[error(transparent)]
+    WgAdapterError(#[from] telio_wg::Error),
 }
 
 pub struct Cli {
@@ -108,6 +102,7 @@ pub struct Cli {
     nord: Option<Nord>,
     conf: Option<MeshConf>,
     derp_client: DerpClient,
+    derp_server: Arc<Mutex<Option<Server>>>,
 }
 
 pub enum Resp {
@@ -222,8 +217,6 @@ enum MeshCmd {
     },
     ///Pinger tes
     Ping {},
-    /// Stun test
-    Stun {},
     /// Manually set json config
     Config {
         mesh_config: String,
@@ -315,7 +308,11 @@ fn custom_format(
 }
 
 impl Cli {
-    pub fn new(features: Features, token: Option<String>) -> anyhow::Result<Self> {
+    pub fn new(
+        features: Features,
+        token: Option<String>,
+        derp_server: Arc<Mutex<Option<Server>>>,
+    ) -> anyhow::Result<Self> {
         let base_name = "tcli";
         let suffix = "log";
         if let Ok(logger) = Logger::try_with_str("debug") {
@@ -337,13 +334,20 @@ impl Cli {
 
         let (sender, resp) = mpsc::channel();
 
+        let derp_server_lambda = derp_server.clone();
         let telio = Device::new(
             features,
             {
                 let sender = sender.clone();
                 #[allow(unwrap_check)]
                 #[allow(clippy::unwrap_used)]
-                move |e: Box<DevEvent>| sender.send(Resp::Event(e)).unwrap()
+                move |e: Box<DevEvent>| {
+                    if let DevEvent::Relay { body } = *e.clone() {
+                        *derp_server_lambda.lock() =
+                            body.filter(|s| s.conn_state != RelayState::Disconnected);
+                    }
+                    sender.send(Resp::Event(e)).unwrap()
+                }
             },
             None,
         )?;
@@ -370,6 +374,7 @@ impl Cli {
             nord,
             conf: None,
             derp_client: DerpClient::new(),
+            derp_server,
         })
     }
 
@@ -446,7 +451,7 @@ impl Cli {
                 name,
                 private_key,
             } => {
-                let adapter = str_to_adapter(&adapter);
+                let adapter = cli_try!(res; AdapterType::from_str(&adapter));
 
                 let private_key = cli_try!(res; private_key
                     .or_else(|| self.nord.as_ref().and_then(|n| n.get_private_key().ok())).ok_or(Error::NeedsLogin));
@@ -555,9 +560,10 @@ impl Cli {
                 let meshmap_str = cli_try!(res; nord.get_meshmap(&conf.id));
                 cli_res!(res; (i "got config:\n{}", &meshmap_str));
                 let meshmap: MeshMap = cli_try!(res; serde_json::from_str(&meshmap_str));
+                let adapter_type = cli_try!(res; AdapterType::from_str(&adapter));
 
                 let private_key = conf.sk;
-                cli_try!(res; self.start_telio(name, private_key, str_to_adapter(&adapter), &mut res));
+                cli_try!(res; self.start_telio(name, private_key, adapter_type, &mut res));
                 cli_try!(res; self.telio.set_config(&Some(meshmap)));
                 cli_res!(res; (i "started meshnet"));
             }
@@ -627,101 +633,6 @@ impl Cli {
                         }
                     }
                 })
-            }
-            // Stunner test
-            Stun {} => {
-                let servers_config = cli_try!(res; self.telio.get_derp_config());
-
-                let rt = cli_try!(res; Runtime::new());
-
-                rt.block_on(async {
-                    let protector = match NativeProtector::new(
-                        #[cfg(target_os = "macos")]
-                        Some(false)) {
-                        Ok(p) => p,
-                        Err(e) => {
-                            cli_res!(res; (i "failed to create NativeProtector: {}", e));
-                            return
-                        }
-                    };
-                    let spool = SocketPool::new(protector);
-                    match spool.new_external_udp(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)), None).await {
-                        Ok(udp_socket) => {
-                            let udp_socket = Arc::new(udp_socket);
-
-                            let (stunner, packet_tx) = Stunner::start(
-                                udp_socket.clone(),
-                                Some(StunConfig {
-                                        plain_text_fallback: true,
-                                        servers: servers_config,
-                                    })
-                                );
-
-                            // SocketRx -> Stunner forwarder
-                            let mut forwarder = tokio::spawn(async move {
-                                const MAX_PACKET: usize = 65536;
-                                let mut rx_buff = [0u8; MAX_PACKET];
-
-                                while let Ok((len, src_addr)) =
-                                    udp_socket.recv_from(&mut rx_buff).await
-                                {
-                                    #[allow(mpsc_blocking_send)]
-                                    if packet_tx.send((rx_buff[..len].to_vec(), src_addr)).await.is_err()
-                                    {
-                                        return;
-                                    }
-                                }
-                            });
-
-                            let mut fetcher = tokio::spawn(async move {
-                                let _ = stunner.do_stun().await;
-
-                                loop {
-                                    sleep(Duration::from_secs(1)).await;
-
-                                    if let Ok(endpoints) = stunner.fetch_endpoints().await {
-                                        return Ok(endpoints);
-                                    }
-                                }
-
-                                #[allow(unreachable_code)]
-                                Err(())
-                            });
-
-                            // Timeout for stunner
-                            let sleep = sleep(Duration::from_secs(60));
-                            tokio::pin!(sleep);
-
-                            loop {
-                                tokio::select! {
-                                    () = &mut sleep => {
-                                        cli_res!(res; (i "timeout"));
-                                        break;
-                                    },
-                                    Ok(()) = &mut forwarder => {
-                                        break;
-                                    },
-                                    Ok(endpoints) = &mut fetcher => {
-                                        let endpoints = match endpoints.map_err(|_| Error::NoEndpoints) {
-                                            Ok(endpoints) => endpoints,
-                                            Err(e) => { res.push(Resp::Error(Box::new(e))); break; }
-                                        };
-                                        let endpoints = match endpoints.to_vec() {
-                                            Ok(endpoints) => endpoints,
-                                            Err(e) => {
-                                                res.push(Resp::Error(Box::new(e.into())));
-                                                break;
-                                            }
-                                        };
-                                        cli_res!(res; (i "got endpoints: {:?}", endpoints.into_iter().map(|e| e.0).collect::<Vec<_>>()));
-                                        break;
-                                    }
-                                };
-                            }
-                        }
-                        Err(_) => cli_res!(res; (i "udp socket init error")),
-                    }
-                });
             }
             Config { mesh_config } => {
                 let meshmap: MeshMap = cli_try!(serde_json::from_str(&mesh_config));
@@ -803,20 +714,7 @@ impl Cli {
         }
         Ok(())
     }
-}
 
-fn str_to_adapter(adapter: &str) -> AdapterType {
-    match adapter {
-        "boringtun" => AdapterType::BoringTun,
-        "wireguard-go" => AdapterType::WireguardGo,
-        "linux-native" => AdapterType::LinuxNativeWg,
-        "wireguard-nt" => AdapterType::WindowsNativeWg,
-        "" => AdapterType::default(),
-        _ => unreachable!(),
-    }
-}
-
-impl Report for Cli {
     fn report(&self, cmd: StatusCmd) -> Vec<Resp> {
         use StatusCmd::*;
         let mut res = Vec::new();
@@ -828,7 +726,7 @@ impl Report for Cli {
 
         if self.telio.is_running() {
             let telio_nodes = cli_try!(res; self.telio.external_nodes());
-            let derp_status = cli_try!(res; self.telio.get_derp_server());
+            let derp_status = (*self.derp_server.lock()).clone();
             match cmd {
                 Simple => {
                     let telio_nodes = cli_try!(res; serde_json::to_string(&telio_nodes));

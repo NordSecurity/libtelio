@@ -103,7 +103,7 @@ async fn connect_client(
         #[cfg(target_os = "macos")]
         Some(false),
     )?));
-    let conn = match connect_http_and_start(
+    let conn = match Box::pin(connect_http_and_start(
         pool,
         &hostname,
         addr,
@@ -112,7 +112,7 @@ async fn connect_client(
             timeout: Duration::from_secs(10),
             ..Default::default()
         },
-    )
+    ))
     .await
     {
         Ok(conn) => conn,
@@ -192,10 +192,10 @@ async fn test_pair(
     let addr_2 = resolve_domain_name(&host_2).await?;
 
     log::info!("Starting clients");
-    let mut client_1 = connect_client(addr_1[0], host_1.clone(), key_1)
+    let mut client_1 = Box::pin(connect_client(addr_1[0], host_1.clone(), key_1))
         .await
         .context("Failed to connect to first server")?;
-    let mut client_2 = connect_client(addr_2[0], host_2.clone(), key_2)
+    let mut client_2 = Box::pin(connect_client(addr_2[0], host_2.clone(), key_2))
         .await
         .context("Failed to connect to second server")?;
 
@@ -218,12 +218,12 @@ async fn main() -> Result<()> {
     println!("Derp connection tester starting");
 
     for pair in config.servers.iter().combinations_with_replacement(2) {
-        match test_pair(
+        match Box::pin(test_pair(
             pair[0].clone(),
             config.private_key_1,
             pair[1].clone(),
             config.private_key_2,
-        )
+        ))
         .await
         {
             Ok(_) => println!("✔️ {:?} <-> {:?}", pair[0], pair[1]),

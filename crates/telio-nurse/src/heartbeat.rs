@@ -9,9 +9,9 @@ use std::{
     pin::Pin,
 };
 use telio_crypto::{PublicKey, SecretKey};
+use telio_model::config::{RelayState, Server};
 use telio_model::{event::Event, mesh::NodeState};
 use telio_proto::{HeartbeatMessage, HeartbeatStatus, HeartbeatType};
-use telio_relay::{RelayState, Server};
 use telio_task::{
     io::{chan, mc_chan, Chan},
     Runtime, RuntimeExt, WaitResponse,
@@ -307,33 +307,31 @@ impl Analytics {
 
     async fn handle_wg_event(&mut self, event: Event) {
         if let Event::Node { body: Some(node) } = event {
-            if let Some(state) = node.state {
-                if state == PeerState::Disconnected {
-                    let _ = self.local_nodes.remove(&node.public_key);
+            if node.state == PeerState::Disconnected {
+                let _ = self.local_nodes.remove(&node.public_key);
+            } else {
+                let mut mesh_link = MeshLink::default();
+                mesh_link
+                    .connection_state
+                    .set(MeshConnectionState::WG, node.state == NodeState::Connected);
+
+                let node_info = if node.is_vpn {
+                    NodeInfo::Vpn {
+                        mesh_link,
+                        hostname: node.hostname.as_ref().cloned().or_else(|| {
+                            node.endpoint.map(|endpoint| {
+                                format!("{:x}", md5::compute(endpoint.to_string().as_bytes()))
+                            })
+                        }),
+                    }
                 } else {
-                    let mut mesh_link = MeshLink::default();
-                    mesh_link
-                        .connection_state
-                        .set(MeshConnectionState::WG, state == NodeState::Connected);
+                    NodeInfo::Node {
+                        mesh_link,
+                        meshnet_id: None,
+                    }
+                };
 
-                    let node_info = if node.is_vpn {
-                        NodeInfo::Vpn {
-                            mesh_link,
-                            hostname: node.hostname.as_ref().cloned().or_else(|| {
-                                node.endpoint.map(|endpoint| {
-                                    format!("{:x}", md5::compute(endpoint.to_string().as_bytes()))
-                                })
-                            }),
-                        }
-                    } else {
-                        NodeInfo::Node {
-                            mesh_link,
-                            meshnet_id: None,
-                        }
-                    };
-
-                    *self.local_nodes.entry(node.public_key).or_default() = node_info;
-                }
+                *self.local_nodes.entry(node.public_key).or_default() = node_info;
             }
         }
     }

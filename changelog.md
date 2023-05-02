@@ -8,6 +8,9 @@
 * LLT-3502: Refactor telio-nurse. Fix meshnet members list, conectivity matrix, external links data.
 * LLT-3504: Enable nurse component. Its start has been accidentally removed during merges.
 * LLT-3562: Add offline external nodes in analytics events.
+* LLT-2948: Improve derpcli for large scale stress-testing
+* LLT-3420: Box large futures
+* NVA-3705: Configure Android SONAME
 
 ### v4.0.0
 ### **Bruschetta**

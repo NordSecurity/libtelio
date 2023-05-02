@@ -6,21 +6,15 @@ authors = ["nord <info@nordsec.com>"]
 license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 crypto_box = "0.7.0"
 tokio = { version = ">=1.22", features = ["io-util", "net", "sync", "macros", "rt-multi-thread", "io-std", "time"] }
 env_logger = "0.9.0"
-hex = "0.3.0"
 clap = { version = "3.1", features = ["derive"] }
 base64 = "0.13.0"
 url = "2.2.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-ctrlc = "3.2.2"
-lazy_static = "1.4.0"
-scoped-tls = "=1.0.0"
 futures = "0.3.23"
 
 telio-crypto = { path = "../../crates/telio-crypto" }
@@ -31,6 +25,5 @@ anyhow = "1.0.69"
 itertools = "0.10.5"
 
 [dev-dependencies]
-hex = "0.3.0"
 tokio = { version = ">=1.22", features = ["macros", "rt-multi-thread", "io-std"] }
 env_logger = "0.9.0"

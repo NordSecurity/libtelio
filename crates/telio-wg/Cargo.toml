@@ -4,25 +4,25 @@ version = "0.1.0"
 edition = "2018"
 license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+publish = false
 
 [target.'cfg(windows)'.dependencies]
+ipnet = "2.3"
+sha2 = "0.10.6"
 wireguard-nt = { git = "https://github.com/NordSecurity/wireguard-nt-rust-wrapper", tag = "v1.0.0" }
+winapi = { version = "0.3", features = ["ws2def", "netioapi", "nldef"] }
 wg-go-rust-wrapper = { path = "../../wireguard-go-rust-wrapper" }
 
 [dependencies]
-boringtun = { git = "https://github.com/NordSecurity/boringtun.git", tag = "v1.1.0" }
+boringtun = { git = "https://github.com/NordSecurity/boringtun.git", tag = "v1.1.1" }
 futures = "0.3"
 hex = "0.4.3"
-ipnet = "2.3"
 ipnetwork = "0.18"
 lazy_static = "1.4.0"
 libc = "0.2.99"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 log = {version = "0.4.14", features = ["release_max_level_info"]}
-sha2 = "0.10.6"
 slog = "2.7"
 slog-stdlog = "4.1.0"
 thiserror = "1.0"
@@ -34,18 +34,15 @@ telio-sockets = { path = "../telio-sockets" }
 telio-task = { path = "../telio-task" }
 telio-utils = { path = "../telio-utils" }
 wireguard-uapi = { version = "2.0.4", features = ["xplatform"]}
-winapi = { version = "0.3", features = ["ws2def", "netioapi", "nldef"] }
 
 [dev-dependencies]
 pretty_assertions = "0.7.2"
-
 tokio = { version = ">=1.22", features = ["test-util"] }
-
 ntest = "0.7"
 
+telio-firewall = { path = "../telio-firewall" }
 telio-task = { features = ["test-util"], path = "../telio-task" }
 telio-test = { version = "1.0.0", path = "../telio-test" }
-
 mockall = "0.11.3"
 
 [build-dependencies]

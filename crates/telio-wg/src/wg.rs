@@ -61,17 +61,27 @@ pub struct DynamicWg {
     task: Task<State>,
 }
 
+/// WireGuard configuration
 pub struct Config {
+    /// Type of WireGuard implementation
     pub adapter: AdapterType,
+    /// Name of network interface in readable string
     pub name: Option<String>,
+    /// Tunnel file descriptor
     pub tun: Option<Tun>,
+    /// Sockets to be protected, in order to avoid loopback
     pub socket_pool: Arc<SocketPool>,
+    /// Callback of firewall to process incoming packets
     pub firewall_process_inbound_callback: FirewallCb,
+    /// Callback of firewall to process outgoing packets
     pub firewall_process_outbound_callback: FirewallCb,
 }
 
+/// Events and analytics transmission channels
 pub struct Io {
+    /// Channel to transmit peer information
     pub events: Tx<Box<Event>>,
+    /// Channel to transmit analytics
     pub analytics_tx: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
 }
 
@@ -104,6 +114,73 @@ const DEFAULT_NAME: &str = "utun10";
 const DEFAULT_NAME: &str = "nlx0";
 
 impl DynamicWg {
+    /// Starts the WireGuard adapter with the given parameters.
+    ///
+    /// # Arguments
+    ///
+    /// * 'io' -  Communication channels for peer info and analytics
+    /// * 'cfg' - The WireGuard adapter configuration
+    ///
+    /// # Returns
+    ///
+    /// Returns whether the adapter successfully started
+    ///
+    /// # Example
+    /// ```
+    /// use std::{sync::Arc, io};
+    /// use telio_firewall::firewall::{StatefullFirewall, Firewall};
+    /// use telio_sockets::{native::NativeSocket, Protector, SocketPool, Protect};
+    /// use telio_task::io::Chan;
+    /// pub use telio_wg::{AdapterType, DynamicWg, Tun, Io, Config};
+    /// use tokio::runtime::Runtime;
+    /// use mockall::mock;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///
+    ///     mock! {
+    ///         Protector {}
+    ///         impl Protector for Protector {
+    ///         fn make_external(&self, socket: NativeSocket) -> io::Result<()>;
+    ///         #[cfg(any(target_os = "macos", target_os = "ios"))]
+    ///         fn make_internal(&self, interface: i32) -> Result<(), std::io::Error>;
+    ///         fn clean(&self, socket: NativeSocket);
+    ///         #[cfg(target_os = "linux")]
+    ///         fn set_fwmark(&self, fwmark: u32);
+    ///         #[cfg(any(target_os = "macos", windows))]
+    ///         fn set_tunnel_interface(&self, interface: u64);
+    ///         }
+    ///     }
+    ///     let firewall = Arc::new(StatefullFirewall::new());
+    ///     let firewall_filter_inbound_packets = {
+    ///         let fw = firewall.clone();
+    ///         move |peer: &[u8; 32], packet: &[u8]| fw.process_inbound_packet(peer, packet)
+    ///     };
+    ///     let firewall_filter_outbound_packets = {
+    ///         let fw = firewall.clone();
+    ///         move |peer: &[u8; 32], packet: &[u8]| fw.process_outbound_packet(peer, packet)
+    ///     };
+    ///
+    ///     let chan = Chan::default();
+    ///     let socket_pool = Arc::new(SocketPool::new(MockProtector::default()));
+    ///     let wireguard_interface = DynamicWg::start(
+    ///         Io {
+    ///             events: chan.tx,
+    ///             analytics_tx: None,
+    ///         },
+    ///         Config {
+    ///             adapter: AdapterType::default(),
+    ///             name: Some("tun10".to_string()),
+    ///             tun: Some(Tun::default()),
+    ///             socket_pool: socket_pool,
+    ///             firewall_process_inbound_callback:
+    ///                 Some(Arc::new(firewall_filter_inbound_packets)),
+    ///             firewall_process_outbound_callback:
+    ///                 Some(Arc::new(firewall_filter_outbound_packets)),
+    ///         },
+    ///     );
+    /// }
+    /// ```
     pub fn start(io: Io, cfg: Config) -> Result<Self, Error>
     where
         Self: Sized,
@@ -416,7 +493,7 @@ impl State {
                 return false;
             }
 
-            if peer.connected() && !try_send(Connected, peer.clone()).await {
+            if peer.is_connected() && !try_send(Connected, peer.clone()).await {
                 return false;
             }
         }
@@ -570,7 +647,7 @@ impl State {
                     let rx_bytes = peer.rx_bytes.unwrap_or_default();
                     let peer_state = if diff_keys.delete_keys.contains(pubkey) {
                         PeerState::Disconnected
-                    } else if peer.connected() {
+                    } else if peer.is_connected() {
                         PeerState::Connected
                     } else {
                         PeerState::Connecting

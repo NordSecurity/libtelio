@@ -4,8 +4,9 @@ use super::mesh::Node;
 use modifier::Modifier;
 use serde::Serialize;
 
+use crate::config::Server as Relay;
+
 pub use modifier::Set;
-use telio_relay::derp::Server as Relay;
 
 /// Macro used to report events
 /// # Arguments
@@ -213,17 +214,18 @@ impl Set for Event {}
 
 #[cfg(test)]
 mod tests {
+    use crate::config::{RelayState, Server};
+
     use super::super::mesh::*;
     use super::*;
     use telio_crypto::{PublicKey, KEY_SIZE};
-    use telio_relay::derp::{RelayState, Server};
 
     #[test]
     fn validate_to_json() {
         let node = Node {
             identifier: "f2b18d10-82ed-49a3-8b50-3356685ec5fa".to_owned(),
             public_key: PublicKey([1_u8; KEY_SIZE]),
-            state: Some(NodeState::Connected),
+            state: NodeState::Connected,
             is_exit: true,
             is_vpn: true,
             allowed_ips: Vec::from(["127.0.0.1".parse().unwrap()]),
@@ -247,7 +249,6 @@ mod tests {
             weight: 1,
             conn_state: RelayState::Connecting,
             use_plain_text: true,
-            used: false,
         };
 
         let err_json = String::from(
@@ -265,9 +266,8 @@ mod tests {
             r#""stun_plaintext_port":3478,"#,
             r#""public_key":"SPB77H13eXlOdWc+PGrX6oAQfCvz2me1fvAB0lrxN0Y=","#,
             r#""weight":1,"#,
-            r#""conn_state":"connecting","#,
             r#""use_plain_text":true,"#,
-            r#""used":false"#,
+            r#""conn_state":"connecting""#,
             r#"}}"#
         ));
 

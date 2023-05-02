@@ -4,8 +4,7 @@ version = "0.1.0"
 edition = "2018"
 license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+publish = false
 
 [dependencies]
 crypto_box = "0.7.2"
@@ -24,13 +23,10 @@ webpki-roots = "0.21.0"
 webpki = "0.21.0"
 tokio = { version = ">=1.22", features = ["io-util", "net", "sync"] }
 url = "2.2.2"
-log = {version = "0.4.14", features = ["release_max_level_info"]}
+log = { version = "0.4.14", features = ["release_max_level_info"] }
 libc = "0.2.99"
 async-trait = "0.1.51"
-async-stream = "0.3.3"
-mockall = "0.11.3"
 serde = { version = "1.0", features = ["derive"] }
-static_assertions = "1.1.0"
 generic-array = "0.14.5"
 
 telio-crypto = { path = "../telio-crypto" }
@@ -38,13 +34,23 @@ telio-utils = { path = "../telio-utils" }
 telio-proto = { path = "../telio-proto" }
 telio-task = { path = "../telio-task" }
 telio-sockets = { path = "../telio-sockets" }
+telio-model = { path = "../telio-model" }
+
+[target.'cfg(windows)'.dependencies]
+static_assertions = "1.1.0"
 
 [dev-dependencies]
 async-std = { version = "1.5", features = ["attributes"] }
 env_logger = "0.9.0"
-hex = "0.3.0"
+hex = "0.4.3"
 ntest = "0.7"
 rstest = "0.11.0"
 telio-test = { version = "1.0.0", path = "../telio-test" }
 telio-task = { features = ["test-util"], path = "../telio-task" }
-tokio = { version = ">=1.22", features = ["macros", "rt-multi-thread", "io-std", "time", "test-util"] }
+tokio = { version = ">=1.22", features = [
+    "macros",
+    "rt-multi-thread",
+    "io-std",
+    "time",
+    "test-util",
+] }

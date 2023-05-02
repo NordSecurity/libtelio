@@ -110,8 +110,6 @@ pub struct FeatureExitDns {
 pub enum PathType {
     /// Nodes connected via a middle-man relay
     Relay,
-    /// Nodes connected directly via hole punching
-    UdpHolePunch,
     /// Nodes connected directly via WG
     Direct,
 }
@@ -441,7 +439,7 @@ mod tests {
             },
             "paths":
             {
-                "priority": ["relay", "udp-hole-punch"],
+                "priority": ["relay", "direct"],
                 "force": "relay"
             },
             "direct": {},
@@ -469,7 +467,7 @@ mod tests {
                 prod: true,
             }),
             paths: Some(FeaturePaths {
-                priority: vec![PathType::Relay, PathType::UdpHolePunch],
+                priority: vec![PathType::Relay, PathType::Direct],
                 force: Some(PathType::Relay),
             }),
             direct: Some(FeatureDirect {
@@ -504,35 +502,27 @@ mod tests {
     fn get_paths_from_feature_paths() {
         assert_eq!(
             FeaturePaths {
-                priority: vec![PathType::UdpHolePunch],
+                priority: vec![PathType::Direct],
                 force: None
             }
             .paths(),
-            vec![PathType::Relay, PathType::UdpHolePunch]
+            vec![PathType::Relay, PathType::Direct]
         );
         assert_eq!(
             FeaturePaths {
-                priority: vec![
-                    PathType::UdpHolePunch,
-                    PathType::Relay,
-                    PathType::UdpHolePunch
-                ],
+                priority: vec![PathType::Direct, PathType::Relay, PathType::Direct],
                 force: None
             }
             .paths(),
-            vec![PathType::Relay, PathType::UdpHolePunch]
+            vec![PathType::Relay, PathType::Direct]
         );
         assert_eq!(
             FeaturePaths {
-                priority: vec![
-                    PathType::UdpHolePunch,
-                    PathType::Relay,
-                    PathType::UdpHolePunch
-                ],
-                force: Some(PathType::UdpHolePunch)
+                priority: vec![PathType::Direct, PathType::Relay, PathType::Direct],
+                force: Some(PathType::Direct)
             }
             .paths(),
-            vec![PathType::UdpHolePunch]
+            vec![PathType::Direct]
         );
     }
 }

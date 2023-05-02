@@ -124,7 +124,7 @@ async fn consolidate_wg_peers<
 
     let actual_peers = wireguard_interface.get_interface().await?.peers;
 
-    // Calculate diff between requesed and actual list of peers
+    // Calculate diff between requested and actual list of peers
     let requested_keys: HashSet<&PublicKey> = requested_peers.keys().collect();
     let actual_keys: HashSet<&PublicKey> = actual_peers.keys().collect();
     let delete_keys = &actual_keys - &requested_keys;
@@ -673,10 +673,9 @@ mod tests {
     use telio_model::api_config::{
         DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD, DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
     };
-    use telio_model::config::{Config, PeerBase};
+    use telio_model::config::{Config, PeerBase, Server};
     use telio_model::mesh::ExitNode;
     use telio_proxy::MockProxy;
-    use telio_relay::Server;
     use telio_traversal::cross_ping_check::MockCrossPingCheckTrait;
     use telio_traversal::{MockSessionKeeperTrait, MockUpgradeSyncTrait, UpgradeRequest};
     use telio_wg::uapi::Interface;

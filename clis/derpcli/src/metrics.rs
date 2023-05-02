@@ -1,172 +1,81 @@
-#![allow(unwrap_check)]
-use anyhow::Result;
-use prometheus::{CounterVec, Encoder, GaugeVec, Opts, Registry, TextEncoder};
-use std::{
-    collections::HashMap,
-    fs,
-    io::Write,
-    time::{SystemTime, UNIX_EPOCH},
-};
-use telio_crypto::PublicKey;
+use std::collections::HashMap;
 
-#[derive(Clone)]
-pub struct Counters {
-    pub ping_counter: CounterVec,
-    pub pong_counter: CounterVec,
-    pub rtt: GaugeVec,
-    pub ping_time: GaugeVec,
-    pub registry: Registry,
-}
+const MONITORING_INTERVAL_MILLIS: u64 = 3000;
 
-#[derive(Clone)]
 pub struct Metrics {
-    pub clients: HashMap<PublicKey, Counters>,
+    /// clients - connected client count; should be even number if no errors
+    ///           as clients are added in pairs
+    pub clients: usize,
+    /// rtts - vector packet RTTs; tuple (Timestamp-in-ms, RTT-in-ms, DERP-name)
+    ///        keeps only received in the last MONITORING_INTERVAL_MILLIS
+    pub rtts: Vec<(u64, u16, String)>,
 }
 
 impl Metrics {
     pub fn new() -> Self {
-        let clients: HashMap<PublicKey, Counters> = HashMap::new();
-        Metrics { clients }
-    }
-
-    pub fn add_client(&mut self, client_public_key: PublicKey) -> Result<()> {
-        let counters = Counters {
-            ping_counter: CounterVec::new(
-                Opts::new(
-                    "ping_counter",
-                    format!("client {} ping_counter", client_public_key,),
-                ),
-                &["client", "peer"],
-            )?,
-            pong_counter: CounterVec::new(
-                Opts::new(
-                    "pong_counter",
-                    format!("client {} pong_counter", client_public_key,),
-                ),
-                &["client", "peer"],
-            )?,
-            rtt: GaugeVec::new(
-                Opts::new(
-                    "rtt",
-                    format!(
-                        "client {} last ping pong round trip time (ms)",
-                        client_public_key,
-                    ),
-                ),
-                &["client", "peer"],
-            )?,
-            ping_time: GaugeVec::new(
-                Opts::new(
-                    "ping_time",
-                    format!("client {} ping time (ms)", client_public_key,),
-                ),
-                &["client", "peer"],
-            )?,
-            registry: Registry::new(),
-        };
-
-        counters
-            .registry
-            .register(Box::new(counters.ping_counter.clone()))?;
-        counters
-            .registry
-            .register(Box::new(counters.pong_counter.clone()))?;
-        counters.registry.register(Box::new(counters.rtt.clone()))?;
-        counters
-            .registry
-            .register(Box::new(counters.ping_time.clone()))?;
-
-        self.clients.insert(client_public_key, counters);
-        Ok(())
-    }
-
-    pub fn inc_peer_ping_counter(
-        &mut self,
-        client_public_key: PublicKey,
-        peer_public_key: PublicKey,
-    ) -> Result<()> {
-        if let Some(counter) = self.clients.get_mut(&client_public_key) {
-            counter
-                .ping_counter
-                .with_label_values(&[
-                    &format!("{}", client_public_key),
-                    &format!("{}", peer_public_key),
-                ])
-                .inc();
-            counter
-                .ping_time
-                .with_label_values(&[
-                    &format!("{}", client_public_key),
-                    &format!("{}", peer_public_key),
-                ])
-                .set(SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as f64);
+        Metrics {
+            clients: 0,
+            rtts: Vec::new(),
         }
-        Ok(())
     }
 
-    pub fn inc_peer_pong_counter(
-        &mut self,
-        client_public_key: PublicKey,
-        peer_public_key: PublicKey,
-    ) -> Result<()> {
-        if let Some(counter) = self.clients.get_mut(&client_public_key) {
-            counter
-                .pong_counter
-                .with_label_values(&[
-                    &format!("{}", client_public_key),
-                    &format!("{}", peer_public_key),
-                ])
-                .inc();
-            counter
-                .rtt
-                .with_label_values(&[
-                    &format!("{}", client_public_key),
-                    &format!("{}", peer_public_key),
-                ])
-                .set(
-                    SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as f64
-                        - counter
-                            .ping_time
-                            .with_label_values(&[
-                                &format!("{}", client_public_key),
-                                &format!("{}", peer_public_key),
-                            ])
-                            .get(),
-                );
-        }
-        Ok(())
+    pub fn inc_clients(&mut self) {
+        self.clients += 1;
     }
 
-    pub fn print_metrics(&mut self) -> Result<()> {
-        for (_, counters) in self.clients.iter() {
-            let mut buffer = vec![];
-            let encoder = TextEncoder::new();
-            let metric_families = counters.registry.gather();
-            encoder.encode(&metric_families, &mut buffer)?;
-            println!("{}", String::from_utf8(buffer)?);
-        }
-        Ok(())
+    pub fn get_clients(&mut self) -> usize {
+        self.clients
     }
 
-    pub fn flush_metrics_to_file(&mut self, path: String) -> Result<()> {
-        if !path.is_empty() {
-            let mut file = if std::path::Path::new(&path).exists() {
-                fs::OpenOptions::new()
-                    .write(true)
-                    .append(true)
-                    .open(&path)?
-            } else {
-                fs::File::create(&path)?
-            };
+    pub fn add_rtt(&mut self, now: u64, rtt: u16, derp1: String) {
+        self.remove_outdated_rtt(now);
 
-            for (_, counters) in self.clients.iter() {
-                let mut buffer = vec![];
-                let encoder = TextEncoder::new();
-                let metric_families = counters.registry.gather();
-                encoder.encode(&metric_families, &mut buffer)?;
-                let _ = file.write_all(&buffer);
+        if let Some((last_time_received, _, _)) = self.rtts.last() {
+            if *last_time_received > now {
+                println!("WARNING: Time went back, ignoring RTT...");
+                return;
             }
         }
-        Ok(())
+
+        self.rtts.push((now, rtt, derp1));
+    }
+
+    pub fn print_rtts(&mut self) {
+        if self.rtts.is_empty() {
+            return;
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        self.remove_outdated_rtt(now);
+
+        let mut rtt_sum_per_derp = HashMap::new();
+        let mut packets_per_derp = HashMap::new();
+
+        for (_t, rtt, derp1) in &self.rtts {
+            rtt_sum_per_derp
+                .entry(derp1)
+                .and_modify(|sum| *sum += *rtt as u64)
+                .or_insert(*rtt as u64);
+            packets_per_derp
+                .entry(derp1)
+                .and_modify(|sum| *sum += 1)
+                .or_insert(1);
+        }
+        for (derp1, packet_count) in &packets_per_derp {
+            let rtt_sum = rtt_sum_per_derp[derp1];
+            let rtt_avg = rtt_sum as f64 / *packet_count as f64;
+            println!("* Avg. RTT via [{}]: {:.2} ms", derp1, rtt_avg);
+        }
+    }
+
+    fn remove_outdated_rtt(&mut self, now: u64) {
+        let tooold = now - MONITORING_INTERVAL_MILLIS;
+        let index = self.rtts.iter().position(|(t, _rtt, _derp1)| *t > tooold);
+        match index {
+            Some(i) => self.rtts = self.rtts[i..].into(),
+            None => self.rtts.clear(),
+        }
     }
 }
