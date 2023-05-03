@@ -1,4 +1,4 @@
-name: Trigger GitLab pipeline
+name: GitLab CI Pipeline
 on:
   pull_request_target:
     branches: [main]
