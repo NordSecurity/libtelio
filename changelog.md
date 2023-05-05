@@ -13,6 +13,7 @@
 * NVA-3705: Configure Android SONAME
 * LLT-3496: Fix is_exit flag when disconnecting from exit node
 * LLT-3499: Fix missing libtelio tag version
+* LLT-3596: Do not fail to start whole meshnet if single peer config is invalid within meshmap
 
 ### v4.0.0
 ### **Bruschetta**

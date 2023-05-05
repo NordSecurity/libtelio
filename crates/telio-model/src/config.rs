@@ -1,6 +1,8 @@
 //! Description of a network configuration map
 
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use serde_json::{from_value, Error, Value};
 
 use std::{
     net::{IpAddr, Ipv4Addr},
@@ -135,6 +137,39 @@ impl Default for Server {
     }
 }
 
+/// [PartialConfig] is similar to [Config] but allows for `peers` to contain invalid entries.
+#[derive(Debug, Deserialize)]
+pub struct PartialConfig {
+    #[serde(flatten)]
+    this: PeerBase,
+    peers: Option<Vec<Value>>,
+    derp_servers: Option<Vec<Server>>,
+    dns: Option<DnsConfig>,
+}
+
+impl PartialConfig {
+    /// Convert `self` to [Config]. When any given peer fails to convert, error for that will
+    /// be collected in the resulting vector and it will be omitted from resulting [Config].
+    pub fn to_config(self) -> (Config, Vec<Error>) {
+        let (failures, peers) = self
+            .peers
+            .map(|peers| {
+                let (failures, peers) = peers.into_iter().map(from_value).partition_map(Into::into);
+                (failures, Some(peers))
+            })
+            .unwrap_or((vec![], None));
+        (
+            Config {
+                this: self.this,
+                peers,
+                derp_servers: self.derp_servers,
+                dns: self.dns,
+            },
+            failures,
+        )
+    }
+}
+
 /// Rust representation of [meshnet map]
 /// A network map of all the Peers and the servers
 /// [meshnet map]: https://docs.nordvpn.com/client-api/#get-map
@@ -171,6 +206,7 @@ impl Deref for Config {
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+    use serde_json::from_str;
 
     #[test]
     fn json_to_config() {
@@ -197,6 +233,52 @@ mod tests {
                     "198.51.100.43"
                   ],
                   "is_local": true,
+                  "user_email": "alice@example.com",
+                  "allow_incoming_connections": true,
+                  "peer_allows_traffic_routing": false,
+                  "allow_peer_traffic_routing": true
+                },
+                {},
+                {
+                  "identifier": "64463e0f-64ee-455d-b468-e29302e3e747",
+                  "public_key": "LRrbraNJXOrVdnpXy6gA/XcpmxymE0oMZlzP5Pqi20I=",
+                  "hostname": "everest-alice.nord",
+                  "os": "android",
+                  "os_version": "29",
+                  "ip_addresses": [
+                    "198.51.100.43"
+                  ],
+                  "is_local": false,
+                  "user_email": "bob@example.com",
+                  "allow_incoming_connections": false,
+                  "peer_allows_traffic_routing": true,
+                  "allow_peer_traffic_routing": false
+                },
+                {
+                  "invalid_key": "98e00fa1-2c83-4e85-bf01-45c1d4eefea6",
+                  "public_key": "LRrbraNJXOrVdnpXy6gA/XcpmxymE0oMZlzP5Pqi20I=",
+                  "hostname": "everest-bob.nord",
+                  "os": "android",
+                  "os_version": "29",
+                  "ip_addresses": [
+                    "198.51.100.43"
+                  ],
+                  "is_local": true,
+                  "user_email": "alice@example.com",
+                  "allow_incoming_connections": true,
+                  "peer_allows_traffic_routing": false,
+                  "allow_peer_traffic_routing": true
+                },
+                {
+                  "identifier": "98e00fa1-2c83-4e85-bf01-45c1d4eefea6",
+                  "public_key": "LRrbraNJXOrVdnpXy6gA/XcpmxymE0oMZlzP5Pqi20I=",
+                  "hostname": "everest-bob.nord",
+                  "os": "android",
+                  "os_version": "29",
+                  "ip_addresses": [
+                    "198.51.100.43"
+                  ],
+                  "is_local": 42,
                   "user_email": "alice@example.com",
                   "allow_incoming_connections": true,
                   "peer_allows_traffic_routing": false,
@@ -232,7 +314,7 @@ mod tests {
               ]
             }
        "#;
-        let config = Config {
+        let expected_config = Config {
             this: PeerBase {
                 identifier: "3fa85f64-5717-4562-b3fc-2c963f66afa6".to_owned(),
                 public_key: "qj1pru+cP0mU9K0FrU8e0JYtTaPo0YiQG8O2NbFHeH4="
@@ -241,18 +323,32 @@ mod tests {
                 hostname: "everest-alice.nord".to_owned(),
                 ip_addresses: Some(vec!["198.51.100.42".parse().unwrap()]),
             },
-            peers: Some(vec![Peer {
-                base: PeerBase {
-                    identifier: "98e00fa1-2c83-4e85-bf01-45c1d4eefea6".to_owned(),
-                    public_key: "LRrbraNJXOrVdnpXy6gA/XcpmxymE0oMZlzP5Pqi20I="
-                        .parse()
-                        .unwrap(),
-                    hostname: "everest-bob.nord".to_owned(),
-                    ip_addresses: Some(vec!["198.51.100.43".parse().unwrap()]),
+            peers: Some(vec![
+                Peer {
+                    base: PeerBase {
+                        identifier: "98e00fa1-2c83-4e85-bf01-45c1d4eefea6".to_owned(),
+                        public_key: "LRrbraNJXOrVdnpXy6gA/XcpmxymE0oMZlzP5Pqi20I="
+                            .parse()
+                            .unwrap(),
+                        hostname: "everest-bob.nord".to_owned(),
+                        ip_addresses: Some(vec!["198.51.100.43".parse().unwrap()]),
+                    },
+                    is_local: true,
+                    allow_incoming_connections: true,
                 },
-                is_local: true,
-                allow_incoming_connections: true,
-            }]),
+                Peer {
+                    base: PeerBase {
+                        identifier: "64463e0f-64ee-455d-b468-e29302e3e747".to_owned(),
+                        public_key: "LRrbraNJXOrVdnpXy6gA/XcpmxymE0oMZlzP5Pqi20I="
+                            .parse()
+                            .unwrap(),
+                        hostname: "everest-alice.nord".to_owned(),
+                        ip_addresses: Some(vec!["198.51.100.43".parse().unwrap()]),
+                    },
+                    is_local: false,
+                    allow_incoming_connections: false,
+                },
+            ]),
             derp_servers: Some(vec![Server {
                 region_code: "lt".to_owned(),
                 name: "lt123".to_owned(),
@@ -273,6 +369,10 @@ mod tests {
             }),
         };
 
-        assert_eq!(serde_json::from_str::<Config>(json).unwrap(), config);
+        let partial_config: PartialConfig = from_str(json).unwrap();
+        let (full_config, peer_deserialization_failures) = partial_config.to_config();
+
+        assert_eq!(peer_deserialization_failures.len(), 3);
+        assert_eq!(full_config, expected_config);
     }
 }
