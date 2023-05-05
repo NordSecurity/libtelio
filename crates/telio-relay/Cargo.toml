@@ -23,7 +23,7 @@ webpki-roots = "0.21.0"
 webpki = "0.21.0"
 tokio = { version = ">=1.22", features = ["io-util", "net", "sync"] }
 url = "2.2.2"
-log = { version = "0.4.14", features = ["release_max_level_info"] }
+log = { version = "0.4.14", features = ["release_max_level_debug"] }
 libc = "0.2.99"
 async-trait = "0.1.51"
 serde = { version = "1.0", features = ["derive"] }

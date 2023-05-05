@@ -16,6 +16,6 @@ telio-utils = { path = "../telio-utils" }
 
 async-trait = "0.1.51"
 futures = "0.3"
-log = {version = "0.4.14", features = ["release_max_level_info"]}
+log = {version = "0.4.14", features = ["release_max_level_debug"]}
 thiserror = "1.0.32"
 tokio = { version = ">=1.22", features = ["full"] }
