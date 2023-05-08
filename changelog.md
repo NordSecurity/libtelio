@@ -14,6 +14,7 @@
 * LLT-3496: Fix is_exit flag when disconnecting from exit node
 * LLT-3499: Fix missing libtelio tag version
 * LLT-3596: Do not fail to start whole meshnet if single peer config is invalid within meshmap
+* LLT-3520: Add missing verification of sideload feature on macOS
 
 ### v4.0.0
 ### **Bruschetta**

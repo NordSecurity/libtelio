@@ -918,9 +918,74 @@ fn bytes_to_zero_terminated_unmanaged_bytes(bytes: &[u8]) -> *mut c_char {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use libc::c_void;
+    use std::ptr;
     use telio_model::api_config::Features;
 
-    use super::*;
+    unsafe extern "C" fn test_telio_event_fn(_: *mut c_void, _: *const c_char) {}
+
+    unsafe extern "C" fn test_telio_logger_fn(
+        _: *mut c_void,
+        _: telio_log_level,
+        _: *const c_char,
+    ) {
+    }
+
+    const CORRECT_FEATURES_JSON_WITHOUT_MACOS_SIDELOAD: &str = r#"
+        {
+            "wireguard":
+            {
+                "persistent_keepalive": {
+                    "vpn": null,
+                    "stun": 50
+                }
+            },
+            "nurse":
+            {
+                "fingerprint": "fingerprint_test"
+            },
+            "lana":
+            {
+                "event_path": "path/to/some/event/data",
+                "prod": true
+            },
+            "paths":
+            {
+                "priority": ["relay", "direct"],
+                "force": "relay"
+            },
+            "direct": {},
+            "exit_dns": {}
+        }"#;
+
+    const CORRECT_FEATURES_JSON_WITH_MACOS_SIDELOAD: &str = r#"
+        {
+            "wireguard":
+            {
+                "persistent_keepalive": {
+                    "vpn": null,
+                    "stun": 50
+                }
+            },
+            "nurse":
+            {
+                "fingerprint": "fingerprint_test"
+            },
+            "lana":
+            {
+                "event_path": "path/to/some/event/data",
+                "prod": true
+            },
+            "paths":
+            {
+                "priority": ["relay", "direct"],
+                "force": "relay"
+            },
+            "direct": {},
+            "exit_dns": {},
+            "macos_sideload": false
+        }"#;
 
     #[test]
     fn telio_set_meshnet_rejects_too_long_configs() -> anyhow::Result<()> {
@@ -939,5 +1004,69 @@ mod tests {
             TELIO_RES_INVALID_STRING
         );
         Ok(())
+    }
+
+    #[test]
+    fn test_telio_new_when_sideload_flag_is_missing() {
+        let mut telio_dev: *mut telio = ptr::null_mut();
+        let features_cstr = CString::new(CORRECT_FEATURES_JSON_WITHOUT_MACOS_SIDELOAD).unwrap();
+        let events = telio_event_cb {
+            ctx: ptr::null_mut(),
+            cb: test_telio_event_fn,
+        };
+        let log_level = telio_log_level::TELIO_LOG_DEBUG;
+        let telio_logger = telio_logger_cb {
+            ctx: ptr::null_mut(),
+            cb: test_telio_logger_fn,
+        };
+        let res = telio_new(
+            &mut telio_dev,
+            features_cstr.as_ptr(),
+            events,
+            log_level,
+            telio_logger,
+        );
+
+        #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
+        {
+            assert_eq!(res, TELIO_RES_BAD_CONFIG);
+            assert!(telio_dev.is_null());
+        }
+
+        #[cfg(not(any(target_os = "macos", feature = "pretend_to_be_macos")))]
+        {
+            assert_eq!(res, TELIO_RES_OK);
+            assert!(!telio_dev.is_null());
+        }
+        // Restore panic hook
+        let _ = panic::take_hook();
+    }
+
+    #[test]
+    fn test_telio_new_when_sideload_flag_is_present() {
+        let mut telio_dev: *mut telio = ptr::null_mut();
+        let features_cstr = CString::new(CORRECT_FEATURES_JSON_WITH_MACOS_SIDELOAD).unwrap();
+        let events = telio_event_cb {
+            ctx: ptr::null_mut(),
+            cb: test_telio_event_fn,
+        };
+        let log_level = telio_log_level::TELIO_LOG_DEBUG;
+        let telio_logger = telio_logger_cb {
+            ctx: ptr::null_mut(),
+            cb: test_telio_logger_fn,
+        };
+        let res = telio_new(
+            &mut telio_dev,
+            features_cstr.as_ptr(),
+            events,
+            log_level,
+            telio_logger,
+        );
+
+        assert_eq!(res, TELIO_RES_OK);
+        assert!(!telio_dev.is_null());
+
+        // Restore panic hook
+        let _ = panic::take_hook();
     }
 }

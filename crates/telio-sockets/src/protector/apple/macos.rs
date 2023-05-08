@@ -30,10 +30,7 @@ use crate::Protector;
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn};
 
 #[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("Macos must provide sideload option in features")]
-    SideloadOptionMissing,
-}
+pub enum Error {}
 
 pub struct SocketWatcher {
     sockets: Arc<Mutex<Sockets>>,
@@ -51,23 +48,21 @@ pub struct NativeProtector {
 }
 
 impl NativeProtector {
-    pub fn new(macos_sideload: Option<bool>) -> Result<Self, Error> {
-        match macos_sideload {
-            Some(true) => {
-                let sockets = Arc::new(Mutex::new(Sockets::new()));
-                Ok(Self {
-                    socket_watcher: Some(SocketWatcher {
-                        sockets: sockets.clone(),
-                        monitor: spawn_monitor(sockets),
-                    }),
-                    tunnel_interface: RwLock::new(None),
-                })
-            }
-            Some(false) => Ok(Self {
+    pub fn new(macos_sideload: bool) -> Result<Self, Error> {
+        if macos_sideload {
+            let sockets = Arc::new(Mutex::new(Sockets::new()));
+            Ok(Self {
+                socket_watcher: Some(SocketWatcher {
+                    sockets: sockets.clone(),
+                    monitor: spawn_monitor(sockets),
+                }),
+                tunnel_interface: RwLock::new(None),
+            })
+        } else {
+            Ok(Self {
                 socket_watcher: None,
                 tunnel_interface: RwLock::new(None),
-            }),
-            None => Err(Error::SideloadOptionMissing),
+            })
         }
     }
 }
