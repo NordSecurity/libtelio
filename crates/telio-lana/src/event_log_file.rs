@@ -128,6 +128,28 @@ pub mod moose {
         AlreadyInitiated,
     }
 
+    pub enum ErrorLevel {
+        Warning,
+        Error,
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    pub enum ContextState {
+        Ready,
+        AlreadyInitiated,
+        TrackerDeleted,
+        AllTrackersDeleted,
+        Deleted,
+    }
+
+    pub trait InitCallback {
+        fn on_init(&self, result_code: &std::result::Result<ContextState, Error>);
+    }
+
+    pub trait ErrorCallback {
+        fn on_error(&self, error_level: ErrorLevel, error_code: Error, msg: &str);
+    }
+
     /// Initialize logger file with current date and time.
     ///
     /// Parameters:
@@ -135,7 +157,9 @@ pub mod moose {
     /// * app_name      - Lana's application name
     /// * app_version   - Semantic version of the application.
     /// * exp_moose_ver - Eventual moose version
-    /// * prod          - wether the events should be sent to production or not
+    /// * prod          - whether the events should be sent to production or not
+    /// * init_cb       - callback by Moose after succesfull initialization
+    /// * error_cb      - callback by Moose to record any errors
     #[allow(unused_variables)]
     pub fn init(
         event_path: String,
@@ -143,6 +167,8 @@ pub mod moose {
         app_version: String,
         exp_moose_ver: String,
         prod: bool,
+        init_cb: Box<(dyn InitCallback + 'static)>,
+        error_cb: Box<(dyn ErrorCallback + Sync + std::marker::Send + 'static)>,
     ) -> std::result::Result<Result, Error> {
         match super::event_log(
             "init",
