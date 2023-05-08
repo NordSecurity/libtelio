@@ -191,6 +191,8 @@ enum DevCmd {
     #[clap(about = "Restarts telio wg adapter")]
     NotifyNetChange,
     Stop,
+    #[clap(about = "Trigger analytics event")]
+    Analytics,
 }
 
 #[derive(Parser)]
@@ -504,6 +506,10 @@ impl Cli {
             Stop => {
                 self.telio.stop();
                 cli_res!(res; (i "stopped telio."));
+            }
+            Analytics => {
+                cli_res!(res; (i "Trigger analytics event."));
+                cli_try!(self.telio.trigger_analytics_event());
             }
         }
         res

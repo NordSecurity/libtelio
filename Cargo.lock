@@ -3342,6 +3342,7 @@ dependencies = [
  "futures",
  "histogram",
  "log",
+ "md5",
  "protobuf-codegen-pure",
  "rand",
  "serde",

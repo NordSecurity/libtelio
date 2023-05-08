@@ -26,7 +26,7 @@ use telio_traversal::{
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 use telio_sockets::native;
 
-use telio_nurse::{config::Config as NurseConfig, data::MeshConfigUpdateEvent, Nurse};
+use telio_nurse::{config::Config as NurseConfig, data::MeshConfigUpdateEvent, Nurse, NurseIo};
 use telio_wg as wg;
 use thiserror::Error as TError;
 use tokio::{
@@ -260,6 +260,12 @@ pub struct EventListeners {
 
 pub struct EventPublishers {
     libtelio_event_publisher: mc_chan::Tx<Box<Event>>,
+
+    /// Used to send local nodes to nurse component when there is a config update
+    nurse_config_update_publisher: Option<Tx<Box<MeshConfigUpdateEvent>>>,
+
+    /// Used to manually trigger a nurse event collection
+    nurse_collection_trigger_publisher: Option<Tx<Box<()>>>,
 }
 
 // All of the instances and state required to run local DNS resolver for NordNames
@@ -284,9 +290,6 @@ struct Runtime {
     /// therefore this state may be different from reality even though the controllers will "try"
     /// their best to ensure that requested and actual states match
     requested_state: RequestedState,
-
-    /// Used to send local nodes to nurse component when there is a config update
-    config_update_ch: Option<Tx<Box<MeshConfigUpdateEvent>>>,
 
     /// All device Entities
     ///
@@ -599,6 +602,15 @@ impl Device {
             Err(no_data) => Err(Error::FailedNatInfoRecover(no_data)),
         }
     }
+
+    pub fn trigger_analytics_event(&self) -> Result<()> {
+        self.art()?.block_on(async {
+            task_exec!(self.rt()?, async move |rt| Ok(rt
+                .trigger_analytics_event()
+                .await))
+            .await?
+        })
+    }
 }
 
 impl Drop for Device {
@@ -681,10 +693,14 @@ impl Runtime {
             derp_events.tx.clone(),
         ));
 
-        let (analytics_ch, config_update_ch) = if features.nurse.is_some() {
-            (Some(McChan::default().tx), Some(McChan::default().tx))
+        let (analytics_ch, config_update_ch, collection_trigger_ch) = if features.nurse.is_some() {
+            (
+                Some(McChan::default().tx),
+                Some(McChan::default().tx),
+                Some(McChan::default().tx),
+            )
         } else {
-            (None, None)
+            (None, None, None)
         };
 
         let wg_events = Chan::default();
@@ -711,15 +727,20 @@ impl Runtime {
 
         let nurse = if telio_lana::is_lana_initialized() {
             if let Some(nurse_features) = &features.nurse {
+                let nurse_io = NurseIo {
+                    derp_event_channel: &derp_events.tx,
+                    wg_event_channel: &libtelio_wide_event_publisher,
+                    relay_multiplexer: &multiplexer,
+                    wg_analytics_channel: analytics_ch,
+                    config_update_channel: config_update_ch.clone(),
+                    collection_trigger_channel: collection_trigger_ch.clone(),
+                };
+
                 Some(Arc::new(
                     Nurse::start_with(
                         config.private_key.public(),
                         NurseConfig::new(nurse_features),
-                        &derp_events.tx,
-                        &libtelio_wide_event_publisher,
-                        multiplexer.as_ref(),
-                        analytics_ch,
-                        config_update_ch.clone(),
+                        nurse_io,
                     )
                     .await,
                 ))
@@ -873,7 +894,6 @@ impl Runtime {
         Ok(Runtime {
             features,
             requested_state,
-            config_update_ch,
             entities: Entities {
                 wireguard_interface,
                 dns,
@@ -894,6 +914,8 @@ impl Runtime {
             },
             event_publishers: EventPublishers {
                 libtelio_event_publisher: libtelio_wide_event_publisher,
+                nurse_config_update_publisher: config_update_ch,
+                nurse_collection_trigger_publisher: collection_trigger_ch,
             },
             polling_interval: interval_at(tokio::time::Instant::now(), Duration::from_secs(5)),
         })
@@ -1143,7 +1165,7 @@ impl Runtime {
 
         self.log_nat().await;
 
-        match (&self.config_update_ch, config) {
+        match (&self.event_publishers.nurse_config_update_publisher, config) {
             (Some(ch), Some(config)) => {
                 let event = MeshConfigUpdateEvent::from(config);
                 if ch.send(Box::new(event)).is_err() {
@@ -1375,6 +1397,15 @@ impl Runtime {
                 })
             }
             _ => None,
+        }
+    }
+
+    async fn trigger_analytics_event(&self) -> Result<()> {
+        if let Some(ch) = &self.event_publishers.nurse_collection_trigger_publisher {
+            let _ = ch.send(Box::new(()));
+            Ok(())
+        } else {
+            Err(Error::NotStarted)
         }
     }
 }

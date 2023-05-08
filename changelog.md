@@ -4,9 +4,12 @@
 ### Changelog
 * LLT-3423: Add identifier to `Node` and `ExitNode`, and telio function to supply an identifier when connecting to an exit node
 * LLT-3404: Add github PR template
+* LLT-3468: Separate Heartbeat collection from QoS so heartbeat collection can be alone enabled.
+* LLT-3502: Refactor telio-nurse. Fix meshnet members list, conectivity matrix, external links data.
+* LLT-3504: Enable nurse component. Its start has been accidentally removed during merges.
+* LLT-3562: Add offline external nodes in analytics events.
 * LLT-2948: Improve derpcli for large scale stress-testing
 * LLT-3420: Box large futures
-* LLT-3504: Enable nurse component. Its start has been accidentally removed during merges.
 * NVA-3705: Configure Android SONAME
 * LLT-3496: Fix is_exit flag when disconnecting from exit node
 * LLT-3499: Fix missing libtelio tag version

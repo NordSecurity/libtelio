@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use histogram::Histogram;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::net::IpAddr;
 use std::time::Instant;
 
@@ -10,6 +10,8 @@ use tokio::time::{interval_at, Interval};
 use telio_crypto::PublicKey;
 use telio_task::{io::mc_chan, Runtime, RuntimeExt, WaitResponse};
 use telio_wg::uapi::{AnalyticsEvent, PeerState};
+
+use telio_utils::telio_log_debug;
 
 use crate::config::QoSConfig;
 
@@ -72,11 +74,12 @@ impl NodeInfo {
     fn update_connection_duration(&mut self, event: &AnalyticsEvent) {
         if self.peer_state != event.peer_state {
             // Connected -> Disconnected
-            if event.peer_state == PeerState::Disconnected {
+            if self.peer_state == PeerState::Connected {
                 // Connected time
                 let duration = event
                     .timestamp
                     .checked_duration_since(self.last_state_change);
+                telio_log_debug!("adding {:?} to connected_time", duration);
                 self.connected_time += duration
                     .map(|duration| duration.as_secs())
                     .unwrap_or_default();
@@ -119,23 +122,26 @@ impl OutputData {
     /// Create a new `OutputData` containing the contents of two `OutputData`
     pub fn merge(a: OutputData, b: OutputData) -> Self {
         OutputData {
-            rtt: OutputData::merge_strings(a.rtt, b.rtt),
-            tx: OutputData::merge_strings(a.tx, b.tx),
-            rx: OutputData::merge_strings(a.rx, b.rx),
+            rtt: OutputData::merge_strings(a.rtt, b.rtt, ','),
+            tx: OutputData::merge_strings(a.tx, b.tx, ','),
+            rx: OutputData::merge_strings(a.rx, b.rx, ','),
             connection_duration: OutputData::merge_strings(
                 a.connection_duration,
                 b.connection_duration,
+                ';',
             ),
         }
     }
 
-    fn merge_strings(a: String, b: String) -> String {
+    fn merge_strings(a: String, b: String, separator: char) -> String {
         let mut result = String::new();
         if a.is_empty() {
             result.push_str(&b);
+        } else if b.is_empty() {
+            result.push_str(&a);
         } else {
             result.push_str(&a);
-            result.push(',');
+            result.push(separator);
             result.push_str(&b);
         }
         result
@@ -210,8 +216,12 @@ impl Analytics {
     }
 
     /// Wrapper function around `Analytics::get_data_from_nodes_hashmap`.
-    pub fn get_data(&mut self, sorted_public_keys: &[PublicKey]) -> OutputData {
-        Analytics::get_data_from_nodes_hashmap(&mut self.nodes, self.buckets, sorted_public_keys)
+    pub fn get_data(&mut self, sorted_public_keys_set: &BTreeSet<PublicKey>) -> OutputData {
+        Analytics::get_data_from_nodes_hashmap(
+            &mut self.nodes,
+            self.buckets,
+            sorted_public_keys_set,
+        )
     }
 
     /// Get QoS data from the specified nodes in the meshnet.
@@ -228,7 +238,7 @@ impl Analytics {
     pub fn get_data_from_nodes_hashmap(
         nodes: &mut HashMap<PublicKey, NodeInfo>,
         buckets: u32,
-        sorted_public_keys: &[PublicKey],
+        sorted_public_keys: &BTreeSet<PublicKey>,
     ) -> OutputData {
         let mut output = OutputData::default();
 
@@ -258,6 +268,10 @@ impl Analytics {
                 let mut total_connected_time = node.connected_time;
                 if node.peer_state == PeerState::Connected {
                     let duration = Instant::now().checked_duration_since(node.last_state_change);
+                    telio_log_debug!(
+                        "connected at the collection interval, adding: {:?}",
+                        duration
+                    );
                     total_connected_time += duration
                         .map(|duration| duration.as_secs())
                         .unwrap_or_default();
@@ -286,8 +300,13 @@ impl Analytics {
         output.rx.pop();
         output.connection_duration.pop();
 
+        output
+    }
+
+    /// Clear cached data
+    pub fn reset_cached_data(&mut self) {
         // Clear cached data
-        for node in nodes.values_mut() {
+        for node in self.nodes.values_mut() {
             // Keep the nodes, but clear the histograms
             node.rtt_histogram = Histogram::new();
             node.tx_histogram = Histogram::new();
@@ -297,11 +316,10 @@ impl Analytics {
             node.last_state_change = Instant::now();
             node.connected_time = 0;
         }
-
-        output
     }
 
     async fn handle_wg_event(&mut self, event: AnalyticsEvent) {
+        telio_log_debug!("WG event: {:?}", event);
         self.nodes
             .entry(event.public_key)
             .and_modify(|n| {
@@ -410,11 +428,11 @@ mod tests {
         let output = Analytics::get_data_from_nodes_hashmap(
             &mut hashmap,
             5,
-            &[
+            &BTreeSet::<PublicKey>::from([
                 a_public_key,
                 PublicKey(*b"ABBBBBBBBBBBBBBBBBBBAAAAAAAAAAAA"),
                 b_public_key,
-            ],
+            ]),
         );
 
         let expected_output = OutputData {
