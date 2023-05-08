@@ -256,6 +256,8 @@ impl Analytics {
         let start_time = if let Some(initial_timeout) = config.initial_collect_interval {
             Instant::now() + initial_timeout
         } else {
+            // Adjust the time when the first event will be generated.
+            // This way, the interval between events will be constant.
             Instant::now() + config.collect_interval - config.collect_answer_timeout
         };
 

@@ -645,10 +645,10 @@ impl State {
                 if let Some(endpoint) = peer.endpoint {
                     let tx_bytes = peer.tx_bytes.unwrap_or_default();
                     let rx_bytes = peer.rx_bytes.unwrap_or_default();
-                    let peer_state = if diff_keys.delete_keys.contains(pubkey) {
-                        PeerState::Disconnected
-                    } else if peer.is_connected() {
+                    let peer_state = if peer.is_connected() {
                         PeerState::Connected
+                    } else if diff_keys.delete_keys.contains(pubkey) {
+                        PeerState::Disconnected
                     } else {
                         PeerState::Connecting
                     };
