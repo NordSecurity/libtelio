@@ -142,6 +142,8 @@ impl ForwardZone {
         // We provide our own forward servers, so we don't need to look at the hosts file
         options.use_hosts_file = false;
 
+        options.num_concurrent_reqs = 1;
+
         let zone = ForwardAuthority::try_from_config(
             Name::from_str(name)?,
             ZoneType::Forward,
