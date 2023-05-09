@@ -1,4 +1,4 @@
-pub use moosemeshnetapp as moose;
+pub use crate::event_log::*;
 pub use telio_utils::{telio_log_error, telio_log_info, telio_log_warn};
 
 /// Struct for Moose callbacks
