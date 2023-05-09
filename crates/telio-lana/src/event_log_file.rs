@@ -121,6 +121,7 @@ pub mod moose {
         EventLogError,
     }
 
+    #[derive(Debug, Clone, Copy)]
     pub enum MooseError {
         Input,
         Version,
@@ -144,6 +145,7 @@ pub mod moose {
         AlreadyInitiated,
     }
 
+    #[derive(Debug, Clone, Copy)]
     pub enum MooseErrorLevel {
         Warning,
         Error,
