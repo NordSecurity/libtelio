@@ -121,6 +121,22 @@ pub mod moose {
         EventLogError,
     }
 
+    pub enum MooseError {
+        Input,
+        Version,
+        StorageEngine,
+        StorageSet,
+        StorageGet,
+        History,
+        Usage,
+        Handler,
+        QueueDisabled,
+        QueueFull,
+        ContextNotFound,
+        Send,
+        NotInitiated,
+    }
+
     /// Logger result
     #[derive(Debug, PartialEq, Eq)]
     pub enum Result {
@@ -128,7 +144,7 @@ pub mod moose {
         AlreadyInitiated,
     }
 
-    pub enum ErrorLevel {
+    pub enum MooseErrorLevel {
         Warning,
         Error,
     }
@@ -143,11 +159,11 @@ pub mod moose {
     }
 
     pub trait InitCallback {
-        fn on_init(&self, result_code: &std::result::Result<ContextState, Error>);
+        fn on_init(&self, result_code: &std::result::Result<ContextState, MooseError>);
     }
 
     pub trait ErrorCallback {
-        fn on_error(&self, error_level: ErrorLevel, error_code: Error, msg: &str);
+        fn on_error(&self, error_level: MooseErrorLevel, error_code: MooseError, msg: &str);
     }
 
     /// Initialize logger file with current date and time.
