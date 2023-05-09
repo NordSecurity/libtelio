@@ -3312,6 +3312,7 @@ name = "telio-model"
 version = "0.1.0"
 dependencies = [
  "ipnetwork",
+ "itertools",
  "modifier",
  "pretty_assertions",
  "serde",

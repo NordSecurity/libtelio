@@ -28,7 +28,7 @@ use std::{
 
 use self::types::*;
 use crate::device::{Device, DeviceConfig, Result as DevResult};
-use telio_model::{config::Config, event::*, mesh::ExitNode};
+use telio_model::{config::PartialConfig, event::*, mesh::ExitNode};
 
 // debug tools
 use telio_utils::{
@@ -36,6 +36,7 @@ use telio_utils::{
 };
 
 const DEFAULT_PANIC_MSG: &str = "libtelio panicked";
+const MAX_CONFIG_LENGTH: usize = 16 * 1024 * 1024;
 
 /// Check if res is ok, else return early by converting Error into telio_result
 /// and saving it to LAST_ERROR storage
@@ -684,7 +685,19 @@ pub extern "C" fn telio_set_meshnet(dev: &telio, cfg: *const c_char) -> telio_re
             let cfg_str = ffi_try!(unsafe { CStr::from_ptr(cfg) }
                 .to_str()
                 .map_err(|_| TELIO_RES_INVALID_STRING));
-            let cfg: Config = ffi_try!(serde_json::from_str(cfg_str));
+            if cfg_str.as_bytes().len() > MAX_CONFIG_LENGTH {
+                telio_log_error!(
+                    "config string exceeds maximum allowed length ({}): {}",
+                    MAX_CONFIG_LENGTH,
+                    cfg_str.as_bytes().len()
+                );
+                return TELIO_RES_INVALID_STRING;
+            }
+            let cfg: PartialConfig = ffi_try!(serde_json::from_str(cfg_str));
+            let (cfg, peer_deserialization_failures) = cfg.to_config();
+            for failure in peer_deserialization_failures {
+                telio_log_warn!("Failed to deserialize one of the peers: {}", failure);
+            }
             dev.set_config(&Some(cfg))
                 .telio_log_result("telio_set_meshnet")
         }
@@ -901,4 +914,30 @@ fn bytes_to_zero_terminated_unmanaged_bytes(bytes: &[u8]) -> *mut c_char {
     buf[..bytes.len()].copy_from_slice(bytes);
     buf[bytes.len()] = 0; //set last byte to 0 for null terminated C string
     buf.as_ptr() as *mut c_char
+}
+
+#[cfg(test)]
+mod tests {
+    use telio_model::api_config::Features;
+
+    use super::*;
+
+    #[test]
+    fn telio_set_meshnet_rejects_too_long_configs() -> anyhow::Result<()> {
+        let features = Features::default();
+        let event_cb = Box::new(|_event| {});
+        let telio_dev = telio(Mutex::new(Device::new(features, event_cb, None)?));
+
+        let cfg = "a".repeat(MAX_CONFIG_LENGTH);
+        assert_eq!(
+            telio_set_meshnet(&telio_dev, cfg.as_bytes().as_ptr() as *const i8),
+            TELIO_RES_BAD_CONFIG
+        );
+        let cfg = "a".repeat(MAX_CONFIG_LENGTH + 1);
+        assert_eq!(
+            telio_set_meshnet(&telio_dev, cfg.as_bytes().as_ptr() as *const i8),
+            TELIO_RES_INVALID_STRING
+        );
+        Ok(())
+    }
 }

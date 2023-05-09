@@ -7,6 +7,7 @@ use std::ffi::c_void;
 use crate::device::{AdapterType, Error as DevError, Result as DevResult};
 
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 #[allow(non_camel_case_types)]
 #[allow(clippy::upper_case_acronyms)]
 #[repr(C)]
