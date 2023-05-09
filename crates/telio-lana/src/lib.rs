@@ -4,11 +4,12 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 pub use telio_utils::telio_log_warn;
-use telio_utils::{telio_log_error, telio_log_info};
 
 #[cfg_attr(all(feature = "moose", not(docrs)), path = "event_log_moose.rs")]
 #[cfg_attr(any(not(feature = "moose"), docsrs), path = "event_log_file.rs")]
 pub mod event_log;
+/// Moduel containing moose callbacks
+pub mod moose_callbacks;
 pub use event_log::*;
 
 /// App name used to initialize moose with
@@ -50,35 +51,6 @@ macro_rules! lana {
     }};
 }
 
-struct MooseCallbacks;
-
-impl moose::InitCallback for MooseCallbacks {
-    fn on_init(&self, result_code: &Result<moose::ContextState, moose::MooseError>) {
-        match result_code {
-            Ok(res) => telio_log_info!("Moose init success with code {:?}", res),
-            Err(err) => telio_log_error!("Moose init failed with code {:?}", err),
-        }
-    }
-}
-
-impl moose::ErrorCallback for MooseCallbacks {
-    fn on_error(
-        &self,
-        error_level: moose::MooseErrorLevel,
-        error_code: moose::MooseError,
-        msg: &str,
-    ) {
-        match error_level {
-            moose::MooseErrorLevel::Warning => {
-                telio_log_warn!("Moose error {:?}: {}", error_code, msg)
-            }
-            moose::MooseErrorLevel::Error => {
-                telio_log_error!("Moose error {:?}: {}", error_code, msg)
-            }
-        }
-    }
-}
-
 /// Initialize lana with the given configuration
 ///
 /// # Parameters:
@@ -97,8 +69,8 @@ pub fn init_lana(
             app_version,
             LANA_MOOSE_VERSION.to_string(),
             prod,
-            Box::new(MooseCallbacks),
-            Box::new(MooseCallbacks),
+            Box::new(moose_callbacks::MooseCallbacks),
+            Box::new(moose_callbacks::MooseCallbacks),
         );
         if let Some(error) = result.as_ref().err() {
             telio_log_warn!("[Moose] Error: {} on call to `{}`", error, "init");
