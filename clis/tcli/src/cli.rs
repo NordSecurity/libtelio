@@ -123,8 +123,10 @@ struct MeshConf {
 #[derive(Parser)]
 #[clap(help_template = "commands:\n{subcommands}")]
 enum Cmd {
-    #[clap(subcommand)]
-    Status(StatusCmd),
+    #[clap(about = "Status about telio, nodes, derp")]
+    Status,
+    #[clap(about = "Same as 'status' but in json string")]
+    StatusSimple,
     #[clap(subcommand)]
     Login(LoginCmd),
     Events,
@@ -143,12 +145,8 @@ enum Cmd {
     Quit,
 }
 
-#[derive(Parser)]
-#[clap(about = "Status about telio, nodes, derp")]
 enum StatusCmd {
-    #[clap(about = "Print status as json string")]
     Simple,
-    #[clap(about = "Print status as formatted json")]
     Pretty,
 }
 
@@ -401,7 +399,8 @@ impl Cli {
     fn exec_cmd(&mut self, cmd: Cmd) -> Vec<Resp> {
         let mut res = Vec::new();
         match cmd {
-            Cmd::Status(cmd) => cli_res!(res; (j self.report(cmd))),
+            Cmd::Status => cli_res!(res; (j self.report(StatusCmd::Pretty))),
+            Cmd::StatusSimple => cli_res!(res; (j self.report(StatusCmd::Simple))),
             Cmd::Login(cmd) => cli_res!(res; (j self.exec_login(cmd))),
             Cmd::Events => cli_res!(res; (j self.resp.try_iter().collect())),
             Cmd::Dev(cmd) => cli_res!(res; (j self.exec_dev(cmd))),

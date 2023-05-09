@@ -34,7 +34,7 @@ fn main() -> Result<()> {
 
     let derp_server = Arc::new(Mutex::<Option<Server>>::new(None));
 
-    let mut cli = cli::Cli::new(features, token, derp_server.clone())?;
+    let mut cli = cli::Cli::new(features, token, derp_server)?;
     let mut stdout = std::io::stdout();
 
     let less_spam = args.less_spam;
