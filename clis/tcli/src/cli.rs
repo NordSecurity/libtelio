@@ -298,7 +298,7 @@ fn custom_format(
         now.now().month(),
         now.now().day(),
         now.now().time(),
-        record.file().unwrap_or("unknown file"),
+        record.module_path().unwrap_or("unknown module"),
         record.line().unwrap_or(0),
         record.level(),
         record.args()

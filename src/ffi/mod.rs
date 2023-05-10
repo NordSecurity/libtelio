@@ -873,7 +873,7 @@ impl log::Log for telio_logger_cb {
 
         if let Some(filtered_msg) = filter_log_message(format!(
             "{:#?}:{:#?} {}",
-            record.file().unwrap_or("unknown file"),
+            record.module_path().unwrap_or("unknown module"),
             record.line().unwrap_or(0),
             record.args()
         )) {
