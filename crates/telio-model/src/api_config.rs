@@ -169,7 +169,8 @@ pub struct Features {
     /// Configure options for direct WG connections
     pub direct: Option<FeatureDirect>,
     /// Should only be set for macos sideload
-    pub macos_sideload: Option<bool>,
+    #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
+    pub macos_sideload: bool,
 }
 
 impl FeaturePaths {
@@ -194,7 +195,98 @@ impl FeaturePaths {
 
 #[cfg(test)]
 mod tests {
+    use once_cell::sync::Lazy;
+    use serde_json::from_str;
+
     use super::*;
+
+    const CORRECT_FEATURES_JSON_WITHOUT_MACOS_SIDELOAD: &str = r#"
+        {
+            "wireguard":
+            {
+                "persistent_keepalive": {
+                    "vpn": null,
+                    "stun": 50
+                }
+            },
+            "nurse":
+            {
+                "fingerprint": "fingerprint_test"
+            },
+            "lana":
+            {
+                "event_path": "path/to/some/event/data",
+                "prod": true
+            },
+            "paths":
+            {
+                "priority": ["relay", "direct"],
+                "force": "relay"
+            },
+            "direct": {},
+            "exit_dns": {}
+        }"#;
+
+    const CORRECT_FEATURES_JSON_WITH_MACOS_SIDELOAD: &str = r#"
+        {
+            "wireguard":
+            {
+                "persistent_keepalive": {
+                    "vpn": null,
+                    "stun": 50
+                }
+            },
+            "nurse":
+            {
+                "fingerprint": "fingerprint_test"
+            },
+            "lana":
+            {
+                "event_path": "path/to/some/event/data",
+                "prod": true
+            },
+            "paths":
+            {
+                "priority": ["relay", "direct"],
+                "force": "relay"
+            },
+            "direct": {},
+            "exit_dns": {},
+            "macos_sideload": true
+        }"#;
+
+    static EXPECTED_FEATURES: Lazy<Features> = Lazy::new(|| Features {
+        wireguard: FeatureWireguard {
+            persistent_keepalive: FeaturePersistentKeepalive {
+                vpn: None,
+                direct: 5,
+                proxying: Some(25),
+                stun: Some(50),
+            },
+        },
+        nurse: Some(FeatureNurse {
+            fingerprint: "fingerprint_test".to_string(),
+            heartbeat_interval: None,
+            qos: None,
+        }),
+        lana: Some(FeatureLana {
+            event_path: "path/to/some/event/data".to_string(),
+            prod: true,
+        }),
+        paths: Some(FeaturePaths {
+            priority: vec![PathType::Relay, PathType::Direct],
+            force: Some(PathType::Relay),
+        }),
+        direct: Some(FeatureDirect {
+            providers: None,
+            endpoint_interval_secs: None,
+        }),
+        exit_dns: Some(FeatureExitDns {
+            auto_switch_dns_ips: None,
+        }),
+        #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
+        macos_sideload: true,
+    });
 
     #[test]
     fn test_json_direct_feature_set() {
@@ -223,12 +315,9 @@ mod tests {
             endpoint_interval_secs: None,
         };
 
+        assert_eq!(from_str::<FeatureDirect>(full_json).unwrap(), full_features);
         assert_eq!(
-            serde_json::from_str::<FeatureDirect>(full_json).unwrap(),
-            full_features
-        );
-        assert_eq!(
-            serde_json::from_str::<FeatureDirect>(partial_json).unwrap(),
+            from_str::<FeatureDirect>(partial_json).unwrap(),
             partial_features
         );
     }
@@ -262,17 +351,15 @@ mod tests {
             buckets: None,
         };
 
+        assert_eq!(from_str::<FeatureQoS>(full_json).unwrap(), full_features);
         assert_eq!(
-            serde_json::from_str::<FeatureQoS>(full_json).unwrap(),
-            full_features
-        );
-        assert_eq!(
-            serde_json::from_str::<FeatureQoS>(partial_json).unwrap(),
+            from_str::<FeatureQoS>(partial_json).unwrap(),
             partial_features
         );
     }
 
     #[test]
+    #[cfg(not(any(target_os = "macos", feature = "pretend_to_be_macos")))]
     fn test_json_to_nurse_feature_set() {
         let full_json = r#"
         {
@@ -319,7 +406,6 @@ mod tests {
             paths: None,
             direct: None,
             exit_dns: None,
-            macos_sideload: None,
         };
 
         let empty_qos_features = Features {
@@ -338,7 +424,6 @@ mod tests {
             paths: None,
             direct: None,
             exit_dns: None,
-            macos_sideload: None,
         };
 
         let no_qos_features = Features {
@@ -352,24 +437,18 @@ mod tests {
             paths: None,
             direct: None,
             exit_dns: None,
-            macos_sideload: None,
         };
 
+        assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
         assert_eq!(
-            serde_json::from_str::<Features>(full_json).unwrap(),
-            full_features
-        );
-        assert_eq!(
-            serde_json::from_str::<Features>(empty_qos_json).unwrap(),
+            from_str::<Features>(empty_qos_json).unwrap(),
             empty_qos_features
         );
-        assert_eq!(
-            serde_json::from_str::<Features>(no_qos_json).unwrap(),
-            no_qos_features
-        );
+        assert_eq!(from_str::<Features>(no_qos_json).unwrap(), no_qos_features);
     }
 
     #[test]
+    #[cfg(not(any(target_os = "macos", feature = "pretend_to_be_macos")))]
     fn test_json_to_exit_dns_feature_set() {
         let full_json = r#"
         {
@@ -392,7 +471,6 @@ mod tests {
             exit_dns: Some(FeatureExitDns {
                 auto_switch_dns_ips: Some(true),
             }),
-            macos_sideload: None,
         };
 
         let empty_features = Features {
@@ -404,86 +482,33 @@ mod tests {
             exit_dns: Some(FeatureExitDns {
                 auto_switch_dns_ips: None,
             }),
-            macos_sideload: None,
         };
 
-        assert_eq!(
-            serde_json::from_str::<Features>(full_json).unwrap(),
-            full_features
-        );
-        assert_eq!(
-            serde_json::from_str::<Features>(empty_json).unwrap(),
-            empty_features
-        );
+        assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
+        assert_eq!(from_str::<Features>(empty_json).unwrap(), empty_features);
     }
 
     #[test]
-    fn test_json_to_feature_set() {
-        let json = r#"
-        {
-            "wireguard":
-            {
-                "persistent_keepalive": {
-                    "vpn": null,
-                    "stun": 50
-                }
-            },
-            "nurse":
-            {
-                "fingerprint": "fingerprint_test"
-            },
-            "lana":
-            {
-                "event_path": "path/to/some/event/data",
-                "prod": true
-            },
-            "paths":
-            {
-                "priority": ["relay", "direct"],
-                "force": "relay"
-            },
-            "direct": {},
-            "exit_dns": {},
+    fn test_json_without_macos_sideload_to_feature_set() {
+        let deserialization: Result<Features, _> =
+            from_str(CORRECT_FEATURES_JSON_WITHOUT_MACOS_SIDELOAD);
+        #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
+        assert!(deserialization.is_err());
 
-            "macos_sideload": true
-        }"#;
-
-        let features = Features {
-            wireguard: FeatureWireguard {
-                persistent_keepalive: FeaturePersistentKeepalive {
-                    vpn: None,
-                    direct: 5,
-                    proxying: Some(25),
-                    stun: Some(50),
-                },
-            },
-            nurse: Some(FeatureNurse {
-                fingerprint: "fingerprint_test".to_string(),
-                heartbeat_interval: None,
-                qos: None,
-            }),
-            lana: Some(FeatureLana {
-                event_path: "path/to/some/event/data".to_string(),
-                prod: true,
-            }),
-            paths: Some(FeaturePaths {
-                priority: vec![PathType::Relay, PathType::Direct],
-                force: Some(PathType::Relay),
-            }),
-            direct: Some(FeatureDirect {
-                providers: None,
-                endpoint_interval_secs: None,
-            }),
-            exit_dns: Some(FeatureExitDns {
-                auto_switch_dns_ips: None,
-            }),
-            macos_sideload: Some(true),
-        };
-
-        assert_eq!(serde_json::from_str::<Features>(json).unwrap(), features);
+        #[cfg(not(any(target_os = "macos", feature = "pretend_to_be_macos")))]
+        assert_eq!(deserialization.unwrap(), *EXPECTED_FEATURES);
     }
 
     #[test]
+    fn test_json_with_macos_sideload_to_feature_set() {
+        let deserialization: Result<Features, _> =
+            from_str(CORRECT_FEATURES_JSON_WITH_MACOS_SIDELOAD);
+
+        assert_eq!(deserialization.unwrap(), *EXPECTED_FEATURES);
+    }
+
+    #[test]
+    #[cfg(not(any(target_os = "macos", feature = "pretend_to_be_macos")))]
     fn test_default_features() {
         let expected_defaults = Features {
             wireguard: Default::default(),
@@ -492,7 +517,6 @@ mod tests {
             paths: None,
             exit_dns: None,
             direct: None,
-            macos_sideload: None,
         };
 
         assert_eq!(Features::default(), expected_defaults);

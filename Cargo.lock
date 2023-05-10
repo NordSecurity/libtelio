@@ -3314,6 +3314,7 @@ dependencies = [
  "ipnetwork",
  "itertools",
  "modifier",
+ "once_cell",
  "pretty_assertions",
  "serde",
  "serde_json",

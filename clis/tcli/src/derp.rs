@@ -137,7 +137,7 @@ impl DerpClient {
                     // This will not work on mac/win due to not provided tunnel interface to socketpool
                     match NativeProtector::new(
                         #[cfg(target_os = "macos")]
-                        Some(false),
+                        false,
                     ) {
                         Ok(protector) => {
                             let relay = DerpRelay::start_with(

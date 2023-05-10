@@ -9,6 +9,9 @@ repository = "https://github.com/NordSecurity/libtelio"
 [lib]
 crate-type = ["staticlib", "cdylib", "lib"]
 
+[features]
+pretend_to_be_macos = ["telio-model/pretend_to_be_macos"]
+
 [dependencies]
 anyhow = "1.0.64"
 base64 = "0.13.0"
