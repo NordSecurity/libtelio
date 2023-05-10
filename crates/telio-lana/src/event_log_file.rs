@@ -10,7 +10,7 @@ const LOGFILE_PATH: &str = "events-moose.log";
 /// Mock for setting the device info on libmoose.
 /// Is logging every piece of info helpful or a general log would be enough?
 #[allow(unused_must_use)]
-pub fn init_device_info() {
+pub fn init_context_info() {
     let foreign_tracker = "nordvpnapp";
 
     moose::fetch_specific_context(foreign_tracker);
@@ -24,6 +24,59 @@ pub fn init_device_info() {
     event_log("set_context_device_resolution", Some(vec!["NA"]));
     event_log("set_context_device_timeZone", Some(vec!["NA"]));
     event_log("set_context_device_type", Some(vec!["NA"]));
+    event_log(
+        "set_context_user_subscription_currentState_activationDate",
+        Some(vec!["NA"]),
+    );
+    event_log(
+        "set_context_user_subscription_currentState_frequencyInterval",
+        Some(vec!["NA"]),
+    );
+    event_log(
+        "set_context_user_subscription_currentState_frequencyUnit",
+        Some(vec!["NA"]),
+    );
+    event_log(
+        "set_context_user_subscription_currentState_isActive",
+        Some(vec!["NA"]),
+    );
+    event_log(
+        "set_context_user_subscription_currentState_isNewCustomer",
+        Some(vec!["NA"]),
+    );
+    event_log(
+        "set_context_user_subscription_currentState_merchantID",
+        Some(vec!["NA"]),
+    );
+    event_log(
+        "set_context_user_subscription_currentState_paymentAmount",
+        Some(vec!["NA"]),
+    );
+    event_log(
+        "set_context_user_subscription_currentState_paymentCurrency",
+        Some(vec!["NA"]),
+    );
+    event_log(
+        "set_context_user_subscription_currentState_paymentProvider",
+        Some(vec!["NA"]),
+    );
+    event_log(
+        "set_context_user_subscription_currentState_paymentStatus",
+        Some(vec!["NA"]),
+    );
+    event_log(
+        "set_context_user_subscription_currentState_planId",
+        Some(vec!["NA"]),
+    );
+    event_log(
+        "set_context_user_subscription_currentState_planType",
+        Some(vec!["NA"]),
+    );
+    event_log(
+        "set_context_user_subscription_currentState_subscriptionStatus",
+        Some(vec!["NA"]),
+    );
+    event_log("set_context_user_subscription_history", Some(vec!["NA"]));
 }
 
 /// Logs a function call and its arguments to file.

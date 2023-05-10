@@ -78,7 +78,7 @@ pub fn init_lana(
 
         if result.is_ok() {
             MOOSE_INITIALIZED.store(true, DEFAULT_ORDERING);
-            init_device_info();
+            init_context_info();
         }
 
         result
