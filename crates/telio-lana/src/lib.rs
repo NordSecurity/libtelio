@@ -15,7 +15,7 @@ pub use event_log::*;
 /// App name used to initialize moose with
 pub const LANA_APP_NAME: &str = "libtelio";
 /// Version of the tracker used, should be updated everytime the tracker library is updated
-pub const LANA_MOOSE_VERSION: &str = "0.5.2";
+pub const LANA_MOOSE_VERSION: &str = "0.5.4";
 
 static MOOSE_INITIALIZED: AtomicBool = AtomicBool::new(false);
 const DEFAULT_ORDERING: Ordering = Ordering::SeqCst;
