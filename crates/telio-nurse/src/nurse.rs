@@ -165,6 +165,9 @@ impl State {
     }
 
     async fn handle_heartbeat_event(&self, info: HeartbeatInfo) {
+        // Re-parse the foreign tracker before sending an event, in case it has changed since last time
+        init_context_info();
+
         // Send off nominated fingerprint to moose
         let _ = lana!(
             set_context_application_config_currentState_internalMeshnet_fp,
