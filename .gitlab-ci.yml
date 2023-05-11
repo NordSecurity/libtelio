@@ -15,5 +15,5 @@ libtelio-build-pipeline:
 
   trigger:
     project: $LIBTELIO_BUILD_PROJECT_PATH
-    branch: test_moose
+    branch: main
     strategy: depend
