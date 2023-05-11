@@ -17,6 +17,7 @@
 * LLT-3520: Add missing verification of sideload feature on macOS
 * LLT-3477: Change absolute file path to module path in logger
 * Release build contains debug logs from now
+* LLT-3616: Upgrade bindings for moose
 
 ### v4.0.0
 ### **Bruschetta**

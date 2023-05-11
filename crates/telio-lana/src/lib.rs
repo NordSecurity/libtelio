@@ -8,12 +8,14 @@ pub use telio_utils::telio_log_warn;
 #[cfg_attr(all(feature = "moose", not(docrs)), path = "event_log_moose.rs")]
 #[cfg_attr(any(not(feature = "moose"), docsrs), path = "event_log_file.rs")]
 pub mod event_log;
+/// Moduel containing moose callbacks
+pub mod moose_callbacks;
 pub use event_log::*;
 
 /// App name used to initialize moose with
 pub const LANA_APP_NAME: &str = "libtelio";
 /// Version of the tracker used, should be updated everytime the tracker library is updated
-pub const LANA_MOOSE_VERSION: &str = "0.5.2";
+pub const LANA_MOOSE_VERSION: &str = "0.5.4";
 
 static MOOSE_INITIALIZED: AtomicBool = AtomicBool::new(false);
 const DEFAULT_ORDERING: Ordering = Ordering::SeqCst;
@@ -67,6 +69,8 @@ pub fn init_lana(
             app_version,
             LANA_MOOSE_VERSION.to_string(),
             prod,
+            Box::new(moose_callbacks::MooseCallbacks),
+            Box::new(moose_callbacks::MooseCallbacks),
         );
         if let Some(error) = result.as_ref().err() {
             telio_log_warn!("[Moose] Error: {} on call to `{}`", error, "init");
@@ -74,7 +78,7 @@ pub fn init_lana(
 
         if result.is_ok() {
             MOOSE_INITIALIZED.store(true, DEFAULT_ORDERING);
-            init_device_info();
+            init_context_info();
         }
 
         result
