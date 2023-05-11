@@ -3313,6 +3313,7 @@ version = "0.1.0"
 dependencies = [
  "ipnetwork",
  "itertools",
+ "log",
  "modifier",
  "once_cell",
  "pretty_assertions",
@@ -3322,6 +3323,7 @@ dependencies = [
  "strum",
  "strum_macros",
  "telio-crypto",
+ "telio-utils",
  "telio-wg",
 ]
 

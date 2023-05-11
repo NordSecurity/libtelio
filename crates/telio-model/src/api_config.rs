@@ -3,9 +3,9 @@
 
 use std::collections::HashSet;
 
-use serde::{Deserialize, Deserializer, Serialize};
-use serde_with::{DeserializeAs, VecSkipError};
+use serde::{de::IntoDeserializer, Deserialize, Deserializer, Serialize};
 use strum_macros::EnumCount;
+use telio_utils::telio_log_warn;
 
 /// Default keepalive period used for proxying peers,
 /// STUN servers and VPN servers
@@ -141,16 +141,6 @@ pub enum EndpointProvider {
     Stun,
 }
 
-// Needed for VecSkipError reuse
-impl<'de> DeserializeAs<'de, EndpointProvider> for EndpointProvider {
-    fn deserialize_as<D>(deserializer: D) -> Result<EndpointProvider, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Self::deserialize(deserializer)
-    }
-}
-
 /// Endpoint polling interval
 pub const DEFAULT_ENDPOINT_POLL_INTERVAL_SECS: u64 = 10;
 
@@ -169,12 +159,23 @@ fn deserialize_providers<'de, D>(de: D) -> Result<Option<HashSet<EndpointProvide
 where
     D: Deserializer<'de>,
 {
-    let eps = match VecSkipError::<EndpointProvider>::deserialize_as::<D>(de) {
-        Ok(v) => v,
+    let eps: Vec<&str> = match Deserialize::deserialize(de) {
+        Ok(vec) => vec,
         Err(_) => return Ok(None),
     };
 
-    Ok(Some(eps.into_iter().collect()))
+    let eps: HashSet<_> = eps
+        .into_iter()
+        .filter_map(|provider| {
+            EndpointProvider::deserialize(<&str as IntoDeserializer>::into_deserializer(provider))
+                .map_err(|e| {
+                    telio_log_warn!("Failed to parse EndpointProvider: {}", e);
+                })
+                .ok()
+        })
+        .collect();
+
+    Ok(Some(eps))
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
@@ -348,13 +349,13 @@ mod tests {
     }
 
     #[test]
-    fn test_json_direct_accepts_abritary_providers() {
-        let abritery_providers_json = r#"
+    fn test_json_direct_accepts_arbitrary_providers() {
+        let arbitrery_providers_json = r#"
         {
             "providers": ["local", "stun", "other", "none"]
         }"#;
 
-        let parrsed_feature = FeatureDirect {
+        let parsed_feature = FeatureDirect {
             providers: Some(
                 vec![EndpointProvider::Local, EndpointProvider::Stun]
                     .into_iter()
@@ -364,8 +365,8 @@ mod tests {
         };
 
         assert_eq!(
-            from_str::<FeatureDirect>(abritery_providers_json).unwrap(),
-            parrsed_feature
+            from_str::<FeatureDirect>(arbitrery_providers_json).unwrap(),
+            parsed_feature
         );
     }
 
@@ -375,11 +376,11 @@ mod tests {
 
         let empty_json = r#"{}"#;
 
-        let parrsed_feature = FeatureDirect::default();
+        let parsed_feature = FeatureDirect::default();
 
         assert_eq!(
             from_str::<FeatureDirect>(empty_json).unwrap(),
-            parrsed_feature
+            parsed_feature
         );
     }
 
