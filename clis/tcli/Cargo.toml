@@ -28,7 +28,7 @@ shellwords = "1.1.0"
 thiserror = "1.0"
 tokio = { version = ">=1.22", features = ["full"] }
 regex = "1.5.5"
-log = { version = "0.4.14", features = ["release_max_level_info"] }
+log = { version = "0.4.14", features = ["release_max_level_debug"] }
 flexi_logger = "0.22.0"
 rustyline = "11.0.0"
 

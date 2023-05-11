@@ -17,7 +17,7 @@ trust-dns-resolver = { git = "https://github.com/NordSecurity/trust-dns.git", ta
 trust-dns-server = { git = "https://github.com/NordSecurity/trust-dns.git", tag = "v1.0.0", features = ["resolver"] }
 async-trait = "0.1.51"
 lazy_static = "1.4.0"
-log = {version = "0.4.14", features = ["release_max_level_info"]}
+log = {version = "0.4.14", features = ["release_max_level_debug"]}
 libc = "0.2.99"
 ipnetwork = "0.18"
 mockall = { version = "0.11.3", optional = true }

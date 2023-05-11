@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 ipnetwork = "0.18"
-log = {version = "0.4.14", features = ["release_max_level_info"]}
+log = {version = "0.4.14", features = ["release_max_level_debug"]}
 lru_time_cache = "0.11.11"
 pnet_packet = "0.28.0"
 mockall = { version = "0.11.3", optional = true }

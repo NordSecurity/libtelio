@@ -16,6 +16,7 @@
 * LLT-3596: Do not fail to start whole meshnet if single peer config is invalid within meshmap
 * LLT-3520: Add missing verification of sideload feature on macOS
 * LLT-3477: Change absolute file path to module path in logger
+* Release build contains debug logs from now
 
 ### v4.0.0
 ### **Bruschetta**
@@ -40,7 +41,7 @@
   * Supported providers:
     * `local`: Retrieves endpoint by local interfaces
     * `stun`: Uses stun and wg-stun on derp servers to resolve public ip address for node.
-    
+
   * Node's `endpoints` field was replaced by `endpoint` field reporting singular endpoint wireguard is actually using.
   * Node's `path_type` field now will either be `"relay"` or `"direct"`, vpn nodes `path_type` is always `"direct"`.
   * Communication between versions:

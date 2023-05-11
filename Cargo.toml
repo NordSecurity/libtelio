@@ -20,7 +20,7 @@ futures = "0.3"
 ipnetwork = "0.18"
 lazy_static = "1.4.0"
 libc = "0.2.99"
-log = {version = "0.4.14", features = ["release_max_level_info"]}
+log = {version = "0.4.14", features = ["release_max_level_debug"]}
 modifier = "0.1.0"
 num_cpus = "1.15.0"
 serde = { version = "1.0", features = ["derive"] }
