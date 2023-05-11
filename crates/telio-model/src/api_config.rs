@@ -3,7 +3,8 @@
 
 use std::collections::HashSet;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_with::{DeserializeAs, VecSkipError};
 use strum_macros::EnumCount;
 
 /// Default keepalive period used for proxying peers,
@@ -140,6 +141,16 @@ pub enum EndpointProvider {
     Stun,
 }
 
+// Needed for VecSkipError reuse
+impl<'de> DeserializeAs<'de, EndpointProvider> for EndpointProvider {
+    fn deserialize_as<D>(deserializer: D) -> Result<EndpointProvider, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Self::deserialize(deserializer)
+    }
+}
+
 /// Endpoint polling interval
 pub const DEFAULT_ENDPOINT_POLL_INTERVAL_SECS: u64 = 10;
 
@@ -147,9 +158,23 @@ pub const DEFAULT_ENDPOINT_POLL_INTERVAL_SECS: u64 = 10;
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 pub struct FeatureDirect {
     /// Endpoint providers [default all]
+    #[serde(default)]
+    #[serde(deserialize_with = "deserialize_providers")]
     pub providers: Option<HashSet<EndpointProvider>>,
     /// Polling interval for endpoints [default 10s]
     pub endpoint_interval_secs: Option<u64>,
+}
+
+fn deserialize_providers<'de, D>(de: D) -> Result<Option<HashSet<EndpointProvider>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let eps = match VecSkipError::<EndpointProvider>::deserialize_as::<D>(de) {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+
+    Ok(Some(eps.into_iter().collect()))
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
@@ -319,6 +344,42 @@ mod tests {
         assert_eq!(
             from_str::<FeatureDirect>(partial_json).unwrap(),
             partial_features
+        );
+    }
+
+    #[test]
+    fn test_json_direct_accepts_abritary_providers() {
+        let abritery_providers_json = r#"
+        {
+            "providers": ["local", "stun", "other", "none"]
+        }"#;
+
+        let parrsed_feature = FeatureDirect {
+            providers: Some(
+                vec![EndpointProvider::Local, EndpointProvider::Stun]
+                    .into_iter()
+                    .collect(),
+            ),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            from_str::<FeatureDirect>(abritery_providers_json).unwrap(),
+            parrsed_feature
+        );
+    }
+
+    #[test]
+    fn test_json_direct_allow_empty() {
+        // Custom deserialize needs default to make Option None
+
+        let empty_json = r#"{}"#;
+
+        let parrsed_feature = FeatureDirect::default();
+
+        assert_eq!(
+            from_str::<FeatureDirect>(empty_json).unwrap(),
+            parrsed_feature
         );
     }
 
