@@ -2,7 +2,7 @@
 
 use std::{array::TryFromSliceError, convert::TryInto};
 
-use crypto_box::{aead::Aead, ChaChaBox};
+use crypto_box::{aead::Aead, aead::AeadCore, ChaChaBox};
 use rand::{CryptoRng, RngCore};
 use telio_utils::telio_err_with_log;
 
@@ -15,7 +15,7 @@ const NONCE_SIZE: usize = 24;
 pub enum Error {
     /// Encryption failed
     #[error(transparent)]
-    EncryptionFailed(#[from] aead::Error),
+    EncryptionFailed(#[from] crypto_box::aead::Error),
     /// Received request contained unknown key
     #[error("Request contains forbidden key: {0}")]
     ForbiddenKey(PublicKey),
@@ -40,11 +40,11 @@ pub enum Error {
 /// public key for inner layer. If they recognize that key decoding of inner layer can proceed.
 pub fn encrypt_request(
     msg: &[u8],
-    rng: &mut (impl RngCore + CryptoRng),
+    mut rng: &mut (impl RngCore + CryptoRng),
     local_sk: &SecretKey,
     remote_pk: &PublicKey,
 ) -> Result<Vec<u8>, Error> {
-    let inner_nonce = crypto_box::generate_nonce(rng);
+    let inner_nonce = ChaChaBox::generate_nonce(&mut rng);
     let inner_secret_box = ChaChaBox::new(&remote_pk.into(), &local_sk.into());
     let inner_encrypted_payload = match inner_secret_box.encrypt(&inner_nonce, msg) {
         Ok(inner_encrypted_payload) => inner_encrypted_payload,
@@ -61,7 +61,7 @@ pub fn encrypt_request(
 
     let ephemeral_sk = SecretKey::gen_with(rng);
     let ephemeral_pk = ephemeral_sk.public();
-    let outer_nonce = crypto_box::generate_nonce(rng);
+    let outer_nonce = ChaChaBox::generate_nonce(rng);
     let outer_secret_box = ChaChaBox::new(&remote_pk.into(), &ephemeral_sk.into());
 
     let outer_encrypted_payload = match outer_secret_box.encrypt(&outer_nonce, outer_msg.as_slice())
@@ -141,7 +141,7 @@ pub fn encrypt_response(
     local_sk: &SecretKey,
     remote_pk: &PublicKey,
 ) -> Result<Vec<u8>, Error> {
-    let nonce = crypto_box::generate_nonce(rng);
+    let nonce = ChaChaBox::generate_nonce(rng);
     let secret_box = ChaChaBox::new(&remote_pk.into(), &local_sk.into());
     let encrypted_msg = match secret_box.encrypt(&nonce, msg) {
         Ok(encrypted_msg) => encrypted_msg,

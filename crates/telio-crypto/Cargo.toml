@@ -7,9 +7,8 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-aead = { version = "0.4", features = [ "std" ] }
 base64 = "0.13.0"
-crypto_box = "0.7.0"
+crypto_box = { version = "0.8.2", features = ["std"] }
 hex = "0.4.3"
 log = {version = "0.4.14", features = ["release_max_level_debug"]}
 rand = { version = "0.8.4", features = ["std", "std_rng"] }

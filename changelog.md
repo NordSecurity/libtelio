@@ -1,3 +1,10 @@
+### v4.0.2
+### **Bruschetta**
+---
+* LLT-3619: Update crypto box
+
+<br>
+
 ### v4.0.1
 ### **Bruschetta**
 ---
@@ -20,6 +27,8 @@
 * Release build contains debug logs from now
 * LLT-3616: Upgrade bindings for moose
 * LLT-3647: Remove dependency on the outdated time crate
+
+<br>
 
 ### v4.0.0
 ### **Bruschetta**
@@ -52,6 +61,7 @@
     * 3.x <-> 3.x can aditionaly communicate using `udp-hole-puch` path.
     * 4.x <-> 4.x can also communicate using `direct` path
 
+<br>
 
 ### v3.4.2
 ### **Pastel de nata**

@@ -1,4 +1,7 @@
-use crypto_box::{aead::Aead, Box as CryptoBox, PublicKey as BoxPublicKey};
+use crypto_box::{
+    aead::{Aead, AeadCore},
+    PublicKey as BoxPublicKey, SalsaBox,
+};
 use log::{log_enabled, Level::Debug, Level::Trace};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use std::{
@@ -230,9 +233,9 @@ async fn write_client_key<W: AsyncWrite + Unpin>(
     telio_log_trace!("DERP starting with {}", PublicKey::from(public_key.clone()));
 
     let mut rng = rand_core::OsRng;
-    let nonce = crypto_box::generate_nonce(&mut rng);
+    let nonce = SalsaBox::generate_nonce(&mut rng);
     let plain_text = b"{\"version\": 2, \"meshKey\": \"\"}";
-    let b = CryptoBox::new(&server_key, &secret_key);
+    let b = SalsaBox::new(&server_key, &secret_key);
 
     let ciphertext = b
         .encrypt(&nonce, &plain_text[..])
