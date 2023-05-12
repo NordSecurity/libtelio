@@ -1,5 +1,5 @@
-### Unreleased
-###
+### v4.0.1
+### **Bruschetta**
 ---
 ### Changelog
 * LLT-3423: Add identifier to `Node` and `ExitNode`, and telio function to supply an identifier when connecting to an exit node
