@@ -87,6 +87,7 @@ use telio_relay::{
     http::{connect_http_and_start, DerpConnection},
 };
 use telio_sockets::{NativeProtector, SocketPool};
+use time::macros::format_description;
 use tokio::{
     net::lookup_host,
     sync::{Mutex, RwLock},
@@ -520,7 +521,8 @@ async fn run_with_clients_config(
     if client_pair_delta == 0 {
         println!(
             "{} Clients: {}",
-            chrono::Local::now().format("%H:%M:%S"),
+            time::OffsetDateTime::now_local()?
+                .format(format_description!("[hour]:[minute]:[second]"))?,
             initial_client_count
         );
         if stats_take_every > 0 {
@@ -531,7 +533,9 @@ async fn run_with_clients_config(
 
     println!(
         "[{}]  Clients: {}, GOAL: {}",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+        time::OffsetDateTime::now_local()?.format(format_description!(
+            "[year]-[month]-[day] [hour]:[minute]:[second]"
+        ))?,
         initial_client_count,
         client_count_goal
     );
