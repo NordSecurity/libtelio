@@ -7,7 +7,7 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-crypto_box = "0.8.2"
+crypto_box = { version = "0.8.2", features = ["std"] }
 futures = "0.3.13"
 tokio = { version = ">=1.22", features = ["net", "sync"] }
 slog = "2.7"

@@ -327,7 +327,7 @@ impl DerpRelay {
 
         // new Box and convert telio-key to crypto_box format
         let secret_box = ChaChaBox::new(&public_key.into(), &secret_key.into());
-        let nonce = crypto_box::generate_nonce(rng);
+        let nonce = ChaChaBox::generate_nonce(rng);
         // Encrypt the message using the box
         match secret_box.encrypt(
             &nonce,
