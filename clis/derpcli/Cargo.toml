@@ -9,7 +9,15 @@ repository = "https://github.com/NordSecurity/libtelio"
 [dependencies]
 anyhow = "1"
 crypto_box = "0.7.0"
-tokio = { version = ">=1.22", features = ["io-util", "net", "sync", "macros", "rt-multi-thread", "io-std", "time"] }
+tokio = { version = ">=1.22", features = [
+    "io-util",
+    "net",
+    "sync",
+    "macros",
+    "rt-multi-thread",
+    "io-std",
+    "time",
+] }
 clap = { version = "3.1", features = ["derive"] }
 base64 = "0.13.0"
 url = "2.2.2"
@@ -19,8 +27,12 @@ serde_json = "1.0"
 ctrlc = "3.2.2"
 futures = "0.3.23"
 rand = "0.8"
-chrono = "0.4"
 atomic-counter = "1.0.1"
+time = { version = "0.3.9", features = [
+    "macros",
+    "local-offset",
+    "formatting",
+] }
 
 telio-crypto = { path = "../../crates/telio-crypto" }
 telio-relay = { path = "../../crates/telio-relay" }
