@@ -16,6 +16,7 @@ mod packet;
 pub use codec::{Codec, Error as CodecError, Result as CodecResult};
 pub use packet::*;
 
+pub use messages::nurse::Heartbeat_NatType as HeartbeatNatType;
 pub use messages::nurse::Heartbeat_Status as HeartbeatStatus;
 pub use messages::nurse::Heartbeat_Type as HeartbeatType;
 

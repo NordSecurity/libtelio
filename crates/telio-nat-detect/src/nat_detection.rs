@@ -22,7 +22,7 @@ pub struct NatData {
 /// # fn get_my_stun_server_ip() -> String { "10.2.3.4".to_owned() }
 /// # #[tokio::main]
 /// # async fn main() {
-/// match retrieve_single_nat(get_my_stun_server_ip()).await {
+/// match retrieve_single_nat(&get_my_stun_server_ip()).await {
 ///     Ok(NatData{public_ip,nat_type}) => {
 ///         println!("our public ip is {} and the nat type is {:?}", public_ip, nat_type);
 ///     },
@@ -32,10 +32,10 @@ pub struct NatData {
 /// }
 /// # }
 /// ```
-pub async fn retrieve_single_nat(stun_sever_ip: String) -> Result<NatData, Error> {
+pub async fn retrieve_single_nat(stun_sever_ip: &str) -> Result<NatData, Error> {
     let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0);
 
-    match Box::pin(nat_detect(address, &stun_sever_ip)).await {
+    match Box::pin(nat_detect(address, stun_sever_ip)).await {
         Ok(data) => {
             // converting the result in a better
             // way to show

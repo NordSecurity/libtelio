@@ -1,9 +1,11 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use telio_crypto::{PublicKey, SecretKey};
 use telio_lana::*;
 use telio_model::{config::Server, event::Event};
 use telio_proto::HeartbeatMessage;
-use telio_relay::multiplexer::Multiplexer;
+use telio_relay::{multiplexer::Multiplexer, DerpRelay};
 use telio_task::{
     io::{chan, mc_chan, Chan, McChan},
     task_exec, Runtime, RuntimeExt, Task, WaitResponse,
@@ -46,9 +48,14 @@ pub struct Nurse {
 
 impl Nurse {
     /// Nurse's constructor
-    pub async fn start_with(public_key: PublicKey, config: Config, io: NurseIo<'_>) -> Self {
+    pub async fn start_with(
+        public_key: PublicKey,
+        derp: Arc<DerpRelay>,
+        config: Config,
+        io: NurseIo<'_>,
+    ) -> Self {
         Self {
-            task: Task::start(State::new(public_key, config, io).await),
+            task: Task::start(State::new(public_key, derp, config, io).await),
         }
     }
 
@@ -91,7 +98,12 @@ impl State {
     /// # Returns
     ///
     /// A Nurse instance.
-    pub async fn new(public_key: PublicKey, config: Config, io: NurseIo<'_>) -> Self {
+    pub async fn new(
+        public_key: PublicKey,
+        derp: Arc<DerpRelay>,
+        config: Config,
+        io: NurseIo<'_>,
+    ) -> Self {
         let meshnet_id = Self::meshnet_id();
 
         // Analytics channel
@@ -124,6 +136,7 @@ impl State {
             meshnet_id,
             config.heartbeat_config,
             heartbeat_io,
+            derp,
         );
 
         // Qos component
@@ -189,6 +202,16 @@ impl State {
         let _ = lana!(
             set_context_application_config_currentState_externalLinks,
             info.external_links
+        );
+
+        let _ = lana!(
+            set_context_application_config_currentState_internalMeshnet_fpNat,
+            info.nat_type
+        );
+
+        let _ = lana!(
+            set_context_application_config_currentState_internalMeshnet_membersNat,
+            info.peer_nat_types.join(",")
         );
 
         // TODO: Make it better

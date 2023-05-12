@@ -1,7 +1,10 @@
 use async_trait::async_trait;
 use bitflags::bitflags;
+use nat_detect::NatType;
 use std::collections::BTreeSet;
 use std::fmt::Write;
+use std::net::SocketAddr;
+use std::sync::Arc;
 use std::{
     collections::{HashMap, HashSet},
     convert::{TryFrom, TryInto},
@@ -11,12 +14,14 @@ use std::{
 use telio_crypto::{PublicKey, SecretKey};
 use telio_model::config::{RelayState, Server};
 use telio_model::{event::Event, mesh::NodeState};
-use telio_proto::{HeartbeatMessage, HeartbeatStatus, HeartbeatType};
+use telio_nat_detect::nat_detection::{retrieve_single_nat, NatData};
+use telio_proto::{HeartbeatMessage, HeartbeatNatType, HeartbeatStatus, HeartbeatType};
+use telio_relay::DerpRelay;
 use telio_task::{
     io::{chan, mc_chan, Chan},
     Runtime, RuntimeExt, WaitResponse,
 };
-use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
+use telio_utils::{map_enum, telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
 use telio_wg::uapi::PeerState;
 use tokio::time::{interval_at, sleep, Duration, Instant, Interval, Sleep};
 use uuid::Uuid;
@@ -40,6 +45,22 @@ bitflags! {
         const DERP = 0b00000001;
         const WG = 0b00000010;
     }
+}
+
+trait From<T> {
+    fn from(t: T) -> Self;
+}
+
+map_enum! {
+    NatType <=> HeartbeatNatType,
+    UdpBlocked = UdpBlocked,
+    FullCone = FullCone,
+    RestrictedCone = RestrictedCone,
+    OpenInternet = OpenInternet,
+    PortRestrictedCone = PortRestrictedCone,
+    Symmetric = Symmetric,
+    SymmetricUdpFirewall = SymmetricUdpFirewall,
+    Unknown = Unknown,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -96,6 +117,7 @@ struct Collection {
     pub meshnet_ids: HashMap<PublicKey, Uuid>,
     pub fingerprints: HashMap<PublicKey, String>,
     pub links: HashMap<(PublicKey, PublicKey), MeshLink>,
+    pub nat_type_peers: HashMap<PublicKey, NatType>,
 }
 
 impl Collection {
@@ -114,6 +136,10 @@ impl Collection {
 
     pub fn add_fingerprint(&mut self, pk: PublicKey, fp: String) {
         *self.fingerprints.entry(pk).or_default() = fp;
+    }
+
+    pub fn add_peer_nat_type(&mut self, pk: PublicKey, nat_type: NatType) {
+        self.nat_type_peers.insert(pk, nat_type);
     }
 
     pub fn resolve_current_meshnet_id(&self, config_local_nodes: &HashSet<PublicKey>) -> Uuid {
@@ -156,6 +182,8 @@ impl Collection {
         self.fingerprints.clear();
         // Clear collected links
         self.links.clear();
+        // Clear collected member nat types
+        self.nat_type_peers.clear();
     }
 }
 
@@ -196,6 +224,9 @@ pub struct Analytics {
     config_nodes: HashMap<PublicKey, bool>,
 
     derp_connection: bool,
+
+    /// DERP Server instance
+    derp: Arc<DerpRelay>,
 }
 
 #[async_trait]
@@ -228,7 +259,7 @@ impl Runtime for Analytics {
 
             // Received data from node, Should always listen for incoming data
             Some((pk, msg)) = self.io.chan.rx.recv() =>
-                Self::guard(async move { self.handle_receive((pk, msg)).await; telio_log_trace!("tokio::select! self.io.chan.rx.recv() branch"); Ok(()) }),
+                Self::guard(async move { self.message_handler((pk, msg)).await; telio_log_trace!("tokio::select! self.io.chan.rx.recv() branch"); Ok(()) }),
 
             // Time to aggregate collected data, only update when in the `Collecting` state
             _ = &mut self.collect_period, if self.state == RuntimeState::Collecting =>
@@ -252,7 +283,13 @@ impl Analytics {
     /// # Returns
     ///
     /// An empty Analytics instance with the given config
-    pub fn new(public_key: PublicKey, meshnet_id: Uuid, config: HeartbeatConfig, io: Io) -> Self {
+    pub fn new(
+        public_key: PublicKey,
+        meshnet_id: Uuid,
+        config: HeartbeatConfig,
+        io: Io,
+        derp_server: Arc<DerpRelay>,
+    ) -> Self {
         let start_time = if let Some(initial_timeout) = config.initial_collect_interval {
             Instant::now() + initial_timeout
         } else {
@@ -279,6 +316,7 @@ impl Analytics {
             local_nodes: HashMap::new(),
             config_nodes,
             derp_connection: false,
+            derp: derp_server,
         }
     }
 
@@ -377,7 +415,7 @@ impl Analytics {
         self.state = RuntimeState::Collecting;
     }
 
-    async fn handle_receive(&mut self, data: (PublicKey, HeartbeatMessage)) {
+    async fn message_handler(&mut self, data: (PublicKey, HeartbeatMessage)) {
         let pk = data.0;
 
         // Since we already got a message from the other node, we can assume that the derp connection is functioning from them to us
@@ -436,10 +474,27 @@ impl Analytics {
             links.push(status);
         }
 
+        let nat_type = {
+            if let Some(server) = self.derp.get_connected_server().await {
+                <telio_proto::HeartbeatNatType as crate::heartbeat::From<NatType>>::from(
+                    retrieve_single_nat(&server.ipv4.to_string())
+                        .await
+                        .unwrap_or(NatData {
+                            public_ip: SocketAddr::from(([0, 0, 0, 0], 80)),
+                            nat_type: NatType::Unknown,
+                        })
+                        .nat_type,
+                )
+            } else {
+                HeartbeatNatType::Unknown
+            }
+        };
+
         let heartbeat = HeartbeatMessage::response(
             self.meshnet_id.into_bytes().to_vec(),
             self.config.fingerprint.clone(),
             &links,
+            nat_type,
         );
 
         #[allow(mpsc_blocking_send)]
@@ -468,6 +523,13 @@ impl Analytics {
         } else {
             telio_log_warn!("Failed to parse meshnet ID from Heartbeat message");
         }
+
+        self.collection.add_peer_nat_type(
+            pk,
+            <nat_detect::NatType as crate::heartbeat::From<HeartbeatNatType>>::from(
+                message.get_nat_type(),
+            ),
+        );
 
         message.get_statuses().iter().for_each(|status| {
             let link_state = MeshConnectionState::from_bits(status.connection_state)
@@ -636,8 +698,8 @@ impl Analytics {
 
         // External links
         let mut external_links = String::new();
-        for key in external_sorted_public_keys {
-            let node = self.local_nodes.entry(key).or_default();
+        for key in external_sorted_public_keys.iter() {
+            let node = self.local_nodes.entry(*key).or_default();
 
             let (meshnet_id, fingerprint, connection_state) = match node {
                 NodeInfo::Vpn {
@@ -663,7 +725,7 @@ impl Analytics {
                     }),
                     self.collection
                         .fingerprints
-                        .get(&key)
+                        .get(key)
                         .cloned()
                         .unwrap_or_else(|| {
                             telio_log_warn!("Node with pk: {:?} has no fingerprint", key);
@@ -675,8 +737,7 @@ impl Analytics {
 
             if write!(
                 external_links,
-                "{}:{}:{},",
-                meshnet_id, fingerprint, connection_state
+                "{meshnet_id}:{fingerprint}:{connection_state},"
             )
             .is_err()
             {
@@ -685,6 +746,34 @@ impl Analytics {
         }
         external_links.pop();
         heartbeat_info.external_links = external_links;
+
+        // Collect NAT type
+        heartbeat_info.nat_type = {
+            if let Some(server) = self.derp.get_connected_server().await {
+                format!(
+                    "{:?}",
+                    retrieve_single_nat(&server.ipv4.to_string())
+                        .await
+                        .unwrap_or(NatData {
+                            public_ip: SocketAddr::from(([0, 0, 0, 0], 80)),
+                            nat_type: NatType::Unknown,
+                        })
+                        .nat_type
+                )
+            } else {
+                format!("{:?}", NatType::Unknown)
+            }
+        };
+
+        // Collect peer NAT types
+        self.copy_nat_type(
+            &mut heartbeat_info.peer_nat_types,
+            internal_sorted_public_keys,
+        );
+        self.copy_nat_type(
+            &mut heartbeat_info.peer_nat_types,
+            external_sorted_public_keys,
+        );
 
         // Send heartbeat info to Nurse
         #[allow(mpsc_blocking_send)]
@@ -709,6 +798,14 @@ impl Analytics {
         // In case we got a config update while aggregating data, attempt to update the state
         self.update_public_key().await;
         self.update_config().await;
+    }
+
+    fn copy_nat_type(&self, nat_types: &mut Vec<String>, sorted_pk: BTreeSet<PublicKey>) {
+        for pk in sorted_pk.iter() {
+            if let Some(nat_type) = self.collection.nat_type_peers.get(pk) {
+                nat_types.push(format!("{:?}", nat_type));
+            };
+        }
     }
 
     fn is_local(&self, pk: PublicKey) -> bool {

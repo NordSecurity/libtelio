@@ -19,6 +19,10 @@ pub struct HeartbeatInfo {
     pub heartbeat_interval: i32,
     /// String with comma-separated list of `meshnet_id:fingerprint:connection_state` for all external nodes
     pub external_links: String,
+    /// NAT type of the derp server
+    pub nat_type: String,
+    /// List of nat types as Strings of all connected peers
+    pub peer_nat_types: Vec<String>,
 }
 
 /// Analytics data

@@ -38,12 +38,14 @@ impl HeartbeatMessage {
         meshnet_id: Vec<u8>,
         node_fingerprint: String,
         statuses: &[Heartbeat_Status],
+        nat_type: Heartbeat_NatType,
     ) -> Self {
         Self(Heartbeat {
             message_type: Heartbeat_Type::RESPONSE,
             statuses: RepeatedField::from_slice(statuses),
             node_fingerprint,
             meshnet_id,
+            nat_type,
             ..Default::default()
         })
     }
@@ -66,6 +68,11 @@ impl HeartbeatMessage {
     /// Returns the Meshnet ID of the message
     pub fn get_meshnet_id(&self) -> &[u8] {
         self.0.get_meshnet_id()
+    }
+
+    /// Returns the Nat Type of the message
+    pub fn get_nat_type(&self) -> Heartbeat_NatType {
+        self.0.get_nat_type()
     }
 }
 
@@ -139,6 +146,7 @@ mod tests {
             meshnet_id,
             "fingerprint".to_string(),
             &[Heartbeat_Status::new()],
+            Heartbeat_NatType::UdpBlocked,
         );
 
         let bytes = &[

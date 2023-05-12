@@ -21,6 +21,8 @@ rand = "0.8.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 histogram = "0.6.9"
+nat-detect = "0.1.7"
+
 md5 = "0.7.0"
 
 telio-task = { path = "../telio-task" }
@@ -28,6 +30,7 @@ telio-relay = { path = "../telio-relay" }
 telio-crypto = { path = "../telio-crypto" }
 telio-lana = { path =  "../telio-lana" }
 telio-model = { path = "../telio-model" }
+telio-nat-detect = { path = "../telio-nat-detect" }
 telio-proto = { path = "../telio-proto"}
 telio-utils = { path = "../telio-utils" }
 telio-wg = { path = "../telio-wg" }

@@ -597,7 +597,7 @@ impl Device {
     }
 
     pub fn get_nat(&self, ip: String) -> Result<NatData> {
-        match self.art()?.block_on(retrieve_single_nat(ip)) {
+        match self.art()?.block_on(retrieve_single_nat(&ip)) {
             Ok(data) => Ok(data),
             Err(no_data) => Err(Error::FailedNatInfoRecover(no_data)),
         }
@@ -739,6 +739,7 @@ impl Runtime {
                 Some(Arc::new(
                     Nurse::start_with(
                         config.private_key.public(),
+                        Arc::clone(&derp),
                         NurseConfig::new(nurse_features),
                         nurse_io,
                     )
@@ -1194,7 +1195,7 @@ impl Runtime {
             // Copy the lowest weight server to log nat in a separate future
             let stun_server_ip = server.ipv4.to_string();
             tokio::spawn(async move {
-                if let Ok(data) = retrieve_single_nat(stun_server_ip).await {
+                if let Ok(data) = retrieve_single_nat(&stun_server_ip).await {
                     telio_log_info!("Nat Type - {:?}", data.nat_type)
                 }
             });

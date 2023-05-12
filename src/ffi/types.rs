@@ -1,6 +1,7 @@
 use libc::c_char;
 use log::Level;
 use telio_crypto::KeyDecodeError;
+use telio_utils::map_enum;
 
 use std::ffi::c_void;
 
@@ -198,35 +199,6 @@ impl From<&DevResult> for telio_result {
             Err(error) => error.into(),
         }
     }
-}
-
-macro_rules! map_enum {
-    ($from:tt <=> $to:tt, $($f:tt = $t:tt),+ $(,)?) => {
-        impl From<$from> for $to {
-            fn from(f: $from) -> $to {
-                match f {
-                    $($from::$f => $to::$t),+
-                }
-            }
-        }
-
-        impl From<$to> for $from {
-            fn from(t: $to) -> $from {
-                match t {
-                    $($to::$t => $from::$f),+
-                }
-            }
-        }
-    };
-    ($from:tt -> $to:tt, $($f:tt = $t:tt),+ $(,)?) => {
-        impl From<$from> for $to {
-            fn from(f: $from) -> $to {
-                match f {
-                    $($from::$f => $to::$t),+
-                }
-            }
-        }
-    };
 }
 
 map_enum! {
