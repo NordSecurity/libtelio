@@ -29,8 +29,8 @@ serde_json = "1.0"
 thiserror = "1.0"
 tokio = { version = ">=1.22", features = ["full"] }
 async-trait = "0.1.51"
-crypto_box = "0.7.0"
 uuid =  { version = "1.1.2", features = ["v4"] }
+crypto_box = "0.8.2"
 
 telio-crypto = { version = "0.1.0", path = "./crates/telio-crypto" }
 telio-dns = { version = "0.1.0", path = "./crates/telio-dns" }

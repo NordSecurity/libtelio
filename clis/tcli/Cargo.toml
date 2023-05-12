@@ -9,7 +9,7 @@ repository = "https://github.com/NordSecurity/libtelio"
 anyhow = "1"
 base64 = "0.13"
 clap = { version = "3.1", features = ["derive"] }
-crypto_box = "0.7.0"
+crypto_box = "0.8.2"
 dirs = "4.0.0"
 hex = "0.4.3"
 ipnetwork = "0.18"
