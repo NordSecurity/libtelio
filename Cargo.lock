@@ -19,16 +19,6 @@ checksum = "f26201604c87b1e01bd3d98f8d5d9a8fcbb815e8cedb41ffccbeb4bf593a35fe"
 
 [[package]]
 name = "aead"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b613b8e1e3cf911a086f53f03bf286f52fd7a7258e4fa606f0ef220d39d8877"
-dependencies = [
- "generic-array",
- "rand_core 0.6.4",
-]
-
-[[package]]
-name = "aead"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d122413f284cf2d62fb1b7db97e02edb8cda96d769b16e443a4f6195e35662b0"
@@ -409,7 +399,7 @@ version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10cd79432192d1c0f4e1a0fef9527696cc039165d729fb41b3f4f4f354c2dc35"
 dependencies = [
- "aead 0.5.2",
+ "aead",
  "chacha20",
  "cipher",
  "poly1305",
@@ -592,7 +582,7 @@ version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd26c32de5307fd08aac445a75c43472b14559d5dccdfba8022dbcd075838ebc"
 dependencies = [
- "aead 0.5.2",
+ "aead",
  "chacha20",
  "chacha20poly1305",
  "salsa20",
@@ -3136,7 +3126,6 @@ dependencies = [
 name = "telio-crypto"
 version = "0.1.0"
 dependencies = [
- "aead 0.4.3",
  "base64 0.13.1",
  "bstr",
  "crypto_box",
@@ -4331,7 +4320,7 @@ version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "472c385ee974833d7e59979eeb74175d56774be3768b5bcc581337e21396bda3"
 dependencies = [
- "aead 0.5.2",
+ "aead",
  "poly1305",
  "salsa20",
  "subtle",
