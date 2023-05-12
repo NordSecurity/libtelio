@@ -3,8 +3,9 @@
 
 use std::collections::HashSet;
 
-use serde::{Deserialize, Serialize};
+use serde::{de::IntoDeserializer, Deserialize, Deserializer, Serialize};
 use strum_macros::EnumCount;
+use telio_utils::telio_log_warn;
 
 /// Default keepalive period used for proxying peers,
 /// STUN servers and VPN servers
@@ -147,9 +148,34 @@ pub const DEFAULT_ENDPOINT_POLL_INTERVAL_SECS: u64 = 10;
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 pub struct FeatureDirect {
     /// Endpoint providers [default all]
+    #[serde(default)]
+    #[serde(deserialize_with = "deserialize_providers")]
     pub providers: Option<HashSet<EndpointProvider>>,
     /// Polling interval for endpoints [default 10s]
     pub endpoint_interval_secs: Option<u64>,
+}
+
+fn deserialize_providers<'de, D>(de: D) -> Result<Option<HashSet<EndpointProvider>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let eps: Vec<&str> = match Deserialize::deserialize(de) {
+        Ok(vec) => vec,
+        Err(_) => return Ok(None),
+    };
+
+    let eps: HashSet<_> = eps
+        .into_iter()
+        .filter_map(|provider| {
+            EndpointProvider::deserialize(<&str as IntoDeserializer>::into_deserializer(provider))
+                .map_err(|e| {
+                    telio_log_warn!("Failed to parse EndpointProvider: {}", e);
+                })
+                .ok()
+        })
+        .collect();
+
+    Ok(Some(eps))
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
@@ -319,6 +345,42 @@ mod tests {
         assert_eq!(
             from_str::<FeatureDirect>(partial_json).unwrap(),
             partial_features
+        );
+    }
+
+    #[test]
+    fn test_json_direct_accepts_arbitrary_providers() {
+        let arbitrery_providers_json = r#"
+        {
+            "providers": ["local", "stun", "other", "none"]
+        }"#;
+
+        let parsed_feature = FeatureDirect {
+            providers: Some(
+                vec![EndpointProvider::Local, EndpointProvider::Stun]
+                    .into_iter()
+                    .collect(),
+            ),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            from_str::<FeatureDirect>(arbitrery_providers_json).unwrap(),
+            parsed_feature
+        );
+    }
+
+    #[test]
+    fn test_json_direct_allow_empty() {
+        // Custom deserialize needs default to make Option None
+
+        let empty_json = r#"{}"#;
+
+        let parsed_feature = FeatureDirect::default();
+
+        assert_eq!(
+            from_str::<FeatureDirect>(empty_json).unwrap(),
+            parsed_feature
         );
     }
 

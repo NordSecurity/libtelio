@@ -11,6 +11,7 @@ publish = false
 pretend_to_be_macos = []
 
 [dependencies]
+log = {version = "0.4.14", features = ["release_max_level_debug"]}
 serde = { version = "1.0", features = ["derive"] }
 serde_with = "1.10"
 serde_json = "1.0"
@@ -21,7 +22,9 @@ modifier = "0.1.0"
 itertools = "0.10"
 
 telio-crypto = { version = "0.1.0", path = "../telio-crypto" }
+telio-utils = { version = "0.1.0", path = "../telio-utils" }
 telio-wg = { version = "0.1.0", path = "../telio-wg" }
+
 
 [dev-dependencies]
 pretty_assertions = "0.7.2"

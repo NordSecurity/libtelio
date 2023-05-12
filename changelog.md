@@ -16,6 +16,7 @@
 * LLT-3596: Do not fail to start whole meshnet if single peer config is invalid within meshmap
 * LLT-3520: Add missing verification of sideload feature on macOS
 * LLT-3477: Change absolute file path to module path in logger
+* LLT-3472: Make feature `direct.providers` accept arbitrary strings with warning instead of error.
 * Release build contains debug logs from now
 * LLT-3616: Upgrade bindings for moose
 
