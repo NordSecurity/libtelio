@@ -18,8 +18,10 @@ pub mod data;
 /// Nurse error module
 pub mod error;
 
-mod heartbeat;
+/// Main nurse module
 mod nurse;
+
+mod heartbeat;
 mod qos;
 mod rtt;
 

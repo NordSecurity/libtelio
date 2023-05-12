@@ -16,4 +16,17 @@ message Heartbeat {
         uint32 connection_state = 2;
     }
     repeated Status statuses = 4;
+
+    enum NatType {
+        UdpBlocked = 1;
+        OpenInternet = 2;
+        SymmetricUdpFirewall = 3;
+        FullCone = 4;
+        RestrictedCone = 5;
+        PortRestrictedCone = 6;
+        Symmetric = 7;
+        Unknown = 8;
+    }
+
+    NatType nat_type = 5;
 }

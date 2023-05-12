@@ -36,3 +36,34 @@ where
         }
     }
 }
+
+#[macro_export]
+/// Maps enum from one type to another
+macro_rules! map_enum {
+    ($from:tt <=> $to:tt, $($f:tt = $t:tt),+ $(,)?) => {
+        impl From<$from> for $to {
+            fn from(f: $from) -> $to {
+                match f {
+                    $($from::$f => $to::$t),+
+                }
+            }
+        }
+
+        impl From<$to> for $from {
+            fn from(t: $to) -> $from {
+                match t {
+                    $($to::$t => $from::$f),+
+                }
+            }
+        }
+    };
+    ($from:tt -> $to:tt, $($f:tt = $t:tt),+ $(,)?) => {
+        impl From<$from> for $to {
+            fn from(f: $from) -> $to {
+                match f {
+                    $($from::$f => $to::$t),+
+                }
+            }
+        }
+    };
+}

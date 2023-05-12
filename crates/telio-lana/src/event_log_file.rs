@@ -265,6 +265,34 @@ pub mod moose {
 
     #[allow(non_snake_case)]
     /// Mocked moose function.
+    pub fn set_context_application_config_currentState_internalMeshnet_fpNat(
+        val: String,
+    ) -> std::result::Result<Result, Error> {
+        match super::event_log(
+            "set_context_application_config_currentState_internalMeshnet_fpNat",
+            Some(vec![val.as_str()]),
+        ) {
+            Ok(_) => Ok(Result::Success),
+            _ => Err(Error::EventLogError),
+        }
+    }
+
+    #[allow(non_snake_case)]
+    /// Mocked moose function.
+    pub fn set_context_application_config_currentState_internalMeshnet_membersNat(
+        val: String,
+    ) -> std::result::Result<Result, Error> {
+        match super::event_log(
+            "set_context_application_config_currentState_internalMeshnet_membersNat",
+            Some(vec![val.as_str()]),
+        ) {
+            Ok(_) => Ok(Result::Success),
+            _ => Err(Error::EventLogError),
+        }
+    }
+
+    #[allow(non_snake_case)]
+    /// Mocked moose function.
     pub fn set_context_application_config_currentState_externalLinks(
         val: String,
     ) -> std::result::Result<Result, Error> {
