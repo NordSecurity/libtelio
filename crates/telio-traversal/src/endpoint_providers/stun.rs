@@ -3,7 +3,7 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 use std::ops::Deref;
 
 use async_trait::async_trait;
-use futures::Future;
+use futures::{future::pending, Future};
 use stun_codec::TransactionId;
 use telio_crypto::PublicKey;
 use telio_model::config::Server;
@@ -15,7 +15,7 @@ use telio_utils::{
     telio_log_debug, telio_log_error, telio_log_info, telio_log_warn, PinnedSleep,
 };
 use telio_wg::{DynamicWg, WireGuard};
-use tokio::{net::UdpSocket, sync::Mutex};
+use tokio::{net::UdpSocket, sync::Mutex, pin};
 
 use crate::{endpoint_providers::EndpointProviderType, ping_pong_handler::PingPongHandler};
 
@@ -115,7 +115,10 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
                 {
                     telio_log_error!("Could not publish the STUN peer");
                 }
+            }
 
+
+            if s.servers.len() > 0 {
                 if s.start_stun_session().await.is_err() {
                     telio_log_error!("STUN session could not be started");
                 }
@@ -351,6 +354,20 @@ impl<Wg: WireGuard, E: Backoff> Runtime for State<Wg, E> {
     {
         let mut ext_buf = vec![0u8; MAX_PACKET_SIZE];
         let mut tun_buf = vec![0u8; MAX_PACKET_SIZE];
+
+        pin!(updated);
+
+        //If no STUN servers are configured -> nothing to do.
+        //NOTE: this will get cancelled on reconfiguration attempt
+        if self.servers.is_empty() {
+            tokio::select! {
+                _ = pending() => {},
+                update = &mut updated => {
+                    return update(self).await;
+                }
+            }
+        }
+
         tokio::select! {
             // Reading data from UDP socket (passed by node, that is awaiting on socket's receive)
             Ok((size, src_addr)) = self.ext_socket.recv_from(&mut ext_buf) => {
@@ -376,7 +393,7 @@ impl<Wg: WireGuard, E: Backoff> Runtime for State<Wg, E> {
                     let _  = self.start_stun_session().await;
                 }
             }
-            update = updated => {
+            update = &mut updated => {
                 return update(self).await;
             }
             else => {
