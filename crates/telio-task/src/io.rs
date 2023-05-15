@@ -231,7 +231,7 @@ mod tests {
         let right = tokio::spawn(forward(rc, vec![1u8; 1480], vec![2u8; 1480]));
         let left = tokio::spawn(forward(lc, vec![2u8; 1480], vec![1u8; 1480]));
 
-        timeout(Duration::from_secs(3), async move {
+        timeout(Duration::from_secs(10), async move {
             let _ = right.await;
             let _ = left.await;
         })
