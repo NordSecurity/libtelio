@@ -3,6 +3,8 @@
 ---
 * LLT-3619: Update crypto box
 * LLT-3636: Add derp server side keepalives configuration to feature config
+* LLT-3649: Remove slog mentions from README.md
+* LLT-3654: Fix infinite loop in STUN endpoint provider when meshnet is off
 
 <br>
 
@@ -29,7 +31,6 @@
 * Release build contains debug logs from now
 * LLT-3616: Upgrade bindings for moose
 * LLT-3647: Remove dependency on the outdated time crate
-* LLT-3649: Remove slog mentions from README.md
 
 <br>
 

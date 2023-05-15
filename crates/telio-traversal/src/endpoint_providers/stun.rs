@@ -3,7 +3,7 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 use std::ops::Deref;
 
 use async_trait::async_trait;
-use futures::Future;
+use futures::{future::pending, Future};
 use stun_codec::TransactionId;
 use telio_crypto::PublicKey;
 use telio_model::config::Server;
@@ -15,7 +15,7 @@ use telio_utils::{
     telio_log_debug, telio_log_error, telio_log_info, telio_log_warn, PinnedSleep,
 };
 use telio_wg::{DynamicWg, WireGuard};
-use tokio::{net::UdpSocket, sync::Mutex};
+use tokio::{net::UdpSocket, pin, sync::Mutex};
 
 use crate::{endpoint_providers::EndpointProviderType, ping_pong_handler::PingPongHandler};
 
@@ -115,10 +115,11 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
                 {
                     telio_log_error!("Could not publish the STUN peer");
                 }
+            }
 
-                if s.start_stun_session().await.is_err() {
-                    telio_log_error!("STUN session could not be started");
-                }
+            // Start STUN session, but only if we have at least one STUN server configured
+            if !s.servers.is_empty() && s.start_stun_session().await.is_err() {
+                telio_log_error!("STUN session could not be started");
             }
 
             Ok(())
@@ -351,6 +352,20 @@ impl<Wg: WireGuard, E: Backoff> Runtime for State<Wg, E> {
     {
         let mut ext_buf = vec![0u8; MAX_PACKET_SIZE];
         let mut tun_buf = vec![0u8; MAX_PACKET_SIZE];
+
+        pin!(updated);
+
+        //If no STUN servers are configured -> nothing to do.
+        //NOTE: this will get cancelled on reconfiguration attempt
+        if self.servers.is_empty() {
+            tokio::select! {
+                _ = pending() => {},
+                update = &mut updated => {
+                    return update(self).await;
+                }
+            }
+        }
+
         tokio::select! {
             // Reading data from UDP socket (passed by node, that is awaiting on socket's receive)
             Ok((size, src_addr)) = self.ext_socket.recv_from(&mut ext_buf) => {
@@ -376,7 +391,7 @@ impl<Wg: WireGuard, E: Backoff> Runtime for State<Wg, E> {
                     let _  = self.start_stun_session().await;
                 }
             }
-            update = updated => {
+            update = &mut updated => {
                 return update(self).await;
             }
             else => {
@@ -786,6 +801,8 @@ mod tests {
     async fn pongs_propagated_through_the_channel() {
         let mut env = prepare_test_env(None).await;
 
+        env.configure_env().await;
+
         let session_id = 456;
         let ping_addr = env.peers[0].ping_sock.local_addr().expect("local_addr");
 
@@ -896,6 +913,8 @@ mod tests {
     #[tokio::test]
     async fn provider_replies_to_ping() {
         let env = prepare_test_env(None).await;
+
+        env.configure_env().await;
 
         let wg_port = WGPort(123);
         let session_id = 456;
