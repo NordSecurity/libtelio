@@ -15,7 +15,7 @@ use telio_utils::{
     telio_log_debug, telio_log_error, telio_log_info, telio_log_warn, PinnedSleep,
 };
 use telio_wg::{DynamicWg, WireGuard};
-use tokio::{net::UdpSocket, sync::Mutex, pin};
+use tokio::{net::UdpSocket, pin, sync::Mutex};
 
 use crate::{endpoint_providers::EndpointProviderType, ping_pong_handler::PingPongHandler};
 
@@ -116,7 +116,6 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
                     telio_log_error!("Could not publish the STUN peer");
                 }
             }
-
 
             if s.servers.len() > 0 {
                 if s.start_stun_session().await.is_err() {
