@@ -801,6 +801,8 @@ mod tests {
     async fn pongs_propagated_through_the_channel() {
         let mut env = prepare_test_env(None).await;
 
+        env.configure_env().await;
+
         let session_id = 456;
         let ping_addr = env.peers[0].ping_sock.local_addr().expect("local_addr");
 
@@ -911,6 +913,8 @@ mod tests {
     #[tokio::test]
     async fn provider_replies_to_ping() {
         let env = prepare_test_env(None).await;
+
+        env.configure_env().await;
 
         let wg_port = WGPort(123);
         let session_id = 456;
