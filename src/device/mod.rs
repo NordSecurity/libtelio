@@ -6,7 +6,10 @@ use telio_firewall::firewall::{Firewall, StatefullFirewall};
 use telio_lana::*;
 use telio_nat_detect::nat_detection::{retrieve_single_nat, NatData};
 use telio_proxy::{Config as ProxyConfig, Io as ProxyIo, Proxy, UdpProxy};
-use telio_relay::{derp::Config as DerpConfig, multiplexer::Multiplexer, DerpRelay, SortedServers};
+use telio_relay::{
+    derp::Config as DerpConfig, multiplexer::Multiplexer, DerpKeepaliveConfig, DerpRelay,
+    SortedServers,
+};
 use telio_sockets::{NativeProtector, Protect, SocketPool};
 use telio_task::{
     io::{chan, mc_chan, mc_chan::Tx, Chan, McChan},
@@ -1115,6 +1118,7 @@ impl Runtime {
                 timeout: Duration::from_secs(10), //TODO: make configurable
                 ca_pem_path: None,
                 mesh_ip,
+                server_keepalives: DerpKeepaliveConfig::from(&self.features.derp),
             };
 
             // Update configuration for DERP client

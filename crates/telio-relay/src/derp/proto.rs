@@ -40,6 +40,12 @@ pub const TCP_KEEPALIVE_COUNT: u32 = 3;
 /// Default value for keepalive interval between probes
 pub const TCP_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(25);
 
+/// Default value for how ofter derp sends keepalives
+pub const DERP_KEEPALIVE_INTERVAL: u32 = 60;
+
+/// Default value for how ofter derp sends tcp keepalives
+pub const DERP_TCP_KEEPALIVE_INTERVAL: u32 = 15;
+
 // Check, if value won't overflow, when setting them on WinSock::setsockopt
 #[cfg(windows)]
 const_assert!(

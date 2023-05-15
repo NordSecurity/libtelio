@@ -155,6 +155,15 @@ pub struct FeatureDirect {
     pub endpoint_interval_secs: Option<u64>,
 }
 
+/// Configure derp behaviour
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+pub struct FeatureDerp {
+    /// Tcp keepalive set on derp server's side [default 15s]
+    pub tcp_keepalive: Option<u32>,
+    /// Derp will send empty messages after this many seconds of not sending/receiving any data [default 60s]
+    pub derp_keepalive: Option<u32>,
+}
+
 fn deserialize_providers<'de, D>(de: D) -> Result<Option<HashSet<EndpointProvider>>, D::Error>
 where
     D: Deserializer<'de>,
@@ -197,6 +206,8 @@ pub struct Features {
     /// Should only be set for macos sideload
     #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
     pub macos_sideload: bool,
+    /// Derp server specific configuration
+    pub derp: Option<FeatureDerp>,
 }
 
 impl FeaturePaths {
@@ -312,6 +323,7 @@ mod tests {
         }),
         #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
         macos_sideload: true,
+        derp: None,
     });
 
     #[test]
@@ -468,6 +480,7 @@ mod tests {
             paths: None,
             direct: None,
             exit_dns: None,
+            derp: None,
         };
 
         let empty_qos_features = Features {
@@ -486,6 +499,7 @@ mod tests {
             paths: None,
             direct: None,
             exit_dns: None,
+            derp: None,
         };
 
         let no_qos_features = Features {
@@ -499,6 +513,7 @@ mod tests {
             paths: None,
             direct: None,
             exit_dns: None,
+            derp: None,
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -533,6 +548,7 @@ mod tests {
             exit_dns: Some(FeatureExitDns {
                 auto_switch_dns_ips: Some(true),
             }),
+            derp: None,
         };
 
         let empty_features = Features {
@@ -544,6 +560,7 @@ mod tests {
             exit_dns: Some(FeatureExitDns {
                 auto_switch_dns_ips: None,
             }),
+            derp: None,
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -579,6 +596,7 @@ mod tests {
             paths: None,
             exit_dns: None,
             direct: None,
+            derp: None,
         };
 
         assert_eq!(Features::default(), expected_defaults);

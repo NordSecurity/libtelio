@@ -16,7 +16,10 @@ use futures::{future::select_all, Future};
 use generic_array::typenum::Unsigned;
 use serde::{Deserialize, Serialize};
 use telio_crypto::{PublicKey, SecretKey};
-use telio_model::config::{RelayState, Server};
+use telio_model::{
+    api_config::FeatureDerp,
+    config::{RelayState, Server},
+};
 use telio_proto::{Codec, Packet, PacketType};
 use telio_sockets::SocketPool;
 use telio_task::io::{wait_for_tx, Chan};
@@ -100,6 +103,32 @@ struct State {
     connecting: Option<JoinHandle<(Server, DerpConnection)>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DerpKeepaliveConfig {
+    tcp_keepalive: u32,
+    derp_keepalive: u32,
+}
+
+impl From<&Option<FeatureDerp>> for DerpKeepaliveConfig {
+    fn from(derp: &Option<FeatureDerp>) -> Self {
+        let mut tcp_keepalive = proto::DERP_TCP_KEEPALIVE_INTERVAL;
+        let mut derp_keepalive = proto::DERP_KEEPALIVE_INTERVAL;
+        if let Some(derp) = derp {
+            if let Some(tcp_ka) = derp.tcp_keepalive {
+                tcp_keepalive = tcp_ka;
+            }
+            if let Some(derp_ka) = derp.derp_keepalive {
+                derp_keepalive = derp_ka;
+            }
+        }
+
+        DerpKeepaliveConfig {
+            tcp_keepalive,
+            derp_keepalive,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     pub secret_key: SecretKey,
@@ -108,6 +137,7 @@ pub struct Config {
     pub timeout: Duration,
     pub ca_pem_path: Option<PathBuf>,
     pub mesh_ip: IpAddr,
+    pub server_keepalives: DerpKeepaliveConfig,
 }
 
 impl Default for Config {
@@ -119,6 +149,10 @@ impl Default for Config {
             servers: Default::default(),
             ca_pem_path: None,
             mesh_ip: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            server_keepalives: DerpKeepaliveConfig {
+                tcp_keepalive: proto::DERP_TCP_KEEPALIVE_INTERVAL,
+                derp_keepalive: proto::DERP_KEEPALIVE_INTERVAL,
+            },
         }
     }
 }
