@@ -2,6 +2,7 @@
 ### **Bruschetta**
 ---
 * LLT-3619: Update crypto box
+* LLT-3654: Fix infinite loop in STUN endpoint provider when meshnet is off
 
 <br>
 
