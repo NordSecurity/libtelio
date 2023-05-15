@@ -28,6 +28,7 @@
 * Release build contains debug logs from now
 * LLT-3616: Upgrade bindings for moose
 * LLT-3647: Remove dependency on the outdated time crate
+* LLT-3649: Remove slog mentions from README.md
 
 <br>
 
