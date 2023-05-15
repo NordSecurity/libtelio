@@ -118,7 +118,7 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
             }
 
             // Start STUN session, but only if we have at least one STUN server configured
-            if s.servers.is_empty() && s.start_stun_session().await.is_err() {
+            if !s.servers.is_empty() && s.start_stun_session().await.is_err() {
                 telio_log_error!("STUN session could not be started");
             }
 
