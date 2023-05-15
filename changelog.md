@@ -2,6 +2,7 @@
 ### **Bruschetta**
 ---
 * LLT-3619: Update crypto box
+* LLT-3636: Add derp server side keepalives configuration to feature config
 
 <br>
 

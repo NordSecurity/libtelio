@@ -13,7 +13,7 @@ use std::{
 use telio_sockets::{SocketBufSizes, SocketPool, TcpParams};
 use telio_task::io::Chan;
 
-use crate::Config;
+use crate::{Config, DerpKeepaliveConfig};
 
 use telio_crypto::{PublicKey, SecretKey};
 use tokio::{
@@ -131,6 +131,7 @@ pub async fn connect_http_and_start(
                 stream,
                 addr,
                 derp_config.secret_key,
+                derp_config.server_keepalives,
                 &hostport,
             ))
             .await
@@ -157,6 +158,7 @@ pub async fn connect_http_and_start(
                 config.connect(dnsname, stream).await?,
                 addr,
                 derp_config.secret_key,
+                derp_config.server_keepalives,
                 &hostport,
             )
             .await
@@ -168,11 +170,18 @@ async fn connect_and_start<RW: AsyncRead + AsyncWrite + Send + 'static>(
     stream: RW,
     addr: PairAddr,
     secret_key: SecretKey,
+    server_keepalives: DerpKeepaliveConfig,
     host: &str,
 ) -> Result<DerpConnection, Error> {
     let (mut reader, mut writer) = split(stream);
 
-    let leftovers = Box::pin(connect_http(&mut reader, &mut writer, host)).await?;
+    let leftovers = Box::pin(connect_http(
+        &mut reader,
+        &mut writer,
+        server_keepalives,
+        host,
+    ))
+    .await?;
 
     let mut reader = Cursor::new(leftovers).chain(reader);
 
@@ -206,13 +215,22 @@ async fn connect_and_start<RW: AsyncRead + AsyncWrite + Send + 'static>(
 async fn connect_http<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     reader: &mut R,
     writer: &mut W,
+    server_keepalives: DerpKeepaliveConfig,
     host: &str,
 ) -> Result<Vec<u8>, Error> {
     writer
         .write_all(
             format!(
-                "GET /derp HTTP/1.1\r\nHost: {}\r\nConnection: Upgrade\r\nUpgrade: DERP\r\n\r\n",
-                host
+                "GET /derp HTTP/1.1\r\n\
+                Host: {host}\r\n\
+                Connection: Upgrade\r\n\
+                Upgrade: DERP\r\n\
+                User-Agent: telio/{} {}\r\n\
+                Keep-Alive: tcp={}, derp={}\r\n\r\n",
+                telio_utils::version_tag(),
+                std::env::consts::OS,
+                server_keepalives.tcp_keepalive,
+                server_keepalives.derp_keepalive,
             )
             .as_bytes(),
         )
