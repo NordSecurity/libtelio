@@ -15,18 +15,13 @@ It supports a number of features, including:
 ### Prerequisites
 
 In the latter sections of this README we assume (if it's not explicitly assumed otherwise)
-that you are working on a Linux machine and that you have installed:
- - [docker](https://docs.docker.com/engine/install),
- - git,
- - python3,
- - pip,
- - quilt and
- - [rust](https://www.rust-lang.org/tools/install).
+that you are working on a Linux machine. To be able to build `libtelio`
+it is enough to have [rust](https://www.rust-lang.org/tools/install) installed.
+To go through the short TCLI tutorial you need also [docker](https://docs.docker.com/engine/install).
 
 ### Build
 
-If the prerequisites are ready, you can build the library simply using
-`cargo build` command.
+You can build the `libtelio` library using standard `cargo build` command.
 
 ### Setting up Meshnet with tcli
 
@@ -38,7 +33,7 @@ First of all, build `tcli` utility:
 cargo build -p tcli
 ```
 
-You will need a basic Linux docker image with the basic networking utilities,
+You will need a lightweight Linux docker image with the some networking utilities,
 which are missing from the basic Ubuntu image, so let's create a new one.
 Make a `docker` directory in `tcli-test` and put there the following simple Dockerfile:
 ```
@@ -150,21 +145,14 @@ It takes three arguments, let's describe them briefly:
 
 `telio::Device` implements `Drop` trait, so we don't need to worry
 about deinitialization in the end.
-Let's look at an example initialization of `telio::Device`
-which uses only a simple logger logging to `stderr`, no additional
-features, handles only `Node` events and doesn't set `protect` callback:
+Let's look at an example initialization of `telio::Device` with no additional
+features, handling only `Node` events and not using `protect` callback:
 
 ```
-let decorator = slog_term::PlainDecorator::new(io::stderr());
-let drain = slog_term::FullFormat::new(decorator).build().fuse();
-let drain = slog_async::Async::new(drain).build().fuse();
-let logger = slog::Logger::root(drain, o!());
-
 let (sender, receiver) = mpsc::channel::<Box<Event>>();
 
 let mut device = telio::device::Device::new(
     Features::default(),
-    logger,
     move |e| {
         sender.send(e).unwrap();
     },
