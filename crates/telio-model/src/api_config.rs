@@ -1,7 +1,7 @@
 //! Object descriptions of various
 //! telio configurable features via API
 
-use std::collections::HashSet;
+use std::{collections::HashSet, fmt};
 
 use serde::{de::IntoDeserializer, Deserialize, Deserializer, Serialize};
 use strum_macros::EnumCount;
@@ -89,12 +89,20 @@ pub struct FeatureNurse {
 }
 
 /// Configurable features for Lana module
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct FeatureLana {
     /// Path of the file where events will be stored. If such file does not exist, it will be created, otherwise reused
     pub event_path: String,
     /// Whether the events should be sent to produciton or not
     pub prod: bool,
+}
+
+impl fmt::Debug for FeatureLana {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FeatureLana")
+            .field("prod", &self.prod)
+            .finish()
+    }
 }
 
 /// Configurable features for exit Dns

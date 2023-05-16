@@ -332,6 +332,8 @@ impl Device {
         let commit_sha = commit_sha();
         telio_log_info!("Created libtelio instance {}, {}", version_tag, commit_sha);
 
+        telio_log_info!("libtelio is starting up with features : {:?}", features);
+
         if let Some(lana) = &features.lana {
             init_lana(lana.event_path.clone(), version_tag.to_string(), lana.prod)?;
         }

@@ -12,6 +12,23 @@
 ### **Bruschetta**
 ---
 ### Changelog
+* LLT-3530: Log features at telio startup
+
+<br>
+
+### v4.0.2
+### **Bruschetta**
+---
+* LLT-3619: Update crypto box
+* LLT-3636: Add derp server side keepalives configuration to feature config
+* LLT-3654: Fix infinite loop in STUN endpoint provider when meshnet is off
+
+<br>
+
+### v4.0.1
+### **Bruschetta**
+---
+### Changelog
 * LLT-3423: Add identifier to `Node` and `ExitNode`, and telio function to supply an identifier when connecting to an exit node
 * LLT-3404: Add github PR template
 * LLT-3468: Separate Heartbeat collection from QoS so heartbeat collection can be alone enabled.
