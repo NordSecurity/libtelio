@@ -1,3 +1,10 @@
+### UNRELEASED
+### **Bruschetta**
+---
+* LLT-3634: `stun_plaintext_port` defaults to 0 when not provided in config
+
+<br>
+
 ### v4.0.2
 ### **Bruschetta**
 ---

@@ -78,6 +78,7 @@ pub struct Server {
     /// Port on which server listens to stun requests
     pub stun_port: u16,
     /// Port on which server listens for unencrypted stun requests
+    #[serde(default)]
     pub stun_plaintext_port: u16,
     /// Server public key
     pub public_key: PublicKey,
@@ -113,9 +114,13 @@ impl PartialEq for Server {
             && self.ipv4 == other.ipv4
             && self.relay_port == other.relay_port
             && self.stun_port == other.stun_port
+            && self.stun_plaintext_port == other.stun_plaintext_port
             && self.public_key == other.public_key
+            && self.use_plain_text == other.use_plain_text
         // Do not compare weights, priority for connection persistence
         // && self.weight == other.weight
+        // also probably ignore conn_state
+        // && self.conn_state == other.conn_state
     }
 }
 

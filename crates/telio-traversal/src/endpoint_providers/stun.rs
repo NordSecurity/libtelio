@@ -105,6 +105,16 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
             servers.sort_by_key(|s| (s.weight, s.public_key));
 
             if s.servers != servers {
+                servers.retain(|server| {
+                    if server.stun_plaintext_port == 0 {
+                        telio_log_warn!(
+                            "Stun plaintext port was not provided for server {}!",
+                            server.public_key
+                        );
+                        return false;
+                    }
+                    true
+                });
                 s.servers = servers;
                 s.current_server_index = 0;
                 s.stun_session = None;
