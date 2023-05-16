@@ -239,31 +239,73 @@ impl Runtime for Analytics {
         tokio::select! {
             // wg event, only in the `Monitoring` state
             Ok(event) = self.io.wg_event_channel.recv(), if self.state == RuntimeState::Monitoring =>
-                Self::guard(async move { self.handle_wg_event(*event).await; telio_log_trace!("tokio::select! self.io.wg_event_channel.recv() branch"); Ok(()) }),
+                Self::guard(
+                    async move {
+                        self.handle_wg_event(*event).await;
+                        telio_log_trace!("tokio::select! self.io.wg_event_channel.recv() branch");
+                        Ok(())
+                     }
+                ),
 
             // Derp event, only in the `Monitoring` state
             Ok(event) = self.io.derp_event_channel.recv(), if self.state == RuntimeState::Monitoring =>
-                Self::guard(async move { self.handle_derp_event(*event).await; telio_log_trace!("tokio::select! self.io.derp_event_channel.recv() branch"); Ok(()) }),
+                Self::guard(
+                    async move {
+                        self.handle_derp_event(*event).await;
+                        telio_log_trace!("tokio::select! self.io.derp_event_channel.recv() branch");
+                        Ok(()) 
+                    }
+                ),
 
             // MeshConfigUpdate event
             Ok(event) = self.io.config_update_channel.recv() =>
-                Self::guard(async move { self.handle_config_update_event(*event).await; telio_log_trace!("tokio::select! self.io.config_update_channel.recv() branch"); Ok(()) }),
+                Self::guard(
+                    async move {
+                        self.handle_config_update_event(*event).await;
+                        telio_log_trace!("tokio::select! self.io.config_update_channel.recv() branch");
+                        Ok(())
+                    }
+                ),
 
             // A collection event has been triggered from the outside, only in the `Monitoring` state
             Ok(_) = self.io.collection_trigger_channel.recv(), if self.state == RuntimeState::Monitoring =>
-                Self::guard(async move { self.handle_collection().await; telio_log_trace!("tokio::select! self.io.collection_trigger_channel.recv() branch"); Ok(()) }),
+                Self::guard(
+                    async move { 
+                        self.handle_collection().await;
+                        telio_log_trace!("tokio::select! self.io.collection_trigger_channel.recv() branch");
+                        Ok(())
+                    }
+                ),
 
             // Time to send a data request to other nodes, only update in the `Monitoring` state
             _ = self.task_interval.tick(), if self.state == RuntimeState::Monitoring =>
-                Self::guard(async move { self.handle_collection().await; telio_log_trace!("tokio::select! self.task_interval.tick() branch"); Ok(()) }),
+                Self::guard(
+                    async move { 
+                        self.handle_collection().await;
+                        telio_log_trace!("tokio::select! self.task_interval.tick() branch");
+                        Ok(())
+                    }
+                ),
 
             // Received data from node, Should always listen for incoming data
             Some((pk, msg)) = self.io.chan.rx.recv() =>
-                Self::guard(async move { self.message_handler((pk, msg)).await; telio_log_trace!("tokio::select! self.io.chan.rx.recv() branch"); Ok(()) }),
+                Self::guard(
+                    async move {
+                        self.message_handler((pk, msg)).await;
+                        telio_log_trace!("tokio::select! self.io.chan.rx.recv() branch");
+                        Ok(())
+                    }
+                ),
 
             // Time to aggregate collected data, only update when in the `Collecting` state
             _ = &mut self.collect_period, if self.state == RuntimeState::Collecting =>
-                Self::guard(async move { self.handle_aggregation().await; telio_log_trace!("tokio::select! self.collect_period branch"); Ok(()) }),
+                Self::guard(
+                    async move {
+                        self.handle_aggregation().await;
+                        telio_log_trace!("tokio::select! self.collect_period branch");
+                        Ok(())
+                    }
+                ),
 
             else => Self::next(),
         }
