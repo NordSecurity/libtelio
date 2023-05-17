@@ -23,6 +23,7 @@ libc = "0.2.99"
 log = {version = "0.4.14", features = ["release_max_level_debug"]}
 modifier = "0.1.0"
 num_cpus = "1.15.0"
+parking_lot = "0.12"
 serde = { version = "1.0", features = ["derive"] }
 serde_with = "1.10"
 serde_json = "1.0"
