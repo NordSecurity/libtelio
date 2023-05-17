@@ -1545,12 +1545,13 @@ impl TaskRuntime for Runtime {
 
         stop_arc_entity!(self.entities.wireguard_interface, "WireguardInterface");
         stop_arc_entity!(self.entities.multiplexer, "Multiplexer");
-        stop_arc_entity!(self.entities.derp, "Derp");
-        stop_arc_entity!(self.entities.proxy, "UdpProxy");
 
         if let Some(nurse) = self.entities.nurse {
             stop_arc_entity!(nurse, "Nurse");
         }
+
+        stop_arc_entity!(self.entities.derp, "Derp");
+        stop_arc_entity!(self.entities.proxy, "UdpProxy");
 
         self.requested_state = Default::default();
     }
