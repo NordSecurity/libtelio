@@ -3,6 +3,7 @@
 ---
 * LLT-3634: `stun_plaintext_port` defaults to 0 when not provided in config
 * LLT-3603: Add support for `allow_peer_send_files` to meshconfig
+* LLT-3668: Stop Nurse before Derp
 
 <br>
 
