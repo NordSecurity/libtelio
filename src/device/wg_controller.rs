@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use telio_crypto::PublicKey;
 use telio_dns::DnsResolver;
-use telio_firewall::firewall::Firewall;
+use telio_firewall::firewall::{Firewall, FILE_SEND_PORT};
 use telio_model::EndpointMap;
 use telio_model::{mesh::Node, SocketAddr};
 use telio_proxy::Proxy;
@@ -648,13 +648,19 @@ fn peer_state(
 fn firewall_remove<F: Firewall>(firewall: &F, allowed_ips: &[IpNetwork]) {
     for ip in allowed_ips {
         firewall.remove_from_network_whitelist(*ip);
+        firewall.remove_from_port_whitelist(*ip);
     }
 }
 
 fn firewall_upsert_node<F: Firewall>(firewall: &F, node: &Node) {
-    if node.allow_incoming_connections {
+    if node.allow_incoming_connections || node.allow_peer_send_files {
         for ip in &node.allowed_ips {
-            firewall.add_to_network_whitelist(*ip);
+            if node.allow_incoming_connections {
+                firewall.add_to_network_whitelist(*ip);
+            }
+            if node.allow_peer_send_files {
+                firewall.add_to_port_whitelist(*ip, FILE_SEND_PORT);
+            }
         }
     } else {
         firewall_remove(firewall, &node.allowed_ips);
@@ -669,7 +675,7 @@ mod tests {
     use std::net::{Ipv4Addr, SocketAddrV4};
     use telio_crypto::SecretKey;
     use telio_dns::MockDnsResolver;
-    use telio_firewall::firewall::MockFirewall;
+    use telio_firewall::firewall::{MockFirewall, FILE_SEND_PORT};
     use telio_model::api_config::{
         DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD, DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
     };
@@ -683,6 +689,7 @@ mod tests {
     use tokio::time::Instant;
 
     type AllowIncomingConnections = bool;
+    type AllowPeerSendFiles = bool;
     type AllowedIps = Vec<IpAddr>;
 
     #[tokio::test]
@@ -801,7 +808,12 @@ mod tests {
     }
 
     fn create_requested_state(
-        input: Vec<(PublicKey, AllowedIps, AllowIncomingConnections)>,
+        input: Vec<(
+            PublicKey,
+            AllowedIps,
+            AllowIncomingConnections,
+            AllowPeerSendFiles,
+        )>,
     ) -> RequestedState {
         let mut requested_state = RequestedState::default();
 
@@ -819,6 +831,7 @@ mod tests {
                         ..Default::default()
                     },
                     allow_incoming_connections: i.2,
+                    allow_peer_send_files: i.3,
                     ..Default::default()
                 };
                 peers.push(peer);
@@ -854,7 +867,7 @@ mod tests {
         let ip1 = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
         let ip2 = IpAddr::V4(Ipv4Addr::new(5, 6, 7, 8));
 
-        let requested_state = create_requested_state(vec![(pub_key, vec![ip1, ip2], true)]);
+        let requested_state = create_requested_state(vec![(pub_key, vec![ip1, ip2], true, true)]);
 
         let interface = create_wireguard_interface(vec![(pub_key, vec![ip1])]);
 
@@ -870,6 +883,70 @@ mod tests {
             .expect_add_to_network_whitelist()
             .once()
             .with(eq(IpNetwork::from(ip2)))
+            .return_const(());
+        firewall
+            .expect_add_to_port_whitelist()
+            .once()
+            .with(eq(IpNetwork::from(ip1)), eq(FILE_SEND_PORT))
+            .return_const(());
+        firewall
+            .expect_add_to_port_whitelist()
+            .once()
+            .with(eq(IpNetwork::from(ip2)), eq(FILE_SEND_PORT))
+            .return_const(());
+
+        consolidate_firewall(&requested_state, &wireguard_interface, &firewall)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn add_currently_allowed_ips_only_to_network_whitelist() {
+        let mut wireguard_interface = MockWireGuard::new();
+        let mut firewall = MockFirewall::new();
+
+        let pub_key = SecretKey::gen().public();
+        let ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+
+        let requested_state = create_requested_state(vec![(pub_key, vec![ip], true, false)]);
+
+        let interface = create_wireguard_interface(vec![(pub_key, vec![ip])]);
+
+        wireguard_interface
+            .expect_get_interface()
+            .return_once(move || Ok(interface));
+        firewall
+            .expect_add_to_network_whitelist()
+            .once()
+            .with(eq(IpNetwork::from(ip)))
+            .return_const(());
+        firewall.expect_add_to_port_whitelist().never();
+
+        consolidate_firewall(&requested_state, &wireguard_interface, &firewall)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn add_currently_allowed_ips_only_to_porty_whitelist() {
+        let mut wireguard_interface = MockWireGuard::new();
+        let mut firewall = MockFirewall::new();
+
+        let pub_key = SecretKey::gen().public();
+        let ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+
+        let requested_state = create_requested_state(vec![(pub_key, vec![ip], false, true)]);
+
+        let interface = create_wireguard_interface(vec![(pub_key, vec![ip])]);
+
+        wireguard_interface
+            .expect_get_interface()
+            .return_once(move || Ok(interface));
+        firewall.expect_add_to_network_whitelist().never();
+        firewall
+            .expect_add_to_port_whitelist()
+            .once()
+            .with(eq(IpNetwork::from(ip)), eq(FILE_SEND_PORT))
             .return_const(());
 
         consolidate_firewall(&requested_state, &wireguard_interface, &firewall)
@@ -903,6 +980,16 @@ mod tests {
             .once()
             .with(eq(IpNetwork::from(ip2)))
             .return_const(());
+        firewall
+            .expect_remove_from_port_whitelist()
+            .once()
+            .with(eq(IpNetwork::from(ip1)))
+            .return_const(());
+        firewall
+            .expect_remove_from_port_whitelist()
+            .once()
+            .with(eq(IpNetwork::from(ip2)))
+            .return_const(());
 
         consolidate_firewall(&requested_state, &wireguard_interface, &firewall)
             .await
@@ -918,8 +1005,12 @@ mod tests {
         let ip1 = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
         let ip2 = IpAddr::V4(Ipv4Addr::new(5, 6, 7, 8));
 
-        let requested_state =
-            create_requested_state(vec![(pub_key, vec![ip1.clone(), ip2.clone()], false)]);
+        let requested_state = create_requested_state(vec![(
+            pub_key,
+            vec![ip1.clone(), ip2.clone()],
+            false,
+            false,
+        )]);
 
         let interface = create_wireguard_interface(vec![(pub_key, vec![ip1.clone(), ip2.clone()])]);
 
@@ -933,6 +1024,16 @@ mod tests {
             .return_const(());
         firewall
             .expect_remove_from_network_whitelist()
+            .once()
+            .with(eq(IpNetwork::from(ip2)))
+            .return_const(());
+        firewall
+            .expect_remove_from_port_whitelist()
+            .once()
+            .with(eq(IpNetwork::from(ip1)))
+            .return_const(());
+        firewall
+            .expect_remove_from_port_whitelist()
             .once()
             .with(eq(IpNetwork::from(ip2)))
             .return_const(());

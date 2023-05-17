@@ -12,7 +12,7 @@ use pnet_packet::{
     udp::UdpPacket,
 };
 use std::collections::HashSet;
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, RwLock};
 use std::time::Duration;
@@ -29,6 +29,9 @@ const ICMP_BLOCK_TYPES_MASK: u32 = 1 << IcmpTypes::EchoRequest.0
     | 1 << IcmpTypes::InformationRequest.0
     | 1 << IcmpTypes::AddressMaskRequest.0;
 
+/// File sending port
+pub const FILE_SEND_PORT: u16 = 49111;
+
 /// Firewall trait.
 #[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
 pub trait Firewall {
@@ -44,6 +47,19 @@ pub trait Firewall {
     /// Returns a whitelist network ranges
     #[cfg(test)]
     fn get_network_whitelist(&self) -> HashSet<IpNetwork>;
+
+    /// Clears the whitelist
+    fn clear_port_whitelist(&self);
+
+    /// Add network range to whitelist
+    fn add_to_port_whitelist(&self, ip_net: IpNetwork, port: u16);
+
+    /// Remove network range from whitelist
+    fn remove_from_port_whitelist(&self, ip_net: IpNetwork);
+
+    /// Returns a whitelist network ranges
+    #[cfg(test)]
+    fn get_port_whitelist(&self) -> HashSet<SocketAddr>;
 
     /// Clears the whitelist
     fn clear_peer_whitelist(&self);
@@ -74,6 +90,9 @@ pub trait Firewall {
 struct Whitelist {
     /// List of whitelisted networks addresses
     network_whitelist: HashSet<IpNetwork>,
+
+    /// List of whitelisted port addresses
+    port_whitelist: HashSet<SocketAddr>,
 
     /// List of whitelisted peers identified by public key
     peer_whitelist: HashSet<PublicKey>,
@@ -241,7 +260,7 @@ impl StatefullFirewall {
                 connection_info
             );
             if connection_info.conn_remote_initiated
-                && !Self::is_whitelisted(whitelist, peer, ip.get_source())
+                && !Self::is_whitelisted(whitelist, peer, ip.get_source(), key.dst_port)
                 && !whitelist.allow_any_ip.load(Ordering::Relaxed)
             {
                 telio_log_trace!("Removing UDP conntrack entry {:?}", key);
@@ -255,7 +274,7 @@ impl StatefullFirewall {
 
         // no value in cache, insert and allow only if ip is whitelisted
         if !whitelist.allow_any_ip.load(Ordering::Relaxed)
-            && !Self::is_whitelisted(whitelist, peer, ip.get_source())
+            && !Self::is_whitelisted(whitelist, peer, ip.get_source(), key.dst_port)
         {
             telio_log_trace!("Dropping UDP packet {:?} {:?}", key, peer);
             return false;
@@ -304,7 +323,7 @@ impl StatefullFirewall {
                 connection_info
             );
             if connection_info.conn_remote_initiated
-                && !Self::is_whitelisted(whitelist, peer, ip.get_source())
+                && !Self::is_whitelisted(whitelist, peer, ip.get_source(), key.dst_port)
                 && !whitelist.allow_any_ip.load(Ordering::Relaxed)
             {
                 telio_log_trace!("Removing TCP conntrack entry {:?}", key);
@@ -331,7 +350,7 @@ impl StatefullFirewall {
         }
 
         if !whitelist.allow_any_ip.load(Ordering::Relaxed)
-            && !Self::is_whitelisted(whitelist, peer, ip.get_source())
+            && !Self::is_whitelisted(whitelist, peer, ip.get_source(), key.dst_port)
         {
             telio_log_trace!("Dropping TCP packet {:?} {:?}", key, peer);
             return false;
@@ -371,7 +390,7 @@ impl StatefullFirewall {
 
         if (1 << icmp_packet.get_icmp_type().0) & ICMP_BLOCK_TYPES_MASK != 0
             && !whitelist.allow_any_ip.load(Ordering::Relaxed)
-            && !Self::is_whitelisted(whitelist, peer, ip.get_source())
+            && !Self::is_whitelisted(whitelist, peer, ip.get_source(), 0)
         {
             telio_log_trace!("Dropping ICMP packet {:?} {:?}", ip, peer);
             return false;
@@ -390,7 +409,7 @@ impl StatefullFirewall {
         false
     }
 
-    fn is_whitelisted(whitelist: &Whitelist, peer: &PublicKey, ip: Ipv4Addr) -> bool {
+    fn is_whitelisted(whitelist: &Whitelist, peer: &PublicKey, ip: Ipv4Addr, port: u16) -> bool {
         if whitelist.peer_whitelist.contains(peer) {
             return true;
         }
@@ -400,7 +419,11 @@ impl StatefullFirewall {
                 return true;
             }
         }
-        false
+
+        whitelist
+            .port_whitelist
+            .iter()
+            .any(|addr| addr.ip() == ip && addr.port() == port)
     }
 }
 
@@ -440,6 +463,35 @@ impl Firewall for StatefullFirewall {
     fn get_network_whitelist(&self) -> HashSet<IpNetwork> {
         unwrap_lock_or_return!(self.whitelist.write(), Default::default())
             .network_whitelist
+            .clone()
+    }
+
+    fn clear_port_whitelist(&self) {
+        telio_log_debug!("Clearing firewall port whitelist");
+        let mut whitelist = unwrap_lock_or_return!(self.whitelist.write());
+        whitelist.port_whitelist.clear();
+    }
+
+    fn add_to_port_whitelist(&self, ip_net: IpNetwork, port: u16) {
+        telio_log_debug!("Adding {:?} network to firewall port whitelist", ip_net);
+        let mut whitelist = unwrap_lock_or_return!(self.whitelist.write());
+        whitelist
+            .port_whitelist
+            .insert(SocketAddr::new(ip_net.ip(), port));
+    }
+
+    fn remove_from_port_whitelist(&self, ip_net: IpNetwork) {
+        telio_log_debug!("Removing {:?} network from firewall port whitelist", ip_net);
+        let mut whitelist = unwrap_lock_or_return!(self.whitelist.write());
+        whitelist
+            .port_whitelist
+            .retain(|addr| addr.ip() != ip_net.ip());
+    }
+
+    #[cfg(test)]
+    fn get_port_whitelist(&self) -> HashSet<SocketAddr> {
+        unwrap_lock_or_return!(self.whitelist.write(), Default::default())
+            .port_whitelist
             .clone()
     }
 
@@ -1100,5 +1152,36 @@ mod tests {
         assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp("100.100.100.100:1234", "127.0.0.1:1111",)), false);
         assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp("100.100.100.101", "127.0.0.1",&IcmpTypes::EchoRequest)), false);
         assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp("100.100.100.101:1234", "127.0.0.1:1111", TcpFlags::PSH)), false);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn firewall_whitelist_port() {
+        let fw = StatefullFirewall::new();
+        assert!(fw.get_network_whitelist().is_empty());
+        assert!(fw.get_peer_whitelist().is_empty());
+        assert!(fw.get_port_whitelist().is_empty());
+
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp("100.100.100.100:11111", format!("127.0.0.1:{}", FILE_SEND_PORT).as_str())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp("100.100.100.100", "127.0.0.1",&IcmpTypes::EchoRequest)), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp("100.100.100.100:11111", format!("127.0.0.1:{}", FILE_SEND_PORT).as_str(), TcpFlags::PSH)), false);
+
+        fw.add_to_port_whitelist("100.100.100.100/32".parse().unwrap(), FILE_SEND_PORT);
+        assert_eq!(fw.get_port_whitelist().len(), 1);
+
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp("100.100.100.100", "127.0.0.1",&IcmpTypes::EchoRequest)), false);
+
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp("100.100.100.100:11111", format!("127.0.0.1:{}", FILE_SEND_PORT).as_str())), true);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp("100.100.100.100:11111", format!("127.0.0.1:{}", FILE_SEND_PORT).as_str(), TcpFlags::PSH)), true);
+
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp("100.100.100.100:11111", "127.0.0.1:12345")), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp("100.100.100.100:11111", "127.0.0.1:12345", TcpFlags::PSH)), false);
+
+        fw.remove_from_port_whitelist("100.100.100.100/32".parse().unwrap());
+        assert_eq!(fw.get_port_whitelist().len(), 0);
+
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp("100.100.100.100:11111", format!("127.0.0.1:{}", FILE_SEND_PORT).as_str())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp("100.100.100.100", "127.0.0.1",&IcmpTypes::EchoRequest)), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp("100.100.100.100:11111", format!("127.0.0.1:{}", FILE_SEND_PORT).as_str(), TcpFlags::PSH)), false);
     }
 }

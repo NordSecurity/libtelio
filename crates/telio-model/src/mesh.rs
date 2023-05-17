@@ -37,6 +37,8 @@ pub struct Node {
     pub hostname: Option<String>,
     /// Flag to control whether the Node allows incoming connections
     pub allow_incoming_connections: bool,
+    /// Flag to control whether the Node allows incoming files
+    pub allow_peer_send_files: bool,
     /// Connection type in the network mesh (through Relay or hole punched directly)
     pub path: PathType,
 }
@@ -117,6 +119,7 @@ impl From<&Peer> for Node {
                 .unwrap_or_default(),
             hostname: Some(peer.hostname.to_owned()),
             allow_incoming_connections: peer.allow_incoming_connections,
+            allow_peer_send_files: peer.allow_peer_send_files,
             ..Default::default()
         }
     }
