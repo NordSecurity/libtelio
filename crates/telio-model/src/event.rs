@@ -232,6 +232,7 @@ mod tests {
             endpoint: Some(SocketAddr::new("127.0.0.1".parse().unwrap(), 8080)),
             hostname: Some(String::from("example.com")),
             allow_incoming_connections: false,
+            allow_peer_send_files: false,
             path: crate::api_config::PathType::Relay,
         };
 
@@ -279,6 +280,7 @@ mod tests {
             r#""is_exit":true,"is_vpn":true,"allowed_ips":["127.0.0.1/32"],"#,
             r#""endpoint":"127.0.0.1:8080","hostname":"example.com","#,
             r#""allow_incoming_connections":false,"#,
+            r#""allow_peer_send_files":false,"#,
             r#""path":"relay""#,
             r#"}}"#
         ));

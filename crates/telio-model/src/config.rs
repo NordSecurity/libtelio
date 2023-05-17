@@ -34,6 +34,9 @@ pub struct Peer {
     pub is_local: bool,
     /// Flag to control whether the peer allows incoming connections
     pub allow_incoming_connections: bool,
+    #[serde(default)]
+    /// Flag to control whether the peer allows incoming files
+    pub allow_peer_send_files: bool,
 }
 
 /// Representation of DNS configuration
@@ -240,6 +243,7 @@ mod tests {
                   "is_local": true,
                   "user_email": "alice@example.com",
                   "allow_incoming_connections": true,
+                  "allow_peer_send_files": true,
                   "peer_allows_traffic_routing": false,
                   "allow_peer_traffic_routing": true
                 },
@@ -256,6 +260,7 @@ mod tests {
                   "is_local": false,
                   "user_email": "bob@example.com",
                   "allow_incoming_connections": false,
+                  "allow_peer_send_files": false,
                   "peer_allows_traffic_routing": true,
                   "allow_peer_traffic_routing": false
                 },
@@ -271,6 +276,7 @@ mod tests {
                   "is_local": true,
                   "user_email": "alice@example.com",
                   "allow_incoming_connections": true,
+                  "allow_peer_send_files": true,
                   "peer_allows_traffic_routing": false,
                   "allow_peer_traffic_routing": true
                 },
@@ -286,6 +292,7 @@ mod tests {
                   "is_local": 42,
                   "user_email": "alice@example.com",
                   "allow_incoming_connections": true,
+                  "allow_peer_send_files": true,
                   "peer_allows_traffic_routing": false,
                   "allow_peer_traffic_routing": true
                 }
@@ -340,6 +347,7 @@ mod tests {
                     },
                     is_local: true,
                     allow_incoming_connections: true,
+                    allow_peer_send_files: true,
                 },
                 Peer {
                     base: PeerBase {
@@ -352,6 +360,7 @@ mod tests {
                     },
                     is_local: false,
                     allow_incoming_connections: false,
+                    allow_peer_send_files: false,
                 },
             ]),
             derp_servers: Some(vec![Server {

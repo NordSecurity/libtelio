@@ -1385,6 +1385,7 @@ impl Runtime {
                     endpoint,
                     hostname: Some(meshnet_peer.base.hostname.clone()),
                     allow_incoming_connections: meshnet_peer.allow_incoming_connections,
+                    allow_peer_send_files: meshnet_peer.allow_peer_send_files,
                     path: path_type,
                 })
             }
@@ -1400,6 +1401,7 @@ impl Runtime {
                     endpoint,
                     hostname: None,
                     allow_incoming_connections: false,
+                    allow_peer_send_files: false,
                     path: path_type,
                 })
             }
