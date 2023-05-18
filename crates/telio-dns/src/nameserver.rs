@@ -11,9 +11,10 @@ use pnet_packet::{
     Packet,
 };
 use std::{
+    collections::HashSet,
     net::{IpAddr, SocketAddr},
     str::FromStr,
-    sync::Arc, collections::HashSet,
+    sync::Arc,
 };
 use tokio::net::UdpSocket;
 use tokio::sync::{RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, Semaphore};
@@ -57,7 +58,9 @@ impl LocalNameServer {
     /// Create a new `LocalNameServer` with forwarding dns servers from `forward_ips`
     /// configured for zone `.`.
     pub async fn new(forward_ips: &[IpAddr]) -> Result<Arc<RwLock<Self>>, String> {
-        let ns = Arc::new(RwLock::new(LocalNameServer {..Default::default()}));
+        let ns = Arc::new(RwLock::new(LocalNameServer {
+            ..Default::default()
+        }));
         ns.forward(forward_ips).await?;
         Ok(ns)
     }
@@ -416,5 +419,4 @@ mod tests {
         assert!(zones.contains(&LowerName::from_str(".").unwrap()));
         assert!(zones.contains(&LowerName::from_str("nord").unwrap()));
     }
-
 }
