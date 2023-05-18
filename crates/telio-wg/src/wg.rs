@@ -702,7 +702,6 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use boringtun::device::peer::Endpoint;
     use lazy_static::lazy_static;
     use mockall::predicate;
     use telio_sockets::NativeProtector;
