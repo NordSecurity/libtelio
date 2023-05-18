@@ -1,6 +1,6 @@
 use crate::{
     resolver::Resolver,
-    zone::{AuthoritativeZone, ClonableZones, ForwardZone, Records, Zones},
+    zone::{AuthoritativeZone, ClonableZones, ForwardZone, Records},
 };
 use async_trait::async_trait;
 use boringtun::noise::{Tunn, TunnResult};
@@ -11,7 +11,6 @@ use pnet_packet::{
     Packet,
 };
 use std::{
-    collections::HashSet,
     net::{IpAddr, SocketAddr},
     str::FromStr,
     sync::Arc,
@@ -59,7 +58,8 @@ impl LocalNameServer {
     /// configured for zone `.`.
     pub async fn new(forward_ips: &[IpAddr]) -> Result<Arc<RwLock<Self>>, String> {
         let ns = Arc::new(RwLock::new(LocalNameServer {
-            ..Default::default()
+            zones: Arc::new(ClonableZones::new()),
+            task_handle: None,
         }));
         ns.forward(forward_ips).await?;
         Ok(ns)
