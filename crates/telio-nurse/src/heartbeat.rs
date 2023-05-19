@@ -223,6 +223,9 @@ pub struct Analytics {
     // All the nodes (public_key, is_local) according to config updates
     config_nodes: HashMap<PublicKey, bool>,
 
+    // Fingerprint for each configured node
+    fingerprints: HashMap<PublicKey, String>,
+
     derp_connection: bool,
 
     /// DERP Server instance
@@ -253,7 +256,7 @@ impl Runtime for Analytics {
                     async move {
                         self.handle_derp_event(*event).await;
                         telio_log_trace!("tokio::select! self.io.derp_event_channel.recv() branch");
-                        Ok(()) 
+                        Ok(())
                     }
                 ),
 
@@ -270,7 +273,7 @@ impl Runtime for Analytics {
             // A collection event has been triggered from the outside, only in the `Monitoring` state
             Ok(_) = self.io.collection_trigger_channel.recv(), if self.state == RuntimeState::Monitoring =>
                 Self::guard(
-                    async move { 
+                    async move {
                         self.handle_collection().await;
                         telio_log_trace!("tokio::select! self.io.collection_trigger_channel.recv() branch");
                         Ok(())
@@ -280,7 +283,7 @@ impl Runtime for Analytics {
             // Time to send a data request to other nodes, only update in the `Monitoring` state
             _ = self.task_interval.tick(), if self.state == RuntimeState::Monitoring =>
                 Self::guard(
-                    async move { 
+                    async move {
                         self.handle_collection().await;
                         telio_log_trace!("tokio::select! self.task_interval.tick() branch");
                         Ok(())
@@ -357,6 +360,7 @@ impl Analytics {
             collection: Collection::default(),
             local_nodes: HashMap::new(),
             config_nodes,
+            fingerprints: HashMap::new(),
             derp_connection: false,
             derp: derp_server,
         }
@@ -639,11 +643,33 @@ impl Analytics {
                 .or_insert_with(|| String::from("null"));
         }
 
+        // Update stored fingerprints
+        for (node, fp) in self.collection.fingerprints.iter() {
+            self.fingerprints
+                .entry(*node)
+                .and_modify(|stored_fp| {
+                    if *fp != "null" {
+                        *stored_fp = fp.clone()
+                    }
+                })
+                .or_insert_with(|| fp.clone());
+        }
+
+        // Drop nodes not present in the collection/config anymore
+        let dropped_nodes: Vec<_> = self
+            .fingerprints
+            .iter()
+            .filter(|(node, _)| !self.collection.fingerprints.contains_key(node))
+            .map(|(node, _)| *node)
+            .collect();
+        for node in dropped_nodes {
+            self.fingerprints.remove(&node);
+        }
+
         // Use BTreeSet to sort out the public keys
         // We sort public keys, instead of sorting by fingerprints, since fingerprints can be empty or null, resulting in
         // multiple same values, which make having a consistent layout for each node awkward to implement
         let internal_sorted_public_keys = self
-            .collection
             .fingerprints
             .iter()
             .map(|x| *x.0)
@@ -651,7 +677,6 @@ impl Analytics {
             .collect::<BTreeSet<_>>();
 
         let mut external_sorted_public_keys = self
-            .collection
             .fingerprints
             .iter()
             .map(|x| *x.0)
@@ -676,7 +701,7 @@ impl Analytics {
             index_map.entry(*pk).or_insert(i as u8);
 
             // By the same token, we can just insert the respective fingerprint into the list of sorted fingerprints
-            if let Some(fp) = self.collection.fingerprints.get(pk).cloned() {
+            if let Some(fp) = self.fingerprints.get(pk).cloned() {
                 internal_sorted_fingerprints.push(fp);
             }
         }
