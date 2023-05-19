@@ -94,7 +94,7 @@ the list `"ip_addresses"`:
 When you find it set it in your bash terminals
 (set the one found in config in `T1a` in `T1b` and the one from `T2a` in `T2b`):
 ```
-ip addr add <IP_ADDRESS> dev <NAME>
+ip addr add <IP_ADDRESS>/10 dev <NAME>
 ip link set up dev <NAME>
 ip link set dev <NAME> mtu 1420
 ```
