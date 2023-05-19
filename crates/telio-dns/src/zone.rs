@@ -203,17 +203,15 @@ impl Authority for ForwardZone {
     }
 }
 
+#[derive(Default)]
 pub(crate) struct ClonableZones {
     zones: Zones,
     names: HashSet<LowerName>,
 }
 
 impl ClonableZones {
-    pub fn new(zones: Zones) -> Self {
-        Self {
-            zones,
-            names: Default::default(),
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn upsert(&mut self, name: LowerName, authority: Box<dyn AuthorityObject>) {

@@ -1,6 +1,6 @@
 use crate::{
     resolver::Resolver,
-    zone::{AuthoritativeZone, ClonableZones, ForwardZone, Records, Zones},
+    zone::{AuthoritativeZone, ClonableZones, ForwardZone, Records},
 };
 use async_trait::async_trait;
 use boringtun::noise::{Tunn, TunnResult};
@@ -47,6 +47,7 @@ pub trait NameServer {
 }
 
 /// Local name server.
+#[derive(Default)]
 pub struct LocalNameServer {
     zones: Arc<ClonableZones>,
     task_handle: Option<JoinHandle<()>>,
@@ -56,14 +57,12 @@ impl LocalNameServer {
     /// Create a new `LocalNameServer` with forwarding dns servers from `forward_ips`
     /// configured for zone `.`.
     pub async fn new(forward_ips: &[IpAddr]) -> Result<Arc<RwLock<Self>>, String> {
-        let mut zones = Zones::new();
-        let forwarding = ForwardZone::new(".", forward_ips).await?;
-        zones.upsert(LowerName::from_str(".")?, Box::new(Arc::new(forwarding)));
-
-        Ok(Arc::new(RwLock::new(LocalNameServer {
-            zones: Arc::new(ClonableZones::new(zones)),
+        let ns = Arc::new(RwLock::new(LocalNameServer {
+            zones: Arc::new(ClonableZones::new()),
             task_handle: None,
-        })))
+        }));
+        ns.forward(forward_ips).await?;
+        Ok(ns)
     }
 }
 
@@ -404,5 +403,20 @@ mod tests {
         let zones = nameserver.zones().await;
         assert!(zones.contains(&LowerName::from_str("nord").unwrap()));
         assert!(zones.contains(&LowerName::from_str("nord2").unwrap()));
+    }
+
+    #[tokio::test]
+    async fn forward_zones_are_cloned_too() {
+        let name1 = "test.nord.".to_owned();
+        let mut records = Records::new();
+        records.insert(name1.clone(), Ipv4Addr::new(100, 69, 69, 69));
+        let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])
+            .await
+            .unwrap();
+        nameserver.upsert("nord.", &records).await.unwrap();
+
+        let zones = nameserver.zones().await;
+        assert!(zones.contains(&LowerName::from_str(".").unwrap()));
+        assert!(zones.contains(&LowerName::from_str("nord").unwrap()));
     }
 }
