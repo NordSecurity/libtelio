@@ -833,7 +833,7 @@ mod tests {
                     interface: None,
                 })
             });
-        wg.set_secret_key(sks).await;
+        wg.set_secret_key(sks).await.unwrap();
         adapter.lock().await.checkpoint();
         assert_eq!(ifa.clone(), wg.get_interface().await.unwrap());
 
@@ -860,7 +860,7 @@ mod tests {
                     interface: None,
                 })
             });
-        wg.set_fwmark(ifa.fwmark).await;
+        wg.set_fwmark(ifa.fwmark).await.unwrap();
         adapter.lock().await.checkpoint();
         assert_eq!(ifa.clone(), wg.get_interface().await.unwrap());
 
@@ -898,7 +898,7 @@ mod tests {
                     interface: None,
                 })
             });
-        wg.add_peer(peer.clone()).await;
+        wg.add_peer(peer.clone()).await.unwrap();
         assert_eq!(
             Some(Box::new(Event {
                 state: PeerState::Connecting,
@@ -943,7 +943,7 @@ mod tests {
                     interface: None,
                 })
             });
-        wg.add_peer(peer.clone()).await;
+        wg.add_peer(peer.clone()).await.unwrap();
         assert_eq!(
             Some(Box::new(Event {
                 state: PeerState::Connecting,
@@ -1011,7 +1011,7 @@ mod tests {
                     interface: None,
                 })
             });
-        wg.add_peer(peer.clone()).await;
+        wg.add_peer(peer.clone()).await.unwrap();
         assert_eq!(
             Some(Box::new(Event {
                 state: PeerState::Connecting,
@@ -1107,7 +1107,7 @@ mod tests {
                     interface: None,
                 })
             });
-        wg.add_peer(peer.clone()).await;
+        wg.add_peer(peer.clone()).await.unwrap();
         adapter.lock().await.checkpoint();
 
         assert_eq!(iface.clone(), wg.get_interface().await.unwrap());
@@ -1129,7 +1129,7 @@ mod tests {
                     interface: None,
                 })
             });
-        wg.del_peer(pubkey).await;
+        wg.del_peer(pubkey).await.unwrap();
         adapter.lock().await.checkpoint();
 
         iface.peers.remove(&pubkey);
@@ -1174,7 +1174,7 @@ mod tests {
                     interface: None,
                 })
             });
-        wg.add_peer(peer.clone()).await;
+        wg.add_peer(peer.clone()).await.unwrap();
         adapter.lock().await.checkpoint();
 
         assert_eq!(iface.clone(), wg.get_interface().await.unwrap());
@@ -1200,7 +1200,7 @@ mod tests {
                     interface: None,
                 })
             });
-        wg.add_peer(peer.clone()).await;
+        wg.add_peer(peer.clone()).await.unwrap();
         adapter.lock().await.checkpoint();
 
         assert_eq!(iface.clone(), wg.get_interface().await.unwrap());
@@ -1214,7 +1214,7 @@ mod tests {
         let Env {
             adapter,
             wg,
-            mut event,
+            event: _event,
             ..
         } = setup().await;
 
