@@ -5,6 +5,8 @@
 * LLT-3554: Add version in FileInfo for windows binary.
 * LLT-3764: Upgrade moose to 0.6.0
 * LLT-3740: Add endpoint gone notification for endpoint providers
+* LLT-3506: Add ip field to node events
+* LLT-3638: Store fingerprints persistently
 
 <br>
 
@@ -18,7 +20,6 @@
 * LLT-3665: Fix missing forward zone after DNS zones clone
 * LLT-3715: Fix incorrect send data length in derpcli manual mode
 * LLT-3710: Fix infinite loop in STUN provider in case of nonet
-* LLT-3506: Add ip field to node events
 
 <br>
 
