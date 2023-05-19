@@ -211,9 +211,7 @@ pub(crate) struct ClonableZones {
 
 impl ClonableZones {
     pub fn new() -> Self {
-        Self {
-            ..Default::default()
-        }
+        Self::default()
     }
 
     pub fn upsert(&mut self, name: LowerName, authority: Box<dyn AuthorityObject>) {
