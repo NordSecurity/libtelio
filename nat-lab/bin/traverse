@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+set -e
+
+# Execute STUN request to acquire UDP port
+addr=$(stun 10.0.1.1 1 -v 2>&1 | grep XorMappedAddress | cut -d'=' -f 2)
+port=$(echo $addr | cut -d':' -f 2)
+
+echo "My reflexive address: $addr, port $port"
+
+# Wait for user to enter "the other side" address
+# Here we expect full UDP reflexive 
+echo "Please enter other side reflexive address\n"
+read -r peer_endpoint
+
+peer_ip=$(echo $peer_endpoint | cut -d':' -f 1)
+peer_port=$(echo $peer_endpoint | cut -d':' -f 2)
+
+echo "Peer's IP: $peer_ip and port: $peer_port"
+echo "Ping" | nc -q 0 -u $peer_ip $peer_port -p $port
+nc -u $peer_ip $peer_port -p $port

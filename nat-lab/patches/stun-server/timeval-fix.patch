@@ -1,0 +1,13 @@
+--- stun_orig/stun-0.97~dfsg/stun.cxx	2023-04-05 12:43:52.000000000 +0000
++++ stun_test/stun-0.97~dfsg/stun.cxx	2023-04-05 10:37:52.107659140 +0000
+@@ -1404,8 +1404,8 @@
+    }
+    
+    struct timeval tv;
+-   tv.tv_sec = 0;
+-   tv.tv_usec = 1000000; // Debian: only run every second (#645671)
++   tv.tv_sec = 1;
++   tv.tv_usec = 0; // Debian: only run every second (#645671)
+ 	
+    int e = select( maxFd, &fdSet, NULL,NULL, &tv );
+    if (e < 0)

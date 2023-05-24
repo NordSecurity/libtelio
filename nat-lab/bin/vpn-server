@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+set -euxo pipefail
+
+/opt/bin/wireguard-go wg0
+wg setconf wg0 /wg0.conf
+
+ip addr add dev wg0 100.64.0.1/10
+ip link set up dev wg0
+
+echo 1 > /proc/sys/net/ipv4/ip_forward
+
+# Configure standart linux NAT, this will be port restricted cone NAT
+iptables -t nat -A POSTROUTING -s 100.64.0.0/10 ! -o wg0 -j MASQUERADE
+
+sleep infinity

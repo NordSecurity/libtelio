@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+set -e
+
+# Acquire public IP address
+public_itf=$(ip route get 10.0.0.1 | egrep -o 'dev [a-z0-9]+' | cut -f 2 -d ' ')
+
+# Configure standart linux NAT, this will be port restricted cone NAT
+iptables -t nat -A POSTROUTING -p tcp -o $public_itf -j MASQUERADE
+
+# incase some1 will need dns, uncomment following lines
+# iptables -A INPUT -p udp --sport 53 -j ACCEPT
+# iptables -A INPUT -p udp --dport 53 -j ACCEPT
+# iptables -A OUTPUT -p udp --sport 53 -j ACCEPT
+# iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
+# iptables -A FORWARD -p udp --sport 53 -j ACCEPT
+# iptables -A FORWARD -p udp --dport 53 -j ACCEPT
+
+iptables -A INPUT -p udp -j DROP
+iptables -A OUTPUT -p udp -j DROP
+iptables -A FORWARD -p udp -j DROP
+
+sleep infinity
