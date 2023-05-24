@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+set -e
+
+upnpd eth0 eth1
+
+echo 1 > /proc/sys/net/ipv4/ip_forward
+
+# Acquire public IP address
+public_ip=$(ip route get 10.0.0.1 | egrep -o 'src [0-9.]+' | cut -f 2 -d ' ')
+public_itf=$(ip route get 10.0.0.1 | egrep -o 'dev [a-z0-9]+' | cut -f 2 -d ' ')
+
+# Configure standart linux NAT, this will be port restricted cone NAT
+iptables -t nat -A POSTROUTING -o $public_itf -j MASQUERADE
+
+
+sleep infinity
