@@ -21,6 +21,7 @@ use std::{
     ffi::{CStr, CString},
     net::{IpAddr, SocketAddr},
     panic,
+    process::abort,
     ptr::null,
     sync::{Mutex, Once},
     time::Duration,
@@ -909,6 +910,11 @@ fn key_to_c_zero_terminated_string_unmanaged(key: &[u8; KEY_SIZE]) -> *mut c_cha
 fn bytes_to_zero_terminated_unmanaged_bytes(bytes: &[u8]) -> *mut c_char {
     let buf = unsafe {
         let buf = libc::malloc(bytes.len() + 1) as *mut u8;
+        if buf.is_null() {
+            // Just like the default allocation failure behaviour of rust std:
+            // https://doc.rust-lang.org/std/alloc/fn.set_alloc_error_hook.html
+            abort();
+        }
         std::slice::from_raw_parts_mut(buf, bytes.len() + 1)
     };
     buf[..bytes.len()].copy_from_slice(bytes);
