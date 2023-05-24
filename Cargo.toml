@@ -6,6 +6,10 @@ edition = "2018"
 license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 
+[package.metadata.cargo-udeps.ignore]
+# Ignore wasm-bindgen dependency on gitlab cargo-lint-udeps
+normal = ["wasm-bindgen"]
+
 [lib]
 crate-type = ["staticlib", "cdylib", "lib"]
 
@@ -32,6 +36,8 @@ tokio = { version = ">=1.22", features = ["full"] }
 async-trait = "0.1.51"
 uuid =  { version = "1.1.2", features = ["v4"] }
 crypto_box = { version = "0.8.2", features = ["std"] }
+wasm-bindgen = "=0.2.83" # Only for compatability with moose wasm version
+
 
 telio-crypto = { version = "0.1.0", path = "./crates/telio-crypto" }
 telio-dns = { version = "0.1.0", path = "./crates/telio-dns" }
