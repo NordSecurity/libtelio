@@ -140,6 +140,11 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
 
 #[async_trait]
 impl<Wg: WireGuard, E: Backoff + 'static> EndpointProvider for StunEndpointProvider<Wg, E> {
+
+    fn name(&self) -> &'static str {
+        return "stun";
+    }
+
     async fn subscribe_for_pong_events(&self, tx: chan::Tx<PongEvent>) {
         let _ = task_exec!(&self.task, async move |s| {
             s.pong_event = Some(tx);

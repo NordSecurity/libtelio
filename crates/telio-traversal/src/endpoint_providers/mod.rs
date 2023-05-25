@@ -90,6 +90,9 @@ pub struct PongEvent {
 #[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
 #[async_trait]
 pub trait EndpointProvider: Sync + Send + 'static {
+    /// Endpoint providers name
+    fn name(&self) -> &'static str;
+
     async fn subscribe_for_pong_events(&self, tx: chan::Tx<PongEvent>);
     async fn subscribe_for_endpoint_candidates_change_events(
         &self,
