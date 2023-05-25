@@ -1,0 +1,78 @@
+name: Build
+on: [push, pull_request]
+permissions: {}
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            target_abi: gnu
+            packages: gcc-multilib
+            target_os: linux
+            runner: ubuntu-22.04
+          - arch: i686
+            target_abi: gnu
+            packages: gcc-multilib
+            target_os: linux
+            runner: ubuntu-22.04
+          - arch: aarch64
+            target_abi: gnu
+            packages: gcc-aarch64-linux-gnu
+            target_os: linux
+            runner: ubuntu-22.04
+          - arch: armv7
+            target_abi: gnueabihf
+            packages: gcc-arm-linux-gnueabihf
+            target_os: linux
+            runner: ubuntu-22.04
+          - arch: armv5
+            target_abi: gnueabi
+            packages: gcc-arm-linux-gnueabi
+            target_os: linux
+            runner: ubuntu-22.04
+          - arch: x86_64
+            target_abi: darwin
+            target_os: macos
+            runner: macos-12
+          - arch: aarch64
+            target_abi: darwin
+            target_os: macos
+            runner: macos-12
+          - arch: aarch64
+            target_abi: ios
+            target_os: macos
+            runner: macos-12
+          - arch: x86_64
+            target_abi: android
+            target_os: android
+            runner: ubuntu-22.04
+          - arch: i686
+            target_abi: android
+            target_os: android
+            runner: ubuntu-22.04
+          - arch: aarch64
+            target_abi: android
+            target_os: android
+            runner: ubuntu-22.04
+          - arch: armv7
+            target_abi: androideabi
+            target_os: android
+            runner: ubuntu-22.04
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          path: libtelio
+      - name: Install packages
+        run: sudo apt-get update && sudo apt-get install ${{ matrix.packages }}
+        if: ${{ matrix.target_os == 'linux' }}
+      - name: Install NDK
+        run: ./libtelio/ci/setup_ndk.sh
+        if: ${{ matrix.target_os == 'android' }}
+      - name: Build libtelio
+        run: python3 libtelio/ci/build_libtelio.py build ${{ matrix.target_os }} ${{ matrix.arch }}
+      - uses: actions/upload-artifact@v3
+        with:
+          name: libtelio-build-${{ matrix.target_os }}-${{ matrix.arch }}-${{ matrix.target_abi }}
+          path: libtelio/dist/
