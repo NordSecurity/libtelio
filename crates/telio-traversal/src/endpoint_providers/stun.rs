@@ -392,8 +392,10 @@ impl<Wg: WireGuard, E: Backoff> Runtime for State<Wg, E> {
             }
             // We are waiting either for stun session to timeout, or for the end of penalty
             _ = &mut self.current_timeout => {
+                // Ensure the backoff in all cases
+                self.current_timeout = PinnedSleep::new(self.exponential_backoff.get_backoff(), ());
+
                 if self.stun_session.take().is_some() {
-                    self.current_timeout = PinnedSleep::new(self.exponential_backoff.get_backoff(), ());
                     self.next_server();
                     if !self.last_candidates.is_empty() {
                         self.last_candidates.clear();
