@@ -807,8 +807,8 @@ mod tests {
     use super::*;
     use crate::{
         cross_ping_check::CrossPingCheck, cross_ping_check::CrossPingCheckTrait,
-        endpoint_providers::EndpointCandidate, endpoint_providers::EndpointProviderType,
-        endpoint_providers::MockEndpointProvider,
+        endpoint_providers, endpoint_providers::EndpointCandidate,
+        endpoint_providers::EndpointProviderType, endpoint_providers::MockEndpointProvider,
     };
 
     struct TestChannels {
@@ -1183,5 +1183,45 @@ mod tests {
                 .exponential_backoff
                 .checkpoint();
         }
+    }
+
+    #[tokio::test]
+    async fn endpoint_connectivity_check_send_ping_to_all_providers_even_if_one_fails() {
+        let endpoint = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080);
+
+        let mut endpoint_provider_mock_1 = MockEndpointProvider::new();
+        endpoint_provider_mock_1
+            .expect_send_ping()
+            .returning(|_, _, _| Err(endpoint_providers::Error::NoWGListenPort));
+
+        let mut endpoint_provider_mock_2 = MockEndpointProvider::new();
+        endpoint_provider_mock_2
+            .expect_send_ping()
+            .returning(|_, _, _| Ok(()));
+
+        let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
+            Machine::new(Disconnected)
+                .transition(SendCallMeMaybeRequest)
+                .as_enum(),
+            endpoint,
+        );
+
+        let cmm_msg = CallMeMaybeMsg::new(false, vec![endpoint].into_iter(), 1);
+        endpoint_connectivity_check_state
+            .handle_call_me_maybe_response_rxed_event(
+                1,
+                (PublicKey::default(), cmm_msg),
+                vec![
+                    Arc::new(endpoint_provider_mock_1),
+                    Arc::new(endpoint_provider_mock_2),
+                ],
+            )
+            .await
+            .unwrap();
+
+        assert_matches!(
+            endpoint_connectivity_check_state.state,
+            PingByReceiveCallMeMaybeResponse(_)
+        );
     }
 }
