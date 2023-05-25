@@ -459,8 +459,16 @@ impl<E: Backoff> State<E> {
 
                 for endpoint in endpoints {
                     for ep in &self.endpoint_providers {
-                        if ep.send_ping(endpoint, local_session_id, public_key).await.is_err() {
-                            telio_log_info!("Endpoint provider {:?} failed to ping via {:?}. Will retry later", ep.name(), endpoint);
+                        if ep
+                            .send_ping(endpoint, local_session_id, public_key)
+                            .await
+                            .is_err()
+                        {
+                            telio_log_info!(
+                                "Endpoint provider {:?} failed to ping via {:?}. Will retry later",
+                                ep.name(),
+                                endpoint
+                            );
                         }
                     }
                 }
@@ -653,9 +661,12 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
                 for addr in message.get_addrs() {
                     for ep in &ep_providers {
                         if ep.send_ping(addr, session_id, public_key).await.is_err() {
-                            telio_log_info!("Endpoint provider {:?} failed to ping via {:?}. Will retry later", ep.name(), addr);
+                            telio_log_info!(
+                                "Endpoint provider {:?} failed to ping via {:?}. Will retry later",
+                                ep.name(),
+                                addr
+                            );
                         }
-
                     }
                 }
                 do_state_transition!(m, ReceiveCallMeMaybeResponse, self);

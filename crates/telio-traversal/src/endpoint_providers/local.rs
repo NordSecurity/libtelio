@@ -56,7 +56,6 @@ pub struct State<T: WireGuard, G: GetIfAddrs> {
 
 #[async_trait]
 impl<T: WireGuard, G: GetIfAddrs> EndpointProvider for LocalInterfacesEndpointProvider<T, G> {
-
     fn name(&self) -> &'static str {
         return "local";
     }
