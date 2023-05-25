@@ -133,7 +133,7 @@ impl<Wg: WireGuard, I: IgdCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E> {
 #[async_trait]
 impl<Wg: WireGuard> EndpointProvider for UpnpEndpointProvider<Wg> {
     fn name(&self) -> &'static str {
-        return "UPnP";
+        "UPnP"
     }
 
     async fn subscribe_for_pong_events(&self, tx: Tx<PongEvent>) {
