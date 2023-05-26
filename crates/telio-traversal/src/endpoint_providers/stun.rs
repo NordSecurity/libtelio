@@ -1132,26 +1132,26 @@ mod tests {
         let mut wg = MockWg::new();
 
         // Expect two calls into get_interface, one on config one on periodic timer
-        wg.expect_get_interface().returning(move || {
-            Err(telio_wg::Error::UnsupportedOperationError)
-        }).times(2);
-
+        wg.expect_get_interface()
+            .returning(move || Err(telio_wg::Error::UnsupportedOperationError))
+            .times(2);
 
         // We need to prepare some more complex mock to test if it is used properly
         let backoff_array = [100, 200, 300, 400, 500, 600];
         let public_key = SecretKey::gen().public();
         let env = prepare_test_env_with_server_weights_and_mockwg(
-                Some(backoff_array),
-                vec!(Server {
-                    public_key,
-                    stun_port: 3479,
-                    stun_plaintext_port: 3478,
-                    weight: 0,
-                    ..Default::default()
-                }),
-                Vec::new(),
-                wg,
-            ).await;
+            Some(backoff_array),
+            vec![Server {
+                public_key,
+                stun_port: 3479,
+                stun_plaintext_port: 3478,
+                weight: 0,
+                ..Default::default()
+            }],
+            Vec::new(),
+            wg,
+        )
+        .await;
 
         env.configure_env().await;
 
@@ -1163,7 +1163,6 @@ mod tests {
         task::yield_now().await;
         time::advance(Duration::from_millis(10)).await;
         task::yield_now().await;
-
     }
 
     // Test helpers
