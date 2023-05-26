@@ -6,6 +6,7 @@
 * LLT-3603: Add support for `allow_peer_send_files` to meshconfig
 * LLT-3668: Stop Nurse before Derp
 * LLT-3665: Fix missing forward zone after DNS zones clone
+* LLT-3715: Fix incorrect send data length in derpcli manual mode
 
 <br>
 
