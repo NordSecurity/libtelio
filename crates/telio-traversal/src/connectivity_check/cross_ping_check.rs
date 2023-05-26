@@ -456,21 +456,14 @@ impl<E: Backoff> State<E> {
                     .map(|(k, v)| (v.public_key, *k))
                     .find(|(pk, _)| *pk == public_key)
                     .ok_or(Error::UnexpectedPeer(public_key))?;
-
                 for endpoint in endpoints {
-                    for ep in &self.endpoint_providers {
-                        if ep
-                            .send_ping(endpoint, local_session_id, public_key)
-                            .await
-                            .is_err()
-                        {
-                            telio_log_info!(
-                                "Endpoint provider {:?} failed to ping via {:?}. Will retry later",
-                                ep.name(),
-                                endpoint
-                            );
-                        }
-                    }
+                    Self::send_ping_via_all_endpoint_providers(
+                        &self.endpoint_providers,
+                        endpoint,
+                        local_session_id,
+                        public_key,
+                    )
+                    .await?;
                 }
 
                 let remote_session_id = message.get_session();
@@ -515,6 +508,33 @@ impl<E: Backoff> State<E> {
                 .handle_tick_event(*session, self.io.intercoms.tx.clone())
                 .await?;
         }
+        Ok(())
+    }
+
+    // Ping other node via all endpoint providers. Single Endpoint provider failure should not
+    // prevent others from attempting the ping.
+    async fn send_ping_via_all_endpoint_providers(
+        ep_providers: &Vec<Arc<dyn EndpointProvider>>,
+        target: SocketAddr,
+        session_id: Session,
+        public_key: PublicKey,
+    ) -> Result<(), Error> {
+        for ep in ep_providers {
+            telio_log_trace!(
+                "Pinging {:?} endpoint {:?}, via {:?} endpoint provider",
+                public_key,
+                target,
+                ep.name()
+            );
+            if ep.send_ping(target, session_id, public_key).await.is_err() {
+                telio_log_warn!(
+                    "Endpoint provider {:?} failed to ping via {:?}. Will retry later",
+                    ep.name(),
+                    target
+                );
+            }
+        }
+
         Ok(())
     }
 }
@@ -658,17 +678,17 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
                     public_key,
                     message
                 );
+
                 for addr in message.get_addrs() {
-                    for ep in &ep_providers {
-                        if ep.send_ping(addr, session_id, public_key).await.is_err() {
-                            telio_log_info!(
-                                "Endpoint provider {:?} failed to ping via {:?}. Will retry later",
-                                ep.name(),
-                                addr
-                            );
-                        }
-                    }
+                    State::<E>::send_ping_via_all_endpoint_providers(
+                        &ep_providers,
+                        addr,
+                        session_id,
+                        public_key,
+                    )
+                    .await?;
                 }
+
                 do_state_transition!(m, ReceiveCallMeMaybeResponse, self);
             }
             _ => {
