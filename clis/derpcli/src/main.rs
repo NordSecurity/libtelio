@@ -227,7 +227,7 @@ async fn connect_client(
                     if verbose {
                         let receiver_pub_key: telio_crypto::PublicKey = peer.public();
                         println!(
-                            "* [{}] -> Send {}b via [{}] to [{}], after {:.3}s",
+                            "* [{}] -> Send {}B via [{}] to [{}], after {:.3}s",
                             get_client_debug_key(&client),
                             payload_len,
                             client.derp_server.get(8..15).unwrap_or_default(),
@@ -305,7 +305,7 @@ async fn connect_client(
 
                         if verbose {
                             println!(
-                                "* [{}] -> Recv {}b from [{}], RTT: {}ms",
+                                "* [{}] -> Recv {}B from [{}], RTT: {}ms",
                                 get_client_debug_key(&client),
                                 payload_len,
                                 &sender_pub_key.to_string()[0..4],
@@ -391,22 +391,18 @@ async fn run_without_clients_config(config: conf::Config) -> Result<()> {
         }
     } else {
         // if running as sender - send series of messages
-        let mut n = 1;
+        let mut counter = 1;
         let mut exit = false;
-
         let pkey = config.target_key.public();
-
-        let mut data_to_send = config.send_data.to_string();
-        // if requested, create data to send of given size
-        if config.send_size_enabled {
-            let arr = vec!['u'; config.send_size.into()];
-            data_to_send = arr.into_iter().collect();
-        }
 
         println!("DERP CLI SENDING");
 
         while !exit {
-            let str = format!("{} {}", data_to_send, n);
+            let data = if config.send_size_enabled {
+                create_buffer(config.send_size as usize, counter)
+            } else {
+                format!("{} {}", config.send_data.to_string(), counter)
+            };
 
             if config.verbose == 1 {
                 print!(".");
@@ -415,12 +411,12 @@ async fn run_without_clients_config(config: conf::Config) -> Result<()> {
                 println!(
                     "SENDING: [{}] -> [{}] -> [{}]",
                     &config.get_pub_key1_b64(),
-                    str,
+                    data,
                     &config.get_pub_key2_b64()
                 )
             }
 
-            if let Err(rc) = comms.tx.send((pkey, str.as_bytes().to_vec())).await {
+            if let Err(rc) = comms.tx.send((pkey, data.as_bytes().to_vec())).await {
                 // error handling
                 println!("Error on sending: {}", rc);
                 process_exit(1);
@@ -428,16 +424,29 @@ async fn run_without_clients_config(config: conf::Config) -> Result<()> {
 
             tokio::time::sleep(config.send_delay).await;
 
-            n += 1;
+            counter += 1;
 
             if config.send_loop {
                 exit = false;
             } else {
-                exit = n > config.send_count;
+                exit = counter > config.send_count;
             }
         }
     }
     Ok(())
+}
+
+fn create_buffer(size: usize, counter: i32) -> String {
+    let mut buf = format!("{}B", size);
+    let middle_point = buf.len();
+    buf.insert_str(middle_point, &format!("#{}", counter));
+    let filler = ".".repeat(if size > buf.len() {
+        size - buf.len()
+    } else {
+        0
+    });
+    buf.insert_str(middle_point, &filler);
+    buf[buf.len() - size..].to_string()
 }
 
 #[tokio::main]
@@ -649,4 +658,29 @@ async fn run_with_clients_config(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::*;
+
+    #[rstest]
+    #[case(00, 001, "")]
+    #[case(01, 001, "1")]
+    #[case(01, 002, "2")]
+    #[case(01, 010, "0")]
+    #[case(02, 001, "#1")]
+    #[case(02, 002, "#2")]
+    #[case(02, 010, "10")]
+    #[case(05, 001, "5B.#1")]
+    #[case(05, 002, "5B.#2")]
+    #[case(05, 010, "5B#10")]
+    #[case(10, 001, "10B.....#1")]
+    #[case(10, 002, "10B.....#2")]
+    #[case(10, 010, "10B....#10")]
+    #[case(10, 100, "10B...#100")]
+    fn test_create_buffer(#[case] size: usize, #[case] counter: i32, #[case] expected_buf: String) {
+        assert_eq!(create_buffer(size, counter), expected_buf);
+    }
 }
