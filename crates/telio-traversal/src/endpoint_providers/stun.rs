@@ -1127,6 +1127,45 @@ mod tests {
         }
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn exponential_backoff_is_applied_even_if_session_start_failed() {
+        let mut wg = MockWg::new();
+
+        // Expect two calls into get_interface, one on config one on periodic timer
+        wg.expect_get_interface().returning(move || {
+            Err(telio_wg::Error::UnsupportedOperationError)
+        }).times(2);
+
+
+        // We need to prepare some more complex mock to test if it is used properly
+        let backoff_array = [100, 200, 300, 400, 500, 600];
+        let public_key = SecretKey::gen().public();
+        let env = prepare_test_env_with_server_weights_and_mockwg(
+                Some(backoff_array),
+                vec!(Server {
+                    public_key,
+                    stun_port: 3479,
+                    stun_plaintext_port: 3478,
+                    weight: 0,
+                    ..Default::default()
+                }),
+                Vec::new(),
+                wg,
+            ).await;
+
+        env.configure_env().await;
+
+        // Ensure that get_interface is not called multiple times in one backoff period
+        // Expectation of single call is already set in mock wg
+        jump_to_next_session_start(STUN_TIMEOUT).await;
+        task::yield_now().await;
+        time::advance(Duration::from_millis(10)).await;
+        task::yield_now().await;
+        time::advance(Duration::from_millis(10)).await;
+        task::yield_now().await;
+
+    }
+
     // Test helpers
 
     mock! {
@@ -1191,22 +1230,6 @@ mod tests {
         let mut wg = MockWg::default();
         let wg_port = 12345;
 
-        let socket_pool = SocketPool::new(NativeProtector::new().unwrap());
-
-        let provider_ext_socket = socket_pool
-            .new_external_udp((Ipv4Addr::LOCALHOST, 0), None)
-            .await
-            .expect("Cannot create UdpSocket");
-        let provider_ext_addr = provider_ext_socket.local_addr().expect("provider ext addr");
-        println!("ext_sock: {}", provider_ext_addr);
-
-        let provider_tun_socket = socket_pool
-            .new_internal_udp((Ipv4Addr::LOCALHOST, 0), None)
-            .await
-            .expect("crate tun socket");
-        let provider_tun_addr = provider_tun_socket.local_addr().expect("provider tun addr");
-        println!("tun_sock: {}", provider_tun_addr);
-
         let mut stun_servers = Vec::<Server>::new();
         let mut stun_peers = Vec::<StunPeerSockets>::new();
         let mut wg_peers = Vec::<(PublicKey, Peer)>::new();
@@ -1265,6 +1288,32 @@ mod tests {
                 ..Default::default()
             })
         });
+
+        prepare_test_env_with_server_weights_and_mockwg(backoff_array, stun_servers, stun_peers, wg)
+            .await
+    }
+
+    async fn prepare_test_env_with_server_weights_and_mockwg(
+        backoff_array: Option<[u64; 6]>,
+        stun_servers: Vec<Server>,
+        stun_peers: Vec<StunPeerSockets>,
+        wg: MockWg,
+    ) -> Env {
+        let socket_pool = SocketPool::new(NativeProtector::new().unwrap());
+
+        let provider_ext_socket = socket_pool
+            .new_external_udp((Ipv4Addr::LOCALHOST, 0), None)
+            .await
+            .expect("Cannot create UdpSocket");
+        let provider_ext_addr = provider_ext_socket.local_addr().expect("provider ext addr");
+        println!("ext_sock: {}", provider_ext_addr);
+
+        let provider_tun_socket = socket_pool
+            .new_internal_udp((Ipv4Addr::LOCALHOST, 0), None)
+            .await
+            .expect("crate tun socket");
+        let provider_tun_addr = provider_tun_socket.local_addr().expect("provider tun addr");
+        println!("tun_sock: {}", provider_tun_addr);
 
         let Chan {
             rx: stun_peer_subscriber,
