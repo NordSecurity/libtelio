@@ -456,11 +456,14 @@ impl<E: Backoff> State<E> {
                     .map(|(k, v)| (v.public_key, *k))
                     .find(|(pk, _)| *pk == public_key)
                     .ok_or(Error::UnexpectedPeer(public_key))?;
-
                 for endpoint in endpoints {
-                    for ep in &self.endpoint_providers {
-                        ep.send_ping(endpoint, local_session_id, public_key).await?;
-                    }
+                    Self::send_ping_via_all_endpoint_providers(
+                        &self.endpoint_providers,
+                        endpoint,
+                        local_session_id,
+                        public_key,
+                    )
+                    .await?;
                 }
 
                 let remote_session_id = message.get_session();
@@ -505,6 +508,33 @@ impl<E: Backoff> State<E> {
                 .handle_tick_event(*session, self.io.intercoms.tx.clone())
                 .await?;
         }
+        Ok(())
+    }
+
+    // Ping other node via all endpoint providers. Single Endpoint provider failure should not
+    // prevent others from attempting the ping.
+    async fn send_ping_via_all_endpoint_providers(
+        ep_providers: &Vec<Arc<dyn EndpointProvider>>,
+        target: SocketAddr,
+        session_id: Session,
+        public_key: PublicKey,
+    ) -> Result<(), Error> {
+        for ep in ep_providers {
+            telio_log_trace!(
+                "Pinging {:?} endpoint {:?}, via {:?} endpoint provider",
+                public_key,
+                target,
+                ep.name()
+            );
+            if ep.send_ping(target, session_id, public_key).await.is_err() {
+                telio_log_warn!(
+                    "Endpoint provider {:?} failed to ping via {:?}. Will retry later",
+                    ep.name(),
+                    target
+                );
+            }
+        }
+
         Ok(())
     }
 }
@@ -648,11 +678,17 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
                     public_key,
                     message
                 );
+
                 for addr in message.get_addrs() {
-                    for ep in &ep_providers {
-                        ep.send_ping(addr, session_id, public_key).await?;
-                    }
+                    State::<E>::send_ping_via_all_endpoint_providers(
+                        &ep_providers,
+                        addr,
+                        session_id,
+                        public_key,
+                    )
+                    .await?;
                 }
+
                 do_state_transition!(m, ReceiveCallMeMaybeResponse, self);
             }
             _ => {
@@ -791,8 +827,8 @@ mod tests {
     use super::*;
     use crate::{
         cross_ping_check::CrossPingCheck, cross_ping_check::CrossPingCheckTrait,
-        endpoint_providers::EndpointCandidate, endpoint_providers::EndpointProviderType,
-        endpoint_providers::MockEndpointProvider,
+        endpoint_providers, endpoint_providers::EndpointCandidate,
+        endpoint_providers::EndpointProviderType, endpoint_providers::MockEndpointProvider,
     };
 
     struct TestChannels {
@@ -1167,5 +1203,45 @@ mod tests {
                 .exponential_backoff
                 .checkpoint();
         }
+    }
+
+    #[tokio::test]
+    async fn endpoint_connectivity_check_send_ping_to_all_providers_even_if_one_fails() {
+        let endpoint = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080);
+
+        let mut endpoint_provider_mock_1 = MockEndpointProvider::new();
+        endpoint_provider_mock_1
+            .expect_send_ping()
+            .returning(|_, _, _| Err(endpoint_providers::Error::NoWGListenPort));
+
+        let mut endpoint_provider_mock_2 = MockEndpointProvider::new();
+        endpoint_provider_mock_2
+            .expect_send_ping()
+            .returning(|_, _, _| Ok(()));
+
+        let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
+            Machine::new(Disconnected)
+                .transition(SendCallMeMaybeRequest)
+                .as_enum(),
+            endpoint,
+        );
+
+        let cmm_msg = CallMeMaybeMsg::new(false, vec![endpoint].into_iter(), 1);
+        endpoint_connectivity_check_state
+            .handle_call_me_maybe_response_rxed_event(
+                1,
+                (PublicKey::default(), cmm_msg),
+                vec![
+                    Arc::new(endpoint_provider_mock_1),
+                    Arc::new(endpoint_provider_mock_2),
+                ],
+            )
+            .await
+            .unwrap();
+
+        assert_matches!(
+            endpoint_connectivity_check_state.state,
+            PingByReceiveCallMeMaybeResponse(_)
+        );
     }
 }

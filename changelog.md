@@ -1,4 +1,4 @@
-### UNRELEASED
+### v4.0.3
 ### **Bruschetta**
 ---
 * LLT-3113: Add upnp endpoint provider
@@ -7,6 +7,7 @@
 * LLT-3668: Stop Nurse before Derp
 * LLT-3665: Fix missing forward zone after DNS zones clone
 * LLT-3715: Fix incorrect send data length in derpcli manual mode
+* LLT-3710: Fix infinite loop in STUN provider in case of nonet
 
 <br>
 

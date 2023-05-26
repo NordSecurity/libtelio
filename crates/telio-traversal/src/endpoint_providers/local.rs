@@ -56,6 +56,10 @@ pub struct State<T: WireGuard, G: GetIfAddrs> {
 
 #[async_trait]
 impl<T: WireGuard, G: GetIfAddrs> EndpointProvider for LocalInterfacesEndpointProvider<T, G> {
+    fn name(&self) -> &'static str {
+        "local"
+    }
+
     async fn subscribe_for_pong_events(&self, tx: chan::Tx<PongEvent>) {
         task_exec!(&self.task, async move |s| {
             s.pong_publisher = Some(tx);
