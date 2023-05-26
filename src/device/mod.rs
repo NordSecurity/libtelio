@@ -815,11 +815,10 @@ impl Runtime {
             // Create endpoint providers
             let has_provider = |provider| {
                 // Default is all providers
-                direct
-                    .providers
-                    .as_ref()
-                    .map(|p| p.contains(&provider))
-                    .unwrap_or(true)
+                match direct.providers.as_ref().map(|p| p.contains(&provider)) {
+                    Some(prov) => prov,
+                    None => provider != Upnp,
+                }
             };
 
             use telio_model::api_config::EndpointProvider::*;
