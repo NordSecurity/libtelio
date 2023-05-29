@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+set -ex
+
+echo 1 > /proc/sys/net/ipv4/ip_forward
+
+pushd /opt/iptables
+make install
+popd
+
+# Configure standard FW
+iptables -t filter -A INPUT -i lo -j ACCEPT
+iptables -t filter -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -t filter -P INPUT DROP
+
+# Configure Full-cone NAT
+iptables -t nat -A POSTROUTING -o eth1 -j FULLCONENAT
+iptables -t nat -A PREROUTING -i eth1 -j FULLCONENAT
+
+sleep infinity
