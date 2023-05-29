@@ -350,7 +350,7 @@ impl<Wg: WireGuard, I: IgdCommands, E: Backoff> State<Wg, I, E> {
 
 #[async_trait]
 impl<Wg: WireGuard, I: IgdCommands, E: Backoff> Runtime for State<Wg, I, E> {
-    const NAME: &'static str = "Upnp";
+    const NAME: &'static str = "UpnpEndpointProvider";
 
     type Err = ();
 
