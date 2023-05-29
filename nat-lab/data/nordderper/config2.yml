@@ -1,0 +1,31 @@
+mode: debug
+port: 8765
+verify-clients: false
+private_key: sC2x/5mzz2dY6GsHlwsI9m5Cr9DrIz27lnIu9iSMAGs=
+mesh:
+  key: WFgTuIAdXHc4OqT9STt3C1TAOov2903vdbzUrjOTQ2M=
+  peers:
+    - http://10.0.10.1:8765
+    - http://10.0.10.3:8765
+tls:
+  enabled: false
+  certificate: /etc/mesh-relay/fullchain.pem
+  key: /etc/mesh-relay/privkey.pem
+stun:
+  enabled: true
+  port: 3478
+wg-stun:
+  enabled: true
+  port: 3479
+logging:
+  enabled: true
+  filename: relay.log
+  max_size: 500
+  max_backups: 5
+  max_age: 28
+  compress: false
+radius:
+  server: ""
+  port: 0
+  nas-id: ""
+  secret: ""

@@ -1,0 +1,614 @@
+version: '3.2'
+
+services:
+  base:
+    image: nat-lab:base
+    build:
+      context: .
+      args:
+        CONTAINER_REGISTRY: $CONTAINER_REGISTRY
+        NAT_LAB_DEPS_TAG: $NAT_LAB_DEPS_TAG
+    profiles:
+      - base
+
+  # Just some publicly-routable service over TCP. To access
+  # it just simply run `curl photo-album`
+  photo-album:
+    hostname: photo-album
+    image: nat-lab:base
+    entrypoint: /usr/bin/python3 -m http.server --directory /srv/www 80
+    networks:
+      internet:
+        ipv4_address: 10.0.80.80
+    volumes:
+      - type: bind
+        source: ./data/photo.png
+        target: /srv/www/photo.png
+        read_only: true
+
+  # Plain STUN server. This can be used for doing some simple testing,
+  # but note that for libtelio, we are not using plaintext STUN.
+  stun-01:
+    hostname: stun-01
+    image: nat-lab:base
+    entrypoint: /opt/bin/stun-server
+    privileged: true
+    networks:
+      internet:
+        # This container requires two IP addresses to operate,
+        # therefore it takes the specified IP address and an
+        # IP address + 1. The logic for this is inside bin/stun-server.
+        ipv4_address: 10.0.1.1
+    logging:
+      options:
+        max-size: 50m
+
+  # Run two DERP servers configured to run in a cluster
+  derp-01:
+    hostname: derp-01
+    image: nat-lab:base
+    entrypoint: /usr/bin/nordderper
+    networks:
+      internet:
+        ipv4_address: 10.0.10.1
+    volumes:
+      - ./data/nordderper/config1.yml:/etc/nordderper/config.yml
+    working_dir: /etc/nordderper
+  derp-02:
+    hostname: derp-02
+    image: nat-lab:base
+    entrypoint: /usr/bin/nordderper
+    networks:
+      internet:
+        ipv4_address: 10.0.10.2
+    volumes:
+      - ./data/nordderper/config2.yml:/etc/nordderper/config.yml
+    working_dir: /etc/nordderper
+  derp-03:
+    hostname: derp-03
+    image: nat-lab:base
+    entrypoint: /usr/bin/nordderper
+    networks:
+      internet:
+        ipv4_address: 10.0.10.3
+    volumes:
+      - ./data/nordderper/config3.yml:/etc/nordderper/config.yml
+    working_dir: /etc/nordderper
+
+  # Two VPN servers
+  vpn-01:
+    hostname: vpn-01
+    image: nat-lab:base
+    entrypoint: /opt/bin/vpn-server
+    networks:
+      internet:
+        ipv4_address: 10.0.100.1
+    privileged: true
+  vpn-02:
+    hostname: vpn-02
+    image: nat-lab:base
+    entrypoint: /opt/bin/vpn-server
+    networks:
+      internet:
+        ipv4_address: 10.0.100.2
+    privileged: true
+
+  # Create gateway for first cone network
+  cone-gw-01:
+    hostname: cone-gw-01
+    image: nat-lab:base
+    entrypoint: /opt/bin/cone-gw
+    privileged: true
+    networks:
+      internet:
+        ipv4_address: 10.0.254.1
+      cone-net-01:
+        ipv4_address: 192.168.101.254
+
+  # Create one open internet client for
+  # cryptography tests
+  open-internet-client-01:
+    hostname: open-client-01
+    image: nat-lab:base
+    entrypoint: /opt/bin/client
+    privileged: true
+    networks:
+      internet:
+        ipv4_address: 10.0.11.2
+    environment:
+      CLIENT_GATEWAY_PRIMARY: none
+    extra_hosts:
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+    volumes:
+      - ../../:/libtelio-build
+  # Create one open internet client for
+  # cryptography tests
+  open-internet-client-02:
+    hostname: open-client-02
+    image: nat-lab:base
+    entrypoint: /opt/bin/client
+    privileged: true
+    networks:
+      internet:
+        ipv4_address: 10.0.11.3
+    environment:
+      CLIENT_GATEWAY_PRIMARY: none
+    extra_hosts:
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+    volumes:
+      - ../../:/libtelio-build
+
+  # Create one client for cone network, this client will use
+  # the above gateway as its route to the "internet"
+  cone-client-01:
+    hostname: cone-client-01
+    image: nat-lab:base
+    entrypoint: /opt/bin/client
+    privileged: true
+    networks:
+      cone-net-01:
+        ipv4_address: 192.168.101.104
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.101.254
+    extra_hosts:
+      - "photo-album:10.0.80.80"
+      - "stun-01:10.0.1.1"
+      - "stun-02:10.0.1.245"
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+    volumes:
+      - ../../:/libtelio-build
+
+  # Create gateway for second cone network
+  cone-gw-02:
+    hostname: cone-gw-02
+    image: nat-lab:base
+    entrypoint: /opt/bin/cone-gw
+    privileged: true
+    networks:
+      internet:
+        ipv4_address: 10.0.254.2
+      cone-net-02:
+        ipv4_address: 192.168.102.254
+  # Create one client for cone network, this client will use
+  # the above gateway as its route to the "internet"
+  cone-client-02:
+    hostname: cone-client-02
+    image: nat-lab:base
+    entrypoint: /opt/bin/client
+    privileged: true
+    networks:
+      cone-net-02:
+        ipv4_address: 192.168.102.54
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.102.254
+    extra_hosts:
+      - "photo-album:10.0.80.80"
+      - "stun-01:10.0.1.1"
+      - "stun-02:10.0.1.245"
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+    volumes:
+      - ../../:/libtelio-build
+
+  symmetric-gw-01:
+    hostname: symmetric-gw-01
+    image: nat-lab:base
+    entrypoint: /opt/bin/symmetric-gw
+    privileged: true
+    networks:
+      internet:
+        ipv4_address: 10.0.254.3
+      hsymmetric-net-01:
+        ipv4_address: 192.168.103.254
+
+  symmetric-client-01:
+    hostname: symmetric-client-01
+    image: nat-lab:base
+    entrypoint: /opt/bin/client
+    privileged: true
+    networks:
+      hsymmetric-net-01:
+        ipv4_address: 192.168.103.88
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.103.254
+    extra_hosts:
+      - "photo-album:10.0.80.80"
+      - "stun-01:10.0.1.1"
+      - "stun-02:10.0.1.245"
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+    volumes:
+      - ../../:/libtelio-build
+
+  symmetric-gw-02:
+    hostname: symmetric-gw-02
+    image: nat-lab:base
+    entrypoint: /opt/bin/symmetric-gw
+    privileged: true
+    networks:
+      internet:
+        ipv4_address: 10.0.254.4
+      hsymmetric-net-02:
+        ipv4_address: 192.168.104.254
+
+  symmetric-client-02:
+    hostname: symmetric-client-02
+    image: nat-lab:base
+    entrypoint: /opt/bin/client
+    privileged: true
+    networks:
+      hsymmetric-net-02:
+        ipv4_address: 192.168.104.88
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.104.254
+    extra_hosts:
+      - "photo-album:10.0.80.80"
+      - "stun-01:10.0.1.1"
+      - "stun-02:10.0.1.245"
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+    volumes:
+      - ../../:/libtelio-build
+
+  fullcone-gw-01:
+    hostname: fullcone-gw-01
+    image: nat-lab:base
+    entrypoint: /opt/bin/fullcone-gw
+    privileged: true
+    cap_add:
+      - ALL
+    networks:
+      internet:
+        ipv4_address: 10.0.254.9
+      fullcone-net-01:
+        ipv4_address: 192.168.109.254
+
+  fullcone-client-01:
+    hostname: fullcone-client-01
+    image: nat-lab:base
+    entrypoint: /opt/bin/client
+    privileged: true
+    networks:
+      fullcone-net-01:
+        ipv4_address: 192.168.109.88
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.109.254
+    extra_hosts:
+      - "photo-album:10.0.80.80"
+      - "stun-01:10.0.1.1"
+      - "stun-02:10.0.1.245"
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+    volumes:
+      - ../../:/libtelio-build
+
+  fullcone-gw-02:
+    hostname: fullcone-gw-02
+    image: nat-lab:base
+    entrypoint: /opt/bin/fullcone-gw
+    privileged: true
+    cap_add:
+      - ALL
+    networks:
+      internet:
+        ipv4_address: 10.0.254.6
+      fullcone-net-02:
+        ipv4_address: 192.168.106.254
+
+  fullcone-client-02:
+    hostname: fullcone-client-02
+    image: nat-lab:base
+    entrypoint: /opt/bin/client
+    privileged: true
+    networks:
+      fullcone-net-02:
+        ipv4_address: 192.168.106.88
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.106.254
+    extra_hosts:
+      - "photo-album:10.0.80.80"
+      - "stun-01:10.0.1.1"
+      - "stun-02:10.0.1.245"
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+    volumes:
+      - ../../:/libtelio-build
+
+  upnp-gw-01:
+    hostname: upnp-gw-01
+    image: nat-lab:base
+    entrypoint: /opt/bin/upnp-gw
+    privileged: true
+    networks:
+      internet:
+        ipv4_address: 10.0.254.5
+      upnp-net-01:
+        ipv4_address: 192.168.105.254
+
+  upnp-client-01:
+    hostname: upnp-client-01
+    image: nat-lab:base
+    entrypoint: /opt/bin/client
+    privileged: true
+    networks:
+      upnp-net-01:
+        ipv4_address: 192.168.105.88
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.105.254
+    extra_hosts:
+      - "photo-album:10.0.80.80"
+      - "stun-01:10.0.1.1"
+      - "stun-02:10.0.1.245"
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+    volumes:
+      - ../../:/libtelio-build
+
+  shared-client-01:
+    hostname: shared-client-01
+    image: nat-lab:base
+    entrypoint: /opt/bin/client
+    privileged: true
+    networks:
+      cone-net-01:
+        ipv4_address: 192.168.101.67
+      cone-net-02:
+        ipv4_address: 192.168.102.67
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.101.254
+      CLIENT_GATEWAY_SECONDARY: 192.168.102.254
+    extra_hosts:
+      - "photo-album:10.0.80.80"
+      - "stun-01:10.0.1.1"
+      - "stun-02:10.0.1.245"
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+    volumes:
+      - ../../:/libtelio-build
+
+  udp-block-client-01:
+    hostname: udp-block-client-01
+    image: nat-lab:base
+    entrypoint: /opt/bin/client
+    privileged: true
+    networks:
+      udp-block-net-01:
+        ipv4_address: 192.168.110.100
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.110.254
+    extra_hosts:
+      - "photo-album:10.0.80.80"
+      - "stun-01:10.0.1.1"
+      - "stun-02:10.0.1.245"
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+    volumes:
+      - ../../:/libtelio-build
+
+  # Create gateway which block all udp traffic
+  udp-block-gw-01:
+    hostname: udp-block-gw-01
+    image: nat-lab:base
+    entrypoint: /opt/bin/udp-block-gw
+    privileged: true
+    networks:
+      internet:
+        ipv4_address: 10.0.254.10
+      udp-block-net-01:
+        ipv4_address: 192.168.110.254
+
+  udp-block-client-02:
+    hostname: udp-block-client-02
+    image: nat-lab:base
+    entrypoint: /opt/bin/client
+    privileged: true
+    networks:
+      udp-block-net-02:
+        ipv4_address: 192.168.111.100
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.111.254
+    extra_hosts:
+      - "photo-album:10.0.80.80"
+      - "stun-01:10.0.1.1"
+      - "stun-02:10.0.1.245"
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+    volumes:
+      - ../../:/libtelio-build
+
+  # Create gateway which block all udp traffic
+  udp-block-gw-02:
+    hostname: udp-block-gw-02
+    image: nat-lab:base
+    entrypoint: /opt/bin/udp-block-gw
+    privileged: true
+    networks:
+      internet:
+        ipv4_address: 10.0.254.11
+      udp-block-net-02:
+        ipv4_address: 192.168.111.254
+
+  # These gateways are dedicated for VM network routing. VM traffic is gonna be routed into
+  # docker network through these gateways.
+  cone-gw-03:
+    hostname: cone-gw-03
+    image: nat-lab:base
+    entrypoint: /opt/bin/cone-gw
+    privileged: true
+    networks:
+      internet:
+        ipv4_address: 10.0.254.7
+      cone-net-03:
+        ipv4_address: 192.168.107.254
+  cone-gw-04:
+    hostname: cone-gw-04
+    image: nat-lab:base
+    entrypoint: /opt/bin/cone-gw
+    privileged: true
+    networks:
+      internet:
+        ipv4_address: 10.0.254.8
+      cone-net-04:
+        ipv4_address: 192.168.108.254
+
+  upnp-gw-02:
+    hostname: upnp-gw-02
+    image: nat-lab:base
+    entrypoint: /opt/bin/upnp-gw
+    privileged: true
+    networks:
+      internet:
+        ipv4_address: 10.0.254.12
+      upnp-net-02:
+        ipv4_address: 192.168.112.254
+
+  upnp-client-02:
+    hostname: upnp-client-02
+    image: nat-lab:base
+    entrypoint: /opt/bin/client
+    privileged: true
+    networks:
+      upnp-net-02:
+        ipv4_address: 192.168.112.88
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.112.254
+    extra_hosts:
+      - "photo-album:10.0.80.80"
+      - "stun-01:10.0.1.1"
+      - "stun-02:10.0.1.245"
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+    volumes:
+      - ../../:/libtelio-build
+
+networks:
+  # Network representing public internet,
+  # various services like DERP/STUN will be hosted
+  # on this network
+  internet:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: 'false'
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.0.0.0/16
+
+  # Define two separate networks for use with cone NATs
+  # gateways on these networks must implement restricted-cone NAT.
+  cone-net-01:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.101.0/24
+  cone-net-02:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.102.0/24
+
+  # Define separate network for use with symmetric NATs
+  # gateways on these networks must implement symmetric NAT.
+  # name starts with letter H prefix, because docker doesn't let name to start with letter S, idk why
+  hsymmetric-net-01:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.103.0/24
+
+  hsymmetric-net-02:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.104.0/24
+
+  # Define separate network for use with full-cone NATs
+  # gateways on these networks must implement full-cone NAT.
+  fullcone-net-01:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.109.0/24
+
+  fullcone-net-02:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.106.0/24
+
+  upnp-net-01:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.105.0/24
+
+  udp-block-net-01:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.110.0/24
+
+  udp-block-net-02:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.111.0/24
+
+  cone-net-03:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.107.0/24
+
+  cone-net-04:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.108.0/24
+
+  upnp-net-02:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.112.0/24
