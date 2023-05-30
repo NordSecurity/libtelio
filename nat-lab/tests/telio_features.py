@@ -29,13 +29,13 @@ class Qos:
     rtt_tries: Optional[int] = None
     rtt_types: Optional[List[str]] = None
     buckets: Optional[int] = None
-    heartbeat_interval: Optional[int] = None
 
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
 class Nurse:
     fingerprint: str
+    heartbeat_interval: Optional[int] = None
     qos: Optional[Qos] = None
 
 

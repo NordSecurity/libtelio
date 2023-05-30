@@ -35,12 +35,12 @@ async def test_telio_tasks_with_all_features() -> None:
                     lana=Lana(prod=False, event_path="/some_path"),
                     nurse=Nurse(
                         fingerprint="alpha",
+                        heartbeat_interval=3600,
                         qos=Qos(
                             rtt_interval=5,
                             rtt_tries=3,
                             rtt_types=["Ping"],
                             buckets=5,
-                            heartbeat_interval=3600,
                         ),
                     ),
                 ),

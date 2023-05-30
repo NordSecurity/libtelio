@@ -73,6 +73,7 @@ def main() -> int:
         default=0,
         help="Pass `reruns` to pytest",
     )
+    parser.add_argument("--moose", action="store_true", help="Build with moose")
     args = parser.parse_args()
 
     if not args.nobuild:
@@ -110,6 +111,8 @@ def run_build_command(os, args):
     command = ["../../ci/build.sh", "--default", os]
     if args.restart:
         command.append("--restart")
+    if args.moose:
+        command.append("--moose")
 
     run_command(command)
 
