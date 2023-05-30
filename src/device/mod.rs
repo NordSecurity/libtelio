@@ -1428,6 +1428,7 @@ impl Runtime {
                         .filter(|node| node.public_key == peer.public_key)
                         .is_some(),
                     is_vpn: false,
+                    ip_addresses: meshnet_peer.base.ip_addresses.unwrap_or_default(),
                     allowed_ips: peer.allowed_ips.clone(),
                     endpoint,
                     hostname: Some(meshnet_peer.base.hostname.clone()),
@@ -1444,6 +1445,10 @@ impl Runtime {
                     state: state.unwrap_or_else(|| peer.state()),
                     is_exit: true,
                     is_vpn: exit_node.endpoint.is_some(),
+                    ip_addresses: vec![
+                        IpAddr::V4(Ipv4Addr::new(10, 5, 0, 1)),
+                        IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1)),
+                    ],
                     allowed_ips: peer.allowed_ips.clone(),
                     endpoint,
                     hostname: None,
