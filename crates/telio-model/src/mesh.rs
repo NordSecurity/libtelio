@@ -5,7 +5,7 @@ use super::EndpointMap as RelayEndpointMap;
 use crate::api_config::PathType;
 use ipnetwork::IpNetworkError;
 use serde::Serialize;
-use std::{collections::HashMap, convert::TryFrom};
+use std::{collections::HashMap, convert::TryFrom, net::IpAddr};
 use telio_crypto::PublicKey;
 
 use telio_wg::uapi::{Event as PeerEvent, Peer as UapiPeer, PeerState};
@@ -29,7 +29,9 @@ pub struct Node {
     pub is_exit: bool,
     /// Is the node is a vpn server.
     pub is_vpn: bool,
-    /// List of Ip's which can connect to the Node
+    /// IP addresses of the node
+    pub ip_addresses: Vec<IpAddr>,
+    /// List of IP's which can connect to the node
     pub allowed_ips: Vec<IpNetwork>,
     /// Endpoint used by node
     pub endpoint: Option<SocketAddr>,

@@ -108,6 +108,7 @@ async def test_event_content_meshnet(
             assert node_state_beta_on_alpha_side.state == telio.State.Connected
             assert node_state_beta_on_alpha_side.is_vpn == False
             assert node_state_beta_on_alpha_side.endpoint
+            assert node_state_beta_on_alpha_side.ip_addresses[0] == beta.ip_addresses[0]
             assert (
                 beta.ip_addresses[0] + "/32"
                 in node_state_beta_on_alpha_side.allowed_ips
@@ -122,6 +123,9 @@ async def test_event_content_meshnet(
             assert node_state_alpha_on_beta_side.state == telio.State.Connected
             assert node_state_alpha_on_beta_side.is_vpn == False
             assert node_state_alpha_on_beta_side.endpoint
+            assert (
+                node_state_alpha_on_beta_side.ip_addresses[0] == alpha.ip_addresses[0]
+            )
             assert (
                 alpha.ip_addresses[0] + "/32"
                 in node_state_alpha_on_beta_side.allowed_ips
@@ -146,6 +150,7 @@ async def test_event_content_meshnet(
             assert node_state_beta_on_alpha_side.state == telio.State.Disconnected
             assert node_state_beta_on_alpha_side.is_vpn == False
             assert node_state_beta_on_alpha_side.endpoint
+            assert node_state_beta_on_alpha_side.ip_addresses[0] == beta.ip_addresses[0]
             assert (
                 beta.ip_addresses[0] + "/32"
                 in node_state_beta_on_alpha_side.allowed_ips
@@ -242,6 +247,7 @@ async def test_event_content_vpn_connection(
             assert alpha_node_state.endpoint == str(wg_server["ipv4"]) + ":" + str(
                 wg_server["port"]
             )
+            assert alpha_node_state.ip_addresses == ["10.5.0.1", "100.64.0.1"]
             assert "0.0.0.0/0" in alpha_node_state.allowed_ips
             assert alpha_node_state.allow_incoming_connections == False
             assert alpha_node_state.path == PathType.Direct
