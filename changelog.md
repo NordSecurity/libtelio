@@ -16,24 +16,10 @@
 ---
 * LLT-3619: Update crypto box
 * LLT-3636: Add derp server side keepalives configuration to feature config
-* LLT-3649: Remove slog mentions from README.md
 * LLT-3654: Fix infinite loop in STUN endpoint provider when meshnet is off
-
-<br>
-
-### v4.0.1
-### **Bruschetta**
----
-### Changelog
-* LLT-3530: Log features at telio startup
-
-<br>
-
-### v4.0.2
-### **Bruschetta**
----
 * LLT-3619: Update crypto box
 * LLT-3636: Add derp server side keepalives configuration to feature config
+* LLT-3649: Remove slog mentions from README.md
 * LLT-3654: Fix infinite loop in STUN endpoint provider when meshnet is off
 
 <br>
@@ -61,6 +47,7 @@
 * Release build contains debug logs from now
 * LLT-3616: Upgrade bindings for moose
 * LLT-3647: Remove dependency on the outdated time crate
+* LLT-3530: Log features at telio startup
 
 <br>
 
