@@ -195,11 +195,11 @@ impl IgdCommands for Igd {
                 "AddPortMapping".to_string(),
             ),
             ServiceCmdType::DeleteRoute => (
-                format!(UPNP_DELETE_CHECK_ROUTE_REQUEST!(), port_map.internal),
+                format!(UPNP_DELETE_CHECK_ROUTE_REQUEST!(), port_map.external),
                 "DeletePortMapping".to_string(),
             ),
             ServiceCmdType::CheckRoute => (
-                format!(UPNP_DELETE_CHECK_ROUTE_REQUEST!(), port_map.internal),
+                format!(UPNP_DELETE_CHECK_ROUTE_REQUEST!(), port_map.external),
                 "GetSpecificPortMappingEntry".to_string(),
             ),
         };
