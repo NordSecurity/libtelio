@@ -12,7 +12,7 @@ class ExitDns:
 @dataclass_json
 @dataclass
 class Direct:
-    providers: List[str]
+    providers: Optional[List[str]]
 
 
 @dataclass_json
