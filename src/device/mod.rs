@@ -1645,6 +1645,7 @@ fn set_tunnel_interface(socket_pool: &Arc<SocketPool>, config: &DeviceConfig) {
 mod tests {
     use super::*;
     use ipnetwork::IpNetwork;
+    use telio_model::api_config::FeatureDirect;
     use telio_model::config::{Peer, PeerBase};
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1821,5 +1822,103 @@ mod tests {
 
         assert!(rt.disconnect_exit_node(&pubkey).await.is_ok());
         assert!(rt.requested_state.exit_node.is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_default_features_when_direct_is_empty() {
+        let (sender, _receiver) = tokio::sync::broadcast::channel(1);
+
+        let mut features = Features::default();
+
+        features.direct = Some(FeatureDirect {
+            providers: None,
+            endpoint_interval_secs: None,
+        });
+
+        let rt = Runtime::start(
+            sender,
+            &DeviceConfig {
+                private_key: SecretKey::gen(),
+                adapter: AdapterType::BoringTun,
+                ..Default::default()
+            },
+            features,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let entities = rt.entities.direct.as_ref().unwrap();
+
+        assert!(entities.upnp_endpoint_provider.is_none());
+        assert!(entities.local_interfaces_endpoint_provider.is_some());
+        assert!(entities.stun_endpoint_provider.is_some());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_default_features_when_provider_is_empty() {
+        let (sender, _receiver) = tokio::sync::broadcast::channel(1);
+
+        let mut features = Features::default();
+
+        features.direct = Some(FeatureDirect {
+            providers: Some(HashSet::<telio_model::api_config::EndpointProvider>::new()),
+            endpoint_interval_secs: None,
+        });
+
+        let rt = Runtime::start(
+            sender,
+            &DeviceConfig {
+                private_key: SecretKey::gen(),
+                adapter: AdapterType::BoringTun,
+                ..Default::default()
+            },
+            features,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let entities = rt.entities.direct.as_ref().unwrap();
+
+        assert!(entities.upnp_endpoint_provider.is_none());
+        assert!(entities.local_interfaces_endpoint_provider.is_none());
+        assert!(entities.stun_endpoint_provider.is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_enable_all_direct_features() {
+        let (sender, _receiver) = tokio::sync::broadcast::channel(1);
+
+        let mut features = Features::default();
+        let mut providers = HashSet::<telio_model::api_config::EndpointProvider>::new();
+
+        providers.insert(telio_model::api_config::EndpointProvider::Stun);
+        providers.insert(telio_model::api_config::EndpointProvider::Upnp);
+        providers.insert(telio_model::api_config::EndpointProvider::Local);
+
+        features.direct = Some(FeatureDirect {
+            providers: Some(providers),
+            endpoint_interval_secs: None,
+        });
+
+        let rt = Runtime::start(
+            sender,
+            &DeviceConfig {
+                private_key: SecretKey::gen(),
+                adapter: AdapterType::BoringTun,
+                ..Default::default()
+            },
+            features,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let entities = rt.entities.direct.as_ref().unwrap();
+
+        assert!(entities.upnp_endpoint_provider.is_some());
+        assert!(entities.local_interfaces_endpoint_provider.is_some());
+        assert!(entities.stun_endpoint_provider.is_some());
     }
 }
