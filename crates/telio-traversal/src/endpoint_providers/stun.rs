@@ -60,10 +60,6 @@ impl<Wg: WireGuard> StunEndpointProvider<Wg> {
             stun_peer_publisher,
         ))
     }
-
-    pub async fn stop(self) {
-        let _ = self.task.stop().await.resume_unwind();
-    }
 }
 
 impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
@@ -135,6 +131,10 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
             Ok(())
         })
         .await;
+    }
+
+    pub async fn stop(self) {
+        let _ = self.task.stop().await.resume_unwind();
     }
 }
 
@@ -643,6 +643,8 @@ mod tests {
                 wg: wg_endpoint,
             }]
         );
+
+        env.stun_provider.stop().await;
     }
 
     #[tokio::test]
@@ -722,6 +724,8 @@ mod tests {
                 wg: wg_endpoint,
             }]
         );
+
+        env.stun_provider.stop().await;
     }
 
     #[tokio::test]
@@ -811,6 +815,8 @@ mod tests {
         let (provider, candidates) = event.expect("got event");
         assert_eq!(provider, EndpointProviderType::Stun);
         assert_eq!(candidates, vec![]);
+
+        env.stun_provider.stop().await;
     }
 
     #[tokio::test]
@@ -924,6 +930,8 @@ mod tests {
         assert_eq!(pong.msg.get_wg_port(), WGPort(22222));
         assert_eq!(pong.msg.get_session(), session_id);
         assert_eq!(pong.addr, ping_addr);
+
+        env.stun_provider.stop().await;
     }
 
     #[tokio::test]
@@ -1026,6 +1034,8 @@ mod tests {
 
         assert_eq!(pong.get_wg_port(), WGPort(22222));
         assert_eq!(pong.get_session(), session_id);
+
+        env.stun_provider.stop().await;
     }
 
     #[tokio::test(start_paused = true)]
@@ -1052,6 +1062,8 @@ mod tests {
         jump_to_next_session_start(poll_interval).await;
 
         env.expect_server_after_session_timeout(2).await;
+
+        env.stun_provider.stop().await;
     }
 
     #[tokio::test(start_paused = true)]
@@ -1084,6 +1096,8 @@ mod tests {
         env.stun_peer_subscriber
             .try_recv()
             .expect_err("Should not happen!");
+
+        env.stun_provider.stop().await;
     }
 
     #[tokio::test(start_paused = true)]
@@ -1125,6 +1139,8 @@ mod tests {
 
             expect_successful_receive("Next request should be already sent");
         }
+
+        env.stun_provider.stop().await;
     }
 
     #[tokio::test(start_paused = true)]
@@ -1163,6 +1179,8 @@ mod tests {
         task::yield_now().await;
         time::advance(Duration::from_millis(10)).await;
         task::yield_now().await;
+
+        env.stun_provider.stop().await;
     }
 
     // Test helpers
