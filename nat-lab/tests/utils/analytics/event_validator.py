@@ -157,15 +157,15 @@ class ExternalLinksValidator:
                 self._validators.append(
                     ConnectionStateValidator(
                         all_connections_up=all_connections_up, expected_state=""
-                    )
+                    )  # type: ignore
                 )
             if no_of_connections != 0:
                 self._validators.append(
-                    ConnectionCountValidator(count=no_of_connections)
+                    ConnectionCountValidator(count=no_of_connections)  # type: ignore
                 )
 
             self._validators.append(
-                StringOccurrencesValidator(value="vpn", count=no_of_vpn)
+                StringOccurrencesValidator(value="vpn", count=no_of_vpn)  # type: ignore
             )
 
     def validate(self, event):
@@ -187,14 +187,14 @@ class ConnectivityMatrixValidator:
         if exists:
             if no_of_connections != 0:
                 self._validators.append(
-                    ConnectionCountValidator(count=no_of_connections)
+                    ConnectionCountValidator(count=no_of_connections)  # type: ignore
                 )
             if all_connections_up or expected_state != "":
                 self._validators.append(
                     ConnectionStateValidator(
                         all_connections_up=all_connections_up,
                         expected_state=expected_state,
-                    )
+                    )  # type: ignore
                 )
 
     def validate(self, event):

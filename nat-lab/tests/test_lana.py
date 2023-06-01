@@ -1,11 +1,11 @@
-from ci_helper_scripts.utils import Ping
+from utils import Ping
 from contextlib import AsyncExitStack
 from config import ALPHA_NODE_ADDRESS, BETA_NODE_ADDRESS, GAMMA_NODE_ADDRESS, WG_SERVER
 from mesh_api import API
 from utils import ConnectionTag, new_connection_by_tag, container_id
 from telio import PathType, Client
 from telio_features import TelioFeatures, Nurse, Lana, Qos
-from utils.analytics import fetch_moose_events, EventValidator, basic_validator
+from utils.analytics import fetch_moose_events, basic_validator
 import asyncio
 import pytest
 import telio
@@ -17,7 +17,9 @@ ALPHA_EVENTS_PATH = "./alpha-events.db"
 BETA_EVENTS_PATH = "./beta-events.db"
 GAMMA_EVENTS_PATH = "./gamma-events.db"
 
-DEFAULT_WAITING_TIME = 10
+DEFAULT_WAITING_TIME = 1
+DEFAULT_CHECK_INTERVAL = 1
+DEFAULT_CHECK_TIMEOUT = 40
 
 
 def build_telio_features(fingerprint: str) -> TelioFeatures:
@@ -146,47 +148,52 @@ async def run_default_scenario(
 
     await asyncio.sleep(DEFAULT_WAITING_TIME)
 
+    async def wait_for_event_dump(container, events_path):
+        start_time = asyncio.get_event_loop().time()
+
+        while asyncio.get_event_loop().time() - start_time < DEFAULT_CHECK_TIMEOUT:
+            get_moose_db_file(container, CONTAINER_EVENT_PATH, events_path)
+            events = fetch_moose_events(events_path)
+            if len(events) == 1:
+                return events
+            await asyncio.sleep(DEFAULT_CHECK_INTERVAL)
+        return None
+
     await client_alpha.trigger_event_collection()
     await client_beta.trigger_event_collection()
     await client_gamma.trigger_event_collection()
 
-    await asyncio.sleep(DEFAULT_WAITING_TIME)
+    alpha_events = await wait_for_event_dump(
+        ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH
+    )
+    beta_events = await wait_for_event_dump(
+        ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH
+    )
+    gamma_events = await wait_for_event_dump(
+        ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, GAMMA_EVENTS_PATH
+    )
 
     await testing.wait_long(client_alpha.stop_device())
     await testing.wait_long(client_beta.stop_device())
     await testing.wait_long(client_gamma.stop_device())
 
-    get_moose_db_file(
-        ConnectionTag.DOCKER_CONE_CLIENT_1, CONTAINER_EVENT_PATH, ALPHA_EVENTS_PATH
-    )
-    get_moose_db_file(
-        ConnectionTag.DOCKER_CONE_CLIENT_2, CONTAINER_EVENT_PATH, BETA_EVENTS_PATH
-    )
-    get_moose_db_file(
-        ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
-        CONTAINER_EVENT_PATH,
-        GAMMA_EVENTS_PATH,
-    )
+    return [alpha_events, beta_events, gamma_events]
 
 
 @pytest.mark.global_tests
 @pytest.mark.asyncio
 async def test_lana_with_same_meshnet() -> None:
     async with AsyncExitStack() as exit_stack:
-        await run_default_scenario(
+        [alpha_events, beta_events, gamma_events] = await run_default_scenario(
             exit_stack=exit_stack,
             alpha_is_local=True,
             beta_is_local=True,
             gamma_is_local=True,
         )
 
-        alpha_events = fetch_moose_events(ALPHA_EVENTS_PATH)
-        beta_events = fetch_moose_events(BETA_EVENTS_PATH)
-        gamma_events = fetch_moose_events(GAMMA_EVENTS_PATH)
-
-        assert len(alpha_events) == 1
-        assert len(beta_events) == 1
-        assert len(gamma_events) == 1
+        assert alpha_events
+        assert beta_events
+        assert gamma_events
 
         alpha_validator = basic_validator()
         alpha_validator.add_external_links_validator(exists=False)
@@ -210,7 +217,7 @@ async def test_lana_with_same_meshnet() -> None:
         )
         beta_validator.add_members_validator(
             exists=True,
-            contains=["alpha_fingerprint", "beta_fingerprin", "gamma_fingerprint"],
+            contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
         )
         assert beta_validator.validate(beta_events[0])
 
@@ -236,20 +243,16 @@ async def test_lana_with_same_meshnet() -> None:
 @pytest.mark.asyncio
 async def test_lana_with_external_node() -> None:
     async with AsyncExitStack() as exit_stack:
-        await run_default_scenario(
+        [alpha_events, beta_events, gamma_events] = await run_default_scenario(
             exit_stack=exit_stack,
             alpha_is_local=True,
             beta_is_local=True,
             gamma_is_local=False,
         )
 
-        alpha_events = fetch_moose_events(ALPHA_EVENTS_PATH)
-        beta_events = fetch_moose_events(BETA_EVENTS_PATH)
-        gamma_events = fetch_moose_events(GAMMA_EVENTS_PATH)
-
-        assert len(alpha_events) == 1
-        assert len(beta_events) == 1
-        assert len(gamma_events) == 1
+        assert alpha_events
+        assert beta_events
+        assert gamma_events
 
         alpha_validator = basic_validator()
         alpha_validator.add_external_links_validator(
@@ -311,20 +314,16 @@ async def test_lana_with_external_node() -> None:
 @pytest.mark.asyncio
 async def test_lana_all_external() -> None:
     async with AsyncExitStack() as exit_stack:
-        await run_default_scenario(
+        [alpha_events, beta_events, gamma_events] = await run_default_scenario(
             exit_stack=exit_stack,
             alpha_is_local=False,
             beta_is_local=False,
             gamma_is_local=False,
         )
 
-        alpha_events = fetch_moose_events(ALPHA_EVENTS_PATH)
-        beta_events = fetch_moose_events(BETA_EVENTS_PATH)
-        gamma_events = fetch_moose_events(GAMMA_EVENTS_PATH)
-
-        assert len(alpha_events) == 1
-        assert len(beta_events) == 1
-        assert len(gamma_events) == 1
+        assert alpha_events
+        assert beta_events
+        assert gamma_events
 
         alpha_validator = basic_validator(node_fingerprint="alpha_fingerprint")
         alpha_validator.add_external_links_validator(
@@ -369,7 +368,7 @@ async def test_lana_all_external() -> None:
 @pytest.mark.asyncio
 async def test_lana_with_vpn_connections() -> None:
     async with AsyncExitStack() as exit_stack:
-        await run_default_scenario(
+        [alpha_events, beta_events, gamma_events] = await run_default_scenario(
             exit_stack=exit_stack,
             alpha_is_local=True,
             beta_is_local=True,
@@ -379,13 +378,9 @@ async def test_lana_with_vpn_connections() -> None:
             gamma_has_vpn_connection=False,
         )
 
-        alpha_events = fetch_moose_events(ALPHA_EVENTS_PATH)
-        beta_events = fetch_moose_events(BETA_EVENTS_PATH)
-        gamma_events = fetch_moose_events(GAMMA_EVENTS_PATH)
-
-        assert len(alpha_events) == 1
-        assert len(beta_events) == 1
-        assert len(gamma_events) == 1
+        assert alpha_events
+        assert beta_events
+        assert gamma_events
 
         alpha_validator = basic_validator()
         alpha_validator.add_external_links_validator(
@@ -407,13 +402,7 @@ async def test_lana_with_vpn_connections() -> None:
         assert alpha_validator.validate(alpha_events[0])
 
         beta_validator = basic_validator()
-        beta_validator.add_external_links_validator(
-            exists=True,
-            contains=["vpn"],
-            all_connections_up=True,
-            no_of_connections=1,
-            no_of_vpn=1,
-        )
+        beta_validator.add_external_links_validator(exists=False)
         beta_validator.add_connectivity_matrix_validator(
             exists=True,
             no_of_connections=3,
@@ -421,7 +410,7 @@ async def test_lana_with_vpn_connections() -> None:
         )
         beta_validator.add_members_validator(
             exists=True,
-            contains=["alpha_fingerprint", "beta_fingerprin", "gamma_fingerprint"],
+            contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
         )
         assert beta_validator.validate(beta_events[0])
 
