@@ -60,6 +60,7 @@ class PeerInfo(DataClassJsonMixin):
     state: State
     is_exit: bool
     is_vpn: bool
+    ip_addresses: List[str]
     allowed_ips: List[str]
     endpoint: Optional[str]
     hostname: Optional[str]
@@ -74,6 +75,7 @@ class PeerInfo(DataClassJsonMixin):
         state=State.Disconnected,
         is_exit=False,
         is_vpn=False,
+        ip_addresses=[],
         allowed_ips=[],
         endpoint=None,
         hostname=None,
@@ -86,6 +88,7 @@ class PeerInfo(DataClassJsonMixin):
         self.state = state
         self.is_exit = is_exit
         self.is_vpn = is_vpn
+        self.ip_addresses = ip_addresses
         self.allowed_ips = allowed_ips
         self.endpoint = endpoint
         self.hostname = hostname

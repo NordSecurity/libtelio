@@ -51,7 +51,7 @@ class TestRuntime:
         runtime = Runtime()
         runtime.allowed_pub_keys = set(["AAA"])
         assert runtime.handle_output_line(
-            'event node: "{"identifier":"tcli","public_key":"AAA","state":"connected","is_exit":true,"is_vpn":true,"allowed_ips":[],"endpoint":null,"hostname":null,"allow_incoming_connections":false,"allow_peer_send_files":false,"path":"relay"}"'
+            'event node: "{"identifier":"tcli","public_key":"AAA","state":"connected","is_exit":true,"is_vpn":true,"ip_addresses":[],"allowed_ips":[],"endpoint":null,"hostname":null,"allow_incoming_connections":false,"allow_peer_send_files":false,"path":"relay"}"'
         )
         peer_info = runtime.get_peer_info("AAA")
         assert peer_info is not None and peer_info.state == State.Connected
