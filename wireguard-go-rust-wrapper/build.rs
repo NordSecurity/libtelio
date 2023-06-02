@@ -17,12 +17,16 @@ fn main() {
 
     println!("cargo:rerun-if-changed=./");
 
+    match std::env::var("OUT_DIR") {
+        Ok(path) => {
+            println!("cargo:rustc-link-search={}", path)
+        }
+        Err(_e) => {}
+    }
+
     // Cannot execute PowerShell scripts on Windows the same way Shell scripts are run on Linux.
     // Here, PowerShell needs to be called as the actual command and the script path be passed as argument.
     if host_os == "windows" {
-        if let Some(path) = std::option_env!("OUT_DIR") {
-            println!("cargo:rustc-link-search={}", path);
-        }
         let output = Command::new("powershell.exe")
             .current_dir("wireguard-go")
             .arg("./build.ps1")
@@ -36,12 +40,6 @@ fn main() {
             );
         }
     } else {
-        match std::env::var("OUT_DIR") {
-            Ok(path) => {
-                println!("cargo:rustc-link-search={}", path)
-            }
-            Err(_e) => {}
-        }
         let output = Command::new("./build.sh")
             .current_dir("wireguard-go")
             .arg(target_os)

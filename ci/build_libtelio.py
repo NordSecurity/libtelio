@@ -4,6 +4,9 @@ import os
 import shutil
 import sys
 import subprocess
+import urllib.request
+import zipfile
+import hashlib
 
 NAME = "telio"
 PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/..")
@@ -33,38 +36,52 @@ MOOSE_MAP = {
 
 
 def finalize_win(config):
-    wintun_path = f"/wintun/bin/amd64/wintun.dll"
-    sqlite_path = f"{PROJECT_ROOT}/3rd-party/libmoose/{MOOSE_RELEASE_TAG}/bin/common/windows/{config.arch}/sqlite3.dll"
-    wireguard_nt_path = f"/wireguard-nt/bin/amd64/wireguard.dll"
+    def get_dependency(url, name, dll_name, checksum):
+        zip_name = name + ".zip"
+        with urllib.request.urlopen(url) as f:
+            with open(zip_name, "wb") as w:
+                content = f.read()
+                m = hashlib.sha256()
+                m.update(content)
+                assert checksum == m.hexdigest(), f"Wrong checksum of downloaded file: {zip_name}"
+                w.write(content)
+        with zipfile.ZipFile(zip_name, "r") as zip_ref:
+            zip_ref.extractall(".")
+        shutil.copyfile(
+            name + "/bin/amd64/" + dll_name,
+            rutils.get_distribution_path(
+                config.target_os, config.arch, dll_name, config.debug
+            ),
+        )
+        shutil.rmtree(name)
+        os.remove(zip_name)
 
-    shutil.copyfile(
-        wintun_path,
-        rutils.get_distribution_path(
-            config.target_os, config.arch, "wintun.dll", config.debug
-        ),
+    get_dependency(
+        "https://www.wintun.net/builds/wintun-0.14.1.zip", "wintun", "wintun.dll",
+        "07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51"
     )
-    shutil.copyfile(
-        sqlite_path,
-        rutils.get_distribution_path(
-            config.target_os, config.arch, "sqlite3.dll", config.debug
-        ),
-    )
-    shutil.copyfile(
-        wireguard_nt_path,
-        rutils.get_distribution_path(
-            config.target_os, config.arch, "wireguard.dll", config.debug
-        ),
+    get_dependency(
+        "https://download.wireguard.com/wireguard-nt/wireguard-nt-0.10.1.zip",
+        "wireguard-nt",
+        "wireguard.dll",
+        "772c0b1463d8d2212716f43f06f4594d880dea4f735165bd68e388fc41b81605",
     )
 
 
 def copy_bindings(config):
     if "binding_src" in LIBTELIO_CONFIG[config.target_os]:
-        telio_bindings = (
-            f"{rutils.PROJECT_ROOT}/{LIBTELIO_CONFIG[config.target_os]['binding_src']}"
+        telio_bindings = os.path.normpath(
+            os.path.join(
+                rutils.PROJECT_ROOT, LIBTELIO_CONFIG[config.target_os]["binding_src"]
+            )
         )
-        binding_destination = (
-            f"{rutils.PROJECT_ROOT}/{LIBTELIO_CONFIG[config.target_os]['binding_dest']}"
-            + telio_bindings.split("/")[-1]
+
+        binding_destination = os.path.normpath(
+            os.path.join(
+                rutils.PROJECT_ROOT,
+                LIBTELIO_CONFIG[config.target_os]["binding_dest"],
+                os.path.basename(telio_bindings),
+            )
         )
 
         if os.path.exists(binding_destination):
@@ -97,7 +114,7 @@ LIBTELIO_CONFIG = {
             },
         },
         "packages": ["tcli", "derpcli", "interderpcli"],
-        "binding_src": f"libtelio/ffi/bindings/windows/csharp",
+        "binding_src": f"ffi/bindings/windows/csharp",
         "binding_dest": f"dist/windows/",
         "post_build": [finalize_win],
     },
