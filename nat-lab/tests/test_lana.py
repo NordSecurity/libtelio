@@ -195,42 +195,49 @@ async def test_lana_with_same_meshnet() -> None:
         assert beta_events
         assert gamma_events
 
-        alpha_validator = basic_validator()
-        alpha_validator.add_external_links_validator(exists=False)
-        alpha_validator.add_connectivity_matrix_validator(
-            exists=True,
-            no_of_connections=3,
-            all_connections_up=True,
+        alpha_validator = (
+            basic_validator()
+            .add_external_links_validator(exists=False)
+            .add_connectivity_matrix_validator(
+                exists=True,
+                no_of_connections=3,
+                all_connections_up=True,
+            )
+            .add_members_validator(
+                exists=True,
+                contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
+            )
         )
-        alpha_validator.add_members_validator(
-            exists=True,
-            contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
-        )
+
         assert alpha_validator.validate(alpha_events[0])
 
-        beta_validator = basic_validator()
-        beta_validator.add_external_links_validator(exists=False)
-        beta_validator.add_connectivity_matrix_validator(
-            exists=True,
-            no_of_connections=3,
-            all_connections_up=True,
-        )
-        beta_validator.add_members_validator(
-            exists=True,
-            contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
+        beta_validator = (
+            basic_validator()
+            .add_external_links_validator(exists=False)
+            .add_connectivity_matrix_validator(
+                exists=True,
+                no_of_connections=3,
+                all_connections_up=True,
+            )
+            .add_members_validator(
+                exists=True,
+                contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
+            )
         )
         assert beta_validator.validate(beta_events[0])
 
-        gamma_validator = basic_validator()
-        gamma_validator.add_external_links_validator(exists=False)
-        gamma_validator.add_connectivity_matrix_validator(
-            exists=True,
-            no_of_connections=3,
-            all_connections_up=True,
-        )
-        gamma_validator.add_members_validator(
-            exists=True,
-            contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
+        gamma_validator = (
+            basic_validator()
+            .add_external_links_validator(exists=False)
+            .add_connectivity_matrix_validator(
+                exists=True,
+                no_of_connections=3,
+                all_connections_up=True,
+            )
+            .add_members_validator(
+                exists=True,
+                contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
+            )
         )
         assert gamma_validator.validate(gamma_events[0])
 
@@ -254,55 +261,61 @@ async def test_lana_with_external_node() -> None:
         assert beta_events
         assert gamma_events
 
-        alpha_validator = basic_validator()
-        alpha_validator.add_external_links_validator(
-            exists=True,
-            contains=["gamma_fingerprint"],
-            does_not_contain=["vpn", alpha_events[0].fp, "alpha_fingerprint"],
-            all_connections_up=True,
-            no_of_connections=1,
-        )
-        alpha_validator.add_connectivity_matrix_validator(
-            exists=True,
-            no_of_connections=1,
-            all_connections_up=True,
-        )
-        alpha_validator.add_members_validator(
-            exists=True,
-            contains=["alpha_fingerprint", "beta_fingerprint"],
-            does_not_contain=["gamma_fingerprint"],
+        alpha_validator = (
+            basic_validator()
+            .add_external_links_validator(
+                exists=True,
+                contains=["gamma_fingerprint"],
+                does_not_contain=["vpn", alpha_events[0].fp, "alpha_fingerprint"],
+                all_connections_up=True,
+                no_of_connections=1,
+            )
+            .add_connectivity_matrix_validator(
+                exists=True,
+                no_of_connections=1,
+                all_connections_up=True,
+            )
+            .add_members_validator(
+                exists=True,
+                contains=["alpha_fingerprint", "beta_fingerprint"],
+                does_not_contain=["gamma_fingerprint"],
+            )
         )
         assert alpha_validator.validate(alpha_events[0])
 
-        beta_validator = basic_validator()
-        beta_validator.add_external_links_validator(
-            exists=True,
-            contains=["gamma_fingerprint"],
-            does_not_contain=["vpn", beta_events[0].fp, "beta_fingerprint"],
-            all_connections_up=True,
-            no_of_connections=1,
-        )
-        beta_validator.add_connectivity_matrix_validator(
-            exists=True,
-            no_of_connections=1,
-            all_connections_up=True,
-        )
-        beta_validator.add_members_validator(
-            exists=True,
-            contains=["alpha_fingerprint", "beta_fingerprint"],
-            does_not_contain=["gamma_fingerprint"],
+        beta_validator = (
+            basic_validator()
+            .add_external_links_validator(
+                exists=True,
+                contains=["gamma_fingerprint"],
+                does_not_contain=["vpn", beta_events[0].fp, "beta_fingerprint"],
+                all_connections_up=True,
+                no_of_connections=1,
+            )
+            .add_connectivity_matrix_validator(
+                exists=True,
+                no_of_connections=1,
+                all_connections_up=True,
+            )
+            .add_members_validator(
+                exists=True,
+                contains=["alpha_fingerprint", "beta_fingerprint"],
+                does_not_contain=["gamma_fingerprint"],
+            )
         )
         assert beta_validator.validate(beta_events[0])
 
-        gamma_validator = basic_validator(node_fingerprint="gamma_fingerprint")
-        gamma_validator.add_external_links_validator(
-            exists=True,
-            contains=["alpha_fingerprint", "beta_fingerprint"],
-            does_not_contain=["vpn", gamma_events[0].fp, "gamma_fingerprint"],
-            all_connections_up=True,
-            no_of_connections=2,
+        gamma_validator = (
+            basic_validator(node_fingerprint="gamma_fingerprint")
+            .add_external_links_validator(
+                exists=True,
+                contains=["alpha_fingerprint", "beta_fingerprint"],
+                does_not_contain=["vpn", gamma_events[0].fp, "gamma_fingerprint"],
+                all_connections_up=True,
+                no_of_connections=2,
+            )
+            .add_connectivity_matrix_validator(exists=False)
         )
-        gamma_validator.add_connectivity_matrix_validator(exists=False)
         assert gamma_validator.validate(gamma_events[0])
 
         # Validate alpha and beta have the same meshent id which is different from gamma's
@@ -325,37 +338,43 @@ async def test_lana_all_external() -> None:
         assert beta_events
         assert gamma_events
 
-        alpha_validator = basic_validator(node_fingerprint="alpha_fingerprint")
-        alpha_validator.add_external_links_validator(
-            exists=True,
-            contains=["beta_fingerprint", "gamma_fingerprint"],
-            does_not_contain=["vpn", alpha_events[0].fp, "alpha_fingerprint"],
-            all_connections_up=True,
-            no_of_connections=2,
+        alpha_validator = (
+            basic_validator(node_fingerprint="alpha_fingerprint")
+            .add_external_links_validator(
+                exists=True,
+                contains=["beta_fingerprint", "gamma_fingerprint"],
+                does_not_contain=["vpn", alpha_events[0].fp, "alpha_fingerprint"],
+                all_connections_up=True,
+                no_of_connections=2,
+            )
+            .add_connectivity_matrix_validator(exists=False)
         )
-        alpha_validator.add_connectivity_matrix_validator(exists=False)
         assert alpha_validator.validate(alpha_events[0])
 
-        beta_validator = basic_validator(node_fingerprint="beta_fingerprint")
-        beta_validator.add_external_links_validator(
-            exists=True,
-            contains=["alpha_fingerprint", "gamma_fingerprint"],
-            does_not_contain=["vpn", beta_events[0].fp, "beta_fingerprint"],
-            all_connections_up=True,
-            no_of_connections=2,
+        beta_validator = (
+            basic_validator(node_fingerprint="beta_fingerprint")
+            .add_external_links_validator(
+                exists=True,
+                contains=["alpha_fingerprint", "gamma_fingerprint"],
+                does_not_contain=["vpn", beta_events[0].fp, "beta_fingerprint"],
+                all_connections_up=True,
+                no_of_connections=2,
+            )
+            .add_connectivity_matrix_validator(exists=False)
         )
-        beta_validator.add_connectivity_matrix_validator(exists=False)
         assert beta_validator.validate(beta_events[0])
 
-        gamma_validator = basic_validator(node_fingerprint="gamma_fingerprint")
-        gamma_validator.add_external_links_validator(
-            exists=True,
-            contains=["alpha_fingerprint", "beta_fingerprint"],
-            does_not_contain=["vpn", gamma_events[0].fp, "gamma_fingerprint"],
-            all_connections_up=True,
-            no_of_connections=2,
+        gamma_validator = (
+            basic_validator(node_fingerprint="gamma_fingerprint")
+            .add_external_links_validator(
+                exists=True,
+                contains=["alpha_fingerprint", "beta_fingerprint"],
+                does_not_contain=["vpn", gamma_events[0].fp, "gamma_fingerprint"],
+                all_connections_up=True,
+                no_of_connections=2,
+            )
+            .add_connectivity_matrix_validator(exists=False)
         )
-        gamma_validator.add_connectivity_matrix_validator(exists=False)
         assert gamma_validator.validate(gamma_events[0])
 
         # Validate all meshent ids are different
@@ -382,48 +401,54 @@ async def test_lana_with_vpn_connections() -> None:
         assert beta_events
         assert gamma_events
 
-        alpha_validator = basic_validator()
-        alpha_validator.add_external_links_validator(
-            exists=True,
-            contains=["vpn"],
-            all_connections_up=True,
-            no_of_connections=1,
-            no_of_vpn=1,
-        )
-        alpha_validator.add_connectivity_matrix_validator(
-            exists=True,
-            no_of_connections=3,
-            all_connections_up=True,
-        )
-        alpha_validator.add_members_validator(
-            exists=True,
-            contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
+        alpha_validator = (
+            basic_validator()
+            .add_external_links_validator(
+                exists=True,
+                contains=["vpn"],
+                all_connections_up=True,
+                no_of_connections=1,
+                no_of_vpn=1,
+            )
+            .add_connectivity_matrix_validator(
+                exists=True,
+                no_of_connections=3,
+                all_connections_up=True,
+            )
+            .add_members_validator(
+                exists=True,
+                contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
+            )
         )
         assert alpha_validator.validate(alpha_events[0])
 
-        beta_validator = basic_validator()
-        beta_validator.add_external_links_validator(exists=False)
-        beta_validator.add_connectivity_matrix_validator(
-            exists=True,
-            no_of_connections=3,
-            all_connections_up=True,
-        )
-        beta_validator.add_members_validator(
-            exists=True,
-            contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
+        beta_validator = (
+            basic_validator()
+            .add_external_links_validator(exists=False)
+            .add_connectivity_matrix_validator(
+                exists=True,
+                no_of_connections=3,
+                all_connections_up=True,
+            )
+            .add_members_validator(
+                exists=True,
+                contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
+            )
         )
         assert beta_validator.validate(beta_events[0])
 
-        gamma_validator = basic_validator()
-        gamma_validator.add_external_links_validator(exists=False)
-        gamma_validator.add_connectivity_matrix_validator(
-            exists=True,
-            no_of_connections=3,
-            all_connections_up=True,
-        )
-        gamma_validator.add_members_validator(
-            exists=True,
-            contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
+        gamma_validator = (
+            basic_validator()
+            .add_external_links_validator(exists=False)
+            .add_connectivity_matrix_validator(
+                exists=True,
+                no_of_connections=3,
+                all_connections_up=True,
+            )
+            .add_members_validator(
+                exists=True,
+                contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
+            )
         )
         assert gamma_validator.validate(gamma_events[0])
 

@@ -68,22 +68,18 @@ class ConnectionStateValidator:
         self._expected_state = expected_state
 
     def validate(self, value):
-        # Each connection is separated by a ','
+        # Each connection is separated by a ',':
+        # [########connection1#########, ########connection2#########]
         connections = value.split(",")
-        for connection in connections:
-            # Each connection consists in three info separated by ':'
-            # Every time the connection_state will be the last info
-            # ########connection1#########,########connection2#########
-            # info1:info2:connection_state,info1:info2:connection_state
-            splitted_connection = connection.split(":")
-            if self._all_connections_up and splitted_connection[2] == "0":
-                return False
-            if (
-                self._expected_state != ""
-                and splitted_connection[2] != self._expected_state
-            ):
-                return False
-        return True
+        # It consists in three info-values separated each by ':' and
+        # the connection_state will always be the last one:
+        # [info1:info2:connection_state, info1:info2:connection_state]
+        if self._all_connections_up:
+            return not any(conn.split(":")[2] == "0" for conn in connections)
+        elif self._expected_state != "":
+            return all(
+                conn.split(":")[2] == self._expected_state for conn in connections
+            )
 
 
 class StringValidator:
@@ -274,9 +270,11 @@ class EventValidator:
 
     def add_name_validator(self, name=""):
         self._validators.append(NameValidator(name=name))
+        return self
 
     def add_category_validator(self, category=""):
         self._validators.append(CategoryValidator(category=category))
+        return self
 
     def add_external_links_validator(
         self,
@@ -299,6 +297,7 @@ class EventValidator:
                 no_of_vpn=no_of_vpn,
             )
         )
+        return self
 
     def add_connectivity_matrix_validator(
         self,
@@ -315,9 +314,11 @@ class EventValidator:
                 expected_state=expected_state,
             )
         )
+        return self
 
     def add_fingerprint_validator(self, exists=True):
         self._validators.append(FingerprintValidator(exists=exists))
+        return self
 
     def add_members_validator(
         self, exists=True, equals="", contains=[], does_not_contain=[]
@@ -330,21 +331,27 @@ class EventValidator:
                 does_not_contain=does_not_contain,
             )
         )
+        return self
 
     def add_connection_duration_validator(self, exists=True):
         self._validators.append(ConnectionDurationValidator(exists=exists))
+        return self
 
     def add_heartbeat_interval_validator(self, value, equals=True):
         self._validators.append(HeartbeatIntervalValidator(value=value, equals=equals))
+        return self
 
     def add_received_data_validator(self, exists=True):
         self._validators.append(ReceivedDataValidator(exists=exists))
+        return self
 
     def add_rtt_validator(self, exists=True):
         self._validators.append(RttValidator(exists=exists))
+        return self
 
     def add_sent_data_validator(self, exists=True):
         self._validators.append(SentDataValidator(exists=exists))
+        return self
 
     def validate(self, event) -> bool:
         for validator in self._validators:
@@ -356,18 +363,19 @@ class EventValidator:
 def basic_validator(
     node_fingerprint: str = "", heartbeat_interval: int = 3600
 ) -> EventValidator:
-    event_validator = EventValidator()
-    event_validator.add_name_validator("heartbeat")
-    event_validator.add_category_validator("service_quality")
-    event_validator.add_fingerprint_validator(exists=True)
+    event_validator = (
+        EventValidator()
+        .add_name_validator("heartbeat")
+        .add_category_validator("service_quality")
+        .add_fingerprint_validator(exists=True)
+        .add_heartbeat_interval_validator(value=heartbeat_interval, equals=True)
+        .add_connection_duration_validator(exists=True)
+        .add_received_data_validator(exists=True)
+        .add_rtt_validator(exists=True)
+        .add_sent_data_validator(exists=True)
+    )
     if node_fingerprint != "":
         # Current node should always be in the members list
         event_validator.add_members_validator(exists=True, contains=[node_fingerprint])
-    event_validator.add_heartbeat_interval_validator(
-        value=heartbeat_interval, equals=True
-    )
-    event_validator.add_connection_duration_validator(exists=True)
-    event_validator.add_received_data_validator(exists=True)
-    event_validator.add_rtt_validator(exists=True)
-    event_validator.add_sent_data_validator(exists=True)
+
     return event_validator
