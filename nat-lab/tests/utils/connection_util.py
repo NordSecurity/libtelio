@@ -113,3 +113,10 @@ async def new_connection_by_tag(tag: ConnectionTag) -> AsyncIterator[Connection]
         network_switcher,
     ):
         yield connection
+
+
+def container_id(tag: ConnectionTag) -> str:
+    if tag in DOCKER_SERVICE_IDS:
+        return f"nat-lab-{DOCKER_SERVICE_IDS[tag]}-1"
+    else:
+        assert False, f"tag {tag} not a docker container"

@@ -514,6 +514,9 @@ class Client:
     async def send_message_from_fake_derp_relay(self, pk: str, data: List[str]) -> None:
         await self._write_command(["derp", "send", pk] + data)
 
+    async def trigger_event_collection(self) -> None:
+        await self._write_command(["dev", "analytics"])
+
     async def _write_command(self, command: List[str]) -> None:
         idx = self._message_idx
         cmd = (
