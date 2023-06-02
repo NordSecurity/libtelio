@@ -9,6 +9,7 @@ pytest-rerunfailures ~= 10.2
 dataclasses-json ~= 0.5.7
 pytest-order ~= 1.0.1
 pytest-timeout == 2.1.0
+flatten_json ~= 0.1.13
 
 # Latest version compatible with protobuf 3.20.3
 types-protobuf == 3.19.21
