@@ -70,7 +70,7 @@ GLOBAL_CONFIG = {
         "lib_name": f"{NAME}.dll",
         "archs": {
             "x86_64": {
-                "rust_target": "x86_64-pc-windows-gnu",
+                "rust_target": "x86_64-pc-windows-msvc",
             },
         },
         "env": {
