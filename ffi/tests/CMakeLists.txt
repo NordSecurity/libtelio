@@ -4,6 +4,7 @@ project (libtelio_panic_test)
 
 include_directories(${CMAKE_SOURCE_DIR}/../bindings)
 link_directories(${CMAKE_SOURCE_DIR}/../../../dist/linux/release/x86_64)
+link_directories(${CMAKE_SOURCE_DIR}/../../dist/linux/release/x86_64)
 
 file(GLOB_RECURSE SRC_FILES ./*.c)
 
