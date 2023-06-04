@@ -79,6 +79,15 @@ jobs:
         if: ${{ matrix.target_os == 'windows' }}
       - name: Build libtelio
         run: python3 libtelio/ci/build_libtelio.py build ${{ matrix.target_os }} ${{ matrix.arch }}
+      - name: Test FFI
+        run: |
+          cd libtelio/ffi/tests
+          mkdir build
+          cd build
+          cmake ..
+          make
+          sudo ./test_panic
+        if: ${{ matrix.target_os == 'linux' && matrix.arch == 'x86_64'}}
       - uses: actions/upload-artifact@v3
         with:
           name: libtelio-build-${{ matrix.target_os }}-${{ matrix.arch }}-${{ matrix.target_abi }}
