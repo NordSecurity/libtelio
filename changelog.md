@@ -2,6 +2,7 @@
 ---
 ### Changelog
 * LLT-3524: Replace [] operator with .get
+* LLT-3554: Add version in FileInfo for windows binary.
 
 <br>
 
