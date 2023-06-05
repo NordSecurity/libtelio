@@ -26,10 +26,11 @@ impl Codec for UpgradeMsg {
             return Err(CodecError::InvalidLength);
         }
 
-        match PacketType::from(bytes[0]) {
+        match PacketType::from(*bytes.first().unwrap_or(&(PacketType::Invalid as u8))) {
             PacketType::Upgrade => {
                 let proto_upgrade =
-                    Upgrade::parse_from_bytes(&bytes[1..]).map_err(|_| CodecError::DecodeFailed)?;
+                    Upgrade::parse_from_bytes(bytes.get(1..).ok_or(CodecError::DecodeFailed)?)
+                        .map_err(|_| CodecError::DecodeFailed)?;
                 let endpoint: SocketAddr = proto_upgrade
                     .get_endpoint()
                     .parse()

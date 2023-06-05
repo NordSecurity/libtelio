@@ -79,9 +79,10 @@ impl Codec for CallMeMaybeMsg {
         if bytes.is_empty() {
             return Err(CodecError::InvalidLength);
         }
-        match PacketType::from(bytes[0]) {
+        match PacketType::from(*bytes.first().unwrap_or(&(PacketType::Invalid as u8))) {
             PacketType::CallMeMaybe => {
-                let cmm = CallMeMaybe::parse_from_bytes(&bytes[1..]);
+                let cmm =
+                    CallMeMaybe::parse_from_bytes(bytes.get(1..).ok_or(CodecError::DecodeFailed)?);
                 Ok(Self(cmm.map_err(|_| CodecError::DecodeFailed)?))
             }
             _ => Err(CodecError::DecodeFailed),
@@ -198,9 +199,11 @@ impl Codec for CallMeMaybeMsgDeprecated {
         if bytes.is_empty() {
             return Err(CodecError::InvalidLength);
         }
-        match PacketType::from(bytes[0]) {
+        match PacketType::from(*bytes.first().unwrap_or(&(PacketType::Invalid as u8))) {
             PacketType::CallMeMaybeDeprecated => {
-                let cmm = CallMeMaybeDeprecated::parse_from_bytes(&bytes[1..]);
+                let cmm = CallMeMaybeDeprecated::parse_from_bytes(
+                    bytes.get(1..).ok_or(CodecError::DecodeFailed)?,
+                );
                 Ok(Self(cmm.map_err(|_| CodecError::DecodeFailed)?))
             }
             _ => Err(CodecError::DecodeFailed),

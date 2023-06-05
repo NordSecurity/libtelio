@@ -481,14 +481,27 @@ impl State {
 
         // Notify all disconnects
         for key in &diff_keys.delete_keys {
-            if !try_send(Disconnected, from.peers[key].clone()).await {
+            if !try_send(
+                Disconnected,
+                if let Some(peer) = from.peers.get(key) {
+                    peer.clone()
+                } else {
+                    return false;
+                },
+            )
+            .await
+            {
                 return false;
             }
         }
 
         // Notify all new connections
         for key in &diff_keys.insert_keys {
-            let peer = &to.peers[key];
+            let peer = if let Some(peer) = to.peers.get(key) {
+                peer
+            } else {
+                return false;
+            };
             if !try_send(Connecting, peer.clone()).await {
                 return false;
             }
@@ -500,15 +513,15 @@ impl State {
 
         // Check for updates, and notify
         for key in &diff_keys.update_keys {
-            let old = &from.peers[key];
-            let old_state = old.state();
-            let new = &to.peers[key];
-            let new_state = new.state();
+            if let (Some(old), Some(new)) = (from.peers.get(key), to.peers.get(key)) {
+                let old_state = old.state();
+                let new_state = new.state();
 
-            #[allow(clippy::collapsible_if)]
-            if !old.is_same_event(new) || old_state != new_state {
-                if !try_send(new_state, new.clone()).await {
-                    return false;
+                #[allow(clippy::collapsible_if)]
+                if !old.is_same_event(new) || old_state != new_state {
+                    if !try_send(new_state, new.clone()).await {
+                        return false;
+                    }
                 }
             }
         }

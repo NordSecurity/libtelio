@@ -2,7 +2,7 @@ use super::{Error, WireGuardEndpointCandidateChangeEvent};
 use crate::{
     endpoint_providers::{
         EndpointCandidate, EndpointCandidatesChangeEvent, EndpointProvider, EndpointProviderType,
-        PongEvent,
+        Error as EndPointError, PongEvent,
     },
     ping_pong_handler::PingPongHandler,
 };
@@ -304,7 +304,11 @@ impl<E: Backoff> State<E> {
         &self,
         provider: EndpointProviderType,
     ) -> HashSet<EndpointCandidate> {
-        self.local_endpoint_cache[provider].clone()
+        if let Some(hmap) = self.local_endpoint_cache.as_array().get(provider as usize) {
+            (*hmap).clone()
+        } else {
+            HashSet::new()
+        }
     }
 
     fn gather_all_nodes(&self) -> Result<HashSet<PublicKey>, Error> {
@@ -425,7 +429,11 @@ impl<E: Backoff> State<E> {
             .await
             .configure(known_sessions);
 
-        self.local_endpoint_cache[provider] = new_endpoints;
+        *(self
+            .local_endpoint_cache
+            .as_mut_array()
+            .get_mut(provider as usize)
+            .ok_or(Error::EndpointProviderError(EndPointError::LocalCacheError))?) = new_endpoints;
 
         Ok(())
     }
