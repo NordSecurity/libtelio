@@ -383,11 +383,11 @@ impl<Wg: WireGuard, E: Backoff> Runtime for State<Wg, E> {
         tokio::select! {
             // Reading data from UDP socket (passed by node, that is awaiting on socket's receive)
             Ok((size, src_addr)) = self.ext_socket.recv_from(&mut ext_buf) => {
-                let _ = self.handle_rx(&ext_buf[..size], &src_addr).await;
+                let _ = self.handle_rx(ext_buf.get(..size).ok_or(())?, &src_addr).await;
             }
             Ok((size, src_addr)) = self.tun_socket.recv_from(&mut tun_buf) => {
                 // We will not pinging through wireguard.
-                let _ = self.try_handle_stun_rx(&tun_buf[..size], &src_addr).await;
+                let _ = self.try_handle_stun_rx(tun_buf.get(..size).ok_or(())?, &src_addr).await;
             }
             // We are waiting either for stun session to timeout, or for the end of penalty
             _ = &mut self.current_timeout => {

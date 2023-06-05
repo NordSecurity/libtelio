@@ -97,7 +97,14 @@ use tokio::{
 use url::{Host, Url};
 
 fn get_client_debug_key(client: &conf::ClientConfig) -> String {
-    client.private_key.public().to_string()[0..4].to_string()
+    let public_key = client.private_key.public();
+
+    if let Some(substring) = public_key.to_string().get(0..4) {
+        String::from(substring)
+    } else {
+        println!("Invalid range for client public key");
+        String::from("")
+    }
 }
 
 fn get_mtime(path: &str) -> u64 {
@@ -159,7 +166,7 @@ async fn connect_client(
     let DerpConnection { mut comms, .. } = match Box::pin(connect_http_and_start(
         pool,
         &client.derp_server,
-        addrs[0],
+        *addrs.first().ok_or_else(|| anyhow!("Empty socket Addr"))?,
         Config {
             secret_key: client.private_key,
             timeout: Duration::from_secs(10),
@@ -231,7 +238,7 @@ async fn connect_client(
                             get_client_debug_key(&client),
                             payload_len,
                             client.derp_server.get(8..15).unwrap_or_default(),
-                            &receiver_pub_key.to_string()[0..4],
+                            &receiver_pub_key.to_string().get(0..4).unwrap_or_default(),
                             prev_interval,
                         );
                     }
@@ -243,11 +250,16 @@ async fn connect_client(
                     let mut payload = vec![0; payload_len];
                     if payload_len > 7 {
                         // Write 8 bytes Timestamp (ms) into payload
-                        payload[0..8].clone_from_slice(&timestamp.to_ne_bytes());
+                        payload
+                            .get_mut(0..8)
+                            .unwrap_or_default()
+                            .clone_from_slice(&timestamp.to_ne_bytes());
                     }
                     if payload_len > 16 {
                         // Write 7 chars of first derp name (after https://<7chars>) into payload
-                        payload[8..15].clone_from_slice(&client.derp_server.as_bytes()[8..15]);
+                        payload.get_mut(8..15).unwrap_or_default().clone_from_slice(
+                            &client.derp_server.as_bytes().get(8..15).unwrap_or_default(),
+                        );
                     }
 
                     if let Err(rc) = comm_tx.send((public_key, payload)).await {
@@ -283,17 +295,20 @@ async fn connect_client(
                         let rtt = if payload_len > 7 {
                             // Read 8 byte Timestamp (ms) from payload
                             let mut send_time = [0u8; 8];
-                            send_time[..8].copy_from_slice(&payload[..8]);
+                            send_time
+                                .get_mut(..8)
+                                .unwrap_or_default()
+                                .copy_from_slice(&payload.get(..8).unwrap_or_default());
                             now - u64::from_ne_bytes(send_time)
                         } else {
                             0
                         };
 
-                        let first_derp = if payload_len > 16 {
-                            // Read 7 chars of first derp name from payload
-                            String::from_utf8(payload[8..15].to_vec()).unwrap_or_default()
-                        } else {
-                            "unknown".to_string()
+                        let first_derp = match payload.get(8..15) {
+                            Some(payload) => {
+                                String::from_utf8(payload.to_vec()).unwrap_or_default()
+                            }
+                            None => "unknown".to_owned(),
                         };
 
                         if stats_take_every > 0 {
@@ -308,7 +323,7 @@ async fn connect_client(
                                 "* [{}] -> Recv {}B from [{}], RTT: {}ms",
                                 get_client_debug_key(&client),
                                 payload_len,
-                                &sender_pub_key.to_string()[0..4],
+                                &sender_pub_key.to_string().get(0..4).unwrap_or_default(),
                                 rtt
                             );
                         }
@@ -336,7 +351,9 @@ async fn run_without_clients_config(config: conf::Config) -> Result<()> {
     let DerpConnection { mut comms, .. } = match Box::pin(connect_http_and_start(
         Arc::new(SocketPool::new(NativeProtector::new()?)),
         config.get_server_address(),
-        addrs[0],
+        *addrs
+            .first()
+            .ok_or_else(|| anyhow!("ERR!! Empty server addr"))?,
         Config {
             secret_key: config.my_key,
             timeout: Duration::from_secs(5),
@@ -602,10 +619,22 @@ async fn run_with_clients_config(
             let derp2_nr = (derp1_nr + derp2_offset) % derps.len();
             let key1 = SecretKey::gen();
             let key2 = SecretKey::gen();
-            let derps1 = derps[derp1_nr].to_string();
-            let derps2 = derps[derp2_nr].to_string();
-            let derps_resolved1 = derps_resolved[derp1_nr].clone();
-            let derps_resolved2 = derps_resolved[derp2_nr].clone();
+            let derps1 = derps
+                .get(derp1_nr)
+                .ok_or_else(|| anyhow!("Err! No derp found"))?
+                .to_string();
+            let derps2 = derps
+                .get(derp2_nr)
+                .ok_or_else(|| anyhow!("Err! No derp found"))?
+                .to_string();
+            let derps_resolved1 = derps_resolved
+                .get(derp1_nr)
+                .ok_or_else(|| anyhow!("Err! No derp found"))?
+                .clone();
+            let derps_resolved2 = derps_resolved
+                .get(derp2_nr)
+                .ok_or_else(|| anyhow!("Err! No derp found"))?
+                .clone();
             let client1 = conf::ClientConfig {
                 private_key: key1,
                 derp_server: derps1,

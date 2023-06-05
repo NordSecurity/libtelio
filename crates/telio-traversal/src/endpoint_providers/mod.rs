@@ -57,6 +57,8 @@ pub enum Error {
     BadStunPeer,
     #[error("Encryption failed: {0}")]
     EncryptionFailed(#[from] encryption::Error),
+    #[error("Cannot find endpoint in local cache")]
+    LocalCacheError,
     /// Failed to get upnp service
     #[error("Failed to get upnp service")]
     FailedToGetUpnpService,

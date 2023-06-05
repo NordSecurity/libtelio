@@ -125,7 +125,7 @@ impl Packet {
         }
 
         Ok((
-            match PacketType::from(bytes[0]) {
+            match PacketType::from(*bytes.first().unwrap_or(&(PacketType::Invalid as u8))) {
                 Data | GenData => Self::Data(DataMsg::decode(bytes)?),
                 Heartbeat => Self::Heartbeat(HeartbeatMessage::decode(bytes)?),
                 CallMeMaybe => Self::CallMeMaybe(CallMeMaybeMsg::decode(bytes)?),
@@ -173,7 +173,7 @@ impl Codec for Packet {
             return Err(CodecError::InvalidLength);
         }
 
-        match PacketType::from(bytes[0]) {
+        match PacketType::from(*bytes.first().unwrap_or(&(PacketType::Invalid as u8))) {
             Data | GenData => Ok(Self::Data(DataMsg::decode(bytes)?)),
             Heartbeat => Ok(Self::Heartbeat(HeartbeatMessage::decode(bytes)?)),
             CallMeMaybe => Ok(Self::CallMeMaybe(CallMeMaybeMsg::decode(bytes)?)),
@@ -230,10 +230,11 @@ impl TryFrom<&[u8]> for PeerId {
             return Err(CodecError::DecodeFailed);
         }
 
-        // Note: all data should be converted to netowrk endian (BE)
-        Ok(Self(
-            unsafe { std::mem::transmute::<[u8; 2], u16>([other[0], other[1]]) }.to_be(),
-        ))
+        // Note: all data should be converted to network endian (BE)
+        Ok(Self(u16::from_be_bytes([
+            *other.first().ok_or(CodecError::DecodeFailed)?,
+            *other.get(1).ok_or(CodecError::DecodeFailed)?,
+        ])))
     }
 }
 
@@ -245,8 +246,11 @@ impl TryFrom<&[u8]> for WGPort {
             return Err(CodecError::DecodeFailed);
         }
 
-        // Note: all data should be converted to netowrk endian (BE)
-        let other_le = [other[0], other[1]];
+        // Note: all data should be converted to network endian (BE)
+        let other_le = [
+            *other.first().ok_or(CodecError::DecodeFailed)?,
+            *other.get(1).ok_or(CodecError::DecodeFailed)?,
+        ];
         Ok(Self(u16::from_be_bytes(other_le)))
     }
 }

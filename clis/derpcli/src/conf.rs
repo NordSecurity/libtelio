@@ -302,7 +302,11 @@ impl Config {
                     "My private key size must be 32 bytes encoded into base64!",
                 ));
             }
-            secret_key1.copy_from_slice(&mykey_bytes[0..32]);
+            secret_key1.copy_from_slice(
+                &mykey_bytes
+                    .get(0..32)
+                    .ok_or_else(|| anyhow!("Out of bounds mykey list"))?,
+            );
         }
 
         if targetkey_str.chars().count() > 0 {
@@ -312,7 +316,11 @@ impl Config {
                     "Target private key size must be 32 bytes encoded into base64!",
                 ));
             }
-            secret_key2.copy_from_slice(&tkey_bytes[0..32]);
+            secret_key2.copy_from_slice(
+                &tkey_bytes
+                    .get(0..32)
+                    .ok_or_else(|| anyhow!("Out of bounds tkey list"))?,
+            );
         }
 
         // switch keys ir run as target

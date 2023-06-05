@@ -259,7 +259,7 @@ impl<T: WireGuard, G: GetIfAddrs> Runtime for State<T, G> {
         let mut rx_buff = vec![0u8; MAX_SUPPORTED_PACKET_SIZE];
         tokio::select! {
             Ok((len, addr)) = self.udp_socket.recv_from(&mut rx_buff) => {
-                let buf = &rx_buff[..len];
+                let buf = rx_buff.get(..len).ok_or(())?;
                 self.handle_rx_packet(buf, &addr).await.unwrap_or_else(
                     |e| {
                         telio_log_warn!("Failed to handle packet received no local interface endpoint provider {:?}", e);

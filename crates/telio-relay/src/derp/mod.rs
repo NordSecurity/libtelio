@@ -355,7 +355,13 @@ impl DerpRelay {
     ) -> Result<Vec<u8>, Error> {
         // In case is a data package already encrypted by wireguard skip
 
-        if PacketType::from(data[0]) == PacketType::Data {
+        if PacketType::from(if let Some(d) = data.first() {
+            *d
+        } else {
+            telio_log_error!("Invalid buffer");
+            return Err(crypto_box::aead::Error);
+        }) == PacketType::Data
+        {
             return Ok(data.to_vec());
         }
 
@@ -401,7 +407,12 @@ impl DerpRelay {
     ) -> Result<Vec<u8>, Error> {
         // Data packages are treated by Wireguard encryption System
         // In this case any encryption operation is skipped for those.
-        match PacketType::from(data[0]) {
+        match PacketType::from(if let Some(d) = data.first() {
+            *d
+        } else {
+            telio_log_error!("Invalid buffer");
+            return Err(crypto_box::aead::Error);
+        }) {
             PacketType::Data => {
                 telio_log_trace!(
                     "Encryption not necessary : {:?} ...",

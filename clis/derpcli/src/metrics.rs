@@ -64,7 +64,11 @@ impl Metrics {
                 .or_insert(1);
         }
         for (derp1, packet_count) in &packets_per_derp {
-            let rtt_sum = rtt_sum_per_derp[derp1];
+            let rtt_sum = if let Some(rtt) = rtt_sum_per_derp.get(derp1) {
+                *rtt
+            } else {
+                panic!("Err! - Invalid rtt");
+            };
             let rtt_avg = rtt_sum as f64 / *packet_count as f64;
             println!("* Avg. RTT via [{}]: {:.2} ms", derp1, rtt_avg);
         }
@@ -74,7 +78,15 @@ impl Metrics {
         let tooold = now - MONITORING_INTERVAL_MILLIS;
         let index = self.rtts.iter().position(|(t, _rtt, _derp1)| *t > tooold);
         match index {
-            Some(i) => self.rtts = self.rtts[i..].into(),
+            Some(i) => {
+                self.rtts = if let Some(rtts) = self.rtts.get(i..) {
+                    rtts
+                } else {
+                    println!("Err! No rtts found. Invalid index");
+                    return;
+                }
+                .into()
+            }
             None => self.rtts.clear(),
         }
     }

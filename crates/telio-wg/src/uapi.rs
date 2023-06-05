@@ -373,7 +373,14 @@ pub(super) fn response_from_read<R: Read>(reader: R) -> Result<Response, Error> 
             if parsed.len() != 2 {
                 return Err(Error::ParsingError("cmd", "not in A=B format".to_owned()));
             }
-            let (key, val) = (parsed[0], parsed[1]);
+            let (key, val) = (
+                *parsed
+                    .first()
+                    .ok_or_else(|| Error::ParsingError("cmd", "No key found".to_owned()))?,
+                *parsed
+                    .get(1)
+                    .ok_or_else(|| Error::ParsingError("cmd", "No val found".to_owned()))?,
+            );
 
             match key {
                 "private_key" => {
@@ -461,7 +468,14 @@ fn parse_peer<R: Read>(
             if parsed.len() != 2 {
                 return Err(Error::ParsingError("cmd", "not in A=B format".to_owned()));
             }
-            let (key, val) = (parsed[0], parsed[1]);
+            let (key, val) = (
+                *parsed
+                    .first()
+                    .ok_or_else(|| Error::ParsingError("cmd", "No key found".to_owned()))?,
+                *parsed
+                    .get(1)
+                    .ok_or_else(|| Error::ParsingError("cmd", "Invalid value".to_owned()))?,
+            );
 
             match key {
                 "endpoint" => {
