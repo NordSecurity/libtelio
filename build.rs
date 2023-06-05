@@ -1,3 +1,6 @@
+#[cfg(windows)]
+use winres;
+
 use anyhow::{anyhow, Context, Result};
 use std::{
     collections::HashSet,
@@ -139,6 +142,13 @@ fn main() -> Result<()> {
         let pkg_name = env!("CARGO_PKG_NAME");
         let soname = format!("lib{}.so", pkg_name);
         println!("cargo:rustc-cdylib-link-arg=-Wl,-soname,{}", soname);
+    }
+
+    #[cfg(windows)]
+    if target_os == "windows" {
+        winres::WindowsResource::new()
+            .set("LegalCopyright", "Nord Security")
+            .compile()?;
     }
 
     Ok(())
