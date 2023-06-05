@@ -917,8 +917,10 @@ fn bytes_to_zero_terminated_unmanaged_bytes(bytes: &[u8]) -> *mut c_char {
         }
         std::slice::from_raw_parts_mut(buf, bytes.len() + 1)
     };
-    buf[..bytes.len()].copy_from_slice(bytes);
-    buf[bytes.len()] = 0; //set last byte to 0 for null terminated C string
+    if let Some((last, elements)) = buf.split_last_mut() {
+        elements.copy_from_slice(bytes);
+        *last = 0;
+    }
     buf.as_ptr() as *mut c_char
 }
 
@@ -1074,5 +1076,16 @@ mod tests {
 
         // Restore panic hook
         let _ = panic::take_hook();
+    }
+
+    #[test]
+    fn test_bytes_to_zero_terminated_unmanaged_bytes() {
+        let inputs: [(&[u8], &[u8]); 3] = [(&[], &[0]), (&[0], &[0, 0]), (&[1, 2], &[1, 2, 0])];
+        for (input, expected_output) in inputs {
+            let output = bytes_to_zero_terminated_unmanaged_bytes(&input);
+            let output =
+                unsafe { Vec::from_raw_parts(output as *mut u8, input.len() + 1, input.len() + 1) };
+            assert_eq!(output, expected_output);
+        }
     }
 }

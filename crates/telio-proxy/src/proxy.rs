@@ -230,7 +230,11 @@ impl Runtime for StateIngress {
             wait_for_tx(&self.output, select_all(futures)).await
         {
             if let Ok(n) = socket.try_recv(self.read_buf.as_mut_slice()) {
-                let msg = DataMsg::new(&self.read_buf[..n]);
+                let msg = DataMsg::new(if let Some(buf) = self.read_buf.get(..n) {
+                    buf
+                } else {
+                    return Self::error(());
+                });
                 let _ = permit.send((pk, msg));
             }
         }

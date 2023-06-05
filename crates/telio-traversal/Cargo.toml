@@ -19,7 +19,7 @@ telio-wg = { path = "../telio-wg" }
 async-trait = "0.1.56"
 base64 = "0.13.0"
 bytecodec = "0.4.15"
-enum-map = "1.1.1"
+enum-map = "2.5.0"
 if-addrs = "0.7.0"
 ipnet = "2.3.1"
 log = { version = "0.4.17", features = ["release_max_level_debug"] }

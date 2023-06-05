@@ -665,8 +665,8 @@ impl RequestedState {
             })
             .iter()
             .filter_map(|v| match &v.ip_addresses {
-                Some(ips) if !ips.is_empty() => match ips[0] {
-                    IpAddr::V4(addr) => Some((v.hostname.to_owned(), addr)),
+                Some(ips) => match ips.first() {
+                    Some(IpAddr::V4(addr)) => Some((v.hostname.to_owned(), *addr)),
                     _ => None,
                 },
                 _ => None,
@@ -1150,7 +1150,7 @@ impl Runtime {
                 .clone()
                 .this
                 .ip_addresses
-                .map(|ip| if !ip.is_empty() { Some(ip[0]) } else { None })
+                .map(|ip| ip.get(0).cloned())
                 .ok_or(Error::NoMeshnetIP)?
                 .ok_or(Error::NoMeshnetIP)?;
 

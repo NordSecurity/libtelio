@@ -250,5 +250,13 @@ async fn connect_http<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
         }
         Status::Complete(len) => len,
     };
-    Ok(data[res_len..data_len].to_vec())
+    Ok(data
+        .get(res_len..data_len)
+        .ok_or_else(|| {
+            Box::new(IoError::new(
+                ErrorKind::Other,
+                "Out of bounds index for data buffer",
+            ))
+        })?
+        .to_vec())
 }

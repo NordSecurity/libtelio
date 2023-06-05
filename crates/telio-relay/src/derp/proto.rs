@@ -12,7 +12,7 @@ use std::{
     time::Duration,
 };
 use telio_crypto::{PublicKey, SecretKey, KEY_SIZE};
-use telio_utils::{telio_log_debug, telio_log_trace};
+use telio_utils::{telio_err_with_log, telio_log_debug, telio_log_trace};
 
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
@@ -150,7 +150,9 @@ pub async fn start_read<R: AsyncRead + Unpin>(
 
                 if log_enabled!(Trace) {
                     // Glance at first byte, which describes the destination
-                    let chan = FrameChannel::try_from(data[0]).unwrap_or(FrameChannel::Unknown);
+                    let chan = FrameChannel::try_from(
+                        *data.first().unwrap_or(&(FrameChannel::Unknown as u8)),
+                    );
                     telio_log_trace!(
                         "DERP Rx: {} -> {}, frame type: {:?}, data len: {}, pubkey: {:?}, channel: {:?}",
                         addr.remote,
@@ -182,7 +184,8 @@ pub async fn start_write<W: AsyncWrite + Unpin>(
 
         if log_enabled!(Trace) {
             // Glance at first byte, which describes the destination
-            let chan = FrameChannel::try_from(data[0]).unwrap_or(FrameChannel::Unknown);
+            let chan =
+                FrameChannel::try_from(*data.first().unwrap_or(&(FrameChannel::Unknown as u8)));
             telio_log_trace!(
                 "DERP Tx: {} -> {}, data len: {}, pubkey: {:?}, channel: {:?}",
                 addr.local,
@@ -296,7 +299,14 @@ async fn read_frame<R: AsyncRead + Unpin>(reader: &mut R) -> Result<(FrameType, 
     let mut buf = [0_u8; 1];
 
     reader.read_exact(&mut buf).await?;
-    let frame_type = FrameType::try_from(buf[0])?;
+    let frame_type = FrameType::try_from(if let Some(b) = buf.first() {
+        *b
+    } else {
+        return Err(Box::new(IoError::new(
+            ErrorKind::InvalidData,
+            "invalid buffer",
+        )));
+    })?;
 
     let mut buf = [0_u8; 4];
     reader.read_exact(&mut buf).await?;
