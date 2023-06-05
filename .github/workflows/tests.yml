@@ -1,0 +1,25 @@
+name: Tests
+on: [push, pull_request]
+permissions: {}
+jobs:
+  test-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all -- --nocapture
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all --features pretend_to_be_macos -- --nocapture
+
+  test-windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all --lib -- --nocapture
