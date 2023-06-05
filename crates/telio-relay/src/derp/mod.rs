@@ -73,7 +73,7 @@ impl SortedServers {
         self.servers.contains(server)
     }
 
-    fn reset(&mut self) {
+    fn reset_server_index(&mut self) {
         self.current_server_num = 0;
     }
 }
@@ -202,7 +202,7 @@ impl State {
                             Self::NAME,
                             sleep_time
                         );
-                        config.servers.reset();
+                        config.servers.reset_server_index();
                         sleep(Duration::from_secs_f64(sleep_time)).await;
                         sleep_time = (sleep_time * 2f64).min(60f64);
                         continue;
