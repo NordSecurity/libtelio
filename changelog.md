@@ -8,6 +8,7 @@
 * LLT-3754: Fix Android getifaddrs permission error
 * LLT-3506: Add ip field to node events
 * LLT-3638: Store fingerprints persistently
+* LLT-3771: Fix derp server list loop
 
 <br>
 
