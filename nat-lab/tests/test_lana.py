@@ -68,6 +68,18 @@ async def connect_to_default_vpn(client: Client):
     await testing.wait_long(client.handshake(WG_SERVER["public_key"], PathType.Direct))
 
 
+async def wait_for_event_dump(container, events_path, nr_events):
+    start_time = asyncio.get_event_loop().time()
+
+    while asyncio.get_event_loop().time() - start_time < DEFAULT_CHECK_TIMEOUT:
+        get_moose_db_file(container, CONTAINER_EVENT_PATH, events_path)
+        events = fetch_moose_events(events_path)
+        if len(events) == nr_events:
+            return events
+        await asyncio.sleep(DEFAULT_CHECK_INTERVAL)
+    return None
+
+
 async def run_default_scenario(
     exit_stack,
     alpha_is_local,
@@ -148,29 +160,18 @@ async def run_default_scenario(
 
     await asyncio.sleep(DEFAULT_WAITING_TIME)
 
-    async def wait_for_event_dump(container, events_path):
-        start_time = asyncio.get_event_loop().time()
-
-        while asyncio.get_event_loop().time() - start_time < DEFAULT_CHECK_TIMEOUT:
-            get_moose_db_file(container, CONTAINER_EVENT_PATH, events_path)
-            events = fetch_moose_events(events_path)
-            if len(events) == 1:
-                return events
-            await asyncio.sleep(DEFAULT_CHECK_INTERVAL)
-        return None
-
     await client_alpha.trigger_event_collection()
     await client_beta.trigger_event_collection()
     await client_gamma.trigger_event_collection()
 
     alpha_events = await wait_for_event_dump(
-        ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH
+        ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH, nr_events=1
     )
     beta_events = await wait_for_event_dump(
-        ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH
+        ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=1
     )
     gamma_events = await wait_for_event_dump(
-        ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, GAMMA_EVENTS_PATH
+        ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, GAMMA_EVENTS_PATH, nr_events=1
     )
 
     await testing.wait_long(client_alpha.stop_device())
@@ -455,3 +456,133 @@ async def test_lana_with_vpn_connections() -> None:
         # Validate all nodes have the same meshnet id
         assert alpha_events[0].fp == beta_events[0].fp
         assert beta_events[0].fp == gamma_events[0].fp
+
+
+@pytest.mark.global_tests
+@pytest.mark.asyncio
+async def test_lana_with_disconnected_node() -> None:
+    async with AsyncExitStack() as exit_stack:
+        api = API()
+        alpha = api.register(
+            name="alpha",
+            id="96ddb926-4b86-11ec-81d3-0242ac130003",
+            private_key="IGm+42FLMMGZRaQvk6F3UPbl+T/CBk8W+NPoX2/AdlU=",
+            public_key="41CCEssnYIh8/8D8YvbTfWEcFanG3D0I0z1tRcN1Lyc=",
+            is_local=True,
+        )
+
+        beta = api.register(
+            name="beta",
+            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
+            private_key="SPFD84gPtBNc3iGY9Cdrj+mSCwBeh3mCMWfPaeWQolw=",
+            public_key="Q1M3VKUcfTmGsrRzY6BpNds1yDIUvPVcs/2TySv/t1U=",
+            is_local=True,
+        )
+
+        api.assign_ip(alpha.id, ALPHA_NODE_ADDRESS)
+        api.assign_ip(beta.id, BETA_NODE_ADDRESS)
+
+        alpha.set_peer_firewall_settings(beta.id, allow_incoming_connections=True)
+        beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
+
+        connection_alpha = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+        connection_beta = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
+        )
+
+        await clean_container(connection_alpha)
+        await clean_container(connection_beta)
+
+        client_alpha = await exit_stack.enter_async_context(
+            telio.run_meshnet(
+                connection_alpha,
+                alpha,
+                api.get_meshmap(alpha.id),
+                telio_features=build_telio_features("alpha_fingerprint"),
+            )
+        )
+        client_beta = await exit_stack.enter_async_context(
+            telio.run_meshnet(
+                connection_beta,
+                beta,
+                api.get_meshmap(beta.id),
+                telio_features=build_telio_features("beta_fingerprint"),
+            )
+        )
+
+        await testing.wait_long(client_alpha.handshake(beta.public_key))
+
+        async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
+            await testing.wait_long(ping.wait_for_next_ping())
+
+        await asyncio.sleep(DEFAULT_WAITING_TIME)
+
+        await client_alpha.trigger_event_collection()
+        await client_beta.trigger_event_collection()
+
+        alpha_events = await wait_for_event_dump(
+            ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH, nr_events=1
+        )
+        beta_events = await wait_for_event_dump(
+            ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=1
+        )
+        assert alpha_events
+        assert beta_events
+
+        # disconnect beta and trigger analytics on alpha
+        await testing.wait_long(client_beta.stop_device())
+
+        await asyncio.sleep(DEFAULT_WAITING_TIME)
+
+        await client_alpha.trigger_event_collection()
+
+        alpha_events = await wait_for_event_dump(
+            ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH, nr_events=2
+        )
+        assert alpha_events
+
+        alpha_validator = (
+            basic_validator()
+            .add_external_links_validator(exists=False)
+            .add_connectivity_matrix_validator(
+                exists=True,
+                no_of_connections=1,
+                all_connections_up=True,
+            )
+            .add_members_validator(
+                exists=True,
+                contains=["alpha_fingerprint", "beta_fingerprint"],
+            )
+        )
+        beta_validator = (
+            basic_validator()
+            .add_external_links_validator(exists=False)
+            .add_connectivity_matrix_validator(
+                exists=True,
+                no_of_connections=1,
+                all_connections_up=True,
+            )
+            .add_members_validator(
+                exists=True,
+                contains=["alpha_fingerprint", "beta_fingerprint"],
+            )
+        )
+        assert alpha_validator.validate(alpha_events[0])
+        assert beta_validator.validate(beta_events[0])
+
+        # Connectivity matrix is not persistent, will be missing when peer is offline
+        alpha_validator = (
+            basic_validator()
+            .add_external_links_validator(exists=False)
+            .add_connectivity_matrix_validator(exists=False)
+            .add_members_validator(
+                exists=True,
+                contains=["alpha_fingerprint", "beta_fingerprint"],
+            )
+        )
+        assert alpha_validator.validate(alpha_events[1])
+
+        # Validate all nodes have the same meshnet id
+        assert alpha_events[0].fp == alpha_events[1].fp == beta_events[0].fp
