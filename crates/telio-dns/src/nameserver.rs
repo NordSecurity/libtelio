@@ -151,7 +151,7 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
                 tokio::spawn(async move {
                     match peer.decapsulate(
                         None,
-                        &receiving_buffer[..bytes_read],
+                        receiving_buffer.get(..bytes_read).unwrap_or(&[]),
                         &mut sending_buffer,
                     ) {
                         // Handshake packets
@@ -275,9 +275,16 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
 
                             telio_log_debug!("nameserver response: {:?}", &dns_response);
 
-                            if let Some(mut udp_response) =
-                                MutableUdpPacket::new(&mut receiving_buffer[IP_HEADER..length])
-                            {
+                            if let Some(mut udp_response) = MutableUdpPacket::new(
+                                if let Some(buffer_slice) =
+                                    receiving_buffer.get_mut(IP_HEADER..length)
+                                {
+                                    buffer_slice
+                                } else {
+                                    telio_log_error!("Empty receiving buffer");
+                                    return;
+                                },
+                            ) {
                                 udp_response.set_source(udp_request.get_destination());
                                 udp_response.set_destination(udp_request.get_source());
                                 udp_response.set_length((UDP_HEADER + dns_response.len()) as u16);
@@ -293,8 +300,10 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
                                 telio_log_debug!("Failed to create mutable UDP packet");
                                 return;
                             }
-                            match peer.encapsulate(&receiving_buffer[..length], &mut sending_buffer)
-                            {
+                            match peer.encapsulate(
+                                receiving_buffer.get(..length).unwrap_or(&[]),
+                                &mut sending_buffer,
+                            ) {
                                 TunnResult::WriteToNetwork(dns) => {
                                     if let Err(e) = socket.send_to(dns, dst_address).await {
                                         telio_log_warn!(

@@ -1,3 +1,10 @@
+### UNRELEASED
+---
+### Changelog
+* LLT-3524: Replace [] operator with .get
+
+<br>
+
 ### v4.0.3
 ### **Bruschetta**
 ---

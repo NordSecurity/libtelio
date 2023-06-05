@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use clap::{Arg, Command};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -192,12 +192,24 @@ async fn test_pair(
     let addr_2 = resolve_domain_name(&host_2).await?;
 
     log::info!("Starting clients");
-    let mut client_1 = Box::pin(connect_client(addr_1[0], host_1.clone(), key_1))
-        .await
-        .context("Failed to connect to first server")?;
-    let mut client_2 = Box::pin(connect_client(addr_2[0], host_2.clone(), key_2))
-        .await
-        .context("Failed to connect to second server")?;
+    let mut client_1 = Box::pin(connect_client(
+        *addr_1
+            .first()
+            .ok_or(anyhow!(format!("Empty server addr")))?,
+        host_1.clone(),
+        key_1,
+    ))
+    .await
+    .context("Failed to connect to first server")?;
+    let mut client_2 = Box::pin(connect_client(
+        *addr_2
+            .first()
+            .ok_or(anyhow!(format!("Empty server addr")))?,
+        host_2.clone(),
+        key_2,
+    ))
+    .await
+    .context("Failed to connect to second server")?;
 
     log::info!("Ping each other");
     ping_each_other(&key_1, &mut client_1, &key_2, &mut client_2)
@@ -218,30 +230,35 @@ async fn main() -> Result<()> {
     println!("Derp connection tester starting");
 
     for pair in config.servers.iter().combinations_with_replacement(2) {
-        match Box::pin(test_pair(
-            pair[0].clone(),
-            config.private_key_1,
-            pair[1].clone(),
-            config.private_key_2,
-        ))
-        .await
-        {
-            Ok(_) => println!("✔️ {:?} <-> {:?}", pair[0], pair[1]),
-            Err(e) => {
-                if verbose {
-                    println!("❌ {:?} <-> {:?}. {:?}", pair[0], pair[1], e);
-                } else {
-                    println!(
-                        "❌ {:?} <-> {:?}. Error: {:?}",
-                        pair[0],
-                        pair[1],
-                        e.to_string()
-                            .lines()
-                            .next()
-                            .ok_or_else(|| anyhow!("empty error"))?
-                    );
+        match (pair.first(), pair.get(1)) {
+            (Some(first), Some(second)) => {
+                match Box::pin(test_pair(
+                    first.to_string(),
+                    config.private_key_1,
+                    second.to_string(),
+                    config.private_key_2,
+                ))
+                .await
+                {
+                    Ok(_) => println!("✔️ {:?} <-> {:?}", first, second),
+                    Err(e) => {
+                        if verbose {
+                            println!("❌ {:?} <-> {:?}. {:?}", first, second, e);
+                        } else {
+                            println!(
+                                "❌ {:?} <-> {:?}. Error: {:?}",
+                                first,
+                                second,
+                                e.to_string()
+                                    .lines()
+                                    .next()
+                                    .ok_or_else(|| anyhow!("empty error"))?
+                            );
+                        }
+                    }
                 }
             }
+            _ => bail!("Empty server addr"),
         }
     }
     Ok(())

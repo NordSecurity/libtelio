@@ -74,9 +74,13 @@ impl SecretKey {
         let mut key = SecretKey([0u8; KEY_SIZE]);
         rng.fill_bytes(&mut key.0);
         // Key clamping
-        key[0] &= 248;
-        key[31] &= 127;
-        key[31] |= 64;
+        if let Some(first) = key.first_mut() {
+            *first &= 248;
+        }
+        if let Some(last) = key.last_mut() {
+            *last &= 127;
+            *last |= 64;
+        }
         key
     }
 
@@ -239,7 +243,7 @@ macro_rules! gen_common {
         impl fmt::Debug for $t {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 let buf = base64::encode(&self.0);
-                f.write_str(&format!("\"{:.*}...{}\"", 4, &buf, &buf[(buf.len())-4..]))
+                f.write_str(&format!("\"{:.*}...{}\"", 4, &buf, &buf.get((buf.len())-4..).ok_or(fmt::Error)?))
             }
         }
 

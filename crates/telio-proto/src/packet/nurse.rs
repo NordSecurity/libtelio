@@ -87,9 +87,10 @@ impl Codec for HeartbeatMessage {
             return Err(CodecError::InvalidLength);
         }
 
-        match PacketType::from(bytes[0]) {
+        match PacketType::from(*bytes.first().unwrap_or(&(PacketType::Invalid as u8))) {
             PacketType::Heartbeat => {
-                let heartbeat = Heartbeat::parse_from_bytes(&bytes[1..]);
+                let heartbeat =
+                    Heartbeat::parse_from_bytes(bytes.get(1..).ok_or(CodecError::DecodeFailed)?);
                 Ok(Self(heartbeat.map_err(|_| CodecError::DecodeFailed)?))
             }
             _ => Err(CodecError::DecodeFailed),

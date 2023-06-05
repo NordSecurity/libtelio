@@ -179,7 +179,9 @@ impl StatefullFirewall {
 
     fn handle_outbound_udp(&self, ip: &Ipv4Packet, buffer: &[u8]) {
         let ip_header_len_bytes = (ip.get_header_length() as usize) * 4; //IPv4->IHL to bytes
-        let udp_packet = unwrap_option_or_return!(UdpPacket::new(&buffer[ip_header_len_bytes..]));
+        let udp_packet = unwrap_option_or_return!(UdpPacket::new(unwrap_option_or_return!(
+            buffer.get(ip_header_len_bytes..)
+        )));
         let key = IpConnWithPort {
             src_addr: u32::from(ip.get_destination()),
             src_port: udp_packet.get_destination(),
@@ -199,7 +201,9 @@ impl StatefullFirewall {
 
     fn handle_outbound_tcp(&self, ip: &Ipv4Packet, buffer: &[u8]) {
         let ip_header_len_bytes = (ip.get_header_length() as usize) * 4; //IPv4->IHL to bytes
-        let tcp_packet = unwrap_option_or_return!(TcpPacket::new(&buffer[ip_header_len_bytes..]));
+        let tcp_packet = unwrap_option_or_return!(TcpPacket::new(unwrap_option_or_return!(
+            buffer.get(ip_header_len_bytes..)
+        )));
         let key = IpConnWithPort {
             src_addr: u32::from(ip.get_destination()),
             src_port: tcp_packet.get_destination(),
@@ -243,8 +247,13 @@ impl StatefullFirewall {
         buffer: &[u8],
     ) -> bool {
         let ip_header_len_bytes = (ip.get_header_length() as usize) * 4; //IPv4->IHL to bytes
-        let udp_packet =
-            unwrap_option_or_return!(UdpPacket::new(&buffer[ip_header_len_bytes..]), false);
+        let udp_packet = unwrap_option_or_return!(
+            UdpPacket::new(unwrap_option_or_return!(
+                buffer.get(ip_header_len_bytes..),
+                false
+            )),
+            false
+        );
         let key = IpConnWithPort {
             src_addr: u32::from(ip.get_source()),
             src_port: udp_packet.get_source(),
@@ -304,8 +313,13 @@ impl StatefullFirewall {
         buffer: &[u8],
     ) -> bool {
         let ip_header_len_bytes = (ip.get_header_length() as usize) * 4; //IPv4->IHL to bytes
-        let tcp_packet =
-            unwrap_option_or_return!(TcpPacket::new(&buffer[ip_header_len_bytes..]), false);
+        let tcp_packet = unwrap_option_or_return!(
+            TcpPacket::new(unwrap_option_or_return!(
+                buffer.get(ip_header_len_bytes..),
+                false
+            )),
+            false
+        );
         let key = IpConnWithPort {
             src_addr: u32::from(ip.get_source()),
             src_port: tcp_packet.get_source(),
@@ -385,8 +399,13 @@ impl StatefullFirewall {
         buffer: &[u8],
     ) -> bool {
         let ip_header_len_bytes = (ip.get_header_length() as usize) * 4; //IPv4->IHL to bytes
-        let icmp_packet =
-            unwrap_option_or_return!(IcmpPacket::new(&buffer[ip_header_len_bytes..]), false);
+        let icmp_packet = unwrap_option_or_return!(
+            IcmpPacket::new(unwrap_option_or_return!(
+                buffer.get(ip_header_len_bytes..),
+                false
+            )),
+            false
+        );
 
         if (1 << icmp_packet.get_icmp_type().0) & ICMP_BLOCK_TYPES_MASK != 0
             && !whitelist.allow_any_ip.load(Ordering::Relaxed)

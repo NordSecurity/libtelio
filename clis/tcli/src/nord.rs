@@ -191,8 +191,14 @@ impl Nord {
             .send()?
             .checked()?
             .json()?;
-        let endpoint: SocketAddr = (server[0].station, 51820).into();
-        let public_key: PublicKey = server[0]
+        let endpoint: SocketAddr = (
+            server.first().ok_or(Error::NoPublicKeyWithId(35))?.station,
+            51820,
+        )
+            .into();
+        let public_key: PublicKey = server
+            .first()
+            .ok_or(Error::NoPublicKeyWithId(35))?
             .technologies
             .iter()
             .find_map(|t| {

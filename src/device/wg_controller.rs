@@ -252,7 +252,10 @@ async fn consolidate_firewall<W: WireGuard, F: Firewall>(
     let to_keys: HashSet<PublicKey> = to_peers.iter().map(|p| p.public_key).collect();
     let delete_keys = &from_keys - &to_keys;
     for key in &delete_keys {
-        firewall_remove(firewall, &from_peers[key].allowed_ips);
+        firewall_remove(
+            firewall,
+            &from_peers.get(key).ok_or(Error::PeerNotFound)?.allowed_ips,
+        );
     }
     for node in to_peers {
         firewall_upsert_node(firewall, &node.into());

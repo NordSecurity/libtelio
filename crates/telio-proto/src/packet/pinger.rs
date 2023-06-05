@@ -110,7 +110,7 @@ impl PingerMsg {
         if bytes.is_empty() {
             return Err(CodecError::InvalidLength);
         }
-        let packet_type = PacketType::from(bytes[0]);
+        let packet_type = PacketType::from(*bytes.first().unwrap_or(&(PacketType::Invalid as u8)));
         match packet_type {
             PacketType::Pinger => {
                 let (bytes, public_key) = decrypt(
@@ -276,7 +276,7 @@ impl PartialPongerMsg {
         if bytes.is_empty() {
             return Err(CodecError::InvalidLength);
         }
-        let packet_type = PacketType::from(bytes[0]);
+        let packet_type = PacketType::from(*bytes.first().unwrap_or(&(PacketType::Invalid as u8)));
         match packet_type {
             PacketType::Ponger => {
                 let session = bytes
@@ -309,7 +309,7 @@ impl Codec for PartialPongerMsg {
         if bytes.is_empty() {
             return Err(CodecError::InvalidLength);
         }
-        match PacketType::from(bytes[0]) {
+        match PacketType::from(*bytes.first().unwrap_or(&(PacketType::Invalid as u8))) {
             PacketType::Ponger => {
                 let session = bytes
                     .get(1..9)
