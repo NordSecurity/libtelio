@@ -1,5 +1,5 @@
 from utils import Ping
-from config import DERP_PRIMARY, DERP_SECONDARY, DERP_TERTIARY
+from config import DERP_PRIMARY, DERP_SECONDARY, DERP_TERTIARY, DERP_SERVERS
 from contextlib import AsyncExitStack
 from mesh_api import API
 from utils import ConnectionTag, new_connection_by_tag, testing
@@ -595,3 +595,100 @@ async def test_derp_restart(adapter_type: telio.AdapterType) -> None:
         #  [GW1]    [GW2]   [Symmetric-GW]
         #    |        |        |
         # [ALPHA]   [BETA]  [GAMMA]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "adapter_type",
+    [
+        pytest.param(
+            telio.AdapterType.BoringTun,
+        ),
+        pytest.param(
+            telio.AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+    ],
+)
+async def test_derp_server_list_exhaustion(adapter_type: telio.AdapterType) -> None:
+    async with AsyncExitStack() as exit_stack:
+        CLIENT_ALPHA_IP = "100.72.31.21"
+        CLIENT_BETA_IP = "100.72.31.22"
+
+        api = API()
+        alpha = api.register(
+            name="alpha",
+            id="96ddb926-4b86-11ec-81d3-0242ac130003",
+            private_key="IGm+42FLMMGZRaQvk6F3UPbl+T/CBk8W+NPoX2/AdlU=",
+            public_key="41CCEssnYIh8/8D8YvbTfWEcFanG3D0I0z1tRcN1Lyc=",
+        )
+        beta = api.register(
+            name="beta",
+            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
+            private_key="SPFD84gPtBNc3iGY9Cdrj+mSCwBeh3mCMWfPaeWQolw=",
+            public_key="Q1M3VKUcfTmGsrRzY6BpNds1yDIUvPVcs/2TySv/t1U=",
+        )
+        api.assign_ip(alpha.id, CLIENT_ALPHA_IP)
+        api.assign_ip(beta.id, CLIENT_BETA_IP)
+
+        beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
+
+        alpha_connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+        beta_connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
+        )
+
+        alpha_client = await exit_stack.enter_async_context(
+            telio.run_meshnet(
+                alpha_connection,
+                alpha,
+                api.get_meshmap(alpha.id),
+                adapter_type,
+            )
+        )
+        beta_client = await exit_stack.enter_async_context(
+            telio.run_meshnet(
+                beta_connection,
+                beta,
+                api.get_meshmap(beta.id),
+            )
+        )
+
+        await testing.wait_long(alpha_client.handshake(beta.public_key))
+        await testing.wait_long(beta_client.handshake(alpha.public_key))
+
+        await testing.wait_lengthy(
+            check_derp_connection(alpha_client, str(DERP_SERVERS[0]["ipv4"]), True)
+        )
+        await testing.wait_lengthy(
+            check_derp_connection(beta_client, str(DERP_SERVERS[0]["ipv4"]), True)
+        )
+
+        async with Ping(alpha_connection, CLIENT_BETA_IP) as ping:
+            await testing.wait_long(ping.wait_for_next_ping())
+
+        # Insert iptables rules to block connection for every Derp server
+        async with AsyncExitStack() as exit_stack_iptables:
+            for derp_server in DERP_SERVERS:
+                await exit_stack_iptables.enter_async_context(
+                    beta_client.get_router().break_tcp_conn_to_host(
+                        str(derp_server["ipv4"])
+                    )
+                )
+
+            # Wait till connection is broken
+            for derp_server in DERP_SERVERS:
+                await testing.wait_lengthy(
+                    check_derp_connection(beta_client, str(derp_server["ipv4"]), False)
+                )
+
+        # iptables rules are dropped already
+        await testing.wait_lengthy(
+            check_derp_connection(beta_client, str(DERP_SERVERS[0]["ipv4"]), True)
+        )
+
+        # Ping peer to check if connection truly works
+        async with Ping(alpha_connection, CLIENT_BETA_IP) as ping:
+            await testing.wait_long(ping.wait_for_next_ping())
