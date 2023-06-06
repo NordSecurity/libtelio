@@ -3,6 +3,7 @@
 ### Changelog
 * LLT-3524: Replace [] operator with .get
 * LLT-3554: Add version in FileInfo for windows binary.
+* LLT-3764: Upgrade moose to 0.6.0
 
 <br>
 
