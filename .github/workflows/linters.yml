@@ -76,3 +76,16 @@ jobs:
           with:
             command: fmt
             args: -- --check --color always
+  python-format:
+      runs-on: ubuntu-22.04
+      steps:
+        - uses: actions/checkout@v3
+        - run: pip3 install -r ./requirements.txt
+        - run: black --check --diff --color ./nat-lab
+  natlab-typecheck:
+      runs-on: ubuntu-22.04
+      steps:
+        - uses: actions/checkout@v3
+        - run: pip3 install -r ./nat-lab/requirements.txt
+        - run: ./run_local.py --nobuild --notests
+          working-directory: nat-lab
