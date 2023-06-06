@@ -77,6 +77,8 @@ class DockerProcess(Process):
             else:
                 decodeable_lines = lines[:-1]
                 buffers[message.stream] = lines[-1]
+                if len(lines) <= 1:
+                    continue
 
             output = b"\x0A".join(decodeable_lines).decode(sys.getfilesystemencoding())
 

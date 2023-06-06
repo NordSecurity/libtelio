@@ -12,7 +12,8 @@ class ExitDns:
 @dataclass_json
 @dataclass
 class Direct:
-    providers: Optional[List[str]]
+    providers: Optional[List[str]] = None
+    endpoint_interval_secs: Optional[int] = None
 
 
 @dataclass_json

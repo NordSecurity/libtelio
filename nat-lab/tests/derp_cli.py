@@ -7,20 +7,13 @@ import asyncio
 import telio
 
 
-async def check_derp_connection(
-    client: telio.Client, server_ip: str, state: bool
-) -> Optional[telio.DerpServer]:
-    while True:
-        server = await client.get_derp_server()
-
-        if isinstance(server, telio.DerpServer):
-            if state:
-                if server.ipv4 == server_ip and server.conn_state == "connected":
-                    return server
-            else:
-                if server.ipv4 != server_ip:
-                    return server
-        await asyncio.sleep(1)
+async def check_derp_connection(client: telio.Client, server_ip: str, state: bool):
+    await client.wait_for_derp_state(
+        server_ip,
+        [telio.State.Connected]
+        if state
+        else [telio.State.Disconnected, telio.State.Connecting],
+    )
 
 
 class DerpTarget:

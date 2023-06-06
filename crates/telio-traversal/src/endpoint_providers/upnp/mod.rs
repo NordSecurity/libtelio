@@ -164,6 +164,15 @@ impl<Wg: WireGuard> EndpointProvider for UpnpEndpointProvider<Wg> {
         .await?
     }
 
+    async fn handle_endpoint_gone_notification(&self) {
+        task_exec!(&self.task, async move |s| {
+            s.endpoint_candidate = None;
+            Ok(())
+        })
+        .await
+        .unwrap_or_default()
+    }
+
     async fn send_ping(
         &self,
         addr: SocketAddr,
@@ -174,6 +183,17 @@ impl<Wg: WireGuard> EndpointProvider for UpnpEndpointProvider<Wg> {
             .send_ping(addr, session_id, &public_key)
             .await))
         .await?
+    }
+
+    async fn get_current_endpoints(&self) -> Option<Vec<EndpointCandidate>> {
+        task_exec!(&self.task, async move |s| {
+            if let Some(candidate) = s.endpoint_candidate.clone() {
+                return Ok(Some(vec![candidate]));
+            }
+            Ok(None)
+        })
+        .await
+        .unwrap_or(None)
     }
 }
 
@@ -224,51 +244,11 @@ impl<Wg: WireGuard, I: IgdCommands, E: Backoff> State<Wg, I, E> {
         tokio::time::timeout(Duration::from_secs(5), async move {
             if self.endpoint_candidate.is_none() {
                 self.create_endpoint_candidate().await;
-                return Ok(());
-            };
-
-            match self.is_current_endpoint_valid().await {
-                Ok(_) => telio_log_info!("The current Upnp endpoint is valid."),
-                Err(e) => {
-                    telio_log_info!("Error current Upnp endpoint is invalid: {}", e);
-                    telio_log_info!("Deleting a old Upnp endpoint");
-                    // Ignore Error on port deletion
-                    let _ = self.igd.igd_service_command(
-                        ServiceCmdType::DeleteRoute,
-                        self.wg_port_mapping,
-                        self.ip_addr,
-                    );
-                    let _ = self.igd.igd_service_command(
-                        ServiceCmdType::DeleteRoute,
-                        self.proxy_port_mapping,
-                        self.ip_addr,
-                    );
-                    telio_log_info!("Creating a new Upnp endpoint");
-                    self.create_endpoint_candidate().await;
-                }
-            };
+            }
             Ok(())
         })
         .await
         .unwrap_or(Ok(()))
-    }
-
-    async fn is_current_endpoint_valid(&mut self) -> Result<(), Error> {
-        self.igd
-            .igd_service_command(
-                ServiceCmdType::CheckRoute,
-                self.proxy_port_mapping,
-                self.ip_addr,
-            )
-            .await?;
-        self.igd
-            .igd_service_command(
-                ServiceCmdType::CheckRoute,
-                self.wg_port_mapping,
-                self.ip_addr,
-            )
-            .await?;
-        Ok(())
     }
 
     fn create_random_endpoint_ports(&mut self) {

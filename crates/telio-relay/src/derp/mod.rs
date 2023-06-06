@@ -72,6 +72,10 @@ impl SortedServers {
     fn contains(&self, server: &Server) -> bool {
         self.servers.contains(server)
     }
+
+    fn reset(&mut self) {
+        self.current_server_num = 0;
+    }
 }
 
 impl PartialEq for SortedServers {
@@ -198,6 +202,7 @@ impl State {
                             Self::NAME,
                             sleep_time
                         );
+                        config.servers.reset();
                         sleep(Duration::from_secs_f64(sleep_time)).await;
                         sleep_time = (sleep_time * 2f64).min(60f64);
                         continue;
