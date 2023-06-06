@@ -298,6 +298,7 @@ impl InterfaceWatcher {
             }
             Self::setup(&mut watched_adapter, (*iface).Family);
 
+            #[allow(clippy::unwrap_used)]
             let adapter = watched_adapter.adapter.as_ref().unwrap();
             if let Ok(state) = adapter.get_adapter_state() {
                 if wireguard_nt::WIREGUARD_STATE_DOWN == state {

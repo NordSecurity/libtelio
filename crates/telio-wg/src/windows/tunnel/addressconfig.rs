@@ -133,6 +133,7 @@ unsafe fn cleanup_addresses_on_disconnected_interfaces(
     Err(ERROR_BUFFER_OVERFLOW)
 }
 
+#[allow(clippy::unwrap_used)]
 pub fn configure_interface(
     family: ADDRESS_FAMILY,
     config: &wireguard_uapi::xplatform::set::Device,

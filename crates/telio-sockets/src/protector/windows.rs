@@ -237,6 +237,7 @@ unsafe extern "system" fn global_route_callback(
         ..Default::default()
     };
 
+    #[allow(clippy::unwrap_used)]
     let _ = (CallerContext as *mut Sender<Interface>)
         .as_ref()
         .unwrap()
@@ -261,6 +262,7 @@ unsafe extern "system" fn global_iface_callback(
         ..Default::default()
     };
 
+    #[allow(clippy::unwrap_used)]
     let _ = (CallerContext as *mut Sender<Interface>)
         .as_ref()
         .unwrap()
@@ -433,6 +435,7 @@ pub fn get_default_interface(tunnel_interface: u64) -> Result<Interface> {
         let address = unsafe { (*p_adapter).IpAddressList };
         let adapter_index = unsafe { (*p_adapter).Index };
 
+        #[allow(clippy::unwrap_used)]
         if index == adapter_index {
             default_interface.ip = std::str::from_utf8(unsafe {
                 &*((&address.IpAddress.String) as *const [i8] as *const [u8])

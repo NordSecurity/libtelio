@@ -1,6 +1,3 @@
-#[cfg(windows)]
-use winres;
-
 use anyhow::{anyhow, Context, Result};
 use std::{
     collections::HashSet,
