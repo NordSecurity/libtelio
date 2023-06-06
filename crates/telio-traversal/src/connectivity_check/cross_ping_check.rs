@@ -241,6 +241,16 @@ impl CrossPingCheckTrait for CrossPingCheck {
                 .filter(|v| v.public_key == public_key);
             for session in sessions {
                 session.handle_endpoint_gone_notification().await?;
+
+                for e in s.endpoint_providers.iter() {
+                    if let Some(current_endpoints) = e.get_current_endpoints().await {
+                        if current_endpoints.iter().any(|current_endpoint| {
+                            *current_endpoint == session.local_endpoint_candidate
+                        }) {
+                            e.handle_endpoint_gone_notification().await;
+                        }
+                    }
+                }
             }
             Ok(())
         })
@@ -851,6 +861,12 @@ mod tests {
         endpoint_provider_mock
             .expect_send_ping()
             .returning(|_, _, _| Ok(()));
+        endpoint_provider_mock
+            .expect_handle_endpoint_gone_notification()
+            .returning(|| ());
+        endpoint_provider_mock
+            .expect_get_current_endpoints()
+            .returning(|| None);
         let endpoint_change_subscriber = Chan::default();
         let pong_rx_events = Chan::default();
         let wg_endpoint_publish_events = Chan::default();

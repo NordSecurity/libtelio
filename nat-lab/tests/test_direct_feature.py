@@ -1,8 +1,5 @@
-import asyncio
 from contextlib import AsyncExitStack
 
-from config import DERP_PRIMARY
-import config
 import pytest
 import telio
 from mesh_api import API
@@ -16,7 +13,6 @@ EMPTY_PROVIDER = [""]
 @pytest.mark.asyncio
 async def test_default_direct_features() -> None:
     async with AsyncExitStack() as exit_stack:
-        DERP_IP = str(DERP_PRIMARY["ipv4"])
         CLIENT_ALPHA_IP = "100.72.31.21"
         CLIENT_BETA_IP = "100.72.31.22"
 
@@ -66,7 +62,6 @@ async def test_default_direct_features() -> None:
 @pytest.mark.asyncio
 async def test_enable_all_direct_features() -> None:
     async with AsyncExitStack() as exit_stack:
-        DERP_IP = str(DERP_PRIMARY["ipv4"])
         CLIENT_ALPHA_IP = "100.72.31.21"
         CLIENT_BETA_IP = "100.72.31.22"
 
@@ -118,7 +113,6 @@ async def test_enable_all_direct_features() -> None:
 @pytest.mark.asyncio
 async def test_check_features_with_empty_direct_providers() -> None:
     async with AsyncExitStack() as exit_stack:
-        DERP_IP = str(DERP_PRIMARY["ipv4"])
         CLIENT_ALPHA_IP = "100.72.31.21"
         CLIENT_BETA_IP = "100.72.31.22"
 

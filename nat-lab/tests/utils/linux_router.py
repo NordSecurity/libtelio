@@ -229,3 +229,14 @@ class LinuxRouter(Router):
                     "tcp-reset",
                 ]
             ).execute()
+
+    @asynccontextmanager
+    async def restart_upnpd(self) -> AsyncIterator:
+        await self._connection.create_process(["killall", "upnpd"]).execute()
+        try:
+            yield
+        finally:
+            await self._connection.create_process(["upnpd", "eth0", "eth1"]).execute()
+            await self._connection.create_process(
+                ["/opt/bin/configure-port-restricted-cone-nat"]
+            ).execute()

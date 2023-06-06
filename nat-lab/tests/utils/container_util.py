@@ -20,6 +20,7 @@ async def reset(connection: Connection) -> None:
 
     await router.delete_vpn_route()
     await router.delete_exit_node_route()
+    await connection.create_process(["conntrack", "-F"]).execute()
 
 
 async def get(docker: Docker, container_name: str) -> DockerConnection:

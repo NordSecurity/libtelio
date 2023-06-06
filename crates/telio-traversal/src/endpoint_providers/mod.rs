@@ -101,6 +101,7 @@ pub trait EndpointProvider: Sync + Send + 'static {
         tx: chan::Tx<EndpointCandidatesChangeEvent>,
     );
     async fn trigger_endpoint_candidates_discovery(&self) -> Result<(), Error>;
+    async fn handle_endpoint_gone_notification(&self);
 
     async fn send_ping(
         &self,
@@ -108,4 +109,6 @@ pub trait EndpointProvider: Sync + Send + 'static {
         session_id: Session,
         public_key: PublicKey,
     ) -> Result<(), Error>;
+
+    async fn get_current_endpoints(&self) -> Option<Vec<EndpointCandidate>>;
 }

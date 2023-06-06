@@ -88,6 +88,8 @@ impl<T: WireGuard, G: GetIfAddrs> EndpointProvider for LocalInterfacesEndpointPr
         .await?
     }
 
+    async fn handle_endpoint_gone_notification(&self) {}
+
     async fn send_ping(
         &self,
         addr: SocketAddr,
@@ -98,6 +100,14 @@ impl<T: WireGuard, G: GetIfAddrs> EndpointProvider for LocalInterfacesEndpointPr
             Ok(s.send_ping(addr, session_id, &public_key).await)
         })
         .await?
+    }
+
+    async fn get_current_endpoints(&self) -> Option<Vec<EndpointCandidate>> {
+        task_exec!(&self.task, async move |s| Ok(Some(
+            s.last_endpoint_candidates_event.clone()
+        )))
+        .await
+        .unwrap_or(None)
     }
 }
 
