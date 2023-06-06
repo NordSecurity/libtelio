@@ -435,15 +435,18 @@ pub fn get_default_interface(tunnel_interface: u64) -> Result<Interface> {
         let address = unsafe { (*p_adapter).IpAddressList };
         let adapter_index = unsafe { (*p_adapter).Index };
 
-        #[allow(clippy::unwrap_used)]
         if index == adapter_index {
             default_interface.ip = std::str::from_utf8(unsafe {
                 &*((&address.IpAddress.String) as *const [i8] as *const [u8])
             })
-            .unwrap()
+            .map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::Other, "Couldn't parse the address")
+            })?
             .trim_matches(char::from(0))
             .parse::<Ipv4Addr>()
-            .unwrap();
+            .map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::Other, "Couldn't parse the address")
+            })?;
 
             interface_found = true;
             break;
