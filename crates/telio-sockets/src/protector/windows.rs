@@ -237,6 +237,7 @@ unsafe extern "system" fn global_route_callback(
         ..Default::default()
     };
 
+    #[allow(clippy::unwrap_used)]
     let _ = (CallerContext as *mut Sender<Interface>)
         .as_ref()
         .unwrap()
@@ -261,6 +262,7 @@ unsafe extern "system" fn global_iface_callback(
         ..Default::default()
     };
 
+    #[allow(clippy::unwrap_used)]
     let _ = (CallerContext as *mut Sender<Interface>)
         .as_ref()
         .unwrap()
@@ -437,10 +439,14 @@ pub fn get_default_interface(tunnel_interface: u64) -> Result<Interface> {
             default_interface.ip = std::str::from_utf8(unsafe {
                 &*((&address.IpAddress.String) as *const [i8] as *const [u8])
             })
-            .unwrap()
+            .map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::Other, "Couldn't parse the address")
+            })?
             .trim_matches(char::from(0))
             .parse::<Ipv4Addr>()
-            .unwrap();
+            .map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::Other, "Couldn't parse the address")
+            })?;
 
             interface_found = true;
             break;

@@ -170,7 +170,8 @@ pub fn configure_interface(
             match allowedip.ipaddr {
                 IpAddr::V4(ipaddr) => {
                     let route = RouteDataIpv4 {
-                        destination: Ipv4Net::new(ipaddr, allowedip.cidr_mask).unwrap(),
+                        destination: Ipv4Net::new(ipaddr, allowedip.cidr_mask)
+                            .map_err(|_| winapi::shared::winerror::ERROR_INVALID_PARAMETER)?,
                         next_hop: Ipv4Addr::UNSPECIFIED,
                         metric: 0,
                     };
@@ -182,7 +183,8 @@ pub fn configure_interface(
                 }
                 IpAddr::V6(ipaddr) => {
                     let route = RouteDataIpv6 {
-                        destination: Ipv6Net::new(ipaddr, allowedip.cidr_mask).unwrap(),
+                        destination: Ipv6Net::new(ipaddr, allowedip.cidr_mask)
+                            .map_err(|_| winapi::shared::winerror::ERROR_INVALID_PARAMETER)?,
                         next_hop: Ipv6Addr::UNSPECIFIED,
                         metric: 0,
                     };

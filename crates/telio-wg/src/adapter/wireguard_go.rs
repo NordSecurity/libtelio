@@ -31,6 +31,7 @@ pub enum Error {
 
 unsafe extern "C" fn call_log(_ctx: *mut c_void, l: c_int, msg: *const c_char) {
     let c_str: &CStr = CStr::from_ptr(msg);
+    #[allow(clippy::unwrap_used)]
     let str_slice: &str = c_str.to_str().unwrap();
     match l {
         1 => telio_log_error!("wg_go: crit {}", str_slice),
@@ -49,7 +50,12 @@ impl WireguardGo {
         #[allow(unused_variables)] native_tun: Option<NativeTun>,
     ) -> Result<Self, AdapterError> {
         let ctx = std::ptr::null_mut();
-        let c_name = CString::new(name).unwrap();
+        let c_name = CString::new(name).map_err(|_| {
+            AdapterError::IoError(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Name parameter is null",
+            ))
+        })?;
 
         unsafe {
             // Workaround for hanging wireguard-go due to missing Go runtime init when building with MSVC toolchain.
@@ -77,6 +83,7 @@ impl WireguardGo {
         Ok(WireguardGo { handle })
     }
 
+    #[allow(clippy::unwrap_used)]
     async fn send_uapi_cmd_str(&self, cmd: &str) -> String {
         let cmd = cmd.to_owned();
         let c_cmd = CString::new(cmd).unwrap();
