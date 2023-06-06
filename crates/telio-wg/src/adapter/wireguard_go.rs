@@ -50,8 +50,12 @@ impl WireguardGo {
         #[allow(unused_variables)] native_tun: Option<NativeTun>,
     ) -> Result<Self, AdapterError> {
         let ctx = std::ptr::null_mut();
-        #[allow(clippy::unwrap_used)]
-        let c_name = CString::new(name).unwrap();
+        let c_name = CString::new(name).map_err(|_| {
+            AdapterError::IoError(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Name parameter is null",
+            ))
+        })?;
 
         unsafe {
             // Workaround for hanging wireguard-go due to missing Go runtime init when building with MSVC toolchain.
