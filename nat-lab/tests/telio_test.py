@@ -1,5 +1,5 @@
 from utils.asyncio_util import run_async
-from telio import State, Runtime, Events
+from telio import State, Runtime, Events, PeerInfo
 from typing import List
 import asyncio
 import pytest
@@ -40,7 +40,7 @@ class TestRuntime:
         runtime.notify_peer_state("AAA", event)
         runtime.allowed_pub_keys = set(["AAA"])
 
-        runtime._set_peer_state("AAA", State.Connected, "")
+        runtime._set_peer(PeerInfo(public_key="AAA", state=State.Connected))
         await testing.wait_short(event.wait())
 
         peer_info = runtime.get_peer_info("AAA")
@@ -66,8 +66,8 @@ class TestEvents:
         join_handshake = run_async(events.wait_for_state("BBB", State.Connected))
         await asyncio.sleep(1)  # Wait for handshake coroutine to start
         runtime.allowed_pub_keys = set(["AAA", "BBB"])
-        runtime._set_peer_state("AAA", State.Connected)
-        runtime._set_peer_state("BBB", State.Connected)
+        runtime._set_peer(PeerInfo(public_key="AAA", state=State.Connected))
+        runtime._set_peer(PeerInfo(public_key="BBB", state=State.Connected))
 
         await testing.wait_short(join_handshake)
 
