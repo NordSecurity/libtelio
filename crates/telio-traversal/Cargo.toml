@@ -34,10 +34,11 @@ strum = { version = "0.24.0", features = ["derive"] }
 mockall = { version = "0.11.3", optional = true }
 
 # This is for Upnp
-ssdp-client = "1.0"
 lazy_static = "1.4.0"
 http = "0.2.8"
 httparse = "1.8.0"
+igd = "0.12.1"
+parking_lot = "0.12"
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 rupnp = "1.1.0"
