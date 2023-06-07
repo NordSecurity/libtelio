@@ -389,9 +389,7 @@ async def test_event_content_exit_through_peer(
             )
         )
 
-        await testing.wait_long(
-            client_alpha.handshake(beta.public_key, wait_for_repeating_event=True)
-        )
+        await testing.wait_long(client_alpha.handshake(beta.public_key))
         ip_alpha: str = await testing.wait_long(
             stun.get(connection_alpha, config.STUN_SERVER)
         )
