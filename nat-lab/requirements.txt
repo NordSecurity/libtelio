@@ -1,5 +1,3 @@
--r ../../requirements.txt
-
 aiodocker ~= 0.21
 mypy ~= 0.910
 pytest ~= 7.2
