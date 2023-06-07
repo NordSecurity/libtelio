@@ -172,14 +172,12 @@ async def test_direct_upnp_connection_endpoint_gone() -> None:
                     testing.wait_defined(
                         alpha_client.wait_for_any_derp_state(
                             [telio.State.Connecting, telio.State.Disconnected],
-                            wait_for_repeating_event=True,
                         ),
                         60,
                     ),
                     testing.wait_defined(
                         beta_client.wait_for_any_derp_state(
                             [telio.State.Connecting, telio.State.Disconnected],
-                            wait_for_repeating_event=True,
                         ),
                         60,
                     ),
@@ -220,13 +218,13 @@ async def test_direct_upnp_connection_endpoint_gone() -> None:
         await asyncio.gather(
             testing.wait_defined(
                 alpha_client.wait_for_any_derp_state(
-                    [telio.State.Connected], wait_for_repeating_event=True
+                    [telio.State.Connected],
                 ),
                 60,
             ),
             testing.wait_defined(
                 beta_client.wait_for_any_derp_state(
-                    [telio.State.Connected], wait_for_repeating_event=True
+                    [telio.State.Connected],
                 ),
                 60,
             ),
@@ -268,7 +266,6 @@ async def test_direct_upnp_connection_endpoint_gone() -> None:
                     alpha_client.handshake(
                         beta.public_key,
                         telio.PathType.Relay,
-                        wait_for_repeating_event=True,
                     ),
                     60,
                 ),
@@ -276,7 +273,6 @@ async def test_direct_upnp_connection_endpoint_gone() -> None:
                     beta_client.handshake(
                         alpha.public_key,
                         telio.PathType.Relay,
-                        wait_for_repeating_event=True,
                     ),
                     60,
                 ),
@@ -291,7 +287,6 @@ async def test_direct_upnp_connection_endpoint_gone() -> None:
                 alpha_client.handshake(
                     beta.public_key,
                     telio.PathType.Direct,
-                    wait_for_repeating_event=True,
                 ),
                 60,
             ),
@@ -299,7 +294,6 @@ async def test_direct_upnp_connection_endpoint_gone() -> None:
                 beta_client.handshake(
                     alpha.public_key,
                     telio.PathType.Direct,
-                    wait_for_repeating_event=True,
                 ),
                 60,
             ),
