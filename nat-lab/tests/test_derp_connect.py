@@ -29,27 +29,9 @@ async def test_derp_reconnect_2clients(adapter_type: telio.AdapterType) -> None:
     async with AsyncExitStack() as exit_stack:
         DERP1_IP = str(DERP_PRIMARY["ipv4"])
         DERP2_IP = str(DERP_SECONDARY["ipv4"])
-        CLIENT_ALPHA_IP = "100.72.31.21"
-        CLIENT_BETA_IP = "100.72.31.22"
 
         api = API()
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="mODRJKABR4wDCjXn899QO6wb83azXKZF7hcfX8dWuUA=",
-            public_key="3XCOtCGl5tZJ8N5LksxkjfeqocW0BH2qmARD7qzHDkI=",
-        )
-        beta = api.register(
-            name="beta",
-            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
-            private_key="GN+D2Iy9p3UmyBZhgxU4AhbLT6sxY0SUhXu0a0TuiV4=",
-            public_key="UnB+btGMEBXcR7EchMi28Hqk0Q142WokO6n313dt3mc=",
-        )
-        api.assign_ip(alpha.id, CLIENT_ALPHA_IP)
-        api.assign_ip(beta.id, CLIENT_BETA_IP)
-
-        # create a rule in  iptables to accept connections
-        beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
+        (alpha, beta, _) = api.default_config_three_nodes()
 
         # ALPHA will use the cone nat : "nat-lab-cone-client-01-1
         alpha_connection = await exit_stack.enter_async_context(
@@ -95,7 +77,7 @@ async def test_derp_reconnect_2clients(adapter_type: telio.AdapterType) -> None:
         await testing.wait_lengthy(check_derp_connection(alpha_client, DERP1_IP, True))
         await testing.wait_lengthy(check_derp_connection(beta_client, DERP1_IP, True))
 
-        async with Ping(alpha_connection, CLIENT_BETA_IP) as ping:
+        async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         # ==============================================================
@@ -129,7 +111,7 @@ async def test_derp_reconnect_2clients(adapter_type: telio.AdapterType) -> None:
         await testing.wait_lengthy(check_derp_connection(beta_client, DERP2_IP, True))
 
         # Ping peer to check if connection truly works
-        async with Ping(alpha_connection, CLIENT_BETA_IP) as ping:
+        async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
 
@@ -153,37 +135,9 @@ async def test_derp_reconnect_3clients(adapter_type: telio.AdapterType) -> None:
         DERP1_IP = str(DERP_PRIMARY["ipv4"])
         DERP2_IP = str(DERP_SECONDARY["ipv4"])
         DERP3_IP = str(DERP_TERTIARY["ipv4"])
-        CLIENT_ALPHA_IP = "100.72.32.21"
-        CLIENT_BETA_IP = "100.72.32.22"
-        CLIENT_GAMMA_IP = "100.72.32.23"
 
         api = API()
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="mODRJKABR4wDCjXn899QO6wb83azXKZF7hcfX8dWuUA=",
-            public_key="3XCOtCGl5tZJ8N5LksxkjfeqocW0BH2qmARD7qzHDkI=",
-        )
-        beta = api.register(
-            name="beta",
-            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
-            private_key="GN+D2Iy9p3UmyBZhgxU4AhbLT6sxY0SUhXu0a0TuiV4=",
-            public_key="UnB+btGMEBXcR7EchMi28Hqk0Q142WokO6n313dt3mc=",
-        )
-        gamma = api.register(
-            name="gamma",
-            id="6b825055-91fa-41b7-ac65-78dbf397a2cd",
-            private_key="YM/cgTcnTGeGqnDVSD19sWHKr3yOn45JJ5ngQ/9InFQ=",
-            public_key="BXhQTS33twKHzYh2hnWSiuX2s+8jejdBKbSpkRyVwV4=",
-        )
-        api.assign_ip(alpha.id, CLIENT_ALPHA_IP)
-        api.assign_ip(beta.id, CLIENT_BETA_IP)
-        api.assign_ip(gamma.id, CLIENT_GAMMA_IP)
-
-        beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
-        beta.set_peer_firewall_settings(gamma.id, allow_incoming_connections=True)
-        gamma.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
-        gamma.set_peer_firewall_settings(beta.id, allow_incoming_connections=True)
+        (alpha, beta, gamma) = api.default_config_three_nodes()
 
         alpha_connection = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
@@ -241,16 +195,16 @@ async def test_derp_reconnect_3clients(adapter_type: telio.AdapterType) -> None:
         await testing.wait_lengthy(check_derp_connection(gamma_client, DERP1_IP, True))
 
         # Ping ALPHA --> BETA
-        async with Ping(alpha_connection, CLIENT_BETA_IP) as ping:
+        async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
         # Ping ALPHA --> GAMMA
-        async with Ping(alpha_connection, CLIENT_GAMMA_IP) as ping:
+        async with Ping(alpha_connection, gamma.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
         # Ping BETA --> GAMMA
-        async with Ping(beta_connection, CLIENT_GAMMA_IP) as ping:
+        async with Ping(beta_connection, gamma.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
         # Ping GAMMA --> BETA
-        async with Ping(gamma_connection, CLIENT_BETA_IP) as ping:
+        async with Ping(gamma_connection, beta.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         # ==============================================================
@@ -328,16 +282,16 @@ async def test_derp_reconnect_3clients(adapter_type: telio.AdapterType) -> None:
         await testing.wait_lengthy(check_derp_connection(gamma_client, DERP3_IP, True))
 
         # Ping ALPHA --> BETA
-        async with Ping(alpha_connection, CLIENT_BETA_IP) as ping:
+        async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
         # Ping ALPHA --> GAMMA
-        async with Ping(alpha_connection, CLIENT_GAMMA_IP) as ping:
+        async with Ping(alpha_connection, gamma.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
         # Ping BETA --> GAMMA
-        async with Ping(beta_connection, CLIENT_GAMMA_IP) as ping:
+        async with Ping(beta_connection, gamma.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
         # Ping GAMMA --> BETA
-        async with Ping(gamma_connection, CLIENT_BETA_IP) as ping:
+        async with Ping(gamma_connection, beta.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
 
@@ -387,37 +341,9 @@ async def test_derp_restart(adapter_type: telio.AdapterType) -> None:
         DERP1_IP = str(DERP_SERVERS1[0]["ipv4"])
         DERP2_IP = str(DERP_SERVERS1[1]["ipv4"])
         DERP3_IP = str(DERP_SERVERS1[2]["ipv4"])
-        CLIENT_ALPHA_IP = "100.72.33.21"
-        CLIENT_BETA_IP = "100.72.33.22"
-        CLIENT_GAMMA_IP = "100.72.33.23"
 
         api = API()
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="mODRJKABR4wDCjXn899QO6wb83azXKZF7hcfX8dWuUA=",
-            public_key="3XCOtCGl5tZJ8N5LksxkjfeqocW0BH2qmARD7qzHDkI=",
-        )
-        beta = api.register(
-            name="beta",
-            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
-            private_key="GN+D2Iy9p3UmyBZhgxU4AhbLT6sxY0SUhXu0a0TuiV4=",
-            public_key="UnB+btGMEBXcR7EchMi28Hqk0Q142WokO6n313dt3mc=",
-        )
-        gamma = api.register(
-            name="gamma",
-            id="6b825055-91fa-41b7-ac65-78dbf397a2cd",
-            private_key="YM/cgTcnTGeGqnDVSD19sWHKr3yOn45JJ5ngQ/9InFQ=",
-            public_key="BXhQTS33twKHzYh2hnWSiuX2s+8jejdBKbSpkRyVwV4=",
-        )
-        api.assign_ip(alpha.id, CLIENT_ALPHA_IP)
-        api.assign_ip(beta.id, CLIENT_BETA_IP)
-        api.assign_ip(gamma.id, CLIENT_GAMMA_IP)
-
-        beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
-        beta.set_peer_firewall_settings(gamma.id, allow_incoming_connections=True)
-        gamma.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
-        gamma.set_peer_firewall_settings(beta.id, allow_incoming_connections=True)
+        (alpha, beta, gamma) = api.default_config_three_nodes()
 
         alpha_connection = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
@@ -477,16 +403,16 @@ async def test_derp_restart(adapter_type: telio.AdapterType) -> None:
         await testing.wait_lengthy(check_derp_connection(gamma_client, DERP3_IP, True))
 
         # Ping ALPHA --> BETA
-        async with Ping(alpha_connection, CLIENT_BETA_IP) as ping:
+        async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
         # Ping ALPHA --> GAMMA
-        async with Ping(alpha_connection, CLIENT_GAMMA_IP) as ping:
+        async with Ping(alpha_connection, gamma.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
         # Ping BETA --> GAMMA
-        async with Ping(beta_connection, CLIENT_GAMMA_IP) as ping:
+        async with Ping(beta_connection, gamma.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
         # Ping GAMMA --> BETA
-        async with Ping(gamma_connection, CLIENT_BETA_IP) as ping:
+        async with Ping(gamma_connection, beta.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         # ==============================================================
@@ -509,16 +435,16 @@ async def test_derp_restart(adapter_type: telio.AdapterType) -> None:
         await testing.wait_lengthy(check_derp_connection(gamma_client, DERP3_IP, True))
 
         # Ping ALPHA --> BETA
-        async with Ping(alpha_connection, CLIENT_BETA_IP) as ping:
+        async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
         # Ping ALPHA --> GAMMA
-        async with Ping(alpha_connection, CLIENT_GAMMA_IP) as ping:
+        async with Ping(alpha_connection, gamma.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
         # Ping BETA --> GAMMA
-        async with Ping(beta_connection, CLIENT_GAMMA_IP) as ping:
+        async with Ping(beta_connection, gamma.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
         # Ping GAMMA --> BETA
-        async with Ping(gamma_connection, CLIENT_BETA_IP) as ping:
+        async with Ping(gamma_connection, beta.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         # ==============================================================
@@ -541,16 +467,16 @@ async def test_derp_restart(adapter_type: telio.AdapterType) -> None:
         await testing.wait_lengthy(check_derp_connection(gamma_client, DERP3_IP, True))
 
         # Ping ALPHA --> BETA
-        async with Ping(alpha_connection, CLIENT_BETA_IP) as ping:
+        async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
         # Ping ALPHA --> GAMMA
-        async with Ping(alpha_connection, CLIENT_GAMMA_IP) as ping:
+        async with Ping(alpha_connection, gamma.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
         # Ping BETA --> GAMMA
-        async with Ping(beta_connection, CLIENT_GAMMA_IP) as ping:
+        async with Ping(beta_connection, gamma.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
         # Ping GAMMA --> BETA
-        async with Ping(gamma_connection, CLIENT_BETA_IP) as ping:
+        async with Ping(gamma_connection, beta.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         # ==============================================================
@@ -573,16 +499,16 @@ async def test_derp_restart(adapter_type: telio.AdapterType) -> None:
         await testing.wait_lengthy(check_derp_connection(gamma_client, DERP2_IP, True))
 
         # Ping ALPHA --> BETA
-        async with Ping(alpha_connection, CLIENT_BETA_IP) as ping:
+        async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
         # Ping ALPHA --> GAMMA
-        async with Ping(alpha_connection, CLIENT_GAMMA_IP) as ping:
+        async with Ping(alpha_connection, gamma.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
         # Ping BETA --> GAMMA
-        async with Ping(beta_connection, CLIENT_GAMMA_IP) as ping:
+        async with Ping(beta_connection, gamma.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
         # Ping GAMMA --> BETA
-        async with Ping(gamma_connection, CLIENT_BETA_IP) as ping:
+        async with Ping(gamma_connection, beta.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         # ==============================================================
@@ -612,26 +538,8 @@ async def test_derp_restart(adapter_type: telio.AdapterType) -> None:
 )
 async def test_derp_server_list_exhaustion(adapter_type: telio.AdapterType) -> None:
     async with AsyncExitStack() as exit_stack:
-        CLIENT_ALPHA_IP = "100.72.31.21"
-        CLIENT_BETA_IP = "100.72.31.22"
-
         api = API()
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="mODRJKABR4wDCjXn899QO6wb83azXKZF7hcfX8dWuUA=",
-            public_key="3XCOtCGl5tZJ8N5LksxkjfeqocW0BH2qmARD7qzHDkI=",
-        )
-        beta = api.register(
-            name="beta",
-            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
-            private_key="GN+D2Iy9p3UmyBZhgxU4AhbLT6sxY0SUhXu0a0TuiV4=",
-            public_key="UnB+btGMEBXcR7EchMi28Hqk0Q142WokO6n313dt3mc=",
-        )
-        api.assign_ip(alpha.id, CLIENT_ALPHA_IP)
-        api.assign_ip(beta.id, CLIENT_BETA_IP)
-
-        beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
+        (alpha, beta, _) = api.default_config_three_nodes()
 
         alpha_connection = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
@@ -666,7 +574,7 @@ async def test_derp_server_list_exhaustion(adapter_type: telio.AdapterType) -> N
             check_derp_connection(beta_client, str(DERP_SERVERS[0]["ipv4"]), True)
         )
 
-        async with Ping(alpha_connection, CLIENT_BETA_IP) as ping:
+        async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         # Insert iptables rules to block connection for every Derp server
@@ -679,16 +587,17 @@ async def test_derp_server_list_exhaustion(adapter_type: telio.AdapterType) -> N
                 )
 
             # Wait till connection is broken
-            for derp_server in DERP_SERVERS:
-                await testing.wait_lengthy(
-                    check_derp_connection(beta_client, str(derp_server["ipv4"]), False)
+            await testing.wait_lengthy(
+                beta_client.wait_for_any_derp_state(
+                    [telio.State.Connecting, telio.State.Disconnected]
                 )
+            )
 
         # iptables rules are dropped already
         await testing.wait_lengthy(
-            check_derp_connection(beta_client, str(DERP_SERVERS[0]["ipv4"]), True)
+            beta_client.wait_for_any_derp_state([telio.State.Connected])
         )
 
         # Ping peer to check if connection truly works
-        async with Ping(alpha_connection, CLIENT_BETA_IP) as ping:
+        async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
