@@ -34,11 +34,17 @@ strum = { version = "0.24.0", features = ["derive"] }
 mockall = { version = "0.11.3", optional = true }
 
 # This is for Upnp
-rupnp = "1.1.0"
 ssdp-client = "1.0"
 lazy_static = "1.4.0"
 http = "0.2.8"
 httparse = "1.8.0"
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+rupnp = "1.1.0"
+
+# LLT-3754: get_if_addrs overrides bionic getifaddrs
+[target.'cfg(target_os = "android")'.dependencies]
+rupnp = { version = "1.1.0", default-features = false }
 
 [dev-dependencies]
 assert_matches = "1.5.0"
