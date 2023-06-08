@@ -270,12 +270,10 @@ class Events:
         public_key: str,
         state: State,
         path: PathType = PathType.Relay,
-        wait_for_repeating_event: bool = False,
     ) -> None:
         peer_info = self._runtime.get_peer_info(public_key)
         if (
             peer_info
-            and wait_for_repeating_event is False
             and peer_info.state == state
             and (peer_info.path == path or path == PathType.Any)
         ):
@@ -297,14 +295,9 @@ class Events:
         self,
         server_ip: str,
         state: list[State],
-        wait_for_repeating_event: bool = False,
     ) -> None:
         derp_info = self._runtime.get_derp_info(server_ip)
-        if (
-            derp_info
-            and wait_for_repeating_event is False
-            and derp_info.conn_state in state
-        ):
+        if derp_info and derp_info.conn_state in state:
             return
 
         while True:
@@ -370,13 +363,14 @@ class Client:
         return self._runtime._pinged_endpoints
 
     async def handshake(
-        self, public_key, path=PathType.Relay, wait_for_repeating_event: bool = False
+        self,
+        public_key,
+        path=PathType.Relay,
     ) -> None:
         await self._events.wait_for_state(
             public_key,
             State.Connected,
             path,
-            wait_for_repeating_event,
         )
 
     async def disconnect(self, public_key, path=PathType.Relay) -> None:
@@ -391,20 +385,19 @@ class Client:
         await event.wait()
 
     async def wait_for_derp_state(
-        self, server_ip: str, state: list[State], wait_for_repeating_event: bool = False
+        self,
+        server_ip: str,
+        state: list[State],
     ) -> None:
-        await self._events.wait_for_derp_state(
-            server_ip, state, wait_for_repeating_event
-        )
+        await self._events.wait_for_derp_state(server_ip, state)
 
-    async def wait_for_any_derp_state(
-        self, state: list[State], wait_for_repeating_event: bool = False
-    ) -> None:
+    async def wait_for_any_derp_state(self, state: list[State]) -> None:
         futures = []
         for derp in DERP_SERVERS:
             futures.append(
                 self._events.wait_for_derp_state(
-                    str(derp["ipv4"]), state, wait_for_repeating_event
+                    str(derp["ipv4"]),
+                    state,
                 )
             )
         _, pending = await asyncio.wait(futures, return_when=asyncio.FIRST_COMPLETED)
