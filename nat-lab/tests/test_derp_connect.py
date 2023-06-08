@@ -11,20 +11,8 @@ import telio
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "adapter_type",
-    [
-        pytest.param(
-            telio.AdapterType.BoringTun,
-        ),
-        pytest.param(
-            telio.AdapterType.LinuxNativeWg,
-            marks=pytest.mark.linux_native,
-        ),
-    ],
-)
 # test client reconnection
-async def test_derp_reconnect_2clients(adapter_type: telio.AdapterType) -> None:
+async def test_derp_reconnect_2clients() -> None:
     # TODO test tcp keepalive
     async with AsyncExitStack() as exit_stack:
         DERP1_IP = str(DERP_PRIMARY["ipv4"])
@@ -48,7 +36,6 @@ async def test_derp_reconnect_2clients(adapter_type: telio.AdapterType) -> None:
                 alpha_connection,
                 alpha,
                 api.get_meshmap(alpha.id),
-                adapter_type,
             )
         )
 
@@ -116,20 +103,8 @@ async def test_derp_reconnect_2clients(adapter_type: telio.AdapterType) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "adapter_type",
-    [
-        pytest.param(
-            telio.AdapterType.BoringTun,
-        ),
-        pytest.param(
-            telio.AdapterType.LinuxNativeWg,
-            marks=pytest.mark.linux_native,
-        ),
-    ],
-)
 # test client reconnection
-async def test_derp_reconnect_3clients(adapter_type: telio.AdapterType) -> None:
+async def test_derp_reconnect_3clients() -> None:
     # TODO test tcp keepalive
     async with AsyncExitStack() as exit_stack:
         DERP1_IP = str(DERP_PRIMARY["ipv4"])
@@ -154,7 +129,6 @@ async def test_derp_reconnect_3clients(adapter_type: telio.AdapterType) -> None:
                 alpha_connection,
                 alpha,
                 api.get_meshmap(alpha.id),
-                adapter_type,
             )
         )
         beta_client = await exit_stack.enter_async_context(
@@ -296,20 +270,8 @@ async def test_derp_reconnect_3clients(adapter_type: telio.AdapterType) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "adapter_type",
-    [
-        pytest.param(
-            telio.AdapterType.BoringTun,
-        ),
-        pytest.param(
-            telio.AdapterType.LinuxNativeWg,
-            marks=pytest.mark.linux_native,
-        ),
-    ],
-)
 # test client reconnection
-async def test_derp_restart(adapter_type: telio.AdapterType) -> None:
+async def test_derp_restart() -> None:
     async with AsyncExitStack() as exit_stack:
         DERP_SERVERS1 = [
             DERP_PRIMARY.copy(),
@@ -360,7 +322,6 @@ async def test_derp_restart(adapter_type: telio.AdapterType) -> None:
                 alpha_connection,
                 alpha,
                 api.get_meshmap(alpha.id, DERP_SERVERS1),
-                adapter_type,
             )
         )
         beta_client = await exit_stack.enter_async_context(
@@ -524,19 +485,7 @@ async def test_derp_restart(adapter_type: telio.AdapterType) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "adapter_type",
-    [
-        pytest.param(
-            telio.AdapterType.BoringTun,
-        ),
-        pytest.param(
-            telio.AdapterType.LinuxNativeWg,
-            marks=pytest.mark.linux_native,
-        ),
-    ],
-)
-async def test_derp_server_list_exhaustion(adapter_type: telio.AdapterType) -> None:
+async def test_derp_server_list_exhaustion() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
         (alpha, beta, _) = api.default_config_three_nodes()
@@ -553,7 +502,6 @@ async def test_derp_server_list_exhaustion(adapter_type: telio.AdapterType) -> N
                 alpha_connection,
                 alpha,
                 api.get_meshmap(alpha.id),
-                adapter_type,
             )
         )
         beta_client = await exit_stack.enter_async_context(
