@@ -5,6 +5,7 @@
 * LLT-3554: Add version in FileInfo for windows binary.
 * LLT-3764: Upgrade moose to 0.6.0
 * LLT-3740: Add endpoint gone notification for endpoint providers
+* LLT-3754: Fix Android getifaddrs permission error
 * LLT-3506: Add ip field to node events
 * LLT-3638: Store fingerprints persistently
 
