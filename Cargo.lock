@@ -1506,7 +1506,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64 0.13.1",
- "clap 3.2.25",
  "crypto_box",
  "env_logger",
  "futures",
@@ -1514,6 +1513,7 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "structopt",
  "telio-crypto",
  "telio-relay",
  "telio-sockets",
