@@ -167,7 +167,14 @@ impl<Wg: WireGuard, E: Backoff + 'static> EndpointProvider for StunEndpointProvi
         task_exec!(&self.task, async move |s| Ok(s.start_stun_session().await)).await?
     }
 
-    async fn handle_endpoint_gone_notification(&self) {}
+    async fn handle_endpoint_gone_notification(&self) {
+        task_exec!(&self.task, async move |s| {
+            s.stun_session = None;
+            Ok(())
+        })
+        .await
+        .unwrap_or_default();
+    }
 
     async fn send_ping(
         &self,

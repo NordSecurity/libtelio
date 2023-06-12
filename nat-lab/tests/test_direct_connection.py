@@ -1,11 +1,12 @@
 from utils import Ping
-from config import DERP_PRIMARY, DERP_SECONDARY, DERP_TERTIARY
+from config import DERP_PRIMARY, DERP_SECONDARY, DERP_TERTIARY, DERP_SERVERS
 from contextlib import AsyncExitStack
 from mesh_api import API
 from utils import ConnectionTag, new_connection_by_tag, testing
 from derp_cli import check_derp_connection
 from telio import PathType
 from telio_features import TelioFeatures, Direct
+from typing import List
 import asyncio
 import pytest
 import telio
@@ -557,3 +558,182 @@ async def test_direct_connection_loss_for_infinity(
                 "DROP",
             ]
         ).execute()
+
+
+@pytest.mark.timeout(180)
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "alpha_connection_tag,beta_connection_tag,endpoint_providers",
+    [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            ConnectionTag.DOCKER_CONE_CLIENT_2,
+            ["stun"],
+        ),
+        pytest.param(
+            ConnectionTag.DOCKER_UPNP_CLIENT_1,
+            ConnectionTag.DOCKER_UPNP_CLIENT_2,
+            ["upnp"],
+        ),
+    ],
+)
+async def test_direct_connection_endpoint_gone(
+    alpha_connection_tag: ConnectionTag,
+    beta_connection_tag: ConnectionTag,
+    endpoint_providers: List[str],
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        api = API()
+        (alpha, beta, _) = api.default_config_three_nodes()
+        alpha_connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(alpha_connection_tag)
+        )
+        beta_connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(beta_connection_tag)
+        )
+
+        alpha_client = await exit_stack.enter_async_context(
+            telio.run_meshnet(
+                alpha_connection,
+                alpha,
+                api.get_meshmap(alpha.id),
+                telio_features=TelioFeatures(
+                    direct=Direct(providers=endpoint_providers)
+                ),
+            )
+        )
+
+        beta_client = await exit_stack.enter_async_context(
+            telio.run_meshnet(
+                beta_connection,
+                beta,
+                api.get_meshmap(beta.id),
+                telio_features=TelioFeatures(
+                    direct=Direct(providers=endpoint_providers)
+                ),
+            )
+        )
+
+        async def _check_if_true_direct_connection() -> None:
+            async with AsyncExitStack() as temp_exit_stack:
+                for derp in DERP_SERVERS:
+                    await temp_exit_stack.enter_async_context(
+                        alpha_client.get_router().break_tcp_conn_to_host(
+                            str(derp["ipv4"])
+                        )
+                    )
+                    await temp_exit_stack.enter_async_context(
+                        beta_client.get_router().break_tcp_conn_to_host(
+                            str(derp["ipv4"])
+                        )
+                    )
+
+                await asyncio.gather(
+                    testing.wait_defined(
+                        alpha_client.wait_for_any_derp_state(
+                            [telio.State.Connecting, telio.State.Disconnected],
+                        ),
+                        60,
+                    ),
+                    testing.wait_defined(
+                        beta_client.wait_for_any_derp_state(
+                            [telio.State.Connecting, telio.State.Disconnected],
+                        ),
+                        60,
+                    ),
+                )
+
+                async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
+                    await testing.wait_defined(ping.wait_for_next_ping(), 60)
+
+        await asyncio.gather(
+            testing.wait_defined(
+                alpha_client.wait_for_any_derp_state([telio.State.Connected]), 60
+            ),
+            testing.wait_defined(
+                beta_client.wait_for_any_derp_state([telio.State.Connected]), 60
+            ),
+        )
+
+        await asyncio.gather(
+            testing.wait_lengthy(
+                alpha_client.handshake(
+                    beta.public_key,
+                    telio.PathType.Direct,
+                )
+            ),
+            testing.wait_lengthy(
+                beta_client.handshake(
+                    alpha.public_key,
+                    telio.PathType.Direct,
+                )
+            ),
+        )
+
+        await _check_if_true_direct_connection()
+
+        await asyncio.gather(
+            testing.wait_defined(
+                alpha_client.wait_for_any_derp_state(
+                    [telio.State.Connected],
+                ),
+                60,
+            ),
+            testing.wait_defined(
+                beta_client.wait_for_any_derp_state(
+                    [telio.State.Connected],
+                ),
+                60,
+            ),
+        )
+
+        async with AsyncExitStack() as temp_exit_stack:
+            await temp_exit_stack.enter_async_context(
+                alpha_client.get_router().disable_path(
+                    alpha_client.get_endpoint_address(beta.public_key)
+                )
+            )
+            await temp_exit_stack.enter_async_context(
+                beta_client.get_router().disable_path(
+                    beta_client.get_endpoint_address(alpha.public_key)
+                )
+            )
+
+            await asyncio.gather(
+                testing.wait_defined(
+                    alpha_client.handshake(
+                        beta.public_key,
+                        telio.PathType.Relay,
+                    ),
+                    60,
+                ),
+                testing.wait_defined(
+                    beta_client.handshake(
+                        alpha.public_key,
+                        telio.PathType.Relay,
+                    ),
+                    60,
+                ),
+            )
+
+            async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
+                await testing.wait_defined(ping.wait_for_next_ping(), 60)
+
+        await asyncio.gather(
+            testing.wait_defined(
+                alpha_client.handshake(
+                    beta.public_key,
+                    telio.PathType.Direct,
+                ),
+                60,
+            ),
+            testing.wait_defined(
+                beta_client.handshake(
+                    alpha.public_key,
+                    telio.PathType.Direct,
+                ),
+                60,
+            ),
+        )
+
+        await _check_if_true_direct_connection()
