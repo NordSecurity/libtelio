@@ -167,9 +167,9 @@ class API:
 
     def default_config_three_nodes(
         self,
-        alpha_is_local: bool,
-        beta_is_local: bool,
-        gamma_is_local: bool,
+        alpha_is_local: bool = False,
+        beta_is_local: bool = False,
+        gamma_is_local: bool = False,
     ) -> Tuple[Node, Node, Node]:
         alpha = self.register(
             name="alpha",

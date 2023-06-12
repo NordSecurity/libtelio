@@ -557,6 +557,14 @@ class Client:
         self._message_idx += 1
         await self._events.message_done(idx)
 
+    def get_endpoint_address(self, public_key: str) -> str:
+        node = self.get_node_state(public_key)
+        if node is None:
+            raise Exception(f"Node {public_key} doesn't exist")
+        if node.endpoint is None:
+            raise Exception(f"Node {public_key} endpoint doesn't exist")
+        return node.endpoint.split(":")[0]
+
 
 @asynccontextmanager
 async def run_meshnet(
