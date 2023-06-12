@@ -112,8 +112,6 @@ class Runtime:
     _peer_state_events: Dict[str, List[asyncio.Event]]
     _derp_state_events: Dict[str, List[asyncio.Event]]
     _derp_state: Dict[str, DerpServer]
-    _peer_sent_cmm_responses: List[str]
-    _pinged_endpoints: List[str]
     _started_tasks: List[str]
     _stopped_tasks: List[str]
     allowed_pub_keys: Set[str]
@@ -124,48 +122,15 @@ class Runtime:
         self._peer_state_events = {}
         self._derp_state_events = {}
         self._derp_state = {}
-        self._peer_sent_cmm_responses = []
-        self._pinged_endpoints = []
         self._started_tasks = []
         self._stopped_tasks = []
         self.allowed_pub_keys = set()
-
-    def _handle_sent_cmm_responses(self, line) -> bool:
-        if "send cmm response to peer" not in line:
-            return False
-
-        tokens = line.split("send cmm response to peer")
-        string = tokens[1].strip()
-        result = re.search(r"\[(.*?)\]", string)
-
-        if result:
-            self._peer_sent_cmm_responses.append(result.group(1))
-            return True
-
-        return False
-
-    def _handle_pinged_endpoints(self, line) -> bool:
-        if "ping endpoint" not in line:
-            return False
-
-        tokens = line.split("ping endpoint")
-        string = tokens[1].strip()
-        result = re.search(r"\[(.*?)\]", string)
-
-        if result:
-            tokens = result.group(1).split(":")
-            self._pinged_endpoints.append(tokens[0])
-            return True
-
-        return False
 
     def handle_output_line(self, line) -> bool:
         return (
             self._handle_node_event(line)
             or self._output_notifier.handle_output(line)
             or self._handle_derp_event(line)
-            or self._handle_sent_cmm_responses(line)
-            or self._handle_pinged_endpoints(line)
             or self._handle_task_information(line)
         )
 
@@ -356,12 +321,6 @@ class Client:
             ],
         )
 
-    async def get_sent_cmm_responses(self) -> List[str]:
-        return self._runtime._peer_sent_cmm_responses
-
-    async def get_pinged_endpoints(self) -> List[str]:
-        return self._runtime._pinged_endpoints
-
     async def handshake(
         self,
         public_key,
@@ -401,8 +360,8 @@ class Client:
                 )
             )
         _, pending = await asyncio.wait(futures, return_when=asyncio.FIRST_COMPLETED)
-        for future in list(pending):
-            await asyncio_util.cancel_future(future)
+        for future in pending:
+            future.cancel()
 
     async def set_meshmap(self, meshmap: Dict[str, Any]) -> None:
         made_changes = await self._configure_interface()
@@ -588,8 +547,6 @@ async def run(
             "- telio nodes",
             "task stopped - ",
             "task started - ",
-            "send cmm response to peer",
-            "ping endpoint",
         ]
         for line in stdout.splitlines():
             if not any(string in line for string in supress_print_list):

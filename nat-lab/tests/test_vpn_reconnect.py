@@ -16,7 +16,9 @@ async def _connect_vpn(connection: Connection, client: Client, wg_server: dict) 
         )
     )
 
-    await testing.wait_long(client.handshake(wg_server["public_key"], PathType.Direct))
+    await testing.wait_lengthy(
+        client.handshake(wg_server["public_key"], PathType.Direct)
+    )
 
     async with Ping(connection, "10.0.80.80") as ping:
         await testing.wait_long(ping.wait_for_next_ping())
