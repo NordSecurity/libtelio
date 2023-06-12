@@ -59,6 +59,10 @@ jobs:
             target_abi: androideabi
             target_os: android
             runner: ubuntu-22.04
+          - arch: x86_64
+            target_abi: msvc
+            target_os: windows
+            runner: windows-2022
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v3
@@ -70,8 +74,20 @@ jobs:
       - name: Install NDK
         run: ./libtelio/ci/setup_ndk.sh
         if: ${{ matrix.target_os == 'android' }}
+      - name: Setup MSVC
+        uses: egor-tensin/vs-shell@v2
+        if: ${{ matrix.target_os == 'windows' }}
       - name: Build libtelio
         run: python3 libtelio/ci/build_libtelio.py build ${{ matrix.target_os }} ${{ matrix.arch }}
+      - name: Test FFI
+        run: |
+          cd libtelio/ffi/tests
+          mkdir build
+          cd build
+          cmake ..
+          make
+          sudo ./test_panic
+        if: ${{ matrix.target_os == 'linux' && matrix.arch == 'x86_64'}}
       - uses: actions/upload-artifact@v3
         with:
           name: libtelio-build-${{ matrix.target_os }}-${{ matrix.arch }}-${{ matrix.target_abi }}
