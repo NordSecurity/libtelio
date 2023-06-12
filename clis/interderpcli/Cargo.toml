@@ -16,6 +16,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 futures = "0.3.23"
 structopt = "0.3.26"
+ring = "0.16"
+
 
 
 telio-crypto = { path = "../../crates/telio-crypto" }
