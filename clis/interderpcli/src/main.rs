@@ -1,5 +1,6 @@
 use anyhow::{anyhow, bail, Context, Result};
 use itertools::Itertools;
+use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::{fs::File, path::PathBuf, sync::Arc, time::Duration};
@@ -13,25 +14,38 @@ use telio_sockets::{NativeProtector, SocketPool};
 use tokio::{net::lookup_host, time::timeout};
 use url::{Host, Url};
 
+#[allow(unwrap_check)]
 #[derive(StructOpt)]
+#[allow(unwrap_check)]
 #[structopt(name = "interderpcli")]
 struct Opt {
     #[structopt(short = "v")]
     pub verbose: bool,
-    /// Config file. Overrides the other options.
+    /// Config file. Overridden by the other options.
+    #[allow(unwrap_check)]
     #[structopt(short = "c", long = "config-file")]
+    #[allow(unwrap_check)]
     pub config_file: Option<PathBuf>,
+    #[allow(unwrap_check)]
     /// First derp server
+    #[allow(unwrap_check)]
     #[structopt(long = "derp-1")]
+    #[allow(unwrap_check)]
     pub derp_1: Option<String>,
     /// Second derp server
+    #[allow(unwrap_check)]
     #[structopt(long = "derp-2")]
+    #[allow(unwrap_check)]
     pub derp_2: Option<String>,
     /// First private key
+    #[allow(unwrap_check)]
     #[structopt(long = "secret-key-1")]
+    #[allow(unwrap_check)]
     pub secret_key_1: Option<SecretKey>,
     /// Second private key
+    #[allow(unwrap_check)]
     #[structopt(long = "secret-key-2")]
+    #[allow(unwrap_check)]
     pub secret_key_2: Option<SecretKey>,
 }
 
@@ -53,7 +67,6 @@ impl Config {
     }
 }
 
-#[allow(unwrap_check)]
 async fn resolve_domain_name(domain: &str) -> Result<SocketAddr> {
     let url = Url::parse(domain)?;
     let hostname = match url.host() {
@@ -119,8 +132,10 @@ async fn ping_each_other(
     client_2: &mut DerpConnection,
 ) -> Result<()> {
     log::info!("Sending client 1 -> client 2...");
-    let tx_msg1 = vec![0, 1, 2, 3];
-    // TODO: Send 3 packets to reduce fp rate ?
+    let mut tx_msg1 = vec![0, 1, 2, 3];
+    SystemRandom::new()
+        .fill(&mut tx_msg1[..])
+        .map_err(|e| anyhow!(e.to_string()))?;
     for _ in 0..3 {
         client_1
             .comms
@@ -130,7 +145,10 @@ async fn ping_each_other(
     }
 
     log::info!("Sending client 2 -> client 1...");
-    let tx_msg2 = vec![3, 2, 1, 0];
+    let mut tx_msg2 = vec![0; 4];
+    SystemRandom::new()
+        .fill(&mut tx_msg2[..])
+        .map_err(|e| anyhow!(e.to_string()))?;
     // TODO: Send 3 packets to reduce fp rate ?
     for _ in 0..3 {
         client_2
@@ -254,16 +272,18 @@ async fn single_check_scenario(opt: Opt) -> Result<()> {
 }
 
 #[tokio::main]
+#[allow(unwrap_check)]
 async fn main() -> Result<()> {
     env_logger::init();
+    #[allow(unwrap_check)]
     let opt = Opt::from_args();
     let verbose = opt.verbose;
 
-    if let Some(config_file) = opt.config_file {
-        // The main scenario this tool has been created for
-        log::info!("Config file scenario");
-        config_file_scenario(config_file, verbose).await
-    } else {
+    if opt.derp_1.is_some()
+        || opt.derp_2.is_some()
+        || opt.secret_key_1.is_some()
+        || opt.secret_key_2.is_some()
+    {
         // The single check scenario used for automatic validation
         // This should not print anything and just use the exit code
         // to reveal the result
@@ -282,5 +302,14 @@ async fn main() -> Result<()> {
                 std::process::exit(1);
             }
         }
+    } else {
+        // The main scenario this tool has been created for
+        log::info!("Config file scenario");
+        config_file_scenario(
+            opt.config_file
+                .ok_or_else(|| anyhow!("Missing config file"))?,
+            verbose,
+        )
+        .await
     }
 }

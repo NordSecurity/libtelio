@@ -776,21 +776,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "derpmon"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
- "structopt",
- "telio-crypto",
- "telio-relay",
- "telio-sockets",
- "tokio",
- "url",
-]
-
-[[package]]
 name = "diff"
 version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1511,6 +1496,7 @@ dependencies = [
  "futures",
  "itertools",
  "log",
+ "ring",
  "serde",
  "serde_json",
  "structopt",
