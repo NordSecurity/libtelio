@@ -231,7 +231,7 @@ async def test_event_content_vpn_connection(
             )
         )
 
-        await testing.wait_long(
+        await testing.wait_lengthy(
             client_alpha.handshake(wg_server["public_key"], path=PathType.Direct)
         )
 
@@ -550,6 +550,13 @@ async def test_event_content_meshnet_node_upgrade_direct(
                 beta,
                 api.get_meshmap(beta.id),
                 telio_features=TelioFeatures(direct=Direct(providers=["stun"])),
+            )
+        )
+
+        await testing.wait_lengthy(
+            asyncio.gather(
+                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
+                client_beta.wait_for_any_derp_state([telio.State.Connected]),
             )
         )
 

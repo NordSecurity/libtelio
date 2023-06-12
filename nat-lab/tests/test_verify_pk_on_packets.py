@@ -4,7 +4,6 @@ import asyncio
 
 from contextlib import AsyncExitStack
 from utils import ConnectionTag, new_connection_by_tag, testing
-from derp_cli import check_derp_connection
 from mesh_api import API
 from config import DERP_PRIMARY
 from typing import Optional
@@ -78,8 +77,12 @@ async def test_verify_pk_on_packets() -> None:
                 telio.AdapterType.BoringTun,
             )
         )
-        await testing.wait_lengthy(check_derp_connection(alpha_client, DERP_IP, True))
-        await testing.wait_lengthy(check_derp_connection(beta_client, DERP_IP, True))
+        await testing.wait_lengthy(
+            alpha_client.wait_for_any_derp_state([telio.State.Connected])
+        )
+        await testing.wait_lengthy(
+            beta_client.wait_for_any_derp_state([telio.State.Connected])
+        )
 
         await testing.wait_long(
             alpha_client.create_fake_derprelay_to_derp01(

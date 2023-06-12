@@ -81,7 +81,7 @@ async def test_vpn_connection(
             )
         )
 
-        await testing.wait_long(
+        await testing.wait_lengthy(
             client_alpha.handshake(wg_server["public_key"], PathType.Direct)
         )
 

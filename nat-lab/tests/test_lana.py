@@ -65,7 +65,9 @@ async def connect_to_default_vpn(client: Client):
             WG_SERVER["ipv4"], WG_SERVER["port"], WG_SERVER["public_key"]
         )
     )
-    await testing.wait_long(client.handshake(WG_SERVER["public_key"], PathType.Direct))
+    await testing.wait_lengthy(
+        client.handshake(WG_SERVER["public_key"], PathType.Direct)
+    )
 
 
 async def wait_for_event_dump(container, events_path, nr_events):

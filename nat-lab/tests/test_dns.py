@@ -276,7 +276,7 @@ async def test_vpn_dns() -> None:
             )
         )
 
-        await testing.wait_long(
+        await testing.wait_lengthy(
             client_alpha.handshake(wg_server["public_key"], path=PathType.Any)
         )
 
@@ -618,7 +618,7 @@ async def test_dns_update() -> None:
             )
         )
 
-        await testing.wait_long(
+        await testing.wait_lengthy(
             client_alpha.handshake(wg_server["public_key"], path=PathType.Any)
         )
 
