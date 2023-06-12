@@ -166,8 +166,21 @@ class LinuxRouter(Router):
                 "-t",
                 "filter",
                 "-A",
+                "INPUT",
+                "-s",
+                address,
+                "-j",
+                "DROP",
+            ]
+        ).execute()
+        await self._connection.create_process(
+            [
+                "iptables",
+                "-t",
+                "filter",
+                "-A",
                 "OUTPUT",
-                "--destination",
+                "-d",
                 address,
                 "-j",
                 "DROP",
@@ -182,8 +195,21 @@ class LinuxRouter(Router):
                     "-t",
                     "filter",
                     "-D",
+                    "INPUT",
+                    "-s",
+                    address,
+                    "-j",
+                    "DROP",
+                ]
+            ).execute()
+            await self._connection.create_process(
+                [
+                    "iptables",
+                    "-t",
+                    "filter",
+                    "-D",
                     "OUTPUT",
-                    "--destination",
+                    "-d",
                     address,
                     "-j",
                     "DROP",
@@ -228,15 +254,4 @@ class LinuxRouter(Router):
                     "--reject-with",
                     "tcp-reset",
                 ]
-            ).execute()
-
-    @asynccontextmanager
-    async def restart_upnpd(self) -> AsyncIterator:
-        await self._connection.create_process(["killall", "upnpd"]).execute()
-        try:
-            yield
-        finally:
-            await self._connection.create_process(["upnpd", "eth0", "eth1"]).execute()
-            await self._connection.create_process(
-                ["/opt/bin/configure-port-restricted-cone-nat"]
             ).execute()

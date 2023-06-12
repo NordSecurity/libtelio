@@ -105,7 +105,3 @@ class WindowsRouter(Router):
     @asynccontextmanager
     async def break_tcp_conn_to_host(self, address: str) -> AsyncIterator:
         yield
-
-    @asynccontextmanager
-    async def restart_upnpd(self) -> AsyncIterator:
-        yield
