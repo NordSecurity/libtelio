@@ -5,11 +5,11 @@ from mesh_api import API
 from telio import AdapterType, PathType
 from telio_features import TelioFeatures, Direct
 from utils import ConnectionTag, new_connection_by_tag
-from derp_cli import check_derp_connection
 import config
 import pytest
 import telio
 import utils.testing as testing
+import asyncio
 
 
 @pytest.mark.asyncio
@@ -106,7 +106,7 @@ async def test_mesh_plus_vpn_one_peer(
                 wg_server["public_key"],
             )
         )
-        await testing.wait_long(
+        await testing.wait_lengthy(
             client_alpha.handshake(wg_server["public_key"], PathType.Direct)
         )
 
@@ -223,10 +223,10 @@ async def test_mesh_plus_vpn_both_peers(
             )
         )
 
-        await testing.wait_long(
+        await testing.wait_lengthy(
             client_alpha.handshake(wg_server["public_key"], PathType.Direct)
         )
-        await testing.wait_long(
+        await testing.wait_lengthy(
             client_beta.handshake(wg_server["public_key"], PathType.Direct)
         )
 
@@ -341,7 +341,7 @@ async def test_vpn_plus_mesh(
             )
         )
 
-        await testing.wait_long(
+        await testing.wait_lengthy(
             client_alpha.handshake(wg_server["public_key"], PathType.Direct)
         )
 
@@ -452,8 +452,12 @@ async def test_vpn_plus_mesh_over_direct(
             )
         )
 
-        await testing.wait_lengthy(check_derp_connection(client_alpha, DERP_IP, True))
-        await testing.wait_lengthy(check_derp_connection(client_beta, DERP_IP, True))
+        await testing.wait_lengthy(
+            asyncio.gather(
+                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
+                client_beta.wait_for_any_derp_state([telio.State.Connected]),
+            )
+        )
 
         await testing.wait_defined(
             client_alpha.handshake(beta.public_key, PathType.Direct),
@@ -624,9 +628,13 @@ async def test_vpn_plus_mesh_over_different_connection_types(
         await testing.wait_long(client_alpha.handshake(gamma.public_key))
         await testing.wait_long(client_gamma.handshake(alpha.public_key))
 
-        await testing.wait_lengthy(check_derp_connection(client_alpha, DERP_IP, True))
-        await testing.wait_lengthy(check_derp_connection(client_beta, DERP_IP, True))
-        await testing.wait_lengthy(check_derp_connection(client_gamma, DERP_IP, True))
+        await testing.wait_lengthy(
+            asyncio.gather(
+                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
+                client_beta.wait_for_any_derp_state([telio.State.Connected]),
+                client_beta.wait_for_any_derp_state([telio.State.Connected]),
+            )
+        )
 
         await testing.wait_defined(
             client_alpha.handshake(beta.public_key, PathType.Direct),

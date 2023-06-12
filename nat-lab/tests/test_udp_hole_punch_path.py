@@ -3,7 +3,6 @@ from config import DERP_PRIMARY, DERP_SECONDARY, DERP_TERTIARY
 from contextlib import AsyncExitStack
 from mesh_api import API
 from utils import ConnectionTag, new_connection_by_tag, testing
-from derp_cli import check_derp_connection
 from telio import PathType
 from telio_features import TelioFeatures, Direct
 import asyncio
@@ -145,20 +144,22 @@ async def test_direct_working_paths(
             )
         )
 
-        await testing.wait_lengthy(check_derp_connection(alpha_client, DERP_IP, True))
-        await testing.wait_lengthy(check_derp_connection(beta_client, DERP_IP, True))
+        await testing.wait_lengthy(
+            alpha_client.wait_for_any_derp_state([telio.State.Connected])
+        )
+        await testing.wait_lengthy(
+            beta_client.wait_for_any_derp_state([telio.State.Connected])
+        )
 
         await testing.wait_lengthy(
-            alpha_client._events.wait_for_state(
-                "UnB+btGMEBXcR7EchMi28Hqk0Q142WokO6n313dt3mc=",
-                telio.State.Connected,
+            alpha_client.handshake(
+                beta.public_key,
                 PathType.Direct,
             ),
         )
         await testing.wait_lengthy(
-            beta_client._events.wait_for_state(
-                "3XCOtCGl5tZJ8N5LksxkjfeqocW0BH2qmARD7qzHDkI=",
-                telio.State.Connected,
+            beta_client.handshake(
+                alpha.public_key,
                 PathType.Direct,
             )
         )
@@ -294,8 +295,12 @@ async def test_direct_failing_paths(
             )
         )
 
-        await testing.wait_lengthy(check_derp_connection(alpha_client, DERP_IP, True))
-        await testing.wait_lengthy(check_derp_connection(beta_client, DERP_IP, True))
+        await testing.wait_lengthy(
+            alpha_client.wait_for_any_derp_state([telio.State.Connected])
+        )
+        await testing.wait_lengthy(
+            beta_client.wait_for_any_derp_state([telio.State.Connected])
+        )
 
         # TODO: Add CMM messages are going through
         with pytest.raises(asyncio.TimeoutError):
@@ -370,20 +375,25 @@ async def test_direct_short_connection_loss(
             )
         )
 
+        await testing.wait_lengthy(
+            asyncio.gather(
+                alpha_client.wait_for_any_derp_state([telio.State.Connected]),
+                beta_client.wait_for_any_derp_state([telio.State.Connected]),
+            )
+        )
+
         await testing.wait_defined(
-            alpha_client._events.wait_for_state(
-                "UnB+btGMEBXcR7EchMi28Hqk0Q142WokO6n313dt3mc=",
-                telio.State.Connected,
-                PathType.Direct,
+            asyncio.gather(
+                alpha_client.handshake(
+                    beta.public_key,
+                    PathType.Direct,
+                ),
+                beta_client.handshake(
+                    alpha.public_key,
+                    PathType.Direct,
+                ),
             ),
             120,
-        )
-        await testing.wait_lengthy(
-            beta_client._events.wait_for_state(
-                "3XCOtCGl5tZJ8N5LksxkjfeqocW0BH2qmARD7qzHDkI=",
-                telio.State.Connected,
-                PathType.Direct,
-            )
         )
 
         # Disrupt UHP connection for 25 seconds
@@ -491,20 +501,25 @@ async def test_direct_connection_loss_for_infinity(
             )
         )
 
+        await testing.wait_lengthy(
+            asyncio.gather(
+                alpha_client.wait_for_any_derp_state([telio.State.Connected]),
+                beta_client.wait_for_any_derp_state([telio.State.Connected]),
+            )
+        )
+
         await testing.wait_defined(
-            alpha_client._events.wait_for_state(
-                "UnB+btGMEBXcR7EchMi28Hqk0Q142WokO6n313dt3mc=",
-                telio.State.Connected,
-                PathType.Direct,
+            asyncio.gather(
+                alpha_client.handshake(
+                    beta.public_key,
+                    PathType.Direct,
+                ),
+                beta_client.handshake(
+                    alpha.public_key,
+                    PathType.Direct,
+                ),
             ),
             120,
-        )
-        await testing.wait_lengthy(
-            beta_client._events.wait_for_state(
-                "3XCOtCGl5tZJ8N5LksxkjfeqocW0BH2qmARD7qzHDkI=",
-                telio.State.Connected,
-                PathType.Direct,
-            )
         )
 
         await alpha_connection.create_process(

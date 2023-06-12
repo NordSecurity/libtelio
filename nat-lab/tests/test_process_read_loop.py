@@ -21,6 +21,7 @@ async def test_docker_process_read_loop() -> None:
         assert process.get_stdout().count(TESTING_STRING) == 1000001
 
 
+@pytest.mark.asyncio
 async def test_docker_process_read_loop_invalid_utf() -> None:
     async with AsyncExitStack() as exit_stack:
         connection = await exit_stack.enter_async_context(

@@ -100,6 +100,7 @@ async def test_ping_pong() -> None:
         assert "Ponger" in client_output
 
 
+@pytest.mark.asyncio
 async def test_send_malform_pinger_packet() -> None:
     async with AsyncExitStack() as exit_stack:
 

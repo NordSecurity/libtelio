@@ -9,6 +9,7 @@ import utils.testing as testing
 import re
 
 
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "alpha_connection_tag,alpha_adapter_type",
     [
