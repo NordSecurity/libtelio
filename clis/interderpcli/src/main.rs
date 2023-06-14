@@ -1,10 +1,10 @@
 use anyhow::{anyhow, bail, Context, Result};
+use clap::Parser;
 use itertools::Itertools;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::{fs::File, path::PathBuf, sync::Arc, time::Duration};
-use structopt::StructOpt;
 use telio_crypto::SecretKey;
 use telio_relay::{
     derp::Config as DerpConfig,
@@ -14,38 +14,25 @@ use telio_sockets::{NativeProtector, SocketPool};
 use tokio::{net::lookup_host, time::timeout};
 use url::{Host, Url};
 
-#[allow(unwrap_check)]
-#[derive(StructOpt)]
-#[allow(unwrap_check)]
-#[structopt(name = "interderpcli")]
+#[derive(Parser)]
+#[command(version)]
 struct Opt {
-    #[structopt(short = "v")]
+    #[arg(short, long)]
     pub verbose: bool,
     /// Config file. Overridden by the other options.
-    #[allow(unwrap_check)]
-    #[structopt(short = "c", long = "config-file")]
-    #[allow(unwrap_check)]
+    #[arg(short, long)]
     pub config_file: Option<PathBuf>,
-    #[allow(unwrap_check)]
     /// First derp server
-    #[allow(unwrap_check)]
-    #[structopt(long = "derp-1")]
-    #[allow(unwrap_check)]
+    #[arg(long)]
     pub derp_1: Option<String>,
     /// Second derp server
-    #[allow(unwrap_check)]
-    #[structopt(long = "derp-2")]
-    #[allow(unwrap_check)]
+    #[arg(long)]
     pub derp_2: Option<String>,
     /// First private key
-    #[allow(unwrap_check)]
-    #[structopt(long = "secret-key-1")]
-    #[allow(unwrap_check)]
+    #[arg(long)]
     pub secret_key_1: Option<SecretKey>,
     /// Second private key
-    #[allow(unwrap_check)]
-    #[structopt(long = "secret-key-2")]
-    #[allow(unwrap_check)]
+    #[arg(long)]
     pub secret_key_2: Option<SecretKey>,
 }
 
@@ -272,11 +259,9 @@ async fn single_check_scenario(opt: Opt) -> Result<()> {
 }
 
 #[tokio::main]
-#[allow(unwrap_check)]
 async fn main() -> Result<()> {
     env_logger::init();
-    #[allow(unwrap_check)]
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
     let verbose = opt.verbose;
 
     if opt.derp_1.is_some()
