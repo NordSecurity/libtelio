@@ -274,15 +274,11 @@ async fn main() -> Result<()> {
         log::info!("Single check scenario");
         match single_check_scenario(opt).await {
             Ok(_) => {
-                if verbose {
-                    println!("Success");
-                }
+                log::info!("Success");
                 std::process::exit(0);
             }
             Err(e) => {
-                if verbose {
-                    println!("Error: {}", e);
-                }
+                log::info!("Error: {}", e);
                 std::process::exit(1);
             }
         }
