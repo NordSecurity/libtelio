@@ -136,7 +136,6 @@ async fn ping_each_other(
     SystemRandom::new()
         .fill(&mut tx_msg2[..])
         .map_err(|e| anyhow!(e.to_string()))?;
-    // TODO: Send 3 packets to reduce fp rate ?
     for _ in 0..3 {
         client_2
             .comms
