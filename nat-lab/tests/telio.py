@@ -583,6 +583,9 @@ async def run(
         await testing.wait_normal(client.stop_device())
         await asyncio_util.cancel_future(future_process)
         await asyncio_util.cancel_future(client.future_event_request_loop)
+        await client.get_router().delete_interface()
+        await client.get_router().delete_vpn_route()
+        await client.get_router().delete_exit_node_route()
         await save_logs(connection)
 
 

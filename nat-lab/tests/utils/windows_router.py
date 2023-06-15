@@ -89,6 +89,7 @@ class WindowsRouter(Router):
                     "The filename, directory name, or volume label syntax is incorrect."
                 )
                 < 0
+                and exception.stdout.find("Element not found.") < 0
             ):
                 raise exception
 

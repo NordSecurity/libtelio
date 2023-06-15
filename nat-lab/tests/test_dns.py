@@ -8,7 +8,6 @@ import asyncio
 import config
 import pytest
 import telio
-import utils.container_util as container_util
 import utils.testing as testing
 from utils.asyncio_util import run_async_context
 import re
@@ -259,7 +258,9 @@ async def test_vpn_dns() -> None:
         )
         api.assign_ip(alpha.id, ALPHA_NODE_ADDRESS)
 
-        connection = await container_util.get(docker, "nat-lab-cone-client-01-1")
+        connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
 
         client_alpha = await exit_stack.enter_async_context(
             telio.run(
@@ -601,7 +602,9 @@ async def test_dns_update() -> None:
         )
         api.assign_ip(alpha.id, ALPHA_NODE_ADDRESS)
 
-        connection = await container_util.get(docker, "nat-lab-cone-client-01-1")
+        connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
 
         client_alpha = await exit_stack.enter_async_context(
             telio.run(
