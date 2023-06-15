@@ -339,13 +339,6 @@ async def test_derp_restart() -> None:
             )
         )
 
-        await testing.wait_long(alpha_client.handshake(beta.public_key))
-        await testing.wait_long(alpha_client.handshake(gamma.public_key))
-        await testing.wait_long(beta_client.handshake(alpha.public_key))
-        await testing.wait_long(beta_client.handshake(gamma.public_key))
-        await testing.wait_long(gamma_client.handshake(alpha.public_key))
-        await testing.wait_long(gamma_client.handshake(beta.public_key))
-
         # ==============================================================
         # Initial state:
         #
@@ -362,6 +355,13 @@ async def test_derp_restart() -> None:
         await testing.wait_lengthy(check_derp_connection(alpha_client, DERP1_IP, True))
         await testing.wait_lengthy(check_derp_connection(beta_client, DERP2_IP, True))
         await testing.wait_lengthy(check_derp_connection(gamma_client, DERP3_IP, True))
+
+        await testing.wait_long(alpha_client.handshake(beta.public_key))
+        await testing.wait_long(alpha_client.handshake(gamma.public_key))
+        await testing.wait_long(beta_client.handshake(alpha.public_key))
+        await testing.wait_long(beta_client.handshake(gamma.public_key))
+        await testing.wait_long(gamma_client.handshake(alpha.public_key))
+        await testing.wait_long(gamma_client.handshake(beta.public_key))
 
         # Ping ALPHA --> BETA
         async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:

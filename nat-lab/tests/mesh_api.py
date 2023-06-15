@@ -174,24 +174,24 @@ class API:
         alpha = self.register(
             name="alpha",
             id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="mODRJKABR4wDCjXn899QO6wb83azXKZF7hcfX8dWuUA=",
-            public_key="3XCOtCGl5tZJ8N5LksxkjfeqocW0BH2qmARD7qzHDkI=",
+            private_key="IAnPnSDobLEProbDcj0nKTroCyjr2w0Pr2nFa3z35Gg=",
+            public_key="1eX7Fy78bokD5ZSNO5G11R+28v4xzawlsRdSJoU3jDg=",
             is_local=alpha_is_local,
         )
 
         beta = self.register(
             name="beta",
             id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
-            private_key="GN+D2Iy9p3UmyBZhgxU4AhbLT6sxY0SUhXu0a0TuiV4=",
-            public_key="UnB+btGMEBXcR7EchMi28Hqk0Q142WokO6n313dt3mc=",
+            private_key="mODRJKABR4wDCjXn899QO6wb83azXKZF7hcfX8dWuUA=",
+            public_key="3XCOtCGl5tZJ8N5LksxkjfeqocW0BH2qmARD7qzHDkI=",
             is_local=beta_is_local,
         )
 
         gamma = self.register(
             name="gamma",
             id="39388b1e-ebd8-11ec-8ea0-0242ac120002",
-            private_key="wAraYW+DNmY/7zr0whsGCscrGCKToR6gq9XiqlJziWE=",
-            public_key="AqS9/TMs5+Cb2Al72UYRlwS6XsYlte7rAt/uiNBQfTs=",
+            private_key="GN+D2Iy9p3UmyBZhgxU4AhbLT6sxY0SUhXu0a0TuiV4=",
+            public_key="UnB+btGMEBXcR7EchMi28Hqk0Q142WokO6n313dt3mc=",
             is_local=gamma_is_local,
         )
 

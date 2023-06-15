@@ -7,7 +7,6 @@ import asyncio
 import config
 import pytest
 import telio
-import utils.container_util as container_util
 import utils.testing as testing
 from utils import ConnectionTag, new_connection_by_tag, OutputNotifier
 
@@ -40,8 +39,12 @@ async def test_mesh_firewall_successful_passthrough() -> None:
 
         beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=False)
 
-        connection_alpha = await container_util.get(docker, "nat-lab-cone-client-01-1")
-        connection_beta = await container_util.get(docker, "nat-lab-cone-client-02-1")
+        connection_alpha = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+        connection_beta = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
+        )
 
         client_alpha = await exit_stack.enter_async_context(
             telio.run_meshnet(
@@ -102,8 +105,12 @@ async def test_mesh_firewall_reject_packet() -> None:
         alpha.set_peer_firewall_settings(beta.id, allow_incoming_connections=False)
         beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=False)
 
-        connection_alpha = await container_util.get(docker, "nat-lab-cone-client-01-1")
-        connection_beta = await container_util.get(docker, "nat-lab-cone-client-02-1")
+        connection_alpha = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+        connection_beta = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
+        )
 
         client_alpha = await exit_stack.enter_async_context(
             telio.run_meshnet(
@@ -157,9 +164,11 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
         alpha.set_peer_firewall_settings(exit_node.id, allow_incoming_connections=True)
         exit_node.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
 
-        connection_alpha = await container_util.get(docker, "nat-lab-cone-client-01-1")
-        connection_exit_node = await container_util.get(
-            docker, "nat-lab-cone-client-02-1"
+        connection_alpha = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+        connection_exit_node = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
         )
 
         client_alpha = await exit_stack.enter_async_context(

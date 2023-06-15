@@ -5,6 +5,7 @@ from .mac_router import MacRouter
 from .router_util import new_router
 
 from .connection_util import *
+from .connection_tracker import *
 
 from .output_notifier import OutputNotifier
 from .analytics import *

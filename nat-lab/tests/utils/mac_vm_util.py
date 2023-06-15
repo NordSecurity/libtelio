@@ -37,10 +37,12 @@ async def new_connection() -> AsyncIterator[Connection]:
         connection = SshConnection(ssh_connection)
         connection.target_os = TargetOS.Mac
 
-        await _kill_processes(connection)
         await _copy_binaries(ssh_connection, connection)
 
-        yield connection
+        try:
+            yield connection
+        finally:
+            await _kill_processes(connection)
 
 
 async def _copy_binaries(

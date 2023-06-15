@@ -1,4 +1,5 @@
 import pytest
+import natlab
 
 
 def pytest_collection_modifyitems(config, items):
@@ -23,3 +24,7 @@ def pytest_collection_modifyitems(config, items):
                 order_index = 4
 
         item.add_marker(pytest.mark.order(order_index))
+
+
+# def pytest_runtest_setup(item):
+#     natlab.quick_restart_derps()
