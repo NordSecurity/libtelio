@@ -13,9 +13,11 @@ class Ping:
     _process: Process
     _stop: Optional[Coroutine]
     _next_ping_event: asyncio.Event
+    _connection: Connection
 
     def __init__(self, connection: Connection, ip: str) -> None:
         self._ip = ip
+        self._connection = connection
         if connection.target_os == TargetOS.Windows:
             self._process = connection.create_process(["ping", "-t", ip])
         else:
@@ -30,6 +32,12 @@ class Ping:
 
         async def stop(self) -> None:
             await cancel_future(command_coroutine)
+            if self._connection.target_os == TargetOS.Windows:
+                await self._connection.create_process(
+                    ["taskkill", "/IM", "ping.exe", "/F"]
+                ).execute()
+            else:
+                await self._connection.create_process(["killall", "ping"]).execute()
 
         self._stop = stop(self)
 

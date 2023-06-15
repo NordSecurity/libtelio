@@ -156,7 +156,26 @@ class LinuxRouter(Router):
         ).execute()
 
     async def delete_exit_node_route(self) -> None:
-        await self._connection.create_process(["iptables", "-t", "nat", "-F"]).execute()
+        try:
+            await self._connection.create_process(
+                [
+                    "iptables",
+                    "-t",
+                    "nat",
+                    "-D",
+                    "POSTROUTING",
+                    "-s",
+                    "100.64.0.0/10",
+                    "!",
+                    "-o",
+                    self._interface_name,
+                    "-j",
+                    "MASQUERADE",
+                ],
+            ).execute()
+        except ProcessExecError as exception:
+            if exception.stderr.find("No chain/target/match by that name") < 0:
+                raise exception
 
     @asynccontextmanager
     async def disable_path(self, address: str) -> AsyncIterator:

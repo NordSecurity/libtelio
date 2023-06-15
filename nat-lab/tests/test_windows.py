@@ -1,8 +1,7 @@
 import pytest
-import aiodocker
 import utils.testing as testing
 from contextlib import AsyncExitStack
-from utils import container_util, windows_vm_util
+from utils import windows_vm_util, new_connection_by_tag, ConnectionTag
 from mesh_api import API
 import telio
 
@@ -32,16 +31,19 @@ async def test_windows_telio() -> None:
         connection_alpha = await exit_stack.enter_async_context(
             windows_vm_util.new_connection()
         )
-        docker = await exit_stack.enter_async_context(aiodocker.Docker())
 
         client_alpha = await exit_stack.enter_async_context(
             telio.run(connection_alpha, alpha)
         )
         await client_alpha.set_meshmap(api.get_meshmap(alpha.id))
 
+        connection_beta = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
+        )
+
         client_beta = await exit_stack.enter_async_context(
             telio.run_meshnet(
-                await container_util.get(docker, "nat-lab-cone-client-02-1"),
+                connection_beta,
                 beta,
                 api.get_meshmap(beta.id),
             )

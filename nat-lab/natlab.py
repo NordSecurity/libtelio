@@ -50,6 +50,24 @@ def kill():
     stop()
 
 
+def quick_restart_derps(env=None):
+    if env:
+        env = {**os.environ.copy(), **env}
+    docker_status = [
+        line.strip().strip("'")
+        for line in subprocess.check_output(
+            ["docker", "ps", "--filter", "status=running", "--format", "'{{.Names}}'"],
+            env=env,
+        )
+        .decode("utf-8")
+        .splitlines()
+    ]
+
+    for container in docker_status:
+        if "derp" in container:
+            subprocess.run(["docker", "restart", container, "-t", "0"], env=env)
+
+
 def check_containers() -> None:
     services = run_command_with_output(["docker", "compose", "config", "--services"])
     services = [service.strip() for service in services.splitlines()]
