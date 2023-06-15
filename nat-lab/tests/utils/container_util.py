@@ -1,30 +1,49 @@
+from typing import AsyncIterator
+from contextlib import asynccontextmanager
 from aiodocker import Docker
 from utils.connection import Connection, DockerConnection
 from utils.process import ProcessExecError
-from utils import LinuxRouter
 
 
-async def reset(connection: Connection) -> None:
+async def _prepare(connection: Connection) -> None:
+    await connection.create_process(["conntrack", "-F"]).execute()
+    await connection.create_process(
+        ["iptables-save", "-f", "iptables_backup"]
+    ).execute()
+
+
+async def _reset(connection: Connection) -> None:
     try:
-        # JIRA issue: LLT-459
         await connection.create_process(
-            ["killall", "tcli", "derpcli", "ping", "nc", "iperf3"]
+            [
+                "killall",
+                "tcli",
+                "derpcli",
+                "ping",
+                "nc",
+                "iperf3",
+                "tcpdump",
+                "nslookup",
+                "dig",
+                "upnpc",
+            ]
         ).execute()
     except ProcessExecError as exception:
         if exception.stderr.find("no process found") < 0:
             raise exception
 
-    router = LinuxRouter(connection)
-
-    await router.delete_interface()
-
-    await router.delete_vpn_route()
-    await router.delete_exit_node_route()
     await connection.create_process(["conntrack", "-F"]).execute()
 
+    for table in ["filter", "nat", "mangle", "raw", "security"]:
+        await connection.create_process(["iptables", "-t", table, "-F"]).execute()
+    await connection.create_process(["iptables-restore", "iptables_backup"]).execute()
 
-async def get(docker: Docker, container_name: str) -> DockerConnection:
-    container = await docker.containers.get(container_name)
-    connection = DockerConnection(container)
-    await reset(connection)
-    return connection
+
+@asynccontextmanager
+async def get(docker: Docker, container_name: str) -> AsyncIterator[DockerConnection]:
+    connection = DockerConnection(await docker.containers.get(container_name))
+    try:
+        await _prepare(connection)
+        yield connection
+    finally:
+        await _reset(connection)

@@ -38,11 +38,13 @@ async def new_connection() -> AsyncIterator[Connection]:
         connection = SshConnection(ssh_connection)
         connection.target_os = TargetOS.Windows
 
-        await _kill_processes(connection)
         await _copy_binaries(ssh_connection, connection)
         await _disable_firewall(connection)
 
-        yield connection
+        try:
+            yield connection
+        finally:
+            await _kill_processes(connection)
 
 
 async def _disable_firewall(connection: Connection):
