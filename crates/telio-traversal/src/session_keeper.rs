@@ -52,8 +52,10 @@ pub struct SessionKeeper {
 impl SessionKeeper {
     pub fn start(sock_pool: Arc<SocketPool>) -> Result<Self> {
         let mut config_builder = PingerConfig::builder();
-        config_builder = config_builder.bind((Ipv4Addr::UNSPECIFIED, 0).into());
         config_builder = config_builder.kind(ICMP::V4);
+        if cfg!(not(target_os = "android")) {
+            config_builder = config_builder.bind((Ipv4Addr::UNSPECIFIED, 0).into());
+        }
 
         let pinger_client = PingerClient::new(&config_builder.build())?;
 
