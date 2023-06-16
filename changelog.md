@@ -9,6 +9,7 @@
 * LLT-3506: Add ip field to node events
 * LLT-3638: Store fingerprints persistently
 * LLT-3771: Fix derp server list loop
+* LLT-3497: Don't bind ICMP session_keeper socket on Android
 
 <br>
 
