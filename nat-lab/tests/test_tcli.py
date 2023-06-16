@@ -42,28 +42,17 @@ async def test_register_meshnet_client(
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="COFFL2gadYvMNw4aiJAvhbGlJ/F5W7+RdM3ZkSKbVmU=",
-            public_key="YDDaDQHwFlzyQOFahY35KW9jUsan3TOkQ2ZuyErLBjY=",
+        (alpha, beta, _) = api.default_config_three_nodes()
+        alpha_connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(alpha_connection_tag)
         )
-
-        beta = api.register(
-            name="beta",
-            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
-            private_key="gGsIZ/nk0tyeihKWdGvWg60mE97eGK8KRC238iHF+Wg=",
-            public_key="hljyPueY/FgRVrhzDxviv7SDOtoYVUppCbb4uJiBQ3o=",
+        beta_connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
         )
-
-        api.assign_ip(alpha.id, "100.64.0.11")
-        api.assign_ip(beta.id, "100.64.0.22")
 
         client_alpha = await exit_stack.enter_async_context(
             telio.run_meshnet(
-                await exit_stack.enter_async_context(
-                    new_connection_by_tag(alpha_connection_tag)
-                ),
+                alpha_connection,
                 alpha,
                 api.get_meshmap(alpha.id),
                 adapter_type,
@@ -72,12 +61,17 @@ async def test_register_meshnet_client(
 
         client_beta = await exit_stack.enter_async_context(
             telio.run_meshnet(
-                await exit_stack.enter_async_context(
-                    new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
-                ),
+                beta_connection,
                 beta,
                 api.get_meshmap(beta.id),
             )
+        )
+
+        await testing.wait_long(
+            client_alpha.wait_for_any_derp_state([telio.State.Connected])
+        )
+        await testing.wait_long(
+            client_beta.wait_for_any_derp_state([telio.State.Connected])
         )
 
         await testing.wait_long(client_alpha.handshake(beta.public_key))

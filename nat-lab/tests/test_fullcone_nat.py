@@ -10,7 +10,6 @@ LOCAL_IP = "10.0.254.4"
 
 
 @pytest.mark.nat
-@pytest.mark.global_tests
 @pytest.mark.asyncio
 async def test_fullcone_nat() -> None:
     async with AsyncExitStack() as exit_stack:

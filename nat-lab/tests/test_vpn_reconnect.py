@@ -30,6 +30,7 @@ async def _connect_vpn(connection: Connection, client: Client, wg_server: dict) 
 
 
 @pytest.mark.asyncio
+@pytest.mark.vpn
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type,public_ip",
     [
