@@ -4,7 +4,6 @@ import pytest
 import utils.testing as testing
 
 
-@pytest.mark.global_tests
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "connection_tag,public_ip",

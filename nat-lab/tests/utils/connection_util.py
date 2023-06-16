@@ -137,43 +137,70 @@ def create_network_switcher(
 
 
 @asynccontextmanager
-async def new_connection_with_network_switcher(
+async def new_connection_manager_by_tag(
     tag: ConnectionTag,
-) -> AsyncIterator[Tuple[Connection, Optional[NetworkSwitcher]]]:
+    conn_tracker_config: Optional[List[ConnectionTrackerConfig]] = None,
+) -> AsyncIterator[
+    Tuple[
+        Connection, Optional[Connection], Optional[NetworkSwitcher], ConnectionTracker
+    ]
+]:
     async with new_connection_raw(tag) as connection:
         network_switcher = create_network_switcher(tag, connection)
         if network_switcher:
             await network_switcher.switch_to_primary_network()
-
-        yield (connection, network_switcher)
+        if tag in DOCKER_GW_MAP:
+            async with new_connection_raw(DOCKER_GW_MAP[tag]) as gw_connection:
+                async with ConnectionTracker(
+                    connection
+                    if tag not in [ConnectionTag.WINDOWS_VM, ConnectionTag.MAC_VM]
+                    else gw_connection,
+                    conn_tracker_config,
+                ) as conn_tracker:
+                    yield (connection, gw_connection, network_switcher, conn_tracker)
+        else:
+            async with ConnectionTracker(
+                connection,
+                conn_tracker_config,
+            ) as conn_tracker:
+                yield (connection, None, network_switcher, conn_tracker)
 
 
 @asynccontextmanager
-async def new_connection_by_tag(tag: ConnectionTag) -> AsyncIterator[Connection]:
-    async with new_connection_with_network_switcher(tag) as (
+async def new_connection_with_network_switcher(
+    tag: ConnectionTag,
+) -> AsyncIterator[Tuple[Connection, Optional[NetworkSwitcher]]]:
+    async with new_connection_manager_by_tag(tag) as (
         connection,
+        _,
         network_switcher,
+        _,
     ):
-        yield connection
+        yield (connection, network_switcher)
 
 
 @asynccontextmanager
 async def new_connection_with_conn_tracker(
     tag: ConnectionTag, conn_tracker_config: Optional[List[ConnectionTrackerConfig]]
 ) -> AsyncIterator[Tuple[Connection, ConnectionTracker]]:
-    if tag not in [ConnectionTag.WINDOWS_VM, ConnectionTag.MAC_VM]:
-        async with new_connection_by_tag(tag) as connection:
-            async with ConnectionTracker(
-                connection, conn_tracker_config
-            ) as conn_tracker:
-                yield (connection, conn_tracker)
-    else:
-        async with new_connection_by_tag(tag) as connection:
-            async with new_connection_raw(DOCKER_GW_MAP[tag]) as gw_connection:
-                async with ConnectionTracker(
-                    gw_connection, conn_tracker_config
-                ) as conn_tracker:
-                    yield (connection, conn_tracker)
+    async with new_connection_manager_by_tag(tag, conn_tracker_config) as (
+        connection,
+        _,
+        _,
+        conn_tracker,
+    ):
+        yield (connection, conn_tracker)
+
+
+@asynccontextmanager
+async def new_connection_by_tag(tag: ConnectionTag) -> AsyncIterator[Connection]:
+    async with new_connection_manager_by_tag(tag) as (
+        connection,
+        _,
+        _,
+        _,
+    ):
+        yield connection
 
 
 def container_id(tag: ConnectionTag) -> str:
