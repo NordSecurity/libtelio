@@ -12,10 +12,10 @@ def pytest_collection_modifyitems(config, items):
     # Given 4 tests like that, interleaving increases test execution time by 2 minutes.
 
     for item in items:
-        order_index = 0
+        order_index = 1
         for mark in item.iter_markers():
             if mark.name == "linux_native":
-                order_index = 1
+                order_index = 0
             elif mark.name == "windows":
                 order_index = 2
             elif mark.name == "mac":
@@ -26,5 +26,6 @@ def pytest_collection_modifyitems(config, items):
         item.add_marker(pytest.mark.order(order_index))
 
 
-# def pytest_runtest_setup(item):
-#     natlab.quick_restart_derps()
+def pytest_runtest_setup(item):
+    if any(mark for mark in item.iter_markers() if mark.name == "vpn"):
+        natlab.quick_restart_container(["vpn"])

@@ -160,6 +160,7 @@ async def test_event_content_meshnet(
 
 
 @pytest.mark.asyncio
+@pytest.mark.vpn
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type,public_ip",
     [
@@ -560,11 +561,12 @@ async def test_event_content_meshnet_node_upgrade_direct(
             )
         )
 
-        await testing.wait_lengthy(
-            client_alpha.handshake(beta.public_key, path=PathType.Direct)
-        )
-        await testing.wait_lengthy(
-            client_beta.handshake(alpha.public_key, path=PathType.Direct)
+        await testing.wait_defined(
+            asyncio.gather(
+                client_alpha.handshake(beta.public_key, path=PathType.Direct),
+                client_beta.handshake(alpha.public_key, path=PathType.Direct),
+            ),
+            60,
         )
 
         await asyncio.sleep(1)

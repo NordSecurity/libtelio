@@ -7,7 +7,6 @@ import utils.testing as testing
 
 
 @pytest.mark.nat
-@pytest.mark.global_tests
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "connection_tag,nat_string",

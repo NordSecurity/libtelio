@@ -54,6 +54,7 @@ LINUX_CONNECTION_TRACKER_CONFIG = [
 
 
 @pytest.mark.asyncio
+@pytest.mark.vpn
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type,public_ip,conn_tracker_config",
     [
@@ -105,9 +106,9 @@ async def test_vpn_connection(
             new_connection_with_conn_tracker(alpha_connection_tag, conn_tracker_config)
         )
 
-        ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+        ip = await testing.wait_lengthy(stun.get(connection, config.STUN_SERVER))
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
-        await testing.wait_long(conn_tracker.wait_for_event("stun_1"))
+        await testing.wait_lengthy(conn_tracker.wait_for_event("stun_1"))
 
         client_alpha = await exit_stack.enter_async_context(
             telio.run(
@@ -119,7 +120,7 @@ async def test_vpn_connection(
 
         wg_server = config.WG_SERVER
 
-        await testing.wait_long(
+        await testing.wait_lengthy(
             client_alpha.connect_to_vpn(
                 wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
             )
@@ -129,16 +130,16 @@ async def test_vpn_connection(
             client_alpha.handshake(wg_server["public_key"], PathType.Direct)
         )
 
-        await testing.wait_long(conn_tracker.wait_for_event("vpn"))
+        await testing.wait_lengthy(conn_tracker.wait_for_event("vpn"))
 
         async with Ping(connection, config.PHOTO_ALBUM_IP) as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await testing.wait_lengthy(ping.wait_for_next_ping())
 
-        await testing.wait_long(conn_tracker.wait_for_event("ping"))
+        await testing.wait_lengthy(conn_tracker.wait_for_event("ping"))
 
-        ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+        ip = await testing.wait_lengthy(stun.get(connection, config.STUN_SERVER))
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
         # wait for connection tracker to catch last event
-        await testing.wait_long(conn_tracker.wait_for_event("stun_2"))
+        await testing.wait_lengthy(conn_tracker.wait_for_event("stun_2"))
         assert conn_tracker.get_out_of_limits() is None

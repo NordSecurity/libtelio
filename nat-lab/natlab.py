@@ -50,7 +50,7 @@ def kill():
     stop()
 
 
-def quick_restart_derps(env=None):
+def quick_restart_container(names: List[str], env=None):
     if env:
         env = {**os.environ.copy(), **env}
     docker_status = [
@@ -64,7 +64,7 @@ def quick_restart_derps(env=None):
     ]
 
     for container in docker_status:
-        if "derp" in container:
+        if any(name for name in names if name in container):
             subprocess.run(["docker", "restart", container, "-t", "0"], env=env)
 
 

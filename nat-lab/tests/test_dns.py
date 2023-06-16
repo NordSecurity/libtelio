@@ -17,7 +17,6 @@ BETA_NODE_ADDRESS = config.BETA_NODE_ADDRESS
 DNS_SERVER_ADDRESS = config.LIBTELIO_DNS_IP
 
 
-@pytest.mark.global_tests
 @pytest.mark.asyncio
 async def test_dns() -> None:
     async with AsyncExitStack() as exit_stack:
@@ -131,7 +130,6 @@ async def test_dns() -> None:
             )
 
 
-@pytest.mark.global_tests
 @pytest.mark.asyncio
 async def test_dns_port() -> None:
     async with AsyncExitStack() as exit_stack:
@@ -243,7 +241,7 @@ async def test_dns_port() -> None:
             )
 
 
-@pytest.mark.global_tests
+@pytest.mark.vpn
 @pytest.mark.asyncio
 async def test_vpn_dns() -> None:
     async with AsyncExitStack() as exit_stack:
@@ -323,7 +321,6 @@ async def test_vpn_dns() -> None:
         )
 
 
-@pytest.mark.global_tests
 @pytest.mark.asyncio
 async def test_dns_after_mesh_off() -> None:
     async with AsyncExitStack() as exit_stack:
@@ -404,7 +401,6 @@ async def test_dns_after_mesh_off() -> None:
             assert "server can't find beta.nord" in e.stdout
 
 
-@pytest.mark.global_tests
 @pytest.mark.asyncio
 @pytest.mark.timeout(60 * 5 + 60)
 @pytest.mark.parametrize(
@@ -526,7 +522,6 @@ async def test_dns_stability(
         assert ALPHA_NODE_ADDRESS in beta_response.get_stdout()
 
 
-@pytest.mark.global_tests
 @pytest.mark.asyncio
 async def test_set_meshmap_dns_update() -> None:
     async with AsyncExitStack() as exit_stack:
@@ -587,7 +582,7 @@ async def test_set_meshmap_dns_update() -> None:
         assert BETA_NODE_ADDRESS in alpha_response.get_stdout()
 
 
-@pytest.mark.global_tests
+@pytest.mark.vpn
 @pytest.mark.asyncio
 async def test_dns_update() -> None:
     async with AsyncExitStack() as exit_stack:
@@ -648,7 +643,6 @@ async def test_dns_update() -> None:
         assert "Name:	google.com\nAddress:" in alpha_response.get_stdout()
 
 
-@pytest.mark.global_tests
 @pytest.mark.asyncio
 async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
     async with AsyncExitStack() as exit_stack:

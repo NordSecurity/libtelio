@@ -53,7 +53,6 @@ async def send_ping_pong(ping_type) -> None:
         )
 
 
-@pytest.mark.global_tests
 @pytest.mark.asyncio
 async def test_ping_pong() -> None:
     async with AsyncExitStack() as exit_stack:
