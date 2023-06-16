@@ -50,9 +50,9 @@ func maxLoggerCbIndex() uintptr {
 %typemap(goout) (struct telio*) {
         if $input == SwigcptrTelio(0) {
                 $result = nil
+        } else {
+                $result = $input
         }
-
-        $result = $input
 }
 
 %insert(go_wrapper) %{
