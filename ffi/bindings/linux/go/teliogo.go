@@ -485,9 +485,9 @@ func NewTelio(arg1 string, arg2 func(string), arg3 Enum_SS_telio_log_level, arg4
 {
         if swig_r == SwigcptrTelio(0) {
                 swig_r_1 = nil
+        } else {
+                swig_r_1 = swig_r
         }
-
-        swig_r_1 = swig_r
 }
 	return swig_r_1
 }
