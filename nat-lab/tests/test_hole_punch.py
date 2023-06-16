@@ -8,7 +8,6 @@ import asyncio
 TESTING_STRING = "seniukai, skyle pramusta"
 
 
-@pytest.mark.global_tests
 @pytest.mark.asyncio
 async def test_hole_punch() -> None:
     async with AsyncExitStack() as exit_stack:
