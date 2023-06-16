@@ -10,7 +10,7 @@ use tokio::{
     task::JoinHandle,
 };
 
-use telio_utils::telio_log_warn;
+use telio_utils::{telio_log_info, telio_log_warn};
 
 use crate::io::{
     chan::{Rx, Tx},
@@ -223,8 +223,11 @@ where
                         async move {
                             if let Some((action, resp)) = e {
                                 let _ = resp.send(action(s).await?);
+                                Ok(())
+                            } else {
+                                telio_log_info!("Task's {} exec handle dropped.", S::NAME);
+                                pending().await
                             }
-                            Ok(())
                         }
                         .boxed()
                     })
