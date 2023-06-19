@@ -68,12 +68,14 @@ impl UpnpEpCommands for IgdGateway {
         while let Ok(resp) = gw.get_generic_port_mapping_entry(i) {
             i += 1;
 
-            if map_ok == (true, true) {
-                return Ok(());
-            } else if resp.internal_port == proxy_port {
+            if resp.internal_port == proxy_port {
                 map_ok.0 = true;
             } else if resp.internal_port == wg_port {
                 map_ok.1 = true;
+            }
+
+            if map_ok == (true, true) {
+                return Ok(());
             }
         }
         Err(Error::IGDError(
@@ -251,8 +253,8 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
         let _ = task_exec!(&self.task, async move |s| {
             if s.endpoint_candidate.is_some() {
                 let _ = s.igd_gw.delete_endpoint_routes(
-                    s.proxy_port_mapping.internal,
-                    s.wg_port_mapping.internal,
+                    s.proxy_port_mapping.external,
+                    s.wg_port_mapping.external,
                 );
             };
             Ok(())
@@ -391,8 +393,8 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
                     telio_log_info!("Deleting a old Upnp endpoint");
 
                     self.igd_gw.delete_endpoint_routes(
-                        self.proxy_port_mapping.internal,
-                        self.wg_port_mapping.internal,
+                        self.proxy_port_mapping.external,
+                        self.wg_port_mapping.external,
                     )?;
                 }
 
