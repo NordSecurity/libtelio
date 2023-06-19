@@ -30,7 +30,7 @@ const UPNP_INTERVAL: Duration = Duration::from_millis(100);
 
 const MAX_SUPPORTED_PACKET_SIZE: usize = 1500;
 #[cfg(not(test))]
-const UPNP_INTERVAL: Duration = Duration::from_secs(60);
+const UPNP_INTERVAL: Duration = Duration::from_secs(5);
 const GET_INTERFACE_TIMEOUT: u64 = 2;
 
 type Result<T> = std::result::Result<T, Error>;
@@ -291,7 +291,7 @@ impl<Wg: WireGuard> EndpointProvider for UpnpEndpointProvider<Wg> {
 
     async fn trigger_endpoint_candidates_discovery(&self) -> Result<()> {
         let _ = task_exec!(&self.task, async move |s| {
-            let _ = s.check_endpoint_candidate().await;
+            let _ = s.send_endpoint_candidate().await;
             Ok(())
         })
         .await;
@@ -453,6 +453,14 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
             }
         }
         Ok(())
+    }
+
+    async fn send_endpoint_candidate(&self) {
+        if let Some(epc) = self.endpoint_candidate.clone() {
+            if let Some(epc_tx) = &self.epc_event_tx {
+                let _ = epc_tx.send((EndpointProviderType::Upnp, vec![epc])).await;
+            }
+        }
     }
 
     async fn handle_ping_rx(&mut self, encrypted_buf: &[u8], addr: &SocketAddr) -> Result<()> {
