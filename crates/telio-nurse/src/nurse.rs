@@ -70,7 +70,7 @@ impl Nurse {
 
     /// Stop nurse
     pub async fn stop(self) {
-        let _ = self.task.stop().await;
+        let _ = self.task.stop().await.resume_unwind();
     }
 }
 
