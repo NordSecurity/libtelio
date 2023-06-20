@@ -14,7 +14,5 @@ types-protobuf == 3.19.21
 # Must match libprotoc version used to generate proto files
 protobuf == 3.20.3
 
-# Fixes 'asyncssh' cryptography deprecation warnings. If there aren't anymore warnings
-# after running tests, this dependency can be removed.
-# https://github.com/iterative/dvc/issues/7656
-cryptography ~= 36.0
+# Force latest (as of now) stable version to fix CVEs.
+cryptography ~= 41.0.1
