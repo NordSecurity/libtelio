@@ -39,6 +39,18 @@ pub enum Error {
     PacketParserError(#[from] telio_proto::CodecError),
     #[error(transparent)]
     UpnpError(#[from] rupnp::Error),
+    #[error("Missing IGD gateway")]
+    NoIGDGateway,
+    #[error("The existing Upnp endpoint is invalid")]
+    IGDError(#[from] igd::GetGenericPortMappingEntryError),
+    #[error(transparent)]
+    IGDRemovePortError(#[from] igd::RemovePortError),
+    #[error(transparent)]
+    IGDGetExternalIpError(#[from] igd::GetExternalIpError),
+    #[error(transparent)]
+    IGDSearchError(#[from] igd::SearchError),
+    #[error(transparent)]
+    IGDAddPortError(#[from] igd::AddPortError),
     #[error("Failed to build pong packet")]
     FailedToBuildPongPacket,
     /// Stun codec error
