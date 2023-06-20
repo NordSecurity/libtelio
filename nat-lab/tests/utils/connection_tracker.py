@@ -1,7 +1,9 @@
 import re
 import asyncio
+import time
 from typing import Coroutine, Optional, List, Dict
 from dataclasses import dataclass
+from utils.ping import Ping
 from utils.asyncio_util import run_async, cancel_future
 from utils.connection import Connection
 from utils.process import Process
@@ -41,7 +43,7 @@ class ConnectionTrackerConfig:
 def parse_input(input_string) -> FiveTuple:
     five_tuple = FiveTuple()
 
-    match = re.search(r"proto=(\w+)", input_string)
+    match = re.search(r"\[NEW\] (\w+)", input_string)
     if match:
         five_tuple.protocol = match.group(1)
 
@@ -77,7 +79,11 @@ class ConnectionTracker:
         self._stop: Optional[Coroutine] = None
         self._config: Optional[List[ConnectionTrackerConfig]] = config
         self._events: List[FiveTuple] = []
-        self._events_wait_list: Dict[str, List[asyncio.Event]] = {}
+
+        self._initialized: bool = False
+        self._init_connection: FiveTuple = FiveTuple(
+            protocol="icmp", dst_ip="127.0.0.1"
+        )
 
     def execute(self) -> "ConnectionTracker":
         if not self._config:
@@ -86,16 +92,15 @@ class ConnectionTracker:
         async def _on_stdout(stdout: str) -> None:
             for line in stdout.splitlines():
                 connection = parse_input(line)
-                if not self._config or connection is FiveTuple():
+                if connection is FiveTuple():
                     continue
-                self._events.append(connection)
 
-                for cfg in self._config:
-                    if cfg.target.partial_eq(connection):
-                        events = self._events_wait_list.pop(cfg.key, None)
-                        if events:
-                            for event in events:
-                                event.set()
+                if not self._initialized:
+                    if self._init_connection.partial_eq(connection):
+                        self._initialized = True
+                        continue
+
+                self._events.append(connection)
 
         command_coroutine = run_async(self._process.execute(stdout_callback=_on_stdout))
 
@@ -137,26 +142,35 @@ class ConnectionTracker:
 
         cfg = next((cfg for cfg in self._config if cfg.key == key), None)
         if cfg is None:
-            raise Exception(f"Key: {key} not found in connection tracker config")
-
-        count = len([event for event in self._events if cfg.target.partial_eq(event)])
-        if count:
             return
 
         while True:
-            event = asyncio.Event()
-            if key not in self._events_wait_list:
-                self._events_wait_list[key] = [event]
-            else:
-                self._events_wait_list[key].append(event)
-            await event.wait()
+            if [event for event in self._events if cfg.target.partial_eq(event)]:
+                return
+            await asyncio.sleep(0.1)
 
     async def stop(self) -> None:
         if self._stop:
             await self._stop
 
     async def __aenter__(self) -> "ConnectionTracker":
-        return self.execute()
+        if not self._config:
+            return self
+        connection_tracker = self.execute()
+        await self._process.wait_stdin_ready()
+
+        # initialization is just waiting for first conntrack event,
+        # since it has no other indication if it is truly running.
+        # Or wait for 1 second and pray it was initialized
+        async with Ping(self._connection, "127.0.0.1"):
+            start_time = time.time()
+            while not self._initialized:
+                if time.time() - start_time >= 1:
+                    self._initialized = True
+                    break
+                await asyncio.sleep(0.1)
+
+        return connection_tracker
 
     async def __aexit__(self, exc_type, exc, tb):
         await self.stop()
