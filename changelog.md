@@ -21,6 +21,7 @@
 * LLT-3771: Fix derp server list loop
 * LLT-3497: Don't bind ICMP session_keeper socket on Android
 * LLT-3772: Fix derp infinite loop
+* LLT-3849: Fix and adjust test for `telio-task` drop
 
 <br>
 
