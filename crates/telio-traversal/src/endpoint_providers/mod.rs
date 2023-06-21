@@ -50,6 +50,8 @@ pub enum Error {
     #[error(transparent)]
     IGDSearchError(#[from] igd::SearchError),
     #[error(transparent)]
+    IGDAddAnyPortError(#[from] igd::AddAnyPortError),
+    #[error(transparent)]
     IGDAddPortError(#[from] igd::AddPortError),
     #[error("Failed to build pong packet")]
     FailedToBuildPongPacket,
