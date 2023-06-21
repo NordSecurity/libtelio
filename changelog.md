@@ -12,6 +12,7 @@
 * LLT-3497: Don't bind ICMP session_keeper socket on Android
 * LLT-3772: Fix derp infinite loop
 * LLT-3832: Upgrade python cryptography to 41.0.1
+* LLT-3855: Add "release.py" helper script, for easier release preparation
 
 <br>
 
