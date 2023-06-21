@@ -31,7 +31,7 @@ async def send_ping_pong(ping_type) -> None:
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-    await asyncio.sleep(0.01)
+    await asyncio.sleep(0.1)
 
     # Send a PING type message
     if ping_type == PingType.PING:
