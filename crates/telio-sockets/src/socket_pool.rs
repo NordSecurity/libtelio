@@ -268,6 +268,8 @@ mod tests {
             fn set_fwmark(&self, fwmark: u32);
             #[cfg(any(target_os = "macos", windows))]
             fn set_tunnel_interface(&self, interface: u64);
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            fn make_internal(&self, interface: i32) -> Result<(), std::io::Error>;
         }
     }
 
