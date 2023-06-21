@@ -149,8 +149,8 @@ impl Sockets {
                     sock,
                     interface
                 );
-                if let Err(e) = bind(interface as u32, *sock, libc::AF_INET) {
-                    telio_log_debug!(
+                if let Err(e) = bind(interface as u32, *sock) {
+                    telio_log_error!(
                         "failed to bind relay socket {} to default interface: {}: {}",
                         sock,
                         interface,
@@ -180,7 +180,7 @@ impl Sockets {
                 sock,
                 interface
             );
-            if let Err(e) = bind(interface as u32, sock, libc::AF_INET) {
+            if let Err(e) = bind(interface as u32, sock) {
                 telio_log_error!(
                     "failed to bind socket {} to default interface: {}: {}",
                     sock,
@@ -306,4 +306,24 @@ fn spawn_dynamic_store_loop(sockets: Weak<Mutex<Sockets>>) {
 
         core_foundation::runloop::CFRunLoop::run_current();
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use socket2::{Domain, Protocol, Socket, Type};
+
+    use crate::native::AsNativeSocket;
+
+    use super::*;
+
+    #[test]
+    fn test_ipv6_sk_bind() {
+        let socket2_socket = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP));
+
+        let socket_fd = socket2_socket.as_ref().unwrap().as_native_socket();
+
+        if let Err(e) = bind(get_primary_interface(15).unwrap() as u32, socket_fd) {
+            panic!("Test failed with error : {}", e)
+        }
+    }
 }
