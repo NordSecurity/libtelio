@@ -349,7 +349,10 @@ async fn run_without_clients_config(config: conf::Config) -> Result<()> {
     let addrs = resolve_domain_name(config.get_server_address(), config.verbose).await?;
 
     let DerpConnection { mut comms, .. } = match Box::pin(connect_http_and_start(
-        Arc::new(SocketPool::new(NativeProtector::new()?)),
+        Arc::new(SocketPool::new(NativeProtector::new(
+            #[cfg(target_os = "macos")]
+            false,
+        )?)),
         config.get_server_address(),
         *addrs
             .first()
@@ -595,7 +598,10 @@ async fn run_with_clients_config(
     }
 
     // Add client pairs
-    let pool = Arc::new(SocketPool::new(NativeProtector::new()?));
+    let pool = Arc::new(SocketPool::new(NativeProtector::new(
+        #[cfg(target_os = "macos")]
+        false,
+    )?));
 
     let mut additional_client_count = 0;
     let mut remaining_pairs_to_add = client_pair_delta;

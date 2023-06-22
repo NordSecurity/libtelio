@@ -94,7 +94,7 @@ async fn connect_client(
 
     let pool = Arc::new(SocketPool::new(NativeProtector::new(
         #[cfg(target_os = "macos")]
-        Some(false),
+        false,
     )?));
 
     Box::pin(connect_http_and_start(
