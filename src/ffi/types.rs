@@ -56,7 +56,7 @@ pub enum telio_adapter_type {
 #[allow(non_camel_case_types)]
 #[allow(clippy::upper_case_acronyms)]
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// Possible log levels.
 pub enum telio_log_level {
     TELIO_LOG_CRITICAL = 1,
