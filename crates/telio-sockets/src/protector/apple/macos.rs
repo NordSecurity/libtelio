@@ -1,4 +1,4 @@
-use libc;
+use debug_panic::debug_panic;
 use parking_lot::Mutex;
 use parking_lot::RwLock;
 use std::result::Result;
@@ -192,6 +192,7 @@ impl Sockets {
     }
 }
 
+#[allow(unreachable_code)]
 fn spawn_monitor(sockets: Arc<Mutex<Sockets>>) -> JoinHandle<io::Result<()>> {
     spawn_dynamic_store_loop(Arc::downgrade(&sockets));
     tokio::spawn(async move {
@@ -289,7 +290,7 @@ fn get_dynamic_store(sockets: Weak<Mutex<Sockets>>) -> SCDynamicStore {
     let watch_keys: CFArray<CFString> = CFArray::from_CFTypes(&[]);
     let watch_patterns = CFArray::from_CFTypes(&[CFString::from("State:/Network/Service/.*/IPv4")]);
     if !store.set_notification_keys(&watch_keys, &watch_patterns) {
-        panic!("Unable to register notifications for primary service update dynamic store");
+        debug_panic!("Unable to register notifications for primary service update dynamic store");
     }
 
     store
