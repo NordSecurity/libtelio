@@ -13,6 +13,7 @@
 * LLT-3772: Fix derp infinite loop
 * LLT-3832: Upgrade python cryptography to 41.0.1
 * LLT-3855: Add "release.py" helper script, for easier release preparation
+* LLT-3813: Update trust-dns to 0.22.1 
 
 <br>
 
