@@ -734,7 +734,10 @@ mod tests {
                 adapter: Default::default(),
                 name: Default::default(),
                 tun: Default::default(),
-                socket_pool: Arc::new(SocketPool::new(NativeProtector::new()?)),
+                socket_pool: Arc::new(SocketPool::new(NativeProtector::new(
+                    #[cfg(target_os = "macos")]
+                    false,
+                )?)),
                 firewall_process_inbound_callback: Default::default(),
                 firewall_process_outbound_callback: Default::default(),
             })

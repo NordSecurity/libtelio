@@ -335,10 +335,16 @@ mod tests {
                 last_endpoint_candidates_event: vec![],
                 poll_timer: interval_at(tokio::time::Instant::now(), Duration::from_secs(10)),
                 wireguard_interface: Arc::new(wg_mock),
-                udp_socket: SocketPool::new(NativeProtector::new().unwrap())
-                    .new_external_udp((Ipv4Addr::LOCALHOST, 0), None)
-                    .await
+                udp_socket: SocketPool::new(
+                    NativeProtector::new(
+                        #[cfg(target_os = "macos")]
+                        false,
+                    )
                     .unwrap(),
+                )
+                .new_external_udp((Ipv4Addr::LOCALHOST, 0), None)
+                .await
+                .unwrap(),
                 ping_pong_handler: ping_pong_handler.clone(),
                 get_if_addr: get_if_addrs_mock,
             },
@@ -361,7 +367,13 @@ mod tests {
         Arc<Mutex<PingPongHandler>>,
     ) {
         let secret_key = SecretKey::gen();
-        let socket_pool = SocketPool::new(NativeProtector::new().unwrap());
+        let socket_pool = SocketPool::new(
+            NativeProtector::new(
+                #[cfg(target_os = "macos")]
+                false,
+            )
+            .unwrap(),
+        );
 
         async fn create_localhost_socket(pool: &SocketPool) -> (External<UdpSocket>, SocketAddr) {
             let socket = pool
@@ -665,7 +677,13 @@ mod tests {
         let (state, remote_sk, ping_pong_handler) =
             prepare_state_test(wg_mock, get_if_addrs_mock).await;
 
-        let socket_pool = SocketPool::new(NativeProtector::new().unwrap());
+        let socket_pool = SocketPool::new(
+            NativeProtector::new(
+                #[cfg(target_os = "macos")]
+                false,
+            )
+            .unwrap(),
+        );
 
         let (provider_socket, provider_addr) = create_localhost_socket(&socket_pool).await;
         let ping = PingerMsg::ping(WGPort(wg_port), 2, 3);
@@ -722,7 +740,13 @@ mod tests {
         let (state, remote_sk, ping_pong_handler) =
             prepare_state_test(wg_mock, get_if_addrs_mock).await;
 
-        let socket_pool = SocketPool::new(NativeProtector::new().unwrap());
+        let socket_pool = SocketPool::new(
+            NativeProtector::new(
+                #[cfg(target_os = "macos")]
+                false,
+            )
+            .unwrap(),
+        );
 
         let (provider_socket, provider_addr) = create_localhost_socket(&socket_pool).await;
         let ping = PingerMsg::ping(WGPort(wg_port), 2, 3);

@@ -665,7 +665,13 @@ mod tests {
 
     pub async fn prepare_test_setup(
     ) -> UpnpEndpointProvider<MockWg, MockUpnpEpCommands, MockBackoff> {
-        let spool = SocketPool::new(NativeProtector::new().unwrap());
+        let spool = SocketPool::new(
+            NativeProtector::new(
+                #[cfg(target_os = "macos")]
+                false,
+            )
+            .unwrap(),
+        );
         let udp_socket = spool
             .new_external_udp((Ipv4Addr::UNSPECIFIED, 0), None)
             .await
