@@ -1,6 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod ffi;
+pub use ffi::types as ffi_types;
 
 /// cbindgen:ignore
 pub mod device;

@@ -30,3 +30,7 @@ pub use git::*;
 /// Tracking progress of tokio threads
 pub mod tokio;
 pub use ::tokio::*;
+
+/// Utils for dealing with tracing crate
+pub mod tracing;
+pub use ::tracing::*;

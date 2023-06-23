@@ -162,8 +162,14 @@ fn telio_new_common(
     logger: telio_logger_cb,
     #[cfg(target_os = "android")] protect_cb: Option<telio_protect_cb>,
 ) -> telio_result {
+    // Set up `log` crate to use `logger` as 'sink' and if that works set up `tracing` to forward
+    // events to be logged via `log`.
     if let Err(err) = log::set_boxed_logger(Box::new(logger)) {
-        error!("{}", err)
+        eprintln!("{}", err)
+    } else if let Err(err) =
+        tracing::subscriber::set_global_default(telio_utils::tracing::TracingToLogConverter)
+    {
+        error!("{}", err);
     }
 
     log::set_max_level(
