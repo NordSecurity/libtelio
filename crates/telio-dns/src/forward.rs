@@ -1,7 +1,10 @@
 //! Wrapped [ForwardAuthority](https://docs.rs/trust-dns-server/0.21.2/src/trust_dns_server/store/forwarder/authority.rs.html#31-34)
 //! Needed to change behaviour of [tokio::net::UdpSocket]
 
-use std::io;
+use std::{
+    io,
+    net::{Ipv4Addr, Ipv6Addr},
+};
 
 use async_trait::async_trait;
 use telio_utils::{telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn};
@@ -14,10 +17,7 @@ use trust_dns_server::{
         op::ResponseCode,
         rr::{LowerName, Name, Record, RecordType},
     },
-    proto::{
-        iocompat::AsyncIoTokioAsStd, udp::UdpSocket as ProtoUdpSocket, xfer::DnsRequestOptions,
-        TokioTime,
-    },
+    proto::{iocompat::AsyncIoTokioAsStd, udp::UdpSocket as ProtoUdpSocket, TokioTime},
     resolver::{
         config::ResolverConfig,
         error::ResolveErrorKind,
@@ -71,6 +71,31 @@ impl ProtoUdpSocket for TelioUdpSocket {
         target: std::net::SocketAddr,
     ) -> std::task::Poll<io::Result<usize>> {
         ProtoUdpSocket::poll_send_to(&self.0, cx, buf, target)
+    }
+
+    /// setups up a "client" udp connection that will only receive packets from the associated address
+    ///
+    /// if the addr is ipv4 then it will bind local addr to 0.0.0.0:0, ipv6 \[::\]0
+    async fn connect(addr: std::net::SocketAddr) -> io::Result<Self> {
+        let bind_addr: std::net::SocketAddr = match addr {
+            std::net::SocketAddr::V4(_addr) => (Ipv4Addr::UNSPECIFIED, 0).into(),
+            std::net::SocketAddr::V6(_addr) => (Ipv6Addr::UNSPECIFIED, 0).into(),
+        };
+
+        Self::connect_with_bind(addr, bind_addr).await
+    }
+
+    async fn connect_with_bind(
+        _addr: std::net::SocketAddr,
+        bind_addr: std::net::SocketAddr,
+    ) -> io::Result<Self> {
+        let socket = Self::bind(bind_addr).await?;
+
+        // TODO from the upstream trust-dns:
+        // research connect more, it appears to break UDP receiving tests, etc...
+        // socket.connect(addr).await?;
+
+        Ok(socket)
     }
 }
 
@@ -167,10 +192,7 @@ impl Authority for ForwardAuthority {
 
         telio_log_debug!("forwarding lookup: {} {}", name, rtype);
         let name: LowerName = name.clone();
-        let resolve = self
-            .resolver
-            .lookup(name, rtype, DnsRequestOptions::default())
-            .await;
+        let resolve = self.resolver.lookup(name, rtype).await;
 
         resolve
             .map(ForwardLookup)

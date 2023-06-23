@@ -54,6 +54,7 @@ telio-nat-detect = { version = "0.1.0", path = "./crates/telio-nat-detect" }
 telio-utils = { version = "0.1.0", path = "./crates/telio-utils" }
 telio-lana = { version = "0.1.0", path = "./crates/telio-lana" }
 telio-firewall = { version = "0.1.0", path = "./crates/telio-firewall" }
+tracing = { version = "0.1.37", features = ["release_max_level_debug"] }
 
 [dev-dependencies]
 mockall = "0.11.3"
