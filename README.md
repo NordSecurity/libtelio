@@ -273,7 +273,16 @@ Unit tests ensure internal components are working fine. Unit tests *probably* al
 cargo test
 ```
 
-Running integration tests is more complex and currently is out of the scope of this README.
+## Releases
+
+To prepare a release, there's a helper script `release.py`. This script will tag the commit and change versions in all relevant places.
+
+The common usage is:
+```
+release.py --changelog --push --tag=v4.0.5
+```
+
+You can check the actual commands executed, by passing the `--dry-run` argument.
 
 ## Contributions
 
