@@ -442,10 +442,10 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
 
                     telio_log_info!("Deleting a old Upnp endpoint");
 
-                    self.igd_gw.delete_endpoint_routes(
+                    let _ = self.igd_gw.delete_endpoint_routes(
                         self.proxy_port_mapping.external,
                         self.wg_port_mapping.external,
-                    )?;
+                    );
                 }
 
                 telio_log_info!("Creating a new Upnp endpoint");
