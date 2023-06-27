@@ -1,5 +1,5 @@
 from utils import Ping
-from config import DERP_PRIMARY, DERP_SECONDARY, DERP_TERTIARY, DERP_SERVERS
+from config import DERP_SERVERS
 from contextlib import AsyncExitStack
 from mesh_api import API
 from utils import ConnectionTag, new_connection_by_tag, testing
@@ -89,29 +89,8 @@ async def test_direct_working_paths(
     endpoint_providers, client1_type, client2_type, reflexive_ip
 ) -> None:
     async with AsyncExitStack() as exit_stack:
-        DERP_IP = str(DERP_PRIMARY["ipv4"])
-        CLIENT_ALPHA_IP = "100.72.31.21"
-        CLIENT_BETA_IP = "100.72.31.22"
-
         api = API()
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="IGm+42FLMMGZRaQvk6F3UPbl+T/CBk8W+NPoX2/AdlU=",
-            public_key="41CCEssnYIh8/8D8YvbTfWEcFanG3D0I0z1tRcN1Lyc=",
-        )
-        beta = api.register(
-            name="beta",
-            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
-            private_key="SPFD84gPtBNc3iGY9Cdrj+mSCwBeh3mCMWfPaeWQolw=",
-            public_key="Q1M3VKUcfTmGsrRzY6BpNds1yDIUvPVcs/2TySv/t1U=",
-        )
-        api.assign_ip(alpha.id, CLIENT_ALPHA_IP)
-        api.assign_ip(beta.id, CLIENT_BETA_IP)
-
-        # create a rule in  iptables to accept connections
-        beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
-        alpha.set_peer_firewall_settings(beta.id, allow_incoming_connections=True)
+        (alpha, beta) = api.default_config_two_nodes()
 
         alpha_connection = await exit_stack.enter_async_context(
             new_connection_by_tag(client1_type)
@@ -145,39 +124,35 @@ async def test_direct_working_paths(
             )
         )
 
-        await testing.wait_lengthy(
-            alpha_client.wait_for_any_derp_state([telio.State.Connected])
-        )
-        await testing.wait_lengthy(
-            beta_client.wait_for_any_derp_state([telio.State.Connected])
-        )
-
-        await testing.wait_lengthy(
-            alpha_client.handshake(
-                beta.public_key,
-                PathType.Direct,
-            ),
-        )
-        await testing.wait_lengthy(
-            beta_client.handshake(
-                alpha.public_key,
-                PathType.Direct,
+        await testing.wait_long(
+            asyncio.gather(
+                alpha_client.wait_for_any_derp_state([telio.State.Connected]),
+                beta_client.wait_for_any_derp_state([telio.State.Connected]),
             )
         )
 
-        for ip in [
-            str(DERP_PRIMARY["ipv4"]),
-            str(DERP_SECONDARY["ipv4"]),
-            str(DERP_TERTIARY["ipv4"]),
-        ]:
+        await testing.wait_lengthy(
+            asyncio.gather(
+                alpha_client.handshake(
+                    beta.public_key,
+                    PathType.Direct,
+                ),
+                beta_client.handshake(
+                    alpha.public_key,
+                    PathType.Direct,
+                ),
+            )
+        )
+
+        for server in DERP_SERVERS:
             await exit_stack.enter_async_context(
-                alpha_client.get_router().break_tcp_conn_to_host(ip)
+                alpha_client.get_router().break_tcp_conn_to_host(str(server["ipv4"]))
             )
             await exit_stack.enter_async_context(
-                beta_client.get_router().break_tcp_conn_to_host(ip)
+                beta_client.get_router().break_tcp_conn_to_host(str(server["ipv4"]))
             )
 
-        async with Ping(alpha_connection, CLIENT_BETA_IP) as ping:
+        async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
 
@@ -240,29 +215,8 @@ async def test_direct_failing_paths(
     endpoint_providers, client1_type, client2_type
 ) -> None:
     async with AsyncExitStack() as exit_stack:
-        DERP_IP = str(DERP_PRIMARY["ipv4"])
-        CLIENT_ALPHA_IP = "100.72.31.21"
-        CLIENT_BETA_IP = "100.72.31.22"
-
         api = API()
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="IGm+42FLMMGZRaQvk6F3UPbl+T/CBk8W+NPoX2/AdlU=",
-            public_key="41CCEssnYIh8/8D8YvbTfWEcFanG3D0I0z1tRcN1Lyc=",
-        )
-        beta = api.register(
-            name="beta",
-            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
-            private_key="SPFD84gPtBNc3iGY9Cdrj+mSCwBeh3mCMWfPaeWQolw=",
-            public_key="Q1M3VKUcfTmGsrRzY6BpNds1yDIUvPVcs/2TySv/t1U=",
-        )
-        api.assign_ip(alpha.id, CLIENT_ALPHA_IP)
-        api.assign_ip(beta.id, CLIENT_BETA_IP)
-
-        # create a rule in  iptables to accept connections
-        beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
-        alpha.set_peer_firewall_settings(beta.id, allow_incoming_connections=True)
+        (alpha, beta) = api.default_config_two_nodes()
 
         alpha_connection = await exit_stack.enter_async_context(
             new_connection_by_tag(client1_type)
@@ -296,16 +250,30 @@ async def test_direct_failing_paths(
             )
         )
 
-        await testing.wait_lengthy(
-            alpha_client.wait_for_any_derp_state([telio.State.Connected])
+        await testing.wait_long(
+            asyncio.gather(
+                alpha_client.wait_for_any_derp_state([telio.State.Connected]),
+                beta_client.wait_for_any_derp_state([telio.State.Connected]),
+            )
         )
-        await testing.wait_lengthy(
-            beta_client.wait_for_any_derp_state([telio.State.Connected])
-        )
+
+        with pytest.raises(asyncio.TimeoutError):
+            await testing.wait_lengthy(
+                asyncio.gather(
+                    alpha_client.handshake(
+                        beta.public_key,
+                        PathType.Direct,
+                    ),
+                    beta_client.handshake(
+                        alpha.public_key,
+                        PathType.Direct,
+                    ),
+                )
+            )
 
         # TODO: Add CMM messages are going through
         with pytest.raises(asyncio.TimeoutError):
-            async with Ping(alpha_connection, CLIENT_BETA_IP) as ping:
+            async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
                 await testing.wait_long(ping.wait_for_next_ping())
 
 
@@ -321,28 +289,8 @@ async def test_direct_short_connection_loss(
     endpoint_providers, client1_type, client2_type, reflexive_ip
 ) -> None:
     async with AsyncExitStack() as exit_stack:
-        CLIENT_ALPHA_IP = "100.72.31.21"
-        CLIENT_BETA_IP = "100.72.31.22"
-
         api = API()
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="IGm+42FLMMGZRaQvk6F3UPbl+T/CBk8W+NPoX2/AdlU=",
-            public_key="41CCEssnYIh8/8D8YvbTfWEcFanG3D0I0z1tRcN1Lyc=",
-        )
-        beta = api.register(
-            name="beta",
-            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
-            private_key="SPFD84gPtBNc3iGY9Cdrj+mSCwBeh3mCMWfPaeWQolw=",
-            public_key="Q1M3VKUcfTmGsrRzY6BpNds1yDIUvPVcs/2TySv/t1U=",
-        )
-        api.assign_ip(alpha.id, CLIENT_ALPHA_IP)
-        api.assign_ip(beta.id, CLIENT_BETA_IP)
-
-        # create a rule in  iptables to accept connections
-        beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
-        alpha.set_peer_firewall_settings(beta.id, allow_incoming_connections=True)
+        (alpha, beta) = api.default_config_two_nodes()
 
         alpha_connection = await exit_stack.enter_async_context(
             new_connection_by_tag(client1_type)
@@ -398,40 +346,16 @@ async def test_direct_short_connection_loss(
         )
 
         # Disrupt UHP connection for 25 seconds
-        await alpha_connection.create_process(
-            [
-                "iptables",
-                "-t",
-                "filter",
-                "-A",
-                "OUTPUT",
-                "-d",
-                reflexive_ip,
-                "-j",
-                "DROP",
-            ]
-        ).execute()
-        await asyncio.sleep(25)
+        async with AsyncExitStack() as temp_exit_stack:
+            await temp_exit_stack.enter_async_context(
+                alpha_client.get_router().disable_path(reflexive_ip)
+            )
+            await asyncio.sleep(25)
+            with pytest.raises(asyncio.TimeoutError):
+                async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
+                    await testing.wait_short(ping.wait_for_next_ping())
 
-        with pytest.raises(asyncio.TimeoutError):
-            async with Ping(alpha_connection, CLIENT_BETA_IP) as ping:
-                await testing.wait_short(ping.wait_for_next_ping())
-
-        await alpha_connection.create_process(
-            [
-                "iptables",
-                "-t",
-                "filter",
-                "-D",
-                "OUTPUT",
-                "-d",
-                reflexive_ip,
-                "-j",
-                "DROP",
-            ]
-        ).execute()
-
-        async with Ping(alpha_connection, CLIENT_BETA_IP) as ping:
+        async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
             await testing.wait_lengthy(ping.wait_for_next_ping())
 
 
@@ -447,28 +371,8 @@ async def test_direct_connection_loss_for_infinity(
     endpoint_providers, client1_type, client2_type, reflexive_ip
 ) -> None:
     async with AsyncExitStack() as exit_stack:
-        CLIENT_ALPHA_IP = "100.72.31.21"
-        CLIENT_BETA_IP = "100.72.31.22"
-
         api = API()
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="IGm+42FLMMGZRaQvk6F3UPbl+T/CBk8W+NPoX2/AdlU=",
-            public_key="41CCEssnYIh8/8D8YvbTfWEcFanG3D0I0z1tRcN1Lyc=",
-        )
-        beta = api.register(
-            name="beta",
-            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
-            private_key="SPFD84gPtBNc3iGY9Cdrj+mSCwBeh3mCMWfPaeWQolw=",
-            public_key="Q1M3VKUcfTmGsrRzY6BpNds1yDIUvPVcs/2TySv/t1U=",
-        )
-        api.assign_ip(alpha.id, CLIENT_ALPHA_IP)
-        api.assign_ip(beta.id, CLIENT_BETA_IP)
-
-        # create a rule in  iptables to accept connections
-        beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
-        alpha.set_peer_firewall_settings(beta.id, allow_incoming_connections=True)
+        (alpha, beta) = api.default_config_two_nodes()
 
         alpha_connection = await exit_stack.enter_async_context(
             new_connection_by_tag(client1_type)
@@ -523,56 +427,24 @@ async def test_direct_connection_loss_for_infinity(
             120,
         )
 
-        await alpha_connection.create_process(
-            [
-                "iptables",
-                "-t",
-                "filter",
-                "-A",
-                "OUTPUT",
-                "-d",
-                reflexive_ip,
-                "-j",
-                "DROP",
-            ]
-        ).execute()
-
-        with pytest.raises(asyncio.TimeoutError):
-            async with Ping(alpha_connection, CLIENT_BETA_IP) as ping:
-                await testing.wait_short(ping.wait_for_next_ping())
-
-        await testing.wait_defined(
-            alpha_client._events.wait_for_state(
-                "Q1M3VKUcfTmGsrRzY6BpNds1yDIUvPVcs/2TySv/t1U=",
-                telio.State.Connected,
-                PathType.Relay,
-            ),
-            120,
-        )
-        await testing.wait_lengthy(
-            beta_client._events.wait_for_state(
-                "41CCEssnYIh8/8D8YvbTfWEcFanG3D0I0z1tRcN1Lyc=",
-                telio.State.Connected,
-                PathType.Relay,
+        async with AsyncExitStack() as temp_exit_stack:
+            await temp_exit_stack.enter_async_context(
+                alpha_client.get_router().disable_path(reflexive_ip)
             )
-        )
+            with pytest.raises(asyncio.TimeoutError):
+                async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
+                    await testing.wait_short(ping.wait_for_next_ping())
 
-        async with Ping(alpha_connection, CLIENT_BETA_IP) as ping:
-            await testing.wait_lengthy(ping.wait_for_next_ping())
+            await testing.wait_defined(
+                asyncio.gather(
+                    alpha_client.handshake(beta.public_key),
+                    beta_client.handshake(alpha.public_key),
+                ),
+                120,
+            )
 
-        await alpha_connection.create_process(
-            [
-                "iptables",
-                "-t",
-                "filter",
-                "-D",
-                "OUTPUT",
-                "-d",
-                reflexive_ip,
-                "-j",
-                "DROP",
-            ]
-        ).execute()
+            async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
+                await testing.wait_lengthy(ping.wait_for_next_ping())
 
 
 @pytest.mark.timeout(180)
@@ -599,7 +471,7 @@ async def test_direct_connection_endpoint_gone(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
-        (alpha, beta, _) = api.default_config_three_nodes()
+        (alpha, beta) = api.default_config_two_nodes()
         alpha_connection = await exit_stack.enter_async_context(
             new_connection_by_tag(alpha_connection_tag)
         )
@@ -643,63 +515,54 @@ async def test_direct_connection_endpoint_gone(
                         )
                     )
 
-                await asyncio.gather(
-                    testing.wait_defined(
+                await testing.wait_defined(
+                    asyncio.gather(
                         alpha_client.wait_for_any_derp_state(
                             [telio.State.Connecting, telio.State.Disconnected],
                         ),
-                        60,
-                    ),
-                    testing.wait_defined(
                         beta_client.wait_for_any_derp_state(
                             [telio.State.Connecting, telio.State.Disconnected],
                         ),
-                        60,
                     ),
+                    60,
                 )
 
                 async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
                     await testing.wait_defined(ping.wait_for_next_ping(), 60)
 
-        await asyncio.gather(
-            testing.wait_defined(
-                alpha_client.wait_for_any_derp_state([telio.State.Connected]), 60
+        await testing.wait_defined(
+            asyncio.gather(
+                alpha_client.wait_for_any_derp_state([telio.State.Connected]),
+                beta_client.wait_for_any_derp_state([telio.State.Connected]),
             ),
-            testing.wait_defined(
-                beta_client.wait_for_any_derp_state([telio.State.Connected]), 60
-            ),
+            60,
         )
 
-        await asyncio.gather(
-            testing.wait_lengthy(
+        await testing.wait_lengthy(
+            asyncio.gather(
                 alpha_client.handshake(
                     beta.public_key,
                     telio.PathType.Direct,
-                )
-            ),
-            testing.wait_lengthy(
+                ),
                 beta_client.handshake(
                     alpha.public_key,
                     telio.PathType.Direct,
-                )
+                ),
             ),
         )
 
         await _check_if_true_direct_connection()
 
-        await asyncio.gather(
-            testing.wait_defined(
+        await testing.wait_defined(
+            asyncio.gather(
                 alpha_client.wait_for_any_derp_state(
                     [telio.State.Connected],
                 ),
-                60,
-            ),
-            testing.wait_defined(
                 beta_client.wait_for_any_derp_state(
                     [telio.State.Connected],
                 ),
-                60,
             ),
+            60,
         )
 
         async with AsyncExitStack() as temp_exit_stack:
@@ -714,41 +577,29 @@ async def test_direct_connection_endpoint_gone(
                 )
             )
 
-            await asyncio.gather(
-                testing.wait_defined(
-                    alpha_client.handshake(
-                        beta.public_key,
-                        telio.PathType.Relay,
-                    ),
-                    60,
+            await testing.wait_defined(
+                asyncio.gather(
+                    alpha_client.handshake(beta.public_key),
+                    beta_client.handshake(alpha.public_key),
                 ),
-                testing.wait_defined(
-                    beta_client.handshake(
-                        alpha.public_key,
-                        telio.PathType.Relay,
-                    ),
-                    60,
-                ),
+                60,
             )
 
             async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
                 await testing.wait_defined(ping.wait_for_next_ping(), 60)
 
-        await asyncio.gather(
-            testing.wait_defined(
+        await testing.wait_defined(
+            asyncio.gather(
                 alpha_client.handshake(
                     beta.public_key,
                     telio.PathType.Direct,
                 ),
-                60,
-            ),
-            testing.wait_defined(
                 beta_client.handshake(
                     alpha.public_key,
                     telio.PathType.Direct,
                 ),
-                60,
             ),
+            60,
         )
 
         await _check_if_true_direct_connection()

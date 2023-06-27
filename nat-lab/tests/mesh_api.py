@@ -1,5 +1,5 @@
 from typing import Dict, Any, List, Tuple
-from config import *
+from config import DERP_SERVERS
 import pprint
 
 
@@ -165,45 +165,73 @@ class API:
 
         return meshmap
 
+    def default_config_alpha_node(
+        self,
+        is_local: bool = False,
+    ) -> Node:
+        alpha = self.register(
+            name="alpha",
+            id="96ddb926-4b86-11ec-81d3-0242ac130003",
+            private_key="yIsV88+fJrRJRKyMnbK7fHCAXWzaPeAuBILeJMtfQHI=",
+            public_key="Oxm/ZeHev8trOJ69sRyvX1rngZc2Gq7sXxQq4MW7bW4=",
+            is_local=is_local,
+        )
+        self.assign_ip(alpha.id, "100.64.33.1")
+        return alpha
+
+    def default_config_beta_node(
+        self,
+        is_local: bool = False,
+    ) -> Node:
+        beta = self.register(
+            name="beta",
+            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
+            private_key="IGm+42FLMMGZRaQvk6F3UPbl+T/CBk8W+NPoX2/AdlU=",
+            public_key="41CCEssnYIh8/8D8YvbTfWEcFanG3D0I0z1tRcN1Lyc=",
+            is_local=is_local,
+        )
+        self.assign_ip(beta.id, "100.64.33.2")
+        return beta
+
+    def default_config_gamma_node(
+        self,
+        is_local: bool = False,
+    ) -> Node:
+        gamma = self.register(
+            name="gamma",
+            id="39388b1e-ebd8-11ec-8ea0-0242ac120002",
+            private_key="SPFD84gPtBNc3iGY9Cdrj+mSCwBeh3mCMWfPaeWQolw=",
+            public_key="Q1M3VKUcfTmGsrRzY6BpNds1yDIUvPVcs/2TySv/t1U=",
+            is_local=is_local,
+        )
+        self.assign_ip(gamma.id, "100.64.33.3")
+        return gamma
+
+    def default_config_two_nodes(
+        self,
+        alpha_is_local: bool = False,
+        beta_is_local: bool = False,
+    ) -> Tuple[Node, Node]:
+        alpha = self.default_config_alpha_node(alpha_is_local)
+        beta = self.default_config_beta_node(beta_is_local)
+
+        alpha.set_peer_firewall_settings(beta.id, allow_incoming_connections=True)
+        beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
+
+        return (alpha, beta)
+
     def default_config_three_nodes(
         self,
         alpha_is_local: bool = False,
         beta_is_local: bool = False,
         gamma_is_local: bool = False,
     ) -> Tuple[Node, Node, Node]:
-        alpha = self.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="yIsV88+fJrRJRKyMnbK7fHCAXWzaPeAuBILeJMtfQHI=",
-            public_key="Oxm/ZeHev8trOJ69sRyvX1rngZc2Gq7sXxQq4MW7bW4=",
-            is_local=alpha_is_local,
-        )
+        (alpha, beta) = self.default_config_two_nodes(alpha_is_local, beta_is_local)
+        gamma = self.default_config_gamma_node(gamma_is_local)
 
-        beta = self.register(
-            name="beta",
-            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
-            private_key="IGm+42FLMMGZRaQvk6F3UPbl+T/CBk8W+NPoX2/AdlU=",
-            public_key="41CCEssnYIh8/8D8YvbTfWEcFanG3D0I0z1tRcN1Lyc=",
-            is_local=beta_is_local,
-        )
-
-        gamma = self.register(
-            name="gamma",
-            id="39388b1e-ebd8-11ec-8ea0-0242ac120002",
-            private_key="SPFD84gPtBNc3iGY9Cdrj+mSCwBeh3mCMWfPaeWQolw=",
-            public_key="Q1M3VKUcfTmGsrRzY6BpNds1yDIUvPVcs/2TySv/t1U=",
-            is_local=gamma_is_local,
-        )
-
-        self.assign_ip(alpha.id, ALPHA_NODE_ADDRESS)
-        self.assign_ip(beta.id, BETA_NODE_ADDRESS)
-        self.assign_ip(gamma.id, GAMMA_NODE_ADDRESS)
-
-        alpha.set_peer_firewall_settings(beta.id, allow_incoming_connections=True)
-        beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
         alpha.set_peer_firewall_settings(gamma.id, allow_incoming_connections=True)
-        gamma.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
         beta.set_peer_firewall_settings(gamma.id, allow_incoming_connections=True)
+        gamma.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
         gamma.set_peer_firewall_settings(beta.id, allow_incoming_connections=True)
 
         return (alpha, beta, gamma)

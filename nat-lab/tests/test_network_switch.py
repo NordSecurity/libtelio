@@ -93,25 +93,7 @@ async def test_mesh_network_switch(
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="JcnzdKlaRd56T/EnHkbVpNCvYo64YLDpRZsJq14ZU1A=",
-            public_key="eES5D8OiQyMXf/pG0ibJSD2QhSnKLW0+6jW7mvtfL0g=",
-        )
-
-        beta = api.register(
-            name="beta",
-            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
-            private_key="+KqbDiS4KkWlB1iI9DfAnQTX7+c4YvFQzlLQWljbVHc=",
-            public_key="5eURKcx0OlMyz2kXOibfHklUwF9pgplc0eBdlo4B3gk=",
-        )
-
-        api.assign_ip(alpha.id, "100.64.0.11")
-        api.assign_ip(beta.id, "100.64.0.22")
-
-        beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
-
+        (alpha, beta) = api.default_config_two_nodes()
         (connection_alpha, network_switcher) = await exit_stack.enter_async_context(
             new_connection_with_network_switcher(alpha_connection_tag)
         )
@@ -139,13 +121,13 @@ async def test_mesh_network_switch(
         await testing.wait_long(client_alpha.handshake(beta.public_key))
         await testing.wait_long(client_beta.handshake(alpha.public_key))
 
-        async with Ping(connection_alpha, "100.64.0.22") as ping:
+        async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         await network_switcher.switch_to_secondary_network()
         await client_alpha.notify_network_change()
 
-        async with Ping(connection_alpha, "100.64.0.22") as ping:
+        async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
 
@@ -191,15 +173,7 @@ async def test_vpn_network_switch(
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="CIDMCmjr6XSIZp6hnogYSlTYJNeFJmXgf28f27HKCXw=",
-            public_key="655Gn59wY0AbzIvUfQPFSCJkQOhrg6gszlxeVKPIlgw=",
-        )
-
-        api.assign_ip(alpha.id, "100.64.33.4")
-
+        alpha = api.default_config_alpha_node()
         (connection, network_switcher) = await exit_stack.enter_async_context(
             new_connection_with_network_switcher(connection_tag)
         )
@@ -224,7 +198,7 @@ async def test_vpn_network_switch(
             client_alpha.handshake(wg_server["public_key"], PathType.Direct)
         )
 
-        async with Ping(connection, "10.0.80.80") as ping:
+        async with Ping(connection, config.PHOTO_ALBUM_IP) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
@@ -241,7 +215,7 @@ async def test_vpn_network_switch(
         if connection_tag == ConnectionTag.WINDOWS_VM:
             await asyncio.sleep(1.0)
 
-        async with Ping(connection, "10.0.80.80") as ping:
+        async with Ping(connection, config.PHOTO_ALBUM_IP) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))

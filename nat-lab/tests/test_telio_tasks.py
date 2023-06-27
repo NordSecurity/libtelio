@@ -11,21 +11,13 @@ import pytest
 async def test_telio_tasks_with_all_features() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
-
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="JcnzdKlaRd56T/EnHkbVpNCvYo64YLDpRZsJq14ZU1A=",
-            public_key="eES5D8OiQyMXf/pG0ibJSD2QhSnKLW0+6jW7mvtfL0g=",
+        alpha = api.default_config_alpha_node()
+        connection_alpha = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
         )
-
-        api.assign_ip(alpha.id, "100.64.0.11")
-
         client_alpha = await exit_stack.enter_async_context(
             telio.run_meshnet(
-                await exit_stack.enter_async_context(
-                    new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
-                ),
+                connection_alpha,
                 alpha,
                 api.get_meshmap(alpha.id),
                 telio_features=TelioFeatures(
