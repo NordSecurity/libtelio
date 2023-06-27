@@ -3,7 +3,7 @@
 pub use moosemeshnetapp as moose;
 pub use moosemeshnetapp::Error;
 
-pub use telio_utils::telio_log_warn;
+pub use telio_utils::{telio_log_debug, telio_log_warn};
 
 use serde_json::Value;
 
@@ -30,17 +30,29 @@ macro_rules! call_moose {
 /// Fetch and set the context info from the foreign tracker
 pub fn init_context_info() {
     macro_rules! set_context_fields {
-        ( $( $func:ident, $field:expr );* ) => {
-            $(
-                if let Some(val) = $field {
-                    call_moose!($func, val);
-                } else {
-                    telio_log_warn!(
-                        "[Lana] couldn't find foreign context field {}",
-                        stringify!($field)
-                    )
-                }
-            )*
+        ( $( $func:ident, $field:expr $(, $t:tt)? );* $(;)?) => {
+            $( set_context_fields!(@one $func, $field $(, $t)?); )*
+        };
+
+        (@one $func:ident, $field:expr) => {
+            if let Some(val) = $field {
+                call_moose!($func, val);
+            } else {
+                telio_log_warn!(
+                    "[Lana] couldn't find foreign context field {}",
+                    stringify!($field)
+                )
+            }
+        };
+        (@one $func:ident, $field:expr, optional) => {
+            if let Some(val) = $field {
+                call_moose!($func, val);
+            } else {
+                telio_log_debug!(
+                    "[Lana] foreign context field {} does not exist",
+                    stringify!($field)
+                )
+            }
         };
     }
 
@@ -61,20 +73,20 @@ pub fn init_context_info() {
             set_context_device_timeZone, device_info.time_zone;
             set_context_device_type, device_info.x_type;
             set_context_user_fp, user_info.fp;
-            set_context_user_subscription_currentState_activationDate, user_info.subscription.current_state.activation_date;
-            set_context_user_subscription_currentState_frequencyInterval, user_info.subscription.current_state.frequency_interval;
-            set_context_user_subscription_currentState_frequencyUnit, user_info.subscription.current_state.frequency_unit;
-            set_context_user_subscription_currentState_isActive, user_info.subscription.current_state.is_active;
-            set_context_user_subscription_currentState_isNewCustomer, user_info.subscription.current_state.is_new_customer;
-            set_context_user_subscription_currentState_merchantId, user_info.subscription.current_state.merchant_id;
-            set_context_user_subscription_currentState_paymentAmount, user_info.subscription.current_state.payment_amount;
-            set_context_user_subscription_currentState_paymentCurrency, user_info.subscription.current_state.payment_currency;
-            set_context_user_subscription_currentState_paymentProvider, user_info.subscription.current_state.payment_provider;
-            set_context_user_subscription_currentState_paymentStatus, user_info.subscription.current_state.payment_status;
-            set_context_user_subscription_currentState_planId, user_info.subscription.current_state.plan_id;
-            set_context_user_subscription_currentState_planType, user_info.subscription.current_state.plan_type;
-            set_context_user_subscription_currentState_subscriptionStatus, user_info.subscription.current_state.subscription_status;
-            set_context_user_subscription_history, user_info.subscription.history
+            set_context_user_subscription_currentState_activationDate, user_info.subscription.current_state.activation_date, optional;
+            set_context_user_subscription_currentState_frequencyInterval, user_info.subscription.current_state.frequency_interval, optional;
+            set_context_user_subscription_currentState_frequencyUnit, user_info.subscription.current_state.frequency_unit, optional;
+            set_context_user_subscription_currentState_isActive, user_info.subscription.current_state.is_active, optional;
+            set_context_user_subscription_currentState_isNewCustomer, user_info.subscription.current_state.is_new_customer, optional;
+            set_context_user_subscription_currentState_merchantId, user_info.subscription.current_state.merchant_id, optional;
+            set_context_user_subscription_currentState_paymentAmount, user_info.subscription.current_state.payment_amount, optional;
+            set_context_user_subscription_currentState_paymentCurrency, user_info.subscription.current_state.payment_currency, optional;
+            set_context_user_subscription_currentState_paymentProvider, user_info.subscription.current_state.payment_provider, optional;
+            set_context_user_subscription_currentState_paymentStatus, user_info.subscription.current_state.payment_status, optional;
+            set_context_user_subscription_currentState_planId, user_info.subscription.current_state.plan_id, optional;
+            set_context_user_subscription_currentState_planType, user_info.subscription.current_state.plan_type, optional;
+            set_context_user_subscription_currentState_subscriptionStatus, user_info.subscription.current_state.subscription_status, optional;
+            set_context_user_subscription_history, user_info.subscription.history, optional;
         );
     } else {
         telio_log_warn!("[Moose] Failed to fetch context for {}", foreign_tracker);
