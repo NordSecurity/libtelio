@@ -2,11 +2,19 @@ from utils import Ping, stun
 from contextlib import AsyncExitStack
 from mesh_api import API
 from telio import AdapterType
-from utils import ConnectionTag, new_connection_by_tag
 import config
 import pytest
 import telio
 import utils.testing as testing
+from utils import (
+    ConnectionTag,
+    new_connection_with_conn_tracker,
+)
+from utils.connection_tracker import (
+    generate_connection_tracker_config,
+    ConnectionLimits,
+)
+import asyncio
 
 
 @pytest.mark.asyncio
@@ -15,60 +23,56 @@ import utils.testing as testing
     [
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
-            AdapterType.BoringTun,
+            telio.AdapterType.BoringTun,
         ),
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
-            AdapterType.LinuxNativeWg,
+            telio.AdapterType.LinuxNativeWg,
             marks=pytest.mark.linux_native,
         ),
         pytest.param(
             ConnectionTag.WINDOWS_VM,
-            AdapterType.WindowsNativeWg,
+            telio.AdapterType.WindowsNativeWg,
             marks=pytest.mark.windows,
         ),
         pytest.param(
             ConnectionTag.WINDOWS_VM,
-            AdapterType.WireguardGo,
+            telio.AdapterType.WireguardGo,
             marks=pytest.mark.windows,
         ),
         pytest.param(
             ConnectionTag.MAC_VM,
-            AdapterType.Default,
+            telio.AdapterType.Default,
             marks=pytest.mark.mac,
         ),
     ],
 )
 async def test_mesh_exit_through_peer(
-    alpha_connection_tag: ConnectionTag, adapter_type: AdapterType
+    alpha_connection_tag: ConnectionTag,
+    adapter_type: AdapterType,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="mODRJKABR4wDCjXn899QO6wb83azXKZF7hcfX8dWuUA=",
-            public_key="3XCOtCGl5tZJ8N5LksxkjfeqocW0BH2qmARD7qzHDkI=",
+        (alpha, beta) = api.default_config_two_nodes()
+        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                alpha_connection_tag,
+                generate_connection_tracker_config(
+                    alpha_connection_tag,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
         )
-
-        beta = api.register(
-            name="beta",
-            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
-            private_key="GN+D2Iy9p3UmyBZhgxU4AhbLT6sxY0SUhXu0a0TuiV4=",
-            public_key="UnB+btGMEBXcR7EchMi28Hqk0Q142WokO6n313dt3mc=",
-        )
-
-        api.assign_ip(alpha.id, "100.64.0.1")
-        api.assign_ip(beta.id, "100.64.0.2")
-
-        beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
-
-        connection_alpha = await exit_stack.enter_async_context(
-            new_connection_by_tag(alpha_connection_tag)
-        )
-        connection_beta = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
+        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                ConnectionTag.DOCKER_CONE_CLIENT_2,
+                generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                    stun_limits=ConnectionLimits(1, 2),
+                ),
+            )
         )
 
         client_alpha = await exit_stack.enter_async_context(
@@ -88,23 +92,46 @@ async def test_mesh_exit_through_peer(
             )
         )
 
-        await testing.wait_long(client_alpha.handshake(beta.public_key))
-        await testing.wait_long(client_beta.handshake(alpha.public_key))
-        async with Ping(connection_alpha, "100.64.0.2") as ping:
+        await testing.wait_long(
+            asyncio.gather(
+                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
+                client_beta.wait_for_any_derp_state([telio.State.Connected]),
+            )
+        )
+
+        await testing.wait_long(
+            asyncio.gather(
+                alpha_conn_tracker.wait_for_event("derp_1"),
+                beta_conn_tracker.wait_for_event("derp_1"),
+            )
+        )
+
+        await testing.wait_long(
+            asyncio.gather(
+                client_alpha.handshake(beta.public_key),
+                client_beta.handshake(alpha.public_key),
+            )
+        )
+
+        async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         await testing.wait_long(client_beta.get_router().create_exit_node_route())
-
         await testing.wait_long(
             client_alpha.connect_to_exit_node(
                 beta.public_key,
             )
         )
-
         await testing.wait_long(client_alpha.handshake(beta.public_key))
+
         ip_alpha = await testing.wait_long(
             stun.get(connection_alpha, config.STUN_SERVER)
         )
+        await testing.wait_long(beta_conn_tracker.wait_for_event("stun"))
+
         ip_beta = await testing.wait_long(stun.get(connection_beta, config.STUN_SERVER))
+        await testing.wait_long(beta_conn_tracker.wait_for_event("stun"))
 
         assert ip_alpha == ip_beta
+        assert alpha_conn_tracker.get_out_of_limits() is None
+        assert beta_conn_tracker.get_out_of_limits() is None
