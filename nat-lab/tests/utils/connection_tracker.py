@@ -1,6 +1,8 @@
 import re
 import asyncio
 import time
+import config
+import utils
 from typing import Coroutine, Optional, List, Dict
 from dataclasses import dataclass
 from utils.ping import Ping
@@ -79,6 +81,8 @@ class ConnectionTracker:
         self._stop: Optional[Coroutine] = None
         self._config: Optional[List[ConnectionTrackerConfig]] = config
         self._events: List[FiveTuple] = []
+        self._last_event: Optional[FiveTuple] = None
+        self._events_wait_list: Dict[str, List[asyncio.Event]] = {}
 
         self._initialized: bool = False
         self._init_connection: FiveTuple = FiveTuple(
@@ -90,6 +94,9 @@ class ConnectionTracker:
             return self
 
         async def _on_stdout(stdout: str) -> None:
+            if not self._config:
+                return
+
             for line in stdout.splitlines():
                 connection = parse_input(line)
                 if connection is FiveTuple():
@@ -100,7 +107,19 @@ class ConnectionTracker:
                         self._initialized = True
                         continue
 
+                matching_configs = [
+                    cfg for cfg in self._config if cfg.target.partial_eq(connection)
+                ]
+                if not matching_configs:
+                    continue
+
                 self._events.append(connection)
+                self._last_event = connection
+
+                for cfg in matching_configs:
+                    if events := self._events_wait_list.pop(cfg.key, None):
+                        for event in events:
+                            event.set()
 
         command_coroutine = run_async(self._process.execute(stdout_callback=_on_stdout))
 
@@ -142,12 +161,18 @@ class ConnectionTracker:
 
         cfg = next((cfg for cfg in self._config if cfg.key == key), None)
         if cfg is None:
-            return
+            raise KeyError(f"Key {key} doesn't exist in config")
 
-        while True:
-            if [event for event in self._events if cfg.target.partial_eq(event)]:
+        if self._last_event:
+            if cfg.target.partial_eq(self._last_event):
                 return
-            await asyncio.sleep(0.1)
+
+        event = asyncio.Event()
+        if key not in self._events_wait_list:
+            self._events_wait_list[key] = [event]
+        else:
+            self._events_wait_list[key].append(event)
+        await event.wait()
 
     async def stop(self) -> None:
         if self._stop:
@@ -174,3 +199,96 @@ class ConnectionTracker:
 
     async def __aexit__(self, exc_type, exc, tb):
         await self.stop()
+
+
+def generate_connection_tracker_config(
+    connection_tag,
+    vpn_1_limits: ConnectionLimits = ConnectionLimits(0, 0),
+    vpn_2_limits: ConnectionLimits = ConnectionLimits(0, 0),
+    stun_limits: ConnectionLimits = ConnectionLimits(0, 0),
+    ping_limits: ConnectionLimits = ConnectionLimits(0, 0),
+    derp_0_limits: ConnectionLimits = ConnectionLimits(0, 0),
+    derp_1_limits: ConnectionLimits = ConnectionLimits(0, 0),
+    derp_2_limits: ConnectionLimits = ConnectionLimits(0, 0),
+    derp_3_limits: ConnectionLimits = ConnectionLimits(0, 0),
+) -> List[ConnectionTrackerConfig]:
+    lan_addr = utils.LAN_ADDR_MAP[connection_tag]
+    return [
+        ConnectionTrackerConfig(
+            "vpn_1",
+            vpn_1_limits,
+            FiveTuple(
+                protocol="udp",
+                src_ip=lan_addr,
+                dst_ip=str(config.WG_SERVER.get("ipv4")),
+                dst_port=51820,
+            ),
+        ),
+        ConnectionTrackerConfig(
+            "vpn_2",
+            vpn_2_limits,
+            FiveTuple(
+                protocol="udp",
+                src_ip=lan_addr,
+                dst_ip=str(config.WG_SERVER_2.get("ipv4")),
+                dst_port=51820,
+            ),
+        ),
+        ConnectionTrackerConfig(
+            "stun",
+            stun_limits,
+            FiveTuple(
+                protocol="udp",
+                src_ip=lan_addr,
+                dst_ip=config.STUN_SERVER,
+                dst_port=3478,
+            ),
+        ),
+        ConnectionTrackerConfig(
+            "ping",
+            ping_limits,
+            FiveTuple(
+                protocol="icmp",
+            ),
+        ),
+        ConnectionTrackerConfig(
+            "derp_0",
+            derp_0_limits,
+            FiveTuple(
+                protocol="tcp",
+                src_ip=lan_addr,
+                dst_ip=str(config.DERP_FAKE.get("ipv4")),
+                dst_port=8765,
+            ),
+        ),
+        ConnectionTrackerConfig(
+            "derp_1",
+            derp_1_limits,
+            FiveTuple(
+                protocol="tcp",
+                src_ip=lan_addr,
+                dst_ip=str(config.DERP_PRIMARY.get("ipv4")),
+                dst_port=8765,
+            ),
+        ),
+        ConnectionTrackerConfig(
+            "derp_2",
+            derp_2_limits,
+            FiveTuple(
+                protocol="tcp",
+                src_ip=lan_addr,
+                dst_ip=str(config.DERP_SECONDARY.get("ipv4")),
+                dst_port=8765,
+            ),
+        ),
+        ConnectionTrackerConfig(
+            "derp_3",
+            derp_3_limits,
+            FiveTuple(
+                protocol="tcp",
+                src_ip=lan_addr,
+                dst_ip=str(config.DERP_TERTIARY.get("ipv4")),
+                dst_port=8765,
+            ),
+        ),
+    ]

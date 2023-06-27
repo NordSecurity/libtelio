@@ -96,6 +96,50 @@ class PeerInfo(DataClassJsonMixin):
         self.allow_peer_send_files = allow_peer_send_files
         self.path = path
 
+    def __hash__(self):
+        return hash(
+            (
+                self.identifier,
+                self.public_key,
+                self.state,
+                self.is_exit,
+                self.is_vpn,
+                self.ip_addresses,
+                self.allowed_ips,
+                self.endpoint,
+                self.hostname,
+                self.allow_incoming_connections,
+                self.allow_peer_send_files,
+                self.path,
+            )
+        )
+
+    def __eq__(self, other):
+        if not isinstance(other, PeerInfo):
+            return False
+        return (
+            self.identifier == other.identifier
+            and self.public_key == other.public_key
+            and self.state == other.state
+            and self.is_exit == other.is_exit
+            and self.is_vpn == other.is_vpn
+            and self.ip_addresses == other.ip_addresses
+            and self.allowed_ips == other.allowed_ips
+            and (
+                self.endpoint is None
+                or other.endpoint is None
+                or self.endpoint == other.endpoint
+            )
+            and (
+                self.hostname is None
+                or other.hostname is None
+                or self.hostname == other.hostname
+            )
+            and self.allow_incoming_connections == other.allow_incoming_connections
+            and self.allow_peer_send_files == other.allow_peer_send_files
+            and self.path == other.path
+        )
+
 
 # Equivalent of `libtelio/telio-wg/src/adapter/mod.rs`
 class AdapterType(Enum):
@@ -186,7 +230,7 @@ class Runtime:
             node_state = PeerInfo.schema().loads(
                 "{" + result.group(1).replace("\\", "") + "}"
             )
-            assert type(node_state) == PeerInfo
+            assert isinstance(node_state, PeerInfo)
             self._set_peer(node_state)
             return True
         return False
@@ -208,7 +252,7 @@ class Runtime:
             derp_server_json = DerpServer.schema().loads(
                 "{" + result.group(1).replace("\\", "") + "}"
             )
-            assert type(derp_server_json) == DerpServer
+            assert isinstance(derp_server_json, DerpServer)
             self._set_derp(derp_server_json)
             return True
         return False
@@ -341,6 +385,12 @@ class Client:
     async def wait_for_any_node_event(self, public_key) -> None:
         event = asyncio.Event()
         self._runtime.notify_peer_state(public_key, event)
+        await event.wait()
+
+    async def wait_for_any_derp_event(self) -> None:
+        event = asyncio.Event()
+        for derp in DERP_SERVERS:
+            self._runtime.notify_derp_state(str(derp["ipv4"]), event)
         await event.wait()
 
     async def wait_for_derp_state(
@@ -583,9 +633,9 @@ async def run(
         await testing.wait_normal(client.stop_device())
         await asyncio_util.cancel_future(client.future_event_request_loop)
         await asyncio_util.cancel_future(future_process)
-        await client.get_router().delete_interface()
         await client.get_router().delete_vpn_route()
         await client.get_router().delete_exit_node_route()
+        await client.get_router().delete_interface()
         await save_logs(connection)
 
 

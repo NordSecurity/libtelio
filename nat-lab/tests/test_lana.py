@@ -1,8 +1,12 @@
 from utils import Ping
 from contextlib import AsyncExitStack
-from config import ALPHA_NODE_ADDRESS, BETA_NODE_ADDRESS, GAMMA_NODE_ADDRESS, WG_SERVER
+from config import WG_SERVER
 from mesh_api import API
-from utils import ConnectionTag, new_connection_by_tag, container_id
+from utils import (
+    ConnectionTag,
+    container_id,
+    new_connection_with_conn_tracker,
+)
 from telio import PathType, Client
 from telio_features import TelioFeatures, Nurse, Lana, Qos
 from utils.analytics import fetch_moose_events, basic_validator
@@ -11,6 +15,11 @@ import pytest
 import telio
 import utils.testing as testing
 import subprocess
+from utils.connection_tracker import (
+    generate_connection_tracker_config,
+    ConnectionLimits,
+    ConnectionTracker,
+)
 
 CONTAINER_EVENT_PATH = "/event.db"
 ALPHA_EVENTS_PATH = "./alpha-events.db"
@@ -59,12 +68,13 @@ def get_moose_db_file(container_tag, container_path, local_path):
     )
 
 
-async def connect_to_default_vpn(client: Client):
+async def connect_to_default_vpn(client: Client, conn_tracker: ConnectionTracker):
     await testing.wait_long(
         client.connect_to_vpn(
             WG_SERVER["ipv4"], WG_SERVER["port"], WG_SERVER["public_key"]
         )
     )
+    await testing.wait_long(conn_tracker.wait_for_event("vpn_1"))
     await testing.wait_lengthy(
         client.handshake(WG_SERVER["public_key"], PathType.Direct)
     )
@@ -83,7 +93,7 @@ async def wait_for_event_dump(container, events_path, nr_events):
 
 
 async def run_default_scenario(
-    exit_stack,
+    exit_stack: AsyncExitStack,
     alpha_is_local,
     beta_is_local,
     gamma_is_local,
@@ -98,14 +108,38 @@ async def run_default_scenario(
         gamma_is_local=gamma_is_local,
     )
 
-    connection_alpha = await exit_stack.enter_async_context(
-        new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+    (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
+        new_connection_with_conn_tracker(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            generate_connection_tracker_config(
+                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                # TODO: Change back derp limits max value to 1, when issue LLT-3875 is fixed
+                derp_1_limits=ConnectionLimits(1, None),
+                vpn_1_limits=ConnectionLimits(1 if alpha_has_vpn_connection else 0, 1),
+            ),
+        ),
     )
-    connection_beta = await exit_stack.enter_async_context(
-        new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
+    (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
+        new_connection_with_conn_tracker(
+            ConnectionTag.DOCKER_CONE_CLIENT_2,
+            generate_connection_tracker_config(
+                ConnectionTag.DOCKER_CONE_CLIENT_2,
+                # TODO: Change back derp limits max value to 1, when issue LLT-3875 is fixed
+                derp_1_limits=ConnectionLimits(1, None),
+                vpn_1_limits=ConnectionLimits(1 if beta_has_vpn_connection else 0, 1),
+            ),
+        )
     )
-    connection_gamma = await exit_stack.enter_async_context(
-        new_connection_by_tag(ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1)
+    (connection_gamma, gamma_conn_tracker) = await exit_stack.enter_async_context(
+        new_connection_with_conn_tracker(
+            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+            generate_connection_tracker_config(
+                ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+                # TODO: Change back derp limits max value to 1, when issue LLT-3875 is fixed
+                derp_1_limits=ConnectionLimits(1, None),
+                vpn_1_limits=ConnectionLimits(1 if gamma_has_vpn_connection else 0, 1),
+            ),
+        )
     )
 
     # Cleanup
@@ -140,24 +174,47 @@ async def run_default_scenario(
         )
     )
 
-    await testing.wait_long(client_alpha.handshake(beta.public_key))
-    await testing.wait_long(client_alpha.handshake(gamma.public_key))
-    await testing.wait_long(client_beta.handshake(gamma.public_key))
+    await testing.wait_long(
+        asyncio.gather(
+            client_alpha.wait_for_any_derp_state([telio.State.Connected]),
+            client_beta.wait_for_any_derp_state([telio.State.Connected]),
+            client_gamma.wait_for_any_derp_state([telio.State.Connected]),
+        )
+    )
+
+    await testing.wait_long(
+        asyncio.gather(
+            alpha_conn_tracker.wait_for_event("derp_1"),
+            beta_conn_tracker.wait_for_event("derp_1"),
+            gamma_conn_tracker.wait_for_event("derp_1"),
+        )
+    )
+
+    await testing.wait_long(
+        asyncio.gather(
+            client_alpha.handshake(beta.public_key),
+            client_alpha.handshake(gamma.public_key),
+            client_beta.handshake(alpha.public_key),
+            client_beta.handshake(gamma.public_key),
+            client_gamma.handshake(alpha.public_key),
+            client_gamma.handshake(beta.public_key),
+        )
+    )
 
     if alpha_has_vpn_connection:
-        await connect_to_default_vpn(client_alpha)
+        await connect_to_default_vpn(client_alpha, alpha_conn_tracker)
 
     if beta_has_vpn_connection:
-        await connect_to_default_vpn(client_beta)
+        await connect_to_default_vpn(client_beta, beta_conn_tracker)
 
     if gamma_has_vpn_connection:
-        await connect_to_default_vpn(client_gamma)
+        await connect_to_default_vpn(client_gamma, gamma_conn_tracker)
 
-    async with Ping(connection_alpha, BETA_NODE_ADDRESS) as ping:
+    async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
         await testing.wait_long(ping.wait_for_next_ping())
-    async with Ping(connection_beta, GAMMA_NODE_ADDRESS) as ping:
+    async with Ping(connection_beta, gamma.ip_addresses[0]) as ping:
         await testing.wait_long(ping.wait_for_next_ping())
-    async with Ping(connection_gamma, ALPHA_NODE_ADDRESS) as ping:
+    async with Ping(connection_gamma, alpha.ip_addresses[0]) as ping:
         await testing.wait_long(ping.wait_for_next_ping())
 
     await asyncio.sleep(DEFAULT_WAITING_TIME)
@@ -176,9 +233,17 @@ async def run_default_scenario(
         ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, GAMMA_EVENTS_PATH, nr_events=1
     )
 
-    await testing.wait_long(client_alpha.stop_device())
-    await testing.wait_long(client_beta.stop_device())
-    await testing.wait_long(client_gamma.stop_device())
+    await testing.wait_long(
+        asyncio.gather(
+            client_alpha.stop_device(),
+            client_beta.stop_device(),
+            client_gamma.stop_device(),
+        )
+    )
+
+    assert alpha_conn_tracker.get_out_of_limits() is None
+    assert beta_conn_tracker.get_out_of_limits() is None
+    assert gamma_conn_tracker.get_out_of_limits() is None
 
     return [alpha_events, beta_events, gamma_events]
 
@@ -460,33 +525,25 @@ async def test_lana_with_vpn_connections() -> None:
 async def test_lana_with_disconnected_node() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="IGm+42FLMMGZRaQvk6F3UPbl+T/CBk8W+NPoX2/AdlU=",
-            public_key="41CCEssnYIh8/8D8YvbTfWEcFanG3D0I0z1tRcN1Lyc=",
-            is_local=True,
+        (alpha, beta) = api.default_config_two_nodes(True, True)
+        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
         )
-
-        beta = api.register(
-            name="beta",
-            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
-            private_key="SPFD84gPtBNc3iGY9Cdrj+mSCwBeh3mCMWfPaeWQolw=",
-            public_key="Q1M3VKUcfTmGsrRzY6BpNds1yDIUvPVcs/2TySv/t1U=",
-            is_local=True,
-        )
-
-        api.assign_ip(alpha.id, ALPHA_NODE_ADDRESS)
-        api.assign_ip(beta.id, BETA_NODE_ADDRESS)
-
-        alpha.set_peer_firewall_settings(beta.id, allow_incoming_connections=True)
-        beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
-
-        connection_alpha = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
-        )
-        connection_beta = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
+        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                ConnectionTag.DOCKER_CONE_CLIENT_2,
+                generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    # TODO: Change back derp limits max value to 1, when issue LLT-3875 is fixed
+                    derp_1_limits=ConnectionLimits(1, None),
+                ),
+            )
         )
 
         await clean_container(connection_alpha)
@@ -509,7 +566,26 @@ async def test_lana_with_disconnected_node() -> None:
             )
         )
 
-        await testing.wait_long(client_alpha.handshake(beta.public_key))
+        await testing.wait_long(
+            asyncio.gather(
+                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
+                client_beta.wait_for_any_derp_state([telio.State.Connected]),
+            )
+        )
+
+        await testing.wait_long(
+            asyncio.gather(
+                alpha_conn_tracker.wait_for_event("derp_1"),
+                beta_conn_tracker.wait_for_event("derp_1"),
+            )
+        )
+
+        await testing.wait_long(
+            asyncio.gather(
+                client_alpha.handshake(beta.public_key),
+                client_beta.handshake(alpha.public_key),
+            )
+        )
 
         async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
@@ -583,3 +659,5 @@ async def test_lana_with_disconnected_node() -> None:
 
         # Validate all nodes have the same meshnet id
         assert alpha_events[0].fp == alpha_events[1].fp == beta_events[0].fp
+        assert alpha_conn_tracker.get_out_of_limits() is None
+        assert beta_conn_tracker.get_out_of_limits() is None

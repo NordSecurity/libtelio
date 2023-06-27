@@ -1,18 +1,30 @@
 from contextlib import AsyncExitStack
 from mesh_api import API
 from telio import AdapterType
-from utils import ConnectionTag, new_connection_by_tag
-import config
 import pytest
 import telio
 import utils.testing as testing
 import re
+import asyncio
+import config
+from utils.connection_tracker import (
+    ConnectionLimits,
+    generate_connection_tracker_config,
+)
+from utils import (
+    ConnectionTag,
+    new_connection_with_conn_tracker,
+)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "alpha_connection_tag,alpha_adapter_type",
     [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.BoringTun,
+        ),
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
             AdapterType.LinuxNativeWg,
@@ -27,35 +39,31 @@ import re
     ],
 )
 async def test_dns_through_exit(
-    alpha_connection_tag: ConnectionTag, alpha_adapter_type: AdapterType
+    alpha_connection_tag: ConnectionTag,
+    alpha_adapter_type: AdapterType,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="IGm+42FLMMGZRaQvk6F3UPbl+T/CBk8W+NPoX2/AdlU=",
-            public_key="41CCEssnYIh8/8D8YvbTfWEcFanG3D0I0z1tRcN1Lyc=",
+        (alpha, exit_node) = api.default_config_two_nodes()
+
+        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                alpha_connection_tag,
+                generate_connection_tracker_config(
+                    alpha_connection_tag,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
         )
-
-        exit_node = api.register(
-            name="exit-node",
-            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
-            private_key="SPFD84gPtBNc3iGY9Cdrj+mSCwBeh3mCMWfPaeWQolw=",
-            public_key="Q1M3VKUcfTmGsrRzY6BpNds1yDIUvPVcs/2TySv/t1U=",
-        )
-
-        api.assign_ip(alpha.id, config.ALPHA_NODE_ADDRESS)
-        api.assign_ip(exit_node.id, config.BETA_NODE_ADDRESS)
-
-        exit_node.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
-
-        connection_alpha = await exit_stack.enter_async_context(
-            new_connection_by_tag(alpha_connection_tag)
-        )
-        connection_exit = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
+        (connection_exit, exit_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                ConnectionTag.DOCKER_CONE_CLIENT_2,
+                generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
         )
 
         client_alpha = await exit_stack.enter_async_context(
@@ -68,11 +76,33 @@ async def test_dns_through_exit(
         )
 
         client_exit = await exit_stack.enter_async_context(
-            telio.run_meshnet(connection_exit, exit_node, api.get_meshmap(exit_node.id))
+            telio.run_meshnet(
+                connection_exit,
+                exit_node,
+                api.get_meshmap(exit_node.id),
+            )
         )
 
-        await testing.wait_long(client_alpha.handshake(exit_node.public_key))
-        await testing.wait_long(client_exit.handshake(alpha.public_key))
+        await testing.wait_long(
+            asyncio.gather(
+                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
+                client_exit.wait_for_any_derp_state([telio.State.Connected]),
+            )
+        )
+
+        await testing.wait_long(
+            asyncio.gather(
+                alpha_conn_tracker.wait_for_event("derp_1"),
+                exit_conn_tracker.wait_for_event("derp_1"),
+            )
+        )
+
+        await testing.wait_long(
+            asyncio.gather(
+                client_alpha.handshake(exit_node.public_key),
+                client_exit.handshake(alpha.public_key),
+            )
+        )
 
         # entry connects to exit
         await testing.wait_long(client_exit.get_router().create_exit_node_route())
@@ -142,3 +172,6 @@ async def test_dns_through_exit(
             )
             is not None
         )
+
+        assert alpha_conn_tracker.get_out_of_limits() is None
+        assert exit_conn_tracker.get_out_of_limits() is None

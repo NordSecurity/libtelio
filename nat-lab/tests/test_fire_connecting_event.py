@@ -2,55 +2,58 @@ from utils import Ping
 from contextlib import AsyncExitStack
 from mesh_api import API
 from telio import AdapterType
-from utils import ConnectionTag, new_connection_by_tag
 import asyncio
 import pytest
 import telio
 import utils.testing as testing
+from utils.connection_tracker import (
+    ConnectionLimits,
+    generate_connection_tracker_config,
+)
+from utils import (
+    ConnectionTag,
+    new_connection_with_conn_tracker,
+)
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(120 + 60)
+@pytest.mark.long
+@pytest.mark.timeout(180 + 60)
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type",
     [
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
-            AdapterType.BoringTun,
-            marks=pytest.mark.long,
+            telio.AdapterType.BoringTun,
         ),
     ],
 )
 async def test_fire_connecting_event(
-    alpha_connection_tag: ConnectionTag, adapter_type: AdapterType
+    alpha_connection_tag: ConnectionTag,
+    adapter_type: AdapterType,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="IGm+42FLMMGZRaQvk6F3UPbl+T/CBk8W+NPoX2/AdlU=",
-            public_key="41CCEssnYIh8/8D8YvbTfWEcFanG3D0I0z1tRcN1Lyc=",
+        (alpha, beta) = api.default_config_two_nodes()
+        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                alpha_connection_tag,
+                generate_connection_tracker_config(
+                    alpha_connection_tag,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
         )
-
-        beta = api.register(
-            name="beta",
-            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
-            private_key="SPFD84gPtBNc3iGY9Cdrj+mSCwBeh3mCMWfPaeWQolw=",
-            public_key="Q1M3VKUcfTmGsrRzY6BpNds1yDIUvPVcs/2TySv/t1U=",
-        )
-
-        api.assign_ip(alpha.id, "100.64.0.1")
-        api.assign_ip(beta.id, "100.64.0.2")
-
-        beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
-
-        connection_alpha = await exit_stack.enter_async_context(
-            new_connection_by_tag(alpha_connection_tag)
-        )
-        connection_beta = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
+        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                ConnectionTag.DOCKER_CONE_CLIENT_2,
+                generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    # TODO: Change back derp limits max value to 1, when issue LLT-3875 is fixed
+                    derp_1_limits=ConnectionLimits(1, None),
+                ),
+            )
         )
 
         client_alpha = await exit_stack.enter_async_context(
@@ -70,11 +73,37 @@ async def test_fire_connecting_event(
             )
         )
 
-        await testing.wait_long(client_alpha.handshake(beta.public_key))
-        await testing.wait_long(client_beta.handshake(alpha.public_key))
+        await testing.wait_long(
+            asyncio.gather(
+                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
+                client_beta.wait_for_any_derp_state([telio.State.Connected]),
+            )
+        )
 
-        async with Ping(connection_alpha, "100.64.0.2") as ping:
+        await testing.wait_long(
+            asyncio.gather(
+                alpha_conn_tracker.wait_for_event("derp_1"),
+                beta_conn_tracker.wait_for_event("derp_1"),
+            )
+        )
+
+        await testing.wait_long(
+            asyncio.gather(
+                client_alpha.handshake(beta.public_key),
+                client_beta.handshake(alpha.public_key),
+            )
+        )
+
+        async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         await client_beta.stop_device()
-        await asyncio.wait_for(client_alpha.connecting(beta.public_key), 120)
+
+        with pytest.raises(asyncio.TimeoutError):
+            async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
+                await testing.wait_long(ping.wait_for_next_ping())
+
+        await asyncio.wait_for(client_alpha.connecting(beta.public_key), 180)
+
+        assert alpha_conn_tracker.get_out_of_limits() is None
+        assert beta_conn_tracker.get_out_of_limits() is None

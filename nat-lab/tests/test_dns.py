@@ -1,9 +1,7 @@
 from utils import process
 from contextlib import AsyncExitStack
-from mesh_api import DERP_SERVERS, API
+from mesh_api import API
 from telio import AdapterType, PathType
-from utils import ConnectionTag, new_connection_by_tag
-import aiodocker
 import asyncio
 import config
 import pytest
@@ -11,9 +9,12 @@ import telio
 import utils.testing as testing
 from utils.asyncio_util import run_async_context
 import re
+from utils.connection_tracker import (
+    ConnectionLimits,
+    generate_connection_tracker_config,
+)
+from utils import ConnectionTag, new_connection_with_conn_tracker
 
-ALPHA_NODE_ADDRESS = config.ALPHA_NODE_ADDRESS
-BETA_NODE_ADDRESS = config.BETA_NODE_ADDRESS
 DNS_SERVER_ADDRESS = config.LIBTELIO_DNS_IP
 
 
@@ -22,36 +23,35 @@ async def test_dns() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="IGm+42FLMMGZRaQvk6F3UPbl+T/CBk8W+NPoX2/AdlU=",
-            public_key="41CCEssnYIh8/8D8YvbTfWEcFanG3D0I0z1tRcN1Lyc=",
+        (alpha, beta) = api.default_config_two_nodes()
+
+        alpha.set_peer_firewall_settings(beta.id)
+        beta.set_peer_firewall_settings(alpha.id)
+
+        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
         )
-
-        beta = api.register(
-            name="beta",
-            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
-            private_key="SPFD84gPtBNc3iGY9Cdrj+mSCwBeh3mCMWfPaeWQolw=",
-            public_key="Q1M3VKUcfTmGsrRzY6BpNds1yDIUvPVcs/2TySv/t1U=",
-        )
-
-        api.assign_ip(alpha.id, ALPHA_NODE_ADDRESS)
-        api.assign_ip(beta.id, BETA_NODE_ADDRESS)
-
-        connection_alpha = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
-        )
-
-        connection_beta = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
+        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                ConnectionTag.DOCKER_CONE_CLIENT_2,
+                generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
         )
 
         client_alpha = await exit_stack.enter_async_context(
             telio.run_meshnet(
                 connection_alpha,
                 alpha,
-                api.get_meshmap(alpha.id, DERP_SERVERS),
+                api.get_meshmap(alpha.id),
             )
         )
 
@@ -59,12 +59,30 @@ async def test_dns() -> None:
             telio.run_meshnet(
                 connection_beta,
                 beta,
-                api.get_meshmap(beta.id, DERP_SERVERS),
+                api.get_meshmap(beta.id),
             )
         )
 
-        await testing.wait_long(client_alpha.handshake(beta.public_key))
-        await testing.wait_long(client_beta.handshake(alpha.public_key))
+        await testing.wait_long(
+            asyncio.gather(
+                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
+                client_beta.wait_for_any_derp_state([telio.State.Connected]),
+            )
+        )
+
+        await testing.wait_long(
+            asyncio.gather(
+                alpha_conn_tracker.wait_for_event("derp_1"),
+                beta_conn_tracker.wait_for_event("derp_1"),
+            )
+        )
+
+        await testing.wait_long(
+            asyncio.gather(
+                client_alpha.handshake(beta.public_key),
+                client_beta.handshake(alpha.public_key),
+            )
+        )
 
         # These calls should timeout without returning anything, but cache the peer addresses
         with pytest.raises(asyncio.TimeoutError):
@@ -102,14 +120,14 @@ async def test_dns() -> None:
                 ["nslookup", "beta.nord", DNS_SERVER_ADDRESS]
             ).execute()
         )
-        assert BETA_NODE_ADDRESS in alpha_response.get_stdout()
+        assert beta.ip_addresses[0] in alpha_response.get_stdout()
 
         beta_response = await testing.wait_long(
             connection_beta.create_process(
                 ["nslookup", "alpha.nord", DNS_SERVER_ADDRESS]
             ).execute()
         )
-        assert ALPHA_NODE_ADDRESS in beta_response.get_stdout()
+        assert alpha.ip_addresses[0] in beta_response.get_stdout()
 
         # Now we disable magic dns
         await client_alpha.disable_magic_dns()
@@ -129,42 +147,44 @@ async def test_dns() -> None:
                 ).execute(),
             )
 
+        assert alpha_conn_tracker.get_out_of_limits() is None
+        assert beta_conn_tracker.get_out_of_limits() is None
+
 
 @pytest.mark.asyncio
 async def test_dns_port() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="IGm+42FLMMGZRaQvk6F3UPbl+T/CBk8W+NPoX2/AdlU=",
-            public_key="41CCEssnYIh8/8D8YvbTfWEcFanG3D0I0z1tRcN1Lyc=",
+        (alpha, beta) = api.default_config_two_nodes()
+
+        alpha.set_peer_firewall_settings(beta.id)
+        beta.set_peer_firewall_settings(alpha.id)
+
+        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
         )
-
-        beta = api.register(
-            name="beta",
-            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
-            private_key="SPFD84gPtBNc3iGY9Cdrj+mSCwBeh3mCMWfPaeWQolw=",
-            public_key="Q1M3VKUcfTmGsrRzY6BpNds1yDIUvPVcs/2TySv/t1U=",
-        )
-
-        api.assign_ip(alpha.id, ALPHA_NODE_ADDRESS)
-        api.assign_ip(beta.id, BETA_NODE_ADDRESS)
-
-        connection_alpha = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
-        )
-
-        connection_beta = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
+        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                ConnectionTag.DOCKER_CONE_CLIENT_2,
+                generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
         )
 
         client_alpha = await exit_stack.enter_async_context(
             telio.run_meshnet(
                 connection_alpha,
                 alpha,
-                api.get_meshmap(alpha.id, DERP_SERVERS),
+                api.get_meshmap(alpha.id),
             )
         )
 
@@ -172,12 +192,30 @@ async def test_dns_port() -> None:
             telio.run_meshnet(
                 connection_beta,
                 beta,
-                api.get_meshmap(beta.id, DERP_SERVERS),
+                api.get_meshmap(beta.id),
             )
         )
 
-        await testing.wait_long(client_alpha.handshake(beta.public_key))
-        await testing.wait_long(client_beta.handshake(alpha.public_key))
+        await testing.wait_long(
+            asyncio.gather(
+                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
+                client_beta.wait_for_any_derp_state([telio.State.Connected]),
+            )
+        )
+
+        await testing.wait_long(
+            asyncio.gather(
+                alpha_conn_tracker.wait_for_event("derp_1"),
+                beta_conn_tracker.wait_for_event("derp_1"),
+            )
+        )
+
+        await testing.wait_long(
+            asyncio.gather(
+                client_alpha.handshake(beta.public_key),
+                client_beta.handshake(alpha.public_key),
+            )
+        )
 
         # These call should timeout without returning anything
         with pytest.raises(asyncio.TimeoutError):
@@ -211,7 +249,7 @@ async def test_dns_port() -> None:
                 ["dig", "@" + DNS_SERVER_ADDRESS, "-p", "53", "beta.nord"]
             ).execute()
         )
-        assert BETA_NODE_ADDRESS in alpha_response.get_stdout()
+        assert beta.ip_addresses[0] in alpha_response.get_stdout()
 
         # Look for beta on a different port should timeout
         with pytest.raises(asyncio.TimeoutError):
@@ -240,23 +278,24 @@ async def test_dns_port() -> None:
                 ).execute(),
             )
 
+        assert alpha_conn_tracker.get_out_of_limits() is None
+        assert beta_conn_tracker.get_out_of_limits() is None
+
 
 @pytest.mark.asyncio
 async def test_vpn_dns() -> None:
     async with AsyncExitStack() as exit_stack:
-        docker = await exit_stack.enter_async_context(aiodocker.Docker())
         api = API()
+        alpha = api.default_config_alpha_node()
 
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="yIsV88+fJrRJRKyMnbK7fHCAXWzaPeAuBILeJMtfQHI=",
-            public_key="Oxm/ZeHev8trOJ69sRyvX1rngZc2Gq7sXxQq4MW7bW4=",
-        )
-        api.assign_ip(alpha.id, ALPHA_NODE_ADDRESS)
-
-        connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        (connection, conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    vpn_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
         )
 
         client_alpha = await exit_stack.enter_async_context(
@@ -273,6 +312,8 @@ async def test_vpn_dns() -> None:
                 wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
             )
         )
+
+        await testing.wait_long(conn_tracker.wait_for_event("vpn_1"))
 
         await testing.wait_lengthy(
             client_alpha.handshake(wg_server["public_key"], path=PathType.Any)
@@ -309,9 +350,7 @@ async def test_vpn_dns() -> None:
         # Test interop with meshnet
         await client_alpha.enable_magic_dns(["1.1.1.1"])
 
-        await client_alpha.set_meshmap(
-            api.get_meshmap(alpha.id, DERP_SERVERS),
-        )
+        await client_alpha.set_meshmap(api.get_meshmap(alpha.id, derp_servers=[]))
 
         await testing.wait_normal(
             connection.create_process(
@@ -319,38 +358,33 @@ async def test_vpn_dns() -> None:
             ).execute(),
         )
 
+        assert conn_tracker.get_out_of_limits() is None
+
 
 @pytest.mark.asyncio
 async def test_dns_after_mesh_off() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="IGm+42FLMMGZRaQvk6F3UPbl+T/CBk8W+NPoX2/AdlU=",
-            public_key="41CCEssnYIh8/8D8YvbTfWEcFanG3D0I0z1tRcN1Lyc=",
-        )
+        (alpha, beta) = api.default_config_two_nodes()
 
-        beta = api.register(
-            name="beta",
-            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
-            private_key="SPFD84gPtBNc3iGY9Cdrj+mSCwBeh3mCMWfPaeWQolw=",
-            public_key="Q1M3VKUcfTmGsrRzY6BpNds1yDIUvPVcs/2TySv/t1U=",
-        )
+        alpha.set_peer_firewall_settings(beta.id)
+        beta.set_peer_firewall_settings(alpha.id)
 
-        api.assign_ip(alpha.id, ALPHA_NODE_ADDRESS)
-        api.assign_ip(beta.id, BETA_NODE_ADDRESS)
-
-        connection_alpha = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                ),
+            )
         )
 
         client_alpha = await exit_stack.enter_async_context(
             telio.run_meshnet(
                 connection_alpha,
                 alpha,
-                api.get_meshmap(alpha.id, DERP_SERVERS),
+                api.get_meshmap(alpha.id, derp_servers=[]),
             )
         )
 
@@ -377,7 +411,7 @@ async def test_dns_after_mesh_off() -> None:
                 ["nslookup", "beta.nord", DNS_SERVER_ADDRESS]
             ).execute()
         )
-        assert BETA_NODE_ADDRESS in alpha_response.get_stdout()
+        assert beta.ip_addresses[0] in alpha_response.get_stdout()
 
         # Now we disable magic dns
         await client_alpha.set_mesh_off()
@@ -399,8 +433,11 @@ async def test_dns_after_mesh_off() -> None:
         except process.ProcessExecError as e:
             assert "server can't find beta.nord" in e.stdout
 
+        assert alpha_conn_tracker.get_out_of_limits() is None
+
 
 @pytest.mark.asyncio
+@pytest.mark.long
 @pytest.mark.timeout(60 * 5 + 60)
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type",
@@ -408,39 +445,37 @@ async def test_dns_after_mesh_off() -> None:
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
             AdapterType.BoringTun,
-            marks=pytest.mark.long,
         ),
     ],
 )
 async def test_dns_stability(
-    alpha_connection_tag: ConnectionTag, adapter_type: AdapterType
+    alpha_connection_tag: ConnectionTag,
+    adapter_type: AdapterType,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="IGm+42FLMMGZRaQvk6F3UPbl+T/CBk8W+NPoX2/AdlU=",
-            public_key="41CCEssnYIh8/8D8YvbTfWEcFanG3D0I0z1tRcN1Lyc=",
+        (alpha, beta) = api.default_config_two_nodes()
+        alpha.set_peer_firewall_settings(beta.id)
+        beta.set_peer_firewall_settings(alpha.id)
+
+        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                alpha_connection_tag,
+                generate_connection_tracker_config(
+                    alpha_connection_tag,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
         )
-
-        beta = api.register(
-            name="beta",
-            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
-            private_key="SPFD84gPtBNc3iGY9Cdrj+mSCwBeh3mCMWfPaeWQolw=",
-            public_key="Q1M3VKUcfTmGsrRzY6BpNds1yDIUvPVcs/2TySv/t1U=",
-        )
-
-        api.assign_ip(alpha.id, ALPHA_NODE_ADDRESS)
-        api.assign_ip(beta.id, BETA_NODE_ADDRESS)
-
-        connection_alpha = await exit_stack.enter_async_context(
-            new_connection_by_tag(alpha_connection_tag)
-        )
-
-        connection_beta = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
+        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                ConnectionTag.DOCKER_CONE_CLIENT_2,
+                generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
         )
 
         client_alpha = await exit_stack.enter_async_context(
@@ -460,8 +495,26 @@ async def test_dns_stability(
             )
         )
 
-        await testing.wait_long(client_alpha.handshake(beta.public_key))
-        await testing.wait_long(client_beta.handshake(alpha.public_key))
+        await testing.wait_long(
+            asyncio.gather(
+                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
+                client_beta.wait_for_any_derp_state([telio.State.Connected]),
+            )
+        )
+
+        await testing.wait_long(
+            asyncio.gather(
+                alpha_conn_tracker.wait_for_event("derp_1"),
+                beta_conn_tracker.wait_for_event("derp_1"),
+            )
+        )
+
+        await testing.wait_long(
+            asyncio.gather(
+                client_alpha.handshake(beta.public_key),
+                client_beta.handshake(alpha.public_key),
+            )
+        )
 
         await client_alpha.enable_magic_dns(["1.1.1.1"])
         await client_beta.enable_magic_dns(["1.1.1.1"])
@@ -483,14 +536,14 @@ async def test_dns_stability(
                 ["nslookup", "beta.nord", DNS_SERVER_ADDRESS]
             ).execute()
         )
-        assert BETA_NODE_ADDRESS in alpha_response.get_stdout()
+        assert beta.ip_addresses[0] in alpha_response.get_stdout()
 
         beta_response = await testing.wait_normal(
             connection_beta.create_process(
                 ["nslookup", "alpha.nord", DNS_SERVER_ADDRESS]
             ).execute()
         )
-        assert ALPHA_NODE_ADDRESS in beta_response.get_stdout()
+        assert alpha.ip_addresses[0] in beta_response.get_stdout()
 
         await asyncio.sleep(60 * 5)
 
@@ -511,14 +564,17 @@ async def test_dns_stability(
                 ["nslookup", "beta.nord", DNS_SERVER_ADDRESS]
             ).execute()
         )
-        assert BETA_NODE_ADDRESS in alpha_response.get_stdout()
+        assert beta.ip_addresses[0] in alpha_response.get_stdout()
 
         beta_response = await testing.wait_normal(
             connection_beta.create_process(
                 ["nslookup", "alpha.nord", DNS_SERVER_ADDRESS]
             ).execute()
         )
-        assert ALPHA_NODE_ADDRESS in beta_response.get_stdout()
+        assert alpha.ip_addresses[0] in beta_response.get_stdout()
+
+        assert alpha_conn_tracker.get_out_of_limits() is None
+        assert beta_conn_tracker.get_out_of_limits() is None
 
 
 @pytest.mark.asyncio
@@ -526,24 +582,22 @@ async def test_set_meshmap_dns_update() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="IGm+42FLMMGZRaQvk6F3UPbl+T/CBk8W+NPoX2/AdlU=",
-            public_key="41CCEssnYIh8/8D8YvbTfWEcFanG3D0I0z1tRcN1Lyc=",
-        )
+        alpha = api.default_config_alpha_node()
 
-        api.assign_ip(alpha.id, ALPHA_NODE_ADDRESS)
-
-        connection_alpha = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                ),
+            )
         )
 
         client_alpha = await exit_stack.enter_async_context(
             telio.run_meshnet(
                 connection_alpha,
                 alpha,
-                api.get_meshmap(alpha.id),
+                api.get_meshmap(alpha.id, derp_servers=[]),
             )
         )
 
@@ -554,49 +608,41 @@ async def test_set_meshmap_dns_update() -> None:
             await testing.wait_normal(
                 connection_alpha.create_process(
                     ["nslookup", "beta.nord", DNS_SERVER_ADDRESS]
-                ).execute(),
+                ).execute()
             )
         except process.ProcessExecError as e:
             assert "server can't find beta.nord" in e.stdout
 
-        beta = api.register(
-            name="beta",
-            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
-            private_key="SPFD84gPtBNc3iGY9Cdrj+mSCwBeh3mCMWfPaeWQolw=",
-            public_key="Q1M3VKUcfTmGsrRzY6BpNds1yDIUvPVcs/2TySv/t1U=",
-        )
-
-        api.assign_ip(beta.id, BETA_NODE_ADDRESS)
+        beta = api.default_config_beta_node()
 
         # Check if setting meshnet updates nord names for dns resolver
-        await client_alpha.set_meshmap(
-            api.get_meshmap(alpha.id, DERP_SERVERS),
-        )
+        await client_alpha.set_meshmap(api.get_meshmap(alpha.id, derp_servers=[]))
 
         alpha_response = await testing.wait_normal(
             connection_alpha.create_process(
                 ["nslookup", "beta.nord", DNS_SERVER_ADDRESS]
             ).execute(),
         )
-        assert BETA_NODE_ADDRESS in alpha_response.get_stdout()
+        assert beta.ip_addresses[0] in alpha_response.get_stdout()
+
+        assert alpha_conn_tracker.get_out_of_limits() is None
 
 
 @pytest.mark.asyncio
 async def test_dns_update() -> None:
     async with AsyncExitStack() as exit_stack:
-        docker = await exit_stack.enter_async_context(aiodocker.Docker())
         api = API()
 
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="yIsV88+fJrRJRKyMnbK7fHCAXWzaPeAuBILeJMtfQHI=",
-            public_key="Oxm/ZeHev8trOJ69sRyvX1rngZc2Gq7sXxQq4MW7bW4=",
-        )
-        api.assign_ip(alpha.id, ALPHA_NODE_ADDRESS)
+        alpha = api.default_config_alpha_node()
 
-        connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        (connection, conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    vpn_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
         )
 
         client_alpha = await exit_stack.enter_async_context(
@@ -614,8 +660,10 @@ async def test_dns_update() -> None:
             )
         )
 
+        await testing.wait_long(conn_tracker.wait_for_event("vpn_1"))
+
         await testing.wait_lengthy(
-            client_alpha.handshake(wg_server["public_key"], path=PathType.Any)
+            client_alpha.handshake(wg_server["public_key"], path=PathType.Direct)
         )
 
         # Don't forward anything yet
@@ -639,6 +687,7 @@ async def test_dns_update() -> None:
         )
         # Check if some address was found
         assert "Name:	google.com\nAddress:" in alpha_response.get_stdout()
+        assert conn_tracker.get_out_of_limits() is None
 
 
 @pytest.mark.asyncio
@@ -649,17 +698,15 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
         FIRST_DNS_SERVER = "8.8.8.8"
         SECOND_DNS_SERVER = "1.1.1.1"
 
-        alpha = api.register(
-            name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="IGm+42FLMMGZRaQvk6F3UPbl+T/CBk8W+NPoX2/AdlU=",
-            public_key="41CCEssnYIh8/8D8YvbTfWEcFanG3D0I0z1tRcN1Lyc=",
-        )
+        alpha = api.default_config_alpha_node()
 
-        api.assign_ip(alpha.id, ALPHA_NODE_ADDRESS)
-
-        connection_alpha = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                ),
+            )
         )
 
         process = connection_alpha.create_process(
@@ -671,7 +718,7 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
             telio.run_meshnet(
                 connection_alpha,
                 alpha,
-                api.get_meshmap(alpha.id, DERP_SERVERS),
+                api.get_meshmap(alpha.id, derp_servers=[]),
             )
         )
 
@@ -693,3 +740,4 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
         assert results
         assert [result for result in results if FIRST_DNS_SERVER in result]
         assert not ([result for result in results if SECOND_DNS_SERVER in result])
+        assert alpha_conn_tracker.get_out_of_limits() is None
