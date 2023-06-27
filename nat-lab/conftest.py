@@ -1,5 +1,4 @@
 import pytest
-import natlab
 
 
 def pytest_collection_modifyitems(config, items):
@@ -24,8 +23,3 @@ def pytest_collection_modifyitems(config, items):
                 order_index = 4
 
         item.add_marker(pytest.mark.order(order_index))
-
-
-def pytest_runtest_setup(item):
-    if any(mark for mark in item.iter_markers() if mark.name == "vpn"):
-        natlab.quick_restart_container(["vpn"])
