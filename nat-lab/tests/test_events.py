@@ -160,7 +160,6 @@ async def test_event_content_meshnet(
 
 
 @pytest.mark.asyncio
-@pytest.mark.vpn
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type,public_ip",
     [

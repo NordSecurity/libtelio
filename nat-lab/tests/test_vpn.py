@@ -91,7 +91,6 @@ WINDOWS_CONNECTION_TRACKER_CONFIG = [
 
 
 @pytest.mark.asyncio
-@pytest.mark.vpn
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type,public_ip,conn_tracker_config",
     [
