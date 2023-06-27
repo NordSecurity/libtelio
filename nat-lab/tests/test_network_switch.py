@@ -150,7 +150,6 @@ async def test_mesh_network_switch(
 
 
 @pytest.mark.asyncio
-@pytest.mark.vpn
 @pytest.mark.parametrize(
     "connection_tag,adapter_type,public_ip",
     [

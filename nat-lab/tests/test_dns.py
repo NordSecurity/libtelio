@@ -241,7 +241,6 @@ async def test_dns_port() -> None:
             )
 
 
-@pytest.mark.vpn
 @pytest.mark.asyncio
 async def test_vpn_dns() -> None:
     async with AsyncExitStack() as exit_stack:
@@ -582,7 +581,6 @@ async def test_set_meshmap_dns_update() -> None:
         assert BETA_NODE_ADDRESS in alpha_response.get_stdout()
 
 
-@pytest.mark.vpn
 @pytest.mark.asyncio
 async def test_dns_update() -> None:
     async with AsyncExitStack() as exit_stack:
