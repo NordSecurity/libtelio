@@ -1,14 +1,22 @@
-from contextlib import AsyncExitStack
-from mesh_api import API
-from utils import ConnectionTag, new_connection_by_tag
 import pytest
 import telio
 import utils.testing as testing
+import asyncio
+from contextlib import AsyncExitStack
+from mesh_api import API
+from utils.connection_tracker import (
+    ConnectionLimits,
+    generate_connection_tracker_config,
+)
+from utils import (
+    ConnectionTag,
+    new_connection_with_conn_tracker,
+)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "alpha_connection_tag, adapter_type",
+    "alpha_connection_tag,adapter_type",
     [
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -37,17 +45,30 @@ import utils.testing as testing
     ],
 )
 async def test_register_meshnet_client(
-    alpha_connection_tag: ConnectionTag, adapter_type: telio.AdapterType
+    alpha_connection_tag: ConnectionTag,
+    adapter_type: telio.AdapterType,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        (alpha, beta, _) = api.default_config_three_nodes()
-        alpha_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(alpha_connection_tag)
+        (alpha, beta) = api.default_config_two_nodes()
+        (alpha_connection, alpha_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                alpha_connection_tag,
+                generate_connection_tracker_config(
+                    alpha_connection_tag,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
         )
-        beta_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
+        (beta_connection, beta_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                ConnectionTag.DOCKER_CONE_CLIENT_2,
+                generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
         )
 
         client_alpha = await exit_stack.enter_async_context(
@@ -68,11 +89,25 @@ async def test_register_meshnet_client(
         )
 
         await testing.wait_long(
-            client_alpha.wait_for_any_derp_state([telio.State.Connected])
-        )
-        await testing.wait_long(
-            client_beta.wait_for_any_derp_state([telio.State.Connected])
+            asyncio.gather(
+                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
+                client_beta.wait_for_any_derp_state([telio.State.Connected]),
+            )
         )
 
-        await testing.wait_long(client_alpha.handshake(beta.public_key))
-        await testing.wait_long(client_beta.handshake(alpha.public_key))
+        await testing.wait_long(
+            asyncio.gather(
+                alpha_conn_tracker.wait_for_event("derp_1"),
+                beta_conn_tracker.wait_for_event("derp_1"),
+            )
+        )
+
+        await testing.wait_long(
+            asyncio.gather(
+                client_alpha.handshake(beta.public_key),
+                client_beta.handshake(alpha.public_key),
+            )
+        )
+
+        assert alpha_conn_tracker.get_out_of_limits() is None
+        assert beta_conn_tracker.get_out_of_limits() is None

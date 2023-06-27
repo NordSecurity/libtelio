@@ -76,7 +76,7 @@ DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
 
 DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {
     ConnectionTag.DOCKER_CONE_CLIENT_1: ConnectionTag.DOCKER_CONE_GW_1,
-    ConnectionTag.DOCKER_CONE_CLIENT_2: ConnectionTag.DOCKER_CONE_GW_1,
+    ConnectionTag.DOCKER_CONE_CLIENT_2: ConnectionTag.DOCKER_CONE_GW_2,
     ConnectionTag.DOCKER_FULLCONE_CLIENT_1: ConnectionTag.DOCKER_FULLCONE_GW_1,
     ConnectionTag.DOCKER_FULLCONE_CLIENT_2: ConnectionTag.DOCKER_FULLCONE_GW_2,
     ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1: ConnectionTag.DOCKER_SYMMETRIC_GW_1,
@@ -88,6 +88,36 @@ DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: ConnectionTag.DOCKER_UDP_BLOCK_GW_2,
     ConnectionTag.WINDOWS_VM: ConnectionTag.DOCKER_CONE_GW_3,
     ConnectionTag.MAC_VM: ConnectionTag.DOCKER_CONE_GW_3,
+}
+
+LAN_ADDR_MAP: Dict[ConnectionTag, str] = {
+    ConnectionTag.DOCKER_CONE_CLIENT_1: "192.168.101.104",
+    ConnectionTag.DOCKER_CONE_CLIENT_2: "192.168.102.54",
+    ConnectionTag.DOCKER_FULLCONE_CLIENT_1: "192.168.109.88",
+    ConnectionTag.DOCKER_FULLCONE_CLIENT_2: "192.168.106.88",
+    ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1: "192.168.103.88",
+    ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2: "192.168.104.88",
+    ConnectionTag.DOCKER_UPNP_CLIENT_1: "192.168.105.88",
+    ConnectionTag.DOCKER_UPNP_CLIENT_2: "192.168.112.88",
+    ConnectionTag.DOCKER_SHARED_CLIENT_1: "192.168.101.67",
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1: "10.0.11.2",
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2: "10.0.11.3",
+    ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: "192.168.110.100",
+    ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: "192.168.111.100",
+    ConnectionTag.WINDOWS_VM: "10.55.0.11",
+    ConnectionTag.MAC_VM: "10.55.0.12",
+    ConnectionTag.DOCKER_CONE_GW_1: "192.168.101.254",
+    ConnectionTag.DOCKER_CONE_GW_2: "192.168.102.254",
+    ConnectionTag.DOCKER_CONE_GW_3: "192.168.107.254",
+    ConnectionTag.DOCKER_CONE_GW_4: "192.168.108.254",
+    ConnectionTag.DOCKER_FULLCONE_GW_1: "192.168.109.254",
+    ConnectionTag.DOCKER_FULLCONE_GW_2: "192.168.106.254",
+    ConnectionTag.DOCKER_SYMMETRIC_GW_1: "192.168.103.254",
+    ConnectionTag.DOCKER_SYMMETRIC_GW_2: "192.168.104.254",
+    ConnectionTag.DOCKER_UDP_BLOCK_GW_1: "192.168.110.254",
+    ConnectionTag.DOCKER_UDP_BLOCK_GW_2: "192.168.111.254",
+    ConnectionTag.DOCKER_UPNP_GW_1: "192.168.105.254",
+    ConnectionTag.DOCKER_UPNP_GW_2: "192.168.112.254",
 }
 
 
@@ -152,9 +182,7 @@ async def new_connection_manager_by_tag(
         if tag in DOCKER_GW_MAP:
             async with new_connection_raw(DOCKER_GW_MAP[tag]) as gw_connection:
                 async with ConnectionTracker(
-                    connection
-                    if tag not in [ConnectionTag.WINDOWS_VM, ConnectionTag.MAC_VM]
-                    else gw_connection,
+                    gw_connection,
                     conn_tracker_config,
                 ) as conn_tracker:
                     yield (connection, gw_connection, network_switcher, conn_tracker)

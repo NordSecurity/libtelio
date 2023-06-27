@@ -19,7 +19,7 @@ async def test_derp_reconnect_2clients() -> None:
         DERP2_IP = str(DERP_SECONDARY["ipv4"])
 
         api = API()
-        (alpha, beta, _) = api.default_config_three_nodes()
+        (alpha, beta) = api.default_config_two_nodes()
 
         # ALPHA will use the cone nat : "nat-lab-cone-client-01-1
         alpha_connection = await exit_stack.enter_async_context(
@@ -488,7 +488,7 @@ async def test_derp_restart() -> None:
 async def test_derp_server_list_exhaustion() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
-        (alpha, beta, _) = api.default_config_three_nodes()
+        (alpha, beta) = api.default_config_two_nodes()
 
         alpha_connection = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
