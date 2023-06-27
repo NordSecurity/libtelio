@@ -35,5 +35,8 @@ telio-proto = { path = "../telio-proto"}
 telio-utils = { path = "../telio-utils" }
 telio-wg = { path = "../telio-wg" }
 
+[dev-dependencies]
+telio-sockets = { path = "../telio-sockets" }
+
 [build-dependencies]
 protobuf-codegen-pure = "2.27.1"
