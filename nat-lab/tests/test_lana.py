@@ -183,6 +183,7 @@ async def run_default_scenario(
     return [alpha_events, beta_events, gamma_events]
 
 
+@pytest.mark.moose
 @pytest.mark.asyncio
 async def test_lana_with_same_meshnet() -> None:
     async with AsyncExitStack() as exit_stack:
@@ -248,6 +249,7 @@ async def test_lana_with_same_meshnet() -> None:
         assert beta_events[0].fp == gamma_events[0].fp
 
 
+@pytest.mark.moose
 @pytest.mark.asyncio
 async def test_lana_with_external_node() -> None:
     async with AsyncExitStack() as exit_stack:
@@ -324,6 +326,7 @@ async def test_lana_with_external_node() -> None:
         assert alpha_events[0].fp != gamma_events[0].fp
 
 
+@pytest.mark.moose
 @pytest.mark.asyncio
 async def test_lana_all_external() -> None:
     async with AsyncExitStack() as exit_stack:
@@ -383,6 +386,7 @@ async def test_lana_all_external() -> None:
         assert beta_events[0].fp != gamma_events[0].fp
 
 
+@pytest.mark.moose
 @pytest.mark.asyncio
 async def test_lana_with_vpn_connections() -> None:
     async with AsyncExitStack() as exit_stack:
@@ -456,6 +460,7 @@ async def test_lana_with_vpn_connections() -> None:
         assert beta_events[0].fp == gamma_events[0].fp
 
 
+@pytest.mark.moose
 @pytest.mark.asyncio
 async def test_lana_with_disconnected_node() -> None:
     async with AsyncExitStack() as exit_stack:
