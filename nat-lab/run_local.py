@@ -129,13 +129,15 @@ def get_pytest_arguments(options) -> List[str]:
     if options.m:
         args.extend(["-m", options.m])
     else:
-        marks = "not nat and not windows and not mac and not linux_native and not long"
+        marks = "not nat and not windows and not mac and not linux_native and not long and not moose"
         if options.windows:
             marks = marks.replace("not windows", "windows")
         if options.mac:
             marks = marks.replace("not mac", "mac")
         if options.linux_native:
             marks = marks.replace("not linux_native", "linux_native")
+        if options.moose:
+            marks = marks.replace("and not moose", "")
         args.extend(["-m", marks])
 
     return args
