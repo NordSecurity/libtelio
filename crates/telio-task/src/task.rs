@@ -309,6 +309,8 @@ mod tests {
     struct State {
         io: Io,
         buf: Vec<&'static str>,
+        conf: Option<()>,
+        thread_sleep: Option<Duration>,
     }
 
     impl Test {
@@ -317,6 +319,8 @@ mod tests {
                 task: Task::start(State {
                     io,
                     buf: Vec::new(),
+                    conf: None,
+                    thread_sleep: None,
                 }),
             }
         }
@@ -329,6 +333,22 @@ mod tests {
             task_exec!(&self.task, async move |state| Ok(state.buf.clone()))
                 .await
                 .ok()
+        }
+
+        async fn test_configure(&self, conf: Option<()>) {
+            let _ = task_exec!(&self.task, async move |s| {
+                s.conf = conf;
+                Ok(())
+            })
+            .await;
+        }
+
+        async fn test_thread_sleep(&self, sleep: Option<Duration>) {
+            let _ = task_exec!(&self.task, async move |s| {
+                s.thread_sleep = sleep;
+                Ok(())
+            })
+            .await;
         }
 
         async fn test_fail(&self) {
@@ -372,6 +392,36 @@ mod tests {
             }
         }
 
+        async fn wait_with_update<F>(&mut self, update: F) -> Result<(), Self::Err>
+        where
+            F: Future<Output = BoxAction<Self, Result<(), Self::Err>>> + Send,
+        {
+            // Locks the thread, so we can test, if the Task can be dropped properly
+            if let Some(sleep) = self.thread_sleep {
+                std::thread::sleep(sleep);
+            }
+
+            // Runtime mimic of task's branch, which is yet to be configured
+            let _config = match self.conf.as_ref() {
+                Some(c) => c,
+                None => {
+                    return (update.await)(self).await;
+                }
+            };
+
+            /*  This is the default implementation of 'Runtime::wait_with_update'
+            which waits invokes wait(&mut self) function ^^^. Rust do not have a
+            functionality to invoke overriden default trait methods */
+            if let Some(update) = tokio::select! {
+                res = self.wait() => { res.0.await?; None },
+                updated = update => Some(updated),
+            } {
+                update(self).await?;
+            }
+
+            Ok(())
+        }
+
         async fn stop(self) {
             let _ = self.io.stop.send("stopped");
         }
@@ -382,13 +432,13 @@ mod tests {
         let (lc, mut rc) = Chan::pipe();
         let (stop, stopped) = oneshot::channel();
         let test = Test::new(Io { msg: lc, stop });
+        test.test_configure(Some(())).await;
 
         rc.tx.send("ok").await.expect("Failed to send.");
         assert_eq!("ok", rc.rx.recv().await.unwrap());
 
         test.test_do("ok2").await;
         assert_eq!("ok2", rc.rx.recv().await.unwrap());
-
         assert_eq!(Some(vec!["ok", "ok2"]), test.test_get().await);
 
         test.stop().await;
@@ -398,29 +448,29 @@ mod tests {
         assert!(rc.tx.send("end").await.is_err())
     }
 
-    #[cfg(debug_assertions)]
-    #[tokio::test]
-    #[should_panic]
-    #[ignore = "panic removed from `Drop`"]
-    async fn test_task_panics_if_droped_without_stop() {
-        let (lc, _rc) = Chan::pipe();
-        let (stop, _stopped) = oneshot::channel();
-        {
-            let test = Test::new(Io { msg: lc, stop });
-            assert_eq!(Some(vec![]), test.test_get().await);
-        }
-    }
-
-    #[cfg(not(debug_assertions))]
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_task_stops_if_droped_without_stop() {
+        /*  Task is created, locked by the `std::thread::sleep`
+        and than we wait for the destructor to come into play. The
+        good scenario, is that task should exit, event if it is stuck with `sleep`,
+        bad case - it hangs more than `WAIT` */
+        const WAIT: Duration = Duration::from_secs(1);
+
         let (lc, _rc) = Chan::pipe();
         let (stop, stopped) = oneshot::channel();
         {
             let test = Test::new(Io { msg: lc, stop });
             assert_eq!(Some(vec![]), test.test_get().await);
+            test.test_thread_sleep(Some(WAIT)).await;
         }
-        assert_eq!(Ok("stopped"), stopped.await);
+
+        assert_eq!(
+            Ok("stopped"),
+            tokio::select! {
+                stop = stopped => stop,
+                _ = tokio::time::sleep(WAIT * 2) => Ok("timeout"),
+            }
+        );
     }
 
     #[tokio::test]
@@ -428,6 +478,7 @@ mod tests {
         let (lc, rc) = Chan::pipe();
         let (stop, stopped) = oneshot::channel();
         let test = Test::new(Io { msg: lc, stop });
+        test.test_configure(Some(())).await;
 
         test.test_fail().await;
 
@@ -443,6 +494,7 @@ mod tests {
         let (lc, rc) = Chan::pipe();
         let (stop, stopped) = oneshot::channel();
         let test = Test::new(Io { msg: lc, stop });
+        test.test_configure(Some(())).await;
 
         rc.tx.send("fail").await.expect("failed to send");
 
@@ -459,6 +511,7 @@ mod tests {
         let (lc, _rc) = Chan::pipe();
         let (stop, _stopped) = oneshot::channel();
         let test = Test::new(Io { msg: lc, stop });
+        test.test_configure(Some(())).await;
 
         test.test_panic().await;
 
@@ -470,6 +523,7 @@ mod tests {
         let (lc, mut rc) = Chan::pipe();
         let (stop, _stopped) = oneshot::channel();
         let test = Test::new(Io { msg: lc, stop });
+        test.test_configure(Some(())).await;
 
         rc.tx.send("sleep").await.expect("failed to send sleep");
 
