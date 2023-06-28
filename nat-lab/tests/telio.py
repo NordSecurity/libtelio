@@ -574,6 +574,11 @@ class Client:
             raise Exception(f"Node {public_key} endpoint doesn't exist")
         return node.endpoint.split(":")[0]
 
+    def wait_for_output(self, what: str) -> asyncio.Event:
+        event = asyncio.Event()
+        self._runtime.get_output_notifier().notify_output(what, event)
+        return event
+
 
 @asynccontextmanager
 async def run_meshnet(
