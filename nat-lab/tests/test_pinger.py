@@ -67,6 +67,9 @@ async def test_ping_pong() -> None:
             )
         )
 
+        pinger_event = client_alpha.wait_for_output("Pinger")
+        ponger_event = client_alpha.wait_for_output("Ponger")
+
         # Send PING type message
         await exit_stack.enter_async_context(
             run_async_context(testing.wait_lengthy(client_alpha.receive_ping()))
@@ -79,12 +82,8 @@ async def test_ping_pong() -> None:
         )
         await testing.wait_lengthy(send_ping_pong(PingType.PONG))
 
-        await asyncio.sleep(1)
-
-        client_output = client_alpha._process.get_stdout()
-
-        assert "Pinger" in client_output
-        assert "Ponger" in client_output
+        await testing.wait_long(pinger_event.wait())
+        await testing.wait_long(ponger_event.wait())
 
 
 @pytest.mark.asyncio
@@ -107,12 +106,12 @@ async def test_send_malform_pinger_packet() -> None:
             )
         )
 
+        unexpected_packet_event = client_alpha.wait_for_output("Unexpected packet: ")
+
         # Send malformed PingerMsg
         await exit_stack.enter_async_context(
             run_async_context(testing.wait_lengthy(client_alpha.receive_ping()))
         )
         await testing.wait_lengthy(send_ping_pong(PingType.MALFORMED))
 
-        await asyncio.sleep(1)
-        client_output = client_alpha._process.get_stdout()
-        assert "Unexpected packet: " in client_output
+        await testing.wait_long(unexpected_packet_event.wait())
