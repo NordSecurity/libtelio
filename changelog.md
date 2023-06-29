@@ -2,10 +2,11 @@
 ---
 * LLT-3832: Upgrade python cryptography to 41.0.1
 * LLT-3855: Add "release.py" helper script, for easier release preparation
-* LLT-3813: Update trust-dns to 0.22.1 
+* LLT-3813: Update trust-dns to 0.22.1
 * LLT-3901: Don't log warn for optional analytics fix.
 * LLT-3878: Reduce "cross_ping_check" log output
 * LLT-3791: Remove telio-wg as telio-model dependency
+* LLT-3010: Fix telio unit-tests
 
 <br>
 
