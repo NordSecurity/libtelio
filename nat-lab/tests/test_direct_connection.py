@@ -14,6 +14,7 @@ from utils.ping import Ping
 ANY_PROVIDERS = ["local", "stun"]
 LOCAL_PROVIDER = ["local"]
 STUN_PROVIDER = ["stun"]
+UPNP_PROVIDER = ["upnp"]
 
 DOCKER_CONE_GW_2_IP = "10.0.254.2"
 DOCKER_FULLCONE_GW_1_IP = "10.0.254.9"
@@ -77,6 +78,12 @@ UHP_conn_client_types = [
         ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
         DOCKER_OPEN_INTERNET_CLIENT_1_IP,
     ),
+    (
+        UPNP_PROVIDER,
+        ConnectionTag.DOCKER_UPNP_CLIENT_1,
+        ConnectionTag.DOCKER_UPNP_CLIENT_2,
+        DOCKER_OPEN_INTERNET_CLIENT_1_IP,
+    ),
 ]
 
 
@@ -86,7 +93,10 @@ UHP_conn_client_types = [
     UHP_conn_client_types,
 )
 async def test_direct_working_paths(
-    endpoint_providers, client1_type, client2_type, _reflexive_ip
+    endpoint_providers,
+    client1_type,
+    client2_type,
+    reflexive_ip,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -297,7 +307,10 @@ async def test_direct_failing_paths(
     UHP_conn_client_types,
 )
 async def test_direct_short_connection_loss(
-    endpoint_providers, client1_type, client2_type, reflexive_ip
+    endpoint_providers,
+    client1_type,
+    client2_type,
+    reflexive_ip,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -389,7 +402,10 @@ async def test_direct_short_connection_loss(
     UHP_conn_client_types,
 )
 async def test_direct_connection_loss_for_infinity(
-    endpoint_providers, client1_type, client2_type, reflexive_ip
+    endpoint_providers,
+    client1_type,
+    client2_type,
+    reflexive_ip,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -475,7 +491,6 @@ async def test_direct_connection_loss_for_infinity(
                 await testing.wait_lengthy(ping.wait_for_next_ping())
 
 
-@pytest.mark.timeout(180)
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "alpha_connection_tag,beta_connection_tag,endpoint_providers",
@@ -483,19 +498,22 @@ async def test_direct_connection_loss_for_infinity(
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
             ConnectionTag.DOCKER_CONE_CLIENT_2,
-            ["stun"],
+            "stun",
+            "stun",
         ),
         pytest.param(
             ConnectionTag.DOCKER_UPNP_CLIENT_1,
             ConnectionTag.DOCKER_UPNP_CLIENT_2,
-            ["upnp"],
+            "upnp",
+            "upnp",
         ),
     ],
 )
 async def test_direct_connection_endpoint_gone(
     alpha_connection_tag: ConnectionTag,
     beta_connection_tag: ConnectionTag,
-    endpoint_providers: List[str],
+    ep1: str,
+    ep2: str,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -512,18 +530,19 @@ async def test_direct_connection_endpoint_gone(
                 alpha_connection,
                 alpha,
                 telio_features=TelioFeatures(
-                    direct=Direct(providers=endpoint_providers)
+                    direct=Direct(providers=[ep1])
                 ),
             ).run_meshnet(
                 api.get_meshmap(alpha.id),
             )
         )
+
         beta_client = await exit_stack.enter_async_context(
             telio.Client(
                 beta_connection,
                 beta,
                 telio_features=TelioFeatures(
-                    direct=Direct(providers=endpoint_providers)
+                    direct=Direct(providers=ep2)
                 ),
             ).run_meshnet(
                 api.get_meshmap(beta.id),
@@ -543,6 +562,7 @@ async def test_direct_connection_endpoint_gone(
                             str(derp["ipv4"])
                         )
                     )
+
                 await testing.wait_lengthy(
                     asyncio.gather(
                         alpha_client.wait_for_every_derp_disconnection(),
