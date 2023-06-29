@@ -22,6 +22,7 @@ DOCKER_FULLCONE_GW_2_IP = "10.0.254.6"
 DOCKER_OPEN_INTERNET_CLIENT_1_IP = "10.0.11.2"
 DOCKER_OPEN_INTERNET_CLIENT_2_IP = "10.0.11.3"
 DOCKER_SYMMETRIC_GW_1_IP = "10.0.254.3"
+DOCKER_UPNP_CLIENT_2_IP = "10.0.254.12"
 
 UHP_conn_client_types = [
     (
@@ -34,7 +35,7 @@ UHP_conn_client_types = [
         STUN_PROVIDER,
         ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
         ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
-        DOCKER_SYMMETRIC_GW_1_IP,
+        DOCKER_FULLCONE_GW_1_IP,
     ),
     (
         STUN_PROVIDER,
@@ -82,7 +83,7 @@ UHP_conn_client_types = [
         UPNP_PROVIDER,
         ConnectionTag.DOCKER_UPNP_CLIENT_1,
         ConnectionTag.DOCKER_UPNP_CLIENT_2,
-        DOCKER_OPEN_INTERNET_CLIENT_1_IP,
+        DOCKER_UPNP_CLIENT_2_IP,
     ),
 ]
 
@@ -323,6 +324,7 @@ async def test_direct_short_connection_loss(
         (beta_connection, beta_gw) = await exit_stack.enter_async_context(
             new_connection_with_gw(client2_type)
         )
+        assert alpha_gw and beta_gw
 
         alpha_client = await exit_stack.enter_async_context(
             telio.Client(
@@ -357,7 +359,7 @@ async def test_direct_short_connection_loss(
             )
         )
 
-        await testing.wait_defined(
+        await testing.wait_lengthy(
             asyncio.gather(
                 alpha_client.wait_for_state_peer(
                     beta.public_key,
@@ -380,13 +382,9 @@ async def test_direct_short_connection_loss(
             )
 
             # Clear conntrack to make UHP disruption faster
-            assert alpha_gw
-            assert beta_gw
             await alpha_gw.create_process(["conntrack", "-F"]).execute()
             await beta_gw.create_process(["conntrack", "-F"]).execute()
 
-            # Some docker container combinations requires a sligth wait to work
-            time.sleep(2)
             with pytest.raises(asyncio.TimeoutError):
                 async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
                     await testing.wait_long(ping.wait_for_next_ping())
