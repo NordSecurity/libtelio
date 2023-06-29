@@ -11,6 +11,6 @@ pub(crate) mod windows;
 pub mod uapi;
 
 pub use crate::{
-    adapter::{AdapterType, Error, FirewallCb, Tun},
+    adapter::{Adapter, AdapterType, Error, FirewallCb, Tun},
     wg::*,
 };

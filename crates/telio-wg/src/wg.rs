@@ -104,13 +104,19 @@ struct State {
 
 const POLL_MILLIS: u64 = 1000;
 
-#[cfg(all(not(test), windows))]
+#[cfg(all(not(any(test, feature = "test-adapter")), windows))]
 const DEFAULT_NAME: &str = "NordLynx";
 
-#[cfg(all(not(test), any(target_os = "macos", target_os = "ios")))]
+#[cfg(all(
+    not(any(test, feature = "test-adapter")),
+    any(target_os = "macos", target_os = "ios")
+))]
 const DEFAULT_NAME: &str = "utun10";
 
-#[cfg(all(not(test), any(target_os = "linux", target_os = "android")))]
+#[cfg(all(
+    not(any(test, feature = "test-adapter")),
+    any(target_os = "linux", target_os = "android")
+))]
 const DEFAULT_NAME: &str = "nlx0";
 
 impl DynamicWg {
@@ -212,7 +218,7 @@ impl DynamicWg {
         }
     }
 
-    #[cfg(not(test))]
+    #[cfg(not(any(test, feature = "test-adapter")))]
     fn start_adapter(cfg: Config) -> Result<Box<dyn Adapter>, Error> {
         adapter::start(
             cfg.adapter,
@@ -224,7 +230,7 @@ impl DynamicWg {
         )
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-adapter"))]
     fn start_adapter(_cfg: Config) -> Result<Box<dyn Adapter>, Error> {
         use std::sync::Mutex;
 
@@ -705,8 +711,9 @@ impl Runtime for State {
     }
 }
 
-#[cfg(test)]
-mod tests {
+#[cfg(any(test, feature = "test-adapter"))]
+#[allow(missing_docs)]
+pub mod tests {
     use std::{
         net::{Ipv4Addr, SocketAddrV4},
         sync::{Arc, Mutex as StdMutex},
@@ -718,7 +725,7 @@ mod tests {
     use telio_sockets::NativeProtector;
     use tokio::{runtime::Handle, sync::Mutex, task, time::sleep};
 
-    use telio_task::io::Chan;
+    use telio_task::io::{Chan, McChan};
 
     use super::*;
     use crate::adapter::{Error as AdapterError, MockAdapter};
@@ -728,6 +735,19 @@ mod tests {
             StdMutex::new(None);
     }
 
+    impl DynamicWg {
+        pub async fn set_listen_port(&self, port: u16) -> Result<(), Error> {
+            Ok(task_exec!(&self.task, async move |s| {
+                let mut ifc = s.interface.clone();
+                ifc.listen_port = Some(port);
+                s.update(&ifc, true).await;
+                Ok(())
+            })
+            .await?)
+        }
+    }
+
+    #[cfg(all(unix, test))]
     impl Config {
         fn new() -> std::io::Result<Self> {
             Ok(Self {
@@ -767,14 +787,19 @@ mod tests {
         }
     }
 
-    struct Env {
-        event: Rx<Box<Event>>,
-        adapter: Arc<Mutex<MockAdapter>>,
-        wg: DynamicWg,
+    pub struct Env {
+        pub event: Rx<Box<Event>>,
+        pub analytics: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
+        pub adapter: Arc<Mutex<MockAdapter>>,
+        #[cfg(test)]
+        pub wg: DynamicWg,
+        #[cfg(not(test))]
+        pub wg: Arc<DynamicWg>,
     }
 
-    async fn setup() -> Env {
-        let chan = Chan::default();
+    pub async fn setup(#[cfg(all(not(test), feature = "test-adapter"))] cfg: Config) -> Env {
+        let events_ch = Chan::default();
+        let analytics_ch = Some(McChan::default().tx);
 
         let adapter = Arc::new(Mutex::new(MockAdapter::new()));
 
@@ -790,21 +815,28 @@ mod tests {
                     interface: Some(Interface::default()),
                 })
             });
+
         let wg = DynamicWg::start_with(
             Io {
-                events: chan.tx,
-                analytics_tx: None,
+                events: events_ch.tx.clone(),
+                analytics_tx: analytics_ch.clone(),
             },
             Box::new(adapter.clone()),
-            #[cfg(unix)]
+            #[cfg(all(unix, test))]
             Config::new().unwrap(),
+            #[cfg(all(unix, not(test)))]
+            cfg,
         );
         time::advance(Duration::from_millis(0)).await;
         adapter.lock().await.checkpoint();
 
         Env {
-            event: chan.rx,
+            event: events_ch.rx,
+            analytics: analytics_ch,
             adapter,
+            #[cfg(not(test))]
+            wg: Arc::new(wg),
+            #[cfg(test)]
             wg,
         }
     }

@@ -322,7 +322,7 @@ mod tests {
 
         let socket_fd = socket2_socket.as_ref().unwrap().as_native_socket();
 
-        if let Err(e) = bind(get_primary_interface(15).unwrap() as u32, socket_fd) {
+        if let Err(e) = bind(get_primary_interface(0).unwrap() as u32, socket_fd) {
             panic!("Test failed with error : {}", e)
         }
     }

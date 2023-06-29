@@ -3250,6 +3250,7 @@ dependencies = [
  "async-trait",
  "base64 0.13.1",
  "cc",
+ "cfg-if",
  "crypto_box",
  "ffi_helpers",
  "futures",
