@@ -3413,6 +3413,7 @@ dependencies = [
  "telio-nat-detect",
  "telio-proto",
  "telio-relay",
+ "telio-sockets",
  "telio-task",
  "telio-utils",
  "telio-wg",

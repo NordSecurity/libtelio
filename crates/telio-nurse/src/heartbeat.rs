@@ -32,7 +32,7 @@ use crate::data::{AnalyticsMessage, HeartbeatInfo, MeshConfigUpdateEvent};
 /// Approximately 30 years worth of time, used to pause timers and periods
 const FAR_FUTURE: Duration = Duration::from_secs(86400 * 365 * 30);
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Debug)]
 enum RuntimeState {
     Monitoring,
     Collecting,
@@ -142,6 +142,17 @@ impl Collection {
         self.nat_type_peers.insert(pk, nat_type);
     }
 
+    /// Find meshnet ID that best represents our meshnet.
+    ///
+    /// This can be different than the meshnet_id we are starting with since it
+    /// is based on all meshnet IDs reported by nodes during Collecting state.
+    /// Among the collected meshnet IDs, we select the most common one and break
+    /// the ties by selecting smallest (lexicographically) public keys' ID.
+    ///
+    /// The main point of doing it this way, is to prevent new nodes connecting
+    /// from changing the reported ID - since all the old nodes will report old
+    /// meshnet ID, the new node will also see the old meshnet ID as most common
+    /// and will report it (instead of random one it generated at startup).
     pub fn resolve_current_meshnet_id(&self, config_local_nodes: &HashSet<PublicKey>) -> Uuid {
         // Figure out what meshnet id we should use, based on all of the collected data
         // Start off by generating a heatmap of the received ID's
@@ -893,5 +904,213 @@ impl Analytics {
                 .unwrap_or(false),
             _ => false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use telio_sockets::{native::NativeSocket, Protector, SocketPool};
+    use telio_task::io::McChan;
+    use telio_utils::sync::mpsc::Receiver;
+
+    use super::*;
+
+    struct FakeProtector;
+
+    impl Protector for FakeProtector {
+        fn make_external(&self, _: NativeSocket) -> std::io::Result<()> {
+            Ok(())
+        }
+
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        fn make_internal(&self, _socket: NativeSocket) -> std::io::Result<()> {
+            Ok(())
+        }
+
+        fn clean(&self, _: NativeSocket) {}
+
+        #[cfg(target_os = "linux")]
+        fn set_fwmark(&self, _fwmark: u32) {}
+
+        #[cfg(any(target_os = "macos", target_os = "ios", windows))]
+        fn set_tunnel_interface(&self, _interface: u64) {}
+    }
+
+    struct State {
+        public_key: PublicKey,
+        meshnet_id: Uuid,
+        analytics_channel: Receiver<AnalyticsMessage>,
+        analytics: Analytics,
+    }
+
+    fn setup() -> State {
+        let sk = SecretKey::gen();
+        let pk = sk.public();
+        let meshnet_id = Uuid::new_v4();
+        let config = HeartbeatConfig::default();
+        let analytics_channel = Chan::new(1);
+        let io = Io {
+            chan: Chan::new(1),
+            derp_event_channel: McChan::new(1).rx,
+            wg_event_channel: McChan::new(1).rx,
+            config_update_channel: McChan::new(1).rx,
+            analytics_channel: analytics_channel.tx,
+            collection_trigger_channel: McChan::new(1).rx,
+        };
+        let channel = Chan::new(1);
+        let fake_protector = FakeProtector;
+        let socket_pool = Arc::new(SocketPool::new(fake_protector));
+        let event = McChan::new(1);
+        let derp = Arc::new(DerpRelay::start_with(channel, socket_pool, event.tx));
+        let analytics = Analytics::new(pk, meshnet_id, config, io, derp);
+        State {
+            public_key: pk,
+            meshnet_id,
+            analytics_channel: analytics_channel.rx,
+            analytics,
+        }
+    }
+
+    async fn setup_local_nodes(
+        analytics: &mut Analytics,
+        nodes: impl IntoIterator<Item = SecretKey>,
+    ) {
+        let is_local = true;
+        let mesh_config_update_event = MeshConfigUpdateEvent {
+            nodes: nodes
+                .into_iter()
+                .map(|sk| (sk.public(), is_local))
+                .collect(),
+        };
+        analytics
+            .handle_config_update_event(mesh_config_update_event)
+            .await;
+    }
+
+    async fn send_heartbeat_response(
+        analytics: &mut Analytics,
+        peer_sk: SecretKey,
+        meshnet_id: Uuid,
+    ) {
+        let heartbeat_response = HeartbeatMessage::response(
+            meshnet_id.into_bytes().to_vec(),
+            "fingerprint".to_owned(),
+            &[HeartbeatStatus::new()],
+            HeartbeatNatType::Unknown,
+        );
+        analytics
+            .message_handler((peer_sk.public(), heartbeat_response))
+            .await;
+    }
+
+    async fn receive_heartbeat(analytics_channel: &mut Receiver<AnalyticsMessage>) -> Uuid {
+        let heartbeat = match analytics_channel.recv().await {
+            Some(AnalyticsMessage::Heartbeat { heartbeat_info }) => heartbeat_info,
+            None => unreachable!(),
+        };
+        heartbeat.meshnet_id.parse().unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_analytics_reports_locally_generated_meshnet_id_if_no_other_nodes_are_present() {
+        let State {
+            meshnet_id,
+            mut analytics_channel,
+            mut analytics,
+            ..
+        } = setup();
+
+        analytics.handle_aggregation().await;
+
+        assert_eq!(meshnet_id, receive_heartbeat(&mut analytics_channel).await);
+    }
+
+    #[tokio::test]
+    async fn test_analytics_reports_locally_generated_meshnet_id_if_majority_of_peers_also_have_it()
+    {
+        let State {
+            mut analytics_channel,
+            mut analytics,
+            meshnet_id,
+            ..
+        } = setup();
+
+        let peer_sk_1 = SecretKey::gen();
+        let peer_sk_2 = SecretKey::gen();
+
+        setup_local_nodes(&mut analytics, [peer_sk_1, peer_sk_2]).await;
+
+        analytics.handle_collection().await;
+        assert_eq!(RuntimeState::Collecting, analytics.state);
+
+        let other_meshnet_id = Uuid::new_v4();
+        send_heartbeat_response(&mut analytics, peer_sk_1, other_meshnet_id).await;
+        send_heartbeat_response(&mut analytics, peer_sk_2, meshnet_id).await;
+
+        analytics.handle_aggregation().await;
+
+        assert_eq!(meshnet_id, receive_heartbeat(&mut analytics_channel).await);
+    }
+
+    #[tokio::test]
+    async fn test_analytics_overrides_local_meshnet_id_when_other_peers_report_different_in_greater_number(
+    ) {
+        let State {
+            mut analytics_channel,
+            mut analytics,
+            ..
+        } = setup();
+        let peer_sk_1 = SecretKey::gen();
+        let peer_sk_2 = SecretKey::gen();
+
+        setup_local_nodes(&mut analytics, [peer_sk_1, peer_sk_2]).await;
+
+        analytics.handle_collection().await;
+        assert_eq!(RuntimeState::Collecting, analytics.state);
+
+        let other_meshnet_id = Uuid::new_v4();
+        send_heartbeat_response(&mut analytics, peer_sk_1, other_meshnet_id).await;
+        send_heartbeat_response(&mut analytics, peer_sk_2, other_meshnet_id).await;
+
+        analytics.handle_aggregation().await;
+
+        assert_eq!(
+            other_meshnet_id,
+            receive_heartbeat(&mut analytics_channel).await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_analytics_reports_meshnet_id_of_peer_with_lexicographically_smallest_public_key()
+    {
+        let State {
+            public_key,
+            mut analytics_channel,
+            mut analytics,
+            meshnet_id,
+        } = setup();
+
+        let peer_sk = SecretKey::gen();
+
+        setup_local_nodes(&mut analytics, [peer_sk]).await;
+
+        analytics.handle_collection().await;
+        assert_eq!(RuntimeState::Collecting, analytics.state);
+
+        let other_meshnet_id = Uuid::new_v4();
+        send_heartbeat_response(&mut analytics, peer_sk, other_meshnet_id).await;
+
+        analytics.handle_aggregation().await;
+
+        let meshnet_id_of_smaller_pk = if public_key < peer_sk.public() {
+            meshnet_id
+        } else {
+            other_meshnet_id
+        };
+
+        assert_eq!(
+            meshnet_id_of_smaller_pk,
+            receive_heartbeat(&mut analytics_channel).await
+        );
     }
 }
