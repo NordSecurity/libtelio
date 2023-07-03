@@ -77,6 +77,9 @@ pub use wg::{
     FirewallCb, Tun, WireGuard,
 };
 
+#[cfg(test)]
+use wg::tests::AdapterExpectation;
+
 #[derive(Debug, TError)]
 pub enum Error {
     #[error("Driver already started.")]
@@ -781,17 +784,7 @@ impl Runtime {
                         }
                     ).await;
 
-                    adapter
-                        .lock()
-                        .await
-                        .expect_send_uapi_cmd()
-                        .times(1)
-                        .returning(|_| {
-                            Ok(telio_wg::uapi::Response {
-                                errno: 0,
-                                interface: None,
-                            })
-                        });
+                    adapter.expect_send_uapi_cmd_generic_call(1).await;
             }
         }
 
@@ -1728,22 +1721,15 @@ mod tests {
 
         rt.test_env
             .adapter
-            .lock()
-            .await
-            .expect_send_uapi_cmd()
-            .times(1)
-            .returning(|_| {
-                Ok(telio_wg::uapi::Response {
-                    errno: 0,
-                    interface: None,
-                })
-            });
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
         rt.entities
             .wireguard_interface
             .set_listen_port(1234)
             .await
             .unwrap();
         rt.test_env.adapter.lock().await.checkpoint();
+
         assert_eq!(
             Interface {
                 private_key: Some(private_key),
@@ -1798,16 +1784,8 @@ mod tests {
 
         rt.test_env
             .adapter
-            .lock()
-            .await
-            .expect_send_uapi_cmd()
-            .times(1)
-            .returning(|_| {
-                Ok(telio_wg::uapi::Response {
-                    errno: 0,
-                    interface: None,
-                })
-            });
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
         rt.entities
             .wireguard_interface
             .set_listen_port(1234)
@@ -1817,48 +1795,24 @@ mod tests {
 
         rt.test_env
             .adapter
-            .lock()
-            .await
-            .expect_send_uapi_cmd()
-            .times(1)
-            .returning(|_| {
-                Ok(telio_wg::uapi::Response {
-                    errno: 0,
-                    interface: None,
-                })
-            });
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
         assert!(rt.set_config(&Some(get_config)).await.is_ok());
         assert!(rt.requested_state.exit_node.is_none());
         rt.test_env.adapter.lock().await.checkpoint();
 
         rt.test_env
             .adapter
-            .lock()
-            .await
-            .expect_send_uapi_cmd()
-            .times(1)
-            .returning(|_| {
-                Ok(telio_wg::uapi::Response {
-                    errno: 0,
-                    interface: None,
-                })
-            });
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
         assert!(rt.connect_exit_node(&exit_node).await.is_ok());
         assert!(rt.requested_state.exit_node.is_some());
         rt.test_env.adapter.lock().await.checkpoint();
 
         rt.test_env
             .adapter
-            .lock()
-            .await
-            .expect_send_uapi_cmd()
-            .times(1)
-            .returning(|_| {
-                Ok(telio_wg::uapi::Response {
-                    errno: 0,
-                    interface: None,
-                })
-            });
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
         assert!(rt.disconnect_exit_nodes().await.is_ok());
         assert!(rt.requested_state.exit_node.is_none());
         rt.test_env.adapter.lock().await.checkpoint();
@@ -1922,16 +1876,8 @@ mod tests {
 
         rt.test_env
             .adapter
-            .lock()
-            .await
-            .expect_send_uapi_cmd()
-            .times(1)
-            .returning(|_| {
-                Ok(telio_wg::uapi::Response {
-                    errno: 0,
-                    interface: None,
-                })
-            });
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
         rt.entities
             .wireguard_interface
             .set_listen_port(1234)
@@ -1941,31 +1887,15 @@ mod tests {
 
         rt.test_env
             .adapter
-            .lock()
-            .await
-            .expect_send_uapi_cmd()
-            .times(2)
-            .returning(|_| {
-                Ok(telio_wg::uapi::Response {
-                    errno: 0,
-                    interface: None,
-                })
-            });
+            .expect_send_uapi_cmd_generic_call(2)
+            .await;
         assert!(matches!(rt.set_config(&Some(config)).await, Ok(())));
         rt.test_env.adapter.lock().await.checkpoint();
 
         rt.test_env
             .adapter
-            .lock()
-            .await
-            .expect_send_uapi_cmd()
-            .times(0)
-            .returning(|_| {
-                Ok(telio_wg::uapi::Response {
-                    errno: 0,
-                    interface: None,
-                })
-            });
+            .expect_send_uapi_cmd_generic_call(0)
+            .await;
         let _expected_error: super::Error = wg_controller::Error::BadAllowedIps.into();
         assert!(matches!(
             rt.connect_exit_node(&vpn_node).await,
@@ -2014,16 +1944,8 @@ mod tests {
 
         rt.test_env
             .adapter
-            .lock()
-            .await
-            .expect_send_uapi_cmd()
-            .times(1)
-            .returning(|_| {
-                Ok(telio_wg::uapi::Response {
-                    errno: 0,
-                    interface: None,
-                })
-            });
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
         rt.entities
             .wireguard_interface
             .set_listen_port(1234)
@@ -2033,32 +1955,16 @@ mod tests {
 
         rt.test_env
             .adapter
-            .lock()
-            .await
-            .expect_send_uapi_cmd()
-            .times(1)
-            .returning(|_| {
-                Ok(telio_wg::uapi::Response {
-                    errno: 0,
-                    interface: None,
-                })
-            });
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
         assert!(rt.set_config(&config).await.is_ok());
         assert!(rt.requested_state.exit_node.is_none());
         rt.test_env.adapter.lock().await.checkpoint();
 
         rt.test_env
             .adapter
-            .lock()
-            .await
-            .expect_send_uapi_cmd()
-            .times(1)
-            .returning(|_| {
-                Ok(telio_wg::uapi::Response {
-                    errno: 0,
-                    interface: None,
-                })
-            });
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
         assert!(rt.connect_exit_node(&node).await.is_ok());
         assert_eq!(
             rt.requested_state.exit_node.as_ref().unwrap().public_key,
@@ -2068,16 +1974,8 @@ mod tests {
 
         rt.test_env
             .adapter
-            .lock()
-            .await
-            .expect_send_uapi_cmd()
-            .times(0)
-            .returning(|_| {
-                Ok(telio_wg::uapi::Response {
-                    errno: 0,
-                    interface: None,
-                })
-            });
+            .expect_send_uapi_cmd_generic_call(0)
+            .await;
         assert!(rt.set_config(&config).await.is_ok());
         assert_eq!(
             rt.requested_state.exit_node.as_ref().unwrap().public_key,
@@ -2087,16 +1985,8 @@ mod tests {
 
         rt.test_env
             .adapter
-            .lock()
-            .await
-            .expect_send_uapi_cmd()
-            .times(1)
-            .returning(|_| {
-                Ok(telio_wg::uapi::Response {
-                    errno: 0,
-                    interface: None,
-                })
-            });
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
         assert!(rt.disconnect_exit_node(&pubkey).await.is_ok());
         assert!(rt.requested_state.exit_node.is_none());
         rt.test_env.adapter.lock().await.checkpoint();

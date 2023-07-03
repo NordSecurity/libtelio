@@ -112,7 +112,9 @@ fn event_log(
             }
             buffer.push_str(")\n");
 
-            Ok(file.write(buffer.as_bytes()).unwrap_or(0))
+            Ok(file
+                .write(buffer.as_bytes())
+                .map_err(|_| moose::Error::EventLogError)?)
         }
         Err(e) => {
             telio_log_error!("Failed to open log file: {}", e);
@@ -127,7 +129,7 @@ fn get_logfile() -> std::io::Result<File> {
     } else {
         let file = File::create(LOGFILE_PATH)?;
         let mut perms = file.metadata()?.permissions();
-        // some tests are ran by root so we need to set file as world-writable
+        // some tests are run by root so we need to set file as world-writable
         perms.set_readonly(false);
         file.set_permissions(perms)?;
         Ok(file)
