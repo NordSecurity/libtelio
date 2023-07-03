@@ -373,11 +373,11 @@ services:
     networks:
       cone-net-01:
         ipv4_address: 192.168.101.67
-      cone-net-02:
-        ipv4_address: 192.168.102.67
+      cone-net-05:
+        ipv4_address: 192.168.113.67
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.101.254
-      CLIENT_GATEWAY_SECONDARY: 192.168.102.254
+      CLIENT_GATEWAY_SECONDARY: 192.168.113.254
     extra_hosts:
       - "photo-album:10.0.80.80"
       - "stun-01:10.0.1.1"
@@ -510,6 +510,17 @@ services:
     volumes:
       - ../../:/libtelio-build
 
+  cone-gw-05:
+    hostname: cone-gw-05
+    image: nat-lab:base
+    entrypoint: /opt/bin/cone-gw
+    privileged: true
+    networks:
+      internet:
+        ipv4_address: 10.0.254.13
+      cone-net-05:
+        ipv4_address: 192.168.113.254
+
 networks:
   # Network representing public internet,
   # various services like DERP/STUN will be hosted
@@ -612,3 +623,10 @@ networks:
       driver: default
       config:
         - subnet: 192.168.112.0/24
+
+  cone-net-05:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.113.0/24
