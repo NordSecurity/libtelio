@@ -54,19 +54,19 @@ async def test_upnp_route_removed() -> None:
 
         await testing.wait_lengthy(
             asyncio.gather(
-                alpha_client.wait_for_state_on_any_derp([telio.State.Connected]),
-                beta_client.wait_for_state_on_any_derp([telio.State.Connected]),
+                alpha_client.wait_for_state_on_any_derp([State.Connected]),
+                beta_client.wait_for_state_on_any_derp([State.Connected]),
                 alpha_client.wait_for_state_peer(
-                    beta.public_key, [telio.State.Connected], [PathType.Direct]
+                    beta.public_key, [State.Connected], [PathType.Direct]
                 ),
                 beta_client.wait_for_state_peer(
-                    alpha.public_key, [telio.State.Connected], [PathType.Direct]
+                    alpha.public_key, [State.Connected], [PathType.Direct]
                 ),
             )
         )
 
-        # Reset Upnpd on both gateways
-        # this also requires to wipe-out the contrack list
+        # Shutoff Upnpd on both gateways to wipe out all upnp created external
+        # routes, this also requires to wipe-out the contrack list
         await alpha_connection_gw.create_process(["killall", "upnpd"]).execute()
         await beta_connection_gw.create_process(["killall", "upnpd"]).execute()
         await alpha_connection_gw.create_process(["conntrack", "-F"]).execute()
@@ -75,7 +75,7 @@ async def test_upnp_route_removed() -> None:
         with pytest.raises(asyncio.TimeoutError):
             async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
                 await testing.wait_long(ping.wait_for_next_ping())
-
+        #  Turnon upnpd on both gateways, to enable creating new erternal routes
         await alpha_connection_gw.create_process(["upnpd", "eth0", "eth1"]).execute()
         await beta_connection_gw.create_process(["upnpd", "eth0", "eth1"]).execute()
 
@@ -91,6 +91,6 @@ async def test_upnp_route_removed() -> None:
         )
 
         async with Ping(beta_connection, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await testing.wait_lengthy(ping.wait_for_next_ping())
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await testing.wait_lengthy(ping.wait_for_next_ping())

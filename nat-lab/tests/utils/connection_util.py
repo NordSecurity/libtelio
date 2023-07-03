@@ -231,6 +231,19 @@ async def new_connection_with_gw(
 
 
 @asynccontextmanager
+async def new_connection_with_tracker_and_gw(
+    tag: ConnectionTag, conn_tracker_config: Optional[List[ConnectionTrackerConfig]]
+) -> AsyncIterator[Tuple[Connection, Optional[Connection], ConnectionTracker]]:
+    async with new_connection_manager_by_tag(tag, conn_tracker_config) as (
+        connection,
+        connection_gw,
+        _,
+        conn_tracker,
+    ):
+        yield (connection, connection_gw, conn_tracker)
+
+
+@asynccontextmanager
 async def new_connection_by_tag(tag: ConnectionTag) -> AsyncIterator[Connection]:
     async with new_connection_manager_by_tag(tag) as (connection, _, _, _):
         yield connection
