@@ -3,6 +3,7 @@
 use ipnetwork::{IpNetwork, IpNetworkError};
 use serde::{Deserialize, Serialize};
 use telio_crypto::{KeyDecodeError, PublicKey, SecretKey};
+use telio_model::mesh::{Node, NodeState};
 use telio_utils::telio_log_warn;
 use wireguard_uapi::{get, xplatform::set};
 
@@ -80,6 +81,41 @@ impl From<set::Peer> for Peer {
                 .map(|ip| IpNetwork::new(ip.ipaddr, ip.cidr_mask))
                 .collect::<Result<Vec<IpNetwork>, _>>()
                 .unwrap_or_default(),
+            ..Default::default()
+        }
+    }
+}
+
+impl From<&Node> for Peer {
+    fn from(other: &Node) -> Peer {
+        Peer {
+            public_key: other.public_key,
+            allowed_ips: other.allowed_ips.clone(),
+            endpoint: other.endpoint,
+            persistent_keepalive_interval: Some(25),
+            ..Default::default()
+        }
+    }
+}
+
+impl From<&Peer> for Node {
+    fn from(other: &Peer) -> Self {
+        Self {
+            public_key: other.public_key,
+            allowed_ips: other.allowed_ips.clone(),
+            endpoint: other.endpoint,
+            ..Default::default()
+        }
+    }
+}
+
+impl From<&Event> for Node {
+    fn from(other: &Event) -> Node {
+        Self {
+            public_key: other.peer.public_key,
+            state: other.state,
+            allowed_ips: other.peer.allowed_ips.clone(),
+            endpoint: other.peer.endpoint,
             ..Default::default()
         }
     }
@@ -184,17 +220,8 @@ pub struct Response {
     pub interface: Option<Interface>,
 }
 
-/// Connection state of the peer
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum PeerState {
-    /// Peer is disconnected
-    Disconnected,
-    /// Trying to connect to the Peer
-    Connecting,
-    /// Peer is connected
-    Connected,
-}
+/// The connection state of the Node
+pub type PeerState = NodeState;
 
 /// Peer information to transmit
 #[derive(Debug, PartialEq, Eq)]
@@ -339,12 +366,6 @@ impl Display for Response {
             _ => (),
         }
         Ok(())
-    }
-}
-
-impl Default for PeerState {
-    fn default() -> Self {
-        PeerState::Disconnected
     }
 }
 

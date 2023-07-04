@@ -4,11 +4,9 @@ use super::EndpointMap as RelayEndpointMap;
 
 use crate::api_config::PathType;
 use ipnetwork::IpNetworkError;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, convert::TryFrom, net::IpAddr};
 use telio_crypto::PublicKey;
-
-use telio_wg::uapi::{Event as PeerEvent, Peer as UapiPeer, PeerState};
 
 use super::config::{Config, Peer, PeerBase};
 
@@ -60,8 +58,18 @@ pub struct ExitNode {
     pub endpoint: Option<SocketAddr>,
 }
 
-/// The connection state of the Node
-pub type NodeState = PeerState;
+/// Connection state of the node
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NodeState {
+    /// Node is disconnected
+    #[default]
+    Disconnected,
+    /// Trying to connect to the Node
+    Connecting,
+    /// Node is connected
+    Connected,
+}
 
 /// Network mesh map of all the nodes
 #[derive(Debug, Default)]
@@ -160,41 +168,6 @@ impl From<&Config> for Map {
                         .collect()
                 })
                 .unwrap_or_default(),
-        }
-    }
-}
-
-impl From<&UapiPeer> for Node {
-    fn from(other: &UapiPeer) -> Self {
-        Self {
-            public_key: other.public_key,
-            allowed_ips: other.allowed_ips.clone(),
-            endpoint: other.endpoint,
-            ..Default::default()
-        }
-    }
-}
-
-impl From<&PeerEvent> for Node {
-    fn from(other: &PeerEvent) -> Node {
-        Self {
-            public_key: other.peer.public_key,
-            state: other.state,
-            allowed_ips: other.peer.allowed_ips.clone(),
-            endpoint: other.peer.endpoint,
-            ..Default::default()
-        }
-    }
-}
-
-impl From<&Node> for UapiPeer {
-    fn from(other: &Node) -> UapiPeer {
-        UapiPeer {
-            public_key: other.public_key,
-            allowed_ips: other.allowed_ips.clone(),
-            endpoint: other.endpoint,
-            persistent_keepalive_interval: Some(25),
-            ..Default::default()
         }
     }
 }

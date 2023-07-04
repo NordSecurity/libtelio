@@ -468,8 +468,6 @@ impl State {
         to: &uapi::Interface,
         diff_keys: &DiffKeys,
     ) -> bool {
-        use PeerState::*;
-
         let from = &self.interface;
 
         // Setup
@@ -482,7 +480,7 @@ impl State {
         // Notify all disconnects
         for key in &diff_keys.delete_keys {
             if !try_send(
-                Disconnected,
+                PeerState::Disconnected,
                 if let Some(peer) = from.peers.get(key) {
                     peer.clone()
                 } else {
@@ -502,11 +500,11 @@ impl State {
             } else {
                 return false;
             };
-            if !try_send(Connecting, peer.clone()).await {
+            if !try_send(PeerState::Connecting, peer.clone()).await {
                 return false;
             }
 
-            if peer.is_connected() && !try_send(Connected, peer.clone()).await {
+            if peer.is_connected() && !try_send(PeerState::Connected, peer.clone()).await {
                 return false;
             }
         }

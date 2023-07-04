@@ -23,7 +23,6 @@ itertools = "0.10"
 
 telio-crypto = { version = "0.1.0", path = "../telio-crypto" }
 telio-utils = { version = "0.1.0", path = "../telio-utils" }
-telio-wg = { version = "0.1.0", path = "../telio-wg" }
 
 
 [dev-dependencies]
