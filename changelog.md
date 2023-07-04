@@ -5,6 +5,7 @@
 * LLT-3855: Add "release.py" helper script, for easier release preparation
 * LLT-3813: Update trust-dns to 0.22.1 
 * LLT-3901: Don't log warn for optional analytics fix.
+* LLT-3878: Reduce "cross_ping_check" log output
 
 <br>
 

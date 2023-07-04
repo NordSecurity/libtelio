@@ -57,7 +57,14 @@ use EndpointState::Variant::*;
 use EndpointState::*;
 macro_rules! do_state_transition {
     ($machine: expr, $event: expr, $ep: expr) => {{
-        telio_log_info!(
+        if $machine.state() == EndpointState::Published || $event == EndpointState::Publish {
+            do_state_transition!($machine, $event, $ep, telio_log_info);
+        } else {
+            do_state_transition!($machine, $event, $ep, telio_log_debug);
+        }
+    }};
+    ($machine: expr, $event: expr, $ep: expr, $log: ident) => {{
+        $log!(
             "Node's {:?} EP {:?} state transition {:?} -> {:?}",
             $ep.public_key,
             $ep.local_endpoint_candidate.udp,
