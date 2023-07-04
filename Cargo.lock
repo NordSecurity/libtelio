@@ -3377,7 +3377,6 @@ dependencies = [
  "strum_macros",
  "telio-crypto",
  "telio-utils",
- "telio-wg",
 ]
 
 [[package]]
@@ -3618,6 +3617,7 @@ dependencies = [
  "slog-stdlog",
  "telio-crypto",
  "telio-firewall",
+ "telio-model",
  "telio-sockets",
  "telio-task",
  "telio-test",

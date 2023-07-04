@@ -30,6 +30,7 @@ tokio = { version = ">=1.22", features = ["full"] }
 async-trait = "0.1.51"
 mockall = { version = "0.11.3", optional = true }
 telio-crypto = { path = "../telio-crypto" }
+telio-model = { path = "../telio-model" }
 telio-sockets = { path = "../telio-sockets" }
 telio-task = { path = "../telio-task" }
 telio-utils = { path = "../telio-utils" }
