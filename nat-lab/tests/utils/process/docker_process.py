@@ -1,10 +1,13 @@
 from aiodocker.containers import DockerContainer
 from aiodocker.stream import Stream
+from aiodocker.execs import Exec
 from utils.process import Process, ProcessExecError, StreamCallback
-from utils import asyncio_util
-from typing import List, Optional
+from utils.asyncio_util import run_async_context
+from typing import List, Optional, AsyncIterator
+from contextlib import suppress, asynccontextmanager
 import asyncio
 import sys
+import os
 
 
 class DockerProcess(Process):
@@ -15,6 +18,7 @@ class DockerProcess(Process):
     _allowed_exit_codes: List[int]
     _stdin_ready: asyncio.Event
     _stream: Optional[Stream]
+    _execute: Optional[Exec]
 
     def __init__(self, container: DockerContainer, command: List[str]) -> None:
         self._container = container
@@ -23,32 +27,49 @@ class DockerProcess(Process):
         self._stderr = ""
         self._stdin_ready = asyncio.Event()
         self._stream = None
+        self._execute = None
 
     async def execute(
         self,
         stdout_callback: Optional[StreamCallback] = None,
         stderr_callback: Optional[StreamCallback] = None,
     ) -> "DockerProcess":
-        execute = await self._container.exec(self._command, stdin=True)
-
-        async with execute.start() as exe_stream:
+        self._execute = await self._container.exec(self._command, stdin=True)
+        if self._execute is None:
+            return self
+        async with self._execute.start() as exe_stream:
             self._stream = exe_stream
             self._stdin_ready.set()
-            # This doesn't have to be run as async. This is solely to make it similar to
-            # how SshProcess is implemented. Since DockerProcess is more widely used, this
-            # makes async code problems more visible.
-            await asyncio_util.run_async(
-                self._read_loop(exe_stream, stdout_callback, stderr_callback)
-            )
+            await self._read_loop(exe_stream, stdout_callback, stderr_callback)
             self._stream = None
 
-        inspect = await execute.inspect()
-
+        inspect = await self._execute.inspect()
         exit_code = inspect["ExitCode"]
-        if exit_code != 0:
+
+        # we ignore 143 (SIGTERM), since sometimes we kill processes ourselfs
+        if exit_code not in [0, 143]:
             raise ProcessExecError(exit_code, self._command, self._stdout, self._stderr)
 
         return self
+
+    @asynccontextmanager
+    async def run(
+        self,
+        stdout_callback: Optional[StreamCallback] = None,
+        stderr_callback: Optional[StreamCallback] = None,
+    ) -> AsyncIterator["DockerProcess"]:
+        async with run_async_context(self.execute(stdout_callback, stderr_callback)):
+            try:
+                yield self
+            finally:
+                if self._execute:
+                    with suppress(Exception):
+                        inspect = await self._execute.inspect()
+                        while inspect["Pid"] == 0:
+                            inspect = await self._execute.inspect()
+                            await asyncio.sleep(0.01)
+                        if inspect["ExitCode"] is None:
+                            os.system(f"sudo kill -9 {inspect['Pid']}")
 
     async def _read_loop(
         self,

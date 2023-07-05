@@ -71,18 +71,13 @@ async def test_node_state_flickering(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_alpha,
-                alpha,
+            telio.Client(connection_alpha, alpha, adapter_type,).run_meshnet(
                 api.get_meshmap(alpha.id),
-                adapter_type,
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_beta,
-                beta,
+            telio.Client(connection_beta, beta,).run_meshnet(
                 api.get_meshmap(beta.id),
             )
         )

@@ -1,5 +1,4 @@
 import pytest
-import telio
 import utils.testing as testing
 from contextlib import AsyncExitStack
 import config
@@ -38,7 +37,7 @@ async def _connect_vpn(
 
     await testing.wait_long(conn_tracker.wait_for_event(connection_key))
 
-    async with Ping(connection, config.PHOTO_ALBUM_IP) as ping:
+    async with Ping(connection, config.PHOTO_ALBUM_IP).run() as ping:
         await testing.wait_long(ping.wait_for_next_ping())
 
     ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
@@ -104,11 +103,7 @@ async def test_vpn_connection(
         await testing.wait_long(conn_tracker.wait_for_event("stun"))
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run(
-                connection,
-                alpha,
-                adapter_type,
-            )
+            Client(connection, alpha, adapter_type).run()
         )
         await _connect_vpn(
             connection, conn_tracker, client_alpha, config.WG_SERVER, "vpn_1"
@@ -176,7 +171,7 @@ async def test_vpn_reconnect(
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run(connection, alpha, adapter_type)
+            Client(connection, alpha, adapter_type).run()
         )
 
         await _connect_vpn(

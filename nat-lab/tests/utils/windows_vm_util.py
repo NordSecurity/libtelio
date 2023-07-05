@@ -44,7 +44,7 @@ async def new_connection() -> AsyncIterator[Connection]:
         try:
             yield connection
         finally:
-            await _kill_processes(connection)
+            pass
 
 
 async def _disable_firewall(connection: Connection):
@@ -74,15 +74,3 @@ async def _copy_binaries(
         get_root_path("dist/windows/release/x86_64/*"), (ssh_connection, VM_TCLI_DIR)
     )
     FILES_COPIED = True
-
-
-async def _kill_processes(connection: Connection) -> None:
-    processes = ["tcli", "derpcli", "ping", "stunclient", "iperf3"]
-    for proc in processes:
-        try:
-            await connection.create_process(
-                ["taskkill", "/IM", f"{proc}.exe", "/F"]
-            ).execute()
-        except ProcessExecError as exception:
-            if exception.stderr.find(f'The process "{proc}.exe" not found') < 0:
-                raise exception

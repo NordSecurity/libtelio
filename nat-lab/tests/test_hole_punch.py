@@ -2,7 +2,6 @@ import pytest
 import utils.testing as testing
 from utils import ConnectionTag, new_connection_by_tag
 from contextlib import AsyncExitStack
-from utils.asyncio_util import run_async_context
 import asyncio
 
 TESTING_STRING = "seniukai, skyle pramusta"
@@ -41,28 +40,27 @@ async def test_hole_punch() -> None:
             in process.get_stdout()
         )
 
-        # listen for udp packets on connection1 local port
         event = asyncio.Event()
-        listening_process = connection_1.create_process(
-            ["nc", "-n", "-l", "-u", "-v", "-p", str(LOCAL_PORT)]
-        )
 
         async def on_stdout(stdout: str) -> None:
             print(stdout)
             if TESTING_STRING in stdout:
                 event.set()
 
-        await exit_stack.enter_async_context(
-            run_async_context(listening_process.execute(stdout_callback=on_stdout))
+        # listen for udp packets on connection1 local port
+        listening_process = await exit_stack.enter_async_context(
+            connection_1.create_process(
+                ["nc", "-n", "-l", "-u", "-v", "-p", str(LOCAL_PORT)]
+            ).run(stdout_callback=on_stdout)
         )
         await listening_process.wait_stdin_ready()
 
         # send udp packet from connection2 to connection1 to its external ip
-        send_process = connection_2.create_process(
-            ["nc", "-n", "-u", "-v", PUBLIC_IP, str(PUBLIC_PORT)]
+        send_process = await exit_stack.enter_async_context(
+            connection_2.create_process(
+                ["nc", "-n", "-u", "-v", PUBLIC_IP, str(PUBLIC_PORT)]
+            ).run()
         )
-
-        await exit_stack.enter_async_context(run_async_context(send_process.execute()))
         await send_process.wait_stdin_ready()
         await asyncio.sleep(1)
         await send_process.write_stdin(TESTING_STRING + "\n")

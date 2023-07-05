@@ -1,10 +1,10 @@
 from utils.connection import Connection
 from utils.process import Process
-from utils.asyncio_util import run_async, cancel_future
-from typing import Optional, Coroutine
+from typing import AsyncIterator
 from utils import OutputNotifier, connection_util
 import asyncio
 import telio
+from contextlib import asynccontextmanager
 
 
 async def check_derp_connection(client: telio.Client, server_ip: str, state: bool):
@@ -17,7 +17,6 @@ async def check_derp_connection(client: telio.Client, server_ip: str, state: boo
 
 
 class DerpTarget:
-    _stop: Optional[Coroutine]
     _process: Process
     _output_notifier: OutputNotifier
 
@@ -34,41 +33,27 @@ class DerpTarget:
         )
         self._output_notifier = OutputNotifier()
 
-    async def run(self) -> "DerpTarget":
-        async def on_stdout(stdout: str) -> None:
-            self._output_notifier.handle_output(stdout)
+    async def on_stdout(self, stdout: str) -> None:
+        self._output_notifier.handle_output(stdout)
 
-        process_future = run_async(self._process.execute(stdout_callback=on_stdout))
-
-        async def stop() -> None:
-            await cancel_future(process_future)
-
-        self._stop = stop()
-
-        return self
+    async def execute(self) -> None:
+        await self._process.execute(stdout_callback=self.on_stdout)
 
     async def wait_message_received(self, message: str) -> None:
         event = asyncio.Event()
         self._output_notifier.notify_output(message, event)
         await event.wait()
 
-    async def stop(self) -> None:
-        if self._stop:
-            await self._stop
-
-    async def __aenter__(self) -> "DerpTarget":
-        return await self.run()
-
-    async def __aexit__(self, exc_type, exc, tb):
-        await self.stop()
+    @asynccontextmanager
+    async def run(self) -> AsyncIterator["DerpTarget"]:
+        async with self._process.run(stdout_callback=self.on_stdout):
+            yield self
 
 
 class DerpClient:
-    _stop: Optional[Coroutine]
     _process: Process
 
     def __init__(self, connection: Connection, server: str, data: str) -> None:
-        self._stop = None
         self._process = connection.create_process(
             [
                 connection_util.get_libtelio_binary_path("derpcli", connection),
@@ -80,22 +65,10 @@ class DerpClient:
             ]
         )
 
-    async def run(self) -> "DerpClient":
-        process_future = run_async(self._process.execute())
+    async def execute(self) -> None:
+        await self._process.execute()
 
-        async def stop() -> None:
-            await cancel_future(process_future)
-
-        self._stop = stop()
-
-        return self
-
-    async def stop(self) -> None:
-        if self._stop:
-            await self._stop
-
-    async def __aenter__(self) -> "DerpClient":
-        return await self.run()
-
-    async def __aexit__(self, exc_type, exc, tb):
-        await self.stop()
+    @asynccontextmanager
+    async def run(self) -> AsyncIterator["DerpClient"]:
+        async with self._process.run():
+            yield self
