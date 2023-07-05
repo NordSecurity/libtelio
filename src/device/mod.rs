@@ -53,6 +53,8 @@ use std::{
     time::Duration,
 };
 
+use cfg_if::cfg_if;
+
 use telio_utils::{
     commit_sha,
     exponential_backoff::ExponentialBackoffBounds,
@@ -71,9 +73,12 @@ use telio_model::{
 };
 
 pub use wg::{
-    uapi::Event as WGEvent, AdapterType, DynamicWg, Error as AdapterError, FirewallCb, Tun,
-    WireGuard,
+    uapi::Event as WGEvent, uapi::Interface, AdapterType, DynamicWg, Error as AdapterError,
+    FirewallCb, Tun, WireGuard,
 };
+
+#[cfg(test)]
+use wg::tests::AdapterExpectation;
 
 #[derive(Debug, TError)]
 pub enum Error {
@@ -322,6 +327,10 @@ struct Runtime {
     ///
     /// Some of the events are time based, so just poll the whole state from time to time
     polling_interval: Interval,
+
+    #[cfg(test)]
+    /// MockedAdapter (tests)
+    test_env: telio_wg::tests::Env,
 }
 
 impl Device {
@@ -722,37 +731,69 @@ impl Runtime {
             derp_events.tx.clone(),
         ));
 
-        let (analytics_ch, config_update_ch, collection_trigger_ch) = if features.nurse.is_some() {
+        let (config_update_ch, collection_trigger_ch) = if features.nurse.is_some() {
             (
-                Some(McChan::default().tx),
-                Some(McChan::default().tx),
-                Some(McChan::default().tx),
+                Some(McChan::<Box<MeshConfigUpdateEvent>>::default().tx),
+                Some(McChan::<Box<()>>::default().tx),
             )
         } else {
-            (None, None, None)
+            (None, None)
         };
 
-        let wg_events = Chan::default();
-        let wireguard_interface = Arc::new(DynamicWg::start(
-            wg::Io {
-                events: wg_events.tx.clone(),
-                analytics_tx: analytics_ch.clone(),
-            },
-            wg::Config {
-                adapter: config.adapter,
-                name: config.name.clone(),
-                tun: config.tun,
-                socket_pool: socket_pool.clone(),
-                firewall_process_inbound_callback: Some(Arc::new(firewall_filter_inbound_packets)),
-                firewall_process_outbound_callback: Some(Arc::new(
-                    firewall_filter_outbound_packets,
-                )),
-            },
-        )?);
+        // tests runtime use wg::MockedAdapter
+        cfg_if! {
+            if #[cfg(not(test))] {
+                let analytics_ch = match features.nurse.is_some() {
+                    true => Some(McChan::default().tx),
+                    false => None
+                };
+                let wg_events = Chan::<Box<telio_wg::uapi::Event>>::default();
+                let wireguard_interface = Arc::new(DynamicWg::start(
+                    wg::Io {
+                        events: wg_events.tx.clone(),
+                        analytics_tx: analytics_ch.clone(),
+                    },
+                    wg::Config {
+                        adapter: config.adapter,
+                        name: config.name.clone(),
+                        tun: config.tun,
+                        socket_pool: socket_pool.clone(),
+                        firewall_process_inbound_callback: Some(Arc::new(firewall_filter_inbound_packets)),
+                        firewall_process_outbound_callback: Some(Arc::new(
+                            firewall_filter_outbound_packets,
+                        )),
+                    },
+                )?);
+                let wg_events = wg_events.rx;
+            } else {
+                let wg::tests::Env {
+                        event: wg_events,
+                        analytics: analytics_ch,
+                        wg: wireguard_interface,
+                        adapter,
+                } = wg::tests::setup(
+                        wg::Config {
+                            adapter: config.adapter,
+                            name: config.name.clone(),
+                            tun: config.tun,
+                            socket_pool: socket_pool.clone(),
+                            firewall_process_inbound_callback: Some(Arc::new(firewall_filter_inbound_packets)),
+                            firewall_process_outbound_callback: Some(Arc::new(
+                                firewall_filter_outbound_packets,
+                            )),
+                        }
+                    ).await;
+
+                    adapter.expect_send_uapi_cmd_generic_call(1).await;
+            }
+        }
 
         wireguard_interface
             .set_secret_key(config.private_key)
             .await?;
+
+        #[cfg(test)]
+        adapter.lock().await.checkpoint();
 
         let nurse = if telio_lana::is_lana_initialized() {
             if let Some(nurse_features) = &features.nurse {
@@ -760,7 +801,7 @@ impl Runtime {
                     derp_event_channel: &derp_events.tx,
                     wg_event_channel: &libtelio_wide_event_publisher,
                     relay_multiplexer: &multiplexer,
-                    wg_analytics_channel: analytics_ch,
+                    wg_analytics_channel: analytics_ch.clone(),
                     config_update_channel: config_update_ch.clone(),
                     collection_trigger_channel: collection_trigger_ch.clone(),
                 };
@@ -948,7 +989,7 @@ impl Runtime {
             features,
             requested_state,
             entities: Entities {
-                wireguard_interface,
+                wireguard_interface: wireguard_interface.clone(),
                 dns,
                 firewall,
                 multiplexer,
@@ -960,7 +1001,7 @@ impl Runtime {
             },
             event_listeners: EventListeners {
                 wg_endpoint_publish_event_subscriber: wg_endpoint_publish_events.rx,
-                wg_event_subscriber: wg_events.rx,
+                wg_event_subscriber: wg_events,
                 derp_event_subscriber: derp_events.rx,
                 endpoint_upgrade_event_subscriber: wg_upgrade_sync.rx,
                 stun_server_subscriber: stun_server_events.rx,
@@ -971,6 +1012,13 @@ impl Runtime {
                 nurse_collection_trigger_publisher: collection_trigger_ch,
             },
             polling_interval: interval_at(tokio::time::Instant::now(), Duration::from_secs(5)),
+            #[cfg(test)]
+            test_env: wg::tests::Env {
+                analytics: analytics_ch,
+                event: Chan::default().rx,
+                wg: wireguard_interface,
+                adapter,
+            },
         })
     }
 
@@ -1653,17 +1701,16 @@ mod tests {
     use telio_model::api_config::FeatureDirect;
     use telio_model::config::{Peer, PeerBase};
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_disconnect_exit_nodes() {
+    #[tokio::test(start_paused = true)]
+    async fn test_mocked_adapter() {
         let (sender, _receiver) = tokio::sync::broadcast::channel(1);
+        let features = Features::default();
+        let private_key = SecretKey::gen();
 
-        let features = Default::default();
-
-        let mut rt = Runtime::start(
+        let rt = Runtime::start(
             sender,
             &DeviceConfig {
-                private_key: SecretKey::gen(),
-                adapter: AdapterType::BoringTun,
+                private_key,
                 ..Default::default()
             },
             features,
@@ -1671,6 +1718,49 @@ mod tests {
         )
         .await
         .unwrap();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        rt.entities
+            .wireguard_interface
+            .set_listen_port(1234)
+            .await
+            .unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        assert_eq!(
+            Interface {
+                private_key: Some(private_key),
+                listen_port: Some(1234),
+                ..Default::default()
+            },
+            rt.entities
+                .wireguard_interface
+                .get_interface()
+                .await
+                .unwrap()
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_disconnect_exit_nodes() {
+        let (sender, _receiver) = tokio::sync::broadcast::channel(1);
+        let features = Features::default();
+
+        let mut rt = Runtime::start(
+            sender,
+            &DeviceConfig {
+                private_key: SecretKey::gen(),
+                ..Default::default()
+            },
+            features,
+            None,
+        )
+        .await
+        .unwrap();
+
         let pubkey = SecretKey::gen().public();
         let exit_node = ExitNode {
             public_key: pubkey,
@@ -1685,39 +1775,60 @@ mod tests {
         let get_config = Config {
             this: peer_base.clone(),
             peers: Some(vec![Peer {
-                base: peer_base,
+                base: peer_base.clone(),
                 ..Default::default()
             }]),
             derp_servers: None,
             dns: None,
         };
 
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        rt.entities
+            .wireguard_interface
+            .set_listen_port(1234)
+            .await
+            .unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
         assert!(rt.set_config(&Some(get_config)).await.is_ok());
         assert!(rt.requested_state.exit_node.is_none());
+        rt.test_env.adapter.lock().await.checkpoint();
 
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
         assert!(rt.connect_exit_node(&exit_node).await.is_ok());
         assert!(rt.requested_state.exit_node.is_some());
+        rt.test_env.adapter.lock().await.checkpoint();
 
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
         assert!(rt.disconnect_exit_nodes().await.is_ok());
         assert!(rt.requested_state.exit_node.is_none());
+        rt.test_env.adapter.lock().await.checkpoint();
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test(start_paused = true)]
     async fn test_duplicate_allowed_ips() {
         let (sender, _receiver) = tokio::sync::broadcast::channel(1);
-
         let features = Features::default();
-
         let private_key = SecretKey::gen();
 
         let mut rt = Runtime::start(
             sender,
             &DeviceConfig {
                 private_key,
-                adapter: AdapterType::BoringTun,
-                name: None,
-                tun: None,
-                fwmark: None,
+                ..Default::default()
             },
             features,
             None,
@@ -1763,25 +1874,45 @@ mod tests {
             ..Default::default()
         };
 
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        rt.entities
+            .wireguard_interface
+            .set_listen_port(1234)
+            .await
+            .unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(2)
+            .await;
         assert!(matches!(rt.set_config(&Some(config)).await, Ok(())));
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(0)
+            .await;
         let _expected_error: super::Error = wg_controller::Error::BadAllowedIps.into();
         assert!(matches!(
             rt.connect_exit_node(&vpn_node).await,
             Err(_expected_error)
         ));
+        rt.test_env.adapter.lock().await.checkpoint();
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test(start_paused = true)]
     async fn test_exit_node_demote() {
         let (sender, _receiver) = tokio::sync::broadcast::channel(1);
-
         let features = Default::default();
 
         let mut rt = Runtime::start(
             sender,
             &DeviceConfig {
                 private_key: SecretKey::gen(),
-                adapter: AdapterType::BoringTun,
                 ..Default::default()
             },
             features,
@@ -1789,6 +1920,7 @@ mod tests {
         )
         .await
         .unwrap();
+
         let pubkey = SecretKey::gen().public();
         let node = ExitNode {
             public_key: pubkey,
@@ -1810,41 +1942,71 @@ mod tests {
             dns: None,
         });
 
-        rt.set_config(&config).await.expect("configure");
-        assert!(rt.requested_state.exit_node.is_none());
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        rt.entities
+            .wireguard_interface
+            .set_listen_port(1234)
+            .await
+            .unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
 
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        assert!(rt.set_config(&config).await.is_ok());
+        assert!(rt.requested_state.exit_node.is_none());
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
         assert!(rt.connect_exit_node(&node).await.is_ok());
         assert_eq!(
             rt.requested_state.exit_node.as_ref().unwrap().public_key,
             pubkey
         );
+        rt.test_env.adapter.lock().await.checkpoint();
 
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(0)
+            .await;
         assert!(rt.set_config(&config).await.is_ok());
         assert_eq!(
             rt.requested_state.exit_node.as_ref().unwrap().public_key,
             pubkey
         );
+        rt.test_env.adapter.lock().await.checkpoint();
 
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
         assert!(rt.disconnect_exit_node(&pubkey).await.is_ok());
         assert!(rt.requested_state.exit_node.is_none());
+        rt.test_env.adapter.lock().await.checkpoint();
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test(start_paused = true)]
     async fn test_default_features_when_direct_is_empty() {
         let (sender, _receiver) = tokio::sync::broadcast::channel(1);
-
-        let mut features = Features::default();
-
-        features.direct = Some(FeatureDirect {
-            providers: None,
-            endpoint_interval_secs: None,
-        });
+        let features = Features {
+            direct: Some(FeatureDirect {
+                providers: None,
+                endpoint_interval_secs: None,
+            }),
+            ..Default::default()
+        };
 
         let rt = Runtime::start(
             sender,
             &DeviceConfig {
                 private_key: SecretKey::gen(),
-                adapter: AdapterType::BoringTun,
                 ..Default::default()
             },
             features,
@@ -1860,22 +2022,21 @@ mod tests {
         assert!(entities.stun_endpoint_provider.is_some());
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test(start_paused = true)]
     async fn test_default_features_when_provider_is_empty() {
         let (sender, _receiver) = tokio::sync::broadcast::channel(1);
-
-        let mut features = Features::default();
-
-        features.direct = Some(FeatureDirect {
-            providers: Some(HashSet::<telio_model::api_config::EndpointProvider>::new()),
-            endpoint_interval_secs: None,
-        });
+        let features = Features {
+            direct: Some(FeatureDirect {
+                providers: Some(HashSet::<telio_model::api_config::EndpointProvider>::new()),
+                endpoint_interval_secs: None,
+            }),
+            ..Default::default()
+        };
 
         let rt = Runtime::start(
             sender,
             &DeviceConfig {
                 private_key: SecretKey::gen(),
-                adapter: AdapterType::BoringTun,
                 ..Default::default()
             },
             features,
@@ -1891,27 +2052,27 @@ mod tests {
         assert!(entities.stun_endpoint_provider.is_none());
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test(start_paused = true)]
     async fn test_enable_all_direct_features() {
         let (sender, _receiver) = tokio::sync::broadcast::channel(1);
 
-        let mut features = Features::default();
         let mut providers = HashSet::<telio_model::api_config::EndpointProvider>::new();
-
         providers.insert(telio_model::api_config::EndpointProvider::Stun);
         providers.insert(telio_model::api_config::EndpointProvider::Upnp);
         providers.insert(telio_model::api_config::EndpointProvider::Local);
 
-        features.direct = Some(FeatureDirect {
-            providers: Some(providers),
-            endpoint_interval_secs: None,
-        });
+        let features = Features {
+            direct: Some(FeatureDirect {
+                providers: Some(providers),
+                endpoint_interval_secs: None,
+            }),
+            ..Default::default()
+        };
 
         let rt = Runtime::start(
             sender,
             &DeviceConfig {
                 private_key: SecretKey::gen(),
-                adapter: AdapterType::BoringTun,
                 ..Default::default()
             },
             features,

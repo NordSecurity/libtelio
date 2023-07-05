@@ -196,7 +196,13 @@ mod tests {
     async fn send_keepalives() {
         const PERIOD: Duration = Duration::from_millis(100);
 
-        let socket_pool = Arc::new(SocketPool::new(NativeProtector::new().unwrap()));
+        let socket_pool = Arc::new(SocketPool::new(
+            NativeProtector::new(
+                #[cfg(target_os = "macos")]
+                false,
+            )
+            .unwrap(),
+        ));
         let sess_keep = SessionKeeper::start(socket_pool).unwrap();
 
         let pk = "REjdn4zY2TFx2AMujoNGPffo9vDiRDXpGG4jHPtx2AY="

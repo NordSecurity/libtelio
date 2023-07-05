@@ -1,6 +1,7 @@
 //! This module is a mock for libmoose API, it logs moose function calls to file.
 //!
-use std::{fs::File, fs::OpenOptions, io::Write};
+use std::{fs::File, io::Write};
+use telio_utils::telio_log_error;
 use time;
 
 pub use telio_utils::telio_log_warn;
@@ -90,38 +91,48 @@ fn event_log(
     func_name: &str,
     arg_set: Option<Vec<&str>>,
 ) -> std::result::Result<usize, moose::Error> {
-    let file = if std::path::Path::new(&LOGFILE_PATH).exists() {
-        OpenOptions::new()
-            .write(true)
-            .append(true)
-            .open(LOGFILE_PATH)
-    } else {
-        File::create(LOGFILE_PATH)
-    };
-
-    if let Ok(mut f) = file {
-        let format_string =
-            time::format_description::parse("[year]-[month]-[day] [hour]:[minute]:[second] ")
+    match get_logfile() {
+        Ok(mut file) => {
+            let format_string =
+                time::format_description::parse("[year]-[month]-[day] [hour]:[minute]:[second] ")
+                    .map_err(|_| moose::Error::EventLogError)?;
+            let mut buffer = time::OffsetDateTime::now_utc()
+                .format(&format_string)
                 .map_err(|_| moose::Error::EventLogError)?;
-        let mut buffer = time::OffsetDateTime::now_utc()
-            .format(&format_string)
-            .map_err(|_| moose::Error::EventLogError)?;
-        buffer.push_str(func_name);
-        buffer.push('(');
-        if let Some(args) = arg_set {
-            let mut it = args.iter().peekable();
-            while let Some(arg) = it.next() {
-                match it.peek() {
-                    Some(_) => buffer.push_str(format!("{}, ", arg).as_str()),
-                    None => buffer.push_str(arg),
+            buffer.push_str(func_name);
+            buffer.push('(');
+            if let Some(args) = arg_set {
+                let mut it = args.iter().peekable();
+                while let Some(arg) = it.next() {
+                    match it.peek() {
+                        Some(_) => buffer.push_str(format!("{}, ", arg).as_str()),
+                        None => buffer.push_str(arg),
+                    }
                 }
             }
-        }
-        buffer.push_str(")\n");
+            buffer.push_str(")\n");
 
-        Ok(f.write(buffer.as_bytes()).unwrap_or(0))
+            Ok(file
+                .write(buffer.as_bytes())
+                .map_err(|_| moose::Error::EventLogError)?)
+        }
+        Err(e) => {
+            telio_log_error!("Failed to open log file: {}", e);
+            Err(moose::Error::EventLogError)
+        }
+    }
+}
+
+fn get_logfile() -> std::io::Result<File> {
+    if std::path::Path::new(&LOGFILE_PATH).exists() {
+        File::options().append(true).open(LOGFILE_PATH)
     } else {
-        Err(moose::Error::EventLogError)
+        let file = File::create(LOGFILE_PATH)?;
+        let mut perms = file.metadata()?.permissions();
+        // some tests are run by root so we need to set file as world-writable
+        perms.set_readonly(false);
+        file.set_permissions(perms)?;
+        Ok(file)
     }
 }
 
