@@ -2,7 +2,7 @@ from utils import Ping
 from contextlib import AsyncExitStack
 from mesh_api import API
 from utils import ConnectionTag, new_connection_with_gw, testing
-from telio import PathType
+from telio import PathType, Client
 from telio_features import TelioFeatures, Direct
 import asyncio
 import pytest
@@ -34,22 +34,22 @@ async def test_upnp_route_corrupted() -> None:
         await beta_connection_gw.create_process(["upnpd", "eth0", "eth1"]).execute()
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            Client(
                 alpha_connection,
                 alpha,
-                api.get_meshmap(alpha.id),
                 telio.AdapterType.BoringTun,
                 telio_features=TelioFeatures(direct=Direct(providers=UPNP_PROVIDER)),
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
             )
         )
         beta_client = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            Client(
                 beta_connection,
                 beta,
-                api.get_meshmap(beta.id),
                 telio.AdapterType.BoringTun,
                 telio_features=TelioFeatures(direct=Direct(providers=UPNP_PROVIDER)),
-            )
+            ).run_meshnet(api.get_meshmap(beta.id))
         )
 
         await testing.wait_lengthy(
@@ -76,7 +76,7 @@ async def test_upnp_route_corrupted() -> None:
         await beta_connection_gw.create_process(["upnpd", "eth0", "eth1"]).execute()
 
         with pytest.raises(asyncio.TimeoutError):
-            async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
+            async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
                 await testing.wait_long(ping.wait_for_next_ping())
 
         await testing.wait_lengthy(
@@ -88,7 +88,7 @@ async def test_upnp_route_corrupted() -> None:
 
         time.sleep(10)
 
-        async with Ping(beta_connection, alpha.ip_addresses[0]) as ping:
+        async with Ping(beta_connection, alpha.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
-        async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
+        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())

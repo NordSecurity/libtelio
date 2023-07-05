@@ -42,7 +42,7 @@ async def new_connection() -> AsyncIterator[Connection]:
         try:
             yield connection
         finally:
-            await _kill_processes(connection)
+            pass
 
 
 async def _copy_binaries(
@@ -65,13 +65,3 @@ async def _copy_binaries(
     )
     await connection.create_process(["chmod", "+x", f"{VM_TCLI_DIR}/tcli"]).execute()
     FILES_COPIED = True
-
-
-async def _kill_processes(connection: Connection) -> None:
-    try:
-        await connection.create_process(
-            ["killall", "tcli", "derpcli", "ping", "nc", "iperf3"]
-        ).execute()
-    except ProcessExecError as exception:
-        if exception.stderr.find("No matching processes were found") < 0:
-            raise exception

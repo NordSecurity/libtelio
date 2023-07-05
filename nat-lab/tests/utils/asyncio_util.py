@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Coroutine
+from typing import AsyncIterator, Coroutine, List
 import asyncio
 import sys
 
@@ -55,6 +55,18 @@ async def run_async_context(coroutine: Coroutine) -> AsyncIterator[asyncio.Futur
         yield future
     finally:
         await cancel_future(future)
+
+
+@asynccontextmanager
+async def run_async_contexts(
+    coroutines: List[Coroutine],
+) -> AsyncIterator[List[asyncio.Future]]:
+    futures = [run_async(coroutine) for coroutine in coroutines]
+    try:
+        yield futures
+    finally:
+        for future in futures:
+            await cancel_future(future)
 
 
 # Cancel a future that has been created with `asyncio_util.run_async`.

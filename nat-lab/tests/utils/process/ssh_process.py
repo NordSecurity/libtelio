@@ -1,8 +1,9 @@
 from utils.process import Process, ProcessExecError, StreamCallback
-from utils import asyncio_util
-from typing import List, Optional, Callable
+from utils.asyncio_util import run_async_context
+from typing import List, Optional, Callable, AsyncIterator
 import asyncio
 import asyncssh
+from contextlib import suppress, asynccontextmanager
 
 
 class SshProcess(Process):
@@ -35,29 +36,42 @@ class SshProcess(Process):
         escaped = [self._escape_argument(arg) for arg in self._command]
         command_str = " ".join(escaped)
 
-        process = await self._ssh_connection.create_process(command_str)
-
-        self._stdin = process.stdin
+        self._process = await self._ssh_connection.create_process(command_str)
+        self._stdin = self._process.stdin
         self._stdin_ready.set()
 
-        future_stdout = asyncio_util.run_async(
-            self._stdout_loop(process.stdout, stdout_callback)
-        )
-        future_stderr = asyncio_util.run_async(
-            self._stderr_loop(process.stderr, stderr_callback)
+        await asyncio.gather(
+            self._stdout_loop(self._process.stdout, stdout_callback),
+            self._stderr_loop(self._process.stderr, stderr_callback),
         )
 
-        await future_stdout
-        await future_stderr
-
-        completed_process: asyncssh.SSHCompletedProcess = await process.wait()
+        completed_process: asyncssh.SSHCompletedProcess = await self._process.wait()
         assert completed_process.returncode is not None
         if completed_process.returncode != 0:
             raise ProcessExecError(
-                completed_process.returncode, self._command, self._stdout, self._stderr
+                completed_process.returncode,
+                self._command,
+                self._stdout,
+                self._stderr,
             )
 
         return self
+
+    @asynccontextmanager
+    async def run(
+        self,
+        stdout_callback: Optional[StreamCallback] = None,
+        stderr_callback: Optional[StreamCallback] = None,
+    ) -> AsyncIterator["SshProcess"]:
+        async with run_async_context(self.execute(stdout_callback, stderr_callback)):
+            try:
+                yield self
+            finally:
+                with suppress(Exception):
+                    if self._process.returncode is None:
+                        self._process.kill()
+                        self._process.close()
+                        await self._process.wait_closed()
 
     async def _stdout_loop(
         self, stdout: asyncssh.SSHReader, stdout_callback: Optional[StreamCallback]

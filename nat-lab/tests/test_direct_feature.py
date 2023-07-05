@@ -21,16 +21,17 @@ async def test_default_direct_features() -> None:
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 alpha_connection,
                 alpha,
-                api.get_meshmap(alpha.id),
                 telio.AdapterType.BoringTun,
                 telio_features=TelioFeatures(direct=Direct(providers=None)),
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
             )
         )
 
-        started_tasks = alpha_client._events._runtime._started_tasks
+        started_tasks = alpha_client.get_runtime().get_started_tasks()
         assert "UpnpEndpointProvider" not in started_tasks
         assert "LocalInterfacesEndpointProvider" in started_tasks
         assert "StunEndpointProvider" in started_tasks
@@ -47,18 +48,19 @@ async def test_enable_all_direct_features() -> None:
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 alpha_connection,
                 alpha,
-                api.get_meshmap(alpha.id),
                 telio.AdapterType.BoringTun,
                 telio_features=TelioFeatures(
                     direct=Direct(providers=ALL_DIRECT_FEATURES)
                 ),
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
             )
         )
 
-        started_tasks = alpha_client._events._runtime._started_tasks
+        started_tasks = alpha_client.get_runtime().get_started_tasks()
         assert "UpnpEndpointProvider" in started_tasks
         assert "LocalInterfacesEndpointProvider" in started_tasks
         assert "StunEndpointProvider" in started_tasks
@@ -75,16 +77,17 @@ async def test_check_features_with_empty_direct_providers() -> None:
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 alpha_connection,
                 alpha,
-                api.get_meshmap(alpha.id),
                 telio.AdapterType.BoringTun,
                 telio_features=TelioFeatures(direct=Direct(providers=EMPTY_PROVIDER)),
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
             )
         )
 
-        started_tasks = alpha_client._events._runtime._started_tasks
+        started_tasks = alpha_client.get_runtime().get_started_tasks()
         assert "UpnpEndpointProvider" not in started_tasks
         assert "LocalInterfacesEndpointProvider" not in started_tasks
         assert "StunEndpointProvider" not in started_tasks

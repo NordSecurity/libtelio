@@ -10,7 +10,7 @@ from typing import Optional
 async def check_fake_derp_connection(client: telio.Client) -> Optional[telio.Client]:
     while True:
         await client.fake_derp_events()
-        output = reversed(client._process.get_stdout().splitlines())
+        output = reversed(client.get_stdout().splitlines())
 
         for line in output:
             if "- Server {" in line:
@@ -38,20 +38,22 @@ async def test_verify_pk_on_packets() -> None:
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 alpha_connection,
                 alpha,
-                api.get_meshmap(alpha.id),
                 telio.AdapterType.BoringTun,
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
             )
         )
 
         beta_client = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 beta_connection,
                 beta,
-                api.get_meshmap(beta.id),
                 telio.AdapterType.BoringTun,
+            ).run_meshnet(
+                api.get_meshmap(beta.id),
             )
         )
         await testing.wait_lengthy(
@@ -84,7 +86,7 @@ async def test_verify_pk_on_packets() -> None:
         )
         await beta_client.recv_message_from_fake_derp_relay()
 
-        assert "bytes: [0, 0, 2, 3, 5, 6]" in beta_client._process.get_stdout()
+        assert "bytes: [0, 0, 2, 3, 5, 6]" in beta_client.get_stdout()
 
         # Remove Alpha pk from Beta allowed list
         await testing.wait_long(beta_client.disconnect_fake_derprelay())
@@ -103,4 +105,4 @@ async def test_verify_pk_on_packets() -> None:
             ["0", "0", "0", "1", "1", "1"],
         )
         await beta_client.recv_message_from_fake_derp_relay()
-        assert "bytes: [0, 0, 0, 1, 1, 1]" not in beta_client._process.get_stdout()
+        assert "bytes: [0, 0, 0, 1, 1, 1]" not in beta_client.get_stdout()

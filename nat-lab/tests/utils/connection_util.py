@@ -184,13 +184,13 @@ async def new_connection_manager_by_tag(
                 async with ConnectionTracker(
                     gw_connection,
                     conn_tracker_config,
-                ) as conn_tracker:
+                ).run() as conn_tracker:
                     yield (connection, gw_connection, network_switcher, conn_tracker)
         else:
             async with ConnectionTracker(
                 connection,
                 conn_tracker_config,
-            ) as conn_tracker:
+            ).run() as conn_tracker:
                 yield (connection, None, network_switcher, conn_tracker)
 
 

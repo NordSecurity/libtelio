@@ -67,18 +67,13 @@ async def test_dns_through_exit(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_alpha,
-                alpha,
+            telio.Client(connection_alpha, alpha, alpha_adapter_type,).run_meshnet(
                 api.get_meshmap(alpha.id),
-                alpha_adapter_type,
             )
         )
 
         client_exit = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_exit,
-                exit_node,
+            telio.Client(connection_exit, exit_node,).run_meshnet(
                 api.get_meshmap(exit_node.id),
             )
         )
