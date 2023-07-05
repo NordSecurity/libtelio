@@ -7,7 +7,6 @@ import config
 import pytest
 import telio
 import utils.testing as testing
-from utils.asyncio_util import run_async_context
 import re
 from utils.connection_tracker import (
     ConnectionLimits,
@@ -48,17 +47,13 @@ async def test_dns() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_alpha,
-                alpha,
+            telio.Client(connection_alpha, alpha,).run_meshnet(
                 api.get_meshmap(alpha.id),
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_beta,
-                beta,
+            telio.Client(connection_beta, beta,).run_meshnet(
                 api.get_meshmap(beta.id),
             )
         )
@@ -181,17 +176,13 @@ async def test_dns_port() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_alpha,
-                alpha,
+            telio.Client(connection_alpha, alpha,).run_meshnet(
                 api.get_meshmap(alpha.id),
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_beta,
-                beta,
+            telio.Client(connection_beta, beta,).run_meshnet(
                 api.get_meshmap(beta.id),
             )
         )
@@ -299,10 +290,10 @@ async def test_vpn_dns() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run(
+            telio.Client(
                 connection,
                 alpha,
-            )
+            ).run()
         )
 
         wg_server = config.WG_SERVER
@@ -381,9 +372,7 @@ async def test_dns_after_mesh_off() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_alpha,
-                alpha,
+            telio.Client(connection_alpha, alpha,).run_meshnet(
                 api.get_meshmap(alpha.id, derp_servers=[]),
             )
         )
@@ -479,18 +468,13 @@ async def test_dns_stability(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_alpha,
-                alpha,
+            telio.Client(connection_alpha, alpha, adapter_type,).run_meshnet(
                 api.get_meshmap(alpha.id),
-                adapter_type,
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_beta,
-                beta,
+            telio.Client(connection_beta, beta,).run_meshnet(
                 api.get_meshmap(beta.id),
             )
         )
@@ -594,9 +578,7 @@ async def test_set_meshmap_dns_update() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_alpha,
-                alpha,
+            telio.Client(connection_alpha, alpha,).run_meshnet(
                 api.get_meshmap(alpha.id, derp_servers=[]),
             )
         )
@@ -646,10 +628,10 @@ async def test_dns_update() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run(
+            telio.Client(
                 connection,
                 alpha,
-            )
+            ).run()
         )
 
         wg_server = config.WG_SERVER
@@ -709,15 +691,14 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
             )
         )
 
-        process = connection_alpha.create_process(
-            ["tcpdump", "-ni", "eth0", "udp", "and", "port", "53", "-l"]
+        process = await exit_stack.enter_async_context(
+            connection_alpha.create_process(
+                ["tcpdump", "-ni", "eth0", "udp", "and", "port", "53", "-l"]
+            ).run()
         )
-        await exit_stack.enter_async_context(run_async_context(process.execute()))
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_alpha,
-                alpha,
+            telio.Client(connection_alpha, alpha,).run_meshnet(
                 api.get_meshmap(alpha.id, derp_servers=[]),
             )
         )

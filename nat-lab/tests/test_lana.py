@@ -148,29 +148,32 @@ async def run_default_scenario(
     await clean_container(connection_gamma)
 
     client_alpha = await exit_stack.enter_async_context(
-        telio.run_meshnet(
+        telio.Client(
             connection_alpha,
             alpha,
-            api.get_meshmap(alpha.id),
             telio_features=build_telio_features("alpha_fingerprint"),
+        ).run_meshnet(
+            api.get_meshmap(alpha.id),
         )
     )
 
     client_beta = await exit_stack.enter_async_context(
-        telio.run_meshnet(
+        telio.Client(
             connection_beta,
             beta,
-            api.get_meshmap(beta.id),
             telio_features=build_telio_features("beta_fingerprint"),
+        ).run_meshnet(
+            api.get_meshmap(beta.id),
         )
     )
 
     client_gamma = await exit_stack.enter_async_context(
-        telio.run_meshnet(
+        telio.Client(
             connection_gamma,
             gamma,
-            api.get_meshmap(gamma.id),
             telio_features=build_telio_features("gamma_fingerprint"),
+        ).run_meshnet(
+            api.get_meshmap(gamma.id),
         )
     )
 
@@ -210,11 +213,11 @@ async def run_default_scenario(
     if gamma_has_vpn_connection:
         await connect_to_default_vpn(client_gamma, gamma_conn_tracker)
 
-    async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
+    async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
         await testing.wait_long(ping.wait_for_next_ping())
-    async with Ping(connection_beta, gamma.ip_addresses[0]) as ping:
+    async with Ping(connection_beta, gamma.ip_addresses[0]).run() as ping:
         await testing.wait_long(ping.wait_for_next_ping())
-    async with Ping(connection_gamma, alpha.ip_addresses[0]) as ping:
+    async with Ping(connection_gamma, alpha.ip_addresses[0]).run() as ping:
         await testing.wait_long(ping.wait_for_next_ping())
 
     await asyncio.sleep(DEFAULT_WAITING_TIME)
@@ -555,19 +558,21 @@ async def test_lana_with_disconnected_node() -> None:
         await clean_container(connection_beta)
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 connection_alpha,
                 alpha,
-                api.get_meshmap(alpha.id),
                 telio_features=build_telio_features("alpha_fingerprint"),
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
             )
         )
         client_beta = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 connection_beta,
                 beta,
-                api.get_meshmap(beta.id),
                 telio_features=build_telio_features("beta_fingerprint"),
+            ).run_meshnet(
+                api.get_meshmap(beta.id),
             )
         )
 
@@ -592,7 +597,7 @@ async def test_lana_with_disconnected_node() -> None:
             )
         )
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
+        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         await asyncio.sleep(DEFAULT_WAITING_TIME)

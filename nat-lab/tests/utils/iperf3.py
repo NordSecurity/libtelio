@@ -1,15 +1,12 @@
 from utils.connection import Connection, TargetOS
 from utils.process import Process
-from utils.asyncio_util import (
-    cancel_future,
-    run_async,
-)
-from typing import Optional, Coroutine
+from typing import AsyncIterator
 from utils import OutputNotifier
-from asyncio import Event, sleep
+from asyncio import Event
 from enum import Enum, auto
 import config
 import re
+from contextlib import asynccontextmanager
 
 
 class Protocol(Enum):
@@ -33,7 +30,6 @@ def get_iperf_binary(target_os: TargetOS) -> str:
 
 class IperfServer:
     _process: Process
-    _stop: Optional[Coroutine]
     _stdout: str
     _log_prefix: str
     _output_notifier: OutputNotifier
@@ -46,7 +42,6 @@ class IperfServer:
         verbose: bool = False,
         protocol: Protocol = Protocol.Udp,
     ) -> None:
-        self._stop = None
         self._log_prefix = log_prefix
         self._stdout = ""
         self._output_notifier = OutputNotifier()
@@ -71,36 +66,23 @@ class IperfServer:
         self._output_notifier.notify_output("Server listening on 5201", event)
         await event.wait()
 
-    async def stop(self) -> None:
-        if self._stop:
-            await self._stop
-            self._stop = None
+    async def on_stdout(self, stdout: str) -> None:
+        self._stdout += stdout
+        for line in stdout.splitlines():
+            self._output_notifier.handle_output(line)
+            if self._verbose:
+                print(f"[{self._log_prefix}] - Server: {line}")
 
-    async def __aenter__(self) -> "IperfServer":
-        async def on_stdout(stdout: str) -> None:
-            self._stdout += stdout
-            for line in stdout.splitlines():
-                self._output_notifier.handle_output(line)
-                if self._verbose:
-                    print(f"[{self._log_prefix}] - Server: {line}")
+    async def execute(self) -> None:
+        await self._process.execute(stdout_callback=self.on_stdout)
 
-        process_future = run_async(self._process.execute(stdout_callback=on_stdout))
-
-        async def stop() -> None:
-            await cancel_future(process_future)
-
-        self._stop = stop()
-
-        await sleep(1)
-
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        await self.stop()
+    @asynccontextmanager
+    async def run(self) -> AsyncIterator["IperfServer"]:
+        async with self._process.run(stdout_callback=self.on_stdout):
+            yield self
 
 
 class IperfClient:
-    _stop: Optional[Coroutine]
     _process: Process
     _stdout: str
     _log_prefix: str
@@ -122,7 +104,6 @@ class IperfClient:
         protocol: Protocol = Protocol.Udp,
         send: bool = True,
     ):
-        self._stop = None
         self._log_prefix = log_prefix
         self._stdout = ""
         self._output_notifier = OutputNotifier()
@@ -180,27 +161,17 @@ class IperfClient:
         assert match
         return int(match.group(1))
 
-    async def stop(self) -> None:
-        if self._stop:
-            await self._stop
-            self._stop = None
+    async def on_stdout(self, stdout: str) -> None:
+        self._output_notifier.handle_output(stdout)
+        self._stdout += stdout
+        for line in stdout.splitlines():
+            if self._verbose:
+                print(f"[{self._log_prefix}] - Client: {line}")
 
-    async def __aenter__(self) -> "IperfClient":
-        async def on_stdout(stdout: str) -> None:
-            self._output_notifier.handle_output(stdout)
-            self._stdout += stdout
-            for line in stdout.splitlines():
-                if self._verbose:
-                    print(f"[{self._log_prefix}] - Client: {line}")
+    async def execute(self) -> None:
+        await self._process.execute(stdout_callback=self.on_stdout)
 
-        process_future = run_async(self._process.execute(stdout_callback=on_stdout))
-
-        async def stop() -> None:
-            await cancel_future(process_future)
-
-        self._stop = stop()
-
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        await self.stop()
+    @asynccontextmanager
+    async def run(self) -> AsyncIterator["IperfClient"]:
+        async with self._process.run(stdout_callback=self.on_stdout):
+            yield self

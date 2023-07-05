@@ -1,7 +1,6 @@
 from utils import Ping, stun
 from contextlib import AsyncExitStack
 from mesh_api import API
-from config import DERP_PRIMARY, DERP_SECONDARY, DERP_TERTIARY, DERP_SERVERS
 from telio import AdapterType, PathType
 from telio_features import TelioFeatures, Direct
 import asyncio
@@ -50,12 +49,18 @@ async def test_network_switcher(
         connection,
         network_switcher,
     ):
-        assert await stun.get(connection, config.STUN_SERVER) == primary_ip
+        assert (
+            await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+            == primary_ip
+        )
 
         assert network_switcher
         await network_switcher.switch_to_secondary_network()
 
-        assert await stun.get(connection, config.STUN_SERVER) == secondary_ip
+        assert (
+            await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+            == secondary_ip
+        )
 
 
 @pytest.mark.asyncio
@@ -100,22 +105,18 @@ async def test_mesh_network_switch(
             new_connection_with_network_switcher(alpha_connection_tag)
         )
         assert network_switcher
+        connection_beta = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1)
+        )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_alpha,
-                alpha,
+            telio.Client(connection_alpha, alpha, adapter_type,).run_meshnet(
                 api.get_meshmap(alpha.id),
-                adapter_type,
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                await exit_stack.enter_async_context(
-                    new_connection_by_tag(ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1)
-                ),
-                beta,
+            telio.Client(connection_beta, beta).run_meshnet(
                 api.get_meshmap(beta.id),
             )
         )
@@ -123,13 +124,13 @@ async def test_mesh_network_switch(
         await testing.wait_long(client_alpha.handshake(beta.public_key))
         await testing.wait_long(client_beta.handshake(alpha.public_key))
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
+        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         await network_switcher.switch_to_secondary_network()
         await client_alpha.notify_network_change()
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
+        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
 
@@ -182,11 +183,11 @@ async def test_vpn_network_switch(
         assert network_switcher
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run(
+            telio.Client(
                 connection,
                 alpha,
                 adapter_type,
-            )
+            ).run()
         )
 
         wg_server = config.WG_SERVER
@@ -200,7 +201,7 @@ async def test_vpn_network_switch(
             client_alpha.handshake(wg_server["public_key"], PathType.Direct)
         )
 
-        async with Ping(connection, config.PHOTO_ALBUM_IP) as ping:
+        async with Ping(connection, config.PHOTO_ALBUM_IP).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
@@ -217,7 +218,7 @@ async def test_vpn_network_switch(
         if connection_tag == ConnectionTag.WINDOWS_VM:
             await asyncio.sleep(1.0)
 
-        async with Ping(connection, config.PHOTO_ALBUM_IP) as ping:
+        async with Ping(connection, config.PHOTO_ALBUM_IP).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
@@ -275,26 +276,28 @@ async def test_mesh_network_switch_direct(
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 alpha_connection,
                 alpha,
-                api.get_meshmap(alpha.id),
                 adapter_type,
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
             )
         )
 
         beta_client = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 beta_connection,
                 beta,
-                api.get_meshmap(beta.id),
                 telio.AdapterType.BoringTun,
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
+            ).run_meshnet(
+                api.get_meshmap(beta.id),
             )
         )
 
@@ -322,7 +325,7 @@ async def test_mesh_network_switch_direct(
             ),
         )
 
-        async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
+        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         await network_switcher.switch_to_secondary_network()
@@ -348,5 +351,5 @@ async def test_mesh_network_switch_direct(
             ),
         )
 
-        async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
+        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_lengthy(ping.wait_for_next_ping())

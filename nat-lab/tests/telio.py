@@ -257,6 +257,12 @@ class Runtime:
             return True
         return False
 
+    def get_started_tasks(self) -> List[str]:
+        return self._started_tasks
+
+    def get_stopped_tasks(self) -> List[str]:
+        return self._stopped_tasks
+
 
 class Events:
     _runtime: Runtime
@@ -321,46 +327,83 @@ class Events:
 class Client:
     def __init__(
         self,
-        router: Router,
+        connection: Connection,
         node: Node,
-        events: Events,
-        process: Process,
-        runtime: Runtime,
+        adapter_type: AdapterType = AdapterType.Default,
+        telio_features: TelioFeatures = TelioFeatures(),
     ) -> None:
-        self._router = router
-        self._node = node
-        self._events = events
-        self._process = process
-        self._runtime = runtime
+        self._router: Optional[Router] = None
+        self._events: Optional[Events] = None
+        self._runtime: Optional[Runtime] = None
+        self._process: Optional[Process] = None
         self._interface_configured = False
         self._message_idx = 0
-        self._adapter_type: Optional[AdapterType] = None
-
-    async def start(self, adapter_type: AdapterType) -> None:
+        self._node = node
+        self._connection = connection
         self._adapter_type = adapter_type
+        self._telio_features = telio_features
 
-        await self._write_command(
-            [
-                "dev",
-                "start",
-                adapter_type.value,
-                self._router.get_interface_name(),
-                self._node.private_key,
-            ],
+    @asynccontextmanager
+    async def run(self) -> AsyncIterator["Client"]:
+        async def on_stdout(stdout: str) -> None:
+            supress_print_list = [
+                "MESSAGE_DONE=",
+                "- no login.",
+                "- telio running.",
+                "- telio nodes",
+                "task stopped - ",
+                "task started - ",
+            ]
+            for line in stdout.splitlines():
+                if not any(string in line for string in supress_print_list):
+                    print(f"[{self._node.name}]: {line}")
+                if self._runtime:
+                    self._runtime.handle_output_line(line)
+
+        tcli_path = connection_util.get_libtelio_binary_path("tcli", self._connection)
+
+        self._runtime = Runtime()
+        self._events = Events(self._runtime)
+        self._router = new_router(self._connection)
+        self._process = self._connection.create_process(
+            [tcli_path, "--less-spam", f"-f {self._telio_features.to_json()}"]  # type: ignore
         )
 
-        self.future_event_request_loop = asyncio_util.run_async(
-            self._event_request_loop()
-        )
+        async with self._process.run(stdout_callback=on_stdout):
+            try:
+                await self._process.wait_stdin_ready()
+                await self._write_command(
+                    [
+                        "dev",
+                        "start",
+                        self._adapter_type.value,
+                        self._router.get_interface_name(),
+                        self._node.private_key,
+                    ],
+                )
+                async with asyncio_util.run_async_context(self._event_request_loop()):
+                    yield self
+            finally:
+                await testing.wait_normal(self.stop_device())
+                if self._router:
+                    await self._router.delete_vpn_route()
+                    await self._router.delete_exit_node_route()
+                    await self._router.delete_interface()
+                await self.save_logs(self._connection)
+
+    @asynccontextmanager
+    async def run_meshnet(self, meshmap: Dict[str, Any]) -> AsyncIterator["Client"]:
+        async with self.run():
+            await self.set_meshmap(meshmap)
+            yield self
 
     async def simple_start(self):
-        assert self._adapter_type is not None
         await self._write_command(
             [
                 "dev",
                 "start",
                 self._adapter_type.value,
-                self._router.get_interface_name(),
+                self.get_router().get_interface_name(),
                 self._node.private_key,
             ],
         )
@@ -370,27 +413,27 @@ class Client:
         public_key,
         path=PathType.Relay,
     ) -> None:
-        await self._events.wait_for_state(
+        await self.get_events().wait_for_state(
             public_key,
             State.Connected,
             path,
         )
 
     async def disconnect(self, public_key, path=PathType.Relay) -> None:
-        await self._events.wait_for_state(public_key, State.Disconnected, path)
+        await self.get_events().wait_for_state(public_key, State.Disconnected, path)
 
     async def connecting(self, public_key, path=PathType.Relay) -> None:
-        await self._events.wait_for_state(public_key, State.Connecting, path)
+        await self.get_events().wait_for_state(public_key, State.Connecting, path)
 
     async def wait_for_any_node_event(self, public_key) -> None:
         event = asyncio.Event()
-        self._runtime.notify_peer_state(public_key, event)
+        self.get_runtime().notify_peer_state(public_key, event)
         await event.wait()
 
     async def wait_for_any_derp_event(self) -> None:
         event = asyncio.Event()
         for derp in DERP_SERVERS:
-            self._runtime.notify_derp_state(str(derp["ipv4"]), event)
+            self.get_runtime().notify_derp_state(str(derp["ipv4"]), event)
         await event.wait()
 
     async def wait_for_derp_state(
@@ -398,20 +441,20 @@ class Client:
         server_ip: str,
         state: list[State],
     ) -> None:
-        await self._events.wait_for_derp_state(server_ip, state)
+        await self.get_events().wait_for_derp_state(server_ip, state)
 
     async def wait_for_any_derp_state(self, state: list[State]) -> None:
         futures = []
         for derp in DERP_SERVERS:
             futures.append(
-                self._events.wait_for_derp_state(
+                self.get_events().wait_for_derp_state(
                     str(derp["ipv4"]),
                     state,
                 )
             )
         _, pending = await asyncio.wait(futures, return_when=asyncio.FIRST_COMPLETED)
         for future in pending:
-            future.cancel()
+            await asyncio_util.cancel_future(future)
 
     async def set_meshmap(self, meshmap: Dict[str, Any]) -> None:
         made_changes = await self._configure_interface()
@@ -426,7 +469,7 @@ class Client:
         if "peers" in meshmap:
             peers = meshmap["peers"]
             for peer in peers:
-                self._runtime.allowed_pub_keys.add(peer["public_key"])
+                self.get_runtime().allowed_pub_keys.add(peer["public_key"])
 
         await self._write_command(["mesh", "config", json.dumps(meshmap)])
 
@@ -444,8 +487,8 @@ class Client:
 
     async def connect_to_vpn(self, ip, port, public_key) -> None:
         await self._configure_interface()
-        await self._router.create_vpn_route()
-        self._runtime.allowed_pub_keys.add(public_key)
+        await self.get_router().create_vpn_route()
+        self.get_runtime().allowed_pub_keys.add(public_key)
         await self._write_command(
             [
                 "dev",
@@ -458,11 +501,11 @@ class Client:
     async def disconnect_from_vpn(self, public_key, path=PathType.Relay) -> None:
         await self._write_command(["vpn", "off"])
         await self.disconnect(public_key, path)
-        await self._router.delete_vpn_route()
+        await self.get_router().delete_vpn_route()
 
     async def disconnect_from_exit_nodes(self) -> None:
         await self._write_command(["vpn", "off"])
-        await self._router.delete_vpn_route()
+        await self.get_router().delete_vpn_route()
 
     async def enable_magic_dns(self, forward_servers: List[str]) -> None:
         await self._write_command(
@@ -481,11 +524,11 @@ class Client:
 
     async def _configure_interface(self) -> bool:
         if not self._interface_configured:
-            await self._router.setup_interface(
+            await self.get_router().setup_interface(
                 self._node.ip_addresses[0],
             )
 
-            await self._router.create_meshnet_route()
+            await self.get_router().create_meshnet_route()
             self._interface_configured = True
             return True
 
@@ -493,24 +536,41 @@ class Client:
 
     async def connect_to_exit_node(self, public_key: str) -> None:
         await self._configure_interface()
-        await self._router.create_vpn_route()
+        await self.get_router().create_vpn_route()
         await self._write_command(["dev", "con", public_key])
 
     def get_router(self) -> Router:
+        assert self._router
         return self._router
+
+    def get_runtime(self) -> Runtime:
+        assert self._runtime
+        return self._runtime
+
+    def get_process(self) -> Process:
+        assert self._process
+        return self._process
+
+    def get_events(self) -> Events:
+        assert self._events
+        return self._events
+
+    def get_stdout(self) -> str:
+        assert self._process
+        return self._process.get_stdout()
 
     async def stop_device(self) -> None:
         await self._write_command(["dev", "stop"])
         self._interface_configured = False
-        assert Counter(self._runtime._started_tasks) == Counter(
-            self._runtime._stopped_tasks
+        assert Counter(self.get_runtime().get_started_tasks()) == Counter(
+            self.get_runtime().get_stopped_tasks()
         ), f"started tasks and stopped tasks differ!"
 
     def get_node_state(self, public_key: str) -> Optional[PeerInfo]:
-        return self._runtime.get_peer_info(public_key)
+        return self.get_runtime().get_peer_info(public_key)
 
     def get_derp_state(self, server_ip: str) -> Optional[DerpServer]:
-        return self._runtime.get_derp_info(server_ip)
+        return self.get_runtime().get_derp_info(server_ip)
 
     async def _event_request_loop(self) -> None:
         while True:
@@ -562,9 +622,9 @@ class Client:
             + " ".join([shlex.quote(arg) for arg in command])
             + "\n"
         )
-        await self._process.write_stdin(cmd)
+        await self.get_process().write_stdin(cmd)
         self._message_idx += 1
-        await self._events.message_done(idx)
+        await self.get_events().message_done(idx)
 
     def get_endpoint_address(self, public_key: str) -> str:
         node = self.get_node_state(public_key)
@@ -576,102 +636,38 @@ class Client:
 
     def wait_for_output(self, what: str) -> asyncio.Event:
         event = asyncio.Event()
-        self._runtime.get_output_notifier().notify_output(what, event)
+        self.get_runtime().get_output_notifier().notify_output(what, event)
         return event
 
+    @staticmethod
+    async def save_logs(connection: Connection) -> None:
+        if os.environ.get("NATLAB_SAVE_LOGS") is None:
+            return
 
-@asynccontextmanager
-async def run_meshnet(
-    connection: Connection,
-    node: Node,
-    meshmap: Dict[str, Any],
-    adapter_type=AdapterType.Default,
-    telio_features=TelioFeatures(),
-) -> AsyncIterator[Client]:
-    async with run(connection, node, adapter_type, telio_features) as client:
-        await client.set_meshmap(meshmap)
-        yield client
+        log_dir = "logs"
+        os.makedirs(log_dir, exist_ok=True)
 
-
-@asynccontextmanager
-async def run(
-    connection: Connection,
-    node: Node,
-    adapter_type=AdapterType.Default,
-    telio_features=TelioFeatures(),
-) -> AsyncIterator[Client]:
-    runtime = Runtime()
-
-    async def on_stdout(stdout: str) -> None:
-        supress_print_list = [
-            "MESSAGE_DONE=",
-            "- no login.",
-            "- telio running.",
-            "- telio nodes",
-            "task stopped - ",
-            "task started - ",
-        ]
-        for line in stdout.splitlines():
-            if not any(string in line for string in supress_print_list):
-                print(f"[{node.name}]: {line}")
-            runtime.handle_output_line(line)
-
-    tcli_path = connection_util.get_libtelio_binary_path("tcli", connection)
-    features = "-f " + telio_features.to_json()
-
-    process = connection.create_process(
-        [
-            tcli_path,
-            "--less-spam",
-            features,
-        ]
-    )
-    future_process = asyncio_util.run_async(process.execute(stdout_callback=on_stdout))
-    await process.wait_stdin_ready()
-
-    client = Client(new_router(connection), node, Events(runtime), process, runtime)
-    await client.start(adapter_type)
-
-    try:
-        yield client
-    finally:
-        await testing.wait_normal(client.stop_device())
-        await asyncio_util.cancel_future(client.future_event_request_loop)
-        await asyncio_util.cancel_future(future_process)
-        await client.get_router().delete_vpn_route()
-        await client.get_router().delete_exit_node_route()
-        await client.get_router().delete_interface()
-        await save_logs(connection)
-
-
-async def save_logs(connection: Connection) -> None:
-    if os.environ.get("NATLAB_SAVE_LOGS") is None:
-        return
-
-    log_dir = "logs"
-    os.makedirs(log_dir, exist_ok=True)
-
-    process = (
-        connection.create_process(["type", "tcli.log"])
-        if connection.target_os == TargetOS.Windows
-        else connection.create_process(["cat", "./tcli.log"])
-    )
-    await process.execute()
-    log_content = process.get_stdout()
-
-    if connection.target_os == TargetOS.Linux:
-        process = connection.create_process(["cat", "/etc/hostname"])
-        await process.execute()
-        container_id = process.get_stdout().strip()
-    else:
-        container_id = str(connection.target_os)
-
-    test_name = os.environ.get("PYTEST_CURRENT_TEST")
-    if test_name is not None:
-        test_name = "".join(
-            [x if x.isalnum() else "_" for x in test_name.split(" ")[0]]
+        process = (
+            connection.create_process(["type", "tcli.log"])
+            if connection.target_os == TargetOS.Windows
+            else connection.create_process(["cat", "./tcli.log"])
         )
-    with open(
-        os.path.join(log_dir, str(test_name) + "_" + container_id + ".log"), "w"
-    ) as f:
-        f.write(log_content)
+        await process.execute()
+        log_content = process.get_stdout()
+
+        if connection.target_os == TargetOS.Linux:
+            process = connection.create_process(["cat", "/etc/hostname"])
+            await process.execute()
+            container_id = process.get_stdout().strip()
+        else:
+            container_id = str(connection.target_os)
+
+        test_name = os.environ.get("PYTEST_CURRENT_TEST")
+        if test_name is not None:
+            test_name = "".join(
+                [x if x.isalnum() else "_" for x in test_name.split(" ")[0]]
+            )
+        with open(
+            os.path.join(log_dir, str(test_name) + "_" + container_id + ".log"), "w"
+        ) as f:
+            f.write(log_content)

@@ -74,18 +74,13 @@ async def test_mesh_reconnect(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                alpha_connection,
-                alpha,
+            telio.Client(alpha_connection, alpha, adapter_type,).run_meshnet(
                 api.get_meshmap(alpha.id),
-                adapter_type,
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                beta_connection,
-                beta,
+            telio.Client(beta_connection, beta,).run_meshnet(
                 api.get_meshmap(beta.id),
             )
         )
@@ -111,10 +106,10 @@ async def test_mesh_reconnect(
             )
         )
 
-        async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
+        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
-        async with Ping(beta_connection, alpha.ip_addresses[0]) as ping:
+        async with Ping(beta_connection, alpha.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         await client_alpha.stop_device()
@@ -134,10 +129,10 @@ async def test_mesh_reconnect(
             )
         )
 
-        async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
+        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
-        async with Ping(beta_connection, alpha.ip_addresses[0]) as ping:
+        async with Ping(beta_connection, alpha.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         assert alpha_conn_tracker.get_out_of_limits() is None

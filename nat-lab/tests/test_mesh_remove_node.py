@@ -85,26 +85,19 @@ async def test_mesh_remove_node(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_alpha,
-                alpha,
+            telio.Client(connection_alpha, alpha, adapter_type,).run_meshnet(
                 api.get_meshmap(alpha.id),
-                adapter_type,
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_beta,
-                beta,
+            telio.Client(connection_beta, beta,).run_meshnet(
                 api.get_meshmap(beta.id),
             )
         )
 
         client_gamma = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_gamma,
-                gamma,
+            telio.Client(connection_gamma, gamma,).run_meshnet(
                 api.get_meshmap(gamma.id),
             )
         )
@@ -136,11 +129,11 @@ async def test_mesh_remove_node(
             )
         )
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
+        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
-        async with Ping(connection_beta, gamma.ip_addresses[0]) as ping:
+        async with Ping(connection_beta, gamma.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
-        async with Ping(connection_gamma, alpha.ip_addresses[0]) as ping:
+        async with Ping(connection_gamma, alpha.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         api.remove(gamma.id)
@@ -148,13 +141,13 @@ async def test_mesh_remove_node(
         await client_alpha.set_meshmap(api.get_meshmap(alpha.id))
         await client_beta.set_meshmap(api.get_meshmap(beta.id))
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
+        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
         with pytest.raises(asyncio.TimeoutError):
-            async with Ping(connection_beta, gamma.ip_addresses[0]) as ping:
+            async with Ping(connection_beta, gamma.ip_addresses[0]).run() as ping:
                 await testing.wait_normal(ping.wait_for_next_ping())
         with pytest.raises(asyncio.TimeoutError):
-            async with Ping(connection_gamma, alpha.ip_addresses[0]) as ping:
+            async with Ping(connection_gamma, alpha.ip_addresses[0]).run() as ping:
                 await testing.wait_normal(ping.wait_for_next_ping())
 
         assert alpha_conn_tracker.get_out_of_limits() is None

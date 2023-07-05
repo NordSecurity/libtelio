@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional, Callable, Awaitable
+from typing import List, Optional, Callable, Awaitable, AsyncIterator
+from contextlib import asynccontextmanager
 
 StreamCallback = Callable[[str], Awaitable[None]]
 
@@ -27,6 +28,15 @@ class Process(ABC):
         stderr_callback: Optional[StreamCallback] = None,
     ) -> "Process":
         pass
+
+    @abstractmethod
+    @asynccontextmanager
+    async def run(
+        self,
+        stdout_callback: Optional[StreamCallback] = None,
+        stderr_callback: Optional[StreamCallback] = None,
+    ) -> AsyncIterator["Process"]:
+        yield self
 
     @abstractmethod
     async def wait_stdin_ready(self) -> None:

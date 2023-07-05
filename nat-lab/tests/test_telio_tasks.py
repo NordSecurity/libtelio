@@ -1,7 +1,7 @@
 from contextlib import AsyncExitStack
 from mesh_api import API
 from utils import ConnectionTag, new_connection_by_tag
-import telio
+from telio import Client
 from telio_features import TelioFeatures, Direct, Lana, Nurse, Qos, ExitDns
 import asyncio
 import pytest
@@ -16,10 +16,9 @@ async def test_telio_tasks_with_all_features() -> None:
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
         )
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            Client(
                 connection_alpha,
                 alpha,
-                api.get_meshmap(alpha.id),
                 telio_features=TelioFeatures(
                     macos_sideload=True,
                     exit_dns=ExitDns(auto_switch_dns_ips=True),
@@ -36,6 +35,8 @@ async def test_telio_tasks_with_all_features() -> None:
                         ),
                     ),
                 ),
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
             )
         )
         # le wait some seconds for everything to start

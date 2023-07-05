@@ -76,18 +76,13 @@ async def test_event_content_meshnet(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_alpha,
-                alpha,
+            telio.Client(connection_alpha, alpha, adapter_type,).run_meshnet(
                 api.get_meshmap(alpha.id),
-                adapter_type,
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_beta,
-                beta,
+            telio.Client(connection_beta, beta,).run_meshnet(
                 api.get_meshmap(beta.id),
             )
         )
@@ -113,9 +108,9 @@ async def test_event_content_meshnet(
             )
         )
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
+        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
-        async with Ping(connection_beta, alpha.ip_addresses[0]) as ping:
+        async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         assert client_alpha.get_node_state(beta.public_key) == PeerInfo(
@@ -153,7 +148,7 @@ async def test_event_content_meshnet(
         await client_alpha.set_meshmap(api.get_meshmap(alpha.id))
 
         with pytest.raises(asyncio.TimeoutError):
-            async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
+            async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
                 await testing.wait_normal(ping.wait_for_next_ping())
 
         await asyncio.sleep(1)
@@ -237,11 +232,11 @@ async def test_event_content_vpn_connection(
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run(
+            telio.Client(
                 connection,
                 alpha,
                 adapter_type,
-            )
+            ).run()
         )
 
         wg_server = config.WG_SERVER
@@ -256,7 +251,7 @@ async def test_event_content_vpn_connection(
             client_alpha.handshake(wg_server["public_key"], path=PathType.Direct)
         )
 
-        async with Ping(connection, config.PHOTO_ALBUM_IP) as ping:
+        async with Ping(connection, config.PHOTO_ALBUM_IP).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         assert client_alpha.get_node_state(str(wg_server["public_key"])) == PeerInfo(
@@ -367,18 +362,13 @@ async def test_event_content_exit_through_peer(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_alpha,
-                alpha,
+            telio.Client(connection_alpha, alpha, adapter_type,).run_meshnet(
                 api.get_meshmap(alpha.id),
-                adapter_type,
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_beta,
-                beta,
+            telio.Client(connection_beta, beta,).run_meshnet(
                 api.get_meshmap(beta.id),
             )
         )
@@ -404,7 +394,7 @@ async def test_event_content_exit_through_peer(
             )
         )
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
+        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         await asyncio.sleep(1)
@@ -532,19 +522,18 @@ async def test_event_content_meshnet_node_upgrade_direct(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 connection_alpha,
                 alpha,
-                api.get_meshmap(alpha.id),
                 adapter_type,
                 telio_features=TelioFeatures(direct=Direct(providers=["stun"])),
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_beta,
-                beta,
+            telio.Client(connection_beta, beta,).run_meshnet(
                 api.get_meshmap(beta.id),
             )
         )
@@ -570,9 +559,9 @@ async def test_event_content_meshnet_node_upgrade_direct(
             )
         )
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
+        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
-        async with Ping(connection_beta, alpha.ip_addresses[0]) as ping:
+        async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         await asyncio.sleep(1)
@@ -622,11 +611,12 @@ async def test_event_content_meshnet_node_upgrade_direct(
         del client_beta
 
         client_beta = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 connection_beta,
                 beta,
-                api.get_meshmap(beta.id),
                 telio_features=TelioFeatures(direct=Direct(providers=["stun"])),
+            ).run_meshnet(
+                api.get_meshmap(beta.id),
             )
         )
 
@@ -648,9 +638,9 @@ async def test_event_content_meshnet_node_upgrade_direct(
 
         await asyncio.sleep(1)
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
+        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
-        async with Ping(connection_beta, alpha.ip_addresses[0]) as ping:
+        async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         beta_node_state = client_alpha.get_node_state(beta.public_key)

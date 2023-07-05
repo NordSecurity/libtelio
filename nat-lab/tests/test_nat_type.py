@@ -1,4 +1,3 @@
-from utils.asyncio_util import run_async_context
 from utils import ConnectionTag, new_connection_by_tag, connection_util
 import asyncio
 import pytest
@@ -36,7 +35,7 @@ async def test_nat_type(connection_tag, nat_string) -> None:
             if "Nat Type:" in stdout:
                 event.set()
 
-        async with run_async_context(process.execute(stdout_callback=print_result)):
+        async with process.run(stdout_callback=print_result):
             await process.wait_stdin_ready()
             await process.write_stdin("nat address  10.0.1.1:3478\n")
             await testing.wait_lengthy(event.wait())
