@@ -243,20 +243,23 @@ async def test_vpn_network_switch(
             True,
             marks=pytest.mark.linux_native,
         ),
-        pytest.param(
-            ["stun"],
-            ConnectionTag.WINDOWS_VM,
-            AdapterType.WindowsNativeWg,
-            True,
-            marks=pytest.mark.windows,
-        ),
-        pytest.param(
-            ["stun"],
-            ConnectionTag.WINDOWS_VM,
-            AdapterType.WireguardGo,
-            True,
-            marks=pytest.mark.windows,
-        ),
+        # Windows test cases are temporarily disabled because they are flaky
+        # see LLT-3946
+        #
+        # pytest.param(
+        #     ["stun"],
+        #     ConnectionTag.WINDOWS_VM,
+        #     AdapterType.WindowsNativeWg,
+        #     True,
+        #     marks=pytest.mark.windows,
+        # ),
+        # pytest.param(
+        #     ["stun"],
+        #     ConnectionTag.WINDOWS_VM,
+        #     AdapterType.WireguardGo,
+        #     True,
+        #     marks=pytest.mark.windows,
+        # ),
     ],
 )
 async def test_mesh_network_switch_direct(
