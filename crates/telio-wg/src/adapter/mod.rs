@@ -16,8 +16,8 @@ mod wireguard_go;
 mod windows_native_wg;
 
 use async_trait::async_trait;
-#[cfg(test)]
-use mockall::automock;
+#[cfg(any(test, feature = "test-adapter"))]
+pub use mockall::automock;
 use std::{io, str::FromStr, sync::Arc};
 use telio_sockets::{Protect, SocketPool};
 use thiserror::Error as TError;
@@ -36,9 +36,10 @@ pub type Tun = std::os::unix::io::RawFd;
 #[cfg_attr(docsrs, doc(cfg(windows)))]
 pub type Tun = ();
 
-#[cfg_attr(test, automock)]
+/// Generic Adapter
+#[cfg_attr(any(test, feature = "test-adapter"), automock)]
 #[async_trait]
-pub(crate) trait Adapter: Send + Sync {
+pub trait Adapter: Send + Sync {
     /// Stop and destroy Driver
     async fn stop(&self);
 
@@ -180,7 +181,7 @@ impl FromStr for AdapterType {
     }
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "test-adapter")))]
 pub(crate) fn start(
     adapter: AdapterType,
     name: &str,

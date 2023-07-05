@@ -104,13 +104,19 @@ struct State {
 
 const POLL_MILLIS: u64 = 1000;
 
-#[cfg(all(not(test), windows))]
+#[cfg(all(not(any(test, feature = "test-adapter")), windows))]
 const DEFAULT_NAME: &str = "NordLynx";
 
-#[cfg(all(not(test), any(target_os = "macos", target_os = "ios")))]
+#[cfg(all(
+    not(any(test, feature = "test-adapter")),
+    any(target_os = "macos", target_os = "ios")
+))]
 const DEFAULT_NAME: &str = "utun10";
 
-#[cfg(all(not(test), any(target_os = "linux", target_os = "android")))]
+#[cfg(all(
+    not(any(test, feature = "test-adapter")),
+    any(target_os = "linux", target_os = "android")
+))]
 const DEFAULT_NAME: &str = "nlx0";
 
 impl DynamicWg {
@@ -212,7 +218,7 @@ impl DynamicWg {
         }
     }
 
-    #[cfg(not(test))]
+    #[cfg(not(any(test, feature = "test-adapter")))]
     fn start_adapter(cfg: Config) -> Result<Box<dyn Adapter>, Error> {
         adapter::start(
             cfg.adapter,
@@ -224,7 +230,7 @@ impl DynamicWg {
         )
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-adapter"))]
     fn start_adapter(_cfg: Config) -> Result<Box<dyn Adapter>, Error> {
         use std::sync::Mutex;
 
@@ -705,8 +711,9 @@ impl Runtime for State {
     }
 }
 
-#[cfg(test)]
-mod tests {
+#[cfg(any(test, feature = "test-adapter"))]
+#[allow(missing_docs)]
+pub mod tests {
     use std::{
         net::{Ipv4Addr, SocketAddrV4},
         sync::{Arc, Mutex as StdMutex},
@@ -718,7 +725,7 @@ mod tests {
     use telio_sockets::NativeProtector;
     use tokio::{runtime::Handle, sync::Mutex, task, time::sleep};
 
-    use telio_task::io::Chan;
+    use telio_task::io::{Chan, McChan};
 
     use super::*;
     use crate::adapter::{Error as AdapterError, MockAdapter};
@@ -728,13 +735,29 @@ mod tests {
             StdMutex::new(None);
     }
 
+    impl DynamicWg {
+        pub async fn set_listen_port(&self, port: u16) -> Result<(), Error> {
+            Ok(task_exec!(&self.task, async move |s| {
+                let mut ifc = s.interface.clone();
+                ifc.listen_port = Some(port);
+                s.update(&ifc, true).await;
+                Ok(())
+            })
+            .await?)
+        }
+    }
+
+    #[cfg(all(unix, test))]
     impl Config {
         fn new() -> std::io::Result<Self> {
             Ok(Self {
                 adapter: Default::default(),
                 name: Default::default(),
                 tun: Default::default(),
-                socket_pool: Arc::new(SocketPool::new(NativeProtector::new()?)),
+                socket_pool: Arc::new(SocketPool::new(NativeProtector::new(
+                    #[cfg(target_os = "macos")]
+                    false,
+                )?)),
                 firewall_process_inbound_callback: Default::default(),
                 firewall_process_outbound_callback: Default::default(),
             })
@@ -764,14 +787,40 @@ mod tests {
         }
     }
 
-    struct Env {
-        event: Rx<Box<Event>>,
-        adapter: Arc<Mutex<MockAdapter>>,
-        wg: DynamicWg,
+    #[async_trait]
+    pub trait AdapterExpectation {
+        async fn expect_send_uapi_cmd_generic_call(&self, times: usize);
     }
 
-    async fn setup() -> Env {
-        let chan = Chan::default();
+    #[async_trait]
+    impl AdapterExpectation for Arc<Mutex<MockAdapter>> {
+        async fn expect_send_uapi_cmd_generic_call(&self, times: usize) {
+            self.lock()
+                .await
+                .expect_send_uapi_cmd()
+                .times(times)
+                .returning(|_| {
+                    Ok(Response {
+                        errno: 0,
+                        interface: Some(Interface::default()),
+                    })
+                });
+        }
+    }
+
+    pub struct Env {
+        pub event: Rx<Box<Event>>,
+        pub analytics: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
+        pub adapter: Arc<Mutex<MockAdapter>>,
+        #[cfg(test)]
+        pub wg: DynamicWg,
+        #[cfg(not(test))]
+        pub wg: Arc<DynamicWg>,
+    }
+
+    pub async fn setup(#[cfg(all(not(test), feature = "test-adapter"))] cfg: Config) -> Env {
+        let events_ch = Chan::default();
+        let analytics_ch = Some(McChan::default().tx);
 
         let adapter = Arc::new(Mutex::new(MockAdapter::new()));
 
@@ -787,21 +836,28 @@ mod tests {
                     interface: Some(Interface::default()),
                 })
             });
+
         let wg = DynamicWg::start_with(
             Io {
-                events: chan.tx,
-                analytics_tx: None,
+                events: events_ch.tx.clone(),
+                analytics_tx: analytics_ch.clone(),
             },
             Box::new(adapter.clone()),
-            #[cfg(unix)]
+            #[cfg(all(unix, test))]
             Config::new().unwrap(),
+            #[cfg(all(unix, not(test)))]
+            cfg,
         );
         time::advance(Duration::from_millis(0)).await;
         adapter.lock().await.checkpoint();
 
         Env {
-            event: chan.rx,
+            event: events_ch.rx,
+            analytics: analytics_ch,
             adapter,
+            #[cfg(not(test))]
+            wg: Arc::new(wg),
+            #[cfg(test)]
             wg,
         }
     }
@@ -832,18 +888,7 @@ mod tests {
             private_key: Some(sks),
             ..Default::default()
         };
-
-        adapter
-            .lock()
-            .await
-            .expect_send_uapi_cmd()
-            .times(1)
-            .returning(|_| {
-                Ok(Response {
-                    errno: 0,
-                    interface: None,
-                })
-            });
+        adapter.expect_send_uapi_cmd_generic_call(1).await;
         wg.set_secret_key(sks).await.unwrap();
         adapter.lock().await.checkpoint();
         assert_eq!(ifa.clone(), wg.get_interface().await.unwrap());
@@ -860,17 +905,7 @@ mod tests {
             fwmark: 2,
             ..Default::default()
         };
-        adapter
-            .lock()
-            .await
-            .expect_send_uapi_cmd()
-            .times(1)
-            .returning(|_| {
-                Ok(Response {
-                    errno: 0,
-                    interface: None,
-                })
-            });
+        adapter.expect_send_uapi_cmd_generic_call(1).await;
         wg.set_fwmark(ifa.fwmark).await.unwrap();
         adapter.lock().await.checkpoint();
         assert_eq!(ifa.clone(), wg.get_interface().await.unwrap());
@@ -898,17 +933,7 @@ mod tests {
         };
 
         ifa.peers.insert(pkc, peer.clone());
-        adapter
-            .lock()
-            .await
-            .expect_send_uapi_cmd()
-            .times(1)
-            .returning(|_| {
-                Ok(Response {
-                    errno: 0,
-                    interface: None,
-                })
-            });
+        adapter.expect_send_uapi_cmd_generic_call(1).await;
         wg.add_peer(peer.clone()).await.unwrap();
         assert_eq!(
             Some(Box::new(Event {
@@ -943,17 +968,7 @@ mod tests {
         };
 
         ifa.peers.insert(pkc, peer.clone());
-        adapter
-            .lock()
-            .await
-            .expect_send_uapi_cmd()
-            .times(1)
-            .returning(|_| {
-                Ok(Response {
-                    errno: 0,
-                    interface: None,
-                })
-            });
+        adapter.expect_send_uapi_cmd_generic_call(1).await;
         wg.add_peer(peer.clone()).await.unwrap();
         assert_eq!(
             Some(Box::new(Event {
@@ -1011,17 +1026,7 @@ mod tests {
         };
 
         ifa.peers.insert(pkc, peer.clone());
-        adapter
-            .lock()
-            .await
-            .expect_send_uapi_cmd()
-            .times(1)
-            .returning(|_| {
-                Ok(Response {
-                    errno: 0,
-                    interface: None,
-                })
-            });
+        adapter.expect_send_uapi_cmd_generic_call(1).await;
         wg.add_peer(peer.clone()).await.unwrap();
         assert_eq!(
             Some(Box::new(Event {
@@ -1282,22 +1287,11 @@ mod tests {
 
         // Add a peer with different key, it shouldn't change the
         // time since last endpoint change
-        adapter
-            .lock()
-            .await
-            .expect_send_uapi_cmd()
-            .times(1)
-            .returning(|_| {
-                Ok(Response {
-                    errno: 0,
-                    interface: None,
-                })
-            });
-
         let peer = Peer {
             public_key: SecretKey::gen().public(),
             ..peer
         };
+        adapter.expect_send_uapi_cmd_generic_call(1).await;
         wg.add_peer(peer).await.unwrap();
         adapter.lock().await.checkpoint();
         assert_eq!(
@@ -1320,23 +1314,13 @@ mod tests {
 
         // Let's add a peer with the same pubkey and other endpoint
         // in order to check if it resets the last endpoint change time
-        adapter
-            .lock()
-            .await
-            .expect_send_uapi_cmd()
-            .times(1)
-            .returning(|_| {
-                Ok(Response {
-                    errno: 0,
-                    interface: None,
-                })
-            });
         let peer = Peer {
             public_key: pkc,
             endpoint: Some(([2, 2, 2, 2], 123).into()),
             persistent_keepalive_interval: Some(25),
             ..Default::default()
         };
+        adapter.expect_send_uapi_cmd_generic_call(1).await;
         wg.add_peer(peer).await.unwrap();
         adapter.lock().await.checkpoint();
         assert_eq!(
@@ -1350,17 +1334,7 @@ mod tests {
         // And in the end let's check if the time of the last
         // endpoint change is removed if the corresponding
         // endpoint is removed
-        adapter
-            .lock()
-            .await
-            .expect_send_uapi_cmd()
-            .times(1)
-            .returning(|_| {
-                Ok(Response {
-                    errno: 0,
-                    interface: None,
-                })
-            });
+        adapter.expect_send_uapi_cmd_generic_call(1).await;
         wg.del_peer(pkc).await.unwrap();
         adapter.lock().await.checkpoint();
         assert_eq!(wg.time_since_last_endpoint_change(pkc).await.unwrap(), None);

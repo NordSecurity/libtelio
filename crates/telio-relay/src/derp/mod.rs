@@ -757,7 +757,13 @@ mod tests {
 
         let test_derp = DerpRelay::start_with(
             derp_inner_ch,
-            Arc::new(SocketPool::new(NativeProtector::new().unwrap())),
+            Arc::new(SocketPool::new(
+                NativeProtector::new(
+                    #[cfg(target_os = "macos")]
+                    false,
+                )
+                .unwrap(),
+            )),
             devent_tx,
         );
         test_derp.configure(Some(config)).await;
@@ -805,7 +811,13 @@ mod tests {
 
         let test_derp = DerpRelay::start_with(
             derp_inner_ch,
-            Arc::new(SocketPool::new(NativeProtector::new().unwrap())),
+            Arc::new(SocketPool::new(
+                NativeProtector::new(
+                    #[cfg(target_os = "macos")]
+                    false,
+                )
+                .unwrap(),
+            )),
             devent_tx,
         );
         test_derp.configure(Some(config)).await;
@@ -842,7 +854,13 @@ mod tests {
 
         let test_derp = DerpRelay::start_with(
             derp_inner_ch,
-            Arc::new(SocketPool::new(NativeProtector::new().unwrap())),
+            Arc::new(SocketPool::new(
+                NativeProtector::new(
+                    #[cfg(target_os = "macos")]
+                    false,
+                )
+                .unwrap(),
+            )),
             devent_tx,
         );
         test_derp.configure(Some(config)).await;

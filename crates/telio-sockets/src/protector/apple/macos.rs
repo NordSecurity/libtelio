@@ -1,7 +1,6 @@
 use debug_panic::debug_panic;
 use parking_lot::Mutex;
 use parking_lot::RwLock;
-use std::result::Result;
 use std::{
     io,
     sync::{Arc, Weak},
@@ -48,7 +47,7 @@ pub struct NativeProtector {
 }
 
 impl NativeProtector {
-    pub fn new(macos_sideload: bool) -> Result<Self, Error> {
+    pub fn new(macos_sideload: bool) -> io::Result<Self> {
         if macos_sideload {
             let sockets = Arc::new(Mutex::new(Sockets::new()));
             Ok(Self {
@@ -323,7 +322,7 @@ mod tests {
 
         let socket_fd = socket2_socket.as_ref().unwrap().as_native_socket();
 
-        if let Err(e) = bind(get_primary_interface(15).unwrap() as u32, socket_fd) {
+        if let Err(e) = bind(get_primary_interface(0).unwrap() as u32, socket_fd) {
             panic!("Test failed with error : {}", e)
         }
     }

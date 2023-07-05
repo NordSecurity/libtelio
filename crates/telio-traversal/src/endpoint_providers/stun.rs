@@ -1332,7 +1332,13 @@ mod tests {
         stun_peers: Vec<StunPeerSockets>,
         wg: MockWg,
     ) -> Env {
-        let socket_pool = SocketPool::new(NativeProtector::new().unwrap());
+        let socket_pool = SocketPool::new(
+            NativeProtector::new(
+                #[cfg(target_os = "macos")]
+                false,
+            )
+            .unwrap(),
+        );
 
         let provider_ext_socket = socket_pool
             .new_external_udp((Ipv4Addr::LOCALHOST, 0), None)
