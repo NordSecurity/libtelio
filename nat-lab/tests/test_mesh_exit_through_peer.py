@@ -76,18 +76,13 @@ async def test_mesh_exit_through_peer(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_alpha,
-                alpha,
+            telio.Client(connection_alpha, alpha, adapter_type,).run_meshnet(
                 api.get_meshmap(alpha.id),
-                adapter_type,
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_beta,
-                beta,
+            telio.Client(connection_beta, beta,).run_meshnet(
                 api.get_meshmap(beta.id),
             )
         )
@@ -113,7 +108,7 @@ async def test_mesh_exit_through_peer(
             )
         )
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
+        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         await testing.wait_long(client_beta.get_router().create_exit_node_route())

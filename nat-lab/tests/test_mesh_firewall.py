@@ -1,5 +1,4 @@
 from utils import Ping, stun
-from utils.asyncio_util import run_async_context
 from contextlib import AsyncExitStack
 from mesh_api import API
 import asyncio
@@ -46,17 +45,13 @@ async def test_mesh_firewall_successful_passthrough() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_alpha,
-                alpha,
+            telio.Client(connection_alpha, alpha,).run_meshnet(
                 api.get_meshmap(alpha.id),
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_beta,
-                beta,
+            telio.Client(connection_beta, beta,).run_meshnet(
                 api.get_meshmap(beta.id),
             )
         )
@@ -82,15 +77,15 @@ async def test_mesh_firewall_successful_passthrough() -> None:
             )
         )
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
+        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             with pytest.raises(asyncio.TimeoutError):
                 await testing.wait_long(ping.wait_for_next_ping())
 
-        async with Ping(connection_beta, alpha.ip_addresses[0]) as ping:
+        async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         # this should still block
-        async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
+        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             with pytest.raises(asyncio.TimeoutError):
                 await testing.wait_long(ping.wait_for_next_ping())
 
@@ -127,17 +122,13 @@ async def test_mesh_firewall_reject_packet() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_alpha,
-                alpha,
+            telio.Client(connection_alpha, alpha,).run_meshnet(
                 api.get_meshmap(alpha.id),
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_beta,
-                beta,
+            telio.Client(connection_beta, beta,).run_meshnet(
                 api.get_meshmap(beta.id),
             )
         )
@@ -163,11 +154,11 @@ async def test_mesh_firewall_reject_packet() -> None:
             )
         )
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
+        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             with pytest.raises(asyncio.TimeoutError):
                 await testing.wait_long(ping.wait_for_next_ping())
 
-        async with Ping(connection_beta, alpha.ip_addresses[0]) as ping:
+        async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
             with pytest.raises(asyncio.TimeoutError):
                 await testing.wait_long(ping.wait_for_next_ping())
 
@@ -207,20 +198,22 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 connection_alpha,
                 alpha,
-                api.get_meshmap(alpha.id),
                 telio.AdapterType.BoringTun,
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
             )
         )
 
         client_exit_node = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 connection_exit_node,
                 exit_node,
-                api.get_meshmap(exit_node.id),
                 telio.AdapterType.BoringTun,
+            ).run_meshnet(
+                api.get_meshmap(exit_node.id),
             )
         )
 
@@ -246,10 +239,10 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
         )
 
         async def ping_should_work_both_ways():
-            async with Ping(connection_alpha, exit_node.ip_addresses[0]) as ping:
+            async with Ping(connection_alpha, exit_node.ip_addresses[0]).run() as ping:
                 await testing.wait_long(ping.wait_for_next_ping())
 
-            async with Ping(connection_exit_node, alpha.ip_addresses[0]) as ping:
+            async with Ping(connection_exit_node, alpha.ip_addresses[0]).run() as ping:
                 await testing.wait_long(ping.wait_for_next_ping())
 
         async def get_external_ips():
@@ -273,11 +266,11 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
 
         # Ping should fail both ways
 
-        async with Ping(connection_alpha, exit_node.ip_addresses[0]) as ping:
+        async with Ping(connection_alpha, exit_node.ip_addresses[0]).run() as ping:
             with pytest.raises(asyncio.TimeoutError):
                 await testing.wait_long(ping.wait_for_next_ping())
 
-        async with Ping(connection_exit_node, alpha.ip_addresses[0]) as ping:
+        async with Ping(connection_exit_node, alpha.ip_addresses[0]).run() as ping:
             with pytest.raises(asyncio.TimeoutError):
                 await testing.wait_long(ping.wait_for_next_ping())
 
@@ -337,10 +330,10 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
 
         # Ping should only work in one direction
 
-        async with Ping(connection_alpha, exit_node.ip_addresses[0]) as ping:
+        async with Ping(connection_alpha, exit_node.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
-        async with Ping(connection_exit_node, alpha.ip_addresses[0]) as ping:
+        async with Ping(connection_exit_node, alpha.ip_addresses[0]).run() as ping:
             with pytest.raises(asyncio.TimeoutError):
                 await testing.wait_long(ping.wait_for_next_ping())
 
@@ -417,17 +410,13 @@ async def test_mesh_firewall_file_share_port(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_alpha,
-                alpha,
+            telio.Client(connection_alpha, alpha,).run_meshnet(
                 api.get_meshmap(alpha.id),
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_beta,
-                beta,
+            telio.Client(connection_beta, beta,).run_meshnet(
                 api.get_meshmap(beta.id),
             )
         )
@@ -453,14 +442,14 @@ async def test_mesh_firewall_file_share_port(
             )
         )
 
-        async with Ping(connection_alpha, CLIENT_BETA_IP) as ping:
+        async with Ping(connection_alpha, CLIENT_BETA_IP).run() as ping:
             if allow_incoming_connections:
                 await testing.wait_long(ping.wait_for_next_ping())
             else:
                 with pytest.raises(asyncio.TimeoutError):
                     await testing.wait_long(ping.wait_for_next_ping())
 
-        async with Ping(connection_beta, CLIENT_ALPHA_IP) as ping:
+        async with Ping(connection_beta, CLIENT_ALPHA_IP).run() as ping:
             if allow_incoming_connections:
                 await testing.wait_long(ping.wait_for_next_ping())
             else:
@@ -472,28 +461,6 @@ async def test_mesh_firewall_file_share_port(
         async def on_stdout(stdout: str) -> None:
             for line in stdout.splitlines():
                 output_notifier.handle_output(line)
-
-        listening_process = connection_alpha.create_process(
-            [
-                "nc",
-                "-nluvv",
-                "-p",
-                str(PORT),
-                "-s",
-                CLIENT_ALPHA_IP,
-                CLIENT_BETA_IP,
-            ]
-        )
-        send_process = connection_beta.create_process(
-            [
-                "nc",
-                "-nuvvz",
-                "-s",
-                CLIENT_BETA_IP,
-                CLIENT_ALPHA_IP,
-                str(PORT),
-            ]
-        )
 
         listening_start_event = asyncio.Event()
         sender_start_event = asyncio.Event()
@@ -516,11 +483,17 @@ async def test_mesh_firewall_file_share_port(
 
         # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
         await exit_stack.enter_async_context(
-            run_async_context(
-                listening_process.execute(
-                    stdout_callback=on_stdout, stderr_callback=on_stdout
-                )
-            )
+            connection_alpha.create_process(
+                [
+                    "nc",
+                    "-nluvv",
+                    "-p",
+                    str(PORT),
+                    "-s",
+                    CLIENT_ALPHA_IP,
+                    CLIENT_BETA_IP,
+                ]
+            ).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
         )
 
         # wait for listening to start
@@ -528,11 +501,16 @@ async def test_mesh_firewall_file_share_port(
 
         # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
         await exit_stack.enter_async_context(
-            run_async_context(
-                send_process.execute(
-                    stdout_callback=on_stdout, stderr_callback=on_stdout
-                )
-            )
+            connection_beta.create_process(
+                [
+                    "nc",
+                    "-nuvvz",
+                    "-s",
+                    CLIENT_BETA_IP,
+                    CLIENT_ALPHA_IP,
+                    str(PORT),
+                ]
+            ).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
         )
 
         # wait for sender to start

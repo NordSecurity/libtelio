@@ -32,11 +32,11 @@ async def test_derp_client_message_forward(connection_tag: ConnectionTag) -> Non
         )
 
         # Test message relay with identical DERP servers
-        async with DerpTarget(connection_1, DERP_SERVER) as target:
-            async with DerpClient(connection_2, DERP_SERVER, TESTING_STRING):
+        async with DerpTarget(connection_1, DERP_SERVER).run() as target:
+            async with DerpClient(connection_2, DERP_SERVER, TESTING_STRING).run():
                 await testing.wait_lengthy(target.wait_message_received(TESTING_STRING))
 
         # Test message relay with different DERP servers
-        async with DerpTarget(connection_1, DERP_SERVER) as target:
-            async with DerpClient(connection_2, DERP_SERVER_2, TESTING_STRING):
+        async with DerpTarget(connection_1, DERP_SERVER).run() as target:
+            async with DerpClient(connection_2, DERP_SERVER_2, TESTING_STRING).run():
                 await testing.wait_lengthy(target.wait_message_received(TESTING_STRING))

@@ -57,18 +57,13 @@ async def test_fire_connecting_event(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_alpha,
-                alpha,
+            telio.Client(connection_alpha, alpha, adapter_type,).run_meshnet(
                 api.get_meshmap(alpha.id),
-                adapter_type,
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_beta,
-                beta,
+            telio.Client(connection_beta, beta,).run_meshnet(
                 api.get_meshmap(beta.id),
             )
         )
@@ -94,13 +89,13 @@ async def test_fire_connecting_event(
             )
         )
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
+        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         await client_beta.stop_device()
 
         with pytest.raises(asyncio.TimeoutError):
-            async with Ping(connection_alpha, beta.ip_addresses[0]) as ping:
+            async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
                 await testing.wait_long(ping.wait_for_next_ping())
 
         await asyncio.wait_for(client_alpha.connecting(beta.public_key), 180)

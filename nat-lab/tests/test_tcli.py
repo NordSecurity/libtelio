@@ -72,18 +72,13 @@ async def test_register_meshnet_client(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                alpha_connection,
-                alpha,
+            telio.Client(alpha_connection, alpha, adapter_type,).run_meshnet(
                 api.get_meshmap(alpha.id),
-                adapter_type,
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                beta_connection,
-                beta,
+            telio.Client(beta_connection, beta,).run_meshnet(
                 api.get_meshmap(beta.id),
             )
         )

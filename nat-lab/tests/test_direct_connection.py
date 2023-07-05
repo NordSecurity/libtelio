@@ -101,26 +101,28 @@ async def test_direct_working_paths(
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 alpha_connection,
                 alpha,
-                api.get_meshmap(alpha.id),
                 telio.AdapterType.BoringTun,
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
             )
         )
 
         beta_client = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 beta_connection,
                 beta,
-                api.get_meshmap(beta.id),
                 telio.AdapterType.BoringTun,
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
+            ).run_meshnet(
+                api.get_meshmap(beta.id),
             )
         )
 
@@ -152,7 +154,7 @@ async def test_direct_working_paths(
                 beta_client.get_router().break_tcp_conn_to_host(str(server["ipv4"]))
             )
 
-        async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
+        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
 
@@ -227,26 +229,28 @@ async def test_direct_failing_paths(
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 alpha_connection,
                 alpha,
-                api.get_meshmap(alpha.id),
                 telio.AdapterType.BoringTun,
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
             )
         )
 
         beta_client = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 beta_connection,
                 beta,
-                api.get_meshmap(beta.id),
                 telio.AdapterType.BoringTun,
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
+            ).run_meshnet(
+                api.get_meshmap(beta.id),
             )
         )
 
@@ -273,7 +277,7 @@ async def test_direct_failing_paths(
 
         # TODO: Add CMM messages are going through
         with pytest.raises(asyncio.TimeoutError):
-            async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
+            async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
                 await testing.wait_long(ping.wait_for_next_ping())
 
 
@@ -301,26 +305,28 @@ async def test_direct_short_connection_loss(
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 alpha_connection,
                 alpha,
-                api.get_meshmap(alpha.id),
                 telio.AdapterType.BoringTun,
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
             )
         )
 
         beta_client = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 beta_connection,
                 beta,
-                api.get_meshmap(beta.id),
                 telio.AdapterType.BoringTun,
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
+            ).run_meshnet(
+                api.get_meshmap(beta.id),
             )
         )
 
@@ -352,10 +358,10 @@ async def test_direct_short_connection_loss(
             )
             await asyncio.sleep(25)
             with pytest.raises(asyncio.TimeoutError):
-                async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
+                async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
                     await testing.wait_short(ping.wait_for_next_ping())
 
-        async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
+        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_lengthy(ping.wait_for_next_ping())
 
 
@@ -383,26 +389,28 @@ async def test_direct_connection_loss_for_infinity(
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 alpha_connection,
                 alpha,
-                api.get_meshmap(alpha.id),
                 telio.AdapterType.BoringTun,
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
             )
         )
 
         beta_client = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 beta_connection,
                 beta,
-                api.get_meshmap(beta.id),
                 telio.AdapterType.BoringTun,
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
+            ).run_meshnet(
+                api.get_meshmap(beta.id),
             )
         )
 
@@ -432,7 +440,7 @@ async def test_direct_connection_loss_for_infinity(
                 alpha_client.get_router().disable_path(reflexive_ip)
             )
             with pytest.raises(asyncio.TimeoutError):
-                async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
+                async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
                     await testing.wait_short(ping.wait_for_next_ping())
 
             await testing.wait_defined(
@@ -443,7 +451,7 @@ async def test_direct_connection_loss_for_infinity(
                 120,
             )
 
-            async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
+            async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
                 await testing.wait_lengthy(ping.wait_for_next_ping())
 
 
@@ -480,24 +488,26 @@ async def test_direct_connection_endpoint_gone(
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 alpha_connection,
                 alpha,
-                api.get_meshmap(alpha.id),
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
             )
         )
 
         beta_client = await exit_stack.enter_async_context(
-            telio.run_meshnet(
+            telio.Client(
                 beta_connection,
                 beta,
-                api.get_meshmap(beta.id),
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
+            ).run_meshnet(
+                api.get_meshmap(beta.id),
             )
         )
 
@@ -527,7 +537,7 @@ async def test_direct_connection_endpoint_gone(
                     60,
                 )
 
-                async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
+                async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
                     await testing.wait_defined(ping.wait_for_next_ping(), 60)
 
         await testing.wait_defined(
@@ -585,7 +595,7 @@ async def test_direct_connection_endpoint_gone(
                 60,
             )
 
-            async with Ping(alpha_connection, beta.ip_addresses[0]) as ping:
+            async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
                 await testing.wait_defined(ping.wait_for_next_ping(), 60)
 
         await testing.wait_defined(

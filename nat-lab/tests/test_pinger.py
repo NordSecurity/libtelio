@@ -60,9 +60,7 @@ async def test_ping_pong() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_alpha,
-                alpha,
+            telio.Client(connection_alpha, alpha,).run_meshnet(
                 api.get_meshmap(alpha.id, DERP_SERVERS),
             )
         )
@@ -99,9 +97,7 @@ async def test_send_malform_pinger_packet() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.run_meshnet(
-                connection_alpha,
-                alpha,
+            telio.Client(connection_alpha, alpha,).run_meshnet(
                 api.get_meshmap(alpha.id, DERP_SERVERS),
             )
         )

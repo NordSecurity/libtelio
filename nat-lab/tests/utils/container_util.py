@@ -2,7 +2,6 @@ from typing import AsyncIterator
 from contextlib import asynccontextmanager
 from aiodocker import Docker
 from utils.connection import Connection, DockerConnection
-from utils.process import ProcessExecError
 
 
 async def _prepare(connection: Connection) -> None:
@@ -13,25 +12,6 @@ async def _prepare(connection: Connection) -> None:
 
 
 async def _reset(connection: Connection) -> None:
-    try:
-        await connection.create_process(
-            [
-                "killall",
-                "tcli",
-                "derpcli",
-                "ping",
-                "nc",
-                "iperf3",
-                "tcpdump",
-                "nslookup",
-                "dig",
-                "upnpc",
-            ]
-        ).execute()
-    except ProcessExecError as exception:
-        if exception.stderr.find("no process found") < 0:
-            raise exception
-
     await connection.create_process(["conntrack", "-F"]).execute()
 
     for table in ["filter", "nat", "mangle", "raw", "security"]:
