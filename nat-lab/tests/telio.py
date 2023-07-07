@@ -31,9 +31,6 @@ class PathType(Enum):
     Relay = "relay"
     Direct = "direct"
 
-    # Any should always be last, because it is only introduced in nat-lab, not in libtelio itself
-    Any = "any"
-
 
 @dataclass_json
 @dataclass
@@ -49,6 +46,23 @@ class DerpServer(DataClassJsonMixin):
     weight: int
     use_plain_text: bool
     conn_state: State
+
+    def __hash__(self):
+        return hash(
+            (
+                self.region_code,
+                self.name,
+                self.hostname,
+                self.ipv4,
+                self.relay_port,
+                self.stun_port,
+                self.stun_plaintext_port,
+                self.public_key,
+                self.weight,
+                self.use_plain_text,
+                self.conn_state,
+            )
+        )
 
 
 # Equivalent of `libtelio/crates/telio-model/src/mesh.rs:Node`
@@ -104,8 +118,8 @@ class PeerInfo(DataClassJsonMixin):
                 self.state,
                 self.is_exit,
                 self.is_vpn,
-                self.ip_addresses,
-                self.allowed_ips,
+                tuple(self.ip_addresses),
+                tuple(self.allowed_ips),
                 self.endpoint,
                 self.hostname,
                 self.allow_incoming_connections,
@@ -153,9 +167,9 @@ class AdapterType(Enum):
 class Runtime:
     _output_notifier: OutputNotifier
     _peer_info: Dict[str, PeerInfo]
-    _peer_state_events: Dict[str, List[asyncio.Event]]
-    _derp_state_events: Dict[str, List[asyncio.Event]]
+    _peer_state_events: List[PeerInfo]
     _derp_state: Dict[str, DerpServer]
+    _derp_state_events: List[DerpServer]
     _started_tasks: List[str]
     _stopped_tasks: List[str]
     allowed_pub_keys: Set[str]
@@ -163,9 +177,9 @@ class Runtime:
     def __init__(self) -> None:
         self._output_notifier = OutputNotifier()
         self._peer_info = {}
-        self._peer_state_events = {}
-        self._derp_state_events = {}
+        self._peer_state_events = []
         self._derp_state = {}
+        self._derp_state_events = []
         self._started_tasks = []
         self._stopped_tasks = []
         self.allowed_pub_keys = set()
@@ -194,31 +208,72 @@ class Runtime:
     def get_output_notifier(self) -> OutputNotifier:
         return self._output_notifier
 
-    def notify_peer_state(self, public_key: str, event: asyncio.Event) -> None:
-        if public_key not in self._peer_state_events:
-            self._peer_state_events[public_key] = [event]
-        else:
-            self._peer_state_events[public_key].append(event)
+    async def notify_peer_state(
+        self,
+        public_key: str,
+        states: List[State],
+        paths: List[PathType],
+        new_event_explicitly: bool = False,
+    ) -> None:
+        def _get_events() -> Set[PeerInfo]:
+            return {
+                event
+                for event in self._peer_state_events
+                if event.public_key == public_key
+                and event.state in states
+                and event.path in paths
+            }
+
+        old_events = _get_events()
+        while True:
+            peer = self.get_peer_info(public_key)
+            events = _get_events()
+            if (
+                not new_event_explicitly
+                and (
+                    (peer and peer.path in paths and peer.state in states)
+                    or any(events)
+                )
+            ) or (new_event_explicitly and set(events) - set(old_events)):
+                self._peer_state_events = list(set(self._peer_state_events) - events)
+                return
+            await asyncio.sleep(0.01)
 
     def get_peer_info(self, public_key: str) -> Optional[PeerInfo]:
         return self._peer_info.get(public_key)
 
-    def notify_derp_state(self, server_ip: str, event: asyncio.Event) -> None:
-        if server_ip not in self._derp_state_events:
-            self._derp_state_events[server_ip] = [event]
-        else:
-            self._derp_state_events[server_ip].append(event)
+    async def notify_derp_state(
+        self, server_ip: str, states: List[State], new_event_explicitly: bool = False
+    ) -> None:
+        def _get_events() -> Set[DerpServer]:
+            return {
+                event
+                for event in self._derp_state_events
+                if event.ipv4 == server_ip and (event.conn_state in states)
+            }
+
+        old_events = _get_events()
+        while True:
+            derp = self.get_derp_info(server_ip)
+            events = _get_events()
+            if (
+                not new_event_explicitly
+                and (
+                    (derp and (derp.ipv4 == server_ip and derp.conn_state in states))
+                    or any(events)
+                )
+            ) or (new_event_explicitly and set(events) - set(old_events)):
+                self._derp_state_events = list(set(self._derp_state_events) - events)
+                return
+            await asyncio.sleep(0.01)
 
     def get_derp_info(self, server_ip: str) -> Optional[DerpServer]:
         return self._derp_state.get(server_ip)
 
     def _set_peer(self, peer: PeerInfo) -> None:
-        self._peer_info[peer.public_key] = peer
         assert peer.public_key in self.allowed_pub_keys
-        events = self._peer_state_events.pop(peer.public_key, None)
-        if events:
-            for event in events:
-                event.set()
+        self._peer_info[peer.public_key] = peer
+        self._peer_state_events.append(peer)
 
     def _handle_node_event(self, line) -> bool:
         if not line.startswith("event node: "):
@@ -237,10 +292,7 @@ class Runtime:
 
     def _set_derp(self, derp: DerpServer) -> None:
         self._derp_state[derp.ipv4] = derp
-        events = self._derp_state_events.pop(derp.ipv4, None)
-        if events:
-            for event in events:
-                event.set()
+        self._derp_state_events.append(derp)
 
     def _handle_derp_event(self, line) -> bool:
         if not line.startswith("event relay: "):
@@ -280,48 +332,29 @@ class Events:
         )
         await event.wait()
 
-    async def wait_for_state(
+    async def wait_for_peer_state(
         self,
         public_key: str,
-        state: State,
-        path: PathType = PathType.Relay,
+        state: List[State],
+        path: List[PathType],
     ) -> None:
-        peer_info = self._runtime.get_peer_info(public_key)
-        if (
-            peer_info
-            and peer_info.state == state
-            and (peer_info.path == path or path == PathType.Any)
-        ):
-            return
+        await self._runtime.notify_peer_state(public_key, state, path, False)
 
-        while True:
-            event = asyncio.Event()
-            self._runtime.notify_peer_state(public_key, event)
-            await event.wait()
-            peer_info = self._runtime.get_peer_info(public_key)
-            if (
-                peer_info
-                and peer_info.state == state
-                and (peer_info.path == path or path == PathType.Any)
-            ):
-                return
-
-    async def wait_for_derp_state(
+    async def wait_for_new_peer_state(
         self,
-        server_ip: str,
-        state: list[State],
+        public_key: str,
+        state: List[State],
+        path: List[PathType],
     ) -> None:
-        derp_info = self._runtime.get_derp_info(server_ip)
-        if derp_info and derp_info.conn_state in state:
-            return
+        await self._runtime.notify_peer_state(public_key, state, path, True)
 
-        while True:
-            event = asyncio.Event()
-            self._runtime.notify_derp_state(server_ip, event)
-            await event.wait()
-            derp_info = self._runtime.get_derp_info(server_ip)
-            if derp_info and derp_info.conn_state in state:
-                return
+    async def wait_for_derp_state(self, server_ip: str, states: List[State]) -> None:
+        await self._runtime.notify_derp_state(server_ip, states, False)
+
+    async def wait_for_new_derp_state(
+        self, server_ip: str, states: List[State]
+    ) -> None:
+        await self._runtime.notify_derp_state(server_ip, states, True)
 
 
 class Client:
@@ -414,53 +447,67 @@ class Client:
             ],
         )
 
-    async def handshake(
-        self,
-        public_key,
-        path=PathType.Relay,
-    ) -> None:
-        await self.get_events().wait_for_state(
-            public_key,
-            State.Connected,
-            path,
+    async def handshake(self, public_key, path=PathType.Relay) -> None:
+        await self.get_events().wait_for_peer_state(
+            public_key, [State.Connected], [path]
         )
 
     async def disconnect(self, public_key, path=PathType.Relay) -> None:
-        await self.get_events().wait_for_state(public_key, State.Disconnected, path)
+        await self.get_events().wait_for_peer_state(
+            public_key, [State.Disconnected], [path]
+        )
 
     async def connecting(self, public_key, path=PathType.Relay) -> None:
-        await self.get_events().wait_for_state(public_key, State.Connecting, path)
+        await self.get_events().wait_for_peer_state(
+            public_key, [State.Connecting], [path]
+        )
 
-    async def wait_for_any_node_event(self, public_key) -> None:
-        event = asyncio.Event()
-        self.get_runtime().notify_peer_state(public_key, event)
-        await event.wait()
-
-    async def wait_for_any_derp_event(self) -> None:
-        event = asyncio.Event()
-        for derp in DERP_SERVERS:
-            self.get_runtime().notify_derp_state(str(derp["ipv4"]), event)
-        await event.wait()
+    async def wait_for_any_new_node_event(self, public_key) -> None:
+        await self.get_events().wait_for_new_peer_state(
+            public_key,
+            [State.Connected, State.Disconnected, State.Connecting],
+            [PathType.Relay, PathType.Direct],
+        )
 
     async def wait_for_derp_state(
         self,
         server_ip: str,
-        state: list[State],
+        state: List[State],
     ) -> None:
         await self.get_events().wait_for_derp_state(server_ip, state)
 
-    async def wait_for_any_derp_state(self, state: list[State]) -> None:
-        futures = []
-        for derp in DERP_SERVERS:
-            futures.append(
-                self.get_events().wait_for_derp_state(
+    async def wait_for_new_derp_state(
+        self,
+        server_ip: str,
+        state: List[State],
+    ) -> None:
+        await self.get_events().wait_for_new_derp_state(server_ip, state)
+
+    async def wait_for_any_new_derp_state(self) -> None:
+        async with asyncio_util.run_async_contexts(
+            [
+                self.wait_for_new_derp_state(
                     str(derp["ipv4"]),
-                    state,
+                    [State.Connected, State.Disconnected, State.Connecting],
                 )
-            )
-        _, pending = await asyncio.wait(futures, return_when=asyncio.FIRST_COMPLETED)
-        for future in pending:
-            await asyncio_util.cancel_future(future)
+                for derp in DERP_SERVERS
+            ]
+        ) as futures:
+            while not any([fut for fut in futures if fut.done()]):
+                await asyncio.sleep(0.001)
+
+    async def wait_for_any_derp_state(self, states: List[State]) -> None:
+        async with asyncio_util.run_async_contexts(
+            [
+                self.wait_for_derp_state(
+                    str(derp["ipv4"]),
+                    states,
+                )
+                for derp in DERP_SERVERS
+            ]
+        ) as futures:
+            while not any([fut for fut in futures if fut.done()]):
+                await asyncio.sleep(0.001)
 
     async def set_meshmap(self, meshmap: Dict[str, Any]) -> None:
         made_changes = await self._configure_interface()

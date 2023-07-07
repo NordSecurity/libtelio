@@ -307,7 +307,7 @@ async def test_vpn_dns() -> None:
         await testing.wait_long(conn_tracker.wait_for_event("vpn_1"))
 
         await testing.wait_lengthy(
-            client_alpha.handshake(wg_server["public_key"], path=PathType.Any)
+            client_alpha.handshake(wg_server["public_key"], path=PathType.Direct)
         )
 
         # After we connect to the VPN, enable magic DNS
