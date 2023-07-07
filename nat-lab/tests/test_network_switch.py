@@ -337,6 +337,16 @@ async def test_mesh_network_switch_direct(
 
         await testing.wait_lengthy(
             alpha_client.wait_for_any_derp_state(
+                [telio.State.Disconnected],
+            ),
+        )
+        await testing.wait_lengthy(
+            alpha_client.wait_for_any_derp_state(
+                [telio.State.Connecting],
+            ),
+        )
+        await testing.wait_lengthy(
+            alpha_client.wait_for_any_derp_state(
                 [telio.State.Connected],
             ),
         )

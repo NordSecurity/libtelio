@@ -106,10 +106,10 @@ async def test_node_state_flickering(
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_defined(
                 asyncio.gather(
-                    client_alpha.wait_for_any_node_event(beta.public_key),
-                    client_alpha.wait_for_any_derp_event(),
-                    client_beta.wait_for_any_node_event(alpha.public_key),
-                    client_beta.wait_for_any_derp_event(),
+                    client_alpha.wait_for_any_new_node_event(beta.public_key),
+                    client_alpha.wait_for_any_new_derp_state(),
+                    client_beta.wait_for_any_new_node_event(alpha.public_key),
+                    client_beta.wait_for_any_new_derp_state(),
                 ),
                 3 * 60,
             )
