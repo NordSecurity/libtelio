@@ -201,8 +201,8 @@ class ConnectivityMatrixValidator:
 
 
 class FingerprintValidator:
-    def __init__(self, exists=True):
-        self._validator = StringValidator(exists=exists)
+    def __init__(self, exists=True, equals=""):
+        self._validator = StringValidator(exists=exists, equals=equals)
 
     def validate(self, event):
         return self._validator.validate(event.fp)
@@ -316,8 +316,8 @@ class EventValidator:
         )
         return self
 
-    def add_fingerprint_validator(self, exists=True):
-        self._validators.append(FingerprintValidator(exists=exists))
+    def add_fingerprint_validator(self, exists=True, equals=""):
+        self._validators.append(FingerprintValidator(exists=exists, equals=equals))
         return self
 
     def add_members_validator(
@@ -361,13 +361,13 @@ class EventValidator:
 
 
 def basic_validator(
-    node_fingerprint: str = "", heartbeat_interval: int = 3600
+    node_fingerprint: str = "", heartbeat_interval: int = 3600, meshnet_id: str = ""
 ) -> EventValidator:
     event_validator = (
         EventValidator()
         .add_name_validator("heartbeat")
         .add_category_validator("service_quality")
-        .add_fingerprint_validator(exists=True)
+        .add_fingerprint_validator(exists=True, equals=meshnet_id)
         .add_heartbeat_interval_validator(value=heartbeat_interval, equals=True)
         .add_connection_duration_validator(exists=True)
         .add_received_data_validator(exists=True)
