@@ -6,6 +6,7 @@ from utils import (
     ConnectionTag,
     container_id,
     new_connection_with_conn_tracker,
+    new_connection_by_tag,
 )
 from telio import PathType, Client
 from telio_features import TelioFeatures, Nurse, Lana, Qos
@@ -266,8 +267,11 @@ async def test_lana_with_same_meshnet() -> None:
         assert beta_events
         assert gamma_events
 
+        # Alpha has smallest public key when sorted lexicographically
+        expected_meshnet_id = alpha_events[0].fp
+
         alpha_validator = (
-            basic_validator()
+            basic_validator(meshnet_id=expected_meshnet_id)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
                 exists=True,
@@ -283,7 +287,7 @@ async def test_lana_with_same_meshnet() -> None:
         assert alpha_validator.validate(alpha_events[0])
 
         beta_validator = (
-            basic_validator()
+            basic_validator(meshnet_id=expected_meshnet_id)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
                 exists=True,
@@ -298,7 +302,7 @@ async def test_lana_with_same_meshnet() -> None:
         assert beta_validator.validate(beta_events[0])
 
         gamma_validator = (
-            basic_validator()
+            basic_validator(meshnet_id=expected_meshnet_id)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
                 exists=True,
@@ -311,10 +315,6 @@ async def test_lana_with_same_meshnet() -> None:
             )
         )
         assert gamma_validator.validate(gamma_events[0])
-
-        # Validate all nodes have the same meshnet id
-        assert alpha_events[0].fp == beta_events[0].fp
-        assert beta_events[0].fp == gamma_events[0].fp
 
 
 @pytest.mark.moose
@@ -472,8 +472,11 @@ async def test_lana_with_vpn_connections() -> None:
         assert beta_events
         assert gamma_events
 
+        # Alpha has smallest public key when sorted lexicographically
+        expected_meshnet_id = alpha_events[0].fp
+
         alpha_validator = (
-            basic_validator()
+            basic_validator(meshnet_id=expected_meshnet_id)
             .add_external_links_validator(
                 exists=True,
                 contains=["vpn"],
@@ -494,7 +497,7 @@ async def test_lana_with_vpn_connections() -> None:
         assert alpha_validator.validate(alpha_events[0])
 
         beta_validator = (
-            basic_validator()
+            basic_validator(meshnet_id=expected_meshnet_id)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
                 exists=True,
@@ -509,7 +512,7 @@ async def test_lana_with_vpn_connections() -> None:
         assert beta_validator.validate(beta_events[0])
 
         gamma_validator = (
-            basic_validator()
+            basic_validator(meshnet_id=expected_meshnet_id)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
                 exists=True,
@@ -522,10 +525,6 @@ async def test_lana_with_vpn_connections() -> None:
             )
         )
         assert gamma_validator.validate(gamma_events[0])
-
-        # Validate all nodes have the same meshnet id
-        assert alpha_events[0].fp == beta_events[0].fp
-        assert beta_events[0].fp == gamma_events[0].fp
 
 
 @pytest.mark.moose
@@ -671,3 +670,151 @@ async def test_lana_with_disconnected_node() -> None:
         assert alpha_events[0].fp == alpha_events[1].fp == beta_events[0].fp
         assert alpha_conn_tracker.get_out_of_limits() is None
         assert beta_conn_tracker.get_out_of_limits() is None
+
+
+@pytest.mark.moose
+@pytest.mark.asyncio
+async def test_lana_with_second_node_joining_later_meshnet_id_can_change() -> None:
+    async with AsyncExitStack() as exit_stack:
+        api = API()
+        beta = api.default_config_beta_node(True)
+        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                ConnectionTag.DOCKER_CONE_CLIENT_2,
+                generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    derp_1_limits=ConnectionLimits(1, None),
+                ),
+            )
+        )
+        await clean_container(connection_beta)
+
+        client_beta = await exit_stack.enter_async_context(
+            telio.Client(
+                connection_beta,
+                beta,
+                telio_features=build_telio_features("beta_fingerprint"),
+            ).run_meshnet(
+                api.get_meshmap(beta.id),
+            )
+        )
+
+        await client_beta.trigger_event_collection()
+        beta_events = await wait_for_event_dump(
+            ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=1
+        )
+        assert beta_events
+        initial_beta_meshnet_id = beta_events[0].fp
+
+        alpha = api.default_config_alpha_node(True)
+        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
+        )
+        await clean_container(connection_alpha)
+
+        alpha.set_peer_firewall_settings(beta.id, allow_incoming_connections=True)
+        client_alpha = await exit_stack.enter_async_context(
+            telio.Client(
+                connection_alpha,
+                alpha,
+                telio_features=build_telio_features("alpha_fingerprint"),
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
+            )
+        )
+
+        beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
+        await client_beta.set_meshmap(api.get_meshmap(beta.id))
+
+        await testing.wait_long(
+            asyncio.gather(
+                client_alpha.handshake(beta.public_key),
+                client_beta.handshake(alpha.public_key),
+            )
+        )
+
+        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
+            await testing.wait_long(ping.wait_for_next_ping())
+        async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
+            await testing.wait_long(ping.wait_for_next_ping())
+
+        await client_alpha.trigger_event_collection()
+        await client_beta.trigger_event_collection()
+
+        alpha_events = await wait_for_event_dump(
+            ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH, nr_events=1
+        )
+        beta_events = await wait_for_event_dump(
+            ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=2
+        )
+        assert alpha_events
+        assert beta_events
+
+        assert alpha_events[-1].fp != initial_beta_meshnet_id
+        assert alpha_events[-1].fp == beta_events[-1].fp
+
+
+@pytest.mark.moose
+@pytest.mark.asyncio
+async def test_lana_same_meshnet_id_is_reported_after_a_restart():
+    async with AsyncExitStack() as exit_stack:
+        api = API()
+        beta = api.default_config_beta_node(True)
+        connection_beta = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
+        )
+        await clean_container(connection_beta)
+
+        client_beta = await exit_stack.enter_async_context(
+            telio.Client(
+                connection_beta,
+                beta,
+                telio_features=build_telio_features("beta_fingerprint"),
+            ).run_meshnet(
+                api.get_meshmap(beta.id),
+            )
+        )
+
+        await client_beta.trigger_event_collection()
+        beta_events = await wait_for_event_dump(
+            ConnectionTag.DOCKER_CONE_CLIENT_2,
+            BETA_EVENTS_PATH,
+            nr_events=1,
+        )
+        assert beta_events
+        initial_beta_meshnet_id = beta_events[0].fp
+
+        await client_beta.quit()
+        api.remove(beta.id)
+
+        beta = api.default_config_beta_node(True)
+        connection_beta = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
+        )
+
+        client_beta = await exit_stack.enter_async_context(
+            telio.Client(
+                connection_beta,
+                beta,
+                telio_features=build_telio_features("beta_fingerprint"),
+            ).run_meshnet(
+                api.get_meshmap(beta.id),
+            )
+        )
+
+        await client_beta.trigger_event_collection()
+        beta_events = await wait_for_event_dump(
+            ConnectionTag.DOCKER_CONE_CLIENT_2,
+            BETA_EVENTS_PATH,
+            nr_events=1,
+        )
+        assert beta_events
+        second_beta_meshnet_id = beta_events[0].fp
+
+        assert initial_beta_meshnet_id == second_beta_meshnet_id

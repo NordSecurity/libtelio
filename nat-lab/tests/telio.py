@@ -342,6 +342,7 @@ class Client:
         self._connection = connection
         self._adapter_type = adapter_type
         self._telio_features = telio_features
+        self._quit = False
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator["Client"]:
@@ -384,7 +385,8 @@ class Client:
                 async with asyncio_util.run_async_context(self._event_request_loop()):
                     yield self
             finally:
-                await testing.wait_normal(self.stop_device())
+                if not self._quit:
+                    await testing.wait_normal(self.stop_device())
                 if self._router:
                     await self._router.delete_vpn_route()
                     await self._router.delete_exit_node_route()
@@ -396,6 +398,10 @@ class Client:
         async with self.run():
             await self.set_meshmap(meshmap)
             yield self
+
+    async def quit(self):
+        self._quit = True
+        await self._write_command(["quit"])
 
     async def simple_start(self):
         await self._write_command(
@@ -574,8 +580,13 @@ class Client:
 
     async def _event_request_loop(self) -> None:
         while True:
-            await self._write_command(["events"])
-            await asyncio.sleep(1)
+            try:
+                await self._write_command(["events"])
+                await asyncio.sleep(1)
+            except:
+                if self._quit:
+                    return
+                raise
 
     async def create_fake_derprelay_to_derp01(self, sk: str, allowed_pk: str) -> None:
         derp01_server = (
