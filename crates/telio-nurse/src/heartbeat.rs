@@ -911,7 +911,7 @@ mod tests {
             Ok(())
         }
 
-        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
         fn make_internal(&self, _socket: NativeSocket) -> std::io::Result<()> {
             Ok(())
         }
@@ -921,7 +921,7 @@ mod tests {
         #[cfg(target_os = "linux")]
         fn set_fwmark(&self, _fwmark: u32) {}
 
-        #[cfg(any(target_os = "macos", target_os = "ios", windows))]
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos", windows))]
         fn set_tunnel_interface(&self, _interface: u64) {}
     }
 

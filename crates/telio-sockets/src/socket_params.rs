@@ -7,10 +7,10 @@ use socket2::Socket;
 #[cfg(windows)]
 use {std::os::windows::io::AsRawSocket, windows::Win32::Networking::WinSock};
 
-#[cfg(any(target_os = "macos", target_os = "ios", doc))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos", doc))]
 use std::os::unix::io::AsRawFd;
 
-#[cfg(any(target_os = "macos", target_os = "ios", doc))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos", doc))]
 /// time after which tcp retransmissions will be stopped and the connection will be dropped
 const TCP_RXT_CONNDROPTIME: libc::c_int = 0x80;
 
@@ -39,7 +39,7 @@ impl TcpParams {
         socket.set_tcp_user_timeout(self.user_timeout)
     }
 
-    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
     fn set_tcp_timeout(&self, socket: &Socket) -> Result<(), Error> {
         // Setting TCP timeout (darwin)
         if let Some(user_timeout) = self.user_timeout {
@@ -110,7 +110,7 @@ impl TcpParams {
         let addr = socket.local_addr();
 
         // Setting linger=0 so tcp sockets would close immediately
-        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
         {
             if let Err(err) = socket.set_linger(Some(Duration::from_secs(0))) {
                 telio_log_warn!("Failed to set so_linger on tcp socket: {}", err);

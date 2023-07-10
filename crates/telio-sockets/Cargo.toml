@@ -19,12 +19,12 @@ telio-utils = { path = "../telio-utils" }
 
 boringtun = { git = "https://github.com/NordSecurity/boringtun.git", tag = "v1.1.1" }
 
-[target.'cfg(target_os = "ios")'.dependencies]
+[target.'cfg(any(target_os = "ios", target_os = "tvos"))'.dependencies]
 objc = "0.2.7"
 objc-foundation = "0.1.1"
 version-compare = "0.1"
 
-[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+[target.'cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))'.dependencies]
 system-configuration = "0.5.0"
 nix = "0.26.2"
 debug_panic = "0.2.1"

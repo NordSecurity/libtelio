@@ -109,7 +109,7 @@ const DEFAULT_NAME: &str = "NordLynx";
 
 #[cfg(all(
     not(any(test, feature = "test-adapter")),
-    any(target_os = "macos", target_os = "ios")
+    any(target_os = "macos", target_os = "ios", target_os = "tvos")
 ))]
 const DEFAULT_NAME: &str = "utun10";
 
@@ -148,7 +148,7 @@ impl DynamicWg {
     ///         Protector {}
     ///         impl Protector for Protector {
     ///         fn make_external(&self, socket: NativeSocket) -> io::Result<()>;
-    ///         #[cfg(any(target_os = "macos", target_os = "ios"))]
+    ///         #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
     ///         fn make_internal(&self, interface: i32) -> Result<(), std::io::Error>;
     ///         fn clean(&self, socket: NativeSocket);
     ///         #[cfg(target_os = "linux")]

@@ -9,7 +9,7 @@ pub type NativeSocket = RawFd;
 #[cfg(windows)]
 pub type NativeSocket = RawSocket;
 
-#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 use std::io;
 
 pub trait AsNativeSocket {
@@ -36,7 +36,7 @@ where
     }
 }
 
-#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 pub fn interface_index_from_name(name: &str) -> io::Result<u64> {
     use std::ffi::CString;
 
@@ -52,7 +52,7 @@ pub fn interface_index_from_name(name: &str) -> io::Result<u64> {
     }
 }
 
-#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 pub fn interface_index_from_tun(tun_fd: RawFd) -> io::Result<u64> {
     let index = unsafe {
         let mut name = [0 as libc::c_char; libc::IFNAMSIZ + 1];

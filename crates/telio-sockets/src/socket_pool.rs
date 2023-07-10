@@ -120,7 +120,7 @@ impl SocketPool {
         self.protect.set_fwmark(fwmark);
     }
 
-    #[cfg(any(target_os = "macos", target_os = "ios", windows))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos", windows))]
     pub fn set_tunnel_interface(&self, interface: u64) {
         self.protect.set_tunnel_interface(interface);
     }
@@ -202,7 +202,7 @@ impl SocketPool {
 
     /// binds socket to tunnel interface on mac and iOS
     pub fn make_internal(&self, _socket: NativeSocket) -> io::Result<()> {
-        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
         self.protect.make_internal(_socket)?;
         Ok(())
     }
@@ -249,7 +249,7 @@ mod tests {
             fn set_fwmark(&self, fwmark: u32);
             #[cfg(any(target_os = "macos", windows))]
             fn set_tunnel_interface(&self, interface: u64);
-            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
             fn make_internal(&self, interface: i32) -> Result<(), std::io::Error>;
         }
     }
