@@ -1,19 +1,22 @@
 //! Utils for binding socket's to tunnel interfaces
 
-#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 pub use darwin::set_should_bind;
 
-#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 pub(crate) use darwin::{bind_to_tun, set_tun};
 
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "tvos")))]
 pub use any::set_should_bind;
 
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "tvos")))]
 pub(crate) use any::{bind_to_tun, set_tun};
 
-#[cfg(any(target_os = "macos", target_os = "ios", doc))]
-#[cfg_attr(docsrs, doc(cfg(any(target_os = "macos", target_os = "ios"))))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos", doc))]
+#[cfg_attr(
+    docsrs,
+    doc(cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos")))
+)]
 mod darwin {
     use lazy_static::lazy_static;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -99,8 +102,11 @@ mod darwin {
     }
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
-#[cfg_attr(docsrs, doc(cfg(not(any(target_os = "macos", target_os = "ios")))))]
+#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "tvos")))]
+#[cfg_attr(
+    docsrs,
+    doc(cfg(not(any(target_os = "macos", target_os = "ios", target_os = "tvos"))))
+)]
 mod any {
     use std::io;
 

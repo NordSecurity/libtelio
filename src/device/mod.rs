@@ -26,7 +26,7 @@ use telio_traversal::{
     SessionKeeper, UpgradeRequestChangeEvent, UpgradeSync, WireGuardEndpointCandidateChangeEvent,
 };
 
-#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 use telio_sockets::native;
 
 use telio_nurse::{config::Config as NurseConfig, data::MeshConfigUpdateEvent, Nurse, NurseIo};
@@ -830,7 +830,7 @@ impl Runtime {
             let adapter_luid = wireguard_interface.get_adapter_luid().await?;
             socket_pool.set_tunnel_interface(adapter_luid);
         }
-        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
         set_tunnel_interface(&socket_pool, config);
 
         let requested_state = RequestedState {
@@ -1670,7 +1670,7 @@ impl TaskRuntime for Runtime {
     }
 }
 
-#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 fn set_tunnel_interface(socket_pool: &Arc<SocketPool>, config: &DeviceConfig) {
     let mut tunnel_if_index = None;
     if let Some(tun) = config.tun {

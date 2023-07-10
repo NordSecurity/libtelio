@@ -10,7 +10,7 @@ pub mod platform;
 #[path = "apple/macos.rs"]
 pub mod platform;
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "tvos"))]
 #[path = "apple/ios.rs"]
 pub mod platform;
 
@@ -29,7 +29,7 @@ pub type Protect = Arc<dyn Fn(NativeSocket) + Send + Sync + RefUnwindSafe + 'sta
 pub trait Protector: Send + Sync {
     fn make_external(&self, socket: NativeSocket) -> io::Result<()>;
 
-    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
     fn make_internal(&self, socket: NativeSocket) -> io::Result<()>;
 
     fn clean(&self, socket: NativeSocket);
@@ -37,7 +37,7 @@ pub trait Protector: Send + Sync {
     #[cfg(target_os = "linux")]
     fn set_fwmark(&self, fwmark: u32);
 
-    #[cfg(any(target_os = "macos", target_os = "ios", windows))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos", windows))]
     fn set_tunnel_interface(&self, interface: u64);
 }
 
@@ -47,7 +47,7 @@ impl Protector for Protect {
         Ok(())
     }
 
-    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
     fn make_internal(&self, _socket: NativeSocket) -> io::Result<()> {
         Ok(())
     }
@@ -57,6 +57,6 @@ impl Protector for Protect {
     #[cfg(target_os = "linux")]
     fn set_fwmark(&self, _fwmark: u32) {}
 
-    #[cfg(any(target_os = "macos", target_os = "ios", windows))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos", windows))]
     fn set_tunnel_interface(&self, _: u64) {}
 }

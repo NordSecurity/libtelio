@@ -2,6 +2,7 @@
 ### **Bruschetta**
 ---
 ### Changelog
+* LLT-3914: Add apple tvOS support
 
 <br>
 

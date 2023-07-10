@@ -33,7 +33,11 @@ impl BoringTun {
         let logger = Logger::root(StdLog.fuse(), o!());
         let config = DeviceConfig {
             n_threads: 4,
-            use_connected_socket: cfg!(not(any(target_os = "ios", target_os = "macos"))),
+            use_connected_socket: cfg!(not(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos"
+            ))),
             logger,
             #[cfg(target_os = "linux")]
             use_multi_queue: true,
