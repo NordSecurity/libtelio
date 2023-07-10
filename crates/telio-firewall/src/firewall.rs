@@ -536,8 +536,9 @@ fn check_valid(ip: &Ipv4Packet) -> bool {
     true
 }
 
-#[cfg(test)]
-mod tests {
+#[cfg(any(test, feature = "test_utils"))]
+#[allow(missing_docs, unused)]
+pub mod tests {
     use super::*;
     use pnet_packet::{
         icmp::{IcmpType, MutableIcmpPacket},
@@ -581,7 +582,7 @@ mod tests {
         [1; 32]
     }
 
-    fn make_udp(src: &str, dst: &str) -> Vec<u8> {
+    pub fn make_udp(src: &str, dst: &str) -> Vec<u8> {
         let msg: &str = "Some message";
         let (saddr, sport) = src.split_once(":").expect("UDP: Bad src address");
         let (daddr, dport) = dst.split_once(":").expect("UDP: Bad dst address");
@@ -611,7 +612,7 @@ mod tests {
         raw
     }
 
-    fn make_tcp(src: &str, dst: &str, flags: u16) -> Vec<u8> {
+    pub fn make_tcp(src: &str, dst: &str, flags: u16) -> Vec<u8> {
         let msg: &str = "Some message";
         let (saddr, sport) = src.split_once(":").expect("TCP: Bad src address");
         let (daddr, dport) = dst.split_once(":").expect("TCP: Bad dst address");
