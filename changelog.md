@@ -29,6 +29,7 @@
 * LLT-4306: Prevent infinite loop in STUN handler on socket error
 * LLT-3628: Enable IPv6 and add tests for it (unit and nat-lab).
 * LLT-4042: IPv6 firewall nat-lab tests.
+* LLT-3914: Add apple tvOS support
 
 <br>
 

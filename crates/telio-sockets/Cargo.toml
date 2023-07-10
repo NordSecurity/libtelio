@@ -23,12 +23,12 @@ telio-utils.workspace = true
 mockall.workspace = true
 rstest.workspace = true
 
-[target.'cfg(target_os = "ios")'.dependencies]
+[target.'cfg(any(target_os = "ios", target_os = "tvos"))'.dependencies]
 objc = "0.2.7"
 objc-foundation = "0.1.1"
 version-compare = "0.1"
 
-[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+[target.'cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))'.dependencies]
 debug_panic = "0.2.1"
 nix = "0.26.2"
 system-configuration = "0.5.0"
