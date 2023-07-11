@@ -1,0 +1,19 @@
+
+[patch.crates-io]
+cc = { git = 'https://github.com/nordsecurity/cc-rs.git', branch = 'add_apple_tvos_support' }
+tokio = { git = 'https://github.com/nordsecurity/tokio.git', branch = 'add_apple_tvos_support_1_32' }
+get_if_addrs = { git = 'https://github.com/nordsecurity/if-addrs.git', branch = 'add_apple_tvos_support_getifaddrs' }
+if-addrs = { git = 'https://github.com/nordsecurity/if-addrs.git', branch = 'add_apple_tvos_support_ifaddrs' }
+socket2 = { git = 'https://github.com/nordsecurity/socket2.git', branch = 'add_apple_tvos_support_0_4_9' }
+ring = { git = 'https://github.com/nordsecurity/ring.git', branch = 'add_apple_tvos_support_0_16_20' }
+parking_lot_core = { git = 'https://github.com/nordsecurity/parking_lot.git', branch = 'add_apple_tvos_support_0.9.8' }
+parking_lot_core_0_8_6 = { git = 'https://github.com/nordsecurity/parking_lot.git', package = 'parking_lot_core', branch = 'add_apple_tvos_support_0.8.6' }
+nix = { git = 'https://github.com/nordsecurity/nix.git', branch = 'add_apple_tvos_support_0_26_2' }
+block = { git = 'https://github.com/nordsecurity/rust-block.git', branch = 'add_apple_tvos_support' }
+objc = { git = 'https://github.com/nordsecurity/rust-objc.git', branch = 'add_apple_tvos_support' }
+system-configuration = { git = 'https://github.com/nordsecurity/system-configuration-rs.git', branch = 'add_apple_tvos_support' }
+system-configuration-sys = { git = 'https://github.com/nordsecurity/system-configuration-rs.git', branch = 'add_apple_tvos_support' }
+libc = { git = 'https://github.com/nordsecurity/libc.git', branch = 'add_apple_tvos_support' }
+
+[patch.'https://github.com/NordSecurity/boringtun.git']
+boringtun = { git = 'https://github.com/NordSecurity//boringtun.git', branch = 'add_apple_tvos_support' }
