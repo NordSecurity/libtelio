@@ -15,5 +15,5 @@ libtelio-build-pipeline:
 
   trigger:
     project: $LIBTELIO_BUILD_PROJECT_PATH
-    branch: v0.1.2
+    branch: LLT-3914_add_apple_tv_job
     strategy: depend
