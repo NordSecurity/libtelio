@@ -6,6 +6,24 @@ from utils import testing
 from utils.asyncio_util import run_async_contexts, run_async_context
 
 
+def create_derpserver_config(state: State) -> DerpServer:
+    return DerpServer(
+        region_code="test",
+        name="test",
+        hostname="test-01",
+        ipv4="1.1.1.1",
+        relay_port=1111,
+        stun_port=1111,
+        stun_plaintext_port=1111,
+        public_key="test",
+        weight=1,
+        use_plain_text=True,
+        conn_state=state,
+        # Only for compatibility with telio v3.6
+        used=False,
+    )
+
+
 class TestRuntime:
     @pytest.mark.asyncio
     async def test_wait_output(self) -> None:
@@ -96,23 +114,7 @@ class TestRuntime:
     @pytest.mark.asyncio
     async def test_set_derp_state(self) -> None:
         runtime = Runtime()
-
-        runtime.set_derp(
-            DerpServer(
-                region_code="test",
-                name="test",
-                hostname="test-01",
-                ipv4="1.1.1.1",
-                relay_port=1111,
-                stun_port=1111,
-                stun_plaintext_port=1111,
-                public_key="test",
-                weight=1,
-                use_plain_text=True,
-                conn_state=State.Connected,
-            )
-        )
-
+        runtime.set_derp(create_derpserver_config(State.Connected))
         await testing.wait_short(
             runtime.notify_derp_state("1.1.1.1", [State.Connected])
         )
@@ -120,7 +122,8 @@ class TestRuntime:
         # it should pass again
         await testing.wait_short(
             runtime.notify_derp_state(
-                "1.1.1.1", [State.Disconnected, State.Connecting, State.Connected]
+                "1.1.1.1",
+                [State.Disconnected, State.Connecting, State.Connected],
             )
         )
 
@@ -145,21 +148,7 @@ class TestRuntime:
         ) as future:
             # wait for futures to be started
             await asyncio.sleep(0)
-            runtime.set_derp(
-                DerpServer(
-                    region_code="test",
-                    name="test",
-                    hostname="test-01",
-                    ipv4="1.1.1.1",
-                    relay_port=1111,
-                    stun_port=1111,
-                    stun_plaintext_port=1111,
-                    public_key="test",
-                    weight=1,
-                    use_plain_text=True,
-                    conn_state=State.Connected,
-                )
-            )
+            runtime.set_derp(create_derpserver_config(State.Connected))
             await testing.wait_short(future)
 
         with pytest.raises(asyncio.TimeoutError):
@@ -172,8 +161,7 @@ class TestRuntime:
         runtime = Runtime()
 
         assert runtime.handle_output_line(
-            "event relay:"
-            ' {"region_code":"test","name":"test","hostname":"test","ipv4":"1.1.1.1","relay_port":1111,"stun_port":1111,"stun_plaintext_port":1111,"public_key":"test","weight":1,"use_plain_text":true,"conn_state":"connected"}'
+            "event relay: " + create_derpserver_config(State.Connected).to_json()
         )
 
         await testing.wait_short(
@@ -186,8 +174,7 @@ class TestRuntime:
         runtime.allowed_pub_keys = set(["AAA"])
 
         assert runtime.handle_output_line(
-            "event node:"
-            ' "{"identifier":"tcli","public_key":"AAA","state":"connected","is_exit":true,"is_vpn":true,"ip_addresses":[],"allowed_ips":[],"endpoint":null,"hostname":null,"allow_incoming_connections":false,"allow_peer_send_files":false,"path":"relay"}"'
+            "event node: " + create_derpserver_config(State.Connected).to_json()
         )
 
         await testing.wait_short(
@@ -200,6 +187,7 @@ class TestEvents:
     async def test_peer_state(self) -> None:
         runtime = Runtime()
         events = Events(runtime)
+
         runtime.allowed_pub_keys = set(["AAA", "BBB"])
 
         runtime.set_peer(
@@ -253,6 +241,7 @@ class TestEvents:
         await testing.wait_short(
             events.wait_for_state_peer("BBB", [State.Connected], [PathType.Relay])
         )
+
         await testing.wait_short(
             events.wait_for_state_peer("AAA", [State.Connected], [PathType.Relay])
         )
@@ -282,7 +271,7 @@ class TestEvents:
         # it should fail (old state)
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_short(
-                events.wait_for_state_peer("BBB", [State.Connected], [PathType.Relay])
+                events.wait_for_state_peer("BBB", [State.Connected], [PathType.Relay]),
             )
 
         # it should fail (wrong path)
@@ -290,7 +279,7 @@ class TestEvents:
             await testing.wait_short(
                 events.wait_for_state_peer(
                     "AAA", [State.Disconnected], [PathType.Direct]
-                )
+                ),
             )
 
     @pytest.mark.asyncio
@@ -399,21 +388,7 @@ class TestEvents:
         runtime = Runtime()
         events = Events(runtime)
 
-        runtime.set_derp(
-            DerpServer(
-                region_code="test",
-                name="test",
-                hostname="test-01",
-                ipv4="1.1.1.1",
-                relay_port=1111,
-                stun_port=1111,
-                stun_plaintext_port=1111,
-                public_key="test",
-                weight=1,
-                use_plain_text=True,
-                conn_state=State.Connected,
-            )
-        )
+        runtime.set_derp(create_derpserver_config(State.Connected))
 
         await testing.wait_short(
             events.wait_for_state_derp("1.1.1.1", [State.Connected])
@@ -443,41 +418,13 @@ class TestEvents:
         runtime = Runtime()
         events = Events(runtime)
 
-        runtime.set_derp(
-            DerpServer(
-                region_code="test",
-                name="test",
-                hostname="test-01",
-                ipv4="1.1.1.1",
-                relay_port=1111,
-                stun_port=1111,
-                stun_plaintext_port=1111,
-                public_key="test",
-                weight=1,
-                use_plain_text=True,
-                conn_state=State.Connected,
-            )
-        )
+        runtime.set_derp(create_derpserver_config(State.Connected))
 
         await testing.wait_short(
             events.wait_for_state_derp("1.1.1.1", [State.Connected])
         )
 
-        runtime.set_derp(
-            DerpServer(
-                region_code="test",
-                name="test",
-                hostname="test-01",
-                ipv4="1.1.1.1",
-                relay_port=1111,
-                stun_port=1111,
-                stun_plaintext_port=1111,
-                public_key="test",
-                weight=1,
-                use_plain_text=True,
-                conn_state=State.Disconnected,
-            )
-        )
+        runtime.set_derp(create_derpserver_config(State.Disconnected))
 
         await testing.wait_short(
             events.wait_for_state_derp("1.1.1.1", [State.Disconnected])
@@ -494,19 +441,7 @@ class TestEvents:
     async def test_derp_event(self) -> None:
         runtime = Runtime()
         events = Events(runtime)
-        test_derp_server = DerpServer(
-            region_code="test",
-            name="test",
-            hostname="test-01",
-            ipv4="1.1.1.1",
-            relay_port=1111,
-            stun_port=1111,
-            stun_plaintext_port=1111,
-            public_key="test",
-            weight=1,
-            use_plain_text=True,
-            conn_state=State.Connected,
-        )
+        test_derp_server = create_derpserver_config(State.Connected)
 
         # Start waiting for new event before it is being generated
         async with run_async_context(
@@ -544,19 +479,7 @@ class TestEvents:
     async def test_derp_with_multiple_events(self) -> None:
         runtime = Runtime()
         events = Events(runtime)
-        test_derp_server = DerpServer(
-            region_code="test",
-            name="test",
-            hostname="test-01",
-            ipv4="1.1.1.1",
-            relay_port=1111,
-            stun_port=1111,
-            stun_plaintext_port=1111,
-            public_key="test",
-            weight=1,
-            use_plain_text=True,
-            conn_state=State.Connected,
-        )
+        test_derp_server = create_derpserver_config(State.Connected)
         # Start waiting for new event before it is being generated
         async with run_async_contexts(
             [
