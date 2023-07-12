@@ -17,6 +17,7 @@
 * LLT-3909: Fix stun poll intervals on happy path
 * LLT-3849: Fix and adjust test for `telio-task` drop
 * LLT-3592: Bind Ipv6 sockets on macOs
+* LLT-3626: Implement IPv6 support in telio-firewall
 
 <br>
 
