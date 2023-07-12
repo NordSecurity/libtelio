@@ -9,6 +9,7 @@
 * LLT-3010: Fix telio unit-tests
 * LLT-3651: Integration test for NAT type
 * LLT-3943: Fix secret key clamping issue causing instabilities.
+* LLT-3909: Fix stun poll intervals on happy path
 
 <br>
 
