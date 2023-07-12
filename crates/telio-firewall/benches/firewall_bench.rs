@@ -50,6 +50,7 @@ pub fn firewall_tcp_inbound_benchmarks(c: &mut Criterion) {
                                 );
                                 which_peer = (which_peer + 1) % peers.len();
                             }
+                            assert_eq!((0, 0), firewall.get_state());
                         });
                     },
                 );
@@ -82,6 +83,7 @@ pub fn firewall_tcp_inbound_benchmarks(c: &mut Criterion) {
                                 );
                                 which_peer = (which_peer + 1) % peers.len();
                             }
+                            assert_eq!((0, 0), firewall.get_state());
                         });
                     },
                 );
@@ -100,20 +102,29 @@ pub fn firewall_tcp_inbound_benchmarks(c: &mut Criterion) {
                     &parameter,
                     |b, &p| {
                         let firewall = StatefullFirewall::new();
-                        let mut peers = vec![];
-                        for _ in 0..p.peers {
+                        let mut peers_and_packets = vec![];
+                        let port_base = 1111;
+                        for i in 0..p.peers {
+                            let port = port_base + i;
                             let public_key = SecretKey::gen().public();
-                            firewall.add_to_port_whitelist(public_key, 1111);
-                            peers.push(public_key.0);
+                            firewall.add_to_port_whitelist(public_key, port as u16);
+                            let packet = make_tcp(
+                                "8.8.8.8:8888",
+                                &format!("127.0.0.1:{port}"),
+                                TcpFlags::SYN,
+                            );
+                            peers_and_packets.push((public_key.0, packet));
                         }
                         let mut which_peer = 0usize;
                         b.iter(|| {
                             for _ in 0..p.packets {
-                                assert!(
-                                    firewall.process_inbound_packet(&peers[which_peer], &packet)
-                                );
-                                which_peer = (which_peer + 1) % peers.len();
+                                assert!(firewall.process_inbound_packet(
+                                    &peers_and_packets[which_peer].0,
+                                    &peers_and_packets[which_peer].1,
+                                ));
+                                which_peer = (which_peer + 1) % peers_and_packets.len();
                             }
+                            assert_eq!((peers_and_packets.len(), 0), firewall.get_state());
                         });
                     },
                 );
@@ -255,6 +266,7 @@ pub fn firewall_udp_inbound_benchmarks(c: &mut Criterion) {
                                 );
                                 which_peer = (which_peer + 1) % peers.len();
                             }
+                            assert_eq!((0, 0), firewall.get_state());
                         });
                     },
                 );
@@ -287,6 +299,7 @@ pub fn firewall_udp_inbound_benchmarks(c: &mut Criterion) {
                                 );
                                 which_peer = (which_peer + 1) % peers.len();
                             }
+                            assert_eq!((0, 0), firewall.get_state());
                         });
                     },
                 );
@@ -305,20 +318,25 @@ pub fn firewall_udp_inbound_benchmarks(c: &mut Criterion) {
                     &parameter,
                     |b, &p| {
                         let firewall = StatefullFirewall::new();
-                        let mut peers = vec![];
-                        for _ in 0..p.peers {
+                        let mut peers_and_packets = vec![];
+                        let port_base = 42;
+                        for i in 0..p.peers {
+                            let port = port_base + i;
                             let public_key = SecretKey::gen().public();
-                            firewall.add_to_port_whitelist(public_key, 42);
-                            peers.push(public_key.0);
+                            firewall.add_to_port_whitelist(public_key, port as u16);
+                            let packet = make_udp("8.8.8.8:8888", &format!("127.0.0.1:{port}"));
+                            peers_and_packets.push((public_key.0, packet));
                         }
                         let mut which_peer = 0usize;
                         b.iter(|| {
                             for _ in 0..p.packets {
-                                assert!(
-                                    firewall.process_inbound_packet(&peers[which_peer], &packet)
-                                );
-                                which_peer = (which_peer + 1) % peers.len();
+                                assert!(firewall.process_inbound_packet(
+                                    &peers_and_packets[which_peer].0,
+                                    &peers_and_packets[which_peer].1,
+                                ));
+                                which_peer = (which_peer + 1) % peers_and_packets.len();
                             }
+                            assert_eq!((0, peers_and_packets.len()), firewall.get_state());
                         });
                     },
                 );

@@ -153,6 +153,14 @@ impl StatefullFirewall {
         StatefullFirewall::new_custom(LRU_CAPACITY, LRU_TIMEOUT)
     }
 
+    #[cfg(feature = "test_utils")]
+    /// Return the size of conntrack entries for tcp and udp (for testing only).
+    pub fn get_state(&self) -> (usize, usize) {
+        let tcp = unwrap_lock_or_return!(self.tcp.lock(), (0, 0)).len();
+        let udp = unwrap_lock_or_return!(self.udp.lock(), (0, 0)).len();
+        (tcp, udp)
+    }
+
     /// Constructs firewall with custom capacity and timeout in ms (for testing only).
     pub fn new_custom(capacity: usize, ttl: u64) -> Self {
         let ttl = Duration::from_millis(ttl);
