@@ -86,6 +86,8 @@ pub struct FeatureNurse {
     pub heartbeat_interval: Option<u32>,
     /// QoS configuration for Nurse
     pub qos: Option<FeatureQoS>,
+    /// Enable/disable collecting nat type
+    pub enable_nat_type_collection: Option<bool>,
 }
 
 /// Configurable features for Lana module
@@ -315,6 +317,7 @@ mod tests {
             fingerprint: "fingerprint_test".to_string(),
             heartbeat_interval: None,
             qos: None,
+            enable_nat_type_collection: None,
         }),
         lana: Some(FeatureLana {
             event_path: "path/to/some/event/data".to_string(),
@@ -485,6 +488,7 @@ mod tests {
                     rtt_types: Some(vec![String::from("Ping")]),
                     buckets: Some(5),
                 }),
+                enable_nat_type_collection: None,
             }),
             lana: None,
             paths: None,
@@ -504,6 +508,7 @@ mod tests {
                     rtt_types: None,
                     buckets: None,
                 }),
+                enable_nat_type_collection: None,
             }),
             lana: None,
             paths: None,
@@ -518,6 +523,7 @@ mod tests {
                 fingerprint: String::from("fingerprint_test"),
                 heartbeat_interval: None,
                 qos: None,
+                enable_nat_type_collection: None,
             }),
             lana: None,
             paths: None,
