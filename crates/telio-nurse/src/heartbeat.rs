@@ -3,7 +3,7 @@ use bitflags::bitflags;
 use nat_detect::NatType;
 use std::collections::BTreeSet;
 use std::fmt::Write;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::{
     collections::{HashMap, HashSet},
@@ -531,27 +531,13 @@ impl Analytics {
             links.push(status);
         }
 
-        let nat_type = {
-            if let Some(server) = self.derp.get_connected_server().await {
-                <telio_proto::HeartbeatNatType as crate::heartbeat::From<NatType>>::from(
-                    retrieve_single_nat(&server.ipv4.to_string())
-                        .await
-                        .unwrap_or(NatData {
-                            public_ip: SocketAddr::from(([0, 0, 0, 0], 80)),
-                            nat_type: NatType::Unknown,
-                        })
-                        .nat_type,
-                )
-            } else {
-                HeartbeatNatType::Unknown
-            }
-        };
-
         let heartbeat = HeartbeatMessage::response(
             self.meshnet_id.into_bytes().to_vec(),
             self.config.fingerprint.clone(),
             &links,
-            nat_type,
+            <telio_proto::HeartbeatNatType as crate::heartbeat::From<NatType>>::from(
+                self.retrieve_nat().await,
+            ),
         );
 
         #[allow(mpsc_blocking_send)]
@@ -826,23 +812,7 @@ impl Analytics {
         heartbeat_info.external_links = external_links;
 
         // Collect NAT type
-        heartbeat_info.nat_type = {
-            if let Some(server) = self.derp.get_connected_server().await {
-                format!(
-                    "{:?}",
-                    retrieve_single_nat(&server.ipv4.to_string())
-                        .await
-                        .unwrap_or(NatData {
-                            public_ip: SocketAddr::from(([0, 0, 0, 0], 80)),
-                            nat_type: NatType::Unknown,
-                        })
-                        .nat_type
-                )
-            } else {
-                format!("{:?}", NatType::Unknown)
-            }
-        };
-
+        heartbeat_info.nat_type = format!("{:?}", self.retrieve_nat().await);
         // Collect peer NAT types
         self.copy_nat_type(
             &mut heartbeat_info.peer_nat_types,
@@ -883,6 +853,25 @@ impl Analytics {
             if let Some(nat_type) = self.collection.nat_type_peers.get(pk) {
                 nat_types.push(format!("{:?}", nat_type));
             };
+        }
+    }
+
+    async fn retrieve_nat(&mut self) -> NatType {
+        if self.config.is_nat_type_collection_enabled {
+            if let Some(server) = self.derp.get_connected_server().await {
+                retrieve_single_nat(SocketAddr::new(IpAddr::V4(server.ipv4), server.stun_port))
+                    .await
+                    .unwrap_or(NatData {
+                        public_ip: SocketAddr::from(([0, 0, 0, 0], 80)),
+                        nat_type: NatType::Unknown,
+                    })
+                    .nat_type
+            } else {
+                telio_log_error!("Unable to get a connected derp server");
+                NatType::Unknown
+            }
+        } else {
+            NatType::Unknown
         }
     }
 

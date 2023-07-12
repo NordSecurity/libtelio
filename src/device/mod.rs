@@ -48,7 +48,7 @@ use std::{
     convert::TryInto,
     future::Future,
     io::{Error as IoError, ErrorKind},
-    net::{IpAddr, Ipv4Addr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
     time::Duration,
 };
@@ -634,8 +634,8 @@ impl Device {
         })
     }
 
-    pub fn get_nat(&self, ip: String) -> Result<NatData> {
-        match self.art()?.block_on(retrieve_single_nat(&ip)) {
+    pub fn get_nat(&self, skt: SocketAddr) -> Result<NatData> {
+        match self.art()?.block_on(retrieve_single_nat(skt)) {
             Ok(data) => Ok(data),
             Err(no_data) => Err(Error::FailedNatInfoRecover(no_data)),
         }
@@ -1294,9 +1294,9 @@ impl Runtime {
                 .and_then(|servers| servers.iter().min_by_key(|server| server.weight))
         }) {
             // Copy the lowest weight server to log nat in a separate future
-            let stun_server_ip = server.ipv4.to_string();
+            let stun_server_skt = SocketAddr::new(IpAddr::V4(server.ipv4), server.stun_port);
             tokio::spawn(async move {
-                if let Ok(data) = retrieve_single_nat(&stun_server_ip).await {
+                if let Ok(data) = retrieve_single_nat(stun_server_skt).await {
                     telio_log_info!("Nat Type - {:?}", data.nat_type)
                 }
             });

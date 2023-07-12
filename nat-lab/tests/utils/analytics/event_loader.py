@@ -43,6 +43,16 @@ class Event:
     received_data: str = field(metadata=json_config(field_name="body_received_data"))
     rtt: str = field(metadata=json_config(field_name="body_rtt"))
     sent_data: str = field(metadata=json_config(field_name="body_sent_data"))
+    nat_type: str = field(
+        metadata=json_config(
+            field_name="context_application_config_current_state_internal_meshnet_fp_nat"
+        )
+    )
+    mem_nat_types: str = field(
+        metadata=json_config(
+            field_name="context_application_config_current_state_internal_meshnet_members_nat"
+        )
+    )
 
 
 def fetch_moose_events(database_name):

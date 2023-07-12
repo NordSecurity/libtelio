@@ -233,7 +233,8 @@ enum DnsCmd {
 #[derive(Parser)]
 #[clap(about = "Detect NAT type using stun binding requests ( RFC 3489 )")]
 enum DetectCmd {
-    Address { stun_server: String },
+    #[clap(about = "Usage: nat address <IpAddr> <port>")]
+    Address { stun_server: String, stun_port: u16 },
 }
 
 #[macro_export]
@@ -674,7 +675,13 @@ impl Cli {
         let mut res = Vec::new();
 
         match cmd {
-            DetectCmd::Address { stun_server } => match self.telio.get_nat(stun_server) {
+            DetectCmd::Address {
+                stun_server,
+                stun_port,
+            } => match self.telio.get_nat(SocketAddr::new(
+                stun_server.parse::<IpAddr>().expect("Invalid IPv4 address"),
+                stun_port,
+            )) {
                 Ok(data) => {
                     cli_res!(res; (i"Public Address: {:?}", data.public_ip));
                     cli_res!(res; (i"Nat Type: {:?}", data.nat_type));
