@@ -37,7 +37,7 @@ async def test_nat_type(connection_tag, nat_string) -> None:
 
         async with process.run(stdout_callback=print_result):
             await process.wait_stdin_ready()
-            await process.write_stdin("nat address  10.0.1.1:3478\n")
+            await process.write_stdin("nat address 10.0.1.1 3478\n")
             await testing.wait_lengthy(event.wait())
             result = re.search(r"Nat Type: (.*)", process.get_stdout())
             assert result

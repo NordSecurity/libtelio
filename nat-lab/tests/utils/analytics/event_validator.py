@@ -1,3 +1,6 @@
+from typing import List
+
+
 class ExistanceValidator:
     def validate(self, value):
         return (value is not None) and (value != "")
@@ -264,6 +267,27 @@ class SentDataValidator:
         return self._validator.validate(event.sent_data)
 
 
+class NatTypeValidator:
+    def __init__(self, value):
+        self._validator = StringValidator(equals=value)
+
+    def validate(self, event):
+        return self._validator.validate(event.nat_type)
+
+
+class MemNatTypeValidator:
+    def __init__(self, value):
+        self._validators = []
+        for v in value:
+            self._validators.append(StringValidator(equals=v))
+
+    def validate(self, event):
+        for v, e in zip(self._validators, event.mem_nat_types.split(",")):
+            if not v.validate(e):
+                return False
+        return True
+
+
 class EventValidator:
     def __init__(self):
         self._validators = []
@@ -351,6 +375,22 @@ class EventValidator:
 
     def add_sent_data_validator(self, exists=True):
         self._validators.append(SentDataValidator(exists=exists))
+        return self
+
+    def add_nat_type_validators(
+        self, is_nat_type_collection_enabled: bool, nat_type: str, nat_mem: List[str]
+    ):
+        if is_nat_type_collection_enabled:
+            self.add_self_nat_validator(value=nat_type)
+            self.add_members_nat_validator(value=nat_mem)
+        return self
+
+    def add_self_nat_validator(self, value):
+        self._validators.append(NatTypeValidator(value))
+        return self
+
+    def add_members_nat_validator(self, value):
+        self._validators.append(MemNatTypeValidator(value))
         return self
 
     def validate(self, event) -> bool:
