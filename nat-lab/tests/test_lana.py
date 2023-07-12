@@ -30,6 +30,7 @@ GAMMA_EVENTS_PATH = "./gamma-events.db"
 DEFAULT_WAITING_TIME = 1
 DEFAULT_CHECK_INTERVAL = 1
 DEFAULT_CHECK_TIMEOUT = 40
+COLLECT_NAT_TYPE = False
 
 
 def build_telio_features(fingerprint: str) -> TelioFeatures:
@@ -42,6 +43,7 @@ def build_telio_features(fingerprint: str) -> TelioFeatures:
                 rtt_interval=10,
                 buckets=5,
             ),
+            enable_nat_type_collection=COLLECT_NAT_TYPE,
         ),
     )
 
@@ -282,6 +284,11 @@ async def test_lana_with_same_meshnet() -> None:
                 exists=True,
                 contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
             )
+            .add_nat_type_validators(
+                is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
+                nat_type="PortRestrictedCone",
+                nat_mem=["Symmetric", "PortRestrictedCone"],
+            )
         )
 
         assert alpha_validator.validate(alpha_events[0])
@@ -298,7 +305,13 @@ async def test_lana_with_same_meshnet() -> None:
                 exists=True,
                 contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
             )
+            .add_nat_type_validators(
+                is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
+                nat_type="PortRestrictedCone",
+                nat_mem=["PortRestrictedCone", "Symmetric"],
+            )
         )
+
         assert beta_validator.validate(beta_events[0])
 
         gamma_validator = (
@@ -313,7 +326,13 @@ async def test_lana_with_same_meshnet() -> None:
                 exists=True,
                 contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
             )
+            .add_nat_type_validators(
+                is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
+                nat_type="Symmetric",
+                nat_mem=["PortRestrictedCone", "PortRestrictedCone"],
+            )
         )
+
         assert gamma_validator.validate(gamma_events[0])
 
 
@@ -351,7 +370,13 @@ async def test_lana_with_external_node() -> None:
                 contains=["alpha_fingerprint", "beta_fingerprint"],
                 does_not_contain=["gamma_fingerprint"],
             )
+            .add_nat_type_validators(
+                is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
+                nat_type="PortRestrictedCone",
+                nat_mem=["PortRestrictedCone", "Symmetric"],
+            )
         )
+
         assert alpha_validator.validate(alpha_events[0])
 
         beta_validator = (
@@ -373,11 +398,19 @@ async def test_lana_with_external_node() -> None:
                 contains=["alpha_fingerprint", "beta_fingerprint"],
                 does_not_contain=["gamma_fingerprint"],
             )
+            .add_nat_type_validators(
+                is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
+                nat_type="PortRestrictedCone",
+                nat_mem=["PortRestrictedCone", "Symmetric"],
+            )
         )
+
         assert beta_validator.validate(beta_events[0])
 
         gamma_validator = (
-            basic_validator(node_fingerprint="gamma_fingerprint")
+            basic_validator(
+                node_fingerprint="gamma_fingerprint",
+            )
             .add_external_links_validator(
                 exists=True,
                 contains=["alpha_fingerprint", "beta_fingerprint"],
@@ -386,7 +419,13 @@ async def test_lana_with_external_node() -> None:
                 no_of_connections=2,
             )
             .add_connectivity_matrix_validator(exists=False)
+            .add_nat_type_validators(
+                is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
+                nat_type="Symmetric",
+                nat_mem=["PortRestrictedCone", "PortRestrictedCone"],
+            )
         )
+
         assert gamma_validator.validate(gamma_events[0])
 
         # Validate alpha and beta have the same meshent id which is different from gamma's
@@ -410,7 +449,9 @@ async def test_lana_all_external() -> None:
         assert gamma_events
 
         alpha_validator = (
-            basic_validator(node_fingerprint="alpha_fingerprint")
+            basic_validator(
+                node_fingerprint="alpha_fingerprint",
+            )
             .add_external_links_validator(
                 exists=True,
                 contains=["beta_fingerprint", "gamma_fingerprint"],
@@ -419,11 +460,19 @@ async def test_lana_all_external() -> None:
                 no_of_connections=2,
             )
             .add_connectivity_matrix_validator(exists=False)
+            .add_nat_type_validators(
+                is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
+                nat_type="PortRestrictedCone",
+                nat_mem=["Symmetric", "PortRestrictedCone"],
+            )
         )
+
         assert alpha_validator.validate(alpha_events[0])
 
         beta_validator = (
-            basic_validator(node_fingerprint="beta_fingerprint")
+            basic_validator(
+                node_fingerprint="beta_fingerprint",
+            )
             .add_external_links_validator(
                 exists=True,
                 contains=["alpha_fingerprint", "gamma_fingerprint"],
@@ -432,11 +481,19 @@ async def test_lana_all_external() -> None:
                 no_of_connections=2,
             )
             .add_connectivity_matrix_validator(exists=False)
+            .add_nat_type_validators(
+                is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
+                nat_type="PortRestrictedCone",
+                nat_mem=["PortRestrictedCone", "Symmetric"],
+            )
         )
+
         assert beta_validator.validate(beta_events[0])
 
         gamma_validator = (
-            basic_validator(node_fingerprint="gamma_fingerprint")
+            basic_validator(
+                node_fingerprint="gamma_fingerprint",
+            )
             .add_external_links_validator(
                 exists=True,
                 contains=["alpha_fingerprint", "beta_fingerprint"],
@@ -445,7 +502,13 @@ async def test_lana_all_external() -> None:
                 no_of_connections=2,
             )
             .add_connectivity_matrix_validator(exists=False)
+            .add_nat_type_validators(
+                is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
+                nat_type="Symmetric",
+                nat_mem=["PortRestrictedCone", "PortRestrictedCone"],
+            )
         )
+
         assert gamma_validator.validate(gamma_events[0])
 
         # Validate all meshent ids are different
@@ -493,7 +556,13 @@ async def test_lana_with_vpn_connections() -> None:
                 exists=True,
                 contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
             )
+            .add_nat_type_validators(
+                is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
+                nat_type="Symmetric",
+                nat_mem=["Symmetric", "PortRestrictedCone"],
+            )
         )
+
         assert alpha_validator.validate(alpha_events[0])
 
         beta_validator = (
@@ -508,7 +577,13 @@ async def test_lana_with_vpn_connections() -> None:
                 exists=True,
                 contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
             )
+            .add_nat_type_validators(
+                is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
+                nat_type="PortRestrictedCone",
+                nat_mem=["Symmetric", "Symmetric"],
+            )
         )
+
         assert beta_validator.validate(beta_events[0])
 
         gamma_validator = (
@@ -523,7 +598,13 @@ async def test_lana_with_vpn_connections() -> None:
                 exists=True,
                 contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
             )
+            .add_nat_type_validators(
+                is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
+                nat_type="Symmetric",
+                nat_mem=["Symmetric", "PortRestrictedCone"],
+            )
         )
+
         assert gamma_validator.validate(gamma_events[0])
 
 
@@ -637,6 +718,11 @@ async def test_lana_with_disconnected_node() -> None:
                 exists=True,
                 contains=["alpha_fingerprint", "beta_fingerprint"],
             )
+            .add_nat_type_validators(
+                is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
+                nat_type="PortRestrictedCone",
+                nat_mem=[],
+            )
         )
         beta_validator = (
             basic_validator()
@@ -650,7 +736,13 @@ async def test_lana_with_disconnected_node() -> None:
                 exists=True,
                 contains=["alpha_fingerprint", "beta_fingerprint"],
             )
+            .add_nat_type_validators(
+                is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
+                nat_type="PortRestrictedCone",
+                nat_mem=[],
+            )
         )
+
         assert alpha_validator.validate(alpha_events[0])
         assert beta_validator.validate(beta_events[0])
 
@@ -663,7 +755,13 @@ async def test_lana_with_disconnected_node() -> None:
                 exists=True,
                 contains=["alpha_fingerprint", "beta_fingerprint"],
             )
+            .add_nat_type_validators(
+                is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
+                nat_type="PortRestrictedCone",
+                nat_mem=[],
+            )
         )
+
         assert alpha_validator.validate(alpha_events[1])
 
         # Validate all nodes have the same meshnet id

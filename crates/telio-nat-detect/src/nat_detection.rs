@@ -19,10 +19,10 @@ pub struct NatData {
 ///
 /// ```rust
 /// # use telio_nat_detect::nat_detection::{NatData,retrieve_single_nat};
-/// # fn get_my_stun_server_ip() -> String { "10.2.3.4".to_owned() }
+/// # use std::net::SocketAddr;
 /// # #[tokio::main]
 /// # async fn main() {
-/// match retrieve_single_nat(&get_my_stun_server_ip()).await {
+/// match retrieve_single_nat(SocketAddr::from(([10, 2, 3, 4], 3478))).await {
 ///     Ok(NatData{public_ip,nat_type}) => {
 ///         println!("our public ip is {} and the nat type is {:?}", public_ip, nat_type);
 ///     },
@@ -32,10 +32,10 @@ pub struct NatData {
 /// }
 /// # }
 /// ```
-pub async fn retrieve_single_nat(stun_sever_ip: &str) -> Result<NatData, Error> {
+pub async fn retrieve_single_nat(stun_server: SocketAddr) -> Result<NatData, Error> {
     let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0);
 
-    match Box::pin(nat_detect(address, stun_sever_ip)).await {
+    match Box::pin(nat_detect(address, &stun_server.to_string())).await {
         Ok(data) => {
             // converting the result in a better
             // way to show

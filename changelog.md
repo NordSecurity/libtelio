@@ -7,6 +7,7 @@
 * LLT-3878: Reduce "cross_ping_check" log output
 * LLT-3791: Remove telio-wg as telio-model dependency
 * LLT-3010: Fix telio unit-tests
+* LLT-3651: Integration test for NAT type
 
 <br>
 
