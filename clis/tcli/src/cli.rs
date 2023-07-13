@@ -25,6 +25,7 @@ use std::str::FromStr;
 use std::{
     fs,
     net::{IpAddr, Ipv4Addr, SocketAddr},
+    process::Command,
     sync::{
         mpsc::{self, Receiver},
         Arc,
@@ -48,7 +49,10 @@ pub enum Error {
     #[error("device must be started.")]
     NotStarted,
 
-    #[error("login is needed")]
+    #[error("meshnet must be started.")]
+    MeshnetNotStarted,
+
+    #[error("login is needed.")]
     NeedsLogin,
 
     #[error(transparent)]
@@ -69,7 +73,7 @@ pub enum Error {
     #[error(transparent)]
     Nord(#[from] NordError),
 
-    #[error("bad command: {0:?}")]
+    #[error("bad command: {0:?}.")]
     Parser(clap::ErrorKind),
 
     #[error(transparent)]
@@ -82,10 +86,10 @@ pub enum Error {
     #[error(transparent)]
     Apple(#[from] telio_sockets::protector::platform::Error),
 
-    #[error("Config is empty")]
+    #[error("config is empty.")]
     EmptyConfig,
 
-    #[error("Data local dir unknown")]
+    #[error("data local dir unknown.")]
     NoDataLocalDir,
 
     #[error(transparent)]
@@ -93,6 +97,9 @@ pub enum Error {
 
     #[error(transparent)]
     WgAdapterError(#[from] telio_wg::Error),
+
+    #[error("setting ip address for the adapter failed.")]
+    SettingIpFailed,
 }
 
 pub struct Cli {
@@ -101,6 +108,7 @@ pub struct Cli {
     auth: Option<OAuth>,
     nord: Option<Nord>,
     conf: Option<MeshConf>,
+    meshmap: Option<MeshMap>,
     derp_client: DerpClient,
     derp_server: Arc<Mutex<Option<Server>>>,
 }
@@ -199,6 +207,11 @@ enum VpnCmd {
     On,
     #[clap(about = "Disconnect from vpn server.")]
     Off,
+    #[clap(about = "Set 10.5.0.2 address for the adapter")]
+    SetIp {
+        #[clap(default_value = DEFAULT_TUNNEL_NAME)]
+        name: String,
+    },
 }
 
 #[derive(Parser)]
@@ -209,14 +222,21 @@ enum MeshCmd {
         #[clap(possible_values = &["boringtun", "wireguard-go", "wireguard-nt", "linux-native", ""], default_value ="")]
         adapter: String,
     },
+    /// Set own meshnet ip address for the adapter
+    SetIp {
+        /// Name of device. By default the one used in 'on' command
+        #[clap(default_value = "")]
+        name: String,
+    },
     /// Register to mesh as with some name
     Register {
         name: String,
     },
-    ///Pinger tes
+    ///Pinger test
     Ping {},
-    /// Manually set json config
+    /// Manually set json config. If MESH_CONFIG is empty it will print current config
     Config {
+        #[clap(default_value = "")]
         mesh_config: String,
     },
     Off,
@@ -372,6 +392,7 @@ impl Cli {
             auth: None,
             nord,
             conf: None,
+            meshmap: None,
             derp_client: DerpClient::new(),
             derp_server,
         })
@@ -537,6 +558,9 @@ impl Cli {
                 }
                 cli_try!(self.telio.connect_exit_node(&server));
             }
+            SetIp { name } => {
+                cli_try!(self.set_ip(&name, "10.5.0.2/16"));
+            }
             Off => {
                 cli_try!(self.telio.disconnect_exit_nodes());
             }
@@ -559,13 +583,33 @@ impl Cli {
                 let nord = cli_try!(res; self.nord.as_ref().ok_or(Error::NeedsLogin));
                 let meshmap_str = cli_try!(res; nord.get_meshmap(&conf.id));
                 cli_res!(res; (i "got config:\n{}", &meshmap_str));
-                let meshmap: MeshMap = cli_try!(res; serde_json::from_str(&meshmap_str));
+                self.meshmap = cli_try!(res; serde_json::from_str(&meshmap_str));
                 let adapter_type = cli_try!(res; AdapterType::from_str(&adapter));
 
                 let private_key = conf.sk;
                 cli_try!(res; self.start_telio(name, private_key, adapter_type, &mut res));
-                cli_try!(res; self.telio.set_config(&Some(meshmap)));
+                cli_try!(res; self.telio.set_config(&self.meshmap));
                 cli_res!(res; (i "started meshnet"));
+            }
+            SetIp { mut name } => {
+                let meshmap = cli_try!(self
+                    .meshmap
+                    .as_ref()
+                    .cloned()
+                    .ok_or(Error::MeshnetNotStarted));
+                if name.is_empty() {
+                    let config =
+                        cli_try!(self.conf.as_ref().cloned().ok_or(Error::MeshnetNotStarted));
+                    name = config.name;
+                }
+
+                let ip_addr = meshmap.ip_addresses.as_ref().cloned().unwrap_or_default();
+                if ip_addr.len() != 1 {
+                    cli_res!(res; (e Error::SettingIpFailed));
+                }
+                let ip_addr = ip_addr[0].to_string() + "/10";
+
+                cli_try!(self.set_ip(&name, &ip_addr));
             }
             Register { name } => {
                 let nord = cli_try!(res; self.nord.as_ref().ok_or(Error::NeedsLogin));
@@ -635,8 +679,15 @@ impl Cli {
                 })
             }
             Config { mesh_config } => {
-                let meshmap: MeshMap = cli_try!(serde_json::from_str(&mesh_config));
-                cli_try!(self.telio.set_config(&Some(meshmap)));
+                if mesh_config.is_empty() {
+                    let meshmap =
+                        cli_try!(self.meshmap.as_ref().cloned().ok_or(Error::EmptyConfig));
+                    let meshmap = cli_try!(serde_json::to_string_pretty(&meshmap));
+                    cli_res!(res; (i "Current meshnet config:\n{}", meshmap));
+                } else {
+                    let meshmap: MeshMap = cli_try!(serde_json::from_str(&mesh_config));
+                    cli_try!(self.telio.set_config(&Some(meshmap)));
+                }
             }
             Off => {
                 cli_try!(res; self.telio.set_config(&None));
@@ -719,6 +770,46 @@ impl Cli {
             cli_res!(res; (i "started telio with {:?}:{}...", adapter_type, private_key));
         }
         Ok(())
+    }
+
+    fn set_ip(&self, adapter_name: &str, ip_address: &str) -> Result<(), Error> {
+        let execute = |command: &mut Command| -> Result<(), Error> {
+            command
+                .output()
+                .map_err(|_| Error::SettingIpFailed)
+                .and_then(|r| {
+                    if r.status.success() {
+                        Ok(())
+                    } else {
+                        Err(Error::SettingIpFailed)
+                    }
+                })
+        };
+
+        if std::env::consts::OS == "windows" {
+            execute(Command::new("netsh").args([
+                "interface",
+                "ip",
+                "set",
+                "address",
+                adapter_name,
+                "static",
+                ip_address,
+            ]))
+        } else if std::env::consts::OS == "macos" {
+            let len = ip_address.len();
+            if len < 3 {
+                return Err(Error::SettingIpFailed);
+            }
+            execute(Command::new("ifconfig").args([
+                adapter_name,
+                ip_address,
+                &ip_address[..len - 3],
+            ]))
+        } else {
+            execute(Command::new("ifconfig").args([adapter_name, ip_address]))?;
+            execute(Command::new("ifconfig").args([adapter_name, "up"]))
+        }
     }
 
     fn report(&self, cmd: StatusCmd) -> Vec<Resp> {
