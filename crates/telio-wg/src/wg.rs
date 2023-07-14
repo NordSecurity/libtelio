@@ -557,7 +557,7 @@ impl State {
         });
 
         set::Device {
-            private_key: to.private_key.map(|key| key.0),
+            private_key: to.private_key.map(|key| key.into_bytes()),
             listen_port: to.listen_port,
             fwmark: match to.fwmark {
                 0 => None,

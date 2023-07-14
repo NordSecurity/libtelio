@@ -34,7 +34,7 @@ pub const KEY_SIZE: usize = 32;
 #[derive(
     Default, PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone, DeserializeFromStr, SerializeDisplay,
 )]
-pub struct SecretKey(pub [u8; KEY_SIZE]);
+pub struct SecretKey([u8; KEY_SIZE]);
 
 /// Public key type
 #[derive(
@@ -57,6 +57,19 @@ pub enum KeyDecodeError {
 }
 
 impl SecretKey {
+    /// Create new key from bytes
+    /// This ensures bytes are properly clamped
+    pub fn new(mut bytes: [u8; KEY_SIZE]) -> Self {
+        if let Some(first) = bytes.first_mut() {
+            *first &= 248;
+        }
+        if let Some(last) = bytes.last_mut() {
+            *last &= 127;
+            *last |= 64;
+        }
+        Self(bytes)
+    }
+
     /// Generates a new random SecretKey.
     /// # Examples
     ///
@@ -97,6 +110,23 @@ impl SecretKey {
     /// ```
     pub fn public(&self) -> PublicKey {
         crypto_box::SecretKey::from(self.0).public_key().into()
+    }
+
+    /// Return key represented as bytes
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+
+    /// Convert secret key to raw bytes
+    pub fn into_bytes(self) -> [u8; 32] {
+        self.0
+    }
+}
+
+impl PublicKey {
+    /// Create new key from bytes
+    pub fn new(bytes: [u8; 32]) -> Self {
+        Self(bytes)
     }
 }
 
@@ -202,15 +232,15 @@ macro_rules! gen_common {
             type Err = KeyDecodeError;
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                let mut key = Self([0; KEY_SIZE]);
+                let mut key = [0; KEY_SIZE];
 
                 match s.len() {
-                    64 => { hex::decode_to_slice(s, &mut key.0)? }
-                    44 => { base64::decode_config_slice(s, base64::STANDARD, &mut key.0)?; }
+                    64 => { hex::decode_to_slice(s, &mut key)? }
+                    44 => { base64::decode_config_slice(s, base64::STANDARD, &mut key)?; }
                     l => return Err(KeyDecodeError::InvalidLength(l)),
                 }
 
-                Ok(key)
+                Ok(Self::new(key))
             }
         }
 
