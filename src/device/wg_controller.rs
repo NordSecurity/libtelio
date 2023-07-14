@@ -252,10 +252,8 @@ async fn consolidate_firewall<W: WireGuard, F: Firewall>(
     let to_keys: HashSet<PublicKey> = to_peers.iter().map(|p| p.public_key).collect();
     let delete_keys = &from_keys - &to_keys;
     for key in &delete_keys {
-        firewall_remove(
-            firewall,
-            &from_peers.get(key).ok_or(Error::PeerNotFound)?.allowed_ips,
-        );
+        firewall.remove_from_peer_whitelist(*key);
+        firewall.remove_from_port_whitelist(*key);
     }
     for node in to_peers {
         firewall_upsert_node(firewall, &node.into());
@@ -648,25 +646,17 @@ fn peer_state(
     }
 }
 
-fn firewall_remove<F: Firewall>(firewall: &F, allowed_ips: &[IpNetwork]) {
-    for ip in allowed_ips {
-        firewall.remove_from_network_whitelist(*ip);
-        firewall.remove_from_port_whitelist(*ip);
-    }
-}
-
 fn firewall_upsert_node<F: Firewall>(firewall: &F, node: &Node) {
     if node.allow_incoming_connections || node.allow_peer_send_files {
-        for ip in &node.allowed_ips {
-            if node.allow_incoming_connections {
-                firewall.add_to_network_whitelist(*ip);
-            }
-            if node.allow_peer_send_files {
-                firewall.add_to_port_whitelist(*ip, FILE_SEND_PORT);
-            }
+        if node.allow_incoming_connections {
+            firewall.add_to_peer_whitelist(node.public_key);
+        }
+        if node.allow_peer_send_files {
+            firewall.add_to_port_whitelist(node.public_key, FILE_SEND_PORT);
         }
     } else {
-        firewall_remove(firewall, &node.allowed_ips);
+        firewall.remove_from_peer_whitelist(node.public_key);
+        firewall.remove_from_port_whitelist(node.public_key);
     }
 }
 
@@ -878,24 +868,14 @@ mod tests {
             .expect_get_interface()
             .return_once(move || Ok(interface));
         firewall
-            .expect_add_to_network_whitelist()
+            .expect_add_to_peer_whitelist()
             .once()
-            .with(eq(IpNetwork::from(ip1)))
-            .return_const(());
-        firewall
-            .expect_add_to_network_whitelist()
-            .once()
-            .with(eq(IpNetwork::from(ip2)))
+            .with(eq(pub_key))
             .return_const(());
         firewall
             .expect_add_to_port_whitelist()
             .once()
-            .with(eq(IpNetwork::from(ip1)), eq(FILE_SEND_PORT))
-            .return_const(());
-        firewall
-            .expect_add_to_port_whitelist()
-            .once()
-            .with(eq(IpNetwork::from(ip2)), eq(FILE_SEND_PORT))
+            .with(eq(pub_key), eq(FILE_SEND_PORT))
             .return_const(());
 
         consolidate_firewall(&requested_state, &wireguard_interface, &firewall)
@@ -919,9 +899,9 @@ mod tests {
             .expect_get_interface()
             .return_once(move || Ok(interface));
         firewall
-            .expect_add_to_network_whitelist()
+            .expect_add_to_peer_whitelist()
             .once()
-            .with(eq(IpNetwork::from(ip)))
+            .with(eq(pub_key))
             .return_const(());
         firewall.expect_add_to_port_whitelist().never();
 
@@ -945,11 +925,11 @@ mod tests {
         wireguard_interface
             .expect_get_interface()
             .return_once(move || Ok(interface));
-        firewall.expect_add_to_network_whitelist().never();
+        firewall.expect_add_to_peer_whitelist().never();
         firewall
             .expect_add_to_port_whitelist()
             .once()
-            .with(eq(IpNetwork::from(ip)), eq(FILE_SEND_PORT))
+            .with(eq(pub_key), eq(FILE_SEND_PORT))
             .return_const(());
 
         consolidate_firewall(&requested_state, &wireguard_interface, &firewall)
@@ -974,24 +954,14 @@ mod tests {
             .expect_get_interface()
             .return_once(move || Ok(interface));
         firewall
-            .expect_remove_from_network_whitelist()
+            .expect_remove_from_peer_whitelist()
             .once()
-            .with(eq(IpNetwork::from(ip1)))
-            .return_const(());
-        firewall
-            .expect_remove_from_network_whitelist()
-            .once()
-            .with(eq(IpNetwork::from(ip2)))
+            .with(eq(pub_key))
             .return_const(());
         firewall
             .expect_remove_from_port_whitelist()
             .once()
-            .with(eq(IpNetwork::from(ip1)))
-            .return_const(());
-        firewall
-            .expect_remove_from_port_whitelist()
-            .once()
-            .with(eq(IpNetwork::from(ip2)))
+            .with(eq(pub_key))
             .return_const(());
 
         consolidate_firewall(&requested_state, &wireguard_interface, &firewall)
@@ -1021,24 +991,14 @@ mod tests {
             .expect_get_interface()
             .return_once(move || Ok(interface));
         firewall
-            .expect_remove_from_network_whitelist()
+            .expect_remove_from_peer_whitelist()
             .once()
-            .with(eq(IpNetwork::from(ip1)))
-            .return_const(());
-        firewall
-            .expect_remove_from_network_whitelist()
-            .once()
-            .with(eq(IpNetwork::from(ip2)))
+            .with(eq(pub_key))
             .return_const(());
         firewall
             .expect_remove_from_port_whitelist()
             .once()
-            .with(eq(IpNetwork::from(ip1)))
-            .return_const(());
-        firewall
-            .expect_remove_from_port_whitelist()
-            .once()
-            .with(eq(IpNetwork::from(ip2)))
+            .with(eq(pub_key))
             .return_const(());
 
         consolidate_firewall(&requested_state, &wireguard_interface, &firewall)
