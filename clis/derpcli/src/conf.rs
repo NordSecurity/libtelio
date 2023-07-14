@@ -331,8 +331,8 @@ impl Config {
         Ok(Self {
             server: server_addr,
             is_target,
-            my_key: SecretKey(secret_key1),
-            target_key: SecretKey(secret_key2),
+            my_key: SecretKey::new(secret_key1),
+            target_key: SecretKey::new(secret_key2),
             send_count: count,
             send_delay: Duration::from_millis(if delay > 5000 { 5000 } else { delay }),
             send_loop: matches.is_present("loop"),
