@@ -7,7 +7,6 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-ipnetwork = "0.18"
 log = {version = "0.4.14", features = ["release_max_level_debug"]}
 lru_time_cache = "0.11.11"
 pnet_packet = "0.28.0"
@@ -17,3 +16,11 @@ telio-utils = { path = "../telio-utils" }
 
 [dev-dependencies]
 mockall = "0.11.3"
+criterion = "0.3"
+
+[features]
+test_utils = [] # For use in benchmarks to avoid duplication of the 'setup' code needed to create buffers with valid packets
+
+[[bench]]
+name = "firewall_bench"
+harness = false
