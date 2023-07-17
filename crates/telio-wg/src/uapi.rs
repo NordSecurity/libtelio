@@ -158,7 +158,7 @@ impl From<get::Device> for Interface {
     /// Convert from wireguard get::Device to telio Interface
     fn from(item: get::Device) -> Self {
         Self {
-            private_key: item.private_key.map(SecretKey),
+            private_key: item.private_key.map(SecretKey::new),
             listen_port: Some(item.listen_port),
             fwmark: item.fwmark,
             peers: item
@@ -174,7 +174,7 @@ impl From<set::Device> for Interface {
     /// Convert from wireguard set::Device to telio Interface
     fn from(item: set::Device) -> Self {
         Self {
-            private_key: item.private_key.map(SecretKey),
+            private_key: item.private_key.map(SecretKey::new),
             listen_port: item.listen_port,
             fwmark: item.fwmark.map_or(0, |x| x),
             peers: item
@@ -190,7 +190,7 @@ impl From<Interface> for set::Device {
     /// Convert from telio Interface to wireguard set::Device
     fn from(item: Interface) -> Self {
         Self {
-            private_key: item.private_key.map(|key| key.0),
+            private_key: item.private_key.map(|key| key.into_bytes()),
             listen_port: item.listen_port,
             fwmark: match item.fwmark {
                 0 => None,

@@ -8,6 +8,7 @@
 * LLT-3791: Remove telio-wg as telio-model dependency
 * LLT-3010: Fix telio unit-tests
 * LLT-3651: Integration test for NAT type
+* LLT-3943: Fix secret key clamping issue causing instabilities.
 
 <br>
 

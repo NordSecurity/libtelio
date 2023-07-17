@@ -3701,9 +3701,6 @@ dependencies = [
 [[package]]
 name = "telio-test"
 version = "1.0.0"
-dependencies = [
- "telio-crypto",
-]
 
 [[package]]
 name = "telio-traversal"

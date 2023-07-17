@@ -7,4 +7,3 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-telio-crypto = { path = "../telio-crypto" }

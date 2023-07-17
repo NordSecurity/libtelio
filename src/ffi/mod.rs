@@ -1,11 +1,11 @@
 pub mod types;
 
 use base64::{decode as base64decode, encode as base64encode};
-use crypto_box::SecretKey;
 use ffi_helpers::{error_handling, panic as panic_handling};
 use ipnetwork::IpNetwork;
 use libc::c_char;
 use log::{error, Level, Metadata, Record};
+use telio_crypto::SecretKey;
 use telio_wg::AdapterType;
 
 #[cfg(target_os = "linux")]
@@ -431,7 +431,7 @@ pub extern "C" fn telio_get_private_key(dev: &telio) -> *mut c_char {
     };
 
     match dev.get_private_key() {
-        Ok(key) => key_to_c_zero_terminated_string_unmanaged(&key.0),
+        Ok(key) => key_to_c_zero_terminated_string_unmanaged(key.as_bytes()),
         Err(err) => {
             telio_log_error!("telio_get_private_key: dev.get_private_key: {}", err);
             bytes_to_zero_terminated_unmanaged_bytes(&[0_u8])
@@ -724,8 +724,7 @@ pub extern "C" fn telio_set_meshnet_off(dev: &telio) -> telio_result {
 
 #[no_mangle]
 pub extern "C" fn telio_generate_secret_key(_dev: &telio) -> *mut c_char {
-    let mut rng = crypto_box::rand_core::OsRng;
-    let secret_key = SecretKey::generate(&mut rng);
+    let secret_key = SecretKey::gen();
     key_to_c_zero_terminated_string_unmanaged(secret_key.as_bytes()) //Managed by swig
 }
 
@@ -749,10 +748,10 @@ pub extern "C" fn telio_generate_public_key(_dev: &telio, secret: *const c_char)
     let mut secret_bytes = [0_u8; 32];
     secret_bytes.copy_from_slice(&secret_dec);
 
-    let secret_key = SecretKey::from(secret_bytes);
-    let public_key = secret_key.public_key();
+    let secret_key = SecretKey::new(secret_bytes);
+    let public_key = secret_key.public();
 
-    key_to_c_zero_terminated_string_unmanaged(public_key.as_bytes()) //Managed by swig
+    key_to_c_zero_terminated_string_unmanaged(&public_key.0) //Managed by swig
 }
 
 #[no_mangle]
