@@ -9,6 +9,9 @@ async def _prepare(connection: Connection) -> None:
     await connection.create_process(
         ["iptables-save", "-f", "iptables_backup"]
     ).execute()
+    await connection.create_process(
+        ["ip6tables-save", "-f", "ip6tables_backup"]
+    ).execute()
 
 
 async def _reset(connection: Connection) -> None:
@@ -16,7 +19,9 @@ async def _reset(connection: Connection) -> None:
 
     for table in ["filter", "nat", "mangle", "raw", "security"]:
         await connection.create_process(["iptables", "-t", table, "-F"]).execute()
+        await connection.create_process(["ip6tables", "-t", table, "-F"]).execute()
     await connection.create_process(["iptables-restore", "iptables_backup"]).execute()
+    await connection.create_process(["ip6tables-restore", "ip6tables_backup"]).execute()
 
 
 @asynccontextmanager

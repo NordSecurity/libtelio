@@ -2,10 +2,16 @@
 
 set -euxo pipefail
 
+# Enable IPv6, by default, docker has this set to '1'
+sysctl -w net.ipv6.conf.all.disable_ipv6=0
+sysctl -w net.ipv6.conf.default.disable_ipv6=0
+
 /opt/bin/wireguard-go wg0
 wg setconf wg0 /wg0.conf
 
-ip addr add dev wg0 100.64.0.1/10
+ip -4 addr add dev wg0 100.64.0.1/10
+# TODO correct subnet when we'll decide about the range
+ip -6 addr add dev wg0 fd00::1/64
 ip link set up dev wg0
 
 echo 1 > /proc/sys/net/ipv4/ip_forward

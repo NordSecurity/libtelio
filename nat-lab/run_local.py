@@ -8,7 +8,7 @@ from typing import List, Optional, Dict, Any
 
 PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/../..")
 
-TEST_TIMEOUT = 60
+TEST_TIMEOUT = 80
 
 
 # Runs the command with stdout and stderr piped back to executing shell (this results

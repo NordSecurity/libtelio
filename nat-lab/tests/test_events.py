@@ -6,6 +6,7 @@ from contextlib import AsyncExitStack
 from mesh_api import API
 from telio import AdapterType, PathType, PeerInfo, State
 from telio_features import TelioFeatures, Direct
+from typing import List
 from utils import testing, stun
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
@@ -14,6 +15,21 @@ from utils.connection_util import (
     new_connection_with_conn_tracker,
 )
 from utils.ping import Ping
+from utils.router import IPProto, get_ip_address_type
+
+
+def get_allowed_ip_list(addrs: List[str]) -> List[str]:
+    ret: List[str] = []
+
+    for ip in addrs:
+        typ = get_ip_address_type(ip)
+
+        if typ == IPProto.IPv4:
+            ret.append(ip + "/32")
+        elif typ == IPProto.IPv6:
+            ret.append(ip + "/128")
+
+    return ret
 
 
 @pytest.mark.asyncio
@@ -99,7 +115,7 @@ async def test_event_content_meshnet(
             is_exit=False,
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
-            allowed_ips=[ip + "/32" for ip in beta.ip_addresses],
+            allowed_ips=get_allowed_ip_list(beta.ip_addresses),
             endpoint=None,
             hostname=beta.name + ".nord",
             allow_incoming_connections=True,
@@ -114,7 +130,7 @@ async def test_event_content_meshnet(
             is_exit=False,
             is_vpn=False,
             ip_addresses=alpha.ip_addresses,
-            allowed_ips=[ip + "/32" for ip in alpha.ip_addresses],
+            allowed_ips=get_allowed_ip_list(alpha.ip_addresses),
             endpoint=None,
             hostname=alpha.name + ".nord",
             allow_incoming_connections=True,
@@ -139,7 +155,7 @@ async def test_event_content_meshnet(
             is_exit=False,
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
-            allowed_ips=[ip + "/32" for ip in beta.ip_addresses],
+            allowed_ips=get_allowed_ip_list(beta.ip_addresses),
             endpoint=None,
             hostname=beta.name + ".nord",
             allow_incoming_connections=True,
@@ -234,7 +250,7 @@ async def test_event_content_vpn_connection(
             is_exit=True,
             is_vpn=True,
             ip_addresses=["10.5.0.1", "100.64.0.1"],
-            allowed_ips=["0.0.0.0/0"],
+            allowed_ips=["0.0.0.0/0", "::/0"],
             endpoint=f'{wg_server["ipv4"]}:{wg_server["port"]}',
             hostname=None,
             allow_incoming_connections=False,
@@ -270,7 +286,7 @@ async def test_event_content_vpn_connection(
             is_exit=True,
             is_vpn=True,
             ip_addresses=["10.5.0.1", "100.64.0.1"],
-            allowed_ips=["0.0.0.0/0"],
+            allowed_ips=["0.0.0.0/0", "::/0"],
             endpoint=f'{wg_server["ipv4"]}:{wg_server["port"]}',
             hostname=None,
             allow_incoming_connections=False,
@@ -368,7 +384,7 @@ async def test_event_content_exit_through_peer(
             is_exit=False,
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
-            allowed_ips=[ip + "/32" for ip in beta.ip_addresses],
+            allowed_ips=get_allowed_ip_list(beta.ip_addresses),
             endpoint=None,
             hostname=beta.name + ".nord",
             allow_incoming_connections=False,
@@ -402,7 +418,7 @@ async def test_event_content_exit_through_peer(
             is_exit=True,
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
-            allowed_ips=["0.0.0.0/0"],
+            allowed_ips=["0.0.0.0/0", "::/0"],
             endpoint=None,
             hostname=beta.name + ".nord",
             allow_incoming_connections=False,
@@ -516,7 +532,7 @@ async def test_event_content_meshnet_node_upgrade_direct(
             is_exit=False,
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
-            allowed_ips=[ip + "/32" for ip in beta.ip_addresses],
+            allowed_ips=get_allowed_ip_list(beta.ip_addresses),
             endpoint=None,
             hostname=beta.name + ".nord",
             allow_incoming_connections=True,
@@ -536,7 +552,7 @@ async def test_event_content_meshnet_node_upgrade_direct(
             is_exit=False,
             is_vpn=False,
             ip_addresses=alpha.ip_addresses,
-            allowed_ips=[ip + "/32" for ip in alpha.ip_addresses],
+            allowed_ips=get_allowed_ip_list(alpha.ip_addresses),
             endpoint=None,
             hostname=alpha.name + ".nord",
             allow_incoming_connections=True,
@@ -591,7 +607,7 @@ async def test_event_content_meshnet_node_upgrade_direct(
             is_exit=False,
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
-            allowed_ips=[ip + "/32" for ip in beta.ip_addresses],
+            allowed_ips=get_allowed_ip_list(beta.ip_addresses),
             endpoint=None,
             hostname=beta.name + ".nord",
             allow_incoming_connections=True,
@@ -609,7 +625,7 @@ async def test_event_content_meshnet_node_upgrade_direct(
             is_exit=False,
             is_vpn=False,
             ip_addresses=alpha.ip_addresses,
-            allowed_ips=[ip + "/32" for ip in alpha.ip_addresses],
+            allowed_ips=get_allowed_ip_list(alpha.ip_addresses),
             endpoint=None,
             hostname=alpha.name + ".nord",
             allow_incoming_connections=True,
