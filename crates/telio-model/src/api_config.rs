@@ -154,7 +154,7 @@ pub enum EndpointProvider {
 }
 
 /// Endpoint polling interval
-pub const DEFAULT_ENDPOINT_POLL_INTERVAL_SECS: u64 = 10;
+pub const DEFAULT_ENDPOINT_POLL_INTERVAL_SECS: u64 = 25;
 
 /// Enable meshent direct connection
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
