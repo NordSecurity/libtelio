@@ -92,6 +92,7 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
                 last_candidates: Vec::new(),
                 ping_pong_tracker: ping_pong_handler,
                 stun_peer_publisher,
+                stun_state: StunState::SearchingForServer,
             }),
         }
     }
@@ -113,7 +114,6 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
                 });
                 s.servers = servers;
                 s.current_server_index = 0;
-                s.stun_session = None;
 
                 if s.stun_peer_publisher
                     .try_send(s.servers.get(s.current_server_index).cloned())
@@ -122,6 +122,8 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
                     telio_log_error!("Could not publish the STUN peer");
                 }
             }
+
+            s.exponential_backoff.reset();
 
             // Start STUN session, but only if we have at least one STUN server configured
             if !s.servers.is_empty() && s.start_stun_session().await.is_err() {
@@ -197,6 +199,24 @@ impl<Wg: WireGuard, E: Backoff + 'static> EndpointProvider for StunEndpointProvi
     }
 }
 
+//                                -------------
+//                                |           |
+//                                v           |
+// +------------------+     +--------------+  |
+// |SearchingForServer|---->| HasEndpoints |---
+// +------------------+     +--------------+
+//          ^                     |
+//          |                     |
+//          v                     |
+//   +-------------+              |
+//   | BackingOff  |<--------------
+//   +-------------+
+enum StunState {
+    SearchingForServer,
+    BackingOff,
+    HasEndpoints,
+}
+
 struct State<Wg: WireGuard, E: Backoff> {
     servers: Vec<Server>,
     current_server_index: usize,
@@ -213,6 +233,7 @@ struct State<Wg: WireGuard, E: Backoff> {
     exponential_backoff: E,
     current_timeout: PinnedSleep<()>,
     last_candidates: Vec<EndpointCandidate>,
+    stun_state: StunState,
 
     stun_peer_publisher: chan::Tx<Option<StunServer>>,
 }
@@ -323,19 +344,7 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
             match session.try_consume(payload, src_addr)? {
                 // Candidate resolved, session is consumed.
                 StunResult::Final(candidate) => {
-                    if let Some(change_event) = &self.change_event {
-                        let candidates = vec![candidate];
-                        if self.last_candidates != candidates {
-                            self.last_candidates = candidates.clone();
-                            change_event
-                                .send((EndpointProviderType::Stun, candidates))
-                                .await?;
-                        }
-
-                        self.exponential_backoff.reset();
-                    } else {
-                        telio_log_warn!("{} does not have endpoint provider sender.", Self::NAME)
-                    }
+                    self.transition_to_has_endpoints_state(candidate).await;
                     return Ok(true);
                 }
                 // Session resolved one of endpoints, session continues
@@ -367,6 +376,50 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
                 &self.pong_event,
             )
             .await
+    }
+
+    async fn transition_to_has_endpoints_state(&mut self, candidate: EndpointCandidate) {
+        // Anounce the new candidates
+        let candidates = vec![candidate];
+        if self.last_candidates != candidates {
+            self.last_candidates = candidates.clone();
+            if let Some(change_event) = &self.change_event {
+                let _ = change_event
+                    .send((EndpointProviderType::Stun, candidates))
+                    .await;
+            } else {
+                telio_log_warn!("{} does not have endpoint provider sender.", Self::NAME)
+            }
+        }
+
+        // Transition to HasEndpoints state
+        self.stun_state = StunState::HasEndpoints;
+        self.exponential_backoff.reset();
+        // Current backoff should be DEFAULT_ENDPOINT_POLL_INTERVAL_SECS or configured value
+        self.current_timeout = PinnedSleep::new(self.exponential_backoff.get_backoff(), ());
+    }
+
+    async fn transition_to_backing_off_state(&mut self) {
+        // We failed so we clear the candidates if there are any
+        if !self.last_candidates.is_empty() {
+            self.last_candidates.clear();
+            if let Some(ce) = &self.change_event {
+                let _ = ce.send((EndpointProviderType::Stun, vec![])).await;
+            } else {
+                telio_log_warn!("{} does not have endpoint provider sender.", Self::NAME)
+            }
+        }
+
+        // Transition to backing off state
+        self.stun_state = StunState::BackingOff;
+        // Clear the session so we can start the next search after backing off
+        self.stun_session = None;
+        // Move to the next server
+        self.next_server();
+        // Set the timeout according to the exponential backoff
+        self.current_timeout = PinnedSleep::new(self.exponential_backoff.get_backoff(), ());
+        // Update next backoff
+        self.exponential_backoff.next_backoff();
     }
 }
 
@@ -407,20 +460,26 @@ impl<Wg: WireGuard, E: Backoff> Runtime for State<Wg, E> {
             }
             // We are waiting either for stun session to timeout, or for the end of penalty
             _ = &mut self.current_timeout => {
-                // Ensure the backoff in all cases
-                self.current_timeout = PinnedSleep::new(self.exponential_backoff.get_backoff(), ());
-
-                if self.stun_session.take().is_some() {
-                    self.next_server();
-                    if !self.last_candidates.is_empty() {
-                        self.last_candidates.clear();
-                        if let Some(ce) = &self.change_event {
-                            let _ = ce.send((EndpointProviderType::Stun, vec![])).await;
+                match self.stun_state {
+                    StunState::SearchingForServer => {
+                        // This is a stun timeout. We should back off.
+                        self.transition_to_backing_off_state().await;
+                    },
+                    StunState::BackingOff => {
+                        // Backoff timeout is over. We should try again.
+                        // Transition to searching state
+                        self.stun_state = StunState::SearchingForServer;
+                        let _ = self.start_stun_session().await;
+                    },
+                    StunState::HasEndpoints => {
+                        if self.stun_session.take().is_some() {
+                            // This is a stun timeout. We should back off and move to the next server.
+                            self.transition_to_backing_off_state().await;
+                        } else {
+                            // This is a poll interval. We're still in HasEndpoints state.
+                            let _ = self.start_stun_session().await;
                         }
-                    }
-                } else {
-                    self.exponential_backoff.next_backoff();
-                    let _  = self.start_stun_session().await;
+                    },
                 }
             }
             update = &mut updated => {
@@ -527,7 +586,7 @@ impl StunRequest {
                     return Ok(false);
                 }
                 telio_log_debug!(
-                    "Got stun response from {} for sesion {:?} -> {}",
+                    "Got stun response from {} for session {:?} -> {}",
                     src_addr,
                     tid.as_bytes(),
                     &sa,
@@ -630,6 +689,61 @@ mod tests {
         task,
         time::{self, sleep, timeout},
     };
+
+    #[tokio::test]
+    async fn timeouts_on_happy_path() {
+        const DEFAULT_POLL_INTERVAL_MILLIS: u64 = 1000;
+        let mut env = prepare_test_env(Some([DEFAULT_POLL_INTERVAL_MILLIS; 6])).await;
+        env.configure_env().await;
+
+        let udp_endpoint = SocketAddr::new([1, 1, 1, 1].into(), 11111);
+        let wg_endpoint = SocketAddr::new([2, 2, 2, 2].into(), 22222);
+
+        await_timeout!(stun_reply(
+            &env.peers[0].stun_sock,
+            XorMappedAddress::new(udp_endpoint)
+        ));
+        await_timeout!(stun_reply(
+            &env.peers[0].peer_sock,
+            MappedAddress::new(wg_endpoint)
+        ));
+
+        let event = await_timeout!(env.change_event.recv());
+        let (provider, candidates) = event.expect("got event");
+        assert_eq!(provider, EndpointProviderType::Stun);
+        assert_eq!(
+            candidates,
+            vec![EndpointCandidate {
+                udp: udp_endpoint,
+                wg: wg_endpoint,
+            }]
+        );
+
+        for _ in 0..2 {
+            timeout(
+                Duration::from_millis(DEFAULT_POLL_INTERVAL_MILLIS - 50),
+                async {
+                    let mut buf = [0; MAX_PACKET_SIZE];
+                    let _ = env.peers[0].stun_sock.recv(&mut buf).await;
+                    let _ = env.peers[0].peer_sock.recv(&mut buf).await;
+                },
+            )
+            .await
+            .expect_err("Should not receive stun requests yet");
+
+            // Poll interval should expire already so we try to complete the requests
+            await_timeout!(stun_reply(
+                &env.peers[0].stun_sock,
+                XorMappedAddress::new(udp_endpoint)
+            ));
+            await_timeout!(stun_reply(
+                &env.peers[0].peer_sock,
+                MappedAddress::new(wg_endpoint)
+            ));
+        }
+
+        env.stun_provider.stop().await;
+    }
 
     #[tokio::test]
     async fn collect_stun_endpoints_on_configure() {
@@ -1191,7 +1305,7 @@ mod tests {
         // Expectation of single call is already set in mock wg
         jump_to_next_session_start(STUN_TIMEOUT).await;
         task::yield_now().await;
-        time::advance(Duration::from_millis(10)).await;
+        time::advance(Duration::from_millis(100)).await;
         task::yield_now().await;
         time::advance(Duration::from_millis(10)).await;
         task::yield_now().await;
