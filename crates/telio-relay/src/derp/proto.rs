@@ -420,10 +420,10 @@ mod tests {
         let mut buf1 = Vec::new();
         let mut buf2 = Vec::new();
         let mut buf3 = Vec::new();
-        let secret_key1 = SecretKey([0_u8; KEY_SIZE]);
-        let server_key1 = SecretKey([1_u8; KEY_SIZE]).public();
-        let secret_key2 = SecretKey([2_u8; KEY_SIZE]);
-        let server_key2 = SecretKey([3_u8; KEY_SIZE]).public();
+        let secret_key1 = SecretKey::new([0_u8; KEY_SIZE]);
+        let server_key1 = SecretKey::new([1_u8; KEY_SIZE]).public();
+        let secret_key2 = SecretKey::new([2_u8; KEY_SIZE]);
+        let server_key2 = SecretKey::new([3_u8; KEY_SIZE]).public();
         write_client_key(&mut buf1, secret_key1, server_key1)
             .await
             .unwrap();
@@ -453,7 +453,7 @@ mod tests {
     ) {
         let reader = &reader[..];
         let mut writer = Vec::new();
-        let secret_key = SecretKey(secret_key);
+        let secret_key = SecretKey::new(secret_key);
         match error {
             true => assert_eq!(
                 true,

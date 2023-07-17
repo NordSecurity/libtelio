@@ -34,7 +34,7 @@ pub const KEY_SIZE: usize = 32;
 #[derive(
     Default, PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone, DeserializeFromStr, SerializeDisplay,
 )]
-pub struct SecretKey(pub [u8; KEY_SIZE]);
+pub struct SecretKey([u8; KEY_SIZE]);
 
 /// Public key type
 #[derive(
@@ -57,6 +57,16 @@ pub enum KeyDecodeError {
 }
 
 impl SecretKey {
+    /// Create new key from bytes
+    /// This ensures bytes are properly clamped
+    pub const fn new(mut bytes: [u8; KEY_SIZE]) -> Self {
+        bytes[0] &= 248;
+        bytes[31] &= 127;
+        bytes[31] |= 64;
+
+        Self(bytes)
+    }
+
     /// Generates a new random SecretKey.
     /// # Examples
     ///
@@ -97,6 +107,23 @@ impl SecretKey {
     /// ```
     pub fn public(&self) -> PublicKey {
         crypto_box::SecretKey::from(self.0).public_key().into()
+    }
+
+    /// Return key represented as bytes
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+
+    /// Convert secret key to raw bytes
+    pub fn into_bytes(self) -> [u8; 32] {
+        self.0
+    }
+}
+
+impl PublicKey {
+    /// Create new key from bytes
+    pub const fn new(bytes: [u8; 32]) -> Self {
+        Self(bytes)
     }
 }
 
@@ -202,15 +229,15 @@ macro_rules! gen_common {
             type Err = KeyDecodeError;
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                let mut key = Self([0; KEY_SIZE]);
+                let mut key = [0; KEY_SIZE];
 
                 match s.len() {
-                    64 => { hex::decode_to_slice(s, &mut key.0)? }
-                    44 => { base64::decode_config_slice(s, base64::STANDARD, &mut key.0)?; }
+                    64 => { hex::decode_to_slice(s, &mut key)? }
+                    44 => { base64::decode_config_slice(s, base64::STANDARD, &mut key)?; }
                     l => return Err(KeyDecodeError::InvalidLength(l)),
                 }
 
-                Ok(key)
+                Ok(Self::new(key))
             }
         }
 
@@ -259,10 +286,10 @@ gen_common!(SecretKey, PublicKey);
 mod tests {
     use super::*;
 
-    const SK: SecretKey = SecretKey([0xBAu8; 32]);
-    const SK_HEX: &str = "babababababababababababababababababababababababababababababababa";
-    const SK_B64: &str = "urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uro=";
-    const SK_B64_SHORT: &str = "\"urq6...uro=\"";
+    const SK: SecretKey = SecretKey::new([0xBAu8; 32]);
+    const SK_HEX: &str = "b8babababababababababababababababababababababababababababababa7a";
+    const SK_B64: &str = "uLq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uno=";
+    const SK_B64_SHORT: &str = "\"uLq6...uno=\"";
     const PK: PublicKey = PublicKey([
         124, 138, 97, 25, 210, 221, 193, 169, 240, 19, 235, 72, 147, 68, 8, 93, 67, 1, 26, 73, 54,
         36, 116, 129, 248, 12, 124, 44, 238, 225, 78, 53,
@@ -270,6 +297,12 @@ mod tests {
     const PK_HEX: &str = "7c8a6119d2ddc1a9f013eb489344085d43011a4936247481f80c7c2ceee14e35";
     const PK_B64: &str = "fIphGdLdwanwE+tIk0QIXUMBGkk2JHSB+Ax8LO7hTjU=";
     const PK_B64_SHORT: &str = "\"fIph...TjU=\"";
+
+    #[test]
+    fn secret_key_is_clammped() {
+        assert_eq!(SK.as_bytes()[0], 0xb8);
+        assert_eq!(SK.as_bytes()[31], 0x7a);
+    }
 
     #[test]
     fn convert_sk_to_pk() {
