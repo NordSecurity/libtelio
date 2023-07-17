@@ -7,7 +7,7 @@ from dataclasses_json import dataclass_json, DataClassJsonMixin
 from enum import Enum
 from mesh_api import Node
 from typing import List, Dict, Any, Set, Optional, AsyncIterator
-from utils import Router, new_router, OutputNotifier, connection_util
+from utils import Router, new_router, OutputNotifier, connection_util, IPStack
 from config import DERP_PRIMARY, DERP_SERVERS
 import asyncio
 import json
@@ -415,6 +415,7 @@ class Client:
                         self._node.private_key,
                     ],
                 )
+                self._router.ip_stack = IPStack.IPv4v6
                 async with asyncio_util.run_async_context(self._event_request_loop()):
                     yield self
             finally:
@@ -578,7 +579,7 @@ class Client:
     async def _configure_interface(self) -> bool:
         if not self._interface_configured:
             await self.get_router().setup_interface(
-                self._node.ip_addresses[0],
+                self._node.ip_addresses,
             )
 
             await self.get_router().create_meshnet_route()

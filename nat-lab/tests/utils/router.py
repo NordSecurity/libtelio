@@ -1,15 +1,54 @@
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
+from ipaddress import ip_address, IPv4Address
+from typing import AsyncIterator, List, Optional
+from enum import Enum, auto
+
+
+class IPStack(Enum):
+    IPv4 = auto()
+    IPv6 = auto()
+    IPv4v6 = auto()
+
+
+class IPProto(Enum):
+    IPv4 = auto()
+    IPv6 = auto()
+
+
+def get_ip_address_type(address: str) -> Optional[IPProto]:
+    try:
+        return (
+            IPProto.IPv4 if type(ip_address(address)) is IPv4Address else IPProto.IPv6
+        )
+    except ValueError:
+        return None
 
 
 class Router(ABC):
+    _ip_stack: IPStack
+
+    def __init__(self) -> None:
+        self._ip_stack = IPStack.IPv4v6
+
+    def check_ip_address(self, address: str) -> Optional[IPProto]:
+        addr_proto = get_ip_address_type(address)
+
+        if (
+            addr_proto == None
+            or (self.ip_stack == IPStack.IPv4 and addr_proto == IPProto.IPv6)
+            or (self.ip_stack == IPStack.IPv6 and addr_proto == IPProto.IPv4)
+        ):
+            return None
+
+        return addr_proto
+
     @abstractmethod
     def get_interface_name(self) -> str:
         pass
 
     @abstractmethod
-    async def setup_interface(self, address: str) -> None:
+    async def setup_interface(self, addresses: List[str]) -> None:
         pass
 
     @abstractmethod
@@ -45,3 +84,11 @@ class Router(ABC):
     @asynccontextmanager
     async def break_tcp_conn_to_host(self, address: str) -> AsyncIterator:
         yield
+
+    @property
+    def ip_stack(self) -> IPStack:
+        return self._ip_stack
+
+    @ip_stack.setter
+    def ip_stack(self, ip_stack: IPStack) -> None:
+        self._ip_stack = ip_stack

@@ -1,4 +1,4 @@
-from .router import Router
+from .router import Router, IPStack, IPProto, get_ip_address_type
 from .linux_router import LinuxRouter
 from .windows_router import WindowsRouter
 from .mac_router import MacRouter

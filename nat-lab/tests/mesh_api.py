@@ -177,6 +177,9 @@ class API:
             is_local=is_local,
         )
         self.assign_ip(alpha.id, "100.64.33.1")
+        self.assign_ip(
+            alpha.id, "fd00::dead:1"
+        )  # TODO correct subnet when we'll decide about the range
         return alpha
 
     def default_config_beta_node(
@@ -191,6 +194,9 @@ class API:
             is_local=is_local,
         )
         self.assign_ip(beta.id, "100.64.33.2")
+        self.assign_ip(
+            beta.id, "fd00::dead:2"
+        )  # TODO correct subnet when we'll decide about the range
         return beta
 
     def default_config_gamma_node(
@@ -205,6 +211,9 @@ class API:
             is_local=is_local,
         )
         self.assign_ip(gamma.id, "100.64.33.3")
+        self.assign_ip(
+            gamma.id, "fd00::dead:3"
+        )  # TODO correct subnet when we'll decide about the range
         return gamma
 
     def default_config_two_nodes(

@@ -1,8 +1,8 @@
 from utils.connection import Connection
 from utils.process import ProcessExecError
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
-from utils import Router
+from typing import AsyncIterator, List
+from utils import Router, IPStack, IPProto
 
 # An arbitrary routing table id. Must be unique on the system.
 ROUTING_TABLE_ID = "73110"  # TELIO
@@ -24,41 +24,79 @@ class LinuxRouter(Router):
     _interface_name: str
 
     def __init__(self, connection: Connection):
+        super().__init__()
         self._connection = connection
         self._interface_name = "tun10"
 
     def get_interface_name(self) -> str:
         return self._interface_name
 
-    async def setup_interface(self, address: str) -> None:
-        await self._connection.create_process(
-            [
-                "ip",
-                "addr",
-                "add",
-                "dev",
-                self._interface_name,
-                address,
-            ],
-        ).execute()
+    async def setup_interface(self, addresses: List[str]) -> None:
+        for address in addresses:
+            addr_proto = self.check_ip_address(address)
+
+            if addr_proto == IPProto.IPv4:
+                await self._connection.create_process(
+                    [
+                        "ip",
+                        "-4",
+                        "addr",
+                        "add",
+                        "dev",
+                        self._interface_name,
+                        address,
+                    ],
+                ).execute()
+            elif addr_proto == IPProto.IPv6:
+                await self._connection.create_process(
+                    [
+                        "ip",
+                        "-6",
+                        "addr",
+                        "add",
+                        address,
+                        "dev",
+                        self._interface_name,
+                    ],
+                ).execute()
+            else:
+                continue
 
         await self._connection.create_process(
             ["ip", "link", "set", "up", "dev", self._interface_name],
         ).execute()
 
     async def create_meshnet_route(self):
-        await self._connection.create_process(
-            [
-                "ip",
-                "route",
-                "add",
-                "100.64.0.0/10",
-                "dev",
-                self._interface_name,
-            ],
-        ).execute()
+        if self.ip_stack == IPStack.IPv4 or self.ip_stack == IPStack.IPv4v6:
+            await self._connection.create_process(
+                [
+                    "ip",
+                    "-4",
+                    "route",
+                    "add",
+                    "100.64.0.0/10",
+                    "dev",
+                    self._interface_name,
+                ],
+            ).execute()
+
+        if self.ip_stack == IPStack.IPv6 or self.ip_stack == IPStack.IPv4v6:
+            await self._connection.create_process(
+                [
+                    "ip",
+                    "-6",
+                    "route",
+                    "add",
+                    "fd00::/64",  # TODO correct subnet when we'll decide about the range
+                    "dev",
+                    self._interface_name,
+                ],
+            ).execute()
 
     async def create_vpn_route(self):
+        if self.ip_stack == IPStack.IPv6:
+            assert False, f"IPv6 for VPN is not supported"
+
         try:
             await self._connection.create_process(
                 [
@@ -120,6 +158,9 @@ class LinuxRouter(Router):
                 raise exception
 
     async def delete_vpn_route(self):
+        if self.ip_stack == IPStack.IPv6:
+            assert False, f"IPv6 for VPN is not supported"
+
         try:
             await self._connection.create_process(
                 [
@@ -138,31 +179,13 @@ class LinuxRouter(Router):
                 raise exception
 
     async def create_exit_node_route(self) -> None:
-        await self._connection.create_process(
-            [
-                "iptables",
-                "-t",
-                "nat",
-                "-A",
-                "POSTROUTING",
-                "-s",
-                "100.64.0.0/10",
-                "!",
-                "-o",
-                self._interface_name,
-                "-j",
-                "MASQUERADE",
-            ],
-        ).execute()
-
-    async def delete_exit_node_route(self) -> None:
-        try:
+        if self.ip_stack == IPStack.IPv4 or self.ip_stack == IPStack.IPv4v6:
             await self._connection.create_process(
                 [
                     "iptables",
                     "-t",
                     "nat",
-                    "-D",
+                    "-A",
                     "POSTROUTING",
                     "-s",
                     "100.64.0.0/10",
@@ -173,15 +196,85 @@ class LinuxRouter(Router):
                     "MASQUERADE",
                 ],
             ).execute()
-        except ProcessExecError as exception:
-            if exception.stderr.find("No chain/target/match by that name") < 0:
-                raise exception
+
+        if self.ip_stack == IPStack.IPv6 or self.ip_stack == IPStack.IPv4v6:
+            await self._connection.create_process(
+                [
+                    "ip6tables",
+                    "-t",
+                    "nat",
+                    "-A",
+                    "POSTROUTING",
+                    "-s",
+                    "fd00::/64",  # TODO correct subnet when we'll decide about the range
+                    "!",
+                    "-o",
+                    self._interface_name,
+                    "-j",
+                    "MASQUERADE",
+                ],
+            ).execute()
+
+    async def delete_exit_node_route(self) -> None:
+        if self.ip_stack == IPStack.IPv4 or self.ip_stack == IPStack.IPv4v6:
+            try:
+                await self._connection.create_process(
+                    [
+                        "iptables",
+                        "-t",
+                        "nat",
+                        "-D",
+                        "POSTROUTING",
+                        "-s",
+                        "100.64.0.0/10",
+                        "!",
+                        "-o",
+                        self._interface_name,
+                        "-j",
+                        "MASQUERADE",
+                    ],
+                ).execute()
+            except ProcessExecError as exception:
+                if exception.stderr.find("No chain/target/match by that name") < 0:
+                    raise exception
+
+        if self.ip_stack == IPStack.IPv6 or self.ip_stack == IPStack.IPv4v6:
+            try:
+                await self._connection.create_process(
+                    [
+                        "ip6tables",
+                        "-t",
+                        "nat",
+                        "-D",
+                        "POSTROUTING",
+                        "-s",
+                        "fd00::/64",  # TODO correct subnet when we'll decide about the range
+                        "!",
+                        "-o",
+                        self._interface_name,
+                        "-j",
+                        "MASQUERADE",
+                    ],
+                ).execute()
+            except ProcessExecError as exception:
+                if (
+                    exception.stderr.find(
+                        "Bad rule (does a matching rule exist in that chain?)"
+                    )
+                    < 0
+                ):
+                    raise exception
 
     @asynccontextmanager
     async def disable_path(self, address: str) -> AsyncIterator:
+        addr_proto = self.check_ip_address(address)
+
+        if addr_proto == None:
+            return
+
         await self._connection.create_process(
             [
-                "iptables",
+                ("ip" if addr_proto == IPProto.IPv4 else "ip6") + "tables",
                 "-t",
                 "filter",
                 "-A",
@@ -194,7 +287,7 @@ class LinuxRouter(Router):
         ).execute()
         await self._connection.create_process(
             [
-                "iptables",
+                ("ip" if addr_proto == IPProto.IPv4 else "ip6") + "tables",
                 "-t",
                 "filter",
                 "-A",
@@ -205,12 +298,13 @@ class LinuxRouter(Router):
                 "DROP",
             ]
         ).execute()
+
         try:
             yield
         finally:
             await self._connection.create_process(
                 [
-                    "iptables",
+                    ("ip" if addr_proto == IPProto.IPv4 else "ip6") + "tables",
                     "-t",
                     "filter",
                     "-D",
@@ -223,7 +317,7 @@ class LinuxRouter(Router):
             ).execute()
             await self._connection.create_process(
                 [
-                    "iptables",
+                    ("ip" if addr_proto == IPProto.IPv4 else "ip6") + "tables",
                     "-t",
                     "filter",
                     "-D",
@@ -237,9 +331,14 @@ class LinuxRouter(Router):
 
     @asynccontextmanager
     async def break_tcp_conn_to_host(self, address: str) -> AsyncIterator:
+        addr_proto = self.check_ip_address(address)
+
+        if addr_proto == None:
+            return
+
         await self._connection.create_process(
             [
-                "iptables",
+                ("ip" if addr_proto == IPProto.IPv4 else "ip6") + "tables",
                 "-t",
                 "filter",
                 "-A",
@@ -254,12 +353,13 @@ class LinuxRouter(Router):
                 "tcp-reset",
             ]
         ).execute()
+
         try:
             yield
         finally:
             await self._connection.create_process(
                 [
-                    "iptables",
+                    ("ip" if addr_proto == IPProto.IPv4 else "ip6") + "tables",
                     "-t",
                     "filter",
                     "-D",

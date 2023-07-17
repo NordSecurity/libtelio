@@ -297,10 +297,10 @@ async fn build_requested_peers_list<
 
     // Add or promote exit node peer
     if let Some(exit_node) = &requested_state.exit_node {
-        let allowed_ips = exit_node
-            .allowed_ips
-            .clone()
-            .unwrap_or(vec![IpNetwork::V4("0.0.0.0/0".parse()?)]);
+        let allowed_ips = exit_node.allowed_ips.clone().unwrap_or(vec![
+            IpNetwork::V4("0.0.0.0/0".parse()?),
+            IpNetwork::V6("::/0".parse()?),
+        ]);
 
         if let Some(meshnet_peer) = requested_peers.get_mut(&exit_node.public_key) {
             // Exit node is meshnet peer, so just promote already existing node to be exit node
@@ -407,7 +407,10 @@ async fn build_requested_meshnet_peers_list<
             // Retreive node's meshnet IP from config, and convert it into `/32` network type
             let allowed_ips = p.base.ip_addresses.clone().map_or(vec![], |ips| {
                 ips.iter()
-                    .map(|ip| IpNetwork::new(*ip, 32))
+                    .map(|ip| match ip {
+                        IpAddr::V4(_) => IpNetwork::new(*ip, 32),
+                        IpAddr::V6(_) => IpNetwork::new(*ip, 128),
+                    })
                     .filter_map(|ip_res| ip_res.ok())
                     .collect()
             });

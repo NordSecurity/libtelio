@@ -86,7 +86,8 @@ impl TryFrom<&ExitNode> for Node {
     type Error = IpNetworkError;
 
     fn try_from(other: &ExitNode) -> Result<Self, IpNetworkError> {
-        let address = "0.0.0.0/0".parse()?;
+        let address_v4 = "0.0.0.0/0".parse()?;
+        let address_v6 = "::/0".parse()?;
         Ok(Self {
             public_key: other.public_key,
             is_exit: true,
@@ -95,7 +96,7 @@ impl TryFrom<&ExitNode> for Node {
                 .allowed_ips
                 .as_ref()
                 .cloned()
-                .unwrap_or_else(|| vec![address]),
+                .unwrap_or_else(|| vec![address_v4, address_v6]),
             endpoint: other.endpoint,
             ..Default::default()
         })

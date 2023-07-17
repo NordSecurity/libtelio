@@ -20,6 +20,8 @@ services:
     networks:
       internet:
         ipv4_address: 10.0.80.80
+      internet_v6:
+        ipv6_address: 2001:0db8:85a4::adda:edde:0005
     volumes:
       - type: bind
         source: ./data/photo.png
@@ -144,6 +146,28 @@ services:
     volumes:
       - ../../:/libtelio-build
 
+  # Create one open internet client for
+  # cryptography tests
+  open-internet-client-dual-stack:
+    hostname: open-client-dual-stack
+    image: nat-lab:base
+    entrypoint: /opt/bin/client
+    privileged: true
+    networks:
+      internet:
+        ipv4_address: 10.0.11.4
+      internet_v6:
+        ipv6_address: 2001:0db8:85a4::dead:beef:ceed
+    environment:
+      CLIENT_GATEWAY_PRIMARY: none
+    extra_hosts:
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+    volumes:
+      - ../../:/libtelio-build
+
   # Create one client for cone network, this client will use
   # the above gateway as its route to the "internet"
   cone-client-01:
@@ -158,6 +182,7 @@ services:
       CLIENT_GATEWAY_PRIMARY: 192.168.101.254
     extra_hosts:
       - "photo-album:10.0.80.80"
+      - "photo-album:2001:0db8:85a4::adda:edde:0005"
       - "stun-01:10.0.1.1"
       - "stun-02:10.0.1.245"
       - "derp-01:10.0.10.1"
@@ -533,6 +558,15 @@ networks:
       driver: default
       config:
         - subnet: 10.0.0.0/16
+
+  # Network representing internet with global ipv6 addresses
+  internet_v6:
+    enable_ipv6: true
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 2001:0db8:85a4::/48
 
   # Define two separate networks for use with cone NATs
   # gateways on these networks must implement restricted-cone NAT.

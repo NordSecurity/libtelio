@@ -1,12 +1,11 @@
 from utils.connection import Connection
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
-from utils import Router
+from typing import AsyncIterator, List
+from utils import Router, IPStack, IPProto
 
 from config import (
     LINUX_VM_PRIMARY_GATEWAY,
-    DERP_PRIMARY,
-    DERP_SECONDARY,
+    DERP_SERVERS,
     VPN_SERVER_SUBNET,
 )
 
@@ -16,54 +15,82 @@ class MacRouter(Router):
     _interface_name: str
 
     def __init__(self, connection: Connection):
+        super().__init__()
         self._connection = connection
         self._interface_name = "utun10"
 
     def get_interface_name(self) -> str:
         return self._interface_name
 
-    async def setup_interface(self, address: str) -> None:
-        await self._connection.create_process(
-            [
-                "ifconfig",
-                self._interface_name,
-                "add",
-                address,
-                "255.192.0.0",
-                address,
-            ],
-        ).execute()
+    async def setup_interface(self, addresses: List[str]) -> None:
+        for address in addresses:
+            addr_proto = self.check_ip_address(address)
+
+            if addr_proto == IPProto.IPv4:
+                await self._connection.create_process(
+                    [
+                        "ifconfig",
+                        self._interface_name,
+                        "inet",
+                        "add",
+                        address,
+                        "255.192.0.0",
+                        address,
+                    ],
+                ).execute()
+            elif addr_proto == IPProto.IPv6:
+                await self._connection.create_process(
+                    [
+                        "ifconfig",
+                        self._interface_name,
+                        "inet6",
+                        "add",
+                        address,
+                        "prefixlen",
+                        "64",
+                    ],
+                ).execute()
+            else:
+                continue
 
     async def create_meshnet_route(self) -> None:
-        await self._connection.create_process(
-            [
-                "route",
-                "add",
-                "100.64.0.0/10",
-                "-interface",
-                self._interface_name,
-            ],
-        ).execute()
+        if self.ip_stack == IPStack.IPv4 or self.ip_stack == IPStack.IPv4v6:
+            await self._connection.create_process(
+                [
+                    "route",
+                    "add",
+                    "-inet",
+                    "100.64.0.0/10",
+                    "-interface",
+                    self._interface_name,
+                ],
+            ).execute()
 
-        await self._connection.create_process(
-            [
-                "route",
-                "add",
-                str(DERP_PRIMARY.get("ipv4")) + "/32",
-                LINUX_VM_PRIMARY_GATEWAY,
-            ],
-        ).execute()
+            for derp in DERP_SERVERS:
+                await self._connection.create_process(
+                    [
+                        "route",
+                        "add",
+                        str(derp.get("ipv4")) + "/32",
+                        LINUX_VM_PRIMARY_GATEWAY,
+                    ],
+                ).execute()
 
-        await self._connection.create_process(
-            [
-                "route",
-                "add",
-                str(DERP_SECONDARY.get("ipv4")) + "/32",
-                LINUX_VM_PRIMARY_GATEWAY,
-            ],
-        ).execute()
+        if self.ip_stack == IPStack.IPv6 or self.ip_stack == IPStack.IPv4v6:
+            await self._connection.create_process(
+                [
+                    "route",
+                    "add",
+                    "-inet6",
+                    "fd00::/64",  # TODO correct subnet when we'll decide about the range "fd00::/64"
+                    "-interface",
+                    self._interface_name,
+                ],
+            ).execute()
 
     async def create_vpn_route(self) -> None:
+        if self.ip_stack == IPStack.IPv6:
+            assert False, f"IPv6 for VPN is not supported"
 
         await self._connection.create_process(
             [
@@ -96,6 +123,8 @@ class MacRouter(Router):
         pass
 
     async def delete_vpn_route(self) -> None:
+        if self.ip_stack == IPStack.IPv6:
+            assert False, f"IPv6 for VPN is not supported"
 
         await self._connection.create_process(
             [
