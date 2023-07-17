@@ -1,5 +1,10 @@
 ### UNRELEASED
 ---
+
+<br>
+
+### v4.0.5
+---
 * LLT-3832: Upgrade python cryptography to 41.0.1
 * LLT-3855: Add "release.py" helper script, for easier release preparation
 * LLT-3813: Update trust-dns to 0.22.1
@@ -10,6 +15,8 @@
 * LLT-3651: Integration test for NAT type
 * LLT-3943: Fix secret key clamping issue causing instabilities.
 * LLT-3909: Fix stun poll intervals on happy path
+* LLT-3849: Fix and adjust test for `telio-task` drop
+* LLT-3592: Bind Ipv6 sockets on macOs
 
 <br>
 
@@ -26,7 +33,6 @@
 * LLT-3771: Fix derp server list loop
 * LLT-3497: Don't bind ICMP session_keeper socket on Android
 * LLT-3772: Fix derp infinite loop
-* LLT-3849: Fix and adjust test for `telio-task` drop
 
 <br>
 
@@ -38,7 +44,6 @@
 * LLT-3603: Add support for `allow_peer_send_files` to meshconfig
 * LLT-3668: Stop Nurse before Derp
 * LLT-3665: Fix missing forward zone after DNS zones clone
-* LLT-3592: Bind Ipv6 sockets on macOs
 * LLT-3715: Fix incorrect send data length in derpcli manual mode
 * LLT-3710: Fix infinite loop in STUN provider in case of nonet
 
