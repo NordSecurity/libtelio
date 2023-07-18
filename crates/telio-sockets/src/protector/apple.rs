@@ -1,10 +1,12 @@
 use debug_panic::debug_panic;
 use parking_lot::Mutex;
 use parking_lot::RwLock;
+
 use std::{
-    io,
+    io, os,
     sync::{Arc, Weak},
 };
+
 use system_configuration::{
     self,
     core_foundation::{
@@ -20,13 +22,70 @@ use system_configuration::{
 };
 use tokio::{self, sync::Notify, task::JoinHandle};
 
-mod common;
-use common::{bind, bind_to_tun};
-
 use crate::native::interface_index_from_name;
 use crate::native::NativeSocket;
 use crate::Protector;
+use nix::sys::socket::{getsockname, AddressFamily, SockaddrLike, SockaddrStorage};
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn};
+
+#[cfg(target_os = "ios")]
+use objc::{class, msg_send, runtime::Object, sel, sel_impl};
+#[cfg(target_os = "ios")]
+use objc_foundation::{INSString, NSString};
+#[cfg(target_os = "ios")]
+use version_compare::{compare_to, Cmp};
+
+pub(crate) fn bind_to_tun(sock: NativeSocket, tunnel_interface: u64) -> io::Result<()> {
+    telio_log_debug!(
+        "Binding socket {} to tunnel interface: {}",
+        sock,
+        tunnel_interface
+    );
+    let res = bind(tunnel_interface as u32, sock);
+    if let Err(e) = &res {
+        telio_log_error!(
+            "failed to bind socket {} to tunnel interface: {}: {}",
+            sock,
+            tunnel_interface,
+            e
+        );
+    }
+
+    res
+}
+
+pub(crate) fn bind(interface_index: u32, socket: i32) -> io::Result<()> {
+    if let Some(sock_addr) = getsockname::<SockaddrStorage>(socket)?.family() {
+        let (option, level) = match sock_addr {
+            AddressFamily::Inet6 => (libc::IPV6_BOUND_IF, libc::IPPROTO_IPV6),
+            AddressFamily::Inet => (libc::IP_BOUND_IF, libc::IPPROTO_IP),
+            _ => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Invalid IP family type",
+                ))
+            }
+        };
+
+        const ARRAY_LEN: libc::size_t = std::mem::size_of::<u32>();
+        let array: [i8; ARRAY_LEN] = unsafe { std::mem::transmute(interface_index) };
+        unsafe {
+            if libc::setsockopt(
+                socket,
+                level,
+                option,
+                array.as_ptr() as *const os::raw::c_void,
+                std::mem::size_of_val(&array) as libc::socklen_t,
+            ) != 0
+            {
+                return Err(std::io::Error::last_os_error());
+            }
+        }
+    } else {
+        telio_log_warn!("Failed to find sock addr for socket : {}", socket);
+    }
+    Ok(())
+}
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {}
@@ -35,9 +94,17 @@ pub struct SocketWatcher {
     sockets: Arc<Mutex<Sockets>>,
     monitor: JoinHandle<io::Result<()>>,
 }
+
+#[cfg(target_os = "ios")]
+const SOCKET_WATCHER_MIN_IOS: &str = "15.7.1";
 pub struct NativeProtector {
     /// This is used to bind sockets to external interface
     /// It will save provided sockets and rebind them when network changes
+    ///
+    /// LLT-3777 socket_watcher should be created only for iOS newer than 15.7.1
+    /// With older iOS versions iOS handled rebinding by itself. It's not exactly
+    /// clear in which version the implementation changed, 15.7.1 was tested as set
+    /// as a reference point.
     socket_watcher: Option<SocketWatcher>,
 
     /// This is used to bind sockets to tunnel interface
@@ -47,8 +114,14 @@ pub struct NativeProtector {
 }
 
 impl NativeProtector {
-    pub fn new(macos_sideload: bool) -> io::Result<Self> {
-        if macos_sideload {
+    pub fn new(#[cfg(target_os = "macos")] is_test_env: bool) -> io::Result<Self> {
+        #[cfg(target_os = "macos")]
+        let should_create_socket_watcher = !is_test_env;
+
+        #[cfg(target_os = "ios")]
+        let should_create_socket_watcher = NativeProtector::should_create_socket_watcher();
+
+        if should_create_socket_watcher {
             let sockets = Arc::new(Mutex::new(Sockets::new()));
             Ok(Self {
                 socket_watcher: Some(SocketWatcher {
@@ -63,6 +136,31 @@ impl NativeProtector {
                 tunnel_interface: RwLock::new(None),
             })
         }
+    }
+
+    #[cfg(target_os = "ios")]
+    fn should_create_socket_watcher() -> bool {
+        matches!(
+            compare_to(
+                NativeProtector::get_ios_version().as_str(),
+                SOCKET_WATCHER_MIN_IOS,
+                Cmp::Gt,
+            ),
+            Ok(true)
+        )
+    }
+
+    #[cfg(target_os = "ios")]
+    fn get_ios_version() -> String {
+        let ui_device = class!(UIDevice);
+
+        let system_version_unsafe_str = unsafe {
+            let current_device: *const Object = msg_send![ui_device, currentDevice];
+            let system_version: *const Object = msg_send![current_device, systemVersion];
+            &*(system_version as *const NSString)
+        };
+
+        system_version_unsafe_str.as_str().to_owned()
     }
 }
 
@@ -129,64 +227,63 @@ impl Sockets {
     }
 
     fn rebind_all(&mut self, force: bool) {
-        let tunnel_interface = match self.tunnel_interface {
-            Some(tun_if) => tun_if,
-            None => return,
-        };
-        if self.sockets.is_empty() {
+        telio_log_debug!("Rebinding all relay sockets, force: {}", force);
+
+        if !self.set_new_default_interface(force) {
             return;
         }
-        let new_default_interface = get_primary_interface(tunnel_interface);
-        if !force && self.default_interface == new_default_interface {
-            return;
-        }
-        self.default_interface = new_default_interface;
+
         if let Some(&interface) = self.default_interface.as_ref() {
-            for sock in &self.sockets {
-                telio_log_debug!(
-                    "Binding relay socket {} to default interface: {}",
-                    sock,
-                    interface
-                );
-                if let Err(e) = bind(interface as u32, *sock) {
-                    telio_log_error!(
-                        "failed to bind relay socket {} to default interface: {}: {}",
-                        sock,
-                        interface,
-                        e
-                    );
-                }
+            for socket in &self.sockets {
+                Sockets::bind(interface as u32, socket);
             }
-        };
+        }
     }
 
     fn rebind(&mut self, sock: i32, force: bool) {
+        telio_log_debug!("Rebinding socket {}, force: {}", sock, force);
+
+        if !self.set_new_default_interface(force) {
+            return;
+        }
+
+        if let Some(&interface) = self.default_interface.as_ref() {
+            Sockets::bind(interface as u32, &sock);
+        }
+    }
+
+    fn set_new_default_interface(&mut self, force: bool) -> bool {
         let tunnel_interface = match self.tunnel_interface {
             Some(tun_if) => tun_if,
-            None => return,
+            None => return false,
         };
         if self.sockets.is_empty() {
-            return;
+            return false;
         }
         let new_default_interface = get_primary_interface(tunnel_interface);
+
         if !force && self.default_interface == new_default_interface {
-            return;
+            return false;
         }
+
         self.default_interface = new_default_interface;
-        if let Some(&interface) = self.default_interface.as_ref() {
+
+        true
+    }
+
+    fn bind(interface: u32, socket: &i32) {
+        telio_log_debug!(
+            "Binding relay socket {} to default interface: {}",
+            socket,
+            interface
+        );
+        if let Err(e) = bind(interface, *socket) {
             telio_log_debug!(
-                "Binding socket {} to default interface: {}",
-                sock,
-                interface
+                "failed to bind relay socket {} to default interface: {}: {}",
+                socket,
+                interface,
+                e
             );
-            if let Err(e) = bind(interface as u32, sock) {
-                telio_log_error!(
-                    "failed to bind socket {} to default interface: {}: {}",
-                    sock,
-                    interface,
-                    e
-                );
-            }
         }
     }
 }
@@ -205,9 +302,6 @@ fn spawn_monitor(sockets: Arc<Mutex<Sockets>>) -> JoinHandle<io::Result<()>> {
             let mut sockets = sockets.lock();
             sockets.rebind_all(true);
         }
-
-        telio_log_warn!("Sockets monitor returned early");
-        Ok(())
     })
 }
 

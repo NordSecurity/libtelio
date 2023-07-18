@@ -945,7 +945,7 @@ mod tests {
     ) {
     }
 
-    const CORRECT_FEATURES_JSON_WITHOUT_MACOS_SIDELOAD: &str = r#"
+    const CORRECT_FEATURES_JSON_WITHOUT_IS_TEST_ENV: &str = r#"
         {
             "wireguard":
             {
@@ -972,7 +972,7 @@ mod tests {
             "exit_dns": {}
         }"#;
 
-    const CORRECT_FEATURES_JSON_WITH_MACOS_SIDELOAD: &str = r#"
+    const CORRECT_FEATURES_JSON_WITH_IS_TEST_ENV: &str = r#"
         {
             "wireguard":
             {
@@ -997,7 +997,7 @@ mod tests {
             },
             "direct": {},
             "exit_dns": {},
-            "macos_sideload": false
+            "is_test_env": false
         }"#;
 
     #[test]
@@ -1020,9 +1020,9 @@ mod tests {
     }
 
     #[test]
-    fn test_telio_new_when_sideload_flag_is_missing() {
+    fn test_telio_new_when_is_test_env_flag_is_missing() {
         let mut telio_dev: *mut telio = ptr::null_mut();
-        let features_cstr = CString::new(CORRECT_FEATURES_JSON_WITHOUT_MACOS_SIDELOAD).unwrap();
+        let features_cstr = CString::new(CORRECT_FEATURES_JSON_WITHOUT_IS_TEST_ENV).unwrap();
         let events = telio_event_cb {
             ctx: ptr::null_mut(),
             cb: test_telio_event_fn,
@@ -1040,25 +1040,17 @@ mod tests {
             telio_logger,
         );
 
-        #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
-        {
-            assert_eq!(res, TELIO_RES_BAD_CONFIG);
-            assert!(telio_dev.is_null());
-        }
+        assert_eq!(res, TELIO_RES_OK);
+        assert!(!telio_dev.is_null());
 
-        #[cfg(not(any(target_os = "macos", feature = "pretend_to_be_macos")))]
-        {
-            assert_eq!(res, TELIO_RES_OK);
-            assert!(!telio_dev.is_null());
-        }
         // Restore panic hook
         let _ = panic::take_hook();
     }
 
     #[test]
-    fn test_telio_new_when_sideload_flag_is_present() {
+    fn test_telio_new_when_is_test_env_flag_is_present() {
         let mut telio_dev: *mut telio = ptr::null_mut();
-        let features_cstr = CString::new(CORRECT_FEATURES_JSON_WITH_MACOS_SIDELOAD).unwrap();
+        let features_cstr = CString::new(CORRECT_FEATURES_JSON_WITH_IS_TEST_ENV).unwrap();
         let events = telio_event_cb {
             ctx: ptr::null_mut(),
             cb: test_telio_event_fn,

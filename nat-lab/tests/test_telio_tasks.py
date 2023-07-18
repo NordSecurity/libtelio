@@ -20,7 +20,6 @@ async def test_telio_tasks_with_all_features() -> None:
                 connection_alpha,
                 alpha,
                 telio_features=TelioFeatures(
-                    macos_sideload=True,
                     exit_dns=ExitDns(auto_switch_dns_ips=True),
                     direct=Direct(providers=["stun", "local"]),
                     lana=Lana(prod=False, event_path="/some_path"),
