@@ -13,8 +13,8 @@ use pnet_packet::{
     udp::UdpPacket,
     Packet,
 };
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::{
-    collections::{HashMap, HashSet},
     fmt::{Debug, Formatter},
     net::{IpAddr as StdIpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr as StdIpv6Addr},
     sync::{Mutex, RwLock},

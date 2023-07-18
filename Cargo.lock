@@ -3556,6 +3556,7 @@ dependencies = [
  "lru_time_cache",
  "mockall",
  "pnet_packet 0.28.0",
+ "rustc-hash",
  "telio-crypto",
  "telio-utils",
 ]
