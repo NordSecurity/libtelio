@@ -1,5 +1,6 @@
 ### UNRELEASED
 ---
+* LLT-3777: Apply rebinding logic to all Apple platforms
 
 <br>
 

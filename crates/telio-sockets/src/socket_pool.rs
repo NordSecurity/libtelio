@@ -128,7 +128,6 @@ impl SocketPool {
     pub fn new_external_tcp_v4(
         &self,
         params: Option<TcpParams>,
-        #[cfg(target_os = "macos")] force_protect: bool,
     ) -> io::Result<External<TcpSocket>> {
         let ty = Type::STREAM;
 
@@ -149,11 +148,7 @@ impl SocketPool {
             socket2_socket.as_native_socket()
         );
 
-        self.new_external(
-            TcpSocket::from_std_stream(socket2_socket.into()),
-            #[cfg(target_os = "macos")]
-            force_protect,
-        )
+        self.new_external(TcpSocket::from_std_stream(socket2_socket.into()))
     }
 
     pub async fn new_udp<A: ToSocketAddrs>(
@@ -197,11 +192,7 @@ impl SocketPool {
             "Creating external udp socket: {}",
             socket.as_native_socket()
         );
-        self.new_external(
-            socket,
-            #[cfg(target_os = "macos")]
-            true,
-        )
+        self.new_external(socket)
     }
 
     /// wraps protect() on android, fmark on linux and interface binding for others
@@ -216,17 +207,7 @@ impl SocketPool {
         Ok(())
     }
 
-    fn new_external<T: AsNativeSocket>(
-        &self,
-        socket: T,
-        #[cfg(target_os = "macos")] force_protect: bool,
-    ) -> io::Result<External<T>> {
-        // TODO: remove this check once mac integration tests support our binding mechanism
-        #[cfg(target_os = "macos")]
-        if force_protect {
-            self.protect.make_external(socket.as_native_socket())?;
-        }
-        #[cfg(not(target_os = "macos"))]
+    fn new_external<T: AsNativeSocket>(&self, socket: T) -> io::Result<External<T>> {
         self.protect.make_external(socket.as_native_socket())?;
 
         Ok(External {
@@ -282,13 +263,7 @@ mod tests {
 
         let pool = SocketPool::new(protect);
 
-        let tcp = pool
-            .new_external_tcp_v4(
-                None,
-                #[cfg(target_os = "macos")]
-                true,
-            )
-            .expect("tcp");
+        let tcp = pool.new_external_tcp_v4(None).expect("tcp");
         let _ = tcp
             .connect(SocketAddr::V4(SocketAddrV4::new(
                 Ipv4Addr::new(0, 0, 0, 0),
@@ -318,13 +293,7 @@ mod tests {
 
         let pool = SocketPool::new(protect);
         {
-            let tcp = pool
-                .new_external_tcp_v4(
-                    None,
-                    #[cfg(target_os = "macos")]
-                    true,
-                )
-                .expect("tcp");
+            let tcp = pool.new_external_tcp_v4(None).expect("tcp");
             let udp = pool
                 .new_external_udp(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)), None)
                 .await
@@ -347,13 +316,7 @@ mod tests {
             })
         };
         let pool = SocketPool::new(protect);
-        let tcp = pool
-            .new_external_tcp_v4(
-                None,
-                #[cfg(target_os = "macos")]
-                true,
-            )
-            .expect("tcp");
+        let tcp = pool.new_external_tcp_v4(None).expect("tcp");
 
         assert_eq!(socks.lock().unwrap().clone(), vec![tcp.as_native_socket()]);
     }
