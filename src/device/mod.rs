@@ -133,7 +133,7 @@ pub enum Error {
     SessionKeeperError(#[from] telio_traversal::session_keeper::Error),
     #[error("Session keeper error")]
     UpgradeSyncError(#[from] telio_traversal::upgrade_sync::Error),
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     #[error("Socket pool error")]
     SocketPoolError(#[from] telio_sockets::protector::platform::Error),
 }
@@ -710,7 +710,7 @@ impl Runtime {
             } else {
                 SocketPool::new(NativeProtector::new(
                     #[cfg(target_os = "macos")]
-                    features.macos_sideload,
+                    features.is_test_env.unwrap_or(false),
                 )?)
             }
         });

@@ -105,22 +105,18 @@ pub async fn connect_http_and_start(
     };
     let hostport = format!("{}:{}", hostname, port);
 
-    let socket = socket_pool.new_external_tcp_v4(
-        Some(TcpParams {
-            keepalive_enable: Some(true),
-            keepalive_cnt: Some(TCP_KEEPALIVE_COUNT),
-            keepalive_idle: Some(TCP_KEEPALIVE_IDLE),
-            keepalive_intvl: Some(TCP_KEEPALIVE_INTERVAL),
-            nodelay_enable: Some(true),
-            user_timeout: Some(TCP_USER_TIMEOUT),
-            buf_size: SocketBufSizes {
-                tx_buf_size: Some(SOCK_BUF_SZ),
-                rx_buf_size: Some(SOCK_BUF_SZ),
-            },
-        }),
-        #[cfg(target_os = "macos")]
-        false,
-    )?;
+    let socket = socket_pool.new_external_tcp_v4(Some(TcpParams {
+        keepalive_enable: Some(true),
+        keepalive_cnt: Some(TCP_KEEPALIVE_COUNT),
+        keepalive_idle: Some(TCP_KEEPALIVE_IDLE),
+        keepalive_intvl: Some(TCP_KEEPALIVE_INTERVAL),
+        nodelay_enable: Some(true),
+        user_timeout: Some(TCP_USER_TIMEOUT),
+        buf_size: SocketBufSizes {
+            tx_buf_size: Some(SOCK_BUF_SZ),
+            rx_buf_size: Some(SOCK_BUF_SZ),
+        },
+    }))?;
 
     let stream = timeout(derp_config.timeout, socket.connect(ip)).await??;
 

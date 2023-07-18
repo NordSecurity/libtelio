@@ -6,12 +6,8 @@ use crate::native::NativeSocket;
 #[path = "windows.rs"]
 pub mod platform;
 
-#[cfg(target_os = "macos")]
-#[path = "apple/macos.rs"]
-pub mod platform;
-
-#[cfg(any(target_os = "ios", target_os = "tvos"))]
-#[path = "apple/ios.rs"]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+#[path = "apple.rs"]
 pub mod platform;
 
 #[cfg(target_os = "linux")]
