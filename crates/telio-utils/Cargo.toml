@@ -16,9 +16,15 @@ log = {version = "0.4.14", features = ["release_max_level_debug"]}
 parking_lot = "0.12"
 rustc-hash = "1"
 tracing = { version = "0.1.37", features = ["release_max_level_debug"] }
+hashlink = "0.8.3"
 
 
 [dev-dependencies]
 mockall = { version = "0.11.3" }
 tokio = { version = ">=1.22", features = ["time", "rt", "macros", "test-util"] }
 telio-test = { version = "1.0.0", path = "../telio-test" }
+rand = "0.8.5"
+proptest = "1.2.0"
+proptest-derive = "0.3.0"
+sn_fake_clock = "0.4.14"
+lru_time_cache = { version = "0.11.11", features = ["sn_fake_clock"] }

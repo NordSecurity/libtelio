@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 6b9d4356d61b506b914a3649ebb86368494dbc998e06bbff85efc4b76e89efcd # shrinks to init = (0, 0), ops = [Insert(0)]
+cc 10dc7db51b0c073137260e5b162effcfcb08acae661faf7f171cc606a887fcbb # shrinks to init = (27, 0), ops = [Insert(12), GetMut(12)]
+cc 1d2f8eb5108b9f6a21167328a5c2306d358c0bd8e49bd56a32222c9f00cf5ca8 # shrinks to init = (158, 1), ops = [Insert(B), Insert(A), Sleep(22), GetUsingEntry(B), Sleep(138)]
+cc 2b02f504b6709385ef927d4a41cb2bd3ab3d6d8f4469cb9e61fd946f4440a30c # shrinks to init = (0, 0), ops = [Insert(A), Insert(B)]
