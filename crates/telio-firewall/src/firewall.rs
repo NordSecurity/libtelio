@@ -422,17 +422,17 @@ impl StatefullFirewall {
 
     fn handle_outbound_tcp<'a>(&self, ip: &impl IpPacket<'a>) {
         let tcp_packet = unwrap_option_or_return!(TcpPacket::new(ip.payload()));
-        let key = IpConnWithPort {
-            remote_addr: ip.get_destination().into(),
-            remote_port: tcp_packet.get_destination(),
-            local_addr: ip.get_source().into(),
-            local_port: tcp_packet.get_source(),
-        };
-        let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock());
-
         let flags = tcp_packet.get_flags();
 
         if flags & TCP_FIRST_PKT_MASK == TcpFlags::SYN {
+            let key = IpConnWithPort {
+                remote_addr: ip.get_destination().into(),
+                remote_port: tcp_packet.get_destination(),
+                local_addr: ip.get_source().into(),
+                local_port: tcp_packet.get_source(),
+            };
+
+            let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock());
             telio_log_trace!("Inserting TCP conntrack entry {:?}", key);
             tcp_cache.insert(
                 key,
@@ -443,9 +443,25 @@ impl StatefullFirewall {
                 },
             );
         } else if flags & TcpFlags::RST == TcpFlags::RST {
+            let key = IpConnWithPort {
+                remote_addr: ip.get_destination().into(),
+                remote_port: tcp_packet.get_destination(),
+                local_addr: ip.get_source().into(),
+                local_port: tcp_packet.get_source(),
+            };
+
+            let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock());
             telio_log_trace!("Removing TCP conntrack entry {:?}", key);
             tcp_cache.remove(&key);
         } else if flags & TcpFlags::FIN == TcpFlags::FIN {
+            let key = IpConnWithPort {
+                remote_addr: ip.get_destination().into(),
+                remote_port: tcp_packet.get_destination(),
+                local_addr: ip.get_source().into(),
+                local_port: tcp_packet.get_source(),
+            };
+
+            let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock());
             telio_log_trace!("Connection {:?} closing", key);
             if let Some(connection) = tcp_cache.get_mut(&key) {
                 connection.tx_alive = false;
