@@ -16,7 +16,7 @@ use telio_traversal::{
     cross_ping_check::CrossPingCheckTrait, SessionKeeperTrait, UpgradeSyncTrait,
     WireGuardEndpointCandidateChangeEvent,
 };
-use telio_utils::{telio_log_debug, telio_log_info};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_info};
 use telio_wg::{uapi::Peer, WireGuard};
 use thiserror::Error as TError;
 use tokio::sync::Mutex;
@@ -194,10 +194,24 @@ async fn consolidate_wg_peers<
                 if let (Some(sk), Some(mesh_ip)) =
                     (session_keeper, requested_peer.peer.allowed_ips.first())
                 {
+                    // TODO this should be acommodatedto IPv6
+                    let ip4 = {
+                        match mesh_ip.ip() {
+                            IpAddr::V4(ip4) => ip4,
+                            IpAddr::V6(_ip6) => {
+                                telio_log_error!(
+                                    "IPv6 not supported, session keeper will not run on peer {:?}",
+                                    requested_peer.peer.public_key
+                                );
+                                break;
+                            }
+                        }
+                    };
+
                     // Start persistent keepalives
                     sk.add_node(
                         &requested_peer.peer.public_key,
-                        mesh_ip.ip(),
+                        (Some(ip4), None),
                         Duration::from_secs(
                             requested_peer
                                 .peer
@@ -1210,10 +1224,21 @@ mod tests {
 
         fn then_keeper_add_node(&mut self, input: Vec<(PublicKey, IpAddr, u32)>) {
             for i in input {
+                let ip4 = {
+                    match i.1 {
+                        IpAddr::V4(ip4) => ip4,
+                        IpAddr::V6(_) => panic!("Only ip4 is allowed"),
+                    }
+                };
+
                 self.session_keeper
                     .expect_add_node()
                     .once()
-                    .with(eq(i.0), eq(i.1), eq(Duration::from_secs(i.2.into())))
+                    .with(
+                        eq(i.0),
+                        eq((Some(ip4), None)),
+                        eq(Duration::from_secs(i.2.into())),
+                    )
                     .return_once(|_, _, _| Ok(()));
             }
         }
