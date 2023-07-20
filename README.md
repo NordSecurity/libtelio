@@ -1,6 +1,7 @@
 # libtelio
 
 ![CI status](https://github.com/NordSecurity/libtelio/actions/workflows/gitlab.yml/badge.svg?branch=main)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/NordSecurity/libtelio/badge)](https://securityscorecards.dev/viewer/?uri=github.com/NordSecurity/libtelio)
 
 ## Overview
 Libtelio (pronounced 'lɪbtælɪɔ') is a client-side library for creating encrypted networks (called Meshnet) on the user's nodes.
@@ -108,7 +109,7 @@ run `ping` in `T1b` and `tcpdump` in `T2b` and see how the packages are flowing.
 
 ##### Running meshnet on macOS
 
-To run tcli client on native macOS use utun name for interface name instead of t1/t2. 
+To run tcli client on native macOS use utun name for interface name instead of t1/t2.
 Use unique index for utun since there might be some already present.
 ```
 >>> login token <NORDVPN_TOKEN>
