@@ -1297,7 +1297,7 @@ impl Runtime {
             let stun_server_skt = SocketAddr::new(IpAddr::V4(server.ipv4), server.stun_port);
             tokio::spawn(async move {
                 if let Ok(data) = retrieve_single_nat(stun_server_skt).await {
-                    telio_log_info!("Nat Type - {:?}", data.nat_type)
+                    telio_log_debug!("Nat Type - {:?}", data.nat_type)
                 }
             });
         }
@@ -1531,6 +1531,7 @@ impl TaskRuntime for Runtime {
     {
         tokio::select! {
             Some(_) = self.event_listeners.wg_endpoint_publish_event_subscriber.recv() => {
+                telio_log_debug!("WG consolidation triggered by endpoint publish event");
                 wg_controller::consolidate_wg_state(&self.requested_state, &self.entities)
                     .await
                     .unwrap_or_else(
@@ -1561,7 +1562,7 @@ impl TaskRuntime for Runtime {
             },
 
             Some(_) = self.event_listeners.endpoint_upgrade_event_subscriber.recv() => {
-                telio_log_info!("Upgrade request, consolidate wg");
+                telio_log_debug!("WG consolidation triggered by upgrade sync request");
                 wg_controller::consolidate_wg_state(&self.requested_state, &self.entities)
                     .await
                     .unwrap_or_else(
@@ -1572,6 +1573,8 @@ impl TaskRuntime for Runtime {
             },
 
             Some(wg_stun_server) = self.event_listeners.stun_server_subscriber.recv() => {
+                telio_log_debug!("WG consolidation triggered by STUN server event");
+
                 self.requested_state.wg_stun_server = wg_stun_server;
 
                 wg_controller::consolidate_wg_state(&self.requested_state, &self.entities)
@@ -1584,6 +1587,7 @@ impl TaskRuntime for Runtime {
             },
 
             _ = self.polling_interval.tick() => {
+                telio_log_debug!("WG consolidation triggered by tick event");
                 wg_controller::consolidate_wg_state(&self.requested_state, &self.entities)
                     .await
                     .unwrap_or_else(

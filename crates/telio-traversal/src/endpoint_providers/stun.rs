@@ -184,7 +184,12 @@ impl<Wg: WireGuard, E: Backoff + 'static> EndpointProvider for StunEndpointProvi
         session_id: Session,
         public_key: PublicKey,
     ) -> Result<(), Error> {
-        telio_log_info!("stun send ping");
+        telio_log_debug!(
+            "STUN sending ping to {:?} {:?} {:?}",
+            addr,
+            public_key,
+            session_id
+        );
         task_exec!(&self.task, async move |s| Ok(s
             .send_ping(addr, session_id, &public_key)
             .await))
