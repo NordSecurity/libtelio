@@ -462,8 +462,11 @@ impl StatefullFirewall {
             let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock());
             telio_log_trace!("Connection {:?} closing", key);
             if let Entry::Occupied(mut e) = tcp_cache.entry(key) {
-                e.get_mut().tx_alive = false;
-                if !e.get_mut().rx_alive {
+                let TcpConnectionInfo {
+                    tx_alive, rx_alive, ..
+                } = e.get_mut();
+                *tx_alive = false;
+                if !*rx_alive {
                     telio_log_trace!("Removing TCP conntrack entry {:?}", e.key());
                     e.remove();
                 }
