@@ -1,6 +1,9 @@
 ### v4.0.7
+### **Bruschetta**
 ---
+### Changelog
 * LLT-4119: Fix multiple bugs in telio-firewall. Mainly whitelist vpn server
+* LLT-4002: Review log-levels of spammy log messages
 
 <br>
 
