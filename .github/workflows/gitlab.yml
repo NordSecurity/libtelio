@@ -11,7 +11,7 @@ jobs:
     runs-on: [self-hosted, libtelio]
     if: ${{ github.event_name == 'push' || (github.event_name == 'pull_request_target' && contains(github.event.pull_request.labels.*.name, 'run tests')) }}
     steps:
-      - uses: NordSecurity/trigger-gitlab-pipeline@v1
+      - uses: NordSecurity/trigger-gitlab-pipeline@fd24fd4a3d03065fe67ae1e98d05d4283d7bb104 # v1
         with:
           ci-api-v4-url: ${{ secrets.CI_API_V4_URL }}
           project-id: ${{ secrets.PROJECT_ID }}
