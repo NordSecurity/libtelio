@@ -201,13 +201,12 @@ struct Whitelist {
 }
 
 impl Whitelist {
-    fn is_whitelisted(&self, peer: &PublicKey, port: u16) -> bool {
-        self.peer_whitelist.contains(peer)
-            || self
-                .port_whitelist
-                .get(peer)
-                .map(|p| *p == port)
-                .unwrap_or_default()
+    fn is_port_whitelisted(&self, peer: &PublicKey, port: u16) -> bool {
+        debug_assert!(!self.peer_whitelist.contains(peer));
+        self.port_whitelist
+            .get(peer)
+            .map(|p| *p == port)
+            .unwrap_or_default()
     }
 }
 
@@ -396,7 +395,7 @@ impl StatefullFirewall {
         match ip.get_next_level_protocol() {
             IpNextHeaderProtocols::Udp => self.handle_inbound_udp(&whitelist, &peer, &ip),
             IpNextHeaderProtocols::Tcp => self.handle_inbound_tcp(&whitelist, &peer, &ip),
-            IpNextHeaderProtocols::Icmp => self.handle_inbound_icmp(&whitelist, &peer, &ip),
+            IpNextHeaderProtocols::Icmp => self.handle_inbound_icmp(&peer, &ip),
             _ => false,
         }
     }
@@ -494,7 +493,7 @@ impl StatefullFirewall {
                 connection_info
             );
             if connection_info.is_remote_initiated
-                && !whitelist.is_whitelisted(peer, key.local_port)
+                && !whitelist.is_port_whitelisted(peer, key.local_port)
             {
                 telio_log_trace!("Removing UDP conntrack entry {:?}", key);
                 udp_cache.remove(&key);
@@ -506,7 +505,7 @@ impl StatefullFirewall {
         }
 
         // no value in cache, insert and allow only if ip is whitelisted
-        if !whitelist.is_whitelisted(peer, key.local_port) {
+        if !whitelist.is_port_whitelisted(peer, key.local_port) {
             telio_log_trace!("Dropping UDP packet {:?} {:?}", key, peer);
             return false;
         }
@@ -551,7 +550,7 @@ impl StatefullFirewall {
                 connection_info
             );
             if connection_info.conn_remote_initiated
-                && !whitelist.is_whitelisted(peer, key.local_port)
+                && !whitelist.is_port_whitelisted(peer, key.local_port)
             {
                 telio_log_trace!("Removing TCP conntrack entry {:?}", key);
                 tcp_cache.remove(&key);
@@ -576,7 +575,7 @@ impl StatefullFirewall {
             return true;
         }
 
-        if !whitelist.is_whitelisted(peer, key.local_port) {
+        if !whitelist.is_port_whitelisted(peer, key.local_port) {
             telio_log_trace!("Dropping TCP packet {:?} {:?}", key, peer);
             return false;
         }
@@ -602,12 +601,7 @@ impl StatefullFirewall {
         true
     }
 
-    fn handle_inbound_icmp<'a, P: IpPacket<'a>>(
-        &self,
-        _whitelist: &Whitelist,
-        peer: &PublicKey,
-        ip: &P,
-    ) -> bool {
+    fn handle_inbound_icmp<'a, P: IpPacket<'a>>(&self, peer: &PublicKey, ip: &P) -> bool {
         let icmp_packet = unwrap_option_or_return!(P::Icmp::new(ip.payload()), false);
 
         if P::Icmp::BLOCKED_TYPES.contains(&icmp_packet.get_type()) {
