@@ -18,7 +18,7 @@ use telio_sockets::External;
 use telio_task::{io::chan::Tx, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
     exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
-    telio_log_info, PinnedSleep,
+    telio_log_debug, telio_log_info, PinnedSleep,
 };
 use telio_wg::{DynamicWg, WireGuard};
 use tokio::{net::UdpSocket, sync::Mutex};
@@ -503,7 +503,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
 
         if let Some(epc) = self.endpoint_candidate.clone() {
             if let Some(epc_tx) = &self.epc_event_tx {
-                telio_log_info!("Got UpnpEndpointCanditate: {:?}", epc);
+                telio_log_debug!("Got UpnpEndpointCanditate: {:?}", epc);
                 let _ = epc_tx.send((EndpointProviderType::Upnp, vec![epc])).await;
             }
         }
