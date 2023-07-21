@@ -30,16 +30,19 @@ pub struct OccupiedEntry<'a, K, V> {
 
 impl<'a, K: Hash + Eq, V> OccupiedEntry<'a, K, V> {
     /// Gets a reference to the key in the entry.
+    #[inline(always)]
     pub fn key(&self) -> &K {
         &self.key
     }
 
     /// Gets a mutable reference to the value in the entry.
+    #[inline(always)]
     pub fn get_mut(&mut self) -> &mut V {
         &mut self.occupied_entry().into_mut().data
     }
 
     /// Removes the entry from the map.
+    #[inline(always)]
     pub fn remove(&mut self) {
         self.occupied_entry().remove();
     }
@@ -67,11 +70,13 @@ pub struct VacantEntry<'a, K, V> {
 
 impl<'a, K, V> VacantEntry<'a, K, V> {
     /// Gets a reference to the key in the entry.
+    #[inline(always)]
     pub fn key(&self) -> &K {
         &self.key
     }
 
     /// Sets the value of the entry with the VacantEntry’s key, and returns a mutable reference to it.
+    #[inline(always)]
     pub fn insert(self, value: V)
     where
         K: Hash + Eq,
@@ -124,6 +129,7 @@ pub struct LruCache<Key, Value> {
 
 impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
     /// Constructor for dual-feature capacity and time based `LruCache`.
+    #[inline(always)]
     pub fn new(ttl: Duration, capacity: usize) -> LruCache<Key, Value> {
         LruCache {
             map: LinkedHashMap::default(),
@@ -134,6 +140,7 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
 
     /// Returns the size of the cache, i.e. the number of cached non-expired key-value pairs.
     /// Also removes expired elements.
+    #[inline(always)]
     pub fn len(&mut self) -> usize {
         self.remove_expired();
         self.map.len()
@@ -141,12 +148,14 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
 
     /// Returns true if the map contains no elements.
     /// Also removes expired elements.
+    #[inline(always)]
     pub fn is_empty(&mut self) -> bool {
         self.remove_expired();
         self.map.is_empty()
     }
 
     /// Gets the given key’s corresponding entry in the map for in-place manipulation.
+    #[inline(always)]
     pub fn entry(&mut self, key: Key) -> Entry<'_, Key, Value> {
         let mut state = self.map.hasher().build_hasher();
         key.hash(&mut state);
@@ -171,6 +180,7 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
 
     /// Retrieves a reference to the value stored under `key`, or `None` if the key doesn't exist.
     /// Also removes expired elements and updates the time.
+    #[inline(always)]
     pub fn get<Q: ?Sized>(&mut self, key: &Q) -> Option<&Value>
     where
         Key: Borrow<Q>,
@@ -181,6 +191,7 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
 
     /// Retrieves a mutable reference to the value stored under `key`, or `None` if the key doesn't
     /// exist.  Also removes expired elements and updates the time.
+    #[inline(always)]
     pub fn get_mut<Q: ?Sized>(&mut self, key: &Q) -> Option<&mut Value>
     where
         Key: Borrow<Q>,
@@ -200,6 +211,7 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
     ///
     /// If the key already existed in the cache, the existing value is overwritten in
     /// the cache.  Otherwise, the new key-value pair is inserted.
+    #[inline(always)]
     pub fn insert(&mut self, key: Key, value: Value) {
         self.map.insert(key, TimedValue::new(value));
 
@@ -209,6 +221,7 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
     }
 
     /// Removes a key-value pair from the cache.
+    #[inline(always)]
     pub fn remove(&mut self, key: &Key) -> Option<Value> {
         self.map.remove(key).map(|v| v.data)
     }
