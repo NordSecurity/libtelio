@@ -16,6 +16,7 @@ import pytest
 import telio
 import utils.testing as testing
 import subprocess
+from typing import Optional
 from utils.connection_tracker import (
     generate_connection_tracker_config,
     ConnectionLimits,
@@ -33,12 +34,15 @@ DEFAULT_CHECK_TIMEOUT = 40
 COLLECT_NAT_TYPE = False
 
 
-def build_telio_features(fingerprint: str) -> TelioFeatures:
+def build_telio_features(
+    fingerprint: str, initial_heartbeat_interval: Optional[int] = None
+) -> TelioFeatures:
     return TelioFeatures(
         lana=Lana(prod=False, event_path=CONTAINER_EVENT_PATH),
         nurse=Nurse(
             fingerprint=fingerprint,
             heartbeat_interval=3600,
+            initial_heartbeat_interval=initial_heartbeat_interval,
             qos=Qos(
                 rtt_interval=10,
                 buckets=5,
@@ -916,3 +920,48 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart():
         second_beta_meshnet_id = beta_events[0].fp
 
         assert initial_beta_meshnet_id == second_beta_meshnet_id
+
+
+@pytest.mark.moose
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "initial_heartbeat_interval",
+    [
+        pytest.param(5),
+        pytest.param(None),
+    ],
+)
+async def test_lana_initial_heartbeat_no_trigger(
+    initial_heartbeat_interval: Optional[int],
+):
+    async with AsyncExitStack() as exit_stack:
+        api = API()
+        alpha = api.default_config_alpha_node(True)
+
+        connection_alpha = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+        await clean_container(connection_alpha)
+
+        await exit_stack.enter_async_context(
+            telio.Client(
+                connection_alpha,
+                alpha,
+                telio_features=build_telio_features(
+                    "alpha_fingerprint",
+                    initial_heartbeat_interval=initial_heartbeat_interval,
+                ),
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
+            )
+        )
+
+        if initial_heartbeat_interval:
+            await asyncio.sleep(initial_heartbeat_interval)
+            assert await wait_for_event_dump(
+                ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH, nr_events=1
+            )
+        else:
+            assert not await wait_for_event_dump(
+                ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH, nr_events=1
+            )
