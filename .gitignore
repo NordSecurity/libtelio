@@ -60,3 +60,7 @@ target/
 /ffi/bindings/windows/wrap/java_wrap.gnuld_exports.lst
 /ffi/helpers/go/go.mod
 __pycache__
+event.db
+alpha-events.db
+beta-events.db
+gamma-events.db
