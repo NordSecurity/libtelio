@@ -17,7 +17,7 @@ from utils import (
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "alpha_connection_tag,adapter_type",
+    "alpha_connection_tag, adapter_type",
     [
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -88,24 +88,22 @@ async def test_connected_state_after_routing(
             )
         )
 
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-                client_beta.wait_for_any_derp_state([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
+                client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
+                client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
                 alpha_conn_tracker.wait_for_event("derp_1"),
                 beta_conn_tracker.wait_for_event("derp_1"),
             )
         )
-
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key),
-                client_beta.handshake(alpha.public_key),
+                client_alpha.wait_for_state_peer(
+                    beta.public_key, [telio.State.Connected]
+                ),
+                client_beta.wait_for_state_peer(
+                    alpha.public_key, [telio.State.Connected]
+                ),
             )
         )
 
@@ -115,11 +113,17 @@ async def test_connected_state_after_routing(
                 beta.public_key,
             )
         )
-        await testing.wait_long(client_alpha.handshake(beta.public_key))
+
+        await testing.wait_long(
+            client_alpha.wait_for_event_peer(beta.public_key, [telio.State.Connected])
+        )
 
         await testing.wait_long(client_alpha.disconnect_from_exit_nodes())
 
-        await testing.wait_long(client_alpha.handshake(beta.public_key))
+        await testing.wait_long(
+            client_alpha.wait_for_event_peer(beta.public_key, [telio.State.Connected])
+        )
+
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 

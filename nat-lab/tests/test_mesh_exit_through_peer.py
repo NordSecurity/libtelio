@@ -1,7 +1,7 @@
 from utils import Ping, stun
 from contextlib import AsyncExitStack
 from mesh_api import API
-from telio import AdapterType
+from telio import AdapterType, State
 import config
 import pytest
 import telio
@@ -87,24 +87,18 @@ async def test_mesh_exit_through_peer(
             )
         )
 
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-                client_beta.wait_for_any_derp_state([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
+                client_alpha.wait_for_state_on_any_derp([State.Connected]),
+                client_beta.wait_for_state_on_any_derp([State.Connected]),
                 alpha_conn_tracker.wait_for_event("derp_1"),
                 beta_conn_tracker.wait_for_event("derp_1"),
             )
         )
-
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key),
-                client_beta.handshake(alpha.public_key),
+                client_alpha.wait_for_state_peer(beta.public_key, [State.Connected]),
+                client_beta.wait_for_state_peer(alpha.public_key, [State.Connected]),
             )
         )
 
@@ -117,7 +111,9 @@ async def test_mesh_exit_through_peer(
                 beta.public_key,
             )
         )
-        await testing.wait_long(client_alpha.handshake(beta.public_key))
+        await testing.wait_long(
+            client_alpha.wait_for_state_peer(beta.public_key, [State.Connected])
+        )
 
         ip_alpha = await testing.wait_long(
             stun.get(connection_alpha, config.STUN_SERVER)
