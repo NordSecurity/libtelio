@@ -84,6 +84,8 @@ pub struct FeatureNurse {
     pub fingerprint: String,
     /// Heartbeat interval in seconds. Default value is 3600.
     pub heartbeat_interval: Option<u32>,
+    /// Initial heartbeat interval in seconds. Default value is None.
+    pub initial_heartbeat_interval: Option<u32>,
     /// QoS configuration for Nurse
     pub qos: Option<FeatureQoS>,
     /// Enable/disable collecting nat type
@@ -317,6 +319,7 @@ mod tests {
         nurse: Some(FeatureNurse {
             fingerprint: "fingerprint_test".to_string(),
             heartbeat_interval: None,
+            initial_heartbeat_interval: None,
             qos: None,
             enable_nat_type_collection: None,
         }),
@@ -352,6 +355,7 @@ mod tests {
         nurse: Some(FeatureNurse {
             fingerprint: "fingerprint_test".to_string(),
             heartbeat_interval: None,
+            initial_heartbeat_interval: None,
             qos: None,
             enable_nat_type_collection: None,
         }),
@@ -518,6 +522,7 @@ mod tests {
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
                 heartbeat_interval: Some(3600),
+                initial_heartbeat_interval: None,
                 qos: Some(FeatureQoS {
                     rtt_interval: Some(3600),
                     rtt_tries: Some(5),
@@ -538,6 +543,7 @@ mod tests {
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
                 heartbeat_interval: None,
+                initial_heartbeat_interval: None,
                 qos: Some(FeatureQoS {
                     rtt_interval: None,
                     rtt_tries: None,
@@ -558,6 +564,7 @@ mod tests {
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
                 heartbeat_interval: None,
+                initial_heartbeat_interval: None,
                 qos: None,
                 enable_nat_type_collection: None,
             }),
