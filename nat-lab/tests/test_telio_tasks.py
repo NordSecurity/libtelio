@@ -26,6 +26,7 @@ async def test_telio_tasks_with_all_features() -> None:
                     nurse=Nurse(
                         fingerprint="alpha",
                         heartbeat_interval=3600,
+                        initial_heartbeat_interval=10,
                         qos=Qos(
                             rtt_interval=5,
                             rtt_tries=3,
