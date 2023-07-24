@@ -363,7 +363,10 @@ mod tests {
     async fn dns_lookup() {
         let entry_name = String::from("pashka.nord.");
         let mut records = Records::new();
-        records.insert(entry_name.clone(), Ipv4Addr::new(100, 69, 69, 69));
+        records.insert(
+            entry_name.clone(),
+            (Some(Ipv4Addr::new(100, 69, 69, 69)), None),
+        );
         let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])
             .await
             .unwrap();
@@ -391,7 +394,7 @@ mod tests {
     async fn zones_are_lazily_copied_on_write_access() {
         let name1 = "test.nord.".to_owned();
         let mut records = Records::new();
-        records.insert(name1.clone(), Ipv4Addr::new(100, 69, 69, 69));
+        records.insert(name1.clone(), (Some(Ipv4Addr::new(100, 69, 69, 69)), None));
         let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])
             .await
             .unwrap();
@@ -402,7 +405,7 @@ mod tests {
 
         let name2 = "test.nord2.".to_owned();
         let mut records = Records::new();
-        records.insert(name2.clone(), Ipv4Addr::new(100, 69, 69, 69));
+        records.insert(name2.clone(), (Some(Ipv4Addr::new(100, 69, 69, 69)), None));
 
         let read_ptr3 = nameserver.zones().await;
         nameserver.upsert("nord2", &records).await.unwrap();
@@ -418,7 +421,7 @@ mod tests {
     async fn forward_zones_are_cloned_too() {
         let name1 = "test.nord.".to_owned();
         let mut records = Records::new();
-        records.insert(name1.clone(), Ipv4Addr::new(100, 69, 69, 69));
+        records.insert(name1.clone(), (Some(Ipv4Addr::new(100, 69, 69, 69)), None));
         let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])
             .await
             .unwrap();

@@ -134,7 +134,10 @@ async fn dns_over_wireguard() {
     );
 
     let mut records = Records::new();
-    records.insert(String::from("alice.nord"), Ipv4Addr::new(100, 64, 0, 123));
+    records.insert(
+        String::from("alice.nord"),
+        (Some(Ipv4Addr::new(100, 64, 0, 123)), None),
+    );
     let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])
         .await
         .unwrap();
@@ -161,7 +164,10 @@ async fn dns_over_wireguard() {
         )
         .await;
 
-    records.insert(String::from("bob.nord"), Ipv4Addr::new(100, 64, 0, 213));
+    records.insert(
+        String::from("bob.nord"),
+        (Some(Ipv4Addr::new(100, 64, 0, 213)), None),
+    );
 
     nameserver.upsert("nord", &records).await.unwrap();
 
