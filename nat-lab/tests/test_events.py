@@ -1,7 +1,7 @@
 from utils import Ping, stun
 from contextlib import AsyncExitStack
 from mesh_api import API
-from telio import AdapterType, PathType, PeerInfo
+from telio import AdapterType, PathType, PeerInfo, State
 from telio_features import TelioFeatures, Direct
 import asyncio
 import pytest
@@ -87,24 +87,18 @@ async def test_event_content_meshnet(
             )
         )
 
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-                client_beta.wait_for_any_derp_state([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
+                client_alpha.wait_for_state_on_any_derp([State.Connected]),
+                client_beta.wait_for_state_on_any_derp([State.Connected]),
                 alpha_conn_tracker.wait_for_event("derp_1"),
                 beta_conn_tracker.wait_for_event("derp_1"),
             )
         )
-
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key),
-                client_beta.handshake(alpha.public_key),
+                client_alpha.wait_for_state_peer(beta.public_key, [State.Connected]),
+                client_beta.wait_for_state_peer(alpha.public_key, [State.Connected]),
             )
         )
 
@@ -116,7 +110,7 @@ async def test_event_content_meshnet(
         assert client_alpha.get_node_state(beta.public_key) == PeerInfo(
             identifier=beta.id,
             public_key=beta.public_key,
-            state=telio.State.Connected,
+            state=State.Connected,
             is_exit=False,
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
@@ -131,7 +125,7 @@ async def test_event_content_meshnet(
         assert client_beta.get_node_state(alpha.public_key) == PeerInfo(
             identifier=alpha.id,
             public_key=alpha.public_key,
-            state=telio.State.Connected,
+            state=State.Connected,
             is_exit=False,
             is_vpn=False,
             ip_addresses=alpha.ip_addresses,
@@ -156,7 +150,7 @@ async def test_event_content_meshnet(
         assert client_alpha.get_node_state(beta.public_key) == PeerInfo(
             identifier=beta.id,
             public_key=beta.public_key,
-            state=telio.State.Disconnected,
+            state=State.Disconnected,
             is_exit=False,
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
@@ -248,7 +242,9 @@ async def test_event_content_vpn_connection(
         )
         await testing.wait_long(alpha_conn_tracker.wait_for_event("vpn_1"))
         await testing.wait_lengthy(
-            client_alpha.handshake(wg_server["public_key"], path=PathType.Direct)
+            client_alpha.wait_for_state_peer(
+                wg_server["public_key"], [State.Connected], [PathType.Direct]
+            )
         )
 
         async with Ping(connection, config.PHOTO_ALBUM_IP).run() as ping:
@@ -257,7 +253,7 @@ async def test_event_content_vpn_connection(
         assert client_alpha.get_node_state(str(wg_server["public_key"])) == PeerInfo(
             identifier="tcli",
             public_key=str(wg_server["public_key"]),
-            state=telio.State.Connected,
+            state=State.Connected,
             is_exit=True,
             is_vpn=True,
             ip_addresses=["10.5.0.1", "100.64.0.1"],
@@ -274,7 +270,7 @@ async def test_event_content_vpn_connection(
 
         await testing.wait_lengthy(
             client_alpha.disconnect_from_vpn(
-                wg_server["public_key"], path=PathType.Direct
+                wg_server["public_key"], path=[PathType.Direct]
             )
         )
 
@@ -282,12 +278,18 @@ async def test_event_content_vpn_connection(
         await testing.wait_long(alpha_conn_tracker.wait_for_event("stun"))
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
-        await asyncio.sleep(1)
+        await testing.wait_lengthy(
+            client_alpha.wait_for_state_peer(
+                str(wg_server["public_key"]),
+                [telio.State.Disconnected],
+                [PathType.Direct],
+            )
+        )
 
         assert client_alpha.get_node_state(str(wg_server["public_key"])) == PeerInfo(
             identifier="tcli",
             public_key=str(wg_server["public_key"]),
-            state=telio.State.Disconnected,
+            state=State.Disconnected,
             is_exit=True,
             is_vpn=True,
             ip_addresses=["10.5.0.1", "100.64.0.1"],
@@ -375,34 +377,26 @@ async def test_event_content_exit_through_peer(
 
         await testing.wait_long(
             asyncio.gather(
-                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-                client_beta.wait_for_any_derp_state([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
+                client_alpha.wait_for_state_on_any_derp([State.Connected]),
+                client_beta.wait_for_state_on_any_derp([State.Connected]),
                 alpha_conn_tracker.wait_for_event("derp_1"),
                 beta_conn_tracker.wait_for_event("derp_1"),
             )
         )
-
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key),
-                client_beta.handshake(alpha.public_key),
+                client_alpha.wait_for_state_peer(beta.public_key, [State.Connected]),
+                client_beta.wait_for_state_peer(alpha.public_key, [State.Connected]),
             )
         )
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
-        await asyncio.sleep(1)
-
         assert client_alpha.get_node_state(beta.public_key) == PeerInfo(
             identifier=beta.id,
             public_key=beta.public_key,
-            state=telio.State.Connected,
+            state=State.Connected,
             is_exit=False,
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
@@ -422,7 +416,9 @@ async def test_event_content_exit_through_peer(
             )
         )
 
-        await testing.wait_long(client_alpha.handshake(beta.public_key))
+        await testing.wait_long(
+            client_alpha.wait_for_event_peer(beta.public_key, [State.Connected])
+        )
 
         ip_alpha: str = await testing.wait_long(
             stun.get(connection_alpha, config.STUN_SERVER)
@@ -435,12 +431,10 @@ async def test_event_content_exit_through_peer(
 
         assert ip_alpha == ip_beta
 
-        await asyncio.sleep(1)
-
         assert client_alpha.get_node_state(beta.public_key) == PeerInfo(
             identifier=beta.id,
             public_key=beta.public_key,
-            state=telio.State.Connected,
+            state=State.Connected,
             is_exit=True,
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
@@ -540,22 +534,16 @@ async def test_event_content_meshnet_node_upgrade_direct(
 
         await testing.wait_long(
             asyncio.gather(
-                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-                client_beta.wait_for_any_derp_state([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
+                client_alpha.wait_for_state_on_any_derp([State.Connected]),
+                client_beta.wait_for_state_on_any_derp([State.Connected]),
                 alpha_conn_tracker.wait_for_event("derp_1"),
                 beta_conn_tracker.wait_for_event("derp_1"),
             )
         )
-
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key),
-                client_beta.handshake(alpha.public_key),
+                client_alpha.wait_for_state_peer(beta.public_key, [State.Connected]),
+                client_beta.wait_for_state_peer(alpha.public_key, [State.Connected]),
             )
         )
 
@@ -564,14 +552,12 @@ async def test_event_content_meshnet_node_upgrade_direct(
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
-        await asyncio.sleep(1)
-
         beta_node_state = client_alpha.get_node_state(beta.public_key)
         assert beta_node_state
         assert beta_node_state == PeerInfo(
             identifier=beta.id,
             public_key=beta.public_key,
-            state=telio.State.Connected,
+            state=State.Connected,
             is_exit=False,
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
@@ -591,7 +577,7 @@ async def test_event_content_meshnet_node_upgrade_direct(
         assert alpha_node_state == PeerInfo(
             identifier=alpha.id,
             public_key=alpha.public_key,
-            state=telio.State.Connected,
+            state=State.Connected,
             is_exit=False,
             is_vpn=False,
             ip_addresses=alpha.ip_addresses,
@@ -621,7 +607,7 @@ async def test_event_content_meshnet_node_upgrade_direct(
         )
 
         await testing.wait_lengthy(
-            client_beta.wait_for_any_derp_state([telio.State.Connected]),
+            client_beta.wait_for_state_on_any_derp([State.Connected]),
         )
 
         await testing.wait_long(
@@ -630,13 +616,15 @@ async def test_event_content_meshnet_node_upgrade_direct(
 
         await testing.wait_defined(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key, path=PathType.Direct),
-                client_beta.handshake(alpha.public_key, path=PathType.Direct),
+                client_alpha.wait_for_state_peer(
+                    beta.public_key, [State.Connected], [PathType.Direct]
+                ),
+                client_beta.wait_for_state_peer(
+                    alpha.public_key, [State.Connected], [PathType.Direct]
+                ),
             ),
             60,
         )
-
-        await asyncio.sleep(1)
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
@@ -648,7 +636,7 @@ async def test_event_content_meshnet_node_upgrade_direct(
         assert beta_node_state == PeerInfo(
             identifier=beta.id,
             public_key=beta.public_key,
-            state=telio.State.Connected,
+            state=State.Connected,
             is_exit=False,
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
@@ -666,7 +654,7 @@ async def test_event_content_meshnet_node_upgrade_direct(
         assert alpha_node_state == PeerInfo(
             identifier=alpha.id,
             public_key=alpha.public_key,
-            state=telio.State.Connected,
+            state=State.Connected,
             is_exit=False,
             is_vpn=False,
             ip_addresses=alpha.ip_addresses,

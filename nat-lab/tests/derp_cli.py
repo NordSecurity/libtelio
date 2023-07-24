@@ -7,15 +7,6 @@ import telio
 from contextlib import asynccontextmanager
 
 
-async def check_derp_connection(client: telio.Client, server_ip: str, state: bool):
-    await client.wait_for_derp_state(
-        server_ip,
-        [telio.State.Connected]
-        if state
-        else [telio.State.Disconnected, telio.State.Connecting],
-    )
-
-
 class DerpTarget:
     _process: Process
     _output_notifier: OutputNotifier

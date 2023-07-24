@@ -1,7 +1,7 @@
 from utils import Ping, stun
 from contextlib import AsyncExitStack
 from mesh_api import API
-from telio import AdapterType, PathType
+from telio import AdapterType, PathType, State
 from telio_features import TelioFeatures, Direct
 import config
 import pytest
@@ -90,22 +90,16 @@ async def test_mesh_plus_vpn_one_peer(
 
         await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-                client_beta.wait_for_any_derp_state([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_lengthy(
-            asyncio.gather(
+                client_alpha.wait_for_state_on_any_derp([State.Connected]),
+                client_beta.wait_for_state_on_any_derp([State.Connected]),
                 alpha_conn_tracker.wait_for_event("derp_1"),
                 beta_conn_tracker.wait_for_event("derp_1"),
             )
         )
-
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key),
-                client_beta.handshake(alpha.public_key),
+                client_alpha.wait_for_state_peer(beta.public_key, [State.Connected]),
+                client_beta.wait_for_state_peer(alpha.public_key, [State.Connected]),
             )
         )
 
@@ -122,7 +116,9 @@ async def test_mesh_plus_vpn_one_peer(
             )
         )
         await testing.wait_lengthy(
-            client_alpha.handshake(wg_server["public_key"], PathType.Direct)
+            client_alpha.wait_for_state_peer(
+                wg_server["public_key"], [State.Connected], [PathType.Direct]
+            )
         )
 
         await testing.wait_lengthy(
@@ -219,22 +215,16 @@ async def test_mesh_plus_vpn_both_peers(
 
         await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-                client_beta.wait_for_any_derp_state([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_lengthy(
-            asyncio.gather(
+                client_alpha.wait_for_state_on_any_derp([State.Connected]),
+                client_beta.wait_for_state_on_any_derp([State.Connected]),
                 alpha_conn_tracker.wait_for_event("derp_1"),
                 beta_conn_tracker.wait_for_event("derp_1"),
             )
         )
-
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key),
-                client_beta.handshake(alpha.public_key),
+                client_alpha.wait_for_state_peer(beta.public_key, [State.Connected]),
+                client_beta.wait_for_state_peer(alpha.public_key, [State.Connected]),
             )
         )
 
@@ -260,13 +250,12 @@ async def test_mesh_plus_vpn_both_peers(
 
         await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(wg_server["public_key"], PathType.Direct),
-                client_beta.handshake(wg_server["public_key"], PathType.Direct),
-            )
-        )
-
-        await testing.wait_lengthy(
-            asyncio.gather(
+                client_alpha.wait_for_state_peer(
+                    wg_server["public_key"], [State.Connected], [PathType.Direct]
+                ),
+                client_beta.wait_for_state_peer(
+                    wg_server["public_key"], [State.Connected], [PathType.Direct]
+                ),
                 alpha_conn_tracker.wait_for_event("vpn_1"),
                 beta_conn_tracker.wait_for_event("vpn_1"),
             )
@@ -377,7 +366,9 @@ async def test_vpn_plus_mesh(
         )
 
         await testing.wait_lengthy(
-            client_alpha.handshake(wg_server["public_key"], PathType.Direct)
+            client_alpha.wait_for_state_peer(
+                wg_server["public_key"], [State.Connected], [PathType.Direct]
+            )
         )
 
         await testing.wait_long(alpha_conn_tracker.wait_for_event("vpn_1"))
@@ -398,22 +389,16 @@ async def test_vpn_plus_mesh(
 
         await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-                client_beta.wait_for_any_derp_state([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
-                client_alpha.handshake(beta.public_key),
-                client_beta.handshake(alpha.public_key),
-            )
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
+                client_alpha.wait_for_state_on_any_derp([State.Connected]),
+                client_beta.wait_for_state_on_any_derp([State.Connected]),
                 alpha_conn_tracker.wait_for_event("derp_1"),
                 beta_conn_tracker.wait_for_event("derp_1"),
+            )
+        )
+        await testing.wait_lengthy(
+            asyncio.gather(
+                client_alpha.wait_for_state_peer(beta.public_key, [State.Connected]),
+                client_beta.wait_for_state_peer(alpha.public_key, [State.Connected]),
             )
         )
 
@@ -510,22 +495,20 @@ async def test_vpn_plus_mesh_over_direct(
 
         await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-                client_beta.wait_for_any_derp_state([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
+                client_alpha.wait_for_state_on_any_derp([State.Connected]),
+                client_beta.wait_for_state_on_any_derp([State.Connected]),
                 alpha_conn_tracker.wait_for_event("derp_1"),
                 beta_conn_tracker.wait_for_event("derp_1"),
             )
         )
-
         await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key, PathType.Direct),
-                client_beta.handshake(alpha.public_key, PathType.Direct),
+                client_alpha.wait_for_state_peer(
+                    beta.public_key, [State.Connected], [PathType.Direct]
+                ),
+                client_beta.wait_for_state_peer(
+                    alpha.public_key, [State.Connected], [PathType.Direct]
+                ),
             ),
         )
 
@@ -552,13 +535,12 @@ async def test_vpn_plus_mesh_over_direct(
         )
         await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(wg_server["public_key"], PathType.Direct),
-                client_beta.handshake(wg_server["public_key"], PathType.Direct),
-            )
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
+                client_alpha.wait_for_state_peer(
+                    wg_server["public_key"], [State.Connected], [PathType.Direct]
+                ),
+                client_beta.wait_for_state_peer(
+                    wg_server["public_key"], [State.Connected], [PathType.Direct]
+                ),
                 alpha_conn_tracker.wait_for_event("vpn_1"),
                 beta_conn_tracker.wait_for_event("vpn_1"),
             )
@@ -691,31 +673,29 @@ async def test_vpn_plus_mesh_over_different_connection_types(
 
         await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-                client_beta.wait_for_any_derp_state([telio.State.Connected]),
-                client_gamma.wait_for_any_derp_state([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
+                client_alpha.wait_for_state_on_any_derp([State.Connected]),
+                client_beta.wait_for_state_on_any_derp([State.Connected]),
+                client_gamma.wait_for_state_on_any_derp([State.Connected]),
                 alpha_conn_tracker.wait_for_event("derp_1"),
                 beta_conn_tracker.wait_for_event("derp_1"),
                 gamma_conn_tracker.wait_for_event("derp_1"),
             )
         )
-
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(gamma.public_key),
-                client_gamma.handshake(alpha.public_key),
+                client_alpha.wait_for_state_peer(gamma.public_key, [State.Connected]),
+                client_gamma.wait_for_state_peer(alpha.public_key, [State.Connected]),
             )
         )
 
         await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key, PathType.Direct),
-                client_beta.handshake(alpha.public_key, PathType.Direct),
+                client_alpha.wait_for_state_peer(
+                    beta.public_key, [State.Connected], [PathType.Direct]
+                ),
+                client_beta.wait_for_state_peer(
+                    alpha.public_key, [State.Connected], [PathType.Direct]
+                ),
             ),
         )
 
@@ -748,14 +728,15 @@ async def test_vpn_plus_mesh_over_different_connection_types(
 
         await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(wg_server["public_key"], PathType.Direct),
-                client_beta.handshake(wg_server["public_key"], PathType.Direct),
-                client_gamma.handshake(wg_server["public_key"], PathType.Direct),
-            )
-        )
-
-        await testing.wait_lengthy(
-            asyncio.gather(
+                client_alpha.wait_for_state_peer(
+                    wg_server["public_key"], [State.Connected], [PathType.Direct]
+                ),
+                client_beta.wait_for_state_peer(
+                    wg_server["public_key"], [State.Connected], [PathType.Direct]
+                ),
+                client_gamma.wait_for_state_peer(
+                    wg_server["public_key"], [State.Connected], [PathType.Direct]
+                ),
                 alpha_conn_tracker.wait_for_event("vpn_1"),
                 beta_conn_tracker.wait_for_event("vpn_1"),
                 gamma_conn_tracker.wait_for_event("vpn_1"),

@@ -58,22 +58,20 @@ async def test_mesh_firewall_successful_passthrough() -> None:
 
         await testing.wait_long(
             asyncio.gather(
-                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-                client_beta.wait_for_any_derp_state([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
+                client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
+                client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
                 alpha_conn_tracker.wait_for_event("derp_1"),
                 beta_conn_tracker.wait_for_event("derp_1"),
             )
         )
-
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key),
-                client_beta.handshake(alpha.public_key),
+                client_alpha.wait_for_state_peer(
+                    beta.public_key, [telio.State.Connected]
+                ),
+                client_beta.wait_for_state_peer(
+                    alpha.public_key, [telio.State.Connected]
+                ),
             )
         )
 
@@ -135,22 +133,20 @@ async def test_mesh_firewall_reject_packet() -> None:
 
         await testing.wait_long(
             asyncio.gather(
-                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-                client_beta.wait_for_any_derp_state([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
+                client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
+                client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
                 alpha_conn_tracker.wait_for_event("derp_1"),
                 beta_conn_tracker.wait_for_event("derp_1"),
             )
         )
-
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key),
-                client_beta.handshake(alpha.public_key),
+                client_alpha.wait_for_state_peer(
+                    beta.public_key, [telio.State.Connected]
+                ),
+                client_beta.wait_for_state_peer(
+                    alpha.public_key, [telio.State.Connected]
+                ),
             )
         )
 
@@ -219,22 +215,20 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
 
         await testing.wait_long(
             asyncio.gather(
-                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-                client_exit_node.wait_for_any_derp_state([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
+                client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
+                client_exit_node.wait_for_state_on_any_derp([telio.State.Connected]),
                 alpha_conn_tracker.wait_for_event("derp_1"),
                 exit_node_conn_tracker.wait_for_event("derp_1"),
             )
         )
-
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(exit_node.public_key),
-                client_exit_node.handshake(alpha.public_key),
+                client_alpha.wait_for_state_peer(
+                    exit_node.public_key, [telio.State.Connected]
+                ),
+                client_exit_node.wait_for_state_peer(
+                    alpha.public_key, [telio.State.Connected]
+                ),
             )
         )
 
@@ -307,7 +301,11 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
             )
         )
 
-        await testing.wait_long(client_alpha.handshake(exit_node.public_key))
+        await testing.wait_long(
+            client_alpha.wait_for_state_peer(
+                exit_node.public_key, [telio.State.Connected]
+            )
+        )
 
         # Both nodes should have the same external ip
 
@@ -423,22 +421,20 @@ async def test_mesh_firewall_file_share_port(
 
         await testing.wait_long(
             asyncio.gather(
-                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-                client_beta.wait_for_any_derp_state([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
+                client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
+                client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
                 alpha_conn_tracker.wait_for_event("derp_1"),
                 beta_conn_tracker.wait_for_event("derp_1"),
             )
         )
-
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key),
-                client_beta.handshake(alpha.public_key),
+                client_alpha.wait_for_state_peer(
+                    beta.public_key, [telio.State.Connected]
+                ),
+                client_beta.wait_for_state_peer(
+                    alpha.public_key, [telio.State.Connected]
+                ),
             )
         )
 
@@ -583,8 +579,8 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
 
         await testing.wait_long(
             asyncio.gather(
-                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-                client_beta.wait_for_any_derp_state([telio.State.Connected]),
+                client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
+                client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
             )
         )
 
@@ -597,8 +593,12 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
 
         await testing.wait_long(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key),
-                client_beta.handshake(alpha.public_key),
+                client_alpha.wait_for_state_peer(
+                    beta.public_key, [telio.State.Connected]
+                ),
+                client_beta.wait_for_state_peer(
+                    alpha.public_key, [telio.State.Connected]
+                ),
             )
         )
 
@@ -734,8 +734,8 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
 
         await testing.wait_long(
             asyncio.gather(
-                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-                client_beta.wait_for_any_derp_state([telio.State.Connected]),
+                client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
+                client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
             )
         )
 
@@ -748,8 +748,12 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
 
         await testing.wait_long(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key),
-                client_beta.handshake(alpha.public_key),
+                client_alpha.wait_for_state_peer(
+                    beta.public_key, [telio.State.Connected]
+                ),
+                client_beta.wait_for_state_peer(
+                    alpha.public_key, [telio.State.Connected]
+                ),
             )
         )
 

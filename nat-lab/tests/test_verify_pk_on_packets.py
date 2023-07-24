@@ -57,34 +57,40 @@ async def test_verify_pk_on_packets() -> None:
             )
         )
         await testing.wait_lengthy(
-            alpha_client.wait_for_any_derp_state([telio.State.Connected])
-        )
-        await testing.wait_lengthy(
-            beta_client.wait_for_any_derp_state([telio.State.Connected])
-        )
-
-        await testing.wait_long(
-            alpha_client.create_fake_derprelay_to_derp01(
-                "YM/cgTcnTGeGqnDVSD19sWHKr3yOn45JJ5ngQ/9InFQ=",
-                "TNRZu9dcu7xM3b1jiVlVAVCf5zcyT0B98q7zgKOGEQI=",
-            )
-        )
-        await testing.wait_long(
-            beta_client.create_fake_derprelay_to_derp01(
-                "4NuMvvYQ9bpUE8nokwCjbZiOCeb1iqVKfpDsHkmDXXM=",
-                "BXhQTS33twKHzYh2hnWSiuX2s+8jejdBKbSpkRyVwV4=",
+            asyncio.gather(
+                alpha_client.wait_for_state_on_any_derp([telio.State.Connected]),
+                beta_client.wait_for_state_on_any_derp([telio.State.Connected]),
             )
         )
 
-        await testing.wait_short(check_fake_derp_connection(alpha_client))
-        await testing.wait_short(check_fake_derp_connection(beta_client))
+        await testing.wait_long(
+            asyncio.gather(
+                alpha_client.create_fake_derprelay_to_derp01(
+                    "YM/cgTcnTGeGqnDVSD19sWHKr3yOn45JJ5ngQ/9InFQ=",
+                    "TNRZu9dcu7xM3b1jiVlVAVCf5zcyT0B98q7zgKOGEQI=",
+                ),
+                beta_client.create_fake_derprelay_to_derp01(
+                    "4NuMvvYQ9bpUE8nokwCjbZiOCeb1iqVKfpDsHkmDXXM=",
+                    "BXhQTS33twKHzYh2hnWSiuX2s+8jejdBKbSpkRyVwV4=",
+                ),
+            )
+        )
+
+        await testing.wait_long(
+            asyncio.gather(
+                check_fake_derp_connection(alpha_client),
+                check_fake_derp_connection(beta_client),
+            )
+        )
 
         # Send and receive Byte on FakeDerp
-        await alpha_client.send_message_from_fake_derp_relay(
-            "TNRZu9dcu7xM3b1jiVlVAVCf5zcyT0B98q7zgKOGEQI=",
-            ["0", "0", "2", "3", "5", "6"],
+        await testing.wait_normal(
+            alpha_client.send_message_from_fake_derp_relay(
+                "TNRZu9dcu7xM3b1jiVlVAVCf5zcyT0B98q7zgKOGEQI=",
+                ["0", "0", "2", "3", "5", "6"],
+            )
         )
-        await beta_client.recv_message_from_fake_derp_relay()
+        await testing.wait_normal(beta_client.recv_message_from_fake_derp_relay())
 
         assert "bytes: [0, 0, 2, 3, 5, 6]" in beta_client.get_stdout()
 
@@ -100,9 +106,11 @@ async def test_verify_pk_on_packets() -> None:
         await testing.wait_normal(check_fake_derp_connection(beta_client))
 
         # Beta should not recveive this message
-        await alpha_client.send_message_from_fake_derp_relay(
-            "TNRZu9dcu7xM3b1jiVlVAVCf5zcyT0B98q7zgKOGEQI=",
-            ["0", "0", "0", "1", "1", "1"],
+        await testing.wait_normal(
+            alpha_client.send_message_from_fake_derp_relay(
+                "TNRZu9dcu7xM3b1jiVlVAVCf5zcyT0B98q7zgKOGEQI=",
+                ["0", "0", "0", "1", "1", "1"],
+            )
         )
-        await beta_client.recv_message_from_fake_derp_relay()
+        await testing.wait_normal(beta_client.recv_message_from_fake_derp_relay())
         assert "bytes: [0, 0, 0, 1, 1, 1]" not in beta_client.get_stdout()

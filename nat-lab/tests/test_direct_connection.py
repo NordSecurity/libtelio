@@ -3,7 +3,7 @@ from config import DERP_SERVERS
 from contextlib import AsyncExitStack
 from mesh_api import API
 from utils import ConnectionTag, new_connection_by_tag, testing
-from telio import PathType
+from telio import PathType, State, AdapterType
 from telio_features import TelioFeatures, Direct
 from typing import List
 import asyncio
@@ -82,11 +82,11 @@ UHP_conn_client_types = [
 @pytest.mark.asyncio
 @pytest.mark.timeout(150)
 @pytest.mark.parametrize(
-    "endpoint_providers, client1_type, client2_type, reflexive_ip",
+    "endpoint_providers, client1_type, client2_type, _reflexive_ip",
     UHP_conn_client_types,
 )
 async def test_direct_working_paths(
-    endpoint_providers, client1_type, client2_type, reflexive_ip
+    endpoint_providers, client1_type, client2_type, _reflexive_ip
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -104,7 +104,7 @@ async def test_direct_working_paths(
             telio.Client(
                 alpha_connection,
                 alpha,
-                telio.AdapterType.BoringTun,
+                AdapterType.BoringTun,
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
@@ -117,7 +117,7 @@ async def test_direct_working_paths(
             telio.Client(
                 beta_connection,
                 beta,
-                telio.AdapterType.BoringTun,
+                AdapterType.BoringTun,
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
@@ -126,24 +126,26 @@ async def test_direct_working_paths(
             )
         )
 
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                alpha_client.wait_for_any_derp_state([telio.State.Connected]),
-                beta_client.wait_for_any_derp_state([telio.State.Connected]),
-            )
+                alpha_client.wait_for_state_on_any_derp([State.Connected]),
+                beta_client.wait_for_state_on_any_derp([State.Connected]),
+            ),
         )
 
         await testing.wait_lengthy(
             asyncio.gather(
-                alpha_client.handshake(
+                alpha_client.wait_for_state_peer(
                     beta.public_key,
-                    PathType.Direct,
+                    [State.Connected],
+                    [PathType.Direct],
                 ),
-                beta_client.handshake(
+                beta_client.wait_for_state_peer(
                     alpha.public_key,
-                    PathType.Direct,
+                    [State.Connected],
+                    [PathType.Direct],
                 ),
-            )
+            ),
         )
 
         for server in DERP_SERVERS:
@@ -232,7 +234,7 @@ async def test_direct_failing_paths(
             telio.Client(
                 alpha_connection,
                 alpha,
-                telio.AdapterType.BoringTun,
+                AdapterType.BoringTun,
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
@@ -245,7 +247,7 @@ async def test_direct_failing_paths(
             telio.Client(
                 beta_connection,
                 beta,
-                telio.AdapterType.BoringTun,
+                AdapterType.BoringTun,
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
@@ -256,21 +258,23 @@ async def test_direct_failing_paths(
 
         await testing.wait_long(
             asyncio.gather(
-                alpha_client.wait_for_any_derp_state([telio.State.Connected]),
-                beta_client.wait_for_any_derp_state([telio.State.Connected]),
+                alpha_client.wait_for_state_on_any_derp([State.Connected]),
+                beta_client.wait_for_state_on_any_derp([State.Connected]),
             )
         )
 
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_lengthy(
                 asyncio.gather(
-                    alpha_client.handshake(
+                    alpha_client.wait_for_state_peer(
                         beta.public_key,
-                        PathType.Direct,
+                        [State.Connected],
+                        [PathType.Direct],
                     ),
-                    beta_client.handshake(
+                    beta_client.wait_for_state_peer(
                         alpha.public_key,
-                        PathType.Direct,
+                        [State.Connected],
+                        [PathType.Direct],
                     ),
                 )
             )
@@ -308,7 +312,7 @@ async def test_direct_short_connection_loss(
             telio.Client(
                 alpha_connection,
                 alpha,
-                telio.AdapterType.BoringTun,
+                AdapterType.BoringTun,
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
@@ -321,7 +325,7 @@ async def test_direct_short_connection_loss(
             telio.Client(
                 beta_connection,
                 beta,
-                telio.AdapterType.BoringTun,
+                AdapterType.BoringTun,
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
@@ -332,20 +336,22 @@ async def test_direct_short_connection_loss(
 
         await testing.wait_lengthy(
             asyncio.gather(
-                alpha_client.wait_for_any_derp_state([telio.State.Connected]),
-                beta_client.wait_for_any_derp_state([telio.State.Connected]),
+                alpha_client.wait_for_state_on_any_derp([State.Connected]),
+                beta_client.wait_for_state_on_any_derp([State.Connected]),
             )
         )
 
         await testing.wait_defined(
             asyncio.gather(
-                alpha_client.handshake(
+                alpha_client.wait_for_state_peer(
                     beta.public_key,
-                    PathType.Direct,
+                    [State.Connected],
+                    [PathType.Direct],
                 ),
-                beta_client.handshake(
+                beta_client.wait_for_state_peer(
                     alpha.public_key,
-                    PathType.Direct,
+                    [State.Connected],
+                    [PathType.Direct],
                 ),
             ),
             120,
@@ -392,7 +398,7 @@ async def test_direct_connection_loss_for_infinity(
             telio.Client(
                 alpha_connection,
                 alpha,
-                telio.AdapterType.BoringTun,
+                AdapterType.BoringTun,
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
@@ -405,7 +411,7 @@ async def test_direct_connection_loss_for_infinity(
             telio.Client(
                 beta_connection,
                 beta,
-                telio.AdapterType.BoringTun,
+                AdapterType.BoringTun,
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
@@ -416,20 +422,22 @@ async def test_direct_connection_loss_for_infinity(
 
         await testing.wait_lengthy(
             asyncio.gather(
-                alpha_client.wait_for_any_derp_state([telio.State.Connected]),
-                beta_client.wait_for_any_derp_state([telio.State.Connected]),
+                alpha_client.wait_for_state_on_any_derp([State.Connected]),
+                beta_client.wait_for_state_on_any_derp([State.Connected]),
             )
         )
 
         await testing.wait_defined(
             asyncio.gather(
-                alpha_client.handshake(
+                alpha_client.wait_for_state_peer(
                     beta.public_key,
-                    PathType.Direct,
+                    [State.Connected],
+                    [PathType.Direct],
                 ),
-                beta_client.handshake(
+                beta_client.wait_for_state_peer(
                     alpha.public_key,
-                    PathType.Direct,
+                    [State.Connected],
+                    [PathType.Direct],
                 ),
             ),
             120,
@@ -445,8 +453,12 @@ async def test_direct_connection_loss_for_infinity(
 
             await testing.wait_defined(
                 asyncio.gather(
-                    alpha_client.handshake(beta.public_key),
-                    beta_client.handshake(alpha.public_key),
+                    alpha_client.wait_for_state_peer(
+                        beta.public_key, [State.Connected]
+                    ),
+                    beta_client.wait_for_state_peer(
+                        alpha.public_key, [State.Connected]
+                    ),
                 ),
                 120,
             )
@@ -498,7 +510,6 @@ async def test_direct_connection_endpoint_gone(
                 api.get_meshmap(alpha.id),
             )
         )
-
         beta_client = await exit_stack.enter_async_context(
             telio.Client(
                 beta_connection,
@@ -524,55 +535,48 @@ async def test_direct_connection_endpoint_gone(
                             str(derp["ipv4"])
                         )
                     )
-
-                await testing.wait_defined(
+                await testing.wait_lengthy(
                     asyncio.gather(
-                        alpha_client.wait_for_any_derp_state(
-                            [telio.State.Connecting, telio.State.Disconnected],
-                        ),
-                        beta_client.wait_for_any_derp_state(
-                            [telio.State.Connecting, telio.State.Disconnected],
-                        ),
+                        alpha_client.wait_for_every_derp_disconnection(),
+                        beta_client.wait_for_every_derp_disconnection(),
                     ),
-                    60,
                 )
-
                 async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
                     await testing.wait_defined(ping.wait_for_next_ping(), 60)
 
-        await testing.wait_defined(
+        await testing.wait_lengthy(
             asyncio.gather(
-                alpha_client.wait_for_any_derp_state([telio.State.Connected]),
-                beta_client.wait_for_any_derp_state([telio.State.Connected]),
+                alpha_client.wait_for_state_on_any_derp([State.Connected]),
+                beta_client.wait_for_state_on_any_derp([State.Connected]),
             ),
-            60,
         )
 
         await testing.wait_lengthy(
             asyncio.gather(
-                alpha_client.handshake(
+                alpha_client.wait_for_state_peer(
                     beta.public_key,
-                    telio.PathType.Direct,
+                    [State.Connected],
+                    [PathType.Direct],
                 ),
-                beta_client.handshake(
+                beta_client.wait_for_state_peer(
                     alpha.public_key,
-                    telio.PathType.Direct,
+                    [State.Connected],
+                    [PathType.Direct],
                 ),
             ),
         )
 
         await _check_if_true_direct_connection()
 
-        await testing.wait_defined(
+        await testing.wait_lengthy(
             asyncio.gather(
-                alpha_client.wait_for_any_derp_state(
-                    [telio.State.Connected],
+                alpha_client.wait_for_state_on_any_derp(
+                    [State.Connected],
                 ),
-                beta_client.wait_for_any_derp_state(
-                    [telio.State.Connected],
+                beta_client.wait_for_state_on_any_derp(
+                    [State.Connected],
                 ),
             ),
-            60,
         )
 
         async with AsyncExitStack() as temp_exit_stack:
@@ -587,29 +591,33 @@ async def test_direct_connection_endpoint_gone(
                 )
             )
 
-            await testing.wait_defined(
+            await testing.wait_lengthy(
                 asyncio.gather(
-                    alpha_client.handshake(beta.public_key),
-                    beta_client.handshake(alpha.public_key),
+                    alpha_client.wait_for_state_peer(
+                        beta.public_key, [State.Connected]
+                    ),
+                    beta_client.wait_for_state_peer(
+                        alpha.public_key, [State.Connected]
+                    ),
                 ),
-                60,
             )
 
             async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-                await testing.wait_defined(ping.wait_for_next_ping(), 60)
+                await testing.wait_lengthy(ping.wait_for_next_ping())
 
-        await testing.wait_defined(
+        await testing.wait_lengthy(
             asyncio.gather(
-                alpha_client.handshake(
+                alpha_client.wait_for_state_peer(
                     beta.public_key,
-                    telio.PathType.Direct,
+                    [State.Connected],
+                    [PathType.Direct],
                 ),
-                beta_client.handshake(
+                beta_client.wait_for_state_peer(
                     alpha.public_key,
-                    telio.PathType.Direct,
+                    [State.Connected],
+                    [PathType.Direct],
                 ),
             ),
-            60,
         )
 
         await _check_if_true_direct_connection()

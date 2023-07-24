@@ -58,24 +58,22 @@ async def test_dns() -> None:
             )
         )
 
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-                client_beta.wait_for_any_derp_state([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
+                client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
+                client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
                 alpha_conn_tracker.wait_for_event("derp_1"),
                 beta_conn_tracker.wait_for_event("derp_1"),
             )
         )
-
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key),
-                client_beta.handshake(alpha.public_key),
+                client_alpha.wait_for_state_peer(
+                    beta.public_key, [telio.State.Connected]
+                ),
+                client_beta.wait_for_state_peer(
+                    alpha.public_key, [telio.State.Connected]
+                ),
             )
         )
 
@@ -187,24 +185,22 @@ async def test_dns_port() -> None:
             )
         )
 
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-                client_beta.wait_for_any_derp_state([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
+                client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
+                client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
                 alpha_conn_tracker.wait_for_event("derp_1"),
                 beta_conn_tracker.wait_for_event("derp_1"),
             )
         )
-
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key),
-                client_beta.handshake(alpha.public_key),
+                client_alpha.wait_for_state_peer(
+                    beta.public_key, [telio.State.Connected]
+                ),
+                client_beta.wait_for_state_peer(
+                    alpha.public_key, [telio.State.Connected]
+                ),
             )
         )
 
@@ -307,7 +303,9 @@ async def test_vpn_dns() -> None:
         await testing.wait_long(conn_tracker.wait_for_event("vpn_1"))
 
         await testing.wait_lengthy(
-            client_alpha.handshake(wg_server["public_key"], path=PathType.Direct)
+            client_alpha.wait_for_state_peer(
+                wg_server["public_key"], [telio.State.Connected], [PathType.Direct]
+            )
         )
 
         # After we connect to the VPN, enable magic DNS
@@ -481,22 +479,20 @@ async def test_dns_stability(
 
         await testing.wait_long(
             asyncio.gather(
-                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-                client_beta.wait_for_any_derp_state([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
+                client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
+                client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
                 alpha_conn_tracker.wait_for_event("derp_1"),
                 beta_conn_tracker.wait_for_event("derp_1"),
             )
         )
-
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key),
-                client_beta.handshake(alpha.public_key),
+                client_alpha.wait_for_state_peer(
+                    beta.public_key, [telio.State.Connected]
+                ),
+                client_beta.wait_for_state_peer(
+                    alpha.public_key, [telio.State.Connected]
+                ),
             )
         )
 
@@ -636,16 +632,16 @@ async def test_dns_update() -> None:
 
         wg_server = config.WG_SERVER
 
-        await testing.wait_long(
-            client_alpha.connect_to_vpn(
-                wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-            )
-        )
-
-        await testing.wait_long(conn_tracker.wait_for_event("vpn_1"))
-
         await testing.wait_lengthy(
-            client_alpha.handshake(wg_server["public_key"], path=PathType.Direct)
+            asyncio.gather(
+                client_alpha.connect_to_vpn(
+                    wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
+                ),
+                conn_tracker.wait_for_event("vpn_1"),
+                client_alpha.wait_for_state_peer(
+                    wg_server["public_key"], [telio.State.Connected], [PathType.Direct]
+                ),
+            )
         )
 
         # Don't forward anything yet

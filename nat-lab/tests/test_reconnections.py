@@ -85,47 +85,58 @@ async def test_mesh_reconnect(
             )
         )
 
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-                client_beta.wait_for_any_derp_state([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
+                client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
+                client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
                 alpha_conn_tracker.wait_for_event("derp_1"),
                 beta_conn_tracker.wait_for_event("derp_1"),
             )
         )
-
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key),
-                client_beta.handshake(alpha.public_key),
+                client_alpha.wait_for_state_peer(
+                    beta.public_key, [telio.State.Connected]
+                ),
+                client_beta.wait_for_state_peer(
+                    alpha.public_key, [telio.State.Connected]
+                ),
             )
         )
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
-
         async with Ping(beta_connection, alpha.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         await client_alpha.stop_device()
+
+        with pytest.raises(asyncio.TimeoutError):
+            async with Ping(beta_connection, alpha.ip_addresses[0]).run() as ping:
+                await testing.wait_long(ping.wait_for_next_ping())
+
         await client_alpha.simple_start()
         await client_alpha.set_meshmap(api.get_meshmap(alpha.id))
 
-        await testing.wait_long(
-            client_alpha.wait_for_any_derp_state([telio.State.Connected])
+        await testing.wait_lengthy(
+            asyncio.gather(
+                client_alpha.wait_for_event_peer(
+                    beta.public_key,
+                    [telio.State.Connected],
+                ),
+                client_alpha.wait_for_event_on_any_derp([telio.State.Connected]),
+                alpha_conn_tracker.wait_for_event("derp_1"),
+            )
         )
-
-        await testing.wait_long(alpha_conn_tracker.wait_for_event("derp_1"))
 
         await testing.wait_long(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key),
-                client_beta.handshake(alpha.public_key),
+                client_alpha.wait_for_state_peer(
+                    beta.public_key, [telio.State.Connected]
+                ),
+                client_beta.wait_for_state_peer(
+                    alpha.public_key, [telio.State.Connected]
+                ),
             )
         )
 
