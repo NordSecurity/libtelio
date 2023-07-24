@@ -53,7 +53,7 @@ impl HeartbeatConfig {
         let initial_collect_interval = features
             .initial_heartbeat_interval
             .map(|interval| Some(Duration::from_secs(interval.into())))
-            .unwrap_or(None);
+            .unwrap_or_default();
 
         Self {
             initial_collect_interval,
