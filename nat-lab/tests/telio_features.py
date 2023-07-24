@@ -37,6 +37,7 @@ class Qos:
 class Nurse:
     fingerprint: str
     heartbeat_interval: Optional[int] = None
+    initial_heartbeat_interval: Optional[int] = None
     qos: Optional[Qos] = None
     enable_nat_type_collection: bool = False
 
