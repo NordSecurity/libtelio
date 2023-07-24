@@ -1,6 +1,7 @@
 name: Linters
-on: [push, pull_request]
+on: [workflow_call]
 permissions: {}
+
 jobs:
   check:
       runs-on: ubuntu-22.04

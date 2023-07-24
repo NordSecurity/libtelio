@@ -5,7 +5,6 @@ on:
     - cron: "43 5 * * 0"
   push:
     branches: [ "main" ]
-
 permissions: read-all
 
 jobs:

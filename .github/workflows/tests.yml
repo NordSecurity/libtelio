@@ -1,6 +1,7 @@
 name: Tests
-on: [push, pull_request]
+on: [workflow_call]
 permissions: {}
+
 jobs:
   test-linux:
     runs-on: ubuntu-22.04
