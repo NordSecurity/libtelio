@@ -300,7 +300,7 @@ async fn dns_request_local() {
     let mut records = Records::new();
     records.insert(
         String::from("test.nord."),
-        Ipv4Addr::new(100, 100, 100, 100),
+        (Some(Ipv4Addr::new(100, 100, 100, 100)), None),
     );
     let zone = String::from("nord");
     timeout(

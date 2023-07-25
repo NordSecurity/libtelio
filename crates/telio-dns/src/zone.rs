@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use std::{
     collections::{HashMap, HashSet},
-    net::{IpAddr, Ipv4Addr},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
     str::FromStr,
 };
 use trust_dns_client::rr::{rdata::SOA, DNSClass, LowerName, Name, RData, Record, RecordType};
@@ -25,7 +25,7 @@ pub(crate) type Zones = Catalog;
 /// DNS servers and provide information about a domain including what IP
 /// address is associated with that domain and how to handle requests
 /// for that domain.
-pub type Records = HashMap<String, Ipv4Addr>;
+pub type Records = HashMap<String, (Option<Ipv4Addr>, Option<Ipv6Addr>)>;
 
 /// AuthoritativeZone is a zone for which the local server references its
 /// own data when responding to queries.
@@ -64,18 +64,34 @@ impl AuthoritativeZone {
         )
         .await;
 
-        for (name, &ip) in records.iter() {
-            zone.upsert(
-                Record::new()
-                    .set_name(Name::parse(name, None)?)
-                    .set_ttl(900)
-                    .set_rr_type(RecordType::A)
-                    .set_dns_class(DNSClass::IN)
-                    .set_data(Some(RData::A(ip)))
-                    .clone(),
-                0,
-            )
-            .await;
+        for (name, &(ipv4, ipv6)) in records.iter() {
+            if let Some(ip) = ipv4 {
+                zone.upsert(
+                    Record::new()
+                        .set_name(Name::parse(name, None)?)
+                        .set_ttl(900)
+                        .set_rr_type(RecordType::A)
+                        .set_dns_class(DNSClass::IN)
+                        .set_data(Some(RData::A(ip)))
+                        .clone(),
+                    0,
+                )
+                .await;
+            }
+
+            if let Some(ip) = ipv6 {
+                zone.upsert(
+                    Record::new()
+                        .set_name(Name::parse(name, None)?)
+                        .set_ttl(900)
+                        .set_rr_type(RecordType::AAAA)
+                        .set_dns_class(DNSClass::IN)
+                        .set_data(Some(RData::AAAA(ip)))
+                        .clone(),
+                    0,
+                )
+                .await;
+            }
         }
         Ok(AuthoritativeZone { zone })
     }
@@ -246,5 +262,77 @@ impl Clone for ClonableZones {
                 }),
             names: self.names.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn validate_record(
+        zone: &AuthoritativeZone,
+        name: &str,
+        expected_ipv4: Option<Ipv4Addr>,
+        expected_ipv6: Option<Ipv6Addr>,
+    ) {
+        let lookup = zone
+            .lookup(
+                &Name::from_str(name).unwrap().into(),
+                RecordType::A,
+                Default::default(),
+            )
+            .await;
+
+        if let Some(expected_ipv4) = expected_ipv4 {
+            let lookup = lookup.unwrap();
+            let records: Vec<&Record> = lookup.iter().collect();
+            assert_eq!(records.len(), 1);
+            let record = records[0];
+            assert_eq!(record.name(), &Name::from_str(name).unwrap());
+            assert_eq!(record.data(), Some(&RData::A(expected_ipv4)));
+        } else {
+            assert!(matches!(lookup, Err(LookupError::NameExists)));
+        }
+
+        let lookup = zone
+            .lookup(
+                &Name::from_str(name).unwrap().into(),
+                RecordType::AAAA,
+                Default::default(),
+            )
+            .await;
+
+        if let Some(expected_ipv6) = expected_ipv6 {
+            let lookup = lookup.unwrap();
+            let records: Vec<&Record> = lookup.iter().collect();
+            assert_eq!(records.len(), 1);
+            let record = records[0];
+            assert_eq!(record.name(), &Name::from_str(name).unwrap());
+            assert_eq!(record.data(), Some(&RData::AAAA(expected_ipv6)));
+        } else {
+            assert!(matches!(lookup, Err(LookupError::NameExists)));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_authoritative_zone() {
+        let alpha_ipv4 = Ipv4Addr::new(1, 2, 3, 4);
+        let alpha_ipv6 = Ipv6Addr::new(1, 2, 3, 4, 5, 6, 7, 8);
+        let beta_ipv4 = Ipv4Addr::new(4, 3, 2, 1);
+        let gamma_ipv6 = Ipv6Addr::new(8, 7, 6, 5, 4, 3, 2, 1);
+
+        let mut records = HashMap::new();
+        records.insert(
+            String::from("alpha.nord"),
+            (Some(alpha_ipv4), Some(alpha_ipv6)),
+        );
+        records.insert(String::from("beta.nord"), (Some(beta_ipv4), None));
+        records.insert(String::from("gamma.nord"), (None, Some(gamma_ipv6)));
+
+        let zone = AuthoritativeZone::new("nord", &records).await.unwrap();
+
+        validate_record(&zone, "alpha.nord", Some(alpha_ipv4), Some(alpha_ipv6)).await;
+        validate_record(&zone, "beta.nord", Some(beta_ipv4), None).await;
+        validate_record(&zone, "gamma.nord", None, Some(gamma_ipv6)).await;
     }
 }

@@ -662,9 +662,8 @@ impl Drop for Device {
 impl RequestedState {
     // A Convenience function to build a DNS records list from the requested meshnet config
     // This function does not take into account whether DNS is enabled or not. It simply builds a
-    // list of hostnam<->IP pairs out of currently requested meshnet nodes. If meshnet is disabled,
-    // empty list is returned. At this moment any IPv6 addresses are skipped, because internal DNS
-    // resolver does not support IPv6
+    // list of hostname<->IP pairs out of currently requested meshnet nodes. If meshnet is disabled,
+    // empty list is returned.
     pub fn collect_dns_records(&self) -> Records {
         let result = self
             .meshnet_config
@@ -674,10 +673,32 @@ impl RequestedState {
             })
             .iter()
             .filter_map(|v| match &v.ip_addresses {
-                Some(ips) => match ips.first() {
-                    Some(IpAddr::V4(addr)) => Some((v.hostname.to_owned(), *addr)),
-                    _ => None,
-                },
+                Some(ips) => {
+                    let ipv4 = ips
+                        .iter()
+                        .filter(|&&ip| ip.is_ipv4())
+                        .collect::<Vec<_>>()
+                        .first()
+                        .and_then(|ip| match **ip {
+                            IpAddr::V4(ip) => Some(ip),
+                            _ => None,
+                        });
+
+                    let ipv6 = ips
+                        .iter()
+                        .filter(|&&ip| ip.is_ipv6())
+                        .collect::<Vec<_>>()
+                        .first()
+                        .and_then(|ip| match **ip {
+                            IpAddr::V6(ip) => Some(ip),
+                            _ => None,
+                        });
+
+                    match (ipv4, ipv6) {
+                        (None, None) => None,
+                        _ => Some((v.hostname.to_owned(), (ipv4, ipv6))),
+                    }
+                }
                 _ => None,
             })
             .collect();
@@ -1697,14 +1718,71 @@ fn set_tunnel_interface(socket_pool: &Arc<SocketPool>, config: &DeviceConfig) {
     }
 }
 
-#[cfg(not(windows))]
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ipnetwork::IpNetwork;
+    use std::net::Ipv6Addr;
     use telio_model::api_config::FeatureDirect;
     use telio_model::config::{Peer, PeerBase};
 
+    fn build_peer_base(hostname: String, ip_addresses: Vec<IpAddr>) -> PeerBase {
+        PeerBase {
+            hostname,
+            ip_addresses: Some(ip_addresses),
+            ..Default::default()
+        }
+    }
+
+    fn build_peer(hostname: String, ip_addresses: Vec<IpAddr>) -> Peer {
+        Peer {
+            base: build_peer_base(hostname, ip_addresses),
+            ..Default::default()
+        }
+    }
+
+    fn build_mesh_config(peers: Option<Vec<Peer>>) -> Config {
+        Config {
+            peers,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_collect_dns_records() {
+        let alpha_ipv4 = Ipv4Addr::new(1, 2, 3, 4);
+        let alpha_ipv6 = Ipv6Addr::new(1, 2, 3, 4, 5, 6, 7, 8);
+        let beta_ipv4 = Ipv4Addr::new(4, 3, 2, 1);
+        let gamma_ipv6 = Ipv6Addr::new(8, 7, 6, 5, 4, 3, 2, 1);
+
+        let peers = Some(vec![
+            build_peer(
+                String::from("alpha"),
+                vec![IpAddr::V4(alpha_ipv4), IpAddr::V6(alpha_ipv6)],
+            ),
+            build_peer(String::from("beta"), vec![IpAddr::V4(beta_ipv4)]),
+            build_peer(String::from("gamma"), vec![IpAddr::V6(gamma_ipv6)]),
+        ]);
+
+        let requested_state = RequestedState {
+            meshnet_config: Some(build_mesh_config(peers)),
+            ..Default::default()
+        };
+
+        let records = requested_state.collect_dns_records();
+
+        let validate_record =
+            |name: String, expected_ipv4: Option<Ipv4Addr>, expected_ipv6: Option<Ipv6Addr>| {
+                let (ipv4, ipv6) = records[&name].clone();
+                assert_eq!(ipv4, expected_ipv4);
+                assert_eq!(ipv6, expected_ipv6);
+            };
+
+        validate_record(String::from("alpha"), Some(alpha_ipv4), Some(alpha_ipv6));
+        validate_record(String::from("beta"), Some(beta_ipv4), None);
+        validate_record(String::from("gamma"), None, Some(gamma_ipv6));
+    }
+
+    #[cfg(not(windows))]
     #[tokio::test(start_paused = true)]
     async fn test_mocked_adapter() {
         let (sender, _receiver) = tokio::sync::broadcast::channel(1);
@@ -1748,6 +1826,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(windows))]
     #[tokio::test(start_paused = true)]
     async fn test_disconnect_exit_nodes() {
         let (sender, _receiver) = tokio::sync::broadcast::channel(1);
@@ -1822,6 +1901,7 @@ mod tests {
         rt.test_env.adapter.lock().await.checkpoint();
     }
 
+    #[cfg(not(windows))]
     #[tokio::test(start_paused = true)]
     async fn test_duplicate_allowed_ips() {
         let (sender, _receiver) = tokio::sync::broadcast::channel(1);
@@ -1840,8 +1920,8 @@ mod tests {
         .await
         .unwrap();
 
-        let first_ip_network = IpNetwork::from(IpAddr::from(Ipv4Addr::new(1, 2, 3, 4)));
-        let second_ip_network = IpNetwork::from(IpAddr::from(Ipv4Addr::new(4, 3, 2, 1)));
+        let first_ip_network = ipnetwork::IpNetwork::from(IpAddr::from(Ipv4Addr::new(1, 2, 3, 4)));
+        let second_ip_network = ipnetwork::IpNetwork::from(IpAddr::from(Ipv4Addr::new(4, 3, 2, 1)));
 
         let config = Config {
             this: PeerBase {
@@ -1908,6 +1988,7 @@ mod tests {
         rt.test_env.adapter.lock().await.checkpoint();
     }
 
+    #[cfg(not(windows))]
     #[tokio::test(start_paused = true)]
     async fn test_exit_node_demote() {
         let (sender, _receiver) = tokio::sync::broadcast::channel(1);
@@ -1996,6 +2077,7 @@ mod tests {
         rt.test_env.adapter.lock().await.checkpoint();
     }
 
+    #[cfg(not(windows))]
     #[tokio::test(start_paused = true)]
     async fn test_default_features_when_direct_is_empty() {
         let (sender, _receiver) = tokio::sync::broadcast::channel(1);
@@ -2026,6 +2108,7 @@ mod tests {
         assert!(entities.stun_endpoint_provider.is_some());
     }
 
+    #[cfg(not(windows))]
     #[tokio::test(start_paused = true)]
     async fn test_default_features_when_provider_is_empty() {
         let (sender, _receiver) = tokio::sync::broadcast::channel(1);
@@ -2056,6 +2139,7 @@ mod tests {
         assert!(entities.stun_endpoint_provider.is_none());
     }
 
+    #[cfg(not(windows))]
     #[tokio::test(start_paused = true)]
     async fn test_enable_all_direct_features() {
         let (sender, _receiver) = tokio::sync::broadcast::channel(1);
