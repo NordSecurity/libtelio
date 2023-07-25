@@ -2,7 +2,6 @@
 //! with other devices§
 
 use log::error;
-use lru_time_cache::LruCache;
 use pnet_packet::{
     icmp::{IcmpPacket, IcmpType, IcmpTypes},
     icmpv6::{Icmpv6Packet, Icmpv6Type, Icmpv6Types},
@@ -13,13 +12,14 @@ use pnet_packet::{
     udp::UdpPacket,
     Packet,
 };
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::{
-    collections::{HashMap, HashSet},
     fmt::{Debug, Formatter},
     net::{IpAddr as StdIpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr as StdIpv6Addr},
     sync::{Mutex, RwLock},
     time::Duration,
 };
+use telio_utils::lru_cache::{Entry, LruCache};
 
 use telio_crypto::PublicKey;
 use telio_utils::{telio_log_debug, telio_log_trace, telio_log_warn};
@@ -201,13 +201,12 @@ struct Whitelist {
 }
 
 impl Whitelist {
-    fn is_whitelisted(&self, peer: &PublicKey, port: u16) -> bool {
-        self.peer_whitelist.contains(peer)
-            || self
-                .port_whitelist
-                .get(peer)
-                .map(|p| *p == port)
-                .unwrap_or_default()
+    fn is_port_whitelisted(&self, peer: &PublicKey, port: u16) -> bool {
+        debug_assert!(!self.peer_whitelist.contains(peer));
+        self.port_whitelist
+            .get(peer)
+            .map(|p| *p == port)
+            .unwrap_or_default()
     }
 }
 
@@ -233,7 +232,7 @@ struct TcpConnectionInfo {
     conn_remote_initiated: bool,
 }
 
-#[derive(Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Debug)]
+#[derive(Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 enum IpAddr {
     Ipv4(u32),
     Ipv6(u128),
@@ -260,7 +259,7 @@ impl From<IpAddr> for StdIpAddr {
     }
 }
 
-#[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 struct IpConnWithPort {
     remote_addr: IpAddr,
     remote_port: u16,
@@ -324,8 +323,8 @@ impl StatefullFirewall {
     pub fn new_custom(capacity: usize, ttl: u64) -> Self {
         let ttl = Duration::from_millis(ttl);
         Self {
-            tcp: Mutex::new(LruCache::with_expiry_duration_and_capacity(ttl, capacity)),
-            udp: Mutex::new(LruCache::with_expiry_duration_and_capacity(ttl, capacity)),
+            tcp: Mutex::new(LruCache::new(ttl, capacity)),
+            udp: Mutex::new(LruCache::new(ttl, capacity)),
             whitelist: RwLock::new(Whitelist::default()),
         }
     }
@@ -396,7 +395,7 @@ impl StatefullFirewall {
         match ip.get_next_level_protocol() {
             IpNextHeaderProtocols::Udp => self.handle_inbound_udp(&whitelist, &peer, &ip),
             IpNextHeaderProtocols::Tcp => self.handle_inbound_tcp(&whitelist, &peer, &ip),
-            IpNextHeaderProtocols::Icmp => self.handle_inbound_icmp(&whitelist, &peer, &ip),
+            IpNextHeaderProtocols::Icmp => self.handle_inbound_icmp(&peer, &ip),
             _ => false,
         }
     }
@@ -410,29 +409,29 @@ impl StatefullFirewall {
             local_port: udp_packet.get_source(),
         };
         let mut udp_cache = unwrap_lock_or_return!(self.udp.lock());
-        // If key already exists, dont change the value, just update timer with get()
-        if udp_cache.get(&key).is_none() {
+        // If key already exists, dont change the value, just update timer with entry
+        if let Entry::Vacant(e) = udp_cache.entry(key) {
             let conninfo = UdpConnectionInfo {
                 is_remote_initiated: false,
             };
-            telio_log_trace!("Inserting new UDP conntrack entry {:?}", key);
-            udp_cache.insert(key, conninfo);
+            telio_log_trace!("Inserting new UDP conntrack entry {:?}", e.key());
+            e.insert(conninfo);
         }
     }
 
     fn handle_outbound_tcp<'a>(&self, ip: &impl IpPacket<'a>) {
         let tcp_packet = unwrap_option_or_return!(TcpPacket::new(ip.payload()));
-        let key = IpConnWithPort {
-            remote_addr: ip.get_destination().into(),
-            remote_port: tcp_packet.get_destination(),
-            local_addr: ip.get_source().into(),
-            local_port: tcp_packet.get_source(),
-        };
-        let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock());
-
         let flags = tcp_packet.get_flags();
 
         if flags & TCP_FIRST_PKT_MASK == TcpFlags::SYN {
+            let key = IpConnWithPort {
+                remote_addr: ip.get_destination().into(),
+                remote_port: tcp_packet.get_destination(),
+                local_addr: ip.get_source().into(),
+                local_port: tcp_packet.get_source(),
+            };
+
+            let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock());
             telio_log_trace!("Inserting TCP conntrack entry {:?}", key);
             tcp_cache.insert(
                 key,
@@ -443,15 +442,33 @@ impl StatefullFirewall {
                 },
             );
         } else if flags & TcpFlags::RST == TcpFlags::RST {
+            let key = IpConnWithPort {
+                remote_addr: ip.get_destination().into(),
+                remote_port: tcp_packet.get_destination(),
+                local_addr: ip.get_source().into(),
+                local_port: tcp_packet.get_source(),
+            };
+
             telio_log_trace!("Removing TCP conntrack entry {:?}", key);
-            tcp_cache.remove(&key);
+            unwrap_lock_or_return!(self.tcp.lock()).remove(&key);
         } else if flags & TcpFlags::FIN == TcpFlags::FIN {
+            let key = IpConnWithPort {
+                remote_addr: ip.get_destination().into(),
+                remote_port: tcp_packet.get_destination(),
+                local_addr: ip.get_source().into(),
+                local_port: tcp_packet.get_source(),
+            };
+
+            let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock());
             telio_log_trace!("Connection {:?} closing", key);
-            if let Some(connection) = tcp_cache.get_mut(&key) {
-                connection.tx_alive = false;
-                if !connection.rx_alive {
-                    telio_log_trace!("Removing TCP conntrack entry {:?}", key);
-                    tcp_cache.remove(&key);
+            if let Entry::Occupied(mut e) = tcp_cache.entry(key) {
+                let TcpConnectionInfo {
+                    tx_alive, rx_alive, ..
+                } = e.get_mut();
+                *tx_alive = false;
+                if !*rx_alive {
+                    telio_log_trace!("Removing TCP conntrack entry {:?}", e.key());
+                    e.remove();
                 }
             }
         }
@@ -479,7 +496,7 @@ impl StatefullFirewall {
                 connection_info
             );
             if connection_info.is_remote_initiated
-                && !whitelist.is_whitelisted(peer, key.local_port)
+                && !whitelist.is_port_whitelisted(peer, key.local_port)
             {
                 telio_log_trace!("Removing UDP conntrack entry {:?}", key);
                 udp_cache.remove(&key);
@@ -491,7 +508,7 @@ impl StatefullFirewall {
         }
 
         // no value in cache, insert and allow only if ip is whitelisted
-        if !whitelist.is_whitelisted(peer, key.local_port) {
+        if !whitelist.is_port_whitelisted(peer, key.local_port) {
             telio_log_trace!("Dropping UDP packet {:?} {:?}", key, peer);
             return false;
         }
@@ -536,7 +553,7 @@ impl StatefullFirewall {
                 connection_info
             );
             if connection_info.conn_remote_initiated
-                && !whitelist.is_whitelisted(peer, key.local_port)
+                && !whitelist.is_port_whitelisted(peer, key.local_port)
             {
                 telio_log_trace!("Removing TCP conntrack entry {:?}", key);
                 tcp_cache.remove(&key);
@@ -561,7 +578,7 @@ impl StatefullFirewall {
             return true;
         }
 
-        if !whitelist.is_whitelisted(peer, key.local_port) {
+        if !whitelist.is_port_whitelisted(peer, key.local_port) {
             telio_log_trace!("Dropping TCP packet {:?} {:?}", key, peer);
             return false;
         }
@@ -587,12 +604,7 @@ impl StatefullFirewall {
         true
     }
 
-    fn handle_inbound_icmp<'a, P: IpPacket<'a>>(
-        &self,
-        _whitelist: &Whitelist,
-        peer: &PublicKey,
-        ip: &P,
-    ) -> bool {
+    fn handle_inbound_icmp<'a, P: IpPacket<'a>>(&self, peer: &PublicKey, ip: &P) -> bool {
         let icmp_packet = unwrap_option_or_return!(P::Icmp::new(ip.payload()), false);
 
         if P::Icmp::BLOCKED_TYPES.contains(&icmp_packet.get_type()) {
@@ -1232,6 +1244,55 @@ pub mod tests {
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::FIN)), true);
             assert_eq!(fw.tcp.lock().unwrap().len(), 1);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::FIN)), true);
+            assert_eq!(fw.tcp.lock().unwrap().len(), 0);
+        }
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn firewall_tcp_connection_is_removed_when_outbound_fin_is_after_inbound_one() {
+        struct TestInput {
+            us: &'static str,
+            them: &'static str,
+            make_tcp: MakeTcp,
+        }
+
+        impl TestInput {
+            fn us_port(&self) -> u16 { self.us.parse::<StdSocketAddr>().unwrap().port() }
+            fn them_port(&self) -> u16 { self.them.parse::<StdSocketAddr>().unwrap().port() }
+            fn us_ip(&self) -> IpAddr { self.us.parse::<StdSocketAddr>().unwrap().ip().into() }
+            fn them_ip(&self) -> IpAddr { self.them.parse::<StdSocketAddr>().unwrap().ip().into() }
+        }
+
+        let test_inputs = vec![
+            TestInput{ us: "127.0.0.1:1111", them: "8.8.8.8:8888",                 make_tcp: &make_tcp },
+            TestInput{ us: "[::1]:1111",     them: "[2001:4860:4860::8888]:8888",  make_tcp: &make_tcp6 },
+        ];
+        for test_input @ TestInput { us, them, make_tcp } in test_inputs {
+            let fw = StatefullFirewall::new_custom(3, LRU_TIMEOUT);
+
+            let outgoing_init_packet = make_tcp(us, them, TcpFlags::SYN);
+            assert_eq!(fw.process_outbound_packet(&make_peer(), &outgoing_init_packet), true);
+            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            let conn_key = IpConnWithPort {
+                remote_addr: test_input.them_ip(),
+                remote_port: test_input.them_port(),
+                local_addr: test_input.us_ip(),
+                local_port: test_input.us_port(),
+            };
+
+            assert_eq!(fw.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
+                tx_alive: true, rx_alive: true, conn_remote_initiated: false
+            }));
+
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::FIN)), true);
+            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+
+            assert_eq!(fw.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
+                tx_alive: true, rx_alive: false, conn_remote_initiated: false
+            }));
+
+            assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::FIN)), true);
             assert_eq!(fw.tcp.lock().unwrap().len(), 0);
         }
     }

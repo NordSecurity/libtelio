@@ -8,15 +8,19 @@ publish = false
 
 [dependencies]
 log = {version = "0.4.14", features = ["release_max_level_debug"]}
-lru_time_cache = "0.11.11"
 pnet_packet = "0.28.0"
 mockall = { version = "0.11.3", optional = true }
 telio-crypto = { path = "../telio-crypto" }
 telio-utils = { path = "../telio-utils" }
+rustc-hash = "1.1.0"
+hashlink = "0.8.3"
 
 [dev-dependencies]
 mockall = "0.11.3"
 criterion = "0.3"
+rand = "0.8.5"
+proptest-derive = "0.3.0"
+proptest = "1.2.0"
 
 [features]
 test_utils = [] # For use in benchmarks to avoid duplication of the 'setup' code needed to create buffers with valid packets
