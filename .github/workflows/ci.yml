@@ -32,6 +32,10 @@ jobs:
     needs: skipper
     if: needs.skipper.outputs.should_skip != 'true'
     uses: ./.github/workflows/fuzzing.yml
+  benchmarks:
+    needs: skipper
+    if: needs.skipper.outputs.should_skip != 'true'
+    uses: ./.github/workflows/benchmarks.yml
 
   check-all-green:
     needs:
@@ -39,6 +43,7 @@ jobs:
     - linters
     - tests
     - fuzzing
+    - benchmarks
     - skipper
     if: needs.skipper.outputs.should_skip != 'true'
     runs-on: ubuntu-22.04
