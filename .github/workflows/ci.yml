@@ -1,0 +1,49 @@
+name: CI
+on: [push, pull_request]
+permissions: {}
+
+jobs:
+  skipper:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    outputs:
+      should_skip: ${{ steps.skip_check.outputs.should_skip }}
+    steps:
+      - id: skip_check
+        uses: fkirc/skip-duplicate-actions@12aca0a884f6137d619d6a8a09fcc3406ced5281 # v5.3.0
+        with:
+          concurrent_skipping: 'same_content_newer'
+
+  build:
+    needs: skipper
+    if: needs.skipper.outputs.should_skip != 'true'
+    uses: ./.github/workflows/build.yml
+  linters:
+    needs: skipper
+    if: needs.skipper.outputs.should_skip != 'true'
+    uses: ./.github/workflows/linters.yml
+  tests:
+    needs: skipper
+    if: needs.skipper.outputs.should_skip != 'true'
+    uses: ./.github/workflows/tests.yml
+  fuzzing:
+    needs: skipper
+    if: needs.skipper.outputs.should_skip != 'true'
+    uses: ./.github/workflows/fuzzing.yml
+
+  check-all-green:
+    needs:
+    - build
+    - linters
+    - tests
+    - fuzzing
+    - skipper
+    if: needs.skipper.outputs.should_skip != 'true'
+    runs-on: ubuntu-22.04
+    steps:
+    - name: Collect statuses from all jobs
+      uses: re-actors/alls-green@05ac9388f0aebcb5727afa17fcccfecd6f8ec5fe # v1.2.2
+      with:
+        jobs: ${{ toJSON(needs) }}

@@ -1,6 +1,7 @@
 name: Fuzzing
-on: [push, pull_request]
+on: [workflow_call]
 permissions: {}
+
 jobs:
   telio-proto-fuzzing:
       runs-on: ubuntu-22.04
