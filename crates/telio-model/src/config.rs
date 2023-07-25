@@ -12,7 +12,7 @@ use std::{
 use telio_crypto::PublicKey;
 
 /// Characterstics descriping a peer
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PeerBase {
     /// 32-character identifier of the peer
     pub identifier: String,
@@ -25,7 +25,7 @@ pub struct PeerBase {
 }
 
 /// Description of a peer
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Peer {
     #[serde(flatten)]
     /// The base object describing a peer
@@ -40,7 +40,7 @@ pub struct Peer {
 }
 
 /// Representation of DNS configuration
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DnsConfig {
     /// List of DNS servers
     pub dns_servers: Option<Vec<IpAddr>>,
@@ -181,7 +181,7 @@ impl PartialConfig {
 /// Rust representation of [meshnet map]
 /// A network map of all the Peers and the servers
 /// [meshnet map]: https://docs.nordvpn.com/client-api/#get-map
-#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Config {
     #[serde(flatten)]
     /// Description of the local peer
