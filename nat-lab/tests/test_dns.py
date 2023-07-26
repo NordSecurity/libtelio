@@ -12,7 +12,7 @@ from utils.connection_tracker import (
     ConnectionLimits,
     generate_connection_tracker_config,
 )
-from utils import ConnectionTag, new_connection_with_conn_tracker
+from utils import ConnectionTag, new_connection_with_conn_tracker, new_connection_by_tag
 
 DNS_SERVER_ADDRESS = config.LIBTELIO_DNS_IP
 
@@ -722,3 +722,35 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
         assert [result for result in results if FIRST_DNS_SERVER in result]
         assert not ([result for result in results if SECOND_DNS_SERVER in result])
         assert alpha_conn_tracker.get_out_of_limits() is None
+
+
+@pytest.mark.asyncio
+async def test_dns_aaaa_records() -> None:
+    async with AsyncExitStack() as exit_stack:
+        api = API()
+        (alpha, beta) = api.default_config_two_nodes()
+
+        beta_ipv6 = "1234:5678:9abc:def0:1234:5678:9abc:def0"
+        api.assign_ip(beta.id, beta_ipv6)
+
+        connection_alpha = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+
+        client_alpha = await exit_stack.enter_async_context(
+            telio.Client(connection_alpha, alpha).run_meshnet(
+                api.get_meshmap(alpha.id),
+            )
+        )
+        await client_alpha.enable_magic_dns(["1.1.1.1"])
+
+        alpha_response = await testing.wait_long(
+            connection_alpha.create_process(
+                ["nslookup", "beta.nord", DNS_SERVER_ADDRESS]
+            ).execute()
+        )
+
+        # 100.64.33.2
+        assert beta.ip_addresses[0] in alpha_response.get_stdout()
+        # 1234:5678:9abc:def0:1234:5678:9abc:def0
+        assert beta.ip_addresses[1] in alpha_response.get_stdout()
