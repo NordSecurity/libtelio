@@ -9,4 +9,4 @@ jobs:
         - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
         - name: Telio firewall benchmarks
           working-directory: crates/telio-firewall
-          run: cargo bench --features test_utils --bench firewall_bench "64.*10000" -- --warm-up-time 1 --measurement-time 1
+          run: cargo bench --features test_utils --bench firewall_bench "64" -- --warm-up-time 1 --measurement-time 1

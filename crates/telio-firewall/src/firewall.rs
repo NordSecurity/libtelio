@@ -795,8 +795,12 @@ pub mod tests {
 
         let mut ip = MutableIpv4Packet::new(&mut raw).expect("UDP: Bad IP buffer");
         set_ipv4(&mut ip, IpNextHeaderProtocols::Udp, IPV4_HEADER_MIN, ip_len);
-        let source: SocketAddrV4 = src.parse().expect("UDPv4: Bad src address");
-        let destination: SocketAddrV4 = dst.parse().expect("UDPv4: Bad dst address");
+        let source: SocketAddrV4 = src
+            .parse()
+            .expect(&format!("UDPv4: Bad src address: {src}"));
+        let destination: SocketAddrV4 = dst
+            .parse()
+            .expect(&format!("UDPv4: Bad dst address: {dst}"));
         ip.set_source(*source.ip());
         ip.set_destination(*destination.ip());
 
@@ -820,8 +824,12 @@ pub mod tests {
 
         let mut ip = MutableIpv6Packet::new(&mut raw).expect("UDP: Bad IP buffer");
         set_ipv6(&mut ip, IpNextHeaderProtocols::Udp, IPV6_HEADER_MIN, ip_len);
-        let source: SocketAddrV6 = src.parse().expect("UDPv6: Bad src address");
-        let destination: SocketAddrV6 = dst.parse().expect("UDPv6: Bad dst address");
+        let source: SocketAddrV6 = src
+            .parse()
+            .expect(&format!("UDPv6: Bad src address: {src}"));
+        let destination: SocketAddrV6 = dst
+            .parse()
+            .expect(&format!("UDPv6: Bad dst address: {dst}"));
         ip.set_source(*source.ip());
         ip.set_destination(*destination.ip());
 
@@ -844,8 +852,12 @@ pub mod tests {
 
         let mut ip = MutableIpv4Packet::new(&mut raw).expect("TCP: Bad IP buffer");
         set_ipv4(&mut ip, IpNextHeaderProtocols::Tcp, IPV4_HEADER_MIN, ip_len);
-        let source: SocketAddrV4 = src.parse().expect("UDPv4: Bad src address");
-        let destination: SocketAddrV4 = dst.parse().expect("UDPv4: Bad dst address");
+        let source: SocketAddrV4 = src
+            .parse()
+            .expect(&format!("TCPv4: Bad src address: {src}"));
+        let destination: SocketAddrV4 = dst
+            .parse()
+            .expect(&format!("TCPv4: Bad dst address: {dst}"));
         ip.set_source(*source.ip());
         ip.set_destination(*destination.ip());
 
@@ -868,8 +880,12 @@ pub mod tests {
 
         let mut ip = MutableIpv6Packet::new(&mut raw).expect("TCP: Bad IP buffer");
         set_ipv6(&mut ip, IpNextHeaderProtocols::Tcp, IPV6_HEADER_MIN, ip_len);
-        let source: SocketAddrV6 = src.parse().expect("UDPv6: Bad src address");
-        let destination: SocketAddrV6 = dst.parse().expect("UDPv6: Bad dst address");
+        let source: SocketAddrV6 = src
+            .parse()
+            .expect(&format!("TCPv6: Bad src address: {src}"));
+        let destination: SocketAddrV6 = dst
+            .parse()
+            .expect(&format!("TCPv6: Bad dst address: {dst}"));
         ip.set_source(*source.ip());
         ip.set_destination(*destination.ip());
 
