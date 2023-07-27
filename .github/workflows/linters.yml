@@ -7,7 +7,7 @@ jobs:
       runs-on: ubuntu-22.04
       steps:
         - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
-        - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
+        - uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
           with:
             command: check
             args: --target "x86_64-unknown-linux-gnu" --lib --color always
@@ -18,7 +18,7 @@ jobs:
         - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
           with:
             components: clippy
-        - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
+        - uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
           with:
             command: clippy
             args: --target "x86_64-unknown-linux-gnu" --lib --color always -- --deny warnings --allow unknown-lints -W clippy::expect_used -W clippy::panic -W clippy::unwrap_used
@@ -30,7 +30,7 @@ jobs:
           with:
             target: x86_64-pc-windows-gnu
             components: clippy
-        - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
+        - uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
           with:
             command: clippy
             args: --target "x86_64-pc-windows-gnu" --lib --color always -- --deny warnings --allow unknown-lints -W clippy::expect_used -W clippy::panic -W clippy::unwrap_used
@@ -42,7 +42,7 @@ jobs:
           with:
             target: x86_64-apple-darwin
             components: clippy
-        - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
+        - uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
           with:
             command: clippy
             args: --target "x86_64-apple-darwin" --lib --color always -- --deny warnings --allow unknown-lints -W clippy::expect_used -W clippy::panic -W clippy::unwrap_used
@@ -84,7 +84,7 @@ jobs:
         - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
           with:
             components: rustfmt
-        - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
+        - uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1.0.3
           with:
             command: fmt
             args: -- --check --color always
