@@ -665,45 +665,18 @@ impl RequestedState {
     // list of hostname<->IP pairs out of currently requested meshnet nodes. If meshnet is disabled,
     // empty list is returned.
     pub fn collect_dns_records(&self) -> Records {
-        let result = self
-            .meshnet_config
+        self.meshnet_config
             .clone()
             .map_or(Vec::new(), |cfg| {
                 cfg.peers.map_or(Vec::new(), |peers| peers)
             })
             .iter()
-            .filter_map(|v| match &v.ip_addresses {
-                Some(ips) => {
-                    let ipv4 = ips
-                        .iter()
-                        .filter(|&&ip| ip.is_ipv4())
-                        .collect::<Vec<_>>()
-                        .first()
-                        .and_then(|ip| match **ip {
-                            IpAddr::V4(ip) => Some(ip),
-                            _ => None,
-                        });
-
-                    let ipv6 = ips
-                        .iter()
-                        .filter(|&&ip| ip.is_ipv6())
-                        .collect::<Vec<_>>()
-                        .first()
-                        .and_then(|ip| match **ip {
-                            IpAddr::V6(ip) => Some(ip),
-                            _ => None,
-                        });
-
-                    match (ipv4, ipv6) {
-                        (None, None) => None,
-                        _ => Some((v.hostname.to_owned(), (ipv4, ipv6))),
-                    }
-                }
-                _ => None,
+            .filter_map(|v| {
+                v.ip_addresses
+                    .as_ref()
+                    .map(|ips| (v.hostname.to_owned(), ips.clone()))
             })
-            .collect();
-
-        result
+            .collect()
     }
 }
 
@@ -1770,16 +1743,11 @@ mod tests {
 
         let records = requested_state.collect_dns_records();
 
-        let validate_record =
-            |name: String, expected_ipv4: Option<Ipv4Addr>, expected_ipv6: Option<Ipv6Addr>| {
-                let (ipv4, ipv6) = records[&name].clone();
-                assert_eq!(ipv4, expected_ipv4);
-                assert_eq!(ipv6, expected_ipv6);
-            };
+        assert!(records["alpha"].contains(&IpAddr::V4(alpha_ipv4)));
+        assert!(records["alpha"].contains(&IpAddr::V6(alpha_ipv6)));
 
-        validate_record(String::from("alpha"), Some(alpha_ipv4), Some(alpha_ipv6));
-        validate_record(String::from("beta"), Some(beta_ipv4), None);
-        validate_record(String::from("gamma"), None, Some(gamma_ipv6));
+        assert_eq!(records["beta"].clone(), vec![IpAddr::V4(beta_ipv4)]);
+        assert_eq!(records["gamma"].clone(), vec![IpAddr::V6(gamma_ipv6)]);
     }
 
     #[cfg(not(windows))]

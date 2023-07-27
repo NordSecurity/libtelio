@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use std::{
     collections::{HashMap, HashSet},
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    net::IpAddr,
     str::FromStr,
 };
 use trust_dns_client::rr::{rdata::SOA, DNSClass, LowerName, Name, RData, Record, RecordType};
@@ -25,7 +25,7 @@ pub(crate) type Zones = Catalog;
 /// DNS servers and provide information about a domain including what IP
 /// address is associated with that domain and how to handle requests
 /// for that domain.
-pub type Records = HashMap<String, (Option<Ipv4Addr>, Option<Ipv6Addr>)>;
+pub type Records = HashMap<String, Vec<IpAddr>>;
 
 /// AuthoritativeZone is a zone for which the local server references its
 /// own data when responding to queries.
@@ -64,35 +64,37 @@ impl AuthoritativeZone {
         )
         .await;
 
-        for (name, &(ipv4, ipv6)) in records.iter() {
-            if let Some(ip) = ipv4 {
-                zone.upsert(
-                    Record::new()
-                        .set_name(Name::parse(name, None)?)
-                        .set_ttl(900)
-                        .set_rr_type(RecordType::A)
-                        .set_dns_class(DNSClass::IN)
-                        .set_data(Some(RData::A(ip)))
-                        .clone(),
-                    0,
-                )
-                .await;
-            }
+        let build_record = |name: Name, ty: RecordType, data: RData| -> Record {
+            Record::new()
+                .set_name(name)
+                .set_ttl(900)
+                .set_rr_type(ty)
+                .set_dns_class(DNSClass::IN)
+                .set_data(Some(data))
+                .clone()
+        };
 
-            if let Some(ip) = ipv6 {
-                zone.upsert(
-                    Record::new()
-                        .set_name(Name::parse(name, None)?)
-                        .set_ttl(900)
-                        .set_rr_type(RecordType::AAAA)
-                        .set_dns_class(DNSClass::IN)
-                        .set_data(Some(RData::AAAA(ip)))
-                        .clone(),
-                    0,
-                )
-                .await;
+        for (name, record) in records.iter() {
+            let name = Name::parse(name, None)?;
+            for ip in record.iter() {
+                match *ip {
+                    IpAddr::V4(ipv4) => {
+                        let _ = zone
+                            .upsert(build_record(name.clone(), RecordType::A, RData::A(ipv4)), 0)
+                            .await;
+                    }
+                    IpAddr::V6(ipv6) => {
+                        let _ = zone
+                            .upsert(
+                                build_record(name.clone(), RecordType::AAAA, RData::AAAA(ipv6)),
+                                0,
+                            )
+                            .await;
+                    }
+                }
             }
         }
+
         Ok(AuthoritativeZone { zone })
     }
 }
@@ -268,6 +270,7 @@ impl Clone for ClonableZones {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::{Ipv4Addr, Ipv6Addr};
 
     async fn validate_record(
         zone: &AuthoritativeZone,
@@ -324,10 +327,10 @@ mod tests {
         let mut records = HashMap::new();
         records.insert(
             String::from("alpha.nord"),
-            (Some(alpha_ipv4), Some(alpha_ipv6)),
+            vec![IpAddr::V4(alpha_ipv4), IpAddr::V6(alpha_ipv6)],
         );
-        records.insert(String::from("beta.nord"), (Some(beta_ipv4), None));
-        records.insert(String::from("gamma.nord"), (None, Some(gamma_ipv6)));
+        records.insert(String::from("beta.nord"), vec![IpAddr::V4(beta_ipv4)]);
+        records.insert(String::from("gamma.nord"), vec![IpAddr::V6(gamma_ipv6)]);
 
         let zone = AuthoritativeZone::new("nord", &records).await.unwrap();
 
