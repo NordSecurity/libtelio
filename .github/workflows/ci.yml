@@ -3,38 +3,32 @@ on: [push, pull_request]
 permissions: {}
 
 jobs:
-  skipper:
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write
-      contents: read
-    outputs:
-      should_skip: ${{ steps.skip_check.outputs.should_skip }}
+  trigger:
+    if: |
+      github.event_name == 'push' ||
+      (
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+      )
+    runs-on: ubuntu-22.04
     steps:
-      - id: skip_check
-        uses: fkirc/skip-duplicate-actions@12aca0a884f6137d619d6a8a09fcc3406ced5281 # v5.3.0
-        with:
-          concurrent_skipping: 'same_content_newer'
+      - name: CI Trigger
+        run: echo "Triggering CI"
 
   build:
-    needs: skipper
-    if: needs.skipper.outputs.should_skip != 'true'
+    needs: trigger
     uses: ./.github/workflows/build.yml
   linters:
-    needs: skipper
-    if: needs.skipper.outputs.should_skip != 'true'
+    needs: trigger
     uses: ./.github/workflows/linters.yml
   tests:
-    needs: skipper
-    if: needs.skipper.outputs.should_skip != 'true'
+    needs: trigger
     uses: ./.github/workflows/tests.yml
   fuzzing:
-    needs: skipper
-    if: needs.skipper.outputs.should_skip != 'true'
+    needs: trigger
     uses: ./.github/workflows/fuzzing.yml
   benchmarks:
-    needs: skipper
-    if: needs.skipper.outputs.should_skip != 'true'
+    needs: trigger
     uses: ./.github/workflows/benchmarks.yml
 
   check-all-green:
@@ -44,8 +38,6 @@ jobs:
     - tests
     - fuzzing
     - benchmarks
-    - skipper
-    if: needs.skipper.outputs.should_skip != 'true'
     runs-on: ubuntu-22.04
     steps:
     - name: Collect statuses from all jobs
