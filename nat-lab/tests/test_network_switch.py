@@ -37,7 +37,7 @@ from utils import (
             "10.0.254.8",
             marks=[
                 pytest.mark.mac,
-                pytest.mark.skip(reason="the test is flaky - JIRA issue: LLT-2393"),
+                pytest.mark.xfail(reason="the test is flaky - JIRA issue: LLT-2393"),
             ],
         ),
     ],
