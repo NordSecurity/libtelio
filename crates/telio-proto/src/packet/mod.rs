@@ -1,14 +1,10 @@
-mod data;
-mod generation;
-mod natter;
-mod nurse;
-mod pinger;
-mod upgrade;
+mod control;
+mod relayed;
 
 use crate::{Codec, CodecError, CodecResult};
 use telio_crypto::PublicKey;
 
-pub use self::{
+pub use relayed::{
     data::DataMsg,
     generation::Generation,
     natter::CallMeMaybeMsg,
@@ -19,6 +15,8 @@ pub use self::{
     pinger::{PartialPongerMsg, PlaintextPongerMsg},
     upgrade::UpgradeMsg,
 };
+
+pub use control::derppoll::{DerpPollRequestMsg, DerpPollResponseMsg, PeersStatesMap};
 
 use std::convert::TryFrom;
 
@@ -36,8 +34,8 @@ pub struct PeerId(pub u16);
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct WGPort(pub u16);
 
-/// Downcast packet to a more concreate type
-pub trait DowncastPacket {
+/// Downcast packet to a more concrete type
+pub trait DowncastPacket<Packet> {
     /// Downcast packet into inner type or return enum on failure.
     fn downcast(packet: Packet) -> Result<Self, Packet>
     where
@@ -45,14 +43,20 @@ pub trait DowncastPacket {
 }
 
 /// Trait bound for any packet.
-pub trait AnyPacket: Codec + DowncastPacket + Into<Packet> + Send {}
+pub trait AnyPacket<Packet, PacketType: 'static>:
+    Codec<PacketType> + DowncastPacket<Packet> + Into<Packet> + Send
+{
+}
 
-impl<T> AnyPacket for T where T: Codec + DowncastPacket + Into<Packet> + Send {}
+impl<T, Packet, PacketType: 'static> AnyPacket<Packet, PacketType> for T where
+    T: Codec<PacketType> + DowncastPacket<Packet> + Into<Packet> + Send
+{
+}
 
 #[repr(u8)]
 #[derive(Debug, Hash, PartialEq, Eq, Copy, Clone, strum::EnumIter, strum::FromRepr)]
-/// Byte encoding of telio [Packet] types.
-pub enum PacketType {
+/// Byte encoding of telio [PacketRelayed] types.
+pub enum PacketTypeRelayed {
     /// Plain WG packet.
     Data = 0x00,
     /// Plain WG packet with generation index.
@@ -74,6 +78,7 @@ pub enum PacketType {
     Upgrade = 0x08,
     /// Ponger packet
     Ponger = 0x09,
+
     /// Reserved for future, in case we use all byte values for types.
     Reserved = 0xfe,
 
@@ -81,15 +86,15 @@ pub enum PacketType {
     Invalid = 0xff,
 }
 
-impl From<u8> for PacketType {
+impl From<u8> for PacketTypeRelayed {
     fn from(val: u8) -> Self {
-        PacketType::from_repr(val).unwrap_or(PacketType::Invalid)
+        PacketTypeRelayed::from_repr(val).unwrap_or(PacketTypeRelayed::Invalid)
     }
 }
 
-/// Complete telio packet representation.
+/// Packet for Node <-> Node communication.
 #[derive(Debug, PartialEq, Clone)]
-pub enum Packet {
+pub enum PacketRelayed {
     /// Packet used to transfer WG packets.
     Data(DataMsg),
     /// Meshnet heartbeat packet.
@@ -106,26 +111,26 @@ pub enum Packet {
     Upgrade(UpgradeMsg),
 }
 
-impl Packet {
+impl PacketRelayed {
     /// Decode and decrypt `bytes` using `decrypt` function.
     ///
     /// Some messages are sent (partialy) encrypted and in such cases decryption is needed. Otherwise
     /// this function bahaves just like `Codec::decode`.
     pub fn decode_and_decrypt(
         bytes: &[u8],
-        decrypt: impl FnOnce(PacketType, &[u8]) -> CodecResult<(Vec<u8>, Option<PublicKey>)>,
+        decrypt: impl FnOnce(PacketTypeRelayed, &[u8]) -> CodecResult<(Vec<u8>, Option<PublicKey>)>,
     ) -> CodecResult<(Self, Option<PublicKey>)>
     where
         Self: Sized,
     {
-        use PacketType::*;
+        use PacketTypeRelayed::*;
 
         if bytes.is_empty() {
             return Err(CodecError::InvalidLength);
         }
 
         Ok((
-            match PacketType::from(*bytes.first().unwrap_or(&(PacketType::Invalid as u8))) {
+            match PacketTypeRelayed::from(*bytes.first().unwrap_or(&(Invalid as u8))) {
                 Data | GenData => Self::Data(DataMsg::decode(bytes)?),
                 Heartbeat => Self::Heartbeat(HeartbeatMessage::decode(bytes)?),
                 CallMeMaybe => Self::CallMeMaybe(CallMeMaybeMsg::decode(bytes)?),
@@ -151,29 +156,29 @@ impl Packet {
     }
 }
 
-impl Codec for Packet {
-    const TYPES: &'static [PacketType] = &[
-        PacketType::Data,
-        PacketType::GenData,
-        PacketType::Heartbeat,
-        PacketType::CallMeMaybeDeprecated,
-        PacketType::CallMeMaybe,
-        PacketType::Pinger,
-        PacketType::Upgrade,
-        PacketType::Ponger,
+impl Codec<PacketTypeRelayed> for PacketRelayed {
+    const TYPES: &'static [PacketTypeRelayed] = &[
+        PacketTypeRelayed::Data,
+        PacketTypeRelayed::GenData,
+        PacketTypeRelayed::Heartbeat,
+        PacketTypeRelayed::CallMeMaybeDeprecated,
+        PacketTypeRelayed::CallMeMaybe,
+        PacketTypeRelayed::Pinger,
+        PacketTypeRelayed::Upgrade,
+        PacketTypeRelayed::Ponger,
     ];
 
     fn decode(bytes: &[u8]) -> CodecResult<Self>
     where
         Self: Sized,
     {
-        use PacketType::*;
+        use PacketTypeRelayed::*;
 
         if bytes.is_empty() {
             return Err(CodecError::InvalidLength);
         }
 
-        match PacketType::from(*bytes.first().unwrap_or(&(PacketType::Invalid as u8))) {
+        match PacketTypeRelayed::from(*bytes.first().unwrap_or(&(Invalid as u8))) {
             Data | GenData => Ok(Self::Data(DataMsg::decode(bytes)?)),
             Heartbeat => Ok(Self::Heartbeat(HeartbeatMessage::decode(bytes)?)),
             CallMeMaybe => Ok(Self::CallMeMaybe(CallMeMaybeMsg::decode(bytes)?)),
@@ -187,7 +192,7 @@ impl Codec for Packet {
             Reserved | Invalid | Encrypted => Err(CodecError::DecodeFailed),
         }
     }
-
+    // can be done with enum_dispatch
     fn encode(self) -> CodecResult<Vec<u8>> {
         match self {
             Self::Data(msg) => msg.encode(),
@@ -200,7 +205,8 @@ impl Codec for Packet {
         }
     }
 
-    fn packet_type(&self) -> PacketType {
+    // can be done with enum_dispatch
+    fn packet_type(&self) -> PacketTypeRelayed {
         match self {
             Self::Data(msg) => msg.packet_type(),
             Self::Heartbeat(msg) => msg.packet_type(),
@@ -213,12 +219,73 @@ impl Codec for Packet {
     }
 }
 
-impl DowncastPacket for Packet {
-    fn downcast(packet: Packet) -> Result<Self, Packet>
+#[repr(u8)]
+#[derive(Debug, Hash, PartialEq, Eq, Copy, Clone, strum::EnumIter, strum::FromRepr)]
+/// Byte encoding of telio [PacketControl] types.
+pub enum PacketTypeControl {
+    /// Polling derp for remote peer states
+    DerpPollRequest = 0x00,
+    /// Response to DerpPollRequest
+    DerpPollResponse = 0x01,
+
+    /// Reserved for future, in case we use all byte values for types.
+    Reserved = 0xfe,
+
+    /// Packet is of invalid type.
+    Invalid = 0xff,
+}
+
+impl From<u8> for PacketTypeControl {
+    fn from(val: u8) -> Self {
+        PacketTypeControl::from_repr(val).unwrap_or(PacketTypeControl::Invalid)
+    }
+}
+
+/// Packet for Node <-> Derp communication.
+#[derive(Debug, PartialEq, Clone)]
+// #[enum_dispatch]
+pub enum PacketControl {
+    /// Poll remote peer states
+    DerpPollRequest(DerpPollRequestMsg),
+    /// Reply to DerpPollRequest
+    DerpPollResponse(DerpPollResponseMsg),
+}
+
+impl Codec<PacketTypeControl> for PacketControl {
+    const TYPES: &'static [PacketTypeControl] = &[
+        PacketTypeControl::DerpPollRequest,
+        PacketTypeControl::DerpPollResponse,
+    ];
+
+    fn decode(bytes: &[u8]) -> CodecResult<Self>
     where
         Self: Sized,
     {
-        Ok(packet)
+        use PacketTypeControl::*;
+
+        if bytes.is_empty() {
+            return Err(CodecError::InvalidLength);
+        }
+
+        match PacketTypeControl::from(*bytes.first().unwrap_or(&(Invalid as u8))) {
+            DerpPollRequest => Ok(Self::DerpPollRequest(DerpPollRequestMsg::decode(bytes)?)),
+            DerpPollResponse => Ok(Self::DerpPollResponse(DerpPollResponseMsg::decode(bytes)?)),
+            Reserved | Invalid => Err(CodecError::DecodeFailed),
+        }
+    }
+
+    fn encode(self) -> CodecResult<Vec<u8>> {
+        match self {
+            Self::DerpPollRequest(msg) => msg.encode(),
+            Self::DerpPollResponse(msg) => msg.encode(),
+        }
+    }
+
+    fn packet_type(&self) -> PacketTypeControl {
+        match self {
+            Self::DerpPollRequest(msg) => msg.packet_type(),
+            Self::DerpPollResponse(msg) => msg.packet_type(),
+        }
     }
 }
 
@@ -255,37 +322,37 @@ impl TryFrom<&[u8]> for WGPort {
     }
 }
 
-impl From<DataMsg> for Packet {
+impl From<DataMsg> for PacketRelayed {
     fn from(other: DataMsg) -> Self {
         Self::Data(other)
     }
 }
 
-impl From<CallMeMaybeMsg> for Packet {
+impl From<CallMeMaybeMsg> for PacketRelayed {
     fn from(other: CallMeMaybeMsg) -> Self {
         Self::CallMeMaybe(other)
     }
 }
 
-impl From<CallMeMaybeMsgDeprecated> for Packet {
+impl From<CallMeMaybeMsgDeprecated> for PacketRelayed {
     fn from(other: CallMeMaybeMsgDeprecated) -> Self {
         Self::CallMeMaybeDeprecated(other)
     }
 }
 
-impl From<HeartbeatMessage> for Packet {
+impl From<HeartbeatMessage> for PacketRelayed {
     fn from(other: HeartbeatMessage) -> Self {
         Self::Heartbeat(other)
     }
 }
 
-impl From<UpgradeMsg> for Packet {
+impl From<UpgradeMsg> for PacketRelayed {
     fn from(other: UpgradeMsg) -> Self {
         Self::Upgrade(other)
     }
 }
 
-impl From<PartialPongerMsg> for Packet {
+impl From<PartialPongerMsg> for PacketRelayed {
     fn from(other: PartialPongerMsg) -> Self {
         Self::Ponger(other)
     }
@@ -299,13 +366,21 @@ mod test {
     #[test]
     fn all_packet_types_are_covered() {
         let skip = [
-            PacketType::Reserved,
-            PacketType::Encrypted,
-            PacketType::Invalid,
+            PacketTypeRelayed::Reserved,
+            PacketTypeRelayed::Encrypted,
+            PacketTypeRelayed::Invalid,
         ];
         assert_eq!(
-            Packet::TYPES,
-            &PacketType::iter()
+            PacketRelayed::TYPES,
+            &PacketTypeRelayed::iter()
+                .filter(|pt| !skip.contains(pt))
+                .collect::<Vec<_>>()
+        );
+
+        let skip = [PacketTypeControl::Reserved, PacketTypeControl::Invalid];
+        assert_eq!(
+            PacketControl::TYPES,
+            &PacketTypeControl::iter()
                 .filter(|pt| !skip.contains(pt))
                 .collect::<Vec<_>>()
         )
@@ -313,25 +388,29 @@ mod test {
 
     #[test]
     fn decode_empty_packet() {
-        assert_eq!(Packet::decode(&[]), Err(CodecError::InvalidLength));
+        assert_eq!(PacketRelayed::decode(&[]), Err(CodecError::InvalidLength));
+        assert_eq!(PacketControl::decode(&[]), Err(CodecError::InvalidLength));
     }
 
     #[test]
     fn decode_invalid_packet() {
-        let bytes = &[PacketType::Invalid as u8, 1, 2, 3];
-        assert_eq!(Packet::decode(bytes), Err(CodecError::DecodeFailed));
+        let bytes = &[PacketTypeRelayed::Invalid as u8, 1, 2, 3];
+        assert_eq!(PacketRelayed::decode(bytes), Err(CodecError::DecodeFailed));
+
+        let bytes = &[PacketTypeControl::Invalid as u8, 1, 2, 3];
+        assert_eq!(PacketControl::decode(bytes), Err(CodecError::DecodeFailed));
     }
 
     #[test]
     fn decode_data_packet() {
         let bytes = &[0, 1, 2, 3];
-        let expected: Packet = DataMsg::new(&[1, 2, 3]).into();
-        assert_eq!(Packet::decode(bytes), Ok(expected));
+        let expected: PacketRelayed = DataMsg::new(&[1, 2, 3]).into();
+        assert_eq!(PacketRelayed::decode(bytes), Ok(expected));
     }
 
     #[test]
     fn encode_data_packet() {
-        let packet: Packet = DataMsg::new(&[3, 2, 1]).into();
+        let packet: PacketRelayed = DataMsg::new(&[3, 2, 1]).into();
         let expected = &[0, 3, 2, 1];
         assert_eq!(&packet.encode().unwrap(), expected);
     }

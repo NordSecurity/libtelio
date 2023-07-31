@@ -1,19 +1,19 @@
 use crate::{
-    messages::nurse::*, Codec, CodecError, CodecResult, DowncastPacket, Packet, PacketType,
-    MAX_PACKET_SIZE,
+    messages::nurse::*, Codec, CodecError, CodecResult, DowncastPacket, PacketRelayed,
+    PacketTypeRelayed, MAX_PACKET_SIZE,
 };
 use bytes::BufMut;
 use protobuf::{Message, RepeatedField};
 
 /// Meshnet heartbeat message.
 /// ```rust
-/// # use crate::telio_proto::{Codec,HeartbeatMessage, HeartbeatStatus, HeartbeatType, PacketType};
+/// # use crate::telio_proto::{Codec,HeartbeatMessage, HeartbeatStatus, HeartbeatType, PacketTypeRelayed};
 /// let bytes = &[
 ///     0x2, 0x8, 0x1, 0x12, 0x1, 0x45, 0x1a, 0xb, 0x66, 0x69, 0x6e, 0x67, 0x65, 0x72, 0x70,
 ///     0x72, 0x69, 0x6e, 0x74, 0x22, 0x0,
 /// ];
 /// let data = HeartbeatMessage::decode(bytes).expect("Failed to parse packet");
-/// assert_eq!(data.packet_type(), PacketType::Heartbeat);
+/// assert_eq!(data.packet_type(), PacketTypeRelayed::Heartbeat);
 /// assert_eq!(data.get_message_type(), HeartbeatType::RESPONSE);
 /// assert_eq!(data.get_meshnet_id(), &[0x45]);
 /// assert_eq!(data.get_node_fingerprint(), "fingerprint");
@@ -76,8 +76,8 @@ impl HeartbeatMessage {
     }
 }
 
-impl Codec for HeartbeatMessage {
-    const TYPES: &'static [PacketType] = &[PacketType::Heartbeat];
+impl Codec<PacketTypeRelayed> for HeartbeatMessage {
+    const TYPES: &'static [PacketTypeRelayed] = &[PacketTypeRelayed::Heartbeat];
 
     fn decode(bytes: &[u8]) -> CodecResult<Self>
     where
@@ -87,8 +87,9 @@ impl Codec for HeartbeatMessage {
             return Err(CodecError::InvalidLength);
         }
 
-        match PacketType::from(*bytes.first().unwrap_or(&(PacketType::Invalid as u8))) {
-            PacketType::Heartbeat => {
+        match PacketTypeRelayed::from(*bytes.first().unwrap_or(&(PacketTypeRelayed::Invalid as u8)))
+        {
+            PacketTypeRelayed::Heartbeat => {
                 let heartbeat =
                     Heartbeat::parse_from_bytes(bytes.get(1..).ok_or(CodecError::DecodeFailed)?);
                 Ok(Self(heartbeat.map_err(|_| CodecError::DecodeFailed)?))
@@ -103,7 +104,7 @@ impl Codec for HeartbeatMessage {
     {
         let mut bytes = Vec::with_capacity(MAX_PACKET_SIZE);
 
-        bytes.put_u8(PacketType::Heartbeat as u8);
+        bytes.put_u8(PacketTypeRelayed::Heartbeat as u8);
         self.0
             .write_to_vec(&mut bytes)
             .map_err(|_| CodecError::Encode)?;
@@ -111,18 +112,18 @@ impl Codec for HeartbeatMessage {
         Ok(bytes)
     }
 
-    fn packet_type(&self) -> PacketType {
-        PacketType::Heartbeat
+    fn packet_type(&self) -> PacketTypeRelayed {
+        PacketTypeRelayed::Heartbeat
     }
 }
 
-impl DowncastPacket for HeartbeatMessage {
-    fn downcast(packet: Packet) -> Result<Self, Packet>
+impl DowncastPacket<PacketRelayed> for HeartbeatMessage {
+    fn downcast(packet: PacketRelayed) -> Result<Self, PacketRelayed>
     where
         Self: Sized,
     {
         match packet {
-            Packet::Heartbeat(msg) => Ok(msg),
+            PacketRelayed::Heartbeat(msg) => Ok(msg),
             packet => Err(packet),
         }
     }

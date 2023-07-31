@@ -326,6 +326,10 @@ impl WireGuard for DynamicWg {
                 new_peer.tx_bytes = old_peer.tx_bytes;
             }
 
+            if new_peer.persistent_keepalive_interval.is_none() {
+                new_peer.persistent_keepalive_interval = Some(0);
+            }
+
             to.peers.insert(new_peer.public_key, new_peer);
             s.update(&to, true).await;
             Ok(())
@@ -1104,6 +1108,7 @@ pub mod tests {
         let pubkey = SecretKey::gen().public();
         let peer = Peer {
             public_key: pubkey,
+            persistent_keepalive_interval: Some(0),
             ..Default::default()
         };
 

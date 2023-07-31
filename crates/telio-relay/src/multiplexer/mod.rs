@@ -10,7 +10,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::PollSender;
 
 use telio_crypto::PublicKey;
-use telio_proto::{AnyPacket, Packet};
+use telio_proto::{AnyPacket, PacketRelayed, PacketTypeRelayed};
 use telio_task::{io::Chan, task_exec, BoxAction, Runtime, Task};
 use telio_utils::telio_log_error;
 
@@ -30,14 +30,14 @@ pub struct Multiplexer {
 }
 
 struct State {
-    relay_tx: PollSender<(PublicKey, Packet)>,
-    relay_rx: ReceiverStream<(PublicKey, Packet)>,
-    multi_channel: InOut<MultiChannel, (PublicKey, Packet)>,
+    relay_tx: PollSender<(PublicKey, PacketRelayed)>,
+    relay_rx: ReceiverStream<(PublicKey, PacketRelayed)>,
+    multi_channel: InOut<MultiChannel, (PublicKey, PacketRelayed)>,
 }
 
 impl Multiplexer {
     /// Multiplexer constructor
-    pub fn start(relay: Chan<(PublicKey, Packet)>) -> Self {
+    pub fn start(relay: Chan<(PublicKey, PacketRelayed)>) -> Self {
         Self {
             task: Task::start(State {
                 // relay,
@@ -49,7 +49,7 @@ impl Multiplexer {
     }
 
     /// Change the relay, that communicates with lower relay module
-    pub async fn change_output(&self, relay: Chan<(PublicKey, Packet)>) {
+    pub async fn change_output(&self, relay: Chan<(PublicKey, PacketRelayed)>) {
         let _ = task_exec!(&self.task, async move |s| {
             s.relay_tx = PollSender::new(relay.tx);
             s.relay_rx = ReceiverStream::new(relay.rx);
@@ -58,7 +58,9 @@ impl Multiplexer {
     }
 
     /// Change the relay, that communicates with lower relay module
-    pub async fn get_channel<T: AnyPacket + 'static>(&self) -> Result<Chan<(PublicKey, T)>, Error> {
+    pub async fn get_channel<T: AnyPacket<PacketRelayed, PacketTypeRelayed> + 'static>(
+        &self,
+    ) -> Result<Chan<(PublicKey, T)>, Error> {
         task_exec!(&self.task, async move |s| {
             let mc = match s.multi_channel.joined() {
                 Ok(Some(mc)) => mc,
@@ -150,7 +152,7 @@ mod test {
 
             assert_eq!(
                 await_timeout!(output.rx.recv()).unwrap(),
-                (pub_key, Packet::Data(DataMsg::new(&payload)))
+                (pub_key, PacketRelayed::Data(DataMsg::new(&payload)))
             );
         }
 
@@ -163,7 +165,7 @@ mod test {
 
             assert_eq!(
                 await_timeout!(output.rx.recv()).unwrap(),
-                (pub_key, Packet::Heartbeat(msg))
+                (pub_key, PacketRelayed::Heartbeat(msg))
             );
         }
 

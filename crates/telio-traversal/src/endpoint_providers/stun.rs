@@ -680,7 +680,7 @@ mod tests {
         PublicKey, SecretKey,
     };
     use telio_model::mesh::IpNetwork;
-    use telio_proto::{CodecError, Packet, PartialPongerMsg, PingerMsg};
+    use telio_proto::{CodecError, PacketRelayed, PartialPongerMsg, PingerMsg};
     use telio_sockets::NativeProtector;
     use telio_sockets::SocketPool;
     use telio_task::io::Chan;
@@ -982,8 +982,8 @@ mod tests {
                 .map(|(buf, pk)| (buf, Some(pk)))
                 .unwrap())
         };
-        if let (Packet::Pinger(msg), _) =
-            Packet::decode_and_decrypt(&buf[..len], decrypt_transform).unwrap()
+        if let (PacketRelayed::Pinger(msg), _) =
+            PacketRelayed::decode_and_decrypt(&buf[..len], decrypt_transform).unwrap()
         {
             let resp = msg.pong(msg.get_wg_port(), &addr.ip()).unwrap();
 
@@ -1042,8 +1042,8 @@ mod tests {
                 .map(|(buf, pk)| (buf, Some(pk)))
                 .unwrap())
         };
-        if let (Packet::Pinger(msg), _) =
-            Packet::decode_and_decrypt(&buf[..len], decrypt_transform).unwrap()
+        if let (PacketRelayed::Pinger(msg), _) =
+            PacketRelayed::decode_and_decrypt(&buf[..len], decrypt_transform).unwrap()
         {
             let resp = msg.pong(msg.get_wg_port(), &addr.ip()).unwrap();
 

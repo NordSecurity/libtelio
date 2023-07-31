@@ -1,7 +1,7 @@
 pub mod http;
 pub mod proto;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -20,7 +20,10 @@ use telio_model::{
     api_config::FeatureDerp,
     config::{RelayState, Server},
 };
-use telio_proto::{Codec, Packet, PacketType};
+use telio_proto::{
+    Codec, CodecError, CodecResult, DerpPollRequestMsg, DerpPollResponseMsg, PacketControl,
+    PacketRelayed, PacketTypeControl, PacketTypeRelayed, PeersStatesMap, Session,
+};
 use telio_sockets::SocketPool;
 use telio_task::io::{wait_for_tx, Chan};
 use telio_task::{io::mc_chan::Tx, task_exec, BoxAction, Runtime, Task};
@@ -90,7 +93,7 @@ pub struct DerpRelay {
 
 struct State {
     /// Channel, that communicates with upper multiplexer module
-    channel: Chan<(PublicKey, Packet)>,
+    channel: Chan<(PublicKey, PacketRelayed)>,
     /// Derp configuration
     config: Option<Config>,
     /// Connection object
@@ -103,6 +106,10 @@ struct State {
     rng: StdRng,
     /// Used to get external sockets
     socket_pool: Arc<SocketPool>,
+    /// Used to match derp poll request with response
+    derp_poll_session: Session,
+    /// Cache the result of derp polling
+    remote_peers_states: PeersStatesMap,
 
     connecting: Option<JoinHandle<(Server, DerpConnection)>>,
 }
@@ -142,6 +149,8 @@ pub struct Config {
     pub ca_pem_path: Option<PathBuf>,
     pub mesh_ip: IpAddr,
     pub server_keepalives: DerpKeepaliveConfig,
+    pub enable_polling: bool,
+    pub meshnet_peers: Vec<PublicKey>,
 }
 
 impl Default for Config {
@@ -157,6 +166,8 @@ impl Default for Config {
                 tcp_keepalive: proto::DERP_TCP_KEEPALIVE_INTERVAL,
                 derp_keepalive: proto::DERP_KEEPALIVE_INTERVAL,
             },
+            enable_polling: false,
+            meshnet_peers: Default::default(),
         }
     }
 }
@@ -240,7 +251,7 @@ impl State {
 impl DerpRelay {
     /// Relay's constructor
     pub fn start_with(
-        channel: Chan<(PublicKey, Packet)>,
+        channel: Chan<(PublicKey, PacketRelayed)>,
         socket_pool: Arc<SocketPool>,
         event: Tx<Box<Server>>,
     ) -> Self {
@@ -256,6 +267,8 @@ impl DerpRelay {
                 server: None,
                 rng,
                 socket_pool,
+                derp_poll_session: 0,
+                remote_peers_states: HashMap::new(),
                 connecting: None,
             }),
         }
@@ -318,6 +331,14 @@ impl DerpRelay {
             .unwrap_or(None)
     }
 
+    /// Get newest information about remote peer states
+    pub async fn get_remote_peer_states(&self) -> PeersStatesMap {
+        task_exec!(&self.task, async move |s| Ok(s.remote_peers_states.clone()))
+            .await
+            .ok()
+            .unwrap_or_default()
+    }
+
     /// Try reconnect
     pub async fn reconnect(&self) {
         let _ = task_exec!(&self.task, async move |s| {
@@ -360,12 +381,12 @@ impl DerpRelay {
     ) -> Result<Vec<u8>, Error> {
         // In case is a data package already encrypted by wireguard skip
 
-        if PacketType::from(if let Some(d) = data.first() {
+        if PacketTypeRelayed::from(if let Some(d) = data.first() {
             *d
         } else {
             telio_log_error!("Invalid buffer");
             return Err(crypto_box::aead::Error);
-        }) == PacketType::Data
+        }) == PacketTypeRelayed::Data
         {
             return Ok(data.to_vec());
         }
@@ -384,7 +405,7 @@ impl DerpRelay {
         ) {
             Ok(mut cipher_text) => {
                 // include encrypt message type
-                let mut message = vec![PacketType::Encrypted as u8];
+                let mut message = vec![PacketTypeRelayed::Encrypted as u8];
                 // include nonce
                 message.append(&mut nonce.as_slice().to_vec());
                 // include ciphered payload
@@ -412,20 +433,20 @@ impl DerpRelay {
     ) -> Result<Vec<u8>, Error> {
         // Data packages are treated by Wireguard encryption System
         // In this case any encryption operation is skipped for those.
-        match PacketType::from(if let Some(d) = data.first() {
+        match PacketTypeRelayed::from(if let Some(d) = data.first() {
             *d
         } else {
             telio_log_error!("Invalid buffer");
             return Err(crypto_box::aead::Error);
         }) {
-            PacketType::Data => {
+            PacketTypeRelayed::Data => {
                 telio_log_trace!(
                     "Encryption not necessary : {:?} ...",
                     &data.chunks(8).next().unwrap_or_default()
                 );
                 Ok(data.to_vec())
             }
-            PacketType::Encrypted => {
+            PacketTypeRelayed::Encrypted => {
                 // Extract nonce always with exactly 24 bytes from byte 1 to 24
                 let nonce: Nonce<ChaChaBox> = GenericArray::clone_from_slice(
                     data.get(DerpRelay::NONCE_BEGIN_POS..DerpRelay::NONCE_END_POS)
@@ -471,10 +492,11 @@ impl DerpRelay {
 }
 
 impl State {
-    async fn handle_outcoming_payload(
+    /// handle traffic for |LocalNode -> Derp -> RemoteNode|
+    async fn handle_outcoming_payload_relayed(
         permit: OwnedPermit<(PublicKey, Vec<u8>)>,
         pk: PublicKey,
-        msg: Packet,
+        msg: PacketRelayed,
         config: &Config,
         rng: &mut StdRng,
     ) {
@@ -500,15 +522,33 @@ impl State {
         }
     }
 
-    async fn handle_incoming_payload(
-        permit: OwnedPermit<(PublicKey, Packet)>,
+    /// handle traffic for |LocalNode -> Derp|
+    async fn handle_outcoming_payload_direct(permit: OwnedPermit<Vec<u8>>, msg: PacketControl) {
+        telio_log_trace!(
+            "({}) Tx --> DERP, packet type: {:?}",
+            Self::NAME,
+            msg.packet_type()
+        );
+        match msg.encode() {
+            Ok(buf) => {
+                let _ = permit.send(buf.to_vec());
+            }
+            Err(e) => {
+                telio_log_debug!("({}) Failed to encode packet: {}", Self::NAME, e);
+            }
+        }
+    }
+
+    /// handle traffic for |RemoteNode -> Derp -> LocalNode|
+    async fn handle_incoming_payload_relayed(
+        permit: OwnedPermit<(PublicKey, PacketRelayed)>,
         pk: PublicKey,
         buf: Vec<u8>,
         config: &Config,
     ) {
         if config.allowed_pk.contains(&pk) {
             match DerpRelay::decrypt_if_needed(config.secret_key, pk, &buf) {
-                Ok(plain_text) => match Packet::decode(&plain_text) {
+                Ok(plain_text) => match PacketRelayed::decode(&plain_text) {
                     Ok(msg) => {
                         telio_log_trace!(
                             "({}) DERP --> Rx, pubkey: {:?}, len: {}, packet type: {:?}",
@@ -537,6 +577,45 @@ impl State {
                 Self::NAME,
                 pk
             );
+        }
+    }
+
+    /// handle traffic for |Derp -> LocalNode|
+    async fn handle_incoming_payload_direct(
+        expected_session: Session,
+        buf: Vec<u8>,
+    ) -> Option<HashMap<PublicKey, bool>> {
+        match PacketControl::decode(buf.as_slice()) {
+            Ok(msg) => match msg {
+                PacketControl::DerpPollResponse(derp_poll_response) => {
+                    if derp_poll_response.get_session() != expected_session {
+                        telio_log_debug!(
+                            "Invalid session for incoming derp poll response: {}, expected: {}",
+                            derp_poll_response.get_session(),
+                            expected_session
+                        );
+                        return None;
+                    }
+                    Some(derp_poll_response.get_peers_statuses())
+                }
+                _ => {
+                    telio_log_debug!(
+                        "({}) DERP --> Rx, unexpected packet type: {:?}",
+                        Self::NAME,
+                        msg.packet_type()
+                    );
+                    None
+                }
+            },
+            Err(e) => {
+                telio_log_debug!(
+                    "({}) DERP --> Rx, failed to decode derp poll response packet: ({}), bytes: {:?}",
+                    Self::NAME,
+                    e,
+                    buf
+                );
+                None
+            }
         }
     }
 }
@@ -570,8 +649,10 @@ impl Runtime for State {
                 }
 
                 let upper_read = self.channel.rx.recv();
-                let derp_read = c.comms.rx.recv();
+                let derp_relayed_read = c.comms_relayed.rx.recv();
+                let derp_direct_read = c.comms_direct.rx.recv();
                 let conn_join = select_all([&mut c.join_sender, &mut c.join_receiver]);
+                let poll_timer_tick = c.poll_timer.tick();
 
                 tokio::select! {
                     // Connection returned, reconnect
@@ -580,9 +661,9 @@ impl Runtime for State {
                         self.disconnect().await;
                     },
                     // Received payload from upper relay, forward it to DERP stream
-                    res = wait_for_tx(&c.comms.tx, upper_read) => match res {
+                    res = wait_for_tx(&c.comms_relayed.tx, upper_read) => match res {
                         Some((permit, Some((pk, msg)))) => {
-                            Self::handle_outcoming_payload(permit, pk, msg, config, &mut self.rng).await;
+                            Self::handle_outcoming_payload_relayed(permit, pk, msg, config, &mut self.rng).await;
                         },
                         Some((_, None)) => {
                             telio_log_debug!("Disconnecting from DERP server due to closed rx channel");
@@ -594,10 +675,24 @@ impl Runtime for State {
                             self.disconnect().await;
                         }
                     },
+                    // On tick send derp poll request to derp stream
+                    Some((permit, _)) = wait_for_tx(&c.comms_direct.tx, poll_timer_tick) => {
+                        if config.enable_polling {
+                            self.derp_poll_session = self.derp_poll_session.wrapping_add(1);
+                            Self::handle_outcoming_payload_direct(permit, PacketControl::DerpPollRequest(DerpPollRequestMsg::new(
+                                self.derp_poll_session, &config.meshnet_peers
+                            ))).await;
+                        }
+                    }
                     // Received payload from DERP stream, forward it to upper relay
-                    Some((permit, Some((pk, buf)))) = wait_for_tx(&self.channel.tx, derp_read) => {
-                        Self::handle_incoming_payload(permit, pk, buf, config).await;
+                    Some((permit, Some((pk, buf)))) = wait_for_tx(&self.channel.tx, derp_relayed_read) => {
+                        Self::handle_incoming_payload_relayed(permit, pk, buf, config).await;
                     },
+                    Some((permit, Some(buf))) = wait_for_tx(&self.channel.tx, derp_direct_read) => {
+                        self.remote_peers_states = Self::handle_incoming_payload_direct(self.derp_poll_session, buf).await.unwrap_or_default();
+                        telio_log_debug!("Remote peers statuses: {:?}", self.remote_peers_states);
+                    }
+
                     update = update => return update(self).await,
 
                     else => (),
@@ -656,13 +751,13 @@ mod tests {
     use tokio::time::timeout;
 
     struct DerpTestConfig {
-        pub payload: Packet,
+        pub payload: PacketRelayed,
         pub private_key: SecretKey,
     }
     impl DerpTestConfig {
         pub fn new() -> Self {
             Self {
-                payload: Packet::Data(DataMsg::new(b"seniuuukastavepinginu!")),
+                payload: PacketRelayed::Data(DataMsg::new(b"seniuuukastavepinginu!")),
                 private_key: "mLB63f78Mx9QEEIi8z+hoKk4v/X0P98M3FcFJZ8o6gA="
                     .parse::<SecretKey>()
                     .unwrap(),

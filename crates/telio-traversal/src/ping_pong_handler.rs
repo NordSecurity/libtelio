@@ -9,7 +9,9 @@ use telio_crypto::{
     encryption::{decrypt_request, decrypt_response, encrypt_request, encrypt_response},
     PublicKey, SecretKey,
 };
-use telio_proto::{CodecError, Packet, PacketType, PingerMsg, Session, Timestamp, WGPort};
+use telio_proto::{
+    CodecError, PacketRelayed, PacketTypeRelayed, PingerMsg, Session, Timestamp, WGPort,
+};
 use telio_task::io::chan;
 use telio_utils::{telio_log_debug, telio_log_warn};
 use tokio::{net::UdpSocket, sync::Mutex};
@@ -87,18 +89,18 @@ impl PingPongHandler {
     ) -> Result<(), Error> {
         let decrypt_transform = |packet_type, buf: &[u8]| {
             match packet_type {
-                PacketType::Pinger => {
+                PacketTypeRelayed::Pinger => {
                     decrypt_request(buf, &self.secret_key, |k| self.known_keys.contains(k))
                         .map_err(|e| CodecError::DecryptionFailed(e.to_string()))
                         .map(|(buf, pk)| (buf, Some(pk)))
                 }
                 // keep inner proto encrypted for now, later on we will decrypt it when we will have access to session to public key mapping
-                PacketType::Ponger => Ok((buf.to_vec(), None)),
+                PacketTypeRelayed::Ponger => Ok((buf.to_vec(), None)),
                 _ => Err(CodecError::InvalidType),
             }
         };
-        match Packet::decode_and_decrypt(encrypted_buf, decrypt_transform)? {
-            (Packet::Pinger(packet), Some(remote_pk)) => {
+        match PacketRelayed::decode_and_decrypt(encrypted_buf, decrypt_transform)? {
+            (PacketRelayed::Pinger(packet), Some(remote_pk)) => {
                 // Respond with pong
                 telio_log_debug!("Received ping from {:?}, responding", addr);
                 let pong = packet
@@ -112,7 +114,7 @@ impl PingPongHandler {
                 let buf = pong.encode_and_encrypt(encrypt_transform)?;
                 udp_socket.send_to(&buf, addr).await?;
             }
-            (Packet::Ponger(packet), _) => {
+            (PacketRelayed::Ponger(packet), _) => {
                 if let Some(pong_publisher) = pong_publisher.as_ref() {
                     if let Some(remote_pk) = self.known_sessions.get(&packet.get_session()) {
                         let decrypt_transform = |b: &[u8]| {

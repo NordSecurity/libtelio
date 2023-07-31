@@ -5,7 +5,7 @@ use parking_lot::Mutex;
 use serde::Deserialize;
 use telio::crypto::SecretKey;
 use telio_model::{config::Server, PublicKey};
-use telio_proto::{Codec, Packet};
+use telio_proto::{Codec, PacketRelayed};
 use telio_relay::{DerpRelay, SortedServers};
 use telio_sockets::{NativeProtector, SocketPool};
 use telio_task::io::{chan::Tx, Chan, McChan};
@@ -50,8 +50,8 @@ pub struct Serv {
 struct Instance {
     rt: Runtime,
     events: Arc<Mutex<Vec<Server>>>,
-    packets: Arc<Mutex<Vec<(PublicKey, Packet)>>>,
-    send: Tx<(PublicKey, Packet)>,
+    packets: Arc<Mutex<Vec<(PublicKey, PacketRelayed)>>>,
+    send: Tx<(PublicKey, PacketRelayed)>,
     collect: JoinHandle<()>,
     relay: DerpRelay,
 }
@@ -160,7 +160,7 @@ impl DerpClient {
             }
             Send { public_key, bytes } => {
                 if let Some(inst) = &mut self.inst {
-                    let packet = cli_try!(Packet::decode(&bytes));
+                    let packet = cli_try!(PacketRelayed::decode(&bytes));
                     let _ = inst.send.blocking_send((public_key, packet));
                 }
             }

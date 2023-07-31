@@ -82,10 +82,7 @@ use std::{
     },
 };
 use telio_crypto::SecretKey;
-use telio_relay::{
-    derp::Config,
-    http::{connect_http_and_start, DerpConnection},
-};
+use telio_relay::{derp::Config, http::connect_http_and_start};
 use telio_sockets::{NativeProtector, SocketPool};
 use time::macros::format_description;
 use tokio::{
@@ -163,7 +160,7 @@ async fn connect_client(
     rx_packet_counter: Arc<RelaxedCounter>,
 ) -> Result<()> {
     let verbose = verbosity >= 1;
-    let DerpConnection { mut comms, .. } = match Box::pin(connect_http_and_start(
+    let mut derp_conn = match Box::pin(connect_http_and_start(
         pool,
         &client.derp_server,
         *addrs.first().ok_or_else(|| anyhow!("Empty socket Addr"))?,
@@ -201,7 +198,7 @@ async fn connect_client(
 
     let _ = tokio::spawn({
         let client = client.clone();
-        let comm_tx = comms.tx.clone();
+        let comm_tx = derp_conn.comms_relayed.tx.clone();
         async move {
             if verbose {
                 println!("* [{}] -> TX START", get_client_debug_key(&client),);
@@ -285,7 +282,7 @@ async fn connect_client(
                 println!("* [{}] -> RX START", get_client_debug_key(&client),);
             }
             loop {
-                match comms.rx.recv().await {
+                match derp_conn.comms_relayed.rx.recv().await {
                     Some((sender_pub_key, payload)) => {
                         let now = std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
@@ -348,7 +345,7 @@ async fn run_without_clients_config(config: conf::Config) -> Result<()> {
 
     let addrs = resolve_domain_name(config.get_server_address(), config.verbose).await?;
 
-    let DerpConnection { mut comms, .. } = match Box::pin(connect_http_and_start(
+    let mut derp_conn = match Box::pin(connect_http_and_start(
         Arc::new(SocketPool::new(NativeProtector::new(
             #[cfg(target_os = "macos")]
             false,
@@ -389,7 +386,8 @@ async fn run_without_clients_config(config: conf::Config) -> Result<()> {
         }
 
         loop {
-            let (public_key, data) = comms
+            let (public_key, data) = derp_conn
+                .comms_relayed
                 .rx
                 .recv()
                 .await
@@ -436,7 +434,12 @@ async fn run_without_clients_config(config: conf::Config) -> Result<()> {
                 )
             }
 
-            if let Err(rc) = comms.tx.send((pkey, data.as_bytes().to_vec())).await {
+            if let Err(rc) = derp_conn
+                .comms_relayed
+                .tx
+                .send((pkey, data.as_bytes().to_vec()))
+                .await
+            {
                 // error handling
                 println!("Error on sending: {}", rc);
                 process_exit(1);

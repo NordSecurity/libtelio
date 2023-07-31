@@ -2,9 +2,9 @@ use bytes::BufMut;
 use std::convert::TryFrom;
 use telio_utils::telio_log_error;
 
-use super::PeerId;
 use crate::{
-    Codec, CodecError, CodecResult, DowncastPacket, Generation, Packet, PacketType, MAX_PACKET_SIZE,
+    Codec, CodecError, CodecResult, DowncastPacket, Generation, PacketRelayed, PacketTypeRelayed,
+    PeerId, MAX_PACKET_SIZE,
 };
 
 /// Packet encapsulating containing WG packets
@@ -13,10 +13,10 @@ use crate::{
 /// # Examples
 /// Parsing Data packet:
 /// ```rust
-/// # use crate::telio_proto::{Codec,DataMsg,PacketType};
+/// # use crate::telio_proto::{Codec,DataMsg,PacketTypeRelayed};
 /// let bytes = &[0, 1, 2, 3, 4, 5];
 /// let data = DataMsg::decode(bytes).expect("Failed to parse packet");
-/// assert_eq!(data.packet_type(), PacketType::Data);
+/// assert_eq!(data.packet_type(), PacketTypeRelayed::Data);
 /// assert_eq!(data.get_generation(), None);
 /// assert_eq!(data.get_payload(), &[1, 2, 3, 4, 5]);
 ///
@@ -24,10 +24,10 @@ use crate::{
 /// ```
 /// Parsing GenData packet:
 /// ```rust
-/// # use crate::telio_proto::{Codec,DataMsg,Generation,PacketType,PeerId};
+/// # use crate::telio_proto::{Codec,DataMsg,Generation,PacketTypeRelayed,PeerId};
 /// let bytes = &[1, 255, 0, 42, 1, 2, 3, 4, 5];
 /// let data = DataMsg::decode(bytes).expect("Failed to parse packet");
-/// assert_eq!(data.packet_type(), PacketType::GenData);
+/// assert_eq!(data.packet_type(), PacketTypeRelayed::GenData);
 /// assert_eq!(data.get_generation(), Some(Generation(255)));
 /// assert_eq!(data.get_peer_id(), Some(PeerId(42)));
 /// assert_eq!(data.get_payload(), &[1, 2, 3, 4, 5]);
@@ -44,7 +44,7 @@ impl DataMsg {
     pub fn new(wg_data: &[u8]) -> Self {
         let mut bytes = Vec::with_capacity(MAX_PACKET_SIZE);
 
-        bytes.put_u8(PacketType::Data as u8);
+        bytes.put_u8(PacketTypeRelayed::Data as u8);
         bytes.put(wg_data);
 
         Self { bytes }
@@ -54,7 +54,7 @@ impl DataMsg {
     pub fn with_generation(wg_data: &[u8], generation: Generation, peer_id: PeerId) -> Self {
         let mut bytes = Vec::with_capacity(MAX_PACKET_SIZE);
 
-        bytes.put_u8(PacketType::GenData as u8);
+        bytes.put_u8(PacketTypeRelayed::GenData as u8);
         bytes.put_u8(generation.0);
         bytes.put_u16(peer_id.0);
         bytes.put(wg_data);
@@ -62,20 +62,23 @@ impl DataMsg {
         Self { bytes }
     }
 
-    /// Returns message generation if packet type is [`PacketType::GenData`].
+    /// Returns message generation if packet type is [`PacketTypeRelayed::GenData`].
     pub fn get_generation(&self) -> Option<Generation> {
-        if self.packet_type() == PacketType::GenData {
+        if self.packet_type() == PacketTypeRelayed::GenData {
             return Some(Generation(
-                *self.bytes.get(1).unwrap_or(&(PacketType::Invalid as u8)),
+                *self
+                    .bytes
+                    .get(1)
+                    .unwrap_or(&(PacketTypeRelayed::Invalid as u8)),
             ));
         }
 
         None
     }
 
-    /// Returns peer ID if packet type is [`PacketType::GenData`].
+    /// Returns peer ID if packet type is [`PacketTypeRelayed::GenData`].
     pub fn get_peer_id(&self) -> Option<PeerId> {
-        if self.packet_type() == PacketType::GenData {
+        if self.packet_type() == PacketTypeRelayed::GenData {
             return PeerId::try_from(self.bytes.get(2..4).unwrap_or(&[])).ok();
         }
 
@@ -85,7 +88,7 @@ impl DataMsg {
     /// Returns payload data.
     pub fn get_payload(&self) -> &[u8] {
         let offset = match self.packet_type() {
-            PacketType::GenData => 4,
+            PacketTypeRelayed::GenData => 4,
             _ => 1,
         };
 
@@ -97,7 +100,7 @@ impl DataMsg {
         }
     }
 
-    /// Set peer generation, transforming [`PacketType::Data`] into [`PacketType::GenData`] if needed.
+    /// Set peer generation, transforming [`PacketTypeRelayed::Data`] into [`PacketTypeRelayed::GenData`] if needed.
     pub fn set_generation(&mut self, generation: Generation) {
         self.convert_to_gen_data();
         if let Some(element) = self.bytes.get_mut(1) {
@@ -107,9 +110,9 @@ impl DataMsg {
         }
     }
 
-    /// Sets peer ID if packet type is [`PacketType::GenData`].
+    /// Sets peer ID if packet type is [`PacketTypeRelayed::GenData`].
     pub fn set_peer_id(&mut self, peer_id: PeerId) -> CodecResult<()> {
-        if self.packet_type() == PacketType::GenData {
+        if self.packet_type() == PacketTypeRelayed::GenData {
             let mut bytes = Vec::with_capacity(2);
             bytes.put_u16(peer_id.0);
 
@@ -122,19 +125,20 @@ impl DataMsg {
     }
 
     fn convert_to_gen_data(&mut self) {
-        if let PacketType::Data = self.packet_type() {
+        if let PacketTypeRelayed::Data = self.packet_type() {
             self.bytes.extend([0u8; 3]);
             self.bytes.rotate_right(3);
             self.bytes
                 .get_mut(..4)
                 .unwrap_or_default()
-                .copy_from_slice(&[PacketType::GenData as u8, 0, 0, 0]);
+                .copy_from_slice(&[PacketTypeRelayed::GenData as u8, 0, 0, 0]);
         }
     }
 }
 
-impl Codec for DataMsg {
-    const TYPES: &'static [PacketType] = &[PacketType::Data, PacketType::GenData];
+impl Codec<PacketTypeRelayed> for DataMsg {
+    const TYPES: &'static [PacketTypeRelayed] =
+        &[PacketTypeRelayed::Data, PacketTypeRelayed::GenData];
 
     fn decode(bytes: &[u8]) -> CodecResult<Self>
     where
@@ -143,9 +147,12 @@ impl Codec for DataMsg {
         if bytes.is_empty() {
             return Err(CodecError::InvalidLength);
         }
-        match PacketType::from(*bytes.first().unwrap_or(&(PacketType::Invalid as u8))) {
-            PacketType::Data => Ok(Self::new(bytes.get(1..).ok_or(CodecError::DecodeFailed)?)),
-            PacketType::GenData => {
+        match PacketTypeRelayed::from(*bytes.first().unwrap_or(&(PacketTypeRelayed::Invalid as u8)))
+        {
+            PacketTypeRelayed::Data => {
+                Ok(Self::new(bytes.get(1..).ok_or(CodecError::DecodeFailed)?))
+            }
+            PacketTypeRelayed::GenData => {
                 if bytes.len() < 4 {
                     return Err(CodecError::InvalidLength);
                 }
@@ -168,19 +175,24 @@ impl Codec for DataMsg {
         Ok(self.bytes)
     }
 
-    /// Returns [`PacketType`] for message.
-    fn packet_type(&self) -> PacketType {
-        PacketType::from(*self.bytes.first().unwrap_or(&(PacketType::Invalid as u8)))
+    /// Returns [`PacketTypeRelayed`] for message.
+    fn packet_type(&self) -> PacketTypeRelayed {
+        PacketTypeRelayed::from(
+            *self
+                .bytes
+                .first()
+                .unwrap_or(&(PacketTypeRelayed::Invalid as u8)),
+        )
     }
 }
 
-impl DowncastPacket for DataMsg {
-    fn downcast(packet: Packet) -> std::result::Result<Self, Packet>
+impl DowncastPacket<PacketRelayed> for DataMsg {
+    fn downcast(packet: PacketRelayed) -> std::result::Result<Self, PacketRelayed>
     where
         Self: Sized,
     {
         match packet {
-            Packet::Data(data) => Ok(data),
+            PacketRelayed::Data(data) => Ok(data),
             packet => Err(packet),
         }
     }
@@ -188,11 +200,16 @@ impl DowncastPacket for DataMsg {
 
 impl std::fmt::Display for DataMsg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match PacketType::from(*self.bytes.first().unwrap_or(&(PacketType::Invalid as u8))) {
-            PacketType::Data => {
+        match PacketTypeRelayed::from(
+            *self
+                .bytes
+                .first()
+                .unwrap_or(&(PacketTypeRelayed::Invalid as u8)),
+        ) {
+            PacketTypeRelayed::Data => {
                 write!(f, "Data: payload len: {}", self.get_payload().len(),)
             }
-            PacketType::GenData => {
+            PacketTypeRelayed::GenData => {
                 write!(
                     f,
                     "GenData: generation: {}, peer_id: {} payload len: {}",
@@ -221,7 +238,7 @@ mod tests {
 
     #[test]
     fn fail_to_decode_packet_of_wrong_type() {
-        let bytes = &[PacketType::Invalid as u8, 3, 1];
+        let bytes = &[PacketTypeRelayed::Invalid as u8, 3, 1];
         let data = DataMsg::decode(bytes);
         assert_eq!(data, Err(CodecError::DecodeFailed));
     }
@@ -253,19 +270,19 @@ mod tests {
     #[test]
     fn set_generation() {
         let mut packet = DataMsg::new(b"simple");
-        assert_eq!(packet.packet_type(), PacketType::Data);
+        assert_eq!(packet.packet_type(), PacketTypeRelayed::Data);
         assert_eq!(packet.get_generation(), None);
         assert_eq!(packet.get_peer_id(), None);
         assert_eq!(packet.get_payload(), b"simple");
 
         packet.set_generation(Generation(1));
-        assert_eq!(packet.packet_type(), PacketType::GenData);
+        assert_eq!(packet.packet_type(), PacketTypeRelayed::GenData);
         assert_eq!(packet.get_generation(), Some(Generation(1)));
         assert_eq!(packet.get_peer_id(), Some(PeerId(0)));
         assert_eq!(packet.get_payload(), b"simple");
 
         packet.set_generation(Generation(8));
-        assert_eq!(packet.packet_type(), PacketType::GenData);
+        assert_eq!(packet.packet_type(), PacketTypeRelayed::GenData);
         assert_eq!(packet.get_generation(), Some(Generation(8)));
         assert_eq!(packet.get_peer_id(), Some(PeerId(0)));
         assert_eq!(packet.get_payload(), b"simple");

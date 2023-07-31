@@ -1,7 +1,5 @@
 use thiserror::Error as ThisError;
 
-use crate::PacketType;
-
 /// Posible [Codec] trait errors.
 #[derive(ThisError, Debug, PartialEq, Eq)]
 pub enum Error {
@@ -29,7 +27,7 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Common trait for packet encoding/decoding.
-pub trait Codec {
+pub trait Codec<PacketType: 'static> {
     /// [PacketType]s convertable by the codec.
     const TYPES: &'static [PacketType];
 

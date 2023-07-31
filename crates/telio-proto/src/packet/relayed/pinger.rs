@@ -5,10 +5,9 @@ use std::{
 };
 use telio_crypto::PublicKey;
 
-use super::WGPort;
 use crate::{
-    messages::pinger::*, Codec, CodecError, CodecResult, DowncastPacket, Packet, PacketType,
-    Session, MAX_PACKET_SIZE,
+    messages::pinger::*, Codec, CodecError, CodecResult, DowncastPacket, PacketRelayed,
+    PacketTypeRelayed, Session, WGPort, MAX_PACKET_SIZE,
 };
 use protobuf::Message;
 
@@ -19,10 +18,10 @@ pub type Timestamp = u64;
 /// # Examples
 /// Decoding ping message:
 /// ```rust
-/// # use crate::telio_proto::{Codec, PingerMsg, PacketType};
+/// # use crate::telio_proto::{Codec, PingerMsg, PacketTypeRelayed};
 /// let bytes = &[7, 0, 0, 0, 0, 0, 0, 0, 9, 8, 128, 2, 16, 8];
 /// let data = PingerMsg::decode(bytes).expect("Failed to parse packet");
-/// assert_eq!(data.packet_type(), PacketType::Pinger);
+/// assert_eq!(data.packet_type(), PacketTypeRelayed::Pinger);
 /// assert_eq!(data.get_wg_port().0, 8_u16);
 /// assert_eq!(data.get_session(), 9_u64);
 /// assert_eq!(data.get_start_timestamp(), 256_u64);
@@ -102,7 +101,10 @@ impl PingerMsg {
     /// Decode and decrypt `bytes` using `decrypt` function.
     pub fn decode_and_decrypt(
         bytes: &[u8],
-        decrypt: impl FnOnce(PacketType, &[u8]) -> Result<(Vec<u8>, Option<PublicKey>), CodecError>,
+        decrypt: impl FnOnce(
+            PacketTypeRelayed,
+            &[u8],
+        ) -> Result<(Vec<u8>, Option<PublicKey>), CodecError>,
     ) -> CodecResult<(Self, Option<PublicKey>)>
     where
         Self: Sized,
@@ -110,9 +112,10 @@ impl PingerMsg {
         if bytes.is_empty() {
             return Err(CodecError::InvalidLength);
         }
-        let packet_type = PacketType::from(*bytes.first().unwrap_or(&(PacketType::Invalid as u8)));
+        let packet_type =
+            PacketTypeRelayed::from(*bytes.first().unwrap_or(&(PacketTypeRelayed::Invalid as u8)));
         match packet_type {
-            PacketType::Pinger => {
+            PacketTypeRelayed::Pinger => {
                 let (bytes, public_key) = decrypt(
                     packet_type,
                     bytes.get(1..).ok_or(CodecError::InvalidLength)?,
@@ -152,14 +155,14 @@ impl PingerMsg {
             .map_err(|_| CodecError::Encode)?;
         let transformed = encrypt(&inner_bytes)?;
         let mut bytes = Vec::with_capacity(1 + transformed.len());
-        bytes.put_u8(PacketType::Pinger as u8);
+        bytes.put_u8(PacketTypeRelayed::Pinger as u8);
         bytes.extend(transformed);
         Ok(bytes)
     }
 }
 
-impl Codec for PingerMsg {
-    const TYPES: &'static [PacketType] = &[PacketType::Pinger];
+impl Codec<PacketTypeRelayed> for PingerMsg {
+    const TYPES: &'static [PacketTypeRelayed] = &[PacketTypeRelayed::Pinger];
 
     fn decode(bytes: &[u8]) -> CodecResult<Self>
     where
@@ -172,18 +175,18 @@ impl Codec for PingerMsg {
         self.encode_and_encrypt(|b| Ok(b.to_vec()))
     }
 
-    fn packet_type(&self) -> PacketType {
-        PacketType::Pinger
+    fn packet_type(&self) -> PacketTypeRelayed {
+        PacketTypeRelayed::Pinger
     }
 }
 
-impl DowncastPacket for PingerMsg {
-    fn downcast(packet: Packet) -> Result<Self, Packet>
+impl DowncastPacket<PacketRelayed> for PingerMsg {
+    fn downcast(packet: PacketRelayed) -> Result<Self, PacketRelayed>
     where
         Self: Sized,
     {
         match packet {
-            Packet::Pinger(data) => Ok(data),
+            PacketRelayed::Pinger(data) => Ok(data),
             packet => Err(packet),
         }
     }
@@ -240,7 +243,7 @@ impl PlaintextPongerMsg {
             .map_err(|_| CodecError::Encode)?;
         let transformed = encrypt(&buf)?;
         let mut bytes = Vec::with_capacity(1 + 8 + transformed.len());
-        bytes.put_u8(PacketType::Ponger as u8);
+        bytes.put_u8(PacketTypeRelayed::Ponger as u8);
         bytes.put_u64(self.session);
         bytes.extend(transformed);
         Ok(bytes)
@@ -268,7 +271,10 @@ impl PartialPongerMsg {
     /// Decode and decrypt `bytes` using `decrypt` function.
     pub fn decode_and_decrypt(
         bytes: &[u8],
-        decrypt: impl FnOnce(PacketType, &[u8]) -> Result<(Vec<u8>, Option<PublicKey>), CodecError>,
+        decrypt: impl FnOnce(
+            PacketTypeRelayed,
+            &[u8],
+        ) -> Result<(Vec<u8>, Option<PublicKey>), CodecError>,
     ) -> CodecResult<Self>
     where
         Self: Sized,
@@ -276,9 +282,10 @@ impl PartialPongerMsg {
         if bytes.is_empty() {
             return Err(CodecError::InvalidLength);
         }
-        let packet_type = PacketType::from(*bytes.first().unwrap_or(&(PacketType::Invalid as u8)));
+        let packet_type =
+            PacketTypeRelayed::from(*bytes.first().unwrap_or(&(PacketTypeRelayed::Invalid as u8)));
         match packet_type {
-            PacketType::Ponger => {
+            PacketTypeRelayed::Ponger => {
                 let session = bytes
                     .get(1..9)
                     .ok_or(CodecError::InvalidLength)?
@@ -299,8 +306,8 @@ impl PartialPongerMsg {
     }
 }
 
-impl Codec for PartialPongerMsg {
-    const TYPES: &'static [PacketType] = &[PacketType::Ponger];
+impl Codec<PacketTypeRelayed> for PartialPongerMsg {
+    const TYPES: &'static [PacketTypeRelayed] = &[PacketTypeRelayed::Ponger];
 
     fn decode(bytes: &[u8]) -> CodecResult<Self>
     where
@@ -309,8 +316,9 @@ impl Codec for PartialPongerMsg {
         if bytes.is_empty() {
             return Err(CodecError::InvalidLength);
         }
-        match PacketType::from(*bytes.first().unwrap_or(&(PacketType::Invalid as u8))) {
-            PacketType::Ponger => {
+        match PacketTypeRelayed::from(*bytes.first().unwrap_or(&(PacketTypeRelayed::Invalid as u8)))
+        {
+            PacketTypeRelayed::Ponger => {
                 let session = bytes
                     .get(1..9)
                     .ok_or(CodecError::InvalidLength)?
@@ -331,24 +339,24 @@ impl Codec for PartialPongerMsg {
         Self: Sized,
     {
         let mut bytes = Vec::with_capacity(1 + 8 + self.msg.len());
-        bytes.put_u8(PacketType::Ponger as u8);
+        bytes.put_u8(PacketTypeRelayed::Ponger as u8);
         bytes.put_u64(self.session);
         bytes.extend(self.msg);
         Ok(bytes)
     }
 
-    fn packet_type(&self) -> PacketType {
-        PacketType::Ponger
+    fn packet_type(&self) -> PacketTypeRelayed {
+        PacketTypeRelayed::Ponger
     }
 }
 
-impl DowncastPacket for PartialPongerMsg {
-    fn downcast(packet: Packet) -> Result<Self, Packet>
+impl DowncastPacket<PacketRelayed> for PartialPongerMsg {
+    fn downcast(packet: PacketRelayed) -> Result<Self, PacketRelayed>
     where
         Self: Sized,
     {
         match packet {
-            Packet::Ponger(data) => Ok(data),
+            PacketRelayed::Ponger(data) => Ok(data),
             packet => Err(packet),
         }
     }
@@ -373,14 +381,14 @@ mod tests {
     fn decode_packet() {
         let ping_bytes = &[7, 0, 0, 0, 0, 0, 0, 0, 9, 8, 128, 2, 16, 8];
         let ping_data = PingerMsg::decode(ping_bytes).expect("Failed to parse packet");
-        assert_eq!(ping_data.packet_type(), PacketType::Pinger);
+        assert_eq!(ping_data.packet_type(), PacketTypeRelayed::Pinger);
         assert_eq!(ping_data.get_wg_port().0, 8_u16);
         assert_eq!(ping_data.get_session(), 9_u64);
         assert_eq!(ping_data.get_start_timestamp(), 256_u64);
 
         let ping_bytes = &[7, 0, 0, 0, 0, 0, 0, 0, 8, 8, 128, 4, 16, 6];
         let ping_data = PingerMsg::decode(ping_bytes).expect("Failed to parse packet");
-        assert_eq!(ping_data.packet_type(), PacketType::Pinger);
+        assert_eq!(ping_data.packet_type(), PacketTypeRelayed::Pinger);
         assert_eq!(ping_data.get_wg_port().0, 6_u16);
         assert_eq!(ping_data.get_session(), 8_u64);
         assert_eq!(ping_data.get_start_timestamp(), 512_u64);
@@ -395,7 +403,7 @@ mod tests {
 
     #[test]
     fn fail_to_decode_packet_of_wrong_type() {
-        let bytes = &[PacketType::Invalid as u8, 3, 1, 7, 6];
+        let bytes = &[PacketTypeRelayed::Invalid as u8, 3, 1, 7, 6];
         let data = PingerMsg::decode(bytes);
         assert_eq!(data, Err(CodecError::DecodeFailed));
     }

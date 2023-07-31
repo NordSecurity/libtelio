@@ -10,21 +10,21 @@ use futures::{
     Sink, SinkExt, Stream, StreamExt,
 };
 use telio_crypto::PublicKey;
-use telio_proto::{AnyPacket, Codec, Packet, PacketType};
+use telio_proto::{AnyPacket, Codec, PacketRelayed, PacketTypeRelayed};
 use telio_task::io::Chan;
 use tokio_util::sync::{PollSendError, PollSender};
 
 type BoxFusedStream<'a, T> = Pin<Box<dyn FusedStream<Item = T> + Send + 'a>>;
 type BoxSink<'a, T, E> = Pin<Box<dyn Sink<T, Error = E> + Send + 'a>>;
 
-type InTx = BoxSink<'static, (PublicKey, Packet), SendError>;
-type InRx = BoxFusedStream<'static, (PublicKey, Packet)>;
+type InTx = BoxSink<'static, (PublicKey, PacketRelayed), SendError>;
+type InRx = BoxFusedStream<'static, (PublicKey, PacketRelayed)>;
 
 #[derive(Default)]
 pub struct MultiChannel {
     last: Wrapping<usize>,
     channels: BTreeMap<usize, Channel>,
-    mapping: HashMap<PacketType, usize>,
+    mapping: HashMap<PacketTypeRelayed, usize>,
 }
 
 struct Channel {
@@ -38,7 +38,9 @@ struct SendError;
 
 impl MultiChannel {
     /// Create one piped channel for [T] packets.
-    pub fn pipe<T: AnyPacket + 'static>(&mut self) -> Result<Chan<(PublicKey, T)>, ()> {
+    pub fn pipe<T: AnyPacket<PacketRelayed, PacketTypeRelayed> + 'static>(
+        &mut self,
+    ) -> Result<Chan<(PublicKey, T)>, ()> {
         self.cleanup();
 
         if self.mapping.keys().any(|k| T::TYPES.contains(k)) {
@@ -54,11 +56,11 @@ impl MultiChannel {
             Box::new(move || tx.is_closed())
         };
 
-        let tx: InTx = Box::pin(
-            PollSender::new(tx).with(|data: (PublicKey, Packet)| async move {
+        let tx: InTx = Box::pin(PollSender::new(tx).with(
+            |data: (PublicKey, PacketRelayed)| async move {
                 Ok((data.0, T::downcast(data.1).map_err(|_| SendError)?))
-            }),
-        );
+            },
+        ));
 
         let rx = Box::pin(
             stream::poll_fn(move |cx| {
@@ -100,7 +102,7 @@ impl MultiChannel {
 }
 
 impl Stream for MultiChannel {
-    type Item = (PublicKey, Packet);
+    type Item = (PublicKey, PacketRelayed);
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut dirty = false;
@@ -133,12 +135,12 @@ pub enum SinkError {
     #[error("poll_ready failed")]
     PollReadyFailed,
     #[error("Packet type {0:?} not in mapping")]
-    MissingPacketType(PacketType),
+    MissingPacketType(PacketTypeRelayed),
     #[error("No channel for packet type {0:?} and id {1}")]
-    MissingChannel(PacketType, usize),
+    MissingChannel(PacketTypeRelayed, usize),
 }
 
-impl Sink<(PublicKey, Packet)> for MultiChannel {
+impl Sink<(PublicKey, PacketRelayed)> for MultiChannel {
     type Error = SinkError;
 
     fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -164,7 +166,10 @@ impl Sink<(PublicKey, Packet)> for MultiChannel {
         }
     }
 
-    fn start_send(mut self: Pin<&mut Self>, item: (PublicKey, Packet)) -> Result<(), Self::Error> {
+    fn start_send(
+        mut self: Pin<&mut Self>,
+        item: (PublicKey, PacketRelayed),
+    ) -> Result<(), Self::Error> {
         let i = self
             .mapping
             .get(&item.1.packet_type())

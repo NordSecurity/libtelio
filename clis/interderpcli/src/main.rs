@@ -125,7 +125,7 @@ async fn ping_each_other(
         .map_err(|e| anyhow!(e.to_string()))?;
     for _ in 0..3 {
         client_1
-            .comms
+            .comms_relayed
             .tx
             .send((key_2.public(), tx_msg1.clone()))
             .await?;
@@ -138,7 +138,7 @@ async fn ping_each_other(
         .map_err(|e| anyhow!(e.to_string()))?;
     for _ in 0..3 {
         client_2
-            .comms
+            .comms_relayed
             .tx
             .send((key_1.public(), tx_msg2.clone()))
             .await?;
@@ -148,7 +148,7 @@ async fn ping_each_other(
     timeout(Duration::from_secs(3), async move {
         loop {
             let rx_msg1 = client_1
-                .comms
+                .comms_relayed
                 .rx
                 .recv()
                 .await
@@ -165,7 +165,7 @@ async fn ping_each_other(
     timeout(Duration::from_secs(3), async move {
         loop {
             let rx_msg2 = client_2
-                .comms
+                .comms_relayed
                 .rx
                 .recv()
                 .await
