@@ -462,14 +462,8 @@ impl StatefullFirewall {
             let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock());
             telio_log_trace!("Connection {:?} closing", key);
             if let Entry::Occupied(mut e) = tcp_cache.entry(key) {
-                let TcpConnectionInfo {
-                    tx_alive, rx_alive, ..
-                } = e.get_mut();
+                let TcpConnectionInfo { tx_alive, .. } = e.get_mut();
                 *tx_alive = false;
-                if !*rx_alive {
-                    telio_log_trace!("Removing TCP conntrack entry {:?}", e.key());
-                    e.remove();
-                }
             }
         }
     }
@@ -546,7 +540,7 @@ impl StatefullFirewall {
         let flags = tcp_packet.get_flags();
         let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock(), false);
 
-        if let Some(connection_info) = tcp_cache.get(&key) {
+        if let Some(connection_info) = tcp_cache.peek(&key) {
             telio_log_trace!(
                 "Matched TCP conntrack entry {:?} {:?}",
                 key,
@@ -567,13 +561,19 @@ impl StatefullFirewall {
                 telio_log_trace!("Connection {:?} closing", key);
                 if let Some(connection) = tcp_cache.get_mut(&key) {
                     connection.rx_alive = false;
-                    if !connection.tx_alive {
-                        telio_log_trace!("Removing TCP conntrack entry {:?}", key);
-                        tcp_cache.remove(&key);
-                    }
                 }
+            } else if !connection_info.tx_alive
+                && !connection_info.rx_alive
+                && !connection_info.conn_remote_initiated
+            {
+                if flags & TcpFlags::ACK == TcpFlags::ACK {
+                    telio_log_trace!("Removing TCP conntrack entry {:?}", key);
+                    tcp_cache.remove(&key);
+                    return true;
+                }
+                return false;
             }
-
+            tcp_cache.get(&key);
             telio_log_trace!("Accepting TCP packet {:?} {:?}", ip, peer);
             return true;
         }
@@ -1260,6 +1260,13 @@ pub mod tests {
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::FIN)), true);
             assert_eq!(fw.tcp.lock().unwrap().len(), 1);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::FIN)), true);
+            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+
+            assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::ACK)), true);
+            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::PSH)), false);
+            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::ACK)), true);
             assert_eq!(fw.tcp.lock().unwrap().len(), 0);
         }
     }
@@ -1309,6 +1316,13 @@ pub mod tests {
             }));
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::FIN)), true);
+            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+
+            assert_eq!(fw.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
+                tx_alive: false, rx_alive: false, conn_remote_initiated: false
+            }));
+
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::ACK)), true);
             assert_eq!(fw.tcp.lock().unwrap().len(), 0);
         }
     }
