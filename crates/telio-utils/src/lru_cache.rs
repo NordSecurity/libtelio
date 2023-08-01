@@ -228,7 +228,6 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
 
     /// Returns a reference to the value with the given `key`, if present and not expired, without
     /// updating the timestamp.
-    #[cfg(test)]
     pub fn peek<Q: ?Sized>(&self, key: &Q) -> Option<&Value>
     where
         Key: Borrow<Q>,

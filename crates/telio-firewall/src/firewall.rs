@@ -462,14 +462,8 @@ impl StatefullFirewall {
             let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock());
             telio_log_trace!("Connection {:?} closing", key);
             if let Entry::Occupied(mut e) = tcp_cache.entry(key) {
-                let TcpConnectionInfo {
-                    tx_alive, rx_alive, ..
-                } = e.get_mut();
+                let TcpConnectionInfo { tx_alive, .. } = e.get_mut();
                 *tx_alive = false;
-                if !*rx_alive {
-                    telio_log_trace!("Removing TCP conntrack entry {:?}", e.key());
-                    e.remove();
-                }
             }
         }
     }
@@ -546,7 +540,7 @@ impl StatefullFirewall {
         let flags = tcp_packet.get_flags();
         let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock(), false);
 
-        if let Some(connection_info) = tcp_cache.get(&key) {
+        if let Some(connection_info) = tcp_cache.peek(&key) {
             telio_log_trace!(
                 "Matched TCP conntrack entry {:?} {:?}",
                 key,
@@ -567,13 +561,20 @@ impl StatefullFirewall {
                 telio_log_trace!("Connection {:?} closing", key);
                 if let Some(connection) = tcp_cache.get_mut(&key) {
                     connection.rx_alive = false;
-                    if !connection.tx_alive {
-                        telio_log_trace!("Removing TCP conntrack entry {:?}", key);
-                        tcp_cache.remove(&key);
-                    }
                 }
+            } else if !connection_info.tx_alive
+                && !connection_info.rx_alive
+                && !connection_info.conn_remote_initiated
+            {
+                if flags & TcpFlags::ACK == TcpFlags::ACK {
+                    telio_log_trace!("Removing TCP conntrack entry {:?}", key);
+                    tcp_cache.remove(&key);
+                    return true;
+                }
+                return false;
             }
-
+            // restarts cache entry timeout
+            tcp_cache.get(&key);
             telio_log_trace!("Accepting TCP packet {:?} {:?}", ip, peer);
             return true;
         }
@@ -1260,6 +1261,13 @@ pub mod tests {
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::FIN)), true);
             assert_eq!(fw.tcp.lock().unwrap().len(), 1);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::FIN)), true);
+            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+
+            assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::ACK)), true);
+            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::PSH)), false);
+            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::ACK)), true);
             assert_eq!(fw.tcp.lock().unwrap().len(), 0);
         }
     }
@@ -1309,6 +1317,78 @@ pub mod tests {
             }));
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::FIN)), true);
+            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+
+            assert_eq!(fw.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
+                tx_alive: false, rx_alive: false, conn_remote_initiated: false
+            }));
+
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::ACK)), true);
+            assert_eq!(fw.tcp.lock().unwrap().len(), 0);
+        }
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn firewall_tcp_connection_timeout_is_not_updated_after_fin() {
+        struct TestInput {
+            us: &'static str,
+            them: &'static str,
+            make_tcp: MakeTcp,
+        }
+
+        impl TestInput {
+            fn us_port(&self) -> u16 { self.us.parse::<StdSocketAddr>().unwrap().port() }
+            fn them_port(&self) -> u16 { self.them.parse::<StdSocketAddr>().unwrap().port() }
+            fn us_ip(&self) -> IpAddr { self.us.parse::<StdSocketAddr>().unwrap().ip().into() }
+            fn them_ip(&self) -> IpAddr { self.them.parse::<StdSocketAddr>().unwrap().ip().into() }
+        }
+
+        let test_inputs = vec![
+            TestInput{ us: "127.0.0.1:1111", them: "8.8.8.8:8888",                 make_tcp: &make_tcp },
+            TestInput{ us: "[::1]:1111",     them: "[2001:4860:4860::8888]:8888",  make_tcp: &make_tcp6 },
+        ];
+        for test_input @ TestInput { us, them, make_tcp } in test_inputs {
+            let ttl = 20;
+            let fw = StatefullFirewall::new_custom(3, ttl);
+
+            let outgoing_init_packet = make_tcp(us, them, TcpFlags::SYN);
+            assert_eq!(fw.process_outbound_packet(&make_peer(), &outgoing_init_packet), true);
+            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            let conn_key = IpConnWithPort {
+                remote_addr: test_input.them_ip(),
+                remote_port: test_input.them_port(),
+                local_addr: test_input.us_ip(),
+                local_port: test_input.us_port(),
+            };
+
+            assert_eq!(fw.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
+                tx_alive: true, rx_alive: true, conn_remote_initiated: false
+            }));
+
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::FIN)), true);
+            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+
+            assert_eq!(fw.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
+                tx_alive: true, rx_alive: false, conn_remote_initiated: false
+            }));
+
+            assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::FIN)), true);
+            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+
+            // update tcp cache entry timeout
+            assert_eq!(fw.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
+                tx_alive: false, rx_alive: false, conn_remote_initiated: false
+            }));
+
+            // process inbound packet (should not update ttl, because not ACK, but entry should still exist)
+            sleep(Duration::from_millis(ttl / 2));
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::PSH)), false);
+            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+
+            // process inbound packet (should not update ttl, because not ACK, and entry should be removed after timeout)
+            sleep(Duration::from_millis(ttl / 2));
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::PSH)), false);
             assert_eq!(fw.tcp.lock().unwrap().len(), 0);
         }
     }
