@@ -6,6 +6,7 @@
 * LLT-4008: Add support for AAAA records in telio-dns
 * LLT-4012: Fix firewall being stuck on LAST_ACK after FIN
 * LLT-4023: Add validation that meshnet and device keys match
+* LLT-4056: Add git commit requirements
 
 <br>
 

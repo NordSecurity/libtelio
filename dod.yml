@@ -1,4 +1,4 @@
 dod:
-  - 'Commit history is clean'
+  - 'Commit history is clean ([requirements](../../blob/main/docs/git_commit_messages_requirements.md))'
   - 'README.md is updated'
   - 'changelog.md is updated'
