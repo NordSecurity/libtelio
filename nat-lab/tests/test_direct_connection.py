@@ -372,7 +372,7 @@ async def test_direct_short_connection_loss(
     UHP_conn_client_types,
 )
 @pytest.mark.timeout(4 * 60)
-@pytest.mark.skip(reason="the test is flaky - JIRA issue: LLT-3079")
+@pytest.mark.xfail(reason="the test is flaky - JIRA issue: LLT-3079")
 async def test_direct_connection_loss_for_infinity(
     endpoint_providers, client1_type, client2_type, reflexive_ip
 ) -> None:

@@ -23,7 +23,7 @@ async def check_fake_derp_connection(client: telio.Client) -> Optional[telio.Cli
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="the test is flaky - JIRA issue: LLT-3078")
+@pytest.mark.xfail(reason="the test is flaky - JIRA issue: LLT-3078")
 async def test_verify_pk_on_packets() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
