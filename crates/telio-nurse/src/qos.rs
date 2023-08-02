@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use histogram::Histogram;
 use serde::Deserialize;
 use std::collections::{BTreeSet, HashMap};
+use std::convert::Infallible;
 use std::net::IpAddr;
 use std::time::Instant;
 
@@ -158,7 +159,7 @@ pub struct Analytics {
 impl Runtime for Analytics {
     const NAME: &'static str = "Nurse QoS Analytics";
 
-    type Err = ();
+    type Err = Infallible;
 
     async fn wait(&mut self) -> WaitResponse<'_, Self::Err> {
         tokio::select! {

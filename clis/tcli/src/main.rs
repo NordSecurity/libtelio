@@ -98,6 +98,14 @@ fn main() -> Result<()> {
                             );
                         }
                     }
+                    DevEvent::Monitor { body } => {
+                        if let Some(b) = body.as_ref() {
+                            println!(
+                                "event monitor: {}",
+                                serde_json::to_string(&b).unwrap_or_else(|_| "".to_string())
+                            );
+                        }
+                    }
                     _ => (),
                 },
                 Error(e) => {

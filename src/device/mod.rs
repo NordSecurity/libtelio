@@ -13,7 +13,7 @@ use telio_relay::{
 use telio_sockets::{NativeProtector, Protect, SocketPool};
 use telio_task::{
     io::{chan, mc_chan, mc_chan::Tx, Chan, McChan},
-    task_exec, BoxAction, Runtime as TaskRuntime, Task,
+    task_exec, BoxAction, Runtime as TaskRuntime, Task, TaskMonitor,
 };
 use telio_traversal::{
     connectivity_check,
@@ -70,6 +70,7 @@ use telio_model::{
     config::{Config, Peer, Server as DerpServer},
     event::{Event, Set},
     mesh::{ExitNode, Node},
+    task_monitor::{MonitorEvent, StopReason},
 };
 
 pub use wg::{
@@ -357,17 +358,55 @@ impl Device {
 
         let thread_tracker = Arc::new(parking_lot::Mutex::new(ThreadTracker::default()));
 
+        let (event_tx, mut event_rx) = tokio::sync::broadcast::channel(256);
+
+        let maybe_monitor = features.task_monitor.as_ref().cloned().map({
+            let event_tx = event_tx.clone();
+            move |c| {
+                TaskMonitor::new(c, move |event| {
+                    use telio_model::task_monitor::MonitorEvent::*;
+                    let global_event = Event::new::<MonitorEvent>().set(event.clone());
+                    if let Err(err) = event_tx.send(Box::new(global_event)) {
+                        telio_log_warn!("Failed to report task monitor event: {err}");
+                    }
+
+                    match event {
+                        TaskBusyLoop { name } => {
+                            telio_log_warn!("Task {name} is excessively looping")
+                        }
+                        TaskStart { .. } => {}
+                        TaskStop { name, reason } => {
+                            if matches!(reason, StopReason::Error(_) | StopReason::Panic) {
+                                telio_log_warn!("Task {name} stopped due to {reason:?}")
+                            }
+                        }
+                    }
+                })
+            }
+        });
+
         let art = Builder::new_multi_thread()
             .worker_threads(num_cpus::get())
             .enable_io()
             .enable_time()
             .on_thread_start({
                 let thread_tracker = thread_tracker.clone();
-                move || thread_tracker.lock().on_thread_start()
+                let maybe_monitor = maybe_monitor.clone();
+                move || {
+                    thread_tracker.lock().on_thread_start();
+                    if let Some(m) = &maybe_monitor {
+                        m.on_thread_start()
+                    }
+                }
             })
             .on_thread_stop({
                 let thread_tracker = thread_tracker.clone();
-                move || thread_tracker.lock().on_thread_stop()
+                move || {
+                    thread_tracker.lock().on_thread_stop();
+                    if let Some(m) = &maybe_monitor {
+                        m.on_thread_stop()
+                    }
+                }
             })
             .on_thread_park({
                 let thread_tracker = thread_tracker.clone();
@@ -381,7 +420,6 @@ impl Device {
 
         thread_tracker.start();
 
-        let (event_tx, mut event_rx) = tokio::sync::broadcast::channel(256);
         art.spawn(async move {
             while let Ok(event) = event_rx.recv().await {
                 event_cb(event);

@@ -53,6 +53,13 @@ class Nurse(DataClassJsonMixin):
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
+class TaskMonitor:
+    max_polls_immediately: Optional[int] = None
+    duration_between_reporting_same_event_ms: Optional[int] = None
+
+
+@dataclass_json(undefined=Undefined.EXCLUDE)
+@dataclass
 class TelioFeatures(DataClassJsonMixin):
     is_test_env: Optional[bool] = True
     exit_dns: Optional[ExitDns] = field(
@@ -61,3 +68,4 @@ class TelioFeatures(DataClassJsonMixin):
     direct: Optional[Direct] = None
     lana: Optional[Lana] = None
     nurse: Optional[Nurse] = None
+    task_monitor: Optional[TaskMonitor] = None

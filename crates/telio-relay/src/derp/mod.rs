@@ -14,6 +14,7 @@ use async_trait::async_trait;
 use futures::{future::select_all, Future};
 use generic_array::typenum::Unsigned;
 use std::collections::{HashMap, HashSet};
+use std::convert::Infallible;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -643,7 +644,7 @@ impl State {
 impl Runtime for State {
     const NAME: &'static str = "DerpRelay";
 
-    type Err = ();
+    type Err = Infallible;
 
     async fn wait_with_update<F>(&mut self, update: F) -> Result<(), Self::Err>
     where

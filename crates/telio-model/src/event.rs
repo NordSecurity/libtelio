@@ -4,7 +4,7 @@ use super::mesh::Node;
 use modifier::Modifier;
 use serde::Serialize;
 
-use crate::config::Server as Relay;
+use crate::{config::Server as Relay, task_monitor::MonitorEvent};
 
 pub use modifier::Set;
 
@@ -84,6 +84,12 @@ impl MakeEvent for Node {
     }
 }
 
+impl MakeEvent for MonitorEvent {
+    fn make() -> Event {
+        Event::Monitor { body: None }
+    }
+}
+
 /// Main object of `Event`. See `Event::new()` for init options.
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type")]
@@ -104,6 +110,11 @@ pub enum Event {
     Error {
         /// Error type event
         body: Option<Error>,
+    },
+    /// Used to report events by [TaskMonitor]
+    Monitor {
+        /// Monitor type event
+        body: Option<MonitorEvent>,
     },
 }
 
@@ -200,18 +211,30 @@ impl Modifier<Event> for EventMsg {
     }
 }
 
+impl Modifier<Event> for MonitorEvent {
+    fn modify(self, res: &mut Event) {
+        if let Event::Monitor { body } = res {
+            *body = Some(self)
+        }
+    }
+}
+
 impl Set for Event {}
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{RelayState, Server};
+    use crate::{
+        config::{RelayState, Server},
+        task_monitor::StopReason,
+    };
 
     use super::super::mesh::*;
     use super::*;
+    use serde_json::json;
     use telio_crypto::{PublicKey, KEY_SIZE};
 
     #[test]
-    fn validate_to_json() {
+    fn validate_node_to_json() {
         let node = Node {
             identifier: "f2b18d10-82ed-49a3-8b50-3356685ec5fa".to_owned(),
             public_key: PublicKey([1_u8; KEY_SIZE]),
@@ -227,6 +250,26 @@ mod tests {
             path: crate::api_config::PathType::Relay,
         };
 
+        let node_json = String::from(concat!(
+            r#"{"type":"node","#,
+            r#""body":"#,
+            r#"{"identifier":"f2b18d10-82ed-49a3-8b50-3356685ec5fa","#,
+            r#""public_key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","state":"connected","#,
+            r#""is_exit":true,"is_vpn":true,"ip_addresses":["127.0.0.1"],"allowed_ips":["127.0.0.1/32"],"#,
+            r#""endpoint":"127.0.0.1:8080","hostname":"example.com","#,
+            r#""allow_incoming_connections":false,"#,
+            r#""allow_peer_send_files":false,"#,
+            r#""path":"relay""#,
+            r#"}}"#
+        ));
+
+        let node_event = Event::new::<Node>().set(node);
+
+        assert_eq!(node_json, node_event.to_json().unwrap());
+    }
+
+    #[test]
+    fn validate_server_to_json() {
         let server = Server {
             region_code: "nl".to_string(),
             name: "Natlab #0001".to_string(),
@@ -243,9 +286,6 @@ mod tests {
             use_plain_text: true,
         };
 
-        let err_json = String::from(
-            r#"{"type":"error","body":{"level":"severe","code":"unknown","msg":"big_error"}}"#,
-        );
         let conn_json = String::from(concat!(
             r#"{"type":"relay","#,
             r#""body":"#,
@@ -263,30 +303,60 @@ mod tests {
             r#"}}"#
         ));
 
-        let node_json = String::from(concat!(
-            r#"{"type":"node","#,
-            r#""body":"#,
-            r#"{"identifier":"f2b18d10-82ed-49a3-8b50-3356685ec5fa","#,
-            r#""public_key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","state":"connected","#,
-            r#""is_exit":true,"is_vpn":true,"ip_addresses":["127.0.0.1"],"allowed_ips":["127.0.0.1/32"],"#,
-            r#""endpoint":"127.0.0.1:8080","hostname":"example.com","#,
-            r#""allow_incoming_connections":false,"#,
-            r#""allow_peer_send_files":false,"#,
-            r#""path":"relay""#,
-            r#"}}"#
-        ));
+        let conn_event = Event::new::<Relay>().set(server);
+
+        assert_eq!(conn_json, conn_event.to_json().unwrap());
+    }
+
+    #[test]
+    fn validate_error_to_json() {
+        let err_json = String::from(
+            r#"{"type":"error","body":{"level":"severe","code":"unknown","msg":"big_error"}}"#,
+        );
 
         let err_event = Event::new::<Error>()
             .set(EventMsg::from("big_error"))
             .set(ErrorCode::Unknown)
             .set(ErrorLevel::Severe);
 
-        let conn_event = Event::new::<Relay>().set(server);
-
-        let node_event = Event::new::<Node>().set(node);
-
         assert_eq!(err_json, err_event.to_json().unwrap());
-        assert_eq!(conn_json, conn_event.to_json().unwrap());
-        assert_eq!(node_json, node_event.to_json().unwrap());
+    }
+
+    #[test]
+    fn validate_monitor_to_json() {
+        let monitor_start_json = json!({
+            "type": "monitor",
+            "body": {
+                "event": "task_start",
+                "name": "SomeTask",
+            }
+        });
+
+        let monitor = MonitorEvent::TaskStart { name: "SomeTask" };
+
+        let event = Event::new::<MonitorEvent>().set(monitor);
+
+        assert_eq!(monitor_start_json, serde_json::to_value(event).unwrap());
+
+        let monitor_stop_json = json!({
+            "type": "monitor",
+            "body": {
+                "event": "task_stop",
+                "name": "SomeTask",
+                "reason": {
+                    "type": "error",
+                    "message": "Bad Socket",
+                }
+            },
+        });
+
+        let monitor = MonitorEvent::TaskStop {
+            name: "SomeTask",
+            reason: StopReason::Error("Bad Socket".to_string()),
+        };
+
+        let event = Event::new::<MonitorEvent>().set(monitor);
+
+        assert_eq!(monitor_stop_json, serde_json::to_value(event).unwrap());
     }
 }

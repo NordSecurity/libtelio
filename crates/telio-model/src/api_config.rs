@@ -263,6 +263,47 @@ where
     Ok(Some(eps))
 }
 
+/// Telio task monitor configuration
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct FeatureTaskMonitor {
+    /// The number of consecutive wait iterations that should trigger busy loop detection.
+    /// This typically occurs when erroneous code results in a wait loop without any awaits.
+    #[serde(default = "FeatureTaskMonitor::default_max_polls_immediately")]
+    pub max_polls_immediately: Option<u64>,
+
+    /// The frequency at which the same event can be reported by the task monitor, in milliseconds.
+    #[serde(default = "FeatureTaskMonitor::default_duration_between_reporting_same_event")]
+    pub duration_between_reporting_same_event_ms: Option<u64>,
+}
+
+impl FeatureTaskMonitor {
+    /// Default for [FeatureTaskMonitor::max_polls_immediately]
+    pub const DEFAULT_MAX_POLLS_IMMEDIATELY: u64 = 10_000;
+
+    /// Default for [FeatureTaskMonitor::duration_between_reporting_same_event]
+    pub const DEFAULT_DURATION_BETWEEN_REPORTING_SAME_EVENT: u64 = 1000;
+
+    /// Default for [FeatureTaskMonitor::max_polls_immediately]
+    pub const fn default_max_polls_immediately() -> Option<u64> {
+        Some(Self::DEFAULT_MAX_POLLS_IMMEDIATELY)
+    }
+
+    /// Default for [FeatureTaskMonitor::duration_between_reporting_same_event]
+    pub const fn default_duration_between_reporting_same_event() -> Option<u64> {
+        Some(Self::DEFAULT_DURATION_BETWEEN_REPORTING_SAME_EVENT)
+    }
+}
+
+impl Default for FeatureTaskMonitor {
+    fn default() -> Self {
+        Self {
+            max_polls_immediately: Self::default_max_polls_immediately(),
+            duration_between_reporting_same_event_ms:
+                Self::default_duration_between_reporting_same_event(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 /// Encompasses all of the possible features that can be enabled
 pub struct Features {
@@ -288,6 +329,11 @@ pub struct Features {
     /// Flag to specify if keys should be validated
     #[serde(default)]
     pub validate_keys: FeatureValidateKeys,
+    /// Avoid sending periodic messages to peers with no traffic reported by wireguard
+    #[serde(default)]
+    pub skip_unresponsive_peers: bool,
+    /// Telio task monitor configuration
+    pub task_monitor: Option<FeatureTaskMonitor>,
 }
 
 impl FeaturePaths {
@@ -341,7 +387,8 @@ mod tests {
                 "force": "relay"
             },
             "direct": {},
-            "exit_dns": {}
+            "exit_dns": {},
+            "task_monitor": {}
         }"#;
 
     const CORRECT_FEATURES_JSON_WITH_ALL_OPTIONAL: &str = r#"
@@ -388,7 +435,9 @@ mod tests {
                 "derp_keepalive": 2,
                 "enable_polling": true
             },
-            "validate_keys": false
+            "validate_keys": false,
+            "skip_unresponsive_peers": true,
+            "task_monitor": {}
         }"#;
 
     static EXPECTED_FEATURES: Lazy<Features> = Lazy::new(|| Features {
@@ -433,6 +482,8 @@ mod tests {
             enable_polling: Some(true),
         }),
         validate_keys: FeatureValidateKeys(false),
+        skip_unresponsive_peers: true,
+        task_monitor: Some(FeatureTaskMonitor::default()),
     });
 
     static EXPECTED_FEATURES_WITHOUT_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
@@ -471,6 +522,8 @@ mod tests {
         is_test_env: None,
         derp: None,
         validate_keys: Default::default(),
+        skip_unresponsive_peers: Default::default(),
+        task_monitor: Some(FeatureTaskMonitor::default()),
     });
 
     #[test]
@@ -638,6 +691,8 @@ mod tests {
             exit_dns: None,
             derp: None,
             validate_keys: Default::default(),
+            skip_unresponsive_peers: Default::default(),
+            task_monitor: None,
         };
 
         let empty_qos_features = Features {
@@ -660,6 +715,8 @@ mod tests {
             exit_dns: None,
             derp: None,
             validate_keys: Default::default(),
+            skip_unresponsive_peers: Default::default(),
+            task_monitor: None,
         };
 
         let no_qos_features = Features {
@@ -677,6 +734,8 @@ mod tests {
             exit_dns: None,
             derp: None,
             validate_keys: Default::default(),
+            skip_unresponsive_peers: Default::default(),
+            task_monitor: None,
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -713,6 +772,8 @@ mod tests {
             }),
             derp: None,
             validate_keys: Default::default(),
+            skip_unresponsive_peers: Default::default(),
+            task_monitor: None,
         };
 
         let empty_features = Features {
@@ -726,6 +787,8 @@ mod tests {
             }),
             derp: None,
             validate_keys: Default::default(),
+            skip_unresponsive_peers: Default::default(),
+            task_monitor: None,
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -763,6 +826,8 @@ mod tests {
             direct: None,
             derp: None,
             validate_keys: Default::default(),
+            skip_unresponsive_peers: Default::default(),
+            task_monitor: None,
         };
 
         assert_eq!(Features::default(), expected_defaults);

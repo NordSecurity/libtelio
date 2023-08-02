@@ -1,20 +1,21 @@
-use std::{any::Any, sync::Arc};
+use std::{any::Any, error::Error};
 
 use async_trait::async_trait;
 use futures::{
-    future::{pending, ready, BoxFuture},
+    future::{pending, BoxFuture},
     Future, FutureExt,
 };
-use tokio::{
-    sync::{oneshot, Notify},
-    task::JoinHandle,
-};
+use telio_model::task_monitor::StopKind;
+use telio_utils::{telio_log_error, telio_log_info, telio_log_warn};
+use tokio::{sync::oneshot, task::JoinHandle};
 
-use telio_utils::telio_log_warn;
-
-use crate::io::{
-    chan::{Rx, Tx},
-    Chan,
+use crate::{
+    io::{
+        chan::{Rx, Tx},
+        Chan,
+    },
+    task::monitor,
+    ExecError, StopResult, WaitResponse,
 };
 
 /// Runtime implementation for a [Task]'s state
@@ -24,13 +25,13 @@ pub trait Runtime: Sized {
     const NAME: &'static str;
 
     /// Error that may occur in [Task]
-    type Err: Send + 'static;
+    type Err: Error + Send + 'static;
 
     /// Wait on state events. Called from an infinite loop
     ///
     /// Use [RuntimeExt] to create valid responses in an easier manner
     async fn wait(&mut self) -> WaitResponse<'_, Self::Err> {
-        WaitResponse(pending().boxed())
+        pending().await
     }
 
     /// Wait with manual control over updates
@@ -51,38 +52,7 @@ pub trait Runtime: Sized {
     async fn stop(self) {}
 }
 
-/// Typical responses from wait implementation
-#[async_trait]
-pub trait RuntimeExt: Runtime {
-    /// Guard multiple async operations form being interrupted by exec
-    fn guard<'a, F>(block: F) -> WaitResponse<'a, Self::Err>
-    where
-        F: Future<Output = Result<(), Self::Err>> + Send + 'a,
-    {
-        WaitResponse(block.boxed())
-    }
-
-    /// Continue to next loop iteration
-    fn next() -> WaitResponse<'static, Self::Err> {
-        WaitResponse(ready(Ok(())).boxed())
-    }
-
-    /// Error out with [Runtime::Err]
-    fn error(e: Self::Err) -> WaitResponse<'static, Self::Err> {
-        WaitResponse(ready(Err(e)).boxed())
-    }
-
-    /// Sleep forever in loop, loop is stopped, but not deallocated
-    /// Task loop can be re-triggered using exec
-    async fn sleep_forever() -> WaitResponse<'static, Self::Err> {
-        pending().await
-    }
-}
-
-impl<T> RuntimeExt for T where T: Runtime {}
-
-/// A general runtime for components
-///
+/// A general runtime for compoments.
 /// This task should be used in components requiring long running actions.
 ///
 /// It takes care of:
@@ -90,55 +60,9 @@ impl<T> RuntimeExt for T where T: Runtime {}
 ///   * Wait entry to wait for outside triggers. (Like [Rx], sockets, timers etc)
 ///   * Ability to execute mutation on state without requiring mutex'es
 pub struct Task<S: Runtime> {
-    stop: Arc<Notify>,
-    execute: Tx<Update<S, S::Err>>,
-    join: Option<JoinHandle<Result<(), S::Err>>>,
+    pub(crate) execute: Tx<Update<S, S::Err>>,
+    pub(crate) stop_and_join: Option<Stopper<S>>,
 }
-
-/// Task was stopped during execution
-#[derive(Debug, thiserror::Error)]
-#[error("Failed to execute.")]
-pub struct ExecError;
-
-/// Task stop status.
-#[derive(Debug)]
-pub enum StopResult<E> {
-    /// Task was stopped successfully
-    Ok,
-    /// Task stopped due to internal error
-    Err(E),
-    /// Task panic'ed
-    Panic(Box<dyn Any + Send + 'static>),
-}
-
-/// Response from [Runtime::wait].
-///
-/// It's recommended to use [RuntimeExt] methods.
-pub struct WaitResponse<'a, E>(BoxFuture<'a, Result<(), E>>);
-
-/// Future closure
-pub trait Action<V, R = ()>
-where
-    for<'a> Self: FnOnce(&'a mut V) -> BoxFuture<'a, R> + Send + 'static,
-    R: Send + 'static,
-{
-}
-
-impl<T, V, R> Action<V, R> for T
-where
-    for<'a> T: FnOnce(&'a mut V) -> BoxFuture<'a, R> + Send + 'static,
-    R: Send + 'static,
-{
-}
-
-/// Boxed future closure
-pub type BoxAction<V, R = ()> = Box<dyn Action<V, R>>;
-
-type AnySend = Box<dyn Any + Send + 'static>;
-
-type Resp<T> = oneshot::Sender<T>;
-
-type Update<S, E> = (BoxAction<S, Result<AnySend, E>>, Resp<AnySend>);
 
 impl<S> Task<S>
 where
@@ -146,32 +70,41 @@ where
 {
     /// Start a new task for state
     pub fn start(mut state: S) -> Self {
-        let stop = Arc::new(Notify::new());
+        let (stop, stopped) = oneshot::channel::<StopKind>();
         let Chan {
             tx: execute,
             rx: execute_rx,
         } = Chan::<Update<S, S::Err>>::default();
 
-        let stopped = stop.clone();
-        let join = Some(tokio::spawn(async move {
-            tokio::select! {
-                res = Self::run_loop(&mut state, execute_rx) => {
-                    state.stop().await;
-                    res
-                },
-                _ = stopped.notified() => {
-                    state.stop().await;
-                    Ok(())
-                },
-            }
-        }));
+        let join = tokio::spawn(async move {
+            let inner = async move {
+                tokio::select! {
+                    err = Self::run_loop(&mut state, execute_rx) => {
+                        state.stop().await;
+                        Err(err)
+                    },
+                    kind = stopped => {
+                        state.stop().await;
+                        // Dropping of sender assumes dropping of task.
+                        Ok(kind.unwrap_or(StopKind::Dropped))
+                    },
+                }
+            };
 
-        println!("task started - {}", S::NAME);
+            // Wrap inner logic with monitoring if needed
+            monitor::with_current_option(move |mon| {
+                if let Some(mon) = mon {
+                    mon.watch::<S>(inner).left_future()
+                } else {
+                    inner.right_future()
+                }
+            })
+            .await
+        });
 
         Self {
-            stop,
             execute,
-            join,
+            stop_and_join: Some((stop, join)),
         }
     }
 
@@ -200,25 +133,29 @@ where
 
     /// Stop task
     pub async fn stop(mut self) -> StopResult<S::Err> {
-        println!("task stopped - {}", S::NAME);
-        self.stop.notify_one();
-        let join = match self.join.take() {
-            Some(v) => v,
-            None => return StopResult::Ok,
-        };
-
-        match join.await {
-            Ok(Ok(())) => StopResult::Ok,
-            Ok(Err(e)) => StopResult::Err(e),
-            Err(e) if e.is_panic() => StopResult::Panic(e.into_panic()),
-            _ => StopResult::Ok,
+        match self.stop_and_join.take() {
+            Some((stop, join)) => {
+                let stop_send_failed = stop.send(StopKind::Manual).is_err();
+                let stop_result = join.await.into();
+                if stop_send_failed {
+                    telio_log_error!(
+                        "Failed to manualy stop task: {}. Result: {:?}",
+                        S::NAME,
+                        &stop_result
+                    );
+                }
+                stop_result
+            }
+            None => StopResult::Ok,
         }
     }
 
-    async fn run_loop(state: &mut S, mut execed: Rx<Update<S, S::Err>>) -> Result<(), S::Err> {
+    pub(crate) async fn run_loop(state: &mut S, mut execed: Rx<Update<S, S::Err>>) -> S::Err {
+        let mut watch = monitor::with_current(|m| m.loop_watch::<S>());
+
         loop {
-            state
-                .wait_with_update(execed.recv().map(|e| -> BoxAction<S, Result<(), S::Err>> {
+            let step = state.wait_with_update(execed.recv().map(
+                |e| -> BoxAction<S, Result<(), S::Err>> {
                     Box::new(move |s: &mut S| {
                         async move {
                             if let Some((action, resp)) = e {
@@ -231,67 +168,72 @@ where
                         }
                         .boxed()
                     })
-                }))
-                .await?;
+                },
+            ));
+
+            let result = if let Some(watch) = &mut watch {
+                watch.step(step).await
+            } else {
+                step.await
+            };
+
+            if let Err(err) = result {
+                return err;
+            }
         }
     }
 }
 
 impl<S: Runtime> Drop for Task<S> {
     fn drop(&mut self) {
-        if self.join.is_some() {
-            self.stop.notify_waiters();
+        telio_log_info!("Task stopped - {}", S::NAME);
+        if let Some((stop, _)) = self.stop_and_join.take() {
+            // We can ignore error, failure would mean that inner
+            // task was already closed due to other reasons
+            let _ = stop.send(StopKind::Dropped);
             telio_log_warn!("Task [{}] was not stopped.", S::NAME);
         }
     }
 }
 
-impl<E> StopResult<E> {
-    /// Stopped successfully
-    pub fn is_ok(&self) -> bool {
-        matches!(self, &StopResult::Ok)
-    }
-
-    /// Stopped due to internal error
-    pub fn is_err(&self) -> bool {
-        matches!(self, &StopResult::Err(_))
-    }
-
-    /// Stopped due to inner panic
-    pub fn is_panic(&self) -> bool {
-        matches!(self, &StopResult::Panic(_))
-    }
-
-    /// Return Ok for proper stop or Err if internal error occurred
-    ///
-    /// # Panics
-    /// Propagates panic if task stopped due to panic
-    pub fn resume_unwind(self) -> Result<(), E> {
-        match self {
-            Self::Ok => Ok(()),
-            Self::Err(e) => Err(e),
-            Self::Panic(p) => std::panic::resume_unwind(p),
-        }
-    }
+/// Future closure
+pub trait Action<V, R = ()>
+where
+    for<'a> Self: FnOnce(&'a mut V) -> BoxFuture<'a, R> + Send + 'static,
+    R: Send + 'static,
+{
 }
 
-impl<E: PartialEq> PartialEq for StopResult<E> {
-    fn eq(&self, other: &Self) -> bool {
-        match (&self, &other) {
-            (&Self::Ok, &Self::Ok) => true,
-            (&Self::Err(el), &Self::Err(er)) => el == er,
-            (&Self::Panic(_), &Self::Panic(_)) => true,
-            _ => false,
-        }
-    }
+impl<T, V, R> Action<V, R> for T
+where
+    for<'a> T: FnOnce(&'a mut V) -> BoxFuture<'a, R> + Send + 'static,
+    R: Send + 'static,
+{
 }
+
+/// Boxed future closure
+pub type BoxAction<V, R = ()> = Box<dyn Action<V, R>>;
+
+type AnySend = Box<dyn Any + Send + 'static>;
+
+type Resp<T> = oneshot::Sender<T>;
+
+type Update<S, E> = (BoxAction<S, Result<AnySend, E>>, Resp<AnySend>);
+
+type Stopper<S> = (
+    oneshot::Sender<StopKind>,
+    JoinHandle<Result<StopKind, <S as Runtime>::Err>>,
+);
 
 #[cfg(test)]
 mod tests {
 
-    use std::time::Duration;
+    use std::{
+        io::{self, ErrorKind},
+        time::Duration,
+    };
 
-    use crate::task_exec;
+    use crate::{task_exec, RuntimeExt};
 
     use super::*;
     use async_trait::async_trait;
@@ -352,25 +294,33 @@ mod tests {
         }
 
         async fn test_fail(&self) {
-            let _ = task_exec!(&self.task, async move |_s| -> Result<(), ()> { Err(()) }).await;
+            let _ = task_exec!(&self.task, async move |_s| -> Result<(), io::Error> {
+                Err(io::ErrorKind::Interrupted.into())
+            })
+            .await;
         }
 
         async fn test_panic(&self) {
-            let _ = task_exec!(&self.task, async move |_s| -> Result<(), ()> {
+            let _ = task_exec!(&self.task, async move |_s| -> Result<(), io::Error> {
                 panic!("inner_panic")
             })
             .await;
         }
 
-        async fn stop(self) -> StopResult<()> {
+        async fn stop(self) -> StopResult<io::Error> {
             self.task.stop().await
         }
     }
 
     impl State {
-        async fn update(&mut self, msg: &'static str) -> Result<(), ()> {
+        async fn update(&mut self, msg: &'static str) -> Result<(), io::Error> {
             self.buf.push(msg);
-            self.io.msg.tx.send(msg).await.map_err(|_| ())
+            self.io
+                .msg
+                .tx
+                .send(msg)
+                .await
+                .map_err(|_| io::ErrorKind::NotConnected.into())
         }
     }
 
@@ -378,17 +328,17 @@ mod tests {
     impl Runtime for State {
         const NAME: &'static str = "Test";
 
-        type Err = ();
+        type Err = io::Error;
 
         async fn wait(&mut self) -> WaitResponse<'_, Self::Err> {
             if let Some(msg) = self.io.msg.rx.recv().await {
                 match msg {
-                    "fail" => Self::error(()),
+                    "fail" => Self::error(io::ErrorKind::ConnectionAborted.into()),
                     "sleep" => Self::sleep_forever().await,
                     msg => Self::guard(async move { self.update(msg).await }),
                 }
             } else {
-                Self::error(())
+                Self::error(io::ErrorKind::NotConnected.into())
             }
         }
 
@@ -439,6 +389,7 @@ mod tests {
 
         test.test_do("ok2").await;
         assert_eq!("ok2", rc.rx.recv().await.unwrap());
+
         assert_eq!(Some(vec!["ok", "ok2"]), test.test_get().await);
 
         test.stop().await;
@@ -486,7 +437,10 @@ mod tests {
 
         assert!(rc.tx.send("end").await.is_err());
 
-        assert_eq!(Err(()), test.stop().await.resume_unwind());
+        assert_eq!(
+            ErrorKind::Interrupted,
+            test.stop().await.resume_unwind().unwrap_err().kind()
+        );
     }
 
     #[tokio::test]
@@ -502,7 +456,10 @@ mod tests {
 
         assert!(rc.tx.send("end").await.is_err());
 
-        assert_eq!(Err(()), test.stop().await.resume_unwind());
+        assert_eq!(
+            ErrorKind::ConnectionAborted,
+            test.stop().await.resume_unwind().unwrap_err().kind()
+        );
     }
 
     #[tokio::test]
@@ -539,6 +496,6 @@ mod tests {
         assert_eq!("ok2", rc.rx.recv().await.unwrap());
         assert_eq!("ok", rc.rx.recv().await.unwrap());
 
-        assert_eq!(Ok(()), test.stop().await.resume_unwind());
+        assert!(test.stop().await.resume_unwind().is_ok());
     }
 }

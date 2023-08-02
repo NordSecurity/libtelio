@@ -17,5 +17,4 @@ mod task;
 pub mod io;
 
 pub use macros::*;
-pub use task::BoxAction;
 pub use task::*;

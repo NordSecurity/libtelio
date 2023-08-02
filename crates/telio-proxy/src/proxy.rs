@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use futures::future::{pending, select_all, FutureExt};
 use std::{
     collections::{HashMap, HashSet},
+    convert::Infallible,
     net::{Ipv4Addr, SocketAddr},
     sync::Arc,
 };
@@ -199,7 +200,7 @@ impl Runtime for StateIngress {
     const NAME: &'static str = "IngressProxy";
 
     /// Error that may occur in [Task]
-    type Err = ();
+    type Err = Infallible;
 
     /// Wait on state events. Called from an infinite loop.
     ///
@@ -230,12 +231,10 @@ impl Runtime for StateIngress {
             wait_for_tx(&self.output, select_all(futures)).await
         {
             if let Ok(n) = socket.try_recv(self.read_buf.as_mut_slice()) {
-                let msg = DataMsg::new(if let Some(buf) = self.read_buf.get(..n) {
-                    buf
-                } else {
-                    return Self::error(());
-                });
-                let _ = permit.send((pk, msg));
+                if let Some(buf) = self.read_buf.get(..n) {
+                    let msg = DataMsg::new(buf);
+                    let _ = permit.send((pk, msg));
+                }
             }
         }
 
@@ -249,7 +248,7 @@ impl Runtime for StateEgress {
     const NAME: &'static str = "EgressProxy";
 
     /// Error that may occur in [Task]
-    type Err = ();
+    type Err = Infallible;
 
     /// Wait on state events. Called from an infinite loop.
     ///

@@ -4,6 +4,7 @@ pub mod api_config;
 pub mod config;
 pub mod event;
 pub mod mesh;
+pub mod task_monitor;
 
 pub use std::collections::HashMap;
 pub use std::net::SocketAddr;

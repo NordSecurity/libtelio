@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use futures::Future;
+use std::convert::Infallible;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use std::time::Duration;
@@ -209,7 +210,7 @@ struct State {
 #[async_trait]
 impl Runtime for State {
     const NAME: &'static str = "SessionKeeper";
-    type Err = ();
+    type Err = Infallible;
 
     async fn wait_with_update<F>(&mut self, update: F) -> std::result::Result<(), Self::Err>
     where
@@ -226,7 +227,7 @@ impl Runtime for State {
                     .map_or_else(|e| {
                         telio_log_warn!("({}) Error sending keepalive to {} node: {}", Self::NAME, pk, e.to_string());
                         Ok(())
-                    }, |_| Ok(()))?;
+                    }, |_| Ok::<(), Self::Err>(()))?;
             }
             update = update => {
                 return update(self).await;
