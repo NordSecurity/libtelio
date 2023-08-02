@@ -1349,7 +1349,7 @@ pub mod tests {
             TestInput{ us: "[::1]:1111",     them: "[2001:4860:4860::8888]:8888",  make_tcp: &make_tcp6 },
         ];
         for test_input @ TestInput { us, them, make_tcp } in test_inputs {
-            let ttl = 20;
+            let ttl = 200;
             let fw = StatefullFirewall::new_custom(3, ttl);
 
             let outgoing_init_packet = make_tcp(us, them, TcpFlags::SYN);
