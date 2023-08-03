@@ -48,7 +48,7 @@ class DerpServer(DataClassJsonMixin):
     use_plain_text: bool
     conn_state: State
     # Only for compatibility with telio v3.6
-    used: bool
+    used: bool = False
 
     def __hash__(self):
         return hash(
@@ -295,7 +295,6 @@ class Runtime:
                 # Added "used" variable for compatibility with telio 3.6
                 "{"
                 + result.group(1).replace("\\", "")
-                + ',"used":false'
                 + "}"
             )
             assert isinstance(derp_server_json, DerpServer)
@@ -412,7 +411,7 @@ class Client:
                 [
                     tcli_path,
                     "--less-spam",
-                    f"-f                     {self._telio_features.to_json()}",  # type: ignore
+                    f"-f {self._telio_features.to_json()}",
                 ]
             )
         async with self._process.run(stdout_callback=on_stdout):

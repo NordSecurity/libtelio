@@ -19,8 +19,6 @@ def create_derpserver_config(state: State) -> DerpServer:
         weight=1,
         use_plain_text=True,
         conn_state=state,
-        # Only for compatibility with telio v3.6
-        used=False,
     )
 
 
@@ -161,7 +159,10 @@ class TestRuntime:
         runtime = Runtime()
 
         assert runtime.handle_output_line(
-            "event relay: " + create_derpserver_config(State.Connected).to_json()
+            'event relay: {"region_code":"test","name":"test","hostname"'
+            + ':"test","ipv4":"1.1.1.1","relay_port":1111,"stun_port":1111,'
+            + '"stun_plaintext_port":1111,"public_key":"test","weight":1,'
+            + '"use_plain_text":true,"conn_state":"connected"}'
         )
 
         await testing.wait_short(
@@ -174,7 +175,10 @@ class TestRuntime:
         runtime.allowed_pub_keys = set(["AAA"])
 
         assert runtime.handle_output_line(
-            "event node: " + create_derpserver_config(State.Connected).to_json()
+            "event node: "
+            + ' "{"identifier":"tcli","public_key":"AAA","state":"connected","is_exit":true,'
+            + '"is_vpn":true,"ip_addresses":[],"allowed_ips":[],"endpoint":null,"hostname":null,'
+            + '"allow_incoming_connections":false,"allow_peer_send_files":false,"path":"relay"}"'
         )
 
         await testing.wait_short(
