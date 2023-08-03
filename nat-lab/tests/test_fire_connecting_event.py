@@ -19,7 +19,32 @@ from utils.ping import Ping
 @pytest.mark.timeout(180 + 60)
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type",
-    [pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, telio.AdapterType.BoringTun)],
+    [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.BoringTun,
+        ),
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WindowsNativeWg,
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=pytest.mark.mac,
+        ),
+    ],
 )
 async def test_fire_connecting_event(
     alpha_connection_tag: ConnectionTag, adapter_type: AdapterType

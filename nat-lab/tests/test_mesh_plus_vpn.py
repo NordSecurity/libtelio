@@ -32,7 +32,14 @@ from utils.ping import Ping
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM, AdapterType.WireguardGo, marks=pytest.mark.windows
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=pytest.mark.mac,
         ),
         pytest.param(ConnectionTag.MAC_VM, AdapterType.Default, marks=pytest.mark.mac),
     ],
@@ -140,7 +147,14 @@ async def test_mesh_plus_vpn_one_peer(
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM, AdapterType.WireguardGo, marks=pytest.mark.windows
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=pytest.mark.mac,
         ),
         pytest.param(ConnectionTag.MAC_VM, AdapterType.Default, marks=pytest.mark.mac),
     ],
@@ -276,7 +290,7 @@ async def test_mesh_plus_vpn_both_peers(
         ),
         pytest.param(
             ConnectionTag.MAC_VM,
-            AdapterType.Default,
+            AdapterType.BoringTun,
             "10.0.254.7",
             marks=pytest.mark.mac,
         ),
@@ -386,7 +400,14 @@ async def test_vpn_plus_mesh(
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM, AdapterType.WireguardGo, marks=pytest.mark.windows
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=pytest.mark.mac,
         ),
         pytest.param(ConnectionTag.MAC_VM, AdapterType.Default, marks=pytest.mark.mac),
     ],
@@ -530,7 +551,14 @@ async def test_vpn_plus_mesh_over_direct(
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM, AdapterType.WireguardGo, marks=pytest.mark.windows
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=pytest.mark.mac,
         ),
         pytest.param(
             ConnectionTag.MAC_VM,

@@ -5,7 +5,7 @@ import telio
 from config import DERP_PRIMARY, DERP_SECONDARY, DERP_TERTIARY, DERP_SERVERS
 from contextlib import AsyncExitStack
 from mesh_api import API
-from telio import State
+from telio import State, AdapterType
 from utils import testing
 from utils.connection_util import ConnectionTag, new_connection_by_tag
 from utils.ping import Ping
@@ -16,25 +16,57 @@ DERP3_IP = str(DERP_TERTIARY["ipv4"])
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "alpha_connection_tag,adapter_type",
+    [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.BoringTun,
+        ),
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WindowsNativeWg,
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=pytest.mark.mac,
+        ),
+    ],
+)
 # test client reconnection
-async def test_derp_reconnect_2clients() -> None:
+async def test_derp_reconnect_2clients(
+    alpha_connection_tag: ConnectionTag,
+    adapter_type: AdapterType,
+) -> None:
     # TODO test tcp keepalive
     async with AsyncExitStack() as exit_stack:
         api = API()
         (alpha, beta) = api.default_config_two_nodes()
 
-        # ALPHA will use the cone nat : "nat-lab-cone-client-01-1
         alpha_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+            new_connection_by_tag(alpha_connection_tag)
         )
 
-        # BETA will use the cone nat : "nat-lab-cone-client-02-1
         beta_connection = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.Client(alpha_connection, alpha).run_meshnet(api.get_meshmap(alpha.id))
+            telio.Client(alpha_connection, alpha, adapter_type).run_meshnet(
+                api.get_meshmap(alpha.id),
+            )
         )
 
         beta_client = await exit_stack.enter_async_context(
@@ -105,19 +137,51 @@ async def test_derp_reconnect_2clients() -> None:
 
         # Ping peer to check if connection truly works
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await testing.wait_lengthy(ping.wait_for_next_ping())
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "alpha_connection_tag,adapter_type",
+    [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.BoringTun,
+        ),
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WindowsNativeWg,
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=pytest.mark.mac,
+        ),
+    ],
+)
 # test client reconnection
-async def test_derp_reconnect_3clients() -> None:
+async def test_derp_reconnect_3clients(
+    alpha_connection_tag: ConnectionTag,
+    adapter_type: AdapterType,
+) -> None:
     # TODO test tcp keepalive
     async with AsyncExitStack() as exit_stack:
         api = API()
         (alpha, beta, gamma) = api.default_config_three_nodes()
 
         alpha_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+            new_connection_by_tag(alpha_connection_tag)
         )
         beta_connection = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
@@ -127,7 +191,9 @@ async def test_derp_reconnect_3clients() -> None:
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.Client(alpha_connection, alpha).run_meshnet(api.get_meshmap(alpha.id))
+            telio.Client(alpha_connection, alpha, adapter_type).run_meshnet(
+                api.get_meshmap(alpha.id),
+            )
         )
         beta_client = await exit_stack.enter_async_context(
             telio.Client(beta_connection, beta).run_meshnet(api.get_meshmap(beta.id))
@@ -287,8 +353,46 @@ async def test_derp_reconnect_3clients() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "alpha_connection_tag,adapter_type",
+    [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.BoringTun,
+        ),
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WindowsNativeWg,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="test fails - Jira issue: LLT-4082"),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="test fails - Jira issue: LLT-4082"),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=pytest.mark.mac,
+        ),
+    ],
+)
 # test client reconnection
-async def test_derp_restart() -> None:
+async def test_derp_restart(
+    alpha_connection_tag: ConnectionTag,
+    adapter_type: AdapterType,
+) -> None:
     async with AsyncExitStack() as exit_stack:
         DERP_SERVERS1 = [
             DERP_PRIMARY.copy(),
@@ -325,7 +429,7 @@ async def test_derp_restart() -> None:
         (alpha, beta, gamma) = api.default_config_three_nodes()
 
         alpha_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+            new_connection_by_tag(alpha_connection_tag)
         )
         beta_connection = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
@@ -335,8 +439,8 @@ async def test_derp_restart() -> None:
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.Client(alpha_connection, alpha).run_meshnet(
-                api.get_meshmap(alpha.id, DERP_SERVERS1)
+            telio.Client(alpha_connection, alpha, adapter_type).run_meshnet(
+                api.get_meshmap(alpha.id, DERP_SERVERS1),
             )
         )
         beta_client = await exit_stack.enter_async_context(
@@ -509,20 +613,39 @@ async def test_derp_restart() -> None:
 
 
 @pytest.mark.asyncio
-async def test_derp_server_list_exhaustion() -> None:
+@pytest.mark.parametrize(
+    "alpha_connection_tag,adapter_type",
+    [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.BoringTun,
+        ),
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+    ],
+)
+async def test_derp_server_list_exhaustion(
+    alpha_connection_tag: ConnectionTag,
+    adapter_type: AdapterType,
+) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
         (alpha, beta) = api.default_config_two_nodes()
 
         alpha_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+            new_connection_by_tag(alpha_connection_tag)
         )
         beta_connection = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.Client(alpha_connection, alpha).run_meshnet(api.get_meshmap(alpha.id))
+            telio.Client(alpha_connection, alpha, adapter_type).run_meshnet(
+                api.get_meshmap(alpha.id),
+            )
         )
         beta_client = await exit_stack.enter_async_context(
             telio.Client(beta_connection, beta).run_meshnet(api.get_meshmap(beta.id))

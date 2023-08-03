@@ -25,6 +25,7 @@ STUN_PROVIDER = ["stun"]
 UPNP_PROVIDER = ["upnp"]
 
 DOCKER_CONE_GW_2_IP = "10.0.254.2"
+DOCKER_CONE_GW_3_IP = "10.0.254.7"
 DOCKER_FULLCONE_GW_1_IP = "10.0.254.9"
 DOCKER_FULLCONE_GW_2_IP = "10.0.254.6"
 DOCKER_OPEN_INTERNET_CLIENT_1_IP = "10.0.11.2"
@@ -33,79 +34,287 @@ DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK_IP = "10.0.11.4"
 DOCKER_SYMMETRIC_GW_1_IP = "10.0.254.3"
 DOCKER_UPNP_CLIENT_2_IP = "10.0.254.12"
 
+# TODO: Simplify parameters - Jira issue: LLT-4111
 
 UHP_conn_client_types = [
-    (
+    pytest.param(
         STUN_PROVIDER,
         ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
         ConnectionTag.DOCKER_FULLCONE_CLIENT_2,
+        AdapterType.BoringTun,
         DOCKER_FULLCONE_GW_2_IP,
     ),
-    (
+    pytest.param(
         STUN_PROVIDER,
         ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
-        ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
-        DOCKER_FULLCONE_GW_1_IP,
+        ConnectionTag.DOCKER_FULLCONE_CLIENT_2,
+        AdapterType.BoringTun,
+        DOCKER_FULLCONE_GW_2_IP,
     ),
-    (
+    pytest.param(
         STUN_PROVIDER,
         ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
-        ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
-        DOCKER_FULLCONE_GW_1_IP,
+        ConnectionTag.DOCKER_FULLCONE_CLIENT_2,
+        AdapterType.BoringTun,
+        DOCKER_FULLCONE_GW_2_IP,
     ),
-    (
+    pytest.param(
         STUN_PROVIDER,
         ConnectionTag.DOCKER_CONE_CLIENT_1,
-        ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
-        DOCKER_FULLCONE_GW_1_IP,
+        ConnectionTag.DOCKER_FULLCONE_CLIENT_2,
+        AdapterType.BoringTun,
+        DOCKER_FULLCONE_GW_2_IP,
     ),
-    (
+    pytest.param(
         STUN_PROVIDER,
         ConnectionTag.DOCKER_CONE_CLIENT_1,
         ConnectionTag.DOCKER_CONE_CLIENT_2,
+        AdapterType.BoringTun,
         DOCKER_CONE_GW_2_IP,
     ),
-    (
+    pytest.param(
         STUN_PROVIDER,
-        ConnectionTag.DOCKER_CONE_CLIENT_1,
         ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
-        DOCKER_OPEN_INTERNET_CLIENT_1_IP,
+        ConnectionTag.DOCKER_CONE_CLIENT_2,
+        AdapterType.BoringTun,
+        DOCKER_CONE_GW_2_IP,
     ),
-    (
+    pytest.param(
         LOCAL_PROVIDER,
         ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
         ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2,
+        AdapterType.BoringTun,
         DOCKER_OPEN_INTERNET_CLIENT_2_IP,
     ),
-    (
+    pytest.param(
         STUN_PROVIDER,
         ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
         ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2,
+        AdapterType.BoringTun,
         DOCKER_OPEN_INTERNET_CLIENT_2_IP,
     ),
-    (
+    pytest.param(
         STUN_PROVIDER,
         ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
         ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+        AdapterType.BoringTun,
         DOCKER_OPEN_INTERNET_CLIENT_1_IP,
     ),
-    (
+    pytest.param(
+        STUN_PROVIDER,
+        ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
+        ConnectionTag.DOCKER_FULLCONE_CLIENT_2,
+        AdapterType.LinuxNativeWg,
+        DOCKER_FULLCONE_GW_2_IP,
+        marks=pytest.mark.linux_native,
+    ),
+    pytest.param(
+        STUN_PROVIDER,
+        ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+        ConnectionTag.DOCKER_FULLCONE_CLIENT_2,
+        AdapterType.LinuxNativeWg,
+        DOCKER_FULLCONE_GW_2_IP,
+        marks=pytest.mark.linux_native,
+    ),
+    pytest.param(
+        STUN_PROVIDER,
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+        ConnectionTag.DOCKER_FULLCONE_CLIENT_2,
+        AdapterType.LinuxNativeWg,
+        DOCKER_FULLCONE_GW_2_IP,
+        marks=pytest.mark.linux_native,
+    ),
+    pytest.param(
+        STUN_PROVIDER,
+        ConnectionTag.DOCKER_CONE_CLIENT_1,
+        ConnectionTag.DOCKER_FULLCONE_CLIENT_2,
+        AdapterType.LinuxNativeWg,
+        DOCKER_FULLCONE_GW_2_IP,
+        marks=pytest.mark.linux_native,
+    ),
+    pytest.param(
+        STUN_PROVIDER,
+        ConnectionTag.DOCKER_CONE_CLIENT_1,
+        ConnectionTag.DOCKER_CONE_CLIENT_2,
+        AdapterType.LinuxNativeWg,
+        DOCKER_CONE_GW_2_IP,
+        marks=pytest.mark.linux_native,
+    ),
+    pytest.param(
+        STUN_PROVIDER,
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+        ConnectionTag.DOCKER_CONE_CLIENT_2,
+        AdapterType.LinuxNativeWg,
+        DOCKER_CONE_GW_2_IP,
+        marks=pytest.mark.linux_native,
+    ),
+    pytest.param(
+        LOCAL_PROVIDER,
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2,
+        AdapterType.LinuxNativeWg,
+        DOCKER_OPEN_INTERNET_CLIENT_2_IP,
+        marks=pytest.mark.linux_native,
+    ),
+    pytest.param(
+        STUN_PROVIDER,
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2,
+        AdapterType.LinuxNativeWg,
+        DOCKER_OPEN_INTERNET_CLIENT_2_IP,
+        marks=pytest.mark.linux_native,
+    ),
+    pytest.param(
+        STUN_PROVIDER,
+        ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+        AdapterType.LinuxNativeWg,
+        DOCKER_OPEN_INTERNET_CLIENT_1_IP,
+        marks=pytest.mark.linux_native,
+    ),
+    pytest.param(
+        STUN_PROVIDER,
+        ConnectionTag.DOCKER_FULLCONE_CLIENT_2,
+        ConnectionTag.WINDOWS_VM,
+        AdapterType.WindowsNativeWg,
+        DOCKER_CONE_GW_3_IP,
+        marks=[
+            pytest.mark.windows,
+            pytest.mark.skip(reason="missing firewall API call - Jira issue: LLT-4087"),
+        ],
+    ),
+    pytest.param(
+        STUN_PROVIDER,
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+        ConnectionTag.WINDOWS_VM,
+        AdapterType.WindowsNativeWg,
+        DOCKER_CONE_GW_3_IP,
+        marks=[
+            pytest.mark.windows,
+            pytest.mark.skip(reason="missing firewall API call - Jira issue: LLT-4087"),
+        ],
+    ),
+    pytest.param(
+        STUN_PROVIDER,
+        ConnectionTag.DOCKER_CONE_CLIENT_1,
+        ConnectionTag.WINDOWS_VM,
+        AdapterType.WindowsNativeWg,
+        DOCKER_CONE_GW_3_IP,
+        marks=[
+            pytest.mark.windows,
+            pytest.mark.skip(reason="missing firewall API call - Jira issue: LLT-4087"),
+        ],
+    ),
+    pytest.param(
+        STUN_PROVIDER,
+        ConnectionTag.DOCKER_FULLCONE_CLIENT_2,
+        ConnectionTag.WINDOWS_VM,
+        AdapterType.WireguardGo,
+        DOCKER_CONE_GW_3_IP,
+        marks=[
+            pytest.mark.windows,
+            pytest.mark.skip(reason="missing firewall API call - Jira issue: LLT-4087"),
+        ],
+    ),
+    pytest.param(
+        STUN_PROVIDER,
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+        ConnectionTag.WINDOWS_VM,
+        AdapterType.WireguardGo,
+        DOCKER_CONE_GW_3_IP,
+        marks=[
+            pytest.mark.windows,
+            pytest.mark.skip(reason="missing firewall API call - Jira issue: LLT-4087"),
+        ],
+    ),
+    pytest.param(
+        STUN_PROVIDER,
+        ConnectionTag.DOCKER_CONE_CLIENT_1,
+        ConnectionTag.WINDOWS_VM,
+        AdapterType.WireguardGo,
+        DOCKER_CONE_GW_3_IP,
+        marks=[
+            pytest.mark.windows,
+            pytest.mark.skip(reason="missing firewall API call - Jira issue: LLT-4087"),
+        ],
+    ),
+    pytest.param(
+        STUN_PROVIDER,
+        ConnectionTag.DOCKER_FULLCONE_CLIENT_2,
+        ConnectionTag.MAC_VM,
+        AdapterType.BoringTun,
+        DOCKER_CONE_GW_3_IP,
+        marks=[
+            pytest.mark.mac,
+            pytest.mark.skip(reason="missing firewall API call - Jira issue: LLT-4087"),
+        ],
+    ),
+    pytest.param(
+        STUN_PROVIDER,
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+        ConnectionTag.MAC_VM,
+        AdapterType.BoringTun,
+        DOCKER_CONE_GW_3_IP,
+        marks=[
+            pytest.mark.mac,
+            pytest.mark.skip(reason="missing firewall API call - Jira issue: LLT-4087"),
+        ],
+    ),
+    pytest.param(
+        STUN_PROVIDER,
+        ConnectionTag.DOCKER_CONE_CLIENT_1,
+        ConnectionTag.MAC_VM,
+        AdapterType.BoringTun,
+        DOCKER_CONE_GW_3_IP,
+        marks=[
+            pytest.mark.mac,
+            pytest.mark.skip(reason="missing firewall API call - Jira issue: LLT-4087"),
+        ],
+    ),
+    pytest.param(
         UPNP_PROVIDER,
         ConnectionTag.DOCKER_UPNP_CLIENT_1,
         ConnectionTag.DOCKER_UPNP_CLIENT_2,
+        AdapterType.BoringTun,
         DOCKER_UPNP_CLIENT_2_IP,
     ),
-    (
+    pytest.param(
+        UPNP_PROVIDER,
+        ConnectionTag.DOCKER_UPNP_CLIENT_1,
+        ConnectionTag.DOCKER_UPNP_CLIENT_2,
+        AdapterType.LinuxNativeWg,
+        DOCKER_UPNP_CLIENT_2_IP,
+        marks=pytest.mark.linux_native,
+    ),
+    pytest.param(
         STUN_PROVIDER,
         ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
         ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2,
+        AdapterType.BoringTun,
         DOCKER_OPEN_INTERNET_CLIENT_2_IP,
     ),
-    (
+    pytest.param(
         LOCAL_PROVIDER,
         ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
         ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
+        AdapterType.BoringTun,
         DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK_IP,
+    ),
+    pytest.param(
+        STUN_PROVIDER,
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2,
+        AdapterType.LinuxNativeWg,
+        DOCKER_OPEN_INTERNET_CLIENT_2_IP,
+        marks=pytest.mark.linux_native,
+    ),
+    pytest.param(
+        LOCAL_PROVIDER,
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
+        AdapterType.LinuxNativeWg,
+        DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK_IP,
+        marks=pytest.mark.linux_native,
     ),
 ]
 
@@ -132,6 +341,7 @@ async def new_connections_with_mesh_clients(
     client1_type: ConnectionTag,
     endpoint_providers_1: List[str],
     client2_type: ConnectionTag,
+    client2_adapter_type: AdapterType,
     endpoint_providers_2: List[str],
     client3_type: Optional[ConnectionTag] = None,
     endpoint_providers_3: Optional[List[str]] = None,
@@ -198,7 +408,7 @@ async def new_connections_with_mesh_clients(
         telio.Client(
             beta_conn,
             beta,
-            AdapterType.BoringTun,
+            client2_adapter_type,
             telio_features=TelioFeatures(direct=Direct(providers=endpoint_providers_2)),
         ).run_meshnet(
             api.get_meshmap(beta.id),
@@ -258,13 +468,17 @@ async def new_connections_with_mesh_clients(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "endpoint_providers, client1_type, client2_type, _reflexive_ip",
+    (
+        "endpoint_providers, client1_type, client2_type, client2_adapter_type,"
+        " _reflexive_ip"
+    ),
     UHP_conn_client_types,
 )
 async def test_direct_working_paths(
     endpoint_providers,
     client1_type,
     client2_type,
+    client2_adapter_type,
     _reflexive_ip,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
@@ -274,6 +488,7 @@ async def test_direct_working_paths(
                 client1_type,
                 endpoint_providers,
                 client2_type,
+                client2_adapter_type,
                 endpoint_providers,
             )
         )
@@ -319,59 +534,305 @@ async def test_direct_working_paths(
 @pytest.mark.long
 @pytest.mark.timeout(120)
 @pytest.mark.parametrize(
-    "endpoint_providers, client1_type, client2_type",
+    "endpoint_providers, client1_type, client2_type, client2_adapter_type",
     [
-        (
-            ANY_PROVIDERS,
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
-        ),
-        (
+        pytest.param(
             ANY_PROVIDERS,
             ConnectionTag.DOCKER_CONE_CLIENT_1,
             ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1,
+            AdapterType.BoringTun,
         ),
-        (
+        pytest.param(
             ANY_PROVIDERS,
             ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
             ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2,
+            AdapterType.BoringTun,
         ),
-        (
+        pytest.param(
             ANY_PROVIDERS,
             ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
             ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1,
+            AdapterType.BoringTun,
         ),
-        (
+        pytest.param(
             ANY_PROVIDERS,
             ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
             ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1,
+            AdapterType.BoringTun,
         ),
-        (
+        pytest.param(
+            ANY_PROVIDERS,
+            ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2,
+            ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1,
+            AdapterType.BoringTun,
+        ),
+        pytest.param(
+            ANY_PROVIDERS,
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            ANY_PROVIDERS,
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            ANY_PROVIDERS,
+            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            ANY_PROVIDERS,
+            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+            ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            ANY_PROVIDERS,
+            ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+            ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            ANY_PROVIDERS,
+            ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2,
+            ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            ANY_PROVIDERS,
+            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing firewall API call - Jira issue: LLT-4087"
+                ),
+            ],
+        ),
+        pytest.param(
             ANY_PROVIDERS,
             ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1,
-            ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2,
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing firewall API call - Jira issue: LLT-4087"
+                ),
+            ],
         ),
-        (
+        pytest.param(
+            ANY_PROVIDERS,
+            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WindowsNativeWg,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing firewall API call - Jira issue: LLT-4087"
+                ),
+            ],
+        ),
+        pytest.param(
+            ANY_PROVIDERS,
+            ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1,
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WindowsNativeWg,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing firewall API call - Jira issue: LLT-4087"
+                ),
+            ],
+        ),
+        pytest.param(
+            ANY_PROVIDERS,
+            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.skip(
+                    reason="missing firewall API call - Jira issue: LLT-4087"
+                ),
+            ],
+        ),
+        pytest.param(
+            ANY_PROVIDERS,
+            ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1,
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.skip(
+                    reason="missing firewall API call - Jira issue: LLT-4087"
+                ),
+            ],
+        ),
+        pytest.param(
             LOCAL_PROVIDER,
             ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
-            ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
+            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+            AdapterType.BoringTun,
         ),
-        (
+        pytest.param(
+            LOCAL_PROVIDER,
+            ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
+            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+            AdapterType.BoringTun,
+        ),
+        pytest.param(
             LOCAL_PROVIDER,
             ConnectionTag.DOCKER_CONE_CLIENT_1,
-            ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+            AdapterType.BoringTun,
         ),
-        (
+        pytest.param(
+            LOCAL_PROVIDER,
+            ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            LOCAL_PROVIDER,
+            ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
+            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            LOCAL_PROVIDER,
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            LOCAL_PROVIDER,
+            ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing firewall API call - Jira issue: LLT-4087"
+                ),
+            ],
+        ),
+        pytest.param(
+            LOCAL_PROVIDER,
+            ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing firewall API call - Jira issue: LLT-4087"
+                ),
+            ],
+        ),
+        pytest.param(
             LOCAL_PROVIDER,
             ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing firewall API call - Jira issue: LLT-4087"
+                ),
+            ],
+        ),
+        pytest.param(
+            LOCAL_PROVIDER,
+            ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WindowsNativeWg,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing firewall API call - Jira issue: LLT-4087"
+                ),
+            ],
+        ),
+        pytest.param(
+            LOCAL_PROVIDER,
             ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WindowsNativeWg,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing firewall API call - Jira issue: LLT-4087"
+                ),
+            ],
+        ),
+        pytest.param(
+            LOCAL_PROVIDER,
+            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WindowsNativeWg,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing firewall API call - Jira issue: LLT-4087"
+                ),
+            ],
+        ),
+        pytest.param(
+            LOCAL_PROVIDER,
+            ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.skip(
+                    reason="missing firewall API call - Jira issue: LLT-4087"
+                ),
+            ],
+        ),
+        pytest.param(
+            LOCAL_PROVIDER,
+            ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.skip(
+                    reason="missing firewall API call - Jira issue: LLT-4087"
+                ),
+            ],
+        ),
+        pytest.param(
+            LOCAL_PROVIDER,
+            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.skip(
+                    reason="missing firewall API call - Jira issue: LLT-4087"
+                ),
+            ],
         ),
     ],
 )
 # Not sure this is needed. It will only be helpful to catch if any
 # libtelio change would make any of these setup work.
 async def test_direct_failing_paths(
-    endpoint_providers, client1_type, client2_type
+    endpoint_providers, client1_type, client2_type, client2_adapter_type
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         (alpha, beta, _) = await exit_stack.enter_async_context(
@@ -380,21 +841,30 @@ async def test_direct_failing_paths(
                 client1_type,
                 endpoint_providers,
                 client2_type,
+                client2_adapter_type,
                 endpoint_providers,
             )
         )
 
         await testing.wait_lengthy(
             asyncio.gather(
-                alpha.client.wait_for_state_on_any_derp([telio.State.Connected]),
-                beta.client.wait_for_state_on_any_derp([telio.State.Connected]),
+                alpha.client.wait_for_state_on_any_derp([State.Connected]),
+                beta.client.wait_for_state_on_any_derp([State.Connected]),
             )
         )
 
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                alpha.client.wait_for_state_on_any_derp([State.Connected]),
-                beta.client.wait_for_state_on_any_derp([State.Connected]),
+                alpha.client.wait_for_state_peer(
+                    beta.node.public_key,
+                    [State.Connected],
+                    [PathType.Relay],
+                ),
+                beta.client.wait_for_state_peer(
+                    alpha.node.public_key,
+                    [State.Connected],
+                    [PathType.Relay],
+                ),
             )
         )
 
@@ -425,8 +895,8 @@ async def test_direct_failing_paths(
 
         await testing.wait_lengthy(
             asyncio.gather(
-                alpha.client.wait_for_state_on_any_derp([State.Connecting]),
-                beta.client.wait_for_state_on_any_derp([State.Connecting]),
+                alpha.client.wait_for_every_derp_disconnection(),
+                beta.client.wait_for_every_derp_disconnection(),
             )
         )
 
@@ -441,13 +911,17 @@ async def test_direct_failing_paths(
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4132")
 @pytest.mark.parametrize(
-    "endpoint_providers, client1_type, client2_type, reflexive_ip",
+    (
+        "endpoint_providers, client1_type, client2_type, client2_adapter_type,"
+        " reflexive_ip"
+    ),
     UHP_conn_client_types,
 )
 async def test_direct_short_connection_loss(
     endpoint_providers,
     client1_type,
     client2_type,
+    client2_adapter_type,
     reflexive_ip,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
@@ -457,6 +931,7 @@ async def test_direct_short_connection_loss(
                 client1_type,
                 endpoint_providers,
                 client2_type,
+                client2_adapter_type,
                 endpoint_providers,
             )
         )
@@ -466,11 +941,6 @@ async def test_direct_short_connection_loss(
             asyncio.gather(
                 alpha.client.wait_for_state_on_any_derp([State.Connected]),
                 beta.client.wait_for_state_on_any_derp([State.Connected]),
-            )
-        )
-
-        await testing.wait_lengthy(
-            asyncio.gather(
                 alpha.conn_track.wait_for_event("derp_1"),
                 beta.conn_track.wait_for_event("derp_1"),
             )
@@ -515,14 +985,14 @@ async def test_direct_short_connection_loss(
 @pytest.mark.asyncio
 @pytest.mark.long
 @pytest.mark.parametrize(
-    "endpoint_providers, client1_type, client2_type, reflexive_ip",
+    (
+        "endpoint_providers, client1_type, client2_type, client2_adapter_type,"
+        " reflexive_ip"
+    ),
     UHP_conn_client_types,
 )
 async def test_direct_connection_loss_for_infinity(
-    endpoint_providers,
-    client1_type,
-    client2_type,
-    reflexive_ip,
+    endpoint_providers, client1_type, client2_type, client2_adapter_type, reflexive_ip
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         (alpha, beta, _) = await exit_stack.enter_async_context(
@@ -531,6 +1001,7 @@ async def test_direct_connection_loss_for_infinity(
                 client1_type,
                 endpoint_providers,
                 client2_type,
+                client2_adapter_type,
                 endpoint_providers,
             )
         )
@@ -538,13 +1009,8 @@ async def test_direct_connection_loss_for_infinity(
 
         await testing.wait_lengthy(
             asyncio.gather(
-                alpha.client.wait_for_state_on_any_derp([telio.State.Connected]),
-                beta.client.wait_for_state_on_any_derp([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_lengthy(
-            asyncio.gather(
+                alpha.client.wait_for_state_on_any_derp([State.Connected]),
+                beta.client.wait_for_state_on_any_derp([State.Connected]),
                 alpha.conn_track.wait_for_event("derp_1"),
                 beta.conn_track.wait_for_event("derp_1"),
             )
@@ -597,50 +1063,90 @@ async def test_direct_connection_loss_for_infinity(
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="test is flaky - LLT-4115")
 @pytest.mark.parametrize(
-    "alpha_connection_tag, beta_connection_tag, ep1, ep2",
+    "client1_type, ep1",
     [
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
-            ConnectionTag.DOCKER_CONE_CLIENT_2,
-            "stun",
             "stun",
         ),
         pytest.param(
             ConnectionTag.DOCKER_UPNP_CLIENT_1,
+            "upnp",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "client2_type, client2_adapter_type, ep2",
+    [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_2,
+            AdapterType.LinuxNativeWg,
+            "stun",
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+            AdapterType.BoringTun,
+            "local",
+            marks=pytest.mark.xfail(reason="test is flaky - LLT-4115"),
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WindowsNativeWg,
+            "stun",
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing firewall API call - Jira issue: LLT-4087"
+                ),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            "stun",
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing firewall API call - Jira issue: LLT-4087"
+                ),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            "stun",
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.skip(
+                    reason="missing firewall API call - Jira issue: LLT-4087"
+                ),
+            ],
+        ),
+        pytest.param(
             ConnectionTag.DOCKER_UPNP_CLIENT_2,
+            AdapterType.LinuxNativeWg,
             "upnp",
-            "upnp",
-        ),
-        pytest.param(
-            ConnectionTag.DOCKER_UPNP_CLIENT_1,
-            ConnectionTag.DOCKER_CONE_CLIENT_2,
-            "upnp",
-            "stun",
-        ),
-        pytest.param(
-            ConnectionTag.DOCKER_UPNP_CLIENT_1,
-            ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
-            "upnp",
-            "local",
-        ),
-        pytest.param(
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
-            "stun",
-            "local",
+            marks=pytest.mark.linux_native,
         ),
     ],
 )
 async def test_direct_connection_endpoint_gone(
-    alpha_connection_tag: ConnectionTag,
-    beta_connection_tag: ConnectionTag,
+    client1_type: ConnectionTag,
+    client2_type: ConnectionTag,
+    client2_adapter_type: AdapterType,
     ep1: str,
     ep2: str,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         (alpha, beta, _) = await exit_stack.enter_async_context(
             new_connections_with_mesh_clients(
-                exit_stack, alpha_connection_tag, [ep1], beta_connection_tag, [ep2]
+                exit_stack,
+                client1_type,
+                [ep1],
+                client2_type,
+                client2_adapter_type,
+                [ep2],
             )
         )
         assert alpha.conn_gw and beta.conn_gw
@@ -661,12 +1167,8 @@ async def test_direct_connection_endpoint_gone(
 
                 await testing.wait_lengthy(
                     asyncio.gather(
-                        alpha.client.wait_for_state_on_any_derp(
-                            [State.Connecting, State.Disconnected],
-                        ),
-                        beta.client.wait_for_state_on_any_derp(
-                            [State.Connecting, State.Disconnected],
-                        ),
+                        alpha.client.wait_for_every_derp_disconnection(),
+                        beta.client.wait_for_every_derp_disconnection(),
                     ),
                 )
 
@@ -677,11 +1179,6 @@ async def test_direct_connection_endpoint_gone(
             asyncio.gather(
                 alpha.client.wait_for_state_on_any_derp([State.Connected]),
                 beta.client.wait_for_state_on_any_derp([State.Connected]),
-            ),
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
                 alpha.conn_track.wait_for_event("derp_1"),
                 beta.conn_track.wait_for_event("derp_1"),
             )
@@ -731,10 +1228,10 @@ async def test_direct_connection_endpoint_gone(
             await testing.wait_lengthy(
                 asyncio.gather(
                     alpha.client.wait_for_state_peer(
-                        beta.node.public_key, [State.Connected]
+                        beta.node.public_key, [State.Connected], [PathType.Relay]
                     ),
                     beta.client.wait_for_state_peer(
-                        alpha.node.public_key, [State.Connected]
+                        alpha.node.public_key, [State.Connected], [PathType.Relay]
                     ),
                 ),
             )

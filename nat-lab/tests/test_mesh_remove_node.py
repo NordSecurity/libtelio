@@ -30,7 +30,14 @@ from utils.ping import Ping
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM, AdapterType.WireguardGo, marks=pytest.mark.windows
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=pytest.mark.mac,
         ),
         pytest.param(ConnectionTag.MAC_VM, AdapterType.Default, marks=pytest.mark.mac),
     ],

@@ -4,6 +4,7 @@ import pytest
 import telio
 from contextlib import AsyncExitStack
 from mesh_api import API
+from telio import AdapterType
 from utils import testing, stun
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
@@ -16,7 +17,21 @@ from utils.ping import Ping
 
 
 @pytest.mark.asyncio
-async def test_mesh_firewall_successful_passthrough() -> None:
+@pytest.mark.parametrize(
+    "beta_connection_tag",
+    [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_2,
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            marks=pytest.mark.mac,
+        ),
+    ],
+)
+async def test_mesh_firewall_successful_passthrough(
+    beta_connection_tag: ConnectionTag,
+) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
@@ -34,20 +49,24 @@ async def test_mesh_firewall_successful_passthrough() -> None:
         )
         (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_2,
+                beta_connection_tag,
                 generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    beta_connection_tag,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
             )
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run_meshnet(api.get_meshmap(alpha.id))
+            telio.Client(connection_alpha, alpha, AdapterType.BoringTun).run_meshnet(
+                api.get_meshmap(alpha.id),
+            )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
+            telio.Client(connection_beta, beta, AdapterType.BoringTun).run_meshnet(
+                api.get_meshmap(beta.id),
+            )
         )
 
         await testing.wait_long(
@@ -86,7 +105,21 @@ async def test_mesh_firewall_successful_passthrough() -> None:
 
 
 @pytest.mark.asyncio
-async def test_mesh_firewall_reject_packet() -> None:
+@pytest.mark.parametrize(
+    "alpha_connection_tag",
+    [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_2,
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            marks=pytest.mark.mac,
+        ),
+    ],
+)
+async def test_mesh_firewall_reject_packet(
+    alpha_connection_tag: ConnectionTag,
+) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
@@ -96,6 +129,15 @@ async def test_mesh_firewall_reject_packet() -> None:
 
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
+                alpha_connection_tag,
+                generate_connection_tracker_config(
+                    alpha_connection_tag,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
+        )
+        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
                 ConnectionTag.DOCKER_CONE_CLIENT_1,
                 generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -103,22 +145,21 @@ async def test_mesh_firewall_reject_packet() -> None:
                 ),
             )
         )
-        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
-            new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_2,
-                generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    derp_1_limits=ConnectionLimits(1, 1),
-                ),
+
+        client_alpha = await exit_stack.enter_async_context(
+            telio.Client(
+                connection_alpha,
+                alpha,
+                AdapterType.BoringTun,
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
             )
         )
 
-        client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run_meshnet(api.get_meshmap(alpha.id))
-        )
-
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
+            telio.Client(connection_beta, beta, AdapterType.BoringTun).run_meshnet(
+                api.get_meshmap(beta.id),
+            )
         )
 
         await testing.wait_long(
@@ -153,7 +194,21 @@ async def test_mesh_firewall_reject_packet() -> None:
 
 
 @pytest.mark.asyncio
-async def test_blocking_incoming_connections_from_exit_node() -> None:
+@pytest.mark.parametrize(
+    "alpha_connection_tag",
+    [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_2,
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            marks=pytest.mark.mac,
+        ),
+    ],
+)
+async def test_blocking_incoming_connections_from_exit_node(
+    alpha_connection_tag: ConnectionTag,
+) -> None:
     # This tests recreates LLT-3449
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -161,9 +216,9 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
         (alpha, exit_node) = api.default_config_two_nodes()
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                alpha_connection_tag,
                 generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    alpha_connection_tag,
                     derp_1_limits=ConnectionLimits(1, 1),
                     stun_limits=ConnectionLimits(1, 1),
                 ),
@@ -174,9 +229,9 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
             exit_node_conn_tracker,
         ) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_2,
+                ConnectionTag.DOCKER_CONE_CLIENT_1,
                 generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                     stun_limits=ConnectionLimits(1, 5),
                 ),
@@ -185,14 +240,22 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
 
         client_alpha = await exit_stack.enter_async_context(
             telio.Client(
-                connection_alpha, alpha, telio.AdapterType.BoringTun
-            ).run_meshnet(api.get_meshmap(alpha.id))
+                connection_alpha,
+                alpha,
+                AdapterType.BoringTun,
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
+            )
         )
 
         client_exit_node = await exit_stack.enter_async_context(
             telio.Client(
-                connection_exit_node, exit_node, telio.AdapterType.BoringTun
-            ).run_meshnet(api.get_meshmap(exit_node.id))
+                connection_exit_node,
+                exit_node,
+                AdapterType.BoringTun,
+            ).run_meshnet(
+                api.get_meshmap(exit_node.id),
+            )
         )
 
         await testing.wait_long(
@@ -324,6 +387,21 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    "alpha_connection_tag",
+    [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_2,
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.skip(reason="missing nc wrap - Jira issue: LLT-4104"),
+            ],
+        ),
+    ],
+)
+@pytest.mark.parametrize(
     "allow_incoming_connections,allow_peer_send_file,port,successful",
     [
         pytest.param(False, True, config.LIBDROP_PORT, True),
@@ -337,6 +415,7 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
     ],
 )
 async def test_mesh_firewall_file_share_port(
+    alpha_connection_tag: ConnectionTag,
     allow_incoming_connections: bool,
     allow_peer_send_file: bool,
     port: int,
@@ -364,6 +443,15 @@ async def test_mesh_firewall_file_share_port(
 
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
+                alpha_connection_tag,
+                generate_connection_tracker_config(
+                    alpha_connection_tag,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
+        )
+        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
                 ConnectionTag.DOCKER_CONE_CLIENT_1,
                 generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -371,22 +459,25 @@ async def test_mesh_firewall_file_share_port(
                 ),
             )
         )
-        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
-            new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_2,
-                generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    derp_1_limits=ConnectionLimits(1, 1),
-                ),
+
+        client_alpha = await exit_stack.enter_async_context(
+            telio.Client(
+                connection_alpha,
+                alpha,
+                AdapterType.BoringTun,
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
             )
         )
 
-        client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run_meshnet(api.get_meshmap(alpha.id))
-        )
-
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
+            telio.Client(
+                connection_beta,
+                beta,
+                AdapterType.BoringTun,
+            ).run_meshnet(
+                api.get_meshmap(beta.id),
+            )
         )
 
         await testing.wait_long(
@@ -478,16 +569,22 @@ async def test_mesh_firewall_file_share_port(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "alpha_adapter_type, beta_adapter_type",
+    "alpha_connection_tag",
     [
-        (telio.AdapterType.BoringTun, telio.AdapterType.BoringTun),
-        (telio.AdapterType.BoringTun, telio.AdapterType.LinuxNativeWg),
-        (telio.AdapterType.LinuxNativeWg, telio.AdapterType.LinuxNativeWg),
-        (telio.AdapterType.LinuxNativeWg, telio.AdapterType.BoringTun),
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_2,
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.skip(reason="missing nc wrap - Jira issue: LLT-4104"),
+            ],
+        ),
     ],
 )
 async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_side(
-    alpha_adapter_type: telio.AdapterType, beta_adapter_type: telio.AdapterType
+    alpha_connection_tag: ConnectionTag,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -501,6 +598,15 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
 
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
+                alpha_connection_tag,
+                generate_connection_tracker_config(
+                    alpha_connection_tag,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
+        )
+        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
                 ConnectionTag.DOCKER_CONE_CLIENT_1,
                 generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -508,24 +614,15 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
                 ),
             )
         )
-        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
-            new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_2,
-                generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    derp_1_limits=ConnectionLimits(1, 1),
-                ),
-            )
-        )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha, alpha_adapter_type).run_meshnet(
+            telio.Client(connection_alpha, alpha, AdapterType.BoringTun).run_meshnet(
                 api.get_meshmap(alpha.id)
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta, beta_adapter_type).run_meshnet(
+            telio.Client(connection_beta, beta, AdapterType.BoringTun).run_meshnet(
                 api.get_meshmap(beta.id)
             )
         )
@@ -618,16 +715,22 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "alpha_adapter_type, beta_adapter_type",
+    "alpha_connection_tag",
     [
-        (telio.AdapterType.BoringTun, telio.AdapterType.BoringTun),
-        (telio.AdapterType.BoringTun, telio.AdapterType.LinuxNativeWg),
-        (telio.AdapterType.LinuxNativeWg, telio.AdapterType.LinuxNativeWg),
-        (telio.AdapterType.LinuxNativeWg, telio.AdapterType.BoringTun),
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_2,
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.skip(reason="missing nc wrap - Jira issue: LLT-4104"),
+            ],
+        ),
     ],
 )
 async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_side(
-    alpha_adapter_type: telio.AdapterType, beta_adapter_type: telio.AdapterType
+    alpha_connection_tag: ConnectionTag,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -641,6 +744,15 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
 
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
+                alpha_connection_tag,
+                generate_connection_tracker_config(
+                    alpha_connection_tag,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
+        )
+        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
                 ConnectionTag.DOCKER_CONE_CLIENT_1,
                 generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -648,24 +760,15 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
                 ),
             )
         )
-        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
-            new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_2,
-                generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    derp_1_limits=ConnectionLimits(1, 1),
-                ),
-            )
-        )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha, alpha_adapter_type).run_meshnet(
+            telio.Client(connection_alpha, alpha, AdapterType.BoringTun).run_meshnet(
                 api.get_meshmap(alpha.id)
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta, beta_adapter_type).run_meshnet(
+            telio.Client(connection_beta, beta, AdapterType.BoringTun).run_meshnet(
                 api.get_meshmap(beta.id)
             )
         )

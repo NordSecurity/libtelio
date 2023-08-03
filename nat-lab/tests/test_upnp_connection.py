@@ -13,8 +13,29 @@ LOCAL_PROVIDER = ["local"]
 UPNP_PROVIDER = ["upnp"]
 
 
+@pytest.mark.parametrize(
+    "alpha_adapter_type,beta_adapter_type",
+    [
+        pytest.param(
+            AdapterType.BoringTun,
+            AdapterType.BoringTun,
+        ),
+        pytest.param(
+            AdapterType.BoringTun,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            AdapterType.LinuxNativeWg,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+    ],
+)
 @pytest.mark.asyncio
-async def test_upnp_route_removed() -> None:
+async def test_upnp_route_removed(
+    alpha_adapter_type: AdapterType, beta_adapter_type: AdapterType
+) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
@@ -36,7 +57,7 @@ async def test_upnp_route_removed() -> None:
             Client(
                 alpha_connection,
                 alpha,
-                AdapterType.BoringTun,
+                alpha_adapter_type,
                 telio_features=TelioFeatures(direct=Direct(providers=UPNP_PROVIDER)),
             ).run_meshnet(
                 api.get_meshmap(alpha.id),
@@ -46,7 +67,7 @@ async def test_upnp_route_removed() -> None:
             Client(
                 beta_connection,
                 beta,
-                AdapterType.BoringTun,
+                beta_adapter_type,
                 telio_features=TelioFeatures(direct=Direct(providers=UPNP_PROVIDER)),
             ).run_meshnet(api.get_meshmap(beta.id))
         )

@@ -75,7 +75,7 @@ async def _connect_vpn(
         ),
         pytest.param(
             ConnectionTag.MAC_VM,
-            AdapterType.Default,
+            AdapterType.BoringTun,
             "10.0.254.7",
             marks=pytest.mark.mac,
         ),
@@ -149,7 +149,7 @@ async def test_vpn_connection(
         ),
         pytest.param(
             ConnectionTag.MAC_VM,
-            AdapterType.Default,
+            AdapterType.BoringTun,
             "10.0.254.7",
             marks=pytest.mark.mac,
         ),

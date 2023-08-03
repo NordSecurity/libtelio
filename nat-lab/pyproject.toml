@@ -52,7 +52,8 @@ disable = [
     "global-statement",
     "bare-except",
     "too-many-branches",
-    "duplicate-code"
+    "duplicate-code",
+    "too-many-lines"
 ]
 
 [tool.pytest.ini_options]

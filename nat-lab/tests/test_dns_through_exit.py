@@ -25,12 +25,30 @@ from utils.connection_util import (
             AdapterType.LinuxNativeWg,
             marks=pytest.mark.linux_native,
         ),
-        # This test is failing, but currently is non critical
-        # pytest.param(
-        #     ConnectionTag.MAC_VM,
-        #     AdapterType.BoringTun,
-        #     marks=pytest.mark.mac,
-        # ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WindowsNativeWg,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="test fails - Jira issue: LLT-4085"),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="test fails - Jira issue: LLT-4085"),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.xfail(reason="test fails - Jira issue: LLT-4085"),
+            ],
+        ),
     ],
 )
 async def test_dns_through_exit(

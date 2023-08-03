@@ -82,12 +82,11 @@ async def test_network_switcher(
             AdapterType.WireguardGo,
             marks=pytest.mark.windows,
         ),
-        # JIRA issue: LLT-1134
-        # pytest.param(
-        #     ConnectionTag.MAC_VM,
-        #     AdapterType.Default,
-        #     marks=pytest.mark.mac,
-        # ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=pytest.mark.mac,
+        ),
     ],
 )
 async def test_mesh_network_switch(
@@ -150,13 +149,14 @@ async def test_mesh_network_switch(
         pytest.param(
             ConnectionTag.WINDOWS_VM, AdapterType.WireguardGo, marks=pytest.mark.windows
         ),
-        # JIRA issue: LLT-1134
-        # pytest.param(
-        #     ConnectionTag.MAC_VM,
-        #     AdapterType.Default,
-        #     "10.0.254.7",
-        #     marks=pytest.mark.mac,
-        # ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.xfail(reason="the test is failing - JIRA issue: LLT-4107"),
+            ],
+        ),
     ],
 )
 async def test_vpn_network_switch(
@@ -182,10 +182,11 @@ async def test_vpn_network_switch(
                 wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
             )
         )
-        await testing.wait_lengthy(
+        await testing.wait_defined(
             client_alpha.wait_for_state_peer(
                 wg_server["public_key"], [State.Connected], [PathType.Direct]
-            )
+            ),
+            60,
         )
 
         async with Ping(connection, config.PHOTO_ALBUM_IP).run() as ping:
@@ -224,7 +225,9 @@ async def test_vpn_network_switch(
     "endpoint_providers, alpha_connection_tag, adapter_type",
     [
         pytest.param(
-            ["stun"], ConnectionTag.DOCKER_SHARED_CLIENT_1, AdapterType.BoringTun
+            ["stun"],
+            ConnectionTag.DOCKER_SHARED_CLIENT_1,
+            AdapterType.BoringTun,
         ),
         pytest.param(
             ["stun"],
@@ -245,6 +248,12 @@ async def test_vpn_network_switch(
             ConnectionTag.WINDOWS_VM,
             AdapterType.WireguardGo,
             marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            ["stun"],
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=pytest.mark.mac,
         ),
     ],
 )
@@ -315,15 +324,20 @@ async def test_mesh_network_switch_direct(
             alpha_client.wait_for_event_on_any_derp([State.Connected])
         )
 
-        await testing.wait_lengthy(
+        await testing.wait_defined(
             asyncio.gather(
                 alpha_client.wait_for_state_peer(
-                    beta.public_key, [State.Connected], [PathType.Relay]
+                    beta.public_key,
+                    [State.Connected],
+                    [PathType.Relay],
                 ),
                 beta_client.wait_for_state_peer(
-                    alpha.public_key, [State.Connected], [PathType.Relay]
+                    alpha.public_key,
+                    [State.Connected],
+                    [PathType.Relay],
                 ),
-            )
+            ),
+            60,
         )
         await testing.wait_defined(
             asyncio.gather(
