@@ -8,9 +8,9 @@ use std::{
     time::Duration,
 };
 
-#[cfg(test)]
+#[cfg(any(test, feature = "sn_fake_clock"))]
 use sn_fake_clock::FakeClock as Instant;
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "sn_fake_clock")))]
 use std::time::Instant;
 
 /// A view into a single entry in a map, which may either be vacant or occupied.
@@ -273,7 +273,7 @@ mod tests {
     use rand::thread_rng;
     use std::time::Duration;
 
-    fn sleep_ms(time: u64) {
+    fn advance_time_by_ms(time: u64) {
         sn_fake_clock::FakeClock::advance_time(time);
     }
 
@@ -312,7 +312,7 @@ mod tests {
             assert_eq!(lru_cache.len(), i + 1);
         }
 
-        sleep_ms(101);
+        advance_time_by_ms(101);
         let _ = lru_cache.insert(11, 11);
 
         assert_eq!(lru_cache.len(), 1);
@@ -323,7 +323,7 @@ mod tests {
             assert_eq!(lru_cache.len(), i + 2);
         }
 
-        sleep_ms(101);
+        advance_time_by_ms(101);
         assert_eq!(0, lru_cache.len());
     }
 
@@ -336,7 +336,7 @@ mod tests {
         let _ = lru_cache.insert(0, 0);
         assert_eq!(lru_cache.len(), 1);
 
-        sleep_ms(101);
+        advance_time_by_ms(101);
 
         assert!(!lru_cache.peek(&0).is_some());
         assert_eq!(lru_cache.len(), 0);
@@ -362,7 +362,7 @@ mod tests {
             }
         }
 
-        sleep_ms(101);
+        advance_time_by_ms(101);
         let _ = lru_cache.insert(1, 1);
 
         assert_eq!(lru_cache.len(), 1);
@@ -417,7 +417,7 @@ mod tests {
             }
         }
 
-        sleep_ms(101);
+        advance_time_by_ms(101);
         let _ = lru_cache.insert(
             Temp {
                 id: generate_random_vec::<u8>(64),
@@ -437,11 +437,11 @@ mod tests {
         let _ = lru_cache.insert(0, 0);
         assert_eq!(lru_cache.len(), 1);
 
-        sleep_ms(300);
+        advance_time_by_ms(300);
         assert_eq!(Some(&0), lru_cache.get(&0));
-        sleep_ms(300);
+        advance_time_by_ms(300);
         assert_eq!(Some(&0), lru_cache.peek(&0));
-        sleep_ms(300);
+        advance_time_by_ms(300);
         assert_eq!(None, lru_cache.peek(&0));
     }
 
@@ -454,11 +454,11 @@ mod tests {
         let _ = lru_cache.insert(0, 0);
         assert_eq!(lru_cache.len(), 1);
 
-        sleep_ms(300);
+        advance_time_by_ms(300);
         lru_cache.entry(0);
-        sleep_ms(300);
+        advance_time_by_ms(300);
         assert_eq!(Some(&0), lru_cache.peek(&0));
-        sleep_ms(300);
+        advance_time_by_ms(300);
         assert_eq!(None, lru_cache.peek(&0));
     }
 
@@ -471,10 +471,10 @@ mod tests {
             let mut lru_cache = LruCache::<usize, usize>::new(ttl, usize::MAX);
             let _ = lru_cache.insert(1, 1);
             let _ = lru_cache.insert(2, 2);
-            sleep_ms(150);
+            advance_time_by_ms(150);
             let _ = lru_cache.insert(3, 3);
             let _ = lru_cache.insert(4, 4);
-            sleep_ms(60);
+            advance_time_by_ms(60);
 
             let _ = lru_cache.remove_expired();
 
@@ -489,10 +489,10 @@ mod tests {
             let mut lru_cache = LruCache::<usize, usize>::new(ttl, usize::MAX);
             let _ = lru_cache.insert(1, 1);
             let _ = lru_cache.insert(2, 2);
-            sleep_ms(150);
+            advance_time_by_ms(150);
             let _ = lru_cache.insert(3, 3);
             let _ = lru_cache.insert(4, 4);
-            sleep_ms(60);
+            advance_time_by_ms(60);
 
             let _ = lru_cache.remove_expired();
 
@@ -507,9 +507,9 @@ mod tests {
             let mut lru_cache = LruCache::<usize, usize>::new(ttl, usize::MAX);
             let _ = lru_cache.insert(1, 1);
             let _ = lru_cache.insert(2, 2);
-            sleep_ms(150);
+            advance_time_by_ms(150);
             let _ = lru_cache.insert(3, 3);
-            sleep_ms(60);
+            advance_time_by_ms(60);
 
             let (_, expired) = lru_cache.remove_expired();
 
@@ -613,7 +613,7 @@ mod tests {
                             }
                         },
                         Op::Sleep(t) => {
-                            sleep_ms(t as u64 * 1000);
+                            advance_time_by_ms(t as u64 * 1000);
                         }
                     }
                     verify_equality(&mut new, &mut old);

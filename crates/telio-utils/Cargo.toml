@@ -6,25 +6,28 @@ license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
+[features]
+sn_fake_clock = ["dep:sn_fake_clock"]
+
 [dependencies]
 futures = "0.3.21"
-serde = { version = "1", features = ["derive"] }
-thiserror = "1.0.30"
-tokio = { version = ">=1.22", features = ["time"] }
-mockall = { version = "0.11.3", optional = true }
+hashlink = "0.8.3"
 log = {version = "0.4.14", features = ["release_max_level_debug"]}
+mockall = { version = "0.11.3", optional = true }
 parking_lot = "0.12"
 rustc-hash = "1"
+serde = { version = "1", features = ["derive"] }
+sn_fake_clock = { version = "0.4", optional = true }
+thiserror = "1.0.30"
+tokio = { version = ">=1.22", features = ["time"] }
 tracing = { version = "0.1.37", features = ["release_max_level_debug"] }
-hashlink = "0.8.3"
 
 
 [dev-dependencies]
+lru_time_cache = { version = "0.11.11", features = ["sn_fake_clock"] }
 mockall = { version = "0.11.3" }
-tokio = { version = ">=1.22", features = ["time", "rt", "macros", "test-util"] }
-telio-test = { version = "1.0.0", path = "../telio-test" }
-rand = "0.8.5"
 proptest = "1.2.0"
 proptest-derive = "0.3.0"
-sn_fake_clock = "0.4.14"
-lru_time_cache = { version = "0.11.11", features = ["sn_fake_clock"] }
+rand = "0.8.5"
+telio-test = { version = "1.0.0", path = "../telio-test" }
+tokio = { version = ">=1.22", features = ["time", "rt", "macros", "test-util"] }

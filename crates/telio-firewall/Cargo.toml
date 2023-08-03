@@ -19,8 +19,10 @@ hashlink = "0.8.3"
 mockall = "0.11.3"
 criterion = "0.3"
 rand = "0.8.5"
+sn_fake_clock = "0.4"
 proptest-derive = "0.3.0"
 proptest = "1.2.0"
+telio-utils = { path = "../telio-utils", features = ["sn_fake_clock"] }
 
 [features]
 test_utils = [] # For use in benchmarks to avoid duplication of the 'setup' code needed to create buffers with valid packets
