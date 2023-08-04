@@ -4930,7 +4930,7 @@ dependencies = [
 [[package]]
 name = "wireguard-nt"
 version = "1.0.0"
-source = "git+https://github.com/NordSecurity/wireguard-nt-rust-wrapper?tag=v1.0.0#9b5cb75c50352908d98eb0bdcad2ee51b682479b"
+source = "git+https://github.com/NordSecurity/wireguard-nt-rust-wrapper?tag=v1.0.2#977a54e4decc8ecd886c0fc1eda58f253ffdc5dc"
 dependencies = [
  "bitflags",
  "ipnet",

@@ -9,7 +9,7 @@ publish = false
 [target.'cfg(windows)'.dependencies]
 ipnet = "2.3"
 sha2 = "0.10.6"
-wireguard-nt = { git = "https://github.com/NordSecurity/wireguard-nt-rust-wrapper", tag = "v1.0.0" }
+wireguard-nt = { git = "https://github.com/NordSecurity/wireguard-nt-rust-wrapper", tag = "v1.0.2" }
 winapi = { version = "0.3", features = ["ws2def", "netioapi", "nldef"] }
 wg-go-rust-wrapper = { path = "../../wireguard-go-rust-wrapper" }
 
