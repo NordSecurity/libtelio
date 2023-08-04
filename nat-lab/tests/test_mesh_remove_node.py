@@ -102,30 +102,36 @@ async def test_mesh_remove_node(
             )
         )
 
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-                client_beta.wait_for_any_derp_state([telio.State.Connected]),
-                client_gamma.wait_for_any_derp_state([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
+                client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
+                client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
+                client_gamma.wait_for_state_on_any_derp([telio.State.Connected]),
                 alpha_conn_tracker.wait_for_event("derp_1"),
                 beta_conn_tracker.wait_for_event("derp_1"),
                 gamma_conn_tracker.wait_for_event("derp_1"),
             )
         )
-
         await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key),
-                client_alpha.handshake(gamma.public_key),
-                client_beta.handshake(alpha.public_key),
-                client_beta.handshake(gamma.public_key),
-                client_gamma.handshake(alpha.public_key),
-                client_gamma.handshake(beta.public_key),
+                client_alpha.wait_for_state_peer(
+                    beta.public_key, [telio.State.Connected]
+                ),
+                client_alpha.wait_for_state_peer(
+                    gamma.public_key, [telio.State.Connected]
+                ),
+                client_beta.wait_for_state_peer(
+                    alpha.public_key, [telio.State.Connected]
+                ),
+                client_beta.wait_for_state_peer(
+                    gamma.public_key, [telio.State.Connected]
+                ),
+                client_gamma.wait_for_state_peer(
+                    alpha.public_key, [telio.State.Connected]
+                ),
+                client_gamma.wait_for_state_peer(
+                    beta.public_key, [telio.State.Connected]
+                ),
             )
         )
 

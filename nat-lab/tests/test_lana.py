@@ -77,13 +77,15 @@ def get_moose_db_file(container_tag, container_path, local_path):
 
 async def connect_to_default_vpn(client: Client, conn_tracker: ConnectionTracker):
     await testing.wait_long(
-        client.connect_to_vpn(
-            WG_SERVER["ipv4"], WG_SERVER["port"], WG_SERVER["public_key"]
+        asyncio.gather(
+            client.connect_to_vpn(
+                WG_SERVER["ipv4"], WG_SERVER["port"], WG_SERVER["public_key"]
+            ),
+            testing.wait_long(conn_tracker.wait_for_event("vpn_1")),
+            client.wait_for_state_peer(
+                WG_SERVER["public_key"], [telio.State.Connected], [PathType.Direct]
+            ),
         )
-    )
-    await testing.wait_long(conn_tracker.wait_for_event("vpn_1"))
-    await testing.wait_lengthy(
-        client.handshake(WG_SERVER["public_key"], PathType.Direct)
     )
 
 
@@ -184,30 +186,24 @@ async def run_default_scenario(
         )
     )
 
-    await testing.wait_long(
+    await testing.wait_lengthy(
         asyncio.gather(
-            client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-            client_beta.wait_for_any_derp_state([telio.State.Connected]),
-            client_gamma.wait_for_any_derp_state([telio.State.Connected]),
-        )
-    )
-
-    await testing.wait_long(
-        asyncio.gather(
+            client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
+            client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
+            client_gamma.wait_for_state_on_any_derp([telio.State.Connected]),
             alpha_conn_tracker.wait_for_event("derp_1"),
             beta_conn_tracker.wait_for_event("derp_1"),
             gamma_conn_tracker.wait_for_event("derp_1"),
         )
     )
-
-    await testing.wait_long(
+    await testing.wait_lengthy(
         asyncio.gather(
-            client_alpha.handshake(beta.public_key),
-            client_alpha.handshake(gamma.public_key),
-            client_beta.handshake(alpha.public_key),
-            client_beta.handshake(gamma.public_key),
-            client_gamma.handshake(alpha.public_key),
-            client_gamma.handshake(beta.public_key),
+            client_alpha.wait_for_state_peer(beta.public_key, [telio.State.Connected]),
+            client_alpha.wait_for_state_peer(gamma.public_key, [telio.State.Connected]),
+            client_beta.wait_for_state_peer(alpha.public_key, [telio.State.Connected]),
+            client_beta.wait_for_state_peer(gamma.public_key, [telio.State.Connected]),
+            client_gamma.wait_for_state_peer(alpha.public_key, [telio.State.Connected]),
+            client_gamma.wait_for_state_peer(beta.public_key, [telio.State.Connected]),
         )
     )
 
@@ -662,22 +658,20 @@ async def test_lana_with_disconnected_node() -> None:
 
         await testing.wait_long(
             asyncio.gather(
-                client_alpha.wait_for_any_derp_state([telio.State.Connected]),
-                client_beta.wait_for_any_derp_state([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
+                client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
+                client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
                 alpha_conn_tracker.wait_for_event("derp_1"),
                 beta_conn_tracker.wait_for_event("derp_1"),
             )
         )
-
-        await testing.wait_long(
+        await testing.wait_lengthy(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key),
-                client_beta.handshake(alpha.public_key),
+                client_alpha.wait_for_state_peer(
+                    beta.public_key, [telio.State.Connected]
+                ),
+                client_beta.wait_for_state_peer(
+                    alpha.public_key, [telio.State.Connected]
+                ),
             )
         )
 
@@ -836,8 +830,12 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change() -> No
 
         await testing.wait_long(
             asyncio.gather(
-                client_alpha.handshake(beta.public_key),
-                client_beta.handshake(alpha.public_key),
+                client_alpha.wait_for_state_peer(
+                    beta.public_key, [telio.State.Connected]
+                ),
+                client_beta.wait_for_state_peer(
+                    alpha.public_key, [telio.State.Connected]
+                ),
             )
         )
 

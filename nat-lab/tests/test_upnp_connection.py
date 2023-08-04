@@ -54,15 +54,14 @@ async def test_upnp_route_corrupted() -> None:
 
         await testing.wait_lengthy(
             asyncio.gather(
-                alpha_client.wait_for_any_derp_state([telio.State.Connected]),
-                beta_client.wait_for_any_derp_state([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.handshake(beta.public_key, PathType.Direct),
-                beta_client.handshake(alpha.public_key, PathType.Direct),
+                alpha_client.wait_for_state_on_any_derp([telio.State.Connected]),
+                beta_client.wait_for_state_on_any_derp([telio.State.Connected]),
+                alpha_client.wait_for_state_peer(
+                    beta.public_key, [telio.State.Connected], [PathType.Direct]
+                ),
+                beta_client.wait_for_state_peer(
+                    alpha.public_key, [telio.State.Connected], [PathType.Direct]
+                ),
             )
         )
 
@@ -81,12 +80,14 @@ async def test_upnp_route_corrupted() -> None:
 
         await testing.wait_lengthy(
             asyncio.gather(
-                alpha_client.handshake(beta.public_key, PathType.Direct),
-                beta_client.handshake(alpha.public_key, PathType.Direct),
+                alpha_client.wait_for_event_peer(
+                    beta.public_key, [telio.State.Connected], [PathType.Direct]
+                ),
+                beta_client.wait_for_event_peer(
+                    alpha.public_key, [telio.State.Connected], [PathType.Direct]
+                ),
             )
         )
-
-        time.sleep(10)
 
         async with Ping(beta_connection, alpha.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())

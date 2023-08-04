@@ -3,7 +3,7 @@ import utils.testing as testing
 from contextlib import AsyncExitStack
 import config
 from mesh_api import API
-from telio import AdapterType, PathType, Client
+from telio import AdapterType, PathType, Client, State
 from utils import (
     Connection,
     ConnectionTag,
@@ -32,7 +32,9 @@ async def _connect_vpn(
     )
 
     await testing.wait_lengthy(
-        client.handshake(wg_server["public_key"], PathType.Direct)
+        client.wait_for_state_peer(
+            wg_server["public_key"], [State.Connected], [PathType.Direct]
+        )
     )
 
     await testing.wait_long(conn_tracker.wait_for_event(connection_key))
@@ -180,7 +182,7 @@ async def test_vpn_reconnect(
 
         await testing.wait_long(
             client_alpha.disconnect_from_vpn(
-                config.WG_SERVER["public_key"], PathType.Direct
+                config.WG_SERVER["public_key"], [PathType.Direct]
             )
         )
 
