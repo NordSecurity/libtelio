@@ -26,10 +26,7 @@ from utils.ping import Ping
         pytest.param(
             ConnectionTag.WINDOWS_VM,
             telio.AdapterType.WindowsNativeWg,
-            marks=[
-                pytest.mark.windows,
-                pytest.mark.xfail(reason="test is flaky - Jira issue: LLT-4064"),
-            ],
+            marks=pytest.mark.windows,
         ),
         pytest.param(
             ConnectionTag.WINDOWS_VM,
