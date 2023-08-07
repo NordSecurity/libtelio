@@ -47,7 +47,7 @@ use std::{
     collections::HashSet,
     future::Future,
     io::{Error as IoError, ErrorKind},
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     sync::Arc,
     time::Duration,
 };
@@ -1524,6 +1524,9 @@ impl Runtime {
                     ip_addresses: vec![
                         IpAddr::V4(Ipv4Addr::new(10, 5, 0, 1)),
                         IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1)),
+                        IpAddr::V6(Ipv6Addr::new(
+                            0xfc74, 0x656c, 0x696f, 0x0000, 0x0000, 0x0000, 0x0000, 0x0001,
+                        )),
                     ],
                     allowed_ips: peer.allowed_ips.clone(),
                     endpoint,
