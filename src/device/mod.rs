@@ -48,7 +48,7 @@ use std::{
     convert::TryInto,
     future::Future,
     io::{Error as IoError, ErrorKind},
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     sync::Arc,
     time::Duration,
 };
@@ -1187,15 +1187,6 @@ impl Runtime {
 
         // Update for proxy and derp config
         if let Some(config) = config {
-            // Retreive meshnet IP address
-            let mesh_ip = config
-                .clone()
-                .this
-                .ip_addresses
-                .map(|ip| ip.get(0).cloned())
-                .ok_or(Error::NoMeshnetIP)?
-                .ok_or(Error::NoMeshnetIP)?;
-
             let proxy_config = ProxyConfig {
                 wg_port: Some(wg_port),
                 peers: peers.clone(),
@@ -1208,7 +1199,6 @@ impl Runtime {
                 allowed_pk: peers,
                 timeout: Duration::from_secs(10), //TODO: make configurable
                 ca_pem_path: None,
-                mesh_ip,
                 server_keepalives: DerpKeepaliveConfig::from(&self.features.derp),
             };
 
@@ -1490,6 +1480,8 @@ impl Runtime {
                     ip_addresses: vec![
                         IpAddr::V4(Ipv4Addr::new(10, 5, 0, 1)),
                         IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1)),
+                        // TODO correct subnet when we'll decide about the range
+                        IpAddr::V6(Ipv6Addr::new(0xfd00, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0001)),
                     ],
                     allowed_ips: peer.allowed_ips.clone(),
                     endpoint,

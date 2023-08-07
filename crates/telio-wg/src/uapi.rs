@@ -599,6 +599,7 @@ listen_port=12912
 public_key=980dc0012a52f21927d952e866fcfabe9db61d406bc333249cc4d729d37ecb44
 endpoint=[abcd:23::33%2]:51820
 allowed_ip=192.168.4.4/32
+allowed_ip=fd00::beef:4/128
 last_handshake_time_nsec=1234
 last_handshake_time_sec=1
 public_key=f1bc9c87d65731aecde6197c001f4219d839c2d384a47799af058bc3fbdab8f1
@@ -610,6 +611,7 @@ endpoint=182.122.22.19:3233
 persistent_keepalive_interval=111
 allowed_ip=192.168.4.10/32
 allowed_ip=192.168.4.11/32
+allowed_ip=fd00::ceed:3/128
 errno=0
 ";
 

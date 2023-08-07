@@ -140,7 +140,6 @@ pub struct Config {
     pub allowed_pk: HashSet<PublicKey>,
     pub timeout: Duration,
     pub ca_pem_path: Option<PathBuf>,
-    pub mesh_ip: IpAddr,
     pub server_keepalives: DerpKeepaliveConfig,
 }
 
@@ -152,7 +151,6 @@ impl Default for Config {
             allowed_pk: Default::default(),
             servers: Default::default(),
             ca_pem_path: None,
-            mesh_ip: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
             server_keepalives: DerpKeepaliveConfig {
                 tcp_keepalive: proto::DERP_TCP_KEEPALIVE_INTERVAL,
                 derp_keepalive: proto::DERP_KEEPALIVE_INTERVAL,

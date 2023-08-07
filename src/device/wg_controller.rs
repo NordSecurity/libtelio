@@ -13,8 +13,8 @@ use telio_model::EndpointMap;
 use telio_model::{mesh::Node, SocketAddr};
 use telio_proxy::Proxy;
 use telio_traversal::{
-    cross_ping_check::CrossPingCheckTrait, SessionKeeperTrait, UpgradeSyncTrait,
-    WireGuardEndpointCandidateChangeEvent,
+    cross_ping_check::CrossPingCheckTrait, SessionKeeperTrait, Target as SessionKeeperTarget,
+    UpgradeSyncTrait, WireGuardEndpointCandidateChangeEvent,
 };
 use telio_utils::{telio_log_debug, telio_log_info};
 use telio_wg::{uapi::Peer, WireGuard};
@@ -191,21 +191,42 @@ async fn consolidate_wg_peers<
                 }
 
                 // Initiate session keeper to start sending data between peers connected directly
-                if let (Some(sk), Some(mesh_ip)) =
-                    (session_keeper, requested_peer.peer.allowed_ips.first())
-                {
-                    // TODO this should be acommodatedto IPv6
-                    let ip4 = {
-                        match mesh_ip.ip() {
-                            IpAddr::V4(ip4) => ip4,
-                            IpAddr::V6(_ip6) => Err(Error::BadAllowedIps)?,
+                if let (Some(sk), Some(mesh_ip1), maybe_mesh_ip2) = (
+                    session_keeper,
+                    requested_peer.peer.allowed_ips.get(0),
+                    requested_peer.peer.allowed_ips.get(1),
+                ) {
+                    let target = {
+                        let mut ret: SessionKeeperTarget = (None, None);
+
+                        match mesh_ip1.ip() {
+                            IpAddr::V4(ip4) => ret.0 = Some(ip4),
+                            IpAddr::V6(ip6) => ret.1 = Some(ip6),
                         }
+
+                        if let Some(mesh_ip2) = maybe_mesh_ip2 {
+                            match mesh_ip2.ip() {
+                                // If both addrs are from same protocol (v4, v4) or (v6, v6), we're taking only the first one received.
+                                IpAddr::V4(ip4) => {
+                                    if ret.0.is_none() {
+                                        ret.0 = Some(ip4)
+                                    }
+                                }
+                                IpAddr::V6(ip6) => {
+                                    if ret.1.is_none() {
+                                        ret.1 = Some(ip6)
+                                    }
+                                }
+                            }
+                        }
+
+                        ret
                     };
 
                     // Start persistent keepalives
                     sk.add_node(
                         &requested_peer.peer.public_key,
-                        (Some(ip4), None),
+                        target,
                         Duration::from_secs(
                             requested_peer
                                 .peer
@@ -676,7 +697,7 @@ mod tests {
     use super::*;
     use crate::device::{DeviceConfig, DNS};
     use mockall::predicate::{self, eq};
-    use std::net::{Ipv4Addr, SocketAddrV4};
+    use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4};
     use telio_crypto::SecretKey;
     use telio_dns::MockDnsResolver;
     use telio_firewall::firewall::{MockFirewall, FILE_SEND_PORT};
@@ -869,9 +890,16 @@ mod tests {
 
         let pub_key = SecretKey::gen().public();
         let ip1 = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+        let ip1v6 = IpAddr::V6(Ipv6Addr::from([
+            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4,
+        ]));
         let ip2 = IpAddr::V4(Ipv4Addr::new(5, 6, 7, 8));
+        let ip2v6 = IpAddr::V6(Ipv6Addr::from([
+            5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8,
+        ]));
 
-        let requested_state = create_requested_state(vec![(pub_key, vec![ip1, ip2], true, true)]);
+        let requested_state =
+            create_requested_state(vec![(pub_key, vec![ip1, ip1v6, ip2, ip2v6], true, true)]);
 
         let interface = create_wireguard_interface(vec![(pub_key, vec![ip1])]);
 
@@ -901,10 +929,13 @@ mod tests {
 
         let pub_key = SecretKey::gen().public();
         let ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+        let ipv6 = IpAddr::V6(Ipv6Addr::from([
+            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4,
+        ]));
 
-        let requested_state = create_requested_state(vec![(pub_key, vec![ip], true, false)]);
+        let requested_state = create_requested_state(vec![(pub_key, vec![ip, ipv6], true, false)]);
 
-        let interface = create_wireguard_interface(vec![(pub_key, vec![ip])]);
+        let interface = create_wireguard_interface(vec![(pub_key, vec![ip, ipv6])]);
 
         wireguard_interface
             .expect_get_interface()
@@ -928,10 +959,13 @@ mod tests {
 
         let pub_key = SecretKey::gen().public();
         let ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+        let ipv6 = IpAddr::V6(Ipv6Addr::from([
+            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4,
+        ]));
 
-        let requested_state = create_requested_state(vec![(pub_key, vec![ip], false, true)]);
+        let requested_state = create_requested_state(vec![(pub_key, vec![ip, ipv6], false, true)]);
 
-        let interface = create_wireguard_interface(vec![(pub_key, vec![ip])]);
+        let interface = create_wireguard_interface(vec![(pub_key, vec![ip, ipv6])]);
 
         wireguard_interface
             .expect_get_interface()
@@ -955,11 +989,20 @@ mod tests {
 
         let pub_key = SecretKey::gen().public();
         let ip1 = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+        let ip1v6 = IpAddr::V6(Ipv6Addr::from([
+            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4,
+        ]));
         let ip2 = IpAddr::V4(Ipv4Addr::new(5, 6, 7, 8));
+        let ip2v6 = IpAddr::V6(Ipv6Addr::from([
+            5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8,
+        ]));
 
         let requested_state = create_requested_state(vec![]);
 
-        let interface = create_wireguard_interface(vec![(pub_key, vec![ip1.clone(), ip2.clone()])]);
+        let interface = create_wireguard_interface(vec![(
+            pub_key,
+            vec![ip1.clone(), ip1v6.clone(), ip2.clone(), ip2v6.clone()],
+        )]);
 
         wireguard_interface
             .expect_get_interface()
@@ -987,7 +1030,13 @@ mod tests {
 
         let pub_key = SecretKey::gen().public();
         let ip1 = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+        let ip1v6 = IpAddr::V6(Ipv6Addr::from([
+            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4,
+        ]));
         let ip2 = IpAddr::V4(Ipv4Addr::new(5, 6, 7, 8));
+        let ip2v6 = IpAddr::V6(Ipv6Addr::from([
+            5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8,
+        ]));
 
         let requested_state = create_requested_state(vec![(
             pub_key,
@@ -996,7 +1045,10 @@ mod tests {
             false,
         )]);
 
-        let interface = create_wireguard_interface(vec![(pub_key, vec![ip1.clone(), ip2.clone()])]);
+        let interface = create_wireguard_interface(vec![(
+            pub_key,
+            vec![ip1.clone(), ip1v6.clone(), ip2.clone(), ip2v6.clone()],
+        )]);
 
         wireguard_interface
             .expect_get_interface()
@@ -1219,23 +1271,12 @@ mod tests {
             }
         }
 
-        fn then_keeper_add_node(&mut self, input: Vec<(PublicKey, IpAddr, u32)>) {
+        fn then_keeper_add_node(&mut self, input: Vec<(PublicKey, SessionKeeperTarget, u32)>) {
             for i in input {
-                let ip4 = {
-                    match i.1 {
-                        IpAddr::V4(ip4) => ip4,
-                        IpAddr::V6(_) => panic!("Only ip4 is allowed"),
-                    }
-                };
-
                 self.session_keeper
                     .expect_add_node()
                     .once()
-                    .with(
-                        eq(i.0),
-                        eq((Some(ip4), None)),
-                        eq(Duration::from_secs(i.2.into())),
-                    )
+                    .with(eq(i.0), eq(i.1), eq(Duration::from_secs(i.2.into())))
                     .return_once(|_, _, _| Ok(()));
             }
         }
@@ -1316,9 +1357,16 @@ mod tests {
         let mut f = Fixture::new();
 
         let pub_key = SecretKey::gen().public();
-        let ip1 = IpAddr::from([1, 2, 3, 4]);
-        let ip2 = IpAddr::from([5, 6, 7, 8]);
-        let allowed_ips = vec![ip1, ip2];
+        let ip1 = Ipv4Addr::from([1, 2, 3, 4]);
+        let ip1v6 = Ipv6Addr::from([1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4]);
+        let ip2 = Ipv4Addr::from([5, 6, 7, 8]);
+        let ip2v6 = Ipv6Addr::from([5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8]);
+        let allowed_ips = vec![
+            IpAddr::from(ip1),
+            IpAddr::from(ip1v6),
+            IpAddr::from(ip2),
+            IpAddr::from(ip2v6),
+        ];
         let remote_wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
         let mapped_port = 12;
         let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
@@ -1345,7 +1393,11 @@ mod tests {
             direct_keepalive_period,
             allowed_ips.into_iter().map(|ip| ip.into()).collect(),
         )]);
-        f.then_keeper_add_node(vec![(pub_key, ip1, direct_keepalive_period)]);
+        f.then_keeper_add_node(vec![(
+            pub_key,
+            (Some(ip1), Some(ip1v6)),
+            direct_keepalive_period,
+        )]);
 
         f.consolidate_peers().await;
     }
@@ -1355,9 +1407,16 @@ mod tests {
         let mut f = Fixture::new();
 
         let pub_key = SecretKey::gen().public();
-        let ip1 = IpAddr::from([1, 2, 3, 4]);
-        let ip2 = IpAddr::from([5, 6, 7, 8]);
-        let allowed_ips = vec![ip1, ip2];
+        let ip1 = Ipv4Addr::from([1, 2, 3, 4]);
+        let ip1v6 = Ipv6Addr::from([1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4]);
+        let ip2 = Ipv4Addr::from([5, 6, 7, 8]);
+        let ip2v6 = Ipv6Addr::from([5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8]);
+        let allowed_ips = vec![
+            IpAddr::from(ip1),
+            IpAddr::from(ip1v6),
+            IpAddr::from(ip2),
+            IpAddr::from(ip2v6),
+        ];
         let remote_wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
         let local_wg_endpoint = SocketAddr::from(([192, 168, 0, 2], 15));
         let mapped_port = 12;
@@ -1390,7 +1449,11 @@ mod tests {
             allowed_ips.into_iter().map(|ip| ip.into()).collect(),
         )]);
         f.then_request_upgrade(vec![(pub_key, remote_wg_endpoint, local_wg_endpoint)]);
-        f.then_keeper_add_node(vec![(pub_key, ip1, direct_keepalive_period)]);
+        f.then_keeper_add_node(vec![(
+            pub_key,
+            (Some(ip1), Some(ip1v6)),
+            direct_keepalive_period,
+        )]);
 
         f.consolidate_peers().await;
     }
@@ -1637,9 +1700,16 @@ mod tests {
         let mut f = Fixture::new();
 
         let pub_key = SecretKey::gen().public();
-        let ip1 = IpAddr::from([1, 2, 3, 4]);
-        let ip2 = IpAddr::from([5, 6, 7, 8]);
-        let allowed_ips = vec![ip1, ip2];
+        let ip1 = Ipv4Addr::from([1, 2, 3, 4]);
+        let ip1v6 = Ipv6Addr::from([1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4]);
+        let ip2 = Ipv4Addr::from([5, 6, 7, 8]);
+        let ip2v6 = Ipv6Addr::from([5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8]);
+        let allowed_ips = vec![
+            IpAddr::from(ip1),
+            IpAddr::from(ip1v6),
+            IpAddr::from(ip2),
+            IpAddr::from(ip2v6),
+        ];
         let remote_wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
         let local_wg_endpoint = SocketAddr::from(([192, 168, 0, 2], 15));
         let mapped_port = 12;
@@ -1671,10 +1741,25 @@ mod tests {
 
         f.then_keeper_add_node(vec![(
             pub_key,
-            ip1,
+            (Some(ip1), Some(ip1v6)),
             DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
         )]);
 
         f.consolidate_peers().await;
+    }
+    
+    #[tokio::test]
+    async fn when_only_ipv4_peer_added() {
+
+    }
+
+    #[tokio::test]
+    async fn when_only_ipv6_peer_added() {
+        
+    }
+
+    #[tokio::test]
+    async fn when_ipv4v6_peer_added() {
+        
     }
 }
