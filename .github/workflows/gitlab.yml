@@ -3,12 +3,19 @@ on:
   pull_request_target:
     types: [labeled]
   push:
+  schedule:
+    # Avoid running on 0 since a lot of other workflows on github start at that
+    # time and this can cause delays or even dropping of jobs:
+    # https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#schedule
+    - cron: 18,48 18-23 * * *
+    - cron: 17,47 0-5 * * *
 permissions: {}
 
 jobs:
   trigger-gitlab-pipeline:
     runs-on: [self-hosted, libtelio]
     if: |
+      github.event_name == 'schedule' ||
       github.event_name == 'push' ||
       (
         github.event_name == 'pull_request_target' &&
@@ -16,9 +23,10 @@ jobs:
         github.event.label.name == 'run tests'
       )
     steps:
-      - uses: NordSecurity/trigger-gitlab-pipeline@fd24fd4a3d03065fe67ae1e98d05d4283d7bb104 # v1
+      - uses: NordSecurity/trigger-gitlab-pipeline@2058fb1a58b364f0b48f4a402a3e89ac405ab146 # v1.1.0
         with:
           ci-api-v4-url: ${{ secrets.CI_API_V4_URL }}
           project-id: ${{ secrets.PROJECT_ID }}
           token: ${{ secrets.TOKEN }}
           ref: v0.1.5
+          schedule: ${{ github.event_name == 'schedule' }}
