@@ -724,7 +724,6 @@ pub mod tests {
         convert::TryInto,
         net::{Ipv4Addr, SocketAddr as StdSocketAddr, SocketAddrV6},
         net::{Ipv6Addr, SocketAddrV4},
-        thread::sleep,
         time::Duration,
     };
     use telio_crypto::SecretKey;
@@ -732,6 +731,13 @@ pub mod tests {
     type MakeUdp = &'static dyn Fn(&str, &str) -> Vec<u8>;
     type MakeTcp = &'static dyn Fn(&str, &str, u16) -> Vec<u8>;
     type MakeIcmp = &'static dyn Fn(&str, &str, GenericIcmpType) -> Vec<u8>;
+
+    fn advance_time(time: Duration) {
+        #[cfg(not(feature = "test_utils"))]
+        sn_fake_clock::FakeClock::advance_time(time.as_millis() as u64);
+        #[cfg(feature = "test_utils")]
+        panic!("don't use advance time when lru cache is not built with support for it")
+    }
 
     impl From<StdIpAddr> for IpAddr {
         fn from(addr: std::net::IpAddr) -> Self {
@@ -1349,7 +1355,7 @@ pub mod tests {
             TestInput{ us: "[::1]:1111",     them: "[2001:4860:4860::8888]:8888",  make_tcp: &make_tcp6 },
         ];
         for test_input @ TestInput { us, them, make_tcp } in test_inputs {
-            let ttl = 200;
+            let ttl = 20;
             let fw = StatefullFirewall::new_custom(3, ttl);
 
             let outgoing_init_packet = make_tcp(us, them, TcpFlags::SYN);
@@ -1382,12 +1388,12 @@ pub mod tests {
             }));
 
             // process inbound packet (should not update ttl, because not ACK, but entry should still exist)
-            sleep(Duration::from_millis(ttl / 2));
+            advance_time(Duration::from_millis(ttl / 2));
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::PSH)), false);
             assert_eq!(fw.tcp.lock().unwrap().len(), 1);
 
             // process inbound packet (should not update ttl, because not ACK, and entry should be removed after timeout)
-            sleep(Duration::from_millis(ttl / 2));
+            advance_time(Duration::from_millis(ttl / 2 + 1));
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::PSH)), false);
             assert_eq!(fw.tcp.lock().unwrap().len(), 0);
         }
@@ -1469,7 +1475,7 @@ pub mod tests {
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_udp(src, dst)), true);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst, src)), true);
-            sleep(Duration::from_millis(200));
+            advance_time(Duration::from_millis(200));
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst, src)), false);
         }
     }
@@ -1495,15 +1501,15 @@ pub mod tests {
 
             //Should PASS
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst, src)), true);
-            sleep(Duration::from_millis(15));
+            advance_time(Duration::from_millis(15));
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst, src)), true);
 
             //Should PASS (because TTL was extended)
-            sleep(Duration::from_millis(15));
+            advance_time(Duration::from_millis(15));
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst, src)), true);
 
             //Should FAIL (because TTL=100 < sleep(200))
-            sleep(Duration::from_millis(30));
+            advance_time(Duration::from_millis(30));
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst, src)), false);
         }
     }
