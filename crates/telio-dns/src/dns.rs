@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use boringtun::crypto::x25519::{X25519PublicKey, X25519SecretKey};
 use boringtun::noise::Tunn;
 use ipnetwork::IpNetwork;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::{net::SocketAddr, sync::Arc};
 use telio_crypto::{PublicKey, SecretKey};
 use telio_wg::uapi::Peer;
@@ -161,17 +161,25 @@ impl DnsResolver for LocalDnsResolver {
         vec![
             IpAddr::V4(Ipv4Addr::new(100, 64, 0, 2)).into(),
             IpAddr::V4(Ipv4Addr::new(100, 64, 0, 3)).into(),
+            IpAddr::V6(Ipv6Addr::new(0xfc74, 0x656c, 0x696f, 0, 0, 0, 0, 2)).into(),
+            IpAddr::V6(Ipv6Addr::new(0xfc74, 0x656c, 0x696f, 0, 0, 0, 0, 3)).into(),
         ]
     }
 
     #[allow(unwrap_check)]
     fn get_exit_connected_dns_allowed_ips(&self) -> Vec<IpNetwork> {
-        vec![IpAddr::V4(Ipv4Addr::new(100, 64, 0, 2)).into()]
+        vec![
+            IpAddr::V4(Ipv4Addr::new(100, 64, 0, 2)).into(),
+            IpAddr::V6(Ipv6Addr::new(0xfc74, 0x656c, 0x696f, 0, 0, 0, 0, 2)).into(),
+        ]
     }
 
     #[allow(unwrap_check)]
     fn get_default_dns_servers(&self) -> Vec<IpAddr> {
-        vec![IpAddr::V4(Ipv4Addr::new(100, 64, 0, 3))]
+        vec![
+            IpAddr::V4(Ipv4Addr::new(100, 64, 0, 3)),
+            IpAddr::V6(Ipv6Addr::new(0xfc74, 0x656c, 0x696f, 0, 0, 0, 0, 3)),
+        ]
     }
 }
 
@@ -187,7 +195,9 @@ mod tests {
         assert_eq!(
             vec![
                 "100.64.0.2/32".parse::<IpNetwork>().unwrap(),
-                "100.64.0.3/32".parse().unwrap(),
+                "100.64.0.3/32".parse::<IpNetwork>().unwrap(),
+                "fc74:656c:696f::2/128".parse::<IpNetwork>().unwrap(),
+                "fc74:656c:696f::3/128".parse::<IpNetwork>().unwrap(),
             ],
             resolver.get_default_dns_allowed_ips()
         );
@@ -199,7 +209,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            vec!["100.64.0.2/32".parse::<IpNetwork>().unwrap()],
+            vec![
+                "100.64.0.2/32".parse::<IpNetwork>().unwrap(),
+                "fc74:656c:696f::2/128".parse::<IpNetwork>().unwrap(),
+            ],
             resolver.get_exit_connected_dns_allowed_ips()
         );
     }
@@ -210,7 +223,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            vec!["100.64.0.3".parse::<IpAddr>().unwrap()],
+            vec![
+                "100.64.0.3".parse::<IpAddr>().unwrap(),
+                "fc74:656c:696f::3".parse::<IpAddr>().unwrap(),
+            ],
             resolver.get_default_dns_servers()
         );
     }
