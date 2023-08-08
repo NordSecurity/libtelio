@@ -683,10 +683,9 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
         await asyncio.sleep(1)
 
         results = re.findall(
-            r".* IP .* > (?P<dest_ip>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,5}): .*"
-            r" A\?.*",
+            r".* IP .* > (?P<dest_ip>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,5}): .* A\?.*",
             process.get_stdout(),
-        )
+        )  # fmt: skip
 
         assert results
         assert [result for result in results if FIRST_DNS_SERVER in result]
