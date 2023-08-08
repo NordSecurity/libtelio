@@ -12,3 +12,11 @@ Unformatted code will automatically be declined by the CI.
 ```
 black . && isort .
 ```
+
+## Linter and typecheck
+
+Python code is checked using https://github.com/python/mypy and https://github.com/pylint-dev/pylint.
+Any faulty code will automatically be declined by the CI.
+```
+mypy . && pylint .
+```
