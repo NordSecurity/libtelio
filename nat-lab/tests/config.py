@@ -1,8 +1,8 @@
 import os
 import platform
-from utils import stun
 
 PROJECT_ROOT = os.path.dirname(os.path.realpath(__file__)) + "/../../../"
+
 
 # Get file path relative to project root
 def get_root_path(path: str) -> str:
@@ -21,13 +21,6 @@ LINUX_VM_SECONDARY_GATEWAY = "10.66.0.10"
 DOCKER_NETWORK_IP = "10.0.0.0"
 DOCKER_NETWORK_MASK = "255.255.0.0"
 STUN_SERVER = "10.0.1.1"
-
-# Same as defined in `libtelio/nat-lab/provision_windows.ps1`
-stun.STUN_BINARY_PATH_WINDOWS = "C:/workspace/stunserver/release/stunclient.exe"
-stun.STUN_BINARY_PATH_MAC = "/Users/vagrant/stunserver/stunclient"
-
-IPERF_BINARY_MAC = "/Users/vagrant/iperf3/iperf3"
-IPERF_BINARY_WINDOWS = "C:\\workspace\\iperf3\\iperf3.exe"
 
 # JIRA issue: LLT-1664
 # The directories between host and Docker container are shared via

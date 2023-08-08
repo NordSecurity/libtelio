@@ -1,8 +1,8 @@
-import pytest
-import utils.testing as testing
-from utils import ConnectionTag, new_connection_by_tag
-from contextlib import AsyncExitStack
 import asyncio
+import pytest
+from contextlib import AsyncExitStack
+from utils import testing
+from utils.connection_util import ConnectionTag, new_connection_by_tag
 
 TESTING_STRING = "seniukai, skyle pramusta"
 
@@ -36,7 +36,8 @@ async def test_hole_punch() -> None:
         await testing.wait_long(process.execute())
 
         assert (
-            f"external {PUBLIC_IP}:1001 UDP is redirected to internal 192.168.105.88:1000 (duration=0)"
+            f"external {PUBLIC_IP}:1001 UDP is redirected to internal"
+            " 192.168.105.88:1000 (duration=0)"
             in process.get_stdout()
         )
 

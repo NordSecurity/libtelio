@@ -1,8 +1,12 @@
-from utils import ConnectionTag, new_connection_by_tag, connection_util
 import asyncio
 import pytest
 import re
-import utils.testing as testing
+from utils import testing
+from utils.connection_util import (
+    ConnectionTag,
+    new_connection_by_tag,
+    get_libtelio_binary_path,
+)
 
 
 @pytest.mark.nat
@@ -10,23 +14,14 @@ import utils.testing as testing
 @pytest.mark.parametrize(
     "connection_tag,nat_string",
     [
-        pytest.param(
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            "PortRestrictedCone",
-        ),
-        pytest.param(
-            ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
-            "FullCone",
-        ),
-        pytest.param(
-            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
-            "Symmetric",
-        ),
+        pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, "PortRestrictedCone"),
+        pytest.param(ConnectionTag.DOCKER_FULLCONE_CLIENT_1, "FullCone"),
+        pytest.param(ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, "Symmetric"),
     ],
 )
 async def test_nat_type(connection_tag, nat_string) -> None:
     async with new_connection_by_tag(connection_tag) as connection:
-        tcli_path = connection_util.get_libtelio_binary_path("tcli", connection)
+        tcli_path = get_libtelio_binary_path("tcli", connection)
         process = connection.create_process([tcli_path])
 
         event = asyncio.Event()

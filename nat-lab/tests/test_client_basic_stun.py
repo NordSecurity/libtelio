@@ -1,27 +1,16 @@
-from utils import ConnectionTag, new_connection_by_tag, stun
 import config
 import pytest
-import utils.testing as testing
+from utils import testing, stun
+from utils.connection_util import ConnectionTag, new_connection_by_tag
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "connection_tag,public_ip",
     [
-        pytest.param(
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            "10.0.254.1",
-        ),
-        pytest.param(
-            ConnectionTag.WINDOWS_VM,
-            "10.0.254.7",
-            marks=pytest.mark.windows,
-        ),
-        pytest.param(
-            ConnectionTag.MAC_VM,
-            "10.0.254.7",
-            marks=pytest.mark.mac,
-        ),
+        pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, "10.0.254.1"),
+        pytest.param(ConnectionTag.WINDOWS_VM, "10.0.254.7", marks=pytest.mark.windows),
+        pytest.param(ConnectionTag.MAC_VM, "10.0.254.7", marks=pytest.mark.mac),
     ],
 )
 async def test_client_basic_stun(connection_tag: ConnectionTag, public_ip: str) -> None:

@@ -1,10 +1,10 @@
-from utils.connection import Connection
-from utils.process import Process
-from typing import AsyncIterator
-from utils import OutputNotifier, connection_util
 import asyncio
-import telio
 from contextlib import asynccontextmanager
+from typing import AsyncIterator
+from utils.connection import Connection
+from utils.connection_util import get_libtelio_binary_path
+from utils.output_notifier import OutputNotifier
+from utils.process import Process
 
 
 class DerpTarget:
@@ -14,13 +14,7 @@ class DerpTarget:
     def __init__(self, connection: Connection, server: str) -> None:
         self._stop = None
         self._process = connection.create_process(
-            [
-                connection_util.get_libtelio_binary_path("derpcli", connection),
-                "-t",
-                "-s",
-                server,
-                "-vv",
-            ]
+            [get_libtelio_binary_path("derpcli", connection), "-t", "-s", server, "-vv"]
         )
         self._output_notifier = OutputNotifier()
 
@@ -47,7 +41,7 @@ class DerpClient:
     def __init__(self, connection: Connection, server: str, data: str) -> None:
         self._process = connection.create_process(
             [
-                connection_util.get_libtelio_binary_path("derpcli", connection),
+                get_libtelio_binary_path("derpcli", connection),
                 "-s",
                 server,
                 "-vv",

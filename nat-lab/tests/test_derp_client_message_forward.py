@@ -1,8 +1,8 @@
 import pytest
-import utils.testing as testing
-from derp_cli import DerpClient, DerpTarget
-from utils import ConnectionTag, new_connection_by_tag
 from contextlib import AsyncExitStack
+from derp_cli import DerpClient, DerpTarget
+from utils import testing
+from utils.connection_util import ConnectionTag, new_connection_by_tag
 
 DERP_SERVER = "http://10.0.10.1:8765"
 DERP_SERVER_2 = "http://10.0.10.2:8765"
@@ -14,12 +14,7 @@ TESTING_STRING = "testing"
     "connection_tag",
     [
         ConnectionTag.DOCKER_CONE_CLIENT_1,
-        pytest.param(
-            ConnectionTag.WINDOWS_VM,
-            marks=[
-                pytest.mark.windows,
-            ],
-        ),
+        pytest.param(ConnectionTag.WINDOWS_VM, marks=[pytest.mark.windows]),
     ],
 )
 async def test_derp_client_message_forward(connection_tag: ConnectionTag) -> None:

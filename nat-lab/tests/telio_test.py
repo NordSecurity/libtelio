@@ -1,9 +1,9 @@
-from utils.asyncio_util import run_async_contexts, run_async_context
-from telio import State, Runtime, Events, PeerInfo, PathType, DerpServer
 import asyncio
-import pytest
-import utils.testing as testing
 import copy
+import pytest
+from telio import State, Runtime, Events, PeerInfo, PathType, DerpServer
+from utils import testing
+from utils.asyncio_util import run_async_contexts, run_async_context
 
 
 class TestRuntime:
@@ -39,11 +39,11 @@ class TestRuntime:
         runtime = Runtime()
         runtime.allowed_pub_keys = set(["AAA", "BBB"])
 
-        runtime._set_peer(
+        runtime.set_peer(
             PeerInfo(public_key="AAA", state=State.Connected, path=PathType.Relay)
         )
 
-        runtime._set_peer(
+        runtime.set_peer(
             PeerInfo(public_key="BBB", state=State.Disconnected, path=PathType.Direct)
         )
 
@@ -85,7 +85,7 @@ class TestRuntime:
         ) as future:
             # wait for futures to be started
             await asyncio.sleep(0)
-            runtime._set_peer(PeerInfo(public_key="AAA", state=State.Connected))
+            runtime.set_peer(PeerInfo(public_key="AAA", state=State.Connected))
             await testing.wait_short(future)
 
         with pytest.raises(asyncio.TimeoutError):
@@ -97,7 +97,7 @@ class TestRuntime:
     async def test_set_derp_state(self) -> None:
         runtime = Runtime()
 
-        runtime._set_derp(
+        runtime.set_derp(
             DerpServer(
                 region_code="test",
                 name="test",
@@ -120,8 +120,7 @@ class TestRuntime:
         # it should pass again
         await testing.wait_short(
             runtime.notify_derp_state(
-                "1.1.1.1",
-                [State.Disconnected, State.Connecting, State.Connected],
+                "1.1.1.1", [State.Disconnected, State.Connecting, State.Connected]
             )
         )
 
@@ -146,7 +145,7 @@ class TestRuntime:
         ) as future:
             # wait for futures to be started
             await asyncio.sleep(0)
-            runtime._set_derp(
+            runtime.set_derp(
                 DerpServer(
                     region_code="test",
                     name="test",
@@ -173,7 +172,8 @@ class TestRuntime:
         runtime = Runtime()
 
         assert runtime.handle_output_line(
-            'event relay: {"region_code":"test","name":"test","hostname":"test","ipv4":"1.1.1.1","relay_port":1111,"stun_port":1111,"stun_plaintext_port":1111,"public_key":"test","weight":1,"use_plain_text":true,"conn_state":"connected"}'
+            "event relay:"
+            ' {"region_code":"test","name":"test","hostname":"test","ipv4":"1.1.1.1","relay_port":1111,"stun_port":1111,"stun_plaintext_port":1111,"public_key":"test","weight":1,"use_plain_text":true,"conn_state":"connected"}'
         )
 
         await testing.wait_short(
@@ -186,7 +186,8 @@ class TestRuntime:
         runtime.allowed_pub_keys = set(["AAA"])
 
         assert runtime.handle_output_line(
-            'event node: "{"identifier":"tcli","public_key":"AAA","state":"connected","is_exit":true,"is_vpn":true,"ip_addresses":[],"allowed_ips":[],"endpoint":null,"hostname":null,"allow_incoming_connections":false,"allow_peer_send_files":false,"path":"relay"}"'
+            "event node:"
+            ' "{"identifier":"tcli","public_key":"AAA","state":"connected","is_exit":true,"is_vpn":true,"ip_addresses":[],"allowed_ips":[],"endpoint":null,"hostname":null,"allow_incoming_connections":false,"allow_peer_send_files":false,"path":"relay"}"'
         )
 
         await testing.wait_short(
@@ -201,43 +202,43 @@ class TestEvents:
         events = Events(runtime)
         runtime.allowed_pub_keys = set(["AAA", "BBB"])
 
-        runtime._set_peer(
+        runtime.set_peer(
             PeerInfo(public_key="AAA", state=State.Connected, path=PathType.Relay)
         )
-        runtime._set_peer(
+        runtime.set_peer(
             PeerInfo(public_key="BBB", state=State.Disconnected, path=PathType.Direct)
         )
 
         await testing.wait_short(
-            events.wait_for_state_peer("AAA", [State.Connected], [PathType.Relay]),
+            events.wait_for_state_peer("AAA", [State.Connected], [PathType.Relay])
         )
 
         await testing.wait_short(
-            events.wait_for_state_peer("BBB", [State.Disconnected], [PathType.Direct]),
+            events.wait_for_state_peer("BBB", [State.Disconnected], [PathType.Direct])
         )
 
         # it should pass again
         await testing.wait_short(
             events.wait_for_state_peer(
                 "AAA", [State.Connected], [PathType.Relay, PathType.Direct]
-            ),
+            )
         )
         await testing.wait_short(
             events.wait_for_state_peer(
                 "BBB", [State.Disconnected], [PathType.Relay, PathType.Direct]
-            ),
+            )
         )
 
         # it should fail (wrong state)
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_short(
-                events.wait_for_state_peer("BBB", [State.Connected], [PathType.Direct]),
+                events.wait_for_state_peer("BBB", [State.Connected], [PathType.Direct])
             )
 
         # it should fail (wrong path)
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_short(
-                events.wait_for_state_peer("AAA", [State.Connected], [PathType.Direct]),
+                events.wait_for_state_peer("AAA", [State.Connected], [PathType.Direct])
             )
 
     @pytest.mark.asyncio
@@ -246,8 +247,8 @@ class TestEvents:
         events = Events(runtime)
         runtime.allowed_pub_keys = set(["AAA", "BBB"])
 
-        runtime._set_peer(PeerInfo(public_key="AAA", state=State.Connected))
-        runtime._set_peer(PeerInfo(public_key="BBB", state=State.Connected))
+        runtime.set_peer(PeerInfo(public_key="AAA", state=State.Connected))
+        runtime.set_peer(PeerInfo(public_key="BBB", state=State.Connected))
 
         await testing.wait_short(
             events.wait_for_state_peer("BBB", [State.Connected], [PathType.Relay])
@@ -256,8 +257,8 @@ class TestEvents:
             events.wait_for_state_peer("AAA", [State.Connected], [PathType.Relay])
         )
 
-        runtime._set_peer(PeerInfo(public_key="AAA", state=State.Disconnected))
-        runtime._set_peer(PeerInfo(public_key="BBB", state=State.Disconnected))
+        runtime.set_peer(PeerInfo(public_key="AAA", state=State.Disconnected))
+        runtime.set_peer(PeerInfo(public_key="BBB", state=State.Disconnected))
 
         await testing.wait_short(
             events.wait_for_state_peer("BBB", [State.Disconnected], [PathType.Relay])
@@ -281,7 +282,7 @@ class TestEvents:
         # it should fail (old state)
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_short(
-                events.wait_for_state_peer("BBB", [State.Connected], [PathType.Relay]),
+                events.wait_for_state_peer("BBB", [State.Connected], [PathType.Relay])
             )
 
         # it should fail (wrong path)
@@ -289,7 +290,7 @@ class TestEvents:
             await testing.wait_short(
                 events.wait_for_state_peer(
                     "AAA", [State.Disconnected], [PathType.Direct]
-                ),
+                )
             )
 
     @pytest.mark.asyncio
@@ -305,25 +306,25 @@ class TestEvents:
             # wait for futures to be started
             await asyncio.sleep(0)
 
-            runtime._set_peer(PeerInfo(public_key="BBB", state=State.Connected))
+            runtime.set_peer(PeerInfo(public_key="BBB", state=State.Connected))
             with pytest.raises(asyncio.TimeoutError):
                 await testing.wait_short(asyncio.shield(future))
 
-            runtime._set_peer(PeerInfo(public_key="AAA", state=State.Disconnected))
+            runtime.set_peer(PeerInfo(public_key="AAA", state=State.Disconnected))
             with pytest.raises(asyncio.TimeoutError):
                 await testing.wait_short(asyncio.shield(future))
 
-            runtime._set_peer(PeerInfo(public_key="AAA", state=State.Connecting))
+            runtime.set_peer(PeerInfo(public_key="AAA", state=State.Connecting))
             with pytest.raises(asyncio.TimeoutError):
                 await testing.wait_short(asyncio.shield(future))
 
-            runtime._set_peer(
+            runtime.set_peer(
                 PeerInfo(public_key="AAA", state=State.Connected, path=PathType.Direct)
             )
             with pytest.raises(asyncio.TimeoutError):
                 await testing.wait_short(asyncio.shield(future))
 
-            runtime._set_peer(PeerInfo(public_key="AAA", state=State.Connected))
+            runtime.set_peer(PeerInfo(public_key="AAA", state=State.Connected))
             await testing.wait_short(future)
 
         with pytest.raises(asyncio.TimeoutError):
@@ -357,36 +358,36 @@ class TestEvents:
             # wait for futures to be started
             await asyncio.sleep(0)
 
-            runtime._set_peer(
+            runtime.set_peer(
                 PeerInfo(public_key="BBB", state=State.Connected, path=PathType.Relay)
             )
-            runtime._set_peer(
+            runtime.set_peer(
                 PeerInfo(public_key="AAA", state=State.Connected, path=PathType.Direct)
             )
             for future in futures:
                 with pytest.raises(asyncio.TimeoutError):
                     await testing.wait_short(asyncio.shield(future))
 
-            runtime._set_peer(
+            runtime.set_peer(
                 PeerInfo(
                     public_key="AAA", state=State.Disconnected, path=PathType.Relay
                 )
             )
-            runtime._set_peer(
+            runtime.set_peer(
                 PeerInfo(public_key="AAA", state=State.Connecting, path=PathType.Relay)
             )
-            runtime._set_peer(
+            runtime.set_peer(
                 PeerInfo(public_key="AAA", state=State.Connected, path=PathType.Relay)
             )
-            runtime._set_peer(
+            runtime.set_peer(
                 PeerInfo(
                     public_key="BBB", state=State.Disconnected, path=PathType.Direct
                 )
             )
-            runtime._set_peer(
+            runtime.set_peer(
                 PeerInfo(public_key="BBB", state=State.Connecting, path=PathType.Direct)
             )
-            runtime._set_peer(
+            runtime.set_peer(
                 PeerInfo(public_key="BBB", state=State.Connected, path=PathType.Direct)
             )
 
@@ -398,7 +399,7 @@ class TestEvents:
         runtime = Runtime()
         events = Events(runtime)
 
-        runtime._set_derp(
+        runtime.set_derp(
             DerpServer(
                 region_code="test",
                 name="test",
@@ -442,7 +443,7 @@ class TestEvents:
         runtime = Runtime()
         events = Events(runtime)
 
-        runtime._set_derp(
+        runtime.set_derp(
             DerpServer(
                 region_code="test",
                 name="test",
@@ -462,7 +463,7 @@ class TestEvents:
             events.wait_for_state_derp("1.1.1.1", [State.Connected])
         )
 
-        runtime._set_derp(
+        runtime.set_derp(
             DerpServer(
                 region_code="test",
                 name="test",
@@ -515,23 +516,23 @@ class TestEvents:
             await asyncio.sleep(0)
 
             test_derp_server.ipv4 = "1.1.1.2"
-            runtime._set_derp(copy.deepcopy(test_derp_server))
+            runtime.set_derp(copy.deepcopy(test_derp_server))
             with pytest.raises(asyncio.TimeoutError):
                 await testing.wait_short(asyncio.shield(future))
 
             test_derp_server.ipv4 = "1.1.1.1"
             test_derp_server.conn_state = State.Disconnected
-            runtime._set_derp(copy.deepcopy(test_derp_server))
+            runtime.set_derp(copy.deepcopy(test_derp_server))
             with pytest.raises(asyncio.TimeoutError):
                 await testing.wait_short(asyncio.shield(future))
 
             test_derp_server.conn_state = State.Connecting
-            runtime._set_derp(copy.deepcopy(test_derp_server))
+            runtime.set_derp(copy.deepcopy(test_derp_server))
             with pytest.raises(asyncio.TimeoutError):
                 await testing.wait_short(asyncio.shield(future))
 
             test_derp_server.conn_state = State.Connected
-            runtime._set_derp(copy.deepcopy(test_derp_server))
+            runtime.set_derp(copy.deepcopy(test_derp_server))
             await testing.wait_short(future)
 
         with pytest.raises(asyncio.TimeoutError):
@@ -573,10 +574,10 @@ class TestEvents:
 
             test_derp_server.ipv4 = "1.1.1.3"
             test_derp_server.conn_state = State.Connected
-            runtime._set_derp(copy.deepcopy(test_derp_server))
+            runtime.set_derp(copy.deepcopy(test_derp_server))
 
             test_derp_server.ipv4 = "1.1.1.4"
-            runtime._set_derp(copy.deepcopy(test_derp_server))
+            runtime.set_derp(copy.deepcopy(test_derp_server))
 
             for future in futures:
                 with pytest.raises(asyncio.TimeoutError):
@@ -584,23 +585,23 @@ class TestEvents:
 
             test_derp_server.ipv4 = "1.1.1.1"
             test_derp_server.conn_state = State.Disconnected
-            runtime._set_derp(copy.deepcopy(test_derp_server))
+            runtime.set_derp(copy.deepcopy(test_derp_server))
             test_derp_server.conn_state = State.Connecting
-            runtime._set_derp(copy.deepcopy(test_derp_server))
+            runtime.set_derp(copy.deepcopy(test_derp_server))
             test_derp_server.conn_state = State.Connected
-            runtime._set_derp(copy.deepcopy(test_derp_server))
+            runtime.set_derp(copy.deepcopy(test_derp_server))
 
             test_derp_server.ipv4 = "1.1.1.2"
             test_derp_server.conn_state = State.Disconnected
-            runtime._set_derp(copy.deepcopy(test_derp_server))
+            runtime.set_derp(copy.deepcopy(test_derp_server))
             test_derp_server.conn_state = State.Connecting
-            runtime._set_derp(copy.deepcopy(test_derp_server))
+            runtime.set_derp(copy.deepcopy(test_derp_server))
             test_derp_server.conn_state = State.Connected
-            runtime._set_derp(copy.deepcopy(test_derp_server))
+            runtime.set_derp(copy.deepcopy(test_derp_server))
 
             test_derp_server.ipv4 = "1.1.1.3"
             test_derp_server.conn_state = State.Disconnected
-            runtime._set_derp(copy.deepcopy(test_derp_server))
+            runtime.set_derp(copy.deepcopy(test_derp_server))
 
             for future in futures:
                 await testing.wait_short(future)

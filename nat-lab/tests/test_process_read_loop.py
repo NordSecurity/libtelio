@@ -1,6 +1,6 @@
-from contextlib import AsyncExitStack
-from utils import ConnectionTag, new_connection_by_tag
 import pytest
+from contextlib import AsyncExitStack
+from utils.connection_util import ConnectionTag, new_connection_by_tag
 
 
 @pytest.mark.asyncio

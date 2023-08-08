@@ -1,6 +1,6 @@
 import asyncio
-from typing import List, Dict, Set, Iterator
 from contextlib import contextmanager
+from typing import List, Dict, Set, Iterator
 
 
 class OutputCapture:

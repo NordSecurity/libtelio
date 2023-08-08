@@ -1,13 +1,13 @@
-from typing import Dict, Any, List, Tuple
-from config import DERP_SERVERS
 import pprint
+from config import DERP_SERVERS
+from typing import Dict, Any, List, Tuple, Optional
 
 
 class NodeError(Exception):
     node_id: str
 
-    def __init__(self, id) -> None:
-        self.node_id = id
+    def __init__(self, node_id) -> None:
+        self.node_id = node_id
 
 
 class DuplicateNodeError(NodeError):
@@ -87,11 +87,11 @@ class Node:
 
     def set_peer_firewall_settings(
         self,
-        id: str,
+        node_id: str,
         allow_incoming_connections: bool = False,
         allow_peer_send_files: bool = False,
     ) -> None:
-        self.firewall_rules[id] = FirewallRule(
+        self.firewall_rules[node_id] = FirewallRule(
             allow_incoming_connections, allow_peer_send_files
         )
 
@@ -114,43 +114,41 @@ class API:
         self.nodes = {}
 
     def register(
-        self, name: str, id: str, private_key: str, public_key: str, is_local=False
+        self, name: str, node_id: str, private_key: str, public_key: str, is_local=False
     ) -> Node:
-        if id in self.nodes:
-            raise DuplicateNodeError(id)
+        if node_id in self.nodes:
+            raise DuplicateNodeError(node_id)
 
         node = Node()
         node.name = name
-        node.id = id
+        node.id = node_id
         node.private_key = private_key
         node.public_key = public_key
         node.is_local = is_local
         node.hostname = name + ".nord"
 
-        self.nodes[id] = node
+        self.nodes[node_id] = node
         return node
 
-    def remove(self, id) -> None:
-        del self.nodes[id]
+    def remove(self, node_id) -> None:
+        del self.nodes[node_id]
 
-    def assign_ip(self, id: str, address: str) -> None:
+    def assign_ip(self, node_id: str, address: str) -> None:
         for _, node in self.nodes.items():
             if address in node.ip_addresses:
                 raise AddressCollisionError(node.id)
 
-        node = self._get_node(id)
+        node = self._get_node(node_id)
         node.ip_addresses.append(address)
 
     def get_meshmap(
-        self,
-        id: str,
-        derp_servers: List[Dict[str, Any]] = DERP_SERVERS,
+        self, node_id: str, derp_servers: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
-        node = self._get_node(id)
+        node = self._get_node(node_id)
 
         peers: List[Dict[str, Any]] = []
         for key, other_node in self.nodes.items():
-            if key != id:
+            if key != node_id:
                 peers.append(other_node.to_peer_config_for_node(node))
 
         meshmap = {
@@ -160,18 +158,15 @@ class API:
             "ip_addresses": node.ip_addresses,
             "endpoints": node.endpoints,
             "peers": peers,
-            "derp_servers": derp_servers,
+            "derp_servers": derp_servers if derp_servers is not None else DERP_SERVERS,
         }
 
         return meshmap
 
-    def default_config_alpha_node(
-        self,
-        is_local: bool = False,
-    ) -> Node:
+    def default_config_alpha_node(self, is_local: bool = False) -> Node:
         alpha = self.register(
             name="alpha",
-            id="96ddb926-4b86-11ec-81d3-0242ac130003",
+            node_id="96ddb926-4b86-11ec-81d3-0242ac130003",
             private_key="IAnPnSDobLEProbDcj0nKTroCyjr2w0Pr2nFa3z35Gg=",
             public_key="1eX7Fy78bokD5ZSNO5G11R+28v4xzawlsRdSJoU3jDg=",
             is_local=is_local,
@@ -179,13 +174,10 @@ class API:
         self.assign_ip(alpha.id, "100.64.33.1")
         return alpha
 
-    def default_config_beta_node(
-        self,
-        is_local: bool = False,
-    ) -> Node:
+    def default_config_beta_node(self, is_local: bool = False) -> Node:
         beta = self.register(
             name="beta",
-            id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
+            node_id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
             private_key="mODRJKABR4wDCjXn899QO6wb83azXKZF7hcfX8dWuUA=",
             public_key="3XCOtCGl5tZJ8N5LksxkjfeqocW0BH2qmARD7qzHDkI=",
             is_local=is_local,
@@ -193,13 +185,10 @@ class API:
         self.assign_ip(beta.id, "100.64.33.2")
         return beta
 
-    def default_config_gamma_node(
-        self,
-        is_local: bool = False,
-    ) -> Node:
+    def default_config_gamma_node(self, is_local: bool = False) -> Node:
         gamma = self.register(
             name="gamma",
-            id="39388b1e-ebd8-11ec-8ea0-0242ac120002",
+            node_id="39388b1e-ebd8-11ec-8ea0-0242ac120002",
             private_key="GN+D2Iy9p3UmyBZhgxU4AhbLT6sxY0SUhXu0a0TuiV4=",
             public_key="UnB+btGMEBXcR7EchMi28Hqk0Q142WokO6n313dt3mc=",
             is_local=is_local,
@@ -208,9 +197,7 @@ class API:
         return gamma
 
     def default_config_two_nodes(
-        self,
-        alpha_is_local: bool = False,
-        beta_is_local: bool = False,
+        self, alpha_is_local: bool = False, beta_is_local: bool = False
     ) -> Tuple[Node, Node]:
         alpha = self.default_config_alpha_node(alpha_is_local)
         beta = self.default_config_beta_node(beta_is_local)
@@ -236,7 +223,7 @@ class API:
 
         return (alpha, beta, gamma)
 
-    def _get_node(self, id: str) -> Node:
-        if id not in self.nodes:
-            raise MissingNodeError(id)
-        return self.nodes[id]
+    def _get_node(self, node_id: str) -> Node:
+        if node_id not in self.nodes:
+            raise MissingNodeError(node_id)
+        return self.nodes[node_id]

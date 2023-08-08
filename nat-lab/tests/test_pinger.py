@@ -1,15 +1,15 @@
 import asyncio
+import enum
 import pytest
-import utils.testing as testing
-from mesh_api import DERP_SERVERS, API
-import telio
-from protobuf.pinger_pb2 import Pinger
 import socket
 import struct
-import enum
+import telio
 from contextlib import AsyncExitStack
-from utils import ConnectionTag, new_connection_by_tag, LAN_ADDR_MAP
+from mesh_api import DERP_SERVERS, API
+from protobuf.pinger_pb2 import Pinger
+from utils import testing
 from utils.asyncio_util import run_async_context
+from utils.connection_util import ConnectionTag, new_connection_by_tag, LAN_ADDR_MAP
 
 
 class PingType(enum.Enum):
@@ -60,8 +60,8 @@ async def test_ping_pong() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha,).run_meshnet(
-                api.get_meshmap(alpha.id, DERP_SERVERS),
+            telio.Client(connection_alpha, alpha).run_meshnet(
+                api.get_meshmap(alpha.id, DERP_SERVERS)
             )
         )
 
@@ -87,7 +87,6 @@ async def test_ping_pong() -> None:
 @pytest.mark.asyncio
 async def test_send_malform_pinger_packet() -> None:
     async with AsyncExitStack() as exit_stack:
-
         api = API()
 
         alpha = api.default_config_alpha_node()
@@ -97,8 +96,8 @@ async def test_send_malform_pinger_packet() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha,).run_meshnet(
-                api.get_meshmap(alpha.id, DERP_SERVERS),
+            telio.Client(connection_alpha, alpha).run_meshnet(
+                api.get_meshmap(alpha.id, DERP_SERVERS)
             )
         )
 

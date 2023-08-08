@@ -1,13 +1,13 @@
-from utils import Ping
-from contextlib import AsyncExitStack
-from mesh_api import API
-from utils import ConnectionTag, new_connection_with_gw, testing
-from telio import PathType, Client
-from telio_features import TelioFeatures, Direct
 import asyncio
 import pytest
 import telio
-import time
+from contextlib import AsyncExitStack
+from mesh_api import API
+from telio import PathType, Client
+from telio_features import TelioFeatures, Direct
+from utils import testing
+from utils.connection_util import ConnectionTag, new_connection_with_gw
+from utils.ping import Ping
 
 ANY_PROVIDERS = ["local", "stun"]
 LOCAL_PROVIDER = ["local"]
@@ -39,9 +39,7 @@ async def test_upnp_route_corrupted() -> None:
                 alpha,
                 telio.AdapterType.BoringTun,
                 telio_features=TelioFeatures(direct=Direct(providers=UPNP_PROVIDER)),
-            ).run_meshnet(
-                api.get_meshmap(alpha.id),
-            )
+            ).run_meshnet(api.get_meshmap(alpha.id))
         )
         beta_client = await exit_stack.enter_async_context(
             Client(

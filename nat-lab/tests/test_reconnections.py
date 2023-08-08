@@ -1,29 +1,24 @@
-from utils import Ping
-from contextlib import AsyncExitStack
-from mesh_api import API
-from telio import AdapterType
 import asyncio
 import pytest
 import telio
-import utils.testing as testing
-from utils.connection_tracker import (
-    ConnectionLimits,
+from contextlib import AsyncExitStack
+from mesh_api import API
+from telio import AdapterType
+from utils import testing
+from utils.connection_tracker import ConnectionLimits
+from utils.connection_util import (
     generate_connection_tracker_config,
-)
-from utils import (
     ConnectionTag,
     new_connection_with_conn_tracker,
 )
+from utils.ping import Ping
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type,",
     [
-        pytest.param(
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            telio.AdapterType.BoringTun,
-        ),
+        pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, telio.AdapterType.BoringTun),
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
             telio.AdapterType.LinuxNativeWg,
@@ -40,15 +35,12 @@ from utils import (
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.MAC_VM,
-            telio.AdapterType.Default,
-            marks=pytest.mark.mac,
+            ConnectionTag.MAC_VM, telio.AdapterType.Default, marks=pytest.mark.mac
         ),
     ],
 )
 async def test_mesh_reconnect(
-    alpha_connection_tag: ConnectionTag,
-    adapter_type: AdapterType,
+    alpha_connection_tag: ConnectionTag, adapter_type: AdapterType
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -74,15 +66,13 @@ async def test_mesh_reconnect(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(alpha_connection, alpha, adapter_type,).run_meshnet(
-                api.get_meshmap(alpha.id),
+            telio.Client(alpha_connection, alpha, adapter_type).run_meshnet(
+                api.get_meshmap(alpha.id)
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(beta_connection, beta,).run_meshnet(
-                api.get_meshmap(beta.id),
-            )
+            telio.Client(beta_connection, beta).run_meshnet(api.get_meshmap(beta.id))
         )
 
         await testing.wait_lengthy(
@@ -121,8 +111,7 @@ async def test_mesh_reconnect(
         await testing.wait_lengthy(
             asyncio.gather(
                 client_alpha.wait_for_event_peer(
-                    beta.public_key,
-                    [telio.State.Connected],
+                    beta.public_key, [telio.State.Connected]
                 ),
                 client_alpha.wait_for_event_on_any_derp([telio.State.Connected]),
                 alpha_conn_tracker.wait_for_event("derp_1"),

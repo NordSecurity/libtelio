@@ -1,13 +1,13 @@
-from aiodocker.containers import DockerContainer
-from aiodocker.stream import Stream
-from aiodocker.execs import Exec
-from utils.process import Process, ProcessExecError, StreamCallback
-from utils.asyncio_util import run_async_context
-from typing import List, Optional, AsyncIterator
-from contextlib import suppress, asynccontextmanager
 import asyncio
-import sys
 import os
+import sys
+from .process import Process, ProcessExecError, StreamCallback
+from aiodocker.containers import DockerContainer
+from aiodocker.execs import Exec
+from aiodocker.stream import Stream
+from contextlib import suppress, asynccontextmanager
+from typing import List, Optional, AsyncIterator
+from utils.asyncio_util import run_async_context
 
 
 class DockerProcess(Process):
@@ -83,7 +83,7 @@ class DockerProcess(Process):
             if message is None:
                 break
 
-            if message.stream != 1 and message.stream != 2:
+            if message.stream not in (1, 2):
                 raise ValueError(f"unknown stream {message.stream}")
 
             buffers[message.stream] += message.data

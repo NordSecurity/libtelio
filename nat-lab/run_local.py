@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 
-from typing import List, Optional, Dict, Any
 import argparse
 import os
 import subprocess
 import sys
+from typing import List, Optional, Dict, Any
 
 PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/../..")
 
 TEST_TIMEOUT = 60
+
 
 # Runs the command with stdout and stderr piped back to executing shell (this results
 # in real time log messages that are properly color coded)
@@ -16,7 +17,7 @@ def run_command(command: List[str], env: Optional[Dict[str, Any]] = None) -> Non
     if env:
         env = {**os.environ.copy(), **env}
 
-    print("|EXECUTE| {}".format(" ".join(command)))
+    print(f"|EXECUTE| {' '.join(command)}")
     subprocess.check_call(command, env=env)
     print("")
 
@@ -48,31 +49,14 @@ def main() -> int:
         help="Build TCLI for Mac, run tests with 'mac' mark",
     )
     parser.add_argument(
-        "--linux-native",
-        action="store_true",
-        help="Run tests with 'linux_native' mark",
+        "--linux-native", action="store_true", help="Run tests with 'linux_native' mark"
     )
+    parser.add_argument("--nobuild", action="store_true", help="Don't build TCLI")
+    parser.add_argument("--notests", action="store_true", help="Don't run tests")
     parser.add_argument(
-        "--nobuild",
-        action="store_true",
-        help="Don't build TCLI",
+        "--notypecheck", action="store_true", help="Don't run typecheck, `mypy`"
     )
-    parser.add_argument(
-        "--notests",
-        action="store_true",
-        help="Don't run tests",
-    )
-    parser.add_argument(
-        "--notypecheck",
-        action="store_true",
-        help="Don't run typecheck, `mypy`",
-    )
-    parser.add_argument(
-        "--reruns",
-        type=int,
-        default=0,
-        help="Pass `reruns` to pytest",
-    )
+    parser.add_argument("--reruns", type=int, default=0, help="Pass `reruns` to pytest")
     parser.add_argument("--moose", action="store_true", help="Build with moose")
     args = parser.parse_args()
 
@@ -85,12 +69,7 @@ def main() -> int:
         run_command(["mypy", "."])
 
     if not args.notests:
-        pytest_cmd = [
-            "pytest",
-            "-vv",
-            "--durations=0",
-            f"--reruns={args.reruns}",
-        ]
+        pytest_cmd = ["pytest", "-vv", "--durations=0", f"--reruns={args.reruns}"]
 
         pytest_cmd += [
             f"--timeout={TEST_TIMEOUT}",
@@ -107,8 +86,8 @@ def main() -> int:
     return 0
 
 
-def run_build_command(os, args):
-    command = ["../../ci/build.sh", "--default", os]
+def run_build_command(operating_system, args):
+    command = ["../../ci/build.sh", "--default", operating_system]
     if args.restart:
         command.append("--restart")
     if args.moose:
@@ -129,7 +108,10 @@ def get_pytest_arguments(options) -> List[str]:
     if options.m:
         args.extend(["-m", options.m])
     else:
-        marks = "not nat and not windows and not mac and not linux_native and not long and not moose"
+        marks = (
+            "not nat and not windows and not mac and not linux_native and not long and"
+            " not moose"
+        )
         if options.windows:
             marks = marks.replace("not windows", "windows")
         if options.mac:

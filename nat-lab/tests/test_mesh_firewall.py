@@ -1,20 +1,18 @@
-from utils import Ping, stun
-from contextlib import AsyncExitStack
-from mesh_api import API
 import asyncio
 import config
 import pytest
 import telio
-import utils.testing as testing
-from utils import (
+from contextlib import AsyncExitStack
+from mesh_api import API
+from utils import testing, stun
+from utils.connection_tracker import ConnectionLimits
+from utils.connection_util import (
+    generate_connection_tracker_config,
     ConnectionTag,
     new_connection_with_conn_tracker,
-    OutputNotifier,
 )
-from utils.connection_tracker import (
-    generate_connection_tracker_config,
-    ConnectionLimits,
-)
+from utils.output_notifier import OutputNotifier
+from utils.ping import Ping
 
 
 @pytest.mark.asyncio
@@ -45,15 +43,11 @@ async def test_mesh_firewall_successful_passthrough() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha,).run_meshnet(
-                api.get_meshmap(alpha.id),
-            )
+            telio.Client(connection_alpha, alpha).run_meshnet(api.get_meshmap(alpha.id))
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta,).run_meshnet(
-                api.get_meshmap(beta.id),
-            )
+            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
         )
 
         await testing.wait_long(
@@ -120,15 +114,11 @@ async def test_mesh_firewall_reject_packet() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha,).run_meshnet(
-                api.get_meshmap(alpha.id),
-            )
+            telio.Client(connection_alpha, alpha).run_meshnet(api.get_meshmap(alpha.id))
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta,).run_meshnet(
-                api.get_meshmap(beta.id),
-            )
+            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
         )
 
         await testing.wait_long(
@@ -195,22 +185,14 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
 
         client_alpha = await exit_stack.enter_async_context(
             telio.Client(
-                connection_alpha,
-                alpha,
-                telio.AdapterType.BoringTun,
-            ).run_meshnet(
-                api.get_meshmap(alpha.id),
-            )
+                connection_alpha, alpha, telio.AdapterType.BoringTun
+            ).run_meshnet(api.get_meshmap(alpha.id))
         )
 
         client_exit_node = await exit_stack.enter_async_context(
             telio.Client(
-                connection_exit_node,
-                exit_node,
-                telio.AdapterType.BoringTun,
-            ).run_meshnet(
-                api.get_meshmap(exit_node.id),
-            )
+                connection_exit_node, exit_node, telio.AdapterType.BoringTun
+            ).run_meshnet(api.get_meshmap(exit_node.id))
         )
 
         await testing.wait_long(
@@ -295,11 +277,7 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
 
         await testing.wait_long(client_exit_node.get_router().create_exit_node_route())
 
-        await testing.wait_long(
-            client_alpha.connect_to_exit_node(
-                exit_node.public_key,
-            )
-        )
+        await testing.wait_long(client_alpha.connect_to_exit_node(exit_node.public_key))
 
         await testing.wait_long(
             client_alpha.wait_for_state_peer(
@@ -311,9 +289,7 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
 
         (ip_alpha, ip_exit_node) = await get_external_ips()
         await testing.wait_long(
-            asyncio.gather(
-                exit_node_conn_tracker.wait_for_event("stun"),
-            )
+            asyncio.gather(exit_node_conn_tracker.wait_for_event("stun"))
         )
         assert ip_alpha == ip_exit_node
 
@@ -339,9 +315,7 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
 
         (ip_alpha, ip_exit_node) = await get_external_ips()
         await testing.wait_long(
-            asyncio.gather(
-                exit_node_conn_tracker.wait_for_event("stun"),
-            )
+            asyncio.gather(exit_node_conn_tracker.wait_for_event("stun"))
         )
         assert ip_alpha == ip_exit_node
         assert alpha_conn_tracker.get_out_of_limits() is None
@@ -408,15 +382,11 @@ async def test_mesh_firewall_file_share_port(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha,).run_meshnet(
-                api.get_meshmap(alpha.id),
-            )
+            telio.Client(connection_alpha, alpha).run_meshnet(api.get_meshmap(alpha.id))
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta,).run_meshnet(
-                api.get_meshmap(beta.id),
-            )
+            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
         )
 
         await testing.wait_long(
@@ -463,13 +433,11 @@ async def test_mesh_firewall_file_share_port(
         connected_event = asyncio.Event()
 
         output_notifier.notify_output(
-            f"listening on [{CLIENT_ALPHA_IP}] {str(PORT)}",
-            listening_start_event,
+            f"listening on [{CLIENT_ALPHA_IP}] {str(PORT)}", listening_start_event
         )
 
         output_notifier.notify_output(
-            f"[{CLIENT_ALPHA_IP}] {str(PORT)} (?) open",
-            sender_start_event,
+            f"[{CLIENT_ALPHA_IP}] {str(PORT)} (?) open", sender_start_event
         )
 
         output_notifier.notify_output(
@@ -480,15 +448,7 @@ async def test_mesh_firewall_file_share_port(
         # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
         await exit_stack.enter_async_context(
             connection_alpha.create_process(
-                [
-                    "nc",
-                    "-nluvv",
-                    "-p",
-                    str(PORT),
-                    "-s",
-                    CLIENT_ALPHA_IP,
-                    CLIENT_BETA_IP,
-                ]
+                ["nc", "-nluvv", "-p", str(PORT), "-s", CLIENT_ALPHA_IP, CLIENT_BETA_IP]
             ).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
         )
 
@@ -498,14 +458,7 @@ async def test_mesh_firewall_file_share_port(
         # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
         await exit_stack.enter_async_context(
             connection_beta.create_process(
-                [
-                    "nc",
-                    "-nuvvz",
-                    "-s",
-                    CLIENT_BETA_IP,
-                    CLIENT_ALPHA_IP,
-                    str(PORT),
-                ]
+                ["nc", "-nuvvz", "-s", CLIENT_BETA_IP, CLIENT_ALPHA_IP, str(PORT)]
             ).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
         )
 
@@ -641,28 +594,13 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
             await testing.wait_normal(conntrack_proc.wait_stdin_ready())
             # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
             async with connection_alpha.create_process(
-                [
-                    "nc",
-                    "-nlvv",
-                    "-p",
-                    str(PORT),
-                    "-s",
-                    CLIENT_ALPHA_IP,
-                    CLIENT_BETA_IP,
-                ]
+                ["nc", "-nlvv", "-p", str(PORT), "-s", CLIENT_ALPHA_IP, CLIENT_BETA_IP]
             ).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as listener:
                 await testing.wait_normal(listener.wait_stdin_ready())
                 await testing.wait_normal(listening_start_event.wait())
                 await exit_stack.enter_async_context(
                     connection_beta.create_process(
-                        [
-                            "nc",
-                            "-nvv",
-                            "-s",
-                            CLIENT_BETA_IP,
-                            CLIENT_ALPHA_IP,
-                            str(PORT),
-                        ]
+                        ["nc", "-nvv", "-s", CLIENT_BETA_IP, CLIENT_ALPHA_IP, str(PORT)]
                     ).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
                 )
                 await testing.wait_normal(sender_start_event.wait())
@@ -795,28 +733,13 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
         ) as conntrack_proc:
             await testing.wait_normal(conntrack_proc.wait_stdin_ready())
             async with connection_alpha.create_process(
-                [
-                    "nc",
-                    "-nlvv",
-                    "-p",
-                    str(PORT),
-                    "-s",
-                    CLIENT_ALPHA_IP,
-                    CLIENT_BETA_IP,
-                ]
+                ["nc", "-nlvv", "-p", str(PORT), "-s", CLIENT_ALPHA_IP, CLIENT_BETA_IP]
             ).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as listener:
                 await testing.wait_normal(listener.wait_stdin_ready())
                 await testing.wait_normal(listening_start_event.wait())
                 # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
                 async with connection_beta.create_process(
-                    [
-                        "nc",
-                        "-nvv",
-                        "-s",
-                        CLIENT_BETA_IP,
-                        CLIENT_ALPHA_IP,
-                        str(PORT),
-                    ]
+                    ["nc", "-nvv", "-s", CLIENT_BETA_IP, CLIENT_ALPHA_IP, str(PORT)]
                 ).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as client:
                     await testing.wait_normal(client.wait_stdin_ready())
                     await testing.wait_normal(sender_start_event.wait())

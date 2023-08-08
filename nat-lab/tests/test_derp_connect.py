@@ -1,14 +1,14 @@
-from utils import Ping
-from config import DERP_PRIMARY, DERP_FAKE, DERP_SECONDARY, DERP_TERTIARY, DERP_SERVERS
-from contextlib import AsyncExitStack
-from mesh_api import API
-from utils import ConnectionTag, new_connection_by_tag, testing
-from telio import State
 import asyncio
 import os
 import pytest
 import telio
-import time  # TEST
+from config import DERP_PRIMARY, DERP_SECONDARY, DERP_TERTIARY, DERP_SERVERS
+from contextlib import AsyncExitStack
+from mesh_api import API
+from telio import State
+from utils import testing
+from utils.connection_util import ConnectionTag, new_connection_by_tag
+from utils.ping import Ping
 
 DERP1_IP = str(DERP_PRIMARY["ipv4"])
 DERP2_IP = str(DERP_SECONDARY["ipv4"])
@@ -34,15 +34,11 @@ async def test_derp_reconnect_2clients() -> None:
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.Client(alpha_connection, alpha,).run_meshnet(
-                api.get_meshmap(alpha.id),
-            )
+            telio.Client(alpha_connection, alpha).run_meshnet(api.get_meshmap(alpha.id))
         )
 
         beta_client = await exit_stack.enter_async_context(
-            telio.Client(beta_connection, beta,).run_meshnet(
-                api.get_meshmap(beta.id),
-            )
+            telio.Client(beta_connection, beta).run_meshnet(api.get_meshmap(beta.id))
         )
 
         # As the wireguard protocol routing scheme is based on the public key
@@ -131,19 +127,13 @@ async def test_derp_reconnect_3clients() -> None:
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.Client(alpha_connection, alpha,).run_meshnet(
-                api.get_meshmap(alpha.id),
-            )
+            telio.Client(alpha_connection, alpha).run_meshnet(api.get_meshmap(alpha.id))
         )
         beta_client = await exit_stack.enter_async_context(
-            telio.Client(beta_connection, beta,).run_meshnet(
-                api.get_meshmap(beta.id),
-            )
+            telio.Client(beta_connection, beta).run_meshnet(api.get_meshmap(beta.id))
         )
         gamma_client = await exit_stack.enter_async_context(
-            telio.Client(gamma_connection, gamma,).run_meshnet(
-                api.get_meshmap(gamma.id),
-            )
+            telio.Client(gamma_connection, gamma).run_meshnet(api.get_meshmap(gamma.id))
         )
 
         await testing.wait_lengthy(
@@ -212,14 +202,12 @@ async def test_derp_reconnect_3clients() -> None:
 
         await testing.wait_lengthy(
             beta_client.wait_for_state_derp(
-                DERP1_IP,
-                [State.Disconnected, State.Connecting],
+                DERP1_IP, [State.Disconnected, State.Connecting]
             )
         )
         await testing.wait_lengthy(
             gamma_client.wait_for_state_derp(
-                DERP1_IP,
-                [State.Disconnected, State.Connecting],
+                DERP1_IP, [State.Disconnected, State.Connecting]
             )
         )
 
@@ -260,8 +248,7 @@ async def test_derp_reconnect_3clients() -> None:
         )
         await testing.wait_lengthy(
             gamma_client.wait_for_state_derp(
-                DERP2_IP,
-                [State.Disconnected, State.Connecting],
+                DERP2_IP, [State.Disconnected, State.Connecting]
             )
         )
 
@@ -330,9 +317,9 @@ async def test_derp_restart() -> None:
         DERP_SERVERS3[1]["weight"] = 2
         DERP_SERVERS3[2]["weight"] = 1
 
-        DERP1_IP = str(DERP_SERVERS1[0]["ipv4"])
-        DERP2_IP = str(DERP_SERVERS1[1]["ipv4"])
-        DERP3_IP = str(DERP_SERVERS1[2]["ipv4"])
+        _DERP1_IP = str(DERP_SERVERS1[0]["ipv4"])
+        _DERP2_IP = str(DERP_SERVERS1[1]["ipv4"])
+        _DERP3_IP = str(DERP_SERVERS1[2]["ipv4"])
 
         api = API()
         (alpha, beta, gamma) = api.default_config_three_nodes()
@@ -348,18 +335,18 @@ async def test_derp_restart() -> None:
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.Client(alpha_connection, alpha,).run_meshnet(
-                api.get_meshmap(alpha.id, DERP_SERVERS1),
+            telio.Client(alpha_connection, alpha).run_meshnet(
+                api.get_meshmap(alpha.id, DERP_SERVERS1)
             )
         )
         beta_client = await exit_stack.enter_async_context(
-            telio.Client(beta_connection, beta,).run_meshnet(
-                api.get_meshmap(beta.id, DERP_SERVERS2),
+            telio.Client(beta_connection, beta).run_meshnet(
+                api.get_meshmap(beta.id, DERP_SERVERS2)
             )
         )
         gamma_client = await exit_stack.enter_async_context(
-            telio.Client(gamma_connection, gamma,).run_meshnet(
-                api.get_meshmap(gamma.id, DERP_SERVERS3),
+            telio.Client(gamma_connection, gamma).run_meshnet(
+                api.get_meshmap(gamma.id, DERP_SERVERS3)
             )
         )
 
@@ -378,9 +365,9 @@ async def test_derp_restart() -> None:
 
         await testing.wait_lengthy(
             asyncio.gather(
-                alpha_client.wait_for_state_derp(DERP1_IP, [State.Connected]),
-                beta_client.wait_for_state_derp(DERP2_IP, [State.Connected]),
-                gamma_client.wait_for_state_derp(DERP3_IP, [State.Connected]),
+                alpha_client.wait_for_state_derp(_DERP1_IP, [State.Connected]),
+                beta_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
+                gamma_client.wait_for_state_derp(_DERP3_IP, [State.Connected]),
             )
         )
         await testing.wait_lengthy(
@@ -422,9 +409,9 @@ async def test_derp_restart() -> None:
 
         await testing.wait_lengthy(
             asyncio.gather(
-                alpha_client.wait_for_state_derp(DERP2_IP, [State.Connected]),
-                beta_client.wait_for_state_derp(DERP2_IP, [State.Connected]),
-                gamma_client.wait_for_state_derp(DERP3_IP, [State.Connected]),
+                alpha_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
+                beta_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
+                gamma_client.wait_for_state_derp(_DERP3_IP, [State.Connected]),
             )
         )
 
@@ -456,9 +443,9 @@ async def test_derp_restart() -> None:
 
         await testing.wait_lengthy(
             asyncio.gather(
-                alpha_client.wait_for_state_derp(DERP1_IP, [State.Connected]),
-                beta_client.wait_for_state_derp(DERP3_IP, [State.Connected]),
-                gamma_client.wait_for_state_derp(DERP3_IP, [State.Connected]),
+                alpha_client.wait_for_state_derp(_DERP1_IP, [State.Connected]),
+                beta_client.wait_for_state_derp(_DERP3_IP, [State.Connected]),
+                gamma_client.wait_for_state_derp(_DERP3_IP, [State.Connected]),
             )
         )
 
@@ -490,9 +477,9 @@ async def test_derp_restart() -> None:
 
         await testing.wait_lengthy(
             asyncio.gather(
-                alpha_client.wait_for_state_derp(DERP1_IP, [State.Connected]),
-                beta_client.wait_for_state_derp(DERP2_IP, [State.Connected]),
-                gamma_client.wait_for_state_derp(DERP2_IP, [State.Connected]),
+                alpha_client.wait_for_state_derp(_DERP1_IP, [State.Connected]),
+                beta_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
+                gamma_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
             )
         )
 
@@ -535,14 +522,10 @@ async def test_derp_server_list_exhaustion() -> None:
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.Client(alpha_connection, alpha,).run_meshnet(
-                api.get_meshmap(alpha.id),
-            )
+            telio.Client(alpha_connection, alpha).run_meshnet(api.get_meshmap(alpha.id))
         )
         beta_client = await exit_stack.enter_async_context(
-            telio.Client(beta_connection, beta,).run_meshnet(
-                api.get_meshmap(beta.id),
-            )
+            telio.Client(beta_connection, beta).run_meshnet(api.get_meshmap(beta.id))
         )
 
         await testing.wait_lengthy(

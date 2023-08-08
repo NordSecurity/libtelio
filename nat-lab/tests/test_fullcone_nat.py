@@ -1,7 +1,7 @@
-from contextlib import AsyncExitStack
-from utils import ConnectionTag, new_connection_by_tag
 import asyncio
 import pytest
+from contextlib import AsyncExitStack
+from utils.connection_util import ConnectionTag, new_connection_by_tag
 
 TESTING_STRING = "test failed"
 LOCAL_PORT = 1235

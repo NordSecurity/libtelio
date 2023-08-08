@@ -1,21 +1,17 @@
-import pytest
-import utils.testing as testing
-from contextlib import AsyncExitStack
 import config
+import pytest
+from contextlib import AsyncExitStack
 from mesh_api import API
 from telio import AdapterType, PathType, Client, State
-from utils import (
-    Connection,
-    ConnectionTag,
-    new_connection_with_conn_tracker,
-    stun,
-    Ping,
-)
-from utils.connection_tracker import (
-    ConnectionTracker,
-    ConnectionLimits,
+from utils import testing, stun
+from utils.connection import Connection
+from utils.connection_tracker import ConnectionTracker, ConnectionLimits
+from utils.connection_util import (
     generate_connection_tracker_config,
+    new_connection_with_conn_tracker,
+    ConnectionTag,
 )
+from utils.ping import Ping
 
 
 async def _connect_vpn(
@@ -51,9 +47,7 @@ async def _connect_vpn(
     "alpha_connection_tag,adapter_type,public_ip",
     [
         pytest.param(
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            AdapterType.BoringTun,
-            "10.0.254.1",
+            ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun, "10.0.254.1"
         ),
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -82,9 +76,7 @@ async def _connect_vpn(
     ],
 )
 async def test_vpn_connection(
-    alpha_connection_tag: ConnectionTag,
-    adapter_type: AdapterType,
-    public_ip: str,
+    alpha_connection_tag: ConnectionTag, adapter_type: AdapterType, public_ip: str
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -118,9 +110,7 @@ async def test_vpn_connection(
     "alpha_connection_tag,adapter_type,public_ip",
     [
         pytest.param(
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            AdapterType.BoringTun,
-            "10.0.254.1",
+            ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun, "10.0.254.1"
         ),
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -149,9 +139,7 @@ async def test_vpn_connection(
     ],
 )
 async def test_vpn_reconnect(
-    alpha_connection_tag: ConnectionTag,
-    adapter_type: AdapterType,
-    public_ip: str,
+    alpha_connection_tag: ConnectionTag, adapter_type: AdapterType, public_ip: str
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()

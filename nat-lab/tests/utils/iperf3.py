@@ -1,12 +1,14 @@
-from utils.connection import Connection, TargetOS
-from utils.process import Process
-from typing import AsyncIterator
-from utils import OutputNotifier
-from asyncio import Event
-from enum import Enum, auto
-import config
 import re
+from asyncio import Event
 from contextlib import asynccontextmanager
+from enum import Enum, auto
+from typing import AsyncIterator
+from utils.connection import Connection, TargetOS
+from utils.output_notifier import OutputNotifier
+from utils.process import Process
+
+IPERF_BINARY_MAC = "/Users/vagrant/iperf3/iperf3"
+IPERF_BINARY_WINDOWS = "C:\\workspace\\iperf3\\iperf3.exe"
 
 
 class Protocol(Enum):
@@ -18,14 +20,13 @@ def get_iperf_binary(target_os: TargetOS) -> str:
     if target_os == TargetOS.Linux:
         return "iperf3"
 
-    elif target_os == TargetOS.Windows:
-        return config.IPERF_BINARY_WINDOWS
+    if target_os == TargetOS.Windows:
+        return IPERF_BINARY_WINDOWS
 
-    elif target_os == TargetOS.Mac:
-        return config.IPERF_BINARY_MAC
+    if target_os == TargetOS.Mac:
+        return IPERF_BINARY_MAC
 
-    else:
-        assert False, f"target_os not supported {target_os}"
+    assert False, f"target_os not supported {target_os}"
 
 
 class IperfServer:
@@ -129,7 +130,7 @@ class IperfClient:
                 "" if protocol == Protocol.Tcp else "--udp-counters-64bit",
                 "-b",
                 "10G",
-                "" if send == True else "-R",
+                "" if send else "-R",
             ]
         )
 

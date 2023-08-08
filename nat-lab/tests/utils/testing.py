@@ -1,12 +1,10 @@
+import asyncio
 from asyncio import Future
 from typing import Union, Coroutine, TypeVar, Any
-import asyncio
 
-"""
-This modules defines standardized waiting categories for tests. Some tasks are expected
-to finish very quickly, hence the waiting time is very short (0.1 seconds). Other tasks
-are expected to take more time, so the waiting time is much longer (5 seconds).
-"""
+# This modules defines standardized waiting categories for tests. Some tasks are expected
+# to finish very quickly, hence the waiting time is very short (0.1 seconds). Other tasks
+# are expected to take more time, so the waiting time is much longer (5 seconds).
 
 T = TypeVar("T")
 

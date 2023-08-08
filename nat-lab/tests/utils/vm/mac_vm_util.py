@@ -1,14 +1,13 @@
-from utils.connection import Connection, SshConnection, TargetOS
-from utils.process import ProcessExecError
-from config import get_root_path
-from contextlib import asynccontextmanager
-from typing import AsyncIterator
 import asyncssh
 import config
 import subprocess
+from config import get_root_path
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+from utils.connection import Connection, SshConnection, TargetOS
+from utils.process import ProcessExecError
 
-
-VM_TCLI_DIR = "C:\\workspace\\binaries"
+VM_TCLI_DIR = config.LIBTELIO_BINARY_PATH_VM
 FILES_COPIED = False
 
 
@@ -29,28 +28,20 @@ async def new_connection() -> AsyncIterator[Connection]:
     )
 
     async with asyncssh.connect(
-        config.WINDOWS_VM_IP,
-        username="vagrant",
+        config.MAC_VM_IP,
+        username="root",
         password="vagrant",
         known_hosts=None,
         options=ssh_options,
     ) as ssh_connection:
-        connection = SshConnection(ssh_connection)
-        connection.target_os = TargetOS.Windows
+        connection = SshConnection(ssh_connection, TargetOS.Mac)
 
         await _copy_binaries(ssh_connection, connection)
-        await _disable_firewall(connection)
 
         try:
             yield connection
         finally:
             pass
-
-
-async def _disable_firewall(connection: Connection):
-    await connection.create_process(
-        ["netsh", "advfirewall", "set", "allprofiles", "state", "off"]
-    ).execute()
 
 
 async def _copy_binaries(
@@ -61,16 +52,15 @@ async def _copy_binaries(
         return
 
     try:
-        await connection.create_process(["rmdir", "/s", "/q", VM_TCLI_DIR]).execute()
+        await connection.create_process(["rm", "-rf", VM_TCLI_DIR]).execute()
     except ProcessExecError as exception:
-        if (
-            exception.stderr.find("The system cannot find the file specified") < 0
-            and exception.stderr.find("The system cannot find the path specified") < 0
-        ):
+        if exception.stderr.find("The system cannot find the file specified.") < 0:
             raise exception
 
-    await connection.create_process(["mkdir", VM_TCLI_DIR]).execute()
+    await connection.create_process(["mkdir", "-p", VM_TCLI_DIR]).execute()
     await asyncssh.scp(
-        get_root_path("dist/windows/release/x86_64/*"), (ssh_connection, VM_TCLI_DIR)
+        get_root_path("dist/darwin/macos/release/x86_64/tcli"),
+        (ssh_connection, f"{VM_TCLI_DIR}"),
     )
+    await connection.create_process(["chmod", "+x", f"{VM_TCLI_DIR}/tcli"]).execute()
     FILES_COPIED = True
