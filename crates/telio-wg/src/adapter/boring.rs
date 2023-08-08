@@ -1,7 +1,7 @@
 use async_trait::async_trait;
-use boringtun::device::{tun::TunSocket, DeviceConfig, DeviceHandle, Tun};
+use boringtun::device::{tun::TunSocket, DeviceConfig, DeviceHandle};
 use futures::future::BoxFuture;
-use slog::{o, Drain, Logger};
+use slog::{o, Drain};
 use slog_stdlog::StdLog;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -30,7 +30,6 @@ impl BoringTun {
         firewall_process_inbound_callback: FirewallCb,
         firewall_process_outbound_callback: FirewallCb,
     ) -> Result<Self, AdapterError> {
-        let logger = Logger::root(StdLog.fuse(), o!());
         let config = DeviceConfig {
             n_threads: 4,
             use_connected_socket: cfg!(not(any(
@@ -38,13 +37,14 @@ impl BoringTun {
                 target_os = "macos",
                 target_os = "tvos"
             ))),
-            logger,
             #[cfg(target_os = "linux")]
             use_multi_queue: true,
             open_uapi_socket: false,
             protect: socket_pool,
             firewall_process_inbound_callback,
             firewall_process_outbound_callback,
+            #[cfg(target_os = "linux")]
+            uapi_fd: -1,
         };
 
         let device = match tun {

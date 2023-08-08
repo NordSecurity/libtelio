@@ -12,7 +12,6 @@ crypto_box.workspace = true
 futures.workspace = true
 log.workspace = true
 mockall = { workspace = true, optional = true }
-slog.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["net", "sync"] }
 

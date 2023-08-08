@@ -7,6 +7,7 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
+rand = "0.8"
 trust-dns-client = { git = "https://github.com/NordSecurity/trust-dns.git", tag = "v2.0.0" }
 trust-dns-proto = { git = "https://github.com/NordSecurity/trust-dns.git", tag = "v2.0.0" }
 trust-dns-resolver = { git = "https://github.com/NordSecurity/trust-dns.git", tag = "v2.0.0" }
@@ -15,6 +16,7 @@ trust-dns-server = { git = "https://github.com/NordSecurity/trust-dns.git", tag 
 async-trait.workspace = true
 base64.workspace = true
 boringtun.workspace = true
+x25519-dalek.workspace = true
 ipnetwork.workspace = true
 lazy_static.workspace = true
 libc.workspace = true
