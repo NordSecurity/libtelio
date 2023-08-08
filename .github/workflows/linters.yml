@@ -85,6 +85,8 @@ jobs:
           working-directory: nat-lab
         - run: isort --check-only --diff .
           working-directory: nat-lab
+        - run: autoflake --check .
+          working-directory: nat-lab
   python-lint:
       runs-on: ubuntu-22.04
       steps:

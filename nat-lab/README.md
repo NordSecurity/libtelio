@@ -7,10 +7,10 @@ them in the CI.
 
 ## Formatting
 
-Python code is formatted using https://github.com/psf/black and https://github.com/PyCQA/isort.
+Python code is formatted using https://github.com/psf/black, https://github.com/PyCQA/isort and https://github.com/PyCQA/autoflake.
 Unformatted code will automatically be declined by the CI.
 ```
-black . && isort .
+black . && isort . && autoflake .
 ```
 
 ## Linter and typecheck
