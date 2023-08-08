@@ -3,7 +3,6 @@ name = "nat-lab"
 
 [tool.black]
 preview = true
-skip_magic_trailing_comma = true
 exclude="tests/protobuf"
 
 [tool.isort]
