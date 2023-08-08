@@ -1,4 +1,5 @@
 import re
+from config import STUN_BINARY_PATH_WINDOWS, STUN_BINARY_PATH_MAC
 from utils.connection import Connection, TargetOS
 
 # For Linux, use the standard `stunclient` available on most distributions.
@@ -8,9 +9,6 @@ from utils.connection import Connection, TargetOS
 #
 # For Mac, stun binaries are available from
 # https://master.dl.sourceforge.net/project/stuntman/stunserver_osx_1_2_13.zip?viasf=1
-
-STUN_BINARY_PATH_WINDOWS = "C:/workspace/stunserver/release/stunclient.exe"
-STUN_BINARY_PATH_MAC = "/Users/vagrant/stunserver/stunclient"
 
 
 async def get(connection: Connection, stun_server: str) -> str:

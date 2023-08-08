@@ -22,6 +22,13 @@ DOCKER_NETWORK_IP = "10.0.0.0"
 DOCKER_NETWORK_MASK = "255.255.0.0"
 STUN_SERVER = "10.0.1.1"
 
+# Same as defined in `libtelio/nat-lab/provision_windows.ps1`
+STUN_BINARY_PATH_WINDOWS = "C:/workspace/stunserver/release/stunclient.exe"
+STUN_BINARY_PATH_MAC = "/Users/vagrant/stunserver/stunclient"
+
+IPERF_BINARY_MAC = "/Users/vagrant/iperf3/iperf3"
+IPERF_BINARY_WINDOWS = "C:\\workspace\\iperf3\\iperf3.exe"
+
 # JIRA issue: LLT-1664
 # The directories between host and Docker container are shared via
 # Docker volumes. Mounting `libtelio-build/dist` is a nogo, since when host

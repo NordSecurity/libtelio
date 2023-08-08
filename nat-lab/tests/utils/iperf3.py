@@ -1,14 +1,12 @@
 import re
 from asyncio import Event
+from config import IPERF_BINARY_MAC, IPERF_BINARY_WINDOWS
 from contextlib import asynccontextmanager
 from enum import Enum, auto
 from typing import AsyncIterator
 from utils.connection import Connection, TargetOS
 from utils.output_notifier import OutputNotifier
 from utils.process import Process
-
-IPERF_BINARY_MAC = "/Users/vagrant/iperf3/iperf3"
-IPERF_BINARY_WINDOWS = "C:\\workspace\\iperf3\\iperf3.exe"
 
 
 class Protocol(Enum):
