@@ -7,8 +7,8 @@ them in the CI.
 
 ## Formatting
 
-Python code is formatted using https://github.com/psf/black.
+Python code is formatted using https://github.com/psf/black and https://github.com/PyCQA/isort.
 Unformatted code will automatically be declined by the CI.
 ```
-black .
+black . && isort .
 ```

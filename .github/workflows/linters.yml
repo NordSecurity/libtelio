@@ -81,11 +81,14 @@ jobs:
       steps:
         - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
         - run: pip3 install -r ./requirements.txt
-        - run: black --check --diff --color ./nat-lab
+        - run: black --check --diff --color .
+          working-directory: nat-lab
+        - run: isort --check-only --diff .
+          working-directory: nat-lab
   natlab-typecheck:
       runs-on: ubuntu-22.04
       steps:
         - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
         - run: pip3 install -r ./nat-lab/requirements.txt
-        - run: ./run_local.py --nobuild --notests
+        - run: mypy .
           working-directory: nat-lab
