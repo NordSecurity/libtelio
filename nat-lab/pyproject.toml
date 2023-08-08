@@ -32,4 +32,26 @@ ignore-paths="tests/protobuf/*"
 
 [tool.pylint.'MESSAGES CONTROL']
 recursive = true
-disable = "C0103,C0114,C0115,C0116,E0115,W1510,W0719,C0301,R0915,R0914,C0411,R0913,R0902,R0916,W0511,R0904,R0903,E1101,W0603,W0702,R0912,R0801"
+disable = [
+    "invalid-name",
+    "missing-module-docstring",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "nonlocal-and-global",
+    "subprocess-run-check",
+    "broad-exception-raised",
+    "line-too-long",
+    "too-many-locals",
+    "wrong-import-order",
+    "too-many-arguments",
+    "too-many-instance-attributes",
+    "too-many-boolean-expressions",
+    "fixme",
+    "too-many-public-methods",
+    "too-few-public-methods",
+    "too-many-statements",
+    "global-statement",
+    "bare-except",
+    "too-many-branches",
+    "duplicate-code"
+]

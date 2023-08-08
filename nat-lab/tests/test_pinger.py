@@ -20,7 +20,7 @@ class PingType(enum.Enum):
 
 async def send_ping_pong(ping_type) -> None:
     ping = Pinger()
-    ping.message_type = ping.PING
+    ping.message_type = ping.PING  # pylint: disable=no-member
     ping.session = 3
     ping.start_timestamp = 10
 
@@ -36,7 +36,7 @@ async def send_ping_pong(ping_type) -> None:
         )
     elif ping_type == PingType.PONG:
         # Send a PONG type message
-        ping.message_type = ping.PONG
+        ping.message_type = ping.PONG  # pylint: disable=no-member
         sock.sendto(
             struct.pack(">BBB", 9, 0, 3) + ping.SerializeToString(),
             (LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1], 5000),
