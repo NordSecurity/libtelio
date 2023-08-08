@@ -76,15 +76,25 @@ jobs:
           with:
             command: fmt
             args: -- --check --color always
-  python-format:
+  python-format-black:
       runs-on: ubuntu-22.04
       steps:
         - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
         - run: pip3 install -r ./requirements.txt
         - run: black --check --diff --color .
           working-directory: nat-lab
+  python-format-isort:
+      runs-on: ubuntu-22.04
+      steps:
+        - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        - run: pip3 install -r ./requirements.txt
         - run: isort --check-only --diff .
           working-directory: nat-lab
+  python-format-autoflake:
+      runs-on: ubuntu-22.04
+      steps:
+        - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        - run: pip3 install -r ./requirements.txt
         - run: autoflake --check .
           working-directory: nat-lab
   python-lint:
