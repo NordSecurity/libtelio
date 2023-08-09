@@ -166,6 +166,7 @@ impl From<DevError> for telio_result {
         // TODO: Map more error types.
         match _err {
             DevError::AlreadyStarted => TELIO_RES_ALREADY_STARTED,
+            DevError::BadPublicKey => TELIO_RES_INVALID_KEY,
             _ => TELIO_RES_ERROR,
         }
     }
@@ -176,6 +177,7 @@ impl From<&DevError> for telio_result {
         // TODO: Map more error types.
         match _err {
             DevError::AlreadyStarted => TELIO_RES_ALREADY_STARTED,
+            DevError::BadPublicKey => TELIO_RES_INVALID_KEY,
             _ => TELIO_RES_ERROR,
         }
     }

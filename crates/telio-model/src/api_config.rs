@@ -178,6 +178,16 @@ pub struct FeatureDerp {
     pub derp_keepalive: Option<u32>,
 }
 
+/// Whether to validate keys
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct FeatureValidateKeys(pub bool);
+
+impl Default for FeatureValidateKeys {
+    fn default() -> Self {
+        Self(true)
+    }
+}
+
 fn deserialize_providers<'de, D>(de: D) -> Result<Option<HashSet<EndpointProvider>>, D::Error>
 where
     D: Deserializer<'de>,
@@ -223,6 +233,9 @@ pub struct Features {
     pub is_test_env: Option<bool>,
     /// Derp server specific configuration
     pub derp: Option<FeatureDerp>,
+    /// Flag to specify if keys should be validated
+    #[serde(default)]
+    pub validate_keys: FeatureValidateKeys,
 }
 
 impl FeaturePaths {
@@ -341,6 +354,7 @@ mod tests {
         #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
         is_test_env: Some(true),
         derp: None,
+        validate_keys: Default::default(),
     });
 
     static EXPECTED_FEATURES_WITHOUT_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
@@ -377,6 +391,7 @@ mod tests {
         #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
         is_test_env: None,
         derp: None,
+        validate_keys: Default::default(),
     });
 
     #[test]
@@ -536,6 +551,7 @@ mod tests {
             direct: None,
             exit_dns: None,
             derp: None,
+            validate_keys: Default::default(),
         };
 
         let empty_qos_features = Features {
@@ -557,6 +573,7 @@ mod tests {
             direct: None,
             exit_dns: None,
             derp: None,
+            validate_keys: Default::default(),
         };
 
         let no_qos_features = Features {
@@ -573,6 +590,7 @@ mod tests {
             direct: None,
             exit_dns: None,
             derp: None,
+            validate_keys: Default::default(),
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -608,6 +626,7 @@ mod tests {
                 auto_switch_dns_ips: Some(true),
             }),
             derp: None,
+            validate_keys: Default::default(),
         };
 
         let empty_features = Features {
@@ -620,6 +639,7 @@ mod tests {
                 auto_switch_dns_ips: None,
             }),
             derp: None,
+            validate_keys: Default::default(),
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -655,6 +675,7 @@ mod tests {
             exit_dns: None,
             direct: None,
             derp: None,
+            validate_keys: Default::default(),
         };
 
         assert_eq!(Features::default(), expected_defaults);
