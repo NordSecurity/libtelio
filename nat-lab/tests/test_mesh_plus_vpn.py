@@ -10,6 +10,7 @@ import utils.testing as testing
 import asyncio
 from utils import (
     ConnectionTag,
+    IPStack,
     new_connection_with_conn_tracker,
 )
 from utils.connection_tracker import (
@@ -18,6 +19,25 @@ from utils.connection_tracker import (
 )
 
 
+# Marks in-tunnel stack only, exiting only through IPv4
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "ip_stack",
+    [
+        pytest.param(
+            IPStack.IPv4,
+            marks=pytest.mark.ipv4,
+        ),
+        pytest.param(
+            IPStack.IPv6,
+            marks=pytest.mark.ipv6,
+        ),
+        pytest.param(
+            IPStack.IPv4v6,
+            marks=pytest.mark.ipv4v6,
+        ),
+    ]
+)
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type",
@@ -51,6 +71,7 @@ from utils.connection_tracker import (
 async def test_mesh_plus_vpn_one_peer(
     alpha_connection_tag: ConnectionTag,
     adapter_type: AdapterType,
+    ip_stack: IPStack,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()

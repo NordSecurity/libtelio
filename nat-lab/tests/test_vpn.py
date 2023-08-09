@@ -7,6 +7,7 @@ from telio import AdapterType, PathType, Client, State
 from utils import (
     Connection,
     ConnectionTag,
+    IPStack,
     new_connection_with_conn_tracker,
     stun,
     Ping,
@@ -47,6 +48,23 @@ async def _connect_vpn(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "ip_stack",
+    [
+        pytest.param(
+            IPStack.IPv4,
+            marks=pytest.mark.ipv4,
+        ),
+        pytest.param(
+            IPStack.IPv6,
+            marks=pytest.mark.ipv6,
+        ),
+        pytest.param(
+            IPStack.IPv4v6,
+            marks=pytest.mark.ipv4v6,
+        ),
+    ]
+)
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type,public_ip",
     [
@@ -114,6 +132,23 @@ async def test_vpn_connection(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "ip_stack",
+    [
+        pytest.param(
+            IPStack.IPv4,
+            marks=pytest.mark.ipv4,
+        ),
+        pytest.param(
+            IPStack.IPv6,
+            marks=pytest.mark.ipv6,
+        ),
+        pytest.param(
+            IPStack.IPv4v6,
+            marks=pytest.mark.ipv4v6,
+        ),
+    ]
+)
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type,public_ip",
     [

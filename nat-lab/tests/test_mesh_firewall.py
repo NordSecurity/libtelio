@@ -8,6 +8,7 @@ import telio
 import utils.testing as testing
 from utils import (
     ConnectionTag,
+    IPStack,
     new_connection_with_conn_tracker,
     OutputNotifier,
 )
@@ -18,7 +19,25 @@ from utils.connection_tracker import (
 
 
 @pytest.mark.asyncio
-async def test_mesh_firewall_successful_passthrough() -> None:
+@pytest.mark.parametrize(
+    "ip_stack",
+    [
+        pytest.param(
+            IPStack.IPv4,
+            marks=pytest.mark.ipv4,
+        ),
+        pytest.param(
+            IPStack.IPv6,
+            marks=pytest.mark.ipv6,
+        ),
+        pytest.param(
+            IPStack.IPv4v6,
+            marks=pytest.mark.ipv4v6,
+        ),
+    ]
+)
+@pytest.mark.asyncio
+async def test_mesh_firewall_successful_passthrough(ip_stack: IPStack) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 

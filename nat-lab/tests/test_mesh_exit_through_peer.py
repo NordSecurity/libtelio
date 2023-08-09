@@ -8,6 +8,7 @@ import telio
 import utils.testing as testing
 from utils import (
     ConnectionTag,
+    IPStack,
     new_connection_with_conn_tracker,
 )
 from utils.connection_tracker import (
@@ -17,7 +18,25 @@ from utils.connection_tracker import (
 import asyncio
 
 
+# Marks in-tunnel stack only, exiting only through IPv4
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "ip_stack",
+    [
+        pytest.param(
+            IPStack.IPv4,
+            marks=pytest.mark.ipv4,
+        ),
+        pytest.param(
+            IPStack.IPv6,
+            marks=pytest.mark.ipv6,
+        ),
+        pytest.param(
+            IPStack.IPv4v6,
+            marks=pytest.mark.ipv4v6,
+        ),
+    ]
+)
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type",
     [
@@ -50,6 +69,7 @@ import asyncio
 async def test_mesh_exit_through_peer(
     alpha_connection_tag: ConnectionTag,
     adapter_type: AdapterType,
+    ip_stack: IPStack,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
