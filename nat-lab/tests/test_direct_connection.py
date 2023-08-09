@@ -2,14 +2,21 @@ import asyncio
 import pytest
 import telio
 from config import DERP_SERVERS
-from contextlib import AsyncExitStack
-from mesh_api import API
-from utils import ConnectionTag, new_connection_with_tracker_and_gw, testing
+from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import dataclass
+from mesh_api import API, Node
 from telio import PathType, State, AdapterType
-from contextlib import asynccontextmanager
 from telio_features import TelioFeatures, Direct
-from typing import List
+from typing import List, AsyncIterator, Tuple, Optional
 from utils import testing
+from utils.connection import Connection
+from utils.connection_util import (
+    ConnectionTag,
+    new_connection_with_tracker_and_gw,
+    ConnectionTracker,
+    generate_connection_tracker_config,
+    ConnectionLimits,
+)
 from utils.ping import Ping
 
 ANY_PROVIDERS = ["local", "stun"]
@@ -132,7 +139,7 @@ async def new_connections_with_mesh_clients(
             client1_type,
             generate_connection_tracker_config(
                 client1_type,
-                derp_0_limits=ConnectionLimits(0, 0),
+                derp_0_limits=ConnectionLimits(0, 1),
                 derp_1_limits=ConnectionLimits(1, 3),
                 derp_2_limits=ConnectionLimits(0, 3),
                 derp_3_limits=ConnectionLimits(0, 3),
@@ -141,8 +148,21 @@ async def new_connections_with_mesh_clients(
         )
     )
 
-        beta_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(client2_type)
+    (
+        beta_conn,
+        beta_conn_gw,
+        beta_conn_tracker,
+    ) = await exit_stack.enter_async_context(
+        new_connection_with_tracker_and_gw(
+            client2_type,
+            generate_connection_tracker_config(
+                client2_type,
+                derp_0_limits=ConnectionLimits(0, 1),
+                derp_1_limits=ConnectionLimits(1, 3),
+                derp_2_limits=ConnectionLimits(0, 3),
+                derp_3_limits=ConnectionLimits(0, 3),
+                ping_limits=ConnectionLimits(0, 5),
+            ),
         )
     )
 
@@ -183,8 +203,6 @@ async def new_connections_with_mesh_clients(
                     derp_2_limits=ConnectionLimits(0, 3),
                     derp_3_limits=ConnectionLimits(0, 3),
                 ),
-            ).run_meshnet(
-                api.get_meshmap(alpha.id),
             )
         )
 
@@ -223,14 +241,14 @@ async def new_connections_with_mesh_clients(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "endpoint_providers, client1_type, client2_type, reflexive_ip",
+    "endpoint_providers, client1_type, client2_type, _reflexive_ip",
     UHP_conn_client_types,
 )
 async def test_direct_working_paths(
     endpoint_providers,
     client1_type,
     client2_type,
-    reflexive_ip,
+    _reflexive_ip,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         (alpha, beta, _) = await exit_stack.enter_async_context(

@@ -1,12 +1,11 @@
 import asyncio
 import pytest
-import telio
 from contextlib import AsyncExitStack
 from mesh_api import API
-from utils import ConnectionTag, new_connection_with_gw, testing
-from telio import PathType, Client
+from telio import AdapterType, State, PathType, Client
 from telio_features import TelioFeatures, Direct
 from utils import testing
+from utils.connection_util import ConnectionTag, new_connection_with_gw
 from utils.ping import Ping
 
 ANY_PROVIDERS = ["local", "stun"]
