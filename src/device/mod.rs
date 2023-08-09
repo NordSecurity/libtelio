@@ -90,6 +90,8 @@ pub enum Error {
     AdapterConfig(String),
     #[error("Private key does not match meshnet config's public key.")]
     BadPrivateKey,
+    #[error("Public key in requested config does not match the device's private key.")]
+    BadPublicKey,
     #[error("Invalid node configuration")]
     InvalidNode,
     #[error("Dublicate exit node")]
@@ -1043,6 +1045,13 @@ impl Runtime {
     async fn set_private_key(&mut self, private_key: &SecretKey) -> Result {
         // TODO: create a global controll state to consolidate all entities
 
+        let should_validate_keys = self.features.validate_keys.0;
+        let meshnet_is_on = self.requested_state.meshnet_config.is_some();
+        let key_is_the_different = self.get_private_key().await? != *private_key;
+        if should_validate_keys && meshnet_is_on && key_is_the_different {
+            return Err(Error::BadPublicKey);
+        }
+
         if self.entities.dns.lock().await.resolver.is_some() {
             return Err(Error::DnsNotDisabled);
         }
@@ -1163,6 +1172,15 @@ impl Runtime {
     }
 
     async fn set_config(&mut self, config: &Option<Config>) -> Result {
+        if let Some(cfg) = config {
+            let should_validate_keys = self.features.validate_keys.0;
+            let keys_match =
+                cfg.this.public_key == self.get_private_key().await.map(|key| key.public())?;
+            if should_validate_keys && !keys_match {
+                return Err(Error::BadPublicKey);
+            }
+        }
+
         self.requested_state.old_meshnet_config = self.requested_state.meshnet_config.clone();
         self.requested_state.meshnet_config = config.clone();
 
@@ -1800,10 +1818,12 @@ mod tests {
         let (sender, _receiver) = tokio::sync::broadcast::channel(1);
         let features = Features::default();
 
+        let private_key = SecretKey::gen();
+
         let mut rt = Runtime::start(
             sender,
             &DeviceConfig {
-                private_key: SecretKey::gen(),
+                private_key,
                 ..Default::default()
             },
             features,
@@ -1812,7 +1832,7 @@ mod tests {
         .await
         .unwrap();
 
-        let pubkey = SecretKey::gen().public();
+        let pubkey = private_key.public();
         let exit_node = ExitNode {
             public_key: pubkey,
             ..Default::default()
@@ -1961,11 +1981,12 @@ mod tests {
     async fn test_exit_node_demote() {
         let (sender, _receiver) = tokio::sync::broadcast::channel(1);
         let features = Default::default();
+        let private_key = SecretKey::gen();
 
         let mut rt = Runtime::start(
             sender,
             &DeviceConfig {
-                private_key: SecretKey::gen(),
+                private_key,
                 ..Default::default()
             },
             features,
@@ -1974,7 +1995,7 @@ mod tests {
         .await
         .unwrap();
 
-        let pubkey = SecretKey::gen().public();
+        let pubkey = private_key.public();
         let node = ExitNode {
             public_key: pubkey,
             ..Default::default()
@@ -2142,5 +2163,134 @@ mod tests {
         assert!(entities.upnp_endpoint_provider.is_some());
         assert!(entities.local_interfaces_endpoint_provider.is_some());
         assert!(entities.stun_endpoint_provider.is_some());
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test(start_paused = true)]
+    async fn test_set_config_with_wrong_public_key() {
+        let (sender, _receiver) = tokio::sync::broadcast::channel(1);
+
+        let features = Features::default();
+        let private_key = SecretKey::gen();
+        let mut rt = Runtime::start(
+            sender,
+            &DeviceConfig {
+                private_key,
+                ..Default::default()
+            },
+            features,
+            None,
+        )
+        .await
+        .unwrap();
+
+        fn gen_config(public_key: PublicKey) -> Config {
+            let peer_base = PeerBase {
+                identifier: "identifier".to_owned(),
+                public_key: public_key,
+                hostname: "hostname".to_owned(),
+                ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
+            };
+            Config {
+                this: peer_base.clone(),
+                peers: Some(vec![Peer {
+                    base: peer_base.clone(),
+                    ..Default::default()
+                }]),
+                derp_servers: None,
+                dns: None,
+            }
+        }
+
+        let valid_cfg = Some(gen_config(private_key.public()));
+        let invalid_cfg = Some(gen_config(SecretKey::gen().public()));
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        rt.entities
+            .wireguard_interface
+            .set_listen_port(1234)
+            .await
+            .unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+
+        assert!(rt.set_config(&valid_cfg).await.is_ok());
+        assert!(matches!(
+            rt.set_config(&invalid_cfg).await.unwrap_err(),
+            Error::BadPublicKey
+        ));
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test(start_paused = true)]
+    async fn test_set_private_key_when_meshnet_is_on() {
+        let (sender, _receiver) = tokio::sync::broadcast::channel(1);
+
+        let features = Features::default();
+        let old_private_key = SecretKey::gen();
+        let new_private_key = SecretKey::gen();
+        let mut rt = Runtime::start(
+            sender,
+            &DeviceConfig {
+                private_key: old_private_key,
+                ..Default::default()
+            },
+            features,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let peer_base = PeerBase {
+            identifier: "identifier".to_owned(),
+            public_key: new_private_key.public(),
+            hostname: "hostname".to_owned(),
+            ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
+        };
+        let config = Config {
+            this: peer_base.clone(),
+            peers: Some(vec![Peer {
+                base: peer_base.clone(),
+                ..Default::default()
+            }]),
+            derp_servers: None,
+            dns: None,
+        };
+        let config = Some(config);
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        rt.entities
+            .wireguard_interface
+            .set_listen_port(1234)
+            .await
+            .unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        assert!(rt.set_private_key(&new_private_key).await.is_ok());
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        rt.set_config(&config).await.unwrap();
+        assert!(matches!(
+            rt.set_private_key(&SecretKey::gen()).await.unwrap_err(),
+            Error::BadPublicKey
+        ));
     }
 }
