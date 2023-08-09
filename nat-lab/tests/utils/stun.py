@@ -1,6 +1,6 @@
-from utils.connection import Connection, TargetOS
-from typing import Optional
 import re
+from config import STUN_BINARY_PATH_WINDOWS, STUN_BINARY_PATH_MAC
+from utils.connection import Connection, TargetOS
 
 # For Linux, use the standard `stunclient` available on most distributions.
 #
@@ -9,9 +9,6 @@ import re
 #
 # For Mac, stun binaries are available from
 # https://master.dl.sourceforge.net/project/stuntman/stunserver_osx_1_2_13.zip?viasf=1
-
-STUN_BINARY_PATH_WINDOWS: Optional[str] = None
-STUN_BINARY_PATH_MAC: Optional[str] = None
 
 
 async def get(connection: Connection, stun_server: str) -> str:
@@ -28,8 +25,7 @@ async def get(connection: Connection, stun_server: str) -> str:
 
         return match.group(1)
 
-    elif connection.target_os == TargetOS.Windows:
-        assert STUN_BINARY_PATH_WINDOWS, "stun binary path not configured"
+    if connection.target_os == TargetOS.Windows:
         process = await connection.create_process(
             [STUN_BINARY_PATH_WINDOWS, stun_server]
         ).execute()
@@ -40,8 +36,7 @@ async def get(connection: Connection, stun_server: str) -> str:
 
         return match.group(1)
 
-    elif connection.target_os == TargetOS.Mac:
-        assert STUN_BINARY_PATH_MAC, "stun binary path not configured"
+    if connection.target_os == TargetOS.Mac:
         process = await connection.create_process(
             [STUN_BINARY_PATH_MAC, stun_server]
         ).execute()

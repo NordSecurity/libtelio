@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional, Any
 
 
 class ExistanceValidator:
@@ -27,8 +27,7 @@ class StringContainmentValidator:
     def validate(self, value):
         if self._contains:
             return self._value in value
-        else:
-            return not self._value in value
+        return not self._value in value
 
 
 class StringOccurrencesValidator:
@@ -79,15 +78,22 @@ class ConnectionStateValidator:
         # [info1:info2:connection_state, info1:info2:connection_state]
         if self._all_connections_up:
             return not any(conn.split(":")[2] == "0" for conn in connections)
-        elif self._expected_state != "":
+        if self._expected_state != "":
             return all(
                 conn.split(":")[2] == self._expected_state for conn in connections
             )
+        return False
 
 
 class StringValidator:
-    def __init__(self, exists=True, equals="", contains=[], does_not_contain=[]):
-        self._validators = []
+    def __init__(
+        self,
+        exists=True,
+        equals="",
+        contains: Optional[List[str]] = None,
+        does_not_contain: Optional[List[str]] = None,
+    ):
+        self._validators: List[Any] = []
 
         if exists:
             self._validators.append(ExistanceValidator())
@@ -98,15 +104,17 @@ class StringValidator:
         if equals != "":
             self._validators.append(StringEqualsValidator(value=equals))
 
-        for substring in contains:
-            self._validators.append(
-                StringContainmentValidator(value=substring, contains=True)
-            )
+        if contains:
+            for substring in contains:
+                self._validators.append(
+                    StringContainmentValidator(value=substring, contains=True)
+                )
 
-        for substring in does_not_contain:
-            self._validators.append(
-                StringContainmentValidator(value=substring, contains=False)
-            )
+        if does_not_contain:
+            for substring in does_not_contain:
+                self._validators.append(
+                    StringContainmentValidator(value=substring, contains=False)
+                )
 
     def validate(self, value):
         for v in self._validators:
@@ -136,13 +144,13 @@ class ExternalLinksValidator:
         self,
         exists=True,
         equals="",
-        contains=[],
-        does_not_contain=[],
+        contains: Optional[List[str]] = None,
+        does_not_contain: Optional[List[str]] = None,
         all_connections_up=False,
         no_of_connections=0,
         no_of_vpn=0,
     ):
-        self._validators = [
+        self._validators: List[Any] = [
             StringValidator(
                 exists=exists,
                 equals=equals,
@@ -156,15 +164,15 @@ class ExternalLinksValidator:
                 self._validators.append(
                     ConnectionStateValidator(
                         all_connections_up=all_connections_up, expected_state=""
-                    )  # type: ignore
+                    )
                 )
             if no_of_connections != 0:
                 self._validators.append(
-                    ConnectionCountValidator(count=no_of_connections)  # type: ignore
+                    ConnectionCountValidator(count=no_of_connections)
                 )
 
             self._validators.append(
-                StringOccurrencesValidator(value="vpn", count=no_of_vpn)  # type: ignore
+                StringOccurrencesValidator(value="vpn", count=no_of_vpn)
             )
 
     def validate(self, event):
@@ -182,18 +190,18 @@ class ConnectivityMatrixValidator:
         all_connections_up=False,
         expected_state="",
     ):
-        self._validators = [StringValidator(exists=exists)]
+        self._validators: List[Any] = [StringValidator(exists=exists)]  # type: ignore
         if exists:
             if no_of_connections != 0:
                 self._validators.append(
-                    ConnectionCountValidator(count=no_of_connections)  # type: ignore
+                    ConnectionCountValidator(count=no_of_connections)
                 )
             if all_connections_up or expected_state != "":
                 self._validators.append(
                     ConnectionStateValidator(
                         all_connections_up=all_connections_up,
                         expected_state=expected_state,
-                    )  # type: ignore
+                    )
                 )
 
     def validate(self, event):
@@ -212,7 +220,13 @@ class FingerprintValidator:
 
 
 class MembersValidator:
-    def __init__(self, exists=True, equals="", contains=[], does_not_contain=[]):
+    def __init__(
+        self,
+        exists=True,
+        equals="",
+        contains: Optional[List[str]] = None,
+        does_not_contain: Optional[List[str]] = None,
+    ):
         self._validator = StringValidator(
             exists=exists,
             equals=equals,
@@ -304,8 +318,8 @@ class EventValidator:
         self,
         exists=True,
         equals="",
-        contains=[],
-        does_not_contain=[],
+        contains: Optional[List[str]] = None,
+        does_not_contain: Optional[List[str]] = None,
         all_connections_up=False,
         no_of_connections=0,
         no_of_vpn=0,
@@ -345,7 +359,11 @@ class EventValidator:
         return self
 
     def add_members_validator(
-        self, exists=True, equals="", contains=[], does_not_contain=[]
+        self,
+        exists=True,
+        equals="",
+        contains: Optional[List[str]] = None,
+        does_not_contain: Optional[List[str]] = None,
     ):
         self._validators.append(
             MembersValidator(

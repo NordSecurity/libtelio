@@ -1,7 +1,7 @@
+import config
+from .network_switcher import NetworkSwitcher
 from utils.connection import Connection
 from utils.process import ProcessExecError
-from utils.network_switcher import NetworkSwitcher
-import config
 
 VAGRANT_DEFAULT_IF = "Ethernet"  # 10.0.2.0/24
 PRIMARY_IF = "Ethernet 2"  # 10.55.0.11
@@ -9,10 +9,7 @@ SECONDARY_IF = "Ethernet 3"  # 10.66.0.11
 
 
 class NetworkSwitcherWindows(NetworkSwitcher):
-    def __init__(
-        self,
-        connection: Connection,
-    ) -> None:
+    def __init__(self, connection: Connection) -> None:
         self._connection = connection
 
     async def switch_to_primary_network(self) -> None:

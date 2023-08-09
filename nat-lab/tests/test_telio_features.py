@@ -34,12 +34,7 @@ def test_telio_features():
     nurse_qos_features = TelioFeatures(
         nurse=Nurse(
             fingerprint="fingerprint",
-            qos=Qos(
-                rtt_interval=5,
-                rtt_tries=3,
-                rtt_types=["Ping"],
-                buckets=5,
-            ),
+            qos=Qos(rtt_interval=5, rtt_tries=3, rtt_types=["Ping"], buckets=5),
             heartbeat_interval=3600,
             initial_heartbeat_interval=10,
         )
@@ -57,12 +52,7 @@ def test_telio_features():
         lana=Lana(prod=False, event_path="/"),
         nurse=Nurse(
             fingerprint="alpha",
-            qos=Qos(
-                rtt_interval=5,
-                rtt_tries=3,
-                rtt_types=["Ping"],
-                buckets=5,
-            ),
+            qos=Qos(rtt_interval=5, rtt_tries=3, rtt_types=["Ping"], buckets=5),
             heartbeat_interval=3600,
             initial_heartbeat_interval=10,
         ),

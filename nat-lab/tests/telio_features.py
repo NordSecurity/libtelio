@@ -1,31 +1,31 @@
 from dataclasses import dataclass, field
-from dataclasses_json import dataclass_json, Undefined
+from dataclasses_json import dataclass_json, Undefined, DataClassJsonMixin
 from typing import Optional, List
 
 
 @dataclass_json
 @dataclass
-class ExitDns:
+class ExitDns(DataClassJsonMixin):
     auto_switch_dns_ips: bool
 
 
 @dataclass_json
 @dataclass
-class Direct:
+class Direct(DataClassJsonMixin):
     providers: Optional[List[str]] = None
     endpoint_interval_secs: Optional[int] = 5
 
 
 @dataclass_json
 @dataclass
-class Lana:
+class Lana(DataClassJsonMixin):
     prod: bool
     event_path: str
 
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
-class Qos:
+class Qos(DataClassJsonMixin):
     rtt_interval: Optional[int] = None
     rtt_tries: Optional[int] = None
     rtt_types: Optional[List[str]] = None
@@ -34,7 +34,7 @@ class Qos:
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
-class Nurse:
+class Nurse(DataClassJsonMixin):
     fingerprint: str
     heartbeat_interval: Optional[int] = None
     initial_heartbeat_interval: Optional[int] = None
@@ -44,7 +44,7 @@ class Nurse:
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
-class TelioFeatures:
+class TelioFeatures(DataClassJsonMixin):
     is_test_env: Optional[bool] = True
     exit_dns: Optional[ExitDns] = field(
         default_factory=lambda: ExitDns(auto_switch_dns_ips=True)

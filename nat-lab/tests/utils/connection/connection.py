@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
-from utils.process import Process
 from enum import Enum, auto
 from typing import List, Optional
+from utils.process import Process
 
 
 class TargetOS(Enum):
@@ -13,14 +13,11 @@ class TargetOS(Enum):
 class Connection(ABC):
     _target_os: Optional[TargetOS]
 
-    def __init__(self) -> None:
-        self._target_os = None
+    def __init__(self, target_os: TargetOS) -> None:
+        self._target_os = target_os
 
     @abstractmethod
-    def create_process(
-        self,
-        command: List[str],
-    ) -> "Process":
+    def create_process(self, command: List[str]) -> "Process":
         pass
 
     @property

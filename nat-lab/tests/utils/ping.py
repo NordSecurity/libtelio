@@ -1,8 +1,8 @@
-from utils.connection import Connection, TargetOS
-from utils.process import Process
-from typing import AsyncIterator
 import asyncio
 from contextlib import asynccontextmanager
+from typing import AsyncIterator
+from utils.connection import Connection, TargetOS
+from utils.process import Process
 
 # This utility uses the standard OS provided `ping` binaries.
 # It should work for Linux, Windows and Mac.
@@ -25,7 +25,7 @@ class Ping:
 
     async def on_stdout(self, stdout: str) -> None:
         for line in stdout.splitlines():
-            if line.find("from {}".format(self._ip)) > 0:
+            if line.find(f"from {self._ip}") > 0:
                 self._next_ping_event.set()
 
     async def execute(self) -> None:

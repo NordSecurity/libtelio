@@ -1,26 +1,24 @@
-from utils import Ping
-from contextlib import AsyncExitStack
-from mesh_api import API
-from telio import AdapterType
-from utils import ConnectionTag, new_connection_with_conn_tracker
 import asyncio
 import pytest
 import telio
-import utils.testing as testing
-from utils.connection_tracker import (
+from contextlib import AsyncExitStack
+from mesh_api import API
+from telio import AdapterType
+from utils import testing
+from utils.connection_tracker import ConnectionLimits
+from utils.connection_util import (
     generate_connection_tracker_config,
-    ConnectionLimits,
+    ConnectionTag,
+    new_connection_with_conn_tracker,
 )
+from utils.ping import Ping
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type",
     [
-        pytest.param(
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            AdapterType.BoringTun,
-        ),
+        pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
             AdapterType.LinuxNativeWg,
@@ -32,20 +30,13 @@ from utils.connection_tracker import (
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM,
-            AdapterType.WireguardGo,
-            marks=pytest.mark.windows,
+            ConnectionTag.WINDOWS_VM, AdapterType.WireguardGo, marks=pytest.mark.windows
         ),
-        pytest.param(
-            ConnectionTag.MAC_VM,
-            AdapterType.Default,
-            marks=pytest.mark.mac,
-        ),
+        pytest.param(ConnectionTag.MAC_VM, AdapterType.Default, marks=pytest.mark.mac),
     ],
 )
 async def test_mesh_remove_node(
-    alpha_connection_tag: ConnectionTag,
-    adapter_type: AdapterType,
+    alpha_connection_tag: ConnectionTag, adapter_type: AdapterType
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -60,10 +51,9 @@ async def test_mesh_remove_node(
             new_connection_with_conn_tracker(
                 alpha_connection_tag,
                 generate_connection_tracker_config(
-                    alpha_connection_tag,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    alpha_connection_tag, derp_1_limits=ConnectionLimits(1, 1)
                 ),
-            ),
+            )
         )
         (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
@@ -85,21 +75,17 @@ async def test_mesh_remove_node(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha, adapter_type,).run_meshnet(
-                api.get_meshmap(alpha.id),
+            telio.Client(connection_alpha, alpha, adapter_type).run_meshnet(
+                api.get_meshmap(alpha.id)
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta,).run_meshnet(
-                api.get_meshmap(beta.id),
-            )
+            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
         )
 
         client_gamma = await exit_stack.enter_async_context(
-            telio.Client(connection_gamma, gamma,).run_meshnet(
-                api.get_meshmap(gamma.id),
-            )
+            telio.Client(connection_gamma, gamma).run_meshnet(api.get_meshmap(gamma.id))
         )
 
         await testing.wait_lengthy(

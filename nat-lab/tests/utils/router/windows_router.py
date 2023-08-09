@@ -1,8 +1,8 @@
-from utils.connection import Connection
-from utils.process import ProcessExecError
+from .router import Router
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
-from utils import Router
+from utils.connection import Connection
+from utils.process import ProcessExecError
 
 
 class WindowsRouter(Router):
@@ -100,9 +100,13 @@ class WindowsRouter(Router):
         pass
 
     @asynccontextmanager
-    async def disable_path(self, address: str) -> AsyncIterator:
+    async def disable_path(
+        self, address: str  # pylint: disable=unused-argument
+    ) -> AsyncIterator:
         yield
 
     @asynccontextmanager
-    async def break_tcp_conn_to_host(self, address: str) -> AsyncIterator:
+    async def break_tcp_conn_to_host(
+        self, address: str  # pylint: disable=unused-argument
+    ) -> AsyncIterator:
         yield

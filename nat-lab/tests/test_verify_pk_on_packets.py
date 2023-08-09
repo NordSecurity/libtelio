@@ -1,10 +1,11 @@
-import telio
-import pytest
 import asyncio
+import pytest
+import telio
 from contextlib import AsyncExitStack
-from utils import ConnectionTag, new_connection_by_tag, testing
 from mesh_api import API
 from typing import Optional
+from utils import testing
+from utils.connection_util import ConnectionTag, new_connection_by_tag
 
 
 async def check_fake_derp_connection(client: telio.Client) -> Optional[telio.Client]:
@@ -14,10 +15,9 @@ async def check_fake_derp_connection(client: telio.Client) -> Optional[telio.Cli
 
         for line in output:
             if "- Server {" in line:
-                if f"Connected," in line:
+                if "Connected," in line:
                     return client
-                else:
-                    break
+                break
 
         await asyncio.sleep(0.1)
 
@@ -39,22 +39,14 @@ async def test_verify_pk_on_packets() -> None:
 
         alpha_client = await exit_stack.enter_async_context(
             telio.Client(
-                alpha_connection,
-                alpha,
-                telio.AdapterType.BoringTun,
-            ).run_meshnet(
-                api.get_meshmap(alpha.id),
-            )
+                alpha_connection, alpha, telio.AdapterType.BoringTun
+            ).run_meshnet(api.get_meshmap(alpha.id))
         )
 
         beta_client = await exit_stack.enter_async_context(
             telio.Client(
-                beta_connection,
-                beta,
-                telio.AdapterType.BoringTun,
-            ).run_meshnet(
-                api.get_meshmap(beta.id),
-            )
+                beta_connection, beta, telio.AdapterType.BoringTun
+            ).run_meshnet(api.get_meshmap(beta.id))
         )
         await testing.wait_lengthy(
             asyncio.gather(

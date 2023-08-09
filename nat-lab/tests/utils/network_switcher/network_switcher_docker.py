@@ -1,12 +1,9 @@
+from .network_switcher import NetworkSwitcher
 from utils.connection import Connection
-from utils.network_switcher import NetworkSwitcher
 
 
 class NetworkSwitcherDocker(NetworkSwitcher):
-    def __init__(
-        self,
-        connection: Connection,
-    ) -> None:
+    def __init__(self, connection: Connection) -> None:
         self._connection = connection
 
     async def switch_to_primary_network(self) -> None:

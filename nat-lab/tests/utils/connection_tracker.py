@@ -1,14 +1,12 @@
-import re
 import asyncio
+import re
 import time
-import config
-import utils
-from typing import Optional, List, Dict, AsyncIterator
-from dataclasses import dataclass
-from utils.ping import Ping
-from utils.connection import Connection
-from utils.process import Process
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from typing import Optional, List, Dict, AsyncIterator
+from utils.connection import Connection
+from utils.ping import Ping
+from utils.process import Process
 
 
 @dataclass
@@ -72,13 +70,13 @@ class ConnectionTracker:
     def __init__(
         self,
         connection: Connection,
-        config: Optional[List[ConnectionTrackerConfig]] = None,
+        configuration: Optional[List[ConnectionTrackerConfig]] = None,
     ):
         self._process: Process = connection.create_process(
             ["conntrack", "-E", "-e", "NEW"]
         )
         self._connection: Connection = connection
-        self._config: Optional[List[ConnectionTrackerConfig]] = config
+        self._config: Optional[List[ConnectionTrackerConfig]] = configuration
         self._events: List[FiveTuple] = []
         self._last_event: Optional[FiveTuple] = None
         self._events_wait_list: Dict[str, List[asyncio.Event]] = {}
@@ -178,96 +176,3 @@ class ConnectionTracker:
                     await asyncio.sleep(0.1)
 
             yield self
-
-
-def generate_connection_tracker_config(
-    connection_tag,
-    vpn_1_limits: ConnectionLimits = ConnectionLimits(0, 0),
-    vpn_2_limits: ConnectionLimits = ConnectionLimits(0, 0),
-    stun_limits: ConnectionLimits = ConnectionLimits(0, 0),
-    ping_limits: ConnectionLimits = ConnectionLimits(0, 0),
-    derp_0_limits: ConnectionLimits = ConnectionLimits(0, 0),
-    derp_1_limits: ConnectionLimits = ConnectionLimits(0, 0),
-    derp_2_limits: ConnectionLimits = ConnectionLimits(0, 0),
-    derp_3_limits: ConnectionLimits = ConnectionLimits(0, 0),
-) -> List[ConnectionTrackerConfig]:
-    lan_addr = utils.LAN_ADDR_MAP[connection_tag]
-    return [
-        ConnectionTrackerConfig(
-            "vpn_1",
-            vpn_1_limits,
-            FiveTuple(
-                protocol="udp",
-                src_ip=lan_addr,
-                dst_ip=str(config.WG_SERVER.get("ipv4")),
-                dst_port=51820,
-            ),
-        ),
-        ConnectionTrackerConfig(
-            "vpn_2",
-            vpn_2_limits,
-            FiveTuple(
-                protocol="udp",
-                src_ip=lan_addr,
-                dst_ip=str(config.WG_SERVER_2.get("ipv4")),
-                dst_port=51820,
-            ),
-        ),
-        ConnectionTrackerConfig(
-            "stun",
-            stun_limits,
-            FiveTuple(
-                protocol="udp",
-                src_ip=lan_addr,
-                dst_ip=config.STUN_SERVER,
-                dst_port=3478,
-            ),
-        ),
-        ConnectionTrackerConfig(
-            "ping",
-            ping_limits,
-            FiveTuple(
-                protocol="icmp",
-            ),
-        ),
-        ConnectionTrackerConfig(
-            "derp_0",
-            derp_0_limits,
-            FiveTuple(
-                protocol="tcp",
-                src_ip=lan_addr,
-                dst_ip=str(config.DERP_FAKE.get("ipv4")),
-                dst_port=8765,
-            ),
-        ),
-        ConnectionTrackerConfig(
-            "derp_1",
-            derp_1_limits,
-            FiveTuple(
-                protocol="tcp",
-                src_ip=lan_addr,
-                dst_ip=str(config.DERP_PRIMARY.get("ipv4")),
-                dst_port=8765,
-            ),
-        ),
-        ConnectionTrackerConfig(
-            "derp_2",
-            derp_2_limits,
-            FiveTuple(
-                protocol="tcp",
-                src_ip=lan_addr,
-                dst_ip=str(config.DERP_SECONDARY.get("ipv4")),
-                dst_port=8765,
-            ),
-        ),
-        ConnectionTrackerConfig(
-            "derp_3",
-            derp_3_limits,
-            FiveTuple(
-                protocol="tcp",
-                src_ip=lan_addr,
-                dst_ip=str(config.DERP_TERTIARY.get("ipv4")),
-                dst_port=8765,
-            ),
-        ),
-    ]

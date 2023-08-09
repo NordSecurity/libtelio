@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional, Callable, Awaitable, AsyncIterator
 from contextlib import asynccontextmanager
+from typing import List, Optional, Callable, Awaitable, AsyncIterator
 
 StreamCallback = Callable[[str], Awaitable[None]]
 

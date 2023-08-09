@@ -7,8 +7,16 @@ them in the CI.
 
 ## Formatting
 
-Python code is formatted using https://github.com/psf/black.
+Python code is formatted using https://github.com/psf/black, https://github.com/PyCQA/isort and https://github.com/PyCQA/autoflake.
 Unformatted code will automatically be declined by the CI.
 ```
-black .
+black . && isort . && autoflake .
+```
+
+## Linter and typecheck
+
+Python code is checked using https://github.com/python/mypy and https://github.com/pylint-dev/pylint.
+Any faulty code will automatically be declined by the CI.
+```
+mypy . && pylint .
 ```

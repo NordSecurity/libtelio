@@ -1,0 +1,56 @@
+[project]
+name = "nat-lab"
+
+[tool.black]
+preview = true
+exclude="tests/protobuf"
+
+[tool.isort]
+profile = "black"
+force_single_line = false
+no_inline_sort = true
+sort_reexports = true
+float_to_top = true
+combine_star = true
+remove_redundant_aliases = true
+combine_as_imports = true
+no_sections = true
+skip=["tests/protobuf"]
+
+[tool.autoflake]
+remove-unused-variables = true
+remove-all-unused-imports = true
+remove-duplicate-keys = true
+ignore-init-module-imports = true
+recursive = true
+in-place = true
+
+[tool.pylint]
+max-line-length = 88
+ignore-paths="tests/protobuf/*"
+
+[tool.pylint.'MESSAGES CONTROL']
+recursive = true
+disable = [
+    "invalid-name",
+    "missing-module-docstring",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "nonlocal-and-global",
+    "subprocess-run-check",
+    "broad-exception-raised",
+    "line-too-long",
+    "too-many-locals",
+    "wrong-import-order",
+    "too-many-arguments",
+    "too-many-instance-attributes",
+    "too-many-boolean-expressions",
+    "fixme",
+    "too-many-public-methods",
+    "too-few-public-methods",
+    "too-many-statements",
+    "global-statement",
+    "bare-except",
+    "too-many-branches",
+    "duplicate-code"
+]

@@ -1,17 +1,15 @@
+import asyncio
+import config
+import pytest
+import re
+import telio
 from contextlib import AsyncExitStack
 from mesh_api import API
 from telio import AdapterType, State
-import pytest
-import telio
-import utils.testing as testing
-import re
-import asyncio
-import config
-from utils.connection_tracker import (
-    ConnectionLimits,
+from utils import testing
+from utils.connection_tracker import ConnectionLimits
+from utils.connection_util import (
     generate_connection_tracker_config,
-)
-from utils import (
     ConnectionTag,
     new_connection_with_conn_tracker,
 )
@@ -21,10 +19,7 @@ from utils import (
 @pytest.mark.parametrize(
     "alpha_connection_tag,alpha_adapter_type",
     [
-        pytest.param(
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            AdapterType.BoringTun,
-        ),
+        pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
             AdapterType.LinuxNativeWg,
@@ -39,8 +34,7 @@ from utils import (
     ],
 )
 async def test_dns_through_exit(
-    alpha_connection_tag: ConnectionTag,
-    alpha_adapter_type: AdapterType,
+    alpha_connection_tag: ConnectionTag, alpha_adapter_type: AdapterType
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -51,8 +45,7 @@ async def test_dns_through_exit(
             new_connection_with_conn_tracker(
                 alpha_connection_tag,
                 generate_connection_tracker_config(
-                    alpha_connection_tag,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    alpha_connection_tag, derp_1_limits=ConnectionLimits(1, 1)
                 ),
             )
         )
@@ -67,14 +60,14 @@ async def test_dns_through_exit(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha, alpha_adapter_type,).run_meshnet(
-                api.get_meshmap(alpha.id),
+            telio.Client(connection_alpha, alpha, alpha_adapter_type).run_meshnet(
+                api.get_meshmap(alpha.id)
             )
         )
 
         client_exit = await exit_stack.enter_async_context(
-            telio.Client(connection_exit, exit_node,).run_meshnet(
-                api.get_meshmap(exit_node.id),
+            telio.Client(connection_exit, exit_node).run_meshnet(
+                api.get_meshmap(exit_node.id)
             )
         )
 
@@ -97,11 +90,7 @@ async def test_dns_through_exit(
 
         # entry connects to exit
         await testing.wait_long(client_exit.get_router().create_exit_node_route())
-        await testing.wait_long(
-            client_alpha.connect_to_exit_node(
-                exit_node.public_key,
-            )
-        )
+        await testing.wait_long(client_alpha.connect_to_exit_node(exit_node.public_key))
 
         await testing.wait_long(
             client_alpha.wait_for_event_peer(exit_node.public_key, [State.Connected])
@@ -113,14 +102,14 @@ async def test_dns_through_exit(
         await testing.wait_normal(
             connection_alpha.create_process(
                 ["nslookup", "google.com", config.LIBTELIO_EXIT_DNS_IP]
-            ).execute(),
+            ).execute()
         )
 
         # sending dns straight to exit peer's dns forwarder(as will be done on linux/windows)
         alpha_response = await testing.wait_normal(
             connection_alpha.create_process(
                 ["nslookup", "google.com", config.LIBTELIO_EXIT_DNS_IP]
-            ).execute(),
+            ).execute()
         )
         # Check if some address was found
         assert (
@@ -141,7 +130,7 @@ async def test_dns_through_exit(
         alpha_response = await testing.wait_normal(
             connection_alpha.create_process(
                 ["nslookup", "google.com", config.LIBTELIO_DNS_IP]
-            ).execute(),
+            ).execute()
         )
         # Check if some address was found
         assert (
@@ -156,7 +145,7 @@ async def test_dns_through_exit(
         alpha_response = await testing.wait_normal(
             connection_alpha.create_process(
                 ["nslookup", "google.com", config.LIBTELIO_DNS_IP]
-            ).execute(),
+            ).execute()
         )
         # Check if some address was found
         assert (

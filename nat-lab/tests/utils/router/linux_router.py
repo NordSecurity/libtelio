@@ -1,8 +1,8 @@
-from utils.connection import Connection
-from utils.process import ProcessExecError
+from .router import Router
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
-from utils import Router
+from utils.connection import Connection
+from utils.process import ProcessExecError
 
 # An arbitrary routing table id. Must be unique on the system.
 ROUTING_TABLE_ID = "73110"  # TELIO
@@ -32,30 +32,16 @@ class LinuxRouter(Router):
 
     async def setup_interface(self, address: str) -> None:
         await self._connection.create_process(
-            [
-                "ip",
-                "addr",
-                "add",
-                "dev",
-                self._interface_name,
-                address,
-            ],
+            ["ip", "addr", "add", "dev", self._interface_name, address]
         ).execute()
 
         await self._connection.create_process(
-            ["ip", "link", "set", "up", "dev", self._interface_name],
+            ["ip", "link", "set", "up", "dev", self._interface_name]
         ).execute()
 
     async def create_meshnet_route(self):
         await self._connection.create_process(
-            [
-                "ip",
-                "route",
-                "add",
-                "100.64.0.0/10",
-                "dev",
-                self._interface_name,
-            ],
+            ["ip", "route", "add", "100.64.0.0/10", "dev", self._interface_name]
         ).execute()
 
     async def create_vpn_route(self):
@@ -70,7 +56,7 @@ class LinuxRouter(Router):
                     self._interface_name,
                     "table",
                     ROUTING_TABLE_ID,
-                ],
+                ]
             ).execute()
         except ProcessExecError as exception:
             if exception.stderr.find("File exists") < 0:
@@ -87,7 +73,7 @@ class LinuxRouter(Router):
                     self._interface_name,
                     "table",
                     ROUTING_TABLE_ID,
-                ],
+                ]
             ).execute()
         except ProcessExecError as exception:
             if exception.stderr.find("File exists") < 0:
@@ -107,7 +93,7 @@ class LinuxRouter(Router):
                 FWMARK_VALUE,
                 "lookup",
                 ROUTING_TABLE_ID,
-            ],
+            ]
         ).execute()
 
     async def delete_interface(self) -> None:
@@ -122,13 +108,7 @@ class LinuxRouter(Router):
     async def delete_vpn_route(self):
         try:
             await self._connection.create_process(
-                [
-                    "ip",
-                    "rule",
-                    "del",
-                    "priority",
-                    ROUTING_PRIORITY,
-                ],
+                ["ip", "rule", "del", "priority", ROUTING_PRIORITY]
             ).execute()
         except ProcessExecError as exception:
             if (
@@ -152,7 +132,7 @@ class LinuxRouter(Router):
                 self._interface_name,
                 "-j",
                 "MASQUERADE",
-            ],
+            ]
         ).execute()
 
     async def delete_exit_node_route(self) -> None:
@@ -171,7 +151,7 @@ class LinuxRouter(Router):
                     self._interface_name,
                     "-j",
                     "MASQUERADE",
-                ],
+                ]
             ).execute()
         except ProcessExecError as exception:
             if exception.stderr.find("No chain/target/match by that name") < 0:
@@ -180,46 +160,16 @@ class LinuxRouter(Router):
     @asynccontextmanager
     async def disable_path(self, address: str) -> AsyncIterator:
         await self._connection.create_process(
-            [
-                "iptables",
-                "-t",
-                "filter",
-                "-A",
-                "INPUT",
-                "-s",
-                address,
-                "-j",
-                "DROP",
-            ]
+            ["iptables", "-t", "filter", "-A", "INPUT", "-s", address, "-j", "DROP"]
         ).execute()
         await self._connection.create_process(
-            [
-                "iptables",
-                "-t",
-                "filter",
-                "-A",
-                "OUTPUT",
-                "-d",
-                address,
-                "-j",
-                "DROP",
-            ]
+            ["iptables", "-t", "filter", "-A", "OUTPUT", "-d", address, "-j", "DROP"]
         ).execute()
         try:
             yield
         finally:
             await self._connection.create_process(
-                [
-                    "iptables",
-                    "-t",
-                    "filter",
-                    "-D",
-                    "INPUT",
-                    "-s",
-                    address,
-                    "-j",
-                    "DROP",
-                ]
+                ["iptables", "-t", "filter", "-D", "INPUT", "-s", address, "-j", "DROP"]
             ).execute()
             await self._connection.create_process(
                 [

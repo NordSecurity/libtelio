@@ -1,18 +1,22 @@
+import config
 from aiodocker import Docker
-from utils.connection import Connection, TargetOS
 from contextlib import asynccontextmanager
 from enum import Enum, auto
 from typing import AsyncIterator, Dict, Tuple, Optional, List
-from utils import container_util, windows_vm_util, mac_vm_util
-from utils.connection_tracker import ConnectionTracker, ConnectionTrackerConfig
-import config
-
+from utils.connection import Connection, TargetOS
+from utils.connection_tracker import (
+    ConnectionTracker,
+    ConnectionTrackerConfig,
+    FiveTuple,
+    ConnectionLimits,
+)
 from utils.network_switcher import (
     NetworkSwitcher,
     NetworkSwitcherDocker,
-    NetworkSwitcherWindows,
     NetworkSwitcherMac,
+    NetworkSwitcherWindows,
 )
+from utils.vm import container_util, windows_vm_util, mac_vm_util
 
 
 class ConnectionTag(Enum):
@@ -125,10 +129,9 @@ def get_libtelio_binary_path(path: str, connection: Connection) -> str:
     target_os = connection.target_os
     if target_os == TargetOS.Linux:
         return config.LIBTELIO_BINARY_PATH_DOCKER + path
-    elif target_os == TargetOS.Windows or target_os == TargetOS.Mac:
+    if target_os in [TargetOS.Windows, TargetOS.Mac]:
         return config.LIBTELIO_BINARY_PATH_VM + path
-    else:
-        assert False, f"target_os not supported '{target_os}'"
+    assert False, f"target_os not supported '{target_os}'"
 
 
 @asynccontextmanager
@@ -156,14 +159,13 @@ def create_network_switcher(
     if tag in DOCKER_SERVICE_IDS:
         return NetworkSwitcherDocker(connection)
 
-    elif tag == ConnectionTag.WINDOWS_VM:
+    if tag == ConnectionTag.WINDOWS_VM:
         return NetworkSwitcherWindows(connection)
 
-    elif tag == ConnectionTag.MAC_VM:
+    if tag == ConnectionTag.MAC_VM:
         return NetworkSwitcherMac(connection)
 
-    else:
-        return None
+    return None
 
 
 @asynccontextmanager
@@ -182,14 +184,12 @@ async def new_connection_manager_by_tag(
         if tag in DOCKER_GW_MAP:
             async with new_connection_raw(DOCKER_GW_MAP[tag]) as gw_connection:
                 async with ConnectionTracker(
-                    gw_connection,
-                    conn_tracker_config,
+                    gw_connection, conn_tracker_config
                 ).run() as conn_tracker:
                     yield (connection, gw_connection, network_switcher, conn_tracker)
         else:
             async with ConnectionTracker(
-                connection,
-                conn_tracker_config,
+                connection, conn_tracker_config
             ).run() as conn_tracker:
                 yield (connection, None, network_switcher, conn_tracker)
 
@@ -224,28 +224,104 @@ async def new_connection_with_conn_tracker(
 async def new_connection_with_gw(
     tag: ConnectionTag,
 ) -> AsyncIterator[Tuple[Connection, Optional[Connection]]]:
-    async with new_connection_manager_by_tag(tag) as (
-        connection,
-        connection_gw,
-        _,
-        _,
-    ):
+    async with new_connection_manager_by_tag(tag) as (connection, connection_gw, _, _):
         yield (connection, connection_gw)
 
 
 @asynccontextmanager
 async def new_connection_by_tag(tag: ConnectionTag) -> AsyncIterator[Connection]:
-    async with new_connection_manager_by_tag(tag) as (
-        connection,
-        _,
-        _,
-        _,
-    ):
+    async with new_connection_manager_by_tag(tag) as (connection, _, _, _):
         yield connection
 
 
 def container_id(tag: ConnectionTag) -> str:
     if tag in DOCKER_SERVICE_IDS:
         return f"nat-lab-{DOCKER_SERVICE_IDS[tag]}-1"
-    else:
-        assert False, f"tag {tag} not a docker container"
+    assert False, f"tag {tag} not a docker container"
+
+
+def generate_connection_tracker_config(
+    connection_tag,
+    vpn_1_limits: ConnectionLimits = ConnectionLimits(0, 0),
+    vpn_2_limits: ConnectionLimits = ConnectionLimits(0, 0),
+    stun_limits: ConnectionLimits = ConnectionLimits(0, 0),
+    ping_limits: ConnectionLimits = ConnectionLimits(0, 0),
+    derp_0_limits: ConnectionLimits = ConnectionLimits(0, 0),
+    derp_1_limits: ConnectionLimits = ConnectionLimits(0, 0),
+    derp_2_limits: ConnectionLimits = ConnectionLimits(0, 0),
+    derp_3_limits: ConnectionLimits = ConnectionLimits(0, 0),
+) -> List[ConnectionTrackerConfig]:
+    lan_addr = LAN_ADDR_MAP[connection_tag]
+    return [
+        ConnectionTrackerConfig(
+            "vpn_1",
+            vpn_1_limits,
+            FiveTuple(
+                protocol="udp",
+                src_ip=lan_addr,
+                dst_ip=str(config.WG_SERVER.get("ipv4")),
+                dst_port=51820,
+            ),
+        ),
+        ConnectionTrackerConfig(
+            "vpn_2",
+            vpn_2_limits,
+            FiveTuple(
+                protocol="udp",
+                src_ip=lan_addr,
+                dst_ip=str(config.WG_SERVER_2.get("ipv4")),
+                dst_port=51820,
+            ),
+        ),
+        ConnectionTrackerConfig(
+            "stun",
+            stun_limits,
+            FiveTuple(
+                protocol="udp",
+                src_ip=lan_addr,
+                dst_ip=config.STUN_SERVER,
+                dst_port=3478,
+            ),
+        ),
+        ConnectionTrackerConfig("ping", ping_limits, FiveTuple(protocol="icmp")),
+        ConnectionTrackerConfig(
+            "derp_0",
+            derp_0_limits,
+            FiveTuple(
+                protocol="tcp",
+                src_ip=lan_addr,
+                dst_ip=str(config.DERP_FAKE.get("ipv4")),
+                dst_port=8765,
+            ),
+        ),
+        ConnectionTrackerConfig(
+            "derp_1",
+            derp_1_limits,
+            FiveTuple(
+                protocol="tcp",
+                src_ip=lan_addr,
+                dst_ip=str(config.DERP_PRIMARY.get("ipv4")),
+                dst_port=8765,
+            ),
+        ),
+        ConnectionTrackerConfig(
+            "derp_2",
+            derp_2_limits,
+            FiveTuple(
+                protocol="tcp",
+                src_ip=lan_addr,
+                dst_ip=str(config.DERP_SECONDARY.get("ipv4")),
+                dst_port=8765,
+            ),
+        ),
+        ConnectionTrackerConfig(
+            "derp_3",
+            derp_3_limits,
+            FiveTuple(
+                protocol="tcp",
+                src_ip=lan_addr,
+                dst_ip=str(config.DERP_TERTIARY.get("ipv4")),
+                dst_port=8765,
+            ),
+        ),
+    ]

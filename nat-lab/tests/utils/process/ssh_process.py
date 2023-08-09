@@ -1,9 +1,9 @@
-from utils.process import Process, ProcessExecError, StreamCallback
-from utils.asyncio_util import run_async_context
-from typing import List, Optional, Callable, AsyncIterator
 import asyncio
 import asyncssh
+from .process import Process, ProcessExecError, StreamCallback
 from contextlib import suppress, asynccontextmanager
+from typing import List, Optional, Callable, AsyncIterator
+from utils.asyncio_util import run_async_context
 
 
 class SshProcess(Process):
@@ -13,6 +13,7 @@ class SshProcess(Process):
     _stderr: str
     _stdin_ready: asyncio.Event
     _stdin: Optional[asyncssh.SSHWriter]
+    _process: Optional[asyncssh.SSHClientProcess]
 
     def __init__(
         self,
@@ -27,6 +28,7 @@ class SshProcess(Process):
         self._stdin_ready = asyncio.Event()
         self._stdin = None
         self._escape_argument = escape_argument
+        self._process = None
 
     async def execute(
         self,
@@ -49,10 +51,7 @@ class SshProcess(Process):
         assert completed_process.returncode is not None
         if completed_process.returncode != 0:
             raise ProcessExecError(
-                completed_process.returncode,
-                self._command,
-                self._stdout,
-                self._stderr,
+                completed_process.returncode, self._command, self._stdout, self._stderr
             )
 
         return self
@@ -68,7 +67,7 @@ class SshProcess(Process):
                 yield self
             finally:
                 with suppress(Exception):
-                    if self._process.returncode is None:
+                    if self._process and self._process.returncode is None:
                         self._process.kill()
                         self._process.close()
                         await self._process.wait_closed()

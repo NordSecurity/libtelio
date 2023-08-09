@@ -1,7 +1,7 @@
 import pytest
 
 
-def pytest_collection_modifyitems(config, items):
+def pytest_collection_modifyitems(items):
     # Separate test execution into layers based on platform. The biggest reason
     # for this is to separate `linux_native` tests. If the tests are running
     # normally, they are interleaved, e.g.:

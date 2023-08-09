@@ -1,5 +1,6 @@
 import re
 
+
 # https://stackoverflow.com/questions/29213106/how-to-securely-escape-command-line-arguments-for-the-cmd-exe-shell-on-windows
 def escape_argument(arg):
     # Escape the argument for the cmd.exe shell.
@@ -34,7 +35,7 @@ def escape_for_cmd_exe(arg):
     meta_re = re.compile(
         "(" + "|".join(re.escape(char) for char in list(meta_chars)) + ")"
     )
-    meta_map = {char: "^%s" % char for char in meta_chars}
+    meta_map = {char: f"^{char}" for char in meta_chars}
 
     def escape_meta_chars(m):
         char = m.group(1)

@@ -1,8 +1,12 @@
-import sqlite3
 import json
+import sqlite3
 from dataclasses import dataclass, field
-from dataclasses_json import dataclass_json, Undefined
-from dataclasses_json import config as json_config
+from dataclasses_json import (
+    dataclass_json,
+    Undefined,
+    DataClassJsonMixin,
+    config as json_config,
+)
 from flatten_json import flatten  # type: ignore
 
 DEFAULT_TABLE_NAME = "queue_elements"
@@ -10,7 +14,7 @@ DEFAULT_TABLE_NAME = "queue_elements"
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
-class Event:
+class Event(DataClassJsonMixin):
     name: str = field(metadata=json_config(field_name="event_name"))
     category: str = field(metadata=json_config(field_name="event_category"))
     datetime_local: str = field(metadata=json_config(field_name="event_datetime_local"))
@@ -31,7 +35,9 @@ class Event:
     )
     members: str = field(
         metadata=json_config(
-            field_name="context_application_config_current_state_internal_meshnet_members"
+            field_name=(
+                "context_application_config_current_state_internal_meshnet_members"
+            )
         )
     )
     connection_duration: str = field(
@@ -45,12 +51,16 @@ class Event:
     sent_data: str = field(metadata=json_config(field_name="body_sent_data"))
     nat_type: str = field(
         metadata=json_config(
-            field_name="context_application_config_current_state_internal_meshnet_fp_nat"
+            field_name=(
+                "context_application_config_current_state_internal_meshnet_fp_nat"
+            )
         )
     )
     mem_nat_types: str = field(
         metadata=json_config(
-            field_name="context_application_config_current_state_internal_meshnet_members_nat"
+            field_name=(
+                "context_application_config_current_state_internal_meshnet_members_nat"
+            )
         )
     )
 

@@ -1,10 +1,10 @@
-from contextlib import AsyncExitStack
-from mesh_api import API
-from utils import ConnectionTag, new_connection_by_tag
-from telio import Client
-from telio_features import TelioFeatures, Direct, Lana, Nurse, Qos, ExitDns
 import asyncio
 import pytest
+from contextlib import AsyncExitStack
+from mesh_api import API
+from telio import Client
+from telio_features import TelioFeatures, Direct, Lana, Nurse, Qos, ExitDns
+from utils.connection_util import ConnectionTag, new_connection_by_tag
 
 
 @pytest.mark.asyncio
@@ -28,16 +28,11 @@ async def test_telio_tasks_with_all_features() -> None:
                         heartbeat_interval=3600,
                         initial_heartbeat_interval=10,
                         qos=Qos(
-                            rtt_interval=5,
-                            rtt_tries=3,
-                            rtt_types=["Ping"],
-                            buckets=5,
+                            rtt_interval=5, rtt_tries=3, rtt_types=["Ping"], buckets=5
                         ),
                     ),
                 ),
-            ).run_meshnet(
-                api.get_meshmap(alpha.id),
-            )
+            ).run_meshnet(api.get_meshmap(alpha.id))
         )
         # le wait some seconds for everything to start
         await asyncio.sleep(5)

@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 
-from typing import List
 import argparse
-import subprocess
 import os
+import subprocess
+from typing import List
 
 
 def run_command(command, env=None):
     if env:
         env = {**os.environ.copy(), **env}
 
-    print("|EXECUTE| {}".format(" ".join(command)))
+    print(f"|EXECUTE| {' '.join(command)}")
     subprocess.check_call(command, env=env)
     print("")
 
 
 def run_command_with_output(command, hide_output=False):
-    print("|EXECUTE| {}".format(" ".join(command)))
+    print(f"|EXECUTE| {' '.join(command)}")
     result = subprocess.check_output(command).decode("utf-8")
     if hide_output:
         print("(OUTPUT HIDDEN)")

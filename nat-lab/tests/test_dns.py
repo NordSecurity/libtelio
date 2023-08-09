@@ -1,18 +1,20 @@
-from utils import process
-from contextlib import AsyncExitStack
-from mesh_api import API
-from telio import AdapterType, PathType
 import asyncio
 import config
 import pytest
-import telio
-import utils.testing as testing
 import re
-from utils.connection_tracker import (
-    ConnectionLimits,
+import telio
+from contextlib import AsyncExitStack
+from mesh_api import API
+from telio import AdapterType, PathType
+from utils import testing
+from utils.connection_tracker import ConnectionLimits
+from utils.connection_util import (
     generate_connection_tracker_config,
+    ConnectionTag,
+    new_connection_with_conn_tracker,
+    new_connection_by_tag,
 )
-from utils import ConnectionTag, new_connection_with_conn_tracker, new_connection_by_tag
+from utils.process import ProcessExecError
 
 DNS_SERVER_ADDRESS = config.LIBTELIO_DNS_IP
 
@@ -47,15 +49,11 @@ async def test_dns() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha,).run_meshnet(
-                api.get_meshmap(alpha.id),
-            )
+            telio.Client(connection_alpha, alpha).run_meshnet(api.get_meshmap(alpha.id))
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta,).run_meshnet(
-                api.get_meshmap(beta.id),
-            )
+            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
         )
 
         await testing.wait_lengthy(
@@ -99,12 +97,12 @@ async def test_dns() -> None:
         await testing.wait_long(
             connection_alpha.create_process(
                 ["nslookup", "google.com", DNS_SERVER_ADDRESS]
-            ).execute(),
+            ).execute()
         )
         await testing.wait_long(
             connection_beta.create_process(
                 ["nslookup", "google.com", DNS_SERVER_ADDRESS]
-            ).execute(),
+            ).execute()
         )
 
         # If the previous calls didn't fail, we can assume that the resolver is running so no need to wait for the timeout and test the validity of the response
@@ -131,13 +129,13 @@ async def test_dns() -> None:
             await testing.wait_long(
                 connection_alpha.create_process(
                     ["nslookup", "google.com", DNS_SERVER_ADDRESS]
-                ).execute(),
+                ).execute()
             )
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_long(
                 connection_beta.create_process(
                     ["nslookup", "google.com", DNS_SERVER_ADDRESS]
-                ).execute(),
+                ).execute()
             )
 
         assert alpha_conn_tracker.get_out_of_limits() is None
@@ -174,15 +172,11 @@ async def test_dns_port() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha,).run_meshnet(
-                api.get_meshmap(alpha.id),
-            )
+            telio.Client(connection_alpha, alpha).run_meshnet(api.get_meshmap(alpha.id))
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta,).run_meshnet(
-                api.get_meshmap(beta.id),
-            )
+            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
         )
 
         await testing.wait_lengthy(
@@ -219,7 +213,7 @@ async def test_dns_port() -> None:
         await testing.wait_normal(
             connection_alpha.create_process(
                 ["dig", "@" + DNS_SERVER_ADDRESS, "-p", "53", "google.com"]
-            ).execute(),
+            ).execute()
         )
 
         # A DNS request on a different port should timeout
@@ -227,7 +221,7 @@ async def test_dns_port() -> None:
             await testing.wait_normal(
                 connection_alpha.create_process(
                     ["dig", "@" + DNS_SERVER_ADDRESS, "-p", "54", "google.com"]
-                ).execute(),
+                ).execute()
             )
 
         # Look for beta on 53 port should work
@@ -243,7 +237,7 @@ async def test_dns_port() -> None:
             await testing.wait_normal(
                 connection_alpha.create_process(
                     ["dig", "@" + DNS_SERVER_ADDRESS, "-p", "54", "beta.nord"]
-                ).execute(),
+                ).execute()
             )
 
         # Disable magic dns
@@ -255,14 +249,14 @@ async def test_dns_port() -> None:
             await testing.wait_normal(
                 connection_alpha.create_process(
                     ["dig", "@" + DNS_SERVER_ADDRESS, "-p", "53", "google.com"]
-                ).execute(),
+                ).execute()
             )
 
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_normal(
                 connection_alpha.create_process(
                     ["dig", "@" + DNS_SERVER_ADDRESS, "-p", "53", "beta.nord"]
-                ).execute(),
+                ).execute()
             )
 
         assert alpha_conn_tracker.get_out_of_limits() is None
@@ -286,10 +280,7 @@ async def test_vpn_dns() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(
-                connection,
-                alpha,
-            ).run()
+            telio.Client(connection, alpha).run()
         )
 
         wg_server = config.WG_SERVER
@@ -315,14 +306,14 @@ async def test_vpn_dns() -> None:
         await testing.wait_normal(
             connection.create_process(
                 ["nslookup", "google.com", DNS_SERVER_ADDRESS]
-            ).execute(),
+            ).execute()
         )
 
         # Test if the DNS module preserves CNAME records
         dns_response = await testing.wait_normal(
             connection.create_process(
                 ["nslookup", "-q=CNAME", "www.microsoft.com", DNS_SERVER_ADDRESS]
-            ).execute(),
+            ).execute()
         )
         assert "canonical name" in dns_response.get_stdout()
 
@@ -333,7 +324,7 @@ async def test_vpn_dns() -> None:
             await testing.wait_normal(
                 connection.create_process(
                     ["nslookup", "google.com", DNS_SERVER_ADDRESS]
-                ).execute(),
+                ).execute()
             )
 
         # Test interop with meshnet
@@ -344,7 +335,7 @@ async def test_vpn_dns() -> None:
         await testing.wait_normal(
             connection.create_process(
                 ["nslookup", "google.com", DNS_SERVER_ADDRESS]
-            ).execute(),
+            ).execute()
         )
 
         assert conn_tracker.get_out_of_limits() is None
@@ -363,15 +354,13 @@ async def test_dns_after_mesh_off() -> None:
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 ConnectionTag.DOCKER_CONE_CLIENT_1,
-                generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                ),
+                generate_connection_tracker_config(ConnectionTag.DOCKER_CONE_CLIENT_1),
             )
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha,).run_meshnet(
-                api.get_meshmap(alpha.id, derp_servers=[]),
+            telio.Client(connection_alpha, alpha).run_meshnet(
+                api.get_meshmap(alpha.id, derp_servers=[])
             )
         )
 
@@ -389,7 +378,7 @@ async def test_dns_after_mesh_off() -> None:
         await testing.wait_normal(
             connection_alpha.create_process(
                 ["nslookup", "google.com", DNS_SERVER_ADDRESS]
-            ).execute(),
+            ).execute()
         )
 
         # If the previous calls didn't fail, we can assume that the resolver is running so no need to wait for the timeout and test the validity of the response
@@ -407,7 +396,7 @@ async def test_dns_after_mesh_off() -> None:
         await testing.wait_normal(
             connection_alpha.create_process(
                 ["nslookup", "google.com", DNS_SERVER_ADDRESS]
-            ).execute(),
+            ).execute()
         )
 
         # After mesh off, .nord names should not be resolved anymore, therefore nslookup should fail
@@ -415,9 +404,9 @@ async def test_dns_after_mesh_off() -> None:
             await testing.wait_normal(
                 connection_alpha.create_process(
                     ["nslookup", "beta.nord", DNS_SERVER_ADDRESS]
-                ).execute(),
+                ).execute()
             )
-        except process.ProcessExecError as e:
+        except ProcessExecError as e:
             assert "server can't find beta.nord" in e.stdout
 
         assert alpha_conn_tracker.get_out_of_limits() is None
@@ -428,16 +417,10 @@ async def test_dns_after_mesh_off() -> None:
 @pytest.mark.timeout(60 * 5 + 60)
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type",
-    [
-        pytest.param(
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            AdapterType.BoringTun,
-        ),
-    ],
+    [pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun)],
 )
 async def test_dns_stability(
-    alpha_connection_tag: ConnectionTag,
-    adapter_type: AdapterType,
+    alpha_connection_tag: ConnectionTag, adapter_type: AdapterType
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -450,8 +433,7 @@ async def test_dns_stability(
             new_connection_with_conn_tracker(
                 alpha_connection_tag,
                 generate_connection_tracker_config(
-                    alpha_connection_tag,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    alpha_connection_tag, derp_1_limits=ConnectionLimits(1, 1)
                 ),
             )
         )
@@ -466,15 +448,13 @@ async def test_dns_stability(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha, adapter_type,).run_meshnet(
-                api.get_meshmap(alpha.id),
+            telio.Client(connection_alpha, alpha, adapter_type).run_meshnet(
+                api.get_meshmap(alpha.id)
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta,).run_meshnet(
-                api.get_meshmap(beta.id),
-            )
+            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
         )
 
         await testing.wait_long(
@@ -502,13 +482,13 @@ async def test_dns_stability(
         await testing.wait_normal(
             connection_alpha.create_process(
                 ["nslookup", "google.com", DNS_SERVER_ADDRESS]
-            ).execute(),
+            ).execute()
         )
 
         await testing.wait_normal(
             connection_beta.create_process(
                 ["nslookup", "google.com", DNS_SERVER_ADDRESS]
-            ).execute(),
+            ).execute()
         )
 
         alpha_response = await testing.wait_normal(
@@ -530,13 +510,13 @@ async def test_dns_stability(
         await testing.wait_normal(
             connection_alpha.create_process(
                 ["nslookup", "google.com", DNS_SERVER_ADDRESS]
-            ).execute(),
+            ).execute()
         )
 
         await testing.wait_normal(
             connection_beta.create_process(
                 ["nslookup", "google.com", DNS_SERVER_ADDRESS]
-            ).execute(),
+            ).execute()
         )
 
         alpha_response = await testing.wait_normal(
@@ -567,15 +547,13 @@ async def test_set_meshmap_dns_update() -> None:
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 ConnectionTag.DOCKER_CONE_CLIENT_1,
-                generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                ),
+                generate_connection_tracker_config(ConnectionTag.DOCKER_CONE_CLIENT_1),
             )
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha,).run_meshnet(
-                api.get_meshmap(alpha.id, derp_servers=[]),
+            telio.Client(connection_alpha, alpha).run_meshnet(
+                api.get_meshmap(alpha.id, derp_servers=[])
             )
         )
 
@@ -588,7 +566,7 @@ async def test_set_meshmap_dns_update() -> None:
                     ["nslookup", "beta.nord", DNS_SERVER_ADDRESS]
                 ).execute()
             )
-        except process.ProcessExecError as e:
+        except ProcessExecError as e:
             assert "server can't find beta.nord" in e.stdout
 
         beta = api.default_config_beta_node()
@@ -599,7 +577,7 @@ async def test_set_meshmap_dns_update() -> None:
         alpha_response = await testing.wait_normal(
             connection_alpha.create_process(
                 ["nslookup", "beta.nord", DNS_SERVER_ADDRESS]
-            ).execute(),
+            ).execute()
         )
         assert beta.ip_addresses[0] in alpha_response.get_stdout()
 
@@ -624,10 +602,7 @@ async def test_dns_update() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(
-                connection,
-                alpha,
-            ).run()
+            telio.Client(connection, alpha).run()
         )
 
         wg_server = config.WG_SERVER
@@ -650,7 +625,7 @@ async def test_dns_update() -> None:
         alpha_response = await testing.wait_normal(
             connection.create_process(
                 ["nslookup", "google.com", DNS_SERVER_ADDRESS]
-            ).execute(),
+            ).execute()
         )
 
         assert "Can't find google.com: No answer" in alpha_response.get_stdout()
@@ -661,7 +636,7 @@ async def test_dns_update() -> None:
         alpha_response = await testing.wait_normal(
             connection.create_process(
                 ["nslookup", "google.com", DNS_SERVER_ADDRESS]
-            ).execute(),
+            ).execute()
         )
         # Check if some address was found
         assert "Name:	google.com\nAddress:" in alpha_response.get_stdout()
@@ -681,9 +656,7 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 ConnectionTag.DOCKER_CONE_CLIENT_1,
-                generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                ),
+                generate_connection_tracker_config(ConnectionTag.DOCKER_CONE_CLIENT_1),
             )
         )
 
@@ -694,8 +667,8 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha,).run_meshnet(
-                api.get_meshmap(alpha.id, derp_servers=[]),
+            telio.Client(connection_alpha, alpha).run_meshnet(
+                api.get_meshmap(alpha.id, derp_servers=[])
             )
         )
 
@@ -704,7 +677,7 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
         await testing.wait_normal(
             connection_alpha.create_process(
                 ["nslookup", "google.com", DNS_SERVER_ADDRESS]
-            ).execute(),
+            ).execute()
         )
 
         await asyncio.sleep(1)
@@ -712,7 +685,7 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
         results = re.findall(
             r".* IP .* > (?P<dest_ip>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,5}): .* A\?.*",
             process.get_stdout(),
-        )
+        )  # fmt: skip
 
         assert results
         assert [result for result in results if FIRST_DNS_SERVER in result]
@@ -734,9 +707,7 @@ async def test_dns_aaaa_records() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run_meshnet(
-                api.get_meshmap(alpha.id),
-            )
+            telio.Client(connection_alpha, alpha).run_meshnet(api.get_meshmap(alpha.id))
         )
         await client_alpha.enable_magic_dns(["1.1.1.1"])
 

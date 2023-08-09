@@ -1,27 +1,24 @@
-from utils import Ping
-from contextlib import AsyncExitStack
+import asyncio
+import pytest
+import subprocess
+import telio
 from config import WG_SERVER
+from contextlib import AsyncExitStack
 from mesh_api import API
-from utils import (
+from telio import PathType, Client
+from telio_features import TelioFeatures, Nurse, Lana, Qos
+from typing import Optional
+from utils import testing
+from utils.analytics import fetch_moose_events, basic_validator
+from utils.connection_tracker import ConnectionLimits, ConnectionTracker
+from utils.connection_util import (
+    generate_connection_tracker_config,
     ConnectionTag,
     container_id,
     new_connection_with_conn_tracker,
     new_connection_by_tag,
 )
-from telio import PathType, Client
-from telio_features import TelioFeatures, Nurse, Lana, Qos
-from utils.analytics import fetch_moose_events, basic_validator
-import asyncio
-import pytest
-import telio
-import utils.testing as testing
-import subprocess
-from typing import Optional
-from utils.connection_tracker import (
-    generate_connection_tracker_config,
-    ConnectionLimits,
-    ConnectionTracker,
-)
+from utils.ping import Ping
 
 CONTAINER_EVENT_PATH = "/event.db"
 ALPHA_EVENTS_PATH = "./alpha-events.db"
@@ -43,10 +40,7 @@ def build_telio_features(
             fingerprint=fingerprint,
             heartbeat_interval=3600,
             initial_heartbeat_interval=initial_heartbeat_interval,
-            qos=Qos(
-                rtt_interval=10,
-                buckets=5,
-            ),
+            qos=Qos(rtt_interval=10, buckets=5),
             enable_nat_type_collection=COLLECT_NAT_TYPE,
         ),
     )
@@ -66,12 +60,7 @@ async def clean_container(connection):
 def get_moose_db_file(container_tag, container_path, local_path):
     subprocess.run(["rm", "-f", local_path])
     subprocess.run(
-        [
-            "docker",
-            "cp",
-            container_id(container_tag) + ":" + container_path,
-            local_path,
-        ]
+        ["docker", "cp", container_id(container_tag) + ":" + container_path, local_path]
     )
 
 
@@ -126,7 +115,7 @@ async def run_default_scenario(
                 derp_1_limits=ConnectionLimits(1, None),
                 vpn_1_limits=ConnectionLimits(1 if alpha_has_vpn_connection else 0, 1),
             ),
-        ),
+        )
     )
     (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
         new_connection_with_conn_tracker(
@@ -161,9 +150,7 @@ async def run_default_scenario(
             connection_alpha,
             alpha,
             telio_features=build_telio_features("alpha_fingerprint"),
-        ).run_meshnet(
-            api.get_meshmap(alpha.id),
-        )
+        ).run_meshnet(api.get_meshmap(alpha.id))
     )
 
     client_beta = await exit_stack.enter_async_context(
@@ -171,9 +158,7 @@ async def run_default_scenario(
             connection_beta,
             beta,
             telio_features=build_telio_features("beta_fingerprint"),
-        ).run_meshnet(
-            api.get_meshmap(beta.id),
-        )
+        ).run_meshnet(api.get_meshmap(beta.id))
     )
 
     client_gamma = await exit_stack.enter_async_context(
@@ -181,9 +166,7 @@ async def run_default_scenario(
             connection_gamma,
             gamma,
             telio_features=build_telio_features("gamma_fingerprint"),
-        ).run_meshnet(
-            api.get_meshmap(gamma.id),
-        )
+        ).run_meshnet(api.get_meshmap(gamma.id))
     )
 
     await testing.wait_lengthy(
@@ -276,9 +259,7 @@ async def test_lana_with_same_meshnet() -> None:
             basic_validator(meshnet_id=expected_meshnet_id)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
-                exists=True,
-                no_of_connections=3,
-                all_connections_up=True,
+                exists=True, no_of_connections=3, all_connections_up=True
             )
             .add_members_validator(
                 exists=True,
@@ -297,9 +278,7 @@ async def test_lana_with_same_meshnet() -> None:
             basic_validator(meshnet_id=expected_meshnet_id)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
-                exists=True,
-                no_of_connections=3,
-                all_connections_up=True,
+                exists=True, no_of_connections=3, all_connections_up=True
             )
             .add_members_validator(
                 exists=True,
@@ -318,9 +297,7 @@ async def test_lana_with_same_meshnet() -> None:
             basic_validator(meshnet_id=expected_meshnet_id)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
-                exists=True,
-                no_of_connections=3,
-                all_connections_up=True,
+                exists=True, no_of_connections=3, all_connections_up=True
             )
             .add_members_validator(
                 exists=True,
@@ -361,9 +338,7 @@ async def test_lana_with_external_node() -> None:
                 no_of_connections=1,
             )
             .add_connectivity_matrix_validator(
-                exists=True,
-                no_of_connections=1,
-                all_connections_up=True,
+                exists=True, no_of_connections=1, all_connections_up=True
             )
             .add_members_validator(
                 exists=True,
@@ -389,9 +364,7 @@ async def test_lana_with_external_node() -> None:
                 no_of_connections=1,
             )
             .add_connectivity_matrix_validator(
-                exists=True,
-                no_of_connections=1,
-                all_connections_up=True,
+                exists=True, no_of_connections=1, all_connections_up=True
             )
             .add_members_validator(
                 exists=True,
@@ -408,9 +381,7 @@ async def test_lana_with_external_node() -> None:
         assert beta_validator.validate(beta_events[0])
 
         gamma_validator = (
-            basic_validator(
-                node_fingerprint="gamma_fingerprint",
-            )
+            basic_validator(node_fingerprint="gamma_fingerprint")
             .add_external_links_validator(
                 exists=True,
                 contains=["alpha_fingerprint", "beta_fingerprint"],
@@ -449,9 +420,7 @@ async def test_lana_all_external() -> None:
         assert gamma_events
 
         alpha_validator = (
-            basic_validator(
-                node_fingerprint="alpha_fingerprint",
-            )
+            basic_validator(node_fingerprint="alpha_fingerprint")
             .add_external_links_validator(
                 exists=True,
                 contains=["beta_fingerprint", "gamma_fingerprint"],
@@ -470,9 +439,7 @@ async def test_lana_all_external() -> None:
         assert alpha_validator.validate(alpha_events[0])
 
         beta_validator = (
-            basic_validator(
-                node_fingerprint="beta_fingerprint",
-            )
+            basic_validator(node_fingerprint="beta_fingerprint")
             .add_external_links_validator(
                 exists=True,
                 contains=["alpha_fingerprint", "gamma_fingerprint"],
@@ -491,9 +458,7 @@ async def test_lana_all_external() -> None:
         assert beta_validator.validate(beta_events[0])
 
         gamma_validator = (
-            basic_validator(
-                node_fingerprint="gamma_fingerprint",
-            )
+            basic_validator(node_fingerprint="gamma_fingerprint")
             .add_external_links_validator(
                 exists=True,
                 contains=["alpha_fingerprint", "beta_fingerprint"],
@@ -548,9 +513,7 @@ async def test_lana_with_vpn_connections() -> None:
                 no_of_vpn=1,
             )
             .add_connectivity_matrix_validator(
-                exists=True,
-                no_of_connections=3,
-                all_connections_up=True,
+                exists=True, no_of_connections=3, all_connections_up=True
             )
             .add_members_validator(
                 exists=True,
@@ -569,9 +532,7 @@ async def test_lana_with_vpn_connections() -> None:
             basic_validator(meshnet_id=expected_meshnet_id)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
-                exists=True,
-                no_of_connections=3,
-                all_connections_up=True,
+                exists=True, no_of_connections=3, all_connections_up=True
             )
             .add_members_validator(
                 exists=True,
@@ -590,9 +551,7 @@ async def test_lana_with_vpn_connections() -> None:
             basic_validator(meshnet_id=expected_meshnet_id)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
-                exists=True,
-                no_of_connections=3,
-                all_connections_up=True,
+                exists=True, no_of_connections=3, all_connections_up=True
             )
             .add_members_validator(
                 exists=True,
@@ -642,18 +601,14 @@ async def test_lana_with_disconnected_node() -> None:
                 connection_alpha,
                 alpha,
                 telio_features=build_telio_features("alpha_fingerprint"),
-            ).run_meshnet(
-                api.get_meshmap(alpha.id),
-            )
+            ).run_meshnet(api.get_meshmap(alpha.id))
         )
         client_beta = await exit_stack.enter_async_context(
             telio.Client(
                 connection_beta,
                 beta,
                 telio_features=build_telio_features("beta_fingerprint"),
-            ).run_meshnet(
-                api.get_meshmap(beta.id),
-            )
+            ).run_meshnet(api.get_meshmap(beta.id))
         )
 
         await testing.wait_long(
@@ -708,13 +663,10 @@ async def test_lana_with_disconnected_node() -> None:
             basic_validator()
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
-                exists=True,
-                no_of_connections=1,
-                all_connections_up=True,
+                exists=True, no_of_connections=1, all_connections_up=True
             )
             .add_members_validator(
-                exists=True,
-                contains=["alpha_fingerprint", "beta_fingerprint"],
+                exists=True, contains=["alpha_fingerprint", "beta_fingerprint"]
             )
             .add_nat_type_validators(
                 is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
@@ -726,13 +678,10 @@ async def test_lana_with_disconnected_node() -> None:
             basic_validator()
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
-                exists=True,
-                no_of_connections=1,
-                all_connections_up=True,
+                exists=True, no_of_connections=1, all_connections_up=True
             )
             .add_members_validator(
-                exists=True,
-                contains=["alpha_fingerprint", "beta_fingerprint"],
+                exists=True, contains=["alpha_fingerprint", "beta_fingerprint"]
             )
             .add_nat_type_validators(
                 is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
@@ -750,8 +699,7 @@ async def test_lana_with_disconnected_node() -> None:
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(exists=False)
             .add_members_validator(
-                exists=True,
-                contains=["alpha_fingerprint", "beta_fingerprint"],
+                exists=True, contains=["alpha_fingerprint", "beta_fingerprint"]
             )
             .add_nat_type_validators(
                 is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
@@ -790,9 +738,7 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change() -> No
                 connection_beta,
                 beta,
                 telio_features=build_telio_features("beta_fingerprint"),
-            ).run_meshnet(
-                api.get_meshmap(beta.id),
-            )
+            ).run_meshnet(api.get_meshmap(beta.id))
         )
 
         await client_beta.trigger_event_collection()
@@ -820,9 +766,7 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change() -> No
                 connection_alpha,
                 alpha,
                 telio_features=build_telio_features("alpha_fingerprint"),
-            ).run_meshnet(
-                api.get_meshmap(alpha.id),
-            )
+            ).run_meshnet(api.get_meshmap(alpha.id))
         )
 
         beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
@@ -859,6 +803,9 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change() -> No
         assert alpha_events[-1].fp != initial_beta_meshnet_id
         assert alpha_events[-1].fp == beta_events[-1].fp
 
+        assert alpha_conn_tracker.get_out_of_limits() is None
+        assert beta_conn_tracker.get_out_of_limits() is None
+
 
 @pytest.mark.moose
 @pytest.mark.asyncio
@@ -876,16 +823,12 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart():
                 connection_beta,
                 beta,
                 telio_features=build_telio_features("beta_fingerprint"),
-            ).run_meshnet(
-                api.get_meshmap(beta.id),
-            )
+            ).run_meshnet(api.get_meshmap(beta.id))
         )
 
         await client_beta.trigger_event_collection()
         beta_events = await wait_for_event_dump(
-            ConnectionTag.DOCKER_CONE_CLIENT_2,
-            BETA_EVENTS_PATH,
-            nr_events=1,
+            ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=1
         )
         assert beta_events
         initial_beta_meshnet_id = beta_events[0].fp
@@ -903,16 +846,12 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart():
                 connection_beta,
                 beta,
                 telio_features=build_telio_features("beta_fingerprint"),
-            ).run_meshnet(
-                api.get_meshmap(beta.id),
-            )
+            ).run_meshnet(api.get_meshmap(beta.id))
         )
 
         await client_beta.trigger_event_collection()
         beta_events = await wait_for_event_dump(
-            ConnectionTag.DOCKER_CONE_CLIENT_2,
-            BETA_EVENTS_PATH,
-            nr_events=1,
+            ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=1
         )
         assert beta_events
         second_beta_meshnet_id = beta_events[0].fp
@@ -923,11 +862,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart():
 @pytest.mark.moose
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "initial_heartbeat_interval",
-    [
-        pytest.param(5),
-        pytest.param(None),
-    ],
+    "initial_heartbeat_interval", [pytest.param(5), pytest.param(None)]
 )
 async def test_lana_initial_heartbeat_no_trigger(
     initial_heartbeat_interval: Optional[int],
@@ -949,9 +884,7 @@ async def test_lana_initial_heartbeat_no_trigger(
                     "alpha_fingerprint",
                     initial_heartbeat_interval=initial_heartbeat_interval,
                 ),
-            ).run_meshnet(
-                api.get_meshmap(alpha.id),
-            )
+            ).run_meshnet(api.get_meshmap(alpha.id))
         )
 
         if initial_heartbeat_interval:
