@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 from utils.connection import Connection, TargetOS
 from utils.process import Process
+from utils.router import IPProto
 
 # This utility uses the standard OS provided `ping` binaries.
 # It should work for Linux, Windows and Mac.
@@ -10,17 +11,29 @@ from utils.process import Process
 
 class Ping:
     _ip: str
+    _ip_proto: IPProto
     _process: Process
     _next_ping_event: asyncio.Event
     _connection: Connection
 
-    def __init__(self, connection: Connection, ip: str) -> None:
+    def __init__(
+        self, connection: Connection, ip: str, ip_proto: IPProto = IPProto.IPv4
+    ) -> None:
         self._ip = ip
+        self._ip_proto = ip_proto
         self._connection = connection
         if connection.target_os == TargetOS.Windows:
-            self._process = connection.create_process(["ping", "-t", ip])
+            self._process = connection.create_process(
+                ["ping", ("-4" if ip_proto == IPProto.IPv4 else "-6"), "-t", ip]
+            )
+        elif connection.target_os == TargetOS.Mac:
+            self._process = connection.create_process(
+                [("ping" if ip_proto == IPProto.IPv4 else "ping6"), ip]
+            )
         else:
-            self._process = connection.create_process(["ping", ip])
+            self._process = connection.create_process(
+                ["ping", ("-4" if ip_proto == IPProto.IPv4 else "-6"), ip]
+            )
         self._next_ping_event = asyncio.Event()
 
     async def on_stdout(self, stdout: str) -> None:

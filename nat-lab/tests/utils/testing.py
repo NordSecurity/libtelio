@@ -1,6 +1,6 @@
 import asyncio
 from asyncio import Future
-from typing import Union, Coroutine, TypeVar, Any
+from typing import Union, Coroutine, Optional, TypeVar, Any
 
 # This modules defines standardized waiting categories for tests. Some tasks are expected
 # to finish very quickly, hence the waiting time is very short (0.1 seconds). Other tasks
@@ -34,3 +34,9 @@ async def wait_defined(
 ) -> T:
     """Wait for defined seconds"""
     return await asyncio.wait_for(coroutine, defined_wait)
+
+
+def unpack_optional(opt: Optional[T]) -> T:
+    if opt is None:
+        raise ValueError("Optional value is None")
+    return opt

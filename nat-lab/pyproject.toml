@@ -68,4 +68,7 @@ markers = [
     "linux_native: tests that use linux native WG implementation",
     "long: tests that take a lot of time to run",
     "moose: test that requires build with full moose",
+    "ipv4: tests only ipv4 WG connectivity",
+    "ipv6: tests only ipv6 WG connectivity",
+    "ipv4v6: tests dual stack WG connectivity",
 ]

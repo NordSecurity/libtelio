@@ -4,9 +4,10 @@ import random
 import time
 import uuid
 from config import DERP_SERVERS, WG_SERVERS
+from ipaddress import ip_address
 from python_wireguard import Key  # type: ignore
 from typing import Dict, Any, List, Tuple, Optional
-from utils.router import IPProto, get_ip_address_type
+from utils.router import IPStack, IPProto, get_ip_address_type
 
 GREEK_ALPHABET = [
     "alpha",
@@ -81,6 +82,7 @@ class Node:
     allow_connections: bool
     path_type: str
     firewall_rules: Dict[str, FirewallRule]
+    ip_stack: IPStack
 
     def __init__(self):
         self.name = ""
@@ -94,6 +96,7 @@ class Node:
         self.allow_connections = False
         self.path_type = ""
         self.firewall_rules = {}
+        self.ip_stack = IPStack.IPv4
 
     def to_client_config(self) -> Dict[str, str]:
         return {
@@ -102,6 +105,24 @@ class Node:
             "sk": self.private_key,
             "pk": self.public_key,
         }
+
+    def get_ip_address(self, ip_proto: IPProto) -> Optional[str]:
+        if not self.ip_addresses:
+            return None
+
+        # Python 'ipaddress' has a weird bug: only sgement of ':0000:' is shortened to ':0:',
+        # instead of '::'
+        if self.ip_stack in [IPStack.IPv4, IPStack.IPv6]:
+            # Only one address in our basket
+            if get_ip_address_type(self.ip_addresses[0]) == ip_proto:
+                return format(ip_address(self.ip_addresses[0])).replace(':0:', '::')
+        else:
+            # Dual stack, so two addresses (or more)
+            for addr in self.ip_addresses:
+                if get_ip_address_type(addr) == ip_proto:
+                    return format(ip_address(addr)).replace(':0:', '::')
+
+        return None
 
     def to_peer_config_for_node(self, node) -> Dict[str, Any]:
         firewall_config = node.get_firewall_config(self.id)
@@ -147,7 +168,13 @@ class API:
         self.nodes = {}
 
     def register(
-        self, name: str, node_id: str, private_key: str, public_key: str, is_local=False
+        self,
+        name: str,
+        node_id: str,
+        private_key: str,
+        public_key: str,
+        is_local=False,
+        ip_stack: IPStack = IPStack.IPv4,
     ) -> Node:
         if node_id in self.nodes:
             raise DuplicateNodeError(node_id)
@@ -159,6 +186,7 @@ class API:
         node.public_key = public_key
         node.is_local = is_local
         node.hostname = name + ".nord"
+        node.ip_stack = ip_stack
 
         self.nodes[node_id] = node
         return node
@@ -196,14 +224,24 @@ class API:
 
         return meshmap
 
-    def default_config_one_node(self, is_local: bool = False) -> Node:
-        alpha, *_ = self.config_dynamic_nodes([is_local])
+    def default_config_one_node(
+        self,
+        is_local: bool = False,
+        ip_stack: IPStack = IPStack.IPv4,
+    ) -> Node:
+        alpha, *_ = self.config_dynamic_nodes([(is_local, ip_stack)])
         return alpha
 
     def default_config_two_nodes(
-        self, alpha_is_local: bool = False, beta_is_local: bool = False
+        self,
+        alpha_is_local: bool = False,
+        beta_is_local: bool = False,
+        alpha_ip_stack: IPStack = IPStack.IPv4,
+        beta_ip_stack: IPStack = IPStack.IPv4,
     ) -> Tuple[Node, Node]:
-        alpha, beta, *_ = self.config_dynamic_nodes([alpha_is_local, beta_is_local])
+        alpha, beta, *_ = self.config_dynamic_nodes(
+            [(alpha_is_local, alpha_ip_stack), (beta_is_local, beta_ip_stack)]
+        )
         alpha.set_peer_firewall_settings(beta.id, True)
         beta.set_peer_firewall_settings(alpha.id, True)
         return alpha, beta
@@ -213,9 +251,16 @@ class API:
         alpha_is_local: bool = False,
         beta_is_local: bool = False,
         gamma_is_local: bool = False,
+        alpha_ip_stack: IPStack = IPStack.IPv4,
+        beta_ip_stack: IPStack = IPStack.IPv4,
+        gamma_ip_stack: IPStack = IPStack.IPv4,
     ) -> Tuple[Node, Node, Node]:
         alpha, beta, gamma, *_ = self.config_dynamic_nodes(
-            [alpha_is_local, beta_is_local, gamma_is_local]
+            [
+                (alpha_is_local, alpha_ip_stack),
+                (beta_is_local, beta_ip_stack),
+                (gamma_is_local, gamma_ip_stack),
+            ]
         )
         alpha.set_peer_firewall_settings(gamma.id, allow_incoming_connections=True)
         alpha.set_peer_firewall_settings(beta.id, allow_incoming_connections=True)
@@ -263,9 +308,11 @@ class API:
         )
         os.system(full_command)
 
-    def config_dynamic_nodes(self, node_configs: List[bool]) -> Tuple[Node, ...]:
+    def config_dynamic_nodes(
+        self, node_configs: List[Tuple[bool, IPStack]]
+    ) -> Tuple[Node, ...]:
         current_node_list_len = len(self.nodes)
-        for idx, is_local in enumerate(node_configs):
+        for idx, (is_local, ip_stack) in enumerate(node_configs):
             node_idx = current_node_list_len + idx
             private, public = Key.key_pair()
             node = self.register(
@@ -274,6 +321,7 @@ class API:
                 private_key=str(private),
                 public_key=str(public),
                 is_local=is_local,
+                ip_stack=ip_stack,
             )
             ipv4 = (
                 f"100.{random.randint(64, 127)}.{random.randint(0, 255)}.{random.randint(8, 254)}"
@@ -281,8 +329,12 @@ class API:
             ipv6 = (
                 f"fc74:656c:696f:0:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(8, 0xFFFF), 'x')}"
             )
-            self.assign_ip(node.id, ipv4)
-            self.assign_ip(node.id, ipv6)
+
+            if ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
+                self.assign_ip(node.id, ipv4)
+
+            if ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
+                self.assign_ip(node.id, ipv6)
 
         for wg_server in WG_SERVERS:
             self.setup_wg_servers(list(self.nodes.values()), wg_server)

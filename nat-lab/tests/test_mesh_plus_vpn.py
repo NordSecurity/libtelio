@@ -16,6 +16,7 @@ from utils.connection_util import (
 from utils.ping import Ping
 
 
+# Marks in-tunnel stack only, exiting only through IPv4
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type",
@@ -46,7 +47,8 @@ from utils.ping import Ping
     ],
 )
 async def test_mesh_plus_vpn_one_peer(
-    alpha_connection_tag: ConnectionTag, adapter_type: AdapterType
+    alpha_connection_tag: ConnectionTag,
+    adapter_type: AdapterType,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()

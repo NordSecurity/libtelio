@@ -13,9 +13,26 @@ from utils.connection_util import (
     new_connection_with_conn_tracker,
 )
 from utils.ping import Ping
+from utils.router import IPProto, IPStack
+
+PHOTO_ALBUM_IPV6 = "2001:db8:85a4::adda:edde:5"
 
 
+# Marks in-tunnel stack only, exiting only through IPv4
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "exit_ip_stack",
+    [
+        pytest.param(
+            IPStack.IPv4,
+            marks=pytest.mark.ipv4,
+        ),
+        pytest.param(
+            IPStack.IPv4v6,
+            marks=pytest.mark.ipv4v6,
+        ),
+    ],
+)
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type",
     [
@@ -41,12 +58,16 @@ from utils.ping import Ping
     ],
 )
 async def test_mesh_exit_through_peer(
-    alpha_connection_tag: ConnectionTag, adapter_type: AdapterType
+    alpha_connection_tag: ConnectionTag,
+    adapter_type: AdapterType,
+    exit_ip_stack: IPStack,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        (alpha, beta) = api.default_config_two_nodes()
+        (alpha, beta) = api.default_config_two_nodes(
+            alpha_ip_stack=IPStack.IPv4v6, beta_ip_stack=exit_ip_stack
+        )
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 alpha_connection_tag,
@@ -91,8 +112,21 @@ async def test_mesh_exit_through_peer(
             )
         )
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+        if exit_ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
+            async with Ping(
+                connection_alpha,
+                testing.unpack_optional(beta.get_ip_address(IPProto.IPv4)),
+                ip_proto=IPProto.IPv4,
+            ).run() as ping:
+                await testing.wait_long(ping.wait_for_next_ping())
+
+        if exit_ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
+            async with Ping(
+                connection_alpha,
+                testing.unpack_optional(beta.get_ip_address(IPProto.IPv6)),
+                ip_proto=IPProto.IPv6,
+            ).run() as ping6:
+                await testing.wait_long(ping6.wait_for_next_ping())
 
         await testing.wait_long(client_beta.get_router().create_exit_node_route())
         await testing.wait_long(client_alpha.connect_to_exit_node(beta.public_key))
@@ -147,3 +181,117 @@ async def test_mesh_exit_through_peer(
 
         assert alpha_conn_tracker.get_out_of_limits() is None
         assert beta_conn_tracker.get_out_of_limits() is None
+
+
+@pytest.mark.parametrize(
+    "exit_ip_stack",
+    [
+        pytest.param(
+            IPStack.IPv6,
+            marks=pytest.mark.ipv6,
+        ),
+        pytest.param(
+            IPStack.IPv4v6,
+            marks=pytest.mark.ipv4v6,
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "alpha_connection_tag,adapter_type",
+    [
+        pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, telio.AdapterType.BoringTun),
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            telio.AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            telio.AdapterType.WindowsNativeWg,
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            telio.AdapterType.WireguardGo,
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM, telio.AdapterType.Default, marks=pytest.mark.mac
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_ipv6_exit_node(
+    alpha_connection_tag: ConnectionTag,
+    adapter_type: AdapterType,
+    exit_ip_stack: IPStack,
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        api = API()
+
+        (alpha, beta) = api.default_config_two_nodes(
+            alpha_ip_stack=IPStack.IPv4v6, beta_ip_stack=exit_ip_stack
+        )
+        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                alpha_connection_tag,
+                generate_connection_tracker_config(
+                    alpha_connection_tag, derp_1_limits=ConnectionLimits(1, 1)
+                ),
+            )
+        )
+        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
+                generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                    stun_limits=ConnectionLimits(1, 2),
+                ),
+            )
+        )
+
+        client_alpha = await exit_stack.enter_async_context(
+            telio.Client(connection_alpha, alpha, adapter_type).run_meshnet(
+                api.get_meshmap(alpha.id)
+            )
+        )
+
+        client_beta = await exit_stack.enter_async_context(
+            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
+        )
+
+        await testing.wait_lengthy(
+            asyncio.gather(
+                client_alpha.wait_for_state_on_any_derp([State.Connected]),
+                client_beta.wait_for_state_on_any_derp([State.Connected]),
+                alpha_conn_tracker.wait_for_event("derp_1"),
+                beta_conn_tracker.wait_for_event("derp_1"),
+            )
+        )
+        await testing.wait_lengthy(
+            asyncio.gather(
+                client_alpha.wait_for_state_peer(beta.public_key, [State.Connected]),
+                client_beta.wait_for_state_peer(alpha.public_key, [State.Connected]),
+            )
+        )
+
+        # Ping in-tunnel node with IPv6
+        async with Ping(
+            connection_alpha,
+            testing.unpack_optional(beta.get_ip_address(IPProto.IPv6)),
+            ip_proto=IPProto.IPv6,
+        ).run() as ping6:
+            await testing.wait_long(ping6.wait_for_next_ping())
+
+        await testing.wait_long(client_beta.get_router().create_exit_node_route())
+        await testing.wait_long(client_alpha.connect_to_exit_node(beta.public_key))
+        await testing.wait_long(
+            client_alpha.wait_for_state_peer(beta.public_key, [State.Connected])
+        )
+
+        # Ping out-tunnel target with IPv6
+        async with Ping(
+            connection_alpha, PHOTO_ALBUM_IPV6, ip_proto=IPProto.IPv6
+        ).run() as ping6:
+            await testing.wait_long(ping6.wait_for_next_ping())

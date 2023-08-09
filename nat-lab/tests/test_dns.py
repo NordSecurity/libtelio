@@ -15,23 +15,69 @@ from utils.connection_util import (
     new_connection_by_tag,
 )
 from utils.process import ProcessExecError
+from utils.router import IPStack
 
-DNS_IPV4_SERVER_ADDRESS = config.LIBTELIO_DNS_IPV4
-DNS_IPV6_SERVER_ADDRESS = config.LIBTELIO_DNS_IPV6
+
+def get_dns_server_address(ip_stack: IPStack) -> str:
+    return (
+        config.LIBTELIO_DNS_IPV4
+        if ip_stack in [IPStack.IPv4, IPStack.IPv4v6]
+        else config.LIBTELIO_DNS_IPV6
+    )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "dns_server_address",
+    "alpha_ip_stack",
     [
-        pytest.param(DNS_IPV4_SERVER_ADDRESS, id="IPv4"),
-        pytest.param(DNS_IPV6_SERVER_ADDRESS, id="IPv6"),
+        pytest.param(
+            IPStack.IPv4,
+            marks=pytest.mark.ipv4,
+        ),
+        pytest.param(
+            IPStack.IPv6,
+            marks=pytest.mark.ipv6,
+        ),
+        pytest.param(
+            IPStack.IPv4v6,
+            marks=pytest.mark.ipv4v6,
+        ),
     ],
 )
-async def test_dns(dns_server_address: str) -> None:
+@pytest.mark.parametrize(
+    "beta_ip_stack",
+    [
+        pytest.param(
+            IPStack.IPv4,
+            marks=pytest.mark.ipv4,
+        ),
+        pytest.param(
+            IPStack.IPv6,
+            marks=pytest.mark.ipv6,
+        ),
+        pytest.param(
+            IPStack.IPv4v6,
+            marks=pytest.mark.ipv4v6,
+        ),
+    ],
+)
+async def test_dns(
+    alpha_ip_stack: IPStack,
+    beta_ip_stack: IPStack,
+) -> None:
     async with AsyncExitStack() as exit_stack:
+        dns_server_address_alpha = get_dns_server_address(alpha_ip_stack)
+        dns_server_address_beta = (
+            config.LIBTELIO_DNS_IPV4
+            if beta_ip_stack == IPStack.IPv4
+            else config.LIBTELIO_DNS_IPV6
+        )
+
         api = API()
-        (alpha, beta) = api.default_config_two_nodes()
+
+        (alpha, beta) = api.default_config_two_nodes(
+            alpha_ip_stack=alpha_ip_stack, beta_ip_stack=beta_ip_stack
+        )
 
         alpha.set_peer_firewall_settings(beta.id)
         beta.set_peer_firewall_settings(alpha.id)
@@ -86,14 +132,14 @@ async def test_dns(dns_server_address: str) -> None:
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_long(
                 connection_alpha.create_process(
-                    ["nslookup", "google.com", dns_server_address]
+                    ["nslookup", "google.com", dns_server_address_alpha]
                 ).execute()
             )
 
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_long(
                 connection_beta.create_process(
-                    ["nslookup", "google.com", dns_server_address]
+                    ["nslookup", "google.com", dns_server_address_beta]
                 ).execute()
             )
 
@@ -103,19 +149,19 @@ async def test_dns(dns_server_address: str) -> None:
         # If everything went correctly, these calls should not timeout
         await testing.wait_long(
             connection_alpha.create_process(
-                ["nslookup", "google.com", dns_server_address]
+                ["nslookup", "google.com", dns_server_address_alpha]
             ).execute()
         )
         await testing.wait_long(
             connection_beta.create_process(
-                ["nslookup", "google.com", dns_server_address]
+                ["nslookup", "google.com", dns_server_address_beta]
             ).execute()
         )
 
         # If the previous calls didn't fail, we can assume that the resolver is running so no need to wait for the timeout and test the validity of the response
         alpha_response = await testing.wait_long(
             connection_alpha.create_process(
-                ["nslookup", "beta.nord", dns_server_address]
+                ["nslookup", "beta.nord", dns_server_address_alpha]
             ).execute()
         )
         for ip in beta.ip_addresses:
@@ -123,7 +169,7 @@ async def test_dns(dns_server_address: str) -> None:
 
         beta_response = await testing.wait_long(
             connection_beta.create_process(
-                ["nslookup", "alpha.nord", dns_server_address]
+                ["nslookup", "alpha.nord", dns_server_address_beta]
             ).execute()
         )
         for ip in alpha.ip_addresses:
@@ -132,7 +178,7 @@ async def test_dns(dns_server_address: str) -> None:
         # Testing if instance can get the IP of self from DNS. See LLT-4246 for more details.
         alpha_response = await testing.wait_long(
             connection_alpha.create_process(
-                ["nslookup", "alpha.nord", dns_server_address]
+                ["nslookup", "alpha.nord", dns_server_address_alpha]
             ).execute()
         )
         for ip in alpha.ip_addresses:
@@ -146,13 +192,13 @@ async def test_dns(dns_server_address: str) -> None:
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_long(
                 connection_alpha.create_process(
-                    ["nslookup", "google.com", dns_server_address]
+                    ["nslookup", "google.com", dns_server_address_alpha]
                 ).execute()
             )
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_long(
                 connection_beta.create_process(
-                    ["nslookup", "google.com", dns_server_address]
+                    ["nslookup", "google.com", dns_server_address_beta]
                 ).execute()
             )
 
@@ -162,16 +208,31 @@ async def test_dns(dns_server_address: str) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "dns_server_address",
+    "alpha_ip_stack",
     [
-        pytest.param(DNS_IPV4_SERVER_ADDRESS, id="IPv4"),
-        pytest.param(DNS_IPV6_SERVER_ADDRESS, id="IPv6"),
+        pytest.param(
+            IPStack.IPv4,
+            marks=pytest.mark.ipv4,
+        ),
+        pytest.param(
+            IPStack.IPv6,
+            marks=pytest.mark.ipv6,
+        ),
+        pytest.param(
+            IPStack.IPv4v6,
+            marks=pytest.mark.ipv4v6,
+        ),
     ],
 )
-async def test_dns_port(dns_server_address: str) -> None:
+async def test_dns_port(alpha_ip_stack: IPStack) -> None:
     async with AsyncExitStack() as exit_stack:
+        beta_ip_stack = IPStack.IPv4v6
+        dns_server_address_alpha = get_dns_server_address(alpha_ip_stack)
+
         api = API()
-        (alpha, beta) = api.default_config_two_nodes()
+        (alpha, beta) = api.default_config_two_nodes(
+            alpha_ip_stack=alpha_ip_stack, beta_ip_stack=beta_ip_stack
+        )
 
         alpha.set_peer_firewall_settings(beta.id)
         beta.set_peer_firewall_settings(alpha.id)
@@ -226,7 +287,7 @@ async def test_dns_port(dns_server_address: str) -> None:
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_normal(
                 connection_alpha.create_process(
-                    ["dig", "@" + dns_server_address, "-p", "53", "google.com"]
+                    ["dig", "@" + dns_server_address_alpha, "-p", "53", "google.com"]
                 ).execute()
             )
 
@@ -236,7 +297,7 @@ async def test_dns_port(dns_server_address: str) -> None:
         # A DNS request on port 53 should work
         await testing.wait_normal(
             connection_alpha.create_process(
-                ["dig", "@" + dns_server_address, "-p", "53", "google.com"]
+                ["dig", "@" + dns_server_address_alpha, "-p", "53", "google.com"]
             ).execute()
         )
 
@@ -244,7 +305,7 @@ async def test_dns_port(dns_server_address: str) -> None:
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_normal(
                 connection_alpha.create_process(
-                    ["dig", "@" + dns_server_address, "-p", "54", "google.com"]
+                    ["dig", "@" + dns_server_address_alpha, "-p", "54", "google.com"]
                 ).execute()
             )
 
@@ -253,7 +314,7 @@ async def test_dns_port(dns_server_address: str) -> None:
             connection_alpha.create_process(
                 [
                     "dig",
-                    "@" + dns_server_address,
+                    "@" + dns_server_address_alpha,
                     "-p",
                     "53",
                     "beta.nord",
@@ -270,7 +331,7 @@ async def test_dns_port(dns_server_address: str) -> None:
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_normal(
                 connection_alpha.create_process(
-                    ["dig", "@" + dns_server_address, "-p", "54", "beta.nord"]
+                    ["dig", "@" + dns_server_address_alpha, "-p", "54", "beta.nord"]
                 ).execute()
             )
 
@@ -282,14 +343,14 @@ async def test_dns_port(dns_server_address: str) -> None:
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_normal(
                 connection_alpha.create_process(
-                    ["dig", "@" + dns_server_address, "-p", "53", "google.com"]
+                    ["dig", "@" + dns_server_address_alpha, "-p", "53", "google.com"]
                 ).execute()
             )
 
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_normal(
                 connection_alpha.create_process(
-                    ["dig", "@" + dns_server_address, "-p", "53", "beta.nord"]
+                    ["dig", "@" + dns_server_address_alpha, "-p", "53", "beta.nord"]
                 ).execute()
             )
 
@@ -299,16 +360,28 @@ async def test_dns_port(dns_server_address: str) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "dns_server_address",
+    "alpha_ip_stack",
     [
-        pytest.param(DNS_IPV4_SERVER_ADDRESS, id="IPv4"),
-        pytest.param(DNS_IPV6_SERVER_ADDRESS, id="IPv6"),
+        pytest.param(
+            IPStack.IPv4,
+            marks=pytest.mark.ipv4,
+        ),
+        pytest.param(
+            IPStack.IPv6,
+            marks=pytest.mark.ipv6,
+        ),
+        pytest.param(
+            IPStack.IPv4v6,
+            marks=pytest.mark.ipv4v6,
+        ),
     ],
 )
-async def test_vpn_dns(dns_server_address: str) -> None:
+async def test_vpn_dns(alpha_ip_stack: IPStack) -> None:
     async with AsyncExitStack() as exit_stack:
+        dns_server_address = get_dns_server_address(alpha_ip_stack)
+
         api = API()
-        alpha = api.default_config_one_node()
+        alpha = api.default_config_one_node(ip_stack=alpha_ip_stack)
 
         (connection, conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
@@ -384,16 +457,31 @@ async def test_vpn_dns(dns_server_address: str) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "dns_server_address",
+    "alpha_ip_stack",
     [
-        pytest.param(DNS_IPV4_SERVER_ADDRESS, id="IPv4"),
-        pytest.param(DNS_IPV6_SERVER_ADDRESS, id="IPv6"),
+        pytest.param(
+            IPStack.IPv4,
+            marks=pytest.mark.ipv4,
+        ),
+        pytest.param(
+            IPStack.IPv6,
+            marks=pytest.mark.ipv6,
+        ),
+        pytest.param(
+            IPStack.IPv4v6,
+            marks=pytest.mark.ipv4v6,
+        ),
     ],
 )
-async def test_dns_after_mesh_off(dns_server_address: str) -> None:
+async def test_dns_after_mesh_off(alpha_ip_stack: IPStack) -> None:
     async with AsyncExitStack() as exit_stack:
+        beta_ip_stack = IPStack.IPv4v6
+        dns_server_address = get_dns_server_address(alpha_ip_stack)
+
         api = API()
-        (alpha, beta) = api.default_config_two_nodes()
+        (alpha, beta) = api.default_config_two_nodes(
+            alpha_ip_stack=alpha_ip_stack, beta_ip_stack=beta_ip_stack
+        )
 
         alpha.set_peer_firewall_settings(beta.id)
         beta.set_peer_firewall_settings(alpha.id)
@@ -464,38 +552,43 @@ async def test_dns_after_mesh_off(dns_server_address: str) -> None:
 @pytest.mark.long
 @pytest.mark.timeout(60 * 5 + 60)
 @pytest.mark.parametrize(
-    "alpha_connection_tag,adapter_type,dns_server_address",
+    "alpha_ip_stack",
     [
         pytest.param(
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            AdapterType.BoringTun,
-            DNS_IPV4_SERVER_ADDRESS,
-            id="IPv4",
+            IPStack.IPv4,
+            marks=pytest.mark.ipv4,
         ),
         pytest.param(
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            AdapterType.BoringTun,
-            DNS_IPV6_SERVER_ADDRESS,
-            id="IPv6",
+            IPStack.IPv6,
+            marks=pytest.mark.ipv6,
+        ),
+        pytest.param(
+            IPStack.IPv4v6,
+            marks=pytest.mark.ipv4v6,
         ),
     ],
 )
 async def test_dns_stability(
-    alpha_connection_tag: ConnectionTag,
-    adapter_type: AdapterType,
-    dns_server_address: str,
+    alpha_ip_stack: IPStack,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
+        beta_ip_stack = IPStack.IPv4v6
+        dns_server_address = get_dns_server_address(alpha_ip_stack)
+
         api = API()
-        (alpha, beta) = api.default_config_two_nodes()
+        (alpha, beta) = api.default_config_two_nodes(
+            alpha_ip_stack=alpha_ip_stack, beta_ip_stack=beta_ip_stack
+        )
+
         alpha.set_peer_firewall_settings(beta.id)
         beta.set_peer_firewall_settings(alpha.id)
 
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
-                alpha_connection_tag,
+                ConnectionTag.DOCKER_CONE_CLIENT_1,
                 generate_connection_tracker_config(
-                    alpha_connection_tag, derp_1_limits=ConnectionLimits(1, 1)
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=ConnectionLimits(1, 1),
                 ),
             )
         )
@@ -510,9 +603,11 @@ async def test_dns_stability(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha, adapter_type).run_meshnet(
-                api.get_meshmap(alpha.id)
-            )
+            telio.Client(
+                connection_alpha,
+                alpha,
+                adapter_type=AdapterType.BoringTun,
+            ).run_meshnet(api.get_meshmap(alpha.id))
         )
 
         client_beta = await exit_stack.enter_async_context(
@@ -605,16 +700,30 @@ async def test_dns_stability(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "dns_server_address",
+    "alpha_ip_stack",
     [
-        pytest.param(DNS_IPV4_SERVER_ADDRESS, id="IPv4"),
-        pytest.param(DNS_IPV6_SERVER_ADDRESS, id="IPv6"),
+        pytest.param(
+            IPStack.IPv4,
+            marks=pytest.mark.ipv4,
+        ),
+        pytest.param(
+            IPStack.IPv6,
+            marks=pytest.mark.ipv6,
+        ),
+        pytest.param(
+            IPStack.IPv4v6,
+            marks=pytest.mark.ipv4v6,
+        ),
     ],
 )
-async def test_set_meshmap_dns_update(dns_server_address: str) -> None:
+async def test_set_meshmap_dns_update(
+    alpha_ip_stack: IPStack,
+) -> None:
     async with AsyncExitStack() as exit_stack:
+        dns_server_address = get_dns_server_address(alpha_ip_stack)
+
         api = API()
-        alpha = api.default_config_one_node()
+        alpha = api.default_config_one_node(ip_stack=alpha_ip_stack)
 
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
@@ -641,7 +750,7 @@ async def test_set_meshmap_dns_update(dns_server_address: str) -> None:
         except ProcessExecError as e:
             assert "server can't find beta.nord" in e.stdout
 
-        beta = api.default_config_one_node()
+        beta = api.default_config_one_node(ip_stack=IPStack.IPv4v6)
 
         # Check if setting meshnet updates nord names for dns resolver
         await client_alpha.set_meshmap(api.get_meshmap(alpha.id, derp_servers=[]))
@@ -658,16 +767,28 @@ async def test_set_meshmap_dns_update(dns_server_address: str) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "dns_server_address",
+    "alpha_ip_stack",
     [
-        pytest.param(DNS_IPV4_SERVER_ADDRESS, id="IPv4"),
-        pytest.param(DNS_IPV6_SERVER_ADDRESS, id="IPv6"),
+        pytest.param(
+            IPStack.IPv4,
+            marks=pytest.mark.ipv4,
+        ),
+        pytest.param(
+            IPStack.IPv6,
+            marks=pytest.mark.ipv6,
+        ),
+        pytest.param(
+            IPStack.IPv4v6,
+            marks=pytest.mark.ipv4v6,
+        ),
     ],
 )
-async def test_dns_update(dns_server_address: str) -> None:
+async def test_dns_update(alpha_ip_stack: IPStack) -> None:
     async with AsyncExitStack() as exit_stack:
+        dns_server_address = get_dns_server_address(alpha_ip_stack)
+
         api = API()
-        alpha = api.default_config_one_node()
+        alpha = api.default_config_one_node(ip_stack=alpha_ip_stack)
 
         (connection, conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
@@ -729,7 +850,7 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
         FIRST_DNS_SERVER = "8.8.8.8"
         SECOND_DNS_SERVER = "1.1.1.1"
 
-        alpha = api.default_config_one_node()
+        alpha = api.default_config_one_node(ip_stack=IPStack.IPv4v6)
 
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
@@ -754,7 +875,7 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
 
         await testing.wait_normal(
             connection_alpha.create_process(
-                ["nslookup", "google.com", DNS_IPV4_SERVER_ADDRESS]
+                ["nslookup", "google.com", config.LIBTELIO_DNS_IPV4]
             ).execute()
         )
 
@@ -775,7 +896,9 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
 async def test_dns_aaaa_records() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
-        (alpha, beta) = api.default_config_two_nodes()
+        (alpha, beta) = api.default_config_two_nodes(
+            alpha_ip_stack=IPStack.IPv4v6, beta_ip_stack=IPStack.IPv4v6
+        )
 
         beta_ipv6 = "1234:5678:9abc:def0:1234:5678:9abc:def0"
         api.assign_ip(beta.id, beta_ipv6)
@@ -791,7 +914,7 @@ async def test_dns_aaaa_records() -> None:
 
         alpha_response = await testing.wait_long(
             connection_alpha.create_process(
-                ["nslookup", "beta.nord", DNS_IPV4_SERVER_ADDRESS]
+                ["nslookup", "beta.nord", config.LIBTELIO_DNS_IPV4]
             ).execute()
         )
 

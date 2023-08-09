@@ -5,8 +5,9 @@ from mesh_api import API
 from telio import AdapterType, PathType, Client, State
 from utils import testing, stun
 from utils.connection import Connection
-from utils.connection_tracker import ConnectionTracker, ConnectionLimits
 from utils.connection_util import (
+    ConnectionTracker,
+    ConnectionLimits,
     generate_connection_tracker_config,
     new_connection_with_conn_tracker,
     new_connection_by_tag,

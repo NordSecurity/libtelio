@@ -13,6 +13,7 @@ from utils.connection_util import (
     new_connection_with_conn_tracker,
 )
 from utils.ping import Ping
+from utils.router import IPProto, IPStack
 
 STUN_PROVIDER = ["stun"]
 
@@ -30,6 +31,19 @@ UHP_conn_client_types = [
 # machines caintaining old tcli v3.6 "/opt/bin/tcli-3.6".
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    "alpha_ip_stack",
+    [
+        pytest.param(
+            IPStack.IPv4,
+            marks=pytest.mark.ipv4,
+        ),
+        pytest.param(
+            IPStack.IPv4v6,
+            marks=pytest.mark.ipv4v6,
+        ),
+    ],
+)
+@pytest.mark.parametrize(
     "endpoint_providers, client1_type, client2_type, adapter_type",
     UHP_conn_client_types,
 )
@@ -38,11 +52,14 @@ async def test_connect_different_telio_version_through_relay(
     client1_type,
     client2_type,
     adapter_type,
+    alpha_ip_stack: IPStack,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        (alpha, beta) = api.default_config_two_nodes()
+        (alpha, beta) = api.default_config_two_nodes(
+            alpha_ip_stack=alpha_ip_stack, beta_ip_stack=IPStack.IPv4
+        )
 
         (
             alpha_conn,
@@ -120,7 +137,11 @@ async def test_connect_different_telio_version_through_relay(
             )
         )
 
-        async with Ping(alpha_conn, beta.ip_addresses[0]).run() as ping:
+        async with Ping(
+            alpha_conn,
+            testing.unpack_optional(beta.get_ip_address(IPProto.IPv4)),
+            ip_proto=IPProto.IPv4,
+        ).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
         assert alpha_conn_tracker.get_out_of_limits() is None
