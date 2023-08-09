@@ -607,7 +607,9 @@ impl Cli {
                 if ip_addr.len() != 1 {
                     cli_res!(res; (e Error::SettingIpFailed));
                 }
-                let ip_addr = ip_addr[0].to_string() + "/10";
+
+                let ip_addr =
+                    ip_addr[0].to_string() + if ip_addr[0].is_ipv4() { "/10" } else { "/64" };
 
                 cli_try!(self.set_ip(&name, &ip_addr));
             }
@@ -786,16 +788,21 @@ impl Cli {
                 })
         };
 
+        let ip: IpNetwork = ip_address.parse().unwrap();
+
         if std::env::consts::OS == "windows" {
-            execute(Command::new("netsh").args([
+            let mut args = vec![
                 "interface",
-                "ip",
+                if ip.is_ipv4() { "ipv4" } else { "ipv6" },
                 "set",
                 "address",
                 adapter_name,
-                "static",
-                ip_address,
-            ]))
+            ];
+            if ip.is_ipv4() {
+                args.push("static");
+            }
+            args.push(ip_address);
+            execute(Command::new("netsh").args(args))
         } else if std::env::consts::OS == "macos" {
             let len = ip_address.len();
             if len < 3 {
@@ -803,11 +810,15 @@ impl Cli {
             }
             execute(Command::new("ifconfig").args([
                 adapter_name,
+                if ip.is_ipv4() { "inet" } else { "inet6" },
                 ip_address,
-                &ip_address[..len - 3],
             ]))
         } else {
-            execute(Command::new("ifconfig").args([adapter_name, ip_address]))?;
+            execute(Command::new("ifconfig").args([
+                adapter_name,
+                if ip.is_ipv4() { "inet" } else { "inet6" },
+                ip_address,
+            ]))?;
             execute(Command::new("ifconfig").args([adapter_name, "up"]))
         }
     }
