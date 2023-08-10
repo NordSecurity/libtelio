@@ -7,6 +7,7 @@
 * LLT-4012: Fix firewall being stuck on LAST_ACK after FIN
 * LLT-4023: Add validation that meshnet and device keys match
 * LLT-4056: Add git commit requirements
+* LLT-3948: Add IPv6 functionality and fallback to session_keeper module
 
 <br>
 
