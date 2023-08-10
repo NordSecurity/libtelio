@@ -218,7 +218,10 @@ async def test_vpn_network_switch(
             ["stun"],
             ConnectionTag.DOCKER_SHARED_CLIENT_1,
             AdapterType.LinuxNativeWg,
-            marks=pytest.mark.linux_native,
+            marks=[
+                pytest.mark.linux_native,
+                pytest.mark.xfail(reason="the test is flaky - JIRA issue: LLT-4105"),
+            ],
         ),
         # Windows test cases are temporarily disabled because they are flaky
         # see LLT-3946
