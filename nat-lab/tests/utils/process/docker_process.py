@@ -40,14 +40,19 @@ class DockerProcess(Process):
         async with self._execute.start() as exe_stream:
             self._stream = exe_stream
             self._stdin_ready.set()
-            await self._read_loop(exe_stream, stdout_callback, stderr_callback)
+            try:
+                await self._read_loop(exe_stream, stdout_callback, stderr_callback)
+            except asyncio.CancelledError:
+                self._stream = None
+                return self
             self._stream = None
 
         inspect = await self._execute.inspect()
         exit_code = inspect["ExitCode"]
 
-        # we ignore 143 (SIGTERM), since sometimes we kill processes ourselfs
-        if exit_code not in [0, 143]:
+        # 0 success
+        # suppress 137 linux sigkill, since we kill those processes
+        if exit_code and exit_code not in [0, 137]:
             raise ProcessExecError(exit_code, self._command, self._stdout, self._stderr)
 
         return self
