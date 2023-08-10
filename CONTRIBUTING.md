@@ -19,6 +19,10 @@ On top of the CI being green, every PR will go through code review, and you can 
 
 **A clean history can make things easier**. Some PRs are easier to review commit-by-commit, rather than looking at the full changelist in one go. To enable that, prefer `rebase` over `merge` when updating your branch. Keeping PRs small and short-lived will also help keep your history clean since there's less time for upstream to change that much.
 
+### Commit message requirements
+
+Read [requirements](docs/git_commit_messages_requirements.md)
+
 ## Licensing
 Libtelio is released under GPL-3.0 License. For more details please refer to [LICENSE.md](LICENSE.md). 
 
