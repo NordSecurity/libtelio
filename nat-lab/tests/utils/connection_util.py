@@ -92,6 +92,8 @@ DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: ConnectionTag.DOCKER_UDP_BLOCK_GW_2,
     ConnectionTag.WINDOWS_VM: ConnectionTag.DOCKER_CONE_GW_3,
     ConnectionTag.MAC_VM: ConnectionTag.DOCKER_CONE_GW_3,
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1: ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2: ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2,
 }
 
 LAN_ADDR_MAP: Dict[ConnectionTag, str] = {
@@ -226,6 +228,19 @@ async def new_connection_with_gw(
 ) -> AsyncIterator[Tuple[Connection, Optional[Connection]]]:
     async with new_connection_manager_by_tag(tag) as (connection, connection_gw, _, _):
         yield (connection, connection_gw)
+
+
+@asynccontextmanager
+async def new_connection_with_tracker_and_gw(
+    tag: ConnectionTag, conn_tracker_config: Optional[List[ConnectionTrackerConfig]]
+) -> AsyncIterator[Tuple[Connection, Optional[Connection], ConnectionTracker]]:
+    async with new_connection_manager_by_tag(tag, conn_tracker_config) as (
+        connection,
+        connection_gw,
+        _,
+        conn_tracker,
+    ):
+        yield (connection, connection_gw, conn_tracker)
 
 
 @asynccontextmanager
