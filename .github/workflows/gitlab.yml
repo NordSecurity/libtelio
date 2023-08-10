@@ -9,6 +9,7 @@ on:
     # https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#schedule
     - cron: 18,48 18-23 * * *
     - cron: 17,47 0-5 * * *
+    - cron: 13 * * * *
 permissions: {}
 
 jobs:
