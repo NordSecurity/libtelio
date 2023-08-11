@@ -531,7 +531,14 @@ async def test_vpn_plus_mesh_over_direct(
         pytest.param(
             ConnectionTag.WINDOWS_VM, AdapterType.WireguardGo, marks=pytest.mark.windows
         ),
-        pytest.param(ConnectionTag.MAC_VM, AdapterType.Default, marks=pytest.mark.mac),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.Default,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.xfail(reason="test is flaky - LLT-4116"),
+            ],
+        ),
     ],
 )
 async def test_vpn_plus_mesh_over_different_connection_types(

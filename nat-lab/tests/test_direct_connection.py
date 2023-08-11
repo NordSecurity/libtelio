@@ -597,12 +597,14 @@ async def test_direct_connection_loss_for_infinity(
             ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
             "upnp",
             "local",
+            marks=pytest.mark.xfail(reason="test is flaky - LLT-4115"),
         ),
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
             ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
             "stun",
             "local",
+            marks=pytest.mark.xfail(reason="test is flaky - LLT-4115"),
         ),
     ],
 )
