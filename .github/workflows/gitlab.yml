@@ -23,7 +23,7 @@ jobs:
         github.event.label.name == 'run tests'
       )
     steps:
-      - uses: NordSecurity/trigger-gitlab-pipeline@2058fb1a58b364f0b48f4a402a3e89ac405ab146 # v1.1.0
+      - uses: NordSecurity/trigger-gitlab-pipeline@1a4bce03474798f5a512411af3223dd2aef0e71d # v1.1.1
         with:
           ci-api-v4-url: ${{ secrets.CI_API_V4_URL }}
           project-id: ${{ secrets.PROJECT_ID }}
