@@ -1,11 +1,11 @@
-from utils.analytics import *
+import utils.analytics as Validator
 
-test_event = Event(
+TEST_EVENT = Validator.Event(
     name="heartbeat",
     category="service_quality",
     datetime_local="2023-08-10T15:03:25.605768807+00:00",
-    external_links="86c4375d-014b:gamma:3,edcd3eea-7aca:beta:3",
-    connectivity_matrix="'1:2:3,0:2:2,0:1:3'",
+    external_links="86c4375d-014b:delta:3,edcd3eea-7aca:charlie:3",
+    connectivity_matrix="1:2:3,0:2:2,0:1:3",
     fp="86bee206-9082",
     members="gamma, beta",
     connection_duration="0;11;11",
@@ -17,11 +17,180 @@ test_event = Event(
     mem_nat_types="Symmetric,PortRestrictedCone",
 )
 
+DUMMY_EVENT = Validator.Event(
+    name="heartbeet",
+    category="service_qwuality",
+    datetime_local="2026-08-10T15:03:25.605768807+00:00",
+    external_links="86c4375d-014b:delta:0",
+    connectivity_matrix="1:2:3,0:2:2",
+    fp="86bee206-9083",
+    members="gamma",
+    connection_duration="",
+    heartbeat_interval=360,
+    received_data="",
+    rtt="",
+    sent_data="",
+    nat_type="Symmetric",
+    mem_nat_types="PortRestrictedCone,PortRestrictedCone",
+)
 
-def test_lana_validators() -> None:
 
+def check_validator(validator, true_event, false_event) -> None:
+    assert validator.validate(true_event)
+    assert not validator.validate(false_event)
+
+
+def test_existance_validator() -> None:
+    check_validator(Validator.ExistanceValidator(), "test", "")
+
+
+def test_inexistance_validator() -> None:
+    check_validator(Validator.InexistanceValidator(), "", "test")
+
+
+def test_string_equals_validator() -> None:
+    check_validator(Validator.StringEqualsValidator("test"), "test", "apple")
+
+
+def test_string_containment_validator() -> None:
+    check_validator(
+        Validator.StringContainmentValidator("test"), "truetestapple", "trueapple"
+    )
+
+
+def test_string_occurences_validator() -> None:
+    check_validator(
+        Validator.StringOccurrencesValidator(count=2, value="true"),
+        "testtrueappletrue",
+        "testappletrue",
+    )
+
+
+def test_integer_equals_validator() -> None:
+    check_validator(Validator.IntegerEqualsValidator(7), 7, 5)
+
+
+def test_integer_not_equals_validator() -> None:
+    check_validator(Validator.IntegerNotEqualsValidator(5), 7, 5)
+
+
+def test_connection_count_validator() -> None:
+    check_validator(Validator.ConnectionCountValidator(2), "gamma, beta", "beta")
+
+
+def test_connection_state_validator() -> None:
+    check_validator(
+        Validator.ConnectionStateValidator(
+            expected_state=3,
+            all_connections_up=True,
+        ),
+        TEST_EVENT.external_links,
+        DUMMY_EVENT.external_links,
+    )
+
+
+def test_string_validator() -> None:
+    check_validator(
+        Validator.StringValidator(
+            exists=True,
+            equals="truetest",
+            contains=["test"],
+            does_not_contain=["apple"],
+        ),
+        "truetest",
+        "appletest",
+    )
+
+
+def test_name_validator() -> None:
+    check_validator(Validator.NameValidator("heartbeat"), TEST_EVENT, DUMMY_EVENT)
+
+
+def test_category_validator() -> None:
+    check_validator(
+        Validator.CategoryValidator("service_quality"), TEST_EVENT, DUMMY_EVENT
+    )
+
+
+def test_external_links_validator() -> None:
+    check_validator(
+        Validator.ExternalLinksValidator(
+            exists=True,
+            contains=["delta", "charlie"],
+            does_not_contain=["alpha"],
+            all_connections_up=True,
+            no_of_connections=2,
+        ),
+        TEST_EVENT,
+        DUMMY_EVENT,
+    )
+
+
+def test_connectivity_matrix_validator() -> None:
+    check_validator(
+        Validator.ConnectivityMatrixValidator(
+            exists=True, no_of_connections=3, all_connections_up=True
+        ),
+        TEST_EVENT,
+        DUMMY_EVENT,
+    )
+
+
+def test_fingerprint_validator() -> None:
+    check_validator(
+        Validator.FingerprintValidator(equals="86bee206-9082"), TEST_EVENT, DUMMY_EVENT
+    )
+
+
+def test_members_validator() -> None:
+    check_validator(
+        Validator.MembersValidator(
+            exists=True,
+            contains=["gamma", "beta"],
+            does_not_contain=["alpha"],
+        ),
+        TEST_EVENT,
+        DUMMY_EVENT,
+    )
+
+
+def test_connection_duration_validator() -> None:
+    check_validator(Validator.ConnectionDurationValidator(), TEST_EVENT, DUMMY_EVENT)
+
+
+def test_heartbeat_interval_validator() -> None:
+    check_validator(Validator.HeartbeatIntervalValidator(3600), TEST_EVENT, DUMMY_EVENT)
+
+
+def test_recieved_data_validator() -> None:
+    check_validator(Validator.ReceivedDataValidator(), TEST_EVENT, DUMMY_EVENT)
+
+
+def test_rtt_validator() -> None:
+    check_validator(Validator.RttValidator(), TEST_EVENT, DUMMY_EVENT)
+
+
+def test_sent_data_validator() -> None:
+    check_validator(Validator.SentDataValidator(), TEST_EVENT, DUMMY_EVENT)
+
+
+def test_nat_type_validator() -> None:
+    check_validator(
+        Validator.NatTypeValidator("PortRestrictedCone"), TEST_EVENT, DUMMY_EVENT
+    )
+
+
+def test_mem_nat_type_validator() -> None:
+    check_validator(
+        Validator.MemNatTypeValidator(["Symmetric", "PortRestrictedCone"]),
+        TEST_EVENT,
+        DUMMY_EVENT,
+    )
+
+
+def test_lana_event_validator() -> None:
     test_validator = (
-        basic_validator(meshnet_id="86bee206-9082")
+        Validator.basic_validator(meshnet_id="86bee206-9082")
         .add_connectivity_matrix_validator(
             exists=True,
             no_of_connections=3,
@@ -39,11 +208,11 @@ def test_lana_validators() -> None:
         )
         .add_external_links_validator(
             exists=True,
-            contains=["gamma", "beta"],
+            contains=["delta", "charlie"],
             does_not_contain=["alpha"],
             all_connections_up=True,
             no_of_connections=2,
         )
     )
 
-    assert test_validator.validate(test_event)
+    check_validator(test_validator, TEST_EVENT, DUMMY_EVENT)
