@@ -220,7 +220,12 @@ async def test_vpn_network_switch(
             AdapterType.LinuxNativeWg,
             marks=[
                 pytest.mark.linux_native,
-                pytest.mark.xfail(reason="the test is flaky - JIRA issue: LLT-4105"),
+                pytest.mark.xfail(
+                    reason=(
+                        "Flaky: Running tests in specific order, might change the"
+                        " result of tests - LLT-4102 / LLT-4105"
+                    )
+                ),
             ],
         ),
         # Windows test cases are temporarily disabled because they are flaky
@@ -282,6 +287,11 @@ async def test_mesh_network_switch_direct(
             asyncio.gather(
                 alpha_client.wait_for_state_on_any_derp([State.Connected]),
                 beta_client.wait_for_state_on_any_derp([State.Connected]),
+            )
+        )
+
+        await testing.wait_lengthy(
+            asyncio.gather(
                 alpha_client.wait_for_state_peer(
                     beta.public_key, [State.Connected], [PathType.Direct]
                 ),
@@ -298,8 +308,11 @@ async def test_mesh_network_switch_direct(
         await alpha_client.notify_network_change()
 
         await testing.wait_lengthy(
+            alpha_client.wait_for_event_on_any_derp([State.Connected])
+        )
+
+        await testing.wait_lengthy(
             asyncio.gather(
-                alpha_client.wait_for_event_on_any_derp([State.Connected]),
                 alpha_client.wait_for_state_peer(
                     beta.public_key, [State.Connected], [PathType.Relay]
                 ),

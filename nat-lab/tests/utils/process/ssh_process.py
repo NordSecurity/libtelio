@@ -42,14 +42,23 @@ class SshProcess(Process):
         self._stdin = self._process.stdin
         self._stdin_ready.set()
 
-        await asyncio.gather(
-            self._stdout_loop(self._process.stdout, stdout_callback),
-            self._stderr_loop(self._process.stderr, stderr_callback),
-        )
+        try:
+            await asyncio.gather(
+                self._stdout_loop(self._process.stdout, stdout_callback),
+                self._stderr_loop(self._process.stderr, stderr_callback),
+            )
+        except asyncio.CancelledError:
+            return self
 
         completed_process: asyncssh.SSHCompletedProcess = await self._process.wait()
-        assert completed_process.returncode is not None
-        if completed_process.returncode != 0:
+
+        # 0 success
+        # suppress 9 macos sigkill and 137 windows sigkill, since we kill those processes
+        if completed_process.returncode and completed_process.returncode not in [
+            0,
+            9,
+            137,
+        ]:
             raise ProcessExecError(
                 completed_process.returncode, self._command, self._stdout, self._stderr
             )
