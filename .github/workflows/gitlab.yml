@@ -28,5 +28,5 @@ jobs:
           ci-api-v4-url: ${{ secrets.CI_API_V4_URL }}
           project-id: ${{ secrets.PROJECT_ID }}
           token: ${{ secrets.TOKEN }}
-          ref: v0.1.5
+          ref: v0.1.7
           schedule: ${{ github.event_name == 'schedule' }}
