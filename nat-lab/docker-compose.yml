@@ -83,7 +83,11 @@ services:
     networks:
       internet:
         ipv4_address: 10.0.100.1
+    environment:
+      CLIENT_GATEWAY_PRIMARY: none
     privileged: true
+    volumes:
+      - ../../:/libtelio-build
   vpn-02:
     hostname: vpn-02
     image: nat-lab:base
@@ -91,7 +95,11 @@ services:
     networks:
       internet:
         ipv4_address: 10.0.100.2
+    environment:
+      CLIENT_GATEWAY_PRIMARY: none
     privileged: true
+    volumes:
+      - ../../:/libtelio-build
 
   # Create gateway for first cone network
   cone-gw-01:

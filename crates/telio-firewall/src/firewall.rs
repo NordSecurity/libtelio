@@ -12,7 +12,6 @@ use pnet_packet::{
     udp::UdpPacket,
     Packet,
 };
-use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::{
     fmt::{Debug, Formatter},
     net::{IpAddr as StdIpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr as StdIpv6Addr},
@@ -23,6 +22,11 @@ use telio_utils::lru_cache::{Entry, LruCache};
 
 use telio_crypto::PublicKey;
 use telio_utils::{telio_log_debug, telio_log_trace, telio_log_warn};
+
+/// HashSet type used internally by firewall and returned by get_peer_whitelist
+pub type HashSet<V> = rustc_hash::FxHashSet<V>;
+/// HashMap type used internally by firewall and returned by get_port_whitelist
+pub type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;
 
 const LRU_CAPACITY: usize = 4096; // Max entries to keep (sepatately for TCP, UDP, and others)
 const LRU_TIMEOUT: u64 = 120_000; // 2min (https://datatracker.ietf.org/doc/html/rfc4787#section-4.3)
@@ -163,7 +167,6 @@ pub trait Firewall {
     fn remove_from_port_whitelist(&self, peer: PublicKey);
 
     /// Returns a whitelist of ports
-    #[cfg(test)]
     fn get_port_whitelist(&self) -> HashMap<PublicKey, u16>;
 
     /// Clears the peer whitelist
@@ -176,7 +179,6 @@ pub trait Firewall {
     fn remove_from_peer_whitelist(&self, peer: PublicKey);
 
     /// Returns a whitelist of peers
-    #[cfg(test)]
     fn get_peer_whitelist(&self) -> HashSet<PublicKey>;
 
     /// For new connections it opens a pinhole for incoming connection
@@ -637,7 +639,6 @@ impl Firewall for StatefullFirewall {
         whitelist.port_whitelist.remove(&peer);
     }
 
-    #[cfg(test)]
     fn get_port_whitelist(&self) -> HashMap<PublicKey, u16> {
         unwrap_lock_or_return!(self.whitelist.write(), Default::default())
             .port_whitelist
@@ -665,7 +666,6 @@ impl Firewall for StatefullFirewall {
             .remove(&peer);
     }
 
-    #[cfg(test)]
     fn get_peer_whitelist(&self) -> HashSet<PublicKey> {
         unwrap_lock_or_return!(self.whitelist.write(), Default::default())
             .peer_whitelist
@@ -1120,7 +1120,7 @@ pub mod tests {
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src3)), false);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src4)), false);
             assert_eq!(fw.udp.lock().unwrap().len(), 0);
-    
+
             // Should PASS (adds 1111..4444 and drops 2222)
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_udp(src1, dst1)), true);
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_udp(src2, dst1)), true);
@@ -1486,7 +1486,7 @@ pub mod tests {
     fn firewall_pinhole_timeout_extending() {
         let capacity = 3;
         let ttl = 20;
-        
+
         struct TestInput { src: &'static str, dst: &'static str, make_udp: MakeUdp, }
         let test_inputs = vec![
             TestInput{ src: "[::1]:1111",     dst: "[2001:4860:4860::8888]:8888",  make_udp: &make_udp6, },
@@ -1549,7 +1549,7 @@ pub mod tests {
         }
         let test_inputs = vec![
             TestInput {
-                src1: "100.100.100.100:1234", 
+                src1: "100.100.100.100:1234",
                 src2: "100.100.100.100:1000",
 
                 src3: "100.100.100.101:1234",
@@ -1594,7 +1594,7 @@ pub mod tests {
             assert_eq!(fw.process_inbound_packet(&peer2.0, &make_udp(src2, dst1,)), true);
             assert_eq!(fw.udp.lock().unwrap().len(), 1);
 
-        
+
             assert_eq!(fw.process_inbound_packet(&peer1.0, &make_tcp(src3, dst2, TcpFlags::SYN)), false);
             assert_eq!(fw.process_inbound_packet(&peer2.0, &make_tcp(src4, dst1, TcpFlags::SYN | TcpFlags::ACK)), true);
             assert_eq!(fw.tcp.lock().unwrap().len(), 0);
@@ -1667,7 +1667,7 @@ pub mod tests {
             assert_eq!(fw.process_outbound_packet(&them_peer.0, &make_udp(us, them)), true);
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_udp(them, us)), true);
             assert_eq!(fw.udp.lock().unwrap().len(), 1);
-        
+
             // Should PASS because we started the session
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_udp(them, us)), true);
             fw.remove_from_port_whitelist(them_peer); // NOTE: also has no impact on this test
@@ -1723,14 +1723,14 @@ pub mod tests {
             assert_eq!(fw.tcp.lock().unwrap().len(), 1);
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), true);
 
-        
+
             // Should PASS because we started the session
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, 0)), true);
             fw.remove_from_port_whitelist(them_peer);
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, 0)), true);
             assert_eq!(fw.tcp.lock().unwrap().len(), 1);
         }
-        
+
     }
 
     #[rustfmt::skip]
@@ -1752,7 +1752,7 @@ pub mod tests {
             assert_eq!(fw.process_outbound_packet(&them_peer.0, &make_tcp(us, them, TcpFlags::SYN | TcpFlags::ACK)), true);
             assert_eq!(fw.tcp.lock().unwrap().len(), 1);
 
-        
+
             // Should BLOCK because they started the session
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, 0)), true);
             fw.remove_from_port_whitelist(them_peer);
@@ -1760,7 +1760,7 @@ pub mod tests {
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, 0)), false);
             assert_eq!(fw.tcp.lock().unwrap().len(), 0);
         }
-        
+
     }
 
     #[rustfmt::skip]
@@ -1830,10 +1830,10 @@ pub mod tests {
             make_icmp: MakeIcmp,
         }
         impl TestInput {
-            fn src_socket(&self, port: u16) -> String { 
+            fn src_socket(&self, port: u16) -> String {
                 StdSocketAddr::new(self.src.parse().unwrap(), port).to_string()
             }
-            fn dst_socket(&self, port: u16) -> String { 
+            fn dst_socket(&self, port: u16) -> String {
                 StdSocketAddr::new(self.dst.parse().unwrap(), port).to_string()
             }
         }
