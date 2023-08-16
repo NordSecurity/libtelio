@@ -1,5 +1,6 @@
-### UNRELEASED
+### v4.0.7
 ---
+* LLT-4119: Fix multiple bugs in telio-firewall. Mainly whitelist vpn server
 
 <br>
 

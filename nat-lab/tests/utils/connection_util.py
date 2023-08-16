@@ -43,6 +43,8 @@ class ConnectionTag(Enum):
     DOCKER_UDP_BLOCK_GW_2 = auto()
     DOCKER_UPNP_GW_1 = auto()
     DOCKER_UPNP_GW_2 = auto()
+    DOCKER_VPN_1 = auto()
+    DOCKER_VPN_2 = auto()
 
 
 DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
@@ -71,6 +73,8 @@ DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_UDP_BLOCK_GW_2: "udp-block-gw-02",
     ConnectionTag.DOCKER_UPNP_GW_1: "upnp-gw-01",
     ConnectionTag.DOCKER_UPNP_GW_2: "upnp-gw-02",
+    ConnectionTag.DOCKER_VPN_1: "vpn-01",
+    ConnectionTag.DOCKER_VPN_2: "vpn-02",
 }
 
 

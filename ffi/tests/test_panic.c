@@ -44,7 +44,7 @@ int main(int argc, char **argv)
         printf("You must be root!\n");
         return 1;
     }
-    
+
     int event_ctx = 0;
     int log_ctx = 0;
 
@@ -60,7 +60,7 @@ int main(int argc, char **argv)
     // Run some random init procedure
     TEST_FUNC(telio_new, TELIO_RES_OK, "telio_new", &device, NULL, events, log_lvl, logger);
     TEST_FUNC(telio_start, TELIO_RES_OK, "telio_start", device, priv_key, TELIO_ADAPTER_BORING_TUN);
-    TEST_FUNC(telio_connect_to_exit_node, TELIO_RES_OK, "telio_connect_to_exit_node", device, pub_key, "0.0.0.0/0", NULL);
+    TEST_FUNC(telio_connect_to_exit_node, TELIO_RES_OK, "telio_connect_to_exit_node", device, pub_key, "0.0.0.0/0", "1.2.3.4:5678");
     TEST_FUNC(telio_disconnect_from_exit_nodes, TELIO_RES_OK, "telio_disconnect_from_exit_nodes", device);
 
     sleep(2);
