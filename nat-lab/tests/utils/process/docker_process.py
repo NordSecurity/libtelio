@@ -67,10 +67,10 @@ class DockerProcess(Process):
             try:
                 yield self
             finally:
-                if self._execute:
-                    with suppress(Exception):
+                with suppress(Exception):
+                    if self._execute:
                         inspect = await self._execute.inspect()
-                        while inspect["Pid"] == 0:
+                        while inspect["Pid"] == 0 and inspect["ExitCode"] is None:
                             inspect = await self._execute.inspect()
                             await asyncio.sleep(0.01)
                         if inspect["ExitCode"] is None:
@@ -93,11 +93,11 @@ class DockerProcess(Process):
 
             buffers[message.stream] += message.data
 
-            if b"\x0A" not in buffers[message.stream]:
+            if b"\x0a" not in buffers[message.stream]:
                 continue
 
-            lines = buffers[message.stream].split(b"\x0A")
-            if b"\x0A" in lines[-1]:
+            lines = buffers[message.stream].split(b"\x0a")
+            if b"\x0a" in lines[-1]:
                 decodeable_lines = lines
                 buffers[message.stream] = bytearray()
             else:
@@ -106,7 +106,7 @@ class DockerProcess(Process):
                     continue
                 decodeable_lines = lines[:-1]
 
-            output = b"\x0A".join(decodeable_lines).decode(sys.getfilesystemencoding())
+            output = b"\x0a".join(decodeable_lines).decode(sys.getfilesystemencoding())
 
             if message.stream == 1:
                 self._stdout += output

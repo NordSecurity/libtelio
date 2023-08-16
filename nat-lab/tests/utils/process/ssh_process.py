@@ -53,12 +53,7 @@ class SshProcess(Process):
         completed_process: asyncssh.SSHCompletedProcess = await self._process.wait()
 
         # 0 success
-        # suppress 9 macos sigkill and 137 windows sigkill, since we kill those processes
-        if completed_process.returncode and completed_process.returncode not in [
-            0,
-            9,
-            137,
-        ]:
+        if completed_process.returncode and completed_process.returncode != 0:
             raise ProcessExecError(
                 completed_process.returncode, self._command, self._stdout, self._stderr
             )
