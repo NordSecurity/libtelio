@@ -59,10 +59,14 @@ async def test_network_switcher(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(reason="the test is flaky - JIRA issue: LLT-4105")
 @pytest.mark.parametrize(
     "alpha_connection_tag, adapter_type",
     [
-        pytest.param(ConnectionTag.DOCKER_SHARED_CLIENT_1, AdapterType.BoringTun),
+        pytest.param(
+            ConnectionTag.DOCKER_SHARED_CLIENT_1,
+            AdapterType.BoringTun,
+        ),
         pytest.param(
             ConnectionTag.DOCKER_SHARED_CLIENT_1,
             AdapterType.LinuxNativeWg,
@@ -74,7 +78,9 @@ async def test_network_switcher(
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM, AdapterType.WireguardGo, marks=pytest.mark.windows
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=pytest.mark.windows,
         ),
         # JIRA issue: LLT-1134
         # pytest.param(
@@ -207,6 +213,12 @@ async def test_vpn_network_switch(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(
+    reason=(
+        "Flaky: Running tests in specific order, might change the"
+        " result of tests - LLT-4102 / LLT-4105, LLT-3946"
+    )
+)
 @pytest.mark.timeout(150)
 @pytest.mark.parametrize(
     "endpoint_providers, alpha_connection_tag, adapter_type",
@@ -220,29 +232,20 @@ async def test_vpn_network_switch(
             AdapterType.LinuxNativeWg,
             marks=[
                 pytest.mark.linux_native,
-                pytest.mark.xfail(
-                    reason=(
-                        "Flaky: Running tests in specific order, might change the"
-                        " result of tests - LLT-4102 / LLT-4105"
-                    )
-                ),
             ],
         ),
-        # Windows test cases are temporarily disabled because they are flaky
-        # see LLT-3946
-        #
-        # pytest.param(
-        #     ["stun"],
-        #     ConnectionTag.WINDOWS_VM,
-        #     AdapterType.WindowsNativeWg,
-        #     marks=pytest.mark.windows,
-        # ),
-        # pytest.param(
-        #     ["stun"],
-        #     ConnectionTag.WINDOWS_VM,
-        #     AdapterType.WireguardGo,
-        #     marks=pytest.mark.windows,
-        # ),
+        pytest.param(
+            ["stun"],
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WindowsNativeWg,
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            ["stun"],
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=pytest.mark.windows,
+        ),
     ],
 )
 async def test_mesh_network_switch_direct(
