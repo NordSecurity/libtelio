@@ -65,13 +65,19 @@ async def _connect_vpn(
             ConnectionTag.WINDOWS_VM,
             AdapterType.WindowsNativeWg,
             "10.0.254.7",
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="test is flaky - Jira issue: LLT-4147"),
+            ],
         ),
         pytest.param(
             ConnectionTag.WINDOWS_VM,
             AdapterType.WireguardGo,
             "10.0.254.7",
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="test is flaky - Jira issue: LLT-4147"),
+            ],
         ),
         pytest.param(
             ConnectionTag.MAC_VM,
@@ -139,13 +145,19 @@ async def test_vpn_connection(
             ConnectionTag.WINDOWS_VM,
             AdapterType.WindowsNativeWg,
             "10.0.254.7",
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="test is flaky - Jira issue: LLT-4147"),
+            ],
         ),
         pytest.param(
             ConnectionTag.WINDOWS_VM,
             AdapterType.WireguardGo,
             "10.0.254.7",
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="test is flaky - Jira issue: LLT-4147"),
+            ],
         ),
         pytest.param(
             ConnectionTag.MAC_VM,
