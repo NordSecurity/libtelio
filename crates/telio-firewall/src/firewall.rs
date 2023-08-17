@@ -13,7 +13,6 @@ use pnet_packet::{
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, RwLock};
 use std::time::Duration;
-
 use telio_crypto::PublicKey;
 use telio_utils::{telio_log_debug, telio_log_trace};
 
@@ -42,7 +41,6 @@ pub trait Firewall {
     fn remove_from_port_whitelist(&self, peer: PublicKey);
 
     /// Returns a whitelist of ports
-    #[cfg(test)]
     fn get_port_whitelist(&self) -> HashMap<PublicKey, u16>;
 
     /// Clears the peer whitelist
@@ -55,7 +53,6 @@ pub trait Firewall {
     fn remove_from_peer_whitelist(&self, peer: PublicKey);
 
     /// Returns a whitelist of peers
-    #[cfg(test)]
     fn get_peer_whitelist(&self) -> HashSet<PublicKey>;
 
     /// For new connections it opens a pinhole for incoming connection
@@ -416,7 +413,6 @@ impl Firewall for StatefullFirewall {
         whitelist.port_whitelist.remove(&peer);
     }
 
-    #[cfg(test)]
     fn get_port_whitelist(&self) -> HashMap<PublicKey, u16> {
         unwrap_lock_or_return!(self.whitelist.write(), Default::default())
             .port_whitelist
@@ -444,7 +440,6 @@ impl Firewall for StatefullFirewall {
             .remove(&peer);
     }
 
-    #[cfg(test)]
     fn get_peer_whitelist(&self) -> HashSet<PublicKey> {
         unwrap_lock_or_return!(self.whitelist.write(), Default::default())
             .peer_whitelist
@@ -926,7 +921,6 @@ pub mod tests {
         assert_eq!(fw.process_inbound_packet(&peer2.0, &make_udp("100.100.100.101:1234", "127.0.0.1:1111",)), true);
         assert_eq!(fw.udp.lock().unwrap().len(), 1);
 
-        
         assert_eq!(fw.process_inbound_packet(&peer1.0, &make_tcp("100.100.100.100:1000", "127.0.0.1:1000", TcpFlags::SYN)), false);
         assert_eq!(fw.process_inbound_packet(&peer2.0, &make_tcp("100.100.100.101:2222", "127.0.0.1:1111", TcpFlags::SYN | TcpFlags::ACK)), true);
         assert_eq!(fw.tcp.lock().unwrap().len(), 0);
@@ -1021,13 +1015,11 @@ pub mod tests {
         assert_eq!(fw.tcp.lock().unwrap().len(), 1);
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), true);
 
-        
         // Should PASS because we started the session
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, 0)), true);
         fw.remove_from_port_whitelist(them_peer);
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, 0)), true);
         assert_eq!(fw.tcp.lock().unwrap().len(), 1);
-        
     }
 
     #[rustfmt::skip]
@@ -1045,14 +1037,12 @@ pub mod tests {
         assert_eq!(fw.process_outbound_packet(&them_peer.0, &make_tcp(us, them, TcpFlags::SYN | TcpFlags::ACK)), true);
         assert_eq!(fw.tcp.lock().unwrap().len(), 1);
 
-        
         // Should BLOCK because they started the session
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, 0)), true);
         fw.remove_from_port_whitelist(them_peer);
         assert_eq!(fw.tcp.lock().unwrap().len(), 1);
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, 0)), false);
         assert_eq!(fw.tcp.lock().unwrap().len(), 0);
-        
     }
 
     #[rustfmt::skip]
