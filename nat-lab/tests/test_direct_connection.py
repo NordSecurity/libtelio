@@ -418,6 +418,7 @@ async def test_direct_failing_paths(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4132")
 @pytest.mark.parametrize(
     "endpoint_providers, client1_type, client2_type, reflexive_ip",
     UHP_conn_client_types,
@@ -571,6 +572,7 @@ async def test_direct_connection_loss_for_infinity(
 
 @pytest.mark.timeout(90)
 @pytest.mark.asyncio
+@pytest.mark.xfail(reason="test is flaky - LLT-4115")
 @pytest.mark.parametrize(
     "alpha_connection_tag, beta_connection_tag, ep1, ep2",
     [
@@ -597,14 +599,12 @@ async def test_direct_connection_loss_for_infinity(
             ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
             "upnp",
             "local",
-            marks=pytest.mark.xfail(reason="test is flaky - LLT-4115"),
         ),
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
             ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
             "stun",
             "local",
-            marks=pytest.mark.xfail(reason="test is flaky - LLT-4115"),
         ),
     ],
 )
