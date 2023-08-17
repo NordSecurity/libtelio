@@ -782,8 +782,8 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
             EndpointGatheringBySendCallMeMaybeRequest(m) => {
                 if duration_in_state > timeout {
                     // Timeout occured
-                    telio_log_info!(
-                        "Connection timed out, next retry after {}s",
+                    telio_log_debug!(
+                        "Timeout waiting for CMM response, next retry after {}s",
                         self.exponential_backoff.get_backoff().as_secs_f64()
                     );
                     do_state_transition!(m, Timeout, self);
@@ -792,8 +792,8 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
             PingByReceiveCallMeMaybeResponse(m) => {
                 if duration_in_state > timeout {
                     // Timeout occured
-                    telio_log_info!(
-                        "Connection timed out, next retry after {}s",
+                    telio_log_debug!(
+                        "Timeout waiting for pongs, next retry after {}s",
                         self.exponential_backoff.get_backoff().as_secs_f64()
                     );
                     do_state_transition!(m, Timeout, self);
