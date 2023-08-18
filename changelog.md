@@ -9,6 +9,7 @@
 * LLT-4056: Add git commit requirements
 * LLT-3948: Add IPv6 functionality and fallback to session_keeper module
 * LLT-3629: Add IPv6 support to nat-lab
+* LLT-4119: Fix multiple bugs in telio-firewall. Mainly whitelist vpn server
 
 <br>
 

@@ -10,7 +10,7 @@ use telio_crypto::PublicKey;
 use telio_dns::DnsResolver;
 use telio_firewall::firewall::{Firewall, FILE_SEND_PORT};
 use telio_model::EndpointMap;
-use telio_model::{mesh::Node, SocketAddr};
+use telio_model::SocketAddr;
 use telio_proxy::Proxy;
 use telio_traversal::{
     cross_ping_check::CrossPingCheckTrait, SessionKeeperTrait, UpgradeSyncTrait,
@@ -58,12 +58,7 @@ pub async fn consolidate_wg_state(requested_state: &RequestedState, entities: &E
         &*entities.dns,
     )
     .await?;
-    consolidate_firewall(
-        requested_state,
-        &*entities.wireguard_interface,
-        &*entities.firewall,
-    )
-    .await?;
+    consolidate_firewall(requested_state, &*entities.firewall).await?;
     Ok(())
 }
 
@@ -250,27 +245,67 @@ fn check_allowed_ips_correctness(peers: &BTreeMap<PublicKey, RequestedPeer>) -> 
         .ok_or_else(|| Error::BadAllowedIps.into())
 }
 
-async fn consolidate_firewall<W: WireGuard, F: Firewall>(
+fn iter_peers(
     requested_state: &RequestedState,
-    wireguard_interface: &W,
-    firewall: &F,
-) -> Result {
-    let from_peers = wireguard_interface.get_interface().await?.peers;
-    let from_keys: HashSet<PublicKey> = from_peers.keys().copied().collect();
-    let to_peers: Vec<&telio_model::config::Peer> = requested_state
+) -> impl Iterator<Item = &telio_model::config::Peer> {
+    requested_state
         .meshnet_config
         .iter()
         .flat_map(|c| c.peers.iter())
         .flatten()
+}
+
+async fn consolidate_firewall<F: Firewall>(
+    requested_state: &RequestedState,
+    firewall: &F,
+) -> Result {
+    let from_keys_peer_whitelist: HashSet<PublicKey> =
+        firewall.get_peer_whitelist().iter().copied().collect();
+    let from_keys_ports_whitelist: HashSet<PublicKey> =
+        firewall.get_port_whitelist().keys().copied().collect();
+
+    // Build a list of peers expected to be peer-whitelisted according
+    // to allow_incoming_connections permission
+    let mut to_keys_peer_whitelist: HashSet<PublicKey> = iter_peers(requested_state)
+        .filter(|p| p.allow_incoming_connections)
+        .map(|p| p.public_key)
         .collect();
-    let to_keys: HashSet<PublicKey> = to_peers.iter().map(|p| p.public_key).collect();
-    let delete_keys = &from_keys - &to_keys;
-    for key in &delete_keys {
-        firewall.remove_from_peer_whitelist(*key);
-        firewall.remove_from_port_whitelist(*key);
+
+    // VPN peer must always be peer-whitelisted
+    if let Some(exit_node) = &requested_state.exit_node {
+        let is_vpn_exit_node =
+            !iter_peers(requested_state).any(|p| p.public_key == exit_node.public_key);
+
+        if is_vpn_exit_node {
+            to_keys_peer_whitelist.insert(exit_node.public_key);
+        }
     }
-    for node in to_peers {
-        firewall_upsert_node(firewall, &node.into());
+
+    // Build a list of peers expected to be port-whitelisted according
+    // to allow_peer_send_files permission
+    let to_keys_ports_whitelist: HashSet<PublicKey> = iter_peers(requested_state)
+        .filter(|p| p.allow_peer_send_files)
+        .map(|p| p.public_key)
+        .collect();
+
+    // Consolidate peer-whitelist
+    let delete_keys = &from_keys_peer_whitelist - &to_keys_peer_whitelist;
+    let add_keys = &to_keys_peer_whitelist - &from_keys_peer_whitelist;
+    for key in delete_keys {
+        firewall.remove_from_peer_whitelist(key);
+    }
+    for key in add_keys {
+        firewall.add_to_peer_whitelist(key);
+    }
+
+    // Consolidate port-whitelist
+    let delete_keys = &from_keys_ports_whitelist - &to_keys_ports_whitelist;
+    let add_keys = &to_keys_ports_whitelist - &from_keys_ports_whitelist;
+    for key in delete_keys {
+        firewall.remove_from_port_whitelist(key);
+    }
+    for key in add_keys {
+        firewall.add_to_port_whitelist(key, FILE_SEND_PORT);
     }
 
     Ok(())
@@ -663,20 +698,6 @@ fn peer_state(
     }
 }
 
-fn firewall_upsert_node<F: Firewall>(firewall: &F, node: &Node) {
-    if node.allow_incoming_connections || node.allow_peer_send_files {
-        if node.allow_incoming_connections {
-            firewall.add_to_peer_whitelist(node.public_key);
-        }
-        if node.allow_peer_send_files {
-            firewall.add_to_port_whitelist(node.public_key, FILE_SEND_PORT);
-        }
-    } else {
-        firewall.remove_from_peer_whitelist(node.public_key);
-        firewall.remove_from_port_whitelist(node.public_key);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -853,172 +874,195 @@ mod tests {
         requested_state
     }
 
-    fn create_wireguard_interface(input: Vec<(PublicKey, AllowedIps)>) -> Interface {
-        let mut interface = Interface::default();
-
-        for i in input {
-            let peer = telio_wg::uapi::Peer {
-                public_key: i.0,
-                allowed_ips: i.1.into_iter().map(|ip| ip.into()).collect(),
-                ..Default::default()
-            };
-            interface.peers.insert(i.0, peer);
-        }
-
-        interface
-    }
-
-    #[tokio::test]
-    async fn add_currently_allowed_ips_to_firewall() {
-        let mut wireguard_interface = MockWireGuard::new();
-        let mut firewall = MockFirewall::new();
-
-        let pub_key = SecretKey::gen().public();
-        let ip1 = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
-        let ip2 = IpAddr::V4(Ipv4Addr::new(5, 6, 7, 8));
-
-        let requested_state = create_requested_state(vec![(pub_key, vec![ip1, ip2], true, true)]);
-
-        let interface = create_wireguard_interface(vec![(pub_key, vec![ip1])]);
-
-        wireguard_interface
-            .expect_get_interface()
-            .return_once(move || Ok(interface));
+    fn expect_add_to_peer_whitelist(firewall: &mut MockFirewall, pub_key: PublicKey) {
         firewall
             .expect_add_to_peer_whitelist()
-            .once()
             .with(eq(pub_key))
-            .return_const(());
-        firewall
-            .expect_add_to_port_whitelist()
             .once()
-            .with(eq(pub_key), eq(FILE_SEND_PORT))
             .return_const(());
-
-        consolidate_firewall(&requested_state, &wireguard_interface, &firewall)
-            .await
-            .unwrap();
     }
 
-    #[tokio::test]
-    async fn add_currently_allowed_ips_only_to_network_whitelist() {
-        let mut wireguard_interface = MockWireGuard::new();
-        let mut firewall = MockFirewall::new();
-
-        let pub_key = SecretKey::gen().public();
-        let ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
-
-        let requested_state = create_requested_state(vec![(pub_key, vec![ip], true, false)]);
-
-        let interface = create_wireguard_interface(vec![(pub_key, vec![ip])]);
-
-        wireguard_interface
-            .expect_get_interface()
-            .return_once(move || Ok(interface));
-        firewall
-            .expect_add_to_peer_whitelist()
-            .once()
-            .with(eq(pub_key))
-            .return_const(());
-        firewall.expect_add_to_port_whitelist().never();
-
-        consolidate_firewall(&requested_state, &wireguard_interface, &firewall)
-            .await
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn add_currently_allowed_ips_only_to_porty_whitelist() {
-        let mut wireguard_interface = MockWireGuard::new();
-        let mut firewall = MockFirewall::new();
-
-        let pub_key = SecretKey::gen().public();
-        let ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
-
-        let requested_state = create_requested_state(vec![(pub_key, vec![ip], false, true)]);
-
-        let interface = create_wireguard_interface(vec![(pub_key, vec![ip])]);
-
-        wireguard_interface
-            .expect_get_interface()
-            .return_once(move || Ok(interface));
-        firewall.expect_add_to_peer_whitelist().never();
-        firewall
-            .expect_add_to_port_whitelist()
-            .once()
-            .with(eq(pub_key), eq(FILE_SEND_PORT))
-            .return_const(());
-
-        consolidate_firewall(&requested_state, &wireguard_interface, &firewall)
-            .await
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn remove_old_ips_from_firewall() {
-        let mut wireguard_interface = MockWireGuard::new();
-        let mut firewall = MockFirewall::new();
-
-        let pub_key = SecretKey::gen().public();
-        let ip1 = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
-        let ip2 = IpAddr::V4(Ipv4Addr::new(5, 6, 7, 8));
-
-        let requested_state = create_requested_state(vec![]);
-
-        let interface = create_wireguard_interface(vec![(pub_key, vec![ip1.clone(), ip2.clone()])]);
-
-        wireguard_interface
-            .expect_get_interface()
-            .return_once(move || Ok(interface));
+    fn expect_remove_from_peer_whitelist(firewall: &mut MockFirewall, pub_key: PublicKey) {
         firewall
             .expect_remove_from_peer_whitelist()
-            .once()
             .with(eq(pub_key))
+            .once()
             .return_const(());
+    }
+
+    fn expect_add_to_port_whitelist(firewall: &mut MockFirewall, pub_key: PublicKey) {
+        firewall
+            .expect_add_to_port_whitelist()
+            .with(eq(pub_key), eq(FILE_SEND_PORT))
+            .once()
+            .return_const(());
+    }
+
+    fn expect_remove_from_port_whitelist(firewall: &mut MockFirewall, pub_key: PublicKey) {
         firewall
             .expect_remove_from_port_whitelist()
-            .once()
             .with(eq(pub_key))
+            .once()
             .return_const(());
+    }
 
-        consolidate_firewall(&requested_state, &wireguard_interface, &firewall)
+    fn expect_get_peer_whitelist(firewall: &mut MockFirewall, pub_keys: Vec<PublicKey>) {
+        firewall
+            .expect_get_peer_whitelist()
+            .return_once(move || pub_keys.into_iter().collect());
+    }
+
+    fn expect_get_port_whitelist(firewall: &mut MockFirewall, pub_keys: Vec<PublicKey>) {
+        firewall
+            .expect_get_port_whitelist()
+            .return_once(move || pub_keys.into_iter().map(|k| (k, FILE_SEND_PORT)).collect());
+    }
+
+    #[tokio::test]
+    async fn add_newly_requested_peers_to_firewall() {
+        let mut firewall = MockFirewall::new();
+
+        let pub_key_1 = SecretKey::gen().public();
+        let pub_key_2 = SecretKey::gen().public();
+        let pub_key_3 = SecretKey::gen().public();
+        let pub_key_4 = SecretKey::gen().public();
+
+        let requested_state = create_requested_state(vec![
+            (pub_key_1, vec![], true, true),
+            (pub_key_2, vec![], true, false),
+            (pub_key_3, vec![], false, true),
+            (pub_key_4, vec![], false, false),
+        ]);
+
+        firewall
+            .expect_get_peer_whitelist()
+            .return_once(|| Default::default());
+
+        firewall
+            .expect_get_port_whitelist()
+            .return_once(|| Default::default());
+
+        expect_add_to_peer_whitelist(&mut firewall, pub_key_1);
+        expect_add_to_port_whitelist(&mut firewall, pub_key_1);
+
+        expect_add_to_peer_whitelist(&mut firewall, pub_key_2);
+
+        expect_add_to_port_whitelist(&mut firewall, pub_key_3);
+
+        consolidate_firewall(&requested_state, &firewall)
             .await
             .unwrap();
     }
 
     #[tokio::test]
-    async fn remove_ips_from_firewall_when_no_longer_incoming_allowed() {
-        let mut wireguard_interface = MockWireGuard::new();
+    async fn update_permissions_for_requested_peers_in_firewall() {
         let mut firewall = MockFirewall::new();
 
-        let pub_key = SecretKey::gen().public();
-        let ip1 = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
-        let ip2 = IpAddr::V4(Ipv4Addr::new(5, 6, 7, 8));
+        let pub_key_1 = SecretKey::gen().public();
+        let pub_key_2 = SecretKey::gen().public();
+        let pub_key_3 = SecretKey::gen().public();
+        let pub_key_4 = SecretKey::gen().public();
 
-        let requested_state = create_requested_state(vec![(
-            pub_key,
-            vec![ip1.clone(), ip2.clone()],
-            false,
-            false,
-        )]);
+        let requested_state = create_requested_state(vec![
+            (pub_key_1, vec![], true, true),
+            (pub_key_2, vec![], true, false),
+            (pub_key_3, vec![], false, true),
+            (pub_key_4, vec![], false, false),
+        ]);
 
-        let interface = create_wireguard_interface(vec![(pub_key, vec![ip1.clone(), ip2.clone()])]);
+        expect_get_peer_whitelist(
+            &mut firewall,
+            vec![pub_key_1, pub_key_2, pub_key_3, pub_key_4],
+        );
 
-        wireguard_interface
-            .expect_get_interface()
-            .return_once(move || Ok(interface));
+        expect_get_port_whitelist(
+            &mut firewall,
+            vec![pub_key_1, pub_key_2, pub_key_3, pub_key_4],
+        );
+
         firewall
-            .expect_remove_from_peer_whitelist()
-            .once()
-            .with(eq(pub_key))
-            .return_const(());
-        firewall
-            .expect_remove_from_port_whitelist()
-            .once()
-            .with(eq(pub_key))
-            .return_const(());
+            .expect_get_port_whitelist()
+            .return_once(|| Default::default());
 
-        consolidate_firewall(&requested_state, &wireguard_interface, &firewall)
+        expect_remove_from_port_whitelist(&mut firewall, pub_key_2);
+
+        expect_remove_from_peer_whitelist(&mut firewall, pub_key_3);
+
+        expect_remove_from_peer_whitelist(&mut firewall, pub_key_4);
+        expect_remove_from_port_whitelist(&mut firewall, pub_key_4);
+
+        consolidate_firewall(&requested_state, &firewall)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn add_vpn_exit_node_to_firewall() {
+        let mut firewall = MockFirewall::new();
+
+        let pub_key_1 = SecretKey::gen().public();
+        let pub_key_2 = SecretKey::gen().public();
+
+        let mut requested_state = create_requested_state(vec![(pub_key_1, vec![], false, false)]);
+
+        requested_state.exit_node = Some(ExitNode {
+            public_key: pub_key_2,
+            ..Default::default()
+        });
+
+        expect_get_peer_whitelist(&mut firewall, vec![pub_key_1]);
+        expect_get_port_whitelist(&mut firewall, vec![]);
+
+        expect_remove_from_peer_whitelist(&mut firewall, pub_key_1);
+
+        expect_add_to_peer_whitelist(&mut firewall, pub_key_2);
+
+        consolidate_firewall(&requested_state, &firewall)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn do_not_add_meshnet_exit_node_to_firewall_if_it_does_not_allow_incoming_connections() {
+        let mut firewall = MockFirewall::new();
+
+        let pub_key_1 = SecretKey::gen().public();
+
+        let mut requested_state = create_requested_state(vec![(pub_key_1, vec![], false, false)]);
+
+        requested_state.exit_node = Some(ExitNode {
+            public_key: pub_key_1,
+            ..Default::default()
+        });
+
+        expect_get_peer_whitelist(&mut firewall, vec![]);
+        expect_get_port_whitelist(&mut firewall, vec![]);
+
+        consolidate_firewall(&requested_state, &firewall)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn remove_meshnet_exit_node_from_firewall_if_it_does_not_allow_incoming_connections_anymore(
+    ) {
+        let mut firewall = MockFirewall::new();
+
+        let pub_key_1 = SecretKey::gen().public();
+
+        let mut requested_state = create_requested_state(vec![(pub_key_1, vec![], false, false)]);
+
+        requested_state.exit_node = Some(ExitNode {
+            public_key: pub_key_1,
+            ..Default::default()
+        });
+
+        expect_get_peer_whitelist(&mut firewall, vec![pub_key_1]);
+        expect_get_port_whitelist(&mut firewall, vec![]);
+
+        expect_remove_from_peer_whitelist(&mut firewall, pub_key_1);
+
+        consolidate_firewall(&requested_state, &firewall)
             .await
             .unwrap();
     }

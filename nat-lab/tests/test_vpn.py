@@ -9,6 +9,7 @@ from utils.connection_tracker import ConnectionTracker, ConnectionLimits
 from utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_with_conn_tracker,
+    new_connection_by_tag,
     ConnectionTag,
 )
 from utils.ping import Ping
@@ -16,8 +17,10 @@ from utils.ping import Ping
 
 async def _connect_vpn(
     connection: Connection,
+    vpn_connection: Connection,
     conn_tracker: ConnectionTracker,
     client: Client,
+    client_meshnet_ip: str,
     wg_server: dict,
     connection_key: str,
 ) -> None:
@@ -36,6 +39,9 @@ async def _connect_vpn(
     await testing.wait_long(conn_tracker.wait_for_event(connection_key))
 
     async with Ping(connection, config.PHOTO_ALBUM_IP).run() as ping:
+        await testing.wait_long(ping.wait_for_next_ping())
+
+    async with Ping(vpn_connection, client_meshnet_ip).run() as ping:
         await testing.wait_long(ping.wait_for_next_ping())
 
     ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
@@ -92,6 +98,10 @@ async def test_vpn_connection(
             )
         )
 
+        vpn_connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_VPN_1)
+        )
+
         ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
         await testing.wait_long(conn_tracker.wait_for_event("stun"))
@@ -100,8 +110,15 @@ async def test_vpn_connection(
             Client(connection, alpha, adapter_type).run()
         )
         await _connect_vpn(
-            connection, conn_tracker, client_alpha, config.WG_SERVER, "vpn_1"
+            connection,
+            vpn_connection,
+            conn_tracker,
+            client_alpha,
+            alpha.ip_addresses[0],
+            config.WG_SERVER,
+            "vpn_1",
         )
+
         assert conn_tracker.get_out_of_limits() is None
 
 
@@ -157,6 +174,14 @@ async def test_vpn_reconnect(
             )
         )
 
+        vpn_1_connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_VPN_1)
+        )
+
+        vpn_2_connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_VPN_2)
+        )
+
         ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
@@ -165,7 +190,13 @@ async def test_vpn_reconnect(
         )
 
         await _connect_vpn(
-            connection, conn_tracker, client_alpha, config.WG_SERVER, "vpn_1"
+            connection,
+            vpn_1_connection,
+            conn_tracker,
+            client_alpha,
+            alpha.ip_addresses[0],
+            config.WG_SERVER,
+            "vpn_1",
         )
 
         await testing.wait_long(
@@ -178,6 +209,12 @@ async def test_vpn_reconnect(
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         await _connect_vpn(
-            connection, conn_tracker, client_alpha, config.WG_SERVER_2, "vpn_2"
+            connection,
+            vpn_2_connection,
+            conn_tracker,
+            client_alpha,
+            alpha.ip_addresses[0],
+            config.WG_SERVER_2,
+            "vpn_2",
         )
         assert conn_tracker.get_out_of_limits() is None

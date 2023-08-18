@@ -45,7 +45,6 @@ use wg::uapi::{self, PeerState};
 
 use std::{
     collections::HashSet,
-    convert::TryInto,
     future::Future,
     io::{Error as IoError, ErrorKind},
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -94,8 +93,8 @@ pub enum Error {
     BadPublicKey,
     #[error("Invalid node configuration")]
     InvalidNode,
-    #[error("Dublicate exit node")]
-    DuplicateExitNode,
+    #[error("Configured exit node is not a meshnet node and does not have an endpoint set")]
+    EndpointNotProvided,
     #[error("Deleting non-existant node")]
     InvalidDelete,
     #[error("Meshnet IP is not set for the node")]
@@ -1316,38 +1315,30 @@ impl Runtime {
     }
 
     async fn connect_exit_node(&mut self, exit_node: &ExitNode) -> Result {
-        let mut node: Node = exit_node.try_into()?;
+        let exit_node = exit_node.clone();
 
         // dns socket for macos should only be bound to tunnel interface when connected to exit,
         // otherwise with no exit dns peer will try to forward packets through tunnel and fail
         bind_tun::set_should_bind(true);
 
-        let wg_peer = self
-            .entities
-            .wireguard_interface
-            .get_interface()
-            .await?
-            .peers
-            .get(&node.public_key)
-            .cloned();
+        let is_meshnet_exit_node = self
+            .requested_state
+            .meshnet_config
+            .as_ref()
+            .and_then(|config| config.peers.as_deref())
+            .map(|peers| peers.iter().any(|p| p.public_key == exit_node.public_key))
+            .unwrap_or_default();
 
-        if let Some(wg_peer) = wg_peer {
-            node.is_vpn = false;
-            node.endpoint = wg_peer.endpoint;
-
-            //  forward dns traffic to exit peer's dns resolver
+        if is_meshnet_exit_node {
             if let Some(dns) = &self.entities.dns.lock().await.resolver {
                 self.reconfigure_dns_peer(dns, &dns.get_default_dns_servers())
                     .await?;
             }
-        } else {
-            node.is_vpn = true;
-            self.entities
-                .firewall
-                .add_to_peer_whitelist(node.public_key);
+        } else if exit_node.endpoint.is_none() {
+            return Err(Error::EndpointNotProvided);
         }
 
-        self.requested_state.exit_node = Some(exit_node.clone());
+        self.requested_state.exit_node = Some(exit_node);
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities).await
     }
 
