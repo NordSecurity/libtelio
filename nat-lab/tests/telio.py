@@ -524,7 +524,7 @@ class Client:
 
     async def _configure_interface(self) -> bool:
         if not self._interface_configured:
-            await self.get_router().setup_interface(self._node.ip_addresses[0])
+            await self.get_router().setup_interface(self._node.ip_addresses)
 
             await self.get_router().create_meshnet_route()
             self._interface_configured = True

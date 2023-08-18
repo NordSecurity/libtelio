@@ -447,7 +447,7 @@ async def test_vpn_plus_mesh_over_direct(
                 beta_conn_tracker.wait_for_event("derp_1"),
             )
         )
-        await testing.wait_lengthy(
+        await testing.wait_defined(
             asyncio.gather(
                 client_alpha.wait_for_state_peer(
                     beta.public_key, [State.Connected], [PathType.Direct]
@@ -455,7 +455,8 @@ async def test_vpn_plus_mesh_over_direct(
                 client_beta.wait_for_state_peer(
                     alpha.public_key, [State.Connected], [PathType.Direct]
                 ),
-            )
+            ),
+            60,
         )
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:

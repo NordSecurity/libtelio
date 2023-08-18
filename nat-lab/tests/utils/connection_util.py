@@ -31,6 +31,7 @@ class ConnectionTag(Enum):
     DOCKER_SHARED_CLIENT_1 = auto()
     DOCKER_OPEN_INTERNET_CLIENT_1 = auto()
     DOCKER_OPEN_INTERNET_CLIENT_2 = auto()
+    DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK = auto()
     DOCKER_UDP_BLOCK_CLIENT_1 = auto()
     DOCKER_UDP_BLOCK_CLIENT_2 = auto()
     WINDOWS_VM = auto()
@@ -63,6 +64,9 @@ DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_SHARED_CLIENT_1: "shared-client-01",
     ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1: "open-internet-client-01",
     ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2: "open-internet-client-02",
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK: (
+        "open-internet-client-dual-stack"
+    ),
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: "udp-block-client-01",
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: "udp-block-client-02",
     ConnectionTag.DOCKER_CONE_GW_1: "cone-gw-01",
@@ -98,6 +102,7 @@ DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {
     ConnectionTag.MAC_VM: ConnectionTag.DOCKER_CONE_GW_3,
     ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1: ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
     ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2: ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2,
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK: ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
 }
 
 LAN_ADDR_MAP: Dict[ConnectionTag, str] = {
@@ -112,6 +117,7 @@ LAN_ADDR_MAP: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_SHARED_CLIENT_1: "192.168.101.67",
     ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1: "10.0.11.2",
     ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2: "10.0.11.3",
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK: "10.0.11.4",
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: "192.168.110.100",
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: "192.168.111.100",
     ConnectionTag.WINDOWS_VM: "10.55.0.11",
@@ -128,6 +134,12 @@ LAN_ADDR_MAP: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_UDP_BLOCK_GW_2: "192.168.111.254",
     ConnectionTag.DOCKER_UPNP_GW_1: "192.168.105.254",
     ConnectionTag.DOCKER_UPNP_GW_2: "192.168.112.254",
+}
+
+LAN_V6_ADDR_MAP: Dict[ConnectionTag, str] = {
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK: (
+        "2001:0db8:85a4::dead:beef:ceed"
+    ),
 }
 
 
