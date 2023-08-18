@@ -79,12 +79,12 @@ async def test_process_run_success(
         )
         async with connection.create_process(ping_command).run() as process:
             await process.wait_stdin_ready()
-            assert " ".join(ping_command) in await _get_running_process_list(connection)
             while (
                 config.PHOTO_ALBUM_IP not in process.get_stdout()
                 and config.PHOTO_ALBUM_IP not in process.get_stderr()
             ):
                 await asyncio.sleep(0.1)
+            assert " ".join(ping_command) in await _get_running_process_list(connection)
         assert " ".join(ping_command) not in await _get_running_process_list(connection)
 
 
@@ -120,14 +120,14 @@ async def test_process_run_fail(
         with pytest.raises(ProcessExecError) as e:
             async with connection.create_process(ping_command).run() as process:
                 await process.wait_stdin_ready()
-                assert " ".join(ping_command) in await _get_running_process_list(
-                    connection
-                )
                 while (
                     error_msg not in process.get_stdout()
                     and error_msg not in process.get_stderr()
                 ):
                     await asyncio.sleep(0.1)
+                assert " ".join(ping_command) in await _get_running_process_list(
+                    connection
+                )
         assert e.value.cmd == ping_command
         assert " ".join(ping_command) not in await _get_running_process_list(connection)
 
@@ -191,13 +191,54 @@ async def test_process_run_cancel(
         with pytest.raises(asyncio.CancelledError):
             async with connection.create_process(ping_command).run() as process:
                 await process.wait_stdin_ready()
-                assert " ".join(ping_command) in await _get_running_process_list(
-                    connection
-                )
                 while (
                     config.PHOTO_ALBUM_IP not in process.get_stdout()
                     and config.PHOTO_ALBUM_IP not in process.get_stderr()
                 ):
                     await asyncio.sleep(0.1)
+                assert " ".join(ping_command) in await _get_running_process_list(
+                    connection
+                )
                 raise asyncio.CancelledError
+        assert " ".join(ping_command) not in await _get_running_process_list(connection)
+
+
+@pytest.mark.parametrize(
+    "connection_tag,ping_command",
+    [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            ["ping", config.PHOTO_ALBUM_IP],
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            ["ping", "-t", config.PHOTO_ALBUM_IP],
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            ["ping", config.PHOTO_ALBUM_IP],
+            marks=pytest.mark.mac,
+        ),
+    ],
+)
+async def test_process_run_general_exception(
+    connection_tag: ConnectionTag, ping_command: list[str]
+):
+    async with AsyncExitStack() as exit_stack:
+        connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(connection_tag)
+        )
+        with pytest.raises(Exception):
+            async with connection.create_process(ping_command).run() as process:
+                await process.wait_stdin_ready()
+                while (
+                    config.PHOTO_ALBUM_IP not in process.get_stdout()
+                    and config.PHOTO_ALBUM_IP not in process.get_stderr()
+                ):
+                    await asyncio.sleep(0.1)
+                assert " ".join(ping_command) in await _get_running_process_list(
+                    connection
+                )
+                raise Exception
         assert " ".join(ping_command) not in await _get_running_process_list(connection)
