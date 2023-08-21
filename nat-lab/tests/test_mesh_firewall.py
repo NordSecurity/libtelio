@@ -16,6 +16,7 @@ from utils.ping import Ping
 
 
 @pytest.mark.asyncio
+@pytest.mark.derp
 async def test_mesh_firewall_successful_passthrough() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -86,6 +87,7 @@ async def test_mesh_firewall_successful_passthrough() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.derp
 async def test_mesh_firewall_reject_packet() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -153,6 +155,7 @@ async def test_mesh_firewall_reject_packet() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.derp
 async def test_blocking_incoming_connections_from_exit_node() -> None:
     # This tests recreates LLT-3449
     async with AsyncExitStack() as exit_stack:
@@ -323,6 +326,7 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.derp
 @pytest.mark.parametrize(
     "allow_incoming_connections,allow_peer_send_file,port,successful",
     [
@@ -477,6 +481,7 @@ async def test_mesh_firewall_file_share_port(
 
 
 @pytest.mark.asyncio
+@pytest.mark.derp
 @pytest.mark.parametrize(
     "alpha_adapter_type, beta_adapter_type",
     [
@@ -617,6 +622,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
 
 
 @pytest.mark.asyncio
+@pytest.mark.derp
 @pytest.mark.parametrize(
     "alpha_adapter_type, beta_adapter_type",
     [

@@ -15,6 +15,7 @@ from utils.ping import Ping
 
 
 @pytest.mark.asyncio
+@pytest.mark.derp
 @pytest.mark.long
 @pytest.mark.timeout(180 + 60)
 @pytest.mark.parametrize(

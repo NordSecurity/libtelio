@@ -49,6 +49,7 @@ async def _connect_vpn(
 
 
 @pytest.mark.asyncio
+@pytest.mark.vpn
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type,public_ip",
     [
@@ -123,6 +124,7 @@ async def test_vpn_connection(
 
 
 @pytest.mark.asyncio
+@pytest.mark.vpn
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type,public_ip",
     [
