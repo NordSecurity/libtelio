@@ -8,6 +8,7 @@ from utils.connection_util import ConnectionTag, new_connection_by_tag
 
 
 @pytest.mark.asyncio
+@pytest.mark.derp
 async def test_telio_tasks_with_all_features() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()

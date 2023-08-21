@@ -49,7 +49,7 @@ services:
   derp-01:
     hostname: derp-01
     image: nat-lab:base
-    entrypoint: /usr/bin/nordderper
+    entrypoint: /opt/bin/derp-server
     networks:
       internet:
         ipv4_address: 10.0.10.1
@@ -59,7 +59,7 @@ services:
   derp-02:
     hostname: derp-02
     image: nat-lab:base
-    entrypoint: /usr/bin/nordderper
+    entrypoint: /opt/bin/derp-server
     networks:
       internet:
         ipv4_address: 10.0.10.2
@@ -69,7 +69,7 @@ services:
   derp-03:
     hostname: derp-03
     image: nat-lab:base
-    entrypoint: /usr/bin/nordderper
+    entrypoint: /opt/bin/derp-server
     networks:
       internet:
         ipv4_address: 10.0.10.3

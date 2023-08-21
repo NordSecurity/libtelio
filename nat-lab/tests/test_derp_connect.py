@@ -16,6 +16,7 @@ DERP3_IP = str(DERP_TERTIARY["ipv4"])
 
 
 @pytest.mark.asyncio
+@pytest.mark.derp
 # test client reconnection
 async def test_derp_reconnect_2clients() -> None:
     # TODO test tcp keepalive
@@ -109,6 +110,7 @@ async def test_derp_reconnect_2clients() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.derp
 # test client reconnection
 async def test_derp_reconnect_3clients() -> None:
     # TODO test tcp keepalive
@@ -287,6 +289,7 @@ async def test_derp_reconnect_3clients() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.derp
 # test client reconnection
 async def test_derp_restart() -> None:
     async with AsyncExitStack() as exit_stack:
@@ -509,6 +512,7 @@ async def test_derp_restart() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.derp
 async def test_derp_server_list_exhaustion() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()

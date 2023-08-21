@@ -16,6 +16,7 @@ from utils.ping import Ping
 
 
 @pytest.mark.asyncio
+@pytest.mark.derp
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type",
     [
