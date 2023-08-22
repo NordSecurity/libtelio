@@ -1,4 +1,4 @@
-//! Types for basic io comuncation between tasks
+//! Types for basic io communication between tasks
 
 use futures::Future;
 use tokio::sync::broadcast;
@@ -13,7 +13,7 @@ pub type McChanSendError<T> = broadcast::error::SendError<T>;
 /// Receive error type for McChan
 pub type McChanRcvError = broadcast::error::RecvError;
 
-/// Default size to be used as backing buffer for queues.
+/// Default size to be used as backing buffer for queues
 pub const DEFAULT_BUFFER_SIZE: usize = 4096;
 
 /// Types for multi producer, single consumer channels
@@ -21,26 +21,26 @@ pub mod chan {
     /// Default sender channel
     pub type Tx<T> = tokio::sync::mpsc::Sender<T>;
 
-    /// Default reciever channel
+    /// Default receiver channel
     pub type Rx<T> = tokio::sync::mpsc::Receiver<T>;
 }
 
-/// Channel encapsulating multi producer, single consumer send and reciever sides
+/// Channel encapsulating multi producer, single consumer send and receiver sides
 pub struct Chan<T> {
-    /// Recieve half.
+    /// Receive half
     pub rx: chan::Rx<T>,
-    /// Send half.
+    /// Send half
     pub tx: chan::Tx<T>,
 }
 
 impl<T: Send> Chan<T> {
-    /// Create a channel pointing to it self of requested size.
+    /// Create a channel pointing to it self of requested size
     pub fn new(buffer: usize) -> Self {
         let (tx, rx) = mpsc::channel::<T>(buffer);
         Self { tx, rx }
     }
 
-    /// Create two channels piped to each other, with specified buffer size.
+    /// Create two channels piped to each other, with specified buffer size
     pub fn pipe_with_size(buffer: usize) -> (Self, Self) {
         let (ltx, rrx) = mpsc::channel::<T>(buffer);
         let (rtx, lrx) = mpsc::channel::<T>(buffer);
@@ -48,7 +48,7 @@ impl<T: Send> Chan<T> {
         (Self { tx: ltx, rx: lrx }, Self { tx: rtx, rx: rrx })
     }
 
-    /// Create two channels piped to each other, with default buffer size.
+    /// Create two channels piped to each other, with default buffer size
     pub fn pipe() -> (Self, Self) {
         Self::pipe_with_size(DEFAULT_BUFFER_SIZE)
     }
@@ -64,26 +64,26 @@ impl<T: Send> Default for Chan<T> {
 pub mod mc_chan {
     /// Default sender channel
     pub type Tx<T> = tokio::sync::broadcast::Sender<T>;
-    /// Default reciever channel
+    /// Default receiver channel
     pub type Rx<T> = tokio::sync::broadcast::Receiver<T>;
 }
 
-/// Channel encapsulating multi producer, multi consumer send and reciever sides
+/// Channel encapsulating multi producer, multi consumer send and receiver sides
 pub struct McChan<T> {
-    /// Recieve half
+    /// Receive half
     pub rx: mc_chan::Rx<T>,
     /// Send half
     pub tx: mc_chan::Tx<T>,
 }
 
 impl<T: Clone> McChan<T> {
-    /// Create a channel pointing to it self of requested size.
+    /// Create a channel pointing to it self of requested size
     pub fn new(buffer: usize) -> Self {
         let (tx, rx) = broadcast::channel::<T>(buffer);
         Self { tx, rx }
     }
 
-    /// Create two channels piped to each other, with specified buffer size.
+    /// Create two channels piped to each other, with specified buffer size
     pub fn pipe_with_size(buffer: usize) -> (Self, Self) {
         let (ltx, rrx) = broadcast::channel::<T>(buffer);
         let (rtx, lrx) = broadcast::channel::<T>(buffer);
@@ -91,7 +91,7 @@ impl<T: Clone> McChan<T> {
         (Self { tx: ltx, rx: lrx }, Self { tx: rtx, rx: rrx })
     }
 
-    /// Create two channels piped to each other, with default buffer size.
+    /// Create two channels piped to each other, with default buffer size
     pub fn pipe() -> (Self, Self) {
         Self::pipe_with_size(DEFAULT_BUFFER_SIZE)
     }
@@ -130,7 +130,7 @@ mod tests {
 
             while tx_tick < TICKS && rx_tick < TICKS {
                 tokio::select! {
-                    // Simulate outisde tx A <- <Self> <- B
+                    // Simulate outside tx A <- <Self> <- B
                     Some(data) = delay(ch.rx.recv()), if rx_tick <= TICKS => {
                         rx_tick += 1;
                         println!("{} <-- {}: {}", msg[0], expect[0], rx_tick);
@@ -167,21 +167,21 @@ mod tests {
 
             while tx_tick < TICKS || rx_tick < TICKS {
                 tokio::select! {
-                    // Simulate outisde tx A <- <Self> <- B
+                    // Simulate outside tx A <- <Self> <- B
                     Some(data) = delay(ch.rx.recv()) => {
                         rx_tick += 1;
                         println!("{} <-- {}: {}", msg[0], expect[0], rx_tick);
                         assert_eq!(data, expect);
                     }
-                    // Enforce back presure
+                    // Enforce back pressure
                     Ok(permit) = ch.tx.reserve(), if my_permit.is_none() => {
                         tx_tick += 1;
                         println!("{} -x- {}: {}", msg[0], expect[0], tx_tick);
                         my_permit.replace(permit);
                     }
-                    // Simulate outisde rx A -> <Self> -> B
+                    // Simulate outside rx A -> <Self> -> B
                     _ = sleep(SPEED), if my_permit.is_some() => {
-                        let permit = my_permit.take().expect("Was checked aready to be some.");
+                        let permit = my_permit.take().expect("Was checked already to be some.");
                         println!("{} --> {}: {}", msg[0], expect[0], tx_tick);
                         let _ = permit.send(msg.clone());
                     }
@@ -210,7 +210,7 @@ mod tests {
 
             while tx_tick < TICKS && rx_tick < TICKS {
                 tokio::select! {
-                    // Simulate outisde tx A <- <Self> <- B
+                    // Simulate outside tx A <- <Self> <- B
                     Some(data) = delay(ch.rx.recv()), if rx_tick <= TICKS => {
                         rx_tick += 1;
                         println!("{} <-- {}: {}", msg[0], expect[0], rx_tick);
@@ -239,7 +239,7 @@ mod tests {
         .expect("Should have not deadlocked!!");
     }
 
-    async fn delay<T>(fut: impl std::future::Future<Output = T>) -> T {
+    async fn delay<T>(fut: impl Future<Output = T>) -> T {
         sleep(SPEED * 3).await;
         fut.await
     }

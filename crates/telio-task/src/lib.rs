@@ -4,11 +4,11 @@
 //!
 //! To be a component these factors should be met:
 //! * Has runtime behaviour:
-//!     - Needs to do something periodicaly
+//!     - Needs to do something periodically
 //!     - React to events.
 //!     - Generates events
 //!     - Read/Writes data.
-//! * Is updateable during runtime.
+//! * Is updatable during runtime.
 //!
 
 mod macros;

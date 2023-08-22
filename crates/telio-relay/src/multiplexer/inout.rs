@@ -24,7 +24,7 @@ where
         Self(Joined(chan))
     }
 
-    /// Get refrences to split halfs
+    /// Get references to split halves
     pub fn split(&mut self) -> Option<(&mut SplitSink<T, I>, &mut SplitStream<T>)> {
         self.in_place(Self::into_split);
         match &mut self.0 {
@@ -33,7 +33,7 @@ where
         }
     }
 
-    /// Get refrence to joined type
+    /// Get reference to joined type
     pub fn joined(&mut self) -> Result<Option<&mut T>, ReuniteError<T, I>> {
         self.try_in_place(Self::into_joined)?;
         Ok(match &mut self.0 {

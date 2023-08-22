@@ -1,6 +1,10 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
-// TODO(862): Remove for final commit
-#![allow(unused)]
+#![deny(missing_docs)]
+
+//! Crate responsible for communicating with Derp.
+//! It defines two tasks:
+//!     derp: for direct communication with Derp,
+//!     multiplexer: for distributing Derp traffic to other crates
 
 pub mod derp;
 pub mod multiplexer;

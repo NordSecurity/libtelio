@@ -196,7 +196,7 @@ impl Sink<(PublicKey, PacketRelayed)> for MultiChannel {
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         for chan in self.channels.values_mut() {
-            // [PollSender] flush compleates afer single poll;
+            // [PollSender] flush completes after single poll
             let _ = chan.tx.poll_flush_unpin(cx);
         }
         Poll::Ready(Ok(()))
@@ -204,7 +204,7 @@ impl Sink<(PublicKey, PacketRelayed)> for MultiChannel {
 
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         for chan in self.channels.values_mut() {
-            // [PollSender] close compleates afer single poll;
+            // [PollSender] close completes after single poll
             let _ = chan.tx.poll_close_unpin(cx);
         }
         Poll::Ready(Ok(()))

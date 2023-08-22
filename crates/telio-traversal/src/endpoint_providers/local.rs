@@ -194,7 +194,7 @@ impl<T: WireGuard, G: GetIfAddrs> State<T, G> {
             let udp_port = match self.udp_socket.local_addr() {
                 Ok(addr) => addr.port(),
                 Err(e) => {
-                    telio_log_warn!("Skipping local interfaces poll due to failure to retreive udp socket addr {:?}", e);
+                    telio_log_warn!("Skipping local interfaces poll due to failure to retrieve udp socket addr {:?}", e);
                     return Err(e.into());
                 }
             };

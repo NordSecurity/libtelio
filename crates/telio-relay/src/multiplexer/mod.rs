@@ -1,10 +1,11 @@
+//! Module is used for distributing Derp traffic with other crates.
+
 mod inout;
 mod mc;
 
 use std::future::Future;
 
 use async_trait::async_trait;
-use futures::stream::ReuniteError;
 use futures::{sink::SinkExt, stream::StreamExt};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::PollSender;
@@ -17,14 +18,19 @@ use telio_utils::telio_log_error;
 use self::inout::InOut;
 use self::mc::MultiChannel;
 
+/// Multiplexer Error types
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// Component was stopped
     #[error("Component was stopped.")]
     Stopped,
+
+    /// Packet Types already handled by other channel
     #[error("Packet Types already handled by other channel.")]
     Occupied,
 }
 
+/// Multiplexer task exposed to other crates
 pub struct Multiplexer {
     task: Task<State>,
 }

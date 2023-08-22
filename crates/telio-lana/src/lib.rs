@@ -8,7 +8,7 @@ pub use telio_utils::telio_log_warn;
 #[cfg_attr(all(feature = "moose", not(docrs)), path = "event_log_moose.rs")]
 #[cfg_attr(any(not(feature = "moose"), docsrs), path = "event_log_file.rs")]
 pub mod event_log;
-/// Moduel containing moose callbacks
+/// Module containing moose callbacks
 pub mod moose_callbacks;
 pub use event_log::*;
 
@@ -56,7 +56,7 @@ macro_rules! lana {
 /// # Parameters:
 /// * event_path - path of the DB file where events will be stored. If such file does not exist, it will be created, otherwise reused.
 /// * app_version - Indicates the semantic version of the application.
-/// * prod - wether the events should be sent to production or not
+/// * prod - whether the events should be sent to production or not
 pub fn init_lana(
     event_path: String,
     app_version: String,

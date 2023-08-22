@@ -1,28 +1,31 @@
+//! This Task is used for communicating with Derp.
+//!
+//! It manages connections to Derp servers, acting as a mid point between Multiplexer module
+//! and actual server.
+//!
+//! Task is started with `DerpRelay::start_with()` and configured with `configure(config)`, where
+//! config contains sorted list of servers, the module will try to connect to them one at a time
+//! until first connection is made. For other configuration values, see `Config` description
+
 pub mod http;
 pub mod proto;
 
+use async_trait::async_trait;
+use futures::{future::select_all, Future};
+use generic_array::typenum::Unsigned;
 use std::collections::{HashMap, HashSet};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-
-#[cfg(windows)]
-use std::os::windows::io::RawSocket;
-
-use async_trait::async_trait;
-use futures::FutureExt;
-use futures::{future::select_all, Future};
-use generic_array::typenum::Unsigned;
-use serde::{Deserialize, Serialize};
 use telio_crypto::{PublicKey, SecretKey};
 use telio_model::{
     api_config::FeatureDerp,
     config::{RelayState, Server},
 };
 use telio_proto::{
-    Codec, CodecError, CodecResult, DerpPollRequestMsg, DerpPollResponseMsg, PacketControl,
-    PacketRelayed, PacketTypeControl, PacketTypeRelayed, PeersStatesMap, Session,
+    Codec, DerpPollRequestMsg, PacketControl, PacketRelayed, PacketTypeRelayed, PeersStatesMap,
+    Session,
 };
 use telio_sockets::SocketPool;
 use telio_task::io::{wait_for_tx, Chan};
@@ -43,10 +46,11 @@ use core::result::Result;
 use generic_array::GenericArray;
 use rand::{rngs::StdRng, SeedableRng};
 
-use self::{http::connect_http_and_start, http::DerpConnection, http::Protect};
+use self::{http::connect_http_and_start, http::DerpConnection};
 
 pub use self::{proto::Error as DerpError, proto::FrameChannel};
 
+/// Helper container structure for specific server ordering
 #[derive(Clone, Debug, Default)]
 pub struct SortedServers {
     servers: Vec<Server>,
@@ -54,6 +58,7 @@ pub struct SortedServers {
 }
 
 impl SortedServers {
+    /// Create SortedServers with default server sorting - by their weight
     pub fn new(mut servers: Vec<Server>) -> Self {
         servers.sort_by(|a, b| a.weight.cmp(&b.weight));
         Self {
@@ -63,7 +68,7 @@ impl SortedServers {
     }
 
     fn get_next(&mut self) -> Option<Server> {
-        if (self.current_server_num < self.servers.len()) {
+        if self.current_server_num < self.servers.len() {
             let result = self.servers.get(self.current_server_num).cloned();
             self.current_server_num += 1;
             result
@@ -87,6 +92,7 @@ impl PartialEq for SortedServers {
     }
 }
 
+/// Derp task exposed to other crates
 pub struct DerpRelay {
     task: Task<State>,
 }
@@ -114,6 +120,9 @@ struct State {
     connecting: Option<JoinHandle<(Server, DerpConnection)>>,
 }
 
+/// Keepalive values that help keeping Derp connection in conntrack alive,
+/// so server can send traffic after being silent for a while
+/// *derp_keepalive* is also used as an interval for retrieving remote peer states.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DerpKeepaliveConfig {
     tcp_keepalive: u32,
@@ -140,16 +149,24 @@ impl From<&Option<FeatureDerp>> for DerpKeepaliveConfig {
     }
 }
 
+/// Derp configuration
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
+    /// Secret key of local node which is used for encryption/decryption of messages to other nodes
     pub secret_key: SecretKey,
+    /// List of potential Derp servers
     pub servers: SortedServers,
+    /// Remote peer list that we accept traffic from
     pub allowed_pk: HashSet<PublicKey>,
+    /// Timeout used for connecting to derp server
     pub timeout: Duration,
+    /// Path to certificate for tls connections
     pub ca_pem_path: Option<PathBuf>,
-    pub mesh_ip: IpAddr,
+    /// Keepalive values for derp connection
     pub server_keepalives: DerpKeepaliveConfig,
+    /// Enable mechanism for turning off keepalive to offline peers
     pub enable_polling: bool,
+    /// Derp polling will be done asking status of these meshnet peers
     pub meshnet_peers: Vec<PublicKey>,
 }
 
@@ -161,7 +178,6 @@ impl Default for Config {
             allowed_pk: Default::default(),
             servers: Default::default(),
             ca_pem_path: None,
-            mesh_ip: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
             server_keepalives: DerpKeepaliveConfig {
                 tcp_keepalive: proto::DERP_TCP_KEEPALIVE_INTERVAL,
                 derp_keepalive: proto::DERP_KEEPALIVE_INTERVAL,
@@ -174,7 +190,7 @@ impl Default for Config {
 
 impl State {
     async fn disconnect(&mut self) {
-        // Stop attenpts to connect
+        // Stop attempts to connect
         if let Some(c) = self.connecting.take() {
             c.abort();
         }
@@ -309,6 +325,7 @@ impl DerpRelay {
         .await;
     }
 
+    /// Get current Derp configuration
     pub async fn get_config(&self) -> Option<Config> {
         task_exec!(&self.task, async move |s| Ok(s.config.as_ref().cloned()))
             .await
@@ -316,7 +333,7 @@ impl DerpRelay {
             .flatten()
     }
 
-    /// Get current connection state (connected/diconnected)
+    /// Get current connection state (connected/disconnected)
     pub async fn get_conn_state(&self) -> bool {
         task_exec!(&self.task, async move |s| Ok(s.conn.is_some()))
             .await
@@ -324,6 +341,8 @@ impl DerpRelay {
             .unwrap_or(false)
     }
 
+    /// Get server we are currently connected to.
+    /// Returns None if we are not connected
     pub async fn get_connected_server(&self) -> Option<Server> {
         task_exec!(&self.task, async move |s| Ok(s.server.clone()))
             .await
@@ -631,8 +650,6 @@ impl Runtime for State {
         F: Future<Output = BoxAction<Self, Result<(), Self::Err>>> + Send,
     {
         // Only react to updates without config
-        let event = &self.event;
-        let socket_pool = &self.socket_pool;
         let config = match self.config.as_ref() {
             Some(c) => c,
             None => {
@@ -696,7 +713,7 @@ impl Runtime for State {
                     Some((permit, Some((pk, buf)))) = wait_for_tx(chan_tx, derp_relayed_read) => {
                         Self::handle_incoming_payload_relayed(permit, pk, buf, config).await;
                     },
-                    Some((permit, Some(buf))) = wait_for_tx(chan_tx, derp_direct_read) => {
+                    Some((_, Some(buf))) = wait_for_tx(chan_tx, derp_direct_read) => {
                         self.remote_peers_states = Self::handle_incoming_payload_direct(self.derp_poll_session, buf).await.unwrap_or_default();
                         telio_log_debug!("Remote peers statuses: {:?}", self.remote_peers_states);
                     }
@@ -755,7 +772,6 @@ impl Runtime for State {
 mod tests {
     use super::*;
     use std::time::Duration;
-    use telio_crypto::PublicKey;
     use telio_proto::DataMsg;
     use telio_sockets::NativeProtector;
     use telio_task::io::McChan;
@@ -834,7 +850,7 @@ mod tests {
     async fn test_derp_fallback() {
         let test_conf = DerpTestConfig::new();
 
-        let mut config = Config {
+        let config = Config {
             secret_key: test_conf.private_key,
             servers: SortedServers::new(vec![
                 // Should NOT work
@@ -888,7 +904,7 @@ mod tests {
     async fn test_retries_exhausted() {
         let test_conf = DerpTestConfig::new();
 
-        let mut config = Config {
+        let config = Config {
             secret_key: test_conf.private_key,
             servers: SortedServers::new(vec![
                 // Should NOT work
@@ -947,7 +963,7 @@ mod tests {
             tx: devent_tx,
         } = McChan::default();
 
-        let mut config = Config {
+        let config = Config {
             secret_key: test_conf.private_key,
             servers: SortedServers::new(vec![Server {
                 hostname: "de1047.nordvpn.com".into(),
@@ -957,7 +973,7 @@ mod tests {
             ..Default::default()
         };
 
-        let (mut derp_outter_ch, derp_inner_ch) = Chan::pipe();
+        let (mut derp_outer_ch, derp_inner_ch) = Chan::pipe();
 
         let test_derp = DerpRelay::start_with(
             derp_inner_ch,
@@ -975,13 +991,13 @@ mod tests {
         let derp_event = await_timeout!(devent_rx.recv()).unwrap();
         assert_eq!(RelayState::Connected, derp_event.conn_state);
 
-        await_timeout!(derp_outter_ch
+        await_timeout!(derp_outer_ch
             .tx
             .send((test_conf.private_key.public(), test_conf.payload.clone())))
         .unwrap();
 
         assert_eq!(
-            await_timeout!(derp_outter_ch.rx.recv()).unwrap(),
+            await_timeout!(derp_outer_ch.rx.recv()).unwrap(),
             ((test_conf.private_key.public(), test_conf.payload.clone()))
         );
 
