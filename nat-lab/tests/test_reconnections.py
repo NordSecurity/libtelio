@@ -16,6 +16,7 @@ from utils.ping import Ping
 
 @pytest.mark.asyncio
 @pytest.mark.derp
+@pytest.mark.xfail(reason="test is flaky - Jira issue: LLT-4161")
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type,",
     [

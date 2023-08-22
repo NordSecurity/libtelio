@@ -49,6 +49,7 @@ async def _connect_vpn(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(reason="test is flaky - Jira issue: LLT-4163")
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type,public_ip",
     [

@@ -301,6 +301,7 @@ async def test_event_content_vpn_connection(
 
 @pytest.mark.asyncio
 @pytest.mark.derp
+@pytest.mark.xfail(reason="test is flaky - Jira issue: LLT-4162")
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type",
     [
