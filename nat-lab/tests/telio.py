@@ -382,7 +382,7 @@ class Client:
                     yield self
             finally:
                 if not self._quit:
-                    await testing.wait_normal(self.stop_device())
+                    await testing.wait_long(self.stop_device())
                 if self._router:
                     await self._router.delete_vpn_route()
                     await self._router.delete_exit_node_route()
