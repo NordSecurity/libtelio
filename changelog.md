@@ -3,9 +3,9 @@
 ---
 ### Changelog
 * LLT-3990: BACKPORT Add initial heartbeat interval to feature config
+* LLT-4166: BACKPORT Bump tokio-rustls version
 
 <br>
-
 
 ### v4.0.7
 ### **Bruschetta**
