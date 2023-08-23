@@ -203,7 +203,7 @@ impl Authority for ForwardAuthority {
                     negative_ttl: _,
                     response_code,
                     trusted: _,
-                } => LookupError::from(*response_code),
+                } => LookupError::ResponseCode(*response_code),
                 _ => LookupError::from(ResponseCode::Unknown(0)),
             })
     }
