@@ -12,7 +12,7 @@ from utils.connection_util import ConnectionTag, new_connection_by_tag
 async def test_telio_tasks_with_all_features() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
-        alpha = api.default_config_alpha_node()
+        alpha = api.default_config_one_node()
         connection_alpha = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
         )

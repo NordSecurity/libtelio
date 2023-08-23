@@ -49,7 +49,6 @@ async def _connect_vpn(
 
 
 @pytest.mark.asyncio
-@pytest.mark.vpn
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type,public_ip",
     [
@@ -87,7 +86,7 @@ async def test_vpn_connection(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
-        alpha = api.default_config_alpha_node()
+        alpha = api.default_config_one_node()
         (connection, conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 alpha_connection_tag,
@@ -124,7 +123,6 @@ async def test_vpn_connection(
 
 
 @pytest.mark.asyncio
-@pytest.mark.vpn
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type,public_ip",
     [
@@ -163,7 +161,7 @@ async def test_vpn_reconnect(
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        alpha = api.default_config_alpha_node()
+        alpha = api.default_config_one_node()
         (connection, conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 alpha_connection_tag,

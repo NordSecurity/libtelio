@@ -144,6 +144,9 @@ async def new_connections_with_mesh_clients(
 
     (alpha, beta, gamma) = api.default_config_three_nodes()
 
+    if not (client3_type and endpoint_providers_3):
+        api.remove(gamma.id)
+
     (
         alpha_conn,
         alpha_conn_gw,

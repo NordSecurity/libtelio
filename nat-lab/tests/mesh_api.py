@@ -1,6 +1,38 @@
+import os
 import pprint
-from config import DERP_SERVERS
+import time
+import uuid
+from config import DERP_SERVERS, WG_SERVERS
+from python_wireguard import Key  # type: ignore
 from typing import Dict, Any, List, Tuple, Optional
+from utils.router import IPProto, get_ip_address_type
+
+GREEK_ALPHABET = [
+    "alpha",
+    "beta",
+    "gamma",
+    "delta",
+    "epsilon",
+    "zeta",
+    "eta",
+    "theta",
+    "iota",
+    "kappa",
+    "lambda",
+    "mu",
+    "nu",
+    "xi",
+    "omicron",
+    "pi",
+    "rho",
+    "sigma",
+    "tau",
+    "upsilon",
+    "phi",
+    "chi",
+    "psi",
+    "omega",
+]
 
 
 class NodeError(Exception):
@@ -163,58 +195,17 @@ class API:
 
         return meshmap
 
-    def default_config_alpha_node(self, is_local: bool = False) -> Node:
-        alpha = self.register(
-            name="alpha",
-            node_id="96ddb926-4b86-11ec-81d3-0242ac130003",
-            private_key="IAnPnSDobLEProbDcj0nKTroCyjr2w0Pr2nFa3z35Gg=",
-            public_key="1eX7Fy78bokD5ZSNO5G11R+28v4xzawlsRdSJoU3jDg=",
-            is_local=is_local,
-        )
-        self.assign_ip(alpha.id, "100.64.33.1")
-        self.assign_ip(
-            alpha.id, "fd00::dead:1"
-        )  # TODO correct subnet when we'll decide about the range
+    def default_config_one_node(self, is_local: bool = False) -> Node:
+        alpha, *_ = self.config_dynamic_nodes([is_local])
         return alpha
-
-    def default_config_beta_node(self, is_local: bool = False) -> Node:
-        beta = self.register(
-            name="beta",
-            node_id="7b4548ca-fe5a-4597-8513-896f38c6d6ae",
-            private_key="mODRJKABR4wDCjXn899QO6wb83azXKZF7hcfX8dWuUA=",
-            public_key="3XCOtCGl5tZJ8N5LksxkjfeqocW0BH2qmARD7qzHDkI=",
-            is_local=is_local,
-        )
-        self.assign_ip(beta.id, "100.64.33.2")
-        self.assign_ip(
-            beta.id, "fd00::dead:2"
-        )  # TODO correct subnet when we'll decide about the range
-        return beta
-
-    def default_config_gamma_node(self, is_local: bool = False) -> Node:
-        gamma = self.register(
-            name="gamma",
-            node_id="39388b1e-ebd8-11ec-8ea0-0242ac120002",
-            private_key="GN+D2Iy9p3UmyBZhgxU4AhbLT6sxY0SUhXu0a0TuiV4=",
-            public_key="UnB+btGMEBXcR7EchMi28Hqk0Q142WokO6n313dt3mc=",
-            is_local=is_local,
-        )
-        self.assign_ip(gamma.id, "100.64.33.3")
-        self.assign_ip(
-            gamma.id, "fd00::dead:3"
-        )  # TODO correct subnet when we'll decide about the range
-        return gamma
 
     def default_config_two_nodes(
         self, alpha_is_local: bool = False, beta_is_local: bool = False
     ) -> Tuple[Node, Node]:
-        alpha = self.default_config_alpha_node(alpha_is_local)
-        beta = self.default_config_beta_node(beta_is_local)
-
-        alpha.set_peer_firewall_settings(beta.id, allow_incoming_connections=True)
-        beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
-
-        return (alpha, beta)
+        alpha, beta, *_ = self.config_dynamic_nodes([alpha_is_local, beta_is_local])
+        alpha.set_peer_firewall_settings(beta.id, True)
+        beta.set_peer_firewall_settings(alpha.id, True)
+        return alpha, beta
 
     def default_config_three_nodes(
         self,
@@ -222,17 +213,73 @@ class API:
         beta_is_local: bool = False,
         gamma_is_local: bool = False,
     ) -> Tuple[Node, Node, Node]:
-        (alpha, beta) = self.default_config_two_nodes(alpha_is_local, beta_is_local)
-        gamma = self.default_config_gamma_node(gamma_is_local)
-
+        alpha, beta, gamma, *_ = self.config_dynamic_nodes(
+            [alpha_is_local, beta_is_local, gamma_is_local]
+        )
         alpha.set_peer_firewall_settings(gamma.id, allow_incoming_connections=True)
+        alpha.set_peer_firewall_settings(beta.id, allow_incoming_connections=True)
+        beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
         beta.set_peer_firewall_settings(gamma.id, allow_incoming_connections=True)
         gamma.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
         gamma.set_peer_firewall_settings(beta.id, allow_incoming_connections=True)
-
-        return (alpha, beta, gamma)
+        return alpha, beta, gamma
 
     def _get_node(self, node_id: str) -> Node:
         if node_id not in self.nodes:
             raise MissingNodeError(node_id)
         return self.nodes[node_id]
+
+    @classmethod
+    def get_allowed_ip_list(cls, addrs: List[str]) -> List[str]:
+        return [
+            ip + ("/32" if ip_type == IPProto.IPv4 else "/128")
+            for ip in addrs
+            if (ip_type := get_ip_address_type(ip)) is not None
+        ]
+
+    @classmethod
+    def setup_wg_servers(cls, node_list: List[Node], server_config: Dict[str, Any]):
+        def generate_peer_config(node: Node, allowed_ips: str) -> str:
+            return (
+                f"[Peer]\nPublicKey = {node.public_key}\nAllowedIPs = {allowed_ips}\n\n"
+            )
+
+        wg_conf = (
+            f"[Interface]\nPrivateKey = {server_config['private_key']}\nListenPort ="
+            f" {server_config['port']}\nAddress = 100.64.0.1/10, fd00::1/64\n\n"
+        )
+
+        for node in node_list:
+            wg_conf += generate_peer_config(
+                node, ", ".join(cls.get_allowed_ip_list(node.ip_addresses))
+            )
+
+        full_command = (
+            f"docker exec -d --privileged {server_config['container']} bash -c 'echo"
+            f' "{wg_conf}" > /etc/wireguard/wg0.conf; wg-quick down'
+            " /etc/wireguard/wg0.conf; wg-quick up /etc/wireguard/wg0.conf'"
+        )
+        os.system(full_command)
+
+    def config_dynamic_nodes(self, node_configs: List[bool]) -> Tuple[Node, ...]:
+        current_node_list_len = len(self.nodes)
+        for idx, is_local in enumerate(node_configs):
+            node_idx = current_node_list_len + idx
+            private, public = Key.key_pair()
+            node = self.register(
+                name=GREEK_ALPHABET[node_idx],
+                node_id=str(uuid.uuid1(node=node_idx, clock_seq=int(time.time()))),
+                private_key=str(private),
+                public_key=str(public),
+                is_local=is_local,
+            )
+            # TODO correct subnet when we'll decide about the range
+            self.assign_ip(node.id, f"100.64.33.{node_idx}")
+            self.assign_ip(node.id, f"fd00::dead:{node_idx}")
+
+        for wg_server in WG_SERVERS:
+            self.setup_wg_servers(list(self.nodes.values()), wg_server)
+
+        assert (len(node_configs) + current_node_list_len) == len(self.nodes)
+
+        return tuple(list(self.nodes.values())[current_node_list_len:])

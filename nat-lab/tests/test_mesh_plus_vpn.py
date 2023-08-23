@@ -18,7 +18,6 @@ from utils.ping import Ping
 
 @pytest.mark.asyncio
 @pytest.mark.derp
-@pytest.mark.vpn
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type",
     [
@@ -128,7 +127,6 @@ async def test_mesh_plus_vpn_one_peer(
 
 @pytest.mark.asyncio
 @pytest.mark.derp
-@pytest.mark.vpn
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type",
     [
@@ -255,7 +253,6 @@ async def test_mesh_plus_vpn_both_peers(
 
 @pytest.mark.asyncio
 @pytest.mark.derp
-@pytest.mark.vpn
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type,public_ip",
     [
@@ -377,7 +374,6 @@ async def test_vpn_plus_mesh(
 
 @pytest.mark.asyncio
 @pytest.mark.derp
-@pytest.mark.vpn
 @pytest.mark.timeout(150)
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type",
@@ -523,7 +519,6 @@ async def test_vpn_plus_mesh_over_direct(
 
 @pytest.mark.asyncio
 @pytest.mark.derp
-@pytest.mark.vpn
 @pytest.mark.timeout(150)
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type",

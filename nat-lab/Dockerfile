@@ -5,7 +5,6 @@ FROM ${CONTAINER_REGISTRY}/low-level-hacks/vpn/client/libtelio-build/natlab-deps
 LABEL org.opencontainers.image.authors="info@nordsec.com"
 
 COPY --chmod=0755 bin/ /opt/bin/
-COPY data/wg0.conf /
 COPY data/nordderper.deb /tmp/
 
 # well.... I do not know nftables yet... somebody please teach me.
