@@ -16,7 +16,7 @@ use telio_traversal::{
     cross_ping_check::CrossPingCheckTrait, SessionKeeperTrait, UpgradeSyncTrait,
     WireGuardEndpointCandidateChangeEvent,
 };
-use telio_utils::{telio_log_debug, telio_log_error, telio_log_info};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_info, telio_log_warn};
 use telio_wg::{uapi::Peer, WireGuard};
 use thiserror::Error as TError;
 use tokio::sync::Mutex;
@@ -436,6 +436,8 @@ async fn build_requested_meshnet_peers_list<
         Some(peers) => peers,
     };
 
+    let mut deduplicated_peer_ips = deduplicate_peer_ips(requested_peers);
+
     // map config peers into wg interface peers. Taking endpoint addresses from proxy state
     let mut requested_peers: BTreeMap<PublicKey, RequestedPeer> = requested_peers
         .iter()
@@ -445,16 +447,23 @@ async fn build_requested_meshnet_peers_list<
             let persistent_keepalive_interval = requested_state.keepalive_periods.proxying;
             let endpoint = proxy_endpoints.get(&public_key).cloned();
 
-            // Retreive node's meshnet IP from config, and convert it into `/32` network type
-            let allowed_ips = p.base.ip_addresses.clone().map_or(vec![], |ips| {
-                ips.iter()
-                    .map(|ip| match ip {
-                        IpAddr::V4(_) => IpNetwork::new(*ip, 32),
-                        IpAddr::V6(_) => IpNetwork::new(*ip, 128),
-                    })
-                    .filter_map(|ip_res| ip_res.ok())
-                    .collect()
-            });
+            // Retreive node's meshnet IP from config, and convert it into `/32` network type for v4, and `/128` for v6
+            let allowed_ips = deduplicated_peer_ips
+                .remove(&public_key)
+                .map_or(vec![], |ips| {
+                    ips.iter()
+                        .map(|ip| match ip {
+                            IpAddr::V4(_) => IpNetwork::new(*ip, 32),
+                            IpAddr::V6(_) => IpNetwork::new(*ip, 128),
+                        })
+                        .filter_map(|ip_res| ip_res.ok())
+                        .collect()
+                });
+            telio_log_debug!(
+                "Allowed IPs for peer with public key {:?}: {:?}",
+                &public_key,
+                &allowed_ips
+            );
 
             // Build telio_wg::uapi::Peer struct
             (
@@ -544,6 +553,47 @@ async fn build_requested_meshnet_peers_list<
     }
 
     Ok(requested_peers)
+}
+
+/// Internal peers will never have IP collisions, but external peers can collide with both internal and external peers
+/// In case of collision, exclude the colliding IPs from external peers
+/// If a peer ends up not having any IPs after deduplicating, the peer will be unreachable
+fn deduplicate_peer_ips(peers: &[telio_model::config::Peer]) -> HashMap<PublicKey, Vec<IpAddr>> {
+    let mut peer_ips = HashMap::new();
+    let mut occupied_ips = vec![];
+    let mut external_peers = vec![];
+    let mut process_ips_for_peer = |peer: &telio_model::config::Peer| {
+        if let Some(ips) = &peer.ip_addresses {
+            let ips = ips
+                .iter()
+                .filter_map(|ip| {
+                    if occupied_ips.contains(ip) {
+                        telio_log_warn!(
+                            "IP collision for peer with public key {:?} and IP {:?}",
+                            peer.public_key,
+                            ip
+                        );
+                        None
+                    } else {
+                        occupied_ips.push(*ip);
+                        Some(*ip)
+                    }
+                })
+                .collect();
+            peer_ips.insert(peer.public_key, ips);
+        }
+    };
+    for peer in peers {
+        if !peer.is_local {
+            external_peers.push(peer);
+        } else {
+            process_ips_for_peer(peer);
+        }
+    }
+    for peer in external_peers {
+        process_ips_for_peer(peer);
+    }
+    peer_ips
 }
 
 // Select endpoint for peer
@@ -1726,5 +1776,52 @@ mod tests {
         )]);
 
         f.consolidate_peers().await;
+    }
+
+    #[test]
+    fn test_ip_deduplication() {
+        fn make_peer(
+            public_key: PublicKey,
+            ip_addresses: Vec<IpAddr>,
+            is_local: bool,
+        ) -> telio_model::config::Peer {
+            let base = PeerBase {
+                public_key,
+                ip_addresses: Some(ip_addresses),
+                ..Default::default()
+            };
+            telio_model::config::Peer {
+                base,
+                is_local,
+                ..Default::default()
+            }
+        }
+
+        let peer1_key = SecretKey::gen().public();
+        let peer1_ips = vec!["1.2.3.4".parse().unwrap()];
+
+        let peer2_key = SecretKey::gen().public();
+        let peer2_ips = vec!["5.6.7.8".parse().unwrap()];
+
+        let peer3_key = SecretKey::gen().public();
+        let peer3_ips = vec!["1.2.3.4".parse().unwrap(), "9.10.11.12".parse().unwrap()];
+        let peer3_expected_ips: Vec<IpAddr> = vec!["9.10.11.12".parse().unwrap()];
+
+        let peer4_key = SecretKey::gen().public();
+        let peer4_ips = vec!["1.2.3.4".parse().unwrap(), "5.6.7.8".parse().unwrap()];
+
+        let peers = vec![
+            make_peer(peer1_key, peer1_ips.clone(), true),
+            make_peer(peer2_key, peer2_ips.clone(), true),
+            make_peer(peer3_key, peer3_ips.clone(), false),
+            make_peer(peer4_key, peer4_ips.clone(), false),
+        ];
+
+        let deduplicated_ips = deduplicate_peer_ips(&peers);
+
+        assert_eq!(deduplicated_ips[&peer1_key], peer1_ips);
+        assert_eq!(deduplicated_ips[&peer2_key], peer2_ips);
+        assert_eq!(deduplicated_ips[&peer3_key], peer3_expected_ips);
+        assert!(deduplicated_ips[&peer4_key].is_empty());
     }
 }
