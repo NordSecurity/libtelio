@@ -15,6 +15,7 @@
 * LLT-3869: Turn off relayed traffic to offline peers
 * LLT-3775: Add test for lana validators
 * LLT-4050: Add support for IPv6 packet handling in telio-dns
+* LLT-3875: Don't reconnect to Derp when Multiplexer channel is closed.
 
 <br>
 

@@ -486,8 +486,7 @@ async def test_event_content_meshnet_node_upgrade_direct(
                 ConnectionTag.DOCKER_CONE_CLIENT_2,
                 generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    # TODO: Change back derp limits max value to 2, when issue LLT-3875 is fixed
-                    derp_1_limits=ConnectionLimits(2, None),
+                    derp_1_limits=ConnectionLimits(2, 2),
                 ),
             )
         )
