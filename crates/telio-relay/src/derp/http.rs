@@ -4,11 +4,12 @@ use super::proto::{
 };
 use httparse::Status;
 use std::{
+    convert::TryFrom,
     fs::File,
     io::{BufReader, Cursor, Error as IoError, ErrorKind},
     net::SocketAddr,
     sync::Arc,
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 use telio_sockets::{SocketBufSizes, SocketPool, TcpParams};
 use telio_task::io::Chan;
@@ -25,12 +26,13 @@ use tokio::{
 };
 use tokio_rustls::{
     rustls::{
-        Certificate, ClientConfig, RootCertStore, ServerCertVerified, ServerCertVerifier, TLSError,
+        client::{ServerCertVerified, ServerCertVerifier, ServerName},
+        Certificate, ClientConfig, Error as TLSError, OwnedTrustAnchor, RootCertStore,
+        ALL_CIPHER_SUITES,
     },
     TlsConnector,
 };
 use url::{Host, Url};
-use webpki::DNSNameRef;
 use webpki_roots::TLS_SERVER_ROOTS;
 
 pub(crate) struct NoVerifier;
@@ -40,10 +42,12 @@ const SOCK_BUF_SZ: usize = 212992;
 impl ServerCertVerifier for NoVerifier {
     fn verify_server_cert(
         &self,
-        _roots: &RootCertStore,
-        _presented_certs: &[Certificate],
-        _dns_name: DNSNameRef,
+        _end_entity: &Certificate,
+        _intermediates: &[Certificate],
+        _server_name: &ServerName,
+        _scts: &mut dyn Iterator<Item = &[u8]>,
         _ocsp_response: &[u8],
+        _now: SystemTime,
     ) -> Result<ServerCertVerified, TLSError> {
         Ok(ServerCertVerified::assertion())
     }
@@ -133,25 +137,41 @@ pub async fn connect_http_and_start(
             .await
         }
         _ => {
-            let mut config = ClientConfig::new();
-            config
-                .root_store
-                .add_server_trust_anchors(&TLS_SERVER_ROOTS);
+            let trust_anchors = TLS_SERVER_ROOTS.iter().map(|trust_anchor| {
+                OwnedTrustAnchor::from_subject_spki_name_constraints(
+                    trust_anchor.subject,
+                    trust_anchor.spki,
+                    trust_anchor.name_constraints,
+                )
+            });
 
-            if let Some(path) = derp_config.ca_pem_path {
+            let mut root_store = RootCertStore::empty();
+            root_store.add_trust_anchors(trust_anchors);
+
+            if let Some(path) = &derp_config.ca_pem_path {
                 let root_cert_file = File::open(path)?;
                 let mut root_cert_file = BufReader::new(root_cert_file);
-                config.root_store.add_pem_file(&mut root_cert_file);
+                let der_certs = rustls_pemfile::certs(&mut root_cert_file).unwrap_or_default();
+                root_store.add_parsable_certificates(&der_certs);
+            }
+
+            let mut config = ClientConfig::builder()
+                .with_safe_defaults()
+                .with_root_certificates(root_store)
+                .with_no_client_auth();
+
+            if derp_config.ca_pem_path.is_some() {
                 config
                     .dangerous()
                     .set_certificate_verifier(Arc::new(NoVerifier));
             }
 
-            let dnsname = DNSNameRef::try_from_ascii_str(&hostname)?;
+            let server_name =
+                ServerName::try_from(hostname.as_str()).map_err(|_| "Invalid Server Name")?;
             let config = TlsConnector::from(Arc::new(config));
 
             connect_and_start(
-                config.connect(dnsname, stream).await?,
+                config.connect(server_name, stream).await?,
                 addr,
                 derp_config.secret_key,
                 derp_config.server_keepalives,
