@@ -56,13 +56,18 @@ async def test_upnp_route_removed() -> None:
             asyncio.gather(
                 alpha_client.wait_for_state_on_any_derp([State.Connected]),
                 beta_client.wait_for_state_on_any_derp([State.Connected]),
+            )
+        )
+        await testing.wait_defined(
+            asyncio.gather(
                 alpha_client.wait_for_state_peer(
                     beta.public_key, [State.Connected], [PathType.Direct]
                 ),
                 beta_client.wait_for_state_peer(
                     alpha.public_key, [State.Connected], [PathType.Direct]
                 ),
-            )
+            ),
+            60,
         )
 
         # Shutoff Upnpd on both gateways to wipe out all upnp created external
@@ -79,7 +84,7 @@ async def test_upnp_route_removed() -> None:
         await alpha_connection_gw.create_process(["upnpd", "eth0", "eth1"]).execute()
         await beta_connection_gw.create_process(["upnpd", "eth0", "eth1"]).execute()
 
-        await testing.wait_lengthy(
+        await testing.wait_defined(
             asyncio.gather(
                 alpha_client.wait_for_event_peer(
                     beta.public_key, [State.Connected], [PathType.Direct]
@@ -87,7 +92,8 @@ async def test_upnp_route_removed() -> None:
                 beta_client.wait_for_event_peer(
                     alpha.public_key, [State.Connected], [PathType.Direct]
                 ),
-            )
+            ),
+            60,
         )
 
         async with Ping(beta_connection, alpha.ip_addresses[0]).run() as ping:

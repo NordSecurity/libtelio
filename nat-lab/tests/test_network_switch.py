@@ -295,7 +295,7 @@ async def test_mesh_network_switch_direct(
             )
         )
 
-        await testing.wait_lengthy(
+        await testing.wait_defined(
             asyncio.gather(
                 alpha_client.wait_for_state_peer(
                     beta.public_key, [State.Connected], [PathType.Direct]
@@ -303,7 +303,8 @@ async def test_mesh_network_switch_direct(
                 beta_client.wait_for_state_peer(
                     alpha.public_key, [State.Connected], [PathType.Direct]
                 ),
-            )
+            ),
+            60,
         )
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
@@ -326,7 +327,7 @@ async def test_mesh_network_switch_direct(
                 ),
             )
         )
-        await testing.wait_lengthy(
+        await testing.wait_defined(
             asyncio.gather(
                 alpha_client.wait_for_state_peer(
                     beta.public_key, [State.Connected], [PathType.Direct]
@@ -334,7 +335,8 @@ async def test_mesh_network_switch_direct(
                 beta_client.wait_for_state_peer(
                     alpha.public_key, [State.Connected], [PathType.Direct]
                 ),
-            )
+            ),
+            60,
         )
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
