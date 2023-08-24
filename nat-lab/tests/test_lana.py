@@ -487,7 +487,6 @@ async def test_lana_all_external() -> None:
 
 @pytest.mark.moose
 @pytest.mark.derp
-@pytest.mark.vpn
 @pytest.mark.asyncio
 async def test_lana_with_vpn_connections() -> None:
     async with AsyncExitStack() as exit_stack:
@@ -728,7 +727,7 @@ async def test_lana_with_disconnected_node() -> None:
 async def test_lana_with_second_node_joining_later_meshnet_id_can_change() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
-        beta = api.default_config_beta_node(True)
+        beta = api.default_config_one_node(True)
         (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 ConnectionTag.DOCKER_CONE_CLIENT_2,
@@ -755,7 +754,7 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change() -> No
         assert beta_events
         initial_beta_meshnet_id = beta_events[0].fp
 
-        alpha = api.default_config_alpha_node(True)
+        alpha = api.default_config_one_node(True)
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -820,7 +819,7 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change() -> No
 async def test_lana_same_meshnet_id_is_reported_after_a_restart():
     async with AsyncExitStack() as exit_stack:
         api = API()
-        beta = api.default_config_beta_node(True)
+        beta = api.default_config_one_node(True)
         connection_beta = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
         )
@@ -844,7 +843,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart():
         await client_beta.quit()
         api.remove(beta.id)
 
-        beta = api.default_config_beta_node(True)
+        beta = api.default_config_one_node(True)
         connection_beta = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
         )
@@ -878,7 +877,7 @@ async def test_lana_initial_heartbeat_no_trigger(
 ):
     async with AsyncExitStack() as exit_stack:
         api = API()
-        alpha = api.default_config_alpha_node(True)
+        alpha = api.default_config_one_node(True)
 
         connection_alpha = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)

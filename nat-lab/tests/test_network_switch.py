@@ -134,7 +134,6 @@ async def test_mesh_network_switch(
 
 
 @pytest.mark.asyncio
-@pytest.mark.vpn
 @pytest.mark.parametrize(
     "connection_tag, adapter_type",
     [
@@ -167,7 +166,7 @@ async def test_vpn_network_switch(
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        alpha = api.default_config_alpha_node()
+        alpha = api.default_config_one_node()
         (connection, network_switcher) = await exit_stack.enter_async_context(
             new_connection_with_network_switcher(connection_tag)
         )

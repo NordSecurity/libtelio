@@ -170,7 +170,6 @@ async def test_event_content_meshnet(
 
 @pytest.mark.asyncio
 @pytest.mark.derp
-@pytest.mark.vpn
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type,public_ip",
     [
@@ -209,7 +208,7 @@ async def test_event_content_vpn_connection(
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        alpha = api.default_config_alpha_node()
+        alpha = api.default_config_one_node()
         (connection, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 alpha_connection_tag,

@@ -1,5 +1,6 @@
 import os
 import platform
+from python_wireguard import Key  # type: ignore
 
 PROJECT_ROOT = os.path.dirname(os.path.realpath(__file__)) + "/../../../"
 
@@ -54,19 +55,30 @@ VPN_SERVER_SUBNET = "10.0.100.0/24"
 PHOTO_ALBUM_IP = "10.0.80.80"
 PHOTO_ALBUM_IPV6 = "2001:0db8:85a4::adda:edde:0005"
 
+
 # vpn-01
 WG_SERVER = {
     "ipv4": "10.0.100.1",
     "port": 51820,
-    "public_key": "N2Kuejq5Gd553kGYKY4iwtnCuk9MJjAPpg7C04FOdDw=",
+    **dict(
+        (key, str(val))
+        for key, val in zip(("private_key", "public_key"), Key.key_pair())
+    ),
+    "container": "nat-lab-vpn-01-1",
 }
 
 # vpn-02
 WG_SERVER_2 = {
     "ipv4": "10.0.100.2",
     "port": 51820,
-    "public_key": "N2Kuejq5Gd553kGYKY4iwtnCuk9MJjAPpg7C04FOdDw=",
+    **dict(
+        (key, str(val))
+        for key, val in zip(("private_key", "public_key"), Key.key_pair())
+    ),
+    "container": "nat-lab-vpn-02-1",
 }
+
+WG_SERVERS = [WG_SERVER, WG_SERVER_2]
 
 # TODO - bring here class DerpServer  from telio.py
 # and replace dictionaries with objects

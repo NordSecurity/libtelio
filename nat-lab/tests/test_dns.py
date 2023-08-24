@@ -267,11 +267,10 @@ async def test_dns_port() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.derp
-@pytest.mark.vpn
 async def test_vpn_dns() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
-        alpha = api.default_config_alpha_node()
+        alpha = api.default_config_one_node()
 
         (connection, conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
@@ -549,7 +548,7 @@ async def test_set_meshmap_dns_update() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        alpha = api.default_config_alpha_node()
+        alpha = api.default_config_one_node()
 
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
@@ -576,7 +575,7 @@ async def test_set_meshmap_dns_update() -> None:
         except ProcessExecError as e:
             assert "server can't find beta.nord" in e.stdout
 
-        beta = api.default_config_beta_node()
+        beta = api.default_config_one_node()
 
         # Check if setting meshnet updates nord names for dns resolver
         await client_alpha.set_meshmap(api.get_meshmap(alpha.id, derp_servers=[]))
@@ -593,12 +592,11 @@ async def test_set_meshmap_dns_update() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.derp
-@pytest.mark.vpn
 async def test_dns_update() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        alpha = api.default_config_alpha_node()
+        alpha = api.default_config_one_node()
 
         (connection, conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
@@ -661,7 +659,7 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
         FIRST_DNS_SERVER = "8.8.8.8"
         SECOND_DNS_SERVER = "1.1.1.1"
 
-        alpha = api.default_config_alpha_node()
+        alpha = api.default_config_one_node()
 
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(

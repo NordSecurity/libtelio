@@ -54,7 +54,7 @@ async def test_ping_pong() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        alpha = api.default_config_alpha_node()
+        alpha = api.default_config_one_node()
 
         connection_alpha = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
@@ -89,7 +89,7 @@ async def test_send_malform_pinger_packet() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
-        alpha = api.default_config_alpha_node()
+        alpha = api.default_config_one_node()
 
         connection_alpha = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)

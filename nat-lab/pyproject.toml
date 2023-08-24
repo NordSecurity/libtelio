@@ -69,5 +69,4 @@ markers = [
     "long: tests that take a lot of time to run",
     "moose: test that requires build with full moose",
     "derp: test that uses derp connection",
-    "vpn: test that uses vpn connection",
 ]
