@@ -285,7 +285,7 @@ async def test_direct_working_paths(
             ),
         )
 
-        await testing.wait_lengthy(
+        await testing.wait_defined(
             asyncio.gather(
                 alpha.client.wait_for_state_peer(
                     beta.node.public_key,
@@ -298,6 +298,7 @@ async def test_direct_working_paths(
                     [PathType.Direct],
                 ),
             ),
+            60,
         )
 
         for server in DERP_SERVERS:
@@ -317,6 +318,8 @@ async def test_direct_working_paths(
 
 @pytest.mark.asyncio
 @pytest.mark.derp
+@pytest.mark.long
+@pytest.mark.timeout(120)
 @pytest.mark.parametrize(
     "endpoint_providers, client1_type, client2_type",
     [
@@ -398,7 +401,7 @@ async def test_direct_failing_paths(
         )
 
         with pytest.raises(asyncio.TimeoutError):
-            await testing.wait_lengthy(
+            await testing.wait_defined(
                 asyncio.gather(
                     alpha.client.wait_for_state_peer(
                         beta.node.public_key,
@@ -410,7 +413,8 @@ async def test_direct_failing_paths(
                         [State.Connected],
                         [PathType.Direct],
                     ),
-                )
+                ),
+                60,
             )
 
         for server in DERP_SERVERS:
@@ -475,7 +479,7 @@ async def test_direct_short_connection_loss(
             )
         )
 
-        await testing.wait_lengthy(
+        await testing.wait_defined(
             asyncio.gather(
                 alpha.client.wait_for_state_peer(
                     beta.node.public_key,
@@ -487,7 +491,8 @@ async def test_direct_short_connection_loss(
                     [State.Connected],
                     [PathType.Direct],
                 ),
-            )
+            ),
+            60,
         )
 
         # Disrupt UHP connection
@@ -549,7 +554,7 @@ async def test_direct_connection_loss_for_infinity(
             )
         )
 
-        await testing.wait_lengthy(
+        await testing.wait_defined(
             asyncio.gather(
                 alpha.client.wait_for_state_peer(
                     beta.node.public_key,
@@ -561,7 +566,8 @@ async def test_direct_connection_loss_for_infinity(
                     [State.Connected],
                     [PathType.Direct],
                 ),
-            )
+            ),
+            60,
         )
 
         # Break UHP route and wait for relay connection
@@ -686,7 +692,7 @@ async def test_direct_connection_endpoint_gone(
             )
         )
 
-        await testing.wait_lengthy(
+        await testing.wait_defined(
             asyncio.gather(
                 alpha.client.wait_for_state_peer(
                     beta.node.public_key,
@@ -699,6 +705,7 @@ async def test_direct_connection_endpoint_gone(
                     [PathType.Direct],
                 ),
             ),
+            60,
         )
 
         await _check_if_true_direct_connection()
@@ -740,7 +747,7 @@ async def test_direct_connection_endpoint_gone(
             async with Ping(alpha.conn, beta.node.ip_addresses[0]).run() as ping:
                 await testing.wait_lengthy(ping.wait_for_next_ping())
 
-        await testing.wait_lengthy(
+        await testing.wait_defined(
             asyncio.gather(
                 alpha.client.wait_for_state_peer(
                     beta.node.public_key,
@@ -753,6 +760,7 @@ async def test_direct_connection_endpoint_gone(
                     [PathType.Direct],
                 ),
             ),
+            60,
         )
         await _check_if_true_direct_connection()
 

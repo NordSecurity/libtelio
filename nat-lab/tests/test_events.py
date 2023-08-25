@@ -397,10 +397,11 @@ async def test_event_content_exit_through_peer(
 
         await testing.wait_long(client_beta.get_router().create_exit_node_route())
 
-        await testing.wait_long(client_alpha.connect_to_exit_node(beta.public_key))
-
         await testing.wait_long(
-            client_alpha.wait_for_event_peer(beta.public_key, [State.Connected])
+            asyncio.gather(
+                client_alpha.connect_to_exit_node(beta.public_key),
+                client_alpha.wait_for_event_peer(beta.public_key, [State.Connected]),
+            )
         )
 
         ip_alpha: str = await testing.wait_long(
