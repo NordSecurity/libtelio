@@ -16,7 +16,6 @@ from utils.connection_util import (
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 @pytest.mark.parametrize(
     "alpha_connection_tag,alpha_adapter_type",
     [

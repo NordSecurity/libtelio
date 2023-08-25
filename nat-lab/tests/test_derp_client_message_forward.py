@@ -10,7 +10,6 @@ TESTING_STRING = "testing"
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 @pytest.mark.parametrize(
     "connection_tag",
     [

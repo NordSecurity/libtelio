@@ -33,7 +33,6 @@ def get_allowed_ip_list(addrs: List[str]) -> List[str]:
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type",
     [
@@ -169,7 +168,6 @@ async def test_event_content_meshnet(
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type,public_ip",
     [
@@ -300,7 +298,6 @@ async def test_event_content_vpn_connection(
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type",
     [
@@ -435,7 +432,6 @@ async def test_event_content_exit_through_peer(
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 @pytest.mark.timeout(90)
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type,alpha_public_ip",

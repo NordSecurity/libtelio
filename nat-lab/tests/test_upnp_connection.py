@@ -14,7 +14,6 @@ UPNP_PROVIDER = ["upnp"]
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 async def test_upnp_route_removed() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
