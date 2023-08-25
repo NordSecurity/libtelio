@@ -718,7 +718,7 @@ async def test_lana_with_disconnected_node() -> None:
 
 @pytest.mark.moose
 @pytest.mark.asyncio
-@pytest.mark.xfail
+@pytest.mark.xfail(reason="test is flaky - LLT-4187")
 async def test_lana_with_second_node_joining_later_meshnet_id_can_change() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()

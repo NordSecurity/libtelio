@@ -106,7 +106,9 @@ class DockerProcess(Process):
                     continue
                 decodeable_lines = lines[:-1]
 
-            output = b"\x0a".join(decodeable_lines).decode(sys.getfilesystemencoding(), errors='replace')
+            output = b"\x0a".join(decodeable_lines).decode(
+                sys.getfilesystemencoding(), errors="replace"
+            )
 
             if message.stream == 1:
                 self._stdout += output
@@ -119,7 +121,7 @@ class DockerProcess(Process):
 
         for stream_id, buffer in buffers.items():
             if buffer:
-                output = buffer.decode(sys.getfilesystemencoding(), errors='replace')
+                output = buffer.decode(sys.getfilesystemencoding(), errors="replace")
                 if stream_id == 1:
                     self._stdout += output
                     if stdout_callback:
