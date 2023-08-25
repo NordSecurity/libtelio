@@ -1227,6 +1227,18 @@ impl Runtime {
                 ca_pem_path: None,
                 mesh_ip,
                 server_keepalives: DerpKeepaliveConfig::from(&self.features.derp),
+                enable_polling: self
+                    .features
+                    .derp
+                    .clone()
+                    .unwrap_or_default()
+                    .enable_polling
+                    .unwrap_or_default(),
+                meshnet_peers: config
+                    .peers
+                    .as_ref()
+                    .map(|peers| peers.iter().map(|peer| peer.public_key).collect())
+                    .unwrap_or_default(),
             };
 
             // Update configuration for DERP client

@@ -1,10 +1,9 @@
 use std::iter::{FromIterator, IntoIterator};
 use std::net::SocketAddr;
 
-use super::PeerId;
 use crate::{
-    messages::natter::*, Codec, CodecError, CodecResult, DowncastPacket, Packet, PacketType,
-    Session, MAX_PACKET_SIZE,
+    messages::natter::*, Codec, CodecError, CodecResult, DowncastPacket, PacketRelayed,
+    PacketTypeRelayed, PeerId, Session, MAX_PACKET_SIZE,
 };
 use bytes::BufMut;
 use protobuf::{Message, RepeatedField};
@@ -12,13 +11,13 @@ use telio_utils::Hidden;
 
 /// Packet encapsulating containing WG packets
 /// ```rust
-/// # use telio_proto::{CallMeMaybeMsg, Codec, PacketType};
+/// # use telio_proto::{CallMeMaybeMsg, Codec, PacketTypeRelayed};
 /// let bytes = &[
 ///     6, 8, 1, 18, 13, 49, 48, 46, 48, 46, 48, 46, 49, 53, 58, 52, 52, 51, 33, 1, 0,
 ///     0, 0, 0, 0, 0, 0, 24, 1,
 /// ];
 /// let data = CallMeMaybeMsg::decode(bytes).expect("Failed to parse packet");
-/// assert_eq!(data.packet_type(), PacketType::CallMeMaybe);
+/// assert_eq!(data.packet_type(), PacketTypeRelayed::CallMeMaybe);
 /// assert_eq!(data.get_session(), 1);
 /// assert_eq!(data.get_addrs()[0], "10.0.0.15:443".parse().unwrap());
 ///
@@ -69,8 +68,8 @@ impl CallMeMaybeMsg {
     }
 }
 
-impl Codec for CallMeMaybeMsg {
-    const TYPES: &'static [PacketType] = &[PacketType::CallMeMaybe];
+impl Codec<PacketTypeRelayed> for CallMeMaybeMsg {
+    const TYPES: &'static [PacketTypeRelayed] = &[PacketTypeRelayed::CallMeMaybe];
 
     fn decode(bytes: &[u8]) -> CodecResult<Self>
     where
@@ -79,8 +78,9 @@ impl Codec for CallMeMaybeMsg {
         if bytes.is_empty() {
             return Err(CodecError::InvalidLength);
         }
-        match PacketType::from(*bytes.first().unwrap_or(&(PacketType::Invalid as u8))) {
-            PacketType::CallMeMaybe => {
+        match PacketTypeRelayed::from(*bytes.first().unwrap_or(&(PacketTypeRelayed::Invalid as u8)))
+        {
+            PacketTypeRelayed::CallMeMaybe => {
                 let cmm =
                     CallMeMaybe::parse_from_bytes(bytes.get(1..).ok_or(CodecError::DecodeFailed)?);
                 Ok(Self(cmm.map_err(|_| CodecError::DecodeFailed)?))
@@ -95,7 +95,7 @@ impl Codec for CallMeMaybeMsg {
     {
         let mut bytes = Vec::with_capacity(MAX_PACKET_SIZE);
 
-        bytes.put_u8(PacketType::CallMeMaybe as u8);
+        bytes.put_u8(PacketTypeRelayed::CallMeMaybe as u8);
         self.0
             .write_to_vec(&mut bytes)
             .map_err(|_| CodecError::Encode)?;
@@ -103,18 +103,18 @@ impl Codec for CallMeMaybeMsg {
         Ok(bytes)
     }
 
-    fn packet_type(&self) -> PacketType {
-        PacketType::CallMeMaybe
+    fn packet_type(&self) -> PacketTypeRelayed {
+        PacketTypeRelayed::CallMeMaybe
     }
 }
 
-impl DowncastPacket for CallMeMaybeMsg {
-    fn downcast(packet: Packet) -> Result<Self, Packet>
+impl DowncastPacket<PacketRelayed> for CallMeMaybeMsg {
+    fn downcast(packet: PacketRelayed) -> Result<Self, PacketRelayed>
     where
         Self: Sized,
     {
         match packet {
-            Packet::CallMeMaybe(msg) => Ok(msg),
+            PacketRelayed::CallMeMaybe(msg) => Ok(msg),
             packet => Err(packet),
         }
     }
@@ -189,8 +189,8 @@ impl CallMeMaybeMsgDeprecated {
     }
 }
 
-impl Codec for CallMeMaybeMsgDeprecated {
-    const TYPES: &'static [PacketType] = &[PacketType::CallMeMaybeDeprecated];
+impl Codec<PacketTypeRelayed> for CallMeMaybeMsgDeprecated {
+    const TYPES: &'static [PacketTypeRelayed] = &[PacketTypeRelayed::CallMeMaybeDeprecated];
 
     fn decode(bytes: &[u8]) -> CodecResult<Self>
     where
@@ -199,8 +199,9 @@ impl Codec for CallMeMaybeMsgDeprecated {
         if bytes.is_empty() {
             return Err(CodecError::InvalidLength);
         }
-        match PacketType::from(*bytes.first().unwrap_or(&(PacketType::Invalid as u8))) {
-            PacketType::CallMeMaybeDeprecated => {
+        match PacketTypeRelayed::from(*bytes.first().unwrap_or(&(PacketTypeRelayed::Invalid as u8)))
+        {
+            PacketTypeRelayed::CallMeMaybeDeprecated => {
                 let cmm = CallMeMaybeDeprecated::parse_from_bytes(
                     bytes.get(1..).ok_or(CodecError::DecodeFailed)?,
                 );
@@ -216,7 +217,7 @@ impl Codec for CallMeMaybeMsgDeprecated {
     {
         let mut bytes = Vec::with_capacity(MAX_PACKET_SIZE);
 
-        bytes.put_u8(PacketType::CallMeMaybeDeprecated as u8);
+        bytes.put_u8(PacketTypeRelayed::CallMeMaybeDeprecated as u8);
         self.0
             .write_to_vec(&mut bytes)
             .map_err(|_| CodecError::Encode)?;
@@ -224,18 +225,18 @@ impl Codec for CallMeMaybeMsgDeprecated {
         Ok(bytes)
     }
 
-    fn packet_type(&self) -> PacketType {
-        PacketType::CallMeMaybeDeprecated
+    fn packet_type(&self) -> PacketTypeRelayed {
+        PacketTypeRelayed::CallMeMaybeDeprecated
     }
 }
 
-impl DowncastPacket for CallMeMaybeMsgDeprecated {
-    fn downcast(packet: Packet) -> Result<Self, Packet>
+impl DowncastPacket<PacketRelayed> for CallMeMaybeMsgDeprecated {
+    fn downcast(packet: PacketRelayed) -> Result<Self, PacketRelayed>
     where
         Self: Sized,
     {
         match packet {
-            Packet::CallMeMaybeDeprecated(msg) => Ok(msg),
+            PacketRelayed::CallMeMaybeDeprecated(msg) => Ok(msg),
             packet => Err(packet),
         }
     }
@@ -270,7 +271,7 @@ mod tests {
 
     #[test]
     fn fail_to_decode_packet_of_wrong_type() {
-        let bytes = &[PacketType::Invalid as u8, 3, 1, 6, 7];
+        let bytes = &[PacketTypeRelayed::Invalid as u8, 3, 1, 6, 7];
         let data = CallMeMaybeMsg::decode(bytes);
         assert_eq!(data, Err(CodecError::DecodeFailed));
     }
@@ -296,7 +297,7 @@ mod tests {
             0, 0, 0, 0, 0, 0,
         ];
         let data = CallMeMaybeMsgDeprecated::decode(bytes).expect("Failed to parse packet");
-        assert_eq!(data.packet_type(), PacketType::CallMeMaybeDeprecated);
+        assert_eq!(data.packet_type(), PacketTypeRelayed::CallMeMaybeDeprecated);
         assert_eq!(data.get_session(), 1);
         assert_eq!(data.get_peer_id().0, 1);
         assert_eq!(
@@ -314,7 +315,7 @@ mod tests {
 
     #[test]
     fn deprecated_fail_to_decode_packet_of_wrong_type() {
-        let bytes = &[PacketType::Invalid as u8, 3, 1, 6, 7];
+        let bytes = &[PacketTypeRelayed::Invalid as u8, 3, 1, 6, 7];
         let data = CallMeMaybeMsgDeprecated::decode(bytes);
         assert_eq!(data, Err(CodecError::DecodeFailed));
     }

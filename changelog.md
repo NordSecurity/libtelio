@@ -12,6 +12,7 @@
 * LLT-4119: Fix multiple bugs in telio-firewall. Mainly whitelist vpn server
 * LLT-4166: Bump tokio-rustls version
 * LLT-3913: Deduplicate IPs of external wireguard peers
+* LLT-3869: Turn off relayed traffic to offline peers
 
 <br>
 

@@ -176,6 +176,8 @@ pub struct FeatureDerp {
     pub tcp_keepalive: Option<u32>,
     /// Derp will send empty messages after this many seconds of not sending/receiving any data [default 60s]
     pub derp_keepalive: Option<u32>,
+    /// Enable polling of remote peer states to reduce derp traffic
+    pub enable_polling: Option<bool>,
 }
 
 /// Whether to validate keys

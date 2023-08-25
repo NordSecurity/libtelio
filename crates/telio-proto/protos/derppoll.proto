@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+message DerpPollRequest {
+    repeated string peers = 1;
+}
+
+message DerpPollResponse {
+    map<string, bool> peer_states = 1;
+}

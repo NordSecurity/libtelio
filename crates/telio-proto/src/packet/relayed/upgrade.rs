@@ -1,8 +1,8 @@
 use std::net::SocketAddr;
 
 use crate::{
-    messages::upgrade::*, Codec, CodecError, CodecResult, DowncastPacket, Packet, PacketType,
-    MAX_PACKET_SIZE,
+    messages::upgrade::*, Codec, CodecError, CodecResult, DowncastPacket, PacketRelayed,
+    PacketTypeRelayed, MAX_PACKET_SIZE,
 };
 
 use bytes::BufMut;
@@ -15,8 +15,8 @@ pub struct UpgradeMsg {
     pub endpoint: SocketAddr,
 }
 
-impl Codec for UpgradeMsg {
-    const TYPES: &'static [PacketType] = &[PacketType::Upgrade];
+impl Codec<PacketTypeRelayed> for UpgradeMsg {
+    const TYPES: &'static [PacketTypeRelayed] = &[PacketTypeRelayed::Upgrade];
 
     fn decode(bytes: &[u8]) -> CodecResult<Self>
     where
@@ -26,8 +26,9 @@ impl Codec for UpgradeMsg {
             return Err(CodecError::InvalidLength);
         }
 
-        match PacketType::from(*bytes.first().unwrap_or(&(PacketType::Invalid as u8))) {
-            PacketType::Upgrade => {
+        match PacketTypeRelayed::from(*bytes.first().unwrap_or(&(PacketTypeRelayed::Invalid as u8)))
+        {
+            PacketTypeRelayed::Upgrade => {
                 let proto_upgrade =
                     Upgrade::parse_from_bytes(bytes.get(1..).ok_or(CodecError::DecodeFailed)?)
                         .map_err(|_| CodecError::DecodeFailed)?;
@@ -46,25 +47,25 @@ impl Codec for UpgradeMsg {
         let mut msg = Upgrade::new();
         msg.set_endpoint(self.endpoint.to_string());
 
-        bytes.put_u8(PacketType::Upgrade as u8);
+        bytes.put_u8(PacketTypeRelayed::Upgrade as u8);
         msg.write_to_vec(&mut bytes)
             .map_err(|_| CodecError::Encode)?;
 
         Ok(bytes)
     }
 
-    fn packet_type(&self) -> PacketType {
-        PacketType::Upgrade
+    fn packet_type(&self) -> PacketTypeRelayed {
+        PacketTypeRelayed::Upgrade
     }
 }
 
-impl DowncastPacket for UpgradeMsg {
-    fn downcast(packet: Packet) -> Result<Self, Packet>
+impl DowncastPacket<PacketRelayed> for UpgradeMsg {
+    fn downcast(packet: PacketRelayed) -> Result<Self, PacketRelayed>
     where
         Self: Sized,
     {
         match packet {
-            Packet::Upgrade(upgrade) => Ok(upgrade),
+            PacketRelayed::Upgrade(upgrade) => Ok(upgrade),
             packet => Err(packet),
         }
     }
@@ -92,7 +93,7 @@ mod tests {
 
     #[test]
     fn fail_to_decode_packet_of_wrong_type() {
-        let bytes = &[PacketType::Invalid as u8];
+        let bytes = &[PacketTypeRelayed::Invalid as u8];
         let data = UpgradeMsg::decode(bytes);
         assert_eq!(data, Err(CodecError::DecodeFailed));
     }

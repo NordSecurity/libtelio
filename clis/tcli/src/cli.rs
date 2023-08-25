@@ -10,7 +10,7 @@ use telio::device::{Device, DeviceConfig};
 use telio_model::api_config::Features;
 use telio_model::config::{RelayState, Server};
 use telio_model::{config::Config as MeshMap, event::Event as DevEvent, mesh::ExitNode};
-use telio_proto::{CodecError, PacketType};
+use telio_proto::{CodecError, PacketTypeRelayed};
 use telio_wg::AdapterType;
 use thiserror::Error;
 use tokio::{
@@ -657,9 +657,9 @@ impl Cli {
                     loop {
                         tokio::select! {
                             Ok((_len, _src_addr)) = udp_socket.recv_from(&mut rx_buff) => {
-                                match rx_buff.first().map(|b| PacketType::from(*b)) {
-                                    Some(PacketType::Pinger) => cli_res!(res; (i "Pinger message received")),
-                                    Some(PacketType::Ponger) => cli_res!(res; (i "Ponger message received")),
+                                match rx_buff.first().map(|b| PacketTypeRelayed::from(*b)) {
+                                    Some(PacketTypeRelayed::Pinger) => cli_res!(res; (i "Pinger message received")),
+                                    Some(PacketTypeRelayed::Ponger) => cli_res!(res; (i "Ponger message received")),
                                     other => cli_res!(res; (i "Unexpected packet: {:?}", other)),
                                 }
                                 break;

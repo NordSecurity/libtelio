@@ -11,6 +11,7 @@ use telio_dns::DnsResolver;
 use telio_firewall::firewall::{Firewall, FILE_SEND_PORT};
 use telio_model::EndpointMap;
 use telio_model::SocketAddr;
+use telio_proto::PeersStatesMap;
 use telio_proxy::Proxy;
 use telio_traversal::{
     cross_ping_check::CrossPingCheckTrait, SessionKeeperTrait, UpgradeSyncTrait,
@@ -56,6 +57,7 @@ pub async fn consolidate_wg_state(requested_state: &RequestedState, entities: &E
         entities.upgrade_sync(),
         entities.session_keeper(),
         &*entities.dns,
+        entities.derp.get_remote_peer_states().await,
     )
     .await?;
     consolidate_firewall(requested_state, &*entities.firewall).await?;
@@ -88,6 +90,7 @@ async fn consolidate_wg_fwmark<W: WireGuard>(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn consolidate_wg_peers<
     W: WireGuard,
     P: Proxy,
@@ -103,6 +106,7 @@ async fn consolidate_wg_peers<
     upgrade_sync: Option<&Arc<U>>,
     session_keeper: Option<&Arc<S>>,
     dns: &Mutex<crate::device::DNS<D>>,
+    remote_peer_states: PeersStatesMap,
 ) -> Result {
     let proxy_endpoints = proxy.get_endpoint_map().await?;
     let requested_peers = build_requested_peers_list(
@@ -112,6 +116,7 @@ async fn consolidate_wg_peers<
         upgrade_sync,
         dns,
         &proxy_endpoints,
+        &remote_peer_states,
     )
     .await?;
 
@@ -324,6 +329,7 @@ async fn build_requested_peers_list<
     upgrade_sync: Option<&Arc<U>>,
     dns: &Mutex<crate::device::DNS<D>>,
     proxy_endpoints: &EndpointMap,
+    remote_peer_states: &PeersStatesMap,
 ) -> Result<BTreeMap<PublicKey, RequestedPeer>> {
     // Build a list of meshnet peers
     let mut requested_peers = build_requested_meshnet_peers_list(
@@ -332,6 +338,7 @@ async fn build_requested_peers_list<
         cross_ping_check,
         upgrade_sync,
         proxy_endpoints,
+        remote_peer_states,
     )
     .await?;
     let mut exit_node_exists = false;
@@ -423,6 +430,7 @@ async fn build_requested_meshnet_peers_list<
     cross_ping_check: Option<&Arc<C>>,
     upgrade_sync: Option<&Arc<U>>,
     proxy_endpoints: &EndpointMap,
+    remote_peer_states: &PeersStatesMap,
 ) -> Result<BTreeMap<PublicKey, RequestedPeer>> {
     // Retreive meshnet config. If it is not set, no peers are requested
     let meshnet_config = match &requested_state.meshnet_config {
@@ -543,10 +551,18 @@ async fn build_requested_meshnet_peers_list<
         requested_peer.peer.endpoint = selected_remote_endpoint;
         requested_peer.local_direct_endpoint = selected_local_endpoint;
 
-        // Decrease the keepalive period for peers which has established direct connection
+        // Adjust keepalive for direct and offline peers
         requested_peer.peer.persistent_keepalive_interval =
             if is_peer_proxying(&requested_peer.peer, proxy_endpoints) {
-                requested_state.keepalive_periods.proxying
+                if matches!(
+                    remote_peer_states.get(&requested_peer.peer.public_key),
+                    Some(false)
+                ) {
+                    // If peer is offline according to derp, we turn off keepalives.
+                    None
+                } else {
+                    requested_state.keepalive_periods.proxying
+                }
             } else {
                 Some(requested_state.keepalive_periods.direct)
             };
@@ -1373,6 +1389,7 @@ mod tests {
                 Some(&upgrade_sync),
                 Some(&session_keeper),
                 &self.dns,
+                HashMap::new(),
             )
             .await
             .unwrap();

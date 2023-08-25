@@ -12,10 +12,11 @@ use std::{
     time::Duration,
 };
 use telio_crypto::{PublicKey, SecretKey, KEY_SIZE};
-use telio_utils::{telio_err_with_log, telio_log_debug, telio_log_trace};
+use telio_utils::{telio_err_with_log, telio_log_debug, telio_log_info, telio_log_trace};
 
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    select,
     sync::mpsc::{Receiver, Sender},
 };
 
@@ -122,6 +123,9 @@ enum FrameType {
     Ping = 0x12,
     /// 8 byte payload, the contents of the ping being replied to
     Pong = 0x13,
+    /// control message for communication with derp. Since these messages are not
+    /// for communication with other peers through derp, they don't contain public_key
+    ControlMessage = 0x14,
 }
 
 /// Error is a boxed std::error::Error
@@ -138,12 +142,14 @@ pub struct PairAddr {
 #[allow(mpsc_blocking_send)]
 pub async fn start_read<R: AsyncRead + Unpin>(
     mut reader: R,
-    reader_sender: Sender<(PublicKey, Vec<u8>)>,
+    sender_relayed: Sender<(PublicKey, Vec<u8>)>,
+    sender_direct: Sender<Vec<u8>>,
     addr: PairAddr,
 ) -> Result<(), Error> {
     loop {
         let (frame_type, mut data) = read_frame(&mut reader).await?;
         match frame_type {
+            // RemoteNode -> Derp -> LocalNode
             FrameType::RecvPacket => {
                 let public_key =
                     <PublicKey as TryFrom<&[u8]>>::try_from(data.drain(0..KEY_SIZE).as_slice())?;
@@ -163,7 +169,18 @@ pub async fn start_read<R: AsyncRead + Unpin>(
                         chan,
                     );
                 }
-                reader_sender.send((public_key, data)).await?
+                sender_relayed.send((public_key, data)).await?
+            }
+            // Derp -> LocalNode
+            FrameType::ControlMessage => {
+                telio_log_trace!(
+                    "DERP Rx: {} -> {}, frame type: {:?}, data len: {}",
+                    addr.remote,
+                    addr.local,
+                    frame_type,
+                    data.len(),
+                );
+                sender_direct.send(data).await?
             }
             _ => telio_log_debug!("Unhandled packet: {:?}: {:?}", frame_type, data),
         }
@@ -174,31 +191,50 @@ pub async fn start_read<R: AsyncRead + Unpin>(
 /// encapsulates them to DERP frames and bypasses them to the writer
 pub async fn start_write<W: AsyncWrite + Unpin>(
     mut writer: W,
-    mut writer_receiver: Receiver<(PublicKey, Vec<u8>)>,
+    mut receiver_relayed: Receiver<(PublicKey, Vec<u8>)>,
+    mut receiver_direct: Receiver<Vec<u8>>,
     addr: PairAddr,
 ) -> Result<(), Error> {
-    while let Some((public_key, data)) = writer_receiver.recv().await {
-        let mut buf = Vec::<u8>::new();
-        buf.write_all(public_key.as_ref()).await?;
-        buf.write_all(&data).await?;
+    loop {
+        tokio::select! {
+            // LocalNode -> Derp -> RemoteNode
+            received = receiver_relayed.recv() => {
+                if let Some((public_key, data)) = received {
+                    let mut buf = Vec::<u8>::new();
+                    buf.write_all(public_key.as_ref()).await?;
+                    buf.write_all(&data).await?;
 
-        if log_enabled!(Trace) {
-            // Glance at first byte, which describes the destination
-            let chan =
-                FrameChannel::try_from(*data.first().unwrap_or(&(FrameChannel::Unknown as u8)));
-            telio_log_trace!(
-                "DERP Tx: {} -> {}, data len: {}, pubkey: {:?}, channel: {:?}",
-                addr.local,
-                addr.remote,
-                data.len(),
-                public_key,
-                chan,
-            );
+                    if log_enabled!(Trace) {
+                        // Glance at first byte, which describes the destination
+                        let chan =
+                            FrameChannel::try_from(*data.first().unwrap_or(&(FrameChannel::Unknown as u8)));
+                        telio_log_trace!(
+                            "DERP Tx: {} -> {}, data len: {}, pubkey: {:?}, channel: {:?}",
+                            addr.local,
+                            addr.remote,
+                            data.len(),
+                            public_key,
+                            chan,
+                        );
+                    }
+
+                    write_frame(&mut writer, FrameType::SendPacket, buf).await?;
+                } else {
+                    break;
+                }
+            },
+            // LocalNode -> Derp
+            received = receiver_direct.recv() => {
+                if let Some(data) = received {
+                    let mut buf = Vec::<u8>::new();
+                    buf.write_all(&data).await?;
+                    write_frame(&mut writer, FrameType::ControlMessage, buf).await?;
+                } else {
+                    break;
+                }
+            }
         }
-
-        write_frame(&mut writer, FrameType::SendPacket, buf).await?;
     }
-
     Ok(())
 }
 

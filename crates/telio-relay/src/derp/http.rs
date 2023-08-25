@@ -17,6 +17,7 @@ use telio_task::io::Chan;
 use crate::{Config, DerpKeepaliveConfig};
 
 use telio_crypto::{PublicKey, SecretKey};
+use tokio::time::{interval_at, Interval, MissedTickBehavior};
 use tokio::{
     io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::{TcpSocket, TcpStream},
@@ -59,9 +60,13 @@ pub type Protect = Arc<dyn Fn(i32) + Send + Sync + 'static>;
 const MAX_TCP_PACKET_SIZE: usize = u16::MAX as usize;
 
 pub struct DerpConnection {
-    pub comms: Chan<(PublicKey, Vec<u8>)>,
+    pub comms_relayed: Chan<(PublicKey, Vec<u8>)>,
+    pub comms_direct: Chan<Vec<u8>>,
     pub join_sender: JoinHandle<Result<(), IoError>>,
     pub join_receiver: JoinHandle<Result<(), IoError>>,
+
+    /// For polling derp about remote peers states
+    pub poll_timer: Interval,
 }
 
 impl DerpConnection {
@@ -194,7 +199,7 @@ async fn connect_and_start<RW: AsyncRead + AsyncWrite + Send + 'static>(
     let leftovers = Box::pin(connect_http(
         &mut reader,
         &mut writer,
-        server_keepalives,
+        &server_keepalives,
         host,
     ))
     .await?;
@@ -205,24 +210,35 @@ async fn connect_and_start<RW: AsyncRead + AsyncWrite + Send + 'static>(
 
     read_server_info(&mut reader).await?;
 
-    // Splitted channel for communication side and for connection side
-    let (comm_side, conn_side) = Chan::pipe();
+    // Split channels for communication side and for connection side. One channel for
+    // connections relayed through derp and another for communication with derp directly
+    let (comm_side_relayed, conn_side_relayed) = Chan::pipe();
+    let (comm_side_direct, conn_side_direct) = Chan::pipe();
 
-    let tx = conn_side.tx;
-    let rx = conn_side.rx;
+    let sender_relayed = conn_side_relayed.tx;
+    let receiver_relayed = conn_side_relayed.rx;
+    let sender_direct = conn_side_direct.tx;
+    let receiver_direct = conn_side_direct.rx;
 
     Ok(DerpConnection {
-        comms: comm_side,
+        comms_relayed: comm_side_relayed,
+        comms_direct: comm_side_direct,
         join_sender: tokio::spawn(async move {
-            start_read(reader, tx, addr)
+            start_read(reader, sender_relayed, sender_direct, addr)
                 .await
                 .map_err(|err| IoError::new(ErrorKind::Other, err.to_string()))
         }),
         join_receiver: tokio::spawn(async move {
-            start_write(writer, rx, addr)
+            start_write(writer, receiver_relayed, receiver_direct, addr)
                 .await
                 .map_err(|err| IoError::new(ErrorKind::Other, err.to_string()))
         }),
+        poll_timer: {
+            let poll_interval = Duration::from_secs(server_keepalives.derp_keepalive as u64);
+            let mut timer = interval_at(tokio::time::Instant::now() + poll_interval, poll_interval);
+            timer.set_missed_tick_behavior(MissedTickBehavior::Delay);
+            timer
+        },
     })
 }
 
@@ -231,7 +247,7 @@ async fn connect_and_start<RW: AsyncRead + AsyncWrite + Send + 'static>(
 async fn connect_http<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     reader: &mut R,
     writer: &mut W,
-    server_keepalives: DerpKeepaliveConfig,
+    server_keepalives: &DerpKeepaliveConfig,
     host: &str,
 ) -> Result<Vec<u8>, Error> {
     writer
