@@ -75,7 +75,7 @@ class MacRouter(Router):
                     "route",
                     "add",
                     "-inet6",
-                    "fd00::/64",  # TODO correct subnet when we'll decide about the range "fd00::/64"
+                    "fc74:656c:696f::/64",
                     "-interface",
                     self._interface_name,
                 ],

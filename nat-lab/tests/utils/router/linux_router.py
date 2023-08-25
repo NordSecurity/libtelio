@@ -70,7 +70,7 @@ class LinuxRouter(Router):
                     "-6",
                     "route",
                     "add",
-                    "fd00::/64",  # TODO correct subnet when we'll decide about the range
+                    "fc74:656c:696f::/64",
                     "dev",
                     self._interface_name,
                 ],
@@ -183,7 +183,7 @@ class LinuxRouter(Router):
                     "-A",
                     "POSTROUTING",
                     "-s",
-                    "fd00::/64",  # TODO correct subnet when we'll decide about the range
+                    "fc74:656c:696f::/64",
                     "!",
                     "-o",
                     self._interface_name,
@@ -225,7 +225,7 @@ class LinuxRouter(Router):
                         "-D",
                         "POSTROUTING",
                         "-s",
-                        "fd00::/64",  # TODO correct subnet when we'll decide about the range
+                        "fc74:656c:696f::/64",
                         "!",
                         "-o",
                         self._interface_name,
