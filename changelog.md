@@ -14,6 +14,7 @@
 * LLT-3913: Deduplicate IPs of external wireguard peers
 * LLT-3869: Turn off relayed traffic to offline peers
 * LLT-3775: Add test for lana validators
+* LLT-4050: Add support for IPv6 packet handling in telio-dns
 
 <br>
 
