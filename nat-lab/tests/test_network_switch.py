@@ -59,7 +59,6 @@ async def test_network_switcher(
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 @pytest.mark.xfail(reason="the test is flaky - JIRA issue: LLT-4105")
 @pytest.mark.parametrize(
     "alpha_connection_tag, adapter_type",
@@ -214,7 +213,6 @@ async def test_vpn_network_switch(
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 @pytest.mark.xfail(
     reason=(
         "Flaky: Running tests in specific order, might change the"

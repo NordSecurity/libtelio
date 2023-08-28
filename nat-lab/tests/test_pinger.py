@@ -49,7 +49,6 @@ async def send_ping_pong(ping_type) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 async def test_ping_pong() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -84,7 +83,6 @@ async def test_ping_pong() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 async def test_send_malform_pinger_packet() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()

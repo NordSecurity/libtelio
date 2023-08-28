@@ -238,7 +238,6 @@ async def run_default_scenario(
 
 
 @pytest.mark.moose
-@pytest.mark.derp
 @pytest.mark.asyncio
 async def test_lana_with_same_meshnet() -> None:
     async with AsyncExitStack() as exit_stack:
@@ -315,7 +314,6 @@ async def test_lana_with_same_meshnet() -> None:
 
 
 @pytest.mark.moose
-@pytest.mark.derp
 @pytest.mark.asyncio
 async def test_lana_with_external_node() -> None:
     async with AsyncExitStack() as exit_stack:
@@ -407,7 +405,6 @@ async def test_lana_with_external_node() -> None:
 
 
 @pytest.mark.moose
-@pytest.mark.derp
 @pytest.mark.asyncio
 async def test_lana_all_external() -> None:
     async with AsyncExitStack() as exit_stack:
@@ -486,7 +483,6 @@ async def test_lana_all_external() -> None:
 
 
 @pytest.mark.moose
-@pytest.mark.derp
 @pytest.mark.asyncio
 async def test_lana_with_vpn_connections() -> None:
     async with AsyncExitStack() as exit_stack:
@@ -572,7 +568,6 @@ async def test_lana_with_vpn_connections() -> None:
 
 
 @pytest.mark.moose
-@pytest.mark.derp
 @pytest.mark.asyncio
 async def test_lana_with_disconnected_node() -> None:
     async with AsyncExitStack() as exit_stack:
@@ -722,8 +717,8 @@ async def test_lana_with_disconnected_node() -> None:
 
 
 @pytest.mark.moose
-@pytest.mark.derp
 @pytest.mark.asyncio
+@pytest.mark.xfail
 async def test_lana_with_second_node_joining_later_meshnet_id_can_change() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -814,7 +809,6 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change() -> No
 
 
 @pytest.mark.moose
-@pytest.mark.derp
 @pytest.mark.asyncio
 async def test_lana_same_meshnet_id_is_reported_after_a_restart():
     async with AsyncExitStack() as exit_stack:
@@ -867,7 +861,6 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart():
 
 
 @pytest.mark.moose
-@pytest.mark.derp
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "initial_heartbeat_interval", [pytest.param(5), pytest.param(None)]

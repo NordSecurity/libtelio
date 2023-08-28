@@ -10,7 +10,6 @@ EMPTY_PROVIDER = [""]
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 async def test_default_direct_features() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -36,7 +35,6 @@ async def test_default_direct_features() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 async def test_enable_all_direct_features() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -64,7 +62,6 @@ async def test_enable_all_direct_features() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 async def test_check_features_with_empty_direct_providers() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()

@@ -20,7 +20,6 @@ DNS_SERVER_ADDRESS = config.LIBTELIO_DNS_IP
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 async def test_dns() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -144,7 +143,6 @@ async def test_dns() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 async def test_dns_port() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -266,7 +264,6 @@ async def test_dns_port() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 async def test_vpn_dns() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -345,7 +342,6 @@ async def test_vpn_dns() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 async def test_dns_after_mesh_off() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -417,7 +413,6 @@ async def test_dns_after_mesh_off() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 @pytest.mark.long
 @pytest.mark.timeout(60 * 5 + 60)
 @pytest.mark.parametrize(
@@ -543,7 +538,6 @@ async def test_dns_stability(
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 async def test_set_meshmap_dns_update() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -591,7 +585,6 @@ async def test_set_meshmap_dns_update() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 async def test_dns_update() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -651,7 +644,6 @@ async def test_dns_update() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -702,7 +694,6 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 async def test_dns_aaaa_records() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()

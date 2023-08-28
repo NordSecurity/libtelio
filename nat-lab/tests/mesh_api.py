@@ -1,5 +1,6 @@
 import os
 import pprint
+import random
 import time
 import uuid
 from config import DERP_SERVERS, WG_SERVERS
@@ -246,7 +247,8 @@ class API:
 
         wg_conf = (
             f"[Interface]\nPrivateKey = {server_config['private_key']}\nListenPort ="
-            f" {server_config['port']}\nAddress = 100.64.0.1/10, fd00::1/64\n\n"
+            f" {server_config['port']}\nAddress = 100.64.0.1/10,"
+            " fc74:656c:696f::1/64\n\n"
         )
 
         for node in node_list:
@@ -273,9 +275,14 @@ class API:
                 public_key=str(public),
                 is_local=is_local,
             )
-            # TODO correct subnet when we'll decide about the range
-            self.assign_ip(node.id, f"100.64.33.{node_idx}")
-            self.assign_ip(node.id, f"fd00::dead:{node_idx}")
+            ipv4 = (
+                f"100.{random.randint(64, 127)}.{random.randint(0, 255)}.{random.randint(8, 254)}"
+            )
+            ipv6 = (
+                f"fc74:656c:696f:0:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(8, 0xFFFF), 'x')}"
+            )
+            self.assign_ip(node.id, ipv4)
+            self.assign_ip(node.id, ipv6)
 
         for wg_server in WG_SERVERS:
             self.setup_wg_servers(list(self.nodes.values()), wg_server)

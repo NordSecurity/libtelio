@@ -74,7 +74,7 @@ class WindowsRouter(Router):
                         "ipv6",
                         "add",
                         "route",
-                        "fd00::/64",  # TODO correct subnet when we'll decide about the range
+                        "fc74:656c:696f::/64",
                         self._interface_name,
                     ]
                 ).execute()

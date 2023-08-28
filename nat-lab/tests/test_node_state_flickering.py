@@ -13,7 +13,6 @@ from utils.connection_util import (
 
 
 @pytest.mark.asyncio
-@pytest.mark.derp
 @pytest.mark.timeout(180)
 @pytest.mark.long
 @pytest.mark.parametrize(
