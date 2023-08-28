@@ -78,17 +78,17 @@ async def test_mesh_remove_node(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha, adapter_type).run_meshnet(
+            telio.Client(connection_alpha, alpha, adapter_type).run(
                 api.get_meshmap(alpha.id)
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
+            telio.Client(connection_beta, beta).run(api.get_meshmap(beta.id))
         )
 
         client_gamma = await exit_stack.enter_async_context(
-            telio.Client(connection_gamma, gamma).run_meshnet(api.get_meshmap(gamma.id))
+            telio.Client(connection_gamma, gamma).run(api.get_meshmap(gamma.id))
         )
 
         await testing.wait_lengthy(

@@ -9,6 +9,8 @@ from python_wireguard import Key  # type: ignore
 from typing import Dict, Any, List, Tuple, Optional
 from utils.router import IPStack, IPProto, get_ip_address_type
 
+Meshmap = Dict[str, Any]
+
 GREEK_ALPHABET = [
     "alpha",
     "beta",
@@ -253,7 +255,7 @@ class API:
 
     def get_meshmap(
         self, node_id: str, derp_servers: Optional[List[Dict[str, Any]]] = None
-    ) -> Dict[str, Any]:
+    ) -> Meshmap:
         node = self._get_node(node_id)
 
         peers: List[Dict[str, Any]] = []

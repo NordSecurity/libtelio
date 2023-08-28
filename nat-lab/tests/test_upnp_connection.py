@@ -38,7 +38,7 @@ async def test_upnp_route_removed() -> None:
                 alpha,
                 AdapterType.BoringTun,
                 telio_features=TelioFeatures(direct=Direct(providers=UPNP_PROVIDER)),
-            ).run_meshnet(
+            ).run(
                 api.get_meshmap(alpha.id),
             )
         )
@@ -48,7 +48,7 @@ async def test_upnp_route_removed() -> None:
                 beta,
                 AdapterType.BoringTun,
                 telio_features=TelioFeatures(direct=Direct(providers=UPNP_PROVIDER)),
-            ).run_meshnet(api.get_meshmap(beta.id))
+            ).run(api.get_meshmap(beta.id))
         )
 
         await testing.wait_lengthy(

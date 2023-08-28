@@ -96,11 +96,11 @@ async def test_mesh_firewall_successful_passthrough(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run_meshnet(api.get_meshmap(alpha.id))
+            telio.Client(connection_alpha, alpha).run(api.get_meshmap(alpha.id))
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
+            telio.Client(connection_beta, beta).run(api.get_meshmap(beta.id))
         )
 
         await testing.wait_long(
@@ -239,11 +239,11 @@ async def test_mesh_firewall_reject_packet(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run_meshnet(api.get_meshmap(alpha.id))
+            telio.Client(connection_alpha, alpha).run(api.get_meshmap(alpha.id))
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
+            telio.Client(connection_beta, beta).run(api.get_meshmap(beta.id))
         )
 
         await testing.wait_long(
@@ -338,15 +338,15 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(
-                connection_alpha, alpha, telio.AdapterType.BoringTun
-            ).run_meshnet(api.get_meshmap(alpha.id))
+            telio.Client(connection_alpha, alpha, telio.AdapterType.BoringTun).run(
+                api.get_meshmap(alpha.id)
+            )
         )
 
         client_exit_node = await exit_stack.enter_async_context(
             telio.Client(
                 connection_exit_node, exit_node, telio.AdapterType.BoringTun
-            ).run_meshnet(api.get_meshmap(exit_node.id))
+            ).run(api.get_meshmap(exit_node.id))
         )
 
         await testing.wait_long(
@@ -569,11 +569,11 @@ async def test_mesh_firewall_file_share_port(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run_meshnet(api.get_meshmap(alpha.id))
+            telio.Client(connection_alpha, alpha).run(api.get_meshmap(alpha.id))
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
+            telio.Client(connection_beta, beta).run(api.get_meshmap(beta.id))
         )
 
         await testing.wait_long(
@@ -755,13 +755,13 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha, alpha_adapter_type).run_meshnet(
+            telio.Client(connection_alpha, alpha, alpha_adapter_type).run(
                 api.get_meshmap(alpha.id)
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta, beta_adapter_type).run_meshnet(
+            telio.Client(connection_beta, beta, beta_adapter_type).run(
                 api.get_meshmap(beta.id)
             )
         )
@@ -949,13 +949,13 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha, alpha_adapter_type).run_meshnet(
+            telio.Client(connection_alpha, alpha, alpha_adapter_type).run(
                 api.get_meshmap(alpha.id)
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta, beta_adapter_type).run_meshnet(
+            telio.Client(connection_beta, beta, beta_adapter_type).run(
                 api.get_meshmap(beta.id)
             )
         )

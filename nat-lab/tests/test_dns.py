@@ -102,11 +102,11 @@ async def test_dns(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run_meshnet(api.get_meshmap(alpha.id))
+            telio.Client(connection_alpha, alpha).run(api.get_meshmap(alpha.id))
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
+            telio.Client(connection_beta, beta).run(api.get_meshmap(beta.id))
         )
 
         await testing.wait_lengthy(
@@ -257,11 +257,11 @@ async def test_dns_port(alpha_ip_stack: IPStack) -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run_meshnet(api.get_meshmap(alpha.id))
+            telio.Client(connection_alpha, alpha).run(api.get_meshmap(alpha.id))
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
+            telio.Client(connection_beta, beta).run(api.get_meshmap(beta.id))
         )
 
         await testing.wait_lengthy(
@@ -494,7 +494,7 @@ async def test_dns_after_mesh_off(alpha_ip_stack: IPStack) -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run_meshnet(
+            telio.Client(connection_alpha, alpha).run(
                 api.get_meshmap(alpha.id, derp_servers=[])
             )
         )
@@ -603,15 +603,13 @@ async def test_dns_stability(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(
-                connection_alpha,
-                alpha,
-                adapter_type=AdapterType.BoringTun,
-            ).run_meshnet(api.get_meshmap(alpha.id))
+            telio.Client(connection_alpha, alpha, adapter_type).run(
+                api.get_meshmap(alpha.id)
+            )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
+            telio.Client(connection_beta, beta).run(api.get_meshmap(beta.id))
         )
 
         await testing.wait_long(
@@ -733,7 +731,7 @@ async def test_set_meshmap_dns_update(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run_meshnet(
+            telio.Client(connection_alpha, alpha).run(
                 api.get_meshmap(alpha.id, derp_servers=[])
             )
         )
@@ -866,7 +864,7 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run_meshnet(
+            telio.Client(connection_alpha, alpha).run(
                 api.get_meshmap(alpha.id, derp_servers=[])
             )
         )
@@ -908,7 +906,7 @@ async def test_dns_aaaa_records() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run_meshnet(api.get_meshmap(alpha.id))
+            telio.Client(connection_alpha, alpha).run(api.get_meshmap(alpha.id))
         )
         await client_alpha.enable_magic_dns(["1.1.1.1"])
 

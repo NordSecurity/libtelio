@@ -214,7 +214,7 @@ async def new_connections_with_mesh_clients(
                     ),
                 )
             ),
-        ).run_meshnet(
+        ).run(
             api.get_meshmap(alpha.id),
         )
     )
@@ -230,9 +230,9 @@ async def new_connections_with_mesh_clients(
                     skip_unresponsive_peers=SkipUnresponsivePeers(
                         no_handshake_threshold_secs=10
                     ),
-                ),
+                )
             ),
-        ).run_meshnet(
+        ).run(
             api.get_meshmap(beta.id),
         )
     )
@@ -840,7 +840,7 @@ async def test_infinite_stun_loop() -> None:
                 alpha,
                 AdapterType.BoringTun,
                 telio_features=TelioFeatures(direct=Direct(providers=["stun"])),
-            ).run_meshnet(
+            ).run(
                 api.get_meshmap(alpha.id),
             )
         )
@@ -850,7 +850,7 @@ async def test_infinite_stun_loop() -> None:
                 beta,
                 AdapterType.BoringTun,
                 telio_features=TelioFeatures(direct=Direct(providers=["stun"])),
-            ).run_meshnet(api.get_meshmap(beta.id))
+            ).run(api.get_meshmap(beta.id))
         )
 
         await testing.wait_defined(

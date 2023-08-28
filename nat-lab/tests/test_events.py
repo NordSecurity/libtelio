@@ -79,13 +79,13 @@ async def test_event_content_meshnet(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha, adapter_type).run_meshnet(
+            telio.Client(connection_alpha, alpha, adapter_type).run(
                 api.get_meshmap(alpha.id)
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
+            telio.Client(connection_beta, beta).run(api.get_meshmap(beta.id))
         )
 
         await testing.wait_lengthy(
@@ -361,13 +361,13 @@ async def test_event_content_exit_through_peer(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha, adapter_type).run_meshnet(
+            telio.Client(connection_alpha, alpha, adapter_type).run(
                 api.get_meshmap(alpha.id)
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
+            telio.Client(connection_beta, beta).run(api.get_meshmap(beta.id))
         )
 
         await testing.wait_long(
@@ -510,11 +510,11 @@ async def test_event_content_meshnet_node_upgrade_direct(
                 alpha,
                 adapter_type,
                 telio_features=TelioFeatures(direct=Direct(providers=["stun"])),
-            ).run_meshnet(api.get_meshmap(alpha.id))
+            ).run(api.get_meshmap(alpha.id))
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
+            telio.Client(connection_beta, beta).run(api.get_meshmap(beta.id))
         )
 
         await testing.wait_long(
@@ -588,7 +588,7 @@ async def test_event_content_meshnet_node_upgrade_direct(
                 connection_beta,
                 beta,
                 telio_features=TelioFeatures(direct=Direct(providers=["stun"])),
-            ).run_meshnet(api.get_meshmap(beta.id))
+            ).run(api.get_meshmap(beta.id))
         )
 
         await testing.wait_lengthy(

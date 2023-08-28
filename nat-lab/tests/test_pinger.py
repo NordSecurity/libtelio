@@ -60,7 +60,7 @@ async def test_ping_pong() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run_meshnet(api.get_meshmap(alpha.id))
+            telio.Client(connection_alpha, alpha).run(api.get_meshmap(alpha.id))
         )
 
         pinger_event = client_alpha.wait_for_output("Pinger")
@@ -94,7 +94,7 @@ async def test_send_malform_pinger_packet() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run_meshnet(api.get_meshmap(alpha.id))
+            telio.Client(connection_alpha, alpha).run(api.get_meshmap(alpha.id))
         )
 
         unexpected_packet_event = client_alpha.wait_for_output("Unexpected packet: ")

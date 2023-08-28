@@ -45,7 +45,7 @@ async def test_telio_tasks_with_all_features() -> None:
                         ),
                     ),
                 ),
-            ).run_meshnet(api.get_meshmap(alpha.id))
+            ).run(api.get_meshmap(alpha.id))
         )
         # let's wait some seconds for everything to start
         await asyncio.sleep(5)

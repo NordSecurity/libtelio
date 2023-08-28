@@ -34,11 +34,11 @@ async def test_derp_reconnect_2clients() -> None:
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.Client(alpha_connection, alpha).run_meshnet(api.get_meshmap(alpha.id))
+            telio.Client(alpha_connection, alpha).run(api.get_meshmap(alpha.id))
         )
 
         beta_client = await exit_stack.enter_async_context(
-            telio.Client(beta_connection, beta).run_meshnet(api.get_meshmap(beta.id))
+            telio.Client(beta_connection, beta).run(api.get_meshmap(beta.id))
         )
 
         # As the wireguard protocol routing scheme is based on the public key
@@ -127,13 +127,13 @@ async def test_derp_reconnect_3clients() -> None:
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.Client(alpha_connection, alpha).run_meshnet(api.get_meshmap(alpha.id))
+            telio.Client(alpha_connection, alpha).run(api.get_meshmap(alpha.id))
         )
         beta_client = await exit_stack.enter_async_context(
-            telio.Client(beta_connection, beta).run_meshnet(api.get_meshmap(beta.id))
+            telio.Client(beta_connection, beta).run(api.get_meshmap(beta.id))
         )
         gamma_client = await exit_stack.enter_async_context(
-            telio.Client(gamma_connection, gamma).run_meshnet(api.get_meshmap(gamma.id))
+            telio.Client(gamma_connection, gamma).run(api.get_meshmap(gamma.id))
         )
 
         await testing.wait_lengthy(
@@ -335,17 +335,17 @@ async def test_derp_restart() -> None:
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.Client(alpha_connection, alpha).run_meshnet(
+            telio.Client(alpha_connection, alpha).run(
                 api.get_meshmap(alpha.id, DERP_SERVERS1)
             )
         )
         beta_client = await exit_stack.enter_async_context(
-            telio.Client(beta_connection, beta).run_meshnet(
+            telio.Client(beta_connection, beta).run(
                 api.get_meshmap(beta.id, DERP_SERVERS2)
             )
         )
         gamma_client = await exit_stack.enter_async_context(
-            telio.Client(gamma_connection, gamma).run_meshnet(
+            telio.Client(gamma_connection, gamma).run(
                 api.get_meshmap(gamma.id, DERP_SERVERS3)
             )
         )
@@ -522,10 +522,10 @@ async def test_derp_server_list_exhaustion() -> None:
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.Client(alpha_connection, alpha).run_meshnet(api.get_meshmap(alpha.id))
+            telio.Client(alpha_connection, alpha).run(api.get_meshmap(alpha.id))
         )
         beta_client = await exit_stack.enter_async_context(
-            telio.Client(beta_connection, beta).run_meshnet(api.get_meshmap(beta.id))
+            telio.Client(beta_connection, beta).run(api.get_meshmap(beta.id))
         )
 
         await testing.wait_lengthy(

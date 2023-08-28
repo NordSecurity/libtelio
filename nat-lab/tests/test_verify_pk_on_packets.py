@@ -39,15 +39,15 @@ async def test_verify_pk_on_packets() -> None:
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.Client(
-                alpha_connection, alpha, telio.AdapterType.BoringTun
-            ).run_meshnet(api.get_meshmap(alpha.id))
+            telio.Client(alpha_connection, alpha, telio.AdapterType.BoringTun).run(
+                api.get_meshmap(alpha.id)
+            )
         )
 
         beta_client = await exit_stack.enter_async_context(
-            telio.Client(
-                beta_connection, beta, telio.AdapterType.BoringTun
-            ).run_meshnet(api.get_meshmap(beta.id))
+            telio.Client(beta_connection, beta, telio.AdapterType.BoringTun).run(
+                api.get_meshmap(beta.id)
+            )
         )
         await testing.wait_lengthy(
             asyncio.gather(

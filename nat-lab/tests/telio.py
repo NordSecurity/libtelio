@@ -9,9 +9,9 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from dataclasses_json import dataclass_json, DataClassJsonMixin
 from enum import Enum
-from mesh_api import Node
+from mesh_api import Node, Meshmap
 from telio_features import TelioFeatures
-from typing import List, Dict, Any, Set, Optional, AsyncIterator
+from typing import List, Set, Optional, AsyncIterator
 from utils import testing, asyncio_util
 from utils.connection import Connection, TargetOS
 from utils.connection_util import get_libtelio_binary_path
@@ -384,7 +384,7 @@ class Client:
         self._quit = False
 
     @asynccontextmanager
-    async def run(self, telio_v3=False) -> AsyncIterator["Client"]:
+    async def run(self, meshmap: Optional[Meshmap] = None, telio_v3: bool = False) -> AsyncIterator["Client"]:
         async def on_stdout(stdout: str) -> None:
             supress_print_list = [
                 "MESSAGE_DONE=",
@@ -434,6 +434,8 @@ class Client:
                     ],
                 )
                 async with asyncio_util.run_async_context(self._event_request_loop()):
+                    if meshmap:
+                        await self.set_meshmap(meshmap)
                     yield self
             finally:
                 if self._process.is_executing():
@@ -444,14 +446,6 @@ class Client:
                     await self._router.delete_exit_node_route()
                     await self._router.delete_interface()
                 await self.save_logs()
-
-    @asynccontextmanager
-    async def run_meshnet(
-        self, meshmap: Dict[str, Any], telio_v3=False
-    ) -> AsyncIterator["Client"]:
-        async with self.run(telio_v3):
-            await self.set_meshmap(meshmap)
-            yield self
 
     async def quit(self):
         self._quit = True
@@ -532,7 +526,7 @@ class Client:
             except asyncio.CancelledError:
                 pass
 
-    async def set_meshmap(self, meshmap: Dict[str, Any]) -> None:
+    async def set_meshmap(self, meshmap: Meshmap) -> None:
         made_changes = await self._configure_interface()
 
         # Linux native WG takes ~1.5s to setup listen port for WG interface. Since

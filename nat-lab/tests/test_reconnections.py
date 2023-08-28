@@ -71,13 +71,13 @@ async def test_mesh_reconnect(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(alpha_connection, alpha, adapter_type).run_meshnet(
+            telio.Client(alpha_connection, alpha, adapter_type).run(
                 api.get_meshmap(alpha.id)
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(beta_connection, beta).run_meshnet(api.get_meshmap(beta.id))
+            telio.Client(beta_connection, beta).run(api.get_meshmap(beta.id))
         )
 
         await testing.wait_lengthy(

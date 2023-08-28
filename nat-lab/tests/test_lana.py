@@ -257,7 +257,7 @@ async def run_default_scenario(
             connection_alpha,
             alpha,
             telio_features=build_telio_features("alpha_fingerprint"),
-        ).run_meshnet(api.get_meshmap(alpha.id))
+        ).run(api.get_meshmap(alpha.id))
     )
 
     client_beta = await exit_stack.enter_async_context(
@@ -265,7 +265,7 @@ async def run_default_scenario(
             connection_beta,
             beta,
             telio_features=build_telio_features("beta_fingerprint"),
-        ).run_meshnet(api.get_meshmap(beta.id))
+        ).run(api.get_meshmap(beta.id))
     )
 
     client_gamma = await exit_stack.enter_async_context(
@@ -273,7 +273,7 @@ async def run_default_scenario(
             connection_gamma,
             gamma,
             telio_features=build_telio_features("gamma_fingerprint"),
-        ).run_meshnet(api.get_meshmap(gamma.id))
+        ).run(api.get_meshmap(gamma.id))
     )
 
     await testing.wait_lengthy(
@@ -841,14 +841,14 @@ async def test_lana_with_disconnected_node(
                 connection_alpha,
                 alpha,
                 telio_features=build_telio_features("alpha_fingerprint"),
-            ).run_meshnet(api.get_meshmap(alpha.id))
+            ).run(api.get_meshmap(alpha.id))
         )
         client_beta = await exit_stack.enter_async_context(
             telio.Client(
                 connection_beta,
                 beta,
                 telio_features=build_telio_features("beta_fingerprint"),
-            ).run_meshnet(api.get_meshmap(beta.id))
+            ).run(api.get_meshmap(beta.id))
         )
 
         await testing.wait_long(
@@ -1006,7 +1006,7 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
                 connection_beta,
                 beta,
                 telio_features=build_telio_features("beta_fingerprint"),
-            ).run_meshnet(api.get_meshmap(beta.id))
+            ).run(api.get_meshmap(beta.id))
         )
 
         await client_beta.trigger_event_collection()
@@ -1033,7 +1033,7 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
                 connection_alpha,
                 alpha,
                 telio_features=build_telio_features("alpha_fingerprint"),
-            ).run_meshnet(api.get_meshmap(alpha.id))
+            ).run(api.get_meshmap(alpha.id))
         )
 
         beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
@@ -1095,7 +1095,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
                 connection_beta,
                 beta,
                 telio_features=build_telio_features("beta_fingerprint"),
-            ).run_meshnet(api.get_meshmap(beta.id))
+            ).run(api.get_meshmap(beta.id))
         )
 
         await client_beta.trigger_event_collection()
@@ -1118,7 +1118,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
                 connection_beta,
                 beta,
                 telio_features=build_telio_features("beta_fingerprint"),
-            ).run_meshnet(api.get_meshmap(beta.id))
+            ).run(api.get_meshmap(beta.id))
         )
 
         await client_beta.trigger_event_collection()
@@ -1156,7 +1156,7 @@ async def test_lana_initial_heartbeat_no_trigger(
                     "alpha_fingerprint",
                     initial_heartbeat_interval=initial_heartbeat_interval,
                 ),
-            ).run_meshnet(api.get_meshmap(alpha.id))
+            ).run(api.get_meshmap(alpha.id))
         )
 
         if initial_heartbeat_interval:

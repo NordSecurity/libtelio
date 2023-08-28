@@ -105,13 +105,13 @@ async def test_mesh_network_switch(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha, adapter_type).run_meshnet(
+            telio.Client(connection_alpha, alpha, adapter_type).run(
                 api.get_meshmap(alpha.id)
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
+            telio.Client(connection_beta, beta).run(api.get_meshmap(beta.id))
         )
 
         await testing.wait_long(
@@ -279,7 +279,7 @@ async def test_mesh_network_switch_direct(
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
-            ).run_meshnet(api.get_meshmap(alpha.id))
+            ).run(api.get_meshmap(alpha.id))
         )
 
         beta_client = await exit_stack.enter_async_context(
@@ -290,7 +290,7 @@ async def test_mesh_network_switch_direct(
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
-            ).run_meshnet(api.get_meshmap(beta.id))
+            ).run(api.get_meshmap(beta.id))
         )
 
         await testing.wait_lengthy(

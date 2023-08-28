@@ -25,7 +25,7 @@ async def test_default_direct_features() -> None:
                 alpha,
                 telio.AdapterType.BoringTun,
                 telio_features=TelioFeatures(direct=Direct(providers=None)),
-            ).run_meshnet(api.get_meshmap(alpha.id))
+            ).run(api.get_meshmap(alpha.id))
         )
 
         started_tasks = alpha_client.get_runtime().get_started_tasks()
@@ -52,7 +52,7 @@ async def test_enable_all_direct_features() -> None:
                 telio_features=TelioFeatures(
                     direct=Direct(providers=ALL_DIRECT_FEATURES)
                 ),
-            ).run_meshnet(api.get_meshmap(alpha.id))
+            ).run(api.get_meshmap(alpha.id))
         )
 
         started_tasks = alpha_client.get_runtime().get_started_tasks()
@@ -77,7 +77,7 @@ async def test_check_features_with_empty_direct_providers() -> None:
                 alpha,
                 telio.AdapterType.BoringTun,
                 telio_features=TelioFeatures(direct=Direct(providers=EMPTY_PROVIDER)),
-            ).run_meshnet(api.get_meshmap(alpha.id))
+            ).run(api.get_meshmap(alpha.id))
         )
 
         started_tasks = alpha_client.get_runtime().get_started_tasks()
