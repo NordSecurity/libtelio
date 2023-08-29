@@ -9,7 +9,14 @@ from utils.connection_util import ConnectionTag, new_connection_by_tag
     "connection_tag,public_ip",
     [
         pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, "10.0.254.1"),
-        pytest.param(ConnectionTag.WINDOWS_VM, "10.0.254.7", marks=pytest.mark.windows),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            "10.0.254.7",
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="test is flaky - LLT-4213"),
+            ],
+        ),
         pytest.param(ConnectionTag.MAC_VM, "10.0.254.7", marks=pytest.mark.mac),
     ],
 )
