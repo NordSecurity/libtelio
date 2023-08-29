@@ -111,8 +111,7 @@ async def run_default_scenario(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
             generate_connection_tracker_config(
                 ConnectionTag.DOCKER_CONE_CLIENT_1,
-                # TODO: Change back derp limits max value to 1, when issue LLT-3875 is fixed
-                derp_1_limits=ConnectionLimits(1, None),
+                derp_1_limits=ConnectionLimits(1, 1),
                 vpn_1_limits=ConnectionLimits(1 if alpha_has_vpn_connection else 0, 1),
             ),
         )
@@ -122,8 +121,7 @@ async def run_default_scenario(
             ConnectionTag.DOCKER_CONE_CLIENT_2,
             generate_connection_tracker_config(
                 ConnectionTag.DOCKER_CONE_CLIENT_2,
-                # TODO: Change back derp limits max value to 1, when issue LLT-3875 is fixed
-                derp_1_limits=ConnectionLimits(1, None),
+                derp_1_limits=ConnectionLimits(1, 1),
                 vpn_1_limits=ConnectionLimits(1 if beta_has_vpn_connection else 0, 1),
             ),
         )
@@ -133,8 +131,7 @@ async def run_default_scenario(
             ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
             generate_connection_tracker_config(
                 ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
-                # TODO: Change back derp limits max value to 1, when issue LLT-3875 is fixed
-                derp_1_limits=ConnectionLimits(1, None),
+                derp_1_limits=ConnectionLimits(1, 1),
                 vpn_1_limits=ConnectionLimits(1 if gamma_has_vpn_connection else 0, 1),
             ),
         )
@@ -587,8 +584,7 @@ async def test_lana_with_disconnected_node() -> None:
                 ConnectionTag.DOCKER_CONE_CLIENT_2,
                 generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    # TODO: Change back derp limits max value to 1, when issue LLT-3875 is fixed
-                    derp_1_limits=ConnectionLimits(1, None),
+                    derp_1_limits=ConnectionLimits(1, 1),
                 ),
             )
         )

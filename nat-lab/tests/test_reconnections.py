@@ -51,8 +51,7 @@ async def test_mesh_reconnect(
                 alpha_connection_tag,
                 generate_connection_tracker_config(
                     alpha_connection_tag,
-                    # TODO: Change back derp limits max value to 1, when issue LLT-3875 is fixed
-                    derp_1_limits=ConnectionLimits(1, None),
+                    derp_1_limits=ConnectionLimits(2, 2),
                 ),
             )
         )

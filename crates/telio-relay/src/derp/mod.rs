@@ -93,7 +93,7 @@ pub struct DerpRelay {
 
 struct State {
     /// Channel, that communicates with upper multiplexer module
-    channel: Chan<(PublicKey, PacketRelayed)>,
+    channel: Option<Chan<(PublicKey, PacketRelayed)>>,
     /// Derp configuration
     config: Option<Config>,
     /// Connection object
@@ -260,7 +260,7 @@ impl DerpRelay {
 
         Self {
             task: Task::start(State {
-                channel,
+                channel: Some(channel),
                 config: None,
                 conn: None,
                 event,
@@ -644,11 +644,18 @@ impl Runtime for State {
 
         match &mut self.conn {
             Some(c) => {
+                let (upper_read, chan_tx) = match self.channel.as_mut() {
+                    Some(chan) => (chan.rx.recv(), &chan.tx),
+                    None => {
+                        // Similar case to config, but the log is already printed
+                        return (update.await)(self).await;
+                    }
+                };
+
                 if let Some(connecting) = self.connecting.take() {
                     connecting.abort();
                 }
 
-                let upper_read = self.channel.rx.recv();
                 let derp_relayed_read = c.comms_relayed.rx.recv();
                 let derp_direct_read = c.comms_direct.rx.recv();
                 let conn_join = select_all([&mut c.join_sender, &mut c.join_receiver]);
@@ -667,6 +674,7 @@ impl Runtime for State {
                         },
                         Some((_, None)) => {
                             telio_log_debug!("Disconnecting from DERP server due to closed rx channel");
+                            self.channel = None;
                             self.disconnect().await;
                         }
                         // If forwarding fails, disconnect
@@ -685,10 +693,10 @@ impl Runtime for State {
                         }
                     }
                     // Received payload from DERP stream, forward it to upper relay
-                    Some((permit, Some((pk, buf)))) = wait_for_tx(&self.channel.tx, derp_relayed_read) => {
+                    Some((permit, Some((pk, buf)))) = wait_for_tx(chan_tx, derp_relayed_read) => {
                         Self::handle_incoming_payload_relayed(permit, pk, buf, config).await;
                     },
-                    Some((permit, Some(buf))) = wait_for_tx(&self.channel.tx, derp_direct_read) => {
+                    Some((permit, Some(buf))) = wait_for_tx(chan_tx, derp_direct_read) => {
                         self.remote_peers_states = Self::handle_incoming_payload_direct(self.derp_poll_session, buf).await.unwrap_or_default();
                         telio_log_debug!("Remote peers statuses: {:?}", self.remote_peers_states);
                     }
@@ -701,6 +709,10 @@ impl Runtime for State {
                 Ok(())
             }
             None => {
+                if self.channel.is_none() {
+                    return (update.await)(self).await;
+                }
+
                 let connecting = if let Some(connecting) = &mut self.connecting {
                     connecting
                 } else {
