@@ -1,9 +1,9 @@
 import asyncio
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
-from itertools import product
+from itertools import product, zip_longest
 from mesh_api import Node, Meshmap, API
-from telio import Client, AdapterType
+from telio import Client, AdapterType, State, PathType
 from telio_features import TelioFeatures
 from typing import List, Tuple, Optional
 from utils.connection import Connection
@@ -114,3 +114,42 @@ async def setup_environment(
     )
 
     return Environment(api, nodes, connection_managers, clients)
+
+
+async def setup_mesh_nodes(
+    exit_stack: AsyncExitStack, instances: List[SetupParameters]
+) -> Environment:
+    env = await setup_environment(exit_stack, instances)
+
+    await asyncio.wait_for(
+        asyncio.gather(
+            *[
+                client.wait_for_state_on_any_derp([State.Connected])
+                for client in env.clients
+            ]
+        ),
+        30,
+    )
+
+    await asyncio.wait_for(
+        asyncio.gather(
+            *[
+                client.wait_for_state_peer(
+                    other_node.public_key,
+                    [State.Connected],
+                    [PathType.Direct]
+                    if instance.features.direct and other_instance.features.direct
+                    else [PathType.Relay],
+                )
+                for (client, node, instance), (
+                    _,
+                    other_node,
+                    other_instance,
+                ) in product(zip_longest(env.clients, env.nodes, instances), repeat=2)
+                if node != other_node
+            ]
+        ),
+        60,
+    )
+
+    return env

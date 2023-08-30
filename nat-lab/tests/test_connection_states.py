@@ -2,7 +2,7 @@ import asyncio
 import pytest
 import telio
 from contextlib import AsyncExitStack
-from helpers import setup_environment, SetupParameters
+from helpers import SetupParameters, setup_mesh_nodes
 from utils import testing
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
@@ -90,29 +90,12 @@ async def test_connected_state_after_routing(
     alpha_setup_params: SetupParameters, beta_setup_params: SetupParameters
 ) -> None:
     async with AsyncExitStack() as exit_stack:
-        env = await setup_environment(
+        env = await setup_mesh_nodes(
             exit_stack, [alpha_setup_params, beta_setup_params]
         )
-        alpha, beta = env.nodes
+        _, beta = env.nodes
         client_alpha, client_beta = env.clients
         conn_alpha, conn_beta = env.connections
-
-        await testing.wait_lengthy(
-            asyncio.gather(
-                client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
-                client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
-            )
-        )
-        await testing.wait_lengthy(
-            asyncio.gather(
-                client_alpha.wait_for_state_peer(
-                    beta.public_key, [telio.State.Connected]
-                ),
-                client_beta.wait_for_state_peer(
-                    alpha.public_key, [telio.State.Connected]
-                ),
-            )
-        )
 
         await testing.wait_long(client_beta.get_router().create_exit_node_route())
         await testing.wait_long(client_alpha.connect_to_exit_node(beta.public_key))
