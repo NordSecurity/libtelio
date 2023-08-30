@@ -5,7 +5,7 @@ from itertools import product, zip_longest
 from mesh_api import Node, Meshmap, API
 from telio import Client, AdapterType, State, PathType
 from telio_features import TelioFeatures
-from typing import AsyncIterator, List, Tuple, Optional
+from typing import AsyncIterator, List, Tuple, Optional, Union
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionTrackerConfig
 from utils.connection_util import (
@@ -47,15 +47,17 @@ def setup_api(node_params: List[bool]) -> Tuple[API, List[Node]]:
 async def setup_connections(
     exit_stack: AsyncExitStack,
     connection_parameters: List[
-        Tuple[ConnectionTag, Optional[List[ConnectionTrackerConfig]]]
+        Union[
+            ConnectionTag, Tuple[ConnectionTag, Optional[List[ConnectionTrackerConfig]]]
+        ]
     ],
 ) -> List[ConnectionManager]:
     return await asyncio.gather(
         *[
-            exit_stack.enter_async_context(
-                new_connection_manager_by_tag(connection_tag, connection_tracker_config)
-            )
-            for connection_tag, connection_tracker_config in connection_parameters
+            exit_stack.enter_async_context(new_connection_manager_by_tag(param, None))
+            if isinstance(param, ConnectionTag)
+            else exit_stack.enter_async_context(new_connection_manager_by_tag(*param))
+            for param in connection_parameters
         ]
     )
 

@@ -1,8 +1,9 @@
 import pytest
 from contextlib import AsyncExitStack
 from derp_cli import DerpClient, DerpTarget
+from helpers import setup_connections
 from utils import testing
-from utils.connection_util import ConnectionTag, new_connection_by_tag
+from utils.connection_util import ConnectionTag
 
 DERP_SERVER = "http://10.0.10.1:8765"
 DERP_SERVER_2 = "http://10.0.10.2:8765"
@@ -19,12 +20,12 @@ TESTING_STRING = "testing"
 )
 async def test_derp_client_message_forward(connection_tag: ConnectionTag) -> None:
     async with AsyncExitStack() as exit_stack:
-        connection_1 = await exit_stack.enter_async_context(
-            new_connection_by_tag(connection_tag)
-        )
-        connection_2 = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
-        )
+        connection_1, connection_2 = [
+            conn.connection
+            for conn in await setup_connections(
+                exit_stack, [connection_tag, ConnectionTag.DOCKER_CONE_CLIENT_2]
+            )
+        ]
 
         # Test message relay with identical DERP servers
         async with DerpTarget(connection_1, DERP_SERVER).run() as target:
