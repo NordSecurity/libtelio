@@ -1,3 +1,12 @@
+### v4.0.8
+### **Bruschetta**
+---
+### Changelog
+* LLT-3990: BACKPORT Add initial heartbeat interval to feature config
+
+<br>
+
+
 ### v4.0.7
 ### **Bruschetta**
 ---
