@@ -1,11 +1,11 @@
 import asyncio
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from itertools import product, zip_longest
 from mesh_api import Node, Meshmap, API
 from telio import Client, AdapterType, State, PathType
 from telio_features import TelioFeatures
-from typing import List, Tuple, Optional
+from typing import AsyncIterator, List, Tuple, Optional
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionTrackerConfig
 from utils.connection_util import (
@@ -82,9 +82,10 @@ async def setup_clients(
     )
 
 
+@asynccontextmanager
 async def setup_environment(
     exit_stack: AsyncExitStack, instances: List[SetupParameters]
-) -> Environment:
+) -> AsyncIterator[Environment]:
     api, nodes = setup_api([instance.is_local for instance in instances])
     connection_managers = await setup_connections(
         exit_stack,
@@ -113,13 +114,20 @@ async def setup_environment(
         ),
     )
 
-    return Environment(api, nodes, connection_managers, clients)
+    try:
+        yield Environment(api, nodes, connection_managers, clients)
+    finally:
+        for conn_manager in connection_managers:
+            assert (
+                conn_manager.tracker
+                and conn_manager.tracker.get_out_of_limits() is None
+            ) or conn_manager.tracker is None
 
 
 async def setup_mesh_nodes(
     exit_stack: AsyncExitStack, instances: List[SetupParameters]
 ) -> Environment:
-    env = await setup_environment(exit_stack, instances)
+    env = await exit_stack.enter_async_context(setup_environment(exit_stack, instances))
 
     await asyncio.wait_for(
         asyncio.gather(
@@ -131,25 +139,27 @@ async def setup_mesh_nodes(
         30,
     )
 
-    await asyncio.wait_for(
-        asyncio.gather(
-            *[
+    await asyncio.gather(
+        *[
+            asyncio.wait_for(
                 client.wait_for_state_peer(
                     other_node.public_key,
                     [State.Connected],
                     [PathType.Direct]
                     if instance.features.direct and other_instance.features.direct
                     else [PathType.Relay],
-                )
-                for (client, node, instance), (
-                    _,
-                    other_node,
-                    other_instance,
-                ) in product(zip_longest(env.clients, env.nodes, instances), repeat=2)
-                if node != other_node
-            ]
-        ),
-        60,
+                ),
+                60
+                if instance.features.direct and other_instance.features.direct
+                else 30,
+            )
+            for (client, node, instance), (
+                _,
+                other_node,
+                other_instance,
+            ) in product(zip_longest(env.clients, env.nodes, instances), repeat=2)
+            if node != other_node
+        ]
     )
 
     return env
