@@ -52,18 +52,6 @@ jobs:
           with:
             version: 'v0.1.39'
             args: '--workspace --locked --output human --backend depinfo'
-  nagger:
-      runs-on: ubuntu-22.04
-      env:
-        RUSTFLAGS: -Dwarnings
-        # TODO: set DYLINT_LIBRARY_PATH with directory path containing dylint lints
-      steps:
-        - uses: actions/checkout@v3
-        - uses: actions-rs/toolchain@v1
-          with:
-            toolchain: 1.65.0
-        - run: cargo +1.65.0 install cargo-dylint dylint-link
-        - run: cargo +1.65.0 dylint --workspace --all
   rustfmt:
       runs-on: ubuntu-22.04
       steps:
