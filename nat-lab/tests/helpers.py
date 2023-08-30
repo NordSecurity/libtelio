@@ -7,9 +7,12 @@ from telio import Client, AdapterType
 from telio_features import TelioFeatures
 from typing import List, Tuple, Optional
 from utils.connection import Connection
-from utils.connection_tracker import ConnectionTracker, ConnectionTrackerConfig
-from utils.connection_util import ConnectionTag, new_connection_manager_by_tag
-from utils.network_switcher import NetworkSwitcher
+from utils.connection_tracker import ConnectionTrackerConfig
+from utils.connection_util import (
+    ConnectionManager,
+    ConnectionTag,
+    new_connection_manager_by_tag,
+)
 
 
 @dataclass
@@ -28,14 +31,7 @@ class SetupParameters:
 class Environment:
     api: API
     nodes: List[Node]
-    connections: List[
-        Tuple[
-            Connection,
-            Optional[Connection],
-            NetworkSwitcher,
-            Optional[ConnectionTracker],
-        ]
-    ]
+    connections: List[ConnectionManager]
     clients: List[Client]
 
 
@@ -53,11 +49,7 @@ async def setup_connections(
     connection_parameters: List[
         Tuple[ConnectionTag, Optional[List[ConnectionTrackerConfig]]]
     ],
-) -> List[
-    Tuple[
-        Connection, Optional[Connection], NetworkSwitcher, Optional[ConnectionTracker]
-    ]
-]:
+) -> List[ConnectionManager]:
     return await asyncio.gather(
         *[
             exit_stack.enter_async_context(
@@ -94,7 +86,7 @@ async def setup_environment(
     exit_stack: AsyncExitStack, instances: List[SetupParameters]
 ) -> Environment:
     api, nodes = setup_api([instance.is_local for instance in instances])
-    connections = await setup_connections(
+    connection_managers = await setup_connections(
         exit_stack,
         [
             (
@@ -109,7 +101,7 @@ async def setup_environment(
         exit_stack,
         list(
             zip(
-                [conn for conn, _, _, _ in connections],
+                [conn_manager.connection for conn_manager in connection_managers],
                 nodes,
                 [instance.adapter_type for instance in instances],
                 [instance.features for instance in instances],
@@ -121,4 +113,4 @@ async def setup_environment(
         ),
     )
 
-    return Environment(api, nodes, connections, clients)
+    return Environment(api, nodes, connection_managers, clients)

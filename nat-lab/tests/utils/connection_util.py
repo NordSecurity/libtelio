@@ -1,6 +1,7 @@
 import config
 from aiodocker import Docker
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from enum import Enum, auto
 from typing import AsyncIterator, Dict, Tuple, Optional, List
 from utils.connection import Connection, TargetOS
@@ -152,6 +153,14 @@ LAN_ADDR_MAP: Dict[ConnectionTag, str] = {
 }
 
 
+@dataclass
+class ConnectionManager:
+    connection: Connection
+    gw_connection: Optional[Connection]
+    network_switcher: Optional[NetworkSwitcher]
+    tracker: ConnectionTracker
+
+
 def get_libtelio_binary_path(path: str, connection: Connection) -> str:
     target_os = connection.target_os
     if target_os == TargetOS.Linux:
@@ -204,11 +213,7 @@ async def create_network_switcher(
 async def new_connection_manager_by_tag(
     tag: ConnectionTag,
     conn_tracker_config: Optional[List[ConnectionTrackerConfig]] = None,
-) -> AsyncIterator[
-    Tuple[
-        Connection, Optional[Connection], Optional[NetworkSwitcher], ConnectionTracker
-    ]
-]:
+) -> AsyncIterator[ConnectionManager]:
     async with new_connection_raw(tag) as connection:
         network_switcher = await create_network_switcher(tag, connection)
         if network_switcher:
@@ -218,65 +223,58 @@ async def new_connection_manager_by_tag(
                 async with ConnectionTracker(
                     gw_connection, conn_tracker_config
                 ).run() as conn_tracker:
-                    yield (connection, gw_connection, network_switcher, conn_tracker)
+                    yield ConnectionManager(
+                        connection, gw_connection, network_switcher, conn_tracker
+                    )
         else:
             async with ConnectionTracker(
                 connection, conn_tracker_config
             ).run() as conn_tracker:
-                yield (connection, None, network_switcher, conn_tracker)
+                yield ConnectionManager(
+                    connection, None, network_switcher, conn_tracker
+                )
 
 
 @asynccontextmanager
 async def new_connection_with_network_switcher(
     tag: ConnectionTag,
 ) -> AsyncIterator[Tuple[Connection, Optional[NetworkSwitcher]]]:
-    async with new_connection_manager_by_tag(tag) as (
-        connection,
-        _,
-        network_switcher,
-        _,
-    ):
-        yield (connection, network_switcher)
+    async with new_connection_manager_by_tag(tag) as conn_manager:
+        yield (conn_manager.connection, conn_manager.network_switcher)
 
 
 @asynccontextmanager
 async def new_connection_with_conn_tracker(
     tag: ConnectionTag, conn_tracker_config: Optional[List[ConnectionTrackerConfig]]
 ) -> AsyncIterator[Tuple[Connection, ConnectionTracker]]:
-    async with new_connection_manager_by_tag(tag, conn_tracker_config) as (
-        connection,
-        _,
-        _,
-        conn_tracker,
-    ):
-        yield (connection, conn_tracker)
+    async with new_connection_manager_by_tag(tag, conn_tracker_config) as conn_manager:
+        yield (conn_manager.connection, conn_manager.tracker)
 
 
 @asynccontextmanager
 async def new_connection_with_gw(
     tag: ConnectionTag,
 ) -> AsyncIterator[Tuple[Connection, Optional[Connection]]]:
-    async with new_connection_manager_by_tag(tag) as (connection, connection_gw, _, _):
-        yield (connection, connection_gw)
+    async with new_connection_manager_by_tag(tag) as conn_manager:
+        yield (conn_manager.connection, conn_manager.gw_connection)
 
 
 @asynccontextmanager
 async def new_connection_with_tracker_and_gw(
     tag: ConnectionTag, conn_tracker_config: Optional[List[ConnectionTrackerConfig]]
 ) -> AsyncIterator[Tuple[Connection, Optional[Connection], ConnectionTracker]]:
-    async with new_connection_manager_by_tag(tag, conn_tracker_config) as (
-        connection,
-        connection_gw,
-        _,
-        conn_tracker,
-    ):
-        yield (connection, connection_gw, conn_tracker)
+    async with new_connection_manager_by_tag(tag, conn_tracker_config) as conn_manager:
+        yield (
+            conn_manager.connection,
+            conn_manager.gw_connection,
+            conn_manager.tracker,
+        )
 
 
 @asynccontextmanager
 async def new_connection_by_tag(tag: ConnectionTag) -> AsyncIterator[Connection]:
-    async with new_connection_manager_by_tag(tag) as (connection, _, _, _):
-        yield connection
+    async with new_connection_manager_by_tag(tag) as conn_manager:
+        yield conn_manager.connection
 
 
 def container_id(tag: ConnectionTag) -> str:

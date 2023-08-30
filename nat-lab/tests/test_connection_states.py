@@ -11,65 +11,91 @@ from utils.ping import Ping
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "alpha_connection_tag, alpha_adapter_type",
+    "alpha_setup_params",
     [
         pytest.param(
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            telio.AdapterType.BoringTun,
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type=telio.AdapterType.BoringTun,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
         ),
         pytest.param(
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            telio.AdapterType.LinuxNativeWg,
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type=telio.AdapterType.LinuxNativeWg,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            ),
             marks=pytest.mark.linux_native,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM,
-            telio.AdapterType.WindowsNativeWg,
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM,
+                adapter_type=telio.AdapterType.WindowsNativeWg,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.WINDOWS_VM,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            ),
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM,
-            telio.AdapterType.WireguardGo,
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM,
+                adapter_type=telio.AdapterType.WireguardGo,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.WINDOWS_VM,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            ),
             marks=[
                 pytest.mark.windows,
                 pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
             ],
         ),
         pytest.param(
-            ConnectionTag.MAC_VM,
-            telio.AdapterType.Default,
+            SetupParameters(
+                connection_tag=ConnectionTag.MAC_VM,
+                adapter_type=telio.AdapterType.BoringTun,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.MAC_VM,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            ),
             marks=pytest.mark.mac,
         ),
     ],
 )
+@pytest.mark.parametrize(
+    "beta_setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
+        )
+    ],
+)
 async def test_connected_state_after_routing(
-    alpha_connection_tag: ConnectionTag, alpha_adapter_type: telio.AdapterType
+    alpha_setup_params: SetupParameters, beta_setup_params: SetupParameters
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await setup_environment(
-            exit_stack,
-            [
-                SetupParameters(
-                    connection_tag=alpha_connection_tag,
-                    adapter_type=alpha_adapter_type,
-                    connection_tracker_config=generate_connection_tracker_config(
-                        alpha_connection_tag, derp_1_limits=ConnectionLimits(1, 1)
-                    ),
-                ),
-                SetupParameters(
-                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    connection_tracker_config=generate_connection_tracker_config(
-                        ConnectionTag.DOCKER_CONE_CLIENT_2,
-                        derp_1_limits=ConnectionLimits(1, 1),
-                    ),
-                ),
-            ],
+            exit_stack, [alpha_setup_params, beta_setup_params]
         )
         alpha, beta = env.nodes
         client_alpha, client_beta = env.clients
-        (connection_alpha, _, _, alpha_conn_tracker), (_, _, _, beta_conn_tracker) = (
-            env.connections
-        )
+        conn_alpha, conn_beta = env.connections
 
         await testing.wait_lengthy(
             asyncio.gather(
@@ -101,8 +127,8 @@ async def test_connected_state_after_routing(
             client_alpha.wait_for_event_peer(beta.public_key, [telio.State.Connected])
         )
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
+        async with Ping(conn_alpha.connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
-        assert alpha_conn_tracker and alpha_conn_tracker.get_out_of_limits() is None
-        assert beta_conn_tracker and beta_conn_tracker.get_out_of_limits() is None
+        assert conn_alpha.tracker and conn_alpha.tracker.get_out_of_limits() is None
+        assert conn_beta.tracker and conn_beta.tracker.get_out_of_limits() is None
