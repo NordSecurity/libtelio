@@ -384,7 +384,9 @@ class Client:
         self._quit = False
 
     @asynccontextmanager
-    async def run(self, meshmap: Optional[Meshmap] = None, telio_v3: bool = False) -> AsyncIterator["Client"]:
+    async def run(
+        self, meshmap: Optional[Meshmap] = None, telio_v3: bool = False
+    ) -> AsyncIterator["Client"]:
         async def on_stdout(stdout: str) -> None:
             supress_print_list = [
                 "MESSAGE_DONE=",
@@ -396,7 +398,13 @@ class Client:
             ]
             for line in stdout.splitlines():
                 if not any(string in line for string in supress_print_list):
-                    print(f"[{self._node.name}]: {line}")
+                    print(f"[{self._node.name}]: stdout: {line}")
+                if self._runtime:
+                    self._runtime.handle_output_line(line)
+
+        async def on_stderr(stdout: str) -> None:
+            for line in stdout.splitlines():
+                print(f"[{self._node.name}]: stderr: {line}")
                 if self._runtime:
                     self._runtime.handle_output_line(line)
 
@@ -421,7 +429,9 @@ class Client:
                     f"-f {self._telio_features.to_json()}",
                 ]
             )
-        async with self._process.run(stdout_callback=on_stdout):
+        async with self._process.run(
+            stdout_callback=on_stdout, stderr_callback=on_stderr
+        ):
             try:
                 await self._process.wait_stdin_ready()
                 await self._write_command(
