@@ -3,7 +3,7 @@ mod wg_controller;
 use async_trait::async_trait;
 use telio_crypto::{PublicKey, SecretKey};
 use telio_firewall::firewall::{Firewall, StatefullFirewall};
-use telio_lana::*;
+use telio_lana::init_lana;
 use telio_nat_detect::nat_detection::{retrieve_single_nat, NatData};
 use telio_proxy::{Config as ProxyConfig, Io as ProxyIo, Proxy, UdpProxy};
 use telio_relay::{
@@ -57,7 +57,7 @@ use cfg_if::cfg_if;
 use telio_utils::{
     commit_sha,
     exponential_backoff::ExponentialBackoffBounds,
-    telio_log_debug, telio_log_info,
+    telio_log_debug, telio_log_info, telio_log_warn,
     tokio::{Monitor, ThreadTracker},
     version_tag,
 };
@@ -1290,20 +1290,11 @@ impl Runtime {
 
         self.log_nat().await;
 
-        match (&self.event_publishers.nurse_config_update_publisher, config) {
-            (Some(ch), Some(config)) => {
-                let event = MeshConfigUpdateEvent::from(config);
-                if ch.send(Box::new(event)).is_err() {
-                    telio_log_warn!("Failed to send MeshConfigUpdateEvent to nurse component");
-                }
+        if let Some(tx) = &self.event_publishers.nurse_config_update_publisher {
+            let event = MeshConfigUpdateEvent::from(config);
+            if tx.send(Box::new(event)).is_err() {
+                telio_log_warn!("Failed to send MeshConfigUpdateEvent to nurse component");
             }
-            (Some(ch), None) => {
-                let event = MeshConfigUpdateEvent::default();
-                if ch.send(Box::new(event)).is_err() {
-                    telio_log_warn!("Failed to send MeshConfigUpdateEvent to nurse component");
-                }
-            }
-            _ => (),
         }
 
         Ok(())

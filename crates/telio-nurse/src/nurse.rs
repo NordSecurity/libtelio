@@ -181,6 +181,11 @@ impl State {
         // Re-parse the foreign tracker before sending an event, in case it has changed since last time
         init_context_info();
 
+        let _ = lana!(
+            set_context_application_config_currentState_meshnetEnabled,
+            info.meshnet_enabled
+        );
+
         // Send off nominated fingerprint to moose
         let _ = lana!(
             set_context_application_config_currentState_internalMeshnet_fp,
@@ -237,6 +242,7 @@ impl State {
         let _ = lana!(
             send_serviceQuality_node_heartbeat,
             qos_data.connection_duration,
+            0, // TODO(LLT-4205): Derp Connection Duration
             info.heartbeat_interval,
             qos_data.rx,
             qos_data.rtt,

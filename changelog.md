@@ -16,6 +16,7 @@
 * LLT-3775: Add test for lana validators
 * LLT-4050: Add support for IPv6 packet handling in telio-dns
 * LLT-3875: Don't reconnect to Derp when Multiplexer channel is closed.
+* LLT-4204: Add `meshnet_enabled` field
 
 <br>
 

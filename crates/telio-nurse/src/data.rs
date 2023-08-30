@@ -5,6 +5,8 @@ use telio_model::config::Config;
 /// Information about a heartbeat, for analytics.
 #[derive(Default)]
 pub struct HeartbeatInfo {
+    /// Is meshnet enabled
+    pub meshnet_enabled: bool,
     /// The id of the meshnet
     pub meshnet_id: String,
     /// String with comma-separated list of fingerprints of all internal nodes
@@ -37,20 +39,25 @@ pub enum AnalyticsMessage {
 /// Represents an update to the meshnet config
 #[derive(Clone, Default)]
 pub struct MeshConfigUpdateEvent {
+    /// Is meshnet enabled for this device
+    pub enabled: bool,
     /// All the nodes (public_key, is_local) from the config passed to telio library.
     pub nodes: HashMap<PublicKey, bool>,
 }
 
-impl From<&Config> for MeshConfigUpdateEvent {
-    fn from(config: &Config) -> Self {
-        if let Some(peers) = &config.peers {
-            let nodes = peers
-                .iter()
-                .map(|p| (p.public_key, p.is_local))
-                .collect::<HashMap<_, _>>();
-            MeshConfigUpdateEvent { nodes }
-        } else {
-            MeshConfigUpdateEvent::default()
-        }
+impl From<&Option<Config>> for MeshConfigUpdateEvent {
+    fn from(config: &Option<Config>) -> Self {
+        let enabled = config.is_some();
+        let nodes = config
+            .as_ref()
+            .and_then(|c| c.peers.as_ref())
+            .map(|peers| {
+                peers
+                    .iter()
+                    .map(|peer| (peer.public_key, peer.is_local))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Self { enabled, nodes }
     }
 }
