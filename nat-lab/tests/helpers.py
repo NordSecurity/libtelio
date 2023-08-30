@@ -5,7 +5,7 @@ from itertools import product, zip_longest
 from mesh_api import Node, Meshmap, API
 from telio import Client, AdapterType, State, PathType
 from telio_features import TelioFeatures
-from typing import AsyncIterator, List, Tuple, Optional, Union
+from typing import AsyncIterator, List, Tuple, Optional, Union, Dict, Any
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionTrackerConfig
 from utils.connection_util import (
@@ -25,6 +25,7 @@ class SetupParameters:
     adapter_type: AdapterType = field(default=AdapterType.Default)
     features: TelioFeatures = field(default=TelioFeatures())
     is_meshnet: bool = field(default=True)
+    derp_servers: Optional[List[Dict[str, Any]]] = field(default=None)
 
 
 @dataclass
@@ -109,7 +110,11 @@ async def setup_environment(
                 [instance.adapter_type for instance in instances],
                 [instance.features for instance in instances],
                 [
-                    (api.get_meshmap(nodes[idx].id) if instance.is_meshnet else None)
+                    (
+                        api.get_meshmap(nodes[idx].id, instance.derp_servers)
+                        if instance.is_meshnet
+                        else None
+                    )
                     for idx, instance in enumerate(instances)
                 ],
             )
