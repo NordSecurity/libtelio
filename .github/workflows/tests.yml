@@ -1,16 +1,17 @@
 name: Tests
-on: [push, pull_request]
+on: [workflow_call]
 permissions: {}
+
 jobs:
   test-linux:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/cargo@v1
+      - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+      - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
         with:
           command: test
           args: --all -- --nocapture
-      - uses: actions-rs/cargo@v1
+      - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
         with:
           command: test
           args: --all --features pretend_to_be_macos -- --nocapture
@@ -18,8 +19,8 @@ jobs:
   test-windows:
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/cargo@v1
+      - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+      - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
         with:
           command: test
           args: --all --lib -- --nocapture

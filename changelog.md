@@ -4,6 +4,7 @@
 ### Changelog
 * LLT-3990: BACKPORT Add initial heartbeat interval to feature config
 * LLT-4166: BACKPORT Bump tokio-rustls version
+* LLT-4204: BACKPORT Add `meshnet_enabled` field
 
 <br>
 

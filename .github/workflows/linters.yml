@@ -1,65 +1,114 @@
 name: Linters
-on: [push, pull_request]
+on: [workflow_call]
 permissions: {}
+
 jobs:
   check:
       runs-on: ubuntu-22.04
       steps:
-        - uses: actions/checkout@v3
-        - uses: actions-rs/cargo@v1
+        - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
           with:
             command: check
             args: --target "x86_64-unknown-linux-gnu" --lib --color always
   clippy:
       runs-on: ubuntu-22.04
       steps:
-        - uses: actions/checkout@v3
-        - uses: actions-rs/toolchain@v1
+        - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
           with:
             components: clippy
-        - uses: actions-rs/cargo@v1
+        - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
           with:
             command: clippy
             args: --target "x86_64-unknown-linux-gnu" --lib --color always -- --deny warnings --allow unknown-lints -W clippy::expect_used -W clippy::panic -W clippy::unwrap_used
   clippy-win:
       runs-on: windows-2022
       steps:
-        - uses: actions/checkout@v3
-        - uses: actions-rs/toolchain@v1
+        - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
           with:
             target: x86_64-pc-windows-gnu
             components: clippy
-        - uses: actions-rs/cargo@v1
+        - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
           with:
             command: clippy
-            args: --target "x86_64-pc-windows-gnu" --lib --color always -- --deny warnings --allow unknown-lints
+            args: --target "x86_64-pc-windows-gnu" --lib --color always -- --deny warnings --allow unknown-lints -W clippy::expect_used -W clippy::panic -W clippy::unwrap_used
+  clippy-mac:
+      runs-on: macos-12
+      steps:
+        - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
+          with:
+            target: x86_64-apple-darwin
+            components: clippy
+        - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
+          with:
+            command: clippy
+            args: --target "x86_64-apple-darwin" --lib --color always -- --deny warnings --allow unknown-lints -W clippy::expect_used -W clippy::panic -W clippy::unwrap_used
   deny:
       runs-on: ubuntu-22.04
       steps:
-        - uses: actions/checkout@v3
-        - uses: EmbarkStudios/cargo-deny-action@v1
+        - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        - uses: EmbarkStudios/cargo-deny-action@e0a440755b184aa50374330fa75cca0f84fcb59a # v1.5.2
           with:
             rust-version: 1.64.0 # NOTE: Runs in its own docker container and doesn't support toolchain files
   udeps:
       runs-on: ubuntu-22.04
       steps:
-        - uses: actions/checkout@v3
-        - uses: actions-rs/toolchain@v1
+        - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
           with:
             toolchain: nightly
             override: true
-        - uses: aig787/cargo-udeps-action@v1
+        - uses: aig787/cargo-udeps-action@1cd634a329e14ccfbccfe7c96497d14dac24a743 # v1
           with:
             version: 'v0.1.39'
             args: '--workspace --locked --output human --backend depinfo'
   rustfmt:
       runs-on: ubuntu-22.04
       steps:
-        - uses: actions/checkout@v3
-        - uses: actions-rs/toolchain@v1
+        - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
           with:
             components: rustfmt
-        - uses: actions-rs/cargo@v1
+        - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
           with:
             command: fmt
             args: -- --check --color always
+  python-format-black:
+      runs-on: ubuntu-22.04
+      steps:
+        - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        - run: pip3 install -r ./requirements.txt
+        - run: black --check --diff --color .
+          working-directory: nat-lab
+  python-format-isort:
+      runs-on: ubuntu-22.04
+      steps:
+        - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        - run: pip3 install -r ./requirements.txt
+        - run: isort --check-only --diff .
+          working-directory: nat-lab
+  python-format-autoflake:
+      runs-on: ubuntu-22.04
+      steps:
+        - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        - run: pip3 install -r ./requirements.txt
+        - run: autoflake --check .
+          working-directory: nat-lab
+  python-lint:
+      runs-on: ubuntu-22.04
+      steps:
+        - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        - run: pip3 install -r ./requirements.txt
+        - run: pip3 install -r ./nat-lab/requirements.txt
+        - run: pylint -f colorized .
+          working-directory: nat-lab
+  natlab-typecheck:
+      runs-on: ubuntu-22.04
+      steps:
+        - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        - run: pip3 install -r ./nat-lab/requirements.txt
+        - run: mypy .
+          working-directory: nat-lab

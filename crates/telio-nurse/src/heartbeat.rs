@@ -239,6 +239,9 @@ pub struct Analytics {
 
     derp_connection: bool,
 
+    /// Was meshnet enabled for this device
+    meshnet_enabled: bool,
+
     /// DERP Server instance
     derp: Arc<DerpRelay>,
 }
@@ -373,6 +376,7 @@ impl Analytics {
             config_nodes,
             fingerprints: HashMap::new(),
             derp_connection: false,
+            meshnet_enabled: false,
             derp: derp_server,
         }
     }
@@ -439,6 +443,7 @@ impl Analytics {
 
     async fn handle_config_update_event(&mut self, event: MeshConfigUpdateEvent) {
         if self.state == RuntimeState::Monitoring {
+            self.meshnet_enabled = event.enabled;
             self.config_nodes = event.nodes;
             // Add self to config nodes
             self.config_nodes.insert(self.public_key, true);
@@ -624,6 +629,7 @@ impl Analytics {
 
         let mut heartbeat_info = HeartbeatInfo {
             meshnet_id: self.meshnet_id.to_string(),
+            meshnet_enabled: self.meshnet_enabled,
             heartbeat_interval: i32::try_from(self.config.collect_interval.as_secs()).unwrap_or(0),
             ..Default::default()
         };
@@ -898,9 +904,14 @@ impl Analytics {
 
 #[cfg(test)]
 mod tests {
+    use telio_model::{
+        event::EventMsg,
+        mesh::{ExitNode, Node},
+    };
     use telio_sockets::{native::NativeSocket, Protector, SocketPool};
-    use telio_task::io::McChan;
+    use telio_task::io::{mc_chan::Tx, McChan};
     use telio_utils::sync::mpsc::Receiver;
+    use tokio::task::yield_now;
 
     use super::*;
 
@@ -962,10 +973,12 @@ mod tests {
 
     async fn setup_local_nodes(
         analytics: &mut Analytics,
+        enabled: bool,
         nodes: impl IntoIterator<Item = SecretKey>,
     ) {
         let is_local = true;
         let mesh_config_update_event = MeshConfigUpdateEvent {
+            enabled,
             nodes: nodes
                 .into_iter()
                 .map(|sk| (sk.public(), is_local))
@@ -1027,7 +1040,7 @@ mod tests {
         let peer_sk_1 = SecretKey::gen();
         let peer_sk_2 = SecretKey::gen();
 
-        setup_local_nodes(&mut analytics, [peer_sk_1, peer_sk_2]).await;
+        setup_local_nodes(&mut analytics, true, [peer_sk_1, peer_sk_2]).await;
 
         analytics.handle_collection().await;
         assert_eq!(RuntimeState::Collecting, analytics.state);
@@ -1052,7 +1065,7 @@ mod tests {
         let peer_sk_1 = SecretKey::gen();
         let peer_sk_2 = SecretKey::gen();
 
-        setup_local_nodes(&mut analytics, [peer_sk_1, peer_sk_2]).await;
+        setup_local_nodes(&mut analytics, true, [peer_sk_1, peer_sk_2]).await;
 
         analytics.handle_collection().await;
         assert_eq!(RuntimeState::Collecting, analytics.state);
@@ -1081,7 +1094,7 @@ mod tests {
 
         let peer_sk = SecretKey::gen();
 
-        setup_local_nodes(&mut analytics, [peer_sk]).await;
+        setup_local_nodes(&mut analytics, true, [peer_sk]).await;
 
         analytics.handle_collection().await;
         assert_eq!(RuntimeState::Collecting, analytics.state);
@@ -1101,5 +1114,89 @@ mod tests {
             meshnet_id_of_smaller_pk,
             receive_heartbeat(&mut analytics_channel).await
         );
+    }
+
+    #[tokio::test]
+    async fn test_analytics_reports_vpn_information_then_meshnet_is_disabled() {
+        let State {
+            mut analytics_channel,
+            mut analytics,
+            ..
+        } = setup();
+
+        let vpn_pk = SecretKey::gen().public();
+
+        setup_local_nodes(&mut analytics, false, []).await;
+
+        analytics
+            .handle_wg_event(Event::Node {
+                body: Some(Node {
+                    public_key: vpn_pk,
+                    is_vpn: true,
+                    state: NodeState::Connected,
+                    endpoint: Some(([1, 2, 3, 4], 5678).into()),
+                    ..Default::default()
+                }),
+            })
+            .await;
+
+        analytics.handle_collection().await;
+        assert_eq!(RuntimeState::Collecting, analytics.state);
+
+        analytics.handle_aggregation().await;
+
+        let AnalyticsMessage::Heartbeat {
+            heartbeat_info:
+                HeartbeatInfo {
+                    meshnet_enabled,
+                    external_links,
+                    ..
+                },
+        } = analytics_channel.recv().await.expect("message");
+
+        assert_eq!(false, meshnet_enabled);
+        assert_eq!("vpn:7600617f9f9db5691a8c2768bd9d8110:2", external_links);
+    }
+
+    #[tokio::test]
+    async fn test_analytics_reports_vpn_information_then_meshnet_is_enabled() {
+        let State {
+            mut analytics_channel,
+            mut analytics,
+            ..
+        } = setup();
+
+        let vpn_pk = SecretKey::gen().public();
+
+        setup_local_nodes(&mut analytics, true, []).await;
+
+        analytics
+            .handle_wg_event(Event::Node {
+                body: Some(Node {
+                    public_key: vpn_pk,
+                    is_vpn: true,
+                    state: NodeState::Connected,
+                    endpoint: Some(([1, 2, 3, 4], 5678).into()),
+                    ..Default::default()
+                }),
+            })
+            .await;
+
+        analytics.handle_collection().await;
+        assert_eq!(RuntimeState::Collecting, analytics.state);
+
+        analytics.handle_aggregation().await;
+
+        let AnalyticsMessage::Heartbeat {
+            heartbeat_info:
+                HeartbeatInfo {
+                    meshnet_enabled,
+                    external_links,
+                    ..
+                },
+        } = analytics_channel.recv().await.expect("message");
+
+        assert_eq!(true, meshnet_enabled);
+        assert_eq!("vpn:7600617f9f9db5691a8c2768bd9d8110:2", external_links);
     }
 }

@@ -1,19 +1,32 @@
 name: GitLab CI Pipeline
 on:
   pull_request_target:
-    branches: [main]
     types: [labeled]
   push:
-    branches: [main]
+  schedule:
+    # Avoid running on 0 since a lot of other workflows on github start at that
+    # time and this can cause delays or even dropping of jobs:
+    # https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#schedule
+    - cron: 18,48 18-23 * * *
+    - cron: 17,47 0-5 * * *
 permissions: {}
+
 jobs:
   trigger-gitlab-pipeline:
     runs-on: [self-hosted, libtelio]
-    if: ${{ github.event_name == 'push' || (github.event_name == 'pull_request_target' && contains(github.event.pull_request.labels.*.name, 'run tests')) }}
+    if: |
+      github.event_name == 'schedule' ||
+      github.event_name == 'push' ||
+      (
+        github.event_name == 'pull_request_target' &&
+        github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name &&
+        github.event.label.name == 'run tests'
+      )
     steps:
-      - uses: NordSecurity/trigger-gitlab-pipeline@v1
+      - uses: NordSecurity/trigger-gitlab-pipeline@1a4bce03474798f5a512411af3223dd2aef0e71d # v1.1.1
         with:
           ci-api-v4-url: ${{ secrets.CI_API_V4_URL }}
           project-id: ${{ secrets.PROJECT_ID }}
           token: ${{ secrets.TOKEN }}
-          ref: v0.1.2
+          schedule: ${{ github.event_name == 'schedule' }}
+          ref: v0.1.10
