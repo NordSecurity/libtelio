@@ -5,7 +5,7 @@ from .process import Process, ProcessExecError, StreamCallback
 from aiodocker.containers import DockerContainer
 from aiodocker.execs import Exec
 from aiodocker.stream import Stream
-from contextlib import suppress, asynccontextmanager
+from contextlib import asynccontextmanager
 from typing import List, Optional, AsyncIterator
 from utils.asyncio_util import run_async_context
 
@@ -75,14 +75,13 @@ class DockerProcess(Process):
             try:
                 yield self
             finally:
-                with suppress(Exception):
-                    if self._execute:
+                if self._execute:
+                    inspect = await self._execute.inspect()
+                    while inspect["Pid"] == 0 and inspect["ExitCode"] is None:
                         inspect = await self._execute.inspect()
-                        while inspect["Pid"] == 0 and inspect["ExitCode"] is None:
-                            inspect = await self._execute.inspect()
-                            await asyncio.sleep(0.01)
-                        if inspect["ExitCode"] is None:
-                            os.system(f"sudo kill -9 {inspect['Pid']}")
+                        await asyncio.sleep(0.01)
+                    if inspect["ExitCode"] is None:
+                        os.system(f"sudo kill -9 {inspect['Pid']}")
 
     async def _read_loop(
         self,
