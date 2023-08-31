@@ -3448,7 +3448,7 @@ dependencies = [
 
 [[package]]
 name = "telio"
-version = "4.0.7"
+version = "4.0.8"
 dependencies = [
  "anyhow",
  "async-trait",
