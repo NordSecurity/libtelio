@@ -101,14 +101,14 @@ async def test_dns_through_exit(
         # if this times out dns forwarder failed to start
         await testing.wait_normal(
             connection_alpha.create_process(
-                ["nslookup", "google.com", config.LIBTELIO_EXIT_DNS_IP]
+                ["nslookup", "google.com", config.LIBTELIO_EXIT_DNS_IPV4]
             ).execute()
         )
 
         # sending dns straight to exit peer's dns forwarder(as will be done on linux/windows)
         alpha_response = await testing.wait_normal(
             connection_alpha.create_process(
-                ["nslookup", "google.com", config.LIBTELIO_EXIT_DNS_IP]
+                ["nslookup", "google.com", config.LIBTELIO_EXIT_DNS_IPV4]
             ).execute()
         )
         # Check if some address was found
@@ -129,7 +129,7 @@ async def test_dns_through_exit(
         # sending dns to local forwarder, which should forward it to exit dns forwarder(apple/android way)
         alpha_response = await testing.wait_normal(
             connection_alpha.create_process(
-                ["nslookup", "google.com", config.LIBTELIO_DNS_IP]
+                ["nslookup", "google.com", config.LIBTELIO_DNS_IPV4]
             ).execute()
         )
         # Check if some address was found
@@ -144,7 +144,7 @@ async def test_dns_through_exit(
         # local forwarder should resolve this, checking if forward ips are changed back correctly
         alpha_response = await testing.wait_normal(
             connection_alpha.create_process(
-                ["nslookup", "google.com", config.LIBTELIO_DNS_IP]
+                ["nslookup", "google.com", config.LIBTELIO_DNS_IPV4]
             ).execute()
         )
         # Check if some address was found

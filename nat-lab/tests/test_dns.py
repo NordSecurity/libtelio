@@ -16,14 +16,21 @@ from utils.connection_util import (
 )
 from utils.process import ProcessExecError
 
-DNS_SERVER_ADDRESS = config.LIBTELIO_DNS_IP
+DNS_IPV4_SERVER_ADDRESS = config.LIBTELIO_DNS_IPV4
+DNS_IPV6_SERVER_ADDRESS = config.LIBTELIO_DNS_IPV6
 
 
 @pytest.mark.asyncio
-async def test_dns() -> None:
+@pytest.mark.parametrize(
+    "dns_server_address",
+    [
+        pytest.param(DNS_IPV4_SERVER_ADDRESS, id="IPv4"),
+        pytest.param(DNS_IPV6_SERVER_ADDRESS, id="IPv6"),
+    ],
+)
+async def test_dns(dns_server_address: str) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
-
         (alpha, beta) = api.default_config_two_nodes()
 
         alpha.set_peer_firewall_settings(beta.id)
@@ -79,14 +86,14 @@ async def test_dns() -> None:
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_long(
                 connection_alpha.create_process(
-                    ["nslookup", "google.com", DNS_SERVER_ADDRESS]
+                    ["nslookup", "google.com", dns_server_address]
                 ).execute()
             )
 
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_long(
                 connection_beta.create_process(
-                    ["nslookup", "google.com", DNS_SERVER_ADDRESS]
+                    ["nslookup", "google.com", dns_server_address]
                 ).execute()
             )
 
@@ -96,29 +103,31 @@ async def test_dns() -> None:
         # If everything went correctly, these calls should not timeout
         await testing.wait_long(
             connection_alpha.create_process(
-                ["nslookup", "google.com", DNS_SERVER_ADDRESS]
+                ["nslookup", "google.com", dns_server_address]
             ).execute()
         )
         await testing.wait_long(
             connection_beta.create_process(
-                ["nslookup", "google.com", DNS_SERVER_ADDRESS]
+                ["nslookup", "google.com", dns_server_address]
             ).execute()
         )
 
         # If the previous calls didn't fail, we can assume that the resolver is running so no need to wait for the timeout and test the validity of the response
         alpha_response = await testing.wait_long(
             connection_alpha.create_process(
-                ["nslookup", "beta.nord", DNS_SERVER_ADDRESS]
+                ["nslookup", "beta.nord", dns_server_address]
             ).execute()
         )
-        assert beta.ip_addresses[0] in alpha_response.get_stdout()
+        for ip in beta.ip_addresses:
+            assert ip in alpha_response.get_stdout()
 
         beta_response = await testing.wait_long(
             connection_beta.create_process(
-                ["nslookup", "alpha.nord", DNS_SERVER_ADDRESS]
+                ["nslookup", "alpha.nord", dns_server_address]
             ).execute()
         )
-        assert alpha.ip_addresses[0] in beta_response.get_stdout()
+        for ip in alpha.ip_addresses:
+            assert ip in beta_response.get_stdout()
 
         # Now we disable magic dns
         await client_alpha.disable_magic_dns()
@@ -128,13 +137,13 @@ async def test_dns() -> None:
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_long(
                 connection_alpha.create_process(
-                    ["nslookup", "google.com", DNS_SERVER_ADDRESS]
+                    ["nslookup", "google.com", dns_server_address]
                 ).execute()
             )
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_long(
                 connection_beta.create_process(
-                    ["nslookup", "google.com", DNS_SERVER_ADDRESS]
+                    ["nslookup", "google.com", dns_server_address]
                 ).execute()
             )
 
@@ -143,10 +152,16 @@ async def test_dns() -> None:
 
 
 @pytest.mark.asyncio
-async def test_dns_port() -> None:
+@pytest.mark.parametrize(
+    "dns_server_address",
+    [
+        pytest.param(DNS_IPV4_SERVER_ADDRESS, id="IPv4"),
+        pytest.param(DNS_IPV6_SERVER_ADDRESS, id="IPv6"),
+    ],
+)
+async def test_dns_port(dns_server_address: str) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
-
         (alpha, beta) = api.default_config_two_nodes()
 
         alpha.set_peer_firewall_settings(beta.id)
@@ -202,7 +217,7 @@ async def test_dns_port() -> None:
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_normal(
                 connection_alpha.create_process(
-                    ["dig", "@" + DNS_SERVER_ADDRESS, "-p", "53", "google.com"]
+                    ["dig", "@" + dns_server_address, "-p", "53", "google.com"]
                 ).execute()
             )
 
@@ -212,7 +227,7 @@ async def test_dns_port() -> None:
         # A DNS request on port 53 should work
         await testing.wait_normal(
             connection_alpha.create_process(
-                ["dig", "@" + DNS_SERVER_ADDRESS, "-p", "53", "google.com"]
+                ["dig", "@" + dns_server_address, "-p", "53", "google.com"]
             ).execute()
         )
 
@@ -220,23 +235,33 @@ async def test_dns_port() -> None:
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_normal(
                 connection_alpha.create_process(
-                    ["dig", "@" + DNS_SERVER_ADDRESS, "-p", "54", "google.com"]
+                    ["dig", "@" + dns_server_address, "-p", "54", "google.com"]
                 ).execute()
             )
 
         # Look for beta on 53 port should work
         alpha_response = await testing.wait_normal(
             connection_alpha.create_process(
-                ["dig", "@" + DNS_SERVER_ADDRESS, "-p", "53", "beta.nord"]
+                [
+                    "dig",
+                    "@" + dns_server_address,
+                    "-p",
+                    "53",
+                    "beta.nord",
+                    "A",
+                    "beta.nord",
+                    "AAAA",
+                ]
             ).execute()
         )
-        assert beta.ip_addresses[0] in alpha_response.get_stdout()
+        for ip in beta.ip_addresses:
+            assert ip in alpha_response.get_stdout()
 
         # Look for beta on a different port should timeout
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_normal(
                 connection_alpha.create_process(
-                    ["dig", "@" + DNS_SERVER_ADDRESS, "-p", "54", "beta.nord"]
+                    ["dig", "@" + dns_server_address, "-p", "54", "beta.nord"]
                 ).execute()
             )
 
@@ -248,14 +273,14 @@ async def test_dns_port() -> None:
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_normal(
                 connection_alpha.create_process(
-                    ["dig", "@" + DNS_SERVER_ADDRESS, "-p", "53", "google.com"]
+                    ["dig", "@" + dns_server_address, "-p", "53", "google.com"]
                 ).execute()
             )
 
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_normal(
                 connection_alpha.create_process(
-                    ["dig", "@" + DNS_SERVER_ADDRESS, "-p", "53", "beta.nord"]
+                    ["dig", "@" + dns_server_address, "-p", "53", "beta.nord"]
                 ).execute()
             )
 
@@ -264,7 +289,14 @@ async def test_dns_port() -> None:
 
 
 @pytest.mark.asyncio
-async def test_vpn_dns() -> None:
+@pytest.mark.parametrize(
+    "dns_server_address",
+    [
+        pytest.param(DNS_IPV4_SERVER_ADDRESS, id="IPv4"),
+        pytest.param(DNS_IPV6_SERVER_ADDRESS, id="IPv6"),
+    ],
+)
+async def test_vpn_dns(dns_server_address: str) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
         alpha = api.default_config_one_node()
@@ -305,14 +337,14 @@ async def test_vpn_dns() -> None:
         # Test to see if the module is working correctly
         await testing.wait_normal(
             connection.create_process(
-                ["nslookup", "google.com", DNS_SERVER_ADDRESS]
+                ["nslookup", "google.com", dns_server_address]
             ).execute()
         )
 
         # Test if the DNS module preserves CNAME records
         dns_response = await testing.wait_normal(
             connection.create_process(
-                ["nslookup", "-q=CNAME", "www.microsoft.com", DNS_SERVER_ADDRESS]
+                ["nslookup", "-q=CNAME", "www.microsoft.com", dns_server_address]
             ).execute()
         )
         assert "canonical name" in dns_response.get_stdout()
@@ -323,7 +355,7 @@ async def test_vpn_dns() -> None:
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_normal(
                 connection.create_process(
-                    ["nslookup", "google.com", DNS_SERVER_ADDRESS]
+                    ["nslookup", "google.com", dns_server_address]
                 ).execute()
             )
 
@@ -334,7 +366,7 @@ async def test_vpn_dns() -> None:
 
         await testing.wait_normal(
             connection.create_process(
-                ["nslookup", "google.com", DNS_SERVER_ADDRESS]
+                ["nslookup", "google.com", dns_server_address]
             ).execute()
         )
 
@@ -342,10 +374,16 @@ async def test_vpn_dns() -> None:
 
 
 @pytest.mark.asyncio
-async def test_dns_after_mesh_off() -> None:
+@pytest.mark.parametrize(
+    "dns_server_address",
+    [
+        pytest.param(DNS_IPV4_SERVER_ADDRESS, id="IPv4"),
+        pytest.param(DNS_IPV6_SERVER_ADDRESS, id="IPv6"),
+    ],
+)
+async def test_dns_after_mesh_off(dns_server_address: str) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
-
         (alpha, beta) = api.default_config_two_nodes()
 
         alpha.set_peer_firewall_settings(beta.id)
@@ -368,7 +406,7 @@ async def test_dns_after_mesh_off() -> None:
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_normal(
                 connection_alpha.create_process(
-                    ["nslookup", "google.com", DNS_SERVER_ADDRESS]
+                    ["nslookup", "google.com", dns_server_address]
                 ).execute()
             )
 
@@ -377,17 +415,18 @@ async def test_dns_after_mesh_off() -> None:
         # If everything went correctly, these calls should not timeout
         await testing.wait_normal(
             connection_alpha.create_process(
-                ["nslookup", "google.com", DNS_SERVER_ADDRESS]
+                ["nslookup", "google.com", dns_server_address]
             ).execute()
         )
 
         # If the previous calls didn't fail, we can assume that the resolver is running so no need to wait for the timeout and test the validity of the response
         alpha_response = await testing.wait_normal(
             connection_alpha.create_process(
-                ["nslookup", "beta.nord", DNS_SERVER_ADDRESS]
+                ["nslookup", "beta.nord", dns_server_address]
             ).execute()
         )
-        assert beta.ip_addresses[0] in alpha_response.get_stdout()
+        for ip in beta.ip_addresses:
+            assert ip in alpha_response.get_stdout()
 
         # Now we disable magic dns
         await client_alpha.set_mesh_off()
@@ -395,7 +434,7 @@ async def test_dns_after_mesh_off() -> None:
         # If everything went correctly, these calls should not timeout
         await testing.wait_normal(
             connection_alpha.create_process(
-                ["nslookup", "google.com", DNS_SERVER_ADDRESS]
+                ["nslookup", "google.com", dns_server_address]
             ).execute()
         )
 
@@ -403,7 +442,7 @@ async def test_dns_after_mesh_off() -> None:
         try:
             await testing.wait_normal(
                 connection_alpha.create_process(
-                    ["nslookup", "beta.nord", DNS_SERVER_ADDRESS]
+                    ["nslookup", "beta.nord", dns_server_address]
                 ).execute()
             )
         except ProcessExecError as e:
@@ -416,15 +455,29 @@ async def test_dns_after_mesh_off() -> None:
 @pytest.mark.long
 @pytest.mark.timeout(60 * 5 + 60)
 @pytest.mark.parametrize(
-    "alpha_connection_tag,adapter_type",
-    [pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun)],
+    "alpha_connection_tag,adapter_type,dns_server_address",
+    [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.BoringTun,
+            DNS_IPV4_SERVER_ADDRESS,
+            id="IPv4",
+        ),
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.BoringTun,
+            DNS_IPV6_SERVER_ADDRESS,
+            id="IPv6",
+        ),
+    ],
 )
 async def test_dns_stability(
-    alpha_connection_tag: ConnectionTag, adapter_type: AdapterType
+    alpha_connection_tag: ConnectionTag,
+    adapter_type: AdapterType,
+    dns_server_address: str,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
-
         (alpha, beta) = api.default_config_two_nodes()
         alpha.set_peer_firewall_settings(beta.id)
         beta.set_peer_firewall_settings(alpha.id)
@@ -481,67 +534,77 @@ async def test_dns_stability(
 
         await testing.wait_normal(
             connection_alpha.create_process(
-                ["nslookup", "google.com", DNS_SERVER_ADDRESS]
+                ["nslookup", "google.com", dns_server_address]
             ).execute()
         )
 
         await testing.wait_normal(
             connection_beta.create_process(
-                ["nslookup", "google.com", DNS_SERVER_ADDRESS]
+                ["nslookup", "google.com", dns_server_address]
             ).execute()
         )
 
         alpha_response = await testing.wait_normal(
             connection_alpha.create_process(
-                ["nslookup", "beta.nord", DNS_SERVER_ADDRESS]
+                ["nslookup", "beta.nord", dns_server_address]
             ).execute()
         )
-        assert beta.ip_addresses[0] in alpha_response.get_stdout()
+        for ip in beta.ip_addresses:
+            assert ip in alpha_response.get_stdout()
 
         beta_response = await testing.wait_normal(
             connection_beta.create_process(
-                ["nslookup", "alpha.nord", DNS_SERVER_ADDRESS]
+                ["nslookup", "alpha.nord", dns_server_address]
             ).execute()
         )
-        assert alpha.ip_addresses[0] in beta_response.get_stdout()
+        for ip in alpha.ip_addresses:
+            assert ip in beta_response.get_stdout()
 
         await asyncio.sleep(60 * 5)
 
         await testing.wait_normal(
             connection_alpha.create_process(
-                ["nslookup", "google.com", DNS_SERVER_ADDRESS]
+                ["nslookup", "google.com", dns_server_address]
             ).execute()
         )
 
         await testing.wait_normal(
             connection_beta.create_process(
-                ["nslookup", "google.com", DNS_SERVER_ADDRESS]
+                ["nslookup", "google.com", dns_server_address]
             ).execute()
         )
 
         alpha_response = await testing.wait_normal(
             connection_alpha.create_process(
-                ["nslookup", "beta.nord", DNS_SERVER_ADDRESS]
+                ["nslookup", "beta.nord", dns_server_address]
             ).execute()
         )
-        assert beta.ip_addresses[0] in alpha_response.get_stdout()
+        for ip in beta.ip_addresses:
+            assert ip in alpha_response.get_stdout()
 
         beta_response = await testing.wait_normal(
             connection_beta.create_process(
-                ["nslookup", "alpha.nord", DNS_SERVER_ADDRESS]
+                ["nslookup", "alpha.nord", dns_server_address]
             ).execute()
         )
-        assert alpha.ip_addresses[0] in beta_response.get_stdout()
+        for ip in alpha.ip_addresses:
+            assert ip in beta_response.get_stdout()
 
         assert alpha_conn_tracker.get_out_of_limits() is None
         assert beta_conn_tracker.get_out_of_limits() is None
 
 
 @pytest.mark.asyncio
-async def test_set_meshmap_dns_update() -> None:
+@pytest.mark.parametrize(
+    "dns_server_address",
+    [
+        pytest.param(DNS_IPV4_SERVER_ADDRESS, id="IPv4"),
+        pytest.param(DNS_IPV6_SERVER_ADDRESS, id="IPv6"),
+    ],
+)
+async def test_set_meshmap_dns_update(dns_server_address: str) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
-
         alpha = api.default_config_one_node()
 
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
@@ -563,7 +626,7 @@ async def test_set_meshmap_dns_update() -> None:
         try:
             await testing.wait_normal(
                 connection_alpha.create_process(
-                    ["nslookup", "beta.nord", DNS_SERVER_ADDRESS]
+                    ["nslookup", "beta.nord", dns_server_address]
                 ).execute()
             )
         except ProcessExecError as e:
@@ -576,7 +639,7 @@ async def test_set_meshmap_dns_update() -> None:
 
         alpha_response = await testing.wait_normal(
             connection_alpha.create_process(
-                ["nslookup", "beta.nord", DNS_SERVER_ADDRESS]
+                ["nslookup", "beta.nord", dns_server_address]
             ).execute()
         )
         assert beta.ip_addresses[0] in alpha_response.get_stdout()
@@ -585,10 +648,16 @@ async def test_set_meshmap_dns_update() -> None:
 
 
 @pytest.mark.asyncio
-async def test_dns_update() -> None:
+@pytest.mark.parametrize(
+    "dns_server_address",
+    [
+        pytest.param(DNS_IPV4_SERVER_ADDRESS, id="IPv4"),
+        pytest.param(DNS_IPV6_SERVER_ADDRESS, id="IPv6"),
+    ],
+)
+async def test_dns_update(dns_server_address: str) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
-
         alpha = api.default_config_one_node()
 
         (connection, conn_tracker) = await exit_stack.enter_async_context(
@@ -624,7 +693,7 @@ async def test_dns_update() -> None:
 
         alpha_response = await testing.wait_normal(
             connection.create_process(
-                ["nslookup", "google.com", DNS_SERVER_ADDRESS]
+                ["nslookup", "google.com", dns_server_address]
             ).execute()
         )
 
@@ -635,7 +704,7 @@ async def test_dns_update() -> None:
 
         alpha_response = await testing.wait_normal(
             connection.create_process(
-                ["nslookup", "google.com", DNS_SERVER_ADDRESS]
+                ["nslookup", "google.com", dns_server_address]
             ).execute()
         )
         # Check if some address was found
@@ -676,7 +745,7 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
 
         await testing.wait_normal(
             connection_alpha.create_process(
-                ["nslookup", "google.com", DNS_SERVER_ADDRESS]
+                ["nslookup", "google.com", DNS_IPV4_SERVER_ADDRESS]
             ).execute()
         )
 
@@ -713,7 +782,7 @@ async def test_dns_aaaa_records() -> None:
 
         alpha_response = await testing.wait_long(
             connection_alpha.create_process(
-                ["nslookup", "beta.nord", DNS_SERVER_ADDRESS]
+                ["nslookup", "beta.nord", DNS_IPV4_SERVER_ADDRESS]
             ).execute()
         )
 
