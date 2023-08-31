@@ -50,7 +50,13 @@ impl HeartbeatConfig {
             .map(|interval| Duration::from_secs(interval.into()))
             .unwrap_or(Self::DEFAULT_HEARTBEAT_INTERVAL);
 
+        let initial_collect_interval = features
+            .initial_heartbeat_interval
+            .map(|interval| Some(Duration::from_secs(interval.into())))
+            .unwrap_or_default();
+
         Self {
+            initial_collect_interval,
             fingerprint: features.fingerprint.clone(),
             collect_interval,
             is_nat_type_collection_enabled: features.enable_nat_type_collection.unwrap_or(false),

@@ -5,7 +5,7 @@ pub use telio_utils::{telio_log_error, telio_log_info, telio_log_warn};
 pub struct MooseCallbacks;
 
 impl moose::InitCallback for MooseCallbacks {
-    fn on_init(&self, result_code: &Result<moose::ContextState, moose::MooseError>) {
+    fn after_init(&self, result_code: &Result<moose::TrackerState, moose::MooseError>) {
         match result_code {
             Ok(res) => telio_log_info!("Moose init success with code {:?}", res),
             Err(err) => telio_log_error!("Moose init failed with code {:?}", err),

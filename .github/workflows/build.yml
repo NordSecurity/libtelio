@@ -1,6 +1,7 @@
 name: Build
-on: [push, pull_request]
+on: [workflow_call]
 permissions: {}
+
 jobs:
   build:
     strategy:
@@ -65,9 +66,13 @@ jobs:
             runner: windows-2022
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
         with:
           path: libtelio
+      - uses: Swatinem/rust-cache@b8a6852b4f997182bdea832df3f9e153038b5191 # v2.6.0
+        with:
+          key: ${{ matrix.target_os }}-${{ matrix.arch }}-${{ matrix.target_abi }}
+          workspaces: "libtelio"
       - name: Install packages
         run: sudo apt-get update && sudo apt-get install ${{ matrix.packages }}
         if: ${{ matrix.target_os == 'linux' }}
@@ -75,7 +80,7 @@ jobs:
         run: ./libtelio/ci/setup_ndk.sh
         if: ${{ matrix.target_os == 'android' }}
       - name: Setup MSVC
-        uses: egor-tensin/vs-shell@v2
+        uses: egor-tensin/vs-shell@9a932a62d05192eae18ca370155cf877eecc2202 # v2.1
         if: ${{ matrix.target_os == 'windows' }}
       - name: Build libtelio
         run: python3 libtelio/ci/build_libtelio.py build ${{ matrix.target_os }} ${{ matrix.arch }}
@@ -88,7 +93,7 @@ jobs:
           make
           sudo ./test_panic
         if: ${{ matrix.target_os == 'linux' && matrix.arch == 'x86_64'}}
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
         with:
           name: libtelio-build-${{ matrix.target_os }}-${{ matrix.arch }}-${{ matrix.target_abi }}
           path: libtelio/dist/

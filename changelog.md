@@ -1,9 +1,20 @@
+### v4.0.8
+### **Bruschetta**
+---
+### Changelog
+* LLT-3990: BACKPORT Add initial heartbeat interval to feature config
+* LLT-4166: BACKPORT Bump tokio-rustls version
+* LLT-4204: BACKPORT Add `meshnet_enabled` field
+
+<br>
+
 ### v4.0.7
 ### **Bruschetta**
 ---
 ### Changelog
 * LLT-4119: Fix multiple bugs in telio-firewall. Mainly whitelist vpn server
 * LLT-4002: Review log-levels of spammy log messages
+* LLT-3990: Add initial heartbeat interval to feature config
 
 <br>
 

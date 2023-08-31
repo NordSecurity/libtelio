@@ -36,7 +36,10 @@ from utils import (
         pytest.param(
             ConnectionTag.WINDOWS_VM,
             telio.AdapterType.WireguardGo,
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="test is flaky - Jira issue: LLT-4064"),
+            ],
         ),
         pytest.param(
             ConnectionTag.MAC_VM,

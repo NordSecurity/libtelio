@@ -10,7 +10,7 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-log = {version = "0.4.14", features = ["release_max_level_debug"]}
+log = { version = "0.4.14", features = ["release_max_level_debug"]}
 telio-utils = { path = "../telio-utils" }
 thiserror = "1.0.30"
 serde = { version = "1.0", features = ["derive"] }

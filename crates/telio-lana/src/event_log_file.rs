@@ -216,16 +216,16 @@ pub mod moose {
     }
 
     #[derive(Debug, Clone, Copy)]
-    pub enum ContextState {
+    pub enum TrackerState {
         Ready,
-        AlreadyInitiated,
+        AlreadyStarted,
         TrackerDeleted,
         AllTrackersDeleted,
-        Deleted,
+        FileDeleted,
     }
 
-    pub trait InitCallback {
-        fn on_init(&self, result_code: &std::result::Result<ContextState, MooseError>);
+    pub trait InitCallback: Send {
+        fn after_init(&self, result: &std::result::Result<TrackerState, MooseError>);
     }
 
     pub trait ErrorCallback {
@@ -269,6 +269,20 @@ pub mod moose {
 
     pub fn moose_deinit() -> std::result::Result<Result, Error> {
         match super::event_log("moose_deinit", None) {
+            Ok(_) => Ok(Result::Success),
+            _ => Err(Error::EventLogError),
+        }
+    }
+
+    #[allow(non_snake_case)]
+    pub fn set_context_application_config_currentState_meshnetEnabled(
+        val: bool,
+    ) -> std::result::Result<Result, Error> {
+        let val = val.to_string();
+        match super::event_log(
+            "set_context_application_config_currentState_meshnetEnabled",
+            Some(vec![val.as_str()]),
+        ) {
             Ok(_) => Ok(Result::Success),
             _ => Err(Error::EventLogError),
         }
@@ -362,14 +376,17 @@ pub mod moose {
     /// Mocked moose function.
     pub fn send_serviceQuality_node_heartbeat(
         connectionDuration: String,
+        derpConnectionDuration: i32,
         heartbeatInterval: i32,
         receivedData: String,
         rtt: String,
         sentData: String,
     ) -> std::result::Result<Result, Error> {
         let heartbeatIntervalString = heartbeatInterval.to_string();
+        let derpConnectionDurationStr = derpConnectionDuration.to_string();
         let args = vec![
             connectionDuration.as_str(),
+            derpConnectionDurationStr.as_str(),
             heartbeatIntervalString.as_str(),
             receivedData.as_str(),
             rtt.as_str(),
