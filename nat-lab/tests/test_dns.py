@@ -4,16 +4,11 @@ import pytest
 import re
 import telio
 from contextlib import AsyncExitStack
-from mesh_api import API
+from helpers import SetupParameters, setup_api, setup_environment, setup_mesh_nodes
 from telio import AdapterType, PathType
 from utils import testing
 from utils.connection_tracker import ConnectionLimits
-from utils.connection_util import (
-    generate_connection_tracker_config,
-    ConnectionTag,
-    new_connection_with_conn_tracker,
-    new_connection_by_tag,
-)
+from utils.connection_util import ConnectionTag, generate_connection_tracker_config
 from utils.process import ProcessExecError
 from utils.router import IPStack
 
@@ -72,61 +67,30 @@ async def test_dns(
             if beta_ip_stack == IPStack.IPv4
             else config.LIBTELIO_DNS_IPV6
         )
-
-        api = API()
-
-        (alpha, beta) = api.default_config_two_nodes(
-            alpha_ip_stack=alpha_ip_stack, beta_ip_stack=beta_ip_stack
-        )
-
-        alpha.set_peer_firewall_settings(beta.id)
-        beta.set_peer_firewall_settings(alpha.id)
-
-        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
-            new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_1,
-                generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+        env = await setup_mesh_nodes(
+            exit_stack,
+            [
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_1,
+                        derp_1_limits=ConnectionLimits(1, 1),
+                    ),
                 ),
-            )
-        )
-        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
-            new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_2,
-                generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_2,
+                        derp_1_limits=ConnectionLimits(1, 1),
+                    ),
                 ),
-            )
+            ],
         )
-
-        client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run(api.get_meshmap(alpha.id))
-        )
-
-        client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run(api.get_meshmap(beta.id))
-        )
-
-        await testing.wait_lengthy(
-            asyncio.gather(
-                client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
-                client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
-                alpha_conn_tracker.wait_for_event("derp_1"),
-                beta_conn_tracker.wait_for_event("derp_1"),
-            )
-        )
-        await testing.wait_lengthy(
-            asyncio.gather(
-                client_alpha.wait_for_state_peer(
-                    beta.public_key, [telio.State.Connected]
-                ),
-                client_beta.wait_for_state_peer(
-                    alpha.public_key, [telio.State.Connected]
-                ),
-            )
-        )
+        alpha, beta = env.nodes
+        client_alpha, client_beta = env.clients
+        connection_alpha, connection_beta = [
+            conn.connection for conn in env.connections
+        ]
 
         # These calls should timeout without returning anything, but cache the peer addresses
         with pytest.raises(asyncio.TimeoutError):
@@ -202,9 +166,6 @@ async def test_dns(
                 ).execute()
             )
 
-        assert alpha_conn_tracker.get_out_of_limits() is None
-        assert beta_conn_tracker.get_out_of_limits() is None
-
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
@@ -226,62 +187,31 @@ async def test_dns(
 )
 async def test_dns_port(alpha_ip_stack: IPStack) -> None:
     async with AsyncExitStack() as exit_stack:
-        beta_ip_stack = IPStack.IPv4v6
         dns_server_address_alpha = get_dns_server_address(alpha_ip_stack)
-
-        api = API()
-        (alpha, beta) = api.default_config_two_nodes(
-            alpha_ip_stack=alpha_ip_stack, beta_ip_stack=beta_ip_stack
-        )
-
-        alpha.set_peer_firewall_settings(beta.id)
-        beta.set_peer_firewall_settings(alpha.id)
-
-        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
-            new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_1,
-                generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+        env = await setup_mesh_nodes(
+            exit_stack,
+            [
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    ip_stack=alpha_ip_stack,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_1,
+                        derp_1_limits=ConnectionLimits(1, 1),
+                    ),
                 ),
-            )
-        )
-        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
-            new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_2,
-                generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    ip_stack=IPStack.IPv4v6,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_2,
+                        derp_1_limits=ConnectionLimits(1, 1),
+                    ),
                 ),
-            )
+            ],
         )
-
-        client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run(api.get_meshmap(alpha.id))
-        )
-
-        client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run(api.get_meshmap(beta.id))
-        )
-
-        await testing.wait_lengthy(
-            asyncio.gather(
-                client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
-                client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
-                alpha_conn_tracker.wait_for_event("derp_1"),
-                beta_conn_tracker.wait_for_event("derp_1"),
-            )
-        )
-        await testing.wait_lengthy(
-            asyncio.gather(
-                client_alpha.wait_for_state_peer(
-                    beta.public_key, [telio.State.Connected]
-                ),
-                client_beta.wait_for_state_peer(
-                    alpha.public_key, [telio.State.Connected]
-                ),
-            )
-        )
+        _, beta = env.nodes
+        client_alpha, client_beta = env.clients
+        connection_alpha, _ = [conn.connection for conn in env.connections]
 
         # These call should timeout without returning anything
         with pytest.raises(asyncio.TimeoutError):
@@ -354,9 +284,6 @@ async def test_dns_port(alpha_ip_stack: IPStack) -> None:
                 ).execute()
             )
 
-        assert alpha_conn_tracker.get_out_of_limits() is None
-        assert beta_conn_tracker.get_out_of_limits() is None
-
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
@@ -379,23 +306,26 @@ async def test_dns_port(alpha_ip_stack: IPStack) -> None:
 async def test_vpn_dns(alpha_ip_stack: IPStack) -> None:
     async with AsyncExitStack() as exit_stack:
         dns_server_address = get_dns_server_address(alpha_ip_stack)
-
-        api = API()
-        alpha = api.default_config_one_node(ip_stack=alpha_ip_stack)
-
-        (connection, conn_tracker) = await exit_stack.enter_async_context(
-            new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_1,
-                generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    vpn_1_limits=ConnectionLimits(1, 1),
-                ),
+        env = await exit_stack.enter_async_context(
+            setup_environment(
+                exit_stack,
+                [
+                    SetupParameters(
+                        connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                        ip_stack=alpha_ip_stack,
+                        connection_tracker_config=generate_connection_tracker_config(
+                            ConnectionTag.DOCKER_CONE_CLIENT_1,
+                            vpn_1_limits=ConnectionLimits(1, 1),
+                        ),
+                        is_meshnet=False,
+                    )
+                ],
             )
         )
-
-        client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection, alpha).run()
-        )
+        api = env.api
+        alpha, *_ = env.nodes
+        client_alpha, *_ = env.clients
+        connection, *_ = [conn.connection for conn in env.connections]
 
         wg_server = config.WG_SERVER
 
@@ -404,8 +334,6 @@ async def test_vpn_dns(alpha_ip_stack: IPStack) -> None:
                 wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
             )
         )
-
-        await testing.wait_long(conn_tracker.wait_for_event("vpn_1"))
 
         await testing.wait_lengthy(
             client_alpha.wait_for_state_peer(
@@ -452,8 +380,6 @@ async def test_vpn_dns(alpha_ip_stack: IPStack) -> None:
             ).execute()
         )
 
-        assert conn_tracker.get_out_of_limits() is None
-
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
@@ -475,29 +401,25 @@ async def test_vpn_dns(alpha_ip_stack: IPStack) -> None:
 )
 async def test_dns_after_mesh_off(alpha_ip_stack: IPStack) -> None:
     async with AsyncExitStack() as exit_stack:
-        beta_ip_stack = IPStack.IPv4v6
         dns_server_address = get_dns_server_address(alpha_ip_stack)
-
-        api = API()
-        (alpha, beta) = api.default_config_two_nodes(
-            alpha_ip_stack=alpha_ip_stack, beta_ip_stack=beta_ip_stack
-        )
-
-        alpha.set_peer_firewall_settings(beta.id)
-        beta.set_peer_firewall_settings(alpha.id)
-
-        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
-            new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_1,
-                generate_connection_tracker_config(ConnectionTag.DOCKER_CONE_CLIENT_1),
+        api, (_, beta) = setup_api([(False, alpha_ip_stack), (False, IPStack.IPv4v6)])
+        env = await exit_stack.enter_async_context(
+            setup_environment(
+                exit_stack,
+                [
+                    SetupParameters(
+                        connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                        connection_tracker_config=generate_connection_tracker_config(
+                            ConnectionTag.DOCKER_CONE_CLIENT_1
+                        ),
+                        derp_servers=[],
+                    )
+                ],
+                provided_api=api,
             )
         )
-
-        client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run(
-                api.get_meshmap(alpha.id, derp_servers=[])
-            )
-        )
+        connection_alpha, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
 
         # These calls should timeout without returning anything, but cache the peer addresses
         with pytest.raises(asyncio.TimeoutError):
@@ -545,8 +467,6 @@ async def test_dns_after_mesh_off(alpha_ip_stack: IPStack) -> None:
         except ProcessExecError as e:
             assert "server can't find beta.nord" in e.stdout
 
-        assert alpha_conn_tracker.get_out_of_limits() is None
-
 
 @pytest.mark.asyncio
 @pytest.mark.long
@@ -568,68 +488,36 @@ async def test_dns_after_mesh_off(alpha_ip_stack: IPStack) -> None:
         ),
     ],
 )
-async def test_dns_stability(
-    alpha_ip_stack: IPStack,
-) -> None:
+async def test_dns_stability(alpha_ip_stack: IPStack) -> None:
     async with AsyncExitStack() as exit_stack:
-        beta_ip_stack = IPStack.IPv4v6
         dns_server_address = get_dns_server_address(alpha_ip_stack)
-
-        api = API()
-        (alpha, beta) = api.default_config_two_nodes(
-            alpha_ip_stack=alpha_ip_stack, beta_ip_stack=beta_ip_stack
-        )
-
-        alpha.set_peer_firewall_settings(beta.id)
-        beta.set_peer_firewall_settings(alpha.id)
-
-        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
-            new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_1,
-                generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+        env = await setup_mesh_nodes(
+            exit_stack,
+            [
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    ip_stack=alpha_ip_stack,
+                    adapter_type=AdapterType.BoringTun,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_1,
+                        derp_1_limits=ConnectionLimits(1, 1),
+                    ),
                 ),
-            )
-        )
-        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
-            new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_2,
-                generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    ip_stack=IPStack.IPv4v6,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_2,
+                        derp_1_limits=ConnectionLimits(1, 1),
+                    ),
                 ),
-            )
+            ],
         )
-
-        client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha, adapter_type).run(
-                api.get_meshmap(alpha.id)
-            )
-        )
-
-        client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run(api.get_meshmap(beta.id))
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
-                client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
-                client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
-                alpha_conn_tracker.wait_for_event("derp_1"),
-                beta_conn_tracker.wait_for_event("derp_1"),
-            )
-        )
-        await testing.wait_lengthy(
-            asyncio.gather(
-                client_alpha.wait_for_state_peer(
-                    beta.public_key, [telio.State.Connected]
-                ),
-                client_beta.wait_for_state_peer(
-                    alpha.public_key, [telio.State.Connected]
-                ),
-            )
-        )
+        alpha, beta = env.nodes
+        client_alpha, client_beta = env.clients
+        connection_alpha, connection_beta = [
+            conn.connection for conn in env.connections
+        ]
 
         await client_alpha.enable_magic_dns(["1.1.1.1"])
         await client_beta.enable_magic_dns(["1.1.1.1"])
@@ -692,9 +580,6 @@ async def test_dns_stability(
         for ip in alpha.ip_addresses:
             assert ip in beta_response.get_stdout()
 
-        assert alpha_conn_tracker.get_out_of_limits() is None
-        assert beta_conn_tracker.get_out_of_limits() is None
-
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
@@ -719,22 +604,25 @@ async def test_set_meshmap_dns_update(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         dns_server_address = get_dns_server_address(alpha_ip_stack)
-
-        api = API()
-        alpha = api.default_config_one_node(ip_stack=alpha_ip_stack)
-
-        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
-            new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_1,
-                generate_connection_tracker_config(ConnectionTag.DOCKER_CONE_CLIENT_1),
+        env = await exit_stack.enter_async_context(
+            setup_environment(
+                exit_stack,
+                [
+                    SetupParameters(
+                        connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                        ip_stack=alpha_ip_stack,
+                        connection_tracker_config=generate_connection_tracker_config(
+                            ConnectionTag.DOCKER_CONE_CLIENT_1
+                        ),
+                        derp_servers=[],
+                    )
+                ],
             )
         )
-
-        client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run(
-                api.get_meshmap(alpha.id, derp_servers=[])
-            )
-        )
+        api = env.api
+        alpha, *_ = env.nodes
+        connection_alpha, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
 
         await client_alpha.enable_magic_dns([])
 
@@ -760,8 +648,6 @@ async def test_set_meshmap_dns_update(
         )
         assert beta.ip_addresses[0] in alpha_response.get_stdout()
 
-        assert alpha_conn_tracker.get_out_of_limits() is None
-
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
@@ -784,23 +670,24 @@ async def test_set_meshmap_dns_update(
 async def test_dns_update(alpha_ip_stack: IPStack) -> None:
     async with AsyncExitStack() as exit_stack:
         dns_server_address = get_dns_server_address(alpha_ip_stack)
-
-        api = API()
-        alpha = api.default_config_one_node(ip_stack=alpha_ip_stack)
-
-        (connection, conn_tracker) = await exit_stack.enter_async_context(
-            new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_1,
-                generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    vpn_1_limits=ConnectionLimits(1, 1),
-                ),
+        env = await exit_stack.enter_async_context(
+            setup_environment(
+                exit_stack,
+                [
+                    SetupParameters(
+                        connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                        ip_stack=alpha_ip_stack,
+                        connection_tracker_config=generate_connection_tracker_config(
+                            ConnectionTag.DOCKER_CONE_CLIENT_1,
+                            vpn_1_limits=ConnectionLimits(1, 1),
+                        ),
+                        is_meshnet=False,
+                    )
+                ],
             )
         )
-
-        client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection, alpha).run()
-        )
+        connection, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
 
         wg_server = config.WG_SERVER
 
@@ -809,7 +696,6 @@ async def test_dns_update(alpha_ip_stack: IPStack) -> None:
                 client_alpha.connect_to_vpn(
                     wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
                 ),
-                conn_tracker.wait_for_event("vpn_1"),
                 client_alpha.wait_for_state_peer(
                     wg_server["public_key"], [telio.State.Connected], [PathType.Direct]
                 ),
@@ -837,36 +723,33 @@ async def test_dns_update(alpha_ip_stack: IPStack) -> None:
         )
         # Check if some address was found
         assert "Name:	google.com\nAddress:" in alpha_response.get_stdout()
-        assert conn_tracker.get_out_of_limits() is None
 
 
 @pytest.mark.asyncio
 async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
     async with AsyncExitStack() as exit_stack:
-        api = API()
-
         FIRST_DNS_SERVER = "8.8.8.8"
         SECOND_DNS_SERVER = "1.1.1.1"
-
-        alpha = api.default_config_one_node(ip_stack=IPStack.IPv4v6)
-
-        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
-            new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_1,
-                generate_connection_tracker_config(ConnectionTag.DOCKER_CONE_CLIENT_1),
-            )
+        env = await setup_mesh_nodes(
+            exit_stack,
+            [
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    ip_stack=IPStack.IPv4v6,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_1
+                    ),
+                    derp_servers=[],
+                )
+            ],
         )
+        connection_alpha, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
 
         process = await exit_stack.enter_async_context(
             connection_alpha.create_process(
                 ["tcpdump", "-ni", "eth0", "udp", "and", "port", "53", "-l"]
             ).run()
-        )
-
-        client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run(
-                api.get_meshmap(alpha.id, derp_servers=[])
-            )
         )
 
         await client_alpha.enable_magic_dns([FIRST_DNS_SERVER, SECOND_DNS_SERVER])
@@ -887,27 +770,18 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
         assert results
         assert [result for result in results if FIRST_DNS_SERVER in result]
         assert not ([result for result in results if SECOND_DNS_SERVER in result])
-        assert alpha_conn_tracker.get_out_of_limits() is None
 
 
 @pytest.mark.asyncio
 async def test_dns_aaaa_records() -> None:
     async with AsyncExitStack() as exit_stack:
-        api = API()
-        (alpha, beta) = api.default_config_two_nodes(
-            alpha_ip_stack=IPStack.IPv4v6, beta_ip_stack=IPStack.IPv4v6
+        api, (_, beta) = setup_api([(False, IPStack.IPv4v6), (False, IPStack.IPv4v6)])
+        env = await exit_stack.enter_async_context(
+            setup_environment(exit_stack, [SetupParameters()], provided_api=api)
         )
+        connection_alpha, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
 
-        beta_ipv6 = "1234:5678:9abc:def0:1234:5678:9abc:def0"
-        api.assign_ip(beta.id, beta_ipv6)
-
-        connection_alpha = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
-        )
-
-        client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run(api.get_meshmap(alpha.id))
-        )
         await client_alpha.enable_magic_dns(["1.1.1.1"])
 
         alpha_response = await testing.wait_long(
@@ -916,7 +790,5 @@ async def test_dns_aaaa_records() -> None:
             ).execute()
         )
 
-        # 100.64.33.2
         assert beta.ip_addresses[0] in alpha_response.get_stdout()
-        # 1234:5678:9abc:def0:1234:5678:9abc:def0
         assert beta.ip_addresses[1] in alpha_response.get_stdout()

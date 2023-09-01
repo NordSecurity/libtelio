@@ -14,10 +14,12 @@ from utils.connection_util import (
     ConnectionTag,
     new_connection_manager_by_tag,
 )
+from utils.router import IPStack
 
 
 @dataclass
 class SetupParameters:
+    ip_stack: IPStack = field(default=IPStack.IPv4v6)
     is_local: bool = field(default=False)
     connection_tag: ConnectionTag = field(default=ConnectionTag.DOCKER_CONE_CLIENT_1)
     connection_tracker_config: Optional[List[ConnectionTrackerConfig]] = field(
@@ -37,7 +39,7 @@ class Environment:
     clients: List[Client]
 
 
-def setup_api(node_params: List[bool]) -> Tuple[API, List[Node]]:
+def setup_api(node_params: List[Tuple[bool, IPStack]]) -> Tuple[API, List[Node]]:
     api = API()
     nodes = list(api.config_dynamic_nodes(node_params))
     for node, other_node in product(nodes, repeat=2):
@@ -88,9 +90,17 @@ async def setup_clients(
 
 @asynccontextmanager
 async def setup_environment(
-    exit_stack: AsyncExitStack, instances: List[SetupParameters]
+    exit_stack: AsyncExitStack,
+    instances: List[SetupParameters],
+    provided_api: Optional[API] = None,
 ) -> AsyncIterator[Environment]:
-    api, nodes = setup_api([instance.is_local for instance in instances])
+    api, nodes = (
+        (provided_api, list(provided_api.nodes.values()))
+        if provided_api
+        else setup_api(
+            [(instance.is_local, instance.ip_stack) for instance in instances]
+        )
+    )
     connection_managers = await setup_connections(
         exit_stack,
         [
@@ -136,14 +146,18 @@ async def setup_mesh_nodes(
     exit_stack: AsyncExitStack,
     instances: List[SetupParameters],
     is_timeout_expected: bool = False,
+    provided_api: Optional[API] = None,
 ) -> Environment:
-    env = await exit_stack.enter_async_context(setup_environment(exit_stack, instances))
+    env = await exit_stack.enter_async_context(
+        setup_environment(exit_stack, instances, provided_api)
+    )
 
     await asyncio.wait_for(
         asyncio.gather(
             *[
                 client.wait_for_state_on_any_derp([State.Connected])
-                for client in env.clients
+                for client, instance in zip_longest(env.clients, instances)
+                if instance.derp_servers != []
             ]
         ),
         30,
@@ -169,6 +183,8 @@ async def setup_mesh_nodes(
                 other_instance,
             ) in product(zip_longest(env.clients, env.nodes, instances), repeat=2)
             if node != other_node
+            and instance.derp_servers != []
+            and other_instance.derp_servers != []
         ]
     )
     if is_timeout_expected:
