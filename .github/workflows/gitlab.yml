@@ -29,4 +29,4 @@ jobs:
           project-id: ${{ secrets.PROJECT_ID }}
           token: ${{ secrets.TOKEN }}
           schedule: ${{ github.event_name == 'schedule' }}
-          ref: v0.1.10
+          ref: v0.1.11
