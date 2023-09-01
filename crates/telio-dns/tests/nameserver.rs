@@ -1,4 +1,3 @@
-use boringtun::crypto::x25519::{X25519PublicKey, X25519SecretKey};
 use boringtun::noise::{Tunn, TunnResult};
 use dns_parser::{self, Builder, QueryClass, QueryType};
 use pnet_packet::{
@@ -8,12 +7,12 @@ use pnet_packet::{
     udp::{ipv4_checksum, ipv6_checksum, MutableUdpPacket, UdpPacket},
     Packet,
 };
+use rand::prelude::*;
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     str::FromStr,
     sync::Arc,
 };
-use telio_crypto::SecretKey;
 use telio_dns::{LocalNameServer, NameServer, Records};
 use tokio::sync::RwLock;
 use tokio::time::sleep;
@@ -21,6 +20,7 @@ use tokio::{
     self,
     time::{timeout, Duration},
 };
+use x25519_dalek::{PublicKey, StaticSecret};
 
 const IPV4_HEADER: usize = 20;
 const IPV6_HEADER: usize = 40;
@@ -36,8 +36,8 @@ struct WGClient {
 
 impl WGClient {
     async fn new(
-        client_secret_key: SecretKey,
-        server_public_key: Arc<X25519PublicKey>,
+        client_secret_key: StaticSecret,
+        server_public_key: PublicKey,
         server_address: SocketAddr,
     ) -> Self {
         let client_socket =
@@ -49,13 +49,7 @@ impl WGClient {
             .expect("Failed to get client local address")
             .port();
         let client_address = ([127, 0, 0, 1], client_port).into();
-        let client_private_key: Arc<X25519SecretKey> = Arc::new(
-            client_secret_key
-                .to_string()
-                .parse()
-                .expect("Failed to convert client private key"),
-        );
-
+        let client_private_key = client_secret_key;
         WGClient {
             client_socket,
             client_address,
@@ -360,20 +354,11 @@ async fn dns_test_with_server(
     let server_address: SocketAddr = ([127, 0, 0, 1], server_port).into();
     let server_socket = Arc::<tokio::net::UdpSocket>::from(server_socket);
 
-    let server_secret_key = SecretKey::gen();
-    let server_private_key: Arc<X25519SecretKey> = Arc::new(
-        server_secret_key
-            .to_string()
-            .parse()
-            .expect("Failed to convert server private key"),
-    );
-    let server_public_key: Arc<X25519PublicKey> =
-        Arc::new(X25519PublicKey::from(&server_secret_key.public()[..]));
+    let server_private_key = StaticSecret::new(&mut rand::rngs::StdRng::from_entropy());
+    let server_public_key = PublicKey::from(&server_private_key);
 
-    let client_secret_key = SecretKey::gen();
-    let client_public_key = client_secret_key.public();
-    let client_public_key: Arc<X25519PublicKey> =
-        Arc::new(X25519PublicKey::from(&client_public_key[..]));
+    let client_secret_key = StaticSecret::new(&mut rand::rngs::StdRng::from_entropy());
+    let client_public_key = PublicKey::from(&client_secret_key);
 
     let server_peer = Arc::<Tunn>::from(
         Tunn::new(server_private_key, client_public_key, None, None, 0, None)
