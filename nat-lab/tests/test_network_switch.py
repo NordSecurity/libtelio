@@ -59,7 +59,6 @@ async def test_network_switcher(
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="the test is flaky - JIRA issue: LLT-4105")
 @pytest.mark.parametrize(
     "alpha_connection_tag, adapter_type",
     [
