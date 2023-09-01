@@ -14,6 +14,7 @@ class SshProcess(Process):
     _stdin_ready: asyncio.Event
     _stdin: Optional[asyncssh.SSHWriter]
     _process: Optional[asyncssh.SSHClientProcess]
+    _running: bool
 
     def __init__(
         self,
@@ -29,6 +30,7 @@ class SshProcess(Process):
         self._stdin = None
         self._escape_argument = escape_argument
         self._process = None
+        self._running = False
 
     async def execute(
         self,
@@ -39,6 +41,7 @@ class SshProcess(Process):
         command_str = " ".join(escaped)
 
         self._process = await self._ssh_connection.create_process(command_str)
+        self._running = True
         self._stdin = self._process.stdin
         self._stdin_ready.set()
 
@@ -49,6 +52,8 @@ class SshProcess(Process):
             )
         except asyncio.CancelledError:
             return self
+        finally:
+            self._running = False
 
         completed_process: asyncssh.SSHCompletedProcess = await self._process.wait()
 
@@ -112,3 +117,6 @@ class SshProcess(Process):
 
     def get_stderr(self) -> str:
         return self._stderr
+
+    def is_executing(self) -> bool:
+        return self._running

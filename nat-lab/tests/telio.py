@@ -184,7 +184,7 @@ class Runtime:
             peer = self.get_peer_info(public_key)
             if peer and peer.path in paths and peer.state in states:
                 return
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0.1)
 
     async def notify_peer_event(
         self, public_key: str, states: List[State], paths: List[PathType]
@@ -205,7 +205,7 @@ class Runtime:
             new_events = _get_events()[len(old_events) :]
             if new_events:
                 return
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0.1)
 
     def get_peer_info(self, public_key: str) -> Optional[PeerInfo]:
         events = [
@@ -222,7 +222,7 @@ class Runtime:
             derp = self.get_derp_info(server_ip)
             if derp and derp.ipv4 == server_ip and derp.conn_state in states:
                 return
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0.1)
 
     async def notify_derp_event(self, server_ip: str, states: List[State]) -> None:
         def _get_events() -> List[DerpServer]:
@@ -238,7 +238,7 @@ class Runtime:
             new_events = _get_events()[len(old_events) :]
             if new_events:
                 return
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0.1)
 
     def get_derp_info(self, server_ip: str) -> Optional[DerpServer]:
         events = [event for event in self._derp_state_events if event.ipv4 == server_ip]
@@ -381,8 +381,9 @@ class Client:
                 async with asyncio_util.run_async_context(self._event_request_loop()):
                     yield self
             finally:
-                if not self._quit:
+                if self._process.is_executing():
                     await testing.wait_long(self.stop_device())
+                    self._quit = True
                 if self._router:
                     await self._router.delete_vpn_route()
                     await self._router.delete_exit_node_route()
@@ -437,8 +438,11 @@ class Client:
                 for derp in DERP_SERVERS
             ]
         ) as futures:
-            while not any(fut.done() for fut in futures):
-                await asyncio.sleep(0.01)
+            try:
+                while not any(fut.done() for fut in futures):
+                    await asyncio.sleep(0.01)
+            except asyncio.CancelledError:
+                pass
 
     async def wait_for_every_derp_disconnection(self) -> None:
         async with asyncio_util.run_async_contexts(
@@ -449,8 +453,11 @@ class Client:
                 for derp in DERP_SERVERS
             ]
         ) as futures:
-            while not all(fut.done() for fut in futures):
-                await asyncio.sleep(0.001)
+            try:
+                while not all(fut.done() for fut in futures):
+                    await asyncio.sleep(0.1)
+            except asyncio.CancelledError:
+                pass
 
     async def wait_for_event_derp(self, derp_ip, states: List[State]) -> None:
         await self.get_events().wait_for_event_derp(derp_ip, states)
@@ -462,8 +469,11 @@ class Client:
                 for derp in DERP_SERVERS
             ]
         ) as futures:
-            while not any(fut.done() for fut in futures):
-                await asyncio.sleep(0.01)
+            try:
+                while not any(fut.done() for fut in futures):
+                    await asyncio.sleep(0.1)
+            except asyncio.CancelledError:
+                pass
 
     async def set_meshmap(self, meshmap: Dict[str, Any]) -> None:
         made_changes = await self._configure_interface()
