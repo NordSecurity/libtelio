@@ -53,3 +53,7 @@ class Process(ABC):
     @abstractmethod
     def get_stderr(self) -> str:
         pass
+
+    @abstractmethod
+    def is_executing(self) -> bool:
+        pass
