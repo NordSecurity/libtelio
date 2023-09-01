@@ -3,28 +3,20 @@ import config
 import pytest
 import telio
 from config import DERP_SERVERS
-from contextlib import AsyncExitStack, asynccontextmanager
-from dataclasses import dataclass
-from mesh_api import API, Node
-from telio import PathType, State, AdapterType, Client
-from telio_features import TelioFeatures, Direct, SkipUnresponsivePeers
-from typing import List, AsyncIterator, Tuple, Optional
+from contextlib import AsyncExitStack
+from helpers import setup_mesh_nodes, SetupParameters
+from telio import PathType, State
+from telio_features import TelioFeatures, Direct
+from typing import List, Tuple
 from utils import testing
-from utils.connection import Connection
 from utils.connection_util import (
     ConnectionTag,
-    new_connection_with_tracker_and_gw,
-    new_connection_by_tag,
-    ConnectionTracker,
     generate_connection_tracker_config,
     ConnectionLimits,
 )
 from utils.ping import Ping
 
 ANY_PROVIDERS = ["local", "stun"]
-LOCAL_PROVIDER = ["local"]
-STUN_PROVIDER = ["stun"]
-UPNP_PROVIDER = ["upnp"]
 
 DOCKER_CONE_GW_2_IP = "10.0.254.2"
 DOCKER_FULLCONE_GW_1_IP = "10.0.254.9"
@@ -37,577 +29,398 @@ DOCKER_SYMMETRIC_GW_1_IP = "10.0.254.3"
 DOCKER_UPNP_CLIENT_2_IP = "10.0.254.12"
 
 
-UHP_conn_client_types = [
-    (
-        STUN_PROVIDER,
-        ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
-        ConnectionTag.DOCKER_FULLCONE_CLIENT_2,
+def _generate_setup_parameter_pair(
+    config: List[Tuple[ConnectionTag, List[str]]]
+) -> List[SetupParameters]:
+    return [
+        SetupParameters(
+            connection_tag=conn_tag,
+            adapter_type=telio.AdapterType.BoringTun,
+            features=TelioFeatures(direct=Direct(providers=endpoint_providers)),
+            connection_tracker_config=generate_connection_tracker_config(
+                conn_tag,
+                derp_0_limits=ConnectionLimits(0, 1),
+                derp_1_limits=ConnectionLimits(1, 3),
+                derp_2_limits=ConnectionLimits(0, 3),
+                derp_3_limits=ConnectionLimits(0, 3),
+                ping_limits=ConnectionLimits(0, 5),
+            ),
+        )
+        for conn_tag, endpoint_providers in config
+    ]
+
+
+UHP_WORKING_PATHS = [
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["stun"]),
+                (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, ["stun"]),
+            ]
+        ),
         DOCKER_FULLCONE_GW_2_IP,
     ),
-    (
-        STUN_PROVIDER,
-        ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
-        ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ["stun"]),
+                (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["stun"]),
+            ]
+        ),
         DOCKER_FULLCONE_GW_1_IP,
     ),
-    (
-        STUN_PROVIDER,
-        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
-        ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["stun"]),
+                (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["stun"]),
+            ]
+        ),
         DOCKER_FULLCONE_GW_1_IP,
     ),
-    (
-        STUN_PROVIDER,
-        ConnectionTag.DOCKER_CONE_CLIENT_1,
-        ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
+                (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["stun"]),
+            ]
+        ),
         DOCKER_FULLCONE_GW_1_IP,
     ),
-    (
-        STUN_PROVIDER,
-        ConnectionTag.DOCKER_CONE_CLIENT_1,
-        ConnectionTag.DOCKER_CONE_CLIENT_2,
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
+                (ConnectionTag.DOCKER_CONE_CLIENT_2, ["stun"]),
+            ]
+        ),
         DOCKER_CONE_GW_2_IP,
     ),
-    (
-        STUN_PROVIDER,
-        ConnectionTag.DOCKER_CONE_CLIENT_1,
-        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["stun"]),
+            ]
+        ),
         DOCKER_OPEN_INTERNET_CLIENT_1_IP,
     ),
-    (
-        LOCAL_PROVIDER,
-        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
-        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2,
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["stun"]),
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2, ["stun"]),
+            ]
+        ),
         DOCKER_OPEN_INTERNET_CLIENT_2_IP,
     ),
-    (
-        STUN_PROVIDER,
-        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
-        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2,
-        DOCKER_OPEN_INTERNET_CLIENT_2_IP,
-    ),
-    (
-        STUN_PROVIDER,
-        ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
-        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ["stun"]),
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["stun"]),
+            ]
+        ),
         DOCKER_OPEN_INTERNET_CLIENT_1_IP,
     ),
-    (
-        UPNP_PROVIDER,
-        ConnectionTag.DOCKER_UPNP_CLIENT_1,
-        ConnectionTag.DOCKER_UPNP_CLIENT_2,
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_UPNP_CLIENT_1, ["upnp"]),
+                (ConnectionTag.DOCKER_UPNP_CLIENT_2, ["upnp"]),
+            ]
+        ),
         DOCKER_UPNP_CLIENT_2_IP,
     ),
-    (
-        STUN_PROVIDER,
-        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
-        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2,
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK, ["stun"]),
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2, ["stun"]),
+            ]
+        ),
         DOCKER_OPEN_INTERNET_CLIENT_2_IP,
     ),
-    (
-        LOCAL_PROVIDER,
-        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
-        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["stun"]),
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK, ["stun"]),
+            ]
+        ),
         DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK_IP,
     ),
-    (
-        LOCAL_PROVIDER,
-        ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
-        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ["local"]),
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+            ]
+        ),
         DOCKER_OPEN_INTERNET_CLIENT_1_IP,
     ),
-    (
-        LOCAL_PROVIDER,
-        ConnectionTag.DOCKER_CONE_CLIENT_1,
-        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, ["local"]),
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+            ]
+        ),
         DOCKER_OPEN_INTERNET_CLIENT_1_IP,
     ),
-    (
-        LOCAL_PROVIDER,
-        ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
-        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["local"]),
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+            ]
+        ),
         DOCKER_OPEN_INTERNET_CLIENT_1_IP,
     ),
-    (
-        LOCAL_PROVIDER,
-        ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT,
-        ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT, ["local"]),
+                (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ["local"]),
+            ]
+        ),
         DOCKER_SYMMETRIC_CLIENT_1_IP,
     ),
 ]
 
-
-@dataclass
-class NodeWithMeshConnection:
-    node: Node
-    client: telio.Client
-    conn: Connection
-    conn_track: ConnectionTracker
-    conn_gw: Optional[Connection]
-
-    def _init_(self, node, client, conn, conn_track, conn_gw=None):
-        self.node = node
-        self.client = client
-        self.conn = conn
-        self.conn_track = conn_track
-        self.conn_gw = conn_gw
-
-
-@asynccontextmanager
-async def new_connections_with_mesh_clients(
-    exit_stack: AsyncExitStack,
-    client1_type: ConnectionTag,
-    endpoint_providers_1: List[str],
-    client2_type: ConnectionTag,
-    endpoint_providers_2: List[str],
-) -> AsyncIterator[Tuple[NodeWithMeshConnection, NodeWithMeshConnection, API]]:
-    api = API()
-
-    (alpha, beta) = api.default_config_two_nodes()
-
-    (
-        alpha_conn,
-        alpha_conn_gw,
-        alpha_conn_tracker,
-    ) = await exit_stack.enter_async_context(
-        new_connection_with_tracker_and_gw(
-            client1_type,
-            generate_connection_tracker_config(
-                client1_type,
-                derp_0_limits=ConnectionLimits(0, 1),
-                derp_1_limits=ConnectionLimits(1, 3),
-                derp_2_limits=ConnectionLimits(0, 3),
-                derp_3_limits=ConnectionLimits(0, 3),
-                ping_limits=ConnectionLimits(0, 5),
-            ),
+UHP_FAILING_PATHS = [
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, ANY_PROVIDERS),
+                (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ANY_PROVIDERS),
+            ]
         )
-    )
-
-    (
-        beta_conn,
-        beta_conn_gw,
-        beta_conn_tracker,
-    ) = await exit_stack.enter_async_context(
-        new_connection_with_tracker_and_gw(
-            client2_type,
-            generate_connection_tracker_config(
-                client2_type,
-                derp_0_limits=ConnectionLimits(0, 1),
-                derp_1_limits=ConnectionLimits(1, 3),
-                derp_2_limits=ConnectionLimits(0, 3),
-                derp_3_limits=ConnectionLimits(0, 3),
-                ping_limits=ConnectionLimits(0, 5),
-            ),
+    ),
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, ANY_PROVIDERS),
+                (ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1, ANY_PROVIDERS),
+            ]
         )
-    )
-
-    alpha_client = await exit_stack.enter_async_context(
-        telio.Client(
-            alpha_conn,
-            alpha,
-            AdapterType.BoringTun,
-            telio_features=TelioFeatures(
-                direct=Direct(
-                    providers=endpoint_providers_1,
-                    skip_unresponsive_peers=SkipUnresponsivePeers(
-                        no_handshake_threshold_secs=10
-                    ),
-                )
-            ),
-        ).run(
-            api.get_meshmap(alpha.id),
+    ),
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ANY_PROVIDERS),
+                (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2, ANY_PROVIDERS),
+            ]
         )
-    )
-
-    beta_client = await exit_stack.enter_async_context(
-        telio.Client(
-            beta_conn,
-            beta,
-            AdapterType.BoringTun,
-            telio_features=TelioFeatures(
-                direct=Direct(
-                    providers=endpoint_providers_2,
-                    skip_unresponsive_peers=SkipUnresponsivePeers(
-                        no_handshake_threshold_secs=10
-                    ),
-                )
-            ),
-        ).run(
-            api.get_meshmap(beta.id),
+    ),
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ANY_PROVIDERS),
+                (ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1, ANY_PROVIDERS),
+            ]
         )
-    )
-
-    yield (
-        NodeWithMeshConnection(
-            alpha, alpha_client, alpha_conn, alpha_conn_tracker, alpha_conn_gw
-        ),
-        NodeWithMeshConnection(
-            beta, beta_client, beta_conn, beta_conn_tracker, beta_conn_gw
-        ),
-        api,
-    )
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "endpoint_providers, client1_type, client2_type, _reflexive_ip",
-    UHP_conn_client_types,
-)
-async def test_direct_working_paths(
-    endpoint_providers,
-    client1_type,
-    client2_type,
-    _reflexive_ip,
-) -> None:
-    async with AsyncExitStack() as exit_stack:
-        (alpha, beta, _) = await exit_stack.enter_async_context(
-            new_connections_with_mesh_clients(
-                exit_stack,
-                client1_type,
-                endpoint_providers,
-                client2_type,
-                endpoint_providers,
-            )
+    ),
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ANY_PROVIDERS),
+                (ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1, ANY_PROVIDERS),
+            ]
         )
-        await testing.wait_long(
-            asyncio.gather(
-                alpha.client.wait_for_state_on_any_derp([State.Connected]),
-                beta.client.wait_for_state_on_any_derp([State.Connected]),
-            ),
+    ),
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1, ANY_PROVIDERS),
+                (ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2, ANY_PROVIDERS),
+            ]
         )
-
-        await testing.wait_defined(
-            asyncio.gather(
-                alpha.client.wait_for_state_peer(
-                    beta.node.public_key,
-                    [State.Connected],
-                    [PathType.Direct],
-                ),
-                beta.client.wait_for_state_peer(
-                    alpha.node.public_key,
-                    [State.Connected],
-                    [PathType.Direct],
-                ),
-            ),
-            60,
+    ),
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+                (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["local"]),
+            ]
         )
-
-        for server in DERP_SERVERS:
-            await exit_stack.enter_async_context(
-                alpha.client.get_router().break_tcp_conn_to_host(str(server["ipv4"]))
-            )
-            await exit_stack.enter_async_context(
-                beta.client.get_router().break_tcp_conn_to_host(str(server["ipv4"]))
-            )
-
-        async with Ping(alpha.conn, beta.node.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
-
-        assert alpha.conn_track.get_out_of_limits() is None
-        assert beta.conn_track.get_out_of_limits() is None
+    ),
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, ["local"]),
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+            ]
+        )
+    ),
+    pytest.param(
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ["local"]),
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+            ]
+        )
+    ),
+]
 
 
 @pytest.mark.asyncio
 @pytest.mark.long
 @pytest.mark.timeout(120)
-@pytest.mark.parametrize(
-    "endpoint_providers, client1_type, client2_type",
-    [
-        (
-            ANY_PROVIDERS,
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
-        ),
-        (
-            ANY_PROVIDERS,
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1,
-        ),
-        (
-            ANY_PROVIDERS,
-            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
-            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2,
-        ),
-        (
-            ANY_PROVIDERS,
-            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
-            ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1,
-        ),
-        (
-            ANY_PROVIDERS,
-            ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
-            ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1,
-        ),
-        (
-            ANY_PROVIDERS,
-            ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1,
-            ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2,
-        ),
-    ],
-)
+@pytest.mark.parametrize("setup_params", UHP_FAILING_PATHS)
 # Not sure this is needed. It will only be helpful to catch if any
 # libtelio change would make any of these setup work.
-async def test_direct_failing_paths(
-    endpoint_providers, client1_type, client2_type
-) -> None:
+async def test_direct_failing_paths(setup_params: List[SetupParameters]) -> None:
     async with AsyncExitStack() as exit_stack:
-        (alpha, beta, _) = await exit_stack.enter_async_context(
-            new_connections_with_mesh_clients(
-                exit_stack,
-                client1_type,
-                endpoint_providers,
-                client2_type,
-                endpoint_providers,
-            )
-        )
-
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha.client.wait_for_state_on_any_derp([telio.State.Connected]),
-                beta.client.wait_for_state_on_any_derp([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
-                alpha.client.wait_for_state_on_any_derp([State.Connected]),
-                beta.client.wait_for_state_on_any_derp([State.Connected]),
-            )
-        )
-
-        with pytest.raises(asyncio.TimeoutError):
-            await testing.wait_defined(
-                asyncio.gather(
-                    alpha.client.wait_for_state_peer(
-                        beta.node.public_key,
-                        [State.Connected],
-                        [PathType.Direct],
-                    ),
-                    beta.client.wait_for_state_peer(
-                        alpha.node.public_key,
-                        [State.Connected],
-                        [PathType.Direct],
-                    ),
-                ),
-                60,
-            )
+        env = await setup_mesh_nodes(exit_stack, setup_params, is_timeout_expected=True)
+        _, beta = env.nodes
+        alpha_client, beta_client = env.clients
+        alpha_connection, _ = [conn.connection for conn in env.connections]
 
         for server in DERP_SERVERS:
             await exit_stack.enter_async_context(
-                alpha.client.get_router().break_tcp_conn_to_host(str(server["ipv4"]))
+                alpha_client.get_router().break_tcp_conn_to_host(str(server["ipv4"]))
             )
             await exit_stack.enter_async_context(
-                beta.client.get_router().break_tcp_conn_to_host(str(server["ipv4"]))
+                beta_client.get_router().break_tcp_conn_to_host(str(server["ipv4"]))
             )
 
         await testing.wait_lengthy(
             asyncio.gather(
-                alpha.client.wait_for_state_on_any_derp([State.Connecting]),
-                beta.client.wait_for_state_on_any_derp([State.Connecting]),
+                alpha_client.wait_for_state_on_any_derp([State.Connecting]),
+                beta_client.wait_for_state_on_any_derp([State.Connecting]),
             )
         )
 
         with pytest.raises(asyncio.TimeoutError):
-            async with Ping(alpha.conn, beta.node.ip_addresses[0]).run() as ping:
+            async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
                 await testing.wait_long(ping.wait_for_next_ping())
 
-        assert alpha.conn_track.get_out_of_limits() is None
-        assert beta.conn_track.get_out_of_limits() is None
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("setup_params, _reflexive_ip", UHP_WORKING_PATHS)
+async def test_direct_working_paths(
+    setup_params: List[SetupParameters],
+    _reflexive_ip: str,
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+        _, beta = env.nodes
+        alpha_client, beta_client = env.clients
+        alpha_connection, _ = [conn.connection for conn in env.connections]
+
+        for server in DERP_SERVERS:
+            await exit_stack.enter_async_context(
+                alpha_client.get_router().break_tcp_conn_to_host(str(server["ipv4"]))
+            )
+            await exit_stack.enter_async_context(
+                beta_client.get_router().break_tcp_conn_to_host(str(server["ipv4"]))
+            )
+
+        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
+            await testing.wait_long(ping.wait_for_next_ping())
 
 
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4132")
-@pytest.mark.parametrize(
-    "endpoint_providers, client1_type, client2_type, reflexive_ip",
-    UHP_conn_client_types,
-)
+@pytest.mark.parametrize("setup_params, reflexive_ip", UHP_WORKING_PATHS)
 async def test_direct_short_connection_loss(
-    endpoint_providers,
-    client1_type,
-    client2_type,
-    reflexive_ip,
+    setup_params: List[SetupParameters], reflexive_ip: str
 ) -> None:
     async with AsyncExitStack() as exit_stack:
-        (alpha, beta, _) = await exit_stack.enter_async_context(
-            new_connections_with_mesh_clients(
-                exit_stack,
-                client1_type,
-                endpoint_providers,
-                client2_type,
-                endpoint_providers,
-            )
-        )
-        assert alpha.conn_gw and beta.conn_gw
-
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha.client.wait_for_state_on_any_derp([State.Connected]),
-                beta.client.wait_for_state_on_any_derp([State.Connected]),
-            )
-        )
-
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha.conn_track.wait_for_event("derp_1"),
-                beta.conn_track.wait_for_event("derp_1"),
-            )
-        )
-
-        await testing.wait_defined(
-            asyncio.gather(
-                alpha.client.wait_for_state_peer(
-                    beta.node.public_key,
-                    [State.Connected],
-                    [PathType.Direct],
-                ),
-                beta.client.wait_for_state_peer(
-                    alpha.node.public_key,
-                    [State.Connected],
-                    [PathType.Direct],
-                ),
-            ),
-            60,
-        )
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+        _, beta = env.nodes
+        alpha_client, _ = env.clients
+        alpha_connection, beta_connection = [
+            conn.connection for conn in env.connections
+        ]
 
         # Disrupt UHP connection
         async with AsyncExitStack() as temp_exit_stack:
             await temp_exit_stack.enter_async_context(
-                alpha.client.get_router().disable_path(reflexive_ip)
+                alpha_client.get_router().disable_path(reflexive_ip)
             )
-
             # Clear conntrack to make UHP disruption faster
-            await alpha.conn.create_process(["conntrack", "-F"]).execute()
-            await beta.conn.create_process(["conntrack", "-F"]).execute()
+            await alpha_connection.create_process(["conntrack", "-F"]).execute()
+            await beta_connection.create_process(["conntrack", "-F"]).execute()
             with pytest.raises(asyncio.TimeoutError):
-                async with Ping(alpha.conn, beta.node.ip_addresses[0]).run() as ping:
+                async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
                     await testing.wait_long(ping.wait_for_next_ping())
 
-        async with Ping(alpha.conn, beta.node.ip_addresses[0]).run() as ping:
+        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_lengthy(ping.wait_for_next_ping())
-
-        assert alpha.conn_track.get_out_of_limits() is None
-        assert beta.conn_track.get_out_of_limits() is None
 
 
 @pytest.mark.asyncio
 @pytest.mark.long
-@pytest.mark.parametrize(
-    "endpoint_providers, client1_type, client2_type, reflexive_ip",
-    UHP_conn_client_types,
-)
+@pytest.mark.parametrize("setup_params, reflexive_ip", UHP_WORKING_PATHS)
 async def test_direct_connection_loss_for_infinity(
-    endpoint_providers,
-    client1_type,
-    client2_type,
-    reflexive_ip,
+    setup_params: List[SetupParameters], reflexive_ip: str
 ) -> None:
     async with AsyncExitStack() as exit_stack:
-        (alpha, beta, _) = await exit_stack.enter_async_context(
-            new_connections_with_mesh_clients(
-                exit_stack,
-                client1_type,
-                endpoint_providers,
-                client2_type,
-                endpoint_providers,
-            )
-        )
-        assert alpha.conn_gw and beta.conn_gw
-
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha.client.wait_for_state_on_any_derp([telio.State.Connected]),
-                beta.client.wait_for_state_on_any_derp([telio.State.Connected]),
-            )
-        )
-
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha.conn_track.wait_for_event("derp_1"),
-                beta.conn_track.wait_for_event("derp_1"),
-            )
-        )
-
-        await testing.wait_defined(
-            asyncio.gather(
-                alpha.client.wait_for_state_peer(
-                    beta.node.public_key,
-                    [State.Connected],
-                    [PathType.Direct],
-                ),
-                beta.client.wait_for_state_peer(
-                    alpha.node.public_key,
-                    [State.Connected],
-                    [PathType.Direct],
-                ),
-            ),
-            60,
-        )
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+        alpha, beta = env.nodes
+        alpha_client, beta_client = env.clients
+        alpha_connection, _ = [conn.connection for conn in env.connections]
 
         # Break UHP route and wait for relay connection
         async with AsyncExitStack() as temp_exit_stack:
             await temp_exit_stack.enter_async_context(
-                alpha.client.get_router().disable_path(reflexive_ip)
+                alpha_client.get_router().disable_path(reflexive_ip)
             )
             with pytest.raises(asyncio.TimeoutError):
-                async with Ping(alpha.conn, beta.node.ip_addresses[0]).run() as ping:
+                async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
                     await testing.wait_short(ping.wait_for_next_ping())
 
             await testing.wait_lengthy(
                 asyncio.gather(
-                    alpha.client.wait_for_state_peer(
-                        beta.node.public_key, [State.Connected]
+                    alpha_client.wait_for_state_peer(
+                        beta.public_key, [State.Connected]
                     ),
-                    beta.client.wait_for_state_peer(
-                        alpha.node.public_key, [State.Connected]
+                    beta_client.wait_for_state_peer(
+                        alpha.public_key, [State.Connected]
                     ),
-                ),
+                )
             )
 
-            async with Ping(alpha.conn, beta.node.ip_addresses[0]).run() as ping:
+            async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
                 await testing.wait_lengthy(ping.wait_for_next_ping())
-
-        assert alpha.conn_track.get_out_of_limits() is None
-        assert beta.conn_track.get_out_of_limits() is None
 
 
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="test is flaky - LLT-4441")
-@pytest.mark.parametrize(
-    "endpoint_providers, client1_type, client2_type, _reflexive_ip",
-    UHP_conn_client_types,
-)
+@pytest.mark.parametrize("setup_params, _reflexive_ip", UHP_WORKING_PATHS)
 async def test_direct_working_paths_with_skip_unresponsive_peers(
-    endpoint_providers,
-    client1_type,
-    client2_type,
-    _reflexive_ip,
+    setup_params: List[SetupParameters], _reflexive_ip: str
 ) -> None:
     async with AsyncExitStack() as exit_stack:
-        (alpha, beta, api) = await exit_stack.enter_async_context(
-            new_connections_with_mesh_clients(
-                exit_stack,
-                client1_type,
-                endpoint_providers,
-                client2_type,
-                endpoint_providers,
-            )
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+        api = env.api
+        alpha, beta = env.nodes
+        alpha_client, beta_client = env.clients
+        alpha_connection, _ = [conn.connection for conn in env.connections]
+
+        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
+            await testing.wait_long(ping.wait_for_next_ping())
+
+        await alpha_client.stop_device()
+
+        await beta_client.wait_for_log(
+            f"Skipping sending CMM to peer {alpha.public_key} (Unresponsive)"
         )
-        await testing.wait_long(
-            asyncio.gather(
-                alpha.client.wait_for_state_on_any_derp([State.Connected]),
-                beta.client.wait_for_state_on_any_derp([State.Connected]),
-            ),
-        )
+
+        await alpha_client.simple_start()
+        await alpha_client.set_meshmap(api.get_meshmap(alpha.id))
 
         await testing.wait_defined(
             asyncio.gather(
-                alpha.client.wait_for_state_peer(
-                    beta.node.public_key,
+                alpha_client.wait_for_state_peer(
+                    beta.public_key,
                     [State.Connected],
                     [PathType.Direct],
                 ),
-                beta.client.wait_for_state_peer(
-                    alpha.node.public_key,
+                beta_client.wait_for_state_peer(
+                    alpha.public_key,
                     [State.Connected],
                     [PathType.Direct],
                 ),
@@ -615,243 +428,129 @@ async def test_direct_working_paths_with_skip_unresponsive_peers(
             60,
         )
 
-        async with Ping(alpha.conn, beta.node.ip_addresses[0]).run() as ping:
+        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
-
-        await alpha.client.stop_device()
-
-        await beta.client.wait_for_log(
-            f"Skipping sending CMM to peer {alpha.node.public_key} (Unresponsive)"
-        )
-
-        await alpha.client.simple_start()
-        await alpha.client.set_meshmap(api.get_meshmap(alpha.node.id))
-
-        await testing.wait_defined(
-            asyncio.gather(
-                alpha.client.wait_for_state_peer(
-                    beta.node.public_key,
-                    [State.Connected],
-                    [PathType.Direct],
-                ),
-                beta.client.wait_for_state_peer(
-                    alpha.node.public_key,
-                    [State.Connected],
-                    [PathType.Direct],
-                ),
-            ),
-            60,
-        )
-
-        async with Ping(alpha.conn, beta.node.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
-
-        assert alpha.conn_track.get_out_of_limits() is None
-        assert beta.conn_track.get_out_of_limits() is None
 
 
 @pytest.mark.timeout(90)
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="test is flaky - LLT-4115")
 @pytest.mark.parametrize(
-    "alpha_connection_tag, beta_connection_tag, ep1, ep2",
+    "setup_params",
     [
         pytest.param(
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            ConnectionTag.DOCKER_CONE_CLIENT_2,
-            "stun",
-            "stun",
+            _generate_setup_parameter_pair(
+                [
+                    (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
+                    (ConnectionTag.DOCKER_CONE_CLIENT_2, ["stun"]),
+                ]
+            )
         ),
         pytest.param(
-            ConnectionTag.DOCKER_UPNP_CLIENT_1,
-            ConnectionTag.DOCKER_UPNP_CLIENT_2,
-            "upnp",
-            "upnp",
+            _generate_setup_parameter_pair(
+                [
+                    (ConnectionTag.DOCKER_UPNP_CLIENT_1, ["upnp"]),
+                    (ConnectionTag.DOCKER_UPNP_CLIENT_2, ["upnp"]),
+                ]
+            )
         ),
         pytest.param(
-            ConnectionTag.DOCKER_UPNP_CLIENT_1,
-            ConnectionTag.DOCKER_CONE_CLIENT_2,
-            "upnp",
-            "stun",
+            _generate_setup_parameter_pair(
+                [
+                    (ConnectionTag.DOCKER_UPNP_CLIENT_1, ["upnp"]),
+                    (ConnectionTag.DOCKER_CONE_CLIENT_2, ["stun"]),
+                ]
+            )
         ),
         pytest.param(
-            ConnectionTag.DOCKER_UPNP_CLIENT_1,
-            ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
-            "upnp",
-            "local",
+            _generate_setup_parameter_pair(
+                [
+                    (ConnectionTag.DOCKER_UPNP_CLIENT_1, ["upnp"]),
+                    (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+                ]
+            )
         ),
         pytest.param(
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
-            "stun",
-            "local",
+            _generate_setup_parameter_pair(
+                [
+                    (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
+                    (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+                ]
+            )
         ),
     ],
 )
 async def test_direct_connection_endpoint_gone(
-    alpha_connection_tag: ConnectionTag,
-    beta_connection_tag: ConnectionTag,
-    ep1: str,
-    ep2: str,
+    setup_params: List[SetupParameters],
 ) -> None:
     async with AsyncExitStack() as exit_stack:
-        (alpha, beta, _) = await exit_stack.enter_async_context(
-            new_connections_with_mesh_clients(
-                exit_stack, alpha_connection_tag, [ep1], beta_connection_tag, [ep2]
-            )
-        )
-        assert alpha.conn_gw and beta.conn_gw
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+        alpha, beta = env.nodes
+        alpha_client, beta_client = env.clients
+        alpha_connection, _ = [conn.connection for conn in env.connections]
 
         async def _check_if_true_direct_connection() -> None:
             async with AsyncExitStack() as temp_exit_stack:
                 for derp in DERP_SERVERS:
                     await temp_exit_stack.enter_async_context(
-                        alpha.client.get_router().break_tcp_conn_to_host(
+                        alpha_client.get_router().break_tcp_conn_to_host(
                             str(derp["ipv4"])
                         )
                     )
                     await temp_exit_stack.enter_async_context(
-                        beta.client.get_router().break_tcp_conn_to_host(
+                        beta_client.get_router().break_tcp_conn_to_host(
                             str(derp["ipv4"])
                         )
                     )
 
                 await testing.wait_lengthy(
                     asyncio.gather(
-                        alpha.client.wait_for_state_on_any_derp(
+                        alpha_client.wait_for_state_on_any_derp(
                             [State.Connecting, State.Disconnected],
                         ),
-                        beta.client.wait_for_state_on_any_derp(
+                        beta_client.wait_for_state_on_any_derp(
                             [State.Connecting, State.Disconnected],
                         ),
                     ),
                 )
 
-                async with Ping(alpha.conn, beta.node.ip_addresses[0]).run() as ping:
+                async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
                     await testing.wait_lengthy(ping.wait_for_next_ping())
-
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha.client.wait_for_state_on_any_derp([State.Connected]),
-                beta.client.wait_for_state_on_any_derp([State.Connected]),
-            ),
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
-                alpha.conn_track.wait_for_event("derp_1"),
-                beta.conn_track.wait_for_event("derp_1"),
-            )
-        )
-
-        await testing.wait_defined(
-            asyncio.gather(
-                alpha.client.wait_for_state_peer(
-                    beta.node.public_key,
-                    [State.Connected],
-                    [PathType.Direct],
-                ),
-                beta.client.wait_for_state_peer(
-                    alpha.node.public_key,
-                    [State.Connected],
-                    [PathType.Direct],
-                ),
-            ),
-            60,
-        )
 
         await _check_if_true_direct_connection()
 
         await testing.wait_lengthy(
             asyncio.gather(
-                alpha.client.wait_for_state_on_any_derp(
-                    [State.Connected],
-                ),
-                beta.client.wait_for_state_on_any_derp(
-                    [State.Connected],
-                ),
+                alpha_client.wait_for_state_on_any_derp([State.Connected]),
+                beta_client.wait_for_state_on_any_derp([State.Connected]),
             ),
         )
 
         async with AsyncExitStack() as temp_exit_stack:
             await temp_exit_stack.enter_async_context(
-                alpha.client.get_router().disable_path(
-                    alpha.client.get_endpoint_address(beta.node.public_key)
+                alpha_client.get_router().disable_path(
+                    alpha_client.get_endpoint_address(beta.public_key)
                 )
             )
             await temp_exit_stack.enter_async_context(
-                beta.client.get_router().disable_path(
-                    beta.client.get_endpoint_address(alpha.node.public_key)
+                beta_client.get_router().disable_path(
+                    beta_client.get_endpoint_address(alpha.public_key)
                 )
             )
 
             await testing.wait_lengthy(
                 asyncio.gather(
-                    alpha.client.wait_for_state_peer(
-                        beta.node.public_key, [State.Connected]
+                    alpha_client.wait_for_state_peer(
+                        beta.public_key, [State.Connected]
                     ),
-                    beta.client.wait_for_state_peer(
-                        alpha.node.public_key, [State.Connected]
+                    beta_client.wait_for_state_peer(
+                        alpha.public_key, [State.Connected]
                     ),
-                ),
+                )
             )
 
-            async with Ping(alpha.conn, beta.node.ip_addresses[0]).run() as ping:
+            async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
                 await testing.wait_lengthy(ping.wait_for_next_ping())
-
-        await testing.wait_defined(
-            asyncio.gather(
-                alpha.client.wait_for_state_peer(
-                    beta.node.public_key,
-                    [State.Connected],
-                    [PathType.Direct],
-                ),
-                beta.client.wait_for_state_peer(
-                    alpha.node.public_key,
-                    [State.Connected],
-                    [PathType.Direct],
-                ),
-            ),
-            60,
-        )
-        await _check_if_true_direct_connection()
-
-        assert alpha.conn_track.get_out_of_limits() is None
-        assert beta.conn_track.get_out_of_limits() is None
-
-
-@pytest.mark.asyncio
-# Regression test for LLT-4306
-async def test_infinite_stun_loop() -> None:
-    async with AsyncExitStack() as exit_stack:
-        api = API()
-
-        (alpha, beta) = api.default_config_two_nodes()
-        alpha_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
-        )
-        beta_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
-        )
-
-        alpha_client = await exit_stack.enter_async_context(
-            Client(
-                alpha_connection,
-                alpha,
-                AdapterType.BoringTun,
-                telio_features=TelioFeatures(direct=Direct(providers=["stun"])),
-            ).run(
-                api.get_meshmap(alpha.id),
-            )
-        )
-        beta_client = await exit_stack.enter_async_context(
-            Client(
-                beta_connection,
-                beta,
-                AdapterType.BoringTun,
-                telio_features=TelioFeatures(direct=Direct(providers=["stun"])),
-            ).run(api.get_meshmap(beta.id))
-        )
 
         await testing.wait_defined(
             asyncio.gather(
@@ -864,6 +563,25 @@ async def test_infinite_stun_loop() -> None:
             ),
             60,
         )
+        await _check_if_true_direct_connection()
+
+
+@pytest.mark.asyncio
+# Regression test for LLT-4306
+@pytest.mark.parametrize(
+    "setup_params",
+    _generate_setup_parameter_pair(
+        [
+            (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
+            (ConnectionTag.DOCKER_CONE_CLIENT_2, ["stun"]),
+        ]
+    ),
+)
+async def test_infinite_stun_loop(setup_params: List[SetupParameters]) -> None:
+    async with AsyncExitStack() as exit_stack:
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+        alpha_client, _ = env.clients
+        alpha_connection, _ = [conn.connection for conn in env.connections]
 
         for server in config.DERP_SERVERS:
             await exit_stack.enter_async_context(

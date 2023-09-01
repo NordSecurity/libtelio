@@ -1,4 +1,5 @@
 import asyncio
+import pytest
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from itertools import product, zip_longest
@@ -132,7 +133,9 @@ async def setup_environment(
 
 
 async def setup_mesh_nodes(
-    exit_stack: AsyncExitStack, instances: List[SetupParameters]
+    exit_stack: AsyncExitStack,
+    instances: List[SetupParameters],
+    is_timeout_expected: bool = False,
 ) -> Environment:
     env = await exit_stack.enter_async_context(setup_environment(exit_stack, instances))
 
@@ -146,7 +149,7 @@ async def setup_mesh_nodes(
         30,
     )
 
-    await asyncio.gather(
+    connection_future = asyncio.gather(
         *[
             asyncio.wait_for(
                 client.wait_for_state_peer(
@@ -168,5 +171,10 @@ async def setup_mesh_nodes(
             if node != other_node
         ]
     )
+    if is_timeout_expected:
+        with pytest.raises(asyncio.TimeoutError):
+            await connection_future
+    else:
+        await connection_future
 
     return env
