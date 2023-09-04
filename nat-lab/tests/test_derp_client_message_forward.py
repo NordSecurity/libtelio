@@ -13,8 +13,13 @@ TESTING_STRING = "testing"
 @pytest.mark.parametrize(
     "connection_tag",
     [
-        ConnectionTag.DOCKER_CONE_CLIENT_1,
-        pytest.param(ConnectionTag.WINDOWS_VM, marks=[pytest.mark.windows]),
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            marks=pytest.mark.windows,
+        ),
     ],
 )
 async def test_derp_client_message_forward(connection_tag: ConnectionTag) -> None:

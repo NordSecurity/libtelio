@@ -48,9 +48,15 @@ def get_allowed_ip_list(addrs: List[str]) -> List[str]:
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM, AdapterType.WireguardGo, marks=pytest.mark.windows
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=pytest.mark.windows,
         ),
-        pytest.param(ConnectionTag.MAC_VM, AdapterType.Default, marks=pytest.mark.mac),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=pytest.mark.mac,
+        ),
     ],
 )
 async def test_event_content_meshnet(
@@ -194,7 +200,7 @@ async def test_event_content_meshnet(
         ),
         pytest.param(
             ConnectionTag.MAC_VM,
-            AdapterType.Default,
+            AdapterType.BoringTun,
             "10.0.254.7",
             marks=pytest.mark.mac,
         ),
@@ -318,7 +324,9 @@ async def test_event_content_vpn_connection(
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.MAC_VM, telio.AdapterType.Default, marks=pytest.mark.mac
+            ConnectionTag.MAC_VM,
+            telio.AdapterType.BoringTun,
+            marks=pytest.mark.mac,
         ),
     ],
 )
@@ -459,7 +467,7 @@ async def test_event_content_exit_through_peer(
         ),
         pytest.param(
             ConnectionTag.MAC_VM,
-            AdapterType.Default,
+            AdapterType.BoringTun,
             "10.0.254.7",
             marks=pytest.mark.mac,
         ),

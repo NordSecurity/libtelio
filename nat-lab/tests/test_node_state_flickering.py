@@ -35,7 +35,9 @@ from utils.connection_util import (
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.MAC_VM, telio.AdapterType.Default, marks=pytest.mark.mac
+            ConnectionTag.MAC_VM,
+            telio.AdapterType.BoringTun,
+            marks=pytest.mark.mac,
         ),
     ],
 )

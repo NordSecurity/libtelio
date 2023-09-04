@@ -1,9 +1,9 @@
-import asyncio
 import pytest
 from contextlib import AsyncExitStack
 from mesh_api import API
-from telio import Client
+from telio import Client, State
 from telio_features import TelioFeatures, Direct, Lana, Nurse, Qos, ExitDns
+from utils import testing
 from utils.connection_util import ConnectionTag, new_connection_by_tag
 
 
@@ -34,6 +34,7 @@ async def test_telio_tasks_with_all_features() -> None:
                 ),
             ).run_meshnet(api.get_meshmap(alpha.id))
         )
-        # le wait some seconds for everything to start
-        await asyncio.sleep(5)
+        await testing.wait_long(
+            client_alpha.wait_for_state_on_any_derp([State.Connected]),
+        )
         await client_alpha.stop_device()

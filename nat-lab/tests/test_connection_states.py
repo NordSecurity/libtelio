@@ -37,7 +37,9 @@ from utils.ping import Ping
             ],
         ),
         pytest.param(
-            ConnectionTag.MAC_VM, telio.AdapterType.Default, marks=pytest.mark.mac
+            ConnectionTag.MAC_VM,
+            telio.AdapterType.BoringTun,
+            marks=pytest.mark.mac,
         ),
     ],
 )

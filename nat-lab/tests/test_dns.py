@@ -20,7 +20,52 @@ DNS_SERVER_ADDRESS = config.LIBTELIO_DNS_IP
 
 
 @pytest.mark.asyncio
-async def test_dns() -> None:
+@pytest.mark.parametrize(
+    "alpha_connection_tag,adapter_type",
+    [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.BoringTun,
+        ),
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WindowsNativeWg,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing magicdns support - Jira issue: LLT-4085"
+                ),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing magicdns support - Jira issue: LLT-4085"
+                ),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.xfail(reason="unknown why it fails - Jira issue: LLT-4085"),
+            ],
+        ),
+    ],
+)
+async def test_dns(
+    alpha_connection_tag: ConnectionTag,
+    adapter_type: AdapterType,
+) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
@@ -31,9 +76,9 @@ async def test_dns() -> None:
 
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                alpha_connection_tag,
                 generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    alpha_connection_tag,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
             )
@@ -49,7 +94,13 @@ async def test_dns() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run_meshnet(api.get_meshmap(alpha.id))
+            telio.Client(
+                connection_alpha,
+                alpha,
+                adapter_type,
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
+            )
         )
 
         client_beta = await exit_stack.enter_async_context(
@@ -143,7 +194,52 @@ async def test_dns() -> None:
 
 
 @pytest.mark.asyncio
-async def test_dns_port() -> None:
+@pytest.mark.parametrize(
+    "alpha_connection_tag,adapter_type",
+    [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.BoringTun,
+        ),
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WindowsNativeWg,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing magicdns support - Jira issue: LLT-4085"
+                ),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing magicdns support - Jira issue: LLT-4085"
+                ),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.xfail(reason="unknown why it fails - Jira issue: LLT-4085"),
+            ],
+        ),
+    ],
+)
+async def test_dns_port(
+    alpha_connection_tag: ConnectionTag,
+    adapter_type: AdapterType,
+) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
@@ -154,9 +250,9 @@ async def test_dns_port() -> None:
 
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                alpha_connection_tag,
                 generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    alpha_connection_tag,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
             )
@@ -172,7 +268,13 @@ async def test_dns_port() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run_meshnet(api.get_meshmap(alpha.id))
+            telio.Client(
+                connection_alpha,
+                alpha,
+                adapter_type,
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
+            )
         )
 
         client_beta = await exit_stack.enter_async_context(
@@ -264,23 +366,68 @@ async def test_dns_port() -> None:
 
 
 @pytest.mark.asyncio
-async def test_vpn_dns() -> None:
+@pytest.mark.parametrize(
+    "alpha_connection_tag,adapter_type",
+    [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.BoringTun,
+        ),
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WindowsNativeWg,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing magicdns support - Jira issue: LLT-4085"
+                ),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing magicdns support - Jira issue: LLT-4085"
+                ),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.xfail(reason="unknown why it fails - Jira issue: LLT-4085"),
+            ],
+        ),
+    ],
+)
+async def test_vpn_dns(
+    alpha_connection_tag: ConnectionTag,
+    adapter_type: AdapterType,
+) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
         alpha = api.default_config_one_node()
 
         (connection, conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                alpha_connection_tag,
                 generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    alpha_connection_tag,
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
             )
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection, alpha).run()
+            telio.Client(connection, alpha, adapter_type).run()
         )
 
         wg_server = config.WG_SERVER
@@ -342,7 +489,52 @@ async def test_vpn_dns() -> None:
 
 
 @pytest.mark.asyncio
-async def test_dns_after_mesh_off() -> None:
+@pytest.mark.parametrize(
+    "alpha_connection_tag,adapter_type",
+    [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.BoringTun,
+        ),
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WindowsNativeWg,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing magicdns support - Jira issue: LLT-4085"
+                ),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing magicdns support - Jira issue: LLT-4085"
+                ),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.xfail(reason="unknown why it fails - Jira issue: LLT-4085"),
+            ],
+        ),
+    ],
+)
+async def test_dns_after_mesh_off(
+    alpha_connection_tag: ConnectionTag,
+    adapter_type: AdapterType,
+) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
@@ -353,14 +545,20 @@ async def test_dns_after_mesh_off() -> None:
 
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_1,
-                generate_connection_tracker_config(ConnectionTag.DOCKER_CONE_CLIENT_1),
+                alpha_connection_tag,
+                generate_connection_tracker_config(
+                    alpha_connection_tag,
+                ),
             )
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run_meshnet(
-                api.get_meshmap(alpha.id, derp_servers=[])
+            telio.Client(
+                connection_alpha,
+                alpha,
+                adapter_type,
+            ).run_meshnet(
+                api.get_meshmap(alpha.id, derp_servers=[]),
             )
         )
 
@@ -417,7 +615,45 @@ async def test_dns_after_mesh_off() -> None:
 @pytest.mark.timeout(60 * 5 + 60)
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type",
-    [pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun)],
+    [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.BoringTun,
+        ),
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WindowsNativeWg,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing magicdns support - Jira issue: LLT-4085"
+                ),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing magicdns support - Jira issue: LLT-4085"
+                ),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.xfail(reason="unknown why it fails - Jira issue: LLT-4085"),
+            ],
+        ),
+    ],
 )
 async def test_dns_stability(
     alpha_connection_tag: ConnectionTag, adapter_type: AdapterType
@@ -538,7 +774,52 @@ async def test_dns_stability(
 
 
 @pytest.mark.asyncio
-async def test_set_meshmap_dns_update() -> None:
+@pytest.mark.parametrize(
+    "alpha_connection_tag,adapter_type",
+    [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.BoringTun,
+        ),
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WindowsNativeWg,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing magicdns support - Jira issue: LLT-4085"
+                ),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing magicdns support - Jira issue: LLT-4085"
+                ),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.xfail(reason="unknown why it fails - Jira issue: LLT-4085"),
+            ],
+        ),
+    ],
+)
+async def test_set_meshmap_dns_update(
+    alpha_connection_tag: ConnectionTag,
+    adapter_type: AdapterType,
+) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
@@ -546,14 +827,20 @@ async def test_set_meshmap_dns_update() -> None:
 
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_1,
-                generate_connection_tracker_config(ConnectionTag.DOCKER_CONE_CLIENT_1),
+                alpha_connection_tag,
+                generate_connection_tracker_config(
+                    alpha_connection_tag,
+                ),
             )
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run_meshnet(
-                api.get_meshmap(alpha.id, derp_servers=[])
+            telio.Client(
+                connection_alpha,
+                alpha,
+                adapter_type,
+            ).run_meshnet(
+                api.get_meshmap(alpha.id, derp_servers=[]),
             )
         )
 
@@ -585,7 +872,52 @@ async def test_set_meshmap_dns_update() -> None:
 
 
 @pytest.mark.asyncio
-async def test_dns_update() -> None:
+@pytest.mark.parametrize(
+    "alpha_connection_tag,adapter_type",
+    [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.BoringTun,
+        ),
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WindowsNativeWg,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing magicdns support - Jira issue: LLT-4085"
+                ),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing magicdns support - Jira issue: LLT-4085"
+                ),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.xfail(reason="unknown why it fails - Jira issue: LLT-4085"),
+            ],
+        ),
+    ],
+)
+async def test_dns_update(
+    alpha_connection_tag: ConnectionTag,
+    adapter_type: AdapterType,
+) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
@@ -593,16 +925,16 @@ async def test_dns_update() -> None:
 
         (connection, conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                alpha_connection_tag,
                 generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    alpha_connection_tag,
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
             )
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection, alpha).run()
+            telio.Client(connection, alpha, adapter_type).run()
         )
 
         wg_server = config.WG_SERVER
@@ -644,7 +976,52 @@ async def test_dns_update() -> None:
 
 
 @pytest.mark.asyncio
-async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
+@pytest.mark.parametrize(
+    "alpha_connection_tag,adapter_type",
+    [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.BoringTun,
+        ),
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WindowsNativeWg,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing magicdns support - Jira issue: LLT-4085"
+                ),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing magicdns support - Jira issue: LLT-4085"
+                ),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.skip(reason="missing tcpdump wrap - Jira issue: LLT-4104"),
+            ],
+        ),
+    ],
+)
+async def test_dns_duplicate_requests_on_multiple_forward_servers(
+    alpha_connection_tag: ConnectionTag,
+    adapter_type: AdapterType,
+) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
 
@@ -655,8 +1032,10 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
 
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_1,
-                generate_connection_tracker_config(ConnectionTag.DOCKER_CONE_CLIENT_1),
+                alpha_connection_tag,
+                generate_connection_tracker_config(
+                    alpha_connection_tag,
+                ),
             )
         )
 
@@ -667,8 +1046,12 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run_meshnet(
-                api.get_meshmap(alpha.id, derp_servers=[])
+            telio.Client(
+                connection_alpha,
+                alpha,
+                adapter_type,
+            ).run_meshnet(
+                api.get_meshmap(alpha.id, derp_servers=[]),
             )
         )
 
@@ -694,7 +1077,52 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
 
 
 @pytest.mark.asyncio
-async def test_dns_aaaa_records() -> None:
+@pytest.mark.parametrize(
+    "alpha_connection_tag,adapter_type",
+    [
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.BoringTun,
+        ),
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            AdapterType.LinuxNativeWg,
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WindowsNativeWg,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing magicdns support - Jira issue: LLT-4085"
+                ),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.skip(
+                    reason="missing magicdns support - Jira issue: LLT-4085"
+                ),
+            ],
+        ),
+        pytest.param(
+            ConnectionTag.MAC_VM,
+            AdapterType.BoringTun,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.xfail(reason="unknown why it fails - Jira issue: LLT-4085"),
+            ],
+        ),
+    ],
+)
+async def test_dns_aaaa_records(
+    alpha_connection_tag: ConnectionTag,
+    adapter_type: AdapterType,
+) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
         (alpha, beta) = api.default_config_two_nodes()
@@ -703,11 +1131,13 @@ async def test_dns_aaaa_records() -> None:
         api.assign_ip(beta.id, beta_ipv6)
 
         connection_alpha = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+            new_connection_by_tag(alpha_connection_tag)
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run_meshnet(api.get_meshmap(alpha.id))
+            telio.Client(connection_alpha, alpha, adapter_type).run_meshnet(
+                api.get_meshmap(alpha.id),
+            )
         )
         await client_alpha.enable_magic_dns(["1.1.1.1"])
 
