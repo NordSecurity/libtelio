@@ -1,107 +1,103 @@
 import asyncio
 import config
 import pytest
-import telio
 from contextlib import AsyncExitStack
-from mesh_api import API
-from telio import AdapterType, PathType, PeerInfo, State
+from helpers import SetupParameters, setup_environment, setup_mesh_nodes, setup_api
+from telio import AdapterType, PathType, PeerInfo, State, Client
 from telio_features import TelioFeatures, Direct
-from typing import List
 from utils import testing, stun
 from utils.connection_tracker import ConnectionLimits
-from utils.connection_util import (
-    generate_connection_tracker_config,
-    ConnectionTag,
-    new_connection_with_conn_tracker,
-)
+from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.ping import Ping
-from utils.router import IPProto, get_ip_address_type
-
-
-def get_allowed_ip_list(addrs: List[str]) -> List[str]:
-    ret: List[str] = []
-
-    for ip in addrs:
-        typ = get_ip_address_type(ip)
-
-        if typ == IPProto.IPv4:
-            ret.append(ip + "/32")
-        elif typ == IPProto.IPv6:
-            ret.append(ip + "/128")
-
-    return ret
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "alpha_connection_tag,adapter_type",
+    "alpha_setup_params",
     [
-        pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
         pytest.param(
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            AdapterType.LinuxNativeWg,
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type=AdapterType.BoringTun,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type=AdapterType.LinuxNativeWg,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            ),
             marks=pytest.mark.linux_native,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM,
-            AdapterType.WindowsNativeWg,
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM,
+                adapter_type=AdapterType.WindowsNativeWg,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.WINDOWS_VM,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            ),
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM, AdapterType.WireguardGo, marks=pytest.mark.windows
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM,
+                adapter_type=AdapterType.WireguardGo,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.WINDOWS_VM,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            ),
+            marks=pytest.mark.windows,
         ),
-        pytest.param(ConnectionTag.MAC_VM, AdapterType.Default, marks=pytest.mark.mac),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.MAC_VM,
+                adapter_type=AdapterType.BoringTun,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.MAC_VM,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            ),
+            marks=pytest.mark.mac,
+        ),
     ],
 )
-async def test_event_content_meshnet(
-    alpha_connection_tag: ConnectionTag, adapter_type: AdapterType
-) -> None:
-    async with AsyncExitStack() as exit_stack:
-        api = API()
-
-        (alpha, beta) = api.default_config_two_nodes()
-        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
-            new_connection_with_conn_tracker(
-                alpha_connection_tag,
-                generate_connection_tracker_config(
-                    alpha_connection_tag, derp_1_limits=ConnectionLimits(1, 1)
-                ),
-            )
-        )
-        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
-            new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_2,
-                generate_connection_tracker_config(
+@pytest.mark.parametrize(
+    "beta_setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
             )
         )
-
-        client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha, adapter_type).run(
-                api.get_meshmap(alpha.id)
-            )
+    ],
+)
+async def test_event_content_meshnet(
+    alpha_setup_params: SetupParameters, beta_setup_params: SetupParameters
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        env = await setup_mesh_nodes(
+            exit_stack, [alpha_setup_params, beta_setup_params]
         )
-
-        client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run(api.get_meshmap(beta.id))
-        )
-
-        await testing.wait_lengthy(
-            asyncio.gather(
-                client_alpha.wait_for_state_on_any_derp([State.Connected]),
-                client_beta.wait_for_state_on_any_derp([State.Connected]),
-                alpha_conn_tracker.wait_for_event("derp_1"),
-                beta_conn_tracker.wait_for_event("derp_1"),
-            )
-        )
-        await testing.wait_lengthy(
-            asyncio.gather(
-                client_alpha.wait_for_state_peer(beta.public_key, [State.Connected]),
-                client_beta.wait_for_state_peer(alpha.public_key, [State.Connected]),
-            )
-        )
+        api = env.api
+        alpha, beta = env.nodes
+        client_alpha, client_beta = env.clients
+        connection_alpha, connection_beta = [
+            conn.connection for conn in env.connections
+        ]
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
@@ -115,12 +111,12 @@ async def test_event_content_meshnet(
             is_exit=False,
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
-            allowed_ips=get_allowed_ip_list(beta.ip_addresses),
+            allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
             nickname=None,
             endpoint=None,
             hostname=beta.name + ".nord",
             allow_incoming_connections=True,
-            allow_peer_send_files=False,
+            allow_peer_send_files=True,
             path=PathType.Relay,
         )
 
@@ -131,12 +127,12 @@ async def test_event_content_meshnet(
             is_exit=False,
             is_vpn=False,
             ip_addresses=alpha.ip_addresses,
-            allowed_ips=get_allowed_ip_list(alpha.ip_addresses),
+            allowed_ips=env.api.get_allowed_ip_list(alpha.ip_addresses),
             nickname=None,
             endpoint=None,
             hostname=alpha.name + ".nord",
             allow_incoming_connections=True,
-            allow_peer_send_files=False,
+            allow_peer_send_files=True,
             path=PathType.Relay,
         )
 
@@ -157,77 +153,103 @@ async def test_event_content_meshnet(
             is_exit=False,
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
-            allowed_ips=get_allowed_ip_list(beta.ip_addresses),
+            allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
             nickname=None,
             endpoint=None,
             hostname=beta.name + ".nord",
             allow_incoming_connections=True,
-            allow_peer_send_files=False,
+            allow_peer_send_files=True,
             path=PathType.Direct,
         )
-
-        assert alpha_conn_tracker.get_out_of_limits() is None
-        assert beta_conn_tracker.get_out_of_limits() is None
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "alpha_connection_tag,adapter_type,public_ip",
+    "alpha_setup_params, alpha_public_ip",
     [
         pytest.param(
-            ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun, "10.0.254.1"
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type=AdapterType.BoringTun,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    vpn_1_limits=ConnectionLimits(1, 1),
+                    stun_limits=ConnectionLimits(2, 2),
+                ),
+                is_meshnet=False,
+            ),
+            "10.0.254.1",
         ),
         pytest.param(
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            AdapterType.LinuxNativeWg,
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type=AdapterType.LinuxNativeWg,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    vpn_1_limits=ConnectionLimits(1, 1),
+                    stun_limits=ConnectionLimits(2, 2),
+                ),
+                is_meshnet=False,
+            ),
             "10.0.254.1",
             marks=pytest.mark.linux_native,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM,
-            AdapterType.WindowsNativeWg,
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM,
+                adapter_type=AdapterType.WindowsNativeWg,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.WINDOWS_VM,
+                    vpn_1_limits=ConnectionLimits(1, 1),
+                    stun_limits=ConnectionLimits(2, 2),
+                ),
+                is_meshnet=False,
+            ),
             "10.0.254.7",
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM,
-            AdapterType.WireguardGo,
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM,
+                adapter_type=AdapterType.WireguardGo,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.WINDOWS_VM,
+                    vpn_1_limits=ConnectionLimits(1, 1),
+                    stun_limits=ConnectionLimits(2, 2),
+                ),
+                is_meshnet=False,
+            ),
             "10.0.254.7",
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.MAC_VM,
-            AdapterType.Default,
+            SetupParameters(
+                connection_tag=ConnectionTag.MAC_VM,
+                adapter_type=AdapterType.BoringTun,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.MAC_VM,
+                    vpn_1_limits=ConnectionLimits(1, 1),
+                    stun_limits=ConnectionLimits(2, 2),
+                ),
+                is_meshnet=False,
+            ),
             "10.0.254.7",
             marks=pytest.mark.mac,
         ),
     ],
 )
 async def test_event_content_vpn_connection(
-    alpha_connection_tag: ConnectionTag, adapter_type: AdapterType, public_ip: str
+    alpha_setup_params: SetupParameters, alpha_public_ip: str
 ) -> None:
     async with AsyncExitStack() as exit_stack:
-        api = API()
-
-        alpha = api.default_config_one_node()
-        (connection, alpha_conn_tracker) = await exit_stack.enter_async_context(
-            new_connection_with_conn_tracker(
-                alpha_connection_tag,
-                generate_connection_tracker_config(
-                    alpha_connection_tag,
-                    vpn_1_limits=ConnectionLimits(1, 1),
-                    stun_limits=ConnectionLimits(2, 2),
-                ),
-            )
+        env = await exit_stack.enter_async_context(
+            setup_environment(exit_stack, [alpha_setup_params])
         )
+        connection, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
 
         ip: str = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
-        await testing.wait_long(alpha_conn_tracker.wait_for_event("stun"))
-        assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
-
-        client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection, alpha, adapter_type).run()
-        )
+        assert ip == alpha_public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         wg_server = config.WG_SERVER
 
@@ -236,7 +258,6 @@ async def test_event_content_vpn_connection(
                 wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
             )
         )
-        await testing.wait_long(alpha_conn_tracker.wait_for_event("vpn_1"))
         await testing.wait_lengthy(
             client_alpha.wait_for_state_peer(
                 wg_server["public_key"], [State.Connected], [PathType.Direct]
@@ -275,13 +296,12 @@ async def test_event_content_vpn_connection(
         )
 
         ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
-        await testing.wait_long(alpha_conn_tracker.wait_for_event("stun"))
-        assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
+        assert ip == alpha_public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         await testing.wait_lengthy(
             client_alpha.wait_for_state_peer(
                 str(wg_server["public_key"]),
-                [telio.State.Disconnected],
+                [State.Disconnected],
                 [PathType.Direct],
             )
         )
@@ -305,85 +325,95 @@ async def test_event_content_vpn_connection(
             path=PathType.Direct,
         )
 
-        assert alpha_conn_tracker.get_out_of_limits() is None
-
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "alpha_connection_tag,adapter_type",
+    "alpha_setup_params",
     [
-        pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, telio.AdapterType.BoringTun),
         pytest.param(
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            telio.AdapterType.LinuxNativeWg,
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type=AdapterType.BoringTun,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type=AdapterType.LinuxNativeWg,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            ),
             marks=pytest.mark.linux_native,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM,
-            telio.AdapterType.WindowsNativeWg,
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM,
+                adapter_type=AdapterType.WindowsNativeWg,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.WINDOWS_VM,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            ),
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM,
-            telio.AdapterType.WireguardGo,
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM,
+                adapter_type=AdapterType.WireguardGo,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.WINDOWS_VM,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            ),
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.MAC_VM, telio.AdapterType.Default, marks=pytest.mark.mac
+            SetupParameters(
+                connection_tag=ConnectionTag.MAC_VM,
+                adapter_type=AdapterType.BoringTun,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.MAC_VM,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            ),
+            marks=pytest.mark.mac,
         ),
     ],
 )
-async def test_event_content_exit_through_peer(
-    alpha_connection_tag: ConnectionTag, adapter_type: AdapterType
-) -> None:
-    async with AsyncExitStack() as exit_stack:
-        api = API()
-
-        (alpha, beta) = api.default_config_two_nodes()
-        alpha.set_peer_firewall_settings(beta.id, allow_incoming_connections=False)
-        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
-            new_connection_with_conn_tracker(
-                alpha_connection_tag,
-                generate_connection_tracker_config(
-                    alpha_connection_tag, derp_1_limits=ConnectionLimits(1, 1)
-                ),
-            )
-        )
-        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
-            new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_2,
-                generate_connection_tracker_config(
+@pytest.mark.parametrize(
+    "beta_setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
                     derp_1_limits=ConnectionLimits(1, 1),
                     stun_limits=ConnectionLimits(2, 2),
                 ),
             )
         )
-
-        client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha, adapter_type).run(
-                api.get_meshmap(alpha.id)
-            )
+    ],
+)
+async def test_event_content_exit_through_peer(
+    alpha_setup_params: SetupParameters, beta_setup_params: SetupParameters
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        api, (alpha, beta) = setup_api([False, False])
+        alpha.set_peer_firewall_settings(beta.id)
+        env = await setup_mesh_nodes(
+            exit_stack, [alpha_setup_params, beta_setup_params], provided_api=api
         )
-
-        client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run(api.get_meshmap(beta.id))
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
-                client_alpha.wait_for_state_on_any_derp([State.Connected]),
-                client_beta.wait_for_state_on_any_derp([State.Connected]),
-                alpha_conn_tracker.wait_for_event("derp_1"),
-                beta_conn_tracker.wait_for_event("derp_1"),
-            )
-        )
-        await testing.wait_lengthy(
-            asyncio.gather(
-                client_alpha.wait_for_state_peer(beta.public_key, [State.Connected]),
-                client_beta.wait_for_state_peer(alpha.public_key, [State.Connected]),
-            )
-        )
+        connection_alpha, connection_beta = [
+            conn.connection for conn in env.connections
+        ]
+        client_alpha, client_beta = env.clients
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
@@ -395,7 +425,7 @@ async def test_event_content_exit_through_peer(
             is_exit=False,
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
-            allowed_ips=get_allowed_ip_list(beta.ip_addresses),
+            allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
             nickname=None,
             endpoint=None,
             hostname=beta.name + ".nord",
@@ -416,11 +446,9 @@ async def test_event_content_exit_through_peer(
         ip_alpha: str = await testing.wait_long(
             stun.get(connection_alpha, config.STUN_SERVER)
         )
-        await testing.wait_long(beta_conn_tracker.wait_for_event("stun"))
         ip_beta: str = await testing.wait_long(
             stun.get(connection_beta, config.STUN_SERVER)
         )
-        await testing.wait_long(beta_conn_tracker.wait_for_event("stun"))
 
         assert ip_alpha == ip_beta
 
@@ -440,97 +468,110 @@ async def test_event_content_exit_through_peer(
             path=PathType.Relay,
         )
 
-        assert alpha_conn_tracker.get_out_of_limits() is None
-        assert beta_conn_tracker.get_out_of_limits() is None
-
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(90)
 @pytest.mark.parametrize(
-    "alpha_connection_tag,adapter_type,alpha_public_ip",
+    "alpha_setup_params, alpha_public_ip",
     [
         pytest.param(
-            ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun, "10.0.254.1"
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type=AdapterType.BoringTun,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+                features=TelioFeatures(direct=Direct(providers=["stun"])),
+            ),
+            "10.0.254.1",
         ),
         pytest.param(
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            AdapterType.LinuxNativeWg,
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type=AdapterType.LinuxNativeWg,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+                features=TelioFeatures(direct=Direct(providers=["stun"])),
+            ),
             "10.0.254.1",
             marks=pytest.mark.linux_native,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM,
-            AdapterType.WindowsNativeWg,
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM,
+                adapter_type=AdapterType.WindowsNativeWg,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.WINDOWS_VM,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+                features=TelioFeatures(direct=Direct(providers=["stun"])),
+            ),
             "10.0.254.7",
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM,
-            AdapterType.WireguardGo,
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM,
+                adapter_type=AdapterType.WireguardGo,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.WINDOWS_VM,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+                features=TelioFeatures(direct=Direct(providers=["stun"])),
+            ),
             "10.0.254.7",
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.MAC_VM,
-            AdapterType.Default,
+            SetupParameters(
+                connection_tag=ConnectionTag.MAC_VM,
+                adapter_type=AdapterType.BoringTun,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.MAC_VM,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+                features=TelioFeatures(direct=Direct(providers=["stun"])),
+            ),
             "10.0.254.7",
             marks=pytest.mark.mac,
         ),
     ],
 )
-async def test_event_content_meshnet_node_upgrade_direct(
-    alpha_connection_tag: ConnectionTag, adapter_type: AdapterType, alpha_public_ip: str
-) -> None:
-    async with AsyncExitStack() as exit_stack:
-        api = API()
-        beta_public_ip = "10.0.254.2"
-
-        (alpha, beta) = api.default_config_two_nodes()
-        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
-            new_connection_with_conn_tracker(
-                alpha_connection_tag,
-                generate_connection_tracker_config(
-                    alpha_connection_tag, derp_1_limits=ConnectionLimits(1, 1)
-                ),
-            )
-        )
-        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
-            new_connection_with_conn_tracker(
-                ConnectionTag.DOCKER_CONE_CLIENT_2,
-                generate_connection_tracker_config(
+@pytest.mark.parametrize(
+    "beta_setup_params, beta_public_ip",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
                     derp_1_limits=ConnectionLimits(2, 2),
                 ),
-            )
+            ),
+            "10.0.254.2",
+        )
+    ],
+)
+async def test_event_content_meshnet_node_upgrade_direct(
+    alpha_setup_params: SetupParameters,
+    alpha_public_ip: str,
+    beta_setup_params: SetupParameters,
+    beta_public_ip: str,
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        env = await setup_mesh_nodes(
+            exit_stack, [alpha_setup_params, beta_setup_params]
         )
 
-        client_alpha = await exit_stack.enter_async_context(
-            telio.Client(
-                connection_alpha,
-                alpha,
-                adapter_type,
-                telio_features=TelioFeatures(direct=Direct(providers=["stun"])),
-            ).run(api.get_meshmap(alpha.id))
-        )
-
-        client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run(api.get_meshmap(beta.id))
-        )
-
-        await testing.wait_long(
-            asyncio.gather(
-                client_alpha.wait_for_state_on_any_derp([State.Connected]),
-                client_beta.wait_for_state_on_any_derp([State.Connected]),
-                alpha_conn_tracker.wait_for_event("derp_1"),
-                beta_conn_tracker.wait_for_event("derp_1"),
-            )
-        )
-        await testing.wait_lengthy(
-            asyncio.gather(
-                client_alpha.wait_for_state_peer(beta.public_key, [State.Connected]),
-                client_beta.wait_for_state_peer(alpha.public_key, [State.Connected]),
-            )
-        )
+        api = env.api
+        alpha, beta = env.nodes
+        connection_alpha, connection_beta = [
+            conn.connection for conn in env.connections
+        ]
+        client_alpha, client_beta = env.clients
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
@@ -546,12 +587,12 @@ async def test_event_content_meshnet_node_upgrade_direct(
             is_exit=False,
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
-            allowed_ips=get_allowed_ip_list(beta.ip_addresses),
+            allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
             nickname=None,
             endpoint=None,
             hostname=beta.name + ".nord",
             allow_incoming_connections=True,
-            allow_peer_send_files=False,
+            allow_peer_send_files=True,
             path=PathType.Relay,
         )
         assert (
@@ -567,12 +608,12 @@ async def test_event_content_meshnet_node_upgrade_direct(
             is_exit=False,
             is_vpn=False,
             ip_addresses=alpha.ip_addresses,
-            allowed_ips=get_allowed_ip_list(alpha.ip_addresses),
+            allowed_ips=env.api.get_allowed_ip_list(alpha.ip_addresses),
             nickname=None,
             endpoint=None,
             hostname=alpha.name + ".nord",
             allow_incoming_connections=True,
-            allow_peer_send_files=False,
+            allow_peer_send_files=True,
             path=PathType.Relay,
         )
         assert (
@@ -584,7 +625,7 @@ async def test_event_content_meshnet_node_upgrade_direct(
         del client_beta
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(
+            Client(
                 connection_beta,
                 beta,
                 telio_features=TelioFeatures(direct=Direct(providers=["stun"])),
@@ -594,8 +635,6 @@ async def test_event_content_meshnet_node_upgrade_direct(
         await testing.wait_lengthy(
             client_beta.wait_for_state_on_any_derp([State.Connected])
         )
-
-        await testing.wait_long(beta_conn_tracker.wait_for_event("derp_1"))
 
         await testing.wait_defined(
             asyncio.gather(
@@ -623,12 +662,12 @@ async def test_event_content_meshnet_node_upgrade_direct(
             is_exit=False,
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
-            allowed_ips=get_allowed_ip_list(beta.ip_addresses),
+            allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
             nickname=None,
             endpoint=None,
             hostname=beta.name + ".nord",
             allow_incoming_connections=True,
-            allow_peer_send_files=False,
+            allow_peer_send_files=True,
             path=PathType.Direct,
         )
         assert beta_node_state.endpoint and beta_public_ip in beta_node_state.endpoint
@@ -642,17 +681,14 @@ async def test_event_content_meshnet_node_upgrade_direct(
             is_exit=False,
             is_vpn=False,
             ip_addresses=alpha.ip_addresses,
-            allowed_ips=get_allowed_ip_list(alpha.ip_addresses),
+            allowed_ips=env.api.get_allowed_ip_list(alpha.ip_addresses),
             nickname=None,
             endpoint=None,
             hostname=alpha.name + ".nord",
             allow_incoming_connections=True,
-            allow_peer_send_files=False,
+            allow_peer_send_files=True,
             path=PathType.Direct,
         )
         assert (
             alpha_node_state.endpoint and alpha_public_ip in alpha_node_state.endpoint
         )
-
-        assert alpha_conn_tracker.get_out_of_limits() is None
-        assert beta_conn_tracker.get_out_of_limits() is None

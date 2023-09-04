@@ -136,10 +136,9 @@ async def setup_environment(
         yield Environment(api, nodes, connection_managers, clients)
     finally:
         for conn_manager in connection_managers:
-            assert (
-                conn_manager.tracker
-                and conn_manager.tracker.get_out_of_limits() is None
-            ) or conn_manager.tracker is None
+            if conn_manager.tracker:
+                limits = conn_manager.tracker.get_out_of_limits()
+                assert limits is None, f"conntracker reported out of limits {limits}"
 
 
 async def setup_mesh_nodes(
