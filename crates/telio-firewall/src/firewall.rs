@@ -398,6 +398,7 @@ impl StatefullFirewall {
             IpNextHeaderProtocols::Udp => self.handle_inbound_udp(&whitelist, &peer, &ip),
             IpNextHeaderProtocols::Tcp => self.handle_inbound_tcp(&whitelist, &peer, &ip),
             IpNextHeaderProtocols::Icmp => self.handle_inbound_icmp(&peer, &ip),
+            IpNextHeaderProtocols::Icmpv6 => self.handle_inbound_icmp(&peer, &ip),
             _ => false,
         }
     }
@@ -998,7 +999,7 @@ pub mod tests {
         let mut ip = MutableIpv6Packet::new(&mut raw).expect("ICMP: Bad IP buffer");
         set_ipv6(
             &mut ip,
-            IpNextHeaderProtocols::Icmp,
+            IpNextHeaderProtocols::Icmpv6,
             IPV6_HEADER_MIN,
             ip_len,
         );
