@@ -29,18 +29,16 @@ async def test_fullcone_nat() -> None:
 
         # listen for udp packets on connection1 local port
         listening_process = await exit_stack.enter_async_context(
-            connection_1.create_process(
-                ["nc", "-n", "-l", "-u", "-v", "-p", str(LOCAL_PORT)]
-            ).run(stdout_callback=on_stdout)
+            connection_1.create_process(["nc", "-nluv", "-p", str(LOCAL_PORT)]).run(
+                stdout_callback=on_stdout
+            )
         )
 
         await listening_process.wait_stdin_ready()
 
         # send udp packet from connection2 to connection1 to its external ip
         send_process = await exit_stack.enter_async_context(
-            connection_2.create_process(
-                ["nc", "-n", "-u", "-v", LOCAL_IP, str(LOCAL_PORT)]
-            ).run()
+            connection_2.create_process(["nc", "-nuv", LOCAL_IP, str(LOCAL_PORT)]).run()
         )
         await send_process.wait_stdin_ready()
         await asyncio.sleep(1)

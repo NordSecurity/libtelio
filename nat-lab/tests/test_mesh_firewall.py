@@ -628,15 +628,16 @@ async def test_mesh_firewall_file_share_port(
         connected_event = asyncio.Event()
 
         output_notifier.notify_output(
-            f"listening on [{CLIENT_ALPHA_IP}] {str(PORT)}", listening_start_event
+            f"Bound on {CLIENT_ALPHA_IP} {str(PORT)}", listening_start_event
         )
 
         output_notifier.notify_output(
-            f"[{CLIENT_ALPHA_IP}] {str(PORT)} (?) open", sender_start_event
+            f"Connection to {CLIENT_ALPHA_IP} {str(PORT)} port [udp/*] succeeded!",
+            sender_start_event,
         )
 
         output_notifier.notify_output(
-            f"connect to [{CLIENT_ALPHA_IP}] from (UNKNOWN) [{CLIENT_BETA_IP}]",
+            f"Connection received on {CLIENT_BETA_IP}",
             connected_event,
         )
 
@@ -645,13 +646,10 @@ async def test_mesh_firewall_file_share_port(
             connection_alpha.create_process(
                 [
                     "nc",
-                    "-nluvv",
+                    "-nluv",
                     "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
-                    "-p",
-                    str(PORT),
-                    "-s",
                     CLIENT_ALPHA_IP,
-                    CLIENT_BETA_IP,
+                    str(PORT),
                 ]
             ).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
         )
@@ -664,7 +662,7 @@ async def test_mesh_firewall_file_share_port(
             connection_beta.create_process(
                 [
                     "nc",
-                    "-nuvvz",
+                    "-nuvz",
                     "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
                     "-s",
                     CLIENT_BETA_IP,
@@ -833,36 +831,39 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
         time_wait_event = asyncio.Event()
 
         output_notifier.notify_output(
-            f"listening on [{CLIENT_ALPHA_IP}] {str(PORT)}", listening_start_event
+            f"Listening on {CLIENT_ALPHA_IP} {str(PORT)}", listening_start_event
         )
 
         output_notifier.notify_output(
-            f"[{CLIENT_ALPHA_IP}] {str(PORT)} (?) open", sender_start_event
+            f"Connection to {CLIENT_ALPHA_IP} {str(PORT)} port [tcp/*] succeeded!",
+            sender_start_event,
         )
 
         output_notifier.notify_output(
-            f"connect to [{CLIENT_ALPHA_IP}] from (UNKNOWN) [{CLIENT_BETA_IP}]",
+            f"Connection received on {CLIENT_BETA_IP}",
             connected_event,
         )
 
-        output_notifier.notify_output("LAST_ACK", last_ack_event)
-        output_notifier.notify_output("TIME_WAIT", time_wait_event)
+        output_notifier.notify_output("FIN_WAIT", last_ack_event)
+        output_notifier.notify_output("CLOSE_WAIT", time_wait_event)
 
-        async with connection_beta.create_process(["conntrack", "-E"]).run(
-            stdout_callback=conntrack_on_stdout
-        ) as conntrack_proc:
+        async with connection_beta.create_process(
+            [
+                "conntrack",
+                "--family",
+                "ipv4" if CLIENT_PROTO == IPProto.IPv4 else "ipv6",
+                "-E",
+            ]
+        ).run(stdout_callback=conntrack_on_stdout) as conntrack_proc:
             await testing.wait_normal(conntrack_proc.wait_stdin_ready())
             # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
             async with connection_alpha.create_process(
                 [
                     "nc",
-                    "-nlvv",
+                    "-nlv",
                     "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
-                    "-p",
-                    str(PORT),
-                    "-s",
                     CLIENT_ALPHA_IP,
-                    CLIENT_BETA_IP,
+                    str(PORT),
                 ]
             ).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as listener:
                 await testing.wait_normal(listener.wait_stdin_ready())
@@ -871,7 +872,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
                     connection_beta.create_process(
                         [
                             "nc",
-                            "-nvv",
+                            "-nv",
                             "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
                             "-s",
                             CLIENT_BETA_IP,
@@ -884,7 +885,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
                 await testing.wait_normal(connected_event.wait())
 
             # kill server and check what is happening in conntrack events
-            # if everything is correct -> conntrack should show LAST_ACK -> TIME_WAIT
+            # if everything is correct -> conntrack should show FIN_WAIT -> CLOSE_WAIT
             # if something goes wrong, it will be stuck at LAST_ACK state
             await testing.wait_long(last_ack_event.wait())
             await testing.wait_long(time_wait_event.wait())
@@ -1038,35 +1039,38 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
         time_wait_event = asyncio.Event()
 
         output_notifier.notify_output(
-            f"listening on [{CLIENT_ALPHA_IP}] {str(PORT)}", listening_start_event
+            f"Listening on {CLIENT_ALPHA_IP} {str(PORT)}", listening_start_event
         )
 
         output_notifier.notify_output(
-            f"[{CLIENT_ALPHA_IP}] {str(PORT)} (?) open", sender_start_event
+            f"Connection to {CLIENT_ALPHA_IP} {str(PORT)} port [tcp/*] succeeded!",
+            sender_start_event,
         )
 
         output_notifier.notify_output(
-            f"connect to [{CLIENT_ALPHA_IP}] from (UNKNOWN) [{CLIENT_BETA_IP}]",
+            f"Connection received on {CLIENT_BETA_IP}",
             connected_event,
         )
 
         output_notifier.notify_output("LAST_ACK", last_ack_event)
         output_notifier.notify_output("TIME_WAIT", time_wait_event)
 
-        async with connection_beta.create_process(["conntrack", "-E"]).run(
-            stdout_callback=conntrack_on_stdout
-        ) as conntrack_proc:
+        async with connection_beta.create_process(
+            [
+                "conntrack",
+                "--family",
+                "ipv4" if CLIENT_PROTO == IPProto.IPv4 else "ipv6",
+                "-E",
+            ]
+        ).run(stdout_callback=conntrack_on_stdout) as conntrack_proc:
             await testing.wait_normal(conntrack_proc.wait_stdin_ready())
             async with connection_alpha.create_process(
                 [
                     "nc",
-                    "-nlvv",
+                    "-nlv",
                     "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
-                    "-p",
-                    str(PORT),
-                    "-s",
                     CLIENT_ALPHA_IP,
-                    CLIENT_BETA_IP,
+                    str(PORT),
                 ]
             ).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as listener:
                 await testing.wait_normal(listener.wait_stdin_ready())
@@ -1075,7 +1079,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
                 async with connection_beta.create_process(
                     [
                         "nc",
-                        "-nvv",
+                        "-nv",
                         "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
                         "-s",
                         CLIENT_BETA_IP,
