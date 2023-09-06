@@ -1,21 +1,31 @@
 #![deny(missing_docs)]
 //! Contains macros to simplify using Moose functions from within libtelio
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::sync_channel,
+    },
+    time::Duration,
+};
 
-pub use telio_utils::telio_log_warn;
+pub use telio_utils::{telio_log_error, telio_log_warn};
 
 #[cfg_attr(all(feature = "moose", not(docrs)), path = "event_log_moose.rs")]
 #[cfg_attr(any(not(feature = "moose"), docsrs), path = "event_log_file.rs")]
 pub mod event_log;
+
 /// Module containing moose callbacks
 pub mod moose_callbacks;
+
 pub use event_log::*;
 
 /// App name used to initialize moose with
 pub const LANA_APP_NAME: &str = "libtelio";
 /// Version of the tracker used, should be updated everytime the tracker library is updated
 pub const LANA_MOOSE_VERSION: &str = "0.8.0";
+/// Timeout for moose to send init error, if any, through callback
+pub const LANA_MOOSE_MAX_INIT_TIME: u8 = 2;
 
 static MOOSE_INITIALIZED: AtomicBool = AtomicBool::new(false);
 const DEFAULT_ORDERING: Ordering = Ordering::SeqCst;
@@ -62,26 +72,41 @@ pub fn init_lana(
     app_version: String,
     prod: bool,
 ) -> Result<moose::Result, moose::Error> {
+    let (tx, rx) = sync_channel(1);
+
     if !is_lana_initialized() {
-        let result = moose::init(
+        if let Err(err) = moose::init(
             event_path,
             LANA_APP_NAME.to_string(),
             app_version,
             LANA_MOOSE_VERSION.to_string(),
             prod,
-            Box::new(moose_callbacks::MooseCallbacks),
-            Box::new(moose_callbacks::MooseCallbacks),
-        );
-        if let Some(error) = result.as_ref().err() {
-            telio_log_warn!("[Moose] Error: {} on call to `{}`", error, "init");
-        }
+            Box::new(moose_callbacks::MooseInitCallback {
+                init_success_tx: tx,
+            }),
+            Box::new(moose_callbacks::MooseErrorCallback),
+        ) {
+            telio_log_warn!("[Moose] Error: {:?} on call to `{}`", err, "moose_init");
+            return Err(err);
+        };
 
-        if result.is_ok() {
-            MOOSE_INITIALIZED.store(true, DEFAULT_ORDERING);
-            init_context_info();
+        match rx.recv_timeout(Duration::from_secs(LANA_MOOSE_MAX_INIT_TIME as u64)) {
+            Err(_) => {
+                telio_log_warn!(
+                    "[Moose] Failed to receive moose init callback result, channel timed out"
+                );
+                Err(moose::Error::NotInitiatedError)
+            }
+            Ok(init_result) => {
+                if init_result {
+                    MOOSE_INITIALIZED.store(true, DEFAULT_ORDERING);
+                    init_context_info();
+                    Ok(moose::Result::Success)
+                } else {
+                    Err(moose::Error::NotInitiatedError)
+                }
+            }
         }
-
-        result
     } else {
         Ok(moose::Result::AlreadyInitiated)
     }
@@ -114,4 +139,51 @@ pub fn deinit_lana() -> Result<moose::Result, moose::Error> {
 /// bool - True if lana was initialized, false otherwise.
 pub fn is_lana_initialized() -> bool {
     MOOSE_INITIALIZED.load(DEFAULT_ORDERING)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_init_lana() {
+        let result = init_lana("/event.db".to_string(), "tests".to_string(), false);
+
+        assert!(result.is_ok());
+        assert!(is_lana_initialized());
+    }
+
+    #[test]
+    fn test_init_lana_initialized() {
+        let result = init_lana("/event.db".to_string(), "tests".to_string(), false);
+
+        assert!(result.is_ok());
+        assert!(is_lana_initialized());
+
+        let result = init_lana("/event.db".to_string(), "tests".to_string(), false);
+
+        assert!(result.is_ok());
+        assert!(is_lana_initialized());
+    }
+
+    #[test]
+    fn test_deinit_lana_initialized() {
+        let result = init_lana("/event.db".to_string(), "tests".to_string(), false);
+
+        assert!(result.is_ok());
+        assert!(is_lana_initialized());
+
+        let result = deinit_lana();
+
+        assert!(result.is_ok());
+        assert!(!is_lana_initialized());
+    }
+
+    #[test]
+    fn test_deinit_lana_uninitialized() {
+        let result = deinit_lana();
+
+        assert!(result.is_err());
+        assert!(!is_lana_initialized());
+    }
 }

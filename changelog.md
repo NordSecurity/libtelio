@@ -21,6 +21,7 @@
 * LLT-3316: Improve usage of peer-reflexive endpoints
 * LLT-4246: Add self nordname as well as self IP address to the DNS records
 * LLT-4179: Fix issue where first WG-STUN request would fail due to missing WG-STUN peer
+* LLT-4233: Add moose init callback validation
 
 <br>
 
