@@ -27,8 +27,6 @@ def run_command_with_output(command, hide_output=False):
 
 
 def start():
-    run_command(["./build_derp.sh", "--check-norebuild"])
-    run_command(["./build_wireguard-go.sh", "--check-norebuild"])
     run_command(
         ["docker", "compose", "--profile", "base", "build", "--no-cache"],
         env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"},
