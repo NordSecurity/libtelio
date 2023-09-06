@@ -18,17 +18,25 @@ MAC_VM_IP = "10.55.0.12"
 LINUX_VM_PRIMARY_GATEWAY = "10.55.0.10"
 LINUX_VM_SECONDARY_GATEWAY = "10.66.0.10"
 
+PRIMARY_VM_NETWORK_PREFIX = "10.55.0"
+SECONDARY_VM_NETWORK_PREFIX = "10.66.0"
+
+# https://vagrant-libvirt.github.io/vagrant-libvirt/configuration.html#management-network
+LIBVIRT_MANAGEMENT_NETWORK_PREFIX = "192.168.121"
+
 # Same as defined in `libtelio/nat-lab/docker-compose.yml`, 10.0.0.0/16
 DOCKER_NETWORK_IP = "10.0.0.0"
 DOCKER_NETWORK_MASK = "255.255.0.0"
 STUN_SERVER = "10.0.1.1"
 
 # Same as defined in `libtelio/nat-lab/provision_windows.ps1`
-STUN_BINARY_PATH_WINDOWS = "C:/workspace/stunserver/release/stunclient.exe"
-STUN_BINARY_PATH_MAC = "/Users/vagrant/stunserver/stunclient"
+STUN_BINARY_PATH_WINDOWS = "C:/workspace/stunserver/release/stunclient.exe".replace(
+    "/", "\\"
+)
+STUN_BINARY_PATH_MAC = "/var/root/stunserver/stunclient"
 
-IPERF_BINARY_MAC = "/Users/vagrant/iperf3/iperf3"
-IPERF_BINARY_WINDOWS = "C:\\workspace\\iperf3\\iperf3.exe"
+IPERF_BINARY_MAC = "/var/root/iperf3/iperf3"
+IPERF_BINARY_WINDOWS = "C:/workspace/iperf3/iperf3.exe".replace("/", "\\")
 
 # JIRA issue: LLT-1664
 # The directories between host and Docker container are shared via
@@ -46,7 +54,8 @@ LIBTELIO_BINARY_PATH_DOCKER = (
 )
 
 # Libtelio binary path inside Windows and Mac VMs
-LIBTELIO_BINARY_PATH_VM = "/workspace/binaries/"
+LIBTELIO_BINARY_PATH_WINDOWS_VM = "C:/workspace/binaries/".replace("/", "\\")
+LIBTELIO_BINARY_PATH_MAC_VM = "/var/root/workspace/binaries/"
 
 LIBTELIO_DNS_IPV4 = "100.64.0.2"
 LIBTELIO_DNS_IPV6 = "fc74:656c:696f::2"

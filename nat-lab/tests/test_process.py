@@ -89,46 +89,34 @@ async def test_process_run_success(
 
 
 @pytest.mark.parametrize(
-    "connection_tag,ping_command,error_msg",
+    "connection_tag,ping_command",
     [
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
-            ["ping", "asdfg"],
-            "ping: asdfg: Temporary failure in name resolution",
+            ["bash", "-c", "exit 77"],
         ),
         pytest.param(
             ConnectionTag.WINDOWS_VM,
-            ["ping", "-t", "asdfg"],
-            "Ping request could not find host asdfg",
+            ["cmd.exe", "/c", "exit 77"],
             marks=pytest.mark.windows,
         ),
         pytest.param(
             ConnectionTag.MAC_VM,
-            ["ping", "asdfg"],
-            "ping: cannot resolve asdfg: Unknown host",
+            ["bash", "-c", "exit 77"],
             marks=pytest.mark.mac,
         ),
     ],
 )
-async def test_process_run_fail(
-    connection_tag: ConnectionTag, ping_command: list[str], error_msg: str
-):
+async def test_process_run_fail(connection_tag: ConnectionTag, ping_command: list[str]):
     async with AsyncExitStack() as exit_stack:
         connection = await exit_stack.enter_async_context(
             new_connection_by_tag(connection_tag)
         )
         with pytest.raises(ProcessExecError) as e:
-            async with connection.create_process(ping_command).run() as process:
-                await process.wait_stdin_ready()
-                while (
-                    error_msg not in process.get_stdout()
-                    and error_msg not in process.get_stderr()
-                ):
-                    await asyncio.sleep(0.1)
-                assert " ".join(ping_command) in await _get_running_process_list(
-                    connection
-                )
+            async with connection.create_process(ping_command).run():
+                await asyncio.sleep(1)
         assert e.value.cmd == ping_command
+        assert e.value.returncode == 77
         assert " ".join(ping_command) not in await _get_running_process_list(connection)
 
 

@@ -154,8 +154,13 @@ def get_libtelio_binary_path(path: str, connection: Connection) -> str:
     target_os = connection.target_os
     if target_os == TargetOS.Linux:
         return config.LIBTELIO_BINARY_PATH_DOCKER + path
-    if target_os in [TargetOS.Windows, TargetOS.Mac]:
-        return config.LIBTELIO_BINARY_PATH_VM + path
+
+    if target_os == TargetOS.Windows:
+        return config.LIBTELIO_BINARY_PATH_WINDOWS_VM + path
+
+    if target_os == TargetOS.Mac:
+        return config.LIBTELIO_BINARY_PATH_MAC_VM + path
+
     assert False, f"target_os not supported '{target_os}'"
 
 
