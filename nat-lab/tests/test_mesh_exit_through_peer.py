@@ -7,7 +7,6 @@ from helpers import setup_mesh_nodes, SetupParameters
 from mesh_api import API
 from telio import State, AdapterType
 from utils import testing, stun
-from utils.asyncio_util import run_async_context
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
     generate_connection_tracker_config,
@@ -147,11 +146,7 @@ async def test_mesh_exit_through_peer(
 
         await testing.wait_long(client_beta.get_router().create_exit_node_route())
 
-        async with run_async_context(
-            client_alpha.wait_for_event_peer(beta.public_key, [State.Connected])
-        ) as task:
-            await testing.wait_long(client_alpha.connect_to_exit_node(beta.public_key))
-            await testing.wait_long(task)
+        await client_alpha.connect_to_exit_node(beta.public_key)
 
         ip_alpha = await testing.wait_long(
             stun.get(connection_alpha, config.STUN_SERVER)

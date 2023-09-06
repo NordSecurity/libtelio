@@ -9,7 +9,6 @@ from helpers import SetupParameters, setup_mesh_nodes, setup_api
 from mesh_api import Node
 from typing import Tuple
 from utils import testing, stun
-from utils.asyncio_util import run_async_context
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.output_notifier import OutputNotifier
@@ -326,15 +325,7 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
 
         await testing.wait_long(client_exit_node.get_router().create_exit_node_route())
 
-        async with run_async_context(
-            client_alpha.wait_for_event_peer(
-                exit_node.public_key, [telio.State.Connected]
-            )
-        ) as task:
-            await testing.wait_long(
-                client_alpha.connect_to_exit_node(exit_node.public_key)
-            )
-            await testing.wait_long(task)
+        await client_alpha.connect_to_exit_node(exit_node.public_key)
 
         # Both nodes should have the same external ip
 

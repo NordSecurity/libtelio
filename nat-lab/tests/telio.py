@@ -580,9 +580,22 @@ class Client:
         )
         await self.get_router().delete_vpn_route()
 
-    async def disconnect_from_exit_nodes(self) -> None:
-        await self._write_command(["vpn", "off"])
-        await self.get_router().delete_vpn_route()
+    async def disconnect_from_exit_node(
+        self, public_key: str, timeout: float = 5
+    ) -> None:
+        async with asyncio_util.run_async_context(
+            self.wait_for_event_peer(public_key, [State.Connected], list(PathType))
+        ) as event:
+            await asyncio.wait_for(
+                asyncio.gather(
+                    *[
+                        self._write_command(["vpn", "off"]),
+                        event,
+                        self.get_router().delete_vpn_route(),
+                    ]
+                ),
+                timeout,
+            )
 
     async def enable_magic_dns(self, forward_servers: List[str]) -> None:
         await self._write_command(["dns", "on"] + forward_servers)
@@ -603,10 +616,21 @@ class Client:
 
         return False
 
-    async def connect_to_exit_node(self, public_key: str) -> None:
-        await self._configure_interface()
-        await self.get_router().create_vpn_route()
-        await self._write_command(["dev", "con", public_key])
+    async def connect_to_exit_node(self, public_key: str, timeout: float = 5) -> None:
+        async with asyncio_util.run_async_context(
+            self.wait_for_event_peer(public_key, [State.Connected], list(PathType))
+        ) as event:
+            await asyncio.wait_for(
+                asyncio.gather(
+                    *[
+                        self._configure_interface(),
+                        self.get_router().create_vpn_route(),
+                        self._write_command(["dev", "con", public_key]),
+                        event,
+                    ]
+                ),
+                timeout,
+            )
 
     def get_router(self) -> Router:
         assert self._router

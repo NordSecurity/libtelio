@@ -5,10 +5,8 @@ import re
 import telio
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
-from telio import State
 from typing import List, Tuple
 from utils import testing
-from utils.asyncio_util import run_async_context
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.router import IPStack
@@ -139,13 +137,7 @@ async def test_dns_through_exit(
         # entry connects to exit
         await testing.wait_long(client_exit.get_router().create_exit_node_route())
 
-        async with run_async_context(
-            client_alpha.wait_for_event_peer(exit_node.public_key, [State.Connected])
-        ) as task:
-            await testing.wait_long(
-                client_alpha.connect_to_exit_node(exit_node.public_key)
-            )
-            await testing.wait_long(task)
+        await client_alpha.connect_to_exit_node(exit_node.public_key)
 
         await client_exit.enable_magic_dns(exit_info[1])
 
@@ -195,7 +187,7 @@ async def test_dns_through_exit(
             )
             is not None
         )
-        await testing.wait_long(client_alpha.disconnect_from_exit_nodes())
+        await client_alpha.disconnect_from_exit_node(exit_node.public_key)
 
         # local forwarder should resolve this, checking if forward ips are changed back correctly
         alpha_response = await testing.wait_normal(
