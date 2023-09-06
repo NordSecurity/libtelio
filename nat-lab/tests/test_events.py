@@ -6,6 +6,7 @@ from helpers import SetupParameters, setup_environment, setup_mesh_nodes, setup_
 from telio import AdapterType, PathType, PeerInfo, State, Client
 from telio_features import TelioFeatures, Direct
 from utils import testing, stun
+from utils.asyncio_util import run_async_context
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.ping import Ping
@@ -436,12 +437,11 @@ async def test_event_content_exit_through_peer(
 
         await testing.wait_long(client_beta.get_router().create_exit_node_route())
 
-        await testing.wait_long(
-            asyncio.gather(
-                client_alpha.connect_to_exit_node(beta.public_key),
-                client_alpha.wait_for_event_peer(beta.public_key, [State.Connected]),
-            )
-        )
+        async with run_async_context(
+            client_alpha.wait_for_event_peer(beta.public_key, [State.Connected])
+        ) as task:
+            await testing.wait_long(client_alpha.connect_to_exit_node(beta.public_key))
+            await testing.wait_long(task)
 
         ip_alpha: str = await testing.wait_long(
             stun.get(connection_alpha, config.STUN_SERVER)

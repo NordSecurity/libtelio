@@ -3,6 +3,7 @@ import telio
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from utils import testing
+from utils.asyncio_util import run_async_context
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.ping import Ping
@@ -98,17 +99,18 @@ async def test_connected_state_after_routing(
         conn_alpha, _ = env.connections
 
         await testing.wait_long(client_beta.get_router().create_exit_node_route())
-        await testing.wait_long(client_alpha.connect_to_exit_node(beta.public_key))
 
-        await testing.wait_long(
+        async with run_async_context(
             client_alpha.wait_for_event_peer(beta.public_key, [telio.State.Connected])
-        )
+        ) as task:
+            await testing.wait_long(client_alpha.connect_to_exit_node(beta.public_key))
+            await testing.wait_long(task)
 
-        await testing.wait_long(client_alpha.disconnect_from_exit_nodes())
-
-        await testing.wait_long(
+        async with run_async_context(
             client_alpha.wait_for_event_peer(beta.public_key, [telio.State.Connected])
-        )
+        ) as task:
+            await testing.wait_long(client_alpha.disconnect_from_exit_nodes())
+            await testing.wait_long(task)
 
         async with Ping(conn_alpha.connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())

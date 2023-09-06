@@ -8,6 +8,7 @@ from helpers import setup_mesh_nodes, SetupParameters
 from telio import State
 from typing import List, Tuple
 from utils import testing
+from utils.asyncio_util import run_async_context
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.router import IPStack
@@ -137,11 +138,14 @@ async def test_dns_through_exit(
 
         # entry connects to exit
         await testing.wait_long(client_exit.get_router().create_exit_node_route())
-        await testing.wait_long(client_alpha.connect_to_exit_node(exit_node.public_key))
 
-        await testing.wait_long(
+        async with run_async_context(
             client_alpha.wait_for_event_peer(exit_node.public_key, [State.Connected])
-        )
+        ) as task:
+            await testing.wait_long(
+                client_alpha.connect_to_exit_node(exit_node.public_key)
+            )
+            await testing.wait_long(task)
 
         await client_exit.enable_magic_dns(exit_info[1])
 
