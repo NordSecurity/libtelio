@@ -565,20 +565,39 @@ class Client:
     async def igd(self):
         await self._write_command(["mesh", "igd"])
 
-    async def connect_to_vpn(self, ip, port, public_key) -> None:
+    async def connect_to_vpn(
+        self, ip: str, port: int, public_key: str, timeout: float = 5
+    ) -> None:
         await self._configure_interface()
         await self.get_router().create_vpn_route()
-        self.get_runtime().allowed_pub_keys.add(public_key)
-        await self._write_command(["dev", "con", public_key, f"{ip}:{port}"])
+        async with asyncio_util.run_async_context(
+            self.wait_for_event_peer(public_key, [State.Connected], list(PathType))
+        ) as event:
+            self.get_runtime().allowed_pub_keys.add(public_key)
+            await asyncio.wait_for(
+                asyncio.gather(
+                    *[
+                        self._write_command(["dev", "con", public_key, f"{ip}:{port}"]),
+                        event,
+                    ]
+                ),
+                timeout,
+            )
 
-    async def disconnect_from_vpn(
-        self, public_key, paths: Optional[List[PathType]] = None
-    ) -> None:
-        await self._write_command(["vpn", "off"])
-        await self.wait_for_state_peer(
-            public_key, [State.Disconnected], paths if paths else [PathType.Relay]
-        )
-        await self.get_router().delete_vpn_route()
+    async def disconnect_from_vpn(self, public_key: str, timeout: float = 5) -> None:
+        async with asyncio_util.run_async_context(
+            self.wait_for_event_peer(public_key, [State.Disconnected], list(PathType))
+        ) as event:
+            await asyncio.wait_for(
+                asyncio.gather(
+                    *[
+                        self._write_command(["vpn", "off"]),
+                        event,
+                        self.get_router().delete_vpn_route(),
+                    ]
+                ),
+                timeout,
+            )
 
     async def disconnect_from_exit_node(
         self, public_key: str, timeout: float = 5
@@ -617,14 +636,14 @@ class Client:
         return False
 
     async def connect_to_exit_node(self, public_key: str, timeout: float = 5) -> None:
+        await self._configure_interface()
+        await self.get_router().create_vpn_route()
         async with asyncio_util.run_async_context(
             self.wait_for_event_peer(public_key, [State.Connected], list(PathType))
         ) as event:
             await asyncio.wait_for(
                 asyncio.gather(
                     *[
-                        self._configure_interface(),
-                        self.get_router().create_vpn_route(),
                         self._write_command(["dev", "con", public_key]),
                         event,
                     ]

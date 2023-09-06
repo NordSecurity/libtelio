@@ -2,10 +2,9 @@ import asyncio
 import config
 import pytest
 import re
-import telio
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_api, setup_environment, setup_mesh_nodes
-from telio import AdapterType, PathType
+from telio import AdapterType
 from utils import testing
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import ConnectionTag, generate_connection_tracker_config
@@ -329,16 +328,8 @@ async def test_vpn_dns(alpha_ip_stack: IPStack) -> None:
 
         wg_server = config.WG_SERVER
 
-        await testing.wait_long(
-            client_alpha.connect_to_vpn(
-                wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-            )
-        )
-
-        await testing.wait_lengthy(
-            client_alpha.wait_for_state_peer(
-                wg_server["public_key"], [telio.State.Connected], [PathType.Direct]
-            )
+        await client_alpha.connect_to_vpn(
+            str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
         )
 
         # After we connect to the VPN, enable magic DNS
@@ -691,15 +682,8 @@ async def test_dns_update(alpha_ip_stack: IPStack) -> None:
 
         wg_server = config.WG_SERVER
 
-        await testing.wait_lengthy(
-            asyncio.gather(
-                client_alpha.connect_to_vpn(
-                    wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-                ),
-                client_alpha.wait_for_state_peer(
-                    wg_server["public_key"], [telio.State.Connected], [PathType.Direct]
-                ),
-            )
+        await client_alpha.connect_to_vpn(
+            str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
         )
 
         # Don't forward anything yet

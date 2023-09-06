@@ -253,15 +253,8 @@ async def test_event_content_vpn_connection(
 
         wg_server = config.WG_SERVER
 
-        await testing.wait_long(
-            client_alpha.connect_to_vpn(
-                wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-            )
-        )
-        await testing.wait_lengthy(
-            client_alpha.wait_for_state_peer(
-                wg_server["public_key"], [State.Connected], [PathType.Direct]
-            )
+        await client_alpha.connect_to_vpn(
+            str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
         )
 
         async with Ping(connection, config.PHOTO_ALBUM_IP).run() as ping:
@@ -289,11 +282,7 @@ async def test_event_content_vpn_connection(
         ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
-        await testing.wait_lengthy(
-            client_alpha.disconnect_from_vpn(
-                wg_server["public_key"], paths=[PathType.Direct]
-            )
-        )
+        await client_alpha.disconnect_from_vpn(str(wg_server["public_key"]))
 
         ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
         assert ip == alpha_public_ip, f"wrong public IP before connecting to VPN {ip}"

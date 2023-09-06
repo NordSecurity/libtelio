@@ -2,7 +2,7 @@ import config
 import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_connections
-from telio import AdapterType, PathType, Client, State
+from telio import AdapterType, Client
 from utils import testing, stun
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionLimits
@@ -21,16 +21,8 @@ async def _connect_vpn(
     client_meshnet_ip: str,
     wg_server: dict,
 ) -> None:
-    await testing.wait_long(
-        client.connect_to_vpn(
-            wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-        )
-    )
-
-    await testing.wait_lengthy(
-        client.wait_for_state_peer(
-            wg_server["public_key"], [State.Connected], [PathType.Direct]
-        )
+    await client.connect_to_vpn(
+        wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
     )
 
     async with Ping(connection, config.PHOTO_ALBUM_IP).run() as ping:
@@ -253,11 +245,7 @@ async def test_vpn_reconnect(
             config.WG_SERVER,
         )
 
-        await testing.wait_long(
-            client_alpha.disconnect_from_vpn(
-                config.WG_SERVER["public_key"], [PathType.Direct]
-            )
-        )
+        await client_alpha.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
 
         ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"

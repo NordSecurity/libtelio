@@ -5,7 +5,7 @@ import telio
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from mesh_api import API
-from telio import AdapterType, PathType, State
+from telio import AdapterType, State
 from telio_features import TelioFeatures, Direct
 from utils import testing, stun
 from utils.connection_tracker import ConnectionLimits
@@ -114,15 +114,8 @@ async def test_mesh_plus_vpn_one_peer(
 
         wg_server = config.WG_SERVER
 
-        await testing.wait_long(
-            client_alpha.connect_to_vpn(
-                wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-            )
-        )
-        await testing.wait_lengthy(
-            client_alpha.wait_for_state_peer(
-                wg_server["public_key"], [State.Connected], [PathType.Direct]
-            )
+        await client_alpha.connect_to_vpn(
+            str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
         )
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
@@ -238,26 +231,17 @@ async def test_mesh_plus_vpn_both_peers(
 
         wg_server = config.WG_SERVER
 
-        await testing.wait_long(
-            asyncio.gather(
-                client_alpha.connect_to_vpn(
-                    wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-                ),
-                client_beta.connect_to_vpn(
-                    wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-                ),
-            )
-        )
-
-        await testing.wait_lengthy(
-            asyncio.gather(
-                client_alpha.wait_for_state_peer(
-                    wg_server["public_key"], [State.Connected], [PathType.Direct]
-                ),
-                client_beta.wait_for_state_peer(
-                    wg_server["public_key"], [State.Connected], [PathType.Direct]
-                ),
-            )
+        await asyncio.gather(
+            client_alpha.connect_to_vpn(
+                str(wg_server["ipv4"]),
+                int(wg_server["port"]),
+                str(wg_server["public_key"]),
+            ),
+            client_beta.connect_to_vpn(
+                str(wg_server["ipv4"]),
+                int(wg_server["port"]),
+                str(wg_server["public_key"]),
+            ),
         )
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
@@ -353,16 +337,8 @@ async def test_vpn_plus_mesh(
 
         wg_server = config.WG_SERVER
 
-        await testing.wait_long(
-            client_alpha.connect_to_vpn(
-                wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-            )
-        )
-
-        await testing.wait_lengthy(
-            client_alpha.wait_for_state_peer(
-                wg_server["public_key"], [State.Connected], [PathType.Direct]
-            )
+        await client_alpha.connect_to_vpn(
+            str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
         )
 
         await testing.wait_long(alpha_conn_tracker.wait_for_event("vpn_1"))
@@ -524,25 +500,17 @@ async def test_vpn_plus_mesh_over_direct(
 
         wg_server = config.WG_SERVER
 
-        await testing.wait_long(
-            asyncio.gather(
-                client_alpha.connect_to_vpn(
-                    wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-                ),
-                client_beta.connect_to_vpn(
-                    wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-                ),
-            )
-        )
-        await testing.wait_lengthy(
-            asyncio.gather(
-                client_alpha.wait_for_state_peer(
-                    wg_server["public_key"], [State.Connected], [PathType.Direct]
-                ),
-                client_beta.wait_for_state_peer(
-                    wg_server["public_key"], [State.Connected], [PathType.Direct]
-                ),
-            )
+        await asyncio.gather(
+            client_alpha.connect_to_vpn(
+                str(wg_server["ipv4"]),
+                int(wg_server["port"]),
+                str(wg_server["public_key"]),
+            ),
+            client_beta.connect_to_vpn(
+                str(wg_server["ipv4"]),
+                int(wg_server["port"]),
+                str(wg_server["public_key"]),
+            ),
         )
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
@@ -694,32 +662,22 @@ async def test_vpn_plus_mesh_over_different_connection_types(
 
         wg_server = config.WG_SERVER
 
-        await testing.wait_long(
-            asyncio.gather(
-                client_alpha.connect_to_vpn(
-                    wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-                ),
-                client_beta.connect_to_vpn(
-                    wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-                ),
-                client_gamma.connect_to_vpn(
-                    wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-                ),
-            )
-        )
-
-        await testing.wait_lengthy(
-            asyncio.gather(
-                client_alpha.wait_for_state_peer(
-                    wg_server["public_key"], [State.Connected], [PathType.Direct]
-                ),
-                client_beta.wait_for_state_peer(
-                    wg_server["public_key"], [State.Connected], [PathType.Direct]
-                ),
-                client_gamma.wait_for_state_peer(
-                    wg_server["public_key"], [State.Connected], [PathType.Direct]
-                ),
-            )
+        await asyncio.gather(
+            client_alpha.connect_to_vpn(
+                str(wg_server["ipv4"]),
+                int(wg_server["port"]),
+                str(wg_server["public_key"]),
+            ),
+            client_beta.connect_to_vpn(
+                str(wg_server["ipv4"]),
+                int(wg_server["port"]),
+                str(wg_server["public_key"]),
+            ),
+            client_gamma.connect_to_vpn(
+                str(wg_server["ipv4"]),
+                int(wg_server["port"]),
+                str(wg_server["public_key"]),
+            ),
         )
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:

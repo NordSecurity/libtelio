@@ -198,15 +198,8 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
 
         wg_server = config.WG_SERVER
 
-        await testing.wait_long(
-            client_alpha.connect_to_vpn(
-                wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-            )
-        )
-        await testing.wait_lengthy(
-            client_alpha.wait_for_state_peer(
-                wg_server["public_key"], [State.Connected], [PathType.Direct]
-            )
+        await client_alpha.connect_to_vpn(
+            str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
         )
 
         async with Ping(alpha_connection, config.PHOTO_ALBUM_IP).run() as ping:

@@ -8,7 +8,6 @@ import telio
 from config import WG_SERVER
 from contextlib import AsyncExitStack
 from mesh_api import API, Node
-from telio import PathType, Client
 from telio_features import TelioFeatures, Nurse, Lana, Qos
 from typing import Optional
 from utils import testing
@@ -21,7 +20,7 @@ from utils.analytics import (
     IPV6_BIT,
 )
 from utils.connection import Connection
-from utils.connection_tracker import ConnectionLimits, ConnectionTracker
+from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
     generate_connection_tracker_config,
     ConnectionTag,
@@ -101,20 +100,6 @@ def get_moose_db_file(container_tag, container_path, local_path):
     subprocess.run(["rm", "-f", local_path])
     subprocess.run(
         ["docker", "cp", container_id(container_tag) + ":" + container_path, local_path]
-    )
-
-
-async def connect_to_default_vpn(client: Client, conn_tracker: ConnectionTracker):
-    await testing.wait_long(
-        asyncio.gather(
-            client.connect_to_vpn(
-                WG_SERVER["ipv4"], WG_SERVER["port"], WG_SERVER["public_key"]
-            ),
-            testing.wait_long(conn_tracker.wait_for_event("vpn_1")),
-            client.wait_for_state_peer(
-                WG_SERVER["public_key"], [telio.State.Connected], [PathType.Direct]
-            ),
-        )
     )
 
 
@@ -298,13 +283,19 @@ async def run_default_scenario(
     )
 
     if alpha_has_vpn_connection:
-        await connect_to_default_vpn(client_alpha, alpha_conn_tracker)
+        await client_alpha.connect_to_vpn(
+            str(WG_SERVER["ipv4"]), int(WG_SERVER["port"]), str(WG_SERVER["public_key"])
+        )
 
     if beta_has_vpn_connection:
-        await connect_to_default_vpn(client_beta, beta_conn_tracker)
+        await client_beta.connect_to_vpn(
+            str(WG_SERVER["ipv4"]), int(WG_SERVER["port"]), str(WG_SERVER["public_key"])
+        )
 
     if gamma_has_vpn_connection:
-        await connect_to_default_vpn(client_gamma, gamma_conn_tracker)
+        await client_gamma.connect_to_vpn(
+            str(WG_SERVER["ipv4"]), int(WG_SERVER["port"]), str(WG_SERVER["public_key"])
+        )
 
     await ping_node(connection_alpha, alpha, beta)
     await ping_node(connection_beta, beta, gamma)
