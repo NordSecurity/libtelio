@@ -28,6 +28,7 @@ DNS_IPV6_SERVER_ADDRESS = config.LIBTELIO_DNS_IPV6
         pytest.param(DNS_IPV6_SERVER_ADDRESS, id="IPv6"),
     ],
 )
+@pytest.mark.xfail(reason="Test is flaky - JIRA issue LLT-4242")
 async def test_dns(dns_server_address: str) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
