@@ -314,18 +314,18 @@ async def test_mesh_network_switch_direct(
             [State.Connected]
         )
         peers_connected_relay_future = asyncio.gather(
-            alpha_client.wait_for_state_peer(
+            alpha_client.wait_for_event_peer(
                 beta.public_key, [State.Connected], [PathType.Relay]
             ),
-            beta_client.wait_for_state_peer(
+            beta_client.wait_for_event_peer(
                 alpha.public_key, [State.Connected], [PathType.Relay]
             ),
         )
         peers_connected_direct_future = asyncio.gather(
-            alpha_client.wait_for_state_peer(
+            alpha_client.wait_for_event_peer(
                 beta.public_key, [State.Connected], [PathType.Direct]
             ),
-            beta_client.wait_for_state_peer(
+            beta_client.wait_for_event_peer(
                 alpha.public_key, [State.Connected], [PathType.Direct]
             ),
         )
