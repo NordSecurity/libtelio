@@ -92,6 +92,11 @@ class Router(ABC):
     async def break_udp_conn_to_host(self, address: str) -> AsyncIterator:
         yield
 
+    @abstractmethod
+    @asynccontextmanager
+    async def reset_upnpd(self) -> AsyncIterator:
+        yield
+
     @property
     def ip_stack(self) -> IPStack:
         return self._ip_stack

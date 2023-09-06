@@ -454,3 +454,12 @@ class LinuxRouter(Router):
                     "icmp-host-unreachable",
                 ]
             ).execute()
+
+    @asynccontextmanager
+    async def reset_upnpd(self) -> AsyncIterator:
+        await self._connection.create_process(["killall", "upnpd"]).execute()
+        await self._connection.create_process(["conntrack", "-F"]).execute()
+        try:
+            yield
+        finally:
+            await self._connection.create_process(["upnpd", "eth0", "eth1"]).execute()

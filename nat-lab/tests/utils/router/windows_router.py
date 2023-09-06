@@ -194,3 +194,7 @@ class WindowsRouter(Router):
         self, address: str  # pylint: disable=unused-argument
     ) -> AsyncIterator:
         yield
+
+    @asynccontextmanager
+    async def reset_upnpd(self) -> AsyncIterator:
+        yield
