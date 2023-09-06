@@ -3,13 +3,12 @@ import enum
 import pytest
 import socket
 import struct
-import telio
 from contextlib import AsyncExitStack
-from mesh_api import API
+from helpers import SetupParameters, setup_mesh_nodes
 from protobuf.pinger_pb2 import Pinger
 from utils import testing
 from utils.asyncio_util import run_async_context
-from utils.connection_util import ConnectionTag, new_connection_by_tag, LAN_ADDR_MAP
+from utils.connection_util import ConnectionTag, LAN_ADDR_MAP
 
 
 class PingType(enum.Enum):
@@ -51,17 +50,11 @@ async def send_ping_pong(ping_type) -> None:
 @pytest.mark.asyncio
 async def test_ping_pong() -> None:
     async with AsyncExitStack() as exit_stack:
-        api = API()
-
-        alpha = api.default_config_one_node()
-
-        connection_alpha = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        env = await setup_mesh_nodes(
+            exit_stack,
+            [SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1)],
         )
-
-        client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run(api.get_meshmap(alpha.id))
-        )
+        client_alpha, *_ = env.clients
 
         pinger_event = client_alpha.wait_for_output("Pinger")
         ponger_event = client_alpha.wait_for_output("Ponger")
@@ -85,17 +78,11 @@ async def test_ping_pong() -> None:
 @pytest.mark.asyncio
 async def test_send_malform_pinger_packet() -> None:
     async with AsyncExitStack() as exit_stack:
-        api = API()
-
-        alpha = api.default_config_one_node()
-
-        connection_alpha = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        env = await setup_mesh_nodes(
+            exit_stack,
+            [SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1)],
         )
-
-        client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha).run(api.get_meshmap(alpha.id))
-        )
+        client_alpha, *_ = env.clients
 
         unexpected_packet_event = client_alpha.wait_for_output("Unexpected packet: ")
 
