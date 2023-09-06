@@ -9,6 +9,7 @@ from telio import PathType, State
 from telio_features import TelioFeatures, Direct
 from typing import List, Tuple
 from utils import testing
+from utils.asyncio_util import run_async_context
 from utils.connection_util import (
     ConnectionTag,
     generate_connection_tracker_config,
@@ -343,9 +344,21 @@ async def test_direct_short_connection_loss(
             # Clear conntrack to make UHP disruption faster
             await alpha_connection.create_process(["conntrack", "-F"]).execute()
             await beta_connection.create_process(["conntrack", "-F"]).execute()
-            with pytest.raises(asyncio.TimeoutError):
-                async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
+            task = await temp_exit_stack.enter_async_context(
+                run_async_context(
+                    alpha_client.wait_for_event_peer(beta.public_key, [State.Connected])
+                )
+            )
+            async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
+                try:
                     await testing.wait_long(ping.wait_for_next_ping())
+                except asyncio.TimeoutError:
+                    pass
+                else:
+                    # if no timeout exception happens, this means, that peers connected through relay
+                    # faster than we expected, but if no relay event occurs, this means, that something
+                    # else was wrong, so we assert
+                    assert task.done()
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_lengthy(ping.wait_for_next_ping())
