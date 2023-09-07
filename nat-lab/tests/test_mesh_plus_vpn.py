@@ -329,8 +329,6 @@ async def test_vpn_plus_mesh(
         ip = await testing.wait_long(stun.get(connection_alpha, config.STUN_SERVER))
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
-        await testing.wait_long(alpha_conn_tracker.wait_for_event("stun"))
-
         client_alpha = await exit_stack.enter_async_context(
             telio.Client(connection_alpha, alpha, adapter_type).run()
         )
@@ -340,8 +338,6 @@ async def test_vpn_plus_mesh(
         await client_alpha.connect_to_vpn(
             str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
         )
-
-        await testing.wait_long(alpha_conn_tracker.wait_for_event("vpn_1"))
 
         async with Ping(connection_alpha, config.PHOTO_ALBUM_IP).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())

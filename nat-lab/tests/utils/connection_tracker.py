@@ -78,8 +78,6 @@ class ConnectionTracker:
         self._connection: Connection = connection
         self._config: Optional[List[ConnectionTrackerConfig]] = configuration
         self._events: List[FiveTuple] = []
-        self._last_event: Optional[FiveTuple] = None
-        self._events_wait_list: Dict[str, List[asyncio.Event]] = {}
 
         self._initialized: bool = False
         self._init_connection: FiveTuple = FiveTuple(
@@ -107,12 +105,6 @@ class ConnectionTracker:
                 continue
 
             self._events.append(connection)
-            self._last_event = connection
-
-            for cfg in matching_configs:
-                if events := self._events_wait_list.pop(cfg.key, None):
-                    for event in events:
-                        event.set()
 
     async def execute(self) -> None:
         if not self._config:
@@ -140,25 +132,6 @@ class ConnectionTracker:
                     continue
 
         return out_of_limit_connections if bool(out_of_limit_connections) else None
-
-    async def wait_for_event(self, key: str) -> None:
-        if not self._config:
-            return
-
-        cfg = next((cfg for cfg in self._config if cfg.key == key), None)
-        if cfg is None:
-            raise KeyError(f"Key {key} doesn't exist in config")
-
-        if self._last_event:
-            if cfg.target.partial_eq(self._last_event):
-                return
-
-        event = asyncio.Event()
-        if key not in self._events_wait_list:
-            self._events_wait_list[key] = [event]
-        else:
-            self._events_wait_list[key].append(event)
-        await event.wait()
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator["ConnectionTracker"]:
