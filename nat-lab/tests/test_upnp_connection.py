@@ -70,16 +70,13 @@ async def test_upnp_route_removed(
                     # else was wrong, so we assert
                     await asyncio.wait_for(task, 1)
 
-        await testing.wait_defined(
-            asyncio.gather(
-                alpha_client.wait_for_event_peer(
-                    beta.public_key, [State.Connected], [PathType.Direct]
-                ),
-                beta_client.wait_for_event_peer(
-                    alpha.public_key, [State.Connected], [PathType.Direct]
-                ),
+        await asyncio.gather(
+            alpha_client.wait_for_event_peer(
+                beta.public_key, [State.Connected], [PathType.Direct]
             ),
-            60,
+            beta_client.wait_for_event_peer(
+                alpha.public_key, [State.Connected], [PathType.Direct]
+            ),
         )
 
         async with Ping(beta_conn.connection, alpha.ip_addresses[0]).run() as ping:

@@ -151,30 +151,22 @@ async def setup_mesh_nodes(
         setup_environment(exit_stack, instances, provided_api)
     )
 
-    await asyncio.wait_for(
-        asyncio.gather(
-            *[
-                client.wait_for_state_on_any_derp([State.Connected])
-                for client, instance in zip_longest(env.clients, instances)
-                if instance.derp_servers != []
-            ]
-        ),
-        30,
+    await asyncio.gather(
+        *[
+            client.wait_for_state_on_any_derp([State.Connected])
+            for client, instance in zip_longest(env.clients, instances)
+            if instance.derp_servers != []
+        ]
     )
 
     connection_future = asyncio.gather(
         *[
-            asyncio.wait_for(
-                client.wait_for_state_peer(
-                    other_node.public_key,
-                    [State.Connected],
-                    [PathType.Direct]
-                    if instance.features.direct and other_instance.features.direct
-                    else [PathType.Relay],
-                ),
-                60
+            client.wait_for_state_peer(
+                other_node.public_key,
+                [State.Connected],
+                [PathType.Direct]
                 if instance.features.direct and other_instance.features.direct
-                else 30,
+                else [PathType.Relay],
             )
             for (client, node, instance), (
                 _,

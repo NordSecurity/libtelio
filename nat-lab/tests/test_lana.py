@@ -261,25 +261,18 @@ async def run_default_scenario(
         ).run(api.get_meshmap(gamma.id))
     )
 
-    await testing.wait_lengthy(
-        asyncio.gather(
-            client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
-            client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
-            client_gamma.wait_for_state_on_any_derp([telio.State.Connected]),
-            alpha_conn_tracker.wait_for_event("derp_1"),
-            beta_conn_tracker.wait_for_event("derp_1"),
-            gamma_conn_tracker.wait_for_event("derp_1"),
-        )
+    await asyncio.gather(
+        client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
+        client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
+        client_gamma.wait_for_state_on_any_derp([telio.State.Connected]),
     )
-    await testing.wait_lengthy(
-        asyncio.gather(
-            client_alpha.wait_for_state_peer(beta.public_key, [telio.State.Connected]),
-            client_alpha.wait_for_state_peer(gamma.public_key, [telio.State.Connected]),
-            client_beta.wait_for_state_peer(alpha.public_key, [telio.State.Connected]),
-            client_beta.wait_for_state_peer(gamma.public_key, [telio.State.Connected]),
-            client_gamma.wait_for_state_peer(alpha.public_key, [telio.State.Connected]),
-            client_gamma.wait_for_state_peer(beta.public_key, [telio.State.Connected]),
-        )
+    await asyncio.gather(
+        client_alpha.wait_for_state_peer(beta.public_key, [telio.State.Connected]),
+        client_alpha.wait_for_state_peer(gamma.public_key, [telio.State.Connected]),
+        client_beta.wait_for_state_peer(alpha.public_key, [telio.State.Connected]),
+        client_beta.wait_for_state_peer(gamma.public_key, [telio.State.Connected]),
+        client_gamma.wait_for_state_peer(alpha.public_key, [telio.State.Connected]),
+        client_gamma.wait_for_state_peer(beta.public_key, [telio.State.Connected]),
     )
 
     if alpha_has_vpn_connection:
@@ -842,23 +835,13 @@ async def test_lana_with_disconnected_node(
             ).run(api.get_meshmap(beta.id))
         )
 
-        await testing.wait_long(
-            asyncio.gather(
-                client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
-                client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
-                alpha_conn_tracker.wait_for_event("derp_1"),
-                beta_conn_tracker.wait_for_event("derp_1"),
-            )
+        await asyncio.gather(
+            client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
+            client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
         )
-        await testing.wait_lengthy(
-            asyncio.gather(
-                client_alpha.wait_for_state_peer(
-                    beta.public_key, [telio.State.Connected]
-                ),
-                client_beta.wait_for_state_peer(
-                    alpha.public_key, [telio.State.Connected]
-                ),
-            )
+        await asyncio.gather(
+            client_alpha.wait_for_state_peer(beta.public_key, [telio.State.Connected]),
+            client_beta.wait_for_state_peer(alpha.public_key, [telio.State.Connected]),
         )
 
         await ping_node(connection_alpha, alpha, beta)
@@ -1030,15 +1013,9 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
         beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
         await client_beta.set_meshmap(api.get_meshmap(beta.id))
 
-        await testing.wait_long(
-            asyncio.gather(
-                client_alpha.wait_for_state_peer(
-                    beta.public_key, [telio.State.Connected]
-                ),
-                client_beta.wait_for_state_peer(
-                    alpha.public_key, [telio.State.Connected]
-                ),
-            )
+        await asyncio.gather(
+            client_alpha.wait_for_state_peer(beta.public_key, [telio.State.Connected]),
+            client_beta.wait_for_state_peer(alpha.public_key, [telio.State.Connected]),
         )
 
         await ping_node(connection_alpha, alpha, beta)

@@ -49,11 +49,9 @@ async def test_verify_pk_on_packets() -> None:
                 api.get_meshmap(beta.id)
             )
         )
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_on_any_derp([telio.State.Connected]),
-                beta_client.wait_for_state_on_any_derp([telio.State.Connected]),
-            )
+        await asyncio.gather(
+            alpha_client.wait_for_state_on_any_derp([telio.State.Connected]),
+            beta_client.wait_for_state_on_any_derp([telio.State.Connected]),
         )
 
         sk_for_alpha, pk_for_alpha = Key.key_pair()

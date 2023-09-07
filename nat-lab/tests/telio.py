@@ -336,31 +336,41 @@ class Events:
         self,
         public_key: str,
         state: List[State],
-        path: List[PathType],
+        paths: List[PathType],
+        timeout: Optional[float] = None,
     ) -> None:
-        await self._runtime.notify_peer_state(public_key, state, path)
+        await asyncio.wait_for(
+            self._runtime.notify_peer_state(public_key, state, paths),
+            timeout if timeout else 60 if PathType.Direct in paths else 30,
+        )
 
     async def wait_for_event_peer(
         self,
         public_key: str,
         states: List[State],
         paths: List[PathType],
+        timeout: Optional[float] = None,
     ) -> None:
-        await self._runtime.notify_peer_event(public_key, states, paths)
+        await asyncio.wait_for(
+            self._runtime.notify_peer_event(public_key, states, paths),
+            timeout if timeout else 60 if PathType.Direct in paths else 30,
+        )
 
     async def wait_for_state_derp(
-        self,
-        server_ip: str,
-        states: List[State],
+        self, server_ip: str, states: List[State], timeout: Optional[float] = None
     ) -> None:
-        await self._runtime.notify_derp_state(server_ip, states)
+        await asyncio.wait_for(
+            self._runtime.notify_derp_state(server_ip, states),
+            timeout if timeout else 30,
+        )
 
     async def wait_for_event_derp(
-        self,
-        server_ip: str,
-        states: List[State],
+        self, server_ip: str, states: List[State], timeout: Optional[float] = None
     ) -> None:
-        await self._runtime.notify_derp_event(server_ip, states)
+        await asyncio.wait_for(
+            self._runtime.notify_derp_event(server_ip, states),
+            timeout if timeout else 30,
+        )
 
 
 class Client:
@@ -473,10 +483,14 @@ class Client:
         )
 
     async def wait_for_state_peer(
-        self, public_key, states: List[State], paths: Optional[List[PathType]] = None
+        self,
+        public_key,
+        states: List[State],
+        paths: Optional[List[PathType]] = None,
+        timeout: Optional[float] = None,
     ) -> None:
         await self.get_events().wait_for_state_peer(
-            public_key, states, paths if paths else [PathType.Relay]
+            public_key, states, paths if paths else [PathType.Relay], timeout
         )
 
     async def wait_for_event_peer(
@@ -484,18 +498,25 @@ class Client:
         public_key: str,
         states: List[State],
         paths: Optional[List[PathType]] = None,
+        timeout: Optional[float] = None,
     ) -> None:
         await self.get_events().wait_for_event_peer(
-            public_key, states, paths if paths else [PathType.Relay]
+            public_key, states, paths if paths else [PathType.Relay], timeout
         )
 
-    async def wait_for_state_derp(self, derp_ip, states: List[State]) -> None:
-        await self.get_events().wait_for_state_derp(derp_ip, states)
+    async def wait_for_state_derp(
+        self, derp_ip, states: List[State], timeout: Optional[float] = None
+    ) -> None:
+        await self.get_events().wait_for_state_derp(derp_ip, states, timeout)
 
-    async def wait_for_state_on_any_derp(self, states: List[State]) -> None:
+    async def wait_for_state_on_any_derp(
+        self, states: List[State], timeout: Optional[float] = None
+    ) -> None:
         async with asyncio_util.run_async_contexts(
             [
-                self.get_events().wait_for_state_derp(str(derp["ipv4"]), states)
+                self.get_events().wait_for_state_derp(
+                    str(derp["ipv4"]), states, timeout
+                )
                 for derp in DERP_SERVERS
             ]
         ) as futures:
@@ -505,11 +526,13 @@ class Client:
             except asyncio.CancelledError:
                 pass
 
-    async def wait_for_every_derp_disconnection(self) -> None:
+    async def wait_for_every_derp_disconnection(
+        self, timeout: Optional[float] = None
+    ) -> None:
         async with asyncio_util.run_async_contexts(
             [
                 self.get_events().wait_for_state_derp(
-                    str(derp["ipv4"]), [State.Disconnected, State.Connecting]
+                    str(derp["ipv4"]), [State.Disconnected, State.Connecting], timeout
                 )
                 for derp in DERP_SERVERS
             ]
@@ -520,13 +543,19 @@ class Client:
             except asyncio.CancelledError:
                 pass
 
-    async def wait_for_event_derp(self, derp_ip, states: List[State]) -> None:
-        await self.get_events().wait_for_event_derp(derp_ip, states)
+    async def wait_for_event_derp(
+        self, derp_ip, states: List[State], timeout: Optional[float] = None
+    ) -> None:
+        await self.get_events().wait_for_event_derp(derp_ip, states, timeout)
 
-    async def wait_for_event_on_any_derp(self, states: List[State]) -> None:
+    async def wait_for_event_on_any_derp(
+        self, states: List[State], timeout: Optional[float] = None
+    ) -> None:
         async with asyncio_util.run_async_contexts(
             [
-                self.get_events().wait_for_event_derp(str(derp["ipv4"]), states)
+                self.get_events().wait_for_event_derp(
+                    str(derp["ipv4"]), states, timeout
+                )
                 for derp in DERP_SERVERS
             ]
         ) as futures:

@@ -55,6 +55,6 @@ async def test_fire_connecting_event(
             async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
                 await testing.wait_long(ping.wait_for_next_ping())
 
-        await testing.wait_defined(
-            client_alpha.wait_for_event_peer(beta.public_key, [State.Connecting]), 180
+        await client_alpha.wait_for_event_peer(
+            beta.public_key, [State.Connecting], timeout=180
         )

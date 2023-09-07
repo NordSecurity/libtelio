@@ -60,10 +60,8 @@ async def test_derp_reconnect_2clients(setup_params: List[SetupParameters]) -> N
         )
 
         # Wait till connection is broken
-        await testing.wait_lengthy(
-            beta_client.wait_for_state_derp(
-                DERP1_IP, [State.Disconnected, State.Connecting]
-            )
+        await beta_client.wait_for_state_derp(
+            DERP1_IP, [State.Disconnected, State.Connecting]
         )
 
         # ==============================================================
@@ -76,9 +74,7 @@ async def test_derp_reconnect_2clients(setup_params: List[SetupParameters]) -> N
         #   /           \
         # [ALPHA]     [BETA]
 
-        await testing.wait_lengthy(
-            beta_client.wait_for_state_derp(DERP2_IP, [State.Connected])
-        )
+        await beta_client.wait_for_state_derp(DERP2_IP, [State.Connected])
 
         # Ping peer to check if connection truly works
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
@@ -152,15 +148,11 @@ async def test_derp_reconnect_3clients(setup_params: List[SetupParameters]) -> N
             gamma_client.get_router().break_tcp_conn_to_host(DERP1_IP)
         )
 
-        await testing.wait_lengthy(
-            beta_client.wait_for_state_derp(
-                DERP1_IP, [State.Disconnected, State.Connecting]
-            )
+        await beta_client.wait_for_state_derp(
+            DERP1_IP, [State.Disconnected, State.Connecting]
         )
-        await testing.wait_lengthy(
-            gamma_client.wait_for_state_derp(
-                DERP1_IP, [State.Disconnected, State.Connecting]
-            )
+        await gamma_client.wait_for_state_derp(
+            DERP1_IP, [State.Disconnected, State.Connecting]
         )
 
         # ==============================================================
@@ -176,12 +168,10 @@ async def test_derp_reconnect_3clients(setup_params: List[SetupParameters]) -> N
         #
         # (* - connection to the escaped client, but DERP does not know):
 
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_derp(DERP1_IP, [State.Connected]),
-                beta_client.wait_for_state_derp(DERP2_IP, [State.Connected]),
-                gamma_client.wait_for_state_derp(DERP2_IP, [State.Connected]),
-            )
+        await asyncio.gather(
+            alpha_client.wait_for_state_derp(DERP1_IP, [State.Connected]),
+            beta_client.wait_for_state_derp(DERP2_IP, [State.Connected]),
+            gamma_client.wait_for_state_derp(DERP2_IP, [State.Connected]),
         )
 
         # ==============================================================
@@ -198,10 +188,8 @@ async def test_derp_reconnect_3clients(setup_params: List[SetupParameters]) -> N
         await exit_stack.enter_async_context(
             gamma_client.get_router().break_tcp_conn_to_host(DERP2_IP)
         )
-        await testing.wait_lengthy(
-            gamma_client.wait_for_state_derp(
-                DERP2_IP, [State.Disconnected, State.Connecting]
-            )
+        await gamma_client.wait_for_state_derp(
+            DERP2_IP, [State.Disconnected, State.Connecting]
         )
 
         # ==============================================================
@@ -216,12 +204,10 @@ async def test_derp_reconnect_3clients(setup_params: List[SetupParameters]) -> N
         #    |         |           |
         # [ALPHA]    [BETA]     [GAMMA]
 
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_derp(DERP1_IP, [State.Connected]),
-                beta_client.wait_for_state_derp(DERP2_IP, [State.Connected]),
-                gamma_client.wait_for_state_derp(DERP3_IP, [State.Connected]),
-            )
+        await asyncio.gather(
+            alpha_client.wait_for_state_derp(DERP1_IP, [State.Connected]),
+            beta_client.wait_for_state_derp(DERP2_IP, [State.Connected]),
+            gamma_client.wait_for_state_derp(DERP3_IP, [State.Connected]),
         )
 
         # Ping ALPHA --> BETA
@@ -332,12 +318,10 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
 
         os.system("docker restart nat-lab-derp-01-1")
 
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
-                beta_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
-                gamma_client.wait_for_state_derp(_DERP3_IP, [State.Connected]),
-            )
+        await asyncio.gather(
+            alpha_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
+            beta_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
+            gamma_client.wait_for_state_derp(_DERP3_IP, [State.Connected]),
         )
 
         # Ping ALPHA --> BETA
@@ -366,12 +350,10 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
 
         os.system("docker restart nat-lab-derp-02-1")
 
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_derp(_DERP1_IP, [State.Connected]),
-                beta_client.wait_for_state_derp(_DERP3_IP, [State.Connected]),
-                gamma_client.wait_for_state_derp(_DERP3_IP, [State.Connected]),
-            )
+        await asyncio.gather(
+            alpha_client.wait_for_state_derp(_DERP1_IP, [State.Connected]),
+            beta_client.wait_for_state_derp(_DERP3_IP, [State.Connected]),
+            gamma_client.wait_for_state_derp(_DERP3_IP, [State.Connected]),
         )
 
         # Ping ALPHA --> BETA
@@ -400,12 +382,10 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
 
         os.system("docker restart nat-lab-derp-03-1")
 
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_derp(_DERP1_IP, [State.Connected]),
-                beta_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
-                gamma_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
-            )
+        await asyncio.gather(
+            alpha_client.wait_for_state_derp(_DERP1_IP, [State.Connected]),
+            beta_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
+            gamma_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
         )
 
         # Ping ALPHA --> BETA
@@ -463,12 +443,10 @@ async def test_derp_server_list_exhaustion(setup_params: List[SetupParameters]) 
                 )
 
             # Every derp connection should be broken at this point
-            await testing.wait_lengthy(beta_client.wait_for_every_derp_disconnection())
+            await beta_client.wait_for_every_derp_disconnection()
 
         # iptables rules are dropped already
-        await testing.wait_lengthy(
-            beta_client.wait_for_state_on_any_derp([State.Connected])
-        )
+        await beta_client.wait_for_state_on_any_derp([State.Connected])
 
         # Ping peer to check if connection truly works
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:

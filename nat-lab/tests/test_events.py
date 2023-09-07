@@ -608,20 +608,15 @@ async def test_event_content_meshnet_node_upgrade_direct(
             ).run(api.get_meshmap(beta.id))
         )
 
-        await testing.wait_lengthy(
-            client_beta.wait_for_state_on_any_derp([State.Connected])
-        )
+        await client_beta.wait_for_state_on_any_derp([State.Connected])
 
-        await testing.wait_defined(
-            asyncio.gather(
-                client_alpha.wait_for_state_peer(
-                    beta.public_key, [State.Connected], [PathType.Direct]
-                ),
-                client_beta.wait_for_state_peer(
-                    alpha.public_key, [State.Connected], [PathType.Direct]
-                ),
+        await asyncio.gather(
+            client_alpha.wait_for_state_peer(
+                beta.public_key, [State.Connected], [PathType.Direct]
             ),
-            60,
+            client_beta.wait_for_state_peer(
+                alpha.public_key, [State.Connected], [PathType.Direct]
+            ),
         )
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:

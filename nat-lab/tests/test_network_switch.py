@@ -331,9 +331,9 @@ async def test_mesh_network_switch_direct(
         ) as (derp, relay, direct):
             await network_switcher.switch_to_secondary_network()
             await alpha_client.notify_network_change()
-            await testing.wait_lengthy(derp)
-            await testing.wait_lengthy(relay)
-            await testing.wait_defined(direct, 60)
+            await derp
+            await relay
+            await direct
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_lengthy(ping.wait_for_next_ping())

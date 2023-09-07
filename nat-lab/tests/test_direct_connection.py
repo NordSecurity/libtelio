@@ -286,11 +286,9 @@ async def test_direct_failing_paths(setup_params: List[SetupParameters]) -> None
                 beta_client.get_router().break_tcp_conn_to_host(str(server["ipv4"]))
             )
 
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_on_any_derp([State.Connecting]),
-                beta_client.wait_for_state_on_any_derp([State.Connecting]),
-            )
+        await asyncio.gather(
+            alpha_client.wait_for_state_on_any_derp([State.Connecting]),
+            beta_client.wait_for_state_on_any_derp([State.Connecting]),
         )
 
         with pytest.raises(asyncio.TimeoutError):
@@ -526,14 +524,12 @@ async def test_direct_connection_endpoint_gone(
                         )
                     )
 
-                await testing.wait_lengthy(
-                    asyncio.gather(
-                        alpha_client.wait_for_state_on_any_derp(
-                            [State.Connecting, State.Disconnected],
-                        ),
-                        beta_client.wait_for_state_on_any_derp(
-                            [State.Connecting, State.Disconnected],
-                        ),
+                await asyncio.gather(
+                    alpha_client.wait_for_state_on_any_derp(
+                        [State.Connecting, State.Disconnected]
+                    ),
+                    beta_client.wait_for_state_on_any_derp(
+                        [State.Connecting, State.Disconnected]
                     ),
                 )
 
@@ -542,11 +538,9 @@ async def test_direct_connection_endpoint_gone(
 
         await _check_if_true_direct_connection()
 
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_on_any_derp([State.Connected]),
-                beta_client.wait_for_state_on_any_derp([State.Connected]),
-            ),
+        await asyncio.gather(
+            alpha_client.wait_for_state_on_any_derp([State.Connected]),
+            beta_client.wait_for_state_on_any_derp([State.Connected]),
         )
 
         async with AsyncExitStack() as temp_exit_stack:
@@ -561,31 +555,23 @@ async def test_direct_connection_endpoint_gone(
                 )
             )
 
-            await testing.wait_lengthy(
-                asyncio.gather(
-                    alpha_client.wait_for_state_peer(
-                        beta.public_key, [State.Connected]
-                    ),
-                    beta_client.wait_for_state_peer(
-                        alpha.public_key, [State.Connected]
-                    ),
-                )
+            await asyncio.gather(
+                alpha_client.wait_for_state_peer(beta.public_key, [State.Connected]),
+                beta_client.wait_for_state_peer(alpha.public_key, [State.Connected]),
             )
 
             async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
                 await testing.wait_lengthy(ping.wait_for_next_ping())
 
-        await testing.wait_defined(
-            asyncio.gather(
-                alpha_client.wait_for_state_peer(
-                    beta.public_key, [State.Connected], [PathType.Direct]
-                ),
-                beta_client.wait_for_state_peer(
-                    alpha.public_key, [State.Connected], [PathType.Direct]
-                ),
+        await asyncio.gather(
+            alpha_client.wait_for_state_peer(
+                beta.public_key, [State.Connected], [PathType.Direct]
             ),
-            60,
+            beta_client.wait_for_state_peer(
+                alpha.public_key, [State.Connected], [PathType.Direct]
+            ),
         )
+
         await _check_if_true_direct_connection()
 
 

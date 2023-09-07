@@ -3,7 +3,6 @@ import pytest
 import telio
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
-from utils import testing
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 
@@ -95,16 +94,13 @@ async def test_node_state_flickering(
         client_alpha, client_beta = env.clients
 
         with pytest.raises(asyncio.TimeoutError):
-            await testing.wait_defined(
-                asyncio.gather(
-                    client_alpha.wait_for_event_peer(
-                        beta.public_key, list(telio.State)
-                    ),
-                    client_alpha.wait_for_event_on_any_derp(list(telio.State)),
-                    client_beta.wait_for_event_peer(
-                        alpha.public_key, list(telio.State)
-                    ),
-                    client_beta.wait_for_event_on_any_derp(list(telio.State)),
+            await asyncio.gather(
+                client_alpha.wait_for_event_peer(
+                    beta.public_key, list(telio.State), timeout=120
                 ),
-                120,
+                client_beta.wait_for_event_peer(
+                    alpha.public_key, list(telio.State), timeout=120
+                ),
+                client_alpha.wait_for_event_on_any_derp(list(telio.State), timeout=120),
+                client_beta.wait_for_event_on_any_derp(list(telio.State), timeout=120),
             )
