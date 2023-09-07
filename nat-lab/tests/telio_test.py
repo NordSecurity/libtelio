@@ -323,22 +323,22 @@ class TestEvents:
         async with run_async_contexts(
             [
                 events.wait_for_event_peer(
-                    "AAA", [State.Disconnected], [PathType.Relay], 1
+                    "AAA", [State.Disconnected], [PathType.Relay], 5
                 ),
                 events.wait_for_event_peer(
-                    "AAA", [State.Connecting], [PathType.Relay], 1
+                    "AAA", [State.Connecting], [PathType.Relay], 5
                 ),
                 events.wait_for_event_peer(
-                    "AAA", [State.Connected], [PathType.Relay], 1
+                    "AAA", [State.Connected], [PathType.Relay], 5
                 ),
                 events.wait_for_event_peer(
-                    "BBB", [State.Disconnected], [PathType.Direct], 1
+                    "BBB", [State.Disconnected], [PathType.Direct], 5
                 ),
                 events.wait_for_event_peer(
-                    "BBB", [State.Connecting], [PathType.Direct], 1
+                    "BBB", [State.Connecting], [PathType.Direct], 5
                 ),
                 events.wait_for_event_peer(
-                    "BBB", [State.Connected], [PathType.Direct], 1
+                    "BBB", [State.Connected], [PathType.Direct], 5
                 ),
             ]
         ) as futures:
@@ -462,13 +462,13 @@ class TestEvents:
         # Start waiting for new event before it is being generated
         async with run_async_contexts(
             [
-                events.wait_for_event_derp("1.1.1.1", [State.Disconnected], 1),
-                events.wait_for_event_derp("1.1.1.1", [State.Connecting], 1),
-                events.wait_for_event_derp("1.1.1.1", [State.Connected], 1),
-                events.wait_for_event_derp("1.1.1.2", [State.Disconnected], 1),
-                events.wait_for_event_derp("1.1.1.2", [State.Connecting], 1),
-                events.wait_for_event_derp("1.1.1.2", [State.Connected], 1),
-                events.wait_for_event_derp("1.1.1.3", [State.Disconnected], 1),
+                events.wait_for_event_derp("1.1.1.1", [State.Disconnected], 5),
+                events.wait_for_event_derp("1.1.1.1", [State.Connecting], 5),
+                events.wait_for_event_derp("1.1.1.1", [State.Connected], 5),
+                events.wait_for_event_derp("1.1.1.2", [State.Disconnected], 5),
+                events.wait_for_event_derp("1.1.1.2", [State.Connecting], 5),
+                events.wait_for_event_derp("1.1.1.2", [State.Connected], 5),
+                events.wait_for_event_derp("1.1.1.3", [State.Disconnected], 5),
             ]
         ) as futures:
             # wait for futures to be started

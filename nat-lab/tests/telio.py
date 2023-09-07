@@ -12,7 +12,7 @@ from enum import Enum
 from mesh_api import Node, Meshmap
 from telio_features import TelioFeatures
 from typing import List, Set, Optional, AsyncIterator
-from utils import testing, asyncio_util
+from utils import asyncio_util
 from utils.connection import Connection, TargetOS
 from utils.connection_util import get_libtelio_binary_path
 from utils.output_notifier import OutputNotifier
@@ -459,7 +459,7 @@ class Client:
                     yield self
             finally:
                 if self._process.is_executing():
-                    await testing.wait_long(self.stop_device())
+                    await self.stop_device()
                     self._quit = True
                 if self._router:
                     await self._router.delete_vpn_route()
@@ -694,8 +694,8 @@ class Client:
         assert self._process
         return self._process.get_stdout()
 
-    async def stop_device(self) -> None:
-        await self._write_command(["dev", "stop"])
+    async def stop_device(self, timeout: float = 5) -> None:
+        await asyncio.wait_for(self._write_command(["dev", "stop"]), timeout)
         self._interface_configured = False
         assert Counter(self.get_runtime().get_started_tasks()) == Counter(
             self.get_runtime().get_stopped_tasks()

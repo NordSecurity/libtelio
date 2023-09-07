@@ -310,12 +310,10 @@ async def run_default_scenario(
         ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, GAMMA_EVENTS_PATH, nr_events=1
     )
 
-    await testing.wait_long(
-        asyncio.gather(
-            client_alpha.stop_device(),
-            client_beta.stop_device(),
-            client_gamma.stop_device(),
-        )
+    await asyncio.gather(
+        client_alpha.stop_device(),
+        client_beta.stop_device(),
+        client_gamma.stop_device(),
     )
 
     assert alpha_conn_tracker.get_out_of_limits() is None
@@ -861,7 +859,7 @@ async def test_lana_with_disconnected_node(
         assert beta_events
 
         # disconnect beta and trigger analytics on alpha
-        await testing.wait_long(client_beta.stop_device())
+        await client_beta.stop_device()
 
         await asyncio.sleep(DEFAULT_WAITING_TIME)
 
