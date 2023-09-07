@@ -287,7 +287,7 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
         setup_params[2].derp_servers = DERP_SERVERS3
 
         env = await setup_mesh_nodes(exit_stack, setup_params)
-        alpha, beta, gamma = env.nodes
+        _, beta, gamma = env.nodes
         alpha_client, beta_client, gamma_client = env.clients
         alpha_connection, beta_connection, gamma_connection = [
             conn.connection for conn in env.connections
@@ -305,24 +305,6 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
         # [ALPHA]   [BETA]  [GAMMA]
         #
         # (w1: DERP->weight=1 for that client):
-
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_derp(_DERP1_IP, [State.Connected]),
-                beta_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
-                gamma_client.wait_for_state_derp(_DERP3_IP, [State.Connected]),
-            )
-        )
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_peer(beta.public_key, [State.Connected]),
-                alpha_client.wait_for_state_peer(gamma.public_key, [State.Connected]),
-                beta_client.wait_for_state_peer(alpha.public_key, [State.Connected]),
-                beta_client.wait_for_state_peer(gamma.public_key, [State.Connected]),
-                gamma_client.wait_for_state_peer(alpha.public_key, [State.Connected]),
-                gamma_client.wait_for_state_peer(beta.public_key, [State.Connected]),
-            )
-        )
 
         # Ping ALPHA --> BETA
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:

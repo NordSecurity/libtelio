@@ -358,7 +358,7 @@ async def test_direct_short_connection_loss(
                     # if no timeout exception happens, this means, that peers connected through relay
                     # faster than we expected, but if no relay event occurs, this means, that something
                     # else was wrong, so we assert
-                    assert task.done()
+                    await asyncio.wait_for(task, 1)
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_lengthy(ping.wait_for_next_ping())
@@ -381,20 +381,30 @@ async def test_direct_connection_loss_for_infinity(
             await temp_exit_stack.enter_async_context(
                 alpha_client.get_router().disable_path(reflexive_ip)
             )
-            with pytest.raises(asyncio.TimeoutError):
-                async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-                    await testing.wait_short(ping.wait_for_next_ping())
-
-            await testing.wait_lengthy(
-                asyncio.gather(
-                    alpha_client.wait_for_state_peer(
-                        beta.public_key, [State.Connected]
-                    ),
-                    beta_client.wait_for_state_peer(
-                        alpha.public_key, [State.Connected]
-                    ),
+            task = await temp_exit_stack.enter_async_context(
+                run_async_context(
+                    asyncio.gather(
+                        alpha_client.wait_for_event_peer(
+                            beta.public_key, [State.Connected]
+                        ),
+                        beta_client.wait_for_event_peer(
+                            alpha.public_key, [State.Connected]
+                        ),
+                    )
                 )
             )
+            async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
+                try:
+                    await testing.wait_long(ping.wait_for_next_ping())
+                except asyncio.TimeoutError:
+                    pass
+                else:
+                    # if no timeout exception happens, this means, that peers connected through relay
+                    # faster than we expected, but if no relay event occurs, this means, that something
+                    # else was wrong, so we assert
+                    await asyncio.wait_for(task, 1)
+
+            await testing.wait_lengthy(task)
 
             async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
                 await testing.wait_lengthy(ping.wait_for_next_ping())

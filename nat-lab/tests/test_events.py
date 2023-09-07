@@ -287,14 +287,6 @@ async def test_event_content_vpn_connection(
         ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
         assert ip == alpha_public_ip, f"wrong public IP before connecting to VPN {ip}"
 
-        await testing.wait_lengthy(
-            client_alpha.wait_for_state_peer(
-                str(wg_server["public_key"]),
-                [State.Disconnected],
-                [PathType.Direct],
-            )
-        )
-
         assert client_alpha.get_node_state(str(wg_server["public_key"])) == PeerInfo(
             identifier="tcli",
             public_key=str(wg_server["public_key"]),

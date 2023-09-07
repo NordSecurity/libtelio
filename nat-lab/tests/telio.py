@@ -559,12 +559,6 @@ class Client:
     async def receive_ping(self):
         await self._write_command(["mesh", "ping"])
 
-    async def send_stun(self):
-        await self._write_command(["mesh", "stun"])
-
-    async def igd(self):
-        await self._write_command(["mesh", "igd"])
-
     async def connect_to_vpn(
         self, ip: str, port: int, public_key: str, timeout: float = 5
     ) -> None:

@@ -95,9 +95,7 @@ async def test_connect_different_telio_version_through_relay(
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
-            ).run_meshnet(
-                api.get_meshmap(alpha.id),
-            )
+            ).run(api.get_meshmap(alpha.id))
         )
 
         beta_client_v3_6 = await exit_stack.enter_async_context(
@@ -108,7 +106,7 @@ async def test_connect_different_telio_version_through_relay(
                 telio_features=TelioFeatures(
                     direct=Direct(providers=endpoint_providers)
                 ),
-            ).run_meshnet(api.get_meshmap(beta.id), True)
+            ).run(api.get_meshmap(beta.id), True)
         )
 
         await testing.wait_long(

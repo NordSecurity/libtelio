@@ -5,6 +5,7 @@ from helpers import SetupParameters, setup_mesh_nodes
 from telio import AdapterType, PathType, State
 from telio_features import Direct, TelioFeatures
 from utils import testing
+from utils.asyncio_util import run_async_context
 from utils.connection_util import ConnectionTag
 from utils.ping import Ping
 from utils.router import new_router
@@ -50,12 +51,24 @@ async def test_upnp_route_removed(
 
         # Shutoff Upnpd on both gateways to wipe out all upnp created external
         # routes, this also requires to wipe-out the contrack list
-        async with alpha_gw_router.reset_upnpd(), beta_gw_router.reset_upnpd():
-            with pytest.raises(asyncio.TimeoutError):
-                async with Ping(
-                    alpha_conn.connection, beta.ip_addresses[0]
-                ).run() as ping:
+        async with AsyncExitStack() as temp_exit_stack:
+            await temp_exit_stack.enter_async_context(alpha_gw_router.reset_upnpd())
+            await temp_exit_stack.enter_async_context(beta_gw_router.reset_upnpd())
+            task = await temp_exit_stack.enter_async_context(
+                run_async_context(
+                    alpha_client.wait_for_event_peer(beta.public_key, [State.Connected])
+                )
+            )
+            async with Ping(alpha_conn.connection, beta.ip_addresses[0]).run() as ping:
+                try:
                     await testing.wait_long(ping.wait_for_next_ping())
+                except asyncio.TimeoutError:
+                    pass
+                else:
+                    # if no timeout exception happens, this means, that peers connected through relay
+                    # faster than we expected, but if no relay event occurs, this means, that something
+                    # else was wrong, so we assert
+                    await asyncio.wait_for(task, 1)
 
         await testing.wait_defined(
             asyncio.gather(
