@@ -5,6 +5,7 @@ tcli.log
 *.box
 *.deb
 *.nix
+/nat-lab/data/tcli*
 /3rd-party/boringtun
 /3rd-party/ci-helper-scripts/
 /3rd-party/libmoose

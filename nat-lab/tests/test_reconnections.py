@@ -18,7 +18,10 @@ from utils.ping import Ping
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type,",
     [
-        pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, telio.AdapterType.BoringTun),
+        pytest.param(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            telio.AdapterType.BoringTun,
+        ),
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
             telio.AdapterType.LinuxNativeWg,
@@ -35,12 +38,15 @@ from utils.ping import Ping
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.MAC_VM, telio.AdapterType.Default, marks=pytest.mark.mac
+            ConnectionTag.MAC_VM,
+            telio.AdapterType.Default,
+            marks=pytest.mark.mac,
         ),
     ],
 )
 async def test_mesh_reconnect(
-    alpha_connection_tag: ConnectionTag, adapter_type: AdapterType
+    alpha_connection_tag: ConnectionTag,
+    adapter_type: AdapterType,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -110,7 +116,8 @@ async def test_mesh_reconnect(
         await testing.wait_lengthy(
             asyncio.gather(
                 client_alpha.wait_for_event_peer(
-                    beta.public_key, [telio.State.Connected]
+                    beta.public_key,
+                    [telio.State.Connected],
                 ),
                 client_alpha.wait_for_event_on_any_derp([telio.State.Connected]),
                 alpha_conn_tracker.wait_for_event("derp_1"),

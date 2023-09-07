@@ -5,3 +5,7 @@ FROM ${CONTAINER_REGISTRY}/low-level-hacks/vpn/client/libtelio-build/natlab-deps
 LABEL org.opencontainers.image.authors="info@nordsec.com"
 
 COPY --chmod=0755 bin/ /opt/bin/
+RUN \
+    tar -xf /opt/tclis-3.6.tar && \
+    mv tcli-3.6* /opt/bin/ && \
+    chmod +x /opt/bin/tcli*

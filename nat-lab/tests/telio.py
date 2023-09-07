@@ -47,6 +47,8 @@ class DerpServer(DataClassJsonMixin):
     weight: int
     use_plain_text: bool
     conn_state: State
+    # Only for compatibility with telio v3.6
+    used: bool = False
 
     def __hash__(self):
         return hash(
@@ -178,7 +180,10 @@ class Runtime:
         return self._output_notifier
 
     async def notify_peer_state(
-        self, public_key: str, states: List[State], paths: List[PathType]
+        self,
+        public_key: str,
+        states: List[State],
+        paths: List[PathType],
     ) -> None:
         while True:
             peer = self.get_peer_info(public_key)
@@ -187,7 +192,10 @@ class Runtime:
             await asyncio.sleep(0.1)
 
     async def notify_peer_event(
-        self, public_key: str, states: List[State], paths: List[PathType]
+        self,
+        public_key: str,
+        states: List[State],
+        paths: List[PathType],
     ) -> None:
         def _get_events() -> List[PeerInfo]:
             return [
@@ -217,14 +225,22 @@ class Runtime:
             return events[-1]
         return None
 
-    async def notify_derp_state(self, server_ip: str, states: List[State]) -> None:
+    async def notify_derp_state(
+        self,
+        server_ip: str,
+        states: List[State],
+    ) -> None:
         while True:
             derp = self.get_derp_info(server_ip)
             if derp and derp.ipv4 == server_ip and derp.conn_state in states:
                 return
             await asyncio.sleep(0.1)
 
-    async def notify_derp_event(self, server_ip: str, states: List[State]) -> None:
+    async def notify_derp_event(
+        self,
+        server_ip: str,
+        states: List[State],
+    ) -> None:
         def _get_events() -> List[DerpServer]:
             return [
                 event
@@ -276,7 +292,10 @@ class Runtime:
         result = re.search("{(.*)}", json_string)
         if result:
             derp_server_json = DerpServer.from_json(
-                "{" + result.group(1).replace("\\", "") + "}"
+                # Added "used" variable for compatibility with telio 3.6
+                "{"
+                + result.group(1).replace("\\", "")
+                + "}"
             )
             assert isinstance(derp_server_json, DerpServer)
             self.set_derp(derp_server_json)
@@ -293,7 +312,10 @@ class Runtime:
 class Events:
     _runtime: Runtime
 
-    def __init__(self, runtime: Runtime) -> None:
+    def __init__(
+        self,
+        runtime: Runtime,
+    ) -> None:
         self._runtime = runtime
 
     async def message_done(self, message_idx: int) -> None:
@@ -304,19 +326,33 @@ class Events:
         await event.wait()
 
     async def wait_for_state_peer(
-        self, public_key: str, state: List[State], path: List[PathType]
+        self,
+        public_key: str,
+        state: List[State],
+        path: List[PathType],
     ) -> None:
         await self._runtime.notify_peer_state(public_key, state, path)
 
     async def wait_for_event_peer(
-        self, public_key: str, states: List[State], paths: List[PathType]
+        self,
+        public_key: str,
+        states: List[State],
+        paths: List[PathType],
     ) -> None:
         await self._runtime.notify_peer_event(public_key, states, paths)
 
-    async def wait_for_state_derp(self, server_ip: str, states: List[State]) -> None:
+    async def wait_for_state_derp(
+        self,
+        server_ip: str,
+        states: List[State],
+    ) -> None:
         await self._runtime.notify_derp_state(server_ip, states)
 
-    async def wait_for_event_derp(self, server_ip: str, states: List[State]) -> None:
+    async def wait_for_event_derp(
+        self,
+        server_ip: str,
+        states: List[State],
+    ) -> None:
         await self._runtime.notify_derp_event(server_ip, states)
 
 
@@ -341,7 +377,7 @@ class Client:
         self._quit = False
 
     @asynccontextmanager
-    async def run(self) -> AsyncIterator["Client"]:
+    async def run(self, telio_v3=False) -> AsyncIterator["Client"]:
         async def on_stdout(stdout: str) -> None:
             supress_print_list = [
                 "MESSAGE_DONE=",
@@ -362,10 +398,22 @@ class Client:
         self._runtime = Runtime()
         self._events = Events(self._runtime)
         self._router = new_router(self._connection)
-        self._process = self._connection.create_process(
-            [tcli_path, "--less-spam", f"-f {self._telio_features.to_json()}"]
-        )
-
+        if telio_v3:
+            self._process = self._connection.create_process(
+                [
+                    "/opt/bin/tcli-3.6",
+                    "--less-spam",
+                    '-f { "paths": { "priority": ["relay", "udp-hole-punch"]} }',
+                ]
+            )
+        else:
+            self._process = self._connection.create_process(
+                [
+                    tcli_path,
+                    "--less-spam",
+                    f"-f {self._telio_features.to_json()}",
+                ]
+            )
         async with self._process.run(stdout_callback=on_stdout):
             try:
                 await self._process.wait_stdin_ready()
@@ -376,7 +424,7 @@ class Client:
                         self._adapter_type.value,
                         self._router.get_interface_name(),
                         self._node.private_key,
-                    ]
+                    ],
                 )
                 async with asyncio_util.run_async_context(self._event_request_loop()):
                     yield self
@@ -391,8 +439,10 @@ class Client:
                 await self.save_logs(self._connection)
 
     @asynccontextmanager
-    async def run_meshnet(self, meshmap: Dict[str, Any]) -> AsyncIterator["Client"]:
-        async with self.run():
+    async def run_meshnet(
+        self, meshmap: Dict[str, Any], telio_v3=False
+    ) -> AsyncIterator["Client"]:
+        async with self.run(telio_v3):
             await self.set_meshmap(meshmap)
             yield self
 
@@ -408,7 +458,7 @@ class Client:
                 self._adapter_type.value,
                 self.get_router().get_interface_name(),
                 self._node.private_key,
-            ]
+            ],
         )
 
     async def wait_for_state_peer(
