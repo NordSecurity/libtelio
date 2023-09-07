@@ -30,8 +30,8 @@ def get_ip_address_type(address: str) -> Optional[IPProto]:
 class Router(ABC):
     _ip_stack: IPStack
 
-    def __init__(self) -> None:
-        self._ip_stack = IPStack.IPv4v6
+    def __init__(self, ip_stack: IPStack) -> None:
+        self._ip_stack = ip_stack
 
     def check_ip_address(self, address: str) -> Optional[IPProto]:
         addr_proto = get_ip_address_type(address)

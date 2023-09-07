@@ -143,12 +143,6 @@ LAN_ADDR_MAP: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW: "192.168.114.254",
 }
 
-LAN_V6_ADDR_MAP: Dict[ConnectionTag, str] = {
-    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK: (
-        "2001:0db8:85a4::dead:beef:ceed"
-    ),
-}
-
 
 def get_libtelio_binary_path(path: str, connection: Connection) -> str:
     target_os = connection.target_os

@@ -20,8 +20,7 @@ services:
     networks:
       internet:
         ipv4_address: 10.0.80.80
-      internet_v6:
-        ipv6_address: 2001:0db8:85a4::adda:edde:0005
+        ipv6_address: 2001:db8:85a4::adda:edde:5
     volumes:
       - type: bind
         source: ./data/photo.png
@@ -164,12 +163,11 @@ services:
     networks:
       internet:
         ipv4_address: 10.0.11.4
-      internet_v6:
-        ipv6_address: 2001:0db8:85a4::dead:beef:ceed
+        ipv6_address: 2001:db8:85a4::dead:beef:ceed
     environment:
       CLIENT_GATEWAY_PRIMARY: none
     extra_hosts:
-      - "photo-album:2001:0db8:85a4::adda:edde:0005"
+      - "photo-album:::adda:edde:0005"
       - "derp-01:10.0.10.1"
       - "derp-02:10.0.10.2"
       - "derp-03:10.0.10.3"
@@ -597,6 +595,7 @@ networks:
   # various services like DERP/STUN will be hosted
   # on this network
   internet:
+    enable_ipv6: true
     driver: bridge
     driver_opts:
       com.docker.network.bridge.enable_ip_masquerade: 'false'
@@ -604,15 +603,7 @@ networks:
       driver: default
       config:
         - subnet: 10.0.0.0/16
-
-  # Network representing internet with global ipv6 addresses
-  internet_v6:
-    enable_ipv6: true
-    driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: 2001:0db8:85a4::/48
+        - subnet: 2001:db8:85a4::/48
 
   # Define two separate networks for use with cone NATs
   # gateways on these networks must implement restricted-cone NAT.

@@ -9,8 +9,8 @@ class MacRouter(Router):
     _connection: Connection
     _interface_name: str
 
-    def __init__(self, connection: Connection):
-        super().__init__()
+    def __init__(self, connection: Connection, ip_stack: IPStack):
+        super().__init__(ip_stack)
         self._connection = connection
         self._interface_name = "utun10"
 
@@ -82,31 +82,48 @@ class MacRouter(Router):
             ).execute()
 
     async def create_vpn_route(self) -> None:
-        if self.ip_stack == IPStack.IPv6:
-            assert False, "IPv6 for VPN is not supported"
+        if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
+            await self._connection.create_process(
+                ["route", "delete", "-inet", "default"]
+            ).execute()
 
-        await self._connection.create_process(["route", "delete", "default"]).execute()
+            await self._connection.create_process(
+                ["route", "add", "-inet", "default", "-interface", self._interface_name]
+            ).execute()
 
-        await self._connection.create_process(
-            ["route", "add", "default", "-interface", self._interface_name]
-        ).execute()
+            await self._connection.create_process(
+                ["route", "add", "-inet", VPN_SERVER_SUBNET, LINUX_VM_PRIMARY_GATEWAY]
+            ).execute()
 
-        await self._connection.create_process(
-            ["route", "add", VPN_SERVER_SUBNET, LINUX_VM_PRIMARY_GATEWAY]
-        ).execute()
+        if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
+            await self._connection.create_process(
+                [
+                    "route",
+                    "add",
+                    "-inet6",
+                    "default",
+                    "-interface",
+                    self._interface_name,
+                ]
+            ).execute()
 
     async def delete_interface(self) -> None:
         pass
 
     async def delete_vpn_route(self) -> None:
-        if self.ip_stack == IPStack.IPv6:
-            assert False, "IPv6 for VPN is not supported"
+        if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
+            await self._connection.create_process(
+                ["route", "delete", "-inet", "default"]
+            ).execute()
 
-        await self._connection.create_process(["route", "delete", "default"]).execute()
+            await self._connection.create_process(
+                ["route", "add", "-inet", "default", LINUX_VM_PRIMARY_GATEWAY]
+            ).execute()
 
-        await self._connection.create_process(
-            ["route", "add", "default", LINUX_VM_PRIMARY_GATEWAY]
-        ).execute()
+        if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
+            await self._connection.create_process(
+                ["route", "delete", "-inet6", "default"]
+            ).execute()
 
     async def create_exit_node_route(self) -> None:
         pass
