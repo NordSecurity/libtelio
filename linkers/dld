@@ -9,7 +9,12 @@ ARGS=$@
 while (( "$#" )); do
 	if [[ $1 == *"-Wl,--version-script="* ]]; then
 		VERSION=${1#"-Wl,--version-script="}
-		sed -i 's/global:/global:\n    Java*;\n    JNI_OnLoad;\n/' $VERSION
+		SED_ARGS='s/global:/global:\n    Java*;\n    JNI_OnLoad;\n/'
+		if [ "$(uname)" != "Darwin" ]; then
+			sed -i "$SED_ARGS" "$VERSION"
+		else
+			sed -i '' "$SED_ARGS" "$VERSION"
+		fi
 		break
 	fi
 
