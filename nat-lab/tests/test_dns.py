@@ -692,13 +692,12 @@ async def test_dns_update(alpha_ip_stack: IPStack) -> None:
         # Don't forward anything yet
         await client_alpha.enable_magic_dns([])
 
-        alpha_response = await testing.wait_normal(
-            connection.create_process(
-                ["nslookup", "google.com", dns_server_address]
-            ).execute()
-        )
-
-        assert "Can't find google.com: No answer" in alpha_response.get_stdout()
+        with pytest.raises(asyncio.TimeoutError):
+            await testing.wait_normal(
+                connection.create_process(
+                    ["nslookup", "google.com", dns_server_address]
+                ).execute()
+            )
 
         # Update forward dns and check if it works now
         await client_alpha.enable_magic_dns(["1.1.1.1"])

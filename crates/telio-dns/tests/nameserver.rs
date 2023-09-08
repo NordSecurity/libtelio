@@ -296,6 +296,7 @@ enum DnsTestType {
     CorrectIpv6,
     BadUdpChecksumIpv6,
     BadUdpPortIpv6,
+    NonRespondingForwardServer,
 }
 
 impl DnsTestType {
@@ -433,7 +434,7 @@ async fn dns_request_forward_to_slow_server() {
     // Start a query that will run for several seconds
     tokio::spawn(dns_test_with_server(
         "google.com",
-        DnsTestType::CorrectIpv4,
+        DnsTestType::NonRespondingForwardServer,
         None,
         nameserver.clone(),
     ));
@@ -446,6 +447,21 @@ async fn dns_request_forward_to_slow_server() {
     assert!(timeout(Duration::from_millis(100), nameserver.write())
         .await
         .is_ok());
+}
+
+#[tokio::test]
+async fn dns_request_to_non_responding_forward_server() {
+    let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))])
+        .await
+        .unwrap();
+
+    dns_test_with_server(
+        "google.com",
+        DnsTestType::NonRespondingForwardServer,
+        None,
+        nameserver.clone(),
+    )
+    .await;
 }
 
 #[tokio::test]
