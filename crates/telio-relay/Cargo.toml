@@ -6,6 +6,10 @@ license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
+# Used by num_enum
+[package.metadata.cargo-udeps.ignore]
+normal = ["toml_edit"]
+
 [dependencies]
 crypto_box = { version = "0.8.2", features = ["std"] }
 futures = "0.3.21"
@@ -14,6 +18,9 @@ rand = "0.8.5"
 httparse = "1.4.1"
 bytes = "1"
 num_enum = "0.5.4"
+# This is enforced by use of toolchain 1.64
+# Newer version of toml_edit require 1.66 or above
+toml_edit = "=0.19.14"
 rustls-pemfile = "1.0.0"
 strum = { version = "0.24.0", features = ["derive"] }
 thiserror = "1.0.30"

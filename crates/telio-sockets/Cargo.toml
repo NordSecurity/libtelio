@@ -10,8 +10,9 @@ publish = false
 futures = "0.3"
 libc = "0.2.112"
 parking_lot = "0.12"
-tokio = { version = ">=1.22", features = ["full"] }
-socket2 = "0.4.7"
+tokio = { version = "=1.29", features = ["full"] }
+# This is enforced by the use of some functions removed in newer versions of socket2
+socket2 = "=0.4.9"
 log = { version = "0.4.14", features = ["release_max_level_debug"]}
 thiserror = "1.0.30"
 
