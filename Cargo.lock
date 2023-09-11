@@ -2246,7 +2246,16 @@ version = "0.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f646caf906c20226733ed5b1374287eb97e3c2a5c227ce668c1f2ce20ae57c9"
 dependencies = [
- "num_enum_derive",
+ "num_enum_derive 0.5.11",
+]
+
+[[package]]
+name = "num_enum"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a015b430d3c108a207fd776d2e2196aaf8b1cf8cf93253e3a097ff3085076a1"
+dependencies = [
+ "num_enum_derive 0.6.1",
 ]
 
 [[package]]
@@ -2259,6 +2268,18 @@ dependencies = [
  "proc-macro2 1.0.66",
  "quote 1.0.33",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "num_enum_derive"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96667db765a921f7b295ffee8b60472b686a51d4f21c2ee4ffdb94c7013b65a6"
+dependencies = [
+ "proc-macro-crate",
+ "proc-macro2 1.0.66",
+ "quote 1.0.33",
+ "syn 2.0.29",
 ]
 
 [[package]]
@@ -3747,6 +3768,7 @@ dependencies = [
  "itertools",
  "log",
  "modifier",
+ "num_enum 0.6.1",
  "once_cell",
  "pretty_assertions",
  "serde",
@@ -3810,6 +3832,7 @@ dependencies = [
  "protobuf-codegen-pure",
  "strum",
  "telio-crypto",
+ "telio-model",
  "telio-utils",
  "thiserror",
 ]
@@ -3851,7 +3874,7 @@ dependencies = [
  "libc",
  "log",
  "ntest",
- "num_enum",
+ "num_enum 0.5.11",
  "rand",
  "rand_core 0.6.4",
  "rstest",

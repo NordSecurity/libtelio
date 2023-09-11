@@ -1,9 +1,10 @@
 use bytes::BufMut;
 use std::{
-    convert::TryInto,
+    convert::{TryFrom, TryInto},
     net::{IpAddr, Ipv4Addr},
 };
 use telio_crypto::PublicKey;
+use telio_model::api_config::EndpointProvider;
 
 use crate::{
     messages::pinger::*, Codec, CodecError, CodecResult, DowncastPacket, PacketRelayed,
@@ -65,9 +66,10 @@ impl PingerMsg {
     pub fn pong(
         &self,
         wg_port: WGPort,
-        ping_source_address: &IpAddr,
+        ping_source: &IpAddr,
+        ep_provider: EndpointProvider,
     ) -> Option<PlaintextPongerMsg> {
-        match ping_source_address {
+        match ping_source {
             IpAddr::V4(v4address) => Some(PlaintextPongerMsg {
                 session: self.session,
                 msg: Ponger {
@@ -76,6 +78,7 @@ impl PingerMsg {
                         *v4address,
                     ))),
                     wg_port: wg_port.0 as u32,
+                    ponging_ep_provider: ep_provider.into(),
                     ..Default::default()
                 },
             }),
@@ -226,6 +229,18 @@ impl PlaintextPongerMsg {
             Ok(Ipv4Addr::from(self.msg.get_v4()))
         } else {
             Err(CodecError::DecodeFailed)
+        }
+    }
+
+    /// Get ponging endpoint provider
+    pub fn get_ponging_ep_provider(&self) -> CodecResult<Option<EndpointProvider>> {
+        let ep_provider_raw = self.msg.get_ponging_ep_provider();
+        if ep_provider_raw == 0 {
+            Ok(None)
+        } else {
+            EndpointProvider::try_from(ep_provider_raw)
+                .map_err(|_| CodecError::DecodeFailed)
+                .map(Some)
         }
     }
 
@@ -395,6 +410,54 @@ mod tests {
     }
 
     #[test]
+    fn decode_pong_packet() {
+        let pong_bytes = &[
+            9, 0, 0, 0, 0, 0, 0, 0, 8, 8, 42, 16, 3, 40, 3, 29, 1, 0, 0, 127,
+        ];
+        let pong_data =
+            PartialPongerMsg::decode_and_decrypt(pong_bytes, |_, b| Ok((b.to_vec(), None)))
+                .and_then(|partial_msg| partial_msg.decrypt(|v| Ok(v.to_vec())))
+                .expect("Failed to parse packet");
+        assert_eq!(pong_data.get_wg_port().0, 3_u16);
+        assert_eq!(pong_data.get_session(), 8_u64);
+        assert_eq!(pong_data.get_start_timestamp(), 42_u64);
+        assert_eq!(
+            pong_data
+                .get_ping_source_address()
+                .expect("Parsing IP address failed"),
+            Ipv4Addr::from([127, 0, 0, 1])
+        );
+        assert_eq!(
+            pong_data
+                .get_ponging_ep_provider()
+                .expect("Encoded endpoint provider is invalid"),
+            Some(EndpointProvider::Upnp)
+        );
+
+        // We need to check also if we can parse correctly the legacy message (i.e. without ep type specified)
+        let pong_bytes = &[9, 0, 0, 0, 0, 0, 0, 0, 8, 8, 42, 16, 3, 29, 1, 0, 0, 127];
+        let pong_data =
+            PartialPongerMsg::decode_and_decrypt(pong_bytes, |_, b| Ok((b.to_vec(), None)))
+                .and_then(|partial_msg| partial_msg.decrypt(|v| Ok(v.to_vec())))
+                .expect("Failed to parse packet");
+        assert_eq!(pong_data.get_wg_port().0, 3_u16);
+        assert_eq!(pong_data.get_session(), 8_u64);
+        assert_eq!(pong_data.get_start_timestamp(), 42_u64);
+        assert_eq!(
+            pong_data
+                .get_ping_source_address()
+                .expect("Parsing IP address failed"),
+            Ipv4Addr::from([127, 0, 0, 1])
+        );
+        assert_eq!(
+            pong_data
+                .get_ponging_ep_provider()
+                .expect("Encoded endpoint provider is invalid"),
+            None
+        );
+    }
+
+    #[test]
     fn fail_to_decode_small_packet() {
         let bytes = &[];
         let data = PingerMsg::decode(bytes);
@@ -415,9 +478,12 @@ mod tests {
         assert_eq!(ping.encode().unwrap(), ping_bytes);
 
         let ping = PingerMsg::ping(WGPort(2), 3_u64, 10_u64);
-        let pong = ping.pong(WGPort(3), &"127.0.0.1".parse().unwrap()).unwrap();
+        let endpoint = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+        let pong = ping
+            .pong(WGPort(3), &endpoint, EndpointProvider::Stun)
+            .unwrap();
         let pong_bytes =
-            b"\x09\x00\x00\x00\x00\x00\x00\x00\x03\x08\x0A\x10\x03\x1d\x01\x00\x00\x7f";
+            b"\x09\x00\x00\x00\x00\x00\x00\x00\x03\x08\x0A\x10\x03\x28\x02\x1d\x01\x00\x00\x7f";
         assert_eq!(
             pong.encode_and_encrypt(|b| Ok(b.to_vec())).unwrap(),
             pong_bytes
