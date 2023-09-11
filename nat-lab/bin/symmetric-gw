@@ -4,14 +4,17 @@ set -e
 
 echo 1 > /proc/sys/net/ipv4/ip_forward
 
+public_itf=$(ip route show | awk '/10.0.0.0\/16.*dev [a-z0-0]+/ {print $3}')
+private_itf=$(ip route show | awk '/192.168.*\/24.*dev [a-z0-0]+/ {print $3}')
+
 # Configure standard FW
 iptables -t filter -A INPUT -i lo -j ACCEPT
 iptables -t filter -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
 iptables -t filter -P INPUT DROP
 
 # Configure symmetric NAT
-iptables -t nat -A POSTROUTING -o eth1 -j MASQUERADE --random
-iptables -A FORWARD -i eth1 -o eth0 -m state --state RELATED,ESTABLISHED -j ACCEPT
-iptables -A FORWARD -i eth0 -o eth1 -j ACCEPT
+iptables -t nat -A POSTROUTING -o $public_itf -j MASQUERADE --random
+iptables -A FORWARD -i $public_itf -o $private_itf -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -A FORWARD -i $private_itf -o $public_itf -j ACCEPT
 
 sleep infinity
