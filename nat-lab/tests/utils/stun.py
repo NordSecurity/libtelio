@@ -22,8 +22,10 @@ async def get(
         match = re.search(
             r"UDP reflexive addr: (\d+\.\d+\.\d+\.\d+):(\d+)", process.get_stdout()
         )
-        assert match, "stun response missing the IP address"
-
+        assert match, (
+            f"stun response missing XorMappedAddress, stdout {process.get_stdout()},"
+            f" stderr {process.get_stderr()}"
+        )
         return match.group(1)
 
     if connection.target_os == TargetOS.Windows:
@@ -37,8 +39,10 @@ async def get(
 
         # Match: 'Mapped address: 10.0.0.1:53628'
         match = re.search(r"Mapped address: (\d+.\d+.\d+.\d+)", process.get_stdout())
-        assert match
-
+        assert match, (
+            f"stun response missing Mapped address, stdout {process.get_stdout()},"
+            f" stderr {process.get_stderr()}"
+        )
         return match.group(1)
 
     if connection.target_os == TargetOS.Mac:
@@ -52,8 +56,10 @@ async def get(
 
         # Match: 'Mapped address: 10.0.0.1:53628'
         match = re.search(r"Mapped address: (\d+.\d+.\d+.\d+)", process.get_stdout())
-        assert match
-
+        assert match, (
+            f"stun response missing Mapped address, stdout {process.get_stdout()},"
+            f" stderr {process.get_stderr()}"
+        )
         return match.group(1)
 
     assert False, "unsupported os"
