@@ -589,7 +589,7 @@ class Client:
         await self._write_command(["mesh", "ping"])
 
     async def connect_to_vpn(
-        self, ip: str, port: int, public_key: str, timeout: float = 5
+        self, ip: str, port: int, public_key: str, timeout: float = 15
     ) -> None:
         await self._configure_interface()
         await self.get_router().create_vpn_route()
@@ -658,7 +658,7 @@ class Client:
 
         return False
 
-    async def connect_to_exit_node(self, public_key: str, timeout: float = 5) -> None:
+    async def connect_to_exit_node(self, public_key: str, timeout: float = 15) -> None:
         await self._configure_interface()
         await self.get_router().create_vpn_route()
         async with asyncio_util.run_async_context(
