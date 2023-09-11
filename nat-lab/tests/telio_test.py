@@ -182,7 +182,9 @@ class TestRuntime:
         )
 
         await testing.wait_short(
-            runtime.notify_peer_state("AAA", [State.Connected], [PathType.Relay])
+            runtime.notify_peer_state(
+                "AAA", [State.Connected], [PathType.Relay], is_exit=True, is_vpn=True
+            )
         )
 
 
@@ -202,30 +204,30 @@ class TestEvents:
         )
 
         await events.wait_for_state_peer(
-            "AAA", [State.Connected], [PathType.Relay], 0.1
+            "AAA", [State.Connected], [PathType.Relay], timeout=0.1
         )
         await events.wait_for_state_peer(
-            "BBB", [State.Disconnected], [PathType.Direct], 0.1
+            "BBB", [State.Disconnected], [PathType.Direct], timeout=0.1
         )
 
         # it should pass again
         await events.wait_for_state_peer(
-            "AAA", [State.Connected], [PathType.Relay, PathType.Direct], 0.1
+            "AAA", [State.Connected], [PathType.Relay, PathType.Direct], timeout=0.1
         )
         await events.wait_for_state_peer(
-            "BBB", [State.Disconnected], [PathType.Relay, PathType.Direct], 0.1
+            "BBB", [State.Disconnected], [PathType.Relay, PathType.Direct], timeout=0.1
         )
 
         # it should fail (wrong state)
         with pytest.raises(asyncio.TimeoutError):
             await events.wait_for_state_peer(
-                "BBB", [State.Connected], [PathType.Direct], 0.1
+                "BBB", [State.Connected], [PathType.Direct], timeout=0.1
             )
 
         # it should fail (wrong path)
         with pytest.raises(asyncio.TimeoutError):
             await events.wait_for_state_peer(
-                "AAA", [State.Connected], [PathType.Direct], 0.1
+                "AAA", [State.Connected], [PathType.Direct], timeout=0.1
             )
 
     @pytest.mark.asyncio
@@ -238,40 +240,40 @@ class TestEvents:
         runtime.set_peer(PeerInfo(public_key="BBB", state=State.Connected))
 
         await events.wait_for_state_peer(
-            "BBB", [State.Connected], [PathType.Relay], 0.1
+            "BBB", [State.Connected], [PathType.Relay], timeout=0.1
         )
         await events.wait_for_state_peer(
-            "AAA", [State.Connected], [PathType.Relay], 0.1
+            "AAA", [State.Connected], [PathType.Relay], timeout=0.1
         )
 
         runtime.set_peer(PeerInfo(public_key="AAA", state=State.Disconnected))
         runtime.set_peer(PeerInfo(public_key="BBB", state=State.Disconnected))
 
         await events.wait_for_state_peer(
-            "BBB", [State.Disconnected], [PathType.Relay], 0.1
+            "BBB", [State.Disconnected], [PathType.Relay], timeout=0.1
         )
         await events.wait_for_state_peer(
-            "AAA", [State.Disconnected], [PathType.Relay], 0.1
+            "AAA", [State.Disconnected], [PathType.Relay], timeout=0.1
         )
 
         # It should pass again
         await events.wait_for_state_peer(
-            "BBB", [State.Disconnected], [PathType.Relay, PathType.Direct], 0.1
+            "BBB", [State.Disconnected], [PathType.Relay, PathType.Direct], timeout=0.1
         )
         await events.wait_for_state_peer(
-            "AAA", [State.Disconnected], [PathType.Relay, PathType.Direct], 0.1
+            "AAA", [State.Disconnected], [PathType.Relay, PathType.Direct], timeout=0.1
         )
 
         # it should fail (old state)
         with pytest.raises(asyncio.TimeoutError):
             await events.wait_for_state_peer(
-                "BBB", [State.Connected], [PathType.Relay], 0.1
+                "BBB", [State.Connected], [PathType.Relay], timeout=0.1
             )
 
         # it should fail (wrong path)
         with pytest.raises(asyncio.TimeoutError):
             await events.wait_for_state_peer(
-                "AAA", [State.Disconnected], [PathType.Direct], 0.1
+                "AAA", [State.Disconnected], [PathType.Direct], timeout=0.1
             )
 
     @pytest.mark.asyncio
@@ -282,7 +284,9 @@ class TestEvents:
 
         # Start waiting for new event before it is being generated
         async with run_async_context(
-            events.wait_for_event_peer("AAA", [State.Connected], [PathType.Relay], 1)
+            events.wait_for_event_peer(
+                "AAA", [State.Connected], [PathType.Relay], timeout=1
+            )
         ) as future:
             # wait for futures to be started
             await asyncio.sleep(0)
@@ -310,7 +314,7 @@ class TestEvents:
 
         with pytest.raises(asyncio.TimeoutError):
             await events.wait_for_event_peer(
-                "AAA", [State.Connected], [PathType.Relay], 0.1
+                "AAA", [State.Connected], [PathType.Relay], timeout=0.1
             )
 
     @pytest.mark.asyncio
@@ -323,22 +327,22 @@ class TestEvents:
         async with run_async_contexts(
             [
                 events.wait_for_event_peer(
-                    "AAA", [State.Disconnected], [PathType.Relay], 5
+                    "AAA", [State.Disconnected], [PathType.Relay], timeout=5
                 ),
                 events.wait_for_event_peer(
-                    "AAA", [State.Connecting], [PathType.Relay], 5
+                    "AAA", [State.Connecting], [PathType.Relay], timeout=5
                 ),
                 events.wait_for_event_peer(
-                    "AAA", [State.Connected], [PathType.Relay], 5
+                    "AAA", [State.Connected], [PathType.Relay], timeout=5
                 ),
                 events.wait_for_event_peer(
-                    "BBB", [State.Disconnected], [PathType.Direct], 5
+                    "BBB", [State.Disconnected], [PathType.Direct], timeout=5
                 ),
                 events.wait_for_event_peer(
-                    "BBB", [State.Connecting], [PathType.Direct], 5
+                    "BBB", [State.Connecting], [PathType.Direct], timeout=5
                 ),
                 events.wait_for_event_peer(
-                    "BBB", [State.Connected], [PathType.Direct], 5
+                    "BBB", [State.Connected], [PathType.Direct], timeout=5
                 ),
             ]
         ) as futures:
@@ -387,20 +391,24 @@ class TestEvents:
         events = Events(runtime)
 
         runtime.set_derp(create_derpserver_config(State.Connected))
-        await events.wait_for_state_derp("1.1.1.1", [State.Connected], 0.1)
+        await events.wait_for_state_derp("1.1.1.1", [State.Connected], timeout=0.1)
 
         # It should pass again
         await events.wait_for_state_derp(
-            "1.1.1.1", [State.Disconnected, State.Connecting, State.Connected], 0.1
+            "1.1.1.1",
+            [State.Disconnected, State.Connecting, State.Connected],
+            timeout=0.1,
         )
 
         # it should fail (wrong state)
         with pytest.raises(asyncio.TimeoutError):
-            await events.wait_for_state_derp("1.1.1.1", [State.Disconnected], 0.1)
+            await events.wait_for_state_derp(
+                "1.1.1.1", [State.Disconnected], timeout=0.1
+            )
 
         # it should fail (wrong IP)
         with pytest.raises(asyncio.TimeoutError):
-            await events.wait_for_state_derp("1.1.1.2", [State.Connected], 0.1)
+            await events.wait_for_state_derp("1.1.1.2", [State.Connected], timeout=0.1)
 
     @pytest.mark.asyncio
     async def test_derp_change_state(self) -> None:
@@ -408,14 +416,16 @@ class TestEvents:
         events = Events(runtime)
 
         runtime.set_derp(create_derpserver_config(State.Connected))
-        await events.wait_for_state_derp("1.1.1.1", [State.Connected], 0.1)
+        await events.wait_for_state_derp("1.1.1.1", [State.Connected], timeout=0.1)
 
         runtime.set_derp(create_derpserver_config(State.Disconnected))
-        await events.wait_for_state_derp("1.1.1.1", [State.Disconnected], 0.1)
+        await events.wait_for_state_derp("1.1.1.1", [State.Disconnected], timeout=0.1)
 
         # It should pass again
         await events.wait_for_state_derp(
-            "1.1.1.1", [State.Connected, State.Connecting, State.Disconnected], 0.1
+            "1.1.1.1",
+            [State.Connected, State.Connecting, State.Disconnected],
+            timeout=0.1,
         )
 
     @pytest.mark.asyncio
@@ -426,7 +436,7 @@ class TestEvents:
 
         # Start waiting for new event before it is being generated
         async with run_async_context(
-            events.wait_for_event_derp("1.1.1.1", [State.Connected], 1)
+            events.wait_for_event_derp("1.1.1.1", [State.Connected], timeout=1)
         ) as future:
             # wait for futures to be started
             await asyncio.sleep(0)
@@ -452,7 +462,7 @@ class TestEvents:
             await future
 
         with pytest.raises(asyncio.TimeoutError):
-            await events.wait_for_event_derp("1.1.1.1", [State.Connected], 0.1)
+            await events.wait_for_event_derp("1.1.1.1", [State.Connected], timeout=0.1)
 
     @pytest.mark.asyncio
     async def test_derp_with_multiple_events(self) -> None:

@@ -191,10 +191,18 @@ class Runtime:
         public_key: str,
         states: List[State],
         paths: List[PathType],
+        is_exit: bool = False,
+        is_vpn: bool = False,
     ) -> None:
         while True:
             peer = self.get_peer_info(public_key)
-            if peer and peer.path in paths and peer.state in states:
+            if (
+                peer
+                and peer.path in paths
+                and peer.state in states
+                and is_exit == peer.is_exit
+                and is_vpn == peer.is_vpn
+            ):
                 return
             await asyncio.sleep(0.1)
 
@@ -203,6 +211,8 @@ class Runtime:
         public_key: str,
         states: List[State],
         paths: List[PathType],
+        is_exit: bool = False,
+        is_vpn: bool = False,
     ) -> None:
         def _get_events() -> List[PeerInfo]:
             return [
@@ -212,6 +222,8 @@ class Runtime:
                 and peer.public_key == public_key
                 and peer.path in paths
                 and peer.state in states
+                and is_exit == peer.is_exit
+                and is_vpn == peer.is_vpn
             ]
 
         old_events = _get_events()
@@ -337,10 +349,12 @@ class Events:
         public_key: str,
         state: List[State],
         paths: List[PathType],
+        is_exit: bool = False,
+        is_vpn: bool = False,
         timeout: Optional[float] = None,
     ) -> None:
         await asyncio.wait_for(
-            self._runtime.notify_peer_state(public_key, state, paths),
+            self._runtime.notify_peer_state(public_key, state, paths, is_exit, is_vpn),
             timeout if timeout else 60 if PathType.Direct in paths else 30,
         )
 
@@ -349,10 +363,12 @@ class Events:
         public_key: str,
         states: List[State],
         paths: List[PathType],
+        is_exit: bool = False,
+        is_vpn: bool = False,
         timeout: Optional[float] = None,
     ) -> None:
         await asyncio.wait_for(
-            self._runtime.notify_peer_event(public_key, states, paths),
+            self._runtime.notify_peer_event(public_key, states, paths, is_exit, is_vpn),
             timeout if timeout else 60 if PathType.Direct in paths else 30,
         )
 
@@ -487,10 +503,17 @@ class Client:
         public_key,
         states: List[State],
         paths: Optional[List[PathType]] = None,
+        is_exit: bool = False,
+        is_vpn: bool = False,
         timeout: Optional[float] = None,
     ) -> None:
         await self.get_events().wait_for_state_peer(
-            public_key, states, paths if paths else [PathType.Relay], timeout
+            public_key,
+            states,
+            paths if paths else [PathType.Relay],
+            is_exit,
+            is_vpn,
+            timeout,
         )
 
     async def wait_for_event_peer(
@@ -498,10 +521,17 @@ class Client:
         public_key: str,
         states: List[State],
         paths: Optional[List[PathType]] = None,
+        is_exit: bool = False,
+        is_vpn: bool = False,
         timeout: Optional[float] = None,
     ) -> None:
         await self.get_events().wait_for_event_peer(
-            public_key, states, paths if paths else [PathType.Relay], timeout
+            public_key,
+            states,
+            paths if paths else [PathType.Relay],
+            is_exit,
+            is_vpn,
+            timeout,
         )
 
     async def wait_for_state_derp(
@@ -594,7 +624,9 @@ class Client:
         await self._configure_interface()
         await self.get_router().create_vpn_route()
         async with asyncio_util.run_async_context(
-            self.wait_for_event_peer(public_key, [State.Connected], list(PathType))
+            self.wait_for_event_peer(
+                public_key, [State.Connected], list(PathType), is_exit=True, is_vpn=True
+            )
         ) as event:
             self.get_runtime().allowed_pub_keys.add(public_key)
             await asyncio.wait_for(
@@ -609,7 +641,13 @@ class Client:
 
     async def disconnect_from_vpn(self, public_key: str, timeout: float = 5) -> None:
         async with asyncio_util.run_async_context(
-            self.wait_for_event_peer(public_key, [State.Disconnected], list(PathType))
+            self.wait_for_event_peer(
+                public_key,
+                [State.Disconnected],
+                list(PathType),
+                is_exit=True,
+                is_vpn=True,
+            )
         ) as event:
             await asyncio.wait_for(
                 asyncio.gather(
@@ -662,7 +700,9 @@ class Client:
         await self._configure_interface()
         await self.get_router().create_vpn_route()
         async with asyncio_util.run_async_context(
-            self.wait_for_event_peer(public_key, [State.Connected], list(PathType))
+            self.wait_for_event_peer(
+                public_key, [State.Connected], list(PathType), is_exit=True
+            )
         ) as event:
             await asyncio.wait_for(
                 asyncio.gather(
