@@ -92,7 +92,7 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
                 last_candidates: Vec::new(),
                 ping_pong_tracker: ping_pong_handler,
                 stun_peer_publisher,
-                stun_state: StunState::SearchingForServer,
+                stun_state: StunState::WaitingForWg,
             }),
         }
     }
@@ -116,7 +116,8 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
                 s.current_server_index = 0;
 
                 if s.stun_peer_publisher
-                    .try_send(s.servers.get(s.current_server_index).cloned())
+                    .send(s.servers.get(s.current_server_index).cloned())
+                    .await
                     .is_err()
                 {
                     telio_log_error!("Could not publish the STUN peer");
@@ -125,10 +126,9 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
 
             s.exponential_backoff.reset();
 
-            // Start STUN session, but only if we have at least one STUN server configured
-            if !s.servers.is_empty() && s.start_stun_session().await.is_err() {
-                telio_log_error!("STUN session could not be started");
-            }
+            s.transition_to_wait_for_wg();
+
+            s.try_transition_to_searching_for_server().await;
 
             Ok(())
         })
@@ -166,7 +166,24 @@ impl<Wg: WireGuard, E: Backoff + 'static> EndpointProvider for StunEndpointProvi
     }
 
     async fn trigger_endpoint_candidates_discovery(&self) -> Result<(), Error> {
-        task_exec!(&self.task, async move |s| Ok(s.start_stun_session().await)).await?
+        task_exec!(&self.task, async move |s| {
+            if let StunState::BackingOff = s.stun_state {
+                s.transition_to_wait_for_wg();
+            }
+
+            if let StunState::WaitingForWg = s.stun_state {
+                s.try_transition_to_searching_for_server().await;
+            }
+
+            if let StunState::HasEndpoints = s.stun_state {
+                if s.stun_session.is_none() {
+                    let _ = s.start_stun_session().await;
+                }
+            }
+
+            Ok(Ok(()))
+        })
+        .await?
     }
 
     async fn handle_endpoint_gone_notification(&self) {
@@ -210,13 +227,20 @@ impl<Wg: WireGuard, E: Backoff + 'static> EndpointProvider for StunEndpointProvi
 // +------------------+     +--------------+  |
 // |SearchingForServer|---->| HasEndpoints |---
 // +------------------+     +--------------+
-//          ^                     |
-//          |                     |
-//          v                     |
-//   +-------------+              |
-//   | BackingOff  |<--------------
-//   +-------------+
+//          ^        |            |
+//          |        |            |
+// +--------------+  |            |
+// | WaitingForWG |  |            |
+// +--------------+  |            |
+//          ^        |            |
+//          |        |            |
+//          v        V            |
+//      +-------------+           |
+//      | BackingOff  |<-----------
+//      +-------------+
+#[derive(Debug)]
 enum StunState {
+    WaitingForWg,
     SearchingForServer,
     BackingOff,
     HasEndpoints,
@@ -284,7 +308,7 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
         }
     }
 
-    fn next_server(&mut self) {
+    async fn next_server(&mut self) {
         let last_server_index = self.current_server_index;
         self.current_server_index = if !self.servers.is_empty() {
             (self.current_server_index + 1) % self.servers.len()
@@ -294,7 +318,8 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
 
         if self
             .stun_peer_publisher
-            .try_send(self.servers.get(self.current_server_index).cloned())
+            .send(self.servers.get(self.current_server_index).cloned())
+            .await
             .is_err()
         {
             telio_log_warn!("Sending new server failed");
@@ -384,6 +409,18 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
             .await
     }
 
+    fn transition_to_wait_for_wg(&mut self) {
+        self.stun_state = StunState::WaitingForWg;
+        self.current_timeout = PinnedSleep::new(STUN_TIMEOUT, ());
+    }
+
+    async fn try_transition_to_searching_for_server(&mut self) {
+        if !self.servers.is_empty() && self.is_wg_ready().await {
+            self.stun_state = StunState::SearchingForServer;
+            let _ = self.start_stun_session().await;
+        }
+    }
+
     async fn transition_to_has_endpoints_state(&mut self, candidate: EndpointCandidate) {
         // Anounce the new candidates
         let candidates = vec![candidate];
@@ -421,11 +458,24 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
         // Clear the session so we can start the next search after backing off
         self.stun_session = None;
         // Move to the next server
-        self.next_server();
+        self.next_server().await;
         // Set the timeout according to the exponential backoff
         self.current_timeout = PinnedSleep::new(self.exponential_backoff.get_backoff(), ());
         // Update next backoff
         self.exponential_backoff.next_backoff();
+    }
+
+    async fn is_wg_ready(&self) -> bool {
+        self.wg
+            .get_interface()
+            .await
+            .ok()
+            .and_then(|wg| {
+                self.servers
+                    .get(self.current_server_index)
+                    .map(|server| wg.peers.contains_key(&server.public_key))
+            })
+            .unwrap_or(false)
     }
 }
 
@@ -467,15 +517,15 @@ impl<Wg: WireGuard, E: Backoff> Runtime for State<Wg, E> {
             // We are waiting either for stun session to timeout, or for the end of penalty
             _ = &mut self.current_timeout => {
                 match self.stun_state {
-                    StunState::SearchingForServer => {
+                    StunState::SearchingForServer | StunState::WaitingForWg => {
                         // This is a stun timeout. We should back off.
                         self.transition_to_backing_off_state().await;
                     },
                     StunState::BackingOff => {
                         // Backoff timeout is over. We should try again.
-                        // Transition to searching state
-                        self.stun_state = StunState::SearchingForServer;
-                        let _ = self.start_stun_session().await;
+                        // Transition to waiting for WG peers to include our stun server
+                        self.transition_to_wait_for_wg();
+                        self.try_transition_to_searching_for_server().await;
                     },
                     StunState::HasEndpoints => {
                         if self.stun_session.take().is_some() {
@@ -1295,7 +1345,8 @@ mod tests {
     async fn exponential_backoff_is_applied_even_if_session_start_failed() {
         let mut wg = MockWg::new();
 
-        // Expect two calls into get_interface, one on config one on periodic timer
+        // Expect a single call to get_interface when we enter the loop first and
+        // and a second in the finished backoff
         wg.expect_get_interface()
             .returning(move || Err(telio_wg::Error::UnsupportedOperationError))
             .times(2);
