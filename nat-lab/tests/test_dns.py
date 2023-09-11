@@ -129,6 +129,15 @@ async def test_dns(dns_server_address: str) -> None:
         for ip in alpha.ip_addresses:
             assert ip in beta_response.get_stdout()
 
+        # Testing if instance can get the IP of self from DNS. See LLT-4246 for more details.
+        alpha_response = await testing.wait_long(
+            connection_alpha.create_process(
+                ["nslookup", "alpha.nord", dns_server_address]
+            ).execute()
+        )
+        for ip in alpha.ip_addresses:
+            assert ip in alpha_response.get_stdout()
+
         # Now we disable magic dns
         await client_alpha.disable_magic_dns()
         await client_beta.disable_magic_dns()
