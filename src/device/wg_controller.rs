@@ -634,7 +634,23 @@ async fn select_endpoint_for_peer<'a>(
                 public_key,
                 upgrade_request_endpoint
             );
-            Ok((Some(*upgrade_request_endpoint), None))
+            if let Some(peer) = actual_peer {
+                telio_log_debug!("Our actual endpoint is: {:?}", peer.endpoint);
+            }
+
+            if (peer_state == PeerState::Upgrading || peer_state == PeerState::Direct)
+                && actual_endpoint.is_some()
+                && actual_endpoint != *proxy_endpoint
+            {
+                telio_log_debug!("Keeping the current direct endpoint: {:?}", actual_endpoint);
+                Ok((actual_endpoint, None))
+            } else {
+                telio_log_debug!(
+                    "Changing endpoint to the one from update request: {:?}",
+                    *upgrade_request_endpoint
+                );
+                Ok((Some(*upgrade_request_endpoint), None))
+            }
         }
 
         // Connection is dead-> always force proxy. Note that we may enter this state in direct

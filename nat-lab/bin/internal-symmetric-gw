@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+set -e
+
+echo 1 > /proc/sys/net/ipv4/ip_forward
+
+# Configure standard FW
+iptables -t filter -A INPUT -i lo -j ACCEPT
+iptables -t filter -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -t filter -P INPUT DROP
+
+# Configure symmetric NAT
+iptables -t nat -A POSTROUTING -o eth1 -j MASQUERADE --random
+iptables -A FORWARD -i eth1 -o eth0 -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -A FORWARD -i eth0 -o eth1 -j ACCEPT
+
+/libtelio-build/libtelio/nat-lab/bin/configure_route.sh secondary
+
+sleep infinity

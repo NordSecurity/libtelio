@@ -9,12 +9,13 @@ publish = false
 [dependencies]
 bytes = "1"
 protobuf = "2"
-log = {version = "0.4.14", features = ["release_max_level_debug"]}
+log = { version = "0.4.14", features = ["release_max_level_debug"] }
 strum = { version = "0.24.0", features = ["derive"] }
 thiserror = "1.0"
 
 telio-crypto = { path = "../telio-crypto" }
 telio-utils = { path = "../telio-utils" }
+telio-model = { path = "../telio-model" }
 
 [build-dependencies]
 protobuf-codegen-pure = "2"

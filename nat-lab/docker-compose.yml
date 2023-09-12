@@ -554,6 +554,44 @@ services:
       cone-net-05:
         ipv4_address: 192.168.113.254
 
+  internal-symmetric-gw-01:
+    hostname: internal-symmetric-gw-01
+    image: nat-lab:base
+    entrypoint: /opt/bin/internal-symmetric-gw
+    privileged: true
+    environment:
+      CLIENT_GATEWAY_SECONDARY: 192.168.103.254
+    networks:
+      hsymmetric-net-01:
+        ipv4_address: 192.168.103.44
+      hsymmetric-internal-net-01:
+        ipv4_address: 192.168.114.254
+    volumes:
+      - ../../:/libtelio-build
+
+  internal-symmetric-client-01:
+    hostname: internal-symmetric-client-01
+    image: nat-lab:base
+    entrypoint: /opt/bin/client
+    privileged: true
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.114.254
+      INTERMEDIATE_NETWORK: 192.168.103.0/24
+    networks:
+      hsymmetric-internal-net-01:
+        ipv4_address: 192.168.114.88
+    volumes:
+      - ../../:/libtelio-build
+    extra_hosts:
+      - "photo-album:10.0.80.80"
+      - "stun-01:10.0.1.1"
+      - "stun-02:10.0.1.245"
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+
+
 networks:
   # Network representing public internet,
   # various services like DERP/STUN will be hosted
@@ -672,3 +710,10 @@ networks:
       driver: default
       config:
         - subnet: 192.168.113.0/24
+
+  hsymmetric-internal-net-01:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.114.0/24

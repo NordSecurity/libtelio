@@ -16,4 +16,5 @@ message Ponger {
         fixed32 v4 = 3;
         bytes v6 = 4;
     }
+    uint32 ponging_ep_provider = 5;
 }
