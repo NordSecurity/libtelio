@@ -3,6 +3,7 @@
 
 use std::{collections::HashSet, fmt};
 
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{de::IntoDeserializer, Deserialize, Deserializer, Serialize};
 use strum_macros::EnumCount;
 use telio_utils::telio_log_warn;
@@ -144,15 +145,28 @@ pub struct FeaturePaths {
 }
 
 /// Available Endpoint Providers for meshnet direct connections
-#[derive(Clone, Copy, Debug, EnumCount, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    EnumCount,
+    IntoPrimitive,
+    TryFromPrimitive,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
+#[repr(u32)]
 #[serde(rename_all = "kebab-case")]
 pub enum EndpointProvider {
     /// Use local interface ips as possible endpoints
-    Local,
+    Local = 1,
     /// Use stun and wg-stun results as possible endpoints
-    Stun,
+    Stun = 2,
     /// Use IGD and upnp to generate endpoints
-    Upnp,
+    Upnp = 3,
 }
 
 /// Endpoint polling interval

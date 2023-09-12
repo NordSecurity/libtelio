@@ -34,6 +34,7 @@ class ConnectionTag(Enum):
     DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK = auto()
     DOCKER_UDP_BLOCK_CLIENT_1 = auto()
     DOCKER_UDP_BLOCK_CLIENT_2 = auto()
+    DOCKER_INTERNAL_SYMMETRIC_CLIENT = auto()
     WINDOWS_VM = auto()
     MAC_VM = auto()
     DOCKER_CONE_GW_1 = auto()
@@ -50,6 +51,7 @@ class ConnectionTag(Enum):
     DOCKER_UPNP_GW_2 = auto()
     DOCKER_VPN_1 = auto()
     DOCKER_VPN_2 = auto()
+    DOCKER_INTERNAL_SYMMETRIC_GW = auto()
 
 
 DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
@@ -69,6 +71,7 @@ DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ),
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: "udp-block-client-01",
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: "udp-block-client-02",
+    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT: "internal-symmetric-client-01",
     ConnectionTag.DOCKER_CONE_GW_1: "cone-gw-01",
     ConnectionTag.DOCKER_CONE_GW_2: "cone-gw-02",
     ConnectionTag.DOCKER_CONE_GW_3: "cone-gw-03",
@@ -83,6 +86,7 @@ DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_UPNP_GW_2: "upnp-gw-02",
     ConnectionTag.DOCKER_VPN_1: "vpn-01",
     ConnectionTag.DOCKER_VPN_2: "vpn-02",
+    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW: "internal-symmetric-gw-01",
 }
 
 
@@ -103,6 +107,7 @@ DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {
     ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1: ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
     ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2: ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2,
     ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK: ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
+    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT: ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW,
 }
 
 LAN_ADDR_MAP: Dict[ConnectionTag, str] = {
@@ -120,6 +125,7 @@ LAN_ADDR_MAP: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK: "10.0.11.4",
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: "192.168.110.100",
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: "192.168.111.100",
+    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT: "192.168.114.88",
     ConnectionTag.WINDOWS_VM: "10.55.0.11",
     ConnectionTag.MAC_VM: "10.55.0.12",
     ConnectionTag.DOCKER_CONE_GW_1: "192.168.101.254",
@@ -134,6 +140,7 @@ LAN_ADDR_MAP: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_UDP_BLOCK_GW_2: "192.168.111.254",
     ConnectionTag.DOCKER_UPNP_GW_1: "192.168.105.254",
     ConnectionTag.DOCKER_UPNP_GW_2: "192.168.112.254",
+    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW: "192.168.114.254",
 }
 
 LAN_V6_ADDR_MAP: Dict[ConnectionTag, str] = {

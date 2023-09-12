@@ -379,6 +379,7 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
                 wg_port,
                 &self.ext_socket,
                 &self.pong_event,
+                telio_model::api_config::EndpointProvider::Stun,
             )
             .await
     }
@@ -985,7 +986,13 @@ mod tests {
         if let (PacketRelayed::Pinger(msg), _) =
             PacketRelayed::decode_and_decrypt(&buf[..len], decrypt_transform).unwrap()
         {
-            let resp = msg.pong(msg.get_wg_port(), &addr.ip()).unwrap();
+            let resp = msg
+                .pong(
+                    msg.get_wg_port(),
+                    &addr.ip(),
+                    telio_model::api_config::EndpointProvider::Stun,
+                )
+                .unwrap();
 
             let mut rng = rand::thread_rng();
             let encrypt_transform = |b: &[u8]| {
@@ -1045,7 +1052,13 @@ mod tests {
         if let (PacketRelayed::Pinger(msg), _) =
             PacketRelayed::decode_and_decrypt(&buf[..len], decrypt_transform).unwrap()
         {
-            let resp = msg.pong(msg.get_wg_port(), &addr.ip()).unwrap();
+            let resp = msg
+                .pong(
+                    msg.get_wg_port(),
+                    &addr.ip(),
+                    telio_model::api_config::EndpointProvider::Stun,
+                )
+                .unwrap();
 
             let mut rng = rand::thread_rng();
             let encrypt_transform = |b: &[u8]| {

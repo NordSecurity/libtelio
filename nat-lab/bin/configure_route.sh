@@ -11,6 +11,11 @@ case "${1:-}" in
         if [[ $CLIENT_GATEWAY_PRIMARY != "none" ]]; then
             ip route delete 10.0.0.0/16 || true
             ip route add 10.0.0.0/16 via $CLIENT_GATEWAY_PRIMARY dev eth0
+
+            if [[ -n ${INTERMEDIATE_NETWORK:-} ]]; then
+                ip route delete $INTERMEDIATE_NETWORK || true
+                ip route add $INTERMEDIATE_NETWORK via $CLIENT_GATEWAY_PRIMARY dev eth0
+            fi
         fi
         ;;
     secondary)

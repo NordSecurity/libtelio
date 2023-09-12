@@ -30,6 +30,7 @@ DOCKER_FULLCONE_GW_2_IP = "10.0.254.6"
 DOCKER_OPEN_INTERNET_CLIENT_1_IP = "10.0.11.2"
 DOCKER_OPEN_INTERNET_CLIENT_2_IP = "10.0.11.3"
 DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK_IP = "10.0.11.4"
+DOCKER_SYMMETRIC_CLIENT_1_IP = "192.168.103.88"
 DOCKER_SYMMETRIC_GW_1_IP = "10.0.254.3"
 DOCKER_UPNP_CLIENT_2_IP = "10.0.254.12"
 
@@ -106,6 +107,30 @@ UHP_conn_client_types = [
         ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
         ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
         DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK_IP,
+    ),
+    (
+        LOCAL_PROVIDER,
+        ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+        DOCKER_OPEN_INTERNET_CLIENT_1_IP,
+    ),
+    (
+        LOCAL_PROVIDER,
+        ConnectionTag.DOCKER_CONE_CLIENT_1,
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+        DOCKER_OPEN_INTERNET_CLIENT_1_IP,
+    ),
+    (
+        LOCAL_PROVIDER,
+        ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+        DOCKER_OPEN_INTERNET_CLIENT_1_IP,
+    ),
+    (
+        LOCAL_PROVIDER,
+        ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT,
+        ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+        DOCKER_SYMMETRIC_CLIENT_1_IP,
     ),
 ]
 
@@ -350,21 +375,6 @@ async def test_direct_working_paths(
             ANY_PROVIDERS,
             ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1,
             ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2,
-        ),
-        (
-            LOCAL_PROVIDER,
-            ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
-            ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
-        ),
-        (
-            LOCAL_PROVIDER,
-            ConnectionTag.DOCKER_CONE_CLIENT_1,
-            ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
-        ),
-        (
-            LOCAL_PROVIDER,
-            ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
-            ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
         ),
     ],
 )
