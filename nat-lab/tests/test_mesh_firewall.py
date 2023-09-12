@@ -5,7 +5,8 @@ import config
 import pytest
 import telio
 from contextlib import AsyncExitStack
-from mesh_api import API
+from mesh_api import API, Node
+from typing import Tuple
 from utils import testing, stun
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
@@ -16,6 +17,21 @@ from utils.connection_util import (
 from utils.output_notifier import OutputNotifier
 from utils.ping import Ping
 from utils.router import IPProto, IPStack
+
+
+def get_ips_and_stack(alpha: Node, beta: Node) -> Tuple[IPProto, str, str]:
+    if alpha.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
+        return (
+            IPProto.IPv4,
+            testing.unpack_optional(alpha.get_ip_address(IPProto.IPv4)),
+            testing.unpack_optional(beta.get_ip_address(IPProto.IPv4)),
+        )
+
+    return (
+        IPProto.IPv6,
+        testing.unpack_optional(alpha.get_ip_address(IPProto.IPv6)),
+        testing.unpack_optional(beta.get_ip_address(IPProto.IPv6)),
+    )
 
 
 @pytest.mark.parametrize(
@@ -113,7 +129,6 @@ async def test_mesh_firewall_successful_passthrough(
             async with Ping(
                 connection_alpha,
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv4)),
-                IPProto.IPv4,
             ).run() as ping:
                 with pytest.raises(asyncio.TimeoutError):
                     await testing.wait_long(ping.wait_for_next_ping())
@@ -121,7 +136,6 @@ async def test_mesh_firewall_successful_passthrough(
             async with Ping(
                 connection_beta,
                 testing.unpack_optional(alpha.get_ip_address(IPProto.IPv4)),
-                IPProto.IPv4,
             ).run() as ping:
                 await testing.wait_long(ping.wait_for_next_ping())
 
@@ -129,7 +143,6 @@ async def test_mesh_firewall_successful_passthrough(
             async with Ping(
                 connection_alpha,
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv4)),
-                IPProto.IPv4,
             ).run() as ping:
                 with pytest.raises(asyncio.TimeoutError):
                     await testing.wait_long(ping.wait_for_next_ping())
@@ -141,7 +154,6 @@ async def test_mesh_firewall_successful_passthrough(
             async with Ping(
                 connection_alpha,
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv6)),
-                IPProto.IPv6,
             ).run() as ping6:
                 with pytest.raises(asyncio.TimeoutError):
                     await testing.wait_long(ping6.wait_for_next_ping())
@@ -149,7 +161,6 @@ async def test_mesh_firewall_successful_passthrough(
             async with Ping(
                 connection_beta,
                 testing.unpack_optional(alpha.get_ip_address(IPProto.IPv6)),
-                IPProto.IPv6,
             ).run() as ping6:
                 await testing.wait_long(ping6.wait_for_next_ping())
 
@@ -157,7 +168,6 @@ async def test_mesh_firewall_successful_passthrough(
             async with Ping(
                 connection_alpha,
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv6)),
-                IPProto.IPv6,
             ).run() as ping6:
                 with pytest.raises(asyncio.TimeoutError):
                     await testing.wait_long(ping6.wait_for_next_ping())
@@ -262,7 +272,6 @@ async def test_mesh_firewall_reject_packet(
             async with Ping(
                 connection_alpha,
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv4)),
-                IPProto.IPv4,
             ).run() as ping:
                 with pytest.raises(asyncio.TimeoutError):
                     await testing.wait_long(ping.wait_for_next_ping())
@@ -270,7 +279,6 @@ async def test_mesh_firewall_reject_packet(
             async with Ping(
                 connection_beta,
                 testing.unpack_optional(alpha.get_ip_address(IPProto.IPv4)),
-                IPProto.IPv4,
             ).run() as ping:
                 with pytest.raises(asyncio.TimeoutError):
                     await testing.wait_long(ping.wait_for_next_ping())
@@ -282,7 +290,6 @@ async def test_mesh_firewall_reject_packet(
             async with Ping(
                 connection_alpha,
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv6)),
-                IPProto.IPv6,
             ).run() as ping6:
                 with pytest.raises(asyncio.TimeoutError):
                     await testing.wait_long(ping6.wait_for_next_ping())
@@ -290,7 +297,6 @@ async def test_mesh_firewall_reject_packet(
             async with Ping(
                 connection_beta,
                 testing.unpack_optional(alpha.get_ip_address(IPProto.IPv6)),
-                IPProto.IPv6,
             ).run() as ping6:
                 with pytest.raises(asyncio.TimeoutError):
                     await testing.wait_long(ping6.wait_for_next_ping())
@@ -541,21 +547,7 @@ async def test_mesh_firewall_file_share_port(
             allow_peer_send_files=allow_peer_send_file,
         )
 
-        CLIENT_PROTO = IPProto.IPv4
-        CLIENT_ALPHA_IP = ""
-        CLIENT_BETA_IP = ""
-
-        if alpha_ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
-            CLIENT_ALPHA_IP = testing.unpack_optional(
-                alpha.get_ip_address(IPProto.IPv4)
-            )
-            CLIENT_BETA_IP = testing.unpack_optional(beta.get_ip_address(IPProto.IPv4))
-        else:
-            CLIENT_PROTO = IPProto.IPv6
-            CLIENT_ALPHA_IP = testing.unpack_optional(
-                alpha.get_ip_address(IPProto.IPv6)
-            )
-            CLIENT_BETA_IP = testing.unpack_optional(beta.get_ip_address(IPProto.IPv6))
+        (CLIENT_PROTO, CLIENT_ALPHA_IP, CLIENT_BETA_IP) = get_ips_and_stack(alpha, beta)
 
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
@@ -603,14 +595,14 @@ async def test_mesh_firewall_file_share_port(
             )
         )
 
-        async with Ping(connection_alpha, CLIENT_BETA_IP, CLIENT_PROTO).run() as ping:
+        async with Ping(connection_alpha, CLIENT_BETA_IP).run() as ping:
             if allow_incoming_connections:
                 await testing.wait_long(ping.wait_for_next_ping())
             else:
                 with pytest.raises(asyncio.TimeoutError):
                     await testing.wait_long(ping.wait_for_next_ping())
 
-        async with Ping(connection_beta, CLIENT_ALPHA_IP, CLIENT_PROTO).run() as ping:
+        async with Ping(connection_beta, CLIENT_ALPHA_IP).run() as ping:
             if allow_incoming_connections:
                 await testing.wait_long(ping.wait_for_next_ping())
             else:
@@ -739,21 +731,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
         )
 
         PORT = 12345
-        CLIENT_PROTO = IPProto.IPv4
-        CLIENT_ALPHA_IP = ""
-        CLIENT_BETA_IP = ""
-
-        if alpha_ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
-            CLIENT_ALPHA_IP = testing.unpack_optional(
-                alpha.get_ip_address(IPProto.IPv4)
-            )
-            CLIENT_BETA_IP = testing.unpack_optional(beta.get_ip_address(IPProto.IPv4))
-        else:
-            CLIENT_PROTO = IPProto.IPv6
-            CLIENT_ALPHA_IP = testing.unpack_optional(
-                alpha.get_ip_address(IPProto.IPv6)
-            )
-            CLIENT_BETA_IP = testing.unpack_optional(beta.get_ip_address(IPProto.IPv6))
+        (CLIENT_PROTO, CLIENT_ALPHA_IP, CLIENT_BETA_IP) = get_ips_and_stack(alpha, beta)
 
         beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=False)
 
@@ -947,21 +925,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
         )
 
         PORT = 12345
-        CLIENT_PROTO = IPProto.IPv4
-        CLIENT_ALPHA_IP = ""
-        CLIENT_BETA_IP = ""
-
-        if alpha_ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
-            CLIENT_ALPHA_IP = testing.unpack_optional(
-                alpha.get_ip_address(IPProto.IPv4)
-            )
-            CLIENT_BETA_IP = testing.unpack_optional(beta.get_ip_address(IPProto.IPv4))
-        else:
-            CLIENT_PROTO = IPProto.IPv6
-            CLIENT_ALPHA_IP = testing.unpack_optional(
-                alpha.get_ip_address(IPProto.IPv6)
-            )
-            CLIENT_BETA_IP = testing.unpack_optional(beta.get_ip_address(IPProto.IPv6))
+        (CLIENT_PROTO, CLIENT_ALPHA_IP, CLIENT_BETA_IP) = get_ips_and_stack(alpha, beta)
 
         beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=False)
 

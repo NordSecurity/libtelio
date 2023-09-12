@@ -15,7 +15,6 @@ from utils.connection_util import (
 from utils.ping import Ping
 from utils.router import IPProto, IPStack
 
-
 PHOTO_ALBUM_IPV6 = config.LIBTELIO_IPV6_WAN_SUBNET + "::adda:edde:5"
 
 
@@ -117,7 +116,6 @@ async def test_mesh_exit_through_peer(
             async with Ping(
                 connection_alpha,
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv4)),
-                ip_proto=IPProto.IPv4,
             ).run() as ping:
                 await testing.wait_long(ping.wait_for_next_ping())
 
@@ -125,7 +123,6 @@ async def test_mesh_exit_through_peer(
             async with Ping(
                 connection_alpha,
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv6)),
-                ip_proto=IPProto.IPv6,
             ).run() as ping6:
                 await testing.wait_long(ping6.wait_for_next_ping())
 
@@ -281,7 +278,6 @@ async def test_ipv6_exit_node(
         async with Ping(
             connection_alpha,
             testing.unpack_optional(beta.get_ip_address(IPProto.IPv6)),
-            ip_proto=IPProto.IPv6,
         ).run() as ping6:
             await testing.wait_long(ping6.wait_for_next_ping())
 
@@ -292,7 +288,5 @@ async def test_ipv6_exit_node(
         )
 
         # Ping out-tunnel target with IPv6
-        async with Ping(
-            connection_alpha, PHOTO_ALBUM_IPV6, ip_proto=IPProto.IPv6
-        ).run() as ping6:
+        async with Ping(connection_alpha, PHOTO_ALBUM_IPV6).run() as ping6:
             await testing.wait_long(ping6.wait_for_next_ping())

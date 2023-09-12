@@ -140,7 +140,6 @@ async def test_connect_different_telio_version_through_relay(
         async with Ping(
             alpha_conn,
             testing.unpack_optional(beta.get_ip_address(IPProto.IPv4)),
-            ip_proto=IPProto.IPv4,
         ).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
