@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import pytest
 import subprocess
 import telio
@@ -714,7 +715,6 @@ async def test_lana_with_disconnected_node() -> None:
 
 @pytest.mark.moose
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="test is flaky - LLT-4187")
 async def test_lana_with_second_node_joining_later_meshnet_id_can_change() -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -743,7 +743,6 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change() -> No
             ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=1
         )
         assert beta_events
-        initial_beta_meshnet_id = beta_events[0].fp
 
         alpha = api.default_config_one_node(True)
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
@@ -797,8 +796,12 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change() -> No
         assert alpha_events
         assert beta_events
 
-        assert alpha_events[-1].fp != initial_beta_meshnet_id
-        assert alpha_events[-1].fp == beta_events[-1].fp
+        if base64.b64decode(alpha.public_key) < base64.b64decode(beta.public_key):
+            assert alpha_events[0].fp == beta_events[1].fp != beta_events[0].fp
+        elif base64.b64decode(alpha.public_key) > base64.b64decode(beta.public_key):
+            assert alpha_events[0].fp == beta_events[1].fp == beta_events[0].fp
+        else:
+            assert False, "[PANIC] Public keys match!"
 
         assert alpha_conn_tracker.get_out_of_limits() is None
         assert beta_conn_tracker.get_out_of_limits() is None
