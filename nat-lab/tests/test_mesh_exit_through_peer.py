@@ -15,7 +15,8 @@ from utils.connection_util import (
 from utils.ping import Ping
 from utils.router import IPProto, IPStack
 
-PHOTO_ALBUM_IPV6 = "2001:db8:85a4::adda:edde:5"
+
+PHOTO_ALBUM_IPV6 = config.LIBTELIO_IPV6_WAN_SUBNET + "::adda:edde:5"
 
 
 # Marks in-tunnel stack only, exiting only through IPv4

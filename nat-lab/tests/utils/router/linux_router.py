@@ -1,3 +1,4 @@
+import config
 from .router import Router, IPStack, IPProto
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, List
@@ -81,7 +82,7 @@ class LinuxRouter(Router):
                     "-6",
                     "route",
                     "add",
-                    "fc74:656c:696f::/64",
+                    config.LIBTELIO_IPV6_WG_SUBNET + "::/64",
                     "dev",
                     self._interface_name,
                 ],
@@ -125,7 +126,12 @@ class LinuxRouter(Router):
             ).execute()
 
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
-            for network in ["2001:db8:85a4::/48", "fc74:656c:696f::1"]:
+            for network in [
+                config.LIBTELIO_IPV6_WAN_SUBNET
+                + "::/"
+                + config.LIBTELIO_IPV6_WAN_SUBNET_SZ,
+                config.LIBTELIO_IPV6_WG_SUBNET + "::1",
+            ]:
                 try:
                     await self._connection.create_process(
                         [
@@ -228,7 +234,7 @@ class LinuxRouter(Router):
                     "-A",
                     "POSTROUTING",
                     "-s",
-                    "fc74:656c:696f::/64",
+                    config.LIBTELIO_IPV6_WG_SUBNET + "::/64",
                     "!",
                     "-o",
                     self._interface_name,
@@ -270,7 +276,7 @@ class LinuxRouter(Router):
                         "-D",
                         "POSTROUTING",
                         "-s",
-                        "fc74:656c:696f::/64",
+                        config.LIBTELIO_IPV6_WG_SUBNET + "::/64",
                         "!",
                         "-o",
                         self._interface_name,

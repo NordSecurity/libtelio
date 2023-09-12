@@ -249,7 +249,10 @@ async def test_event_content_vpn_connection(
             state=State.Connected,
             is_exit=True,
             is_vpn=True,
-            ip_addresses=["10.5.0.1", "100.64.0.1", "fc74:656c:696f::1"],
+            ip_addresses=[
+                "10.5.0.1",
+                "100.64.0.1",
+            ],
             allowed_ips=["0.0.0.0/0", "::/0"],
             endpoint=f'{wg_server["ipv4"]}:{wg_server["port"]}',
             hostname=None,
@@ -285,7 +288,10 @@ async def test_event_content_vpn_connection(
             state=State.Disconnected,
             is_exit=True,
             is_vpn=True,
-            ip_addresses=["10.5.0.1", "100.64.0.1", "fc74:656c:696f::1"],
+            ip_addresses=[
+                "10.5.0.1",
+                "100.64.0.1",
+            ],
             allowed_ips=["0.0.0.0/0", "::/0"],
             endpoint=f'{wg_server["ipv4"]}:{wg_server["port"]}',
             hostname=None,

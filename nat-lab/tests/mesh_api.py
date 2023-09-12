@@ -3,7 +3,7 @@ import pprint
 import random
 import time
 import uuid
-from config import DERP_SERVERS, WG_SERVERS
+from config import DERP_SERVERS, LIBTELIO_IPV6_WG_SUBNET, WG_SERVERS
 from ipaddress import ip_address
 from python_wireguard import Key  # type: ignore
 from typing import Dict, Any, List, Tuple, Optional
@@ -110,17 +110,15 @@ class Node:
         if not self.ip_addresses:
             return None
 
-        # Python 'ipaddress' has a weird bug: only sgement of ':0000:' is shortened to ':0:',
-        # instead of '::'
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv6]:
             # Only one address in our basket
             if get_ip_address_type(self.ip_addresses[0]) == ip_proto:
-                return format(ip_address(self.ip_addresses[0])).replace(':0:', '::')
+                return format(ip_address(self.ip_addresses[0]))
         else:
             # Dual stack, so two addresses (or more)
             for addr in self.ip_addresses:
                 if get_ip_address_type(addr) == ip_proto:
-                    return format(ip_address(addr)).replace(':0:', '::')
+                    return format(ip_address(addr))
 
         return None
 
@@ -292,8 +290,7 @@ class API:
 
         wg_conf = (
             f"[Interface]\nPrivateKey = {server_config['private_key']}\nListenPort ="
-            f" {server_config['port']}\nAddress = 100.64.0.1/10,"
-            " fc74:656c:696f::1/64\n\n"
+            f" {server_config['port']}\nAddress = 100.64.0.1/10\n\n"
         )
 
         for node in node_list:
@@ -327,7 +324,7 @@ class API:
                 f"100.{random.randint(64, 127)}.{random.randint(0, 255)}.{random.randint(8, 254)}"
             )
             ipv6 = (
-                f"fc74:656c:696f:0:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(8, 0xFFFF), 'x')}"
+                f"{LIBTELIO_IPV6_WG_SUBNET}:0:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(8, 0xFFFF), 'x')}"
             )
 
             if ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:

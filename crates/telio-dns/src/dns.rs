@@ -161,8 +161,8 @@ impl DnsResolver for LocalDnsResolver {
         vec![
             IpAddr::V4(Ipv4Addr::new(100, 64, 0, 2)).into(),
             IpAddr::V4(Ipv4Addr::new(100, 64, 0, 3)).into(),
-            IpAddr::V6(Ipv6Addr::new(0xfc74, 0x656c, 0x696f, 0, 0, 0, 0, 2)).into(),
-            IpAddr::V6(Ipv6Addr::new(0xfc74, 0x656c, 0x696f, 0, 0, 0, 0, 3)).into(),
+            IpAddr::V6(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 2)).into(),
+            IpAddr::V6(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 3)).into(),
         ]
     }
 
@@ -170,7 +170,7 @@ impl DnsResolver for LocalDnsResolver {
     fn get_exit_connected_dns_allowed_ips(&self) -> Vec<IpNetwork> {
         vec![
             IpAddr::V4(Ipv4Addr::new(100, 64, 0, 2)).into(),
-            IpAddr::V6(Ipv6Addr::new(0xfc74, 0x656c, 0x696f, 0, 0, 0, 0, 2)).into(),
+            IpAddr::V6(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 2)).into(),
         ]
     }
 
@@ -178,7 +178,7 @@ impl DnsResolver for LocalDnsResolver {
     fn get_default_dns_servers(&self) -> Vec<IpAddr> {
         vec![
             IpAddr::V4(Ipv4Addr::new(100, 64, 0, 3)),
-            IpAddr::V6(Ipv6Addr::new(0xfc74, 0x656c, 0x696f, 0, 0, 0, 0, 3)),
+            IpAddr::V6(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 3)),
         ]
     }
 }
@@ -196,8 +196,8 @@ mod tests {
             vec![
                 "100.64.0.2/32".parse::<IpNetwork>().unwrap(),
                 "100.64.0.3/32".parse::<IpNetwork>().unwrap(),
-                "fc74:656c:696f::2/128".parse::<IpNetwork>().unwrap(),
-                "fc74:656c:696f::3/128".parse::<IpNetwork>().unwrap(),
+                "fd74:656c:696f::2/128".parse::<IpNetwork>().unwrap(),
+                "fd74:656c:696f::3/128".parse::<IpNetwork>().unwrap(),
             ],
             resolver.get_default_dns_allowed_ips()
         );
@@ -211,7 +211,7 @@ mod tests {
         assert_eq!(
             vec![
                 "100.64.0.2/32".parse::<IpNetwork>().unwrap(),
-                "fc74:656c:696f::2/128".parse::<IpNetwork>().unwrap(),
+                "fd74:656c:696f::2/128".parse::<IpNetwork>().unwrap(),
             ],
             resolver.get_exit_connected_dns_allowed_ips()
         );
@@ -225,7 +225,7 @@ mod tests {
         assert_eq!(
             vec![
                 "100.64.0.3".parse::<IpAddr>().unwrap(),
-                "fc74:656c:696f::3".parse::<IpAddr>().unwrap(),
+                "fd74:656c:696f::3".parse::<IpAddr>().unwrap(),
             ],
             resolver.get_default_dns_servers()
         );

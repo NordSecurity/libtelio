@@ -604,7 +604,7 @@ listen_port=12912
 public_key={pk1}
 endpoint=[abcd:23::33%2]:51820
 allowed_ip=192.168.4.4/32
-allowed_ip=fc74:656c:696::beef:4/128
+allowed_ip=fd74:656c:696::beef:4/128
 last_handshake_time_nsec=1234
 last_handshake_time_sec=1
 public_key={pk2}
@@ -616,7 +616,7 @@ endpoint=182.122.22.19:3233
 persistent_keepalive_interval=111
 allowed_ip=192.168.4.10/32
 allowed_ip=192.168.4.11/32
-allowed_ip=fc74:656c:696f::ceed:3/128
+allowed_ip=fd74:656c:696f::ceed:3/128
 errno=0
 "
         );

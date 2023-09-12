@@ -1,5 +1,10 @@
 from .router import Router, IPStack, IPProto
-from config import LINUX_VM_PRIMARY_GATEWAY, DERP_SERVERS, VPN_SERVER_SUBNET
+from config import (
+    LIBTELIO_IPV6_WG_SUBNET,
+    LINUX_VM_PRIMARY_GATEWAY,
+    DERP_SERVERS,
+    VPN_SERVER_SUBNET,
+)
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, List
 from utils.connection import Connection
@@ -75,7 +80,7 @@ class MacRouter(Router):
                     "route",
                     "add",
                     "-inet6",
-                    "fc74:656c:696f::/64",
+                    LIBTELIO_IPV6_WG_SUBNET + "::/64",
                     "-interface",
                     self._interface_name,
                 ],

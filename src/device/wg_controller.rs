@@ -411,7 +411,7 @@ async fn build_requested_peers_list<
         let persistent_keepalive_interval = requested_state.keepalive_periods.stun;
         let allowed_ips = vec![
             IpNetwork::V4("100.64.0.4/32".parse()?),
-            IpNetwork::V6("fc74:656c:696f::4/128".parse()?),
+            IpNetwork::V6("fd74:656c:696f::4/128".parse()?),
         ];
         requested_peers.insert(
             public_key,
@@ -1800,7 +1800,7 @@ mod tests {
         let allowed_ips = vec![
             IpNetwork::new(IpAddr::from([100, 64, 0, 4]), 32).unwrap(),
             IpNetwork::new(
-                IpAddr::V6(Ipv6Addr::new(0xfc74, 0x656c, 0x696f, 0, 0, 0, 0, 4)),
+                IpAddr::V6(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 4)),
                 128,
             )
             .unwrap(),

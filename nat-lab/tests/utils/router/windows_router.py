@@ -1,4 +1,5 @@
 from .router import Router, IPProto, IPStack
+from config import LIBTELIO_IPV6_WG_SUBNET
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, List
 from utils.connection import Connection
@@ -74,7 +75,7 @@ class WindowsRouter(Router):
                         "ipv6",
                         "add",
                         "route",
-                        "fc74:656c:696f::/64",
+                        LIBTELIO_IPV6_WG_SUBNET + "::/64",
                         self._interface_name,
                     ]
                 ).execute()
