@@ -19,6 +19,7 @@
 * LLT-4204: Add `meshnet_enabled` field
 * LLT-4128: Add integration tests for IPv6 MagicDNS service
 * LLT-3316: Improve usage of peer-reflexive endpoints
+* LLT-4246: Add self nordname as well as self IP address to the DNS records
 
 <br>
 

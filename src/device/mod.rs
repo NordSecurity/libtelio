@@ -669,7 +669,14 @@ impl RequestedState {
         self.meshnet_config
             .clone()
             .map_or(Vec::new(), |cfg| {
-                cfg.peers.map_or(Vec::new(), |peers| peers)
+                [
+                    cfg.peers.map_or(Vec::new(), |peers| peers),
+                    vec![Peer {
+                        base: cfg.this,
+                        ..Default::default()
+                    }],
+                ]
+                .concat()
             })
             .iter()
             .filter_map(|v| {
