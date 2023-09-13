@@ -96,9 +96,11 @@ When you find it set it in your bash terminals
 (set the one found in config in `T1a` in `T1b` and the one from `T2a` in `T2b`):
 ```
 ip addr add <IP_ADDRESS>/10 dev <NAME>
+ip -6 addr add <IPv6_ADDRESS>/64 dev <NAME>
 ip link set up dev <NAME>
 ip link set dev <NAME> mtu 1420
 ```
+Note: for meshnet to work, you do not need both IPv4 and IPv6 addresses to be set. Only one of them should be enough.
 
 Currently, there is one more issue to overcome: because node `t1` was connected
 earlier, it doesn't have the information about node `t2`.
@@ -119,8 +121,10 @@ Use unique index for utun since there might be some already present.
 Find meshnet ip address from "ip_addresses" field the same as in linux case. Then
 ```
 ifconfig utun10 add <IP_ADDRESS>/10 <IP_ADDRESS>
+ifconfig inet6 utun10 add <IPv6_ADDRESS> prefixlen 64
 ifconfig utun10 mtu 1420
 route add 100.64/10 <IP_ADDRESS>
+route add -inet6 fd74:656c:696f::/64 <IPv6_ADDRESS>
 ```
 
 ### Using the libtelio API
