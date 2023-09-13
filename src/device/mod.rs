@@ -22,6 +22,7 @@ use telio_traversal::{
         self, local::LocalInterfacesEndpointProvider, stun::StunEndpointProvider, stun::StunServer,
         upnp::UpnpEndpointProvider, EndpointProvider,
     },
+    last_handshake_time_provider::LastHandshakeTimeProvider,
     ping_pong_handler::PingPongHandler,
     SessionKeeper, UpgradeRequestChangeEvent, UpgradeSync, WireGuardEndpointCandidateChangeEvent,
 };
@@ -954,6 +955,12 @@ impl Runtime {
                     .await;
             }
 
+            let last_handshake_time_provider: Option<Arc<dyn LastHandshakeTimeProvider>> =
+                if features.skip_unresponsive_peers {
+                    Some(wireguard_interface.clone())
+                } else {
+                    None
+                };
             // Create Cross Ping Check
             let cross_ping_check = Arc::new(CrossPingCheck::start(
                 CpcIo {
@@ -963,6 +970,7 @@ impl Runtime {
                     intercoms: multiplexer.get_channel().await?,
                 },
                 endpoint_providers.clone(),
+                last_handshake_time_provider.clone(),
                 Duration::from_secs(2),
                 ping_pong_tracker,
                 Default::default(),
@@ -2203,7 +2211,7 @@ mod tests {
         fn gen_config(public_key: PublicKey) -> Config {
             let peer_base = PeerBase {
                 identifier: "identifier".to_owned(),
-                public_key: public_key,
+                public_key,
                 hostname: "hostname".to_owned(),
                 ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
             };

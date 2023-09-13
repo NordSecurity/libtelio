@@ -3,6 +3,7 @@
 pub mod connectivity_check;
 pub mod endpoint_providers;
 pub mod error;
+pub mod last_handshake_time_provider;
 pub mod ping_pong_handler;
 pub mod session_keeper;
 pub mod upgrade_sync;

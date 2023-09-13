@@ -4,15 +4,20 @@ use crate::{
         EndpointCandidate, EndpointCandidatesChangeEvent, EndpointProvider, EndpointProviderType,
         Error as EndPointError, PongEvent,
     },
+    last_handshake_time_provider::{is_peer_alive, LastHandshakeTimeProvider},
     ping_pong_handler::PingPongHandler,
 };
 use async_trait::async_trait;
 use enum_map::EnumMap;
 use futures::Future;
 use sm::sm;
-use std::collections::{HashMap, HashSet};
+use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Formatter,
+};
 use telio_crypto::PublicKey;
 use telio_model::{config::Config, SocketAddr};
 use telio_proto::{CallMeMaybeMsg, CallMeMaybeType, Session};
@@ -130,6 +135,9 @@ pub struct State<E: Backoff> {
     /// It sends us some events through channels, but we also use it directly for sending pings
     pub endpoint_providers: Vec<Arc<dyn EndpointProvider>>,
 
+    /// Last wireguard handshake time provider
+    last_handshake_time_provider: Option<Arc<dyn LastHandshakeTimeProvider>>,
+
     /// All of the per-session needed information for connectivity checks
     ///
     /// Connectivity checks are performed for each pair of (local_endpoint, peer) separately, each
@@ -167,6 +175,7 @@ impl<E: Backoff> CrossPingCheck<E> {
     fn start_with_backoff_provider(
         io: Io,
         endpoint_providers: Vec<Arc<dyn EndpointProvider>>,
+        last_handshake_time_provider: Option<Arc<dyn LastHandshakeTimeProvider>>,
         poll_period: Duration,
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
         exponential_backoff_helper_provider: ExponentialBackoffProvider<E>,
@@ -175,6 +184,7 @@ impl<E: Backoff> CrossPingCheck<E> {
             task: Task::start(State {
                 io,
                 endpoint_providers,
+                last_handshake_time_provider,
                 endpoint_connectivity_check_state: Default::default(),
                 node_cache: Default::default(),
                 local_endpoint_cache: Default::default(),
@@ -190,6 +200,7 @@ impl CrossPingCheck {
     pub fn start(
         io: Io,
         endpoint_providers: Vec<Arc<dyn EndpointProvider>>,
+        last_handshake_time_provider: Option<Arc<dyn LastHandshakeTimeProvider>>,
         poll_period: Duration,
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
         exponential_backoff_bounds: ExponentialBackoffBounds,
@@ -199,6 +210,7 @@ impl CrossPingCheck {
         Self::start_with_backoff_provider(
             io,
             endpoint_providers,
+            last_handshake_time_provider,
             poll_period,
             ping_pong_handler,
             Box::new(move || {
@@ -364,6 +376,7 @@ impl<E: Backoff> State<E> {
                     state: Machine::new(Disconnected).as_enum(),
                     last_state_transition: Instant::now(),
                     last_validated_enpoint: None,
+                    last_handshake_time_provider: self.last_handshake_time_provider.clone(),
                     exponential_backoff: (self.exponential_backoff_helper_provider)()?,
                 };
                 let session_id = rand::random::<Session>();
@@ -424,6 +437,7 @@ impl<E: Backoff> State<E> {
                     state: Machine::new(Disconnected).as_enum(),
                     last_state_transition: Instant::now(),
                     last_validated_enpoint: None,
+                    last_handshake_time_provider: self.last_handshake_time_provider.clone(),
                     exponential_backoff: (self.exponential_backoff_helper_provider)()?,
                 };
                 let session_id = rand::random::<Session>();
@@ -637,14 +651,35 @@ impl<E: Backoff> Runtime for State<E> {
 }
 
 /// The State processing of each (endpoint, remote node) pair.
-#[derive(Debug)]
 pub struct EndpointConnectivityCheckState<E: Backoff> {
     public_key: PublicKey,
     local_endpoint_candidate: EndpointCandidate,
     state: EndpointState::Variant,
     last_state_transition: Instant,
     last_validated_enpoint: Option<SocketAddr>,
+    last_handshake_time_provider: Option<Arc<dyn LastHandshakeTimeProvider>>,
     exponential_backoff: E,
+}
+
+impl<E: Backoff> Debug for EndpointConnectivityCheckState<E> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EndpointConnectivityCheckState")
+            .field("public_key", &self.public_key)
+            .field("local_endpoint_candidate", &self.local_endpoint_candidate)
+            .field("state", &self.state)
+            .field("last_state_transition", &self.last_state_transition)
+            .field("last_validate_endpoint", &self.last_validated_enpoint)
+            .field("exponential_backoff", &self.exponential_backoff)
+            .field(
+                "last_handshake_time_provider",
+                if self.last_handshake_time_provider.is_some() {
+                    &"Some"
+                } else {
+                    &"None"
+                },
+            )
+            .finish()
+    }
 }
 
 impl<E: Backoff> EndpointConnectivityCheckState<E> {
@@ -774,6 +809,18 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
         Ok(())
     }
 
+    async fn should_resend_call_me_maybe_request(&self, duration_in_state: Duration) -> bool {
+        if duration_in_state > self.exponential_backoff.get_backoff() {
+            if let Some(last_handshake_time_provider) = &self.last_handshake_time_provider {
+                is_peer_alive(&**last_handshake_time_provider, &self.public_key).await
+            } else {
+                true
+            }
+        } else {
+            false
+        }
+    }
+
     async fn handle_tick_event(
         &mut self,
         session: Session,
@@ -808,17 +855,27 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
                 do_state_transition!(m, SendCallMeMaybeRequest, self);
             }
             DisconnectedByTimeout(m) => {
-                if duration_in_state > self.exponential_backoff.get_backoff() {
+                if self
+                    .should_resend_call_me_maybe_request(duration_in_state)
+                    .await
+                {
                     self.exponential_backoff.next_backoff();
                     self.send_call_me_maybe_request(session, intercoms).await?;
                     do_state_transition!(m, SendCallMeMaybeRequest, self);
+                } else {
+                    telio_log_debug!("Skipping unresponsive peer {}", self.public_key);
                 }
             }
             DisconnectedByEndpointGone(m) => {
-                if duration_in_state > self.exponential_backoff.get_backoff() {
+                if self
+                    .should_resend_call_me_maybe_request(duration_in_state)
+                    .await
+                {
                     self.exponential_backoff.next_backoff();
                     self.send_call_me_maybe_request(session, intercoms).await?;
                     do_state_transition!(m, SendCallMeMaybeRequest, self);
+                } else {
+                    telio_log_debug!("Skipping unresponsive peer {}", self.public_key);
                 }
             }
             _ => {}
@@ -836,6 +893,8 @@ mod tests {
         time::Duration,
     };
 
+    use mockall::predicate::eq;
+    use rstest::rstest;
     use tokio::{
         sync::mpsc::{Receiver, Sender},
         time::{self, Instant},
@@ -850,6 +909,7 @@ mod tests {
     };
     use telio_proto::{PingerMsg, WGPort};
 
+    use crate::last_handshake_time_provider::{self, MockLastHandshakeTimeProvider};
     use telio_task::io::Chan;
     use telio_utils::exponential_backoff::MockBackoff;
 
@@ -866,6 +926,7 @@ mod tests {
         wg_endpoint_publish_events: Receiver<WireGuardEndpointCandidateChangeEvent>,
         intercoms: Chan<(PublicKey, CallMeMaybeMsg)>,
     }
+    const SESSION_ID: u64 = 0;
 
     fn prepare_checker_test() -> Result<(CrossPingCheck, TestChannels), Error> {
         let mut endpoint_provider_mock = MockEndpointProvider::new();
@@ -891,6 +952,7 @@ mod tests {
                 intercoms: checker_intercoms,
             },
             vec![Arc::new(endpoint_provider_mock)],
+            Some(Arc::new(MockLastHandshakeTimeProvider::new())),
             Duration::from_secs(2),
             Arc::new(Mutex::new(PingPongHandler::new(SecretKey::gen()))),
             ExponentialBackoffBounds::default(),
@@ -900,7 +962,7 @@ mod tests {
             endpoint_change_subscriber: endpoint_change_subscriber.tx,
             pong_rx_events: pong_rx_events.tx,
             wg_endpoint_publish_events: wg_endpoint_publish_events.rx,
-            intercoms: intercoms,
+            intercoms,
         };
 
         Ok((checker, channels))
@@ -956,6 +1018,7 @@ mod tests {
     fn prepare_test_session_in_state(
         state: EndpointState::Variant,
         endpoint: SocketAddr,
+        last_handshake_time_provider: Arc<dyn LastHandshakeTimeProvider>,
     ) -> EndpointConnectivityCheckState<MockBackoff> {
         EndpointConnectivityCheckState {
             public_key: PublicKey::default(),
@@ -966,6 +1029,7 @@ mod tests {
             state,
             last_state_transition: Instant::now(),
             last_validated_enpoint: None,
+            last_handshake_time_provider: Some(last_handshake_time_provider),
             exponential_backoff: MockBackoff::default(),
         }
     }
@@ -1031,9 +1095,12 @@ mod tests {
 
     #[tokio::test]
     async fn endpoint_connectivity_check_state_send_cmm_request() {
+        let last_handshake_time_provider_mock =
+            Arc::new(Mutex::new(MockLastHandshakeTimeProvider::new()));
         let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
             Machine::new(Disconnected).as_enum(),
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080),
+            last_handshake_time_provider_mock,
         );
         let intercoms = Chan::default();
 
@@ -1050,6 +1117,8 @@ mod tests {
 
     #[tokio::test]
     async fn endpoint_connectivity_check_state_receive_cmm_response() {
+        let last_handshake_time_provider_mock =
+            Arc::new(Mutex::new(MockLastHandshakeTimeProvider::new()));
         let mut endpoint_provider_mock = MockEndpointProvider::new();
         let endpoint = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080);
         endpoint_provider_mock
@@ -1060,6 +1129,7 @@ mod tests {
                 .transition(SendCallMeMaybeRequest)
                 .as_enum(),
             endpoint,
+            last_handshake_time_provider_mock.clone(),
         );
 
         let cmm_msg = CallMeMaybeMsg::new(false, vec![endpoint].into_iter(), 1);
@@ -1080,6 +1150,8 @@ mod tests {
 
     #[tokio::test]
     async fn endpoint_connectivity_check_state_publish() {
+        let last_handshake_time_provider_mock =
+            Arc::new(Mutex::new(MockLastHandshakeTimeProvider::new()));
         let endpoint = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080);
         let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
             Machine::new(Disconnected)
@@ -1087,6 +1159,7 @@ mod tests {
                 .transition(ReceiveCallMeMaybeResponse)
                 .as_enum(),
             endpoint,
+            last_handshake_time_provider_mock.clone(),
         );
 
         let msg = PingerMsg::ping(WGPort(2), 1, 10_u64)
@@ -1116,6 +1189,8 @@ mod tests {
 
     #[tokio::test]
     async fn endpoint_connectivity_check_state_endpoint_gone() {
+        let last_handshake_time_provider_mock =
+            Arc::new(Mutex::new(MockLastHandshakeTimeProvider::new()));
         let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
             Machine::new(Disconnected)
                 .transition(SendCallMeMaybeRequest)
@@ -1123,6 +1198,7 @@ mod tests {
                 .transition(Publish)
                 .as_enum(),
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080),
+            last_handshake_time_provider_mock.clone(),
         );
 
         endpoint_connectivity_check_state
@@ -1138,11 +1214,14 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn endpoint_connectivity_check_state_timeout_endpoint_gathering() {
+        let last_handshake_time_provider_mock =
+            Arc::new(Mutex::new(MockLastHandshakeTimeProvider::new()));
         let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
             Machine::new(Disconnected)
                 .transition(SendCallMeMaybeRequest)
                 .as_enum(),
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080),
+            last_handshake_time_provider_mock.clone(),
         );
 
         time::advance(Duration::from_secs(11)).await;
@@ -1159,11 +1238,14 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn endpoint_connectivity_check_state_timeout_ping() {
+        let last_handshake_time_provider_mock =
+            Arc::new(Mutex::new(MockLastHandshakeTimeProvider::new()));
         let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
             Machine::new(Disconnected)
                 .transition(SendCallMeMaybeRequest)
                 .as_enum(),
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080),
+            last_handshake_time_provider_mock.clone(),
         );
 
         time::advance(Duration::from_secs(11)).await;
@@ -1180,10 +1262,20 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn exponential_backoff_on_failure() {
+        let last_handshake_time_provider_mock =
+            Arc::new(Mutex::new(MockLastHandshakeTimeProvider::new()));
         let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
             Machine::new(Disconnected).as_enum(),
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080),
+            last_handshake_time_provider_mock.clone(),
         );
+        last_handshake_time_provider_mock
+            .lock()
+            .await
+            .expect_last_handshake_time()
+            .with(eq(endpoint_connectivity_check_state.public_key))
+            .times(4)
+            .returning(|_| Ok(Some(Duration::from_secs(1))));
 
         let Chan {
             rx: mut intercoms_rx,
@@ -1251,6 +1343,8 @@ mod tests {
 
     #[tokio::test]
     async fn endpoint_connectivity_check_send_ping_to_all_providers_even_if_one_fails() {
+        let last_handshake_time_provider_mock =
+            Arc::new(Mutex::new(MockLastHandshakeTimeProvider::new()));
         let endpoint = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080);
 
         let mut endpoint_provider_mock_1 = MockEndpointProvider::new();
@@ -1268,6 +1362,7 @@ mod tests {
                 .transition(SendCallMeMaybeRequest)
                 .as_enum(),
             endpoint,
+            last_handshake_time_provider_mock.clone(),
         );
 
         let cmm_msg = CallMeMaybeMsg::new(false, vec![endpoint].into_iter(), 1);
@@ -1287,5 +1382,88 @@ mod tests {
             endpoint_connectivity_check_state.state,
             PingByReceiveCallMeMaybeResponse(_)
         );
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(1)]
+    #[case(2)]
+    #[tokio::test(start_paused = true)]
+    async fn failure_to_get_last_handshake_time_means_peer_is_dead(#[case] which_error: u8) {
+        let last_handshake_time_provider_mock =
+            Arc::new(Mutex::new(MockLastHandshakeTimeProvider::new()));
+        let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
+            Machine::new(Disconnected).as_enum(),
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080),
+            last_handshake_time_provider_mock.clone(),
+        );
+        let pk = endpoint_connectivity_check_state.public_key;
+        last_handshake_time_provider_mock
+            .lock()
+            .await
+            .expect_last_handshake_time()
+            .with(eq(endpoint_connectivity_check_state.public_key))
+            .times(1)
+            .returning(move |_| match which_error {
+                0 => Err(last_handshake_time_provider::Error::UnknownPeer(pk)),
+                1 => Err(
+                    last_handshake_time_provider::Error::UnableToCommunicateWithWG(
+                        telio_wg::Error::UnsupportedOperationError,
+                    ),
+                ),
+                2 => Ok(None),
+
+                _ => unreachable!(),
+            });
+
+        let Chan {
+            rx: mut intercoms_rx,
+            tx: intercoms_tx,
+        } = Chan::default();
+
+        // Let's send the initial CMM message
+        endpoint_connectivity_check_state
+            .handle_tick_event(SESSION_ID, intercoms_tx.clone())
+            .await
+            .unwrap();
+        intercoms_rx.try_recv().unwrap();
+
+        let backoff = 20_000;
+
+        endpoint_connectivity_check_state
+            .exponential_backoff
+            .expect_get_backoff()
+            .return_const(Duration::from_millis(backoff));
+        endpoint_connectivity_check_state
+            .exponential_backoff
+            .expect_next_backoff()
+            .return_once(|| ());
+
+        // Let's fire up CMM response timeout
+        time::advance(CPC_TIMEOUT + Duration::from_millis(1)).await;
+
+        // Enter Disconnected state
+        endpoint_connectivity_check_state
+            .handle_tick_event(SESSION_ID, intercoms_tx.clone())
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            endpoint_connectivity_check_state.state,
+            DisconnectedByTimeout(_)
+        ));
+
+        // Skip the expected time
+        let time_to_skip = Duration::from_millis(backoff + 1);
+        time::advance(time_to_skip).await;
+
+        // Nothing should happen here
+        endpoint_connectivity_check_state
+            .handle_tick_event(0, intercoms_tx.clone())
+            .await
+            .unwrap();
+        intercoms_rx
+            .try_recv()
+            .expect_err("CMM message should not be sent");
     }
 }

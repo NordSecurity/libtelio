@@ -247,6 +247,9 @@ pub struct Features {
     /// Flag to specify if keys should be validated
     #[serde(default)]
     pub validate_keys: FeatureValidateKeys,
+    /// Avoid sending periodic messages to peers with no traffic reported by wireguard
+    #[serde(default)]
+    pub skip_unresponsive_peers: bool,
 }
 
 impl FeaturePaths {
@@ -303,7 +306,7 @@ mod tests {
             "exit_dns": {}
         }"#;
 
-    const CORRECT_FEATURES_JSON_WITH_IS_TEST_ENV: &str = r#"
+    const CORRECT_FEATURES_JSON_WITH_ALL_OPTIONAL: &str = r#"
         {
             "wireguard":
             {
@@ -326,9 +329,24 @@ mod tests {
                 "priority": ["relay", "direct"],
                 "force": "relay"
             },
-            "direct": {},
-            "exit_dns": {},
-            "is_test_env": true
+            "direct": 
+            {
+                "providers": 42,
+                "endpoint_interval_secs": 10   
+            },
+            "exit_dns":
+            {
+                "auto_switch_dns_ips": true
+            },
+            "is_test_env": true,
+            "derp":
+            {
+                "tcp_keepalive": 1,
+                "derp_keepalive": 2,
+                "enable_polling": true
+            },
+            "validate_keys": false,
+            "skip_unresponsive_peers": true
         }"#;
 
     static EXPECTED_FEATURES: Lazy<Features> = Lazy::new(|| Features {
@@ -357,15 +375,20 @@ mod tests {
         }),
         direct: Some(FeatureDirect {
             providers: None,
-            endpoint_interval_secs: None,
+            endpoint_interval_secs: Some(10),
         }),
         exit_dns: Some(FeatureExitDns {
-            auto_switch_dns_ips: None,
+            auto_switch_dns_ips: Some(true),
         }),
         #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
         is_test_env: Some(true),
-        derp: None,
-        validate_keys: Default::default(),
+        derp: Some(FeatureDerp {
+            tcp_keepalive: Some(1),
+            derp_keepalive: Some(2),
+            enable_polling: Some(true),
+        }),
+        validate_keys: FeatureValidateKeys(false),
+        skip_unresponsive_peers: true,
     });
 
     static EXPECTED_FEATURES_WITHOUT_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
@@ -403,6 +426,7 @@ mod tests {
         is_test_env: None,
         derp: None,
         validate_keys: Default::default(),
+        skip_unresponsive_peers: Default::default(),
     });
 
     #[test]
@@ -563,6 +587,7 @@ mod tests {
             exit_dns: None,
             derp: None,
             validate_keys: Default::default(),
+            skip_unresponsive_peers: Default::default(),
         };
 
         let empty_qos_features = Features {
@@ -585,6 +610,7 @@ mod tests {
             exit_dns: None,
             derp: None,
             validate_keys: Default::default(),
+            skip_unresponsive_peers: Default::default(),
         };
 
         let no_qos_features = Features {
@@ -602,6 +628,7 @@ mod tests {
             exit_dns: None,
             derp: None,
             validate_keys: Default::default(),
+            skip_unresponsive_peers: Default::default(),
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -638,6 +665,7 @@ mod tests {
             }),
             derp: None,
             validate_keys: Default::default(),
+            skip_unresponsive_peers: Default::default(),
         };
 
         let empty_features = Features {
@@ -651,6 +679,7 @@ mod tests {
             }),
             derp: None,
             validate_keys: Default::default(),
+            skip_unresponsive_peers: Default::default(),
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -670,7 +699,8 @@ mod tests {
 
     #[test]
     fn test_json_with_is_test_env_to_feature_set() {
-        let deserialization: Result<Features, _> = from_str(CORRECT_FEATURES_JSON_WITH_IS_TEST_ENV);
+        let deserialization: Result<Features, _> =
+            from_str(CORRECT_FEATURES_JSON_WITH_ALL_OPTIONAL);
 
         assert_eq!(deserialization.unwrap(), *EXPECTED_FEATURES);
     }
@@ -687,6 +717,7 @@ mod tests {
             direct: None,
             derp: None,
             validate_keys: Default::default(),
+            skip_unresponsive_peers: Default::default(),
         };
 
         assert_eq!(Features::default(), expected_defaults);

@@ -52,6 +52,7 @@ telio-task = { workspace = true, features = ["test-util"] }
 telio-test.workspace = true
 telio-utils = { workspace = true, features = ["mockall"] }
 telio-wg = { workspace = true, features = ["mockall"] }
+rstest.workspace = true
 
 # LLT-3754: get_if_addrs overrides bionic getifaddrs
 [target.'cfg(target_os = "android")'.dependencies]
