@@ -111,3 +111,45 @@ async def test_mesh_exit_through_peer(
         assert ip_alpha == ip_beta
         assert alpha_conn_tracker.get_out_of_limits() is None
         assert beta_conn_tracker.get_out_of_limits() is None
+
+        # Flushing connected event
+        await testing.wait_long(
+            client_alpha.wait_for_event_peer(
+                beta.public_key, [State.Connected], list(telio.PathType)
+            )
+        )
+
+        # Testing if the exit node is cleared after disabling meshnet. See LLT-4266 for more details.
+        # Since there's no way to get the actual events in the current NAT Lab API, using asyncio.wait() to await for a disconnect event future
+        # and also all other events future, then checking which occurred first.
+        disconnect_task = asyncio.create_task(
+            client_alpha.wait_for_event_peer(
+                beta.public_key, [State.Disconnected], list(telio.PathType)
+            )
+        )
+        # Using a list of all State variants except for Disconnect just in case new variants are added in the future.
+        all_other_states = list(State)
+        all_other_states.remove(State.Disconnected)
+        any_other_state_task = asyncio.create_task(
+            client_alpha.wait_for_event_peer(
+                beta.public_key, all_other_states, list(telio.PathType)
+            )
+        )
+        await client_alpha.set_mesh_off()
+        done, pending = await asyncio.wait(
+            [disconnect_task, any_other_state_task],
+            timeout=5,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        assert (
+            any_other_state_task in pending
+        ), "Other events besides disconnect from beta happened after disabling meshnet"
+        assert (
+            disconnect_task in done
+        ), "disconnect from beta never happened after disabling meshnet"
+        with pytest.raises(asyncio.TimeoutError):
+            await testing.wait_long(
+                client_alpha.wait_for_event_peer(
+                    beta.public_key, list(State), list(telio.PathType)
+                )
+            )

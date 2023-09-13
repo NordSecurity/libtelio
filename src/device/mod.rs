@@ -1277,6 +1277,22 @@ impl Runtime {
             cpc.configure(config.clone()).await?;
         }
 
+        // If Disabling meshnet (by calling `set_config()` with `None` as the argument) need to clear exit node
+        // so that the controller does not mistake it for a VPN node. See LLT-4266 for more details.
+        if self.requested_state.meshnet_config.is_none() {
+            if let Some(exit_node) = self.requested_state.exit_node.as_ref() {
+                if let Some(Config {
+                    peers: Some(peers), ..
+                }) = self.requested_state.old_meshnet_config.as_ref()
+                {
+                    peers
+                        .iter()
+                        .any(|peer| exit_node.public_key == peer.base.public_key)
+                        .then(|| self.requested_state.exit_node = None);
+                }
+            }
+        }
+
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities).await?;
         for ep in self.entities.endpoint_providers().iter() {
             if let Err(err) = ep.trigger_endpoint_candidates_discovery().await {

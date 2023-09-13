@@ -20,6 +20,7 @@
 * LLT-4128: Add integration tests for IPv6 MagicDNS service
 * LLT-3316: Improve usage of peer-reflexive endpoints
 * LLT-4246: Add self nordname as well as self IP address to the DNS records
+* LLT-4266: Add exit node clearing when disabling meshnet
 
 <br>
 
