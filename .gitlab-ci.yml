@@ -15,5 +15,5 @@ libtelio-build-pipeline:
 
   trigger:
     project: $LIBTELIO_BUILD_PROJECT_PATH
-    branch: v0.3.5
+    branch: LLT-3683-GH-natlab
     strategy: depend

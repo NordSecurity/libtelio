@@ -6,8 +6,8 @@ services:
     build:
       context: .
       args:
-        CONTAINER_REGISTRY: $CONTAINER_REGISTRY
-        NAT_LAB_DEPS_TAG: $NAT_LAB_DEPS_TAG
+        LIBTELIO_ENV_SEC_CONTAINER_REGISTRY: $LIBTELIO_ENV_SEC_CONTAINER_REGISTRY
+        LIBTELIO_ENV_NAT_LAB_DEPS_TAG: $LIBTELIO_ENV_NAT_LAB_DEPS_TAG
     profiles:
       - base
 
@@ -88,7 +88,7 @@ services:
       CLIENT_GATEWAY_PRIMARY: none
     privileged: true
     volumes:
-      - ../../:/libtelio-build
+      - ../:/libtelio
   vpn-02:
     hostname: vpn-02
     image: nat-lab:base
@@ -100,7 +100,7 @@ services:
       CLIENT_GATEWAY_PRIMARY: none
     privileged: true
     volumes:
-      - ../../:/libtelio-build
+      - ../:/libtelio
 
   # Create gateway for first cone network
   cone-gw-01:
@@ -134,7 +134,7 @@ services:
       - "derp-03:10.0.10.3"
       - "derp-00:10.0.10.245"
     volumes:
-      - ../../:/libtelio-build
+      - ../:/libtelio
   # Create one open internet client for
   # cryptography tests
   open-internet-client-02:
@@ -153,7 +153,7 @@ services:
       - "derp-03:10.0.10.3"
       - "derp-00:10.0.10.245"
     volumes:
-      - ../../:/libtelio-build
+      - ../:/libtelio
 
   # Create one open internet client for
   # cryptography tests
@@ -175,7 +175,7 @@ services:
       - "derp-03:10.0.10.3"
       - "derp-00:10.0.10.245"
     volumes:
-      - ../../:/libtelio-build
+      - ../:/libtelio
 
   # Create one client for cone network, this client will use
   # the above gateway as its route to the "internet"
@@ -198,7 +198,7 @@ services:
       - "derp-03:10.0.10.3"
       - "derp-00:10.0.10.245"
     volumes:
-      - ../../:/libtelio-build
+      - ../:/libtelio
 
   # Create gateway for second cone network
   cone-gw-02:
@@ -234,7 +234,7 @@ services:
       - "derp-03:10.0.10.3"
       - "derp-00:10.0.10.245"
     volumes:
-      - ../../:/libtelio-build
+      - ../:/libtelio
 
   symmetric-gw-01:
     hostname: symmetric-gw-01
@@ -268,7 +268,7 @@ services:
       - "derp-03:10.0.10.3"
       - "derp-00:10.0.10.245"
     volumes:
-      - ../../:/libtelio-build
+      - ../:/libtelio
 
   symmetric-gw-02:
     hostname: symmetric-gw-02
@@ -302,7 +302,7 @@ services:
       - "derp-03:10.0.10.3"
       - "derp-00:10.0.10.245"
     volumes:
-      - ../../:/libtelio-build
+      - ../:/libtelio
 
   fullcone-gw-01:
     hostname: fullcone-gw-01
@@ -338,7 +338,7 @@ services:
       - "derp-03:10.0.10.3"
       - "derp-00:10.0.10.245"
     volumes:
-      - ../../:/libtelio-build
+      - ../:/libtelio
 
   fullcone-gw-02:
     hostname: fullcone-gw-02
@@ -374,7 +374,7 @@ services:
       - "derp-03:10.0.10.3"
       - "derp-00:10.0.10.245"
     volumes:
-      - ../../:/libtelio-build
+      - ../:/libtelio
 
   upnp-gw-01:
     hostname: upnp-gw-01
@@ -408,7 +408,7 @@ services:
       - "derp-03:10.0.10.3"
       - "derp-00:10.0.10.245"
     volumes:
-      - ../../:/libtelio-build
+      - ../:/libtelio
 
   shared-client-01:
     hostname: shared-client-01
@@ -432,7 +432,7 @@ services:
       - "derp-03:10.0.10.3"
       - "derp-00:10.0.10.245"
     volumes:
-      - ../../:/libtelio-build
+      - ../:/libtelio
 
   udp-block-client-01:
     hostname: udp-block-client-01
@@ -453,7 +453,7 @@ services:
       - "derp-03:10.0.10.3"
       - "derp-00:10.0.10.245"
     volumes:
-      - ../../:/libtelio-build
+      - ../:/libtelio
 
   # Create gateway which block all udp traffic
   udp-block-gw-01:
@@ -488,7 +488,7 @@ services:
       - "derp-03:10.0.10.3"
       - "derp-00:10.0.10.245"
     volumes:
-      - ../../:/libtelio-build
+      - ../:/libtelio
 
   # Create gateway which block all udp traffic
   udp-block-gw-02:
@@ -563,7 +563,7 @@ services:
       - "derp-03:10.0.10.3"
       - "derp-00:10.0.10.245"
     volumes:
-      - ../../:/libtelio-build
+      - ../:/libtelio
 
   cone-gw-05:
     hostname: cone-gw-05
@@ -591,7 +591,7 @@ services:
       hsymmetric-internal-net-01:
         ipv4_address: 192.168.114.254
     volumes:
-      - ../../:/libtelio-build
+      - ../:/libtelio
 
   internal-symmetric-client-01:
     hostname: internal-symmetric-client-01
@@ -605,7 +605,7 @@ services:
       hsymmetric-internal-net-01:
         ipv4_address: 192.168.114.88
     volumes:
-      - ../../:/libtelio-build
+      - ../:/libtelio
     extra_hosts:
       - "photo-album:10.0.80.80"
       - "stun-01:10.0.1.1"

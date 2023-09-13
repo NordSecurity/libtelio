@@ -2,7 +2,7 @@ import os
 import platform
 from python_wireguard import Key  # type: ignore
 
-PROJECT_ROOT = os.path.dirname(os.path.realpath(__file__)) + "/../../../"
+PROJECT_ROOT = os.path.dirname(os.path.realpath(__file__)) + "/../../"
 
 
 # Get file path relative to project root
@@ -40,17 +40,17 @@ IPERF_BINARY_WINDOWS = "C:/workspace/iperf3/iperf3.exe".replace("/", "\\")
 
 # JIRA issue: LLT-1664
 # The directories between host and Docker container are shared via
-# Docker volumes. Mounting `libtelio-build/dist` is a nogo, since when host
+# Docker volumes. Mounting `libtelio/dist` is a nogo, since when host
 # filesystem directory dist/linux/release/x86_64 is deleted during
 # ./run_local.py, the volume “loses” it’s link with host file system.
 #
 # JIRA issue: LLT-1702
-# Seems like the best solution is to mount `libtelio-build` root directory,
-# since its stable unlike `libtelio-build/dist`.
+# Seems like the best solution is to mount `libtelio` root directory,
+# since its stable unlike `libtelio/dist`.
 #
 # Libtelio binary path inside Docker containers.
 LIBTELIO_BINARY_PATH_DOCKER = (
-    "/libtelio-build/dist/linux/release/" + platform.uname().machine + "/"
+    "/libtelio/dist/linux/release/" + platform.uname().machine + "/"
 )
 
 # Libtelio binary path inside Windows and Mac VMs

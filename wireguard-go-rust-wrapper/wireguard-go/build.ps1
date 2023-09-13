@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 $env:CC="clang.exe";
 
 # WORKAROUND: Rust on Windows will look for LIBs without "lib" prefix, so we're naming ours "wireguard-go.lib"
-& go build -ldflags=-w -v -buildmode c-archive -o "$env:OUT_DIR\wireguard-go.lib" wireguard-go
+& go build -buildvcs=false -ldflags=-w -v -buildmode c-archive -o "$env:OUT_DIR\wireguard-go.lib" wireguard-go
 
 if(!$?) {
     Exit $LASTEXITCODE

@@ -26,6 +26,7 @@ log.workspace = true
 mockall = { workspace = true, optional = true }
 parking_lot.workspace = true
 rand.workspace = true
+rupnp.workspace = true
 strum.workspace = true
 surge-ping.workspace = true
 thiserror.workspace = true
@@ -53,10 +54,3 @@ telio-test.workspace = true
 telio-utils = { workspace = true, features = ["mockall"] }
 telio-wg = { workspace = true, features = ["mockall"] }
 rstest.workspace = true
-
-# LLT-3754: get_if_addrs overrides bionic getifaddrs
-[target.'cfg(target_os = "android")'.dependencies]
-rupnp = { workspace = true, default-features = false }
-
-[target.'cfg(not(target_os = "android"))'.dependencies]
-rupnp.workspace = true
