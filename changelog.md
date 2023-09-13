@@ -44,6 +44,8 @@
 * LLT-4202: Do not answer DNS request if forward lookup fails
 * LLT-4427: Fix issue with malformed disconnect event
 * LLT-4280: Implement TCP connection reset upon VPN server change for boringtun adapter
+* LLT-4124: Add IPv6 feature flag
+* LLT-3950: Enable IPv6 for wg-stun.
 
 <br>
 
@@ -62,7 +64,6 @@
 * LLT-3849: Fix and adjust test for `telio-task` drop
 * LLT-3592: Bind Ipv6 sockets on macOs
 * LLT-3626: Implement IPv6 support in telio-firewall
-* LLT-4124: Add IPv6 feature flag
 
 <br>
 

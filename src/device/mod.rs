@@ -49,7 +49,7 @@ use std::{
     collections::{hash_map::Entry, HashSet},
     future::Future,
     io::{self, Error as IoError, ErrorKind},
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     sync::Arc,
     time::Duration,
 };
@@ -945,12 +945,20 @@ impl Runtime {
                 None
             };
 
+            let stun_tunnel_socket = if features.ipv6 {
+                socket_pool
+                    .new_internal_udp((Ipv6Addr::UNSPECIFIED, 0), None)
+                    .await?
+            } else {
+                socket_pool
+                    .new_internal_udp((Ipv4Addr::UNSPECIFIED, 0), None)
+                    .await?
+            };
+
             // Create Stun Endpoint Provider
             let stun_endpoint_provider = if has_provider(Stun) {
                 let ep = Arc::new(StunEndpointProvider::start(
-                    socket_pool
-                        .new_internal_udp((Ipv4Addr::UNSPECIFIED, 0), None)
-                        .await?,
+                    stun_tunnel_socket,
                     socket_pool
                         .new_external_udp((Ipv4Addr::UNSPECIFIED, 0), None)
                         .await?,
@@ -1407,7 +1415,8 @@ impl Runtime {
                 .and_then(|servers| servers.iter().min_by_key(|server| server.weight))
         }) {
             // Copy the lowest weight server to log nat in a separate future
-            let stun_server_skt = SocketAddr::new(IpAddr::V4(server.ipv4), server.stun_port);
+            let stun_server_skt =
+                SocketAddr::new(IpAddr::V4(server.ipv4), server.stun_plaintext_port);
             tokio::spawn(async move {
                 if let Ok(data) = retrieve_single_nat(stun_server_skt).await {
                     telio_log_debug!("Nat Type - {:?}", data.nat_type)
