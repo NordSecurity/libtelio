@@ -39,6 +39,8 @@
 * LLT-4409: Wait for listen port only if meshnet is enabled
 * LLT-4375: Add meshmap config support for custom peer names
 * LLT-4376: Add magicdns support for two dns bindings
+* LLT-4124: Add IPv6 feature flag
+* LLT-3950: Enable IPv6 for wg-stun.
 
 <br>
 
@@ -57,7 +59,6 @@
 * LLT-3849: Fix and adjust test for `telio-task` drop
 * LLT-3592: Bind Ipv6 sockets on macOs
 * LLT-3626: Implement IPv6 support in telio-firewall
-* LLT-4124: Add IPv6 feature flag
 
 <br>
 
