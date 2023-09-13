@@ -2094,7 +2094,7 @@ mod tests {
 
         let entities = rt.entities.direct.as_ref().unwrap();
 
-        assert!(entities.upnp_endpoint_provider.is_none());
+        assert!(entities.upnp_endpoint_provider.is_some());
         assert!(entities.local_interfaces_endpoint_provider.is_some());
         assert!(entities.stun_endpoint_provider.is_some());
     }

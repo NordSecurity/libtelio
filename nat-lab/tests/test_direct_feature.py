@@ -29,7 +29,7 @@ async def test_default_direct_features() -> None:
         )
 
         started_tasks = alpha_client.get_runtime().get_started_tasks()
-        assert "UpnpEndpointProvider" not in started_tasks
+        assert "UpnpEndpointProvider" in started_tasks
         assert "LocalInterfacesEndpointProvider" in started_tasks
         assert "StunEndpointProvider" in started_tasks
 
