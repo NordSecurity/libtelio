@@ -229,7 +229,7 @@ pub mod moose {
             match state {
                 TrackerState::Ready => Result::Success,
                 TrackerState::AlreadyStarted => Result::AlreadyInitiated,
-                _ => unreachable!("All other cases are not covered by Result enum"),
+                _ => unimplemented!("All other cases are not covered by Result enum"),
             }
         }
     }

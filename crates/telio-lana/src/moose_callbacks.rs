@@ -1,4 +1,7 @@
-pub use crate::event_log::*;
+pub use crate::event_log::moose::{ErrorCallback, MooseError, MooseErrorLevel, TrackerState};
+
+pub use crate::event_log::moose::InitCallback;
+
 use std::sync::mpsc::SyncSender;
 pub use telio_utils::{telio_log_error, telio_log_info, telio_log_warn};
 
@@ -11,8 +14,8 @@ pub struct MooseInitCallback {
 /// Struct for moose::ErrorCallback
 pub struct MooseErrorCallback;
 
-impl moose::InitCallback for MooseInitCallback {
-    fn after_init(&self, result_code: &Result<moose::TrackerState, moose::MooseError>) {
+impl InitCallback for MooseInitCallback {
+    fn after_init(&self, result_code: &Result<TrackerState, MooseError>) {
         let success = match result_code {
             Ok(res) => {
                 telio_log_info!("[Moose] Init callback success: {:?}", res);
@@ -28,18 +31,13 @@ impl moose::InitCallback for MooseInitCallback {
     }
 }
 
-impl moose::ErrorCallback for MooseErrorCallback {
-    fn on_error(
-        &self,
-        error_level: moose::MooseErrorLevel,
-        error_code: moose::MooseError,
-        msg: &str,
-    ) {
+impl ErrorCallback for MooseErrorCallback {
+    fn on_error(&self, error_level: MooseErrorLevel, error_code: MooseError, msg: &str) {
         match error_level {
-            moose::MooseErrorLevel::Warning => {
+            MooseErrorLevel::Warning => {
                 telio_log_warn!("[Moose] Error callback {:?}: {:?}", error_code, msg)
             }
-            moose::MooseErrorLevel::Error => {
+            MooseErrorLevel::Error => {
                 telio_log_warn!("[Moose] Error callback {:?}: {:?}", error_code, msg)
             }
         }
