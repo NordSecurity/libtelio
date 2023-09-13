@@ -8,10 +8,10 @@ class NetworkSwitcherDocker(NetworkSwitcher):
 
     async def switch_to_primary_network(self) -> None:
         await self._connection.create_process(
-            ["/libtelio-build/libtelio/nat-lab/bin/configure_route.sh", "primary"]
+            ["/libtelio/nat-lab/bin/configure_route.sh", "primary"]
         ).execute()
 
     async def switch_to_secondary_network(self) -> None:
         await self._connection.create_process(
-            ["/libtelio-build/libtelio/nat-lab/bin/configure_route.sh", "secondary"]
+            ["/libtelio/nat-lab/bin/configure_route.sh", "secondary"]
         ).execute()

@@ -24,6 +24,28 @@ To go through the short TCLI tutorial you need also [docker](https://docs.docker
 
 You can build the `libtelio` library using standard `cargo build` command.
 
+#### Windows msvc toolchain
+
+To build `libtelio` on Windows with `x86_64-pc-windows-msvc` toolchain you need to install:
+1. Visual Studio 2019/2022
+2. Additional Visual Studio components:
+a. Desktop development with C++
+b. Python 3 64-bit
+c. C++ Clang tools for Windows
+3. TDM-GCC 64-bit (https://jmeubank.github.io/tdm-gcc/download/)
+4. Go 1.19
+
+Before running `cargo build` you need to set msvc environment. Examples for cmd and powershell in case of Visual Studio 2019 Community:
+1. In cmd.exe run:
+```shell
+call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat" x64
+```
+2. In powershell run:
+```shell
+Import-Module "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+Enter-VsDevShell -VsInstallPath "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community" -SkipAutomaticLocation
+```
+
 ### Setting up Meshnet with tcli
 
 `tcli` is a simple shell created to test and discover the `libtelio` library capabilities.

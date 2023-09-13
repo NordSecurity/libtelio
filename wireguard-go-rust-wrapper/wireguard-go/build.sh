@@ -20,4 +20,4 @@ fi
 
 echo $OUT_DIR
 
-go build -ldflags=-w -v -buildmode c-archive -o "$OUT_DIR/libwireguard-go.a" wireguard-go
+go build -buildvcs=false -ldflags=-w -v -buildmode c-archive -o "$OUT_DIR/libwireguard-go.a" wireguard-go
