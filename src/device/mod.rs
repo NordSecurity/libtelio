@@ -845,7 +845,7 @@ impl Runtime {
         let dns = Arc::new(Mutex::new(DNS {
             resolver: None,
             #[cfg(unix)]
-            virtual_host_tun_fd: config.tun.map(|fd| fd as i32),
+            virtual_host_tun_fd: config.tun,
             #[cfg(windows)]
             virtual_host_tun_fd: None,
         }));

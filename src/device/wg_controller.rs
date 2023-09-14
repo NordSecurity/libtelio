@@ -246,16 +246,14 @@ fn check_allowed_ips_correctness(peers: &BTreeMap<PublicKey, RequestedPeer>) -> 
     peers
         .iter()
         .map(|(_, p)| HashSet::from_iter(&p.peer.allowed_ips))
-        .fold(Some(HashSet::new()), |result, peer_allowed_ips| {
-            result.and_then(|all_allowed_ips| {
-                if all_allowed_ips.is_disjoint(&peer_allowed_ips) {
-                    Some(HashSet::from_iter(
-                        all_allowed_ips.union(&peer_allowed_ips).cloned(),
-                    ))
-                } else {
-                    None
-                }
-            })
+        .try_fold(HashSet::new(), |all_allowed_ips, peer_allowed_ips| {
+            if all_allowed_ips.is_disjoint(&peer_allowed_ips) {
+                Some(HashSet::from_iter(
+                    all_allowed_ips.union(&peer_allowed_ips).cloned(),
+                ))
+            } else {
+                None
+            }
         })
         .map(|_| ())
         .ok_or_else(|| Error::BadAllowedIps.into())

@@ -401,7 +401,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
         self.ping_pong_handler
             .lock()
             .await
-            .send_ping(addr, wg_port, &*self.udp_socket, session_id, public_key)
+            .send_ping(addr, wg_port, &self.udp_socket, session_id, public_key)
             .await
     }
 

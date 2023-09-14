@@ -67,7 +67,7 @@ impl TcpParams {
             let err = unsafe {
                 WinSock::setsockopt(
                     WinSock::SOCKET(socket.as_raw_socket() as usize),
-                    WinSock::IPPROTO_TCP.0 as i32,
+                    WinSock::IPPROTO_TCP.0,
                     WinSock::TCP_MAXRT as i32,
                     String::from_utf8_unchecked(
                         (user_timeout.as_secs() as u32).to_ne_bytes().to_vec(),
@@ -90,9 +90,9 @@ impl TcpParams {
             let err = unsafe {
                 WinSock::setsockopt(
                     WinSock::SOCKET(socket.as_raw_socket() as usize),
-                    WinSock::IPPROTO_TCP.0 as i32,
+                    WinSock::IPPROTO_TCP.0,
                     WinSock::TCP_MAXRT as i32,
-                    String::from_utf8_unchecked((keepalive_cnt as u32).to_ne_bytes().to_vec()),
+                    String::from_utf8_unchecked((keepalive_cnt).to_ne_bytes().to_vec()),
                     4, /* value length */
                 )
             };
@@ -189,27 +189,23 @@ impl SocketBufSizes {
         );
 
         if let Some(rx_buf_size) = self.rx_buf_size {
-            let _ = socket
-                .set_recv_buffer_size(rx_buf_size as usize)
-                .map_err(|_| {
-                    telio_log_warn!(
-                        "Cannot set Rx buf size {} for {:?} socket",
-                        rx_buf_size,
-                        socket.local_addr()
-                    );
-                });
+            let _ = socket.set_recv_buffer_size(rx_buf_size).map_err(|_| {
+                telio_log_warn!(
+                    "Cannot set Rx buf size {} for {:?} socket",
+                    rx_buf_size,
+                    socket.local_addr()
+                );
+            });
         }
 
         if let Some(tx_buf_size) = self.tx_buf_size {
-            let _ = socket
-                .set_send_buffer_size(tx_buf_size as usize)
-                .map_err(|_| {
-                    telio_log_warn!(
-                        "Cannot set Tx buf size {} for {:?} socket",
-                        tx_buf_size,
-                        socket.local_addr()
-                    );
-                });
+            let _ = socket.set_send_buffer_size(tx_buf_size).map_err(|_| {
+                telio_log_warn!(
+                    "Cannot set Tx buf size {} for {:?} socket",
+                    tx_buf_size,
+                    socket.local_addr()
+                );
+            });
         }
     }
 }

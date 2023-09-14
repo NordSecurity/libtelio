@@ -418,7 +418,7 @@ impl RequestInfo {
 trait IpPacket<'a>: Sized + Packet {
     fn try_from(buffer: &'a [u8]) -> Option<Self>;
     fn ip_request_info(&self) -> IpRequestInfo;
-    fn udp_checksum<'b>(&self, udp_packet: &UdpPacket<'b>) -> u16;
+    fn udp_checksum(&self, udp_packet: &UdpPacket<'_>) -> u16;
     fn check_valid(&self) -> bool;
 }
 
@@ -438,7 +438,7 @@ impl<'a> IpPacket<'a> for Ipv4Packet<'a> {
         }
     }
 
-    fn udp_checksum<'b>(&self, udp_packet: &UdpPacket<'b>) -> u16 {
+    fn udp_checksum(&self, udp_packet: &UdpPacket<'_>) -> u16 {
         ipv4_checksum(udp_packet, &self.get_source(), &self.get_destination())
     }
 
@@ -468,7 +468,7 @@ impl<'a> IpPacket<'a> for Ipv6Packet<'a> {
         }
     }
 
-    fn udp_checksum<'b>(&self, udp_packet: &UdpPacket<'b>) -> u16 {
+    fn udp_checksum(&self, udp_packet: &UdpPacket<'_>) -> u16 {
         ipv6_checksum(udp_packet, &self.get_source(), &self.get_destination())
     }
 

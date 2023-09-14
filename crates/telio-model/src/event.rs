@@ -22,10 +22,11 @@ macro_rules! report_event {
 }
 
 /// Error levels. Used for app to decide what to do with `telio` device when error happens.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ErrorLevel {
     /// The error level is critical (highest priority)
+    #[default]
     Critical = 1,
     /// The error level is severe
     Severe = 2,
@@ -35,26 +36,15 @@ pub enum ErrorLevel {
     Notice = 4,
 }
 
-impl Default for ErrorLevel {
-    fn default() -> Self {
-        ErrorLevel::Critical
-    }
-}
-
 /// Error code. Common error code representation (for statistics).
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ErrorCode {
     /// There is no error in the execution
+    #[default]
     NoError = 0,
     /// The error type is unknown
     Unknown = 1,
-}
-
-impl Default for ErrorCode {
-    fn default() -> Self {
-        ErrorCode::NoError
-    }
 }
 
 /// Custom message for event (for log or present-to-user purposes).
@@ -171,7 +161,7 @@ impl Modifier<Event> for ErrorLevel {
                 *body = Some(Error::default());
             }
 
-            body.as_mut().map(|mut b| {
+            body.as_mut().map(|b| {
                 b.level = self;
                 b
             });
@@ -186,7 +176,7 @@ impl Modifier<Event> for ErrorCode {
                 *body = Some(Error::default());
             }
 
-            body.as_mut().map(|mut b| {
+            body.as_mut().map(|b| {
                 b.code = self;
                 b
             });
@@ -202,7 +192,7 @@ impl Modifier<Event> for EventMsg {
                 *body = Some(Error::default());
             }
 
-            body.as_mut().map(|mut b| {
+            body.as_mut().map(|b| {
                 b.msg = self;
                 b
             });

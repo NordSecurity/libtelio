@@ -1,4 +1,4 @@
-///! Implementation for Node <-> Node packets
+//! Implementation for Node <-> Node packets
 pub mod data;
 pub mod generation;
 pub mod natter;

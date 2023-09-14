@@ -47,21 +47,16 @@ pub struct DnsConfig {
 }
 
 /// The currrent state of our connection to derp server
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RelayState {
     /// Disconnected from the Derp server
+    #[default]
     Disconnected,
     /// Connecting to the Derp server
     Connecting,
     /// Connected to the Derp server
     Connected,
-}
-
-impl Default for RelayState {
-    fn default() -> RelayState {
-        RelayState::Disconnected
-    }
 }
 
 /// Representation of a server, which might be used
