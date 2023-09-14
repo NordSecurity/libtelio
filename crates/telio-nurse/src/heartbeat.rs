@@ -1,3 +1,6 @@
+// We use bitmask with all bits 0. We need to fix
+#![allow(clippy::bad_bit_mask)]
+
 use async_trait::async_trait;
 use bitflags::bitflags;
 use nat_detect::NatType;

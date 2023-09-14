@@ -3,7 +3,7 @@ import shutil
 import rust_build_utils.rust_utils as rutils
 from rust_build_utils.rust_utils_config import GLOBAL_CONFIG, NDK_IMAGE_PATH
 
-NDK_VERSION = "r21e"
+NDK_VERSION = "r26"
 TOOLCHAIN = (
     f"{NDK_IMAGE_PATH}/android-ndk-{NDK_VERSION}/toolchains/llvm/prebuilt/linux-x86_64"
 )
@@ -44,5 +44,5 @@ def strip_android(config):
     )
 
     shutil.rmtree(arch_dir)
-    strip = f"{TOOLCHAIN}/{NDK_MAP[config.arch]}/bin/strip"
+    strip = f"{TOOLCHAIN}/bin/llvm-strip"
     rutils.run_command([strip, f"{strip_dir}/{renamed_arch}/{config.lib_name}"])

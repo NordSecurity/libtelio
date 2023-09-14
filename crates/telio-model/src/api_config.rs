@@ -118,19 +118,14 @@ pub struct FeatureExitDns {
 }
 
 /// Mesh connection path type
-#[derive(Clone, Copy, Debug, EnumCount, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, EnumCount, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PathType {
     /// Nodes connected via a middle-man relay
+    #[default]
     Relay,
     /// Nodes connected directly via WG
     Direct,
-}
-
-impl Default for PathType {
-    fn default() -> Self {
-        PathType::Relay
-    }
 }
 
 /// Enable wanted paths for telio

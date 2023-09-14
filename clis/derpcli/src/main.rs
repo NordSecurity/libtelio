@@ -456,6 +456,7 @@ async fn run_without_clients_config(config: conf::Config) -> Result<()> {
     Ok(())
 }
 
+#[allow(index_access_check)]
 fn create_buffer(size: usize, counter: i32) -> String {
     let mut buf = format!("{}B", size);
     let middle_point = buf.len();

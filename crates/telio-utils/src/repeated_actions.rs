@@ -109,7 +109,6 @@ where
         // Transform futures to `Output = (key, action)`
         let mut b: FuturesUnordered<_> = a
             .map(|(key, interval, action)| interval.map(move |_| (key, action)).boxed())
-            .into_iter()
             .collect();
 
         b.next()

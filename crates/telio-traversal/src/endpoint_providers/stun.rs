@@ -62,6 +62,7 @@ impl<Wg: WireGuard> StunEndpointProvider<Wg> {
     }
 
     /// Force STUN endpoint provider to reconnect
+    #[allow(clippy::let_underscore_future)]
     pub async fn reconnect(&self) {
         let _ = task_exec!(&self.task, async move |s| {
             let _ = s.reconnect();
@@ -301,7 +302,7 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
             .send_ping(
                 addr,
                 self.get_wg_port(),
-                &*self.ext_socket,
+                &self.ext_socket,
                 session_id,
                 public_key,
             )

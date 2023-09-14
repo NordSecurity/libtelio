@@ -3,6 +3,7 @@
 ---
 ### Changelog
 * LLT-3914: Add apple tvOS support
+* LLT-4360: Bump rust version to 1.72
 
 <br>
 

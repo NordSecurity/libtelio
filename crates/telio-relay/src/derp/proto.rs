@@ -52,7 +52,7 @@ const_assert!(
     ((TCP_USER_TIMEOUT.as_secs()) as u32 <= (i8::MAX as u32))
         && ((TCP_KEEPALIVE_IDLE.as_secs()) as u32 <= (i8::MAX as u32))
         && ((TCP_KEEPALIVE_INTERVAL.as_secs()) as u32 <= (i8::MAX as u32))
-        && ((TCP_KEEPALIVE_COUNT as u32) <= (i8::MAX as u32))
+        && ((TCP_KEEPALIVE_COUNT) <= (i8::MAX as u32))
 );
 
 #[repr(u8)]

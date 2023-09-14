@@ -656,7 +656,7 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
     ) -> Result<(), Error> {
         let call_me_maybe_init = CallMeMaybeMsg::new(
             true,
-            vec![self.local_endpoint_candidate.udp].iter().cloned(),
+            [self.local_endpoint_candidate.udp].iter().cloned(),
             session,
         );
 

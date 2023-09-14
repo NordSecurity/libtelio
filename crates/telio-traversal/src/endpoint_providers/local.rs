@@ -123,7 +123,7 @@ impl<T: WireGuard> LocalInterfacesEndpointProvider<T> {
             wireguard_interface,
             poll_interval,
             ping_pong_handler,
-            SystemGetIfAddrs::default(),
+            SystemGetIfAddrs,
         )
     }
 }
@@ -236,7 +236,7 @@ impl<T: WireGuard, G: GetIfAddrs> State<T, G> {
         self.ping_pong_handler
             .lock()
             .await
-            .send_ping(addr, wg_port, &*self.udp_socket, session_id, public_key)
+            .send_ping(addr, wg_port, &self.udp_socket, session_id, public_key)
             .await
     }
 

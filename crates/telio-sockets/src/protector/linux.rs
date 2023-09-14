@@ -47,15 +47,7 @@ fn set_fwmark(fd: i32, fwmark: u32) -> io::Result<()> {
     let fwmark = fwmark;
     let fwmark_ptr = &fwmark as *const u32 as *const libc::c_void;
 
-    let res = unsafe {
-        libc::setsockopt(
-            fd,
-            libc::SOL_SOCKET,
-            libc::SO_MARK as i32,
-            fwmark_ptr,
-            4_u32,
-        )
-    };
+    let res = unsafe { libc::setsockopt(fd, libc::SOL_SOCKET, libc::SO_MARK, fwmark_ptr, 4_u32) };
     match res {
         0 => Ok(()),
         _ => Err(io::Error::last_os_error()),
