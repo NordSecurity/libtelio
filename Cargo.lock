@@ -3987,6 +3987,7 @@ dependencies = [
  "hashlink",
  "log",
  "lru_time_cache",
+ "maplit",
  "mockall",
  "parking_lot 0.12.1",
  "proptest",
