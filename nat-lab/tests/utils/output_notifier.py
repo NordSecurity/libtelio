@@ -14,11 +14,15 @@ class OutputCapture:
 
 
 class OutputNotifier:
-    def __init__(self) -> None:
+    def __init__(self, case_sensitive=True) -> None:
         self._output_events: Dict[str, List[asyncio.Event]] = {}
         self._captures: Set[OutputCapture] = set()
+        self._case_sensitive = case_sensitive
 
     def notify_output(self, what: str, event: asyncio.Event) -> None:
+        if not self._case_sensitive:
+            what = what.lower()
+
         if what not in self._output_events:
             self._output_events[what] = [event]
         else:
@@ -34,6 +38,9 @@ class OutputNotifier:
             self._captures.remove(capture)
 
     def handle_output(self, line) -> bool:
+        if not self._case_sensitive:
+            line = line.lower()
+
         hit_list: Set[str] = set(
             filter(lambda what: what in line, self._output_events.keys())
         )
