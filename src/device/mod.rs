@@ -858,10 +858,11 @@ impl Runtime {
             // Create endpoint providers
             let has_provider = |provider| {
                 // Default is all providers
-                match direct.providers.as_ref().map(|p| p.contains(&provider)) {
-                    Some(prov) => prov,
-                    None => provider != Upnp,
-                }
+                direct
+                    .providers
+                    .as_ref()
+                    .map(|p| p.contains(&provider))
+                    .unwrap_or(true)
             };
 
             use telio_model::api_config::EndpointProvider::*;
@@ -2093,7 +2094,7 @@ mod tests {
 
         let entities = rt.entities.direct.as_ref().unwrap();
 
-        assert!(entities.upnp_endpoint_provider.is_none());
+        assert!(entities.upnp_endpoint_provider.is_some());
         assert!(entities.local_interfaces_endpoint_provider.is_some());
         assert!(entities.stun_endpoint_provider.is_some());
     }
