@@ -26,7 +26,7 @@ pub enum Error {
     ListEmpty,
 }
 
-/// Single aaction type
+/// Single action type
 pub type RepeatedAction<V, R> = Arc<dyn for<'a> Fn(&'a mut V) -> BoxFuture<'a, R> + Sync + Send>;
 type Action<K, C, R> = (K, (Interval, RepeatedAction<C, R>));
 type Result<T> = std::result::Result<T, Error>;
@@ -133,6 +133,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use maplit::hashset;
     use telio_test::assert_elapsed;
     use tokio::time;
 
@@ -192,7 +193,6 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    #[ignore = "for some reason does not work with tarpaulin"]
     async fn execute_actions() {
         let mut ctx = Context::new("test".to_owned());
 
@@ -212,58 +212,65 @@ mod tests {
             )
             .unwrap();
 
-        let mut cnt = 0;
-
-        // Start positions with some error tollerance
-        let mut start_0 = time::Instant::now();
-        let mut start_1 = time::Instant::now();
-
         // First ticks immediatelly
         let _ = ctx.actions.select_action().await.unwrap();
         let _ = ctx.actions.select_action().await.unwrap();
 
-        let _ = tokio::spawn(async move {
-            loop {
-                if cnt == 0 {
-                    time::advance(Duration::from_millis(100)).await;
-                }
+        let start = Instant::now();
 
-                let (key, action) = ctx.actions.select_action().await.unwrap();
-                let key = key.clone();
-                let _ = action(&mut ctx).await;
+        {
+            time::advance(Duration::from_millis(100)).await;
+            assert_elapsed!(start, Duration::from_millis(100), Duration::from_millis(10));
+            let (key, action) = ctx.actions.select_action().await.unwrap();
+            let key = key.clone();
+            let _ = action(&mut ctx).await;
+            assert_eq!(ctx.test, "change_0".to_owned());
+            assert_eq!(*key, "action_0".to_owned());
+        }
+        {
+            time::advance(Duration::from_millis(50)).await;
+            assert_elapsed!(start, Duration::from_millis(150), Duration::from_millis(10));
+            let (key, action) = ctx.actions.select_action().await.unwrap();
+            let key = key.clone();
+            let _ = action(&mut ctx).await;
+            assert_eq!(ctx.test, "change_1".to_owned());
+            assert_eq!(*key, "action_1".to_owned());
+        }
+        {
+            time::advance(Duration::from_millis(50)).await;
+            assert_elapsed!(start, Duration::from_millis(200), Duration::from_millis(10));
+            let (key, action) = ctx.actions.select_action().await.unwrap();
+            let key = key.clone();
+            let _ = action(&mut ctx).await;
+            assert_eq!(ctx.test, "change_0".to_owned());
+            assert_eq!(*key, "action_0".to_owned());
+        }
+        {
+            // Both actions should run since 300ms
+            time::advance(Duration::from_millis(100)).await;
+            assert_elapsed!(start, Duration::from_millis(300), Duration::from_millis(10));
 
-                if cnt % 2 == 0 {
-                    assert_eq!(ctx.test, "change_0".to_owned());
-                    assert_eq!(*key, "action_0".to_owned());
-                    assert_elapsed!(
-                        start_0,
-                        Duration::from_millis(100),
-                        Duration::from_millis(10)
-                    );
-                    start_0 = time::Instant::now();
-                    time::advance(Duration::from_millis(50)).await;
-                } else {
-                    assert_eq!(ctx.test, "change_1".to_owned());
-                    assert_eq!(*key, "action_1".to_owned());
-                    assert_elapsed!(
-                        start_1,
-                        Duration::from_millis(150),
-                        Duration::from_millis(10)
-                    );
-                    start_1 = time::Instant::now();
-                    time::advance(Duration::from_millis(50)).await;
-                }
+            let (key1, action1) = ctx.actions.select_action().await.unwrap();
+            let key1 = key1.clone();
+            let _ = action1(&mut ctx).await;
+            let change1 = ctx.test.clone();
 
-                cnt += 1;
+            let (key2, action2) = ctx.actions.select_action().await.unwrap();
+            let key2 = key2.clone();
+            let _ = action2(&mut ctx).await;
+            let change2 = ctx.test.clone();
+            let keys = hashset! {key1, key2};
+            let changes = hashset! {change1, change2};
 
-                // We'll test just 4 iterations
-                if cnt > 3 {
-                    break;
-                }
-            }
-        })
-        .await
-        .unwrap();
+            assert_eq!(
+                hashset! {"change_0".to_owned(), "change_1".to_owned()},
+                changes
+            );
+            assert_eq!(
+                hashset! {"action_0".to_owned(), "action_1".to_owned()},
+                keys
+            );
+        }
     }
 
     #[tokio::test(start_paused = true)]
