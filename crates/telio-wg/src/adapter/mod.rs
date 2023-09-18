@@ -47,7 +47,7 @@ pub trait Adapter: Send + Sync {
     fn get_adapter_luid(&self) -> u64;
 
     /// Send uapi command, and receive response.
-    /// Look at [Cross-Platfrom Userspace Interface](https://www.wireguard.com/xplatform/) for
+    /// Look at [Cross-Platform Userspace Interface](https://www.wireguard.com/xplatform/) for
     /// details.
     async fn send_uapi_cmd(&self, cmd: &Cmd) -> Result<Response, Error>;
 
@@ -87,7 +87,7 @@ pub enum Error {
     WindowsNativeWg(#[from] windows_native_wg::Error),
 
     /// Unsupported adapter
-    #[error("Unsuported adapter")]
+    #[error("Unsupported adapter")]
     UnsupportedAdapter,
 
     /// Unsupported on Windows adapter
@@ -117,16 +117,16 @@ pub enum Error {
     #[error("Unsupported operation error")]
     UnsupportedOperationError,
 
-    /// Dublicate Allowed IPs error
-    #[error("Dublicate AllowedIPs Error")]
+    /// Duplicate Allowed IPs error
+    #[error("Duplicate AllowedIPs Error")]
     DuplicateAllowedIPsError,
 
-    /// Error retreiving system time
-    #[error("Failed to retreive system time")]
+    /// Error retrieving system time
+    #[error("Failed to retrieve system time")]
     SystemTimeError(#[from] std::time::SystemTimeError),
 
     /// Error executing task
-    #[error("Runtime error occured within WireGuard wrapper {0}")]
+    #[error("Runtime error occurred within WireGuard wrapper {0}")]
     ExecError(#[from] telio_task::ExecError),
 
     /// Uapi error

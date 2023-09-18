@@ -26,14 +26,14 @@ pub trait Runtime: Sized {
     /// Error that may occur in [Task]
     type Err: Send + 'static;
 
-    /// Wait on state events. Called from an infinite loop.
+    /// Wait on state events. Called from an infinite loop
     ///
-    /// Use [RuntimeExt] to create valid responses in an easier manner.
+    /// Use [RuntimeExt] to create valid responses in an easier manner
     async fn wait(&mut self) -> WaitResponse<'_, Self::Err> {
         WaitResponse(pending().boxed())
     }
 
-    /// Wait with manual controll over updates
+    /// Wait with manual control over updates
     async fn wait_with_update<F>(&mut self, updated: F) -> Result<(), Self::Err>
     where
         F: Future<Output = BoxAction<Self, Result<(), Self::Err>>> + Send,
@@ -47,14 +47,14 @@ pub trait Runtime: Sized {
         Ok(())
     }
 
-    /// React to stop when needed.
+    /// React to stop when needed
     async fn stop(self) {}
 }
 
-/// Typical responses from wait implementation.
+/// Typical responses from wait implementation
 #[async_trait]
 pub trait RuntimeExt: Runtime {
-    /// Guard multiple async operations form being interupted by exec.
+    /// Guard multiple async operations form being interrupted by exec
     fn guard<'a, F>(block: F) -> WaitResponse<'a, Self::Err>
     where
         F: Future<Output = Result<(), Self::Err>> + Send + 'a,
@@ -62,7 +62,7 @@ pub trait RuntimeExt: Runtime {
         WaitResponse(block.boxed())
     }
 
-    /// Continue to next loop iteration.
+    /// Continue to next loop iteration
     fn next() -> WaitResponse<'static, Self::Err> {
         WaitResponse(ready(Ok(())).boxed())
     }
@@ -72,8 +72,8 @@ pub trait RuntimeExt: Runtime {
         WaitResponse(ready(Err(e)).boxed())
     }
 
-    /// Sleep forever in loop, loop is stopped, but not dealocated.
-    /// Task loop can be retrigger using exec.
+    /// Sleep forever in loop, loop is stopped, but not deallocated
+    /// Task loop can be re-triggered using exec
     async fn sleep_forever() -> WaitResponse<'static, Self::Err> {
         pending().await
     }
@@ -81,13 +81,13 @@ pub trait RuntimeExt: Runtime {
 
 impl<T> RuntimeExt for T where T: Runtime {}
 
-/// A general runtime for compoments.
+/// A general runtime for components
 ///
 /// This task should be used in components requiring long running actions.
 ///
 /// It takes care of:
-///   * Gracefull stop. (On drop or with stop)
-///   * Wait entry to wait for outside trigers. (Like [Rx], sockets, timers etc)
+///   * Graceful stop. (On drop or with stop)
+///   * Wait entry to wait for outside triggers. (Like [Rx], sockets, timers etc)
 ///   * Ability to execute mutation on state without requiring mutex'es
 pub struct Task<S: Runtime> {
     stop: Arc<Notify>,
@@ -95,7 +95,7 @@ pub struct Task<S: Runtime> {
     join: Option<JoinHandle<Result<(), S::Err>>>,
 }
 
-/// Task was stopped durring execution.
+/// Task was stopped during execution
 #[derive(Debug, thiserror::Error)]
 #[error("Failed to execute.")]
 pub struct ExecError;
@@ -103,9 +103,9 @@ pub struct ExecError;
 /// Task stop status.
 #[derive(Debug)]
 pub enum StopResult<E> {
-    /// Task was stopped succesfully
+    /// Task was stopped successfully
     Ok,
-    /// Task stopped due to internal error.
+    /// Task stopped due to internal error
     Err(E),
     /// Task panic'ed
     Panic(Box<dyn Any + Send + 'static>),
@@ -144,7 +144,7 @@ impl<S> Task<S>
 where
     S: Runtime + Send + 'static,
 {
-    /// Start a new task for state.
+    /// Start a new task for state
     pub fn start(mut state: S) -> Self {
         let stop = Arc::new(Notify::new());
         let Chan {
@@ -175,7 +175,7 @@ where
         }
     }
 
-    /// Execute action with exlusive access on state.
+    /// Execute action with exclusive access on state
     #[allow(mpsc_blocking_send)]
     pub async fn exec<A, V>(&self, action: A) -> Result<V, ExecError>
     where
@@ -262,10 +262,10 @@ impl<E> StopResult<E> {
         matches!(self, &StopResult::Panic(_))
     }
 
-    /// Return Ok for propper stop or Err if internal error occured.
+    /// Return Ok for proper stop or Err if internal error occurred
     ///
     /// # Panics
-    /// Propogets panic if task stopped due to panic
+    /// Propagates panic if task stopped due to panic
     pub fn resume_unwind(self) -> Result<(), E> {
         match self {
             Self::Ok => Ok(()),
@@ -357,7 +357,7 @@ mod tests {
 
         async fn test_panic(&self) {
             let _ = task_exec!(&self.task, async move |_s| -> Result<(), ()> {
-                panic!("inner_pannic")
+                panic!("inner_panic")
             })
             .await;
         }
@@ -443,13 +443,13 @@ mod tests {
 
         test.stop().await;
 
-        // Task closed on drop, and droped on next context switch.
+        // Task closed on drop, and dropped on next context switch
         assert_eq!(Ok("stopped"), stopped.await);
         assert!(rc.tx.send("end").await.is_err())
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_task_stops_if_droped_without_stop() {
+    async fn test_task_stops_if_dropped_without_stop() {
         /*  Task is created, locked by the `std::thread::sleep`
         and than we wait for the destructor to come into play. The
         good scenario, is that task should exit, event if it is stuck with `sleep`,
@@ -519,7 +519,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_sleep_cancelation() {
+    async fn test_sleep_cancellation() {
         let (lc, mut rc) = Chan::pipe();
         let (stop, _stopped) = oneshot::channel();
         let test = Test::new(Io { msg: lc, stop });

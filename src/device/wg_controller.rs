@@ -447,13 +447,13 @@ async fn build_requested_meshnet_peers_list<
     proxy_endpoints: &EndpointMap,
     remote_peer_states: &PeersStatesMap,
 ) -> Result<BTreeMap<PublicKey, RequestedPeer>> {
-    // Retreive meshnet config. If it is not set, no peers are requested
+    // Retrieve meshnet config. If it is not set, no peers are requested
     let meshnet_config = match &requested_state.meshnet_config {
         None => return Ok(BTreeMap::new()),
         Some(cfg) => cfg,
     };
 
-    // Retreive peer list from meshnet config. If it is not set, no peers are requested
+    // Retrieve peer list from meshnet config. If it is not set, no peers are requested
     let requested_peers = match &meshnet_config.peers {
         None => return Ok(BTreeMap::new()),
         Some(peers) => peers,
@@ -465,12 +465,12 @@ async fn build_requested_meshnet_peers_list<
     let mut requested_peers: BTreeMap<PublicKey, RequestedPeer> = requested_peers
         .iter()
         .map(|p| {
-            // Retreive public key
+            // Retrieve public key
             let public_key = p.base.public_key;
             let persistent_keepalive_interval = requested_state.keepalive_periods.proxying;
             let endpoint = proxy_endpoints.get(&public_key).cloned();
 
-            // Retreive node's meshnet IP from config, and convert it into `/32` network type for v4, and `/128` for v6
+            // Retrieve node's meshnet IP from config, and convert it into `/32` network type for v4, and `/128` for v6
             let allowed_ips = deduplicated_peer_ips
                 .remove(&public_key)
                 .map_or(vec![], |ips| {
@@ -505,7 +505,7 @@ async fn build_requested_meshnet_peers_list<
         })
         .collect();
 
-    // Retreive actual list of peers
+    // Retrieve actual list of peers
     let actual_peers = wireguard_interface.get_interface().await?.peers;
     let checked_endpoints = if let Some(cpc) = cross_ping_check {
         cpc.get_validated_endpoints().await?

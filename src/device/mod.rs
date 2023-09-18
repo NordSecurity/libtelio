@@ -95,7 +95,7 @@ pub enum Error {
     InvalidNode,
     #[error("Configured exit node is not a meshnet node and does not have an endpoint set")]
     EndpointNotProvided,
-    #[error("Deleting non-existant node")]
+    #[error("Deleting non-existent node")]
     InvalidDelete,
     #[error("Meshnet IP is not set for the node")]
     NoMeshnetIP,
@@ -215,7 +215,7 @@ pub struct Entities {
     direct: Option<DirectEntities>,
 
     // A place to control the sockets used by the libtelio
-    // It is handy whenever sockets needs to be bind'ed to some interface, fwmark'ed or just
+    // It is handy whenever sockets needs to be bound to some interface, fwmark'ed or just
     // receive/send buffers adjusted
     socket_pool: Arc<SocketPool>,
 
@@ -433,9 +433,9 @@ impl Device {
         }
     }
 
-    /// [Windows only] Retrive the UUID of the interface
+    /// [Windows only] Retrieve the UUID of the interface
     ///
-    /// This methods retreives the UUID of the virtual interface created by device::start() call
+    /// This methods retrieves the UUID of the virtual interface created by device::start() call
     pub fn get_adapter_luid(&mut self) -> u64 {
         if let Some(art) = &self.art {
             let res: Result<u64> = art.block_on(async {
@@ -485,7 +485,7 @@ impl Device {
         })
     }
 
-    /// Retreives currently configured private key for the interface
+    /// Retrieves currently configured private key for the interface
     pub fn get_private_key(&self) -> Result<SecretKey> {
         self.art()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| Ok(rt.get_private_key().await)).await?
@@ -1212,15 +1212,6 @@ impl Runtime {
 
         // Update for proxy and derp config
         if let Some(config) = config {
-            // Retreive meshnet IP address
-            let mesh_ip = config
-                .clone()
-                .this
-                .ip_addresses
-                .map(|ip| ip.get(0).cloned())
-                .ok_or(Error::NoMeshnetIP)?
-                .ok_or(Error::NoMeshnetIP)?;
-
             let proxy_config = ProxyConfig {
                 wg_port: Some(wg_port),
                 peers: peers.clone(),
@@ -1233,7 +1224,6 @@ impl Runtime {
                 allowed_pk: peers,
                 timeout: Duration::from_secs(10), //TODO: make configurable
                 ca_pem_path: None,
-                mesh_ip,
                 server_keepalives: DerpKeepaliveConfig::from(&self.features.derp),
                 enable_polling: self
                     .features
@@ -1411,7 +1401,7 @@ impl Runtime {
         }
         .filter(|node| node.public_key == peer.public_key);
 
-        // Find a peer with matching public key in meshnet_config and retreive the needed
+        // Find a peer with matching public key in meshnet_config and retrieve the needed
         // information about it from there
         let meshnet_peer: Option<Peer> = match self
             .requested_state

@@ -1,3 +1,5 @@
+//! Connection to Derp creation and management
+
 use super::proto::{
     exchange_keys, read_server_info, start_read, start_write, Error, PairAddr, TCP_KEEPALIVE_COUNT,
     TCP_KEEPALIVE_IDLE, TCP_KEEPALIVE_INTERVAL, TCP_USER_TIMEOUT,
@@ -20,16 +22,13 @@ use telio_crypto::{PublicKey, SecretKey};
 use tokio::time::{interval_at, Interval, MissedTickBehavior};
 use tokio::{
     io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
-    net::{TcpSocket, TcpStream},
     task::JoinHandle,
-    time,
     time::timeout,
 };
 use tokio_rustls::{
     rustls::{
         client::{ServerCertVerified, ServerCertVerifier, ServerName},
         Certificate, ClientConfig, Error as TLSError, OwnedTrustAnchor, RootCertStore,
-        ALL_CIPHER_SUITES,
     },
     TlsConnector,
 };
@@ -54,15 +53,18 @@ impl ServerCertVerifier for NoVerifier {
     }
 }
 
-pub type Protect = Arc<dyn Fn(i32) + Send + Sync + 'static>;
-
 /// Max TCP packet size is 65535
 const MAX_TCP_PACKET_SIZE: usize = u16::MAX as usize;
 
+/// Class used to manage connection and it's receive/send threads
 pub struct DerpConnection {
+    /// Communication channel for Node <-> Node communication
     pub comms_relayed: Chan<(PublicKey, Vec<u8>)>,
+    /// Communication channel for Node <-> Derp communication
     pub comms_direct: Chan<Vec<u8>>,
+    /// Handle for managing sender thread
     pub join_sender: JoinHandle<Result<(), IoError>>,
+    /// Handle for managing receiver thread
     pub join_receiver: JoinHandle<Result<(), IoError>>,
 
     /// For polling derp about remote peers states
@@ -70,13 +72,14 @@ pub struct DerpConnection {
 }
 
 impl DerpConnection {
+    /// Function used to stop sending/receiving derp traffic
     pub fn stop(&self) {
         self.join_sender.abort();
         self.join_receiver.abort();
     }
 }
 
-/// Function determines wether to use plain TCP socket or TCP over TLS socket, initiates the connection to
+/// Function determines whether to use plain TCP socket or TCP over TLS socket, initiates the connection to
 /// the server. TLS connection is default. In order to ignore tls, set url scheme to `http://`.
 /// The function returns sender and receiver for communicating with other DERP peers and thread handles
 /// Note that this function spawns 2 tasks
