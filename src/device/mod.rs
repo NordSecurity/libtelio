@@ -698,7 +698,7 @@ impl Runtime {
         features: Features,
         protect: Option<Protect>,
     ) -> Result<Self> {
-        let firewall = Arc::new(StatefullFirewall::new());
+        let firewall = Arc::new(StatefullFirewall::new(features.ipv6));
         let firewall_filter_inbound_packets = {
             let fw = firewall.clone();
             move |peer: &[u8; 32], packet: &[u8]| fw.process_inbound_packet(peer, packet)
@@ -987,7 +987,8 @@ impl Runtime {
                 Duration::from_secs(5),
             )?);
 
-            let session_keeper = Arc::new(SessionKeeper::start(socket_pool.clone())?);
+            let session_keeper =
+                Arc::new(SessionKeeper::start(socket_pool.clone(), features.ipv6)?);
 
             Some(DirectEntities {
                 local_interfaces_endpoint_provider,
@@ -1091,7 +1092,8 @@ impl Runtime {
             nurse.set_private_key(*private_key).await;
         }
 
-        wg_controller::consolidate_wg_state(&self.requested_state, &self.entities).await?;
+        wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
+            .await?;
         Ok(())
     }
 
@@ -1108,7 +1110,8 @@ impl Runtime {
         self.requested_state.device_config.fwmark = Some(fwmark);
 
         self.entities.socket_pool.set_fwmark(fwmark);
-        wg_controller::consolidate_wg_state(&self.requested_state, &self.entities).await?;
+        wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
+            .await?;
         Ok(())
     }
 
@@ -1172,7 +1175,8 @@ impl Runtime {
 
         self.upsert_dns_peers().await?;
 
-        wg_controller::consolidate_wg_state(&self.requested_state, &self.entities).await?;
+        wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
+            .await?;
 
         Ok(())
     }
@@ -1194,7 +1198,8 @@ impl Runtime {
             dns.stop().await;
         };
 
-        wg_controller::consolidate_wg_state(&self.requested_state, &self.entities).await?;
+        wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
+            .await?;
         Ok(())
     }
 
@@ -1314,7 +1319,8 @@ impl Runtime {
             }
         }
 
-        wg_controller::consolidate_wg_state(&self.requested_state, &self.entities).await?;
+        wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
+            .await?;
         for ep in self.entities.endpoint_providers().iter() {
             if let Err(err) = ep.trigger_endpoint_candidates_discovery().await {
                 // This can fail on first config, because it takes a bit of time to resolve
@@ -1377,7 +1383,8 @@ impl Runtime {
         }
 
         self.requested_state.exit_node = Some(exit_node);
-        wg_controller::consolidate_wg_state(&self.requested_state, &self.entities).await
+        wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
+            .await
     }
 
     async fn disconnect_exit_node(&mut self, node_key: &PublicKey) -> Result {
@@ -1406,7 +1413,12 @@ impl Runtime {
                 self.reconfigure_dns_peer(dns, forward_dns).await?;
             }
 
-            wg_controller::consolidate_wg_state(&self.requested_state, &self.entities).await?;
+            wg_controller::consolidate_wg_state(
+                &self.requested_state,
+                &self.entities,
+                &self.features,
+            )
+            .await?;
         }
 
         Ok(())
@@ -1573,7 +1585,7 @@ impl TaskRuntime for Runtime {
         tokio::select! {
             Some(_) = self.event_listeners.wg_endpoint_publish_event_subscriber.recv() => {
                 telio_log_debug!("WG consolidation triggered by endpoint publish event");
-                wg_controller::consolidate_wg_state(&self.requested_state, &self.entities)
+                wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
                     .await
                     .unwrap_or_else(
                         |e| {
@@ -1604,7 +1616,7 @@ impl TaskRuntime for Runtime {
 
             Some(_) = self.event_listeners.endpoint_upgrade_event_subscriber.recv() => {
                 telio_log_debug!("WG consolidation triggered by upgrade sync request");
-                wg_controller::consolidate_wg_state(&self.requested_state, &self.entities)
+                wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
                     .await
                     .unwrap_or_else(
                         |e| {
@@ -1618,7 +1630,7 @@ impl TaskRuntime for Runtime {
 
                 self.requested_state.wg_stun_server = wg_stun_server;
 
-                wg_controller::consolidate_wg_state(&self.requested_state, &self.entities)
+                wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
                     .await
                     .unwrap_or_else(
                         |e| {
@@ -1629,7 +1641,7 @@ impl TaskRuntime for Runtime {
 
             _ = self.polling_interval.tick() => {
                 telio_log_debug!("WG consolidation triggered by tick event");
-                wg_controller::consolidate_wg_state(&self.requested_state, &self.entities)
+                wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
                     .await
                     .unwrap_or_else(
                         |e| {

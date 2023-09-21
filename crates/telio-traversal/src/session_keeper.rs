@@ -53,10 +53,11 @@ pub trait SessionKeeperTrait {
 
 pub struct SessionKeeper {
     task: Task<State>,
+    use_ipv6: bool,
 }
 
 impl SessionKeeper {
-    pub fn start(sock_pool: Arc<SocketPool>) -> Result<Self> {
+    pub fn start(sock_pool: Arc<SocketPool>, use_ipv6: bool) -> Result<Self> {
         let mut config_builder = PingerConfig::builder();
         config_builder = config_builder.kind(ICMP::V4);
         if cfg!(not(target_os = "android")) {
@@ -72,6 +73,7 @@ impl SessionKeeper {
                 pinger_client,
                 keepalive_actions: RepeatedActions::default(),
             }),
+            use_ipv6,
         })
     }
 
@@ -98,7 +100,7 @@ impl SessionKeeperTrait for SessionKeeper {
         interval: Duration,
     ) -> Result<()> {
         let public_key = *public_key;
-        let dual_target = DualTarget::new(target)?;
+        let dual_target = DualTarget::new(target, self.use_ipv6)?;
 
         task_exec!(&self.task, async move |s| {
             if s.keepalive_actions.contains_action(&public_key) {
@@ -231,7 +233,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let sess_keep = SessionKeeper::start(socket_pool).unwrap();
+        let sess_keep = SessionKeeper::start(socket_pool, true).unwrap();
 
         let pk = "REjdn4zY2TFx2AMujoNGPffo9vDiRDXpGG4jHPtx2AY="
             .parse::<PublicKey>()

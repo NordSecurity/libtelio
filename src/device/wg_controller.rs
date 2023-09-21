@@ -9,6 +9,7 @@ use std::time::Duration;
 use telio_crypto::PublicKey;
 use telio_dns::DnsResolver;
 use telio_firewall::firewall::{Firewall, FILE_SEND_PORT};
+use telio_model::api_config::Features;
 use telio_model::EndpointMap;
 use telio_model::SocketAddr;
 use telio_proto::PeersStatesMap;
@@ -50,7 +51,11 @@ pub struct RequestedPeer {
     local_direct_endpoint: Option<SocketAddr>,
 }
 
-pub async fn consolidate_wg_state(requested_state: &RequestedState, entities: &Entities) -> Result {
+pub async fn consolidate_wg_state(
+    requested_state: &RequestedState,
+    entities: &Entities,
+    features: &Features,
+) -> Result {
     consolidate_wg_private_key(requested_state, &*entities.wireguard_interface).await?;
     consolidate_wg_fwmark(requested_state, &*entities.wireguard_interface).await?;
     consolidate_wg_peers(
@@ -66,6 +71,7 @@ pub async fn consolidate_wg_state(requested_state: &RequestedState, entities: &E
             .direct
             .as_ref()
             .and_then(|direct| direct.stun_endpoint_provider.as_ref()),
+        features,
     )
     .await?;
     consolidate_firewall(requested_state, &*entities.firewall).await?;
@@ -116,6 +122,7 @@ async fn consolidate_wg_peers<
     dns: &Mutex<crate::device::DNS<D>>,
     remote_peer_states: PeersStatesMap,
     stun_ep_provider: Option<&Arc<StunEndpointProvider>>,
+    features: &Features,
 ) -> Result {
     let proxy_endpoints = proxy.get_endpoint_map().await?;
     let requested_peers = build_requested_peers_list(
@@ -126,6 +133,7 @@ async fn consolidate_wg_peers<
         dns,
         &proxy_endpoints,
         &remote_peer_states,
+        features,
     )
     .await?;
 
@@ -328,6 +336,7 @@ async fn consolidate_firewall<F: Firewall>(
 }
 
 // Builds a full list of WG peers according to current requested state (config) and entities state
+#[allow(clippy::too_many_arguments)]
 async fn build_requested_peers_list<
     W: WireGuard,
     C: CrossPingCheckTrait,
@@ -341,6 +350,7 @@ async fn build_requested_peers_list<
     dns: &Mutex<crate::device::DNS<D>>,
     proxy_endpoints: &EndpointMap,
     remote_peer_states: &PeersStatesMap,
+    features: &Features,
 ) -> Result<BTreeMap<PublicKey, RequestedPeer>> {
     // Build a list of meshnet peers
     let mut requested_peers = build_requested_meshnet_peers_list(
@@ -356,10 +366,16 @@ async fn build_requested_peers_list<
 
     // Add or promote exit node peer
     if let Some(exit_node) = &requested_state.exit_node {
-        let allowed_ips = exit_node.allowed_ips.clone().unwrap_or(vec![
-            IpNetwork::V4("0.0.0.0/0".parse()?),
-            IpNetwork::V6("::/0".parse()?),
-        ]);
+        let allowed_ips: Vec<IpNetwork> = exit_node
+            .allowed_ips
+            .clone()
+            .unwrap_or(vec![
+                IpNetwork::V4("0.0.0.0/0".parse()?),
+                IpNetwork::V6("::/0".parse()?),
+            ])
+            .into_iter()
+            .filter(|network| features.ipv6 || network.is_ipv4())
+            .collect();
 
         if let Some(meshnet_peer) = requested_peers.get_mut(&exit_node.public_key) {
             // Exit node is meshnet peer, so just promote already existing node to be exit node
@@ -1181,6 +1197,7 @@ mod tests {
         upgrade_sync: MockUpgradeSyncTrait,
         session_keeper: MockSessionKeeperTrait,
         dns: Mutex<DNS<MockDnsResolver>>,
+        features: Features,
     }
 
     impl Fixture {
@@ -1196,6 +1213,20 @@ mod tests {
                     resolver: Some(MockDnsResolver::new()),
                     virtual_host_tun_fd: None,
                 }),
+                // currently we care only about ipv6, so they might be empty
+                features: Features {
+                    wireguard: Default::default(),
+                    nurse: None,
+                    lana: None,
+                    paths: None,
+                    direct: None,
+                    exit_dns: None,
+                    #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
+                    is_test_env: Some(true),
+                    derp: None,
+                    validate_keys: Default::default(),
+                    ipv6: false,
+                },
             }
         }
 
@@ -1441,6 +1472,7 @@ mod tests {
                 &self.dns,
                 HashMap::new(),
                 None,
+                &self.features,
             )
             .await
             .unwrap();
@@ -1772,6 +1804,7 @@ mod tests {
             allowed_ips: Some(allowed_ips.clone()),
             endpoint,
         });
+        f.features.ipv6 = true;
 
         f.when_requested_meshnet_config(vec![]);
         f.when_proxy_mapping(vec![]);

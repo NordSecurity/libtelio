@@ -499,7 +499,7 @@ mod tests {
             last_event: Instant::now(),
             last_wg_event: Instant::now(),
             connected_time,
-            endpoint: DualTarget::new((Some(Ipv4Addr::new(127, 0, 0, 1)), None)).unwrap(),
+            endpoint: DualTarget::new((Some(Ipv4Addr::new(127, 0, 0, 1)), None), true).unwrap(),
             rtt_histogram: histogram.clone(),
             rtt_loss_histogram: histogram.clone(),
             rtt6_histogram: histogram.clone(),
