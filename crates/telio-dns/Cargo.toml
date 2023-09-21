@@ -7,26 +7,28 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-base64 = "0.13.0"
-boringtun = { git = "https://github.com/NordSecurity/boringtun.git", tag = "v1.1.1" }
-pnet_packet = "0.28.0"
-tokio = { version = ">=1.22", features = ["rt", "net", "sync", "macros"] }
 trust-dns-client = { git = "https://github.com/NordSecurity/trust-dns.git", tag = "v2.0.0" }
 trust-dns-proto = { git = "https://github.com/NordSecurity/trust-dns.git", tag = "v2.0.0" }
 trust-dns-resolver = { git = "https://github.com/NordSecurity/trust-dns.git", tag = "v2.0.0" }
 trust-dns-server = { git = "https://github.com/NordSecurity/trust-dns.git", tag = "v2.0.0", features = ["resolver"] }
-async-trait = "0.1.51"
-lazy_static = "1.4.0"
-log = {version = "0.4.14", features = ["release_max_level_debug"]}
-libc = "0.2.99"
-ipnetwork = "0.18"
-mockall = { version = "0.11.3", optional = true }
 
-telio-crypto = { path = "../telio-crypto" }
-telio-utils = { path = "../telio-utils" }
-telio-wg = { path = "../telio-wg" }
-telio-model = { path = "../telio-model" }
+async-trait.workspace = true
+base64.workspace = true
+boringtun.workspace = true
+ipnetwork.workspace = true
+lazy_static.workspace = true
+libc.workspace = true
+log.workspace = true
+mockall = { workspace = true, optional = true }
+pnet_packet.workspace = true
+tokio = { workspace = true, features = ["rt", "net", "sync", "macros"] }
+
+telio-crypto.workspace = true
+telio-model.workspace = true
+telio-utils.workspace = true
+telio-wg.workspace = true
 
 [dev-dependencies]
 dns-parser = "0.8.0"
-mockall = "0.11.3"
+
+mockall.workspace = true

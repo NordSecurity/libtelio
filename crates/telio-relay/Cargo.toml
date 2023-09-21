@@ -7,50 +7,53 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-crypto_box = { version = "0.8.2", features = ["std"] }
-futures = "0.3.21"
+generic-array = "0.14.5"
 rand_core = { version = "0.6.3", features = ["getrandom"] }
-rand = "0.8.5"
-httparse = "1.4.1"
-bytes = "1"
-num_enum = "0.5.4"
 rustls-pemfile = "1.0.0"
-strum = { version = "0.24.0", features = ["derive"] }
-thiserror = "1.0.30"
 tokio-rustls = { version = "0.24.1", features = ["dangerous_configuration"] }
 tokio-util = "0.7.3"
 tokio-stream = "0.1.9"
 webpki-roots = "0.25"
-tokio = { version = ">=1.22", features = ["io-util", "net", "sync"] }
-url = "2.2.2"
-log = { version = "0.4.14", features = ["release_max_level_debug"] }
-libc = "0.2.99"
-async-trait = "0.1.51"
-serde = { version = "1.0", features = ["derive"] }
-generic-array = "0.14.5"
 
-telio-crypto = { path = "../telio-crypto" }
-telio-utils = { path = "../telio-utils" }
-telio-proto = { path = "../telio-proto" }
-telio-task = { path = "../telio-task" }
-telio-sockets = { path = "../telio-sockets" }
-telio-model = { path = "../telio-model" }
+async-trait.workspace = true
+bytes.workspace = true
+crypto_box.workspace = true
+futures.workspace = true
+httparse.workspace = true
+libc.workspace = true
+log.workspace = true
+num_enum.workspace = true
+rand.workspace = true
+serde.workspace = true
+strum.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["io-util", "net", "sync"] }
+url.workspace = true
 
-[target.'cfg(windows)'.dependencies]
-static_assertions = "1.1.0"
+telio-crypto.workspace = true
+telio-model.workspace = true
+telio-proto.workspace = true
+telio-sockets.workspace = true
+telio-task.workspace = true
+telio-utils.workspace = true
 
 [dev-dependencies]
 async-std = { version = "1.5", features = ["attributes"] }
-env_logger = "0.9.0"
-hex = "0.4.3"
-ntest = "0.7"
-rstest = "0.11.0"
-telio-test = { version = "1.0.0", path = "../telio-test" }
-telio-task = { features = ["test-util"], path = "../telio-task" }
-tokio = { version = ">=1.22", features = [
+
+env_logger.workspace = true
+hex.workspace = true
+ntest.workspace = true
+rstest.workspace = true
+tokio = { workspace = true, features = [
     "macros",
     "rt-multi-thread",
     "io-std",
     "time",
     "test-util",
 ] }
+
+telio-task = { workspace = true, features = ["test-util"] }
+telio-test.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+static_assertions = "1.1.0"
