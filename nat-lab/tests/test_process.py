@@ -89,7 +89,7 @@ async def test_process_run_success(
 
 
 @pytest.mark.parametrize(
-    "connection_tag,ping_command",
+    "connection_tag,command",
     [
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -107,17 +107,17 @@ async def test_process_run_success(
         ),
     ],
 )
-async def test_process_run_fail(connection_tag: ConnectionTag, ping_command: list[str]):
+async def test_process_run_fail(connection_tag: ConnectionTag, command: list[str]):
     async with AsyncExitStack() as exit_stack:
         connection = await exit_stack.enter_async_context(
             new_connection_by_tag(connection_tag)
         )
         with pytest.raises(ProcessExecError) as e:
-            async with connection.create_process(ping_command).run():
+            async with connection.create_process(command).run():
                 await asyncio.sleep(1)
-        assert e.value.cmd == ping_command
+        assert e.value.cmd == command
         assert e.value.returncode == 77
-        assert " ".join(ping_command) not in await _get_running_process_list(connection)
+        assert " ".join(command) not in await _get_running_process_list(connection)
 
 
 @pytest.mark.parametrize(
