@@ -1,17 +1,19 @@
 import mesh_api
 import pytest
 from mesh_api import Node, API
+from python_wireguard import Key  # type: ignore
 
 
 class TestNode:
     def test_to_client_config(self) -> None:
+        sk, pk = Key.key_pair()
         node = Node()
         node.name = "aa"
         node.id = "bb"
-        node.private_key = "cc"
-        node.public_key = "dd"
+        node.private_key = sk
+        node.public_key = pk
 
-        expected = {"name": "aa", "id": "bb", "sk": "cc", "pk": "dd"}
+        expected = {"name": "aa", "id": "bb", "sk": sk, "pk": pk}
         assert node.to_client_config() == expected
 
     def test_to_peer_config(self) -> None:
@@ -52,11 +54,12 @@ class TestNode:
 class TestMeshApi:
     def test_register_node(self) -> None:
         api = API()
-        node = api.register(name="aa", node_id="bb", private_key="cc", public_key="dd")
+        sk, pk = Key.key_pair()
+        node = api.register(name="aa", node_id="bb", private_key=sk, public_key=pk)
         assert node.name == "aa"
         assert node.id == "bb"
-        assert node.private_key == "cc"
-        assert node.public_key == "dd"
+        assert node.private_key == sk
+        assert node.public_key == pk
 
     def test_register_duplicate_node(self) -> None:
         api = API()
@@ -76,11 +79,13 @@ class TestMeshApi:
     def test_get_meshmap(self) -> None:
         api = API()
 
+        sk_alpha, pk_alpha = Key.key_pair()
+
         alpha = api.register(
             name="alpha",
             node_id="id-alpha",
-            private_key="sk-alpha",
-            public_key="pk-alpha",
+            private_key=sk_alpha,
+            public_key=pk_alpha,
         )
         alpha.hostname = "aaa"
         alpha.ip_addresses = ["bbb"]
@@ -94,7 +99,7 @@ class TestMeshApi:
 
         expected = {
             "identifier": "id-alpha",
-            "public_key": "pk-alpha",
+            "public_key": pk_alpha,
             "hostname": "aaa",
             "ip_addresses": ["bbb"],
             "endpoints": ["ccc"],

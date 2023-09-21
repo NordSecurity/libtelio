@@ -1,6 +1,6 @@
 {
-	"private_key_1": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-	"private_key_2": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+	"private_key_1": "replace with base64 encoded key",
+	"private_key_2": "replace with base64 encoded key",
 	"servers": [
 		"https://de1025.nordvpn.com:8765",
 		"https://de1047.nordvpn.com:8765",

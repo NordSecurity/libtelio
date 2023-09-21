@@ -2,9 +2,9 @@ mode: debug
 port: 8766
 port_user: 8765
 verify-clients: false
-private_key: UFs/MoJzj2SN8QXCe2bvNeIIYF/k8d7sNcUiomD2uGc=
+private_key: UFs/MoJzj2SN8QXCe2bvNeIIYF/k8d7sNcUiomD2uGc= # NOTE: this is hardcoded key for transient docker container existing only during the tests
 mesh:
-  key: WFgTuIAdXHc4OqT9STt3C1TAOov2903vdbzUrjOTQ2M=
+  key: WFgTuIAdXHc4OqT9STt3C1TAOov2903vdbzUrjOTQ2M= # NOTE: this is hardcoded key for transient docker container existing only during the tests
   peers:
     - http://10.0.10.1:8766
     - http://10.0.10.2:8766

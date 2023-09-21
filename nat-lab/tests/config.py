@@ -104,7 +104,7 @@ DERP_PRIMARY = {
     "relay_port": 8765,
     "stun_port": 3479,
     "stun_plaintext_port": 3478,
-    "public_key": "qK/ICYOGBu45EIGnopVu+aeHDugBrkLAZDroKGTuKU0=",
+    "public_key": "qK/ICYOGBu45EIGnopVu+aeHDugBrkLAZDroKGTuKU0=",  # NOTE: this is hardcoded key for transient docker container existing only during the tests
     "weight": 1,
     "use_plain_text": True,
 }
@@ -117,7 +117,7 @@ DERP_FAKE = {
     "relay_port": 8765,
     "stun_port": 3479,
     "stun_plaintext_port": 3478,
-    "public_key": "aAY0rU8pW8LV3BJlY5u5WYH7nbAwS5H0mBMJppVDRGs=",
+    "public_key": "aAY0rU8pW8LV3BJlY5u5WYH7nbAwS5H0mBMJppVDRGs=",  # NOTE: this is hardcoded key for transient docker container existing only during the tests
     "weight": 2,
     "use_plain_text": True,
 }
@@ -131,7 +131,7 @@ DERP_SECONDARY = {
     "relay_port": 8765,
     "stun_port": 3479,
     "stun_plaintext_port": 3478,
-    "public_key": "KmcnUJ7EfhCIF9o1S5ycShaNc3y1DmioKUlkMvEVoRI=",
+    "public_key": "KmcnUJ7EfhCIF9o1S5ycShaNc3y1DmioKUlkMvEVoRI=",  # NOTE: this is hardcoded key for transient docker container existing only during the tests
     "weight": 3,
     "use_plain_text": True,
 }
@@ -144,7 +144,7 @@ DERP_TERTIARY = {
     "relay_port": 8765,
     "stun_port": 3479,
     "stun_plaintext_port": 3478,
-    "public_key": "A4ggUMw5DmMSjz1uSz3IkjM3A/CRgJxEHoGigwT0W3k=",
+    "public_key": "A4ggUMw5DmMSjz1uSz3IkjM3A/CRgJxEHoGigwT0W3k=",  # NOTE: this is hardcoded key for transient docker container existing only during the tests
     "weight": 4,
     "use_plain_text": True,
 }
