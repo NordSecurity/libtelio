@@ -365,9 +365,6 @@ async def test_vpn_plus_mesh(
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
-        assert alpha_conn_tracker.get_out_of_limits() is None
-        assert beta_conn_tracker.get_out_of_limits() is None
-
         # Testing if the VPN node is not cleared after disabling meshnet. See LLT-4266 for more details.
         await client_alpha.set_mesh_off()
         await testing.wait_long(
@@ -383,6 +380,8 @@ async def test_vpn_plus_mesh(
         with pytest.raises(asyncio.TimeoutError):
             await testing.wait_long(alpha_conn_tracker.wait_for_event("vpn_1"))
 
+        assert alpha_conn_tracker.get_out_of_limits() is None
+        assert beta_conn_tracker.get_out_of_limits() is None
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(150)

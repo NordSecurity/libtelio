@@ -97,7 +97,7 @@ async def test_mesh_exit_through_peer(
         await testing.wait_long(client_beta.get_router().create_exit_node_route())
         await testing.wait_long(client_alpha.connect_to_exit_node(beta.public_key))
         await testing.wait_long(
-            client_alpha.wait_for_state_peer(beta.public_key, [State.Connected])
+            client_alpha.wait_for_event_peer(beta.public_key, [State.Connected])
         )
 
         ip_alpha = await testing.wait_long(
@@ -109,15 +109,6 @@ async def test_mesh_exit_through_peer(
         await testing.wait_long(beta_conn_tracker.wait_for_event("stun"))
 
         assert ip_alpha == ip_beta
-        assert alpha_conn_tracker.get_out_of_limits() is None
-        assert beta_conn_tracker.get_out_of_limits() is None
-
-        # Flushing connected event
-        await testing.wait_long(
-            client_alpha.wait_for_event_peer(
-                beta.public_key, [State.Connected], list(telio.PathType)
-            )
-        )
 
         # Testing if the exit node is cleared after disabling meshnet. See LLT-4266 for more details.
         # Since there's no way to get the actual events in the current NAT Lab API, using asyncio.wait() to await for a disconnect event future
@@ -153,3 +144,6 @@ async def test_mesh_exit_through_peer(
                     beta.public_key, list(State), list(telio.PathType)
                 )
             )
+
+        assert alpha_conn_tracker.get_out_of_limits() is None
+        assert beta_conn_tracker.get_out_of_limits() is None
