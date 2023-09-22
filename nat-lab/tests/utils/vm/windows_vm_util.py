@@ -1,13 +1,13 @@
 import asyncssh
 import config
 import subprocess
-from config import get_root_path
+from config import get_root_path, LIBTELIO_BINARY_PATH_WINDOWS_VM
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 from utils.connection import Connection, SshConnection, TargetOS
 from utils.process import ProcessExecError
 
-VM_TCLI_DIR = "C:\\workspace\\binaries"
+VM_TCLI_DIR = LIBTELIO_BINARY_PATH_WINDOWS_VM
 FILES_COPIED = False
 
 

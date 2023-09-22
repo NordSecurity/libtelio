@@ -154,8 +154,13 @@ def get_libtelio_binary_path(path: str, connection: Connection) -> str:
     target_os = connection.target_os
     if target_os == TargetOS.Linux:
         return config.LIBTELIO_BINARY_PATH_DOCKER + path
-    if target_os in [TargetOS.Windows, TargetOS.Mac]:
-        return config.LIBTELIO_BINARY_PATH_VM + path
+
+    if target_os == TargetOS.Windows:
+        return config.LIBTELIO_BINARY_PATH_WINDOWS_VM + path
+
+    if target_os == TargetOS.Mac:
+        return config.LIBTELIO_BINARY_PATH_MAC_VM + path
+
     assert False, f"target_os not supported '{target_os}'"
 
 
@@ -178,14 +183,14 @@ async def new_connection_raw(tag: ConnectionTag) -> AsyncIterator[Connection]:
         assert False, f"tag {tag} not supported"
 
 
-def create_network_switcher(
+async def create_network_switcher(
     tag: ConnectionTag, connection: Connection
 ) -> Optional[NetworkSwitcher]:
     if tag in DOCKER_SERVICE_IDS:
         return NetworkSwitcherDocker(connection)
 
     if tag == ConnectionTag.WINDOWS_VM:
-        return NetworkSwitcherWindows(connection)
+        return await NetworkSwitcherWindows.create(connection)
 
     if tag == ConnectionTag.MAC_VM:
         return NetworkSwitcherMac(connection)
@@ -203,7 +208,7 @@ async def new_connection_manager_by_tag(
     ]
 ]:
     async with new_connection_raw(tag) as connection:
-        network_switcher = create_network_switcher(tag, connection)
+        network_switcher = await create_network_switcher(tag, connection)
         if network_switcher:
             await network_switcher.switch_to_primary_network()
         if tag in DOCKER_GW_MAP:

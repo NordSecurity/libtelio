@@ -7,7 +7,7 @@ from typing import AsyncIterator
 from utils.connection import Connection, SshConnection, TargetOS
 from utils.process import ProcessExecError
 
-VM_TCLI_DIR = config.LIBTELIO_BINARY_PATH_VM
+VM_TCLI_DIR = config.LIBTELIO_BINARY_PATH_MAC_VM
 FILES_COPIED = False
 
 
