@@ -57,7 +57,7 @@ use cfg_if::cfg_if;
 use telio_utils::{
     commit_sha,
     exponential_backoff::ExponentialBackoffBounds,
-    telio_log_debug, telio_log_info, telio_log_warn,
+    telio_log_debug, telio_log_error, telio_log_info, telio_log_warn,
     tokio::{Monitor, ThreadTracker},
     version_tag,
 };
@@ -349,7 +349,9 @@ impl Device {
         telio_log_info!("libtelio is starting up with features : {:?}", features);
 
         if let Some(lana) = &features.lana {
-            init_lana(lana.event_path.clone(), version_tag.to_string(), lana.prod)?;
+            if init_lana(lana.event_path.clone(), version_tag.to_string(), lana.prod).is_err() {
+                telio_log_error!("Failed to initialize lana")
+            }
         }
 
         let thread_tracker = Arc::new(parking_lot::Mutex::new(ThreadTracker::default()));

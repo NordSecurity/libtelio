@@ -1382,6 +1382,136 @@ mod tests {
         env.stun_provider.stop().await;
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn wait_with_session_start_until_stun_server_wg_peer_is_available() {
+        let mut wg = MockWg::default();
+        let wg_port = 12345;
+
+        let peer_sock = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("peer sock");
+
+        let stun_sock = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("stun sock");
+
+        let ping_sock = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("ping sock");
+
+        let public_key = SecretKey::gen().public();
+
+        // Stun peer can be locked
+        let allowed_ip = IpNetwork::new(peer_sock.local_addr().unwrap().ip(), 32).unwrap();
+        let endpoint: SocketAddr = (stun_sock.local_addr().unwrap().ip(), 55555).into();
+
+        let stun_servers = vec![Server {
+            public_key,
+            stun_port: peer_sock.local_addr().unwrap().port(),
+            stun_plaintext_port: stun_sock.local_addr().unwrap().port(),
+            weight: 1,
+            ..Default::default()
+        }];
+
+        let stun_peers = vec![StunPeerSockets {
+            stun_sock,
+            peer_sock,
+            ping_sock,
+        }];
+
+        let wg_peers = vec![(
+            public_key,
+            Peer {
+                public_key,
+                // Allowed ip is used to get ip of remote peer, in this case the fake it to be 127.0.0.1
+                // since we don't provide entire wirguard tunnel for testing.
+                allowed_ips: vec![allowed_ip],
+                // Endpoint would be peer's public ip and wg listen_port that we fake here.
+                endpoint: Some(endpoint),
+                ..Default::default()
+            },
+        )];
+
+        // In the beginning we don't have any peers, so the session should not be started.
+        // There should be three calls to WG interface:
+        //  - in the beginning,
+        //  - after first backoff,
+        //  - after trigger.
+        // In the end we should be asked twice:
+        //  - when the peer is added and is_wg_ready check finally passes
+        //  - when we get the interface while starting the session
+        wg.expect_get_interface()
+            .returning(move || unsafe {
+                static mut RUN_NO: i32 = 0;
+                RUN_NO += 1;
+                if RUN_NO <= 3 {
+                    Ok(Interface {
+                        listen_port: Some(wg_port),
+                        peers: Default::default(),
+                        ..Default::default()
+                    })
+                } else {
+                    Ok(Interface {
+                        listen_port: Some(wg_port),
+                        peers: wg_peers.clone().into_iter().collect(),
+                        ..Default::default()
+                    })
+                }
+            })
+            .times(5);
+
+        const DEFAULT_POLL_INTERVAL_MILLIS: u64 = 1000;
+        let env = prepare_test_env_with_server_weights_and_mockwg(
+            Some([DEFAULT_POLL_INTERVAL_MILLIS; 6]),
+            stun_servers,
+            stun_peers,
+            wg,
+        )
+        .await;
+
+        env.configure_env().await;
+
+        let expect_receive_failure = |msg| {
+            let mut buf = [0; MAX_PACKET_SIZE];
+            env.peers[0].peer_sock.try_recv(&mut buf).expect_err(msg);
+        };
+
+        // First try should simply timeout
+        expect_receive_failure("Nothing should be sent in the beginning");
+
+        // There should be no session started after backoff
+        time::advance(STUN_TIMEOUT + Duration::from_millis(1)).await;
+        task::yield_now().await;
+        time::advance(Duration::from_millis(DEFAULT_POLL_INTERVAL_MILLIS)).await;
+        task::yield_now().await;
+        expect_receive_failure("Session should not be started when there is no WG peer corresponding to the selected stun server");
+
+        // There should be no session started after explicit trigger
+        env.stun_provider
+            .trigger_endpoint_candidates_discovery()
+            .await
+            .expect("tiggered");
+        expect_receive_failure("Session should not be started when there is no WG peer corresponding to the selected stun server");
+
+        // After adding a peer to WG mock, the session should finally appear
+        env.stun_provider
+            .trigger_endpoint_candidates_discovery()
+            .await
+            .expect("tiggered");
+
+        let udp_endpoint = SocketAddr::new([1, 1, 1, 1].into(), 11111);
+        let wg_endpoint = SocketAddr::new([2, 2, 2, 2].into(), 22222);
+
+        await_timeout!(stun_reply(
+            &env.peers[0].stun_sock,
+            XorMappedAddress::new(udp_endpoint)
+        ));
+        await_timeout!(stun_reply(
+            &env.peers[0].peer_sock,
+            MappedAddress::new(wg_endpoint)
+        ));
+    }
+
     // Test helpers
 
     mock! {
