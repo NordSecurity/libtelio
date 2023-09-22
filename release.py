@@ -24,8 +24,10 @@ def check_project_root_directory():
     with open("Cargo.toml") as f:
         content = f.read()
 
-    if not re.search(r"^\[package\]", content, re.MULTILINE) or not re.search(r'name\s*=\s*"telio"', content):
-        print("This does not appear to be a \"libtelio\" repo.")
+    if not re.search(r"^\[package\]", content, re.MULTILINE) or not re.search(
+        r'name\s*=\s*"telio"', content
+    ):
+        print('This does not appear to be a "libtelio" repo.')
         sys.exit(1)
 
 
@@ -44,34 +46,28 @@ def get_default_branch():
     if not default_branch:
         print("Failed to retrieve default branch.")
         sys.exit(1)
-    
+
     return default_branch
 
 
 def check_git_tree(branch):
-    current_branch = (
-        subprocess.run(
-            "git rev-parse --abbrev-ref HEAD",
-            capture_output=True,
-            text=True,
-            shell=True,
-        )
-        .stdout.strip()
-    )
+    current_branch = subprocess.run(
+        "git rev-parse --abbrev-ref HEAD",
+        capture_output=True,
+        text=True,
+        shell=True,
+    ).stdout.strip()
 
     if current_branch != branch:
         print("Git tree is not on the default branch.")
         sys.exit(1)
 
-    git_status = (
-        subprocess.run(
-            "git status --short",
-            capture_output=True,
-            text=True,
-            shell=True,
-        )
-        .stdout.strip()
-    )
+    git_status = subprocess.run(
+        "git status --short",
+        capture_output=True,
+        text=True,
+        shell=True,
+    ).stdout.strip()
 
     if git_status:
         print("Git tree is dirty.")
@@ -119,13 +115,17 @@ def check_cargo_tools(install_missing_tools):
             else:
                 print("$ cargo install cargo-edit")
         else:
-            print("Required tool 'cargo-edit' not found. Use --install-missing-tools to install.")
+            print(
+                "Required tool 'cargo-edit' not found. Use --install-missing-tools to install."
+            )
             sys.exit(1)
 
 
 def validate_tag_format(tag):
     if not re.match(r"^v[0-9]+\.[0-9]+\.[0-9]+$", tag):
-        print("Invalid tag format. Expected format: 'vMAJOR.MINOR.BUGFIX', e.g. 'v4.12.3'.")
+        print(
+            "Invalid tag format. Expected format: 'vMAJOR.MINOR.BUGFIX', e.g. 'v4.12.3'."
+        )
         sys.exit(1)
 
 
@@ -145,7 +145,9 @@ def update_changelog(tag):
         with open(changelog_file, "w") as f:
             f.write(content)
     else:
-        print("$ substitute \"### UNRELEASED\" --> \"### {}\" in ./changelog.md".format(tag))
+        print(
+            '$ substitute "### UNRELEASED" --> "### {}" in ./changelog.md'.format(tag)
+        )
 
 
 def update_cargo_toml(tag):
@@ -164,13 +166,32 @@ def commit_and_push(tag, push, remote, branch):
 
 def main():
     parser = argparse.ArgumentParser(description="Libtelio release helper script")
-    parser.add_argument("--dry-run", action="store_true", help="Run in dry-run mode, only prints commands")
-    parser.add_argument("--install-missing-tools", action="store_true", help="Install missing tools (e.g., 'cargo-edit')")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run in dry-run mode, only prints commands",
+    )
+    parser.add_argument(
+        "--install-missing-tools",
+        action="store_true",
+        help="Install missing tools (e.g., 'cargo-edit')",
+    )
     parser.add_argument("--tag", help="Version to release (mandatory)")
-    parser.add_argument("--push", action="store_true", help="Push changes to the remote repository")
-    parser.add_argument("--changelog", action="store_true", help="Make changes to './changelog.md'")
-    parser.add_argument("--remote", default="origin", help="Remote name for git push (default: 'origin')")
-    parser.add_argument("--branch", help="Remote name for git push (default repo branch will be used, if not supplied)")
+    parser.add_argument(
+        "--push", action="store_true", help="Push changes to the remote repository"
+    )
+    parser.add_argument(
+        "--changelog", action="store_true", help="Make changes to './changelog.md'"
+    )
+    parser.add_argument(
+        "--remote",
+        default="origin",
+        help="Remote name for git push (default: 'origin')",
+    )
+    parser.add_argument(
+        "--branch",
+        help="Remote name for git push (default repo branch will be used, if not supplied)",
+    )
     args = parser.parse_args()
 
     if not args.tag:
@@ -187,7 +208,7 @@ def main():
         branch = get_default_branch()
     else:
         branch = args.branch
-        
+
     check_git_tree(branch)
     check_existing_tag(args.tag)
     check_cargo_tools(args.install_missing_tools)
