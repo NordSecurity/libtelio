@@ -11,14 +11,11 @@ publish = false
 
 [dependencies]
 log = { version = "0.4.14", features = ["release_max_level_debug"]}
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
 telio-utils = { path = "../telio-utils" }
 thiserror = "1.0.30"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 time = { version = "0.3.9", features = ["formatting"] }
-
-[dev-dependencies]
-serial_test = "0.8.0"
 
 [build-dependencies]
 anyhow = "1"

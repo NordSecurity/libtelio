@@ -224,25 +224,6 @@ pub mod moose {
         FileDeleted,
     }
 
-    impl From<TrackerState> for Result {
-        fn from(state: TrackerState) -> Result {
-            match state {
-                TrackerState::Ready => Result::Success,
-                TrackerState::AlreadyStarted => Result::AlreadyInitiated,
-                _ => unimplemented!("All other cases are not covered by Result enum"),
-            }
-        }
-    }
-
-    impl From<MooseError> for Error {
-        fn from(moose_error: MooseError) -> Error {
-            match moose_error {
-                MooseError::NotInitiated => Error::NotInitiatedError,
-                _ => Error::EventLogError,
-            }
-        }
-    }
-
     pub trait InitCallback: Send {
         fn after_init(&self, result: &std::result::Result<TrackerState, MooseError>);
     }
@@ -271,7 +252,7 @@ pub mod moose {
         init_cb: Box<(dyn InitCallback + 'static)>,
         error_cb: Box<(dyn ErrorCallback + Sync + std::marker::Send + 'static)>,
     ) -> std::result::Result<Result, Error> {
-        let result = match super::event_log(
+        match super::event_log(
             "init",
             Some(vec![
                 event_path.as_str(),
@@ -281,15 +262,8 @@ pub mod moose {
                 prod.to_string().as_str(),
             ]),
         ) {
-            Ok(_) => Ok(TrackerState::Ready),
-            _ => Err(MooseError::NotInitiated),
-        };
-
-        init_cb.after_init(&result);
-
-        match result {
-            Ok(r) => Ok(Result::from(r)),
-            Err(e) => Err(Error::from(e)),
+            Ok(_) => Ok(Result::Success),
+            _ => Err(Error::EventLogError),
         }
     }
 
