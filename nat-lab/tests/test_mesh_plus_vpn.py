@@ -386,7 +386,12 @@ async def test_vpn_plus_mesh(
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM, AdapterType.WireguardGo, marks=pytest.mark.windows
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4313"),
+            ],
         ),
         pytest.param(ConnectionTag.MAC_VM, AdapterType.Default, marks=pytest.mark.mac),
     ],
