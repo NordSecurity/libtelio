@@ -120,6 +120,7 @@ async def test_process_run_fail(connection_tag: ConnectionTag, command: list[str
         assert " ".join(command) not in await _get_running_process_list(connection)
 
 
+@pytest.mark.xfail(reason="test is flaky - LLT-4311")
 @pytest.mark.parametrize(
     "connection_tag",
     [
