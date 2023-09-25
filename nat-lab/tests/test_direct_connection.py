@@ -450,7 +450,6 @@ async def test_direct_failing_paths(
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4132")
 @pytest.mark.parametrize(
     "endpoint_providers, client1_type, client2_type, reflexive_ip",
     UHP_conn_client_types,
