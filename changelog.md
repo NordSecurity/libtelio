@@ -24,6 +24,7 @@
 * LLT-4233: Add moose init callback validation
 * LLT-4136: Migrate Natlab VMs to use libvirt
 * LLT-4266: Add exit node clearing when disabling meshnet
+* LLT-4159: Clarify purpose of hardcoded secrets in repo
 
 <br>
 

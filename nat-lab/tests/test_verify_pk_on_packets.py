@@ -3,6 +3,7 @@ import pytest
 import telio
 from contextlib import AsyncExitStack
 from mesh_api import API
+from python_wireguard import Key  # type: ignore
 from typing import Optional
 from utils import testing
 from utils.connection_util import ConnectionTag, new_connection_by_tag
@@ -55,15 +56,18 @@ async def test_verify_pk_on_packets() -> None:
             )
         )
 
+        sk_for_alpha, pk_for_alpha = Key.key_pair()
+        sk_for_beta, pk_for_beta = Key.key_pair()
+
         await testing.wait_long(
             asyncio.gather(
                 alpha_client.create_fake_derprelay_to_derp01(
-                    "YM/cgTcnTGeGqnDVSD19sWHKr3yOn45JJ5ngQ/9InFQ=",
-                    "TNRZu9dcu7xM3b1jiVlVAVCf5zcyT0B98q7zgKOGEQI=",
+                    sk_for_alpha,
+                    pk_for_alpha,
                 ),
                 beta_client.create_fake_derprelay_to_derp01(
-                    "4NuMvvYQ9bpUE8nokwCjbZiOCeb1iqVKfpDsHkmDXXM=",
-                    "BXhQTS33twKHzYh2hnWSiuX2s+8jejdBKbSpkRyVwV4=",
+                    sk_for_beta,
+                    pk_for_beta,
                 ),
             )
         )
@@ -78,7 +82,7 @@ async def test_verify_pk_on_packets() -> None:
         # Send and receive Byte on FakeDerp
         await testing.wait_normal(
             alpha_client.send_message_from_fake_derp_relay(
-                "TNRZu9dcu7xM3b1jiVlVAVCf5zcyT0B98q7zgKOGEQI=",
+                pk_for_alpha,
                 ["0", "0", "2", "3", "5", "6"],
             )
         )
@@ -88,10 +92,10 @@ async def test_verify_pk_on_packets() -> None:
 
         # Remove Alpha pk from Beta allowed list
         await testing.wait_long(beta_client.disconnect_fake_derprelay())
+        pk_dummy = Key.key_pair()[1]
         await testing.wait_long(
             beta_client.create_fake_derprelay_to_derp01(
-                "4NuMvvYQ9bpUE8nokwCjbZiOCeb1iqVKfpDsHkmDXXM=",
-                # Dummy public key
+                pk_dummy,
                 beta.public_key,
             )
         )
@@ -100,7 +104,7 @@ async def test_verify_pk_on_packets() -> None:
         # Beta should not recveive this message
         await testing.wait_normal(
             alpha_client.send_message_from_fake_derp_relay(
-                "TNRZu9dcu7xM3b1jiVlVAVCf5zcyT0B98q7zgKOGEQI=",
+                pk_for_alpha,
                 ["0", "0", "0", "1", "1", "1"],
             )
         )

@@ -30,7 +30,7 @@ async def new_connection() -> AsyncIterator[Connection]:
     async with asyncssh.connect(
         config.MAC_VM_IP,
         username="root",
-        password="vagrant",
+        password="vagrant",  # NOTE: this is hardcoded password for transient vm existing only during the tests
         known_hosts=None,
         options=ssh_options,
     ) as ssh_connection:

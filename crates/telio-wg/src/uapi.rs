@@ -593,15 +593,20 @@ mod tests {
 
     #[test]
     fn bytes_data_overflow() -> Result<(), Error> {
-        let base_string = "\
-private_key=aa920dc47dc5ed30e586263e83f387bc110f421b52377935012e480c04b054a3
+        let sk1 = SecretKey::gen();
+        let pk1 = hex::encode(sk1.public());
+        let pk2 = hex::encode(SecretKey::gen().public());
+        let sk1 = hex::encode(sk1.as_bytes());
+        let base_string = format!(
+            "\
+private_key={sk1}
 listen_port=12912
-public_key=980dc0012a52f21927d952e866fcfabe9db61d406bc333249cc4d729d37ecb44
+public_key={pk1}
 endpoint=[abcd:23::33%2]:51820
 allowed_ip=192.168.4.4/32
 last_handshake_time_nsec=1234
 last_handshake_time_sec=1
-public_key=f1bc9c87d65731aecde6197c001f4219d839c2d384a47799af058bc3fbdab8f1
+public_key={pk2}
 rx_bytes=RXBYTES
 tx_bytes=TXBYTES
 last_handshake_time_nsec=51204
@@ -611,7 +616,8 @@ persistent_keepalive_interval=111
 allowed_ip=192.168.4.10/32
 allowed_ip=192.168.4.11/32
 errno=0
-";
+"
+        );
 
         let received_bytes_overflow_string = base_string
             .replace("RXBYTES", "1000000000000")
