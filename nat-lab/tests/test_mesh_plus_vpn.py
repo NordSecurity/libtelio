@@ -550,7 +550,12 @@ async def test_vpn_plus_mesh_over_direct(
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM, AdapterType.WireguardGo, marks=pytest.mark.windows
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="test is flaky - LLT-4314"),
+            ],
         ),
         pytest.param(
             ConnectionTag.MAC_VM,
