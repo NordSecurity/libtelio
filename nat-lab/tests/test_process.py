@@ -120,7 +120,6 @@ async def test_process_run_fail(connection_tag: ConnectionTag, command: list[str
         assert " ".join(command) not in await _get_running_process_list(connection)
 
 
-@pytest.mark.xfail(reason="test is flaky - LLT-4311")
 @pytest.mark.parametrize(
     "connection_tag",
     [
@@ -148,6 +147,7 @@ async def test_process_run_not_found(connection_tag: ConnectionTag):
                 await process.wait_stdin_ready()
                 assert command in await _get_running_process_list(connection)
         assert e.value.cmd == [command]
+        await asyncio.sleep(1)
         assert command not in await _get_running_process_list(connection)
 
 
