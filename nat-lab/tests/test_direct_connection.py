@@ -286,7 +286,6 @@ async def new_connections_with_mesh_clients(
     "endpoint_providers, client1_type, client2_type, _reflexive_ip",
     UHP_conn_client_types,
 )
-@pytest.mark.xfail(reason="the test is flaky LLT-4308")
 async def test_direct_working_paths(
     endpoint_providers,
     client1_type,

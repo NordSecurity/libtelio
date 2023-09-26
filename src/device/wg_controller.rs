@@ -522,7 +522,6 @@ async fn build_requested_meshnet_peers_list<
     for (public_key, requested_peer) in requested_peers.iter_mut() {
         // Gather required information
         let actual_peer = actual_peers.get(public_key);
-        let time_since_last_rx = wireguard_interface.time_since_last_rx(*public_key).await?;
         let time_since_last_endpoint_change = wireguard_interface
             .time_since_last_endpoint_change(*public_key)
             .await?;
@@ -532,10 +531,21 @@ async fn build_requested_meshnet_peers_list<
             .get(public_key)
             .map(|ur| ur.endpoint);
 
+        // Handshake packets are not counted by the interface
+        let time_since_last_rx = wireguard_interface.time_since_last_rx(*public_key).await?;
+        let time_since_last_hs = actual_peer.and_then(|peer| peer.time_since_last_handshake);
+
+        let time_since_last_rx_or_handshake = match (time_since_last_rx, time_since_last_hs) {
+            (Some(last_rx), Some(last_hs)) => Some(last_rx.min(last_hs)),
+            (Some(last_rx), None) => Some(last_rx),
+            (None, Some(last_hs)) => Some(last_hs),
+            _ => None,
+        };
+
         // Compute the current endpoint state
         let peer_state = peer_state(
             actual_peer,
-            time_since_last_rx.as_ref(),
+            time_since_last_rx_or_handshake.as_ref(),
             time_since_last_endpoint_change.as_ref(),
             proxy_endpoint,
             requested_state,
@@ -553,7 +563,7 @@ async fn build_requested_meshnet_peers_list<
         let (selected_remote_endpoint, selected_local_endpoint) = select_endpoint_for_peer(
             public_key,
             &actual_peer.cloned(),
-            &time_since_last_rx,
+            &time_since_last_rx_or_handshake,
             peer_state,
             &checked_endpoint.cloned(),
             &proxy_endpoint.cloned(),
