@@ -365,6 +365,21 @@ async def test_vpn_plus_mesh(
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
+        # Testing if the VPN node is not cleared after disabling meshnet. See LLT-4266 for more details.
+        await client_alpha.set_mesh_off()
+        await testing.wait_long(
+            asyncio.gather(
+                client_alpha.wait_for_event_peer(
+                    beta.public_key, [State.Disconnected], list(telio.PathType)
+                ),
+                alpha_conn_tracker.wait_for_event("derp_1"),
+            )
+        )
+        ip = await testing.wait_long(stun.get(connection_alpha, config.STUN_SERVER))
+        assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
+        with pytest.raises(asyncio.TimeoutError):
+            await testing.wait_long(alpha_conn_tracker.wait_for_event("vpn_1"))
+
         assert alpha_conn_tracker.get_out_of_limits() is None
         assert beta_conn_tracker.get_out_of_limits() is None
 
