@@ -6,40 +6,41 @@ license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 
 [dependencies]
-anyhow = "1"
-base64 = "0.13"
-clap = { version = "3.1", features = ["derive"] }
-crypto_box = { version = "0.8.2", features = ["std"] }
 dirs = "4.0.0"
-hex = "0.4.3"
-ipnetwork = "0.18"
-parking_lot = "0.12"
-rand = { version = "0.8.4", features = ["std", "std_rng"] }
+flexi_logger = "0.22.0"
+regex = "1.5.5"
 reqwest = { version = "0.11.16", default-features = false, features = [
     "json",
     "blocking",
     "rustls-tls",
 ] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-serde_with = "1.10.0"
-sha2 = "0.9.8"
-shellwords = "1.1.0"
-thiserror = "1.0"
-tokio = { version = ">=1.22", features = ["full"] }
-regex = "1.5.5"
-log = { version = "0.4.14", features = ["release_max_level_debug"] }
-flexi_logger = "0.22.0"
 rustyline = "11.0.0"
+shellwords = "1.1.0"
+
+anyhow.workspace = true
+base64.workspace = true
+clap.workspace = true
+crypto_box.workspace = true
+hex.workspace = true
+ipnetwork.workspace = true
+log.workspace = true
+parking_lot.workspace = true
+rand = { workspace = true, features = ["std", "std_rng"] }
+serde.workspace = true
+serde_json.workspace = true
+serde_with.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["full"] }
 
 telio = { path = "../.." }
-telio-crypto = { path = "../../crates/telio-crypto" }
-telio-utils = { path = "../../crates/telio-utils" }
-telio-model = { path = "../../crates/telio-model" }
-telio-wg = { path = "../../crates/telio-wg" }
-telio-proto = { path = "../../crates/telio-proto" }
-telio-traversal = { path = "../../crates/telio-traversal" }
-telio-task = { path = "../../crates/telio-task" }
-telio-relay = { path = "../../crates/telio-relay" }
-telio-sockets = { path = "../../crates/telio-sockets" }
-telio-nat-detect = { version = "0.1.0", path = "../../crates/telio-nat-detect" }
+telio-crypto.workspace = true
+telio-model.workspace = true
+telio-nat-detect.workspace = true
+telio-proto.workspace = true
+telio-relay.workspace = true
+telio-sockets.workspace = true
+telio-task.workspace = true
+telio-traversal.workspace = true
+telio-utils.workspace = true
+telio-wg.workspace = true

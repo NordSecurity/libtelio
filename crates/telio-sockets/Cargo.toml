@@ -7,17 +7,20 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-futures = "0.3"
-libc = "0.2.112"
-parking_lot = "0.12"
-tokio = { version = ">=1.22", features = ["full"] }
 socket2 = "0.4.7"
-log = { version = "0.4.14", features = ["release_max_level_debug"]}
-thiserror = "1.0.30"
 
-telio-utils = { path = "../telio-utils" }
+boringtun.workspace = true
+futures.workspace = true
+libc.workspace = true
+log.workspace = true
+parking_lot.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["full"] }
 
-boringtun = { git = "https://github.com/NordSecurity/boringtun.git", tag = "v1.1.1" }
+telio-utils.workspace = true
+
+[dev-dependencies]
+mockall.workspace = true
 
 [target.'cfg(target_os = "ios")'.dependencies]
 objc = "0.2.7"
@@ -25,13 +28,10 @@ objc-foundation = "0.1.1"
 version-compare = "0.1"
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
-system-configuration = "0.5.0"
-nix = "0.26.2"
 debug_panic = "0.2.1"
+nix = "0.26.2"
+system-configuration = "0.5.0"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3.9", features = ["netioapi", "ntdef", "winerror", "ws2def", "iptypes", "iphlpapi", "impl-default"] }
+winapi = { workspace = true, features = ["ntdef", "winerror", "iptypes", "iphlpapi", "impl-default"] }
 windows = { version = "0.34.0", features = ["alloc", "Win32_Networking_WinSock", "Win32_NetworkManagement_IpHelper"] }
-
-[dev-dependencies]
-mockall = "0.11.3"

@@ -7,17 +7,16 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-bytes = "1"
 protobuf = "2"
-log = { version = "0.4.14", features = ["release_max_level_debug"] }
-strum = { version = "0.24.0", features = ["derive"] }
-thiserror = "1.0"
 
-telio-crypto = { path = "../telio-crypto" }
-telio-utils = { path = "../telio-utils" }
-telio-model = { path = "../telio-model" }
+bytes.workspace = true
+log.workspace = true
+strum.workspace = true
+thiserror.workspace = true
+
+telio-crypto.workspace = true
+telio-model.workspace = true
+telio-utils.workspace = true
 
 [build-dependencies]
-protobuf-codegen-pure = "2"
-
-[dev-dependencies]
+protobuf-codegen-pure.workspace = true

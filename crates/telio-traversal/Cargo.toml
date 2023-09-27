@@ -7,54 +7,55 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-boringtun = { git = "https://github.com/NordSecurity/boringtun.git", tag = "v1.1.1" }
-telio-crypto = { path = "../telio-crypto" }
-telio-task = { path = "../telio-task" }
-telio-proto = { path = "../telio-proto" }
-telio-utils = { path = "../telio-utils" }
-telio-sockets = { path = "../telio-sockets" }
-telio-model = { path = "../telio-model" }
-telio-wg = { path = "../telio-wg" }
-
-async-trait = "0.1.56"
-base64 = "0.13.0"
 bytecodec = "0.4.15"
 enum-map = "2.5.0"
-if-addrs = "0.7.0"
-ipnet = "2.3.1"
-log = { version = "0.4.17", features = ["release_max_level_debug"] }
-rand = "0.8.4"
-stun_codec = "0.1.13"
-thiserror = "1.0.30"
-tokio = { version = ">=1.22", features = ["full"] }
-futures = "0.3.21"
-surge-ping = { version = "0.8.0" }
-sm = "0.9.0"
-strum = { version = "0.24.0", features = ["derive"] }
-mockall = { version = "0.11.3", optional = true }
-
-# This is for Upnp
-lazy_static = "1.4.0"
 http = "0.2.8"
-httparse = "1.8.0"
+if-addrs = "0.7.0"
 igd = "0.12.1"
-parking_lot = "0.12"
+sm = "0.9.0"
+stun_codec = "0.1.13"
 
-[target.'cfg(not(target_os = "android"))'.dependencies]
-rupnp = "1.1.0"
+async-trait.workspace = true
+base64.workspace = true
+boringtun.workspace = true
+futures.workspace = true
+httparse.workspace = true
+ipnet.workspace = true
+lazy_static.workspace = true
+log.workspace = true
+mockall = { workspace = true, optional = true }
+parking_lot.workspace = true
+rand.workspace = true
+strum.workspace = true
+surge-ping.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["full"] }
 
-# LLT-3754: get_if_addrs overrides bionic getifaddrs
-[target.'cfg(target_os = "android")'.dependencies]
-rupnp = { version = "1.1.0", default-features = false }
+telio-crypto.workspace = true
+telio-model.workspace = true
+telio-proto.workspace = true
+telio-sockets.workspace = true
+telio-task.workspace = true
+telio-utils.workspace = true
+telio-wg.workspace = true
 
 [dev-dependencies]
 assert_matches = "1.5.0"
-ntest = "0.7"
-maplit = "1"
-mockall = "0.11.3"
-env_logger = "0.9.0"
-tokio = { version = ">=1.22", features = ["test-util"] }
-telio-wg = { features = ["mockall"], path = "../telio-wg" }
-telio-task = { features = ["test-util"], path = "../telio-task" }
-telio-test = { path = "../telio-test" }
-telio-utils = { features = ["mockall"], path = "../telio-utils" }
+
+env_logger.workspace = true
+maplit.workspace = true
+mockall.workspace = true
+ntest.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+
+telio-task = { workspace = true, features = ["test-util"] }
+telio-test.workspace = true
+telio-utils = { workspace = true, features = ["mockall"] }
+telio-wg = { workspace = true, features = ["mockall"] }
+
+# LLT-3754: get_if_addrs overrides bionic getifaddrs
+[target.'cfg(target_os = "android")'.dependencies]
+rupnp = { workspace = true, default-features = false }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+rupnp.workspace = true

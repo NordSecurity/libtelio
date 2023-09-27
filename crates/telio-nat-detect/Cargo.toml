@@ -7,6 +7,6 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-tokio = { version = ">=1.22", features = ["full"] }
-nat-detect = "0.1.7"
-log = {version = "0.4.14", features = ["release_max_level_debug"]}
+log.workspace = true
+nat-detect.workspace = true
+tokio = { workspace = true, features = ["full"] }

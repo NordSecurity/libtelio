@@ -9,19 +9,20 @@ license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
+[features]
+moose = []
+
 [dependencies]
-log = { version = "0.4.14", features = ["release_max_level_debug"]}
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-telio-utils = { path = "../telio-utils" }
-thiserror = "1.0.30"
-time = { version = "0.3.9", features = ["formatting"] }
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+time.workspace = true
+
+telio-utils.workspace = true
 
 [dev-dependencies]
 serial_test = "0.8.0"
 
 [build-dependencies]
-anyhow = "1"
-
-[features]
-moose = []
+anyhow.workspace = true

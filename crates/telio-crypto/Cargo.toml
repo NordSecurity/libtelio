@@ -7,16 +7,16 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-base64 = "0.13.0"
-crypto_box = { version = "0.8.2", features = ["std"] }
-hex = "0.4.3"
-log = {version = "0.4.14", features = ["release_max_level_debug"]}
-rand = { version = "0.8.4", features = ["std", "std_rng"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_with = "1.10"
-thiserror = "1.0"
+base64.workspace = true
+crypto_box.workspace = true
+hex.workspace = true
+log.workspace = true
+rand = { workspace = true, features = ["std", "std_rng"] }
+serde.workspace = true
+serde_with.workspace = true
+thiserror.workspace = true
 
-telio-utils = { path = "../telio-utils" }
+telio-utils.workspace = true
 
 [dev-dependencies]
 bstr = "0.2"

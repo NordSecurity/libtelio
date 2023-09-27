@@ -25,6 +25,7 @@
 * LLT-4136: Migrate Natlab VMs to use libvirt
 * LLT-4266: Add exit node clearing when disabling meshnet
 * LLT-4159: Clarify purpose of hardcoded secrets in repo
+* LLT-3451: Use workspace dependencies
 
 <br>
 

@@ -7,23 +7,25 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-crypto_box = { version = "0.8.2", features = ["std"] }
-futures = "0.3.13"
-tokio = { version = ">=1.22", features = ["net", "sync"] }
-slog = "2.7"
-async-trait = "0.1.51"
-thiserror = "1.0"
-telio-task = { path = "../telio-task"}
-telio-crypto = { path = "../telio-crypto" }
-telio-utils = { path = "../telio-utils" }
-telio-model = { path = "../telio-model" }
-telio-sockets = { path = "../telio-sockets" }
-log = {version = "0.4.14", features = ["release_max_level_debug"]}
-telio-proto = { path = "../telio-proto" }
-mockall = { version = "0.11.3", optional = true }
+async-trait.workspace = true
+crypto_box.workspace = true
+futures.workspace = true
+log.workspace = true
+mockall = { workspace = true, optional = true }
+slog.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["net", "sync"] }
+
+telio-crypto.workspace = true
+telio-model.workspace = true
+telio-proto.workspace = true
+telio-sockets.workspace = true
+telio-task.workspace = true
+telio-utils.workspace = true
 
 [dev-dependencies]
-telio-test = { version = "1.0.0", path = "../telio-test" }
-telio-task = { features = ["test-util"], path = "../telio-task" }
-tokio = { version = ">=1.22", features = ["macros", "rt-multi-thread", "time"] }
-mockall = "0.11.3"
+mockall.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+
+telio-task = { workspace = true, features = ["test-util"] }
+telio-test.workspace = true
