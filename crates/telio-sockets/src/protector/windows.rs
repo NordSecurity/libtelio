@@ -468,3 +468,28 @@ pub fn get_default_interface(tunnel_interface: u64) -> Result<Interface> {
 
     Ok(default_interface)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, UdpSocket};
+
+    use crate::native::AsNativeSocket;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(IpAddr::V4(Ipv4Addr::LOCALHOST))]
+    #[case(IpAddr::V6(Ipv6Addr::LOCALHOST))]
+    #[tokio::test]
+    async fn test_make_external(#[case] ip_addr: IpAddr) {
+        let protector = NativeProtector::new().unwrap();
+        let addr = SocketAddr::new(ip_addr, 0);
+
+        let socket = std::net::UdpSocket::bind(addr).unwrap();
+        assert!(protector.make_external(socket.as_native_socket()).is_ok());
+
+        let socket = std::net::TcpListener::bind(addr).unwrap();
+        assert!(protector.make_external(socket.as_native_socket()).is_ok());
+    }
+}

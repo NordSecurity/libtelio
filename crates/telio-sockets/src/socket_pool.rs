@@ -230,15 +230,19 @@ impl MakeExternalBoringtun for SocketPool {
 #[cfg(test)]
 mod tests {
     use std::{
-        net::{Ipv4Addr, SocketAddrV4},
+        io::ErrorKind,
+        net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddrV4},
         sync::Mutex,
     };
 
     use mockall::mock;
+    use rstest::rstest;
 
     use crate::{native::NativeSocket, Protect};
 
     use super::*;
+
+    const PACKET: [u8; 8] = *b"libtelio";
 
     mock! {
         Protector {}
@@ -319,5 +323,75 @@ mod tests {
         let tcp = pool.new_external_tcp_v4(None).expect("tcp");
 
         assert_eq!(socks.lock().unwrap().clone(), vec![tcp.as_native_socket()]);
+    }
+
+    #[rstest]
+    #[case(IpAddr::V4(Ipv4Addr::LOCALHOST))]
+    #[cfg(not(windows))]
+    #[case(IpAddr::V4(Ipv4Addr::UNSPECIFIED))]
+    #[case(IpAddr::V6(Ipv6Addr::LOCALHOST))]
+    #[cfg(not(any(windows, tarpaulin)))]
+    #[case(IpAddr::V6(Ipv6Addr::UNSPECIFIED))]
+    #[tokio::test]
+    async fn internal_udp_socket_can_transfer_data(#[case] ip_addr: IpAddr) {
+        let protect = MockProtector::default();
+        let pool = SocketPool::new(protect);
+        let addr = SocketAddr::new(ip_addr, 0);
+        let socket = match pool.new_internal_udp(addr, None).await {
+            Ok(socket) => socket,
+            Err(e) if e.kind() == ErrorKind::AddrNotAvailable => {
+                // host has no interface with ipv4/ipv6
+                return;
+            }
+            Err(e) => panic!("Unexpected error: {:?}", e),
+        };
+        let local_addr = socket.local_addr().unwrap();
+        tokio::spawn(async move {
+            let protect = MockProtector::default();
+            let pool = SocketPool::new(protect);
+            let addr = SocketAddr::new(ip_addr, 0);
+            let socket = pool.new_internal_udp(addr, None).await.unwrap();
+            socket.send_to(&PACKET, local_addr).await.unwrap();
+        });
+        let mut buf = [0; PACKET.len()];
+        assert_eq!(PACKET.len(), socket.recv_from(&mut buf).await.unwrap().0);
+        assert_eq!(PACKET, buf);
+    }
+
+    #[rstest]
+    #[case(IpAddr::V4(Ipv4Addr::LOCALHOST))]
+    #[cfg(not(windows))]
+    #[case(IpAddr::V4(Ipv4Addr::UNSPECIFIED))]
+    #[case(IpAddr::V6(Ipv6Addr::LOCALHOST))]
+    #[cfg(not(any(windows, tarpaulin)))]
+    #[case(IpAddr::V6(Ipv6Addr::UNSPECIFIED))]
+    #[tokio::test]
+    async fn external_udp_socket_can_transfer_data(#[case] ip_addr: IpAddr) {
+        let mut protect = MockProtector::default();
+        protect.expect_make_external().returning(|_| Ok(()));
+        protect.expect_clean().return_const(());
+        let pool = SocketPool::new(protect);
+        let addr = SocketAddr::new(ip_addr, 0);
+        let socket = match pool.new_internal_udp(addr, None).await {
+            Ok(socket) => socket,
+            Err(e) if e.kind() == ErrorKind::AddrNotAvailable => {
+                // host has no interface with ipv4/ipv6
+                return;
+            }
+            Err(e) => panic!("Unexpected error: {:?}", e),
+        };
+        let local_addr = socket.local_addr().unwrap();
+        tokio::spawn(async move {
+            let mut protect = MockProtector::default();
+            protect.expect_make_external().returning(|_| Ok(()));
+            protect.expect_clean().return_const(());
+            let pool = SocketPool::new(protect);
+            let addr = SocketAddr::new(ip_addr, 0);
+            let socket = pool.new_external_udp(addr, None).await.unwrap();
+            socket.send_to(&PACKET, local_addr).await.unwrap();
+        });
+        let mut buf = [0; PACKET.len()];
+        assert_eq!(PACKET.len(), socket.recv_from(&mut buf).await.unwrap().0);
+        assert_eq!(PACKET, buf);
     }
 }
