@@ -17,6 +17,7 @@ class DockerProcess(Process):
     _stderr: str
     _allowed_exit_codes: List[int]
     _stdin_ready: asyncio.Event
+    _is_done: asyncio.Event
     _stream: Optional[Stream]
     _execute: Optional[Exec]
 
@@ -26,6 +27,7 @@ class DockerProcess(Process):
         self._stdout = ""
         self._stderr = ""
         self._stdin_ready = asyncio.Event()
+        self._is_done = asyncio.Event()
         self._stream = None
         self._execute = None
 
@@ -63,7 +65,13 @@ class DockerProcess(Process):
         stdout_callback: Optional[StreamCallback] = None,
         stderr_callback: Optional[StreamCallback] = None,
     ) -> AsyncIterator["DockerProcess"]:
-        async with run_async_context(self.execute(stdout_callback, stderr_callback)):
+        async def mark_as_done():
+            try:
+                await self.execute(stdout_callback, stderr_callback)
+            finally:
+                self._is_done.set()
+
+        async with run_async_context(mark_as_done()):
             try:
                 yield self
             finally:
@@ -146,3 +154,6 @@ class DockerProcess(Process):
 
     def is_executing(self) -> bool:
         return self._stream is not None
+
+    async def is_done(self) -> None:
+        await self._is_done.wait()
