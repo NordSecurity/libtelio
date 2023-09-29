@@ -23,7 +23,7 @@ use telio_task::{
 };
 use telio_utils::{map_enum, telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
 use telio_wg::uapi::PeerState;
-use tokio::time::{interval_at, sleep, Duration, Instant, Interval, Sleep};
+use tokio::time::{interval_at, sleep, Duration, Instant, Interval, MissedTickBehavior, Sleep};
 use uuid::Uuid;
 
 use crate::config::HeartbeatConfig;
@@ -356,13 +356,15 @@ impl Analytics {
             // This way, the interval between events will be constant.
             Instant::now() + config.collect_interval - config.collect_answer_timeout
         };
+        let mut interval: Interval = interval_at(start_time, config.collect_interval);
+        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         let mut config_nodes = HashMap::new();
         // Add self in config_nodes hashset
         config_nodes.insert(public_key, true);
 
         Self {
-            task_interval: interval_at(start_time, config.collect_interval),
+            task_interval: interval,
             collect_period: Box::pin(sleep(FAR_FUTURE)),
             config,
             io,
