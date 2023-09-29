@@ -26,6 +26,7 @@
 * LLT-4266: Add exit node clearing when disabling meshnet
 * LLT-4159: Clarify purpose of hardcoded secrets in repo
 * LLT-3451: Use workspace dependencies
+* LLT-4306: Prevent infinite loop in STUN handler on socket error
 
 <br>
 

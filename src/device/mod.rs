@@ -1106,6 +1106,12 @@ impl Runtime {
             .drop_connected_sockets()
             .await?;
 
+        if let Some(direct) = &self.entities.direct {
+            if let Some(stun) = &direct.stun_endpoint_provider {
+                stun.reconnect().await;
+            }
+        }
+
         self.entities.derp.reconnect().await;
         self.log_nat().await;
         Ok(())
