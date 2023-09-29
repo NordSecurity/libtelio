@@ -12,6 +12,7 @@ class SshProcess(Process):
     _stdout: str
     _stderr: str
     _stdin_ready: asyncio.Event
+    _is_done: asyncio.Event
     _stdin: Optional[asyncssh.SSHWriter]
     _process: Optional[asyncssh.SSHClientProcess]
     _running: bool
@@ -27,6 +28,7 @@ class SshProcess(Process):
         self._stdout = ""
         self._stderr = ""
         self._stdin_ready = asyncio.Event()
+        self._is_done = asyncio.Event()
         self._stdin = None
         self._escape_argument = escape_argument
         self._process = None
@@ -71,7 +73,13 @@ class SshProcess(Process):
         stdout_callback: Optional[StreamCallback] = None,
         stderr_callback: Optional[StreamCallback] = None,
     ) -> AsyncIterator["SshProcess"]:
-        async with run_async_context(self.execute(stdout_callback, stderr_callback)):
+        async def mark_as_done():
+            try:
+                await self.execute(stdout_callback, stderr_callback)
+            finally:
+                self._is_done.set()
+
+        async with run_async_context(mark_as_done()):
             try:
                 yield self
             finally:
@@ -120,3 +128,6 @@ class SshProcess(Process):
 
     def is_executing(self) -> bool:
         return self._running
+
+    async def is_done(self) -> None:
+        await self._is_done.wait()

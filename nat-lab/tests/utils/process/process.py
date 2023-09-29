@@ -57,3 +57,7 @@ class Process(ABC):
     @abstractmethod
     def is_executing(self) -> bool:
         pass
+
+    @abstractmethod
+    async def is_done(self) -> None:
+        pass
