@@ -285,6 +285,10 @@ release.py --changelog --push --tag=v4.0.5
 
 You can check the actual commands executed, by passing the `--dry-run` argument.
 
+## Cat
+
+![Cat](/images/cat.jpg)
+
 ## Contributions
 
 For information about how to contribute, please see [CONTRIBUTING.md](CONTRIBUTING.md).
