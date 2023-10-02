@@ -421,12 +421,10 @@ async def test_vpn_plus_mesh(
             await testing.wait_long(ping.wait_for_next_ping())
 
         # Testing if the VPN node is not cleared after disabling meshnet. See LLT-4266 for more details.
-        await client_alpha.set_mesh_off()
         await testing.wait_long(
             asyncio.gather(
-                client_alpha.wait_for_event_peer(
-                    beta.public_key, [State.Disconnected], list(telio.PathType)
-                ),
+                client_alpha.disconnect(beta.public_key, [PathType.Relay, PathType.Direct]),
+                client_alpha.set_mesh_off(),
                 alpha_conn_tracker.wait_for_event("derp_1"),
             )
         )

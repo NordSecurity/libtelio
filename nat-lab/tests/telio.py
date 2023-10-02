@@ -452,9 +452,9 @@ class Client:
             public_key, [State.Connected], [path]
         )
 
-    async def disconnect(self, public_key, path=PathType.Relay) -> None:
+    async def disconnect(self, public_key, path=[PathType.Relay]) -> None:
         await self.get_events().wait_for_peer_state(
-            public_key, [State.Disconnected], [path]
+                public_key, [State.Disconnected], path
         )
 
     async def connecting(self, public_key, path=PathType.Relay) -> None:
@@ -553,7 +553,7 @@ class Client:
 
     async def disconnect_from_vpn(self, public_key, path=PathType.Relay) -> None:
         await self._write_command(["vpn", "off"])
-        await self.disconnect(public_key, path)
+        await self.disconnect(public_key, [path])
         await self.get_router().delete_vpn_route()
 
     async def disconnect_from_exit_nodes(self) -> None:
