@@ -3,6 +3,7 @@
 ---
 ### Changelog
 * LLT-4179: Fix an issue where first STUN request would always fail
+* LLT-4233: Add moose init callback validation
 
 <br>
 
