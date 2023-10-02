@@ -50,7 +50,7 @@ jobs:
       runs-on: ubuntu-22.04
       steps:
         - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
-        - uses: EmbarkStudios/cargo-deny-action@e0a440755b184aa50374330fa75cca0f84fcb59a # v1.5.2
+        - uses: EmbarkStudios/cargo-deny-action@1e59595bed8fc55c969333d08d7817b36888f0c5 # v1.5.5
           with:
             rust-version: 1.64.0 # NOTE: Runs in its own docker container and doesn't support toolchain files
   udeps:
