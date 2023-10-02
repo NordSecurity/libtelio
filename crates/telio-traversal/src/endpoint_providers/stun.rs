@@ -60,6 +60,15 @@ impl<Wg: WireGuard> StunEndpointProvider<Wg> {
             stun_peer_publisher,
         ))
     }
+
+    /// Force STUN endpoint provider to reconnect
+    pub async fn reconnect(&self) {
+        let _ = task_exec!(&self.task, async move |s| {
+            let _ = s.reconnect();
+            Ok(())
+        })
+        .await;
+    }
 }
 
 impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
@@ -212,6 +221,7 @@ impl<Wg: WireGuard, E: Backoff + 'static> EndpointProvider for StunEndpointProvi
             .await))
         .await?
     }
+
     async fn get_current_endpoints(&self) -> Option<Vec<EndpointCandidate>> {
         task_exec!(&self.task, async move |s| Ok(Some(
             s.last_candidates.clone()
@@ -296,6 +306,14 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
                 public_key,
             )
             .await
+    }
+
+    async fn reconnect(&mut self) {
+        if let StunState::BackingOff = self.stun_state {
+            self.transition_to_wait_for_wg();
+            self.exponential_backoff.reset();
+            self.try_transition_to_searching_for_server().await;
+        }
     }
 
     /// Get wg port identified by stun
@@ -516,6 +534,7 @@ impl<Wg: WireGuard, E: Backoff> Runtime for State<Wg, E> {
             }
             // We are waiting either for stun session to timeout, or for the end of penalty
             _ = &mut self.current_timeout => {
+                telio_log_debug!("Processing timeout in {:?} state", self.stun_state);
                 match self.stun_state {
                     StunState::SearchingForServer | StunState::WaitingForWg => {
                         // This is a stun timeout. We should back off.
@@ -533,7 +552,11 @@ impl<Wg: WireGuard, E: Backoff> Runtime for State<Wg, E> {
                             self.transition_to_backing_off_state().await;
                         } else {
                             // This is a poll interval. We're still in HasEndpoints state.
-                            let _ = self.start_stun_session().await;
+                            let res = self.start_stun_session().await;
+                            if let Err(err) = res {
+                                telio_log_error!("Starting STUN session failed with error: {:?}", err);
+                                self.transition_to_backing_off_state().await;
+                            }
                         }
                     },
                 }
