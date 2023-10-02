@@ -2,6 +2,7 @@
 ### **Bruschetta**
 ---
 ### Changelog
+* LLT-4179: Fix an issue where first STUN request would always fail
 
 <br>
 

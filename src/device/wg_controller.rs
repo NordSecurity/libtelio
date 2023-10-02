@@ -12,6 +12,8 @@ use telio_firewall::firewall::{Firewall, FILE_SEND_PORT};
 use telio_model::EndpointMap;
 use telio_model::SocketAddr;
 use telio_proxy::Proxy;
+use telio_traversal::endpoint_providers::stun::StunEndpointProvider;
+use telio_traversal::endpoint_providers::EndpointProvider;
 use telio_traversal::{
     cross_ping_check::CrossPingCheckTrait, SessionKeeperTrait, UpgradeSyncTrait,
     WireGuardEndpointCandidateChangeEvent,
@@ -56,6 +58,10 @@ pub async fn consolidate_wg_state(requested_state: &RequestedState, entities: &E
         entities.upgrade_sync(),
         entities.session_keeper(),
         &*entities.dns,
+        entities
+            .direct
+            .as_ref()
+            .and_then(|direct| direct.stun_endpoint_provider.as_ref()),
     )
     .await?;
     consolidate_firewall(requested_state, &*entities.firewall).await?;
@@ -103,6 +109,7 @@ async fn consolidate_wg_peers<
     upgrade_sync: Option<&Arc<U>>,
     session_keeper: Option<&Arc<S>>,
     dns: &Mutex<crate::device::DNS<D>>,
+    stun_ep_provider: Option<&Arc<StunEndpointProvider>>,
 ) -> Result {
     let proxy_endpoints = proxy.get_endpoint_map().await?;
     let requested_peers = build_requested_peers_list(
@@ -152,6 +159,14 @@ async fn consolidate_wg_peers<
             wireguard_interface
                 .add_peer(requested_peer.peer.clone())
                 .await?;
+        }
+
+        if let Some(stun) = stun_ep_provider {
+            if let Some(wg_stun_server) = requested_state.wg_stun_server.as_ref() {
+                if wg_stun_server.public_key == *key {
+                    stun.trigger_endpoint_candidates_discovery().await?;
+                }
+            }
         }
 
         match (
@@ -1295,6 +1310,7 @@ mod tests {
                 Some(&upgrade_sync),
                 Some(&session_keeper),
                 &self.dns,
+                None,
             )
             .await
             .unwrap();
