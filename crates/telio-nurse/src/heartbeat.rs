@@ -349,6 +349,7 @@ impl Analytics {
         io: Io,
         derp_server: Arc<DerpRelay>,
     ) -> Self {
+        #[cfg(not(test))]
         let start_time = if let Some(initial_timeout) = config.initial_collect_interval {
             Instant::now() + initial_timeout
         } else {
@@ -356,7 +357,15 @@ impl Analytics {
             // This way, the interval between events will be constant.
             Instant::now() + config.collect_interval - config.collect_answer_timeout
         };
+
+        #[cfg(not(test))]
         let mut interval: Interval = interval_at(start_time, config.collect_interval);
+
+        #[cfg(test)]
+        let mut interval: Interval = interval_at(
+            Instant::now() - Duration::from_secs(25),
+            Duration::from_secs(5),
+        );
         interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         let mut config_nodes = HashMap::new();
@@ -906,14 +915,11 @@ impl Analytics {
 
 #[cfg(test)]
 mod tests {
-    use telio_model::{
-        event::EventMsg,
-        mesh::{ExitNode, Node},
-    };
+    use telio_model::mesh::Node;
     use telio_sockets::{native::NativeSocket, Protector, SocketPool};
-    use telio_task::io::{mc_chan::Tx, McChan};
+    use telio_task::io::McChan;
     use telio_utils::sync::mpsc::Receiver;
-    use tokio::task::yield_now;
+    use tokio::time::timeout;
 
     use super::*;
 
@@ -950,6 +956,7 @@ mod tests {
         let pk = sk.public();
         let meshnet_id = Uuid::new_v4();
         let config = HeartbeatConfig::default();
+
         let analytics_channel = Chan::new(1);
         let io = Io {
             chan: Chan::new(1),
@@ -1200,5 +1207,20 @@ mod tests {
 
         assert_eq!(true, meshnet_enabled);
         assert_eq!("vpn:7600617f9f9db5691a8c2768bd9d8110:2", external_links);
+    }
+
+    #[tokio::test]
+    async fn test_send_analytics_report_once_on_skipped_ticks() {
+        let State { mut analytics, .. } = setup();
+
+        // First tick should not fail. After this task_interval should catch up with the skipped ticks.
+        if let Err(_) = timeout(Duration::from_millis(200), analytics.task_interval.tick()).await {
+            assert_eq!(true, false);
+        }
+
+        // Ticks should have caught up and this should timeout
+        if let Ok(_) = timeout(Duration::from_millis(200), analytics.task_interval.tick()).await {
+            assert_eq!(true, false);
+        }
     }
 }

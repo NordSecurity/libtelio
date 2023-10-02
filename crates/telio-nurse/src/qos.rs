@@ -397,8 +397,8 @@ mod tests {
 
         let histogram = default_histogram();
 
-        let a_node = dummy_node(&a_public_key, &histogram, 100);
-        let b_node = dummy_node(&b_public_key, &histogram, 200);
+        let a_node = dummy_node(&a_public_key, &histogram, Duration::from_secs(100));
+        let b_node = dummy_node(&b_public_key, &histogram, Duration::from_secs(200));
 
         let mut hashmap = HashMap::new();
         hashmap.insert(a_public_key.clone(), a_node);
@@ -438,12 +438,16 @@ mod tests {
         a
     }
 
-    fn dummy_node(public_key: &PublicKey, histogram: &Histogram, connected_time: u64) -> NodeInfo {
+    fn dummy_node(
+        public_key: &PublicKey,
+        histogram: &Histogram,
+        connected_time: Duration,
+    ) -> NodeInfo {
         NodeInfo {
             public_key: public_key.clone(),
             peer_state: PeerState::Disconnected,
             last_event: Instant::now(),
-            last_state_change: Instant::now(),
+            last_wg_event: Instant::now(),
             connected_time,
             endpoint: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
             rtt_histogram: histogram.clone(),
