@@ -5,6 +5,7 @@
 * LLT-4179: Fix an issue where first STUN request would always fail
 * LLT-4233: Add moose init callback validation
 * LLT-4266: Add exit node clearing when disabling meshnet
+* LLT-4306: Prevent infinite loop in STUN handler on socket error
 
 <br>
 

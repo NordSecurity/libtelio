@@ -142,6 +142,14 @@ async fn consolidate_wg_peers<
         telio_log_info!("Inserting peer: {:?}", requested_peers.get(key));
         let peer = requested_peers.get(key).ok_or(Error::PeerNotFound)?;
         wireguard_interface.add_peer(peer.peer.clone()).await?;
+
+        if let Some(stun) = stun_ep_provider {
+            if let Some(wg_stun_server) = requested_state.wg_stun_server.as_ref() {
+                if wg_stun_server.public_key == *key {
+                    stun.trigger_endpoint_candidates_discovery().await?;
+                }
+            }
+        }
     }
 
     for key in update_keys {
@@ -159,14 +167,6 @@ async fn consolidate_wg_peers<
             wireguard_interface
                 .add_peer(requested_peer.peer.clone())
                 .await?;
-        }
-
-        if let Some(stun) = stun_ep_provider {
-            if let Some(wg_stun_server) = requested_state.wg_stun_server.as_ref() {
-                if wg_stun_server.public_key == *key {
-                    stun.trigger_endpoint_candidates_discovery().await?;
-                }
-            }
         }
 
         match (
