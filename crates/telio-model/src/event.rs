@@ -207,6 +207,7 @@ mod tests {
     use crate::config::{RelayState, Server};
 
     use super::super::mesh::*;
+    use super::Error as EventError;
     use super::*;
     use telio_crypto::{PublicKey, KEY_SIZE};
 
@@ -276,7 +277,7 @@ mod tests {
             r#"}}"#
         ));
 
-        let err_event = Event::new::<Error>()
+        let err_event = Event::new::<EventError>()
             .set(EventMsg::from("big_error"))
             .set(ErrorCode::Unknown)
             .set(ErrorLevel::Severe);

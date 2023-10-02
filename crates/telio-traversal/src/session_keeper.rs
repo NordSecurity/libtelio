@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use futures::Future;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::Ipv4Addr;
 use std::sync::Arc;
 use std::time::Duration;
 use surge_ping::{
@@ -10,7 +10,8 @@ use telio_crypto::PublicKey;
 use telio_sockets::SocketPool;
 use telio_task::{task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
-    repeated_actions, telio_log_debug, telio_log_trace, telio_log_warn, RepeatedActions,
+    dual_target, repeated_actions, telio_log_debug, telio_log_trace, telio_log_warn, DualTarget,
+    RepeatedActions,
 };
 
 const PING_PAYLOAD_SIZE: usize = 56;
@@ -26,46 +27,16 @@ pub enum Error {
     Task(#[from] telio_task::ExecError),
     /// Repeated action errors
     #[error(transparent)]
-    RepeatedActionError(#[from] repeated_actions::Error),
+    RepeatedActionError(#[from] repeated_actions::RepeatedActionError),
     /// Pinger errors
     #[error(transparent)]
     PingerError(#[from] SurgeError),
     // Target error
-    #[error("No IP target provided")]
-    NoTarget,
+    #[error(transparent)]
+    DualTargetError(#[from] dual_target::DualTargetError),
 }
 
 type Result<T> = std::result::Result<T, Error>;
-
-pub type Target = (Option<Ipv4Addr>, Option<Ipv6Addr>);
-
-#[derive(Clone, Copy)]
-struct DualTarget {
-    target: Target,
-}
-
-impl DualTarget {
-    pub fn new(target: Target) -> Result<Self> {
-        if target.0.is_none() && target.1.is_none() {
-            return Err(Error::NoTarget);
-        }
-
-        Ok(DualTarget { target })
-    }
-
-    pub fn get_targets(self) -> Result<(IpAddr, Option<IpAddr>)> {
-        if let (Some(ip4), Some(ip6)) = (self.target.0, self.target.1) {
-            // IPv6 target is preffered, because we can be sure, that address is unique
-            Ok((IpAddr::V6(ip6), Some(IpAddr::V4(ip4))))
-        } else if let (Some(ip4), None) = (self.target.0, self.target.1) {
-            Ok((IpAddr::V4(ip4), None))
-        } else if let (None, Some(ip6)) = (self.target.0, self.target.1) {
-            Ok((IpAddr::V6(ip6), None))
-        } else {
-            Err(Error::NoTarget)
-        }
-    }
-}
 
 #[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
 #[async_trait]
@@ -73,7 +44,7 @@ pub trait SessionKeeperTrait {
     async fn add_node(
         &self,
         public_key: &PublicKey,
-        target: Target,
+        target: dual_target::Target,
         interval: Duration,
     ) -> Result<()>;
     async fn update_interval(&self, public_key: &PublicKey, interval: Duration) -> Result<()>;
@@ -123,7 +94,7 @@ impl SessionKeeperTrait for SessionKeeper {
     async fn add_node(
         &self,
         public_key: &PublicKey,
-        target: Target,
+        target: dual_target::Target,
         interval: Duration,
     ) -> Result<()> {
         let public_key = *public_key;
@@ -247,38 +218,6 @@ mod tests {
     use telio_sockets::NativeProtector;
     use telio_test::assert_elapsed;
     use tokio::time;
-
-    #[test]
-    fn test_dual_target() {
-        assert!(DualTarget::new((None, None)).is_err());
-
-        assert_eq!(
-            (
-                IpAddr::V6(Ipv6Addr::LOCALHOST),
-                Some(IpAddr::V4(Ipv4Addr::LOCALHOST))
-            ),
-            DualTarget::new((Some(Ipv4Addr::LOCALHOST), Some(Ipv6Addr::LOCALHOST)))
-                .unwrap()
-                .get_targets()
-                .unwrap()
-        );
-
-        assert_eq!(
-            (IpAddr::V4(Ipv4Addr::LOCALHOST), None),
-            DualTarget::new((Some(Ipv4Addr::LOCALHOST), None))
-                .unwrap()
-                .get_targets()
-                .unwrap()
-        );
-
-        assert_eq!(
-            (IpAddr::V6(Ipv6Addr::LOCALHOST), None),
-            DualTarget::new((None, Some(Ipv6Addr::LOCALHOST)))
-                .unwrap()
-                .get_targets()
-                .unwrap()
-        );
-    }
 
     #[tokio::test(start_paused = false)]
     #[ignore = "cannot recv on internal ICMP socket"]

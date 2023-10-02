@@ -41,8 +41,10 @@ enum RuntimeState {
 
 bitflags! {
     struct MeshConnectionState: u32 {
-        const DERP = 0b00000001;
-        const WG = 0b00000010;
+        const DERP  = 0b00000001;
+        const WG    = 0b00000010;
+        const IPV4  = 0b00000100;
+        const IPV6  = 0b00001000;
     }
 }
 

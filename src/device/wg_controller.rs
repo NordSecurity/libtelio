@@ -16,10 +16,12 @@ use telio_proxy::Proxy;
 use telio_traversal::endpoint_providers::stun::StunEndpointProvider;
 use telio_traversal::endpoint_providers::EndpointProvider;
 use telio_traversal::{
-    cross_ping_check::CrossPingCheckTrait, SessionKeeperTrait, Target as SessionKeeperTarget,
-    UpgradeSyncTrait, WireGuardEndpointCandidateChangeEvent,
+    cross_ping_check::CrossPingCheckTrait, SessionKeeperTrait, UpgradeSyncTrait,
+    WireGuardEndpointCandidateChangeEvent,
 };
-use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn};
+use telio_utils::{
+    dual_target::Target as SessionKeeperTarget, telio_log_debug, telio_log_info, telio_log_warn,
+};
 use telio_wg::{uapi::Peer, WireGuard};
 use thiserror::Error as TError;
 use tokio::sync::Mutex;
