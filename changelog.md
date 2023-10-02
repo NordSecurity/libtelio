@@ -4,6 +4,7 @@
 ### Changelog
 * LLT-4179: Fix an issue where first STUN request would always fail
 * LLT-4233: Add moose init callback validation
+* LLT-4266: Add exit node clearing when disabling meshnet
 
 <br>
 
