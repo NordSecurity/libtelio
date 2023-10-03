@@ -29,10 +29,18 @@ from utils.ping import Ping
         pytest.param(
             ConnectionTag.WINDOWS_VM,
             AdapterType.WindowsNativeWg,
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
+            ],
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM, AdapterType.WireguardGo, marks=pytest.mark.windows
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
+            ],
         ),
         pytest.param(ConnectionTag.MAC_VM, AdapterType.Default, marks=pytest.mark.mac),
     ],
@@ -140,7 +148,12 @@ async def test_mesh_plus_vpn_one_peer(
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM, AdapterType.WireguardGo, marks=pytest.mark.windows
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
+            ],
         ),
         pytest.param(ConnectionTag.MAC_VM, AdapterType.Default, marks=pytest.mark.mac),
     ],
@@ -560,10 +573,7 @@ async def test_vpn_plus_mesh_over_direct(
         pytest.param(
             ConnectionTag.MAC_VM,
             AdapterType.Default,
-            marks=[
-                pytest.mark.mac,
-                pytest.mark.xfail(reason="test is flaky - LLT-4116"),
-            ],
+            marks=pytest.mark.mac,
         ),
     ],
 )

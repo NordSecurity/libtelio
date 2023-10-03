@@ -30,10 +30,7 @@ from utils.ping import Ping
             ConnectionTag.MAC_VM,
             "10.0.254.7",
             "10.0.254.8",
-            marks=[
-                pytest.mark.mac,
-                pytest.mark.xfail(reason="the test is flaky - JIRA issue: LLT-2393"),
-            ],
+            marks=pytest.mark.mac,
         ),
     ],
 )
