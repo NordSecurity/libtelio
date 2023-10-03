@@ -19,6 +19,17 @@ FWMARK_VALUE = "11673110"  # LIBTELIO
 ROUTING_PRIORITY = "32111"
 
 
+class AddressError(Exception):
+    address: str
+
+    def __init__(self, address) -> None:
+        self.address = address
+
+
+class AddressTypeError(AddressError):
+    pass
+
+
 class LinuxRouter(Router):
     _connection: Connection
     _interface_name: str
@@ -313,7 +324,7 @@ class LinuxRouter(Router):
         addr_proto = self.check_ip_address(address)
 
         if addr_proto is None:
-            return
+            raise AddressTypeError(address)
 
         iptables_string = ("ip" if addr_proto == IPProto.IPv4 else "ip6") + "tables"
 
