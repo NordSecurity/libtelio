@@ -246,6 +246,9 @@ impl State {
             info.heartbeat_interval,
             qos_data.rx,
             qos_data.rtt,
+            qos_data.rtt6,
+            qos_data.rtt6_loss,
+            qos_data.rtt_loss,
             qos_data.tx
         );
     }

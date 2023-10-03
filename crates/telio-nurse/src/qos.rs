@@ -2,7 +2,6 @@ use async_trait::async_trait;
 use histogram::Histogram;
 use serde::Deserialize;
 use std::collections::{BTreeSet, HashMap};
-use std::net::IpAddr;
 use std::time::Instant;
 
 use tokio::time::{interval_at, Duration, Interval};
@@ -11,7 +10,7 @@ use telio_crypto::PublicKey;
 use telio_task::{io::mc_chan, Runtime, RuntimeExt, WaitResponse};
 use telio_wg::uapi::{AnalyticsEvent, PeerState};
 
-use telio_utils::telio_log_debug;
+use telio_utils::{telio_log_debug, DualTarget};
 
 use crate::config::QoSConfig;
 
@@ -36,8 +35,11 @@ pub struct NodeInfo {
     pub connected_time: Duration,
 
     // RTT
-    pub endpoint: IpAddr,
+    pub endpoint: DualTarget,
     pub rtt_histogram: Histogram,
+    pub rtt_loss_histogram: Histogram,
+    pub rtt6_histogram: Histogram,
+    pub rtt6_loss_histogram: Histogram,
 
     // Throughput
     pub last_tx_bytes: u64,
@@ -91,8 +93,11 @@ impl From<AnalyticsEvent> for NodeInfo {
             last_event: event.timestamp,
             last_wg_event: event.timestamp,
             connected_time: Duration::default(),
-            endpoint: event.endpoint.ip(),
+            endpoint: event.endpoint,
             rtt_histogram: Histogram::new(),
+            rtt_loss_histogram: Histogram::new(),
+            rtt6_histogram: Histogram::new(),
+            rtt6_loss_histogram: Histogram::new(),
             last_tx_bytes: 0,
             last_rx_bytes: 0,
             tx_histogram: Histogram::new(),
@@ -105,6 +110,9 @@ impl From<AnalyticsEvent> for NodeInfo {
 #[derive(Default)]
 pub struct OutputData {
     pub rtt: String,
+    pub rtt_loss: String,
+    pub rtt6: String,
+    pub rtt6_loss: String,
     pub tx: String,
     pub rx: String,
     pub connection_duration: String,
@@ -115,6 +123,9 @@ impl OutputData {
     pub fn merge(a: OutputData, b: OutputData) -> Self {
         OutputData {
             rtt: OutputData::merge_strings(a.rtt, b.rtt, ','),
+            rtt_loss: OutputData::merge_strings(a.rtt_loss, b.rtt_loss, ','),
+            rtt6: OutputData::merge_strings(a.rtt6, b.rtt6, ','),
+            rtt6_loss: OutputData::merge_strings(a.rtt6_loss, b.rtt6_loss, ','),
             tx: OutputData::merge_strings(a.tx, b.tx, ','),
             rx: OutputData::merge_strings(a.rx, b.rx, ','),
             connection_duration: OutputData::merge_strings(
@@ -243,6 +254,24 @@ impl Analytics {
                 ));
                 output.rtt.push(',');
 
+                output.rtt_loss.push_str(&Analytics::percentile_histogram(
+                    &node.rtt_loss_histogram,
+                    buckets,
+                ));
+                output.rtt_loss.push(',');
+
+                output.rtt6.push_str(&Analytics::percentile_histogram(
+                    &node.rtt6_histogram,
+                    buckets,
+                ));
+                output.rtt6.push(',');
+
+                output.rtt6_loss.push_str(&Analytics::percentile_histogram(
+                    &node.rtt6_loss_histogram,
+                    buckets,
+                ));
+                output.rtt6_loss.push(',');
+
                 // Throughput
                 output.tx.push_str(&Analytics::percentile_histogram(
                     &node.tx_histogram,
@@ -264,6 +293,15 @@ impl Analytics {
                 output.rtt.push_str(&Analytics::empty_data(buckets));
                 output.rtt.push(',');
 
+                output.rtt_loss.push_str(&Analytics::empty_data(buckets));
+                output.rtt_loss.push(',');
+
+                output.rtt6.push_str(&Analytics::empty_data(buckets));
+                output.rtt6.push(',');
+
+                output.rtt6_loss.push_str(&Analytics::empty_data(buckets));
+                output.rtt6_loss.push(',');
+
                 output.tx.push_str(&Analytics::empty_data(buckets));
                 output.tx.push(',');
 
@@ -276,6 +314,9 @@ impl Analytics {
 
         // Pop the last ','
         output.rtt.pop();
+        output.rtt_loss.pop();
+        output.rtt6.pop();
+        output.rtt6_loss.pop();
         output.tx.pop();
         output.rx.pop();
         output.connection_duration.pop();
@@ -289,6 +330,9 @@ impl Analytics {
         for node in self.nodes.values_mut() {
             // Keep the nodes, but clear the histograms
             node.rtt_histogram = Histogram::new();
+            node.rtt_loss_histogram = Histogram::new();
+            node.rtt6_histogram = Histogram::new();
+            node.rtt6_loss_histogram = Histogram::new();
             node.tx_histogram = Histogram::new();
             node.rx_histogram = Histogram::new();
             node.connected_time = Duration::default();
@@ -306,7 +350,7 @@ impl Analytics {
                 n.update_connection_duration(&event, pause);
 
                 // Update rtt info
-                n.endpoint = event.endpoint.ip();
+                n.endpoint = event.endpoint;
 
                 // Update throughput info
                 n.update_throughput_info(&event);
@@ -371,7 +415,7 @@ impl Analytics {
 mod tests {
     use super::*;
     use histogram::Histogram;
-    use std::net::{IpAddr, Ipv4Addr};
+    use std::net::Ipv4Addr;
 
     use telio_crypto::PublicKey;
 
@@ -416,12 +460,18 @@ mod tests {
 
         let expected_output = OutputData {
             rtt: String::from("20:40:70:90:100,0:0:0:0:0,20:40:70:90:100"),
+            rtt_loss: String::from("20:40:70:90:100,0:0:0:0:0,20:40:70:90:100"),
+            rtt6: String::from("20:40:70:90:100,0:0:0:0:0,20:40:70:90:100"),
+            rtt6_loss: String::from("20:40:70:90:100,0:0:0:0:0,20:40:70:90:100"),
             tx: String::from("20:40:70:90:100,0:0:0:0:0,20:40:70:90:100"),
             rx: String::from("20:40:70:90:100,0:0:0:0:0,20:40:70:90:100"),
             connection_duration: String::from("100;0;200"),
         };
 
         assert_eq!(output.rtt, expected_output.rtt);
+        assert_eq!(output.rtt_loss, expected_output.rtt_loss);
+        assert_eq!(output.rtt6, expected_output.rtt6);
+        assert_eq!(output.rtt6_loss, expected_output.rtt6_loss);
         assert_eq!(output.tx, expected_output.tx);
         assert_eq!(output.rx, expected_output.rx);
         assert_eq!(
@@ -449,8 +499,11 @@ mod tests {
             last_event: Instant::now(),
             last_wg_event: Instant::now(),
             connected_time,
-            endpoint: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            endpoint: DualTarget::new((Some(Ipv4Addr::new(127, 0, 0, 1)), None)).unwrap(),
             rtt_histogram: histogram.clone(),
+            rtt_loss_histogram: histogram.clone(),
+            rtt6_histogram: histogram.clone(),
+            rtt6_loss_histogram: histogram.clone(),
             last_rx_bytes: 0,
             last_tx_bytes: 0,
             tx_histogram: histogram.clone(),

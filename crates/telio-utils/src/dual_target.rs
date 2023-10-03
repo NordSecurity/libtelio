@@ -15,7 +15,7 @@ pub type Result<T> = std::result::Result<T, DualTargetError>;
 pub type Target = (Option<Ipv4Addr>, Option<Ipv6Addr>);
 
 /// DualTarget wrapper
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct DualTarget {
     target: Target,
 }
