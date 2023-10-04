@@ -21,6 +21,7 @@ telio-utils.workspace = true
 
 [dev-dependencies]
 mockall.workspace = true
+rstest.workspace = true
 
 [target.'cfg(target_os = "ios")'.dependencies]
 objc = "0.2.7"

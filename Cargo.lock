@@ -3896,6 +3896,7 @@ dependencies = [
  "objc",
  "objc-foundation",
  "parking_lot 0.12.1",
+ "rstest",
  "socket2 0.5.3",
  "system-configuration",
  "telio-utils",
