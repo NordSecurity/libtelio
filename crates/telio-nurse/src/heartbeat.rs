@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use bitflags::bitflags;
 use nat_detect::NatType;
+use once_cell::sync::Lazy;
 use std::collections::BTreeSet;
 use std::fmt::Write;
 use std::net::{IpAddr, SocketAddr};
@@ -31,6 +32,9 @@ use crate::data::{AnalyticsMessage, HeartbeatInfo, MeshConfigUpdateEvent};
 
 /// Approximately 30 years worth of time, used to pause timers and periods
 const FAR_FUTURE: Duration = Duration::from_secs(86400 * 365 * 30);
+
+static NOW: Lazy<Instant> = Lazy::new(|| Instant::now());
+static NOW_STD: Lazy<std::time::Instant> = Lazy::new(|| std::time::Instant::now());
 
 #[derive(PartialEq, Eq, Debug)]
 enum RuntimeState {
@@ -253,13 +257,14 @@ impl Runtime for Analytics {
     type Err = ();
 
     async fn wait(&mut self) -> WaitResponse<'_, Self::Err> {
+        dbg!(&self.state);
         tokio::select! {
             // wg event, only in the `Monitoring` state
             Ok(event) = self.io.wg_event_channel.recv(), if self.state == RuntimeState::Monitoring =>
                 Self::guard(
                     async move {
                         self.handle_wg_event(*event).await;
-                        telio_log_trace!("tokio::select! self.io.wg_event_channel.recv() branch");
+                        println!("tokio::select! self.io.wg_event_channel.recv() branch");
                         Ok(())
                      }
                 ),
@@ -269,7 +274,7 @@ impl Runtime for Analytics {
                 Self::guard(
                     async move {
                         self.handle_derp_event(*event).await;
-                        telio_log_trace!("tokio::select! self.io.derp_event_channel.recv() branch");
+                        println!("tokio::select! self.io.derp_event_channel.recv() branch");
                         Ok(())
                     }
                 ),
@@ -279,7 +284,7 @@ impl Runtime for Analytics {
                 Self::guard(
                     async move {
                         self.handle_config_update_event(*event).await;
-                        telio_log_trace!("tokio::select! self.io.config_update_channel.recv() branch");
+                        println!("tokio::select! self.io.config_update_channel.recv() branch");
                         Ok(())
                     }
                 ),
@@ -289,7 +294,7 @@ impl Runtime for Analytics {
                 Self::guard(
                     async move {
                         self.handle_collection().await;
-                        telio_log_trace!("tokio::select! self.io.collection_trigger_channel.recv() branch");
+                        println!("tokio::select! self.io.collection_trigger_channel.recv() branch");
                         Ok(())
                     }
                 ),
@@ -298,8 +303,9 @@ impl Runtime for Analytics {
             _ = self.task_interval.tick(), if self.state == RuntimeState::Monitoring =>
                 Self::guard(
                     async move {
+                        println!("############################ {:?} {:?}", NOW.elapsed(), NOW_STD.elapsed());
                         self.handle_collection().await;
-                        telio_log_trace!("tokio::select! self.task_interval.tick() branch");
+                        println!("tokio::select! self.task_interval.tick() branch");
                         Ok(())
                     }
                 ),
@@ -308,8 +314,9 @@ impl Runtime for Analytics {
             Some((pk, msg)) = self.io.chan.rx.recv() =>
                 Self::guard(
                     async move {
+                        dbg!((&pk, &msg));
                         self.message_handler((pk, msg)).await;
-                        telio_log_trace!("tokio::select! self.io.chan.rx.recv() branch");
+                        println!("tokio::select! self.io.chan.rx.recv() branch");
                         Ok(())
                     }
                 ),
@@ -319,7 +326,7 @@ impl Runtime for Analytics {
                 Self::guard(
                     async move {
                         self.handle_aggregation().await;
-                        telio_log_trace!("tokio::select! self.collect_period branch");
+                        println!("tokio::select! self.collect_period branch");
                         Ok(())
                     }
                 ),
@@ -363,10 +370,10 @@ impl Analytics {
 
         #[cfg(test)]
         let mut interval: Interval = interval_at(
-            Instant::now() - Duration::from_secs(25),
-            Duration::from_secs(5),
+            Instant::now(), // - Duration::from_secs(25),
+            Duration::from_secs(2),
         );
-        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        // interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         let mut config_nodes = HashMap::new();
         // Add self in config_nodes hashset
@@ -470,8 +477,9 @@ impl Analytics {
         for pk in self.local_nodes.keys() {
             let heartbeat = HeartbeatMessage::request();
 
+            println!("Will send to {pk:?}");
             #[allow(mpsc_blocking_send)]
-            if self.io.chan.tx.send((*pk, heartbeat)).await.is_err() {
+            if dbg!(self.io.chan.tx.send((*pk, heartbeat)).await).is_err() {
                 telio_log_warn!(
                     "Failed to send Nurse mesh Heartbeat request to node :{:?}",
                     pk
@@ -917,7 +925,7 @@ impl Analytics {
 mod tests {
     use telio_model::mesh::Node;
     use telio_sockets::{native::NativeSocket, Protector, SocketPool};
-    use telio_task::io::McChan;
+    use telio_task::{io::McChan, Task};
     use telio_utils::sync::mpsc::Receiver;
     use tokio::time::timeout;
 
@@ -1222,5 +1230,69 @@ mod tests {
         if let Ok(_) = timeout(Duration::from_millis(200), analytics.task_interval.tick()).await {
             assert_eq!(true, false);
         }
+    }
+
+    #[tokio::test]
+    async fn test_messages_are_not_sent_too_often_after_a_break() {
+        // This test shows that when old configuration is used we send messages
+        // every collect_answer_time (until we catch up) instead of every 2 seconds.
+        // In the old implementation it will generate 8 messages, in the new one 4.
+        let output = Chan::new(1);
+        let input = Chan::new(1);
+        let State { analytics, .. } = {
+            let sk = SecretKey::gen();
+            let pk = sk.public();
+            let meshnet_id = Uuid::new_v4();
+            let mut config = HeartbeatConfig::default();
+            config.collect_answer_timeout = Duration::from_secs(1);
+
+            let analytics_channel = Chan::new(1);
+            let io = Io {
+                chan: Chan {
+                    rx: input.rx,
+                    tx: output.tx,
+                }, //Chan::new(1),
+                derp_event_channel: McChan::new(1).rx,
+                wg_event_channel: McChan::new(1).rx,
+                config_update_channel: McChan::new(1).rx,
+                analytics_channel: analytics_channel.tx,
+                collection_trigger_channel: McChan::new(1).rx,
+            };
+            let channel = Chan::new(1);
+            let fake_protector = FakeProtector;
+            let socket_pool = Arc::new(SocketPool::new(fake_protector));
+            let event = McChan::new(1);
+            let derp = Arc::new(DerpRelay::start_with(channel, socket_pool, event.tx));
+            let analytics = Analytics::new(pk, meshnet_id, config, io, derp);
+            State {
+                public_key: pk,
+                meshnet_id,
+                analytics_channel: analytics_channel.rx,
+                analytics,
+            }
+        };
+        let rt = Task::start(analytics);
+        let mut output = output.rx;
+        let n = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        {
+            let n = n.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_secs(13)).await;
+                dbg!(output.recv().await);
+                dbg!(output.recv().await);
+                loop {
+                    tokio::select! {
+                        msg = output.recv() => {
+                            if msg.is_some() {
+                                n.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        tokio::time::sleep(Duration::from_millis(21500)).await;
+        rt.stop().await;
+        println!("{}", n.load(std::sync::atomic::Ordering::SeqCst));
     }
 }

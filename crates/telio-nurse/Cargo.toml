@@ -22,7 +22,7 @@ serde_json.workspace = true
 slog.workspace = true
 surge-ping.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["net", "sync"] }
+tokio = { workspace = true, features = ["net", "sync", "time"] }
 uuid.workspace = true
 
 telio-crypto.workspace = true
@@ -34,8 +34,10 @@ telio-relay.workspace = true
 telio-task.workspace = true
 telio-utils.workspace = true
 telio-wg.workspace = true
+once_cell.workspace = true
 
 [dev-dependencies]
+once_cell.workspace = true
 telio-sockets.workspace = true
 
 [build-dependencies]
