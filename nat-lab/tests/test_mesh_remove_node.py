@@ -27,7 +27,10 @@ from utils.ping import Ping
         pytest.param(
             ConnectionTag.WINDOWS_VM,
             AdapterType.WindowsNativeWg,
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
+            ],
         ),
         pytest.param(
             ConnectionTag.WINDOWS_VM, AdapterType.WireguardGo, marks=pytest.mark.windows

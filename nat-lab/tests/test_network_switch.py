@@ -76,7 +76,10 @@ async def test_network_switcher(
         pytest.param(
             ConnectionTag.WINDOWS_VM,
             AdapterType.WireguardGo,
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
+            ],
         ),
         # JIRA issue: LLT-1134
         # pytest.param(
@@ -144,7 +147,12 @@ async def test_mesh_network_switch(
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM, AdapterType.WireguardGo, marks=pytest.mark.windows
+            ConnectionTag.WINDOWS_VM,
+            AdapterType.WireguardGo,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
+            ],
         ),
         # JIRA issue: LLT-1134
         # pytest.param(
