@@ -66,6 +66,7 @@ use telio_utils::{
 use telio_model::{
     api_config::{
         FeaturePersistentKeepalive, Features, PathType, DEFAULT_ENDPOINT_POLL_INTERVAL_SECS,
+        DEFAULT_IGD_SEARCH_TIMEOUT_SECS,
     },
     config::{Config, Peer, Server as DerpServer},
     event::{Event, Set},
@@ -936,6 +937,9 @@ impl Runtime {
                         maximal: Some(Duration::from_secs(120)),
                     },
                     ping_pong_tracker.clone(),
+                    direct
+                        .upnp_gw_search_timeout_secs
+                        .unwrap_or(DEFAULT_IGD_SEARCH_TIMEOUT_SECS),
                 )?);
                 endpoint_providers.push(ep.clone());
                 Some(ep)
@@ -2103,6 +2107,7 @@ mod tests {
             direct: Some(FeatureDirect {
                 providers: None,
                 endpoint_interval_secs: None,
+                upnp_gw_search_timeout_secs: None,
                 skip_unresponsive_peers: Default::default(),
             }),
             ..Default::default()
@@ -2135,6 +2140,7 @@ mod tests {
             direct: Some(FeatureDirect {
                 providers: Some(HashSet::<telio_model::api_config::EndpointProvider>::new()),
                 endpoint_interval_secs: None,
+                upnp_gw_search_timeout_secs: None,
                 skip_unresponsive_peers: Default::default(),
             }),
             ..Default::default()
@@ -2175,6 +2181,7 @@ mod tests {
             direct: Some(FeatureDirect {
                 providers: Some(providers),
                 endpoint_interval_secs: None,
+                upnp_gw_search_timeout_secs: None,
                 skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
                     no_handshake_threshold_secs: 42,
                 }),

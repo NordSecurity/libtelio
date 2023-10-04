@@ -166,6 +166,8 @@ pub enum EndpointProvider {
 
 /// Endpoint polling interval
 pub const DEFAULT_ENDPOINT_POLL_INTERVAL_SECS: u64 = 25;
+/// IGD search timeout
+pub const DEFAULT_IGD_SEARCH_TIMEOUT_SECS: u64 = 5;
 
 /// Enable meshent direct connection
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
@@ -176,6 +178,8 @@ pub struct FeatureDirect {
     pub providers: Option<HashSet<EndpointProvider>>,
     /// Polling interval for endpoints [default 10s]
     pub endpoint_interval_secs: Option<u64>,
+    /// Timeout interval upnp ge search [default 5s]
+    pub upnp_gw_search_timeout_secs: Option<u64>,
     /// Configuration options for skipping unresponsive peers
     #[serde(default = "FeatureDirect::default_skip_unresponsive_peers")]
     pub skip_unresponsive_peers: Option<FeatureSkipUnresponsivePeers>,
@@ -186,6 +190,7 @@ impl Default for FeatureDirect {
         Self {
             skip_unresponsive_peers: Self::default_skip_unresponsive_peers(),
             providers: Default::default(),
+            upnp_gw_search_timeout_secs: Default::default(),
             endpoint_interval_secs: Default::default(),
         }
     }
@@ -418,6 +423,7 @@ mod tests {
         direct: Some(FeatureDirect {
             providers: None,
             endpoint_interval_secs: Some(10),
+            upnp_gw_search_timeout_secs: None,
             skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
                 no_handshake_threshold_secs: 50,
             }),
@@ -462,6 +468,7 @@ mod tests {
         direct: Some(FeatureDirect {
             providers: None,
             endpoint_interval_secs: None,
+            upnp_gw_search_timeout_secs: None,
             skip_unresponsive_peers: Some(Default::default()),
         }),
         exit_dns: Some(FeatureExitDns {
@@ -496,6 +503,7 @@ mod tests {
                     .collect(),
             ),
             endpoint_interval_secs: Some(30),
+            upnp_gw_search_timeout_secs: None,
             skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
                 no_handshake_threshold_secs: 42,
             }),
@@ -504,6 +512,7 @@ mod tests {
         let partial_features = FeatureDirect {
             providers: Some(vec![EndpointProvider::Local].into_iter().collect()),
             endpoint_interval_secs: None,
+            upnp_gw_search_timeout_secs: None,
             skip_unresponsive_peers: Some(Default::default()),
         };
 
