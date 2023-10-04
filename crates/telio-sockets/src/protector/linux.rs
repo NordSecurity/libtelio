@@ -75,6 +75,7 @@ mod tests {
 
     use super::*;
 
+    #[cfg(not(tarpaulin))]
     #[rstest]
     #[case(IpAddr::V4(Ipv4Addr::LOCALHOST))]
     #[case(IpAddr::V4(Ipv4Addr::UNSPECIFIED))]
