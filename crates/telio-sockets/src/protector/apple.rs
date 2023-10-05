@@ -28,11 +28,11 @@ use crate::Protector;
 use nix::sys::socket::{getsockname, AddressFamily, SockaddrLike, SockaddrStorage};
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn};
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "tvos"))]
 use objc::{class, msg_send, runtime::Object, sel, sel_impl};
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "tvos"))]
 use objc_foundation::{INSString, NSString};
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "tvos"))]
 use version_compare::{compare_to, Cmp};
 
 pub(crate) fn bind_to_tun(sock: NativeSocket, tunnel_interface: u64) -> io::Result<()> {
@@ -95,7 +95,8 @@ pub struct SocketWatcher {
     monitor: JoinHandle<io::Result<()>>,
 }
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "tvos"))]
+// TODO: Adjust to tvOS
 const SOCKET_WATCHER_MIN_IOS: &str = "15.7.1";
 pub struct NativeProtector {
     /// This is used to bind sockets to external interface
@@ -118,7 +119,7 @@ impl NativeProtector {
         #[cfg(target_os = "macos")]
         let should_create_socket_watcher = !is_test_env;
 
-        #[cfg(target_os = "ios")]
+        #[cfg(any(target_os = "ios", target_os = "tvos"))]
         let should_create_socket_watcher = NativeProtector::should_create_socket_watcher();
 
         if should_create_socket_watcher {
@@ -138,7 +139,7 @@ impl NativeProtector {
         }
     }
 
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "tvos"))]
     fn should_create_socket_watcher() -> bool {
         matches!(
             compare_to(
@@ -150,7 +151,7 @@ impl NativeProtector {
         )
     }
 
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "tvos"))]
     fn get_ios_version() -> String {
         let ui_device = class!(UIDevice);
 

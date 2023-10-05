@@ -155,6 +155,7 @@ impl Default for AdapterType {
     fn default() -> Self {
         if cfg!(any(
             target_os = "ios",
+            target_os = "tvos",
             target_os = "macos",
             target_os = "linux"
         )) {
