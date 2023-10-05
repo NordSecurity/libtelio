@@ -1,3 +1,4 @@
+import config
 from .router import Router, IPStack, IPProto
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, List
@@ -34,8 +35,8 @@ class LinuxRouter(Router):
     _connection: Connection
     _interface_name: str
 
-    def __init__(self, connection: Connection):
-        super().__init__()
+    def __init__(self, connection: Connection, ip_stack: IPStack):
+        super().__init__(ip_stack)
         self._connection = connection
         self._interface_name = "tun10"
 
@@ -81,66 +82,91 @@ class LinuxRouter(Router):
                     "-6",
                     "route",
                     "add",
-                    "fc74:656c:696f::/64",
+                    config.LIBTELIO_IPV6_WG_SUBNET + "::/64",
                     "dev",
                     self._interface_name,
                 ],
             ).execute()
 
     async def create_vpn_route(self):
-        if self.ip_stack == IPStack.IPv6:
-            assert False, "IPv6 for VPN is not supported"
+        if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
+            for network in ["10.0.0.0/16", "100.64.0.1"]:
+                try:
+                    await self._connection.create_process(
+                        [
+                            "ip",
+                            "route",
+                            "add",
+                            network,
+                            "dev",
+                            self._interface_name,
+                            "table",
+                            ROUTING_TABLE_ID,
+                        ]
+                    ).execute()
+                except ProcessExecError as exception:
+                    if exception.stderr.find("File exists") < 0:
+                        raise exception
 
-        try:
             await self._connection.create_process(
                 [
                     "ip",
-                    "route",
+                    "rule",
                     "add",
-                    "10.0.0.0/16",
-                    "dev",
-                    self._interface_name,
-                    "table",
+                    "priority",
+                    ROUTING_PRIORITY,
+                    "not",
+                    "from",
+                    "all",
+                    "fwmark",
+                    FWMARK_VALUE,
+                    "lookup",
                     ROUTING_TABLE_ID,
                 ]
             ).execute()
-        except ProcessExecError as exception:
-            if exception.stderr.find("File exists") < 0:
-                raise exception
 
-        try:
+        if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
+            for network in [
+                config.LIBTELIO_IPV6_WAN_SUBNET
+                + "::/"
+                + config.LIBTELIO_IPV6_WAN_SUBNET_SZ,
+                config.LIBTELIO_IPV6_WG_SUBNET + "::1",
+            ]:
+                try:
+                    await self._connection.create_process(
+                        [
+                            "ip",
+                            "-6",
+                            "route",
+                            "add",
+                            network,
+                            "dev",
+                            self._interface_name,
+                            "table",
+                            ROUTING_TABLE_ID,
+                        ]
+                    ).execute()
+                except ProcessExecError as exception:
+                    if exception.stderr.find("File exists") < 0:
+                        raise exception
+
             await self._connection.create_process(
                 [
                     "ip",
-                    "route",
+                    "-6",
+                    "rule",
                     "add",
-                    "100.64.0.1",
-                    "dev",
-                    self._interface_name,
-                    "table",
+                    "priority",
+                    ROUTING_PRIORITY,
+                    "not",
+                    "from",
+                    "all",
+                    "fwmark",
+                    FWMARK_VALUE,
+                    "lookup",
                     ROUTING_TABLE_ID,
                 ]
             ).execute()
-        except ProcessExecError as exception:
-            if exception.stderr.find("File exists") < 0:
-                raise exception
-
-        await self._connection.create_process(
-            [
-                "ip",
-                "rule",
-                "add",
-                "priority",
-                ROUTING_PRIORITY,
-                "not",
-                "from",
-                "all",
-                "fwmark",
-                FWMARK_VALUE,
-                "lookup",
-                ROUTING_TABLE_ID,
-            ]
-        ).execute()
 
     async def delete_interface(self) -> None:
         try:
@@ -152,19 +178,33 @@ class LinuxRouter(Router):
                 raise exception
 
     async def delete_vpn_route(self):
-        if self.ip_stack == IPStack.IPv6:
-            assert False, "IPv6 for VPN is not supported"
+        if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
+            try:
+                await self._connection.create_process(
+                    ["ip", "rule", "del", "priority", ROUTING_PRIORITY]
+                ).execute()
+            except ProcessExecError as exception:
+                if (
+                    exception.stderr.find(
+                        "RTNETLINK answers: No such file or directory"
+                    )
+                    < 0
+                ):
+                    raise exception
 
-        try:
-            await self._connection.create_process(
-                ["ip", "rule", "del", "priority", ROUTING_PRIORITY]
-            ).execute()
-        except ProcessExecError as exception:
-            if (
-                exception.stderr.find("RTNETLINK answers: No such file or directory")
-                < 0
-            ):
-                raise exception
+        if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
+            try:
+                await self._connection.create_process(
+                    ["ip", "-6", "rule", "del", "priority", ROUTING_PRIORITY]
+                ).execute()
+            except ProcessExecError as exception:
+                if (
+                    exception.stderr.find(
+                        "RTNETLINK answers: No such file or directory"
+                    )
+                    < 0
+                ):
+                    raise exception
 
     async def create_exit_node_route(self) -> None:
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
@@ -194,7 +234,7 @@ class LinuxRouter(Router):
                     "-A",
                     "POSTROUTING",
                     "-s",
-                    "fc74:656c:696f::/64",
+                    config.LIBTELIO_IPV6_WG_SUBNET + "::/64",
                     "!",
                     "-o",
                     self._interface_name,
@@ -236,7 +276,7 @@ class LinuxRouter(Router):
                         "-D",
                         "POSTROUTING",
                         "-s",
-                        "fc74:656c:696f::/64",
+                        config.LIBTELIO_IPV6_WG_SUBNET + "::/64",
                         "!",
                         "-o",
                         self._interface_name,
@@ -258,7 +298,7 @@ class LinuxRouter(Router):
         addr_proto = self.check_ip_address(address)
 
         if addr_proto is None:
-            return
+            pass
 
         iptables_string = ("ip" if addr_proto == IPProto.IPv4 else "ip6") + "tables"
 

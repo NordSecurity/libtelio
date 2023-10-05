@@ -1,4 +1,5 @@
 from .router import Router, IPProto, IPStack
+from config import LIBTELIO_IPV6_WG_SUBNET
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, List
 from utils.connection import Connection
@@ -9,8 +10,8 @@ class WindowsRouter(Router):
     _connection: Connection
     _interface_name: str
 
-    def __init__(self, connection: Connection):
-        super().__init__()
+    def __init__(self, connection: Connection, ip_stack: IPStack):
+        super().__init__(ip_stack)
         self._connection = connection
         self._interface_name = "wintun10"
 
@@ -74,7 +75,7 @@ class WindowsRouter(Router):
                         "ipv6",
                         "add",
                         "route",
-                        "fc74:656c:696f::/64",
+                        LIBTELIO_IPV6_WG_SUBNET + "::/64",
                         self._interface_name,
                     ]
                 ).execute()
@@ -83,9 +84,6 @@ class WindowsRouter(Router):
                     raise exception
 
     async def create_vpn_route(self) -> None:
-        if self.ip_stack == IPStack.IPv6:
-            assert False, "IPv6 for VPN is not supported"
-
         try:
             await self._connection.create_process(
                 [
@@ -103,36 +101,75 @@ class WindowsRouter(Router):
             if exception.stdout.find("The object already exists.") < 0:
                 raise exception
 
-    async def delete_interface(self) -> None:
-        pass
-
-    async def delete_vpn_route(self) -> None:
-        if self.ip_stack == IPStack.IPv6:
-            assert False, "IPv6 for VPN is not supported"
-
-        assert self._interface_name
-
         try:
             await self._connection.create_process(
                 [
                     "netsh",
                     "interface",
-                    "ipv4",
-                    "delete",
+                    "ipv6",
+                    "add",
                     "route",
-                    "0.0.0.0/0",
+                    "::/0",
                     self._interface_name,
                 ]
             ).execute()
         except ProcessExecError as exception:
-            if (
-                exception.stdout.find(
-                    "The filename, directory name, or volume label syntax is incorrect."
-                )
-                < 0
-                and exception.stdout.find("Element not found.") < 0
-            ):
+            if exception.stdout.find("The object already exists.") < 0:
                 raise exception
+
+    async def delete_interface(self) -> None:
+        pass
+
+    async def delete_vpn_route(self) -> None:
+        assert self._interface_name
+
+        if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
+            try:
+                await self._connection.create_process(
+                    [
+                        "netsh",
+                        "interface",
+                        "ipv4",
+                        "delete",
+                        "route",
+                        "0.0.0.0/0",
+                        self._interface_name,
+                    ]
+                ).execute()
+            except ProcessExecError as exception:
+                if (
+                    exception.stdout.find(
+                        "The filename, directory name, or volume label syntax is"
+                        " incorrect."
+                    )
+                    < 0
+                    and exception.stdout.find("Element not found.") < 0
+                ):
+                    raise exception
+
+        if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
+            try:
+                await self._connection.create_process(
+                    [
+                        "netsh",
+                        "interface",
+                        "ipv6",
+                        "delete",
+                        "route",
+                        "::/0",
+                        self._interface_name,
+                    ]
+                ).execute()
+            except ProcessExecError as exception:
+                if (
+                    exception.stdout.find(
+                        "The filename, directory name, or volume label syntax is"
+                        " incorrect."
+                    )
+                    < 0
+                    and exception.stdout.find("Element not found.") < 0
+                ):
+                    raise exception
 
     async def create_exit_node_route(self) -> None:
         pass

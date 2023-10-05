@@ -3,7 +3,7 @@
 set -e
 
 # Acquire public IP address
-public_itf=$(ip route get 10.0.0.1 | egrep -o 'dev [a-z0-9]+' | cut -f 2 -d ' ')
+public_itf=$(ip route show | awk '/10.0.0.0\/16.*dev [a-z0-0]+/ {print $3}')
 
 # Configure standart linux NAT, this will be port restricted cone NAT
 iptables -t nat -A POSTROUTING -p tcp -o $public_itf -j MASQUERADE

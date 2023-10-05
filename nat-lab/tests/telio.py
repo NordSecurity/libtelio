@@ -397,7 +397,7 @@ class Client:
 
         self._runtime = Runtime()
         self._events = Events(self._runtime)
-        self._router = new_router(self._connection)
+        self._router = new_router(self._connection, self._node.ip_stack)
         if telio_v3:
             self._process = self._connection.create_process(
                 [

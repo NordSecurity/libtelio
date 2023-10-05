@@ -3,8 +3,8 @@
 set -e
 
 # Acquire public IP address
-my_ip=$(ip route get 10.0.0.1 | egrep -o 'src [0-9.]+' | cut -f 2 -d ' ')
-my_itf=$(ip route get 10.0.0.1 | egrep -o 'dev [a-z0-9]+' | cut -f 2 -d ' ')
+my_ip=$(ip route show | awk '/10.0.0.0\/16.*dev [a-z0-0]+/ {print $9}')
+my_itf=$(ip route show | awk '/10.0.0.0\/16.*dev [a-z0-0]+/ {print $3}')
 echo "My IP address: $my_ip"
 
 # Increment IP address by one

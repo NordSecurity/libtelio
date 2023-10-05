@@ -20,8 +20,7 @@ services:
     networks:
       internet:
         ipv4_address: 10.0.80.80
-      internet_v6:
-        ipv6_address: 2001:0db8:85a4::adda:edde:0005
+        ipv6_address: 2001:db8:85a4::adda:edde:5
     volumes:
       - type: bind
         source: ./data/photo.png
@@ -112,8 +111,10 @@ services:
     networks:
       internet:
         ipv4_address: 10.0.254.1
+        priority: 1000
       cone-net-01:
         ipv4_address: 192.168.101.254
+        priority: 900
 
   # Create one open internet client for
   # cryptography tests
@@ -164,12 +165,11 @@ services:
     networks:
       internet:
         ipv4_address: 10.0.11.4
-      internet_v6:
-        ipv6_address: 2001:0db8:85a4::dead:beef:ceed
+        ipv6_address: 2001:db8:85a4::dead:beef:ceed
     environment:
       CLIENT_GATEWAY_PRIMARY: none
     extra_hosts:
-      - "photo-album:2001:0db8:85a4::adda:edde:0005"
+      - "photo-album:2001:db8:85a4::adda:edde:5"
       - "derp-01:10.0.10.1"
       - "derp-02:10.0.10.2"
       - "derp-03:10.0.10.3"
@@ -209,8 +209,10 @@ services:
     networks:
       internet:
         ipv4_address: 10.0.254.2
+        priority: 1000
       cone-net-02:
         ipv4_address: 192.168.102.254
+        priority: 900
   # Create one client for cone network, this client will use
   # the above gateway as its route to the "internet"
   cone-client-02:
@@ -242,8 +244,10 @@ services:
     networks:
       internet:
         ipv4_address: 10.0.254.3
+        priority: 1000
       hsymmetric-net-01:
         ipv4_address: 192.168.103.254
+        priority: 900
 
   symmetric-client-01:
     hostname: symmetric-client-01
@@ -274,8 +278,10 @@ services:
     networks:
       internet:
         ipv4_address: 10.0.254.4
+        priority: 1000
       hsymmetric-net-02:
         ipv4_address: 192.168.104.254
+        priority: 900
 
   symmetric-client-02:
     hostname: symmetric-client-02
@@ -308,8 +314,10 @@ services:
     networks:
       internet:
         ipv4_address: 10.0.254.9
+        priority: 1000
       fullcone-net-01:
         ipv4_address: 192.168.109.254
+        priority: 900
 
   fullcone-client-01:
     hostname: fullcone-client-01
@@ -342,8 +350,10 @@ services:
     networks:
       internet:
         ipv4_address: 10.0.254.6
+        priority: 1000
       fullcone-net-02:
         ipv4_address: 192.168.106.254
+        priority: 900
 
   fullcone-client-02:
     hostname: fullcone-client-02
@@ -374,8 +384,10 @@ services:
     networks:
       internet:
         ipv4_address: 10.0.254.5
+        priority: 1000
       upnp-net-01:
         ipv4_address: 192.168.105.254
+        priority: 900
 
   upnp-client-01:
     hostname: upnp-client-01
@@ -452,8 +464,10 @@ services:
     networks:
       internet:
         ipv4_address: 10.0.254.10
+        priority: 1000
       udp-block-net-01:
         ipv4_address: 192.168.110.254
+        priority: 900
 
   udp-block-client-02:
     hostname: udp-block-client-02
@@ -485,8 +499,10 @@ services:
     networks:
       internet:
         ipv4_address: 10.0.254.11
+        priority: 1000
       udp-block-net-02:
         ipv4_address: 192.168.111.254
+        priority: 900
 
   # These gateways are dedicated for VM network routing. VM traffic is gonna be routed into
   # docker network through these gateways.
@@ -498,8 +514,10 @@ services:
     networks:
       internet:
         ipv4_address: 10.0.254.7
+        priority: 1000
       cone-net-03:
         ipv4_address: 192.168.107.254
+        priority: 900
   cone-gw-04:
     hostname: cone-gw-04
     image: nat-lab:base
@@ -508,8 +526,10 @@ services:
     networks:
       internet:
         ipv4_address: 10.0.254.8
+        priority: 1000
       cone-net-04:
         ipv4_address: 192.168.108.254
+        priority: 900
 
   upnp-gw-02:
     hostname: upnp-gw-02
@@ -519,8 +539,10 @@ services:
     networks:
       internet:
         ipv4_address: 10.0.254.12
+        priority: 1000
       upnp-net-02:
         ipv4_address: 192.168.112.254
+        priority: 900
 
   upnp-client-02:
     hostname: upnp-client-02
@@ -551,8 +573,10 @@ services:
     networks:
       internet:
         ipv4_address: 10.0.254.13
+        priority: 1000
       cone-net-05:
         ipv4_address: 192.168.113.254
+        priority: 900
 
   internal-symmetric-gw-01:
     hostname: internal-symmetric-gw-01
@@ -597,6 +621,7 @@ networks:
   # various services like DERP/STUN will be hosted
   # on this network
   internet:
+    enable_ipv6: true
     driver: bridge
     driver_opts:
       com.docker.network.bridge.enable_ip_masquerade: 'false'
@@ -604,15 +629,7 @@ networks:
       driver: default
       config:
         - subnet: 10.0.0.0/16
-
-  # Network representing internet with global ipv6 addresses
-  internet_v6:
-    enable_ipv6: true
-    driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: 2001:0db8:85a4::/48
+        - subnet: 2001:db8:85a4::/48
 
   # Define two separate networks for use with cone NATs
   # gateways on these networks must implement restricted-cone NAT.

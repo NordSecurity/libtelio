@@ -16,10 +16,10 @@ use telio_proxy::Proxy;
 use telio_traversal::endpoint_providers::stun::StunEndpointProvider;
 use telio_traversal::endpoint_providers::EndpointProvider;
 use telio_traversal::{
-    cross_ping_check::CrossPingCheckTrait, SessionKeeperTrait, UpgradeSyncTrait,
-    WireGuardEndpointCandidateChangeEvent,
+    cross_ping_check::CrossPingCheckTrait, SessionKeeperTrait, Target as SessionKeeperTarget,
+    UpgradeSyncTrait, WireGuardEndpointCandidateChangeEvent,
 };
-use telio_utils::{telio_log_debug, telio_log_error, telio_log_info, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn};
 use telio_wg::{uapi::Peer, WireGuard};
 use thiserror::Error as TError;
 use tokio::sync::Mutex;
@@ -206,27 +206,23 @@ async fn consolidate_wg_peers<
                 }
 
                 // Initiate session keeper to start sending data between peers connected directly
-                if let (Some(sk), Some(mesh_ip)) =
-                    (session_keeper, requested_peer.peer.allowed_ips.first())
-                {
-                    // TODO this should be acommodatedto IPv6
-                    let ip4 = {
-                        match mesh_ip.ip() {
-                            IpAddr::V4(ip4) => ip4,
-                            IpAddr::V6(_ip6) => {
-                                telio_log_error!(
-                                    "IPv6 not supported, session keeper will not run on peer {:?}",
-                                    requested_peer.peer.public_key
-                                );
-                                break;
-                            }
-                        }
-                    };
+                if let (Some(sk), Some(mesh_ip1), maybe_mesh_ip2) = (
+                    session_keeper,
+                    requested_peer.peer.allowed_ips.get(0),
+                    requested_peer.peer.allowed_ips.get(1),
+                ) {
+                    let target: SessionKeeperTarget =
+                        match (mesh_ip1.ip(), maybe_mesh_ip2.map(|ip| ip.ip())) {
+                            (IpAddr::V4(ip4), Some(IpAddr::V6(ip6))) => (Some(ip4), Some(ip6)),
+                            (IpAddr::V6(ip6), Some(IpAddr::V4(ip4))) => (Some(ip4), Some(ip6)),
+                            (IpAddr::V4(ip4), _) => (Some(ip4), None),
+                            (IpAddr::V6(ip6), _) => (None, Some(ip6)),
+                        };
 
                     // Start persistent keepalives
                     sk.add_node(
                         &requested_peer.peer.public_key,
-                        (Some(ip4), None),
+                        target,
                         Duration::from_secs(
                             requested_peer
                                 .peer
@@ -413,7 +409,10 @@ async fn build_requested_peers_list<
         let endpoint = SocketAddr::new(IpAddr::V4(wg_stun_server.ipv4), wg_stun_server.stun_port);
         telio_log_debug!("Configuring wg-stun peer: {}, at {}", public_key, endpoint);
         let persistent_keepalive_interval = requested_state.keepalive_periods.stun;
-        let allowed_ips = vec![IpNetwork::V4("100.64.0.4/32".parse()?)];
+        let allowed_ips = vec![
+            IpNetwork::V4("100.64.0.4/32".parse()?),
+            IpNetwork::V6("fd74:656c:696f::4/128".parse()?),
+        ];
         requested_peers.insert(
             public_key,
             RequestedPeer {
@@ -810,7 +809,7 @@ mod tests {
     use super::*;
     use crate::device::{DeviceConfig, DNS};
     use mockall::predicate::{self, eq};
-    use std::net::{Ipv4Addr, SocketAddrV4};
+    use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4};
     use telio_crypto::SecretKey;
     use telio_dns::MockDnsResolver;
     use telio_firewall::firewall::{MockFirewall, FILE_SEND_PORT};
@@ -1376,7 +1375,7 @@ mod tests {
             }
         }
 
-        fn then_keeper_add_node(&mut self, input: Vec<(PublicKey, IpAddr, u32)>) {
+        fn then_keeper_add_node(&mut self, input: Vec<(PublicKey, IpAddr, Option<IpAddr>, u32)>) {
             for i in input {
                 let ip4 = {
                     match i.1 {
@@ -1385,13 +1384,23 @@ mod tests {
                     }
                 };
 
+                let ip6: Option<Ipv6Addr> = {
+                    match i.2 {
+                        Some(ip) => match ip {
+                            IpAddr::V4(_ip4) => panic!("Only ip6 is allowed"),
+                            IpAddr::V6(ip6) => Some(ip6),
+                        },
+                        _ => None,
+                    }
+                };
+
                 self.session_keeper
                     .expect_add_node()
                     .once()
                     .with(
                         eq(i.0),
-                        eq((Some(ip4), None)),
-                        eq(Duration::from_secs(i.2.into())),
+                        eq((Some(ip4), ip6)),
+                        eq(Duration::from_secs(i.3.into())),
                     )
                     .return_once(|_, _, _| Ok(()));
             }
@@ -1444,8 +1453,10 @@ mod tests {
 
         let pub_key = SecretKey::gen().public();
         let ip1 = IpAddr::from([1, 2, 3, 4]);
+        let ip1v6 = IpAddr::from([1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4]);
         let ip2 = IpAddr::from([5, 6, 7, 8]);
-        let allowed_ips = vec![ip1, ip2];
+        let ip2v6 = IpAddr::from([5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8]);
+        let allowed_ips = vec![ip1, ip1v6, ip2, ip2v6];
         let mapped_port = 18;
         let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
 
@@ -1476,8 +1487,14 @@ mod tests {
 
         let pub_key = SecretKey::gen().public();
         let ip1 = IpAddr::from([1, 2, 3, 4]);
+        let ip1v6 = IpAddr::V6(Ipv6Addr::from([
+            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4,
+        ]));
         let ip2 = IpAddr::from([5, 6, 7, 8]);
-        let allowed_ips = vec![ip1, ip2];
+        let ip2v6 = IpAddr::V6(Ipv6Addr::from([
+            5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8,
+        ]));
+        let allowed_ips = vec![ip1, ip1v6, ip2, ip2v6];
         let remote_wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
         let mapped_port = 12;
         let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
@@ -1504,7 +1521,7 @@ mod tests {
             direct_keepalive_period,
             allowed_ips.into_iter().map(|ip| ip.into()).collect(),
         )]);
-        f.then_keeper_add_node(vec![(pub_key, ip1, direct_keepalive_period)]);
+        f.then_keeper_add_node(vec![(pub_key, ip1, Some(ip1v6), direct_keepalive_period)]);
 
         f.consolidate_peers().await;
     }
@@ -1515,8 +1532,14 @@ mod tests {
 
         let pub_key = SecretKey::gen().public();
         let ip1 = IpAddr::from([1, 2, 3, 4]);
+        let ip1v6 = IpAddr::V6(Ipv6Addr::from([
+            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4,
+        ]));
         let ip2 = IpAddr::from([5, 6, 7, 8]);
-        let allowed_ips = vec![ip1, ip2];
+        let ip2v6 = IpAddr::V6(Ipv6Addr::from([
+            5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8,
+        ]));
+        let allowed_ips = vec![ip1, ip1v6, ip2, ip2v6];
         let remote_wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
         let local_wg_endpoint = SocketAddr::from(([192, 168, 0, 2], 15));
         let mapped_port = 12;
@@ -1549,7 +1572,7 @@ mod tests {
             allowed_ips.into_iter().map(|ip| ip.into()).collect(),
         )]);
         f.then_request_upgrade(vec![(pub_key, remote_wg_endpoint, local_wg_endpoint)]);
-        f.then_keeper_add_node(vec![(pub_key, ip1, direct_keepalive_period)]);
+        f.then_keeper_add_node(vec![(pub_key, ip1, Some(ip1v6), direct_keepalive_period)]);
 
         f.consolidate_peers().await;
     }
@@ -1560,8 +1583,10 @@ mod tests {
 
         let pub_key = SecretKey::gen().public();
         let ip1 = IpAddr::from([1, 2, 3, 4]);
+        let ip1v6 = IpAddr::from([1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4]);
         let ip2 = IpAddr::from([5, 6, 7, 8]);
-        let allowed_ips = vec![ip1, ip2];
+        let ip2v6 = IpAddr::from([5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8]);
+        let allowed_ips = vec![ip1, ip1v6, ip2, ip2v6];
         let remote_wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
         let local_wg_endpoint = SocketAddr::from(([192, 168, 0, 2], 15));
         let mapped_port = 12;
@@ -1598,7 +1623,9 @@ mod tests {
 
         let pub_key = SecretKey::gen().public();
         let ip1 = IpAddr::from([1, 2, 3, 4]);
+        let ip1v6 = IpAddr::from([1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4]);
         let ip2 = IpAddr::from([5, 6, 7, 8]);
+        let ip2v6 = IpAddr::from([5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8]);
         let mapped_port = 12;
         let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
 
@@ -1608,7 +1635,7 @@ mod tests {
             pub_key,
             proxy_endpoint,
             DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
-            vec![ip1, ip2],
+            vec![ip1, ip1v6, ip2, ip2v6],
         )]);
         f.when_time_since_last_rx(vec![]);
         f.when_time_since_last_endpoint_change(vec![]);
@@ -1626,8 +1653,10 @@ mod tests {
 
         let pub_key = SecretKey::gen().public();
         let ip1 = IpAddr::from([1, 2, 3, 4]);
+        let ip1v6 = IpAddr::from([1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4]);
         let ip2 = IpAddr::from([5, 6, 7, 8]);
-        let allowed_ips = vec![ip1, ip2];
+        let ip2v6 = IpAddr::from([5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8]);
+        let allowed_ips = vec![ip1, ip1v6, ip2, ip2v6];
         let mapped_port = 12;
         let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
 
@@ -1655,7 +1684,8 @@ mod tests {
 
         let pub_key = SecretKey::gen().public();
         let ip1 = IpAddr::from([1, 2, 3, 4]);
-        let allowed_ips = vec![ip1];
+        let ip1v6 = IpAddr::from([5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8]);
+        let allowed_ips = vec![ip1, ip1v6];
         let mapped_port = 12;
         let wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
         let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
@@ -1694,7 +1724,8 @@ mod tests {
 
         let pub_key = SecretKey::gen().public();
         let ip1 = IpAddr::from([1, 2, 3, 4]);
-        let allowed_ips = vec![ip1];
+        let ip1v6 = IpAddr::from([5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8]);
+        let allowed_ips = vec![ip1, ip1v6];
         let mapped_port = 12;
         let wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
 
@@ -1721,7 +1752,14 @@ mod tests {
         let mut f = Fixture::new();
 
         let public_key = SecretKey::gen().public();
-        let allowed_ips = vec![IpNetwork::new(IpAddr::from([7, 6, 5, 4]), 23).unwrap()];
+        let allowed_ips = vec![
+            IpNetwork::new(IpAddr::from([7, 6, 5, 4]), 23).unwrap(),
+            IpNetwork::new(
+                IpAddr::from([5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8]),
+                128,
+            )
+            .unwrap(),
+        ];
 
         let endpoint_raw = SocketAddr::from(([192, 168, 0, 1], 13));
         let endpoint = Some(endpoint_raw);
@@ -1758,7 +1796,15 @@ mod tests {
         let mut f = Fixture::new();
 
         let public_key = SecretKey::gen().public();
-        let allowed_ips = vec![IpNetwork::new(IpAddr::from([100, 64, 0, 4]), 32).unwrap()];
+
+        let allowed_ips = vec![
+            IpNetwork::new(IpAddr::from([100, 64, 0, 4]), 32).unwrap(),
+            IpNetwork::new(
+                IpAddr::V6(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 4)),
+                128,
+            )
+            .unwrap(),
+        ];
 
         let stun_port = 1234;
         let endpoint_ip = Ipv4Addr::from([100, 10, 0, 17]);
@@ -1797,8 +1843,14 @@ mod tests {
 
         let pub_key = SecretKey::gen().public();
         let ip1 = IpAddr::from([1, 2, 3, 4]);
+        let ip1v6 = IpAddr::V6(Ipv6Addr::from([
+            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4,
+        ]));
         let ip2 = IpAddr::from([5, 6, 7, 8]);
-        let allowed_ips = vec![ip1, ip2];
+        let ip2v6 = IpAddr::V6(Ipv6Addr::from([
+            5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8,
+        ]));
+        let allowed_ips = vec![ip1, ip1v6, ip2, ip2v6];
         let remote_wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
         let local_wg_endpoint = SocketAddr::from(([192, 168, 0, 2], 15));
         let mapped_port = 12;
@@ -1831,6 +1883,7 @@ mod tests {
         f.then_keeper_add_node(vec![(
             pub_key,
             ip1,
+            Some(ip1v6),
             DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
         )]);
 
@@ -1857,17 +1910,28 @@ mod tests {
         }
 
         let peer1_key = SecretKey::gen().public();
-        let peer1_ips = vec!["1.2.3.4".parse().unwrap()];
+        let peer1_ips = vec!["1.2.3.4".parse().unwrap(), "fd00::4".parse().unwrap()];
 
         let peer2_key = SecretKey::gen().public();
-        let peer2_ips = vec!["5.6.7.8".parse().unwrap()];
+        let peer2_ips = vec!["5.6.7.8".parse().unwrap(), "fc12::8".parse().unwrap()];
 
         let peer3_key = SecretKey::gen().public();
-        let peer3_ips = vec!["1.2.3.4".parse().unwrap(), "9.10.11.12".parse().unwrap()];
-        let peer3_expected_ips: Vec<IpAddr> = vec!["9.10.11.12".parse().unwrap()];
+        let peer3_ips = vec![
+            "1.2.3.4".parse().unwrap(),
+            "9.10.11.12".parse().unwrap(),
+            "fc12::8".parse().unwrap(),
+            "fd12::dead".parse().unwrap(),
+        ];
+        let peer3_expected_ips: Vec<IpAddr> =
+            vec!["9.10.11.12".parse().unwrap(), "fd12::dead".parse().unwrap()];
 
         let peer4_key = SecretKey::gen().public();
-        let peer4_ips = vec!["1.2.3.4".parse().unwrap(), "5.6.7.8".parse().unwrap()];
+        let peer4_ips = vec![
+            "1.2.3.4".parse().unwrap(),
+            "5.6.7.8".parse().unwrap(),
+            "fd00::4".parse().unwrap(),
+            "fc12::8".parse().unwrap(),
+        ];
 
         let peers = vec![
             make_peer(peer1_key, peer1_ips.clone(), true),
