@@ -87,6 +87,11 @@ class Router(ABC):
     async def break_tcp_conn_to_host(self, address: str) -> AsyncIterator:
         yield
 
+    @abstractmethod
+    @asynccontextmanager
+    async def break_udp_conn_to_host(self, address: str) -> AsyncIterator:
+        yield
+
     @property
     def ip_stack(self) -> IPStack:
         return self._ip_stack

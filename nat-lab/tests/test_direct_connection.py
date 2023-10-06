@@ -1,11 +1,12 @@
 import asyncio
+import config
 import pytest
 import telio
 from config import DERP_SERVERS
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from mesh_api import API, Node
-from telio import PathType, State, AdapterType
+from telio import PathType, State, AdapterType, Client
 from telio_features import TelioFeatures, Direct
 from typing import List, AsyncIterator, Tuple, Optional
 from utils import testing
@@ -13,6 +14,7 @@ from utils.connection import Connection
 from utils.connection_util import (
     ConnectionTag,
     new_connection_with_tracker_and_gw,
+    new_connection_by_tag,
     ConnectionTracker,
     generate_connection_tracker_config,
     ConnectionLimits,
@@ -771,3 +773,71 @@ async def test_direct_connection_endpoint_gone(
 
         assert alpha.conn_track.get_out_of_limits() is None
         assert beta.conn_track.get_out_of_limits() is None
+
+
+@pytest.mark.asyncio
+# Regression test for LLT-4306
+async def test_infinite_stun_loop() -> None:
+    async with AsyncExitStack() as exit_stack:
+        api = API()
+
+        (alpha, beta) = api.default_config_two_nodes()
+        alpha_connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+        beta_connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
+        )
+
+        alpha_client = await exit_stack.enter_async_context(
+            Client(
+                alpha_connection,
+                alpha,
+                AdapterType.BoringTun,
+                telio_features=TelioFeatures(direct=Direct(providers=["stun"])),
+            ).run_meshnet(
+                api.get_meshmap(alpha.id),
+            )
+        )
+        beta_client = await exit_stack.enter_async_context(
+            Client(
+                beta_connection,
+                beta,
+                AdapterType.BoringTun,
+                telio_features=TelioFeatures(direct=Direct(providers=["stun"])),
+            ).run_meshnet(api.get_meshmap(beta.id))
+        )
+
+        await testing.wait_defined(
+            asyncio.gather(
+                alpha_client.wait_for_state_peer(
+                    beta.public_key, [State.Connected], [PathType.Direct]
+                ),
+                beta_client.wait_for_state_peer(
+                    alpha.public_key, [State.Connected], [PathType.Direct]
+                ),
+            ),
+            60,
+        )
+
+        for server in config.DERP_SERVERS:
+            await exit_stack.enter_async_context(
+                alpha_client.get_router().break_udp_conn_to_host(str(server["ipv4"]))
+            )
+
+        # 3478 and 3479 are STUN ports in natlab containers
+        tcpdump = await exit_stack.enter_async_context(
+            alpha_connection.create_process(
+                ["tcpdump", "-i", "any", "(", "port", "3478", "or", "3479", ")"]
+            ).run()
+        )
+        await asyncio.sleep(5)
+
+        stun_requests = tcpdump.get_stdout().splitlines()
+        # There seems to be some delay when getting stdout from a process
+        # Without this delay, `stun_requests` is empty even if tcpdump reports traffic
+        await asyncio.sleep(0.5)
+        # 20 is a semi-random number that is low enough to prove the original issue is not present
+        # while being high enough to prevent false-positivies.
+        # The actual number of requests will be lower given the time frame that is being measured.
+        assert len(stun_requests) < 20
