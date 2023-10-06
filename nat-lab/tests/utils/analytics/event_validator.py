@@ -1,4 +1,10 @@
 from typing import List, Optional, Any
+from utils import testing
+
+DERP_BIT = 0b00000001
+WG_BIT = 0b00000010
+IPV4_BIT = 0b00000100
+IPV6_BIT = 0b00001000
 
 
 class ExistanceValidator:
@@ -65,9 +71,9 @@ class ConnectionCountValidator:
 
 
 class ConnectionStateValidator:
-    def __init__(self, all_connections_up, expected_state):
+    def __init__(self, all_connections_up, expected_states: Optional[List[int]] = None):
         self._all_connections_up = all_connections_up
-        self._expected_state = expected_state
+        self._expected_states = expected_states
 
     def validate(self, value):
         # Each connection is separated by a ',':
@@ -78,9 +84,11 @@ class ConnectionStateValidator:
         # [info1:info2:connection_state, info1:info2:connection_state]
         if self._all_connections_up:
             return not any(conn.split(":")[2] == "0" for conn in connections)
-        if self._expected_state != "":
+        if self._expected_states is not None:
+            states = testing.unpack_optional(self._expected_states)
             return all(
-                conn.split(":")[2] == self._expected_state for conn in connections
+                int(conn.split(":")[2]) & states[index]
+                for index, conn in enumerate(connections)
             )
         return False
 
@@ -149,6 +157,7 @@ class ExternalLinksValidator:
         all_connections_up=False,
         no_of_connections=0,
         no_of_vpn=0,
+        expected_states: Optional[List[int]] = None,
     ):
         self._validators: List[Any] = [
             StringValidator(
@@ -160,10 +169,11 @@ class ExternalLinksValidator:
         ]
 
         if exists:
-            if all_connections_up:
+            if all_connections_up or expected_states is not None:
                 self._validators.append(
                     ConnectionStateValidator(
-                        all_connections_up=all_connections_up, expected_state=""
+                        all_connections_up=all_connections_up,
+                        expected_states=expected_states,
                     )
                 )
             if no_of_connections != 0:
@@ -188,7 +198,7 @@ class ConnectivityMatrixValidator:
         exists=True,
         no_of_connections=0,
         all_connections_up=False,
-        expected_state="",
+        expected_states: Optional[List[int]] = None,
     ):
         self._validators: List[Any] = [StringValidator(exists=exists)]  # type: ignore
         if exists:
@@ -196,11 +206,11 @@ class ConnectivityMatrixValidator:
                 self._validators.append(
                     ConnectionCountValidator(count=no_of_connections)
                 )
-            if all_connections_up or expected_state != "":
+            if all_connections_up or expected_states is not None:
                 self._validators.append(
                     ConnectionStateValidator(
                         all_connections_up=all_connections_up,
-                        expected_state=expected_state,
+                        expected_states=expected_states,
                     )
                 )
 
@@ -273,6 +283,30 @@ class RttValidator:
         return self._validator.validate(event.rtt)
 
 
+class RttLossValidator:
+    def __init__(self, exists=True):
+        self._validator = StringValidator(exists=exists)
+
+    def validate(self, event):
+        return self._validator.validate(event.rtt_loss)
+
+
+class Rtt6Validator:
+    def __init__(self, exists=True):
+        self._validator = StringValidator(exists=exists)
+
+    def validate(self, event):
+        return self._validator.validate(event.rtt6)
+
+
+class Rtt6LossValidator:
+    def __init__(self, exists=True):
+        self._validator = StringValidator(exists=exists)
+
+    def validate(self, event):
+        return self._validator.validate(event.rtt6_loss)
+
+
 class SentDataValidator:
     def __init__(self, exists=True):
         self._validator = StringValidator(exists=exists)
@@ -323,6 +357,7 @@ class EventValidator:
         all_connections_up=False,
         no_of_connections=0,
         no_of_vpn=0,
+        expected_states: Optional[List[int]] = None,
     ):
         self._validators.append(
             ExternalLinksValidator(
@@ -333,6 +368,7 @@ class EventValidator:
                 all_connections_up=all_connections_up,
                 no_of_connections=no_of_connections,
                 no_of_vpn=no_of_vpn,
+                expected_states=expected_states,
             )
         )
         return self
@@ -342,14 +378,14 @@ class EventValidator:
         exists=True,
         no_of_connections=0,
         all_connections_up=False,
-        expected_state="",
+        expected_states: Optional[List[int]] = None,
     ):
         self._validators.append(
             ConnectivityMatrixValidator(
                 exists,
                 no_of_connections=no_of_connections,
                 all_connections_up=all_connections_up,
-                expected_state=expected_state,
+                expected_states=expected_states,
             )
         )
         return self
@@ -391,6 +427,18 @@ class EventValidator:
         self._validators.append(RttValidator(exists=exists))
         return self
 
+    def add_rtt_loss_validator(self, exists=True):
+        self._validators.append(RttLossValidator(exists=exists))
+        return self
+
+    def add_rtt6_validator(self, exists=True):
+        self._validators.append(Rtt6Validator(exists=exists))
+        return self
+
+    def add_rtt6_loss_validator(self, exists=True):
+        self._validators.append(Rtt6LossValidator(exists=exists))
+        return self
+
     def add_sent_data_validator(self, exists=True):
         self._validators.append(SentDataValidator(exists=exists))
         return self
@@ -430,6 +478,9 @@ def basic_validator(
         .add_connection_duration_validator(exists=True)
         .add_received_data_validator(exists=True)
         .add_rtt_validator(exists=True)
+        .add_rtt_loss_validator(exists=True)
+        .add_rtt6_validator(exists=True)
+        .add_rtt6_loss_validator(exists=True)
         .add_sent_data_validator(exists=True)
     )
     if node_fingerprint != "":

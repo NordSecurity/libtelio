@@ -4,14 +4,17 @@ TEST_EVENT = Validator.Event(
     name="heartbeat",
     category="service_quality",
     datetime_local="2023-08-10T15:03:25.605768807+00:00",
-    external_links="86c4375d-014b:delta:3,edcd3eea-7aca:charlie:3",
-    connectivity_matrix="1:2:3,0:2:2,0:1:3",
+    external_links="86c4375d-014b:delta:15,edcd3eea-7aca:charlie:15",
+    connectivity_matrix="1:2:7,0:2:11,0:1:15",
     fp="86bee206-9082",
     members="gamma, beta",
     connection_duration="0;11;11",
     heartbeat_interval=3600,
     received_data="0:0:0:0:0",
     rtt="0:0:0:0:0",
+    rtt_loss="0:0:0:0:0",
+    rtt6="0:0:0:0:0",
+    rtt6_loss="0:0:0:0:0",
     sent_data="0:0:0:0:0",
     nat_type="PortRestrictedCone",
     mem_nat_types="Symmetric,PortRestrictedCone",
@@ -29,6 +32,9 @@ DUMMY_EVENT = Validator.Event(
     heartbeat_interval=360,
     received_data="",
     rtt="",
+    rtt_loss="",
+    rtt6="",
+    rtt6_loss="",
     sent_data="",
     nat_type="Symmetric",
     mem_nat_types="PortRestrictedCone,PortRestrictedCone",
@@ -81,7 +87,27 @@ def test_connection_count_validator() -> None:
 def test_connection_state_validator() -> None:
     check_validator(
         Validator.ConnectionStateValidator(
-            expected_state=3,
+            expected_states=[
+                (
+                    Validator.DERP_BIT
+                    | Validator.WG_BIT
+                    | Validator.IPV4_BIT
+                    | Validator.IPV6_BIT
+                ),
+                (
+                    Validator.DERP_BIT
+                    | Validator.WG_BIT
+                    | Validator.IPV4_BIT
+                    | Validator.IPV6_BIT
+                ),
+            ],
+            all_connections_up=False,
+        ),
+        TEST_EVENT.external_links,
+        DUMMY_EVENT.external_links,
+    )
+    check_validator(
+        Validator.ConnectionStateValidator(
             all_connections_up=True,
         ),
         TEST_EVENT.external_links,
@@ -118,6 +144,31 @@ def test_external_links_validator() -> None:
             exists=True,
             contains=["delta", "charlie"],
             does_not_contain=["alpha"],
+            all_connections_up=False,
+            no_of_connections=2,
+            expected_states=[
+                (
+                    Validator.DERP_BIT
+                    | Validator.WG_BIT
+                    | Validator.IPV4_BIT
+                    | Validator.IPV6_BIT
+                ),
+                (
+                    Validator.DERP_BIT
+                    | Validator.WG_BIT
+                    | Validator.IPV4_BIT
+                    | Validator.IPV6_BIT
+                ),
+            ],
+        ),
+        TEST_EVENT,
+        DUMMY_EVENT,
+    )
+    check_validator(
+        Validator.ExternalLinksValidator(
+            exists=True,
+            contains=["delta", "charlie"],
+            does_not_contain=["alpha"],
             all_connections_up=True,
             no_of_connections=2,
         ),
@@ -130,6 +181,25 @@ def test_connectivity_matrix_validator() -> None:
     check_validator(
         Validator.ConnectivityMatrixValidator(
             exists=True, no_of_connections=3, all_connections_up=True
+        ),
+        TEST_EVENT,
+        DUMMY_EVENT,
+    )
+    check_validator(
+        Validator.ConnectivityMatrixValidator(
+            exists=True,
+            no_of_connections=3,
+            all_connections_up=False,
+            expected_states=[
+                (Validator.DERP_BIT | Validator.WG_BIT | Validator.IPV4_BIT),
+                (Validator.DERP_BIT | Validator.WG_BIT | Validator.IPV6_BIT),
+                (
+                    Validator.DERP_BIT
+                    | Validator.WG_BIT
+                    | Validator.IPV4_BIT
+                    | Validator.IPV6_BIT
+                ),
+            ],
         ),
         TEST_EVENT,
         DUMMY_EVENT,
@@ -168,6 +238,18 @@ def test_recieved_data_validator() -> None:
 
 def test_rtt_validator() -> None:
     check_validator(Validator.RttValidator(), TEST_EVENT, DUMMY_EVENT)
+
+
+def test_rtt_loss_validator() -> None:
+    check_validator(Validator.RttLossValidator(), TEST_EVENT, DUMMY_EVENT)
+
+
+def test_rtt6_validator() -> None:
+    check_validator(Validator.Rtt6Validator(), TEST_EVENT, DUMMY_EVENT)
+
+
+def test_rtt6_loss_validator() -> None:
+    check_validator(Validator.Rtt6LossValidator(), TEST_EVENT, DUMMY_EVENT)
 
 
 def test_sent_data_validator() -> None:

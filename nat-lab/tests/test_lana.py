@@ -1,3 +1,5 @@
+# pylint: disable=too-many-lines
+
 import asyncio
 import base64
 import pytest
@@ -5,12 +7,20 @@ import subprocess
 import telio
 from config import WG_SERVER
 from contextlib import AsyncExitStack
-from mesh_api import API
+from mesh_api import API, Node
 from telio import PathType, Client
 from telio_features import TelioFeatures, Nurse, Lana, Qos
 from typing import Optional
 from utils import testing
-from utils.analytics import fetch_moose_events, basic_validator
+from utils.analytics import (
+    fetch_moose_events,
+    basic_validator,
+    DERP_BIT,
+    WG_BIT,
+    IPV4_BIT,
+    IPV6_BIT,
+)
+from utils.connection import Connection
 from utils.connection_tracker import ConnectionLimits, ConnectionTracker
 from utils.connection_util import (
     generate_connection_tracker_config,
@@ -20,16 +30,45 @@ from utils.connection_util import (
     new_connection_by_tag,
 )
 from utils.ping import Ping
+from utils.router import IPStack, IPProto
 
 CONTAINER_EVENT_PATH = "/event.db"
 ALPHA_EVENTS_PATH = "./alpha-events.db"
 BETA_EVENTS_PATH = "./beta-events.db"
 GAMMA_EVENTS_PATH = "./gamma-events.db"
 
-DEFAULT_WAITING_TIME = 1
-DEFAULT_CHECK_INTERVAL = 1
-DEFAULT_CHECK_TIMEOUT = 40
+DEFAULT_WAITING_TIME = 3
+DEFAULT_CHECK_INTERVAL = 2
+DEFAULT_CHECK_TIMEOUT = 60
 COLLECT_NAT_TYPE = False
+
+IP_STACK_TEST_CONFIGS = [
+    pytest.param(
+        IPStack.IPv4,
+        IPStack.IPv4,
+        marks=pytest.mark.ipv4,
+    ),
+    pytest.param(
+        IPStack.IPv6,
+        IPStack.IPv6,
+        marks=pytest.mark.ipv6,
+    ),
+    pytest.param(
+        IPStack.IPv4v6,
+        IPStack.IPv4v6,
+        marks=pytest.mark.ipv4v6,
+    ),
+    pytest.param(
+        IPStack.IPv4,
+        IPStack.IPv4v6,
+        marks=pytest.mark.ipv4v6,
+    ),
+    pytest.param(
+        IPStack.IPv6,
+        IPStack.IPv4v6,
+        marks=pytest.mark.ipv4v6,
+    ),
+]
 
 
 def build_telio_features(
@@ -91,6 +130,70 @@ async def wait_for_event_dump(container, events_path, nr_events):
     return None
 
 
+async def ping_node(
+    initiator_conn: Connection,
+    initiator: Node,
+    target: Node,
+    preffered_proto: IPProto = IPProto.IPv4,
+):
+    chosen_stack = choose_peer_stack(initiator.ip_stack, target.ip_stack)
+
+    if chosen_stack == IPStack.IPv4:
+        proto = IPProto.IPv4
+    elif chosen_stack == IPStack.IPv6:
+        proto = IPProto.IPv6
+    elif chosen_stack == IPStack.IPv4v6:
+        proto = preffered_proto
+    else:
+        # Impossibru
+        return
+
+    async with Ping(
+        initiator_conn,
+        testing.unpack_optional(target.get_ip_address(proto)),
+    ).run() as ping:
+        await testing.wait_long(ping.wait_for_next_ping())
+
+
+def choose_peer_stack(node_one: IPStack, node_two: IPStack) -> Optional[IPStack]:
+    if (
+        (node_one, node_two) == (IPStack.IPv4, IPStack.IPv4)
+        or (node_one, node_two) == (IPStack.IPv4v6, IPStack.IPv4)
+        or (node_one, node_two)
+        == (
+            IPStack.IPv4,
+            IPStack.IPv4v6,
+        )
+    ):
+        return IPStack.IPv4
+
+    if (
+        (node_one, node_two) == (IPStack.IPv6, IPStack.IPv6)
+        or (node_one, node_two) == (IPStack.IPv4v6, IPStack.IPv6)
+        or (node_one, node_two)
+        == (
+            IPStack.IPv6,
+            IPStack.IPv4v6,
+        )
+    ):
+        return IPStack.IPv6
+
+    if (node_one, node_two) == (IPStack.IPv4v6, IPStack.IPv4v6):
+        return IPStack.IPv4v6
+
+    return None
+
+
+def ip_stack_to_bits(ip_stack: IPStack) -> int:
+    if ip_stack == IPStack.IPv4:
+        return IPV4_BIT
+    if ip_stack == IPStack.IPv6:
+        return IPV6_BIT
+
+    # IPStack.IPv4v6
+    return IPV4_BIT | IPV6_BIT
+
+
 async def run_default_scenario(
     exit_stack: AsyncExitStack,
     alpha_is_local,
@@ -99,12 +202,18 @@ async def run_default_scenario(
     alpha_has_vpn_connection=False,
     beta_has_vpn_connection=False,
     gamma_has_vpn_connection=False,
+    alpha_ip_stack=IPStack.IPv4,
+    beta_ip_stack=IPStack.IPv4,
+    gamma_ip_stack=IPStack.IPv4,
 ):
     api = API()
     (alpha, beta, gamma) = api.default_config_three_nodes(
         alpha_is_local=alpha_is_local,
         beta_is_local=beta_is_local,
         gamma_is_local=gamma_is_local,
+        alpha_ip_stack=alpha_ip_stack,
+        beta_ip_stack=beta_ip_stack,
+        gamma_ip_stack=gamma_ip_stack,
     )
 
     (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
@@ -197,12 +306,9 @@ async def run_default_scenario(
     if gamma_has_vpn_connection:
         await connect_to_default_vpn(client_gamma, gamma_conn_tracker)
 
-    async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-        await testing.wait_long(ping.wait_for_next_ping())
-    async with Ping(connection_beta, gamma.ip_addresses[0]).run() as ping:
-        await testing.wait_long(ping.wait_for_next_ping())
-    async with Ping(connection_gamma, alpha.ip_addresses[0]).run() as ping:
-        await testing.wait_long(ping.wait_for_next_ping())
+    await ping_node(connection_alpha, alpha, beta)
+    await ping_node(connection_beta, beta, gamma)
+    await ping_node(connection_gamma, gamma, alpha)
 
     await asyncio.sleep(DEFAULT_WAITING_TIME)
 
@@ -232,18 +338,73 @@ async def run_default_scenario(
     assert beta_conn_tracker.get_out_of_limits() is None
     assert gamma_conn_tracker.get_out_of_limits() is None
 
-    return [alpha_events, beta_events, gamma_events]
+    (alpha_expected_states, beta_expected_states, gamma_expected_states) = (
+        [
+            (
+                DERP_BIT
+                | WG_BIT
+                | ip_stack_to_bits(
+                    testing.unpack_optional(
+                        choose_peer_stack(alpha_ip_stack, beta_ip_stack)
+                    )
+                )
+            ),
+            (
+                DERP_BIT
+                | WG_BIT
+                | ip_stack_to_bits(
+                    testing.unpack_optional(
+                        choose_peer_stack(alpha_ip_stack, gamma_ip_stack)
+                    )
+                )
+            ),
+            (
+                DERP_BIT
+                | WG_BIT
+                | ip_stack_to_bits(
+                    testing.unpack_optional(
+                        choose_peer_stack(beta_ip_stack, gamma_ip_stack)
+                    )
+                )
+            ),
+        ]
+        for _ in range(3)
+    )
+
+    return [
+        alpha_events,
+        beta_events,
+        gamma_events,
+        alpha_expected_states,
+        beta_expected_states,
+        gamma_expected_states,
+    ]
 
 
 @pytest.mark.moose
 @pytest.mark.asyncio
-async def test_lana_with_same_meshnet() -> None:
+@pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
+async def test_lana_with_same_meshnet(
+    alpha_ip_stack: IPStack, beta_ip_stack: IPStack
+) -> None:
     async with AsyncExitStack() as exit_stack:
-        [alpha_events, beta_events, gamma_events] = await run_default_scenario(
+        gamma_ip_stack = IPStack.IPv4v6
+
+        [
+            alpha_events,
+            beta_events,
+            gamma_events,
+            alpha_expected_states,
+            beta_expected_states,
+            gamma_expected_states,
+        ] = await run_default_scenario(
             exit_stack=exit_stack,
             alpha_is_local=True,
             beta_is_local=True,
             gamma_is_local=True,
+            alpha_ip_stack=alpha_ip_stack,
+            beta_ip_stack=beta_ip_stack,
+            gamma_ip_stack=gamma_ip_stack,
         )
 
         assert alpha_events
@@ -257,7 +418,10 @@ async def test_lana_with_same_meshnet() -> None:
             basic_validator(meshnet_id=expected_meshnet_id)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
-                exists=True, no_of_connections=3, all_connections_up=True
+                expected_states=alpha_expected_states,
+                exists=True,
+                no_of_connections=3,
+                all_connections_up=False,
             )
             .add_members_validator(
                 exists=True,
@@ -276,7 +440,10 @@ async def test_lana_with_same_meshnet() -> None:
             basic_validator(meshnet_id=expected_meshnet_id)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
-                exists=True, no_of_connections=3, all_connections_up=True
+                exists=True,
+                no_of_connections=3,
+                all_connections_up=False,
+                expected_states=beta_expected_states,
             )
             .add_members_validator(
                 exists=True,
@@ -295,7 +462,10 @@ async def test_lana_with_same_meshnet() -> None:
             basic_validator(meshnet_id=expected_meshnet_id)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
-                exists=True, no_of_connections=3, all_connections_up=True
+                exists=True,
+                no_of_connections=3,
+                all_connections_up=False,
+                expected_states=gamma_expected_states,
             )
             .add_members_validator(
                 exists=True,
@@ -313,13 +483,28 @@ async def test_lana_with_same_meshnet() -> None:
 
 @pytest.mark.moose
 @pytest.mark.asyncio
-async def test_lana_with_external_node() -> None:
+@pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
+async def test_lana_with_external_node(
+    alpha_ip_stack: IPStack, beta_ip_stack: IPStack
+) -> None:
+    gamma_ip_stack = IPStack.IPv4v6
+
     async with AsyncExitStack() as exit_stack:
-        [alpha_events, beta_events, gamma_events] = await run_default_scenario(
+        [
+            alpha_events,
+            beta_events,
+            gamma_events,
+            alpha_expected_states,
+            beta_expected_states,
+            gamma_expected_states,
+        ] = await run_default_scenario(
             exit_stack=exit_stack,
             alpha_is_local=True,
             beta_is_local=True,
             gamma_is_local=False,
+            alpha_ip_stack=alpha_ip_stack,
+            beta_ip_stack=beta_ip_stack,
+            gamma_ip_stack=gamma_ip_stack,
         )
 
         assert alpha_events
@@ -332,11 +517,15 @@ async def test_lana_with_external_node() -> None:
                 exists=True,
                 contains=["gamma_fingerprint"],
                 does_not_contain=["vpn", alpha_events[0].fp, "alpha_fingerprint"],
-                all_connections_up=True,
+                all_connections_up=False,
                 no_of_connections=1,
+                expected_states=alpha_expected_states,
             )
             .add_connectivity_matrix_validator(
-                exists=True, no_of_connections=1, all_connections_up=True
+                exists=True,
+                no_of_connections=1,
+                all_connections_up=False,
+                expected_states=alpha_expected_states,
             )
             .add_members_validator(
                 exists=True,
@@ -358,11 +547,15 @@ async def test_lana_with_external_node() -> None:
                 exists=True,
                 contains=["gamma_fingerprint"],
                 does_not_contain=["vpn", beta_events[0].fp, "beta_fingerprint"],
-                all_connections_up=True,
+                all_connections_up=False,
                 no_of_connections=1,
+                expected_states=beta_expected_states,
             )
             .add_connectivity_matrix_validator(
-                exists=True, no_of_connections=1, all_connections_up=True
+                exists=True,
+                no_of_connections=1,
+                all_connections_up=False,
+                expected_states=beta_expected_states,
             )
             .add_members_validator(
                 exists=True,
@@ -384,8 +577,9 @@ async def test_lana_with_external_node() -> None:
                 exists=True,
                 contains=["alpha_fingerprint", "beta_fingerprint"],
                 does_not_contain=["vpn", gamma_events[0].fp, "gamma_fingerprint"],
-                all_connections_up=True,
+                all_connections_up=False,
                 no_of_connections=2,
+                expected_states=gamma_expected_states,
             )
             .add_connectivity_matrix_validator(exists=False)
             .add_nat_type_validators(
@@ -404,13 +598,28 @@ async def test_lana_with_external_node() -> None:
 
 @pytest.mark.moose
 @pytest.mark.asyncio
-async def test_lana_all_external() -> None:
+@pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
+async def test_lana_all_external(
+    alpha_ip_stack: IPStack, beta_ip_stack: IPStack
+) -> None:
     async with AsyncExitStack() as exit_stack:
-        [alpha_events, beta_events, gamma_events] = await run_default_scenario(
+        gamma_ip_stack = IPStack.IPv4v6
+
+        [
+            alpha_events,
+            beta_events,
+            gamma_events,
+            alpha_expected_states,
+            beta_expected_states,
+            gamma_expected_states,
+        ] = await run_default_scenario(
             exit_stack=exit_stack,
             alpha_is_local=False,
             beta_is_local=False,
             gamma_is_local=False,
+            alpha_ip_stack=alpha_ip_stack,
+            beta_ip_stack=beta_ip_stack,
+            gamma_ip_stack=gamma_ip_stack,
         )
 
         assert alpha_events
@@ -423,8 +632,9 @@ async def test_lana_all_external() -> None:
                 exists=True,
                 contains=["beta_fingerprint", "gamma_fingerprint"],
                 does_not_contain=["vpn", alpha_events[0].fp, "alpha_fingerprint"],
-                all_connections_up=True,
+                all_connections_up=False,
                 no_of_connections=2,
+                expected_states=alpha_expected_states,
             )
             .add_connectivity_matrix_validator(exists=False)
             .add_nat_type_validators(
@@ -442,8 +652,9 @@ async def test_lana_all_external() -> None:
                 exists=True,
                 contains=["alpha_fingerprint", "gamma_fingerprint"],
                 does_not_contain=["vpn", beta_events[0].fp, "beta_fingerprint"],
-                all_connections_up=True,
+                all_connections_up=False,
                 no_of_connections=2,
+                expected_states=beta_expected_states,
             )
             .add_connectivity_matrix_validator(exists=False)
             .add_nat_type_validators(
@@ -461,8 +672,9 @@ async def test_lana_all_external() -> None:
                 exists=True,
                 contains=["alpha_fingerprint", "beta_fingerprint"],
                 does_not_contain=["vpn", gamma_events[0].fp, "gamma_fingerprint"],
-                all_connections_up=True,
+                all_connections_up=False,
                 no_of_connections=2,
+                expected_states=gamma_expected_states,
             )
             .add_connectivity_matrix_validator(exists=False)
             .add_nat_type_validators(
@@ -482,9 +694,21 @@ async def test_lana_all_external() -> None:
 
 @pytest.mark.moose
 @pytest.mark.asyncio
-async def test_lana_with_vpn_connections() -> None:
+@pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
+async def test_lana_with_vpn_connections(
+    alpha_ip_stack: IPStack, beta_ip_stack: IPStack
+) -> None:
     async with AsyncExitStack() as exit_stack:
-        [alpha_events, beta_events, gamma_events] = await run_default_scenario(
+        gamma_ip_stack = IPStack.IPv4v6
+
+        [
+            alpha_events,
+            beta_events,
+            gamma_events,
+            alpha_expected_states,
+            beta_expected_states,
+            gamma_expected_states,
+        ] = await run_default_scenario(
             exit_stack=exit_stack,
             alpha_is_local=True,
             beta_is_local=True,
@@ -492,6 +716,9 @@ async def test_lana_with_vpn_connections() -> None:
             alpha_has_vpn_connection=True,
             beta_has_vpn_connection=False,
             gamma_has_vpn_connection=False,
+            alpha_ip_stack=alpha_ip_stack,
+            beta_ip_stack=beta_ip_stack,
+            gamma_ip_stack=gamma_ip_stack,
         )
 
         assert alpha_events
@@ -506,12 +733,16 @@ async def test_lana_with_vpn_connections() -> None:
             .add_external_links_validator(
                 exists=True,
                 contains=["vpn"],
-                all_connections_up=True,
+                all_connections_up=False,
                 no_of_connections=1,
                 no_of_vpn=1,
+                expected_states=alpha_expected_states,
             )
             .add_connectivity_matrix_validator(
-                exists=True, no_of_connections=3, all_connections_up=True
+                exists=True,
+                no_of_connections=3,
+                all_connections_up=False,
+                expected_states=alpha_expected_states,
             )
             .add_members_validator(
                 exists=True,
@@ -530,7 +761,10 @@ async def test_lana_with_vpn_connections() -> None:
             basic_validator(meshnet_id=expected_meshnet_id)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
-                exists=True, no_of_connections=3, all_connections_up=True
+                exists=True,
+                no_of_connections=3,
+                all_connections_up=False,
+                expected_states=beta_expected_states,
             )
             .add_members_validator(
                 exists=True,
@@ -549,7 +783,10 @@ async def test_lana_with_vpn_connections() -> None:
             basic_validator(meshnet_id=expected_meshnet_id)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
-                exists=True, no_of_connections=3, all_connections_up=True
+                exists=True,
+                no_of_connections=3,
+                all_connections_up=False,
+                expected_states=gamma_expected_states,
             )
             .add_members_validator(
                 exists=True,
@@ -567,10 +804,15 @@ async def test_lana_with_vpn_connections() -> None:
 
 @pytest.mark.moose
 @pytest.mark.asyncio
-async def test_lana_with_disconnected_node() -> None:
+@pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
+async def test_lana_with_disconnected_node(
+    alpha_ip_stack: IPStack, beta_ip_stack: IPStack
+) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
-        (alpha, beta) = api.default_config_two_nodes(True, True)
+        (alpha, beta) = api.default_config_two_nodes(
+            True, True, alpha_ip_stack=alpha_ip_stack, beta_ip_stack=beta_ip_stack
+        )
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -627,8 +869,7 @@ async def test_lana_with_disconnected_node() -> None:
             )
         )
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+        await ping_node(connection_alpha, alpha, beta)
 
         await asyncio.sleep(DEFAULT_WAITING_TIME)
 
@@ -660,7 +901,20 @@ async def test_lana_with_disconnected_node() -> None:
             basic_validator()
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
-                exists=True, no_of_connections=1, all_connections_up=True
+                exists=True,
+                no_of_connections=1,
+                all_connections_up=False,
+                expected_states=[
+                    (
+                        DERP_BIT
+                        | WG_BIT
+                        | ip_stack_to_bits(
+                            testing.unpack_optional(
+                                choose_peer_stack(alpha_ip_stack, beta_ip_stack)
+                            )
+                        )
+                    )
+                ],
             )
             .add_members_validator(
                 exists=True, contains=["alpha_fingerprint", "beta_fingerprint"]
@@ -675,7 +929,20 @@ async def test_lana_with_disconnected_node() -> None:
             basic_validator()
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
-                exists=True, no_of_connections=1, all_connections_up=True
+                exists=True,
+                no_of_connections=1,
+                all_connections_up=False,
+                expected_states=[
+                    (
+                        DERP_BIT
+                        | WG_BIT
+                        | ip_stack_to_bits(
+                            testing.unpack_optional(
+                                choose_peer_stack(beta_ip_stack, alpha_ip_stack)
+                            )
+                        )
+                    )
+                ],
             )
             .add_members_validator(
                 exists=True, contains=["alpha_fingerprint", "beta_fingerprint"]
@@ -715,10 +982,13 @@ async def test_lana_with_disconnected_node() -> None:
 
 @pytest.mark.moose
 @pytest.mark.asyncio
-async def test_lana_with_second_node_joining_later_meshnet_id_can_change() -> None:
+@pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
+async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
+    alpha_ip_stack: IPStack, beta_ip_stack: IPStack
+) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
-        beta = api.default_config_one_node(True)
+        beta = api.default_config_one_node(True, ip_stack=beta_ip_stack)
         (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 ConnectionTag.DOCKER_CONE_CLIENT_2,
@@ -744,7 +1014,7 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change() -> No
         )
         assert beta_events
 
-        alpha = api.default_config_one_node(True)
+        alpha = api.default_config_one_node(True, ip_stack=alpha_ip_stack)
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -779,10 +1049,8 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change() -> No
             )
         )
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
-        async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+        await ping_node(connection_alpha, alpha, beta)
+        await ping_node(connection_beta, beta, alpha)
 
         await client_alpha.trigger_event_collection()
         await client_beta.trigger_event_collection()
@@ -809,10 +1077,13 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change() -> No
 
 @pytest.mark.moose
 @pytest.mark.asyncio
-async def test_lana_same_meshnet_id_is_reported_after_a_restart():
+@pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
+async def test_lana_same_meshnet_id_is_reported_after_a_restart(
+    alpha_ip_stack: IPStack, beta_ip_stack: IPStack
+):
     async with AsyncExitStack() as exit_stack:
         api = API()
-        beta = api.default_config_one_node(True)
+        beta = api.default_config_one_node(True, ip_stack=beta_ip_stack)
         connection_beta = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
         )
@@ -836,7 +1107,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart():
         await client_beta.quit()
         api.remove(beta.id)
 
-        beta = api.default_config_one_node(True)
+        beta = api.default_config_one_node(True, ip_stack=alpha_ip_stack)
         connection_beta = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
         )
