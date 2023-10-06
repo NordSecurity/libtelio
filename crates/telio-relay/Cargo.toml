@@ -28,6 +28,7 @@ libc = "0.2.99"
 async-trait = "0.1.51"
 serde = { version = "1.0", features = ["derive"] }
 generic-array = "0.14.5"
+rustls-native-certs = "0.6.3"
 
 telio-crypto = { path = "../telio-crypto" }
 telio-utils = { path = "../telio-utils" }

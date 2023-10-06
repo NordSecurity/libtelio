@@ -34,6 +34,7 @@ use tokio_rustls::{
 };
 use url::{Host, Url};
 use webpki_roots::TLS_SERVER_ROOTS;
+use rustls_native_certs;
 
 pub(crate) struct NoVerifier;
 
@@ -141,22 +142,10 @@ pub async fn connect_http_and_start(
             .await
         }
         _ => {
-            let trust_anchors = TLS_SERVER_ROOTS.iter().map(|trust_anchor| {
-                OwnedTrustAnchor::from_subject_spki_name_constraints(
-                    trust_anchor.subject,
-                    trust_anchor.spki,
-                    trust_anchor.name_constraints,
-                )
-            });
-
             let mut root_store = RootCertStore::empty();
-            root_store.add_trust_anchors(trust_anchors);
-
-            if let Some(path) = &derp_config.ca_pem_path {
-                let root_cert_file = File::open(path)?;
-                let mut root_cert_file = BufReader::new(root_cert_file);
-                let der_certs = rustls_pemfile::certs(&mut root_cert_file).unwrap_or_default();
-                root_store.add_parsable_certificates(&der_certs);
+            for cert in rustls_native_certs::load_native_certs().expect("Oopsie, could not load native TLS store") {
+                let rcert = tokio_rustls::rustls::Certificate(cert.0);
+                root_store.add(&rcert).expect("Failed to add cert");
             }
 
             let mut config = ClientConfig::builder()
