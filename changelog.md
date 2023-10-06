@@ -35,6 +35,7 @@
 * LLT-4360: Bump rust version to 1.72
 * LLT-4286: Add icmp error packet handling to firewall
 * LLT-4432: Use forked system-configuration crate to prevent iOS linking errors
+* LLT-3951: IPv6 analytics.
 
 <br>
 
