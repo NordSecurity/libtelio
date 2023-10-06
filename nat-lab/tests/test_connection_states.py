@@ -31,7 +31,10 @@ from utils.ping import Ping
         pytest.param(
             ConnectionTag.WINDOWS_VM,
             telio.AdapterType.WireguardGo,
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
+            ],
         ),
         pytest.param(
             ConnectionTag.MAC_VM, telio.AdapterType.Default, marks=pytest.mark.mac
