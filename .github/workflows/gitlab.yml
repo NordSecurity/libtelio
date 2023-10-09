@@ -13,7 +13,7 @@ permissions: {}
 
 jobs:
   trigger-gitlab-pipeline:
-    runs-on: [self-hosted, libtelio]
+    runs-on: [self-hosted, gitlab]
     if: |
       github.event_name == 'schedule' ||
       github.event_name == 'push' ||
