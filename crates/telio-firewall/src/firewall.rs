@@ -291,6 +291,16 @@ struct IcmpConn {
     identifier_sequence: u32,
 }
 
+type IcmpKey = Result<IcmpConn, IcmpErrorKey>;
+
+#[derive(Clone, Debug)]
+enum IcmpErrorKey {
+    Udp(Option<IpConnWithPort>),
+    Tcp(Option<IpConnWithPort>),
+    Icmp(Option<IcmpConn>),
+    None,
+}
+
 impl Debug for IcmpConn {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("IcmpConn")
@@ -433,13 +443,7 @@ impl StatefullFirewall {
     }
 
     fn handle_outbound_udp<'a>(&self, ip: &impl IpPacket<'a>) {
-        let udp_packet = unwrap_option_or_return!(UdpPacket::new(ip.payload()));
-        let key = IpConnWithPort {
-            remote_addr: ip.get_destination().into(),
-            remote_port: udp_packet.get_destination(),
-            local_addr: ip.get_source().into(),
-            local_port: udp_packet.get_source(),
-        };
+        let key = unwrap_option_or_return!(Self::build_udp_key(ip, false));
         let mut udp_cache = unwrap_lock_or_return!(self.udp.lock());
         // If key already exists, dont change the value, just update timer with entry
         if let Entry::Vacant(e) = udp_cache.entry(key) {
@@ -452,18 +456,10 @@ impl StatefullFirewall {
     }
 
     fn handle_outbound_tcp<'a>(&self, ip: &impl IpPacket<'a>) {
-        let tcp_packet = unwrap_option_or_return!(TcpPacket::new(ip.payload()));
-        let flags = tcp_packet.get_flags();
+        let (key, flags) = unwrap_option_or_return!(Self::build_tcp_key(ip, false));
+        let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock());
 
         if flags & TCP_FIRST_PKT_MASK == TcpFlags::SYN {
-            let key = IpConnWithPort {
-                remote_addr: ip.get_destination().into(),
-                remote_port: tcp_packet.get_destination(),
-                local_addr: ip.get_source().into(),
-                local_port: tcp_packet.get_source(),
-            };
-
-            let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock());
             telio_log_trace!("Inserting TCP conntrack entry {:?}", key);
             tcp_cache.insert(
                 key,
@@ -474,24 +470,9 @@ impl StatefullFirewall {
                 },
             );
         } else if flags & TcpFlags::RST == TcpFlags::RST {
-            let key = IpConnWithPort {
-                remote_addr: ip.get_destination().into(),
-                remote_port: tcp_packet.get_destination(),
-                local_addr: ip.get_source().into(),
-                local_port: tcp_packet.get_source(),
-            };
-
             telio_log_trace!("Removing TCP conntrack entry {:?}", key);
-            unwrap_lock_or_return!(self.tcp.lock()).remove(&key);
+            tcp_cache.remove(&key);
         } else if flags & TcpFlags::FIN == TcpFlags::FIN {
-            let key = IpConnWithPort {
-                remote_addr: ip.get_destination().into(),
-                remote_port: tcp_packet.get_destination(),
-                local_addr: ip.get_source().into(),
-                local_port: tcp_packet.get_source(),
-            };
-
-            let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock());
             telio_log_trace!("Connection {:?} closing", key);
             if let Entry::Occupied(mut e) = tcp_cache.entry(key) {
                 let TcpConnectionInfo { tx_alive, .. } = e.get_mut();
@@ -501,12 +482,13 @@ impl StatefullFirewall {
     }
 
     fn handle_outbound_icmp<'a>(&self, ip: &impl IpPacket<'a>) {
-        let key = unwrap_option_or_return!(Self::build_icmp_key(ip, false));
         let mut icmp_cache = unwrap_lock_or_return!(self.icmp.lock());
-        // If key already exists, dont change the value, just update timer with entry
-        if let Entry::Vacant(e) = icmp_cache.entry(key) {
-            telio_log_trace!("Inserting new ICMP conntrack entry {:?}", e.key());
-            e.insert(());
+        if let Ok(key) = Self::build_icmp_key(ip, false) {
+            // If key already exists, dont change the value, just update timer with entry
+            if let Entry::Vacant(e) = icmp_cache.entry(key) {
+                telio_log_trace!("Inserting new ICMP conntrack entry {:?}", e.key());
+                e.insert(());
+            }
         }
     }
 
@@ -516,13 +498,7 @@ impl StatefullFirewall {
         peer: &PublicKey,
         ip: &impl IpPacket<'a>,
     ) -> bool {
-        let udp_packet = unwrap_option_or_return!(UdpPacket::new(ip.payload()), false);
-        let key = IpConnWithPort {
-            remote_addr: ip.get_source().into(),
-            remote_port: udp_packet.get_source(),
-            local_addr: ip.get_destination().into(),
-            local_port: udp_packet.get_destination(),
-        };
+        let key = unwrap_option_or_return!(Self::build_udp_key(ip, true), false);
         let mut udp_cache = unwrap_lock_or_return!(self.udp.lock(), false);
 
         if let Some(connection_info) = udp_cache.get(&key) {
@@ -571,15 +547,7 @@ impl StatefullFirewall {
         peer: &PublicKey,
         ip: &impl IpPacket<'a>,
     ) -> bool {
-        let tcp_packet = unwrap_option_or_return!(TcpPacket::new(ip.payload()), false);
-        let key = IpConnWithPort {
-            remote_addr: ip.get_source().into(),
-            remote_port: tcp_packet.get_source(),
-            local_addr: ip.get_destination().into(),
-            local_port: tcp_packet.get_destination(),
-        };
-
-        let flags = tcp_packet.get_flags();
+        let (key, flags) = unwrap_option_or_return!(Self::build_tcp_key(ip, true), false);
         let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock(), false);
 
         if let Some(connection_info) = tcp_cache.peek(&key) {
@@ -655,21 +623,90 @@ impl StatefullFirewall {
             return false;
         }
 
-        let mut icmp_cache = unwrap_lock_or_return!(self.icmp.lock(), false);
-        let key = unwrap_option_or_return!(Self::build_icmp_key(ip, true), false);
-        if icmp_cache.get(&key).is_some() {
-            telio_log_trace!("Matched ICMP conntrack entry {:?}", key,);
-            telio_log_trace!("Removing ICMP conntrack entry {:?}", key);
-            icmp_cache.remove(&key);
-            telio_log_trace!("Accepting ICMP packet {:?} {:?}", ip, peer);
-            true
-        } else {
-            false
+        match Self::build_icmp_key(ip, true) {
+            Ok(key) => {
+                let mut icmp_cache = unwrap_lock_or_return!(self.icmp.lock(), false);
+                let is_in_cache = icmp_cache.get(&key).is_some();
+                if is_in_cache {
+                    telio_log_trace!("Matched ICMP conntrack entry {:?}", key,);
+                    telio_log_trace!("Removing ICMP conntrack entry {:?}", key);
+                    icmp_cache.remove(&key);
+                    telio_log_trace!("Accepting ICMP packet {:?} {:?}", ip, peer);
+                }
+                is_in_cache
+            }
+            Err(icmp_error_key) => {
+                telio_log_trace!("Encountered ICMP error packet, checking nested packet");
+                let should_accept = self.handle_icmp_error(icmp_error_key);
+                if should_accept {
+                    telio_log_trace!("Accepting ICMP packet {:?} {:?}", ip, peer);
+                }
+                should_accept
+            }
         }
     }
 
-    fn build_icmp_key<'a, P: IpPacket<'a>>(ip: &P, inbound: bool) -> Option<IcmpConn> {
-        let icmp_packet = unwrap_option_or_return!(IcmpPacket::new(ip.payload()), None);
+    fn build_udp_key<'a, P: IpPacket<'a>>(ip: &P, inbound: bool) -> Option<IpConnWithPort> {
+        let udp_packet = match UdpPacket::new(ip.payload()) {
+            Some(packet) => packet,
+            _ => {
+                telio_log_trace!("Could not create UDP packet from IP packet {:?}", ip);
+                return None;
+            }
+        };
+        let key = if inbound {
+            IpConnWithPort {
+                remote_addr: ip.get_source().into(),
+                remote_port: udp_packet.get_source(),
+                local_addr: ip.get_destination().into(),
+                local_port: udp_packet.get_destination(),
+            }
+        } else {
+            IpConnWithPort {
+                remote_addr: ip.get_destination().into(),
+                remote_port: udp_packet.get_destination(),
+                local_addr: ip.get_source().into(),
+                local_port: udp_packet.get_source(),
+            }
+        };
+        Some(key)
+    }
+
+    fn build_tcp_key<'a, P: IpPacket<'a>>(ip: &P, inbound: bool) -> Option<(IpConnWithPort, u16)> {
+        let tcp_packet = match TcpPacket::new(ip.payload()) {
+            Some(packet) => packet,
+            _ => {
+                telio_log_trace!("Could not create TCP packet from IP packet {:?}", ip);
+                return None;
+            }
+        };
+        let key = if inbound {
+            IpConnWithPort {
+                remote_addr: ip.get_source().into(),
+                remote_port: tcp_packet.get_source(),
+                local_addr: ip.get_destination().into(),
+                local_port: tcp_packet.get_destination(),
+            }
+        } else {
+            IpConnWithPort {
+                remote_addr: ip.get_destination().into(),
+                remote_port: tcp_packet.get_destination(),
+                local_addr: ip.get_source().into(),
+                local_port: tcp_packet.get_source(),
+            }
+        };
+        let flags = tcp_packet.get_flags();
+        Some((key, flags))
+    }
+
+    fn build_icmp_key<'a, P: IpPacket<'a>>(ip: &P, inbound: bool) -> IcmpKey {
+        let icmp_packet = match IcmpPacket::new(ip.payload()) {
+            Some(packet) => packet,
+            _ => {
+                telio_log_trace!("Could not create ICMP packet from IP packet {:?}", ip);
+                return Err(IcmpErrorKey::None);
+            }
+        };
         let response_type = {
             use IcmpTypes as v4;
             use Icmpv6Types as v6;
@@ -685,8 +722,21 @@ impl StatefullFirewall {
                     || it == v6::EchoReply.0
                 {
                     it
+                } else if (it == v4::DestinationUnreachable.0
+                    || it == v4::TimeExceeded.0
+                    || it == v4::ParameterProblem.0)
+                    && ip.get_next_level_protocol() == IpNextHeaderProtocols::Icmp
+                {
+                    return Self::build_icmp_error_key(icmp_packet, true);
+                } else if (it == v6::DestinationUnreachable.0
+                    || it == v6::PacketTooBig.0
+                    || it == v6::ParameterProblem.0
+                    || it == v6::TimeExceeded.0)
+                    && ip.get_next_level_protocol() == IpNextHeaderProtocols::Icmpv6
+                {
+                    return Self::build_icmp_error_key(icmp_packet, false);
                 } else {
-                    return None;
+                    return Err(IcmpErrorKey::None);
                 }
             } else if it == v4::EchoRequest.0 {
                 v4::EchoReply.0
@@ -699,34 +749,127 @@ impl StatefullFirewall {
             } else if it == v6::EchoRequest.0 {
                 v6::EchoReply.0
             } else {
-                return None;
+                return Err(IcmpErrorKey::None);
             }
         };
 
         let identifier_sequence = {
-            let payload = icmp_packet.payload();
-            if payload.len() < 4 {
-                return None;
-            }
-            #[allow(index_access_check)]
-            let bytes = payload[0..4].try_into();
-            if let Ok(bytes) = bytes {
-                u32::from_ne_bytes(bytes)
-            } else {
-                return None;
-            }
+            let bytes = icmp_packet
+                .payload()
+                .get(0..4)
+                .and_then(|b| b.try_into().ok());
+            let bytes = unwrap_option_or_return!(bytes, Err(IcmpErrorKey::None));
+            u32::from_ne_bytes(bytes)
         };
         let (remote_addr, local_addr) = if inbound {
             (ip.get_source().into(), ip.get_destination().into())
         } else {
             (ip.get_destination().into(), ip.get_source().into())
         };
-        Some(IcmpConn {
+        let key = IcmpConn {
             remote_addr,
             local_addr,
             response_type,
             identifier_sequence,
-        })
+        };
+        Ok(key)
+    }
+
+    fn build_icmp_error_key(icmp_packet: IcmpPacket, is_v4: bool) -> IcmpKey {
+        let inner_packet = match icmp_packet.payload().get(4..) {
+            Some(bytes) => bytes,
+            None => {
+                telio_log_trace!("ICMP error body does not contain a nested packet");
+                return Err(IcmpErrorKey::None);
+            }
+        };
+        let icmp_error_key = if is_v4 {
+            let packet = match Ipv4Packet::try_from(inner_packet) {
+                Some(packet) => packet,
+                _ => {
+                    telio_log_trace!("ICMP error contains invalid IPv4 packet");
+                    return Err(IcmpErrorKey::None);
+                }
+            };
+            match packet.get_next_level_protocol() {
+                IpNextHeaderProtocols::Udp => {
+                    IcmpErrorKey::Udp(Self::build_udp_key(&packet, false))
+                }
+                IpNextHeaderProtocols::Tcp => {
+                    IcmpErrorKey::Tcp(Self::build_tcp_key(&packet, false).map(|(key, _)| key))
+                }
+                IpNextHeaderProtocols::Icmp => {
+                    IcmpErrorKey::Icmp(Self::build_icmp_key(&packet, false).ok())
+                }
+                _ => IcmpErrorKey::None,
+            }
+        } else {
+            let packet = match Ipv6Packet::try_from(inner_packet) {
+                Some(packet) => packet,
+                _ => {
+                    telio_log_trace!("ICMP error contains invalid IPv6 packet");
+                    return Err(IcmpErrorKey::None);
+                }
+            };
+            match packet.get_next_level_protocol() {
+                IpNextHeaderProtocols::Udp => {
+                    IcmpErrorKey::Udp(Self::build_udp_key(&packet, false))
+                }
+                IpNextHeaderProtocols::Tcp => {
+                    IcmpErrorKey::Tcp(Self::build_tcp_key(&packet, false).map(|(key, _)| key))
+                }
+                IpNextHeaderProtocols::Icmpv6 => {
+                    IcmpErrorKey::Icmp(Self::build_icmp_key(&packet, false).ok())
+                }
+                _ => IcmpErrorKey::None,
+            }
+        };
+        Err(icmp_error_key)
+    }
+
+    fn handle_icmp_error(&self, error_key: IcmpErrorKey) -> bool {
+        match error_key {
+            IcmpErrorKey::Icmp(Some(icmp_key)) => {
+                let mut icmp_cache = unwrap_lock_or_return!(self.icmp.lock(), false);
+                let is_in_cache = icmp_cache.get(&icmp_key).is_some();
+                if is_in_cache {
+                    telio_log_trace!(
+                        "Nested packet in ICMP error packet matched ICMP conntrack entry {:?}",
+                        icmp_key,
+                    );
+                    telio_log_trace!("Removing ICMP conntrack entry {:?}", icmp_key);
+                    icmp_cache.remove(&icmp_key);
+                }
+                is_in_cache
+            }
+            IcmpErrorKey::Tcp(Some(tcp_key)) => {
+                let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock(), false);
+                let is_in_cache = tcp_cache.get(&tcp_key).is_some();
+                if is_in_cache {
+                    telio_log_trace!(
+                        "Nested packet in ICMP error packet matched TCP conntrack entry {:?}",
+                        tcp_key,
+                    );
+                    telio_log_trace!("Removing TCP conntrack entry {:?}", tcp_key);
+                    tcp_cache.remove(&tcp_key);
+                }
+                is_in_cache
+            }
+            IcmpErrorKey::Udp(Some(udp_key)) => {
+                let mut udp_cache = unwrap_lock_or_return!(self.udp.lock(), false);
+                let is_in_cache = udp_cache.get(&udp_key).is_some();
+                if is_in_cache {
+                    telio_log_trace!(
+                        "Nested packet in ICMP error packet matched UDP conntrack entry {:?}",
+                        udp_key,
+                    );
+                    telio_log_trace!("Removing UDP conntrack entry {:?}", udp_key);
+                    udp_cache.remove(&udp_key);
+                }
+                is_in_cache
+            }
+            _ => false,
+        }
     }
 }
 
@@ -841,6 +984,7 @@ pub mod tests {
     type MakeUdp = &'static dyn Fn(&str, &str) -> Vec<u8>;
     type MakeTcp = &'static dyn Fn(&str, &str, u16) -> Vec<u8>;
     type MakeIcmp = &'static dyn Fn(&str, &str, GenericIcmpType) -> Vec<u8>;
+    type MakeIcmpWithBody = &'static dyn Fn(&str, &str, GenericIcmpType, &[u8]) -> Vec<u8>;
 
     fn advance_time(time: Duration) {
         #[cfg(not(feature = "test_utils"))]
@@ -1074,8 +1218,14 @@ pub mod tests {
         }
     }
 
-    fn make_icmp4(src: &str, dst: &str, icmp_type: GenericIcmpType) -> Vec<u8> {
-        let ip_len = IPV4_HEADER_MIN + ICMP_HEADER + 10;
+    fn make_icmp4_with_body(
+        src: &str,
+        dst: &str,
+        icmp_type: GenericIcmpType,
+        body: &[u8],
+    ) -> Vec<u8> {
+        let additional_body_len = body.len().saturating_sub(14);
+        let ip_len = IPV4_HEADER_MIN + ICMP_HEADER + 10 + additional_body_len;
         let mut raw = vec![0u8; ip_len];
 
         let icmp_type: GenericIcmpType = (icmp_type).into();
@@ -1093,11 +1243,26 @@ pub mod tests {
         ip.set_source(src.parse().expect("ICMP: Bad src IP"));
         ip.set_destination(dst.parse().expect("ICMP: Bad dst IP"));
 
+        let body_start = 14.max(body.len());
+        for (i, b) in body.iter().enumerate() {
+            raw[ip_len - (body_start - i)] = *b;
+        }
+
         raw
     }
 
-    fn make_icmp6(src: &str, dst: &str, icmp_type: GenericIcmpType) -> Vec<u8> {
-        let ip_len = IPV6_HEADER_MIN + ICMP_HEADER + 10;
+    fn make_icmp4(src: &str, dst: &str, icmp_type: GenericIcmpType) -> Vec<u8> {
+        make_icmp4_with_body(src, dst, icmp_type, &[])
+    }
+
+    fn make_icmp6_with_body(
+        src: &str,
+        dst: &str,
+        icmp_type: GenericIcmpType,
+        body: &[u8],
+    ) -> Vec<u8> {
+        let additional_body_len = body.len().saturating_sub(14);
+        let ip_len = IPV6_HEADER_MIN + ICMP_HEADER + 10 + additional_body_len;
         let mut raw = vec![0u8; ip_len];
 
         let icmp_type: GenericIcmpType = (icmp_type).into();
@@ -1115,21 +1280,16 @@ pub mod tests {
         ip.set_source(src.parse().expect("ICMP: Bad src IP"));
         ip.set_destination(dst.parse().expect("ICMP: Bad dst IP"));
 
+        let body_start = 14.max(body.len());
+        for (i, b) in body.iter().enumerate() {
+            raw[ip_len - (body_start - i)] = *b;
+        }
+
         raw
     }
 
-    fn make_icmp_with_id_and_seq<F>(id: u8, seq: u8, create_packet: F) -> Vec<u8>
-    where
-        F: Fn() -> Vec<u8>,
-    {
-        let mut packet = create_packet();
-        let len = packet.len();
-        // Packets created by `make_icmp4` and `make_icmp6` have bodies that are 14 bytes long
-        // The first two bytes of the body is the identifier and the following two bytes is the sequence number
-        // The following "magic" numbers lets us set the first (little endian) byte in the identifier and sequence numbers
-        packet[len - 14] = id;
-        packet[len - 12] = seq;
-        packet
+    fn make_icmp6(src: &str, dst: &str, icmp_type: GenericIcmpType) -> Vec<u8> {
+        make_icmp6_with_body(src, dst, icmp_type, &[])
     }
 
     #[test]
@@ -1531,22 +1691,22 @@ pub mod tests {
             src2: &'static str,
             src3: &'static str,
             dst: &'static str,
-            make_icmp: MakeIcmp,
+            make_icmp: MakeIcmpWithBody,
         }
 
         let test_inputs = vec![
-            TestInput { src1: "8.8.8.8",              src2: "8.8.4.4",              src3: "4.4.4.4",              dst: "127.0.0.1", make_icmp: &make_icmp4 },
-            TestInput { src1: "2001:4860:4860::8888", src2: "2001:4860:4860::8844", src3: "2001:4860:4860::4444", dst: "::1",       make_icmp: &make_icmp6 },
+            TestInput { src1: "8.8.8.8",              src2: "8.8.4.4",              src3: "4.4.4.4",              dst: "127.0.0.1", make_icmp: &make_icmp4_with_body },
+            TestInput { src1: "2001:4860:4860::8888", src2: "2001:4860:4860::8844", src3: "2001:4860:4860::4444", dst: "::1",       make_icmp: &make_icmp6_with_body },
         ];
         for TestInput{ src1, src2, src3, dst, make_icmp } in test_inputs {
             let fw = StatefullFirewall::new_custom(2, LRU_TIMEOUT);
 
-            let request1 = make_icmp_with_id_and_seq(1, 1, || make_icmp(dst, src1, IcmpTypes::EchoRequest.into()));
-            let request2 = make_icmp_with_id_and_seq(1, 1, || make_icmp(dst, src2, IcmpTypes::EchoRequest.into()));
-            let request3 = make_icmp_with_id_and_seq(1, 1, || make_icmp(dst, src3, IcmpTypes::EchoRequest.into()));
-            let reply1 = make_icmp_with_id_and_seq(1, 1, || make_icmp(src1, dst, IcmpTypes::EchoReply.into()));
-            let reply2 = make_icmp_with_id_and_seq(1, 1, || make_icmp(src2, dst, IcmpTypes::EchoReply.into()));
-            let reply3 = make_icmp_with_id_and_seq(1, 1, || make_icmp(src3, dst, IcmpTypes::EchoReply.into()));
+            let request1 = make_icmp(dst, src1, IcmpTypes::EchoRequest.into(), &[1, 0, 1, 0]);
+            let request2 = make_icmp(dst, src2, IcmpTypes::EchoRequest.into(), &[1, 0, 1, 0]);
+            let request3 = make_icmp(dst, src3, IcmpTypes::EchoRequest.into(), &[1, 0, 1, 0]);
+            let reply1 = make_icmp(src1, dst, IcmpTypes::EchoReply.into(), &[1, 0, 1, 0]);
+            let reply2 = make_icmp(src2, dst, IcmpTypes::EchoReply.into(), &[1, 0, 1, 0]);
+            let reply3 = make_icmp(src3, dst, IcmpTypes::EchoReply.into(), &[1, 0, 1, 0]);
 
             // Add src1, src2 and src3 to the cache, and dropping src1
             assert_eq!(fw.process_outbound_packet(&make_peer(), &request1), true);
@@ -1571,20 +1731,20 @@ pub mod tests {
         struct TestInput {
             src: &'static str,
             dst: &'static str,
-            make_icmp: MakeIcmp,
+            make_icmp: MakeIcmpWithBody,
         }
 
         let test_inputs = vec![
-            TestInput { src: "8.8.8.8",              dst: "127.0.0.1", make_icmp: &make_icmp4 },
-            TestInput { src: "2001:4860:4860::8888", dst: "::1",       make_icmp: &make_icmp6 },
+            TestInput { src: "8.8.8.8",              dst: "127.0.0.1", make_icmp: &make_icmp4_with_body },
+            TestInput { src: "2001:4860:4860::8888", dst: "::1",       make_icmp: &make_icmp6_with_body },
         ];
         for TestInput{ src, dst, make_icmp } in test_inputs {
             let fw = StatefullFirewall::new();
             
-            let request = make_icmp_with_id_and_seq(1, 1, || make_icmp(dst, src, IcmpTypes::EchoRequest.into()));
-            let reply1 = make_icmp_with_id_and_seq(1, 1, || make_icmp(src, dst, IcmpTypes::EchoReply.into()));
-            let reply2 = make_icmp_with_id_and_seq(1, 2, || make_icmp(src, dst, IcmpTypes::EchoReply.into()));
-            let reply3 = make_icmp_with_id_and_seq(2, 1, || make_icmp(src, dst, IcmpTypes::EchoReply.into()));
+            let request = make_icmp(dst, src, IcmpTypes::EchoRequest.into(), &[1, 0, 1, 0]);
+            let reply1 = make_icmp(src, dst, IcmpTypes::EchoReply.into(), &[1, 0, 1, 0]);
+            let reply2 = make_icmp(src, dst, IcmpTypes::EchoReply.into(), &[1, 0, 2, 0]);
+            let reply3 = make_icmp(src, dst, IcmpTypes::EchoReply.into(), &[2, 0, 1, 0]);
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &request), true);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &reply2), false);
@@ -1600,7 +1760,7 @@ pub mod tests {
             Option<GenericIcmpType>,
             &'static str,
             &'static str,
-            MakeIcmp,
+            MakeIcmpWithBody,
         );
 
         const V4_SRC_IP: &str = "8.8.8.8";
@@ -1632,7 +1792,7 @@ pub mod tests {
                 rep.map(|r| r.into()),
                 V4_SRC_IP,
                 V4_DST_IP,
-                &make_icmp4,
+                &make_icmp4_with_body,
             )
         })
         .collect::<Vec<_>>();
@@ -1648,7 +1808,7 @@ pub mod tests {
                 rep.map(|r| r.into()),
                 V6_SRC_IP,
                 V6_DST_IP,
-                &make_icmp6,
+                &make_icmp6_with_body,
             )
         })
         .collect::<Vec<_>>();
@@ -1662,12 +1822,9 @@ pub mod tests {
                         continue;
                     }
                     let fw = StatefullFirewall::new();
-                    let outbound = make_icmp_with_id_and_seq(1, 1, || {
-                        make_request_packet(src_ip, dst_ip, *request_type)
-                    });
-                    let inbound = make_icmp_with_id_and_seq(1, 1, || {
-                        make_reply_packet(dst_ip, src_ip, *reply_type)
-                    });
+                    let outbound =
+                        make_request_packet(src_ip, dst_ip, *request_type, &[1, 0, 1, 0]);
+                    let inbound = make_reply_packet(dst_ip, src_ip, *reply_type, &[1, 0, 1, 0]);
                     assert_eq!(fw.process_outbound_packet(&make_peer(), &outbound), true);
                     assert_eq!(
                         fw.process_inbound_packet(&make_peer(), &inbound),
@@ -1675,6 +1832,209 @@ pub mod tests {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn firewall_icmp_cache_error_response_icmp() {
+        struct TestInput(
+            &'static str,
+            &'static str,
+            GenericIcmpType,
+            GenericIcmpType,
+            MakeIcmpWithBody,
+        );
+        for TestInput(src, dst, request_type, error_type, make_icmp) in [
+            TestInput(
+                "8.8.8.8",
+                "127.0.0.1",
+                IcmpTypes::EchoRequest.into(),
+                IcmpTypes::DestinationUnreachable.into(),
+                &make_icmp4_with_body,
+            ),
+            TestInput(
+                "2001:4860:4860::8888",
+                "::1",
+                Icmpv6Types::EchoRequest.into(),
+                Icmpv6Types::DestinationUnreachable.into(),
+                &make_icmp6_with_body,
+            ),
+        ] {
+            let fw = StatefullFirewall::new();
+
+            let actual_request = make_icmp(src, dst, request_type, &[1, 0, 1, 0]);
+            let other_request = make_icmp(src, dst, request_type, &[2, 0, 3, 0]);
+
+            let mut actual_response_body = vec![0; 4];
+            actual_response_body.extend_from_slice(&actual_request);
+            let actual_response = make_icmp(dst, src, error_type, &actual_response_body);
+
+            let mut other_response_body = vec![0; 4];
+            other_response_body.extend_from_slice(&other_request);
+            let other_response = make_icmp(dst, src, error_type, &other_response_body);
+
+            assert_eq!(
+                fw.process_outbound_packet(&make_peer(), &actual_request),
+                true
+            );
+            assert_eq!(
+                fw.process_inbound_packet(&make_peer(), &other_response),
+                false
+            );
+            assert_eq!(
+                fw.process_inbound_packet(&make_peer(), &actual_response),
+                true
+            );
+        }
+    }
+
+    #[test]
+    fn firewall_icmp_cache_error_response_tcp() {
+        struct TestInput(
+            &'static str,
+            &'static str,
+            &'static str,
+            &'static str,
+            &'static str,
+            &'static str,
+            GenericIcmpType,
+            MakeTcp,
+            MakeIcmpWithBody,
+        );
+        for TestInput(
+            src1,
+            src1_with_port,
+            src2,
+            src2_with_port,
+            dst,
+            dst_with_port,
+            error_type,
+            make_tcp,
+            make_icmp,
+        ) in [
+            TestInput(
+                "8.8.8.8",
+                "8.8.8.8:8888",
+                "8.8.4.4",
+                "8.8.4.4:4444",
+                "127.0.0.1",
+                "127.0.0.1:1111",
+                IcmpTypes::DestinationUnreachable.into(),
+                &make_tcp,
+                &make_icmp4_with_body,
+            ),
+            TestInput(
+                "2001:4860:4860::8888",
+                "[2001:4860:4860::8888]:8888",
+                "2001:4860:4860::4444",
+                "[2001:4860:4860::4444]:4444",
+                "::1",
+                "[::1]:1111",
+                Icmpv6Types::DestinationUnreachable.into(),
+                &make_tcp6,
+                &make_icmp6_with_body,
+            ),
+        ] {
+            let fw = StatefullFirewall::new();
+
+            let actual_request = make_tcp(src1_with_port, dst_with_port, TcpFlags::SYN);
+            let other_request = make_tcp(src2_with_port, dst_with_port, TcpFlags::SYN);
+
+            let mut actual_response_body = vec![0; 4];
+            actual_response_body.extend_from_slice(&actual_request);
+            let actual_response = make_icmp(dst, src1, error_type, &actual_response_body);
+
+            let mut other_response_body = vec![0; 4];
+            other_response_body.extend_from_slice(&other_request);
+            let other_response = make_icmp(dst, src2, error_type, &other_response_body);
+
+            assert_eq!(
+                fw.process_outbound_packet(&make_peer(), &actual_request),
+                true
+            );
+            assert_eq!(
+                fw.process_inbound_packet(&make_peer(), &other_response),
+                false
+            );
+            assert_eq!(
+                fw.process_inbound_packet(&make_peer(), &actual_response),
+                true
+            );
+        }
+    }
+
+    #[test]
+    fn firewall_icmp_cache_error_response_udp() {
+        struct TestInput(
+            &'static str,
+            &'static str,
+            &'static str,
+            &'static str,
+            &'static str,
+            &'static str,
+            GenericIcmpType,
+            MakeUdp,
+            MakeIcmpWithBody,
+        );
+        for TestInput(
+            src1,
+            src1_with_port,
+            src2,
+            src2_with_port,
+            dst,
+            dst_with_port,
+            error_type,
+            make_udp,
+            make_icmp,
+        ) in [
+            TestInput(
+                "8.8.8.8",
+                "8.8.8.8:8888",
+                "8.8.4.4",
+                "8.8.4.4:4444",
+                "127.0.0.1",
+                "127.0.0.1:1111",
+                IcmpTypes::DestinationUnreachable.into(),
+                &make_udp,
+                &make_icmp4_with_body,
+            ),
+            TestInput(
+                "2001:4860:4860::8888",
+                "[2001:4860:4860::8888]:8888",
+                "2001:4860:4860::4444",
+                "[2001:4860:4860::4444]:4444",
+                "::1",
+                "[::1]:1111",
+                Icmpv6Types::DestinationUnreachable.into(),
+                &make_udp6,
+                &make_icmp6_with_body,
+            ),
+        ] {
+            let fw = StatefullFirewall::new();
+
+            let actual_request = make_udp(src1_with_port, dst_with_port);
+            let other_request = make_udp(src2_with_port, dst_with_port);
+
+            let mut actual_response_body = vec![0; 4];
+            actual_response_body.extend_from_slice(&actual_request);
+            let actual_response = make_icmp(dst, src1, error_type, &actual_response_body);
+
+            let mut other_response_body = vec![0; 4];
+            other_response_body.extend_from_slice(&other_request);
+            let other_response = make_icmp(dst, src2, error_type, &other_response_body);
+
+            assert_eq!(
+                fw.process_outbound_packet(&make_peer(), &actual_request),
+                true
+            );
+            assert_eq!(
+                fw.process_inbound_packet(&make_peer(), &other_response),
+                false
+            );
+            assert_eq!(
+                fw.process_inbound_packet(&make_peer(), &actual_response),
+                true
+            );
         }
     }
 
