@@ -239,6 +239,10 @@ enum MeshCmd {
         #[clap(default_value = "")]
         mesh_config: String,
     },
+    /// Read meshmap from file
+    FileConfig {
+        filename: std::path::PathBuf,
+    },
     Off,
 }
 
@@ -691,6 +695,11 @@ impl Cli {
                     let meshmap: MeshMap = cli_try!(serde_json::from_str(&mesh_config));
                     cli_try!(self.telio.set_config(&Some(meshmap)));
                 }
+            }
+            FileConfig { filename } => {
+                let file_contents = cli_try!(fs::read_to_string(filename));
+                let meshmap: MeshMap = cli_try!(serde_json::from_str(&file_contents));
+                cli_try!(self.telio.set_config(&Some(meshmap)));
             }
             Off => {
                 cli_try!(res; self.telio.set_config(&None));
