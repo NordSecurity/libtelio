@@ -168,7 +168,7 @@ pub enum EndpointProvider {
 pub const DEFAULT_ENDPOINT_POLL_INTERVAL_SECS: u64 = 25;
 
 /// Enable meshent direct connection
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct FeatureDirect {
     /// Endpoint providers [default all]
     #[serde(default)]
@@ -176,6 +176,47 @@ pub struct FeatureDirect {
     pub providers: Option<HashSet<EndpointProvider>>,
     /// Polling interval for endpoints [default 10s]
     pub endpoint_interval_secs: Option<u64>,
+    /// Configuration options for skipping unresponsive peers
+    #[serde(default = "FeatureDirect::default_skip_unresponsive_peers")]
+    pub skip_unresponsive_peers: Option<FeatureSkipUnresponsivePeers>,
+}
+
+impl Default for FeatureDirect {
+    fn default() -> Self {
+        Self {
+            skip_unresponsive_peers: Self::default_skip_unresponsive_peers(),
+            providers: Default::default(),
+            endpoint_interval_secs: Default::default(),
+        }
+    }
+}
+
+impl FeatureDirect {
+    fn default_skip_unresponsive_peers() -> Option<FeatureSkipUnresponsivePeers> {
+        Some(Default::default())
+    }
+}
+
+/// Avoid sending periodic messages to peers with no traffic reported by wireguard
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct FeatureSkipUnresponsivePeers {
+    /// Time after which peers is considered unresponsive if it didn't receive any handshakes
+    #[serde(default = "FeatureSkipUnresponsivePeers::default_no_handshake_threshold_secs")]
+    pub no_handshake_threshold_secs: u64,
+}
+
+impl FeatureSkipUnresponsivePeers {
+    const fn default_no_handshake_threshold_secs() -> u64 {
+        180
+    }
+}
+
+impl Default for FeatureSkipUnresponsivePeers {
+    fn default() -> Self {
+        Self {
+            no_handshake_threshold_secs: Self::default_no_handshake_threshold_secs(),
+        }
+    }
 }
 
 /// Configure derp behaviour
@@ -247,9 +288,6 @@ pub struct Features {
     /// Flag to specify if keys should be validated
     #[serde(default)]
     pub validate_keys: FeatureValidateKeys,
-    /// Avoid sending periodic messages to peers with no traffic reported by wireguard
-    #[serde(default)]
-    pub skip_unresponsive_peers: bool,
 }
 
 impl FeaturePaths {
@@ -332,7 +370,12 @@ mod tests {
             "direct": 
             {
                 "providers": 42,
-                "endpoint_interval_secs": 10   
+                "endpoint_interval_secs": 10,
+                "skip_unresponsive_peers":
+                {
+                    "enabled": true,
+                    "no_handshake_threshold_secs": 50
+                }
             },
             "exit_dns":
             {
@@ -345,8 +388,7 @@ mod tests {
                 "derp_keepalive": 2,
                 "enable_polling": true
             },
-            "validate_keys": false,
-            "skip_unresponsive_peers": true
+            "validate_keys": false
         }"#;
 
     static EXPECTED_FEATURES: Lazy<Features> = Lazy::new(|| Features {
@@ -376,6 +418,9 @@ mod tests {
         direct: Some(FeatureDirect {
             providers: None,
             endpoint_interval_secs: Some(10),
+            skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
+                no_handshake_threshold_secs: 50,
+            }),
         }),
         exit_dns: Some(FeatureExitDns {
             auto_switch_dns_ips: Some(true),
@@ -388,7 +433,6 @@ mod tests {
             enable_polling: Some(true),
         }),
         validate_keys: FeatureValidateKeys(false),
-        skip_unresponsive_peers: true,
     });
 
     static EXPECTED_FEATURES_WITHOUT_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
@@ -418,6 +462,7 @@ mod tests {
         direct: Some(FeatureDirect {
             providers: None,
             endpoint_interval_secs: None,
+            skip_unresponsive_peers: Some(Default::default()),
         }),
         exit_dns: Some(FeatureExitDns {
             auto_switch_dns_ips: None,
@@ -426,7 +471,6 @@ mod tests {
         is_test_env: None,
         derp: None,
         validate_keys: Default::default(),
-        skip_unresponsive_peers: Default::default(),
     });
 
     #[test]
@@ -434,7 +478,10 @@ mod tests {
         let full_json = r#"
         {
             "providers": ["local", "stun"],
-            "endpoint_interval_secs": 30
+            "endpoint_interval_secs": 30,
+            "skip_unresponsive_peers": {
+                "no_handshake_threshold_secs": 42
+            }
         }"#;
 
         let partial_json = r#"
@@ -449,11 +496,15 @@ mod tests {
                     .collect(),
             ),
             endpoint_interval_secs: Some(30),
+            skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
+                no_handshake_threshold_secs: 42,
+            }),
         };
 
         let partial_features = FeatureDirect {
             providers: Some(vec![EndpointProvider::Local].into_iter().collect()),
             endpoint_interval_secs: None,
+            skip_unresponsive_peers: Some(Default::default()),
         };
 
         assert_eq!(from_str::<FeatureDirect>(full_json).unwrap(), full_features);
@@ -587,7 +638,6 @@ mod tests {
             exit_dns: None,
             derp: None,
             validate_keys: Default::default(),
-            skip_unresponsive_peers: Default::default(),
         };
 
         let empty_qos_features = Features {
@@ -610,7 +660,6 @@ mod tests {
             exit_dns: None,
             derp: None,
             validate_keys: Default::default(),
-            skip_unresponsive_peers: Default::default(),
         };
 
         let no_qos_features = Features {
@@ -628,7 +677,6 @@ mod tests {
             exit_dns: None,
             derp: None,
             validate_keys: Default::default(),
-            skip_unresponsive_peers: Default::default(),
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -665,7 +713,6 @@ mod tests {
             }),
             derp: None,
             validate_keys: Default::default(),
-            skip_unresponsive_peers: Default::default(),
         };
 
         let empty_features = Features {
@@ -679,7 +726,6 @@ mod tests {
             }),
             derp: None,
             validate_keys: Default::default(),
-            skip_unresponsive_peers: Default::default(),
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -717,7 +763,6 @@ mod tests {
             direct: None,
             derp: None,
             validate_keys: Default::default(),
-            skip_unresponsive_peers: Default::default(),
         };
 
         assert_eq!(Features::default(), expected_defaults);

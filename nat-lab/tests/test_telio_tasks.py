@@ -3,7 +3,15 @@ import pytest
 from contextlib import AsyncExitStack
 from mesh_api import API
 from telio import Client
-from telio_features import TelioFeatures, Direct, Lana, Nurse, Qos, ExitDns
+from telio_features import (
+    TelioFeatures,
+    Direct,
+    Lana,
+    Nurse,
+    Qos,
+    ExitDns,
+    SkipUnresponsivePeers,
+)
 from utils.connection_util import ConnectionTag, new_connection_by_tag
 
 
@@ -21,7 +29,12 @@ async def test_telio_tasks_with_all_features() -> None:
                 alpha,
                 telio_features=TelioFeatures(
                     exit_dns=ExitDns(auto_switch_dns_ips=True),
-                    direct=Direct(providers=["stun", "local"]),
+                    direct=Direct(
+                        providers=["stun", "local"],
+                        skip_unresponsive_peers=SkipUnresponsivePeers(
+                            no_handshake_threshold_secs=150
+                        ),
+                    ),
                     lana=Lana(prod=False, event_path="/some_path"),
                     nurse=Nurse(
                         fingerprint="alpha",
@@ -34,6 +47,6 @@ async def test_telio_tasks_with_all_features() -> None:
                 ),
             ).run_meshnet(api.get_meshmap(alpha.id))
         )
-        # le wait some seconds for everything to start
+        # let's wait some seconds for everything to start
         await asyncio.sleep(5)
         await client_alpha.stop_device()

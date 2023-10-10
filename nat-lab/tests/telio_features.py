@@ -11,9 +11,18 @@ class ExitDns(DataClassJsonMixin):
 
 @dataclass_json
 @dataclass
+class SkipUnresponsivePeers(DataClassJsonMixin):
+    no_handshake_threshold_secs: int = 180
+
+
+@dataclass_json
+@dataclass
 class Direct(DataClassJsonMixin):
     providers: Optional[List[str]] = None
     endpoint_interval_secs: Optional[int] = 5
+    skip_unresponsive_peers: Optional[SkipUnresponsivePeers] = SkipUnresponsivePeers(
+        no_handshake_threshold_secs=180
+    )
 
 
 @dataclass_json

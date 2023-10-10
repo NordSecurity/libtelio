@@ -809,15 +809,22 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
         Ok(())
     }
 
-    async fn should_resend_call_me_maybe_request(&self, duration_in_state: Duration) -> bool {
+    async fn should_resend_call_me_maybe_request(
+        &self,
+        duration_in_state: Duration,
+    ) -> ShouldSendCMMResult {
         if duration_in_state > self.exponential_backoff.get_backoff() {
             if let Some(last_handshake_time_provider) = &self.last_handshake_time_provider {
-                is_peer_alive(&**last_handshake_time_provider, &self.public_key).await
+                if is_peer_alive(&**last_handshake_time_provider, &self.public_key).await {
+                    ShouldSendCMMResult::Yes
+                } else {
+                    ShouldSendCMMResult::Unresponsive
+                }
             } else {
-                true
+                ShouldSendCMMResult::Yes
             }
         } else {
-            false
+            ShouldSendCMMResult::Backoff
         }
     }
 
@@ -855,27 +862,39 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
                 do_state_transition!(m, SendCallMeMaybeRequest, self);
             }
             DisconnectedByTimeout(m) => {
-                if self
+                match self
                     .should_resend_call_me_maybe_request(duration_in_state)
                     .await
                 {
-                    self.exponential_backoff.next_backoff();
-                    self.send_call_me_maybe_request(session, intercoms).await?;
-                    do_state_transition!(m, SendCallMeMaybeRequest, self);
-                } else {
-                    telio_log_debug!("Skipping unresponsive peer {}", self.public_key);
+                    ShouldSendCMMResult::Yes => {
+                        self.exponential_backoff.next_backoff();
+                        self.send_call_me_maybe_request(session, intercoms).await?;
+                        do_state_transition!(m, SendCallMeMaybeRequest, self);
+                    }
+                    reason => {
+                        telio_log_debug!(
+                            "Skipping sending CMM to peer {} ({reason:?})",
+                            self.public_key,
+                        );
+                    }
                 }
             }
             DisconnectedByEndpointGone(m) => {
-                if self
+                match self
                     .should_resend_call_me_maybe_request(duration_in_state)
                     .await
                 {
-                    self.exponential_backoff.next_backoff();
-                    self.send_call_me_maybe_request(session, intercoms).await?;
-                    do_state_transition!(m, SendCallMeMaybeRequest, self);
-                } else {
-                    telio_log_debug!("Skipping unresponsive peer {}", self.public_key);
+                    ShouldSendCMMResult::Yes => {
+                        self.exponential_backoff.next_backoff();
+                        self.send_call_me_maybe_request(session, intercoms).await?;
+                        do_state_transition!(m, SendCallMeMaybeRequest, self);
+                    }
+                    reason => {
+                        telio_log_debug!(
+                            "Skipping sending CMM to peer {} ({reason:?})",
+                            self.public_key
+                        );
+                    }
                 }
             }
             _ => {}
@@ -883,6 +902,13 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
 
         Ok(())
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ShouldSendCMMResult {
+    Yes,
+    Backoff,
+    Unresponsive,
 }
 
 #[cfg(test)]
@@ -1264,6 +1290,11 @@ mod tests {
     async fn exponential_backoff_on_failure() {
         let last_handshake_time_provider_mock =
             Arc::new(Mutex::new(MockLastHandshakeTimeProvider::new()));
+        last_handshake_time_provider_mock
+            .lock()
+            .await
+            .expect_max_no_handshake_time()
+            .return_const(Duration::from_secs(180));
         let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
             Machine::new(Disconnected).as_enum(),
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080),
