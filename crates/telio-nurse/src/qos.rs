@@ -5,7 +5,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::net::IpAddr;
 use std::time::Instant;
 
-use tokio::time::{interval_at, Interval};
+use tokio::time::{interval_at, Duration, Interval};
 
 use telio_crypto::PublicKey;
 use telio_task::{io::mc_chan, Runtime, RuntimeExt, WaitResponse};
@@ -32,8 +32,8 @@ pub struct NodeInfo {
     pub last_event: Instant,
 
     // Connection duration
-    pub last_state_change: Instant,
-    pub connected_time: u64,
+    pub last_wg_event: Instant,
+    pub connected_time: Duration,
 
     // RTT
     pub endpoint: IpAddr,
@@ -71,23 +71,15 @@ impl NodeInfo {
         };
     }
 
-    fn update_connection_duration(&mut self, event: &AnalyticsEvent) {
-        if self.peer_state != event.peer_state {
-            // Connected -> Disconnected
-            if self.peer_state == PeerState::Connected {
-                // Connected time
-                let duration = event
-                    .timestamp
-                    .checked_duration_since(self.last_state_change);
-                telio_log_debug!("adding {:?} to connected_time", duration);
-                self.connected_time += duration
-                    .map(|duration| duration.as_secs())
-                    .unwrap_or_default();
-            }
-
-            self.peer_state = event.peer_state;
-            self.last_state_change = event.timestamp;
+    fn update_connection_duration(&mut self, event: &AnalyticsEvent, pause: bool) {
+        if self.peer_state == PeerState::Connected && !pause {
+            // Connected time
+            let duration = event.timestamp.checked_duration_since(self.last_wg_event);
+            self.connected_time += duration.unwrap_or_default();
         }
+
+        self.peer_state = event.peer_state;
+        self.last_wg_event = event.timestamp;
     }
 }
 
@@ -97,8 +89,8 @@ impl From<AnalyticsEvent> for NodeInfo {
             public_key: event.public_key,
             peer_state: event.peer_state,
             last_event: event.timestamp,
-            last_state_change: event.timestamp,
-            connected_time: 0,
+            last_wg_event: event.timestamp,
+            connected_time: Duration::default(),
             endpoint: event.endpoint.ip(),
             rtt_histogram: Histogram::new(),
             last_tx_bytes: 0,
@@ -264,21 +256,9 @@ impl Analytics {
                 ));
                 output.rx.push(',');
 
-                // Connection duration
-                let mut total_connected_time = node.connected_time;
-                if node.peer_state == PeerState::Connected {
-                    let duration = Instant::now().checked_duration_since(node.last_state_change);
-                    telio_log_debug!(
-                        "connected at the collection interval, adding: {:?}",
-                        duration
-                    );
-                    total_connected_time += duration
-                        .map(|duration| duration.as_secs())
-                        .unwrap_or_default();
-                }
                 output
                     .connection_duration
-                    .push_str(&total_connected_time.to_string());
+                    .push_str(&node.connected_time.as_secs().to_string());
                 output.connection_duration.push(';');
             } else {
                 output.rtt.push_str(&Analytics::empty_data(buckets));
@@ -311,10 +291,7 @@ impl Analytics {
             node.rtt_histogram = Histogram::new();
             node.tx_histogram = Histogram::new();
             node.rx_histogram = Histogram::new();
-
-            // Even if the state doesn't really change, reset connection duration info
-            node.last_state_change = Instant::now();
-            node.connected_time = 0;
+            node.connected_time = Duration::default();
         }
     }
 
@@ -323,8 +300,10 @@ impl Analytics {
         self.nodes
             .entry(event.public_key)
             .and_modify(|n| {
+                // Check if peer was not paused
+                let pause: bool = (event.timestamp - n.last_event).as_secs() > 10;
                 // Update current state
-                n.update_connection_duration(&event);
+                n.update_connection_duration(&event, pause);
 
                 // Update rtt info
                 n.endpoint = event.endpoint.ip();
@@ -418,8 +397,8 @@ mod tests {
 
         let histogram = default_histogram();
 
-        let a_node = dummy_node(&a_public_key, &histogram, 100);
-        let b_node = dummy_node(&b_public_key, &histogram, 200);
+        let a_node = dummy_node(&a_public_key, &histogram, Duration::from_secs(100));
+        let b_node = dummy_node(&b_public_key, &histogram, Duration::from_secs(200));
 
         let mut hashmap = HashMap::new();
         hashmap.insert(a_public_key.clone(), a_node);
@@ -459,12 +438,16 @@ mod tests {
         a
     }
 
-    fn dummy_node(public_key: &PublicKey, histogram: &Histogram, connected_time: u64) -> NodeInfo {
+    fn dummy_node(
+        public_key: &PublicKey,
+        histogram: &Histogram,
+        connected_time: Duration,
+    ) -> NodeInfo {
         NodeInfo {
             public_key: public_key.clone(),
             peer_state: PeerState::Disconnected,
             last_event: Instant::now(),
-            last_state_change: Instant::now(),
+            last_wg_event: Instant::now(),
             connected_time,
             endpoint: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
             rtt_histogram: histogram.clone(),

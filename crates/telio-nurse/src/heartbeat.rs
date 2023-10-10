@@ -23,7 +23,7 @@ use telio_task::{
 };
 use telio_utils::{map_enum, telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
 use telio_wg::uapi::PeerState;
-use tokio::time::{interval_at, sleep, Duration, Instant, Interval, Sleep};
+use tokio::time::{interval_at, sleep, Duration, Instant, Interval, MissedTickBehavior, Sleep};
 use uuid::Uuid;
 
 use crate::config::HeartbeatConfig;
@@ -357,12 +357,15 @@ impl Analytics {
             Instant::now() + config.collect_interval - config.collect_answer_timeout
         };
 
+        let mut interval: Interval = interval_at(start_time, config.collect_interval);
+        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
         let mut config_nodes = HashMap::new();
         // Add self in config_nodes hashset
         config_nodes.insert(public_key, true);
 
         Self {
-            task_interval: interval_at(start_time, config.collect_interval),
+            task_interval: interval,
             collect_period: Box::pin(sleep(FAR_FUTURE)),
             config,
             io,
@@ -904,14 +907,11 @@ impl Analytics {
 
 #[cfg(test)]
 mod tests {
-    use telio_model::{
-        event::EventMsg,
-        mesh::{ExitNode, Node},
-    };
+    use telio_model::mesh::Node;
     use telio_sockets::{native::NativeSocket, Protector, SocketPool};
-    use telio_task::io::{mc_chan::Tx, McChan};
+    use telio_task::{io::McChan, Task};
     use telio_utils::sync::mpsc::Receiver;
-    use tokio::task::yield_now;
+    use tokio::time::timeout;
 
     use super::*;
 
@@ -943,14 +943,19 @@ mod tests {
         analytics: Analytics,
     }
 
-    fn setup() -> State {
+    fn setup(collect_interval: Option<Duration>) -> State {
         let sk = SecretKey::gen();
         let pk = sk.public();
         let meshnet_id = Uuid::new_v4();
-        let config = HeartbeatConfig::default();
+        let mut config = HeartbeatConfig::default();
+        let channel = Chan::new(1);
+        if let Some(interval) = collect_interval {
+            config.collect_interval = interval;
+        }
+
         let analytics_channel = Chan::new(1);
         let io = Io {
-            chan: Chan::new(1),
+            chan: channel,
             derp_event_channel: McChan::new(1).rx,
             wg_event_channel: McChan::new(1).rx,
             config_update_channel: McChan::new(1).rx,
@@ -1020,7 +1025,7 @@ mod tests {
             mut analytics_channel,
             mut analytics,
             ..
-        } = setup();
+        } = setup(None);
 
         analytics.handle_aggregation().await;
 
@@ -1035,7 +1040,7 @@ mod tests {
             mut analytics,
             meshnet_id,
             ..
-        } = setup();
+        } = setup(None);
 
         let peer_sk_1 = SecretKey::gen();
         let peer_sk_2 = SecretKey::gen();
@@ -1061,7 +1066,7 @@ mod tests {
             mut analytics_channel,
             mut analytics,
             ..
-        } = setup();
+        } = setup(None);
         let peer_sk_1 = SecretKey::gen();
         let peer_sk_2 = SecretKey::gen();
 
@@ -1090,7 +1095,7 @@ mod tests {
             mut analytics_channel,
             mut analytics,
             meshnet_id,
-        } = setup();
+        } = setup(None);
 
         let peer_sk = SecretKey::gen();
 
@@ -1122,7 +1127,7 @@ mod tests {
             mut analytics_channel,
             mut analytics,
             ..
-        } = setup();
+        } = setup(None);
 
         let vpn_pk = SecretKey::gen().public();
 
@@ -1164,7 +1169,7 @@ mod tests {
             mut analytics_channel,
             mut analytics,
             ..
-        } = setup();
+        } = setup(None);
 
         let vpn_pk = SecretKey::gen().public();
 
@@ -1198,5 +1203,44 @@ mod tests {
 
         assert_eq!(true, meshnet_enabled);
         assert_eq!("vpn:7600617f9f9db5691a8c2768bd9d8110:2", external_links);
+    }
+
+    #[tokio::test]
+    // After a pause libtelio should send only one analytic even
+    // if it missed more than one analytic interval.
+    async fn test_send_analytics_report_once_on_skipped_ticks() {
+        let State {
+            mut analytics_channel,
+            mut analytics,
+            ..
+        } = setup(Some(Duration::from_secs(5)));
+
+        // Reset analytic timer 25s in the past
+        analytics
+            .task_interval
+            .reset_at(Instant::now() - Duration::from_secs(25));
+
+        // Set analytic collect interval 200 ms
+        analytics.config.collect_answer_timeout = Duration::from_millis(200);
+
+        let rt = Task::start(analytics);
+
+        // Should succeed to get one analytic meesage
+        assert_eq!(
+            true,
+            timeout(Duration::from_secs(1), analytics_channel.recv())
+                .await
+                .is_ok()
+        );
+
+        // Should timeout trying to get second analytic message
+        assert_eq!(
+            false,
+            timeout(Duration::from_secs(1), analytics_channel.recv())
+                .await
+                .is_ok()
+        );
+
+        rt.stop().await;
     }
 }
