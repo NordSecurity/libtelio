@@ -11,21 +11,26 @@ from utils.connection import Connection, TargetOS
 # https://master.dl.sourceforge.net/project/stuntman/stunserver_osx_1_2_13.zip?viasf=1
 
 
-async def get(connection: Connection, stun_server: str) -> str:
+async def get(
+    connection: Connection, stun_server: str, stun_server_port: int = 3478
+) -> str:
     if connection.target_os == TargetOS.Linux:
         process = await connection.create_process(
-            ["stun", stun_server, "1", "-v"]
+            ["turnutils_stunclient", "-p", str(stun_server_port), stun_server]
         ).execute()
 
-        # Match: 'XorMappedAddress = 10.0.254.1:24295'
         match = re.search(
-            r"XorMappedAddress = (\d+\.\d+\.\d+\.\d+):(\d+)", process.get_stderr()
+            r"UDP reflexive addr: (\d+\.\d+\.\d+\.\d+):(\d+)", process.get_stdout()
         )
-        assert match, "stun response missing XorMappedAddress"
+        assert match, "stun response missing the IP address"
 
         return match.group(1)
 
     if connection.target_os == TargetOS.Windows:
+        assert (
+            stun_server_port == 3478
+        ), "Non-standard Stun ports are supported only on Linux"
+
         process = await connection.create_process(
             [STUN_BINARY_PATH_WINDOWS, stun_server]
         ).execute()
@@ -37,6 +42,10 @@ async def get(connection: Connection, stun_server: str) -> str:
         return match.group(1)
 
     if connection.target_os == TargetOS.Mac:
+        assert (
+            stun_server_port == 3478
+        ), "Non-standard Stun ports are supported only on Linux"
+
         process = await connection.create_process(
             [STUN_BINARY_PATH_MAC, stun_server]
         ).execute()
