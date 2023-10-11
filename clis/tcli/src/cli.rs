@@ -568,6 +568,7 @@ impl Cli {
         res
     }
 
+    #[allow(index_access_check)]
     fn exec_mesh(&mut self, cmd: MeshCmd) -> Vec<Resp> {
         let mut res = Vec::new();
         use MeshCmd::*;
