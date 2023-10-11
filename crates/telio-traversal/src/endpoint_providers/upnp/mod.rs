@@ -401,7 +401,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
         self.ping_pong_handler
             .lock()
             .await
-            .send_ping(addr, wg_port, &*self.udp_socket, session_id, public_key)
+            .send_ping(addr, wg_port, &self.udp_socket, session_id, public_key)
             .await
     }
 
@@ -546,6 +546,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
 
     type Err = ();
 
+    #[allow(index_access_check)]
     async fn wait_with_update<F>(&mut self, update: F) -> std::result::Result<(), Self::Err>
     where
         F: Future<Output = BoxAction<Self, std::result::Result<(), Self::Err>>> + Send,

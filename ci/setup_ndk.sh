@@ -5,10 +5,9 @@ set -euxo pipefail
 mkdir -p "./source/.build"
 
 export ANDROIDNDK="$(readlink -e ./source/.build)"
-export BUILDARCH="x86_64"
 export BUILDOS="linux"
-export NDKVERSION="r21e"
-export NDKZIPNAME="android-ndk-$NDKVERSION-$BUILDOS-$BUILDARCH.zip"
+export NDKVERSION="r26"
+export NDKZIPNAME="android-ndk-$NDKVERSION-$BUILDOS.zip"
 export NDKZIP="https://dl.google.com/android/repository/$NDKZIPNAME"
 export TOOLCHAIN="$ANDROIDNDK/android-ndk-$NDKVERSION/toolchains/llvm/prebuilt/linux-x86_64"
 
@@ -26,4 +25,11 @@ ln -s "$TOOLCHAIN/bin/aarch64-linux-android21-clang"    "$TOOLCHAIN/bin/aarch64-
 ln -s "$TOOLCHAIN/bin/armv7a-linux-androideabi21-clang" "$TOOLCHAIN/bin/arm-linux-androideabi-gcc"
 ln -s "$TOOLCHAIN/bin/armv7a-linux-androideabi21-clang" "$TOOLCHAIN/bin/arm7a-linux-androideabi-gcc"
 
-echo "$ANDROIDNDK/android-ndk-r21e/toolchains/llvm/prebuilt/linux-x86_64/bin" >> $GITHUB_PATH
+
+ln -s "$TOOLCHAIN/bin/llvm-ar" "$TOOLCHAIN/bin/x86_64-linux-android-ar"
+ln -s "$TOOLCHAIN/bin/llvm-ar" "$TOOLCHAIN/bin/i686-linux-android-ar"
+ln -s "$TOOLCHAIN/bin/llvm-ar" "$TOOLCHAIN/bin/aarch64-linux-android-ar"
+ln -s "$TOOLCHAIN/bin/llvm-ar" "$TOOLCHAIN/bin/arm-linux-androideabi-ar"
+ln -s "$TOOLCHAIN/bin/llvm-ar" "$TOOLCHAIN/bin/arm7a-linux-androideabi-ar"
+
+echo "$ANDROIDNDK/android-ndk-r26/toolchains/llvm/prebuilt/linux-x86_64/bin" >> $GITHUB_PATH

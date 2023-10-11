@@ -12,7 +12,7 @@ PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/
 WORKING_DIR = f"{PROJECT_ROOT}/"
 
 os.environ["NAME"] = NAME
-os.environ["VERSION"] = "1.64.0"
+os.environ["VERSION"] = "1.72.0"
 os.environ["PROJECT_ROOT"] = PROJECT_ROOT
 os.environ["WORKING_DIR"] = WORKING_DIR
 
@@ -231,7 +231,7 @@ def create_debug_symbols(config):
     if config.target_os == "linux":
         _create_debug_symbol(f"{dist_dir}/{lib_name}")
     elif config.target_os == "android":
-        strip = f"{abu.TOOLCHAIN}/{abu.NDK_MAP[config.arch]}/bin/strip"
+        strip = f"{abu.TOOLCHAIN}/bin/llvm-strip"
         renamed_arch = GLOBAL_CONFIG[config.target_os]["archs"][config.arch]["dist"]
         dist_dir = rutils.get_distribution_path(
             config.target_os, config.arch, "../unstripped", config.debug

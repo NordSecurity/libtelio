@@ -42,7 +42,7 @@ pub fn interface_index_from_name(name: &str) -> io::Result<u64> {
 
     match CString::new(name) {
         Ok(cstr) => {
-            let index = unsafe { libc::if_nametoindex(cstr.as_ptr() as *const i8) };
+            let index = unsafe { libc::if_nametoindex(cstr.as_ptr()) };
             if index == 0 {
                 return Err(io::Error::last_os_error());
             }

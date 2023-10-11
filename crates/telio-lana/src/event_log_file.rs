@@ -130,6 +130,7 @@ fn get_logfile() -> std::io::Result<File> {
         let file = File::create(LOGFILE_PATH)?;
         let mut perms = file.metadata()?.permissions();
         // some tests are run by root so we need to set file as world-writable
+        #[allow(clippy::permissions_set_readonly_false)]
         perms.set_readonly(false);
         file.set_permissions(perms)?;
         Ok(file)

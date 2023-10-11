@@ -128,7 +128,7 @@ fn spawn_monitor(sockets: Arc<Mutex<Sockets>>) -> io::Result<JoinHandle<()>> {
             let (ready, update) = {
                 let sockets = sockets.lock();
                 (
-                    sockets.tunnel_interface != None && !sockets.sockets.is_empty(),
+                    sockets.tunnel_interface.is_some() && !sockets.sockets.is_empty(),
                     sockets.notify.clone(),
                 )
             };

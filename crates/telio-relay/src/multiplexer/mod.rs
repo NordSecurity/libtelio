@@ -56,6 +56,7 @@ impl Multiplexer {
 
     /// Change the relay, that communicates with lower relay module
     pub async fn change_output(&self, relay: Chan<(PublicKey, PacketRelayed)>) {
+        #[allow(clippy::let_underscore_future)]
         let _ = task_exec!(&self.task, async move |s| {
             s.relay_tx = PollSender::new(relay.tx);
             s.relay_rx = ReceiverStream::new(relay.rx);
