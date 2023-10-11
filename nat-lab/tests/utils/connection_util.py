@@ -104,10 +104,18 @@ DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: ConnectionTag.DOCKER_UDP_BLOCK_GW_2,
     ConnectionTag.WINDOWS_VM: ConnectionTag.DOCKER_CONE_GW_3,
     ConnectionTag.MAC_VM: ConnectionTag.DOCKER_CONE_GW_3,
-    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1: ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
-    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2: ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2,
-    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK: ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
-    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT: ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW,
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1: (
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1
+    ),
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2: (
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2
+    ),
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK: (
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK
+    ),
+    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT: (
+        ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW
+    ),
 }
 
 LAN_ADDR_MAP: Dict[ConnectionTag, str] = {
