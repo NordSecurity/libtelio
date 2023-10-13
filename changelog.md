@@ -31,6 +31,7 @@
 * LLT-4042: IPv6 firewall nat-lab tests.
 * LLT-3914: Add apple tvOS support
 * LLT-4013: Add conntrack rules for icmp
+* LLT-4152: Suspend SessionKeeper and CrossPingCheck for unresponsive peers
 
 <br>
 
