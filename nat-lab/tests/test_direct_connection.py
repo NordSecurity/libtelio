@@ -1,12 +1,19 @@
 import asyncio
 import config
 import pytest
+import re
 import telio
 from config import DERP_SERVERS
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
 from telio import PathType, State
-from telio_features import TelioFeatures, Direct, SkipUnresponsivePeers, Wireguard
+from telio_features import (
+    TelioFeatures,
+    Direct,
+    Wireguard,
+    SkipUnresponsivePeers,
+    FeatureEndpointProvidersOptimization,
+)
 from typing import List, Tuple
 from utils import testing
 from utils.asyncio_util import run_async_context
@@ -603,3 +610,86 @@ async def test_infinite_stun_loop(setup_params: List[SetupParameters]) -> None:
         # while being high enough to prevent false-positivies.
         # The actual number of requests will be lower given the time frame that is being measured.
         assert len(stun_requests) < 20
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("setup_params, _reflexive_ip", UHP_WORKING_PATHS)
+async def test_direct_working_paths_with_pausing_upnp_and_stun(
+    setup_params: List[SetupParameters], _reflexive_ip: str
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        stun_enabled = False
+        upnp_enabled = False
+        for param in setup_params:
+            assert param.features.direct is not None
+            param.features.direct.endpoint_providers_optimization = (
+                FeatureEndpointProvidersOptimization(
+                    optimize_direct_upgrade_stun=True,
+                    optimize_direct_upgrade_upnp=True,
+                )
+            )
+
+            if (
+                param.features.direct.providers is not None
+                and "stun" in param.features.direct.providers
+            ):
+                stun_enabled = True
+
+            if (
+                param.features.direct.providers is not None
+                and "upnp" in param.features.direct.providers
+            ):
+                upnp_enabled = True
+
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+        _, beta = env.nodes
+        alpha_client, _ = env.clients
+        alpha_connection, _ = [conn.connection for conn in env.connections]
+
+        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
+            await testing.wait_long(ping.wait_for_next_ping())
+
+        # wait for upnp and stun to be paused
+        await asyncio.sleep(5)
+
+        if stun_enabled:
+            await testing.wait_long(
+                alpha_client.wait_for_log(
+                    "Skipping getting endpoint via STUN endpoint provider(ModulePaused)"
+                )
+            )
+        if upnp_enabled:
+            await testing.wait_long(
+                alpha_client.wait_for_log(
+                    "Skipping getting endpoint via UPNP endpoint provider(ModulePaused)"
+                )
+            )
+
+        tcpdump = await exit_stack.enter_async_context(
+            alpha_connection.create_process([
+                "tcpdump",
+                "--immediate-mode",
+                "-l",
+                "-i",
+                "any",
+            ]).run()
+        )
+        await asyncio.sleep(5)
+
+        packets = tcpdump.get_stdout().splitlines()
+        # There seems to be some delay when getting stdout from a process
+        # Without this delay, `stun_requests` is empty even if tcpdump reports traffic
+        await asyncio.sleep(0.5)
+
+        # filter outgoing stun packets by ports 3478/3479
+        # filter upnp igd request packets by ip (ssdp multicast ip)
+        # use regex with a few more symbols to avoid false positives
+        match_pattern = r"\.347[89]:|239\.255\.255\.250"
+
+        stun_upnp_requests = [
+            request
+            for request in packets
+            if re.search(match_pattern, request) is not None
+        ]
+
+        assert len(stun_upnp_requests) == 0

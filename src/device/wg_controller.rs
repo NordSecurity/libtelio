@@ -10,15 +10,17 @@ use telio_crypto::PublicKey;
 use telio_dns::DnsResolver;
 use telio_firewall::firewall::{Firewall, FILE_SEND_PORT};
 use telio_model::api_config::Features;
+use telio_model::mesh::NodeState::Connected;
 use telio_model::EndpointMap;
 use telio_model::SocketAddr;
 use telio_proto::PeersStatesMap;
 use telio_proxy::Proxy;
-use telio_traversal::endpoint_providers::stun::StunEndpointProvider;
-use telio_traversal::endpoint_providers::EndpointProvider;
 use telio_traversal::{
-    cross_ping_check::CrossPingCheckTrait, SessionKeeperTrait, UpgradeSyncTrait,
-    WireGuardEndpointCandidateChangeEvent,
+    cross_ping_check::CrossPingCheckTrait,
+    endpoint_providers::{
+        stun::StunEndpointProvider, upnp::UpnpEndpointProvider, EndpointProvider,
+    },
+    SessionKeeperTrait, UpgradeSyncTrait, WireGuardEndpointCandidateChangeEvent,
 };
 use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn};
 use telio_wg::{uapi::Peer, WireGuard};
@@ -76,6 +78,11 @@ pub async fn consolidate_wg_state(
                 .as_ref()
                 .and_then(|direct| direct.stun_endpoint_provider.as_ref())
         }),
+        entities.meshnet.as_ref().and_then(|m| {
+            m.direct
+                .as_ref()
+                .and_then(|direct| direct.upnp_endpoint_provider.as_ref())
+        }),
         features,
     )
     .await?;
@@ -127,6 +134,7 @@ async fn consolidate_wg_peers<
     dns: &Mutex<crate::device::DNS<D>>,
     remote_peer_states: PeersStatesMap,
     stun_ep_provider: Option<&Arc<StunEndpointProvider>>,
+    upnp_ep_provider: Option<&Arc<UpnpEndpointProvider>>,
     features: &Features,
 ) -> Result {
     let proxy_endpoints = if let Some(p) = proxy {
@@ -176,6 +184,8 @@ async fn consolidate_wg_peers<
         }
     }
 
+    let mut is_any_peer_eligible_for_upgrade = false;
+
     for key in update_keys {
         let requested_peer = requested_peers.get(key).ok_or(Error::PeerNotFound)?;
         let actual_peer = actual_peers.get(key).ok_or(Error::PeerNotFound)?;
@@ -193,8 +203,9 @@ async fn consolidate_wg_peers<
                 .await?;
         }
 
+        let is_actual_peer_proxying = is_peer_proxying(actual_peer, &proxy_endpoints);
         match (
-            is_peer_proxying(actual_peer, &proxy_endpoints),
+            is_actual_peer_proxying,
             is_peer_proxying(&requested_peer.peer, &proxy_endpoints),
         ) {
             (false, true) => {
@@ -278,6 +289,34 @@ async fn consolidate_wg_peers<
 
             (_, _) => {}
         }
+        telio_log_debug!(
+            "peer {:?} proxying: {:?}, state: {:?}, lh: {:?}",
+            actual_peer.public_key,
+            is_actual_peer_proxying,
+            actual_peer.state(),
+            actual_peer.time_since_last_handshake
+        );
+        if is_actual_peer_proxying && actual_peer.state() == Connected {
+            is_any_peer_eligible_for_upgrade = true;
+        }
+    }
+
+    let ep_control = |ep: Arc<dyn EndpointProvider>| async move {
+        if is_any_peer_eligible_for_upgrade {
+            telio_log_debug!("Unpausing {} provider", ep.name());
+            ep.unpause().await;
+        } else {
+            telio_log_debug!("Pausing {} provider", ep.name());
+            ep.pause().await;
+        }
+    };
+
+    if let Some(stun) = stun_ep_provider {
+        ep_control(stun.clone()).await;
+    }
+
+    if let Some(upnp) = upnp_ep_provider {
+        ep_control(upnp.clone()).await;
     }
 
     Ok(())
@@ -486,6 +525,7 @@ async fn build_requested_peers_list<
 }
 
 // Builds a list of peers for meshnet, not taking into account any exit node, DNS, etc. peers
+#[allow(clippy::too_many_arguments)]
 async fn build_requested_meshnet_peers_list<
     W: WireGuard,
     C: CrossPingCheckTrait,
@@ -702,7 +742,7 @@ async fn select_endpoint_for_peer<'a>(
     // Retrieve some helper information
     let actual_endpoint = actual_peer.clone().and_then(|p| p.endpoint);
 
-    // Use match statemet to cover all possible variants
+    // Use match statement to cover all possible variants
     match (upgrade_request_endpoint, peer_state, checked_endpoint) {
         // If the other side has requested us to upgrade endpoint -> do that
         (Some(upgrade_request_endpoint), _, _) => {
@@ -802,7 +842,7 @@ fn is_peer_proxying(
     peer: &telio_wg::uapi::Peer,
     proxy_endpoints: &HashMap<PublicKey, SocketAddr>,
 ) -> bool {
-    // If proxy has no knowledge of the public key -> the node definately does not proxy
+    // If proxy has no knowledge of the public key -> the node definitely does not proxy
     let proxy_endpoint = if let Some(proxy_endpoint) = proxy_endpoints.get(&peer.public_key) {
         proxy_endpoint
     } else {
@@ -1526,6 +1566,7 @@ mod tests {
                 Some(&session_keeper),
                 &self.dns,
                 HashMap::new(),
+                None,
                 None,
                 &self.features,
             )
