@@ -4,7 +4,6 @@
 
 use super::{Adapter, Error as AdapterError, Tun as NativeTun};
 use crate::uapi::{Cmd, Cmd::Get, Cmd::Set, Interface, Peer, Response};
-use boringtun::device::Sock;
 use futures::executor::block_on;
 use futures::future::{BoxFuture, FutureExt};
 use ipnetwork::{IpNetwork, IpNetworkError};

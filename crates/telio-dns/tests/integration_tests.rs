@@ -1,5 +1,4 @@
-use base64::encode;
-use boringtun::{crypto::x25519::X25519SecretKey, noise::Tunn};
+use boringtun::noise::Tunn;
 use std::{
     fmt,
     fs::{remove_file, write},
@@ -8,37 +7,26 @@ use std::{
     process::Command,
     sync::Arc,
 };
+use telio_crypto::{PublicKey, SecretKey};
 use telio_dns::{LocalNameServer, NameServer, Records};
 use tokio::net::UdpSocket;
-
-/// Wireguard key pair.
-struct KeyPair {
-    private: String,
-    public: String,
-}
-
-impl KeyPair {
-    /// Generate WireGuard key pair.
-    fn new() -> Self {
-        let private_key = X25519SecretKey::new();
-        let public_key = private_key.public_key();
-        KeyPair {
-            private: encode(private_key.as_bytes()),
-            public: encode(public_key.as_bytes()),
-        }
-    }
-}
+use x25519_dalek::{PublicKey as PublicDalek, StaticSecret};
 
 /// Config is in INI format.
 struct WireguardConfig {
-    private_key: String,
-    peer_public_key: String,
+    private_key: SecretKey,
+    peer_public_key: PublicKey,
     local_address: String,
     peer_address: String,
 }
 
 impl WireguardConfig {
-    fn new(private_key: &str, peer_key: &str, local_address: &str, peer_address: &str) -> Self {
+    fn new(
+        private_key: &SecretKey,
+        peer_key: &PublicKey,
+        local_address: &str,
+        peer_address: &str,
+    ) -> Self {
         WireguardConfig {
             private_key: private_key.to_owned(),
             peer_public_key: peer_key.to_owned(),
@@ -74,8 +62,8 @@ struct WireguardKernel {
 
 impl WireguardKernel {
     fn new(
-        private_key: &str,
-        peer_key: &str,
+        private_key: &SecretKey,
+        peer_key: &PublicKey,
         local_address: &str,
         peer_address: &str,
     ) -> Result<Self, io::Error> {
@@ -121,14 +109,15 @@ fn drill(nameserver: &str, host: &str) -> String {
 async fn dns_over_wireguard() {
     // Test the connection between WireGuard kernel module and
     // the local peer providing DNS server over WireGuard protocol.
-    let kernel_keys = KeyPair::new();
+    let kernel_privatekey = SecretKey::gen();
     let kernel_address = String::from("100.100.100.101/32");
     let dns_address = String::from("100.100.100.102/32");
-    let dns_keys = KeyPair::new();
+    let private_key = SecretKey::gen();
+    let public_key = PublicKey::from(&private_key);
 
     let _stock_wireguard = WireguardKernel::new(
-        &kernel_keys.private,
-        &dns_keys.public,
+        &kernel_privatekey,
+        &public_key,
         &kernel_address,
         &dns_address,
     );
@@ -146,8 +135,8 @@ async fn dns_over_wireguard() {
     let dns_socket = Arc::new(UdpSocket::bind("127.0.0.1:51821").await.unwrap());
     let dns_wireguard = Arc::from(
         Tunn::new(
-            Arc::new(dns_keys.private.parse().unwrap()),
-            Arc::new(kernel_keys.public.parse().unwrap()),
+            StaticSecret::from(private_key.into_bytes()),
+            PublicDalek::from(public_key.0),
             None,
             None,
             0,

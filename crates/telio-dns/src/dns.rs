@@ -1,6 +1,5 @@
 use crate::{bind_tun, LocalNameServer, NameServer, Records};
 use async_trait::async_trait;
-use boringtun::crypto::x25519::{X25519PublicKey, X25519SecretKey};
 use boringtun::noise::Tunn;
 use ipnetwork::IpNetwork;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -9,6 +8,7 @@ use telio_crypto::{PublicKey, SecretKey};
 use telio_wg::uapi::Peer;
 use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
+use x25519_dalek::{PublicKey as PublicKeyDalek, StaticSecret};
 
 use telio_model::api_config::FeatureExitDns;
 
@@ -87,11 +87,7 @@ impl LocalDnsResolver {
         let dns_secret_key = SecretKey::gen();
 
         // Telio public key
-        let telio_public_key: Arc<X25519PublicKey> =
-            Arc::new(X25519PublicKey::from(&public_key[..]));
-
-        let static_private = dns_secret_key.to_string();
-        let static_private: Arc<X25519SecretKey> = Arc::new(static_private.parse()?);
+        let telio_public_key: PublicKeyDalek = PublicKeyDalek::from(public_key.0);
 
         let nameserver = LocalNameServer::new(forward_ips).await?;
 
@@ -102,7 +98,7 @@ impl LocalDnsResolver {
             socket: Arc::new(socket),
             secret_key: dns_secret_key,
             peer: Arc::<Tunn>::from(Tunn::new(
-                static_private,
+                StaticSecret::from(dns_secret_key.into_bytes()),
                 telio_public_key,
                 None,
                 None,
@@ -141,8 +137,12 @@ impl DnsResolver for LocalDnsResolver {
     }
 
     fn public_key(&self) -> PublicKey {
-        telio_log_debug!("Dns - public_key: {:?}", &self.secret_key.public());
-        self.secret_key.public()
+        let static_secret = &StaticSecret::from(self.secret_key.into_bytes());
+        telio_log_debug!(
+            "Dns - public_key: {:?}",
+            PublicKeyDalek::from(static_secret)
+        );
+        PublicKey(PublicKeyDalek::from(static_secret).to_bytes())
     }
 
     fn get_peer(&self, allowed_ips: Vec<IpNetwork>) -> Peer {
@@ -186,6 +186,7 @@ impl DnsResolver for LocalDnsResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use telio_crypto::SecretKey;
 
     #[tokio::test]
     async fn test_get_default_dns_allowed_ips() {
