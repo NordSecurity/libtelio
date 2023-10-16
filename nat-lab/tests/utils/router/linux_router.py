@@ -406,3 +406,51 @@ class LinuxRouter(Router):
                     "tcp-reset",
                 ]
             ).execute()
+
+    @asynccontextmanager
+    async def break_udp_conn_to_host(self, address: str) -> AsyncIterator:
+        addr_proto = self.check_ip_address(address)
+
+        if addr_proto is None:
+            return
+
+        iptables_string = ("ip" if addr_proto == IPProto.IPv4 else "ip6") + "tables"
+
+        await self._connection.create_process(
+            [
+                iptables_string,
+                "-t",
+                "filter",
+                "-A",
+                "OUTPUT",
+                "--destination",
+                address,
+                "-p",
+                "udp",
+                "-j",
+                "REJECT",
+                "--reject-with",
+                "icmp-host-unreachable",
+            ]
+        ).execute()
+
+        try:
+            yield
+        finally:
+            await self._connection.create_process(
+                [
+                    iptables_string,
+                    "-t",
+                    "filter",
+                    "-D",
+                    "OUTPUT",
+                    "--destination",
+                    address,
+                    "-p",
+                    "udp",
+                    "-j",
+                    "REJECT",
+                    "--reject-with",
+                    "icmp-host-unreachable",
+                ]
+            ).execute()

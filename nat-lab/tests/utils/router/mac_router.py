@@ -147,3 +147,9 @@ class MacRouter(Router):
         self, address: str  # pylint: disable=unused-argument
     ) -> AsyncIterator:
         yield
+
+    @asynccontextmanager
+    async def break_udp_conn_to_host(
+        self, address: str  # pylint: disable=unused-argument
+    ) -> AsyncIterator:
+        yield
