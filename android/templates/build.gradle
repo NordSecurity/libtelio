@@ -1,0 +1,121 @@
+apply plugin: 'com.android.library'
+apply plugin: 'com.jfrog.artifactory'
+apply plugin: 'maven-publish'
+apply plugin: 'kotlin-android'
+apply from: "../init.gradle"
+
+buildscript {
+    repositories {
+        jcenter()
+        google()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:4.1.1'
+        classpath "org.jfrog.buildinfo:build-info-extractor-gradle:4.18.2"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.6.21"
+    }
+}
+
+repositories {
+    google()
+    jcenter()
+    maven { url "https://jitpack.io" }
+    maven { url 'https://maven.google.com' }
+}
+
+def packageName = '$PACKAGE_NAME'
+def packageVersionName = '$VERSION'
+def packageVersionCode = 1
+def repoUrl = System.getenv('ARTIFACTORY_URL')
+def repoUsername = System.getenv('ARTIFACTORY_USERNAME')
+def repoPassword = System.getenv('ARTIFACTORY_PASSWORD')
+
+android {
+    compileSdkVersion 29
+    defaultConfig {
+        minSdkVersion 23
+        targetSdkVersion 29
+        versionCode = packageVersionCode
+        versionName = packageVersionName
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    implementation "net.java.dev.jna:jna:5.7.0@aar"
+    implementation files('libs/rustls-platform-verifier.jar')
+}
+
+publishing {
+    publications {
+        aar(MavenPublication) {
+            groupId packageName
+            version = packageVersionName
+            artifactId '$ARTIFACT_ID'
+            artifact("build/outputs/aar/$${project.getName()}-release.aar")
+
+            pom.withXml {
+                def dependenciesNode = asNode().appendNode('dependencies')
+
+                configurations.implementation.allDependencies.each {
+                    def dependencyNode = dependenciesNode.appendNode('dependency')
+                    dependencyNode.appendNode('groupId', it.group)
+                    dependencyNode.appendNode('artifactId', it.name)
+                    dependencyNode.appendNode('version', it.version)
+                    dependencyNode.appendNode('type', 'aar') // The only dependency we have is 'jna' with aar artifact type.
+                }
+            }
+        }
+    }
+}
+
+artifactory {
+    contextUrl = repoUrl
+
+    publish {
+        repository {
+            repoKey = packageVersionName.endsWith('SNAPSHOT') ? 'libs-snapshot-local' : 'libs-release-local'
+            username = repoUsername
+            password = repoPassword
+        }
+        defaults {
+            publications('aar')
+            publishArtifacts = true
+        }
+    }
+
+    resolve {
+        repository {
+            repoKey = 'libs-release'
+            username = repoUsername
+            password = repoPassword
+            maven = true
+        }
+    }
+}
+
+task copyLibraries(type: Copy) {
+    from findRustlsPlatformVerifierProject() + '/android/rustls-platform-verifier/build/intermediates/aar_main_jar/release/classes.jar'
+    into 'libs'
+    rename { String fileName ->
+        fileName.replace('classes.jar', 'rustls-platform-verifier.jar')
+    }
+
+ }
+preBuild.dependsOn(copyLibraries)
+
+task buildDependencies {
+    dependsOn gradle.includedBuild('android').task(':rustls-platform-verifier:build')
+}
+copyLibraries.dependsOn(buildDependencies)

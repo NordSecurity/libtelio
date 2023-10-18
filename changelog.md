@@ -5,6 +5,7 @@
 * LLT-4663: Update zerocopy dependency
 * LLT-4543: Log ffi calls
 * LLT-4310: Change stun client/server to the one, which supports IPv6
+* LLT-4381: Use OS certificates instead of hardcoded mozilla list
 
 ### v4.2.1
 ----

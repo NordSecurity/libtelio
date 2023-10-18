@@ -47,7 +47,7 @@ struct telio {};
 
 
 #if defined(__ANDROID__)
-    telio(const char* features, telio_event_cb events, enum telio_log_level level, telio_logger_cb logger, telio_protect_cb protect) {
+    telio(const char* features, telio_event_cb events, enum telio_log_level level, telio_logger_cb logger, telio_protect_cb protect, jobject ctx) {
         telio *t;
         if (TELIO_RES_OK != telio_new_with_protect(&t, features, events, level, logger, protect)) {
             return NULL;

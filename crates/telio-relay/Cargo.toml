@@ -13,7 +13,7 @@ rustls-pemfile = "1.0.0"
 tokio-rustls = { version = "0.24.1", features = ["dangerous_configuration"] }
 tokio-util = "0.7.3"
 tokio-stream = "0.1.9"
-webpki-roots = "0.25"
+rustls-platform-verifier = { git = "https://github.com/tomaszklak/rustls-platform-verifier.git", rev = "1eeed2dc3a4a7f437220875feb31e50cdec0bf07" }
 
 async-trait.workspace = true
 bytes.workspace = true
@@ -36,6 +36,7 @@ telio-proto.workspace = true
 telio-sockets.workspace = true
 telio-task.workspace = true
 telio-utils.workspace = true
+webpki-roots = "0.25.2"
 
 [dev-dependencies]
 async-std = { version = "1.5", features = ["attributes"] }
