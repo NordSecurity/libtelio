@@ -1,6 +1,3 @@
-// We use bitmask with all bits 0. We need to fix
-#![allow(clippy::bad_bit_mask)]
-
 use async_trait::async_trait;
 use bitflags::bitflags;
 use nat_detect::NatType;
@@ -44,7 +41,6 @@ enum RuntimeState {
 
 bitflags! {
     struct MeshConnectionState: u32 {
-        const NONE = 0b00000000;
         const DERP = 0b00000001;
         const WG = 0b00000010;
     }
@@ -74,7 +70,7 @@ struct MeshLink {
 impl Default for MeshLink {
     fn default() -> Self {
         MeshLink {
-            connection_state: MeshConnectionState::NONE,
+            connection_state: MeshConnectionState::empty(),
         }
     }
 }

@@ -32,6 +32,7 @@
 * LLT-3914: Add apple tvOS support
 * LLT-4013: Add conntrack rules for icmp
 * LLT-4152: Suspend SessionKeeper and CrossPingCheck for unresponsive peers
+* LLT-4360: Bump rust version to 1.72
 
 <br>
 
