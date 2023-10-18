@@ -7,7 +7,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from mesh_api import API, Node
 from telio import PathType, State, AdapterType, Client
-from telio_features import TelioFeatures, Direct
+from telio_features import TelioFeatures, Direct, SkipUnresponsivePeers
 from typing import List, AsyncIterator, Tuple, Optional
 from utils import testing
 from utils.connection import Connection
@@ -160,19 +160,10 @@ async def new_connections_with_mesh_clients(
     endpoint_providers_1: List[str],
     client2_type: ConnectionTag,
     endpoint_providers_2: List[str],
-    client3_type: Optional[ConnectionTag] = None,
-    endpoint_providers_3: Optional[List[str]] = None,
-) -> AsyncIterator[
-    Tuple[
-        NodeWithMeshConnection, NodeWithMeshConnection, Optional[NodeWithMeshConnection]
-    ]
-]:
+) -> AsyncIterator[Tuple[NodeWithMeshConnection, NodeWithMeshConnection, API]]:
     api = API()
 
-    (alpha, beta, gamma) = api.default_config_three_nodes()
-
-    if not (client3_type and endpoint_providers_3):
-        api.remove(gamma.id)
+    (alpha, beta) = api.default_config_two_nodes()
 
     (
         alpha_conn,
@@ -215,7 +206,14 @@ async def new_connections_with_mesh_clients(
             alpha_conn,
             alpha,
             AdapterType.BoringTun,
-            telio_features=TelioFeatures(direct=Direct(providers=endpoint_providers_1)),
+            telio_features=TelioFeatures(
+                direct=Direct(
+                    providers=endpoint_providers_1,
+                    skip_unresponsive_peers=SkipUnresponsivePeers(
+                        no_handshake_threshold_secs=10
+                    ),
+                )
+            ),
         ).run_meshnet(
             api.get_meshmap(alpha.id),
         )
@@ -226,51 +224,18 @@ async def new_connections_with_mesh_clients(
             beta_conn,
             beta,
             AdapterType.BoringTun,
-            telio_features=TelioFeatures(direct=Direct(providers=endpoint_providers_2)),
+            telio_features=TelioFeatures(
+                direct=Direct(
+                    providers=endpoint_providers_2,
+                    skip_unresponsive_peers=SkipUnresponsivePeers(
+                        no_handshake_threshold_secs=10
+                    ),
+                ),
+            ),
         ).run_meshnet(
             api.get_meshmap(beta.id),
         )
     )
-
-    if client3_type and endpoint_providers_3:
-        (
-            gamma_conn,
-            gamma_conn_gw,
-            gamma_conn_tracker,
-        ) = await exit_stack.enter_async_context(
-            new_connection_with_tracker_and_gw(
-                client3_type,
-                generate_connection_tracker_config(
-                    client3_type,
-                    derp_0_limits=ConnectionLimits(0, 3),
-                    derp_1_limits=ConnectionLimits(1, 1),
-                    derp_2_limits=ConnectionLimits(0, 3),
-                    derp_3_limits=ConnectionLimits(0, 3),
-                ),
-            )
-        )
-
-        gamma_client = await exit_stack.enter_async_context(
-            telio.Client(
-                gamma_conn,
-                gamma,
-                AdapterType.BoringTun,
-                telio_features=TelioFeatures(
-                    direct=Direct(providers=endpoint_providers_3)
-                ),
-            ).run_meshnet(
-                api.get_meshmap(beta.id),
-            )
-        )
-        gamma_conn_with_mesh = NodeWithMeshConnection(
-            gamma,
-            gamma_client,
-            gamma_conn,
-            gamma_conn_tracker,
-            gamma_conn_gw,
-        )
-    else:
-        gamma_conn_with_mesh = None
 
     yield (
         NodeWithMeshConnection(
@@ -279,7 +244,7 @@ async def new_connections_with_mesh_clients(
         NodeWithMeshConnection(
             beta, beta_client, beta_conn, beta_conn_tracker, beta_conn_gw
         ),
-        gamma_conn_with_mesh,
+        api,
     )
 
 
@@ -600,6 +565,85 @@ async def test_direct_connection_loss_for_infinity(
 
             async with Ping(alpha.conn, beta.node.ip_addresses[0]).run() as ping:
                 await testing.wait_lengthy(ping.wait_for_next_ping())
+
+        assert alpha.conn_track.get_out_of_limits() is None
+        assert beta.conn_track.get_out_of_limits() is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "endpoint_providers, client1_type, client2_type, _reflexive_ip",
+    UHP_conn_client_types,
+)
+async def test_direct_working_paths_with_skip_unresponsive_peers(
+    endpoint_providers,
+    client1_type,
+    client2_type,
+    _reflexive_ip,
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        (alpha, beta, api) = await exit_stack.enter_async_context(
+            new_connections_with_mesh_clients(
+                exit_stack,
+                client1_type,
+                endpoint_providers,
+                client2_type,
+                endpoint_providers,
+            )
+        )
+        await testing.wait_long(
+            asyncio.gather(
+                alpha.client.wait_for_state_on_any_derp([State.Connected]),
+                beta.client.wait_for_state_on_any_derp([State.Connected]),
+            ),
+        )
+
+        await testing.wait_defined(
+            asyncio.gather(
+                alpha.client.wait_for_state_peer(
+                    beta.node.public_key,
+                    [State.Connected],
+                    [PathType.Direct],
+                ),
+                beta.client.wait_for_state_peer(
+                    alpha.node.public_key,
+                    [State.Connected],
+                    [PathType.Direct],
+                ),
+            ),
+            60,
+        )
+
+        async with Ping(alpha.conn, beta.node.ip_addresses[0]).run() as ping:
+            await testing.wait_long(ping.wait_for_next_ping())
+
+        await alpha.client.stop_device()
+
+        await beta.client.wait_for_log(
+            f"Skipping sending CMM to peer {alpha.node.public_key} (Unresponsive)"
+        )
+
+        await alpha.client.simple_start()
+        await alpha.client.set_meshmap(api.get_meshmap(alpha.node.id))
+
+        await testing.wait_defined(
+            asyncio.gather(
+                alpha.client.wait_for_state_peer(
+                    beta.node.public_key,
+                    [State.Connected],
+                    [PathType.Direct],
+                ),
+                beta.client.wait_for_state_peer(
+                    alpha.node.public_key,
+                    [State.Connected],
+                    [PathType.Direct],
+                ),
+            ),
+            60,
+        )
+
+        async with Ping(alpha.conn, beta.node.ip_addresses[0]).run() as ping:
+            await testing.wait_long(ping.wait_for_next_ping())
 
         assert alpha.conn_track.get_out_of_limits() is None
         assert beta.conn_track.get_out_of_limits() is None

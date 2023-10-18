@@ -22,7 +22,7 @@ use telio_traversal::{
         self, local::LocalInterfacesEndpointProvider, stun::StunEndpointProvider, stun::StunServer,
         upnp::UpnpEndpointProvider, EndpointProvider,
     },
-    last_handshake_time_provider::LastHandshakeTimeProvider,
+    last_handshake_time_provider::{LastHandshakeTimeProvider, WireGuardLastHandshakeTimeProvider},
     ping_pong_handler::PingPongHandler,
     SessionKeeper, UpgradeRequestChangeEvent, UpgradeSync, WireGuardEndpointCandidateChangeEvent,
 };
@@ -956,8 +956,13 @@ impl Runtime {
             }
 
             let last_handshake_time_provider: Option<Arc<dyn LastHandshakeTimeProvider>> =
-                if features.skip_unresponsive_peers {
-                    Some(wireguard_interface.clone())
+                if let Some(skip_unresponsive_peers) = &direct.skip_unresponsive_peers {
+                    Some(Arc::new(WireGuardLastHandshakeTimeProvider {
+                        wg: wireguard_interface.clone(),
+                        threshold: Duration::from_secs(
+                            skip_unresponsive_peers.no_handshake_threshold_secs,
+                        ),
+                    }))
                 } else {
                     None
                 };
@@ -2098,6 +2103,7 @@ mod tests {
             direct: Some(FeatureDirect {
                 providers: None,
                 endpoint_interval_secs: None,
+                skip_unresponsive_peers: Default::default(),
             }),
             ..Default::default()
         };
@@ -2129,6 +2135,7 @@ mod tests {
             direct: Some(FeatureDirect {
                 providers: Some(HashSet::<telio_model::api_config::EndpointProvider>::new()),
                 endpoint_interval_secs: None,
+                skip_unresponsive_peers: Default::default(),
             }),
             ..Default::default()
         };
@@ -2155,6 +2162,8 @@ mod tests {
     #[cfg(not(windows))]
     #[tokio::test(start_paused = true)]
     async fn test_enable_all_direct_features() {
+        use telio_model::api_config::FeatureSkipUnresponsivePeers;
+
         let (sender, _receiver) = tokio::sync::broadcast::channel(1);
 
         let mut providers = HashSet::<telio_model::api_config::EndpointProvider>::new();
@@ -2166,6 +2175,9 @@ mod tests {
             direct: Some(FeatureDirect {
                 providers: Some(providers),
                 endpoint_interval_secs: None,
+                skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
+                    no_handshake_threshold_secs: 42,
+                }),
             }),
             ..Default::default()
         };

@@ -436,7 +436,7 @@ class Client:
                     await self._router.delete_vpn_route()
                     await self._router.delete_exit_node_route()
                     await self._router.delete_interface()
-                await self.save_logs(self._connection)
+                await self.save_logs()
 
     @asynccontextmanager
     async def run_meshnet(
@@ -694,28 +694,38 @@ class Client:
         self.get_runtime().get_output_notifier().notify_output(what, event)
         return event
 
-    @staticmethod
-    async def save_logs(connection: Connection) -> None:
+    async def wait_for_log(self, what: str, case_insensitive: bool = True) -> None:
+        if case_insensitive:
+            what = what.lower()
+        while True:
+            if what in (await self.get_log()).lower():
+                break
+            await asyncio.sleep(1)
+
+    async def get_log(self) -> str:
+        process = (
+            self._connection.create_process(["type", "tcli.log"])
+            if self._connection.target_os == TargetOS.Windows
+            else self._connection.create_process(["cat", "./tcli.log"])
+        )
+        await process.execute()
+        return process.get_stdout()
+
+    async def save_logs(self) -> None:
         if os.environ.get("NATLAB_SAVE_LOGS") is None:
             return
 
         log_dir = "logs"
         os.makedirs(log_dir, exist_ok=True)
 
-        process = (
-            connection.create_process(["type", "tcli.log"])
-            if connection.target_os == TargetOS.Windows
-            else connection.create_process(["cat", "./tcli.log"])
-        )
-        await process.execute()
-        log_content = process.get_stdout()
+        log_content = await self.get_log()
 
-        if connection.target_os == TargetOS.Linux:
-            process = connection.create_process(["cat", "/etc/hostname"])
+        if self._connection.target_os == TargetOS.Linux:
+            process = self._connection.create_process(["cat", "/etc/hostname"])
             await process.execute()
             container_id = process.get_stdout().strip()
         else:
-            container_id = str(connection.target_os)
+            container_id = str(self._connection.target_os)
 
         test_name = os.environ.get("PYTEST_CURRENT_TEST")
         if test_name is not None:
