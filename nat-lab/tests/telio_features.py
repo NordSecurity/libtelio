@@ -45,7 +45,7 @@ class Nurse:
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
 class TelioFeatures:
-    macos_sideload: Optional[bool] = False
+    is_test_env: Optional[bool] = True
     exit_dns: Optional[ExitDns] = field(
         default_factory=lambda: ExitDns(auto_switch_dns_ips=True)
     )

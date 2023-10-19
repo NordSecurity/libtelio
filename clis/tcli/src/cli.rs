@@ -80,7 +80,7 @@ pub enum Error {
 
     #[cfg(target_os = "macos")]
     #[error(transparent)]
-    Sideload(#[from] telio_sockets::protector::platform::Error),
+    Apple(#[from] telio_sockets::protector::platform::Error),
 
     #[error("Config is empty")]
     EmptyConfig,

@@ -212,9 +212,10 @@ pub struct Features {
     pub exit_dns: Option<FeatureExitDns>,
     /// Configure options for direct WG connections
     pub direct: Option<FeatureDirect>,
-    /// Should only be set for macos sideload
+    /// Test environment (natlab) requires binding feature disabled
+    /// TODO: Remove it once mac integration tests support the binding mechanism
     #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
-    pub macos_sideload: bool,
+    pub is_test_env: Option<bool>,
     /// Derp server specific configuration
     pub derp: Option<FeatureDerp>,
 }
@@ -246,7 +247,7 @@ mod tests {
 
     use super::*;
 
-    const CORRECT_FEATURES_JSON_WITHOUT_MACOS_SIDELOAD: &str = r#"
+    const CORRECT_FEATURES_JSON_WITHOUT_IS_TEST_ENV: &str = r#"
         {
             "wireguard":
             {
@@ -273,7 +274,7 @@ mod tests {
             "exit_dns": {}
         }"#;
 
-    const CORRECT_FEATURES_JSON_WITH_MACOS_SIDELOAD: &str = r#"
+    const CORRECT_FEATURES_JSON_WITH_IS_TEST_ENV: &str = r#"
         {
             "wireguard":
             {
@@ -298,7 +299,7 @@ mod tests {
             },
             "direct": {},
             "exit_dns": {},
-            "macos_sideload": true
+            "is_test_env": true
         }"#;
 
     static EXPECTED_FEATURES: Lazy<Features> = Lazy::new(|| Features {
@@ -333,7 +334,42 @@ mod tests {
             auto_switch_dns_ips: None,
         }),
         #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
-        macos_sideload: true,
+        is_test_env: Some(true),
+        derp: None,
+    });
+
+    static EXPECTED_FEATURES_WITHOUT_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
+        wireguard: FeatureWireguard {
+            persistent_keepalive: FeaturePersistentKeepalive {
+                vpn: None,
+                direct: 5,
+                proxying: Some(25),
+                stun: Some(50),
+            },
+        },
+        nurse: Some(FeatureNurse {
+            fingerprint: "fingerprint_test".to_string(),
+            heartbeat_interval: None,
+            qos: None,
+            enable_nat_type_collection: None,
+        }),
+        lana: Some(FeatureLana {
+            event_path: "path/to/some/event/data".to_string(),
+            prod: true,
+        }),
+        paths: Some(FeaturePaths {
+            priority: vec![PathType::Relay, PathType::Direct],
+            force: Some(PathType::Relay),
+        }),
+        direct: Some(FeatureDirect {
+            providers: None,
+            endpoint_interval_secs: None,
+        }),
+        exit_dns: Some(FeatureExitDns {
+            auto_switch_dns_ips: None,
+        }),
+        #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
+        is_test_env: None,
         derp: None,
     });
 
@@ -585,20 +621,19 @@ mod tests {
     }
 
     #[test]
-    fn test_json_without_macos_sideload_to_feature_set() {
+    fn test_json_without_is_test_env_to_feature_set() {
         let deserialization: Result<Features, _> =
-            from_str(CORRECT_FEATURES_JSON_WITHOUT_MACOS_SIDELOAD);
-        #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
-        assert!(deserialization.is_err());
+            from_str(CORRECT_FEATURES_JSON_WITHOUT_IS_TEST_ENV);
 
-        #[cfg(not(any(target_os = "macos", feature = "pretend_to_be_macos")))]
-        assert_eq!(deserialization.unwrap(), *EXPECTED_FEATURES);
+        assert_eq!(
+            deserialization.unwrap(),
+            *EXPECTED_FEATURES_WITHOUT_TEST_ENV
+        );
     }
 
     #[test]
-    fn test_json_with_macos_sideload_to_feature_set() {
-        let deserialization: Result<Features, _> =
-            from_str(CORRECT_FEATURES_JSON_WITH_MACOS_SIDELOAD);
+    fn test_json_with_is_test_env_to_feature_set() {
+        let deserialization: Result<Features, _> = from_str(CORRECT_FEATURES_JSON_WITH_IS_TEST_ENV);
 
         assert_eq!(deserialization.unwrap(), *EXPECTED_FEATURES);
     }

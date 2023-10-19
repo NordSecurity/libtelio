@@ -1,3 +1,11 @@
+### v4.1.1
+### **Bruschetta**
+---
+### Changelog
+* LLT-3777: Apply rebinding logic to all Apple platforms
+
+<br>
+
 ### v4.1.0
 ### **Bruschetta**
 ---
