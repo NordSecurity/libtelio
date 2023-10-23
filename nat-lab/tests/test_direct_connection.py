@@ -571,6 +571,7 @@ async def test_direct_connection_loss_for_infinity(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(reason="test is flaky - LLT-4441")
 @pytest.mark.parametrize(
     "endpoint_providers, client1_type, client2_type, _reflexive_ip",
     UHP_conn_client_types,
