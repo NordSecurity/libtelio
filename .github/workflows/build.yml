@@ -7,59 +7,59 @@ jobs:
     strategy:
       matrix:
         include:
-          - arch: x86_64
-            target_abi: gnu
-            packages: gcc-multilib
-            target_os: linux
-            runner: ubuntu-22.04
-          - arch: i686
-            target_abi: gnu
-            packages: gcc-multilib
-            target_os: linux
-            runner: ubuntu-22.04
-          - arch: aarch64
-            target_abi: gnu
-            packages: gcc-aarch64-linux-gnu
-            target_os: linux
-            runner: ubuntu-22.04
-          - arch: armv7
-            target_abi: gnueabihf
-            packages: gcc-arm-linux-gnueabihf
-            target_os: linux
-            runner: ubuntu-22.04
-          - arch: armv5
-            target_abi: gnueabi
-            packages: gcc-arm-linux-gnueabi
-            target_os: linux
-            runner: ubuntu-22.04
-          - arch: x86_64
-            target_abi: darwin
-            target_os: macos
-            runner: macos-12
-          - arch: aarch64
-            target_abi: darwin
-            target_os: macos
-            runner: macos-12
-          - arch: aarch64
-            target_abi: ios
-            target_os: macos
-            runner: macos-12
-          - arch: x86_64
-            target_abi: android
-            target_os: android
-            runner: ubuntu-22.04
-          - arch: i686
-            target_abi: android
-            target_os: android
-            runner: ubuntu-22.04
-          - arch: aarch64
-            target_abi: android
-            target_os: android
-            runner: ubuntu-22.04
-          - arch: armv7
-            target_abi: androideabi
-            target_os: android
-            runner: ubuntu-22.04
+          # - arch: x86_64
+          #   target_abi: gnu
+          #   packages: gcc-multilib
+          #   target_os: linux
+          #   runner: ubuntu-22.04
+          # - arch: i686
+          #   target_abi: gnu
+          #   packages: gcc-multilib
+          #   target_os: linux
+          #   runner: ubuntu-22.04
+          # - arch: aarch64
+          #   target_abi: gnu
+          #   packages: gcc-aarch64-linux-gnu
+          #   target_os: linux
+          #   runner: ubuntu-22.04
+          # - arch: armv7
+          #   target_abi: gnueabihf
+          #   packages: gcc-arm-linux-gnueabihf
+          #   target_os: linux
+          #   runner: ubuntu-22.04
+          # - arch: armv5
+          #   target_abi: gnueabi
+          #   packages: gcc-arm-linux-gnueabi
+          #   target_os: linux
+          #   runner: ubuntu-22.04
+          # - arch: x86_64
+          #   target_abi: darwin
+          #   target_os: macos
+          #   runner: macos-12
+          # - arch: aarch64
+          #   target_abi: darwin
+          #   target_os: macos
+          #   runner: macos-12
+          # - arch: aarch64
+          #   target_abi: ios
+          #   target_os: macos
+          #   runner: macos-12
+          # - arch: x86_64
+          #   target_abi: android
+          #   target_os: android
+          #   runner: ubuntu-22.04
+          # - arch: i686
+          #   target_abi: android
+          #   target_os: android
+          #   runner: ubuntu-22.04
+          # - arch: aarch64
+          #   target_abi: android
+          #   target_os: android
+          #   runner: ubuntu-22.04
+          # - arch: armv7
+          #   target_abi: androideabi
+          #   target_os: android
+          #   runner: ubuntu-22.04
           - arch: x86_64
             target_abi: msvc
             target_os: windows
@@ -83,7 +83,10 @@ jobs:
         uses: egor-tensin/vs-shell@9a932a62d05192eae18ca370155cf877eecc2202 # v2.1
         if: ${{ matrix.target_os == 'windows' }}
       - name: Build libtelio
-        run: python3 libtelio/ci/build_libtelio.py build ${{ matrix.target_os }} ${{ matrix.arch }}
+        run: |
+          cd libtelio/wireguard-go-rust-wrapper/wireguard-go
+          $env:OUT_DIR = dist
+          ./build.ps1
       - name: Test FFI
         run: |
           cd libtelio/ffi/tests

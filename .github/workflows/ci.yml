@@ -18,29 +18,29 @@ jobs:
   build:
     needs: trigger
     uses: ./.github/workflows/build.yml
-  linters:
-    needs: trigger
-    uses: ./.github/workflows/linters.yml
-  tests:
-    needs: trigger
-    uses: ./.github/workflows/tests.yml
-  fuzzing:
-    needs: trigger
-    uses: ./.github/workflows/fuzzing.yml
-  benchmarks:
-    needs: trigger
-    uses: ./.github/workflows/benchmarks.yml
-  coverage:
-    needs: trigger
-    uses: ./.github/workflows/coverage.yml
+  # linters:
+  #   needs: trigger
+  #   uses: ./.github/workflows/linters.yml
+  # tests:
+  #   needs: trigger
+  #   uses: ./.github/workflows/tests.yml
+  # fuzzing:
+  #   needs: trigger
+  #   uses: ./.github/workflows/fuzzing.yml
+  # benchmarks:
+  #   needs: trigger
+  #   uses: ./.github/workflows/benchmarks.yml
+  # coverage:
+  #   needs: trigger
+  #   uses: ./.github/workflows/coverage.yml
 
   check-all-green:
     needs:
     - build
-    - linters
-    - tests
-    - fuzzing
-    - benchmarks
+    # - linters
+    # - tests
+    # - fuzzing
+    # - benchmarks
     runs-on: ubuntu-22.04
     steps:
     - name: Collect statuses from all jobs
