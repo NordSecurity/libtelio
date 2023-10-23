@@ -85,7 +85,7 @@ jobs:
       - name: Build libtelio
         run: |
           cd libtelio/wireguard-go-rust-wrapper/wireguard-go
-          $env:OUT_DIR = dist
+          $env:OUT_DIR="dist"
           ./build.ps1
       - name: Test FFI
         run: |
