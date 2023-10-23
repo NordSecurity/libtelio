@@ -33,6 +33,7 @@ LIBVIRT_MANAGEMENT_NETWORK_PREFIX = "192.168.121"
 DOCKER_NETWORK_IP = "10.0.0.0"
 DOCKER_NETWORK_MASK = "255.255.0.0"
 STUN_SERVER = "10.0.1.1"
+STUNV6_SERVER = "2001:db8:85a4::deed:6"
 
 # Same as defined in `libtelio/nat-lab/provision_windows.ps1`
 STUN_BINARY_PATH_WINDOWS = "C:/workspace/stunserver/release/stunclient.exe".replace(
