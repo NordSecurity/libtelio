@@ -43,6 +43,7 @@
 * LLT-4119: Fix multiple bugs in telio-firewall. Mainly whitelist vpn server
 * LLT-4002: Review log-levels of spammy log messages
 * LLT-3990: Add initial heartbeat interval to feature config
+* LLT-4432: Use forked system-configuration crate to prevent iOS linking errors
 
 <br>
 
