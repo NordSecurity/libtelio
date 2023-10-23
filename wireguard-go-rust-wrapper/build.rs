@@ -32,7 +32,7 @@ fn main() {
             .arg("./build.ps1")
             .output()
             .expect("failed to build");
-        if !output.status.success() {
+        if true {
             panic!(
                 "\nSTDERR: {}\n STDOUT: {}\n",
                 std::str::from_utf8(&output.stderr).unwrap(),

@@ -85,7 +85,7 @@ jobs:
       - name: Build libtelio
         run: |
           cd libtelio/wireguard-go-rust-wrapper
-          cargo build
+          cargo build -v
       - name: Test FFI
         run: |
           cd libtelio/ffi/tests
