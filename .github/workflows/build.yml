@@ -84,9 +84,8 @@ jobs:
         if: ${{ matrix.target_os == 'windows' }}
       - name: Build libtelio
         run: |
-          cd libtelio/wireguard-go-rust-wrapper/wireguard-go
-          $env:OUT_DIR="dist"
-          ./build.ps1
+          cd libtelio/wireguard-go-rust-wrapper
+          cargo build
       - name: Test FFI
         run: |
           cd libtelio/ffi/tests
