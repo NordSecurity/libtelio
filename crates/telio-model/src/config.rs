@@ -22,6 +22,8 @@ pub struct PeerBase {
     pub hostname: String,
     /// Ip address of peer
     pub ip_addresses: Option<Vec<IpAddr>>,
+    /// Nickname for the peer
+    pub nickname: Option<String>,
 }
 
 /// Description of a peer
@@ -223,6 +225,7 @@ mod tests {
               "ip_addresses": [
                 "198.51.100.42"
               ],
+              "nickname": "bunnyg",
               "discovery_key": "63fe62d704226c770004d1ec31de1192fba88dffc2539ddda29543be878fb6ea",
               "relay_address": "disco.nordmesh:12345",
               "peers": [
@@ -235,6 +238,7 @@ mod tests {
                   "ip_addresses": [
                     "198.51.100.43"
                   ],
+                  "nickname": "",
                   "is_local": true,
                   "user_email": "alice@example.com",
                   "allow_incoming_connections": true,
@@ -268,6 +272,7 @@ mod tests {
                   "ip_addresses": [
                     "198.51.100.43"
                   ],
+                  "nickname": "",
                   "is_local": true,
                   "user_email": "alice@example.com",
                   "allow_incoming_connections": true,
@@ -329,6 +334,7 @@ mod tests {
                     .unwrap(),
                 hostname: "everest-alice.nord".to_owned(),
                 ip_addresses: Some(vec!["198.51.100.42".parse().unwrap()]),
+                nickname: Some("bunnyg".to_owned()),
             },
             peers: Some(vec![
                 Peer {
@@ -339,6 +345,7 @@ mod tests {
                             .unwrap(),
                         hostname: "everest-bob.nord".to_owned(),
                         ip_addresses: Some(vec!["198.51.100.43".parse().unwrap()]),
+                        nickname: Some("".to_owned()),
                     },
                     is_local: true,
                     allow_incoming_connections: true,
@@ -352,6 +359,7 @@ mod tests {
                             .unwrap(),
                         hostname: "everest-alice.nord".to_owned(),
                         ip_addresses: Some(vec!["198.51.100.43".parse().unwrap()]),
+                        nickname: None,
                     },
                     is_local: false,
                     allow_incoming_connections: false,

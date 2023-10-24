@@ -1871,6 +1871,7 @@ mod tests {
             public_key: pubkey,
             hostname: "hostname".to_owned(),
             ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
+            nickname: Some("nickname".to_owned()),
         };
         let get_config = Config {
             this: peer_base.clone(),
@@ -1946,6 +1947,7 @@ mod tests {
                 public_key: private_key.public(),
                 hostname: "hostname".to_owned(),
                 ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
+                nickname: Some("nickname".to_owned()),
             },
             peers: Some(vec![
                 Peer {
@@ -2034,6 +2036,7 @@ mod tests {
             public_key: pubkey,
             hostname: "hostname".to_owned(),
             ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
+            nickname: Some("nickname".to_owned()),
         };
         let config = Some(Config {
             this: peer_base.clone(),
@@ -2226,6 +2229,7 @@ mod tests {
                 public_key,
                 hostname: "hostname".to_owned(),
                 ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
+                nickname: Some("nickname".to_owned()),
             };
             Config {
                 this: peer_base.clone(),
@@ -2289,6 +2293,7 @@ mod tests {
             public_key: new_private_key.public(),
             hostname: "hostname".to_owned(),
             ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
+            nickname: Some("nickname".to_owned()),
         };
         let config = Config {
             this: peer_base.clone(),
