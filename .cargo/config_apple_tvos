@@ -11,8 +11,6 @@ parking_lot_core_0_8_6 = { git = 'https://github.com/nordsecurity/parking_lot.gi
 nix = { git = 'https://github.com/nordsecurity/nix.git', branch = 'add_apple_tvos_support_0_26_4' }
 block = { git = 'https://github.com/nordsecurity/rust-block.git', branch = 'add_apple_tvos_support' }
 objc = { git = 'https://github.com/nordsecurity/rust-objc.git', branch = 'add_apple_tvos_support' }
-system-configuration = { git = 'https://github.com/nordsecurity/system-configuration-rs.git', branch = 'add_apple_tvos_support' }
-system-configuration-sys = { git = 'https://github.com/nordsecurity/system-configuration-rs.git', branch = 'add_apple_tvos_support' }
 libc = { git = 'https://github.com/nordsecurity/libc.git', branch = 'add_apple_tvos_support' }
 
 [patch.'https://github.com/NordSecurity/boringtun.git']
