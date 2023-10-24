@@ -3770,6 +3770,7 @@ dependencies = [
  "strum_macros",
  "telio-crypto",
  "telio-utils",
+ "tokio",
 ]
 
 [[package]]
@@ -3921,6 +3922,7 @@ dependencies = [
  "async-trait",
  "futures",
  "log",
+ "telio-model",
  "telio-utils",
  "thiserror",
  "tokio",

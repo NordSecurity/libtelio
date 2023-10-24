@@ -17,5 +17,5 @@ futures.workspace = true
 log.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["full"] }
-
 telio-utils.workspace = true
+telio-model.workspace = true

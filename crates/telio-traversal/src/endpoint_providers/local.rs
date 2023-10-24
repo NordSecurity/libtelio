@@ -7,6 +7,7 @@ use super::{
 use async_trait::async_trait;
 use futures::Future;
 use ipnet::Ipv4Net;
+use std::convert::Infallible;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
@@ -260,7 +261,7 @@ impl<T: WireGuard, G: GetIfAddrs> State<T, G> {
 #[async_trait]
 impl<T: WireGuard, G: GetIfAddrs> Runtime for State<T, G> {
     const NAME: &'static str = "LocalInterfacesEndpointProvider";
-    type Err = ();
+    type Err = Infallible;
 
     async fn wait_with_update<F>(&mut self, update: F) -> std::result::Result<(), Self::Err>
     where
@@ -270,11 +271,12 @@ impl<T: WireGuard, G: GetIfAddrs> Runtime for State<T, G> {
         let mut rx_buff = vec![0u8; MAX_SUPPORTED_PACKET_SIZE];
         tokio::select! {
             Ok((len, addr)) = self.udp_socket.recv_from(&mut rx_buff) => {
-                let buf = rx_buff.get(..len).ok_or(())?;
-                self.handle_rx_packet(buf, &addr).await.unwrap_or_else(
-                    |e| {
-                        telio_log_warn!("Failed to handle packet received no local interface endpoint provider {:?}", e);
-                    });
+                if let Some(buf) = rx_buff.get(..len) {
+                    self.handle_rx_packet(buf, &addr).await.unwrap_or_else(
+                        |e| {
+                            telio_log_warn!("Failed to handle packet received no local interface endpoint provider {:?}", e);
+                        });
+                }
             }
             _ = self.poll_timer.tick() => {
                 self.poll_local_endpoints().await.unwrap_or_else(

@@ -9,6 +9,7 @@ use igd::{search_gateway, Gateway, PortMappingProtocol};
 use ipnet::Ipv4Net;
 use rand::Rng;
 use rupnp::Error::HttpErrorCode;
+use std::convert::Infallible;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::Arc;
 use std::time::Duration;
@@ -544,7 +545,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
 impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
     const NAME: &'static str = "UpnpEndpointProvider";
 
-    type Err = ();
+    type Err = Infallible;
 
     #[allow(index_access_check)]
     async fn wait_with_update<F>(&mut self, update: F) -> std::result::Result<(), Self::Err>

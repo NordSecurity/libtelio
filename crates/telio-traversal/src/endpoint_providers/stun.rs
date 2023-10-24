@@ -1,3 +1,4 @@
+use std::convert::Infallible;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use std::ops::Deref;
@@ -501,7 +502,7 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
 impl<Wg: WireGuard, E: Backoff> Runtime for State<Wg, E> {
     const NAME: &'static str = "StunEndpointProvider";
 
-    type Err = ();
+    type Err = Infallible;
 
     async fn wait_with_update<F>(&mut self, updated: F) -> Result<(), Self::Err>
     where
@@ -526,11 +527,15 @@ impl<Wg: WireGuard, E: Backoff> Runtime for State<Wg, E> {
         tokio::select! {
             // Reading data from UDP socket (passed by node, that is awaiting on socket's receive)
             Ok((size, src_addr)) = self.ext_socket.recv_from(&mut ext_buf) => {
-                let _ = self.handle_rx(ext_buf.get(..size).ok_or(())?, &src_addr).await;
+                if let Some(buf) = ext_buf.get(..size) {
+                    let _ = self.handle_rx(buf, &src_addr).await;
+                }
             }
             Ok((size, src_addr)) = self.tun_socket.recv_from(&mut tun_buf) => {
                 // We will not pinging through wireguard.
-                let _ = self.try_handle_stun_rx(tun_buf.get(..size).ok_or(())?, &src_addr).await;
+                if let Some(buf) = tun_buf.get(..size) {
+                    let _ = self.try_handle_stun_rx(buf, &src_addr).await;
+                }
             }
             // We are waiting either for stun session to timeout, or for the end of penalty
             _ = &mut self.current_timeout => {

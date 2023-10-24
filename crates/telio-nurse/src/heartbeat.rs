@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use bitflags::bitflags;
 use nat_detect::NatType;
 use std::collections::BTreeSet;
+use std::convert::Infallible;
 use std::fmt::Write;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
@@ -249,7 +250,7 @@ pub struct Analytics {
 impl Runtime for Analytics {
     const NAME: &'static str = "Nurse Heartbeat Analytics";
 
-    type Err = ();
+    type Err = Infallible;
 
     async fn wait(&mut self) -> WaitResponse<'_, Self::Err> {
         tokio::select! {

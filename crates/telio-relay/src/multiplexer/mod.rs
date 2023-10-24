@@ -3,6 +3,7 @@
 mod inout;
 mod mc;
 
+use std::convert::Infallible;
 use std::future::Future;
 
 use async_trait::async_trait;
@@ -13,7 +14,6 @@ use tokio_util::sync::PollSender;
 use telio_crypto::PublicKey;
 use telio_proto::{AnyPacket, PacketRelayed, PacketTypeRelayed};
 use telio_task::{io::Chan, task_exec, BoxAction, Runtime, Task};
-use telio_utils::telio_log_error;
 
 use self::inout::InOut;
 use self::mc::MultiChannel;
@@ -69,18 +69,7 @@ impl Multiplexer {
         &self,
     ) -> Result<Chan<(PublicKey, T)>, Error> {
         task_exec!(&self.task, async move |s| {
-            let mc = match s.multi_channel.joined() {
-                Ok(Some(mc)) => mc,
-                Ok(None) => {
-                    telio_log_error!("Failed to join multi_channel");
-                    return Err(());
-                }
-                Err(e) => {
-                    telio_log_error!("Failed to join multi_channel: {}", e);
-                    return Err(());
-                }
-            };
-            Ok(mc.pipe())
+            Ok(s.multi_channel.joined().pipe())
         })
         .await
         .map_err(|_| Error::Stopped)?
@@ -97,19 +86,13 @@ impl Multiplexer {
 impl Runtime for State {
     const NAME: &'static str = "Multiplexer";
 
-    type Err = ();
+    type Err = Infallible;
 
     async fn wait_with_update<F>(&mut self, update: F) -> Result<(), Self::Err>
     where
         F: Future<Output = BoxAction<Self, Result<(), Self::Err>>> + Send,
     {
-        let (mc_tx, mc_rx) = match self.multi_channel.split() {
-            Some(mc) => mc,
-            None => {
-                telio_log_error!("Failed to split multi_channel");
-                return Err(());
-            }
-        };
+        let (mc_tx, mc_rx) = self.multi_channel.split();
 
         let mut mc_rx = mc_rx.by_ref().map(Result::Ok);
         let mut rl_rx = self.relay_rx.by_ref().map(Result::Ok);

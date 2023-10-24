@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use futures::Future;
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::Duration;
+use std::{collections::HashMap, convert::Infallible};
 use telio_crypto::PublicKey;
 use telio_proto::UpgradeMsg;
 use telio_task::{io::chan, io::Chan, task_exec, BoxAction, Runtime, Task};
@@ -243,7 +243,7 @@ impl State {
 #[async_trait]
 impl Runtime for State {
     const NAME: &'static str = "UpgradeSync";
-    type Err = ();
+    type Err = Infallible;
 
     async fn wait_with_update<F>(&mut self, update: F) -> std::result::Result<(), Self::Err>
     where

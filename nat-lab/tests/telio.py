@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import json
 import os
 import re
@@ -10,7 +11,7 @@ from dataclasses import dataclass, field
 from dataclasses_json import dataclass_json, DataClassJsonMixin
 from enum import Enum
 from mesh_api import Node
-from telio_features import TelioFeatures
+from telio_features import TelioFeatures, TaskMonitor
 from typing import List, Dict, Any, Set, Optional, AsyncIterator
 from utils import testing, asyncio_util
 from utils.connection import Connection, TargetOS
@@ -160,21 +161,8 @@ class Runtime:
             self._handle_node_event(line)
             or self._output_notifier.handle_output(line)
             or self._handle_derp_event(line)
-            or self._handle_task_information(line)
+            or self._handle_task_monitor_event(line)
         )
-
-    def _handle_task_information(self, line) -> bool:
-        if line.startswith("task started - "):
-            tokens = line.split("task started - ")
-            self._started_tasks.append(tokens[1].strip())
-            return True
-
-        if line.startswith("task stopped - "):
-            tokens = line.split("task stopped - ")
-            self._stopped_tasks.append(tokens[1].strip())
-            return True
-
-        return False
 
     def get_output_notifier(self) -> OutputNotifier:
         return self._output_notifier
@@ -302,6 +290,31 @@ class Runtime:
             return True
         return False
 
+    def _handle_task_monitor_event(self, line) -> bool:
+        if not line.startswith("event monitor: "):
+            return False
+
+        tokens = line.split("event monitor: ")
+        json_string = tokens[1].strip()
+        event = json.loads(json_string)
+        kind = event["event"]
+        name = event["name"]
+
+        if kind == "task_start":
+            self._started_tasks.append(name)
+
+        elif kind == "task_stop":
+            msg = f"""Task {name} was not stopped manually.
+            Stop reason:\n{event["reason"]}"""
+            assert event["reason"]["type"] == "manual", msg
+
+            self._stopped_tasks.append(name)
+
+        elif kind == "task_busy_loop":
+            assert False, f"Task {name} is looping excessively"
+
+        return True
+
     def get_started_tasks(self) -> List[str]:
         return self._started_tasks
 
@@ -384,8 +397,6 @@ class Client:
                 "- no login.",
                 "- telio running.",
                 "- telio nodes",
-                "task stopped - ",
-                "task started - ",
             ]
             for line in stdout.splitlines():
                 if not any(string in line for string in supress_print_list):
@@ -407,11 +418,15 @@ class Client:
                 ]
             )
         else:
+            # Always append task monitor in integrational tests
+            features = copy.deepcopy(self._telio_features)
+            features.task_monitor = TaskMonitor()
+
             self._process = self._connection.create_process(
                 [
                     tcli_path,
                     "--less-spam",
-                    f"-f {self._telio_features.to_json()}",
+                    f"-f {features.to_json()}",
                 ]
             )
         async with self._process.run(stdout_callback=on_stdout):
@@ -620,6 +635,10 @@ class Client:
     async def stop_device(self) -> None:
         await self._write_command(["dev", "stop"])
         self._interface_configured = False
+
+        # Collect task monitor events
+        await self._write_command(["events"])
+
         assert Counter(self.get_runtime().get_started_tasks()) == Counter(
             self.get_runtime().get_stopped_tasks()
         ), "started tasks and stopped tasks differ!"
@@ -677,6 +696,7 @@ class Client:
             + " ".join([shlex.quote(arg) for arg in command])
             + "\n"
         )
+
         await self.get_process().write_stdin(cmd)
         self._message_idx += 1
         await self.get_events().message_done(idx)
