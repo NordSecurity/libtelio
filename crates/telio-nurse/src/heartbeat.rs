@@ -13,7 +13,10 @@ use std::{
 };
 use telio_crypto::{PublicKey, SecretKey};
 use telio_model::config::{RelayState, Server};
-use telio_model::{event::Event, mesh::NodeState};
+use telio_model::{
+    event::Event,
+    mesh::{get_ip_stack, IpStack, NodeState},
+};
 use telio_nat_detect::nat_detection::{retrieve_single_nat, NatData};
 use telio_proto::{HeartbeatMessage, HeartbeatNatType, HeartbeatStatus, HeartbeatType};
 use telio_relay::DerpRelay;
@@ -41,8 +44,12 @@ enum RuntimeState {
 
 bitflags! {
     struct MeshConnectionState: u32 {
-        const DERP = 0b00000001;
-        const WG = 0b00000010;
+        const DERP      = 0b00000001;
+        const WG        = 0b00000010;
+        const IPV4      = 0b00000100;
+        const IPV6      = 0b00001000;
+        const IPV4V6    = Self::IPV4.bits
+                        | Self::IPV6.bits;
     }
 }
 
@@ -243,6 +250,9 @@ pub struct Analytics {
 
     /// DERP Server instance
     derp: Arc<DerpRelay>,
+
+    /// Our current IP stack
+    ip_stack: Option<IpStack>,
 }
 
 #[async_trait]
@@ -380,6 +390,7 @@ impl Analytics {
             derp_connection: false,
             meshnet_enabled: false,
             derp: derp_server,
+            ip_stack: None,
         }
     }
 
@@ -418,6 +429,24 @@ impl Analytics {
                     .connection_state
                     .set(MeshConnectionState::WG, node.state == NodeState::Connected);
 
+                if let (Some(our_stack), Ok(nodes_stack)) =
+                    (self.ip_stack.clone(), get_ip_stack(&node.ip_addresses))
+                {
+                    mesh_link.connection_state.set(
+                        match (our_stack, nodes_stack) {
+                            (IpStack::IPv4, IpStack::IPv4) => MeshConnectionState::IPV4,
+                            (IpStack::IPv4v6, IpStack::IPv4) => MeshConnectionState::IPV4,
+                            (IpStack::IPv4, IpStack::IPv4v6) => MeshConnectionState::IPV4,
+                            (IpStack::IPv6, IpStack::IPv6) => MeshConnectionState::IPV6,
+                            (IpStack::IPv4v6, IpStack::IPv6) => MeshConnectionState::IPV6,
+                            (IpStack::IPv6, IpStack::IPv4v6) => MeshConnectionState::IPV6,
+                            (IpStack::IPv4v6, IpStack::IPv4v6) => MeshConnectionState::IPV4V6,
+                            _ => MeshConnectionState::empty(),
+                        },
+                        true,
+                    );
+                }
+
                 let node_info = if node.is_vpn {
                     NodeInfo::Vpn {
                         mesh_link,
@@ -447,6 +476,7 @@ impl Analytics {
         if self.state == RuntimeState::Monitoring {
             self.meshnet_enabled = event.enabled;
             self.config_nodes = event.nodes;
+            self.ip_stack = event.ip_stack;
             // Add self to config nodes
             self.config_nodes.insert(self.public_key, true);
         } else {
@@ -987,6 +1017,7 @@ mod tests {
                 .into_iter()
                 .map(|sk| (sk.public(), is_local))
                 .collect(),
+            ip_stack: None,
         };
         analytics
             .handle_config_update_event(mesh_config_update_event)

@@ -1,9 +1,12 @@
 use async_trait::async_trait;
 use futures::{future::pending, FutureExt};
+use ipnetwork::{IpNetwork, IpNetworkError};
 use slog::{o, Drain, Logger, Never};
 use std::{collections::HashMap, net::SocketAddr};
 use telio_sockets::{NativeProtector, SocketPool};
-use telio_utils::{telio_err_with_log, telio_log_debug, telio_log_trace, telio_log_warn};
+use telio_utils::{
+    dual_target, telio_err_with_log, telio_log_debug, telio_log_trace, telio_log_warn,
+};
 use thiserror::Error as TError;
 use tokio::time::{self, sleep, Instant, Interval};
 use wireguard_uapi::xplatform::set;
@@ -663,7 +666,7 @@ impl State {
 
         if let Some(analytics_tx) = &self.analytics_tx {
             for (pubkey, peer) in &to.peers {
-                if let Some(endpoint) = peer.endpoint {
+                if peer.endpoint.is_some() {
                     let tx_bytes = peer.tx_bytes.unwrap_or_default();
                     let rx_bytes = peer.rx_bytes.unwrap_or_default();
                     let peer_state = if peer.is_connected() {
@@ -672,6 +675,27 @@ impl State {
                         PeerState::Disconnected
                     } else {
                         PeerState::Connecting
+                    };
+
+                    let mut target = (None, None);
+                    for net in &peer.allowed_ips {
+                        match net {
+                            IpNetwork::V4(net4) => {
+                                if net4.prefix() == 32 && target.0.is_none() {
+                                    target.0 = Some(net4.ip());
+                                }
+                            }
+                            IpNetwork::V6(net6) => {
+                                if net6.prefix() == 128 && target.1.is_none() {
+                                    target.1 = Some(net6.ip());
+                                }
+                            }
+                        }
+                    }
+
+                    let endpoint = match dual_target::DualTarget::new(target) {
+                        Ok(dt) => dt,
+                        Err(_) => continue,
                     };
 
                     let event = AnalyticsEvent {

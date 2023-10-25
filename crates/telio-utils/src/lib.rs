@@ -16,6 +16,10 @@ pub use sleep::*;
 pub mod repeated_actions;
 pub use repeated_actions::*;
 
+/// Dual stack IP target helper
+pub mod dual_target;
+pub use dual_target::*;
+
 /// Exponential backoff helper
 pub mod exponential_backoff;
 

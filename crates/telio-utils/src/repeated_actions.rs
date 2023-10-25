@@ -14,7 +14,7 @@ use tokio::time::{interval, interval_at, Duration, Instant, Interval};
 
 /// Possible [RepeatedAction] errors.
 #[derive(ThisError, Debug)]
-pub enum Error {
+pub enum RepeatedActionError {
     /// Action is already added
     #[error("Repeated action already exists")]
     DuplicateRepeatedAction,
@@ -29,7 +29,7 @@ pub enum Error {
 /// Single action type
 pub type RepeatedAction<V, R> = Arc<dyn for<'a> Fn(&'a mut V) -> BoxFuture<'a, R> + Sync + Send>;
 type Action<K, C, R> = (K, (Interval, RepeatedAction<C, R>));
-type Result<T> = std::result::Result<T, Error>;
+type Result<T> = std::result::Result<T, RepeatedActionError>;
 
 /// Main struct container, that hold all actions
 pub struct RepeatedActions<K, C, R> {
@@ -68,20 +68,21 @@ where
             return Ok(());
         }
 
-        Err(Error::DuplicateRepeatedAction)
+        Err(RepeatedActionError::DuplicateRepeatedAction)
     }
 
     /// Remove single action
     pub fn remove_action(&mut self, key: &K) -> Result<()> {
-        self.actions
-            .remove(key)
-            .map_or_else(|| Err(Error::RepeatedActionNotFound), |_| Ok(()))
+        self.actions.remove(key).map_or_else(
+            || Err(RepeatedActionError::RepeatedActionNotFound),
+            |_| Ok(()),
+        )
     }
 
     /// Update interval (first tick is now() + dur)
     pub fn update_interval(&mut self, key: &K, dur: Duration) -> Result<()> {
         self.actions.get_mut(key).map_or_else(
-            || Err(Error::RepeatedActionNotFound),
+            || Err(RepeatedActionError::RepeatedActionNotFound),
             |a| {
                 a.0 = interval_at(Instant::now() + dur, dur);
                 Ok(())
@@ -97,7 +98,7 @@ where
     /// Returns future (action), that will soon 'tick()'
     pub async fn select_action(&mut self) -> Result<(&K, RepeatedAction<C, R>)> {
         if self.actions.is_empty() {
-            return Err(Error::ListEmpty);
+            return Err(RepeatedActionError::ListEmpty);
         }
 
         // Collect futures
@@ -113,7 +114,7 @@ where
 
         b.next()
             .await
-            .ok_or(Error::RepeatedActionNotFound)
+            .ok_or(RepeatedActionError::RepeatedActionNotFound)
             .map(|(s, f)| (s, f.clone()))
     }
 }

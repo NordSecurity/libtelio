@@ -4,7 +4,7 @@ use ipnetwork::{IpNetwork, IpNetworkError};
 use serde::{Deserialize, Serialize};
 use telio_crypto::{KeyDecodeError, PublicKey, SecretKey};
 use telio_model::mesh::{Node, NodeState};
-use telio_utils::telio_log_warn;
+use telio_utils::{telio_log_warn, DualTarget};
 use wireguard_uapi::{get, xplatform::set};
 
 use std::{
@@ -237,8 +237,8 @@ pub struct Event {
 pub struct AnalyticsEvent {
     /// Public key of the Peer
     pub public_key: PublicKey,
-    /// IP address and port number of the socket
-    pub endpoint: SocketAddr,
+    /// Mesh's IP target of peer
+    pub endpoint: DualTarget,
     /// Number of transmitted bytes
     pub tx_bytes: u64,
     /// Number of recieved bytes

@@ -48,6 +48,9 @@ class Event(DataClassJsonMixin):
     )
     received_data: str = field(metadata=json_config(field_name="body_received_data"))
     rtt: str = field(metadata=json_config(field_name="body_rtt"))
+    rtt_loss: str = field(metadata=json_config(field_name="body_rtt_loss"))
+    rtt6: str = field(metadata=json_config(field_name="body_rtt6"))
+    rtt6_loss: str = field(metadata=json_config(field_name="body_rtt6_loss"))
     sent_data: str = field(metadata=json_config(field_name="body_sent_data"))
     nat_type: str = field(
         metadata=json_config(

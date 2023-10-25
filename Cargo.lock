@@ -3770,6 +3770,7 @@ dependencies = [
  "strum_macros",
  "telio-crypto",
  "telio-utils",
+ "thiserror",
 ]
 
 [[package]]

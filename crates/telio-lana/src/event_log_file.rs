@@ -399,6 +399,7 @@ pub mod moose {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[allow(non_snake_case)]
     /// Mocked moose function.
     pub fn send_serviceQuality_node_heartbeat(
@@ -407,6 +408,9 @@ pub mod moose {
         heartbeatInterval: i32,
         receivedData: String,
         rtt: String,
+        rtt6: String,
+        rtt6_loss: String,
+        rtt_loss: String,
         sentData: String,
     ) -> std::result::Result<Result, Error> {
         let heartbeatIntervalString = heartbeatInterval.to_string();
@@ -417,6 +421,9 @@ pub mod moose {
             heartbeatIntervalString.as_str(),
             receivedData.as_str(),
             rtt.as_str(),
+            rtt6.as_str(),
+            rtt6_loss.as_str(),
+            rtt_loss.as_str(),
             sentData.as_str(),
         ];
 
