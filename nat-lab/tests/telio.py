@@ -286,6 +286,12 @@ class Runtime:
         self._peer_state_events.append(peer)
 
     def _handle_node_event(self, line) -> bool:
+        def _check_node_event(node_event: PeerInfo):
+            assert node_event.is_exit or (
+                "0.0.0.0/0" not in node_event.allowed_ips
+                and "::/0" not in node_event.allowed_ips
+            )
+
         if not line.startswith("event node: "):
             return False
         tokens = line.split("event node: ")
@@ -296,6 +302,7 @@ class Runtime:
                 "{" + result.group(1).replace("\\", "") + "}"
             )
             assert isinstance(node_state, PeerInfo)
+            _check_node_event(node_state)
             self.set_peer(node_state)
             return True
         return False

@@ -163,7 +163,10 @@ async def test_mesh_exit_through_peer(
         # and also all other events future, then checking which occurred first.
         disconnect_task = asyncio.create_task(
             client_alpha.wait_for_event_peer(
-                beta.public_key, [State.Disconnected], list(telio.PathType)
+                beta.public_key,
+                [State.Disconnected],
+                list(telio.PathType),
+                is_exit=True,
             )
         )
         # Using a list of all State variants except for Disconnect just in case new variants are added in the future.

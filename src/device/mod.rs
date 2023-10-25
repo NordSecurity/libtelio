@@ -1497,7 +1497,7 @@ impl Runtime {
             .meshnet_config
             .as_ref()
             .and_then(|config| config.peers.clone())
-            .and_then(|config_peers| {
+            .and_then(|config_peers: Vec<Peer>| {
                 config_peers
                     .iter()
                     .cloned()
@@ -1562,12 +1562,10 @@ impl Runtime {
                     identifier: meshnet_peer.base.identifier,
                     public_key: meshnet_peer.base.public_key,
                     state: state.unwrap_or_else(|| peer.state()),
-                    is_exit: self
-                        .requested_state
-                        .exit_node
-                        .as_ref()
-                        .filter(|node| node.public_key == peer.public_key)
-                        .is_some(),
+                    is_exit: peer
+                        .allowed_ips
+                        .iter()
+                        .any(|network| network.ip().is_unspecified()),
                     is_vpn: false,
                     ip_addresses: meshnet_peer.base.ip_addresses.unwrap_or_default(),
                     allowed_ips: peer.allowed_ips.clone(),
