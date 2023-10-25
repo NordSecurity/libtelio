@@ -22,6 +22,7 @@ class TestNode:
         node.public_key = "bb"
         node.hostname = "cc"
         node.ip_addresses = ["dd"]
+        node.nickname = "ff"
         node.endpoints = ["ee"]
 
         expected = {
@@ -29,6 +30,7 @@ class TestNode:
             "public_key": "bb",
             "hostname": "cc",
             "ip_addresses": ["dd"],
+            "nickname": "ff",
             "endpoints": ["ee"],
             "is_local": False,
             "allow_connections": False,
@@ -90,6 +92,7 @@ class TestMeshApi:
         alpha.hostname = "aaa"
         alpha.ip_addresses = ["bbb"]
         alpha.endpoints = ["ccc"]
+        alpha.nickname = "fff"
 
         beta = api.register(
             name="beta", node_id="id-beta", private_key="sk-beta", public_key="pk-beta"
@@ -102,6 +105,7 @@ class TestMeshApi:
             "public_key": pk_alpha,
             "hostname": "aaa",
             "ip_addresses": ["bbb"],
+            "nickname": "fff",
             "endpoints": ["ccc"],
             "peers": [beta.to_peer_config_for_node(alpha)],
             "derp_servers": mesh_api.DERP_SERVERS,
@@ -138,3 +142,72 @@ class TestMeshApi:
         api.assign_ip("id2", "3.3.3.3")
         assert node1.ip_addresses == ["1.1.1.1"]
         assert node2.ip_addresses == ["2.2.2.2", "3.3.3.3"]
+
+    def test_assign_nickname(self):
+        api = API()
+        alpha = api.register(
+            name="alpha", node_id="id1", private_key="sk", public_key="pk"
+        )
+        beta = api.register(
+            name="beta", node_id="id2", private_key="sk", public_key="pk"
+        )
+
+        api.assign_nickname("id1", "john")
+        api.assign_nickname("id2", "jane")
+
+        assert alpha.name == "alpha"
+        assert beta.name == "beta"
+        assert alpha.nickname == "john"
+        assert beta.nickname == "jane"
+
+        api.reset_nickname("id1")
+        api.reset_nickname("id2")
+
+        assert alpha.nickname is None
+        assert beta.nickname is None
+
+    def test_assign_invalid_nickname(self):
+        api = API()
+        alpha = api.register(
+            name="alpha", node_id="id1", private_key="sk", public_key="pk"
+        )
+
+        with pytest.raises(mesh_api.NicknameInvalidError):
+            api.assign_nickname("id1", None)
+        with pytest.raises(mesh_api.NicknameInvalidError):
+            api.assign_nickname("id1", "")
+        with pytest.raises(mesh_api.NicknameInvalidError):
+            api.assign_nickname("id1", "-john")
+        with pytest.raises(mesh_api.NicknameInvalidError):
+            api.assign_nickname("id1", "john-")
+        with pytest.raises(mesh_api.NicknameInvalidError):
+            api.assign_nickname("id1", "john doe")
+        with pytest.raises(mesh_api.NicknameInvalidError):
+            api.assign_nickname("id1", "johnsomethingsomethingsomething")
+        with pytest.raises(mesh_api.NicknameInvalidError):
+            api.assign_nickname("id1", "joh--n")
+        with pytest.raises(mesh_api.NicknameInvalidError):
+            api.assign_nickname("id1", "jOhN")
+        with pytest.raises(mesh_api.NicknameCollisionError):
+            api.assign_nickname("id1", "alpha")
+        with pytest.raises(mesh_api.NicknameCollisionError):
+            api.assign_nickname("id1", "alpha.nord")
+
+        assert alpha.nickname is None
+
+    def test_assign_duplicated_nickname(self):
+        api = API()
+        alpha = api.register(
+            name="alpha", node_id="id1", private_key="sk", public_key="pk"
+        )
+        beta = api.register(
+            name="beta", node_id="id2", private_key="sk", public_key="pk"
+        )
+
+        api.assign_nickname("id1", "john")
+        with pytest.raises(mesh_api.NicknameCollisionError) as e:
+            api.assign_nickname("id2", "john")
+
+        assert e.value.node_id == "id1"
+        assert alpha.nickname == "john"
+        assert beta.nickname is None

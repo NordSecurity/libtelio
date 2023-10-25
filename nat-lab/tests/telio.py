@@ -79,6 +79,7 @@ class PeerInfo(DataClassJsonMixin):
     is_vpn: bool = False
     ip_addresses: List[str] = field(default_factory=lambda: [])
     allowed_ips: List[str] = field(default_factory=lambda: [])
+    nickname: Optional[str] = None
     endpoint: Optional[str] = None
     hostname: Optional[str] = None
     allow_incoming_connections: bool = False
@@ -95,6 +96,7 @@ class PeerInfo(DataClassJsonMixin):
                 self.is_vpn,
                 tuple(self.ip_addresses),
                 tuple(self.allowed_ips),
+                self.nickname,
                 self.endpoint,
                 self.hostname,
                 self.allow_incoming_connections,
@@ -123,6 +125,11 @@ class PeerInfo(DataClassJsonMixin):
                 self.hostname is None
                 or other.hostname is None
                 or self.hostname == other.hostname
+            )
+            and (
+                self.nickname is None
+                or other.nickname is None
+                or self.nickname == other.nickname
             )
             and self.allow_incoming_connections == other.allow_incoming_connections
             and self.allow_peer_send_files == other.allow_peer_send_files

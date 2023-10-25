@@ -44,6 +44,13 @@ class NodeError(Exception):
         self.node_id = node_id
 
 
+class NicknameError(Exception):
+    nickname: str
+
+    def __init__(self, nickname) -> None:
+        self.nickname = nickname
+
+
 class DuplicateNodeError(NodeError):
     pass
 
@@ -53,6 +60,14 @@ class MissingNodeError(NodeError):
 
 
 class AddressCollisionError(NodeError):
+    pass
+
+
+class NicknameInvalidError(NicknameError):
+    pass
+
+
+class NicknameCollisionError(NodeError):
     pass
 
 
@@ -77,6 +92,7 @@ class Node:
 
     hostname: str
     ip_addresses: List[str]
+    nickname: Optional[str]
     endpoints: List[str]
     is_local: bool
     allow_connections: bool
@@ -91,6 +107,7 @@ class Node:
         self.public_key = ""
         self.hostname = ""
         self.ip_addresses = []
+        self.nickname = None
         self.endpoints = []
         self.is_local = False
         self.allow_connections = False
@@ -130,6 +147,7 @@ class Node:
             "public_key": self.public_key,
             "hostname": self.hostname,
             "ip_addresses": self.ip_addresses,
+            "nickname": self.nickname,
             "endpoints": self.endpoints,
             "is_local": node.is_local and self.is_local,
             "allow_connections": self.allow_connections,
@@ -200,6 +218,39 @@ class API:
         node = self._get_node(node_id)
         node.ip_addresses.append(address)
 
+    def assign_nickname(self, node_id: str, nickname: Optional[str]) -> None:
+        if nickname is None:
+            raise NicknameInvalidError(nickname)
+        if len(nickname) > 25:
+            raise NicknameInvalidError(nickname)
+        if nickname == "":
+            raise NicknameInvalidError(nickname)
+        if " " in nickname:
+            raise NicknameInvalidError(nickname)
+        if "--" in nickname:
+            raise NicknameInvalidError(nickname)
+        if nickname.endswith("-"):
+            raise NicknameInvalidError(nickname)
+        if nickname.startswith("-"):
+            raise NicknameInvalidError(nickname)
+        if not nickname.islower():
+            raise NicknameInvalidError(nickname)
+
+        for _, node in self.nodes.items():
+            if nickname == node.nickname:
+                raise NicknameCollisionError(node.id)
+            if nickname == node.name:
+                raise NicknameCollisionError(node.id)
+            if nickname == node.hostname:
+                raise NicknameCollisionError(node.id)
+
+        node = self._get_node(node_id)
+        node.nickname = nickname.lower()
+
+    def reset_nickname(self, node_id: str) -> None:
+        node = self._get_node(node_id)
+        node.nickname = None
+
     def get_meshmap(
         self, node_id: str, derp_servers: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
@@ -215,6 +266,7 @@ class API:
             "public_key": node.public_key,
             "hostname": node.hostname,
             "ip_addresses": node.ip_addresses,
+            "nickname": node.nickname,
             "endpoints": node.endpoints,
             "peers": peers,
             "derp_servers": derp_servers if derp_servers is not None else DERP_SERVERS,
