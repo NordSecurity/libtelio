@@ -16,7 +16,7 @@ services:
   photo-album:
     hostname: photo-album
     image: nat-lab:base
-    entrypoint: /usr/bin/python3 -m http.server --directory /srv/www 80
+    entrypoint: "/usr/bin/python3 -m http.server --bind :: --directory /srv/www 80"
     networks:
       internet:
         ipv4_address: 10.0.80.80
