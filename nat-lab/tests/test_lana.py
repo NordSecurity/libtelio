@@ -804,6 +804,7 @@ async def test_lana_with_vpn_connections(
 
 @pytest.mark.moose
 @pytest.mark.asyncio
+@pytest.mark.xfail(reason="test is flaky - LLT-4451")
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
 async def test_lana_with_disconnected_node(
     alpha_ip_stack: IPStack, beta_ip_stack: IPStack
