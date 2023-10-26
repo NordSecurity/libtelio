@@ -36,6 +36,7 @@
 * LLT-4286: Add icmp error packet handling to firewall
 * LLT-4432: Use forked system-configuration crate to prevent iOS linking errors
 * LLT-3951: IPv6 analytics.
+* LLT-4409: Wait for listen port only if meshnet is enabled
 
 <br>
 

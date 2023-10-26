@@ -1212,11 +1212,6 @@ impl Runtime {
         self.requested_state.meshnet_config = config.clone();
 
         let wg_itf = self.entities.wireguard_interface.get_interface().await?;
-        let wg_port = self
-            .entities
-            .wireguard_interface
-            .wait_for_listen_port(Duration::from_secs(1))
-            .await?;
         let secret_key = if let Some(secret_key) = wg_itf.private_key {
             secret_key
         } else {
@@ -1232,6 +1227,12 @@ impl Runtime {
 
         // Update for proxy and derp config
         if let Some(config) = config {
+            let wg_port = self
+                .entities
+                .wireguard_interface
+                .wait_for_listen_port(Duration::from_secs(1))
+                .await?;
+
             let proxy_config = ProxyConfig {
                 wg_port: Some(wg_port),
                 peers: peers.clone(),
@@ -2327,5 +2328,45 @@ mod tests {
             rt.set_private_key(&SecretKey::gen()).await.unwrap_err(),
             Error::BadPublicKey
         ));
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test(start_paused = true)]
+    async fn test_disabling_meshnet_will_not_fail_if_wg_has_not_listen_port() {
+        let sender = tokio::sync::broadcast::channel(1).0;
+
+        let pk = SecretKey::gen();
+        let mut rt = Runtime::start(
+            sender,
+            &DeviceConfig {
+                private_key: pk,
+                ..Default::default()
+            },
+            Default::default(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        rt.test_env
+            .adapter
+            .lock()
+            .await
+            .expect_send_uapi_cmd()
+            .returning(|_| {
+                Ok(uapi::Response {
+                    errno: 0,
+                    interface: Some(Interface::default()),
+                })
+            });
+        assert!(rt
+            .entities
+            .wireguard_interface
+            .wait_for_listen_port(Duration::from_secs(1))
+            .await
+            .is_err());
+
+        assert!(rt.set_private_key(&pk).await.is_ok());
+        assert!(rt.set_config(&None).await.is_ok());
     }
 }
