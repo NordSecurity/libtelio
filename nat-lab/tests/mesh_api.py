@@ -5,7 +5,11 @@ import time
 import uuid
 from config import DERP_SERVERS, LIBTELIO_IPV6_WG_SUBNET, WG_SERVERS
 from ipaddress import ip_address
-from python_wireguard import Key  # type: ignore
+import platform
+if platform.system() == 'Darwin':
+    import mac_wg as Key
+else:
+    from python_wireguard import Key  # type: ignore
 from typing import Dict, Any, List, Tuple, Optional
 from utils.router import IPStack, IPProto, get_ip_address_type
 

@@ -3,7 +3,11 @@ import pytest
 import telio
 from contextlib import AsyncExitStack
 from mesh_api import API
-from python_wireguard import Key  # type: ignore
+import platform
+if platform.system() == 'Darwin':
+    import mac_wg as Key
+else:
+    from python_wireguard import Key  # type: ignore
 from typing import Optional
 from utils import testing
 from utils.connection_util import ConnectionTag, new_connection_by_tag

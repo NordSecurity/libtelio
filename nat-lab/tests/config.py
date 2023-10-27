@@ -1,6 +1,9 @@
 import os
 import platform
-from python_wireguard import Key  # type: ignore
+if platform.system() == 'Darwin':
+    import mac_wg as Key
+else:
+    from python_wireguard import Key  # type: ignore
 
 PROJECT_ROOT = os.path.dirname(os.path.realpath(__file__)) + "/../../../"
 
