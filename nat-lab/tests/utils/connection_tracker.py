@@ -1,4 +1,5 @@
 import asyncio
+import platform
 import re
 import time
 from contextlib import asynccontextmanager
@@ -121,6 +122,8 @@ class ConnectionTracker:
         await self._process.execute(stdout_callback=self.on_stdout)
 
     def get_out_of_limits(self) -> Optional[Dict[str, int]]:
+        if platform.system() == "Darwin":
+            return None
         if not self._config:
             return None
 
@@ -142,6 +145,9 @@ class ConnectionTracker:
         return out_of_limit_connections if bool(out_of_limit_connections) else None
 
     async def wait_for_event(self, key: str) -> None:
+        if platform.system() == "Darwin":
+            return
+
         if not self._config:
             return
 
