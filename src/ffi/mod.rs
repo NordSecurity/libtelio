@@ -1008,12 +1008,12 @@ mod tests {
 
         let cfg = "a".repeat(MAX_CONFIG_LENGTH);
         assert_eq!(
-            telio_set_meshnet(&telio_dev, cfg.as_bytes().as_ptr() as *const i8),
+            telio_set_meshnet(&telio_dev, cfg.as_bytes().as_ptr() as *const c_char),
             TELIO_RES_BAD_CONFIG
         );
         let cfg = "a".repeat(MAX_CONFIG_LENGTH + 1);
         assert_eq!(
-            telio_set_meshnet(&telio_dev, cfg.as_bytes().as_ptr() as *const i8),
+            telio_set_meshnet(&telio_dev, cfg.as_bytes().as_ptr() as *const c_char),
             TELIO_RES_INVALID_STRING
         );
         Ok(())
