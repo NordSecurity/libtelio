@@ -38,6 +38,7 @@
 * LLT-3951: IPv6 analytics.
 * LLT-4409: Wait for listen port only if meshnet is enabled
 * LLT-4375: Add meshmap config support for custom peer names
+* LLT-4376: Add magicdns support for two dns bindings
 
 <br>
 

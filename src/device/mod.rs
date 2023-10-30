@@ -45,7 +45,7 @@ use telio_dns::bind_tun;
 use wg::uapi::{self, PeerState};
 
 use std::{
-    collections::HashSet,
+    collections::{hash_map::Entry, HashSet},
     future::Future,
     io::{Error as IoError, ErrorKind},
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -67,9 +67,10 @@ use telio_model::{
     api_config::{
         FeaturePersistentKeepalive, Features, PathType, DEFAULT_ENDPOINT_POLL_INTERVAL_SECS,
     },
-    config::{Config, Peer, Server as DerpServer},
+    config::{Config, Peer, PeerBase, Server as DerpServer},
     event::{Event, Set},
     mesh::{ExitNode, Node},
+    validation::validate_nickname,
 };
 
 pub use wg::{
@@ -689,6 +690,39 @@ impl RequestedState {
             })
             .collect()
     }
+
+    // Same as collect_dns_records() fn but for peers with defined nicknames.
+    pub fn collect_dns_nickname_records(&self) -> Records {
+        let to_record = |p: &PeerBase| {
+            p.nickname
+                .as_ref()
+                .cloned()
+                .and_then(|nick| p.ip_addresses.as_ref().cloned().map(|ips| (nick, ips)))
+        };
+
+        self.meshnet_config
+            .iter()
+            .flat_map(|cfg| {
+                to_record(&cfg.this).into_iter().chain(
+                    cfg.peers
+                        .iter()
+                        .flat_map(|peers| peers.iter())
+                        .filter_map(|p| to_record(p)),
+                )
+            })
+            .filter(|(nick, _)| validate_nickname(nick))
+            .fold(Records::new(), |mut records, (mut nick, ip)| {
+                nick += ".nord";
+
+                if let Entry::Vacant(e) = records.entry(nick.to_owned()) {
+                    e.insert(ip);
+                } else {
+                    telio_log_warn!("Nickname is already assigned: {nick:?}. Ignore");
+                }
+
+                records
+            })
+    }
 }
 
 impl Runtime {
@@ -1051,11 +1085,12 @@ impl Runtime {
     }
 
     async fn upsert_dns_peers(&self) -> Result {
-        if let (Some(dns), peers) = (
-            &self.entities.dns.lock().await.resolver,
-            &self.requested_state.collect_dns_records(),
-        ) {
-            dns.upsert("nord", peers)
+        if let Some(dns) = &self.entities.dns.lock().await.resolver {
+            // hostnames have priority over nicknames (override if there's any conflict)
+            let mut peers = self.requested_state.collect_dns_nickname_records();
+            peers.extend(self.requested_state.collect_dns_records());
+
+            dns.upsert("nord", &peers)
                 .await
                 .map_err(Error::DnsResolverError)?;
         }
@@ -1745,17 +1780,26 @@ mod tests {
     use telio_model::api_config::FeatureDirect;
     use telio_model::config::{Peer, PeerBase};
 
-    fn build_peer_base(hostname: String, ip_addresses: Vec<IpAddr>) -> PeerBase {
+    fn build_peer_base(
+        hostname: String,
+        ip_addresses: Option<Vec<IpAddr>>,
+        nickname: Option<String>,
+    ) -> PeerBase {
         PeerBase {
             hostname,
-            ip_addresses: Some(ip_addresses),
+            ip_addresses,
+            nickname,
             ..Default::default()
         }
     }
 
-    fn build_peer(hostname: String, ip_addresses: Vec<IpAddr>) -> Peer {
+    fn build_peer(
+        hostname: String,
+        ip_addresses: Option<Vec<IpAddr>>,
+        nickname: Option<String>,
+    ) -> Peer {
         Peer {
-            base: build_peer_base(hostname, ip_addresses),
+            base: build_peer_base(hostname, ip_addresses, nickname),
             ..Default::default()
         }
     }
@@ -1776,11 +1820,20 @@ mod tests {
 
         let peers = Some(vec![
             build_peer(
-                String::from("alpha"),
-                vec![IpAddr::V4(alpha_ipv4), IpAddr::V6(alpha_ipv6)],
+                String::from("alpha.nord"),
+                Some(vec![IpAddr::V4(alpha_ipv4), IpAddr::V6(alpha_ipv6)]),
+                None,
             ),
-            build_peer(String::from("beta"), vec![IpAddr::V4(beta_ipv4)]),
-            build_peer(String::from("gamma"), vec![IpAddr::V6(gamma_ipv6)]),
+            build_peer(
+                String::from("beta.nord"),
+                Some(vec![IpAddr::V4(beta_ipv4)]),
+                None,
+            ),
+            build_peer(
+                String::from("gamma.nord"),
+                Some(vec![IpAddr::V6(gamma_ipv6)]),
+                None,
+            ),
         ]);
 
         let requested_state = RequestedState {
@@ -1790,11 +1843,185 @@ mod tests {
 
         let records = requested_state.collect_dns_records();
 
-        assert!(records["alpha"].contains(&IpAddr::V4(alpha_ipv4)));
-        assert!(records["alpha"].contains(&IpAddr::V6(alpha_ipv6)));
+        assert!(records["alpha.nord"].contains(&IpAddr::V4(alpha_ipv4)));
+        assert!(records["alpha.nord"].contains(&IpAddr::V6(alpha_ipv6)));
 
-        assert_eq!(records["beta"].clone(), vec![IpAddr::V4(beta_ipv4)]);
-        assert_eq!(records["gamma"].clone(), vec![IpAddr::V6(gamma_ipv6)]);
+        assert_eq!(records["beta.nord"].clone(), vec![IpAddr::V4(beta_ipv4)]);
+        assert_eq!(records["gamma.nord"].clone(), vec![IpAddr::V6(gamma_ipv6)]);
+
+        assert_eq!(records.len(), 3);
+    }
+
+    #[test]
+    fn test_collect_dns_nickname_records() {
+        let alpha_ipv4 = Ipv4Addr::new(1, 2, 3, 4);
+        let alpha_ipv6 = Ipv6Addr::new(1, 2, 3, 4, 5, 6, 7, 8);
+        let beta_ipv4 = Ipv4Addr::new(4, 3, 2, 1);
+        let gamma_ipv6 = Ipv6Addr::new(8, 7, 6, 5, 4, 3, 2, 1);
+
+        let peers = Some(vec![
+            build_peer(
+                String::from("alpha.nord"),
+                Some(vec![IpAddr::V4(alpha_ipv4), IpAddr::V6(alpha_ipv6)]),
+                Some("johnnyrotten".to_owned()),
+            ),
+            build_peer(
+                String::from("beta.nord"),
+                Some(vec![IpAddr::V4(beta_ipv4)]),
+                Some("bond-jamesbond".to_owned()),
+            ),
+            build_peer(
+                String::from("gamma.nord"),
+                Some(vec![IpAddr::V6(gamma_ipv6)]),
+                None,
+            ),
+            build_peer(String::from("theta.nord"), None, Some("pluto".to_owned())),
+        ]);
+
+        let requested_state = RequestedState {
+            meshnet_config: Some(build_mesh_config(peers)),
+            ..Default::default()
+        };
+
+        let mut records = requested_state.collect_dns_nickname_records();
+        records.extend(requested_state.collect_dns_records());
+
+        assert!(records["alpha.nord"].contains(&IpAddr::V4(alpha_ipv4)));
+        assert!(records["alpha.nord"].contains(&IpAddr::V6(alpha_ipv6)));
+        assert!(records["johnnyrotten.nord"].contains(&IpAddr::V4(alpha_ipv4)));
+        assert!(records["johnnyrotten.nord"].contains(&IpAddr::V6(alpha_ipv6)));
+
+        assert_eq!(records["beta.nord"].clone(), vec![IpAddr::V4(beta_ipv4)]);
+        assert_eq!(
+            records["bond-jamesbond.nord"].clone(),
+            vec![IpAddr::V4(beta_ipv4)]
+        );
+
+        assert_eq!(records["gamma.nord"].clone(), vec![IpAddr::V6(gamma_ipv6)]);
+
+        assert!(!records.contains_key("theta.nord"));
+
+        assert_eq!(records.len(), 5);
+    }
+
+    #[test]
+    fn test_collect_dns_nickname_records_invalid() {
+        let valid_hostname = "alpha.nord";
+        let valid_ipv4 = Some(vec![IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4))]);
+        let valid_nickname = Some("johnnyrotten".to_owned());
+
+        let requested_state = RequestedState {
+            meshnet_config: Some(build_mesh_config(Some(vec![
+                build_peer(
+                    valid_hostname.to_owned(),
+                    valid_ipv4.clone(),
+                    valid_nickname.clone(),
+                ),
+                // Contains a ' '
+                build_peer(
+                    valid_hostname.to_owned(),
+                    valid_ipv4.clone(),
+                    Some("johnny rotten".to_owned()),
+                ),
+                // Start with a '-'
+                build_peer(
+                    valid_hostname.to_owned(),
+                    valid_ipv4.clone(),
+                    Some("-johnnyrotten".to_owned()),
+                ),
+                // Ends with a '-'
+                build_peer(
+                    valid_hostname.to_owned(),
+                    valid_ipv4.clone(),
+                    Some("johnnyrotten-".to_owned()),
+                ),
+                // Larger than 25 chars
+                build_peer(
+                    valid_hostname.to_owned(),
+                    valid_ipv4.clone(),
+                    Some("johnsomethingsomethingsomething".to_owned()),
+                ),
+                // Contains '--'
+                build_peer(
+                    valid_hostname.to_owned(),
+                    valid_ipv4.clone(),
+                    Some("johnny--rotten".to_owned()),
+                ),
+                // Contains a uppercase char
+                build_peer(
+                    valid_hostname.to_owned(),
+                    valid_ipv4.clone(),
+                    Some("jOhnnyrotten".to_owned()),
+                ),
+                // Ends with "."
+                build_peer(
+                    valid_hostname.to_owned(),
+                    valid_ipv4.clone(),
+                    Some("johnnyrotten.".to_owned()),
+                ),
+                // Ends with ".nord"
+                build_peer(
+                    valid_hostname.to_owned(),
+                    valid_ipv4.clone(),
+                    Some("johnnyrotten.nord".to_owned()),
+                ),
+            ]))),
+            ..Default::default()
+        };
+
+        let mut records = requested_state.collect_dns_nickname_records();
+        records.extend(requested_state.collect_dns_records());
+
+        assert!(records[valid_hostname].contains(&valid_ipv4.clone().unwrap()[0]));
+        assert!(
+            records[format!("{}.nord", valid_nickname.clone().unwrap()).as_str()]
+                .contains(&valid_ipv4.clone().unwrap()[0])
+        );
+
+        assert_eq!(records.len(), 2);
+    }
+
+    #[test]
+    fn test_collect_dns_nickname_records_duplicated() {
+        let alpha_ipv4 = Ipv4Addr::new(1, 2, 3, 4);
+        let beta_ipv4 = Ipv4Addr::new(2, 3, 4, 1);
+        let gamma_ipv4 = Ipv4Addr::new(3, 4, 1, 2);
+
+        let peers = Some(vec![
+            build_peer(
+                String::from("alpha.nord"),
+                Some(vec![IpAddr::V4(alpha_ipv4)]),
+                Some("johnnyrotten".to_owned()),
+            ),
+            build_peer(
+                String::from("beta.nord"),
+                Some(vec![IpAddr::V4(beta_ipv4)]),
+                Some("johnnyrotten".to_owned()),
+            ),
+            build_peer(
+                String::from("gamma.nord"),
+                Some(vec![IpAddr::V4(gamma_ipv4)]),
+                Some("beta".to_owned()),
+            ),
+        ]);
+
+        let requested_state = RequestedState {
+            meshnet_config: Some(build_mesh_config(peers)),
+            ..Default::default()
+        };
+
+        let mut records = requested_state.collect_dns_nickname_records();
+        records.extend(requested_state.collect_dns_records());
+
+        assert_eq!(records["alpha.nord"].clone(), vec![IpAddr::V4(alpha_ipv4)]);
+        assert_eq!(
+            records["johnnyrotten.nord"].clone(),
+            vec![IpAddr::V4(alpha_ipv4)]
+        );
+        assert_eq!(records["beta.nord"].clone(), vec![IpAddr::V4(beta_ipv4)]);
+        assert_eq!(records["gamma.nord"].clone(), vec![IpAddr::V4(gamma_ipv4)]);
+
+        assert_eq!(records.len(), 4);
     }
 
     #[cfg(not(windows))]
