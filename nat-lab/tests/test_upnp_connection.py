@@ -8,7 +8,7 @@ from utils import testing
 from utils.asyncio_util import run_async_context
 from utils.connection_util import ConnectionTag
 from utils.ping import Ping
-from utils.router import new_router
+from utils.router import new_router, IPStack
 
 
 @pytest.mark.asyncio
@@ -46,8 +46,8 @@ async def test_upnp_route_removed(
         assert alpha_conn.gw_connection
         assert beta_conn.gw_connection
 
-        alpha_gw_router = new_router(alpha_conn.gw_connection)
-        beta_gw_router = new_router(beta_conn.gw_connection)
+        alpha_gw_router = new_router(alpha_conn.gw_connection, IPStack.IPv4v6)
+        beta_gw_router = new_router(beta_conn.gw_connection, IPStack.IPv4v6)
 
         # Shutoff Upnpd on both gateways to wipe out all upnp created external
         # routes, this also requires to wipe-out the contrack list

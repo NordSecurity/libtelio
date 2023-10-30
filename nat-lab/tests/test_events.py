@@ -9,6 +9,7 @@ from utils import testing, stun
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.ping import Ping
+from utils.router import IPStack
 
 
 @pytest.mark.asyncio
@@ -386,7 +387,9 @@ async def test_event_content_exit_through_peer(
     alpha_setup_params: SetupParameters, beta_setup_params: SetupParameters
 ) -> None:
     async with AsyncExitStack() as exit_stack:
-        api, (alpha, beta) = setup_api([False, False])
+        api, (alpha, beta) = setup_api(
+            [(False, IPStack.IPv4v6), (False, IPStack.IPv4v6)]
+        )
         alpha.set_peer_firewall_settings(beta.id)
         env = await setup_mesh_nodes(
             exit_stack, [alpha_setup_params, beta_setup_params], provided_api=api

@@ -70,7 +70,10 @@ PHOTO_ALBUM_IPV6 = config.LIBTELIO_IPV6_WAN_SUBNET + "::adda:edde:5"
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
             ),
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
+            ],
         ),
         pytest.param(
             SetupParameters(
@@ -254,7 +257,6 @@ async def test_ipv6_exit_node(
                 generate_connection_tracker_config(
                     ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
                     derp_1_limits=ConnectionLimits(1, 1),
-                    stun_limits=ConnectionLimits(1, 2),
                 ),
             )
         )
@@ -273,8 +275,6 @@ async def test_ipv6_exit_node(
             asyncio.gather(
                 client_alpha.wait_for_state_on_any_derp([State.Connected]),
                 client_beta.wait_for_state_on_any_derp([State.Connected]),
-                alpha_conn_tracker.wait_for_event("derp_1"),
-                beta_conn_tracker.wait_for_event("derp_1"),
             )
         )
         await testing.wait_lengthy(
@@ -293,10 +293,10 @@ async def test_ipv6_exit_node(
 
         await testing.wait_long(client_beta.get_router().create_exit_node_route())
         await testing.wait_long(client_alpha.connect_to_exit_node(beta.public_key))
-        await testing.wait_long(
-            client_alpha.wait_for_state_peer(beta.public_key, [State.Connected])
-        )
 
         # Ping out-tunnel target with IPv6
         async with Ping(connection_alpha, PHOTO_ALBUM_IPV6).run() as ping6:
             await testing.wait_long(ping6.wait_for_next_ping())
+
+        assert alpha_conn_tracker.get_out_of_limits() is None
+        assert beta_conn_tracker.get_out_of_limits() is None

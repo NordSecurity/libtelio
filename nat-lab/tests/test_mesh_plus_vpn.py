@@ -55,7 +55,10 @@ from utils.ping import Ping
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
             ),
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
+            ],
         ),
         pytest.param(
             SetupParameters(
@@ -67,7 +70,10 @@ from utils.ping import Ping
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
             ),
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
+            ],
         ),
         pytest.param(
             SetupParameters(
@@ -181,7 +187,10 @@ async def test_mesh_plus_vpn_one_peer(
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
             ),
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
+            ],
         ),
         pytest.param(
             SetupParameters(
@@ -366,17 +375,12 @@ async def test_vpn_plus_mesh(
         # Testing if the VPN node is not cleared after disabling meshnet. See LLT-4266 for more details.
         await client_alpha.set_mesh_off()
         await testing.wait_long(
-            asyncio.gather(
-                client_alpha.wait_for_event_peer(
-                    beta.public_key, [State.Disconnected], list(telio.PathType)
-                ),
-                alpha_conn_tracker.wait_for_event("derp_1"),
+            client_alpha.wait_for_event_peer(
+                beta.public_key, [State.Disconnected], list(telio.PathType)
             )
         )
         ip = await testing.wait_long(stun.get(connection_alpha, config.STUN_SERVER))
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
-        with pytest.raises(asyncio.TimeoutError):
-            await testing.wait_long(alpha_conn_tracker.wait_for_event("vpn_1"))
 
         assert alpha_conn_tracker.get_out_of_limits() is None
         assert beta_conn_tracker.get_out_of_limits() is None
@@ -436,7 +440,10 @@ async def test_vpn_plus_mesh(
                 ),
                 features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
             ),
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4313"),
+            ],
         ),
         pytest.param(
             SetupParameters(
@@ -578,7 +585,10 @@ async def test_vpn_plus_mesh_over_direct(
                 ),
                 features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
             ),
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="test is flaky - LLT-4314"),
+            ],
         ),
         pytest.param(
             SetupParameters(

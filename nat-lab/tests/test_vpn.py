@@ -6,11 +6,7 @@ from telio import AdapterType, Client
 from utils import testing, stun
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionLimits
-from utils.connection_util import (
-    ConnectionLimits,
-    generate_connection_tracker_config,
-    ConnectionTag,
-)
+from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.ping import Ping
 
 

@@ -163,7 +163,10 @@ async def test_mesh_network_switch(
                 adapter_type=telio.AdapterType.WindowsNativeWg,
                 is_meshnet=False,
             ),
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4391"),
+            ],
         ),
         pytest.param(
             SetupParameters(

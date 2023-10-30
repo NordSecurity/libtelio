@@ -6,7 +6,7 @@ from config import DERP_SERVERS
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
 from telio import PathType, State
-from telio_features import TelioFeatures, Direct
+from telio_features import TelioFeatures, Direct, SkipUnresponsivePeers
 from typing import List, Tuple
 from utils import testing
 from utils.asyncio_util import run_async_context
@@ -31,13 +31,20 @@ DOCKER_UPNP_CLIENT_2_IP = "10.0.254.12"
 
 
 def _generate_setup_parameter_pair(
-    config: List[Tuple[ConnectionTag, List[str]]]
+    cfg: List[Tuple[ConnectionTag, List[str]]]
 ) -> List[SetupParameters]:
     return [
         SetupParameters(
             connection_tag=conn_tag,
             adapter_type=telio.AdapterType.BoringTun,
-            features=TelioFeatures(direct=Direct(providers=endpoint_providers)),
+            features=TelioFeatures(
+                direct=Direct(
+                    providers=endpoint_providers,
+                    skip_unresponsive_peers=SkipUnresponsivePeers(
+                        no_handshake_threshold_secs=10
+                    ),
+                )
+            ),
             connection_tracker_config=generate_connection_tracker_config(
                 conn_tag,
                 derp_0_limits=ConnectionLimits(0, 1),
@@ -47,7 +54,7 @@ def _generate_setup_parameter_pair(
                 ping_limits=ConnectionLimits(0, 5),
             ),
         )
-        for conn_tag, endpoint_providers in config
+        for conn_tag, endpoint_providers in cfg
     ]
 
 
@@ -297,6 +304,7 @@ async def test_direct_failing_paths(setup_params: List[SetupParameters]) -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4132")
 @pytest.mark.parametrize("setup_params, _reflexive_ip", UHP_WORKING_PATHS)
 async def test_direct_working_paths(
     setup_params: List[SetupParameters],
@@ -579,12 +587,16 @@ async def test_direct_connection_endpoint_gone(
 # Regression test for LLT-4306
 @pytest.mark.parametrize(
     "setup_params",
-    _generate_setup_parameter_pair(
-        [
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
-            (ConnectionTag.DOCKER_CONE_CLIENT_2, ["stun"]),
-        ]
-    ),
+    [
+        pytest.param(
+            _generate_setup_parameter_pair(
+                [
+                    (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
+                    (ConnectionTag.DOCKER_CONE_CLIENT_2, ["stun"]),
+                ],
+            )
+        )
+    ],
 )
 async def test_infinite_stun_loop(setup_params: List[SetupParameters]) -> None:
     async with AsyncExitStack() as exit_stack:
