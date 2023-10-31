@@ -1,3 +1,5 @@
+# pylint: disable=too-many-lines
+
 import asyncio
 import config
 import pytest
@@ -776,3 +778,73 @@ async def test_dns_aaaa_records() -> None:
 
         assert beta.ip_addresses[0] in alpha_response.get_stdout()
         assert beta.ip_addresses[1] in alpha_response.get_stdout()
+
+
+@pytest.mark.asyncio
+async def test_dns_nickname() -> None:
+    async with AsyncExitStack() as exit_stack:
+        api, (alpha, beta) = setup_api(
+            [(False, IPStack.IPv4v6), (False, IPStack.IPv4v6)]
+        )
+        api.assign_nickname(alpha.id, "johnny")
+        api.assign_nickname(beta.id, "yoko")
+
+        env = await setup_mesh_nodes(
+            exit_stack,
+            [
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_1,
+                        derp_1_limits=ConnectionLimits(1, 1),
+                    ),
+                ),
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_2,
+                        derp_1_limits=ConnectionLimits(1, 1),
+                    ),
+                ),
+            ],
+            provided_api=api,
+        )
+        client_alpha, client_beta = env.clients
+        connection_alpha, connection_beta = [
+            conn.connection for conn in env.connections
+        ]
+
+        await client_alpha.enable_magic_dns(["1.1.1.1"])
+        await client_beta.enable_magic_dns(["1.1.1.1"])
+
+        alpha_response = await testing.wait_long(
+            connection_alpha.create_process(
+                ["nslookup", "yoko.nord", config.LIBTELIO_DNS_IPV4]
+            ).execute()
+        )
+        for ip in beta.ip_addresses:
+            assert ip in alpha_response.get_stdout()
+
+        alpha_response = await testing.wait_long(
+            connection_alpha.create_process(
+                ["nslookup", "johnny.nord", config.LIBTELIO_DNS_IPV4]
+            ).execute()
+        )
+        for ip in alpha.ip_addresses:
+            assert ip in alpha_response.get_stdout()
+
+        beta_response = await testing.wait_long(
+            connection_beta.create_process(
+                ["nslookup", "johnny.nord", config.LIBTELIO_DNS_IPV4]
+            ).execute()
+        )
+        for ip in alpha.ip_addresses:
+            assert ip in beta_response.get_stdout()
+
+        beta_response = await testing.wait_long(
+            connection_beta.create_process(
+                ["nslookup", "yoko.nord", config.LIBTELIO_DNS_IPV4]
+            ).execute()
+        )
+        for ip in beta.ip_addresses:
+            assert ip in beta_response.get_stdout()
