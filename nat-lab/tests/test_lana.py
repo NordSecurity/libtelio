@@ -8,7 +8,6 @@ import telio
 from config import WG_SERVER
 from contextlib import AsyncExitStack
 from mesh_api import API, Node
-from telio import PathType, Client
 from telio_features import TelioFeatures, Nurse, Lana, Qos
 from typing import Optional
 from utils import testing
@@ -21,7 +20,7 @@ from utils.analytics import (
     IPV6_BIT,
 )
 from utils.connection import Connection
-from utils.connection_tracker import ConnectionLimits, ConnectionTracker
+from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
     generate_connection_tracker_config,
     ConnectionTag,
@@ -101,20 +100,6 @@ def get_moose_db_file(container_tag, container_path, local_path):
     subprocess.run(["rm", "-f", local_path])
     subprocess.run(
         ["docker", "cp", container_id(container_tag) + ":" + container_path, local_path]
-    )
-
-
-async def connect_to_default_vpn(client: Client, conn_tracker: ConnectionTracker):
-    await testing.wait_long(
-        asyncio.gather(
-            client.connect_to_vpn(
-                WG_SERVER["ipv4"], WG_SERVER["port"], WG_SERVER["public_key"]
-            ),
-            testing.wait_long(conn_tracker.wait_for_event("vpn_1")),
-            client.wait_for_state_peer(
-                WG_SERVER["public_key"], [telio.State.Connected], [PathType.Direct]
-            ),
-        )
     )
 
 
@@ -257,7 +242,7 @@ async def run_default_scenario(
             connection_alpha,
             alpha,
             telio_features=build_telio_features("alpha_fingerprint"),
-        ).run_meshnet(api.get_meshmap(alpha.id))
+        ).run(api.get_meshmap(alpha.id))
     )
 
     client_beta = await exit_stack.enter_async_context(
@@ -265,7 +250,7 @@ async def run_default_scenario(
             connection_beta,
             beta,
             telio_features=build_telio_features("beta_fingerprint"),
-        ).run_meshnet(api.get_meshmap(beta.id))
+        ).run(api.get_meshmap(beta.id))
     )
 
     client_gamma = await exit_stack.enter_async_context(
@@ -273,38 +258,37 @@ async def run_default_scenario(
             connection_gamma,
             gamma,
             telio_features=build_telio_features("gamma_fingerprint"),
-        ).run_meshnet(api.get_meshmap(gamma.id))
+        ).run(api.get_meshmap(gamma.id))
     )
 
-    await testing.wait_lengthy(
-        asyncio.gather(
-            client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
-            client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
-            client_gamma.wait_for_state_on_any_derp([telio.State.Connected]),
-            alpha_conn_tracker.wait_for_event("derp_1"),
-            beta_conn_tracker.wait_for_event("derp_1"),
-            gamma_conn_tracker.wait_for_event("derp_1"),
-        )
+    await asyncio.gather(
+        client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
+        client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
+        client_gamma.wait_for_state_on_any_derp([telio.State.Connected]),
     )
-    await testing.wait_lengthy(
-        asyncio.gather(
-            client_alpha.wait_for_state_peer(beta.public_key, [telio.State.Connected]),
-            client_alpha.wait_for_state_peer(gamma.public_key, [telio.State.Connected]),
-            client_beta.wait_for_state_peer(alpha.public_key, [telio.State.Connected]),
-            client_beta.wait_for_state_peer(gamma.public_key, [telio.State.Connected]),
-            client_gamma.wait_for_state_peer(alpha.public_key, [telio.State.Connected]),
-            client_gamma.wait_for_state_peer(beta.public_key, [telio.State.Connected]),
-        )
+    await asyncio.gather(
+        client_alpha.wait_for_state_peer(beta.public_key, [telio.State.Connected]),
+        client_alpha.wait_for_state_peer(gamma.public_key, [telio.State.Connected]),
+        client_beta.wait_for_state_peer(alpha.public_key, [telio.State.Connected]),
+        client_beta.wait_for_state_peer(gamma.public_key, [telio.State.Connected]),
+        client_gamma.wait_for_state_peer(alpha.public_key, [telio.State.Connected]),
+        client_gamma.wait_for_state_peer(beta.public_key, [telio.State.Connected]),
     )
 
     if alpha_has_vpn_connection:
-        await connect_to_default_vpn(client_alpha, alpha_conn_tracker)
+        await client_alpha.connect_to_vpn(
+            str(WG_SERVER["ipv4"]), int(WG_SERVER["port"]), str(WG_SERVER["public_key"])
+        )
 
     if beta_has_vpn_connection:
-        await connect_to_default_vpn(client_beta, beta_conn_tracker)
+        await client_beta.connect_to_vpn(
+            str(WG_SERVER["ipv4"]), int(WG_SERVER["port"]), str(WG_SERVER["public_key"])
+        )
 
     if gamma_has_vpn_connection:
-        await connect_to_default_vpn(client_gamma, gamma_conn_tracker)
+        await client_gamma.connect_to_vpn(
+            str(WG_SERVER["ipv4"]), int(WG_SERVER["port"]), str(WG_SERVER["public_key"])
+        )
 
     await ping_node(connection_alpha, alpha, beta)
     await ping_node(connection_beta, beta, gamma)
@@ -326,12 +310,10 @@ async def run_default_scenario(
         ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, GAMMA_EVENTS_PATH, nr_events=1
     )
 
-    await testing.wait_long(
-        asyncio.gather(
-            client_alpha.stop_device(),
-            client_beta.stop_device(),
-            client_gamma.stop_device(),
-        )
+    await asyncio.gather(
+        client_alpha.stop_device(),
+        client_beta.stop_device(),
+        client_gamma.stop_device(),
     )
 
     assert alpha_conn_tracker.get_out_of_limits() is None
@@ -841,33 +823,23 @@ async def test_lana_with_disconnected_node(
                 connection_alpha,
                 alpha,
                 telio_features=build_telio_features("alpha_fingerprint"),
-            ).run_meshnet(api.get_meshmap(alpha.id))
+            ).run(api.get_meshmap(alpha.id))
         )
         client_beta = await exit_stack.enter_async_context(
             telio.Client(
                 connection_beta,
                 beta,
                 telio_features=build_telio_features("beta_fingerprint"),
-            ).run_meshnet(api.get_meshmap(beta.id))
+            ).run(api.get_meshmap(beta.id))
         )
 
-        await testing.wait_long(
-            asyncio.gather(
-                client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
-                client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
-                alpha_conn_tracker.wait_for_event("derp_1"),
-                beta_conn_tracker.wait_for_event("derp_1"),
-            )
+        await asyncio.gather(
+            client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
+            client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
         )
-        await testing.wait_lengthy(
-            asyncio.gather(
-                client_alpha.wait_for_state_peer(
-                    beta.public_key, [telio.State.Connected]
-                ),
-                client_beta.wait_for_state_peer(
-                    alpha.public_key, [telio.State.Connected]
-                ),
-            )
+        await asyncio.gather(
+            client_alpha.wait_for_state_peer(beta.public_key, [telio.State.Connected]),
+            client_beta.wait_for_state_peer(alpha.public_key, [telio.State.Connected]),
         )
 
         await ping_node(connection_alpha, alpha, beta)
@@ -887,7 +859,7 @@ async def test_lana_with_disconnected_node(
         assert beta_events
 
         # disconnect beta and trigger analytics on alpha
-        await testing.wait_long(client_beta.stop_device())
+        await client_beta.stop_device()
 
         await asyncio.sleep(DEFAULT_WAITING_TIME)
 
@@ -1006,7 +978,7 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
                 connection_beta,
                 beta,
                 telio_features=build_telio_features("beta_fingerprint"),
-            ).run_meshnet(api.get_meshmap(beta.id))
+            ).run(api.get_meshmap(beta.id))
         )
 
         await client_beta.trigger_event_collection()
@@ -1033,21 +1005,15 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
                 connection_alpha,
                 alpha,
                 telio_features=build_telio_features("alpha_fingerprint"),
-            ).run_meshnet(api.get_meshmap(alpha.id))
+            ).run(api.get_meshmap(alpha.id))
         )
 
         beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
         await client_beta.set_meshmap(api.get_meshmap(beta.id))
 
-        await testing.wait_long(
-            asyncio.gather(
-                client_alpha.wait_for_state_peer(
-                    beta.public_key, [telio.State.Connected]
-                ),
-                client_beta.wait_for_state_peer(
-                    alpha.public_key, [telio.State.Connected]
-                ),
-            )
+        await asyncio.gather(
+            client_alpha.wait_for_state_peer(beta.public_key, [telio.State.Connected]),
+            client_beta.wait_for_state_peer(alpha.public_key, [telio.State.Connected]),
         )
 
         await ping_node(connection_alpha, alpha, beta)
@@ -1095,7 +1061,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
                 connection_beta,
                 beta,
                 telio_features=build_telio_features("beta_fingerprint"),
-            ).run_meshnet(api.get_meshmap(beta.id))
+            ).run(api.get_meshmap(beta.id))
         )
 
         await client_beta.trigger_event_collection()
@@ -1118,7 +1084,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
                 connection_beta,
                 beta,
                 telio_features=build_telio_features("beta_fingerprint"),
-            ).run_meshnet(api.get_meshmap(beta.id))
+            ).run(api.get_meshmap(beta.id))
         )
 
         await client_beta.trigger_event_collection()
@@ -1156,7 +1122,7 @@ async def test_lana_initial_heartbeat_no_trigger(
                     "alpha_fingerprint",
                     initial_heartbeat_interval=initial_heartbeat_interval,
                 ),
-            ).run_meshnet(api.get_meshmap(alpha.id))
+            ).run(api.get_meshmap(alpha.id))
         )
 
         if initial_heartbeat_interval:

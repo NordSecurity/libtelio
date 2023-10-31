@@ -1,6 +1,7 @@
 import os
 import platform
 from python_wireguard import Key  # type: ignore
+from typing import Dict, Union
 
 PROJECT_ROOT = os.path.dirname(os.path.realpath(__file__)) + "/../../"
 
@@ -72,7 +73,7 @@ PHOTO_ALBUM_IP = "10.0.80.80"
 
 
 # vpn-01
-WG_SERVER = {
+WG_SERVER: Dict[str, Union[str, int]] = {
     "ipv4": "10.0.100.1",
     "port": 51820,
     **dict(
@@ -83,7 +84,7 @@ WG_SERVER = {
 }
 
 # vpn-02
-WG_SERVER_2 = {
+WG_SERVER_2: Dict[str, Union[str, int]] = {
     "ipv4": "10.0.100.2",
     "port": 51820,
     **dict(

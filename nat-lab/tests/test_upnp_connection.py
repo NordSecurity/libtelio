@@ -1,101 +1,85 @@
 import asyncio
 import pytest
 from contextlib import AsyncExitStack
-from mesh_api import API
-from telio import AdapterType, State, PathType, Client
-from telio_features import TelioFeatures, Direct
+from helpers import SetupParameters, setup_mesh_nodes
+from telio import AdapterType, PathType, State
+from telio_features import Direct, TelioFeatures
 from utils import testing
-from utils.connection_util import ConnectionTag, new_connection_with_gw
+from utils.asyncio_util import run_async_context
+from utils.connection_util import ConnectionTag
 from utils.ping import Ping
-
-ANY_PROVIDERS = ["local", "stun"]
-LOCAL_PROVIDER = ["local"]
-UPNP_PROVIDER = ["upnp"]
+from utils.router import new_router, IPStack
 
 
 @pytest.mark.asyncio
-async def test_upnp_route_removed() -> None:
+@pytest.mark.parametrize(
+    "alpha_setup_params",
+    [
+        SetupParameters(
+            connection_tag=ConnectionTag.DOCKER_UPNP_CLIENT_1,
+            adapter_type=AdapterType.BoringTun,
+            features=TelioFeatures(direct=Direct(providers=["upnp"])),
+        )
+    ],
+)
+@pytest.mark.parametrize(
+    "beta_setup_params",
+    [
+        SetupParameters(
+            connection_tag=ConnectionTag.DOCKER_UPNP_CLIENT_2,
+            adapter_type=AdapterType.BoringTun,
+            features=TelioFeatures(direct=Direct(providers=["upnp"])),
+        )
+    ],
+)
+async def test_upnp_route_removed(
+    alpha_setup_params: SetupParameters, beta_setup_params: SetupParameters
+) -> None:
     async with AsyncExitStack() as exit_stack:
-        api = API()
+        env = await setup_mesh_nodes(
+            exit_stack, [alpha_setup_params, beta_setup_params]
+        )
+        alpha, beta = env.nodes
+        alpha_conn, beta_conn = env.connections
+        alpha_client, beta_client = env.clients
 
-        (alpha, beta) = api.default_config_two_nodes()
-        (alpha_connection, alpha_connection_gw) = await exit_stack.enter_async_context(
-            new_connection_with_gw(ConnectionTag.DOCKER_UPNP_CLIENT_1)
-        )
-        (beta_connection, beta_connection_gw) = await exit_stack.enter_async_context(
-            new_connection_with_gw(ConnectionTag.DOCKER_UPNP_CLIENT_2)
-        )
+        assert alpha_conn.gw_connection
+        assert beta_conn.gw_connection
 
-        assert alpha_connection_gw
-        assert beta_connection_gw
-
-        await alpha_connection_gw.create_process(["upnpd", "eth0", "eth1"]).execute()
-        await beta_connection_gw.create_process(["upnpd", "eth0", "eth1"]).execute()
-
-        alpha_client = await exit_stack.enter_async_context(
-            Client(
-                alpha_connection,
-                alpha,
-                AdapterType.BoringTun,
-                telio_features=TelioFeatures(direct=Direct(providers=UPNP_PROVIDER)),
-            ).run_meshnet(
-                api.get_meshmap(alpha.id),
-            )
-        )
-        beta_client = await exit_stack.enter_async_context(
-            Client(
-                beta_connection,
-                beta,
-                AdapterType.BoringTun,
-                telio_features=TelioFeatures(direct=Direct(providers=UPNP_PROVIDER)),
-            ).run_meshnet(api.get_meshmap(beta.id))
-        )
-
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_on_any_derp([State.Connected]),
-                beta_client.wait_for_state_on_any_derp([State.Connected]),
-            )
-        )
-        await testing.wait_defined(
-            asyncio.gather(
-                alpha_client.wait_for_state_peer(
-                    beta.public_key, [State.Connected], [PathType.Direct]
-                ),
-                beta_client.wait_for_state_peer(
-                    alpha.public_key, [State.Connected], [PathType.Direct]
-                ),
-            ),
-            60,
-        )
+        alpha_gw_router = new_router(alpha_conn.gw_connection, IPStack.IPv4v6)
+        beta_gw_router = new_router(beta_conn.gw_connection, IPStack.IPv4v6)
 
         # Shutoff Upnpd on both gateways to wipe out all upnp created external
         # routes, this also requires to wipe-out the contrack list
-        await alpha_connection_gw.create_process(["killall", "upnpd"]).execute()
-        await beta_connection_gw.create_process(["killall", "upnpd"]).execute()
-        await alpha_connection_gw.create_process(["conntrack", "-F"]).execute()
-        await beta_connection_gw.create_process(["conntrack", "-F"]).execute()
+        async with AsyncExitStack() as temp_exit_stack:
+            await temp_exit_stack.enter_async_context(alpha_gw_router.reset_upnpd())
+            await temp_exit_stack.enter_async_context(beta_gw_router.reset_upnpd())
+            task = await temp_exit_stack.enter_async_context(
+                run_async_context(
+                    alpha_client.wait_for_event_peer(beta.public_key, [State.Connected])
+                )
+            )
+            async with Ping(alpha_conn.connection, beta.ip_addresses[0]).run() as ping:
+                try:
+                    await testing.wait_long(ping.wait_for_next_ping())
+                except asyncio.TimeoutError:
+                    pass
+                else:
+                    # if no timeout exception happens, this means, that peers connected through relay
+                    # faster than we expected, but if no relay event occurs, this means, that something
+                    # else was wrong, so we assert
+                    await asyncio.wait_for(task, 1)
 
-        with pytest.raises(asyncio.TimeoutError):
-            async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-                await testing.wait_long(ping.wait_for_next_ping())
-        #  Turnon upnpd on both gateways, to enable creating new erternal routes
-        await alpha_connection_gw.create_process(["upnpd", "eth0", "eth1"]).execute()
-        await beta_connection_gw.create_process(["upnpd", "eth0", "eth1"]).execute()
-
-        await testing.wait_defined(
-            asyncio.gather(
-                alpha_client.wait_for_event_peer(
-                    beta.public_key, [State.Connected], [PathType.Direct]
-                ),
-                beta_client.wait_for_event_peer(
-                    alpha.public_key, [State.Connected], [PathType.Direct]
-                ),
+        await asyncio.gather(
+            alpha_client.wait_for_event_peer(
+                beta.public_key, [State.Connected], [PathType.Direct]
             ),
-            60,
+            beta_client.wait_for_event_peer(
+                alpha.public_key, [State.Connected], [PathType.Direct]
+            ),
         )
 
-        async with Ping(beta_connection, alpha.ip_addresses[0]).run() as ping:
+        async with Ping(beta_conn.connection, alpha.ip_addresses[0]).run() as ping:
             await testing.wait_lengthy(ping.wait_for_next_ping())
-        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
+        async with Ping(alpha_conn.connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_lengthy(ping.wait_for_next_ping())

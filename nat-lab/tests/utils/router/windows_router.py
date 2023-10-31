@@ -1,3 +1,4 @@
+import random
 from .router import Router, IPProto, IPStack
 from config import LIBTELIO_IPV6_WG_SUBNET
 from contextlib import asynccontextmanager
@@ -13,7 +14,7 @@ class WindowsRouter(Router):
     def __init__(self, connection: Connection, ip_stack: IPStack):
         super().__init__(ip_stack)
         self._connection = connection
-        self._interface_name = "wintun10"
+        self._interface_name = "wintun10_" + str(random.randint(0, 256))
 
     def get_interface_name(self) -> str:
         return self._interface_name
@@ -193,4 +194,8 @@ class WindowsRouter(Router):
     async def break_udp_conn_to_host(
         self, address: str  # pylint: disable=unused-argument
     ) -> AsyncIterator:
+        yield
+
+    @asynccontextmanager
+    async def reset_upnpd(self) -> AsyncIterator:
         yield

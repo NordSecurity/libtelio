@@ -3,15 +3,18 @@ import config
 import pytest
 import telio
 from contextlib import AsyncExitStack
-from mesh_api import API
+from helpers import (
+    setup_connections,
+    setup_environment,
+    setup_mesh_nodes,
+    SetupParameters,
+)
 from telio import AdapterType, PathType, State
 from telio_features import TelioFeatures, Direct
 from utils import testing, stun
-from utils.connection_util import (
-    ConnectionTag,
-    new_connection_by_tag,
-    new_connection_with_network_switcher,
-)
+from utils.asyncio_util import run_async_contexts
+from utils.connection import TargetOS
+from utils.connection_util import ConnectionTag
 from utils.ping import Ping
 
 
@@ -19,7 +22,11 @@ from utils.ping import Ping
 @pytest.mark.parametrize(
     "connection_tag, primary_ip, secondary_ip",
     [
-        pytest.param(ConnectionTag.DOCKER_SHARED_CLIENT_1, "10.0.254.1", "10.0.254.13"),
+        pytest.param(
+            ConnectionTag.DOCKER_SHARED_CLIENT_1,
+            "10.0.254.1",
+            "10.0.254.13",
+        ),
         pytest.param(
             ConnectionTag.WINDOWS_VM,
             "10.0.254.7",
@@ -30,177 +37,181 @@ from utils.ping import Ping
             ConnectionTag.MAC_VM,
             "10.0.254.7",
             "10.0.254.8",
-            marks=pytest.mark.mac,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.xfail(reason="Flaky: LLT-2393"),
+            ],
         ),
     ],
 )
 async def test_network_switcher(
     connection_tag: ConnectionTag, primary_ip: str, secondary_ip: str
 ) -> None:
-    async with new_connection_with_network_switcher(connection_tag) as (
-        connection,
-        network_switcher,
-    ):
+    async with AsyncExitStack() as exit_stack:
+        conn_mngr, *_ = await setup_connections(exit_stack, [connection_tag])
         assert (
-            await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+            await testing.wait_long(stun.get(conn_mngr.connection, config.STUN_SERVER))
             == primary_ip
         )
 
-        assert network_switcher
-        await network_switcher.switch_to_secondary_network()
+        assert conn_mngr.network_switcher
+        await conn_mngr.network_switcher.switch_to_secondary_network()
 
         assert (
-            await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+            await testing.wait_long(stun.get(conn_mngr.connection, config.STUN_SERVER))
             == secondary_ip
         )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "alpha_connection_tag, adapter_type",
+    "alpha_setup_params",
     [
         pytest.param(
-            ConnectionTag.DOCKER_SHARED_CLIENT_1,
-            AdapterType.BoringTun,
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_SHARED_CLIENT_1,
+                adapter_type=telio.AdapterType.BoringTun,
+            ),
         ),
         pytest.param(
-            ConnectionTag.DOCKER_SHARED_CLIENT_1,
-            AdapterType.LinuxNativeWg,
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_SHARED_CLIENT_1,
+                adapter_type=telio.AdapterType.LinuxNativeWg,
+            ),
             marks=pytest.mark.linux_native,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM,
-            AdapterType.WindowsNativeWg,
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM,
+                adapter_type=telio.AdapterType.WindowsNativeWg,
+            ),
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM,
-            AdapterType.WireguardGo,
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM,
+                adapter_type=telio.AdapterType.WireguardGo,
+            ),
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.MAC_VM,
+                adapter_type=telio.AdapterType.BoringTun,
+            ),
             marks=[
-                pytest.mark.windows,
-                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
+                pytest.mark.mac,
+                pytest.mark.xfail(reason="Flaky: LLT-1134"),
             ],
         ),
-        # JIRA issue: LLT-1134
-        # pytest.param(
-        #     ConnectionTag.MAC_VM,
-        #     AdapterType.Default,
-        #     marks=pytest.mark.mac,
-        # ),
+    ],
+)
+@pytest.mark.parametrize(
+    "beta_setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+            )
+        )
     ],
 )
 async def test_mesh_network_switch(
-    alpha_connection_tag: ConnectionTag, adapter_type: AdapterType
+    alpha_setup_params: SetupParameters, beta_setup_params: SetupParameters
 ) -> None:
     async with AsyncExitStack() as exit_stack:
-        api = API()
+        env = await setup_mesh_nodes(
+            exit_stack, [alpha_setup_params, beta_setup_params]
+        )
+        _, beta = env.nodes
+        alpha_conn_mngr, *_ = env.connections
+        client_alpha, _ = env.clients
 
-        (alpha, beta) = api.default_config_two_nodes()
-        (connection_alpha, network_switcher) = await exit_stack.enter_async_context(
-            new_connection_with_network_switcher(alpha_connection_tag)
-        )
-        assert network_switcher
-        connection_beta = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1)
-        )
-
-        client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha, adapter_type).run_meshnet(
-                api.get_meshmap(alpha.id)
-            )
-        )
-
-        client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run_meshnet(api.get_meshmap(beta.id))
-        )
-
-        await testing.wait_long(
-            client_alpha.wait_for_state_peer(beta.public_key, [State.Connected])
-        )
-        await testing.wait_long(
-            client_beta.wait_for_state_peer(alpha.public_key, [State.Connected])
-        )
-
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
+        async with Ping(alpha_conn_mngr.connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
-        await network_switcher.switch_to_secondary_network()
+        assert alpha_conn_mngr.network_switcher
+        await alpha_conn_mngr.network_switcher.switch_to_secondary_network()
         await client_alpha.notify_network_change()
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
+        async with Ping(alpha_conn_mngr.connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "connection_tag, adapter_type",
+    "alpha_setup_params",
     [
-        pytest.param(ConnectionTag.DOCKER_SHARED_CLIENT_1, AdapterType.BoringTun),
         pytest.param(
-            ConnectionTag.DOCKER_SHARED_CLIENT_1,
-            AdapterType.LinuxNativeWg,
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_SHARED_CLIENT_1,
+                adapter_type=telio.AdapterType.BoringTun,
+                is_meshnet=False,
+            ),
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_SHARED_CLIENT_1,
+                adapter_type=telio.AdapterType.LinuxNativeWg,
+                is_meshnet=False,
+            ),
             marks=pytest.mark.linux_native,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM,
-            AdapterType.WindowsNativeWg,
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM,
+                adapter_type=telio.AdapterType.WindowsNativeWg,
+                is_meshnet=False,
+            ),
             marks=[
                 pytest.mark.windows,
                 pytest.mark.xfail(reason="Test is flaky - LLT-4391"),
             ],
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM,
-            AdapterType.WireguardGo,
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM,
+                adapter_type=telio.AdapterType.WireguardGo,
+                is_meshnet=False,
+            ),
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.MAC_VM,
+                adapter_type=telio.AdapterType.BoringTun,
+                is_meshnet=False,
+            ),
             marks=[
-                pytest.mark.windows,
-                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
+                pytest.mark.mac,
+                pytest.mark.skip(reason="Flaky: LLT-1134"),
             ],
         ),
-        # JIRA issue: LLT-1134
-        # pytest.param(
-        #     ConnectionTag.MAC_VM,
-        #     AdapterType.Default,
-        #     "10.0.254.7",
-        #     marks=pytest.mark.mac,
-        # ),
     ],
 )
-async def test_vpn_network_switch(
-    connection_tag: ConnectionTag, adapter_type: AdapterType
-) -> None:
+async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
     async with AsyncExitStack() as exit_stack:
-        api = API()
-
-        alpha = api.default_config_one_node()
-        (connection, network_switcher) = await exit_stack.enter_async_context(
-            new_connection_with_network_switcher(connection_tag)
+        env = await exit_stack.enter_async_context(
+            setup_environment(exit_stack, [alpha_setup_params])
         )
-        assert network_switcher
-
-        client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection, alpha, adapter_type).run()
-        )
+        client_alpha, *_ = env.clients
+        alpha_conn_mngr, *_ = env.connections
+        alpha_connection = alpha_conn_mngr.connection
+        network_switcher = alpha_conn_mngr.network_switcher
 
         wg_server = config.WG_SERVER
 
-        await testing.wait_long(
-            client_alpha.connect_to_vpn(
-                wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-            )
-        )
-        await testing.wait_lengthy(
-            client_alpha.wait_for_state_peer(
-                wg_server["public_key"], [State.Connected], [PathType.Direct]
-            )
+        await client_alpha.connect_to_vpn(
+            str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
         )
 
-        async with Ping(connection, config.PHOTO_ALBUM_IP).run() as ping:
+        async with Ping(alpha_connection, config.PHOTO_ALBUM_IP).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
-        ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+        ip = await testing.wait_long(stun.get(alpha_connection, config.STUN_SERVER))
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
+        assert network_switcher
         await network_switcher.switch_to_secondary_network()
         await client_alpha.notify_network_change()
 
@@ -209,140 +220,123 @@ async def test_vpn_network_switch(
         # the sleep, the test fails often due to timeouts. Its as if feeding data into
         # a connection, which is being restored, bogs down the connection and it takes
         # more time for the connection to be restored.
-        if connection_tag == ConnectionTag.WINDOWS_VM:
+        if alpha_connection.target_os == TargetOS.Windows:
             await asyncio.sleep(1.0)
 
-        async with Ping(connection, config.PHOTO_ALBUM_IP).run() as ping:
+        async with Ping(alpha_connection, config.PHOTO_ALBUM_IP).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
-        ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+        ip = await testing.wait_long(stun.get(alpha_connection, config.STUN_SERVER))
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason=(
-        "Flaky: Running tests in specific order, might change the"
-        " result of tests - LLT-4102 / LLT-4105, LLT-3946"
-    )
-)
+@pytest.mark.xfail(reason="Flaky: LLT-4102, LLT-4105, LLT-3946")
 @pytest.mark.timeout(150)
 @pytest.mark.parametrize(
-    "endpoint_providers, alpha_connection_tag, adapter_type",
+    "alpha_setup_params",
     [
         pytest.param(
-            ["stun"], ConnectionTag.DOCKER_SHARED_CLIENT_1, AdapterType.BoringTun
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_SHARED_CLIENT_1,
+                adapter_type=telio.AdapterType.BoringTun,
+                features=TelioFeatures(direct=Direct(providers=["stun"])),
+            ),
         ),
         pytest.param(
-            ["stun"],
-            ConnectionTag.DOCKER_SHARED_CLIENT_1,
-            AdapterType.LinuxNativeWg,
-            marks=[
-                pytest.mark.linux_native,
-            ],
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_SHARED_CLIENT_1,
+                adapter_type=telio.AdapterType.LinuxNativeWg,
+                features=TelioFeatures(direct=Direct(providers=["stun"])),
+            ),
+            marks=pytest.mark.linux_native,
         ),
         pytest.param(
-            ["stun"],
-            ConnectionTag.WINDOWS_VM,
-            AdapterType.WindowsNativeWg,
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM,
+                adapter_type=telio.AdapterType.WindowsNativeWg,
+                features=TelioFeatures(direct=Direct(providers=["stun"])),
+            ),
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ["stun"],
-            ConnectionTag.WINDOWS_VM,
-            AdapterType.WireguardGo,
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM,
+                adapter_type=telio.AdapterType.WireguardGo,
+                features=TelioFeatures(direct=Direct(providers=["stun"])),
+            ),
             marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.MAC_VM,
+                adapter_type=telio.AdapterType.BoringTun,
+                features=TelioFeatures(direct=Direct(providers=["stun"])),
+            ),
+            marks=pytest.mark.mac,
         ),
     ],
 )
-async def test_mesh_network_switch_direct(
-    endpoint_providers, alpha_connection_tag, adapter_type
-) -> None:
-    async with AsyncExitStack() as exit_stack:
-        api = API()
-        (alpha, beta) = api.default_config_two_nodes()
-
-        (alpha_connection, network_switcher) = await exit_stack.enter_async_context(
-            new_connection_with_network_switcher(alpha_connection_tag)
-        )
-        assert network_switcher
-
-        beta_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
-        )
-
-        alpha_client = await exit_stack.enter_async_context(
-            telio.Client(
-                alpha_connection,
-                alpha,
-                adapter_type,
-                telio_features=TelioFeatures(
-                    direct=Direct(providers=endpoint_providers)
-                ),
-            ).run_meshnet(api.get_meshmap(alpha.id))
-        )
-
-        beta_client = await exit_stack.enter_async_context(
-            telio.Client(
-                beta_connection,
-                beta,
-                AdapterType.BoringTun,
-                telio_features=TelioFeatures(
-                    direct=Direct(providers=endpoint_providers)
-                ),
-            ).run_meshnet(api.get_meshmap(beta.id))
-        )
-
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_on_any_derp([State.Connected]),
-                beta_client.wait_for_state_on_any_derp([State.Connected]),
+@pytest.mark.parametrize(
+    "beta_setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                adapter_type=AdapterType.BoringTun,
+                features=TelioFeatures(direct=Direct(providers=["stun"])),
             )
         )
-
-        await testing.wait_defined(
-            asyncio.gather(
-                alpha_client.wait_for_state_peer(
-                    beta.public_key, [State.Connected], [PathType.Direct]
-                ),
-                beta_client.wait_for_state_peer(
-                    alpha.public_key, [State.Connected], [PathType.Direct]
-                ),
-            ),
-            60,
+    ],
+)
+async def test_mesh_network_switch_direct(
+    alpha_setup_params: SetupParameters, beta_setup_params: SetupParameters
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        env = await setup_mesh_nodes(
+            exit_stack, [alpha_setup_params, beta_setup_params]
         )
+        alpha, beta = env.nodes
+        (network_switcher, alpha_connection), *_ = [
+            (conn.network_switcher, conn.connection) for conn in env.connections
+        ]
+        assert network_switcher
+        alpha_client, beta_client = env.clients
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 
-        await network_switcher.switch_to_secondary_network()
-        await alpha_client.notify_network_change()
-
-        await testing.wait_lengthy(
-            alpha_client.wait_for_event_on_any_derp([State.Connected])
+        derp_connected_future = alpha_client.wait_for_event_on_any_derp(
+            [State.Connected]
         )
-
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_peer(
-                    beta.public_key, [State.Connected], [PathType.Relay]
-                ),
-                beta_client.wait_for_state_peer(
-                    alpha.public_key, [State.Connected], [PathType.Relay]
-                ),
-            )
-        )
-        await testing.wait_defined(
-            asyncio.gather(
-                alpha_client.wait_for_state_peer(
-                    beta.public_key, [State.Connected], [PathType.Direct]
-                ),
-                beta_client.wait_for_state_peer(
-                    alpha.public_key, [State.Connected], [PathType.Direct]
-                ),
+        peers_connected_relay_future = asyncio.gather(
+            alpha_client.wait_for_event_peer(
+                beta.public_key, [State.Connected], [PathType.Relay]
             ),
-            60,
+            beta_client.wait_for_event_peer(
+                alpha.public_key, [State.Connected], [PathType.Relay]
+            ),
         )
+        peers_connected_direct_future = asyncio.gather(
+            alpha_client.wait_for_event_peer(
+                beta.public_key, [State.Connected], [PathType.Direct]
+            ),
+            beta_client.wait_for_event_peer(
+                alpha.public_key, [State.Connected], [PathType.Direct]
+            ),
+        )
+        async with run_async_contexts(
+            [
+                derp_connected_future,
+                peers_connected_relay_future,
+                peers_connected_direct_future,
+            ]
+        ) as (derp, relay, direct):
+            await network_switcher.switch_to_secondary_network()
+            await alpha_client.notify_network_change()
+            await derp
+            await relay
+            await direct
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_lengthy(ping.wait_for_next_ping())

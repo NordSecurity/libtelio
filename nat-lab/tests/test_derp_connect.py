@@ -1,13 +1,13 @@
 import asyncio
 import os
 import pytest
-import telio
 from config import DERP_PRIMARY, DERP_SECONDARY, DERP_TERTIARY, DERP_SERVERS
 from contextlib import AsyncExitStack
-from mesh_api import API
+from helpers import SetupParameters, setup_mesh_nodes
 from telio import State
+from typing import List
 from utils import testing
-from utils.connection_util import ConnectionTag, new_connection_by_tag
+from utils.connection_util import ConnectionTag
 from utils.ping import Ping
 
 DERP1_IP = str(DERP_PRIMARY["ipv4"])
@@ -16,45 +16,22 @@ DERP3_IP = str(DERP_TERTIARY["ipv4"])
 
 
 @pytest.mark.asyncio
-# test client reconnection
-async def test_derp_reconnect_2clients() -> None:
+@pytest.mark.parametrize(
+    "setup_params",
+    [
+        [
+            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1),
+            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2),
+        ],
+    ],
+)
+async def test_derp_reconnect_2clients(setup_params: List[SetupParameters]) -> None:
     # TODO test tcp keepalive
     async with AsyncExitStack() as exit_stack:
-        api = API()
-        (alpha, beta) = api.default_config_two_nodes()
-
-        # ALPHA will use the cone nat : "nat-lab-cone-client-01-1
-        alpha_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
-        )
-
-        # BETA will use the cone nat : "nat-lab-cone-client-02-1
-        beta_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
-        )
-
-        alpha_client = await exit_stack.enter_async_context(
-            telio.Client(alpha_connection, alpha).run_meshnet(api.get_meshmap(alpha.id))
-        )
-
-        beta_client = await exit_stack.enter_async_context(
-            telio.Client(beta_connection, beta).run_meshnet(api.get_meshmap(beta.id))
-        )
-
-        # As the wireguard protocol routing scheme is based on the public key
-        # a handshake is needed to let both clients aware of the key of each other
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_derp(DERP1_IP, [State.Connected]),
-                beta_client.wait_for_state_derp(DERP1_IP, [State.Connected]),
-            )
-        )
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_peer(beta.public_key, [State.Connected]),
-                beta_client.wait_for_state_peer(alpha.public_key, [State.Connected]),
-            )
-        )
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+        _, beta = env.nodes
+        alpha_connection, _ = [conn.connection for conn in env.connections]
+        _, beta_client = env.clients
 
         # ==============================================================
         # Initial state (ping test 1):
@@ -83,10 +60,8 @@ async def test_derp_reconnect_2clients() -> None:
         )
 
         # Wait till connection is broken
-        await testing.wait_lengthy(
-            beta_client.wait_for_state_derp(
-                DERP1_IP, [State.Disconnected, State.Connecting]
-            )
+        await beta_client.wait_for_state_derp(
+            DERP1_IP, [State.Disconnected, State.Connecting]
         )
 
         # ==============================================================
@@ -99,9 +74,7 @@ async def test_derp_reconnect_2clients() -> None:
         #   /           \
         # [ALPHA]     [BETA]
 
-        await testing.wait_lengthy(
-            beta_client.wait_for_state_derp(DERP2_IP, [State.Connected])
-        )
+        await beta_client.wait_for_state_derp(DERP2_IP, [State.Connected])
 
         # Ping peer to check if connection truly works
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
@@ -109,50 +82,25 @@ async def test_derp_reconnect_2clients() -> None:
 
 
 @pytest.mark.asyncio
-# test client reconnection
-async def test_derp_reconnect_3clients() -> None:
+@pytest.mark.parametrize(
+    "setup_params",
+    [
+        [
+            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1),
+            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2),
+            SetupParameters(connection_tag=ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1),
+        ],
+    ],
+)
+async def test_derp_reconnect_3clients(setup_params: List[SetupParameters]) -> None:
     # TODO test tcp keepalive
     async with AsyncExitStack() as exit_stack:
-        api = API()
-        (alpha, beta, gamma) = api.default_config_three_nodes()
-
-        alpha_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
-        )
-        beta_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
-        )
-        gamma_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1)
-        )
-
-        alpha_client = await exit_stack.enter_async_context(
-            telio.Client(alpha_connection, alpha).run_meshnet(api.get_meshmap(alpha.id))
-        )
-        beta_client = await exit_stack.enter_async_context(
-            telio.Client(beta_connection, beta).run_meshnet(api.get_meshmap(beta.id))
-        )
-        gamma_client = await exit_stack.enter_async_context(
-            telio.Client(gamma_connection, gamma).run_meshnet(api.get_meshmap(gamma.id))
-        )
-
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_derp(DERP1_IP, [State.Connected]),
-                beta_client.wait_for_state_derp(DERP1_IP, [State.Connected]),
-                gamma_client.wait_for_state_derp(DERP1_IP, [State.Connected]),
-            )
-        )
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_peer(beta.public_key, [State.Connected]),
-                alpha_client.wait_for_state_peer(gamma.public_key, [State.Connected]),
-                beta_client.wait_for_state_peer(alpha.public_key, [State.Connected]),
-                beta_client.wait_for_state_peer(gamma.public_key, [State.Connected]),
-                gamma_client.wait_for_state_peer(alpha.public_key, [State.Connected]),
-                gamma_client.wait_for_state_peer(beta.public_key, [State.Connected]),
-            )
-        )
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+        _, beta, gamma = env.nodes
+        alpha_client, beta_client, gamma_client = env.clients
+        alpha_connection, beta_connection, gamma_connection = [
+            conn.connection for conn in env.connections
+        ]
 
         # ==============================================================
         # Initial state (ping test 1):
@@ -200,15 +148,11 @@ async def test_derp_reconnect_3clients() -> None:
             gamma_client.get_router().break_tcp_conn_to_host(DERP1_IP)
         )
 
-        await testing.wait_lengthy(
-            beta_client.wait_for_state_derp(
-                DERP1_IP, [State.Disconnected, State.Connecting]
-            )
+        await beta_client.wait_for_state_derp(
+            DERP1_IP, [State.Disconnected, State.Connecting]
         )
-        await testing.wait_lengthy(
-            gamma_client.wait_for_state_derp(
-                DERP1_IP, [State.Disconnected, State.Connecting]
-            )
+        await gamma_client.wait_for_state_derp(
+            DERP1_IP, [State.Disconnected, State.Connecting]
         )
 
         # ==============================================================
@@ -224,12 +168,10 @@ async def test_derp_reconnect_3clients() -> None:
         #
         # (* - connection to the escaped client, but DERP does not know):
 
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_derp(DERP1_IP, [State.Connected]),
-                beta_client.wait_for_state_derp(DERP2_IP, [State.Connected]),
-                gamma_client.wait_for_state_derp(DERP2_IP, [State.Connected]),
-            )
+        await asyncio.gather(
+            alpha_client.wait_for_state_derp(DERP1_IP, [State.Connected]),
+            beta_client.wait_for_state_derp(DERP2_IP, [State.Connected]),
+            gamma_client.wait_for_state_derp(DERP2_IP, [State.Connected]),
         )
 
         # ==============================================================
@@ -246,10 +188,8 @@ async def test_derp_reconnect_3clients() -> None:
         await exit_stack.enter_async_context(
             gamma_client.get_router().break_tcp_conn_to_host(DERP2_IP)
         )
-        await testing.wait_lengthy(
-            gamma_client.wait_for_state_derp(
-                DERP2_IP, [State.Disconnected, State.Connecting]
-            )
+        await gamma_client.wait_for_state_derp(
+            DERP2_IP, [State.Disconnected, State.Connecting]
         )
 
         # ==============================================================
@@ -264,12 +204,10 @@ async def test_derp_reconnect_3clients() -> None:
         #    |         |           |
         # [ALPHA]    [BETA]     [GAMMA]
 
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_derp(DERP1_IP, [State.Connected]),
-                beta_client.wait_for_state_derp(DERP2_IP, [State.Connected]),
-                gamma_client.wait_for_state_derp(DERP3_IP, [State.Connected]),
-            )
+        await asyncio.gather(
+            alpha_client.wait_for_state_derp(DERP1_IP, [State.Connected]),
+            beta_client.wait_for_state_derp(DERP2_IP, [State.Connected]),
+            gamma_client.wait_for_state_derp(DERP3_IP, [State.Connected]),
         )
 
         # Ping ALPHA --> BETA
@@ -287,8 +225,17 @@ async def test_derp_reconnect_3clients() -> None:
 
 
 @pytest.mark.asyncio
-# test client reconnection
-async def test_derp_restart() -> None:
+@pytest.mark.parametrize(
+    "setup_params",
+    [
+        [
+            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1),
+            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2),
+            SetupParameters(connection_tag=ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1),
+        ],
+    ],
+)
+async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
     async with AsyncExitStack() as exit_stack:
         DERP_SERVERS1 = [
             DERP_PRIMARY.copy(),
@@ -321,34 +268,16 @@ async def test_derp_restart() -> None:
         _DERP2_IP = str(DERP_SERVERS1[1]["ipv4"])
         _DERP3_IP = str(DERP_SERVERS1[2]["ipv4"])
 
-        api = API()
-        (alpha, beta, gamma) = api.default_config_three_nodes()
+        setup_params[0].derp_servers = DERP_SERVERS1
+        setup_params[1].derp_servers = DERP_SERVERS2
+        setup_params[2].derp_servers = DERP_SERVERS3
 
-        alpha_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
-        )
-        beta_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
-        )
-        gamma_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1)
-        )
-
-        alpha_client = await exit_stack.enter_async_context(
-            telio.Client(alpha_connection, alpha).run_meshnet(
-                api.get_meshmap(alpha.id, DERP_SERVERS1)
-            )
-        )
-        beta_client = await exit_stack.enter_async_context(
-            telio.Client(beta_connection, beta).run_meshnet(
-                api.get_meshmap(beta.id, DERP_SERVERS2)
-            )
-        )
-        gamma_client = await exit_stack.enter_async_context(
-            telio.Client(gamma_connection, gamma).run_meshnet(
-                api.get_meshmap(gamma.id, DERP_SERVERS3)
-            )
-        )
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+        _, beta, gamma = env.nodes
+        alpha_client, beta_client, gamma_client = env.clients
+        alpha_connection, beta_connection, gamma_connection = [
+            conn.connection for conn in env.connections
+        ]
 
         # ==============================================================
         # Initial state:
@@ -362,24 +291,6 @@ async def test_derp_restart() -> None:
         # [ALPHA]   [BETA]  [GAMMA]
         #
         # (w1: DERP->weight=1 for that client):
-
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_derp(_DERP1_IP, [State.Connected]),
-                beta_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
-                gamma_client.wait_for_state_derp(_DERP3_IP, [State.Connected]),
-            )
-        )
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_peer(beta.public_key, [State.Connected]),
-                alpha_client.wait_for_state_peer(gamma.public_key, [State.Connected]),
-                beta_client.wait_for_state_peer(alpha.public_key, [State.Connected]),
-                beta_client.wait_for_state_peer(gamma.public_key, [State.Connected]),
-                gamma_client.wait_for_state_peer(alpha.public_key, [State.Connected]),
-                gamma_client.wait_for_state_peer(beta.public_key, [State.Connected]),
-            )
-        )
 
         # Ping ALPHA --> BETA
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
@@ -407,12 +318,10 @@ async def test_derp_restart() -> None:
 
         os.system("docker restart nat-lab-derp-01-1")
 
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
-                beta_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
-                gamma_client.wait_for_state_derp(_DERP3_IP, [State.Connected]),
-            )
+        await asyncio.gather(
+            alpha_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
+            beta_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
+            gamma_client.wait_for_state_derp(_DERP3_IP, [State.Connected]),
         )
 
         # Ping ALPHA --> BETA
@@ -441,12 +350,10 @@ async def test_derp_restart() -> None:
 
         os.system("docker restart nat-lab-derp-02-1")
 
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_derp(_DERP1_IP, [State.Connected]),
-                beta_client.wait_for_state_derp(_DERP3_IP, [State.Connected]),
-                gamma_client.wait_for_state_derp(_DERP3_IP, [State.Connected]),
-            )
+        await asyncio.gather(
+            alpha_client.wait_for_state_derp(_DERP1_IP, [State.Connected]),
+            beta_client.wait_for_state_derp(_DERP3_IP, [State.Connected]),
+            gamma_client.wait_for_state_derp(_DERP3_IP, [State.Connected]),
         )
 
         # Ping ALPHA --> BETA
@@ -475,12 +382,10 @@ async def test_derp_restart() -> None:
 
         os.system("docker restart nat-lab-derp-03-1")
 
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_derp(_DERP1_IP, [State.Connected]),
-                beta_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
-                gamma_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
-            )
+        await asyncio.gather(
+            alpha_client.wait_for_state_derp(_DERP1_IP, [State.Connected]),
+            beta_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
+            gamma_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
         )
 
         # Ping ALPHA --> BETA
@@ -509,38 +414,21 @@ async def test_derp_restart() -> None:
 
 
 @pytest.mark.asyncio
-async def test_derp_server_list_exhaustion() -> None:
+@pytest.mark.parametrize(
+    "setup_params",
+    [
+        [
+            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1),
+            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2),
+        ],
+    ],
+)
+async def test_derp_server_list_exhaustion(setup_params: List[SetupParameters]) -> None:
     async with AsyncExitStack() as exit_stack:
-        api = API()
-        (alpha, beta) = api.default_config_two_nodes()
-
-        alpha_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
-        )
-        beta_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
-        )
-
-        alpha_client = await exit_stack.enter_async_context(
-            telio.Client(alpha_connection, alpha).run_meshnet(api.get_meshmap(alpha.id))
-        )
-        beta_client = await exit_stack.enter_async_context(
-            telio.Client(beta_connection, beta).run_meshnet(api.get_meshmap(beta.id))
-        )
-
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_on_any_derp([State.Connected]),
-                beta_client.wait_for_state_on_any_derp([State.Connected]),
-            )
-        )
-
-        await testing.wait_lengthy(
-            asyncio.gather(
-                alpha_client.wait_for_state_peer(beta.public_key, [State.Connected]),
-                beta_client.wait_for_state_peer(alpha.public_key, [State.Connected]),
-            )
-        )
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+        _, beta = env.nodes
+        _, beta_client = env.clients
+        alpha_connection, _ = [conn.connection for conn in env.connections]
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
@@ -555,12 +443,10 @@ async def test_derp_server_list_exhaustion() -> None:
                 )
 
             # Every derp connection should be broken at this point
-            await testing.wait_lengthy(beta_client.wait_for_every_derp_disconnection())
+            await beta_client.wait_for_every_derp_disconnection()
 
         # iptables rules are dropped already
-        await testing.wait_lengthy(
-            beta_client.wait_for_state_on_any_derp([State.Connected])
-        )
+        await beta_client.wait_for_state_on_any_derp([State.Connected])
 
         # Ping peer to check if connection truly works
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:

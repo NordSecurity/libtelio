@@ -9,10 +9,10 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from dataclasses_json import dataclass_json, DataClassJsonMixin
 from enum import Enum
-from mesh_api import Node
+from mesh_api import Node, Meshmap
 from telio_features import TelioFeatures
-from typing import List, Dict, Any, Set, Optional, AsyncIterator
-from utils import testing, asyncio_util
+from typing import List, Set, Optional, AsyncIterator
+from utils import asyncio_util
 from utils.connection import Connection, TargetOS
 from utils.connection_util import get_libtelio_binary_path
 from utils.output_notifier import OutputNotifier
@@ -191,10 +191,18 @@ class Runtime:
         public_key: str,
         states: List[State],
         paths: List[PathType],
+        is_exit: bool = False,
+        is_vpn: bool = False,
     ) -> None:
         while True:
             peer = self.get_peer_info(public_key)
-            if peer and peer.path in paths and peer.state in states:
+            if (
+                peer
+                and peer.path in paths
+                and peer.state in states
+                and is_exit == peer.is_exit
+                and is_vpn == peer.is_vpn
+            ):
                 return
             await asyncio.sleep(0.1)
 
@@ -203,6 +211,8 @@ class Runtime:
         public_key: str,
         states: List[State],
         paths: List[PathType],
+        is_exit: bool = False,
+        is_vpn: bool = False,
     ) -> None:
         def _get_events() -> List[PeerInfo]:
             return [
@@ -212,6 +222,8 @@ class Runtime:
                 and peer.public_key == public_key
                 and peer.path in paths
                 and peer.state in states
+                and is_exit == peer.is_exit
+                and is_vpn == peer.is_vpn
             ]
 
         old_events = _get_events()
@@ -336,31 +348,45 @@ class Events:
         self,
         public_key: str,
         state: List[State],
-        path: List[PathType],
+        paths: List[PathType],
+        is_exit: bool = False,
+        is_vpn: bool = False,
+        timeout: Optional[float] = None,
     ) -> None:
-        await self._runtime.notify_peer_state(public_key, state, path)
+        await asyncio.wait_for(
+            self._runtime.notify_peer_state(public_key, state, paths, is_exit, is_vpn),
+            timeout if timeout else 60 if PathType.Direct in paths else 30,
+        )
 
     async def wait_for_event_peer(
         self,
         public_key: str,
         states: List[State],
         paths: List[PathType],
+        is_exit: bool = False,
+        is_vpn: bool = False,
+        timeout: Optional[float] = None,
     ) -> None:
-        await self._runtime.notify_peer_event(public_key, states, paths)
+        await asyncio.wait_for(
+            self._runtime.notify_peer_event(public_key, states, paths, is_exit, is_vpn),
+            timeout if timeout else 60 if PathType.Direct in paths else 30,
+        )
 
     async def wait_for_state_derp(
-        self,
-        server_ip: str,
-        states: List[State],
+        self, server_ip: str, states: List[State], timeout: Optional[float] = None
     ) -> None:
-        await self._runtime.notify_derp_state(server_ip, states)
+        await asyncio.wait_for(
+            self._runtime.notify_derp_state(server_ip, states),
+            timeout if timeout else 30,
+        )
 
     async def wait_for_event_derp(
-        self,
-        server_ip: str,
-        states: List[State],
+        self, server_ip: str, states: List[State], timeout: Optional[float] = None
     ) -> None:
-        await self._runtime.notify_derp_event(server_ip, states)
+        await asyncio.wait_for(
+            self._runtime.notify_derp_event(server_ip, states),
+            timeout if timeout else 30,
+        )
 
 
 class Client:
@@ -384,7 +410,9 @@ class Client:
         self._quit = False
 
     @asynccontextmanager
-    async def run(self, telio_v3=False) -> AsyncIterator["Client"]:
+    async def run(
+        self, meshmap: Optional[Meshmap] = None, telio_v3: bool = False
+    ) -> AsyncIterator["Client"]:
         async def on_stdout(stdout: str) -> None:
             supress_print_list = [
                 "MESSAGE_DONE=",
@@ -396,7 +424,13 @@ class Client:
             ]
             for line in stdout.splitlines():
                 if not any(string in line for string in supress_print_list):
-                    print(f"[{self._node.name}]: {line}")
+                    print(f"[{self._node.name}]: stdout: {line}")
+                if self._runtime:
+                    self._runtime.handle_output_line(line)
+
+        async def on_stderr(stdout: str) -> None:
+            for line in stdout.splitlines():
+                print(f"[{self._node.name}]: stderr: {line}")
                 if self._runtime:
                     self._runtime.handle_output_line(line)
 
@@ -421,7 +455,9 @@ class Client:
                     f"-f {self._telio_features.to_json()}",
                 ]
             )
-        async with self._process.run(stdout_callback=on_stdout):
+        async with self._process.run(
+            stdout_callback=on_stdout, stderr_callback=on_stderr
+        ):
             try:
                 await self._process.wait_stdin_ready()
                 await self._write_command(
@@ -434,24 +470,18 @@ class Client:
                     ],
                 )
                 async with asyncio_util.run_async_context(self._event_request_loop()):
+                    if meshmap:
+                        await self.set_meshmap(meshmap)
                     yield self
             finally:
                 if self._process.is_executing():
-                    await testing.wait_long(self.stop_device())
+                    await self.stop_device()
                     self._quit = True
                 if self._router:
                     await self._router.delete_vpn_route()
                     await self._router.delete_exit_node_route()
                     await self._router.delete_interface()
                 await self.save_logs()
-
-    @asynccontextmanager
-    async def run_meshnet(
-        self, meshmap: Dict[str, Any], telio_v3=False
-    ) -> AsyncIterator["Client"]:
-        async with self.run(telio_v3):
-            await self.set_meshmap(meshmap)
-            yield self
 
     async def quit(self):
         self._quit = True
@@ -469,10 +499,21 @@ class Client:
         )
 
     async def wait_for_state_peer(
-        self, public_key, states: List[State], paths: Optional[List[PathType]] = None
+        self,
+        public_key,
+        states: List[State],
+        paths: Optional[List[PathType]] = None,
+        is_exit: bool = False,
+        is_vpn: bool = False,
+        timeout: Optional[float] = None,
     ) -> None:
         await self.get_events().wait_for_state_peer(
-            public_key, states, paths if paths else [PathType.Relay]
+            public_key,
+            states,
+            paths if paths else [PathType.Relay],
+            is_exit,
+            is_vpn,
+            timeout,
         )
 
     async def wait_for_event_peer(
@@ -480,18 +521,32 @@ class Client:
         public_key: str,
         states: List[State],
         paths: Optional[List[PathType]] = None,
+        is_exit: bool = False,
+        is_vpn: bool = False,
+        timeout: Optional[float] = None,
     ) -> None:
         await self.get_events().wait_for_event_peer(
-            public_key, states, paths if paths else [PathType.Relay]
+            public_key,
+            states,
+            paths if paths else [PathType.Relay],
+            is_exit,
+            is_vpn,
+            timeout,
         )
 
-    async def wait_for_state_derp(self, derp_ip, states: List[State]) -> None:
-        await self.get_events().wait_for_state_derp(derp_ip, states)
+    async def wait_for_state_derp(
+        self, derp_ip, states: List[State], timeout: Optional[float] = None
+    ) -> None:
+        await self.get_events().wait_for_state_derp(derp_ip, states, timeout)
 
-    async def wait_for_state_on_any_derp(self, states: List[State]) -> None:
+    async def wait_for_state_on_any_derp(
+        self, states: List[State], timeout: Optional[float] = None
+    ) -> None:
         async with asyncio_util.run_async_contexts(
             [
-                self.get_events().wait_for_state_derp(str(derp["ipv4"]), states)
+                self.get_events().wait_for_state_derp(
+                    str(derp["ipv4"]), states, timeout
+                )
                 for derp in DERP_SERVERS
             ]
         ) as futures:
@@ -501,11 +556,13 @@ class Client:
             except asyncio.CancelledError:
                 pass
 
-    async def wait_for_every_derp_disconnection(self) -> None:
+    async def wait_for_every_derp_disconnection(
+        self, timeout: Optional[float] = None
+    ) -> None:
         async with asyncio_util.run_async_contexts(
             [
                 self.get_events().wait_for_state_derp(
-                    str(derp["ipv4"]), [State.Disconnected, State.Connecting]
+                    str(derp["ipv4"]), [State.Disconnected, State.Connecting], timeout
                 )
                 for derp in DERP_SERVERS
             ]
@@ -516,13 +573,19 @@ class Client:
             except asyncio.CancelledError:
                 pass
 
-    async def wait_for_event_derp(self, derp_ip, states: List[State]) -> None:
-        await self.get_events().wait_for_event_derp(derp_ip, states)
+    async def wait_for_event_derp(
+        self, derp_ip, states: List[State], timeout: Optional[float] = None
+    ) -> None:
+        await self.get_events().wait_for_event_derp(derp_ip, states, timeout)
 
-    async def wait_for_event_on_any_derp(self, states: List[State]) -> None:
+    async def wait_for_event_on_any_derp(
+        self, states: List[State], timeout: Optional[float] = None
+    ) -> None:
         async with asyncio_util.run_async_contexts(
             [
-                self.get_events().wait_for_event_derp(str(derp["ipv4"]), states)
+                self.get_events().wait_for_event_derp(
+                    str(derp["ipv4"]), states, timeout
+                )
                 for derp in DERP_SERVERS
             ]
         ) as futures:
@@ -532,7 +595,7 @@ class Client:
             except asyncio.CancelledError:
                 pass
 
-    async def set_meshmap(self, meshmap: Dict[str, Any]) -> None:
+    async def set_meshmap(self, meshmap: Meshmap) -> None:
         made_changes = await self._configure_interface()
 
         # Linux native WG takes ~1.5s to setup listen port for WG interface. Since
@@ -555,30 +618,64 @@ class Client:
     async def receive_ping(self):
         await self._write_command(["mesh", "ping"])
 
-    async def send_stun(self):
-        await self._write_command(["mesh", "stun"])
-
-    async def igd(self):
-        await self._write_command(["mesh", "igd"])
-
-    async def connect_to_vpn(self, ip, port, public_key) -> None:
+    async def connect_to_vpn(
+        self, ip: str, port: int, public_key: str, timeout: float = 15
+    ) -> None:
         await self._configure_interface()
         await self.get_router().create_vpn_route()
-        self.get_runtime().allowed_pub_keys.add(public_key)
-        await self._write_command(["dev", "con", public_key, f"{ip}:{port}"])
+        async with asyncio_util.run_async_context(
+            self.wait_for_event_peer(
+                public_key, [State.Connected], list(PathType), is_exit=True, is_vpn=True
+            )
+        ) as event:
+            self.get_runtime().allowed_pub_keys.add(public_key)
+            await asyncio.wait_for(
+                asyncio.gather(
+                    *[
+                        self._write_command(["dev", "con", public_key, f"{ip}:{port}"]),
+                        event,
+                    ]
+                ),
+                timeout,
+            )
 
-    async def disconnect_from_vpn(
-        self, public_key, paths: Optional[List[PathType]] = None
+    async def disconnect_from_vpn(self, public_key: str, timeout: float = 5) -> None:
+        async with asyncio_util.run_async_context(
+            self.wait_for_event_peer(
+                public_key,
+                [State.Disconnected],
+                list(PathType),
+                is_exit=True,
+                is_vpn=True,
+            )
+        ) as event:
+            await asyncio.wait_for(
+                asyncio.gather(
+                    *[
+                        self._write_command(["vpn", "off"]),
+                        event,
+                        self.get_router().delete_vpn_route(),
+                    ]
+                ),
+                timeout,
+            )
+
+    async def disconnect_from_exit_node(
+        self, public_key: str, timeout: float = 5
     ) -> None:
-        await self._write_command(["vpn", "off"])
-        await self.wait_for_state_peer(
-            public_key, [State.Disconnected], paths if paths else [PathType.Relay]
-        )
-        await self.get_router().delete_vpn_route()
-
-    async def disconnect_from_exit_nodes(self) -> None:
-        await self._write_command(["vpn", "off"])
-        await self.get_router().delete_vpn_route()
+        async with asyncio_util.run_async_context(
+            self.wait_for_event_peer(public_key, [State.Connected], list(PathType))
+        ) as event:
+            await asyncio.wait_for(
+                asyncio.gather(
+                    *[
+                        self._write_command(["vpn", "off"]),
+                        event,
+                        self.get_router().delete_vpn_route(),
+                    ]
+                ),
+                timeout,
+            )
 
     async def enable_magic_dns(self, forward_servers: List[str]) -> None:
         await self._write_command(["dns", "on"] + forward_servers)
@@ -599,10 +696,23 @@ class Client:
 
         return False
 
-    async def connect_to_exit_node(self, public_key: str) -> None:
+    async def connect_to_exit_node(self, public_key: str, timeout: float = 15) -> None:
         await self._configure_interface()
         await self.get_router().create_vpn_route()
-        await self._write_command(["dev", "con", public_key])
+        async with asyncio_util.run_async_context(
+            self.wait_for_event_peer(
+                public_key, [State.Connected], list(PathType), is_exit=True
+            )
+        ) as event:
+            await asyncio.wait_for(
+                asyncio.gather(
+                    *[
+                        self._write_command(["dev", "con", public_key]),
+                        event,
+                    ]
+                ),
+                timeout,
+            )
 
     def get_router(self) -> Router:
         assert self._router
@@ -624,8 +734,8 @@ class Client:
         assert self._process
         return self._process.get_stdout()
 
-    async def stop_device(self) -> None:
-        await self._write_command(["dev", "stop"])
+    async def stop_device(self, timeout: float = 5) -> None:
+        await asyncio.wait_for(self._write_command(["dev", "stop"]), timeout)
         self._interface_configured = False
         assert Counter(self.get_runtime().get_started_tasks()) == Counter(
             self.get_runtime().get_stopped_tasks()
