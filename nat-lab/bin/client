@@ -19,6 +19,6 @@ sysctl -w net.ipv6.conf.all.forwarding=1
 iptables -A INPUT -m conntrack --ctstate ESTABLISHED -j ACCEPT
 ip6tables -A INPUT -m conntrack --ctstate ESTABLISHED -j ACCEPT
 
-/libtelio-build/libtelio/nat-lab/bin/configure_route.sh primary
+/libtelio/nat-lab/bin/configure_route.sh primary
 
 sleep infinity

@@ -3,7 +3,13 @@
 import argparse
 import os
 import subprocess
+import sys
 from typing import List
+
+# isort: off
+PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/..")
+sys.path += [f"{PROJECT_ROOT}/ci"]
+from env import LIBTELIO_ENV_NAT_LAB_DEPS_TAG  # type: ignore # pylint: disable=import-error, wrong-import-position
 
 
 def run_command(command, env=None):
@@ -29,7 +35,11 @@ def run_command_with_output(command, hide_output=False):
 def start():
     run_command(
         ["docker", "compose", "--profile", "base", "build", "--no-cache"],
-        env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"},
+        env={
+            "COMPOSE_DOCKER_CLI_BUILD": "1",
+            "DOCKER_BUILDKIT": "1",
+            "LIBTELIO_ENV_NAT_LAB_DEPS_TAG": LIBTELIO_ENV_NAT_LAB_DEPS_TAG,
+        },
     )
     run_command(
         ["docker", "compose", "up", "-d"],

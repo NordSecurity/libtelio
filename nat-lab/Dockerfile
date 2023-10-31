@@ -1,7 +1,7 @@
-ARG CONTAINER_REGISTRY
-ARG NAT_LAB_DEPS_TAG
+ARG LIBTELIO_ENV_SEC_CONTAINER_REGISTRY
+ARG LIBTELIO_ENV_NAT_LAB_DEPS_TAG
 
-FROM ${CONTAINER_REGISTRY}/low-level-hacks/vpn/client/libtelio-build/natlab-deps-common:${NAT_LAB_DEPS_TAG}
+FROM ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/vpn/client/libtelio-build/natlab-deps-common:${LIBTELIO_ENV_NAT_LAB_DEPS_TAG}
 LABEL org.opencontainers.image.authors="info@nordsec.com"
 
 COPY --chmod=0755 bin/ /opt/bin/
