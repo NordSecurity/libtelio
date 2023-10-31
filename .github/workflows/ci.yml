@@ -33,6 +33,9 @@ jobs:
   coverage:
     needs: trigger
     uses: ./.github/workflows/coverage.yml
+  nagger:
+    needs: trigger
+    uses: ./.github/workflows/nagger.yml
 
   check-all-green:
     needs:
