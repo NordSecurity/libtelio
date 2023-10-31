@@ -491,7 +491,6 @@ impl Analytics {
         for pk in self.local_nodes.keys() {
             let heartbeat = HeartbeatMessage::request();
 
-            #[allow(mpsc_blocking_send)]
             if self.io.chan.tx.send((*pk, heartbeat)).await.is_err() {
                 telio_log_warn!(
                     "Failed to send Nurse mesh Heartbeat request to node :{:?}",
@@ -577,7 +576,6 @@ impl Analytics {
             ),
         );
 
-        #[allow(mpsc_blocking_send)]
         if self.io.chan.tx.send((pk, heartbeat)).await.is_err() {
             telio_log_warn!(
                 "Failed to send Nurse mesh heartbeat message to node :{:?}",
@@ -862,7 +860,6 @@ impl Analytics {
         );
 
         // Send heartbeat info to Nurse
-        #[allow(mpsc_blocking_send)]
         if self
             .io
             .analytics_channel
