@@ -160,7 +160,7 @@ impl DynamicWg {
     ///         fn set_tunnel_interface(&self, interface: u64);
     ///         }
     ///     }
-    ///     let firewall = Arc::new(StatefullFirewall::new(true));
+    ///     let firewall = Arc::new(StatefullFirewall::new(true, false));
     ///     let firewall_filter_inbound_packets = {
     ///         let fw = firewall.clone();
     ///         move |peer: &[u8; 32], packet: &[u8]| fw.process_inbound_packet(peer, packet)

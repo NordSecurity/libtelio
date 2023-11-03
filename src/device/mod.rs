@@ -733,7 +733,7 @@ impl Runtime {
         features: Features,
         protect: Option<Protect>,
     ) -> Result<Self> {
-        let firewall = Arc::new(StatefullFirewall::new(features.ipv6));
+        let firewall = Arc::new(StatefullFirewall::new(features.ipv6, true));
         let firewall_filter_inbound_packets = {
             let fw = firewall.clone();
             move |peer: &[u8; 32], packet: &[u8]| fw.process_inbound_packet(peer, packet)
