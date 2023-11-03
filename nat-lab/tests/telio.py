@@ -17,7 +17,7 @@ from utils.connection import Connection, TargetOS
 from utils.connection_util import get_libtelio_binary_path
 from utils.output_notifier import OutputNotifier
 from utils.process import Process
-from utils.router import Router, new_router
+from utils.router import Router, new_router, IPStack
 
 
 # Equivalent of `libtelio/telio-wg/src/uapi.rs`
@@ -396,6 +396,7 @@ class Client:
         node: Node,
         adapter_type: AdapterType = AdapterType.Default,
         telio_features: TelioFeatures = TelioFeatures(),
+        force_ipv6_feature: bool = False,
     ) -> None:
         self._router: Optional[Router] = None
         self._events: Optional[Events] = None
@@ -408,6 +409,13 @@ class Client:
         self._adapter_type = adapter_type
         self._telio_features = telio_features
         self._quit = False
+
+        # Automatically enables IPv6 feature when the IPv6 stack is enabled
+        if (
+            self._node.ip_stack in (IPStack.IPv4v6, IPStack.IPv6)
+            and not force_ipv6_feature
+        ):
+            self._telio_features.ipv6 = True
 
     @asynccontextmanager
     async def run(

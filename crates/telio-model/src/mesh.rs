@@ -3,9 +3,8 @@
 use super::EndpointMap as RelayEndpointMap;
 
 use crate::api_config::PathType;
-use ipnetwork::IpNetworkError;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, convert::TryFrom, net::IpAddr};
+use std::{collections::HashMap, net::IpAddr};
 use telio_crypto::PublicKey;
 
 use super::config::{Config, Peer, PeerBase};
@@ -100,27 +99,6 @@ pub struct Map {
     pub allowed_ips: Vec<IpNetwork>,
     /// Hash map of all the nodes in the network mesh
     pub nodes: HashMap<PublicKey, Node>,
-}
-
-impl TryFrom<&ExitNode> for Node {
-    type Error = IpNetworkError;
-
-    fn try_from(other: &ExitNode) -> Result<Self, IpNetworkError> {
-        let address_v4 = "0.0.0.0/0".parse()?;
-        let address_v6 = "::/0".parse()?;
-        Ok(Self {
-            public_key: other.public_key,
-            is_exit: true,
-            is_vpn: other.endpoint.is_some(),
-            allowed_ips: other
-                .allowed_ips
-                .as_ref()
-                .cloned()
-                .unwrap_or_else(|| vec![address_v4, address_v6]),
-            endpoint: other.endpoint,
-            ..Default::default()
-        })
-    }
 }
 
 impl From<&PeerBase> for Node {

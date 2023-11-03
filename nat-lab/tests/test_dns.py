@@ -6,7 +6,7 @@ import pytest
 import re
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_api, setup_environment, setup_mesh_nodes
-from telio import AdapterType
+from telio import AdapterType, TelioFeatures
 from utils import testing
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import ConnectionTag, generate_connection_tracker_config
@@ -406,6 +406,7 @@ async def test_dns_after_mesh_off(alpha_ip_stack: IPStack) -> None:
                             ConnectionTag.DOCKER_CONE_CLIENT_1
                         ),
                         derp_servers=[],
+                        features=TelioFeatures(ipv6=True),
                     )
                 ],
                 provided_api=api,

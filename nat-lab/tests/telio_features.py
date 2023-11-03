@@ -61,3 +61,4 @@ class TelioFeatures(DataClassJsonMixin):
     direct: Optional[Direct] = None
     lana: Optional[Lana] = None
     nurse: Optional[Nurse] = None
+    ipv6: bool = False
