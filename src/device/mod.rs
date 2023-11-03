@@ -48,7 +48,7 @@ use std::collections::HashMap;
 use std::{
     collections::{hash_map::Entry, HashSet},
     future::Future,
-    io::{Error as IoError, ErrorKind},
+    io::{self, Error as IoError, ErrorKind},
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
     time::Duration,
@@ -742,6 +742,14 @@ impl Runtime {
             let fw = firewall.clone();
             move |peer: &[u8; 32], packet: &[u8]| fw.process_outbound_packet(peer, packet)
         };
+        let firewall_reset_connections = {
+            let fw = firewall.clone();
+            move |sink4: &mut dyn io::Write, sink6: &mut dyn io::Write| {
+                if let Err(err) = fw.reset_connections(sink4, sink6) {
+                    telio_log_warn!("Failed to reset all connections: {err:?}");
+                }
+            }
+        };
 
         let socket_pool = Arc::new({
             if let Some(protect) = protect.clone() {
@@ -802,6 +810,7 @@ impl Runtime {
                         firewall_process_outbound_callback: Some(Arc::new(
                             firewall_filter_outbound_packets,
                         )),
+                        firewall_reset_connections: Some(Arc::new(firewall_reset_connections)),
                     },
                 )?);
                 let wg_events = wg_events.rx;
@@ -821,6 +830,7 @@ impl Runtime {
                             firewall_process_outbound_callback: Some(Arc::new(
                                 firewall_filter_outbound_packets,
                             )),
+                            firewall_reset_connections: Some(Arc::new(firewall_reset_connections)),
                         }
                     ).await;
 
@@ -1422,9 +1432,18 @@ impl Runtime {
             return Err(Error::EndpointNotProvided);
         }
 
-        self.requested_state.exit_node = Some(exit_node);
+        let old_exit_node = self.requested_state.exit_node.replace(exit_node);
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
-            .await
+            .await?;
+
+        if old_exit_node.is_some() || self.requested_state.last_exit_node.is_some() {
+            self.entities
+                .wireguard_interface
+                .reset_existing_connections()
+                .await?;
+        }
+
+        Ok(())
     }
 
     async fn disconnect_exit_node(&mut self, node_key: &PublicKey) -> Result {

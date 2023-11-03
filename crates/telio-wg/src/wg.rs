@@ -19,7 +19,7 @@ use telio_task::{
 };
 
 use crate::{
-    adapter::{self, Adapter, AdapterType, Error, Tun},
+    adapter::{self, Adapter, AdapterType, Error, FirewallResetConnsCb, Tun},
     uapi::{self, AnalyticsEvent, Cmd, Event, Interface, Peer, PeerState, Response},
     FirewallCb,
 };
@@ -57,6 +57,9 @@ pub trait WireGuard: Send + Sync + 'static {
     ) -> Result<Option<Duration>, Error>;
     /// Stop adapter
     async fn stop(self);
+    /// Inject apropiate packets into the tunel to reset exising connections.
+    /// Used for forcing external clients to reconnect to public servers.
+    async fn reset_existing_connections(&self) -> Result<(), Error>;
 }
 
 /// WireGuard implementation allowing dynamic selection of implementation.
@@ -78,6 +81,9 @@ pub struct Config {
     pub firewall_process_inbound_callback: FirewallCb,
     /// Callback of firewall to process outgoing packets
     pub firewall_process_outbound_callback: FirewallCb,
+    /// Callback of firewall to create connection reset packets
+    /// for all active connections
+    pub firewall_reset_connections: FirewallResetConnsCb,
 }
 
 /// Events and analytics transmission channels
@@ -186,6 +192,7 @@ impl DynamicWg {
     ///                 Some(Arc::new(firewall_filter_inbound_packets)),
     ///             firewall_process_outbound_callback:
     ///                 Some(Arc::new(firewall_filter_outbound_packets)),
+    ///             firewall_reset_connections: None,
     ///         },
     ///     );
     /// }
@@ -230,6 +237,7 @@ impl DynamicWg {
             cfg.socket_pool,
             cfg.firewall_process_inbound_callback,
             cfg.firewall_process_outbound_callback,
+            cfg.firewall_reset_connections,
         )
     }
 
@@ -379,6 +387,16 @@ impl WireGuard for DynamicWg {
     async fn stop(mut self) {
         let _ = self.task.stop().await.resume_unwind();
     }
+
+    async fn reset_existing_connections(&self) -> Result<(), Error> {
+        task_exec!(&self.task, async move |s| {
+            s.adapter.inject_reset_packets().await;
+            Ok(())
+        })
+        .await?;
+
+        Ok(())
+    }
 }
 
 impl Config {
@@ -404,6 +422,7 @@ impl Config {
             socket_pool: self.socket_pool.clone(),
             firewall_process_inbound_callback: self.firewall_process_inbound_callback.clone(),
             firewall_process_outbound_callback: self.firewall_process_outbound_callback.clone(),
+            firewall_reset_connections: self.firewall_reset_connections.clone(),
         })
     }
 }
@@ -790,6 +809,7 @@ pub mod tests {
                 )?)),
                 firewall_process_inbound_callback: Default::default(),
                 firewall_process_outbound_callback: Default::default(),
+                firewall_reset_connections: None,
             })
         }
     }
