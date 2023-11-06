@@ -1492,64 +1492,30 @@ impl Runtime {
 
         // Find a peer with matching public key in meshnet_config and retrieve the needed
         // information about it from there
-        let meshnet_peer: Option<Peer> = match self
-            .requested_state
-            .meshnet_config
-            .as_ref()
-            .and_then(|config| config.peers.clone())
-            .and_then(|config_peers: Vec<Peer>| {
-                config_peers
-                    .iter()
-                    .cloned()
-                    .filter(|config_peer| config_peer.base.public_key == peer.public_key)
-                    .collect::<Vec<Peer>>()
-                    .first()
-                    .cloned()
-            }) {
-            Some(peer) => Some(peer),
-            None => self
-                .requested_state
-                .old_meshnet_config
-                .as_ref()
-                .and_then(|config| config.peers.clone())
-                .and_then(|config_peers| {
-                    config_peers
-                        .iter()
-                        .cloned()
-                        .filter(|config_peer| config_peer.base.public_key == peer.public_key)
-                        .collect::<Vec<Peer>>()
-                        .first()
-                        .cloned()
-                }),
+        let get_config_peer = |config: Option<&Config>| {
+            config
+                .and_then(|cfg| cfg.peers.as_ref())?
+                .iter()
+                .find(|&p| p.base.public_key == peer.public_key)
+                .cloned()
         };
+        let meshnet_peer: Option<Peer> =
+            get_config_peer(self.requested_state.meshnet_config.as_ref())
+                .or_else(|| get_config_peer(self.requested_state.old_meshnet_config.as_ref()));
 
         // Resolve what type of path is used
         let path_type = {
-            let map = self
-                .entities
+            self.entities
                 .proxy
                 .get_endpoint_map()
                 .await
                 .unwrap_or_else(|err| {
                     telio_log_warn!("Failed to get proxy endpoint map: {}", err);
                     Default::default()
-                });
-            match &endpoint {
-                Some(actual) => map
-                    .get(&peer.public_key)
-                    .map(|proxy| {
-                        if proxy == actual {
-                            PathType::Relay
-                        } else {
-                            PathType::Direct
-                        }
-                    })
-                    .unwrap_or(PathType::Direct),
-                None => {
-                    // TODO: Maybe we should introduce None state after all ?
-                    PathType::Direct
-                }
-            }
+                })
+                .get(&peer.public_key)
+                .and_then(|proxy| endpoint.filter(|actual| proxy == actual))
+                .map_or(PathType::Direct, |_| PathType::Relay)
         };
 
         // Build a node to report event about, we need to report about either meshnet peers
