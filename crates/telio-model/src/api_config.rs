@@ -240,6 +240,11 @@ impl Default for FeatureValidateKeys {
     }
 }
 
+/// Turns on connection resets upon VPN server change
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(transparent)]
+pub struct FeatureBoringtunResetConns(pub bool);
+
 fn deserialize_providers<'de, D>(de: D) -> Result<Option<HashSet<EndpointProvider>>, D::Error>
 where
     D: Deserializer<'de>,
@@ -294,6 +299,9 @@ pub struct Features {
     /// Nicknames support
     #[serde(default)]
     pub nicknames: bool,
+    /// Flag to turn on connection reset upon VPN server change for boringtun adapter
+    #[serde(default)]
+    pub boringtun_reset_connections: FeatureBoringtunResetConns,
 }
 
 impl FeaturePaths {
@@ -396,7 +404,8 @@ mod tests {
             },
             "validate_keys": false,
             "ipv6": true,
-            "nicknames": true
+            "nicknames": true,
+            "boringtun_reset_connections": true
         }"#;
 
     static EXPECTED_FEATURES: Lazy<Features> = Lazy::new(|| Features {
@@ -443,6 +452,7 @@ mod tests {
         validate_keys: FeatureValidateKeys(false),
         ipv6: true,
         nicknames: true,
+        boringtun_reset_connections: FeatureBoringtunResetConns(true),
     });
 
     static EXPECTED_FEATURES_WITHOUT_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
@@ -483,6 +493,7 @@ mod tests {
         validate_keys: Default::default(),
         ipv6: false,
         nicknames: false,
+        boringtun_reset_connections: FeatureBoringtunResetConns(false),
     });
 
     #[test]
@@ -652,6 +663,7 @@ mod tests {
             validate_keys: Default::default(),
             ipv6: false,
             nicknames: false,
+            boringtun_reset_connections: Default::default(),
         };
 
         let empty_qos_features = Features {
@@ -676,6 +688,7 @@ mod tests {
             validate_keys: Default::default(),
             ipv6: false,
             nicknames: false,
+            boringtun_reset_connections: Default::default(),
         };
 
         let no_qos_features = Features {
@@ -695,6 +708,7 @@ mod tests {
             validate_keys: Default::default(),
             ipv6: false,
             nicknames: false,
+            boringtun_reset_connections: Default::default(),
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -733,6 +747,7 @@ mod tests {
             validate_keys: Default::default(),
             ipv6: false,
             nicknames: false,
+            boringtun_reset_connections: Default::default(),
         };
 
         let empty_features = Features {
@@ -748,6 +763,7 @@ mod tests {
             validate_keys: Default::default(),
             ipv6: false,
             nicknames: false,
+            boringtun_reset_connections: Default::default(),
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -787,6 +803,7 @@ mod tests {
             validate_keys: Default::default(),
             ipv6: false,
             nicknames: false,
+            boringtun_reset_connections: Default::default(),
         };
 
         assert_eq!(Features::default(), expected_defaults);

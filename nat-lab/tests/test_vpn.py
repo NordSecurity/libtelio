@@ -4,6 +4,7 @@ import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_connections
 from telio import AdapterType, Client
+from telio_features import TelioFeatures
 from utils import testing, stun
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionLimits
@@ -268,6 +269,7 @@ async def test_vpn_reconnect(
                 connection_tag=ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
                 adapter_type=AdapterType.BoringTun,
                 ip_stack=IPStack.IPv4,
+                features=TelioFeatures(boringtun_reset_connections=True),
             )
         ),
         # TODO(msz): IPv6 public server, it doesn't work with the current VPN implementation
@@ -276,6 +278,7 @@ async def test_vpn_reconnect(
         #         connection_tag=ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
         #         adapter_type=AdapterType.BoringTun,
         #         ip_stack=IPStack.IPv6,
+        #         telio_features=TelioFeatures(boringtun_reset_connections=True),
         #     )
         # ),
     ],

@@ -733,7 +733,11 @@ impl Runtime {
         features: Features,
         protect: Option<Protect>,
     ) -> Result<Self> {
-        let firewall = Arc::new(StatefullFirewall::new(features.ipv6, true));
+        let firewall = Arc::new(StatefullFirewall::new(
+            features.ipv6,
+            features.boringtun_reset_connections.0,
+        ));
+
         let firewall_filter_inbound_packets = {
             let fw = firewall.clone();
             move |peer: &[u8; 32], packet: &[u8]| fw.process_inbound_packet(peer, packet)
@@ -742,13 +746,16 @@ impl Runtime {
             let fw = firewall.clone();
             move |peer: &[u8; 32], packet: &[u8]| fw.process_outbound_packet(peer, packet)
         };
-        let firewall_reset_connections = {
+        let firewall_reset_connections = if features.boringtun_reset_connections.0 {
             let fw = firewall.clone();
-            move |sink4: &mut dyn io::Write, sink6: &mut dyn io::Write| {
+            let cb = move |sink4: &mut dyn io::Write, sink6: &mut dyn io::Write| {
                 if let Err(err) = fw.reset_connections(sink4, sink6) {
                     telio_log_warn!("Failed to reset all connections: {err:?}");
                 }
-            }
+            };
+            Some(Arc::new(cb) as Arc<_>)
+        } else {
+            None
         };
 
         let socket_pool = Arc::new({
@@ -810,7 +817,7 @@ impl Runtime {
                         firewall_process_outbound_callback: Some(Arc::new(
                             firewall_filter_outbound_packets,
                         )),
-                        firewall_reset_connections: Some(Arc::new(firewall_reset_connections)),
+                        firewall_reset_connections,
                     },
                 )?);
                 let wg_events = wg_events.rx;
@@ -830,7 +837,7 @@ impl Runtime {
                             firewall_process_outbound_callback: Some(Arc::new(
                                 firewall_filter_outbound_packets,
                             )),
-                            firewall_reset_connections: Some(Arc::new(firewall_reset_connections)),
+                            firewall_reset_connections,
                         }
                     ).await;
 
