@@ -799,6 +799,7 @@ async def test_dns_nickname() -> None:
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
                         derp_1_limits=ConnectionLimits(1, 1),
                     ),
+                    features=TelioFeatures(nicknames=True),
                 ),
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
@@ -806,6 +807,7 @@ async def test_dns_nickname() -> None:
                         ConnectionTag.DOCKER_CONE_CLIENT_2,
                         derp_1_limits=ConnectionLimits(1, 1),
                     ),
+                    features=TelioFeatures(nicknames=True),
                 ),
             ],
             provided_api=api,
