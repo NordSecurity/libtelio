@@ -291,6 +291,9 @@ pub struct Features {
     /// IPv6 support
     #[serde(default)]
     pub ipv6: bool,
+    /// Nicknames support
+    #[serde(default)]
+    pub nicknames: bool,
 }
 
 impl FeaturePaths {
@@ -392,7 +395,8 @@ mod tests {
                 "enable_polling": true
             },
             "validate_keys": false,
-            "ipv6": true
+            "ipv6": true,
+            "nicknames": true
         }"#;
 
     static EXPECTED_FEATURES: Lazy<Features> = Lazy::new(|| Features {
@@ -438,6 +442,7 @@ mod tests {
         }),
         validate_keys: FeatureValidateKeys(false),
         ipv6: true,
+        nicknames: true,
     });
 
     static EXPECTED_FEATURES_WITHOUT_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
@@ -477,6 +482,7 @@ mod tests {
         derp: None,
         validate_keys: Default::default(),
         ipv6: false,
+        nicknames: false,
     });
 
     #[test]
@@ -645,6 +651,7 @@ mod tests {
             derp: None,
             validate_keys: Default::default(),
             ipv6: false,
+            nicknames: false,
         };
 
         let empty_qos_features = Features {
@@ -668,6 +675,7 @@ mod tests {
             derp: None,
             validate_keys: Default::default(),
             ipv6: false,
+            nicknames: false,
         };
 
         let no_qos_features = Features {
@@ -686,6 +694,7 @@ mod tests {
             derp: None,
             validate_keys: Default::default(),
             ipv6: false,
+            nicknames: false,
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -723,6 +732,7 @@ mod tests {
             derp: None,
             validate_keys: Default::default(),
             ipv6: false,
+            nicknames: false,
         };
 
         let empty_features = Features {
@@ -737,6 +747,7 @@ mod tests {
             derp: None,
             validate_keys: Default::default(),
             ipv6: false,
+            nicknames: false,
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -775,6 +786,7 @@ mod tests {
             derp: None,
             validate_keys: Default::default(),
             ipv6: false,
+            nicknames: false,
         };
 
         assert_eq!(Features::default(), expected_defaults);

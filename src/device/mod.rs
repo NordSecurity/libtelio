@@ -44,6 +44,7 @@ use telio_dns::{DnsResolver, LocalDnsResolver, Records};
 use telio_dns::bind_tun;
 use wg::uapi::{self, PeerState};
 
+use std::collections::HashMap;
 use std::{
     collections::{hash_map::Entry, HashSet},
     future::Future,
@@ -1088,7 +1089,11 @@ impl Runtime {
     async fn upsert_dns_peers(&self) -> Result {
         if let Some(dns) = &self.entities.dns.lock().await.resolver {
             // hostnames have priority over nicknames (override if there's any conflict)
-            let mut peers = self.requested_state.collect_dns_nickname_records();
+            let mut peers: Records = HashMap::new();
+            if self.features.nicknames {
+                peers = self.requested_state.collect_dns_nickname_records();
+            }
+
             peers.extend(self.requested_state.collect_dns_records());
 
             dns.upsert("nord", &peers)

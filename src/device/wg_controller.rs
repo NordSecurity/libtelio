@@ -1226,6 +1226,7 @@ mod tests {
                     derp: None,
                     validate_keys: Default::default(),
                     ipv6: false,
+                    nicknames: false,
                 },
             }
         }
