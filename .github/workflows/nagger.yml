@@ -1,0 +1,12 @@
+name: Nagger
+on: [workflow_call]
+permissions: {}
+
+jobs:
+  nagger:
+    runs-on: ubuntu-22.04
+    container: ghcr.io/nordsecurity/nagger:v2.0.0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 #v4.1.1
+      - run: RUSTFLAGS="-Dwarnings" DYLINT_LIBRARY_PATH=${NAGGER_PATH} cargo dylint --workspace --all
