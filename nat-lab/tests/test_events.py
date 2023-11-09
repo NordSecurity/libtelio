@@ -207,7 +207,10 @@ async def test_event_content_meshnet(
                 is_meshnet=False,
             ),
             "10.0.254.7",
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4522"),
+            ],
         ),
         pytest.param(
             SetupParameters(
@@ -221,7 +224,10 @@ async def test_event_content_meshnet(
                 is_meshnet=False,
             ),
             "10.0.254.7",
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4522"),
+            ],
         ),
         pytest.param(
             SetupParameters(
