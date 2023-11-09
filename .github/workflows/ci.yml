@@ -44,6 +44,8 @@ jobs:
     - tests
     - fuzzing
     - benchmarks
+    - coverage
+    - nagger
     runs-on: ubuntu-22.04
     steps:
     - name: Collect statuses from all jobs
