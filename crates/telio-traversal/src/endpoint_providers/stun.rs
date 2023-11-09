@@ -29,7 +29,7 @@ const STUN_TIMEOUT: Duration = Duration::from_secs(5);
 const STUN_TIMEOUT: Duration = Duration::from_millis(300);
 
 const MAX_PACKET_SIZE: usize = 1500;
-const STUN_SOFTWARE: &str = "tailnode";
+const STUN_SOFTWARE: &str = "libtelio";
 
 pub struct StunEndpointProvider<Wg: WireGuard = DynamicWg, E: Backoff = ExponentialBackoff> {
     task: Task<State<Wg, E>>,

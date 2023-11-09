@@ -3826,6 +3826,7 @@ dependencies = [
  "generic-array",
  "hex",
  "httparse",
+ "hyper",
  "libc",
  "log",
  "ntest",

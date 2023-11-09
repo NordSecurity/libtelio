@@ -259,7 +259,7 @@ async fn connect_http<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
                 "GET /derp HTTP/1.1\r\n\
                 Host: {host}\r\n\
                 Connection: Upgrade\r\n\
-                Upgrade: DERP\r\n\
+                Upgrade: WebSocket\r\n\
                 User-Agent: telio/{} {}\r\n\
                 Keep-Alive: tcp={}, derp={}\r\n\r\n",
                 telio_utils::version_tag(),
@@ -294,4 +294,72 @@ async fn connect_http<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
             ))
         })?
         .to_vec())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hyper::http::HeaderValue;
+    use hyper::server::conn::http1;
+    use hyper::service::service_fn;
+    use hyper::{Request, Response};
+    use tokio::net::{TcpListener, TcpStream};
+
+    #[tokio::test]
+    async fn http_derp_connection_initiation() {
+        const RESPONSE_BODY: &str = "test body";
+        const HOST: &str = "hostname";
+
+        async fn hello(request: Request<hyper::Body>) -> hyper::Result<Response<hyper::Body>> {
+            assert_eq!(
+                request.headers().get(hyper::header::HOST),
+                Some(&HeaderValue::from_static(HOST))
+            );
+            assert_eq!(
+                request.headers().get(hyper::header::CONNECTION),
+                Some(&HeaderValue::from_static("Upgrade"))
+            );
+            assert_eq!(
+                request.headers().get(hyper::header::UPGRADE),
+                Some(&HeaderValue::from_static("WebSocket"))
+            );
+            assert_eq!(
+                request.headers().get("keep-alive"),
+                Some(&HeaderValue::from_static("tcp=1, derp=2"))
+            );
+            Ok(Response::builder()
+                .body(hyper::Body::from(RESPONSE_BODY))
+                .unwrap())
+        }
+        let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 0));
+        let listener = TcpListener::bind(addr).await.unwrap();
+
+        let connect_addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                tokio::task::spawn(async move {
+                    http1::Builder::new()
+                        .serve_connection(stream, service_fn(hello))
+                        .await
+                        .unwrap();
+                });
+            }
+        });
+
+        let mut stream = TcpStream::connect(connect_addr).await.unwrap();
+        let (mut r, mut w) = stream.split();
+
+        let derp_config = DerpKeepaliveConfig {
+            tcp_keepalive: 1,
+            derp_keepalive: 2,
+        };
+        assert_eq!(
+            RESPONSE_BODY.as_bytes(),
+            connect_http(&mut r, &mut w, &derp_config, HOST)
+                .await
+                .unwrap()
+                .as_slice()
+        );
+    }
 }
