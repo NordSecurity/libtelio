@@ -1478,28 +1478,29 @@ impl Runtime {
         Ok(self.entities.socket_pool.clone())
     }
 
-    async fn peer_to_node(&self, peer: &uapi::Peer, state: Option<PeerState>) -> Option<Node> {
+    async fn peer_to_node<'a>(
+        &'a self,
+        peer: &uapi::Peer,
+        state: Option<PeerState>,
+    ) -> Option<Node> {
         let endpoint = peer.endpoint;
 
         // Check if ExitNode in requested state matches the node being reported by public
         // key
-        let exit_node = if let Some(exit_node) = self.requested_state.exit_node.clone() {
-            Some(exit_node)
-        } else {
-            self.requested_state.last_exit_node.clone()
-        }
-        .filter(|node| node.public_key == peer.public_key);
+        let exit_node = self.requested_state.exit_node.as_ref();
+        let exit_node = exit_node
+            .or(self.requested_state.last_exit_node.as_ref())
+            .filter(|node| node.public_key == peer.public_key);
 
         // Find a peer with matching public key in meshnet_config and retrieve the needed
         // information about it from there
-        let get_config_peer = |config: Option<&Config>| {
+        let get_config_peer = |config: Option<&'a Config>| {
             config
                 .and_then(|cfg| cfg.peers.as_ref())?
                 .iter()
                 .find(|&p| p.base.public_key == peer.public_key)
-                .cloned()
         };
-        let meshnet_peer: Option<Peer> =
+        let meshnet_peer: Option<&Peer> =
             get_config_peer(self.requested_state.meshnet_config.as_ref())
                 .or_else(|| get_config_peer(self.requested_state.old_meshnet_config.as_ref()));
 
@@ -1525,7 +1526,7 @@ impl Runtime {
             (Some(meshnet_peer), _) => {
                 // Meshnet peer
                 Some(Node {
-                    identifier: meshnet_peer.base.identifier,
+                    identifier: meshnet_peer.base.identifier.clone(),
                     public_key: meshnet_peer.base.public_key,
                     state: state.unwrap_or_else(|| peer.state()),
                     is_exit: peer
@@ -1533,7 +1534,7 @@ impl Runtime {
                         .iter()
                         .any(|network| network.ip().is_unspecified()),
                     is_vpn: false,
-                    ip_addresses: meshnet_peer.base.ip_addresses.unwrap_or_default(),
+                    ip_addresses: meshnet_peer.base.ip_addresses.clone().unwrap_or_default(),
                     allowed_ips: peer.allowed_ips.clone(),
                     endpoint,
                     hostname: Some(meshnet_peer.base.hostname.clone()),
@@ -1545,7 +1546,7 @@ impl Runtime {
             (None, Some(exit_node)) => {
                 // Exit node
                 Some(Node {
-                    identifier: exit_node.identifier,
+                    identifier: exit_node.identifier.clone(),
                     public_key: exit_node.public_key,
                     state: state.unwrap_or_else(|| peer.state()),
                     is_exit: true,
