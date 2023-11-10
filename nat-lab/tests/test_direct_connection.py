@@ -612,7 +612,19 @@ async def test_infinite_stun_loop(setup_params: List[SetupParameters]) -> None:
         # 3478 and 3479 are STUN ports in natlab containers
         tcpdump = await exit_stack.enter_async_context(
             alpha_connection.create_process(
-                ["tcpdump", "-i", "any", "(", "port", "3478", "or", "3479", ")"]
+                [
+                    "tcpdump",
+                    "--immediate-mode",
+                    "-l",
+                    "-i",
+                    "any",
+                    "(",
+                    "port",
+                    "3478",
+                    "or",
+                    "3479",
+                    ")",
+                ]
             ).run()
         )
         await asyncio.sleep(5)
