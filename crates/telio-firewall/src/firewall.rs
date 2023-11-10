@@ -2735,4 +2735,124 @@ pub mod tests {
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(&test_input.src_socket(11111), &test_input.dst_socket(FILE_SEND_PORT), TcpFlags::PSH)), false);
         }
     }
+
+    #[test]
+    fn firewall_tcp_conns_reset() {
+        let fw = StatefullFirewall::new(false, false);
+        fw.add_to_port_whitelist(PublicKey(make_peer()), FILE_SEND_PORT);
+
+        // Outbound half opened connection
+        assert!(fw.process_outbound_packet(
+            &make_peer(),
+            &make_tcp("127.0.0.2:12345", "101.101.101.101:54321", TcpFlags::SYN),
+        ));
+        // Outbound opened connection
+        assert!(fw.process_outbound_packet(
+            &make_peer(),
+            &make_tcp("127.0.0.4:12345", "103.103.103.103:54321", TcpFlags::SYN),
+        ));
+        assert!(fw.process_inbound_packet(
+            &make_peer(),
+            &make_tcp(
+                "103.103.103.103:54321",
+                &"127.0.0.4:12345",
+                TcpFlags::SYN | TcpFlags::ACK
+            ),
+        ));
+        // Inbound connection
+        assert!(fw.process_inbound_packet(
+            &make_peer(),
+            &make_tcp(
+                "100.100.100.100:12345",
+                &format!("127.0.0.1:{FILE_SEND_PORT}"),
+                TcpFlags::SYN
+            ),
+        ));
+        // Inbound with data
+        assert!(fw.process_inbound_packet(
+            &make_peer(),
+            &make_tcp(
+                "102.102.102.102:12345",
+                &format!("127.0.0.3:{FILE_SEND_PORT}"),
+                TcpFlags::SYN
+            ),
+        ));
+        assert!(fw.process_inbound_packet(
+            &make_peer(),
+            &make_tcp(
+                "102.102.102.102:12345",
+                &format!("127.0.0.3:{FILE_SEND_PORT}"),
+                TcpFlags::PSH
+            ),
+        ));
+
+        #[derive(Default)]
+        struct Sink4 {
+            pkgs: Vec<Vec<u8>>,
+        }
+
+        impl io::Write for Sink4 {
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                self.pkgs.push(buf.to_vec());
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let mut sink4 = Sink4::default();
+        fw.reset_connections(&mut sink4, &mut std::io::sink()); // We do not test IPv6 yet
+
+        assert_eq!(sink4.pkgs.len(), 3); // 3 packets in random order (without the half opened outbound one)
+
+        let mut ippkgs: Vec<_> = sink4
+            .pkgs
+            .iter()
+            .map(|buf| Ipv4Packet::new(&buf).unwrap())
+            .collect();
+
+        // Make it sorted by dest IP
+        ippkgs.sort_unstable_by_key(|ippkg| ippkg.get_destination());
+
+        let tcppkgs: Vec<_> = ippkgs
+            .iter()
+            .map(|ip| TcpPacket::new(ip.payload()).unwrap())
+            .collect();
+
+        // Check common conditions
+        for ip in &ippkgs {
+            assert_eq!(ip.get_version(), 4);
+            assert_eq!(ip.get_header_length(), 5);
+            assert_eq!(ip.get_next_level_protocol(), IpNextHeaderProtocols::Tcp);
+        }
+
+        for tcp in &tcppkgs {
+            assert_eq!(tcp.get_flags(), TcpFlags::RST);
+            assert_eq!(tcp.get_data_offset(), 5);
+        }
+
+        // Check specifics
+        assert_eq!(ippkgs[0].get_source(), Ipv4Addr::new(100, 100, 100, 100));
+        assert_eq!(ippkgs[0].get_destination(), Ipv4Addr::new(127, 0, 0, 1));
+
+        assert_eq!(tcppkgs[0].get_source(), 12345);
+        assert_eq!(tcppkgs[0].get_destination(), FILE_SEND_PORT);
+        assert_eq!(tcppkgs[0].get_sequence(), 1);
+
+        assert_eq!(ippkgs[1].get_source(), Ipv4Addr::new(102, 102, 102, 102));
+        assert_eq!(ippkgs[1].get_destination(), Ipv4Addr::new(127, 0, 0, 3));
+
+        assert_eq!(tcppkgs[1].get_source(), 12345);
+        assert_eq!(tcppkgs[1].get_destination(), FILE_SEND_PORT);
+        assert_eq!(tcppkgs[1].get_sequence(), 12);
+
+        assert_eq!(ippkgs[2].get_source(), Ipv4Addr::new(103, 103, 103, 103));
+        assert_eq!(ippkgs[2].get_destination(), Ipv4Addr::new(127, 0, 0, 4));
+
+        assert_eq!(tcppkgs[2].get_source(), 54321);
+        assert_eq!(tcppkgs[2].get_destination(), 12345);
+        assert_eq!(tcppkgs[2].get_sequence(), 1);
+    }
 }
