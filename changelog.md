@@ -1,3 +1,17 @@
+### UNRELEASED
+---
+* LLT-4515: Add nordvpn app version to moose context
+
+<br>
+
+### v4.1.2
+### **Bruschetta**
+---
+### Changelog
+* LLT-4432: Use forked system-configuration crate to prevent iOS linking errors
+
+<br>
+
 ### v4.1.1
 ### **Bruschetta**
 ---
@@ -43,7 +57,6 @@
 * LLT-4119: Fix multiple bugs in telio-firewall. Mainly whitelist vpn server
 * LLT-4002: Review log-levels of spammy log messages
 * LLT-3990: Add initial heartbeat interval to feature config
-* LLT-4432: Use forked system-configuration crate to prevent iOS linking errors
 
 <br>
 
