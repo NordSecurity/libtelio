@@ -49,7 +49,7 @@ use std::{
     collections::{hash_map::Entry, HashSet},
     future::Future,
     io::{self, Error as IoError, ErrorKind},
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
     time::Duration,
 };
@@ -525,7 +525,11 @@ impl Device {
     pub fn set_config(&self, config: &Option<Config>) -> Result {
         let config = config.clone();
         self.art()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt.set_config(&config).await)).await?
+            task_exec!(self.rt()?, async move |rt| Ok(Box::pin(
+                rt.set_config(&config)
+            )
+            .await))
+            .await?
         })
     }
 
@@ -945,23 +949,9 @@ impl Runtime {
                 None
             };
 
-            let stun_tunnel_socket = if features.ipv6 {
-                socket_pool
-                    .new_internal_udp((Ipv6Addr::UNSPECIFIED, 0), None)
-                    .await?
-            } else {
-                socket_pool
-                    .new_internal_udp((Ipv4Addr::UNSPECIFIED, 0), None)
-                    .await?
-            };
-
             // Create Stun Endpoint Provider
             let stun_endpoint_provider = if has_provider(Stun) {
                 let ep = Arc::new(StunEndpointProvider::start(
-                    stun_tunnel_socket,
-                    socket_pool
-                        .new_external_udp((Ipv4Addr::UNSPECIFIED, 0), None)
-                        .await?,
                     wireguard_interface.clone(),
                     ExponentialBackoffBounds {
                         initial: Duration::from_secs(
@@ -1337,8 +1327,21 @@ impl Runtime {
             // Refresh the lists of servers for STUN endpoint provider
             if let Some(direct) = self.entities.direct.as_ref() {
                 if let Some(stun_ep) = direct.stun_endpoint_provider.as_ref() {
+                    let use_ipv6 = self.features.ipv6 && {
+                        config
+                            .this
+                            .ip_addresses
+                            .as_ref()
+                            .map(|vec| vec.iter().any(|addr| addr.is_ipv6()))
+                            .unwrap_or(false)
+                    };
+
                     stun_ep
-                        .configure(config.derp_servers.clone().unwrap_or_default())
+                        .configure(
+                            config.derp_servers.clone().unwrap_or_default(),
+                            use_ipv6,
+                            self.get_socket_pool().await?,
+                        )
                         .await;
                 }
             }
@@ -1360,7 +1363,9 @@ impl Runtime {
             // Refresh the lists of servers for STUN endpoint provider
             if let Some(direct) = self.entities.direct.as_ref() {
                 if let Some(stun_ep) = direct.stun_endpoint_provider.as_ref() {
-                    stun_ep.configure(vec![]).await;
+                    stun_ep
+                        .configure(vec![], false, self.get_socket_pool().await?)
+                        .await;
                 }
             }
         }
