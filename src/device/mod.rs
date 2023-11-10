@@ -19,8 +19,12 @@ use telio_traversal::{
     connectivity_check,
     cross_ping_check::{CrossPingCheck, CrossPingCheckTrait, Io as CpcIo},
     endpoint_providers::{
-        self, local::LocalInterfacesEndpointProvider, stun::StunEndpointProvider, stun::StunServer,
-        upnp::UpnpEndpointProvider, EndpointProvider,
+        self,
+        local::LocalInterfacesEndpointProvider,
+        stun::StunServer,
+        stun::{StunEndpointProvider, StunSockets},
+        upnp::UpnpEndpointProvider,
+        EndpointProvider,
     },
     last_handshake_time_provider::{LastHandshakeTimeProvider, WireGuardLastHandshakeTimeProvider},
     ping_pong_handler::PingPongHandler,
@@ -926,23 +930,9 @@ impl Runtime {
                 None
             };
 
-            let stun_tunnel_socket = if features.ipv6 {
-                socket_pool
-                    .new_internal_udp((Ipv6Addr::UNSPECIFIED, 0), None)
-                    .await?
-            } else {
-                socket_pool
-                    .new_internal_udp((Ipv4Addr::UNSPECIFIED, 0), None)
-                    .await?
-            };
-
             // Create Stun Endpoint Provider
             let stun_endpoint_provider = if has_provider(Stun) {
                 let ep = Arc::new(StunEndpointProvider::start(
-                    stun_tunnel_socket,
-                    socket_pool
-                        .new_external_udp((Ipv4Addr::UNSPECIFIED, 0), None)
-                        .await?,
                     wireguard_interface.clone(),
                     ExponentialBackoffBounds {
                         initial: Duration::from_secs(
@@ -1314,8 +1304,36 @@ impl Runtime {
             // Refresh the lists of servers for STUN endpoint provider
             if let Some(direct) = self.entities.direct.as_ref() {
                 if let Some(stun_ep) = direct.stun_endpoint_provider.as_ref() {
+                    let use_ipv6 = self.features.ipv6 && {
+                        config
+                            .this
+                            .ip_addresses
+                            .as_ref()
+                            .map(|vec| vec.iter().any(|addr| addr.is_ipv6()))
+                            .unwrap_or(false)
+                    };
+
+                    let socket_pool = self.get_socket_pool().await?;
+                    let stun_tunnel_socket = if use_ipv6 {
+                        socket_pool
+                            .new_internal_udp((Ipv6Addr::UNSPECIFIED, 0), None)
+                            .await?
+                    } else {
+                        socket_pool
+                            .new_internal_udp((Ipv4Addr::UNSPECIFIED, 0), None)
+                            .await?
+                    };
+
                     stun_ep
-                        .configure(config.derp_servers.clone().unwrap_or_default())
+                        .configure(
+                            config.derp_servers.clone().unwrap_or_default(),
+                            Some(StunSockets {
+                                tun_socket: stun_tunnel_socket,
+                                ext_socket: socket_pool
+                                    .new_external_udp((Ipv4Addr::UNSPECIFIED, 0), None)
+                                    .await?,
+                            }),
+                        )
                         .await;
                 }
             }
@@ -1337,7 +1355,7 @@ impl Runtime {
             // Refresh the lists of servers for STUN endpoint provider
             if let Some(direct) = self.entities.direct.as_ref() {
                 if let Some(stun_ep) = direct.stun_endpoint_provider.as_ref() {
-                    stun_ep.configure(vec![]).await;
+                    stun_ep.configure(vec![], None).await;
                 }
             }
         }

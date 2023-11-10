@@ -69,6 +69,8 @@ pub enum Error {
     /// Stun peer is missconfigured (no allowed_ip or endpoint)
     #[error("Stun peer is misconfigured")]
     BadStunPeer,
+    #[error("Stun endpoint provider not configured")]
+    StunNotConfigured,
     #[error("Encryption failed: {0}")]
     EncryptionFailed(#[from] encryption::Error),
     #[error("Cannot find endpoint in local cache")]
