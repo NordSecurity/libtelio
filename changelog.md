@@ -39,6 +39,7 @@
 * LLT-4409: Wait for listen port only if meshnet is enabled
 * LLT-4375: Add meshmap config support for custom peer names
 * LLT-4376: Add magicdns support for two dns bindings
+* LLT-4515: Add nordvpn app version to moose context
 
 <br>
 

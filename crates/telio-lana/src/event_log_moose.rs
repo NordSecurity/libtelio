@@ -59,34 +59,35 @@ pub fn init_context_info() {
     let foreign_tracker = "nordvpnapp";
 
     if let Ok(foreign_context) = moose::fetch_specific_context(foreign_tracker) {
-        let (device_info, user_info) = parse_foreign_context(&foreign_context);
+        let tracker_context_info = parse_foreign_context(&foreign_context);
 
         set_context_fields!(
-            set_context_device_brand, device_info.brand;
-            set_context_device_fp, device_info.fp;
-            set_context_device_location_city, device_info.location.city;
-            set_context_device_location_country, device_info.location.country;
-            set_context_device_location_region, device_info.location.region;
-            set_context_device_model, device_info.model;
-            set_context_device_os, device_info.os;
-            set_context_device_resolution, device_info.resolution;
-            set_context_device_timeZone, device_info.time_zone;
-            set_context_device_type, device_info.x_type;
-            set_context_user_fp, user_info.fp;
-            set_context_user_subscription_currentState_activationDate, user_info.subscription.current_state.activation_date, optional;
-            set_context_user_subscription_currentState_frequencyInterval, user_info.subscription.current_state.frequency_interval, optional;
-            set_context_user_subscription_currentState_frequencyUnit, user_info.subscription.current_state.frequency_unit, optional;
-            set_context_user_subscription_currentState_isActive, user_info.subscription.current_state.is_active, optional;
-            set_context_user_subscription_currentState_isNewCustomer, user_info.subscription.current_state.is_new_customer, optional;
-            set_context_user_subscription_currentState_merchantId, user_info.subscription.current_state.merchant_id, optional;
-            set_context_user_subscription_currentState_paymentAmount, user_info.subscription.current_state.payment_amount, optional;
-            set_context_user_subscription_currentState_paymentCurrency, user_info.subscription.current_state.payment_currency, optional;
-            set_context_user_subscription_currentState_paymentProvider, user_info.subscription.current_state.payment_provider, optional;
-            set_context_user_subscription_currentState_paymentStatus, user_info.subscription.current_state.payment_status, optional;
-            set_context_user_subscription_currentState_planId, user_info.subscription.current_state.plan_id, optional;
-            set_context_user_subscription_currentState_planType, user_info.subscription.current_state.plan_type, optional;
-            set_context_user_subscription_currentState_subscriptionStatus, user_info.subscription.current_state.subscription_status, optional;
-            set_context_user_subscription_history, user_info.subscription.history, optional;
+            set_context_application_config_currentState_nordvpnappVersion, tracker_context_info.application.version;
+            set_context_device_brand, tracker_context_info.device.brand;
+            set_context_device_fp, tracker_context_info.device.fp;
+            set_context_device_location_city, tracker_context_info.device.location.city;
+            set_context_device_location_country, tracker_context_info.device.location.country;
+            set_context_device_location_region, tracker_context_info.device.location.region;
+            set_context_device_model, tracker_context_info.device.model;
+            set_context_device_os, tracker_context_info.device.os;
+            set_context_device_resolution, tracker_context_info.device.resolution;
+            set_context_device_timeZone, tracker_context_info.device.time_zone;
+            set_context_device_type, tracker_context_info.device.x_type;
+            set_context_user_fp, tracker_context_info.user.fp;
+            set_context_user_subscription_currentState_activationDate, tracker_context_info.user.subscription.current_state.activation_date, optional;
+            set_context_user_subscription_currentState_frequencyInterval, tracker_context_info.user.subscription.current_state.frequency_interval, optional;
+            set_context_user_subscription_currentState_frequencyUnit, tracker_context_info.user.subscription.current_state.frequency_unit, optional;
+            set_context_user_subscription_currentState_isActive, tracker_context_info.user.subscription.current_state.is_active, optional;
+            set_context_user_subscription_currentState_isNewCustomer, tracker_context_info.user.subscription.current_state.is_new_customer, optional;
+            set_context_user_subscription_currentState_merchantId, tracker_context_info.user.subscription.current_state.merchant_id, optional;
+            set_context_user_subscription_currentState_paymentAmount, tracker_context_info.user.subscription.current_state.payment_amount, optional;
+            set_context_user_subscription_currentState_paymentCurrency, tracker_context_info.user.subscription.current_state.payment_currency, optional;
+            set_context_user_subscription_currentState_paymentProvider, tracker_context_info.user.subscription.current_state.payment_provider, optional;
+            set_context_user_subscription_currentState_paymentStatus, tracker_context_info.user.subscription.current_state.payment_status, optional;
+            set_context_user_subscription_currentState_planId, tracker_context_info.user.subscription.current_state.plan_id, optional;
+            set_context_user_subscription_currentState_planType, tracker_context_info.user.subscription.current_state.plan_type, optional;
+            set_context_user_subscription_currentState_subscriptionStatus, tracker_context_info.user.subscription.current_state.subscription_status, optional;
+            set_context_user_subscription_history, tracker_context_info.user.subscription.history, optional;
         );
     } else {
         telio_log_warn!("[Moose] Failed to fetch context for {}", foreign_tracker);
@@ -98,109 +99,167 @@ pub fn init_context_info() {
 /// # Parameters:
 /// * foreign_context - &str value containing the json context
 /// # Returns:
-/// * MeshnetappContextDevice - Item containing parsed information from the json context
+/// * MeshnetappContext - Item containing user, app and device information parsed from the json context
 /// if successful or empty item otherwise.
-fn parse_foreign_context(
-    foreign_context: &str,
-) -> (moose::MeshnetappContextDevice, moose::MeshnetappContextUser) {
-    let mut device_info = moose::MeshnetappContextDevice {
-        brand: None,
-        fp: None,
-        location: moose::MeshnetappContextDeviceLocation {
-            city: None,
-            country: None,
-            region: None,
-        },
-        model: None,
-        os: None,
-        resolution: None,
-        time_zone: None,
-        x_type: None,
-    };
-
-    let mut user_info = moose::MeshnetappContextUser {
-        fp: None,
-        subscription: moose::MeshnetappContextUserSubscription {
-            current_state: moose::MeshnetappContextUserSubscriptionCurrentState {
-                activation_date: None,
-                frequency_interval: None,
-                frequency_unit: None,
-                is_active: None,
-                is_new_customer: None,
-                merchant_id: None,
-                payment_amount: None,
-                payment_currency: None,
-                payment_provider: None,
-                payment_status: None,
-                plan_id: None,
-                plan_type: None,
-                subscription_status: None,
-            },
-            history: None,
-        },
-    };
+fn parse_foreign_context(foreign_context: &str) -> moose::MeshnetappContext {
+    let mut tracker_info = moose::MeshnetappContext::default();
 
     if let Ok(foreign_context) = serde_json::from_str::<Value>(foreign_context) {
         if let Some(foreign_device_info) = foreign_context.get("device") {
-            device_info.brand = get_string_field(foreign_device_info, "brand");
-            device_info.fp = get_string_field(foreign_device_info, "fp");
-            device_info.model = get_string_field(foreign_device_info, "model");
-            device_info.os = get_string_field(foreign_device_info, "os");
-            device_info.resolution = get_string_field(foreign_device_info, "resolution");
-            device_info.time_zone = get_string_field(foreign_device_info, "time_zone");
+            tracker_info.device.brand = get_string_field(foreign_device_info, "brand");
+            tracker_info.device.fp = get_string_field(foreign_device_info, "fp");
+            tracker_info.device.model = get_string_field(foreign_device_info, "model");
+            tracker_info.device.os = get_string_field(foreign_device_info, "os");
+            tracker_info.device.resolution = get_string_field(foreign_device_info, "resolution");
+            tracker_info.device.time_zone = get_string_field(foreign_device_info, "time_zone");
 
             if let Some(Value::String(string_type)) = foreign_device_info.get("type") {
                 let ty = format!("\"{}\"", string_type);
                 if let Ok(ty) = serde_json::from_str::<moose::MeshnetappDeviceType>(&ty) {
-                    device_info.x_type = Some(ty);
+                    tracker_info.device.x_type = Some(ty);
                 }
             }
 
             if let Some(foreign_location) = foreign_device_info.get("location") {
-                device_info.location.city = get_string_field(foreign_location, "city");
-                device_info.location.country = get_string_field(foreign_location, "country");
-                device_info.location.region = get_string_field(foreign_location, "region");
+                tracker_info.device.location.city = get_string_field(foreign_location, "city");
+                tracker_info.device.location.country =
+                    get_string_field(foreign_location, "country");
+                tracker_info.device.location.region = get_string_field(foreign_location, "region");
             }
         }
 
         if let Some(foreign_user_info) = foreign_context.get("user") {
-            user_info.fp = get_string_field(foreign_user_info, "fp");
+            tracker_info.user.fp = get_string_field(foreign_user_info, "fp");
 
             if let Some(foreign_subscription) = foreign_user_info.get("subscription") {
-                user_info.subscription.history = get_string_field(foreign_subscription, "history");
+                tracker_info.user.subscription.history =
+                    get_string_field(foreign_subscription, "history");
                 if let Some(foreign_state) = foreign_subscription.get("current_state") {
-                    user_info.subscription.current_state.activation_date =
+                    tracker_info.user.subscription.current_state.activation_date =
                         get_string_field(foreign_state, "activation_date");
-                    user_info.subscription.current_state.frequency_interval =
-                        get_i32_field(foreign_state, "frequency_interval");
-                    user_info.subscription.current_state.frequency_unit =
+                    tracker_info
+                        .user
+                        .subscription
+                        .current_state
+                        .frequency_interval = get_i32_field(foreign_state, "frequency_interval");
+                    tracker_info.user.subscription.current_state.frequency_unit =
                         get_string_field(foreign_state, "frequency_unit");
-                    user_info.subscription.current_state.is_active =
+                    tracker_info.user.subscription.current_state.is_active =
                         get_bool_field(foreign_state, "is_active");
-                    user_info.subscription.current_state.is_new_customer =
+                    tracker_info.user.subscription.current_state.is_new_customer =
                         get_bool_field(foreign_state, "is_new_customer");
-                    user_info.subscription.current_state.merchant_id =
+                    tracker_info.user.subscription.current_state.merchant_id =
                         get_i32_field(foreign_state, "merchant_id");
-                    user_info.subscription.current_state.payment_amount =
+                    tracker_info.user.subscription.current_state.payment_amount =
                         get_f32_field(foreign_state, "payment_amount");
-                    user_info.subscription.current_state.payment_currency =
-                        get_string_field(foreign_state, "payment_currency");
-                    user_info.subscription.current_state.payment_provider =
-                        get_string_field(foreign_state, "payment_provider");
-                    user_info.subscription.current_state.payment_status =
+                    tracker_info
+                        .user
+                        .subscription
+                        .current_state
+                        .payment_currency = get_string_field(foreign_state, "payment_currency");
+                    tracker_info
+                        .user
+                        .subscription
+                        .current_state
+                        .payment_provider = get_string_field(foreign_state, "payment_provider");
+                    tracker_info.user.subscription.current_state.payment_status =
                         get_string_field(foreign_state, "payment_status");
-                    user_info.subscription.current_state.plan_id =
+                    tracker_info.user.subscription.current_state.plan_id =
                         get_i32_field(foreign_state, "plan_id");
-                    user_info.subscription.current_state.plan_type =
+                    tracker_info.user.subscription.current_state.plan_type =
                         get_string_field(foreign_state, "plan_type");
-                    user_info.subscription.current_state.subscription_status =
+                    tracker_info
+                        .user
+                        .subscription
+                        .current_state
+                        .subscription_status =
                         get_string_field(foreign_state, "subscription_status");
                 }
             }
         }
-    }
 
-    (device_info, user_info)
+        if let Some(foreign_app_info) = foreign_context.get("application") {
+            tracker_info.application.name = get_string_field(foreign_app_info, "name");
+            tracker_info.application.version = get_string_field(foreign_app_info, "version");
+            tracker_info.application.platform = get_string_field(foreign_app_info, "platform");
+            tracker_info.application.arch = get_string_field(foreign_app_info, "arch");
+
+            if let Some(foreign_app_config_info) = foreign_app_info.get("config") {
+                if let Some(foreign_app_config_current_state_info) =
+                    foreign_app_config_info.get("current_state")
+                {
+                    tracker_info
+                        .application
+                        .config
+                        .current_state
+                        .nordvpnapp_version = get_string_field(
+                        foreign_app_config_current_state_info,
+                        "nordvpnapp_version",
+                    );
+                    tracker_info
+                        .application
+                        .config
+                        .current_state
+                        .meshnet_enabled =
+                        get_bool_field(foreign_app_config_current_state_info, "meshnet_enabled");
+                    tracker_info.application.config.current_state.external_links =
+                        get_string_field(foreign_app_config_current_state_info, "external_links");
+
+                    if let Some(foreign_app_config_current_state_internal_meshnet_info) =
+                        foreign_app_config_current_state_info.get("internal_meshnet")
+                    {
+                        tracker_info
+                            .application
+                            .config
+                            .current_state
+                            .internal_meshnet
+                            .members = get_string_field(
+                            foreign_app_config_current_state_internal_meshnet_info,
+                            "members",
+                        );
+                        tracker_info
+                            .application
+                            .config
+                            .current_state
+                            .internal_meshnet
+                            .members_nat = get_string_field(
+                            foreign_app_config_current_state_internal_meshnet_info,
+                            "members_nat",
+                        );
+                        tracker_info
+                            .application
+                            .config
+                            .current_state
+                            .internal_meshnet
+                            .fp = get_string_field(
+                            foreign_app_config_current_state_internal_meshnet_info,
+                            "fp",
+                        );
+                        tracker_info
+                            .application
+                            .config
+                            .current_state
+                            .internal_meshnet
+                            .fp_nat = get_string_field(
+                            foreign_app_config_current_state_internal_meshnet_info,
+                            "fp_nat",
+                        );
+                        tracker_info
+                            .application
+                            .config
+                            .current_state
+                            .internal_meshnet
+                            .connectivity_matrix = get_string_field(
+                            foreign_app_config_current_state_internal_meshnet_info,
+                            "connectivity_matrix",
+                        );
+                    }
+                }
+            }
+        }
+    };
+
+    tracker_info
 }
 
 /// Returns a field value in a json array
@@ -273,6 +332,26 @@ mod test {
     #[test]
     fn test_deserialize_complete_device() {
         let complete_string_json = r#"{
+            "application": {
+                "arch": "test-arch",
+                "config": {
+                    "current_state": {
+                        "external_links": "test-external-links",
+                        "internal_meshnet": {
+                            "connectivity_matrix": "test-connectivity-matrix",
+                            "fp": "test-fp",
+                            "fp_nat": "test-fp-nat",
+                            "members": "test-members",
+                            "members_nat": "test-members-nat"
+                        },
+                        "meshnet_enabled": true,
+                        "nordvpnapp_version": "test-nordvpnapp-version"
+                    }
+                },
+                "name": "test-name",
+                "platform": "test-platform",
+                "version": "test-version"
+            },
             "device": {
                 "brand": "test-brand",
                 "fp": "test-fp",
@@ -309,58 +388,231 @@ mod test {
             }
           }"#;
 
-        let (device, user) = parse_foreign_context(complete_string_json);
+        let tracker_context_info = parse_foreign_context(complete_string_json);
 
-        assert_eq!(device.brand, Some(String::from("test-brand")));
-        assert_eq!(device.fp, Some(String::from("test-fp")));
-        assert_eq!(device.model, Some(String::from("test-model")));
-        assert_eq!(device.os, Some(String::from("test-os")));
-        assert_eq!(device.resolution, Some(String::from("test-resolution")));
-        assert_eq!(device.time_zone, Some(String::from("test-time-zone")));
-        assert_eq!(device.location.city, Some(String::from("test-city")));
-        assert_eq!(device.location.country, Some(String::from("test-country")));
-        assert_eq!(device.location.region, Some(String::from("test-region")));
-
-        assert_eq!(user.fp, Some(String::from("test-fp")));
         assert_eq!(
-            user.subscription.current_state.activation_date,
+            tracker_context_info.device.brand,
+            Some(String::from("test-brand"))
+        );
+        assert_eq!(
+            tracker_context_info.device.fp,
+            Some(String::from("test-fp"))
+        );
+        assert_eq!(
+            tracker_context_info.device.model,
+            Some(String::from("test-model"))
+        );
+        assert_eq!(
+            tracker_context_info.device.os,
+            Some(String::from("test-os"))
+        );
+        assert_eq!(
+            tracker_context_info.device.resolution,
+            Some(String::from("test-resolution"))
+        );
+        assert_eq!(
+            tracker_context_info.device.time_zone,
+            Some(String::from("test-time-zone"))
+        );
+        assert_eq!(
+            tracker_context_info.device.location.city,
+            Some(String::from("test-city"))
+        );
+        assert_eq!(
+            tracker_context_info.device.location.country,
+            Some(String::from("test-country"))
+        );
+        assert_eq!(
+            tracker_context_info.device.location.region,
+            Some(String::from("test-region"))
+        );
+
+        assert_eq!(tracker_context_info.user.fp, Some(String::from("test-fp")));
+        assert_eq!(
+            tracker_context_info
+                .user
+                .subscription
+                .current_state
+                .activation_date,
             Some(String::from("test-activation-date"))
         );
-        assert_eq!(user.subscription.current_state.frequency_interval, Some(1));
         assert_eq!(
-            user.subscription.current_state.frequency_unit,
+            tracker_context_info
+                .user
+                .subscription
+                .current_state
+                .frequency_interval,
+            Some(1)
+        );
+        assert_eq!(
+            tracker_context_info
+                .user
+                .subscription
+                .current_state
+                .frequency_unit,
             Some(String::from("test-frequency-unit"))
         );
-        assert_eq!(user.subscription.current_state.is_active, Some(true));
-        assert_eq!(user.subscription.current_state.is_new_customer, Some(true));
-        assert_eq!(user.subscription.current_state.payment_amount, Some(100.0));
         assert_eq!(
-            user.subscription.current_state.payment_currency,
+            tracker_context_info
+                .user
+                .subscription
+                .current_state
+                .is_active,
+            Some(true)
+        );
+        assert_eq!(
+            tracker_context_info
+                .user
+                .subscription
+                .current_state
+                .is_new_customer,
+            Some(true)
+        );
+        assert_eq!(
+            tracker_context_info
+                .user
+                .subscription
+                .current_state
+                .payment_amount,
+            Some(100.0)
+        );
+        assert_eq!(
+            tracker_context_info
+                .user
+                .subscription
+                .current_state
+                .payment_currency,
             Some(String::from("test-payment-currency"))
         );
         assert_eq!(
-            user.subscription.current_state.payment_provider,
+            tracker_context_info
+                .user
+                .subscription
+                .current_state
+                .payment_provider,
             Some(String::from("test-payment-provider"))
         );
         assert_eq!(
-            user.subscription.current_state.payment_status,
+            tracker_context_info
+                .user
+                .subscription
+                .current_state
+                .payment_status,
             Some(String::from("test-payment-status"))
         );
-        assert_eq!(user.subscription.current_state.plan_id, Some(32));
         assert_eq!(
-            user.subscription.current_state.plan_type,
+            tracker_context_info.user.subscription.current_state.plan_id,
+            Some(32)
+        );
+        assert_eq!(
+            tracker_context_info
+                .user
+                .subscription
+                .current_state
+                .plan_type,
             Some(String::from("test-plan-type"))
         );
         assert_eq!(
-            user.subscription.current_state.subscription_status,
+            tracker_context_info
+                .user
+                .subscription
+                .current_state
+                .subscription_status,
             Some(String::from("test-subscription-status"))
         );
         assert_eq!(
-            user.subscription.history,
+            tracker_context_info.user.subscription.history,
             Some(String::from("test-history"))
         );
 
-        let same_type = device
+        assert_eq!(
+            tracker_context_info.application.arch,
+            Some(String::from("test-arch"))
+        );
+        assert_eq!(
+            tracker_context_info.application.name,
+            Some(String::from("test-name"))
+        );
+        assert_eq!(
+            tracker_context_info.application.platform,
+            Some(String::from("test-platform"))
+        );
+        assert_eq!(
+            tracker_context_info.application.version,
+            Some(String::from("test-version"))
+        );
+        assert_eq!(
+            tracker_context_info
+                .application
+                .config
+                .current_state
+                .external_links,
+            Some(String::from("test-external-links"))
+        );
+        assert_eq!(
+            tracker_context_info
+                .application
+                .config
+                .current_state
+                .meshnet_enabled,
+            Some(true)
+        );
+        assert_eq!(
+            tracker_context_info
+                .application
+                .config
+                .current_state
+                .nordvpnapp_version,
+            Some(String::from("test-nordvpnapp-version"))
+        );
+        assert_eq!(
+            tracker_context_info
+                .application
+                .config
+                .current_state
+                .internal_meshnet
+                .connectivity_matrix,
+            Some(String::from("test-connectivity-matrix"))
+        );
+        assert_eq!(
+            tracker_context_info
+                .application
+                .config
+                .current_state
+                .internal_meshnet
+                .fp_nat,
+            Some(String::from("test-fp-nat"))
+        );
+        assert_eq!(
+            tracker_context_info
+                .application
+                .config
+                .current_state
+                .internal_meshnet
+                .fp,
+            Some(String::from("test-fp"))
+        );
+        assert_eq!(
+            tracker_context_info
+                .application
+                .config
+                .current_state
+                .internal_meshnet
+                .members,
+            Some(String::from("test-members"))
+        );
+        assert_eq!(
+            tracker_context_info
+                .application
+                .config
+                .current_state
+                .internal_meshnet
+                .members_nat,
+            Some(String::from("test-members-nat"))
+        );
+
+        let same_type = tracker_context_info
+            .device
             .x_type
             .map(|ty| ty == MeshnetappDeviceType::MeshnetappDeviceTypeDesktop)
             .unwrap_or(false);
@@ -370,6 +622,26 @@ mod test {
     #[test]
     fn test_deserialize_bad_type() {
         let bad_type_string_json = r#"{
+            "application": {
+                "arch": "test-arch",
+                "config": {
+                    "current_state": {
+                        "external_links": "test-external-links",
+                        "internal_meshnet": {
+                            "connectivity_matrix": "test-connectivity-matrix",
+                            "fp": "test-fp",
+                            "fp_nat": "test-fp-nat",
+                            "members": "test-members",
+                            "members_nat": "test-members-nat"
+                        },
+                        "meshnet_enabled": true,
+                        "nordvpnapp_version": "test-nordvpnapp-version"
+                    }
+                },
+                "name": "test-name",
+                "platform": "test-platform",
+                "version": "test-version"
+            },
             "device": {
                 "brand": "test-brand",
                 "fp": "test-fp",
@@ -407,6 +679,26 @@ mod test {
           }"#;
 
         let no_type_string_json = r#"{
+            "application": {
+                "arch": "test-arch",
+                "config": {
+                    "current_state": {
+                        "external_links": "test-external-links",
+                        "internal_meshnet": {
+                            "connectivity_matrix": "test-connectivity-matrix",
+                            "fp": "test-fp",
+                            "fp_nat": "test-fp-nat",
+                            "members": "test-members",
+                            "members_nat": "test-members-nat"
+                        },
+                        "meshnet_enabled": true,
+                        "nordvpnapp_version": "test-nordvpnapp-version"
+                    }
+                },
+                "name": "test-name",
+                "platform": "test-platform",
+                "version": "test-version"
+            },
             "device": {
                 "brand": "test-brand",
                 "fp": "test-fp",
@@ -441,13 +733,13 @@ mod test {
             }
           }"#;
 
-        let bad_type = parse_foreign_context(bad_type_string_json);
-        let no_type_no_status = parse_foreign_context(no_type_string_json);
+        let bad_tracker_context_info = parse_foreign_context(bad_type_string_json);
+        let no_type_no_status_tracker_context = parse_foreign_context(no_type_string_json);
 
-        assert!(bad_type.0.x_type.is_none());
-        assert!(no_type_no_status.0.x_type.is_none());
-        assert!(no_type_no_status
-            .1
+        assert!(bad_tracker_context_info.device.x_type.is_none());
+        assert!(no_type_no_status_tracker_context.device.x_type.is_none());
+        assert!(no_type_no_status_tracker_context
+            .user
             .subscription
             .current_state
             .payment_status
@@ -457,6 +749,26 @@ mod test {
     #[test]
     fn test_deserialize_bad_location() {
         let missing_and_extra_fields_json = r#"{
+            "application": {
+                "arch": "test-arch",
+                "config": {
+                    "current_state": {
+                        "external_links": "test-external-links",
+                        "internal_meshnet": {
+                            "connectivity_matrix": "test-connectivity-matrix",
+                            "fp": "test-fp",
+                            "fp_nat": "test-fp-nat",
+                            "members": "test-members",
+                            "members_nat": "test-members-nat"
+                        },
+                        "meshnet_enabled": true,
+                        "nordvpnapp_version": "test-nordvpnapp-version"
+                    }
+                },
+                "name": "test-name",
+                "platform": "test-platform",
+                "version": "test-version"
+            },
             "device": {
                 "brand": "test-brand",
                 "fp": "test-fp",
@@ -494,6 +806,26 @@ mod test {
           }"#;
 
         let no_location_and_state_json = r#"{
+            "application": {
+                "arch": "test-arch",
+                "config": {
+                    "current_state": {
+                        "external_links": "test-external-links",
+                        "internal_meshnet": {
+                            "connectivity_matrix": "test-connectivity-matrix",
+                            "fp": "test-fp",
+                            "fp_nat": "test-fp-nat",
+                            "members": "test-members",
+                            "members_nat": "test-members-nat"
+                        },
+                        "meshnet_enabled": true,
+                        "nordvpnapp_version": "test-nordvpnapp-version"
+                    }
+                },
+                "name": "test-name",
+                "platform": "test-platform",
+                "version": "test-version"
+            },
             "device": {
                 "brand": "test-brand",
                 "fp": "test-fp",
@@ -511,96 +843,120 @@ mod test {
             }
           }"#;
 
-        let missing_and_extra_fields = parse_foreign_context(missing_and_extra_fields_json);
-        let no_location_and_state = parse_foreign_context(no_location_and_state_json);
+        let missing_and_extra_fields_tracker_context_info =
+            parse_foreign_context(missing_and_extra_fields_json);
+        let no_location_and_state_tracker_context_info =
+            parse_foreign_context(no_location_and_state_json);
 
-        assert!(missing_and_extra_fields.0.location.country.is_none());
+        assert!(missing_and_extra_fields_tracker_context_info
+            .device
+            .location
+            .country
+            .is_none());
         assert_eq!(
-            missing_and_extra_fields.0.location.city,
+            missing_and_extra_fields_tracker_context_info
+                .device
+                .location
+                .city,
             Some(String::from("test-city"))
         );
         assert_eq!(
-            missing_and_extra_fields.0.location.region,
+            missing_and_extra_fields_tracker_context_info
+                .device
+                .location
+                .region,
             Some(String::from("test-region"))
         );
 
-        assert!(no_location_and_state.0.location.city.is_none());
-        assert!(no_location_and_state.0.location.country.is_none());
-        assert!(no_location_and_state.0.location.region.is_none());
-        assert!(no_location_and_state
-            .1
+        assert!(no_location_and_state_tracker_context_info
+            .device
+            .location
+            .city
+            .is_none());
+        assert!(no_location_and_state_tracker_context_info
+            .device
+            .location
+            .country
+            .is_none());
+        assert!(no_location_and_state_tracker_context_info
+            .device
+            .location
+            .region
+            .is_none());
+        assert!(no_location_and_state_tracker_context_info
+            .user
             .subscription
             .current_state
             .activation_date
             .is_none());
-        assert!(no_location_and_state
-            .1
+        assert!(no_location_and_state_tracker_context_info
+            .user
             .subscription
             .current_state
             .frequency_interval
             .is_none());
-        assert!(no_location_and_state
-            .1
+        assert!(no_location_and_state_tracker_context_info
+            .user
             .subscription
             .current_state
             .frequency_unit
             .is_none());
-        assert!(no_location_and_state
-            .1
+        assert!(no_location_and_state_tracker_context_info
+            .user
             .subscription
             .current_state
             .is_active
             .is_none());
-        assert!(no_location_and_state
-            .1
+        assert!(no_location_and_state_tracker_context_info
+            .user
             .subscription
             .current_state
             .is_new_customer
             .is_none());
-        assert!(no_location_and_state
-            .1
+        assert!(no_location_and_state_tracker_context_info
+            .user
             .subscription
             .current_state
             .merchant_id
             .is_none());
-        assert!(no_location_and_state
-            .1
+        assert!(no_location_and_state_tracker_context_info
+            .user
             .subscription
             .current_state
             .payment_amount
             .is_none());
-        assert!(no_location_and_state
-            .1
+        assert!(no_location_and_state_tracker_context_info
+            .user
             .subscription
             .current_state
             .payment_currency
             .is_none());
-        assert!(no_location_and_state
-            .1
+        assert!(no_location_and_state_tracker_context_info
+            .user
             .subscription
             .current_state
             .payment_provider
             .is_none());
-        assert!(no_location_and_state
-            .1
+        assert!(no_location_and_state_tracker_context_info
+            .user
             .subscription
             .current_state
             .payment_status
             .is_none());
-        assert!(no_location_and_state
-            .1
+        assert!(no_location_and_state_tracker_context_info
+            .user
             .subscription
             .current_state
             .plan_id
             .is_none());
-        assert!(no_location_and_state
-            .1
+        assert!(no_location_and_state_tracker_context_info
+            .user
             .subscription
             .current_state
             .plan_type
             .is_none());
-        assert!(no_location_and_state
-            .1
+        assert!(no_location_and_state_tracker_context_info
+            .user
             .subscription
             .current_state
             .subscription_status
@@ -616,37 +972,129 @@ mod test {
           }"#;
         let junk = parse_foreign_context(junk_json);
 
-        assert!(junk.0.brand.is_none());
-        assert!(junk.0.fp.is_none());
-        assert!(junk.0.model.is_none());
-        assert!(junk.0.os.is_none());
-        assert!(junk.0.resolution.is_none());
-        assert!(junk.0.time_zone.is_none());
-        assert!(junk.0.x_type.is_none());
-        assert!(junk.0.location.city.is_none());
-        assert!(junk.0.location.country.is_none());
-        assert!(junk.0.location.region.is_none());
-        assert!(junk.1.fp.is_none());
-        assert!(junk.1.subscription.history.is_none());
-        assert!(junk.1.subscription.current_state.activation_date.is_none());
+        assert!(junk.application.arch.is_none());
+        assert!(junk.application.name.is_none());
+        assert!(junk.application.platform.is_none());
+        assert!(junk.application.version.is_none());
         assert!(junk
-            .1
+            .application
+            .config
+            .current_state
+            .nordvpnapp_version
+            .is_none());
+        assert!(junk
+            .application
+            .config
+            .current_state
+            .meshnet_enabled
+            .is_none());
+        assert!(junk
+            .application
+            .config
+            .current_state
+            .external_links
+            .is_none());
+        assert!(junk
+            .application
+            .config
+            .current_state
+            .internal_meshnet
+            .connectivity_matrix
+            .is_none());
+        assert!(junk
+            .application
+            .config
+            .current_state
+            .internal_meshnet
+            .fp_nat
+            .is_none());
+        assert!(junk
+            .application
+            .config
+            .current_state
+            .internal_meshnet
+            .fp
+            .is_none());
+        assert!(junk
+            .application
+            .config
+            .current_state
+            .internal_meshnet
+            .members
+            .is_none());
+        assert!(junk
+            .application
+            .config
+            .current_state
+            .internal_meshnet
+            .members_nat
+            .is_none());
+        assert!(junk.device.brand.is_none());
+        assert!(junk.device.fp.is_none());
+        assert!(junk.device.model.is_none());
+        assert!(junk.device.os.is_none());
+        assert!(junk.device.resolution.is_none());
+        assert!(junk.device.time_zone.is_none());
+        assert!(junk.device.x_type.is_none());
+        assert!(junk.device.location.city.is_none());
+        assert!(junk.device.location.country.is_none());
+        assert!(junk.device.location.region.is_none());
+        assert!(junk.user.fp.is_none());
+        assert!(junk.user.subscription.history.is_none());
+        assert!(junk
+            .user
+            .subscription
+            .current_state
+            .activation_date
+            .is_none());
+        assert!(junk
+            .user
             .subscription
             .current_state
             .frequency_interval
             .is_none());
-        assert!(junk.1.subscription.current_state.frequency_unit.is_none());
-        assert!(junk.1.subscription.current_state.is_active.is_none());
-        assert!(junk.1.subscription.current_state.is_new_customer.is_none());
-        assert!(junk.1.subscription.current_state.merchant_id.is_none());
-        assert!(junk.1.subscription.current_state.payment_amount.is_none());
-        assert!(junk.1.subscription.current_state.payment_currency.is_none());
-        assert!(junk.1.subscription.current_state.payment_provider.is_none());
-        assert!(junk.1.subscription.current_state.payment_status.is_none());
-        assert!(junk.1.subscription.current_state.plan_id.is_none());
-        assert!(junk.1.subscription.current_state.plan_type.is_none());
         assert!(junk
-            .1
+            .user
+            .subscription
+            .current_state
+            .frequency_unit
+            .is_none());
+        assert!(junk.user.subscription.current_state.is_active.is_none());
+        assert!(junk
+            .user
+            .subscription
+            .current_state
+            .is_new_customer
+            .is_none());
+        assert!(junk.user.subscription.current_state.merchant_id.is_none());
+        assert!(junk
+            .user
+            .subscription
+            .current_state
+            .payment_amount
+            .is_none());
+        assert!(junk
+            .user
+            .subscription
+            .current_state
+            .payment_currency
+            .is_none());
+        assert!(junk
+            .user
+            .subscription
+            .current_state
+            .payment_provider
+            .is_none());
+        assert!(junk
+            .user
+            .subscription
+            .current_state
+            .payment_status
+            .is_none());
+        assert!(junk.user.subscription.current_state.plan_id.is_none());
+        assert!(junk.user.subscription.current_state.plan_type.is_none());
+        assert!(junk
+            .user
             .subscription
             .current_state
             .subscription_status

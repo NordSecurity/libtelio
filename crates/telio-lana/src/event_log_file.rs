@@ -15,6 +15,10 @@ pub fn init_context_info() {
     let foreign_tracker = "nordvpnapp";
 
     moose::fetch_specific_context(foreign_tracker);
+    event_log(
+        "set_context_application_config_currentState_nordvpnappVersion",
+        Some(vec!["NA"]),
+    );
     event_log("set_context_device_brand", Some(vec!["NA"]));
     event_log("set_context_device_fp", Some(vec!["NA"]));
     event_log("set_context_device_location_city", Some(vec!["NA"]));
