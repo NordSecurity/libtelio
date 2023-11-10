@@ -741,7 +741,7 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
 
         await client_alpha.enable_magic_dns([FIRST_DNS_SERVER, SECOND_DNS_SERVER])
 
-        await testing.wait_normal(
+        await testing.wait_long(
             connection_alpha.create_process(
                 ["nslookup", "google.com", config.LIBTELIO_DNS_IPV4]
             ).execute()
@@ -749,12 +749,13 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
 
         await asyncio.sleep(1)
 
+        tcpdump_stdout = process.get_stdout()
         results = re.findall(
             r".* IP .* > (?P<dest_ip>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,5}): .* A\?.*",
-            process.get_stdout(),
+            tcpdump_stdout,
         )  # fmt: skip
 
-        assert results
+        assert results, tcpdump_stdout
         assert [result for result in results if FIRST_DNS_SERVER in result]
         assert not ([result for result in results if SECOND_DNS_SERVER in result])
 
