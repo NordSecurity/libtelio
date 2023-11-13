@@ -735,18 +735,29 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
 
         process = await exit_stack.enter_async_context(
             connection_alpha.create_process(
-                ["tcpdump", "-ni", "eth0", "udp", "and", "port", "53", "-l"]
+                [
+                    "tcpdump",
+                    "--immediate-mode",
+                    "-ni",
+                    "eth0",
+                    "udp",
+                    "and",
+                    "port",
+                    "53",
+                    "-l",
+                ]
             ).run()
         )
+        await asyncio.sleep(1)
 
         await client_alpha.enable_magic_dns([FIRST_DNS_SERVER, SECOND_DNS_SERVER])
+        await asyncio.sleep(1)
 
         await testing.wait_long(
             connection_alpha.create_process(
                 ["nslookup", "google.com", config.LIBTELIO_DNS_IPV4]
             ).execute()
         )
-
         await asyncio.sleep(1)
 
         tcpdump_stdout = process.get_stdout()
