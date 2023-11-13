@@ -1,5 +1,7 @@
-### UNRELEASED
+### v4.1.3
+### **Bruschetta**
 ---
+### Changelog
 * LLT-4515: Add nordvpn app version to moose context
 
 <br>
