@@ -196,64 +196,6 @@ fn parse_foreign_context(foreign_context: &str) -> moose::MeshnetappContext {
                         foreign_app_config_current_state_info,
                         "nordvpnapp_version",
                     );
-                    tracker_info
-                        .application
-                        .config
-                        .current_state
-                        .meshnet_enabled =
-                        get_bool_field(foreign_app_config_current_state_info, "meshnet_enabled");
-                    tracker_info.application.config.current_state.external_links =
-                        get_string_field(foreign_app_config_current_state_info, "external_links");
-
-                    if let Some(foreign_app_config_current_state_internal_meshnet_info) =
-                        foreign_app_config_current_state_info.get("internal_meshnet")
-                    {
-                        tracker_info
-                            .application
-                            .config
-                            .current_state
-                            .internal_meshnet
-                            .members = get_string_field(
-                            foreign_app_config_current_state_internal_meshnet_info,
-                            "members",
-                        );
-                        tracker_info
-                            .application
-                            .config
-                            .current_state
-                            .internal_meshnet
-                            .members_nat = get_string_field(
-                            foreign_app_config_current_state_internal_meshnet_info,
-                            "members_nat",
-                        );
-                        tracker_info
-                            .application
-                            .config
-                            .current_state
-                            .internal_meshnet
-                            .fp = get_string_field(
-                            foreign_app_config_current_state_internal_meshnet_info,
-                            "fp",
-                        );
-                        tracker_info
-                            .application
-                            .config
-                            .current_state
-                            .internal_meshnet
-                            .fp_nat = get_string_field(
-                            foreign_app_config_current_state_internal_meshnet_info,
-                            "fp_nat",
-                        );
-                        tracker_info
-                            .application
-                            .config
-                            .current_state
-                            .internal_meshnet
-                            .connectivity_matrix = get_string_field(
-                            foreign_app_config_current_state_internal_meshnet_info,
-                            "connectivity_matrix",
-                        );
-                    }
                 }
             }
         }
@@ -541,22 +483,9 @@ mod test {
             tracker_context_info.application.version,
             Some(String::from("test-version"))
         );
-        assert_eq!(
-            tracker_context_info
-                .application
-                .config
-                .current_state
-                .external_links,
-            Some(String::from("test-external-links"))
-        );
-        assert_eq!(
-            tracker_context_info
-                .application
-                .config
-                .current_state
-                .meshnet_enabled,
-            Some(true)
-        );
+
+        // nordvpnapp tracker context does not contain internalmeshnet data (except app version),
+        // for that reason those values are not parsed
         assert_eq!(
             tracker_context_info
                 .application
@@ -565,51 +494,53 @@ mod test {
                 .nordvpnapp_version,
             Some(String::from("test-nordvpnapp-version"))
         );
-        assert_eq!(
-            tracker_context_info
-                .application
-                .config
-                .current_state
-                .internal_meshnet
-                .connectivity_matrix,
-            Some(String::from("test-connectivity-matrix"))
-        );
-        assert_eq!(
-            tracker_context_info
-                .application
-                .config
-                .current_state
-                .internal_meshnet
-                .fp_nat,
-            Some(String::from("test-fp-nat"))
-        );
-        assert_eq!(
-            tracker_context_info
-                .application
-                .config
-                .current_state
-                .internal_meshnet
-                .fp,
-            Some(String::from("test-fp"))
-        );
-        assert_eq!(
-            tracker_context_info
-                .application
-                .config
-                .current_state
-                .internal_meshnet
-                .members,
-            Some(String::from("test-members"))
-        );
-        assert_eq!(
-            tracker_context_info
-                .application
-                .config
-                .current_state
-                .internal_meshnet
-                .members_nat,
-            Some(String::from("test-members-nat"))
-        );
+        assert!(tracker_context_info
+            .application
+            .config
+            .current_state
+            .meshnet_enabled
+            .is_none());
+        assert!(tracker_context_info
+            .application
+            .config
+            .current_state
+            .external_links
+            .is_none());
+        assert!(tracker_context_info
+            .application
+            .config
+            .current_state
+            .internal_meshnet
+            .connectivity_matrix
+            .is_none());
+        assert!(tracker_context_info
+            .application
+            .config
+            .current_state
+            .internal_meshnet
+            .fp_nat
+            .is_none());
+        assert!(tracker_context_info
+            .application
+            .config
+            .current_state
+            .internal_meshnet
+            .fp
+            .is_none());
+        assert!(tracker_context_info
+            .application
+            .config
+            .current_state
+            .internal_meshnet
+            .members
+            .is_none());
+        assert!(tracker_context_info
+            .application
+            .config
+            .current_state
+            .internal_meshnet
+            .members_nat
+            .is_none());
 
         let same_type = tracker_context_info
             .device
