@@ -748,11 +748,12 @@ impl Runtime {
         };
         let firewall_reset_connections = if features.boringtun_reset_connections.0 {
             let fw = firewall.clone();
-            let cb = move |sink4: &mut dyn io::Write, sink6: &mut dyn io::Write| {
-                if let Err(err) = fw.reset_connections(sink4, sink6) {
-                    telio_log_warn!("Failed to reset all connections: {err:?}");
-                }
-            };
+            let cb =
+                move |peer: &PublicKey, sink4: &mut dyn io::Write, sink6: &mut dyn io::Write| {
+                    if let Err(err) = fw.reset_connections(peer, sink4, sink6) {
+                        telio_log_warn!("Failed to reset all connections: {err:?}");
+                    }
+                };
             Some(Arc::new(cb) as Arc<_>)
         } else {
             None
@@ -1443,10 +1444,15 @@ impl Runtime {
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
             .await?;
 
-        if old_exit_node.is_some() || self.requested_state.last_exit_node.is_some() {
+        let old_exit_pubkey = old_exit_node
+            .as_ref()
+            .or(self.requested_state.last_exit_node.as_ref())
+            .map(|node| node.public_key);
+
+        if let Some(exit_pubkey) = old_exit_pubkey {
             self.entities
                 .wireguard_interface
-                .reset_existing_connections()
+                .reset_existing_connections(exit_pubkey)
                 .await?;
         }
 

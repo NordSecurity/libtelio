@@ -1553,7 +1553,7 @@ mod tests {
             async fn time_since_last_rx(&self, public_key: PublicKey) -> Result<Option<Duration>, Error>;
             async fn time_since_last_endpoint_change(&self, public_key: PublicKey) -> Result<Option<Duration>, Error>;
             async fn stop(self);
-            async fn reset_existing_connections(&self) -> Result<(), Error>;
+            async fn reset_existing_connections(&self, exit: PublicKey) -> Result<(), Error>;
         }
     }
 

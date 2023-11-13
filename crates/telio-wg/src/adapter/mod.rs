@@ -19,6 +19,7 @@ use async_trait::async_trait;
 #[cfg(any(test, feature = "test-adapter"))]
 pub use mockall::automock;
 use std::{io, str::FromStr, sync::Arc};
+use telio_crypto::PublicKey;
 use telio_sockets::{Protect, SocketPool};
 use thiserror::Error as TError;
 
@@ -29,7 +30,7 @@ pub type FirewallCb = Option<Arc<dyn Fn(&[u8; 32], &[u8]) -> bool + Send + Sync>
 
 /// Function pointer for reseting all the connections
 pub type FirewallResetConnsCb =
-    Option<Arc<dyn Fn(&mut dyn io::Write, &mut dyn io::Write) + Send + Sync>>;
+    Option<Arc<dyn Fn(&PublicKey, &mut dyn io::Write, &mut dyn io::Write) + Send + Sync>>;
 
 /// Tunnel file descriptor
 #[cfg(not(target_os = "windows"))]
@@ -64,7 +65,7 @@ pub trait Adapter: Send + Sync {
     async fn drop_connected_sockets(&self) {}
 
     /// Reset all the connections by injecting packets into the tunnel
-    async fn inject_reset_packets(&self) {}
+    async fn inject_reset_packets(&self, _exit: &PublicKey) {}
 }
 
 /// Enumeration of `Error` types for `Adapter` struct

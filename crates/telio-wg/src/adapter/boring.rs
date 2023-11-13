@@ -5,6 +5,7 @@ use slog::{o, Drain};
 use slog_stdlog::StdLog;
 use std::sync::Arc;
 use std::{io, ops::Deref};
+use telio_crypto::PublicKey;
 use telio_utils::telio_log_debug;
 use tokio::sync::RwLock;
 
@@ -86,7 +87,7 @@ impl Adapter for BoringTun {
         self.device.write().await.wait();
     }
 
-    async fn inject_reset_packets(&self) {
+    async fn inject_reset_packets(&self, exit: &PublicKey) {
         let Some(cb) = self.reset_conns_cb.as_ref() else {
             return;
         };
@@ -128,6 +129,6 @@ impl Adapter for BoringTun {
         let mut sink4 = Sink4 { tun };
         let mut sink6 = Sink6 { tun };
 
-        cb(&mut sink4, &mut sink6);
+        cb(exit, &mut sink4, &mut sink6);
     }
 }
