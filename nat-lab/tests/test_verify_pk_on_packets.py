@@ -1,12 +1,17 @@
 import asyncio
+import platform
 import pytest
 import telio
 from contextlib import AsyncExitStack
 from mesh_api import API
-from python_wireguard import Key  # type: ignore
 from typing import Optional
 from utils import testing
 from utils.connection_util import ConnectionTag, new_connection_by_tag
+
+if platform.system() == "Darwin":
+    import mac_wg as Key
+else:
+    from python_wireguard import Key  # type: ignore
 
 
 async def check_fake_derp_connection(client: telio.Client) -> Optional[telio.Client]:

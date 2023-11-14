@@ -1,7 +1,11 @@
 import os
 import platform
-from python_wireguard import Key  # type: ignore
 from typing import Dict, Union
+
+if platform.system() == "Darwin":
+    import mac_wg as Key
+else:
+    from python_wireguard import Key  # type: ignore
 
 PROJECT_ROOT = os.path.dirname(os.path.realpath(__file__)) + "/../../"
 
@@ -50,9 +54,12 @@ IPERF_BINARY_WINDOWS = "C:/workspace/iperf3/iperf3.exe".replace("/", "\\")
 # since its stable unlike `libtelio/dist`.
 #
 # Libtelio binary path inside Docker containers.
-LIBTELIO_BINARY_PATH_DOCKER = (
-    "/libtelio/dist/linux/release/" + platform.uname().machine + "/"
-)
+if platform.system() == "Darwin":
+    LIBTELIO_BINARY_PATH_DOCKER = "/libtelio/target/aarch64-unknown-linux-gnu/release/"
+else:
+    LIBTELIO_BINARY_PATH_DOCKER = (
+        "/libtelio/dist/linux/release/" + platform.uname().machine + "/"
+    )
 
 # Libtelio binary path inside Windows and Mac VMs
 LIBTELIO_BINARY_PATH_WINDOWS_VM = "C:/workspace/binaries/".replace("/", "\\")

@@ -1,7 +1,12 @@
 import mesh_api
+import platform
 import pytest
 from mesh_api import Node, API
-from python_wireguard import Key  # type: ignore
+
+if platform.system() == "Darwin":
+    import mac_wg as Key
+else:
+    from python_wireguard import Key  # type: ignore
 
 
 class TestNode:

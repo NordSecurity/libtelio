@@ -204,6 +204,9 @@ LIBTELIO_CONFIG = {
             "aarch64": {
                 "strip_path": "/usr/aarch64-linux-gnu/bin/strip"
             },
+            "arm64": {
+                "strip_path": "/usr/aarch64-linux-gnu/bin/strip"
+            },
             "i686": {
                 "strip_path": "/usr/i686-linux-gnu/bin/strip"
             },
