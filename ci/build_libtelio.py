@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 
 import os
-import shutil
 import sys
 import subprocess
-import urllib.request
-import zipfile
 import moose_utils
 from pathlib import Path
 
@@ -35,42 +32,6 @@ PROJECT_CONFIG = rutils.Project(
     root_dir=PROJECT_ROOT,
     working_dir=WORKING_DIR,
 )
-
-
-def finalize_win(config, moose):
-    def get_dependency(url, name, dll_name):
-        zip_name = name + ".zip"
-        with urllib.request.urlopen(url) as f:
-            with open(zip_name, "wb") as w:
-                w.write(f.read())
-        with zipfile.ZipFile(zip_name, "r") as zip_ref:
-            zip_ref.extractall(".")
-        shutil.copyfile(
-            name + "/bin/amd64/" + dll_name,
-            PROJECT_CONFIG.get_distribution_path(
-                config.target_os, config.arch, dll_name, config.debug
-            ),
-        )
-        shutil.rmtree(name)
-        os.remove(zip_name)
-
-    get_dependency(
-        "https://www.wintun.net/builds/wintun-0.14.1.zip", "wintun", "wintun.dll"
-    )
-    get_dependency(
-        "https://download.wireguard.com/wireguard-nt/wireguard-nt-0.10.1.zip",
-        "wireguard-nt",
-        "wireguard.dll",
-    )
-
-    if moose:
-        sqlite_path = f"{PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/windows/{config.arch}/sqlite3.dll"
-        shutil.copyfile(
-            sqlite_path,
-            PROJECT_CONFIG.get_distribution_path(
-                config.target_os, config.arch, "sqlite3.dll", config.debug
-            ),
-        )
 
 
 def copy_bindings(config):
@@ -307,9 +268,6 @@ def exec_build(args):
     )
     rutils.check_config(config)
     call_build(config)
-
-    if args.os == "windows":
-        finalize_win(config, args.moose)
 
 
 def create_debug_symbols(config):
