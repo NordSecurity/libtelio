@@ -410,3 +410,107 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
             # Wait for close on both clients
             await testing.wait_long(close_wait_event.wait())
             await testing.wait_long(close_wait_event.wait())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "setup_params",
+    [
+        # IPv4 public server
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
+                adapter_type=AdapterType.BoringTun,
+                ip_stack=IPStack.IPv4,
+                features=TelioFeatures(boringtun_reset_connections=True),
+            )
+        ),
+        # TODO(msz): IPv6 public server, it doesn't work with the current VPN implementation
+        # pytest.param(
+        #     SetupParameters(
+        #         connection_tag=ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
+        #         adapter_type=AdapterType.BoringTun,
+        #         ip_stack=IPStack.IPv6,
+        #         telio_features=TelioFeatures(boringtun_reset_connections=True),
+        #     )
+        # ),
+    ],
+)
+async def test_kill_external_udp_conn_on_vpn_reconnect(
+    setup_params: SetupParameters,
+) -> None:
+    serv_ip = (
+        config.UDP_SERVER_IP6
+        if setup_params.ip_stack == IPStack.IPv6
+        else config.UDP_SERVER_IP4
+    )
+
+    async with AsyncExitStack() as exit_stack:
+        env = await exit_stack.enter_async_context(
+            setup_environment(exit_stack, [setup_params])
+        )
+
+        alpha, *_ = env.nodes
+        connection, *_ = [conn.connection for conn in env.connections]
+        client, *_ = env.clients
+
+        async def connect(
+            wg_server: dict,
+        ):
+            await client.connect_to_vpn(
+                wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
+            )
+
+            async with Ping(connection, serv_ip).run() as ping:
+                await testing.wait_long(ping.wait_for_next_ping())
+
+        await connect(
+            config.WG_SERVER,
+        )
+
+        output_notifier = OutputNotifier()
+
+        async def on_stdout(stdout: str) -> None:
+            for line in stdout.splitlines():
+                output_notifier.handle_output(line)
+
+        sender_start_event = asyncio.Event()
+
+        output_notifier.notify_output(
+            "2000 port [udp/*] succeeded!",
+            sender_start_event,
+        )
+
+        ip_proto = (
+            IPProto.IPv6 if setup_params.ip_stack == IPStack.IPv6 else IPProto.IPv4
+        )
+        alpha_ip = testing.unpack_optional(alpha.get_ip_address(ip_proto))
+
+        proc = connection.create_process(
+            [
+                "nc",
+                "-nuv",
+                "-6" if setup_params.ip_stack == IPStack.IPv6 else "-4",
+                "-s",
+                alpha_ip,
+                serv_ip,
+                str(2000),
+            ]
+        )
+
+        await exit_stack.enter_async_context(
+            proc.run(stdout_callback=on_stdout, stderr_callback=on_stdout)
+        )
+
+        await testing.wait_long(sender_start_event.wait())
+
+        await testing.wait_long(
+            client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
+        )
+
+        await connect(
+            config.WG_SERVER_2,
+        )
+
+        # nc client should be closed by the reset mechanism
+        await testing.wait_long(proc.is_done())
