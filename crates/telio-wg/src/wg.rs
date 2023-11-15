@@ -2,7 +2,11 @@ use async_trait::async_trait;
 use futures::{future::pending, FutureExt};
 use ipnetwork::{IpNetwork, IpNetworkError};
 use slog::{o, Drain, Logger, Never};
-use std::{collections::HashMap, net::SocketAddr};
+use std::{
+    collections::HashMap,
+    net::{Ipv4Addr, SocketAddr},
+};
+use telio_model::mesh::ExitNode;
 use telio_sockets::{NativeProtector, SocketPool};
 use telio_utils::{
     dual_target, telio_err_with_log, telio_log_debug, telio_log_trace, telio_log_warn,
@@ -59,7 +63,11 @@ pub trait WireGuard: Send + Sync + 'static {
     async fn stop(self);
     /// Inject apropiate packets into the tunel to reset exising connections.
     /// Used for forcing external clients to reconnect to public servers.
-    async fn reset_existing_connections(&self, exit: PublicKey) -> Result<(), Error>;
+    async fn reset_existing_connections(
+        &self,
+        exit_pubkey: PublicKey,
+        exit_interface_ipv4: Ipv4Addr,
+    ) -> Result<(), Error>;
 }
 
 /// WireGuard implementation allowing dynamic selection of implementation.
@@ -388,9 +396,13 @@ impl WireGuard for DynamicWg {
         let _ = self.task.stop().await.resume_unwind();
     }
 
-    async fn reset_existing_connections(&self, exit: PublicKey) -> Result<(), Error> {
+    async fn reset_existing_connections(
+        &self,
+        pubkey: PublicKey,
+        ipv4: Ipv4Addr,
+    ) -> Result<(), Error> {
         task_exec!(&self.task, async move |s| {
-            s.adapter.inject_reset_packets(&exit).await;
+            s.adapter.inject_reset_packets(&pubkey, ipv4).await;
             Ok(())
         })
         .await?;

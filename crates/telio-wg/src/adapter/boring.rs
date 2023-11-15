@@ -3,6 +3,7 @@ use boringtun::device::{tun::TunSocket, DeviceConfig, DeviceHandle};
 use futures::future::BoxFuture;
 use slog::{o, Drain};
 use slog_stdlog::StdLog;
+use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 use std::{io, ops::Deref};
 use telio_crypto::PublicKey;
@@ -87,7 +88,7 @@ impl Adapter for BoringTun {
         self.device.write().await.wait();
     }
 
-    async fn inject_reset_packets(&self, exit: &PublicKey) {
+    async fn inject_reset_packets(&self, exit_pubkey: &PublicKey, exit_ipv4: Ipv4Addr) {
         let Some(cb) = self.reset_conns_cb.as_ref() else {
             return;
         };
@@ -129,6 +130,6 @@ impl Adapter for BoringTun {
         let mut sink4 = Sink4 { tun };
         let mut sink6 = Sink6 { tun };
 
-        cb(exit, &mut sink4, &mut sink6);
+        cb(exit_pubkey, exit_ipv4, &mut sink4, &mut sink6);
     }
 }
