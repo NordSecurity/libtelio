@@ -4,6 +4,7 @@ import argparse
 import os
 import subprocess
 import sys
+import time
 from typing import List, Optional, Dict, Any
 
 PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/../..")
@@ -58,7 +59,15 @@ def main() -> int:
     )
     parser.add_argument("--reruns", type=int, default=0, help="Pass `reruns` to pytest")
     parser.add_argument("--moose", action="store_true", help="Build with moose")
+    parser.add_argument(
+        "--no-verify-setup-correctness",
+        action="store_true",
+        help="Disable verification of setup correctness",
+    )
     args = parser.parse_args()
+
+    if not args.no_verify_setup_correctness:
+        verify_setup_correctness()
 
     if not args.nobuild:
         run_build_command("linux", args)
@@ -123,6 +132,58 @@ def get_pytest_arguments(options) -> List[str]:
         args.extend(["-m", marks])
 
     return args
+
+
+# Verifies that setup for natlab is correct.
+def verify_setup_correctness():
+    def get_tag_or_hash_of_dir(path):
+        result = subprocess.run(
+            ["git", "tag", "--points-at", "HEAD"], cwd=path, capture_output=True
+        )
+        if result.returncode != 0:
+            return None
+        tag = result.stdout.decode("ascii").strip()
+        if tag != "":
+            return tag
+
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=path, capture_output=True
+        )
+        if result.returncode != 0:
+            return None
+        return result.stdout.decode("ascii").strip()
+
+    def get_expected_tag():
+        with open("../.github/workflows/gitlab.yml", "r", encoding="utf-8") as f:
+            lines = [line.strip() for line in f if "triggered-ref" in line]
+            if len(lines) == 0:
+                return None
+            line = lines[0]
+            values = line.split(" ")
+            if len(values) != 2:
+                return None
+            return values[1]
+
+    actual = get_tag_or_hash_of_dir(PROJECT_ROOT)
+    if actual is None:
+        return
+    expected_tag = get_expected_tag()
+    if expected_tag is None:
+        return
+    if expected_tag != actual:
+        print(
+            "################################################################################"
+        )
+        print(
+            f"Project root ({PROJECT_ROOT}) and 'triggered-ref' in"
+            " ../.github/workflows/gitlab.yml differ"
+        )
+        print(f"        '{actual}' vs '{expected_tag}'")
+        print("!!! Nat-lab might not behave correctly !!!")
+        print(
+            "################################################################################"
+        )
+        time.sleep(5)
 
 
 if __name__ == "__main__":
