@@ -1,11 +1,11 @@
-use std::io::{Error as IOError, Result as IOResult};
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use trust_dns_proto::{rr::Record, serialize::binary::BinEncoder};
-use trust_dns_server::{
+use hickory_proto::{rr::Record, serialize::binary::BinEncoder};
+use hickory_server::{
     authority::MessageResponse,
     server::{ResponseHandler, ResponseInfo},
 };
+use std::io::{Error as IOError, Result as IOResult};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[derive(Clone)]
 /// Resolver converts DNS responses to &[u8].

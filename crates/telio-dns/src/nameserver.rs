@@ -4,6 +4,10 @@ use crate::{
 };
 use async_trait::async_trait;
 use boringtun::noise::{Tunn, TunnResult};
+use hickory_proto::rr::LowerName;
+use hickory_proto::serialize::binary::BinDecodable;
+use hickory_server::authority::MessageRequest;
+use hickory_server::server::{Protocol, Request};
 use pnet_packet::{
     ip::IpNextHeaderProtocols,
     ipv4::{checksum, Ipv4Packet, MutableIpv4Packet},
@@ -19,10 +23,6 @@ use std::{
 use tokio::net::UdpSocket;
 use tokio::sync::{RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, Semaphore};
 use tokio::task::JoinHandle;
-use trust_dns_client::rr::LowerName;
-use trust_dns_proto::serialize::binary::BinDecodable;
-use trust_dns_server::authority::MessageRequest;
-use trust_dns_server::server::{Protocol, Request};
 
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
 
@@ -196,8 +196,12 @@ impl LocalNameServer {
             .take()
             .ok_or_else(|| String::from("Inexistent DNS request"))?;
         let dns_request = Request::new(dns_request, request_info.dns_source(), Protocol::Udp);
-        zones.lookup(&dns_request, resolver.clone()).await;
         telio_log_debug!("DNS request: {:?}", &dns_request);
+
+        zones
+            .lookup(&dns_request, resolver.clone())
+            .await
+            .map_err(|e| format!("Lookup failed {}", e))?;
 
         let dns_response = resolver.0.lock().await;
         telio_log_debug!("Nameserver response: {:?}", &dns_response);
@@ -503,10 +507,11 @@ impl WithZones for Arc<RwLock<LocalNameServer>> {
 #[async_trait]
 impl NameServer for Arc<RwLock<LocalNameServer>> {
     async fn upsert(&self, zone: &str, records: &Records) -> Result<(), String> {
-        self.zones_mut().await.upsert(
-            LowerName::from_str(zone)?,
-            Box::new(Arc::new(AuthoritativeZone::new(zone, records).await?)),
-        );
+        let azone = Arc::new(AuthoritativeZone::new(zone, records).await?);
+
+        self.zones_mut()
+            .await
+            .upsert(LowerName::from_str(zone)?, Box::new(azone));
         Ok(())
     }
 
@@ -541,14 +546,14 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
 #[cfg(test)]
 mod tests {
     use crate::zone::Records;
-    use std::{net::Ipv4Addr, str::FromStr};
-    use trust_dns_client::rr::Name;
-    use trust_dns_proto::{
+    use hickory_proto::{
         op::{Message, Query},
+        rr::Name,
         serialize::binary::{BinDecodable, BinDecoder, BinEncodable},
     };
-    use trust_dns_server::authority::MessageRequest;
-    use trust_dns_server::server::Request;
+    use hickory_server::authority::MessageRequest;
+    use hickory_server::server::Request;
+    use std::{net::Ipv4Addr, str::FromStr};
 
     use super::*;
 
@@ -584,7 +589,8 @@ mod tests {
             .zones()
             .await
             .lookup(&request, resolver.clone())
-            .await;
+            .await
+            .unwrap();
         let buf = resolver.0.lock().await;
         let mut decoder = BinDecoder::new(&buf);
         let answers = Message::read(&mut decoder).unwrap().take_answers();

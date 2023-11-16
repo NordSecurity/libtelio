@@ -1,18 +1,19 @@
 use async_trait::async_trait;
-use std::{
-    collections::{HashMap, HashSet},
-    net::IpAddr,
-    str::FromStr,
-};
-use trust_dns_client::rr::{rdata::SOA, DNSClass, LowerName, Name, RData, Record, RecordType};
-use trust_dns_resolver::config::{NameServerConfigGroup, ResolverOpts};
-use trust_dns_server::{
+use hickory_client::rr::{rdata::SOA, DNSClass, Name, RData, Record, RecordType};
+use hickory_proto::rr::{rdata, LowerName};
+use hickory_resolver::config::{NameServerConfigGroup, ResolverOpts};
+use hickory_server::{
     authority::{
         Authority, AuthorityObject, Catalog, LookupError, LookupOptions, MessageRequest,
         UpdateResult, ZoneType,
     },
     server::{Request, RequestInfo, ResponseHandler, ResponseInfo},
     store::{forwarder::ForwardConfig, in_memory::InMemoryAuthority},
+};
+use std::{
+    collections::{HashMap, HashSet},
+    net::IpAddr,
+    str::FromStr,
 };
 
 use crate::forward::ForwardAuthority;
@@ -80,13 +81,20 @@ impl AuthoritativeZone {
                 match *ip {
                     IpAddr::V4(ipv4) => {
                         let _ = zone
-                            .upsert(build_record(name.clone(), RecordType::A, RData::A(ipv4)), 0)
+                            .upsert(
+                                build_record(name.clone(), RecordType::A, RData::A(rdata::A(ipv4))),
+                                0,
+                            )
                             .await;
                     }
                     IpAddr::V6(ipv6) => {
                         let _ = zone
                             .upsert(
-                                build_record(name.clone(), RecordType::AAAA, RData::AAAA(ipv6)),
+                                build_record(
+                                    name.clone(),
+                                    RecordType::AAAA,
+                                    RData::AAAA(rdata::AAAA(ipv6)),
+                                ),
                                 0,
                             )
                             .await;
@@ -162,10 +170,13 @@ impl ForwardZone {
 
         options.num_concurrent_reqs = 1;
 
+        // We set the number of retries to 0. The retry should be handled by the OS retry mechanism
+        options.attempts = 0;
+
         let zone = ForwardAuthority::try_from_config(
             Name::from_str(name)?,
             ZoneType::Forward,
-            &ForwardConfig {
+            ForwardConfig {
                 options: Some(options),
                 name_servers: NameServerConfigGroup::from_ips_clear(ips, 53, true),
             },
@@ -241,7 +252,7 @@ impl ClonableZones {
         &self,
         request: &Request,
         response_handle: R,
-    ) -> ResponseInfo {
+    ) -> Result<ResponseInfo, LookupError> {
         self.zones.lookup(request, None, response_handle).await
     }
 
@@ -292,7 +303,7 @@ mod tests {
             assert_eq!(records.len(), 1);
             let record = records[0];
             assert_eq!(record.name(), &Name::from_str(name).unwrap());
-            assert_eq!(record.data(), Some(&RData::A(expected_ipv4)));
+            assert_eq!(record.data(), Some(&RData::A(rdata::A(expected_ipv4))));
         } else {
             assert!(matches!(lookup, Err(LookupError::NameExists)));
         }
@@ -311,7 +322,10 @@ mod tests {
             assert_eq!(records.len(), 1);
             let record = records[0];
             assert_eq!(record.name(), &Name::from_str(name).unwrap());
-            assert_eq!(record.data(), Some(&RData::AAAA(expected_ipv6)));
+            assert_eq!(
+                record.data(),
+                Some(&RData::AAAA(rdata::AAAA(expected_ipv6)))
+            );
         } else {
             assert!(matches!(lookup, Err(LookupError::NameExists)));
         }

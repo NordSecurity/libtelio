@@ -2,66 +2,81 @@
 //! Needed to change behaviour of [tokio::net::UdpSocket]
 
 use std::{
+    future::Future,
     io,
-    net::{Ipv4Addr, Ipv6Addr},
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr},
+    pin::Pin,
 };
 
 use async_trait::async_trait;
-use telio_utils::{telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn};
-use tokio::net::{TcpStream, UdpSocket};
-use trust_dns_server::{
+use hickory_proto::rr::{LowerName, Name, RecordType};
+use hickory_proto::udp::DnsUdpSocket;
+use hickory_proto::{op::ResponseCode, rr::Record};
+use hickory_resolver::name_server::{GenericConnector, RuntimeProvider, TokioRuntimeProvider};
+use hickory_server::{
     authority::{
         Authority, LookupError, LookupObject, LookupOptions, MessageRequest, UpdateResult, ZoneType,
     },
-    client::{
-        op::ResponseCode,
-        rr::{LowerName, Name, Record, RecordType},
-    },
-    proto::{iocompat::AsyncIoTokioAsStd, udp::UdpSocket as ProtoUdpSocket, TokioTime},
+    proto::udp::UdpSocket as ProtoUdpSocket,
     resolver::{
-        config::ResolverConfig,
-        error::ResolveErrorKind,
-        lookup::Lookup as ResolverLookup,
-        name_server::{GenericConnection, GenericConnectionProvider, RuntimeProvider},
-        AsyncResolver, TokioHandle,
+        config::ResolverConfig, error::ResolveErrorKind, lookup::Lookup as ResolverLookup,
+        AsyncResolver,
     },
     server::RequestInfo,
     store::forwarder::ForwardConfig,
 };
+use telio_utils::{telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn};
+use tokio::net::UdpSocket;
 
 use crate::bind_tun;
 
-#[derive(Clone, Copy)]
-pub struct TelioRuntime;
-impl RuntimeProvider for TelioRuntime {
-    type Handle = TokioHandle;
-    type Tcp = AsyncIoTokioAsStd<TcpStream>;
-    type Timer = TokioTime;
+#[derive(Default, Clone)]
+pub struct TelioRuntimeProvider(TokioRuntimeProvider);
+
+impl RuntimeProvider for TelioRuntimeProvider {
+    type Handle = <TokioRuntimeProvider as RuntimeProvider>::Handle;
+    type Timer = <TokioRuntimeProvider as RuntimeProvider>::Timer;
     type Udp = TelioUdpSocket;
+    type Tcp = <TokioRuntimeProvider as RuntimeProvider>::Tcp;
+
+    fn create_handle(&self) -> Self::Handle {
+        self.0.create_handle()
+    }
+
+    fn connect_tcp(
+        &self,
+        server_addr: SocketAddr,
+    ) -> Pin<Box<dyn Send + Future<Output = io::Result<Self::Tcp>>>> {
+        self.0.connect_tcp(server_addr)
+    }
+
+    fn bind_udp(
+        &self,
+        local_addr: SocketAddr,
+        _server_addr: SocketAddr,
+    ) -> Pin<Box<dyn Send + Future<Output = io::Result<Self::Udp>>>> {
+        Box::pin(async move {
+            let sock = tokio::net::UdpSocket::bind(local_addr).await?;
+            bind_tun::bind_to_tun(&sock)?;
+            Ok(TelioUdpSocket(sock))
+        })
+    }
 }
-pub type TelioConnection = GenericConnection;
-pub type TelioConnectionProvider = GenericConnectionProvider<TelioRuntime>;
-pub type TelioAsyncResolver = AsyncResolver<TelioConnection, TelioConnectionProvider>;
+
+pub type TelioAsyncResolver = AsyncResolver<GenericConnector<TelioRuntimeProvider>>;
 
 pub struct TelioUdpSocket(UdpSocket);
 
 #[async_trait]
-impl ProtoUdpSocket for TelioUdpSocket {
-    type Time = <tokio::net::UdpSocket as ProtoUdpSocket>::Time;
-
-    async fn bind(addr: std::net::SocketAddr) -> io::Result<Self> {
-        telio_log_trace!("binding to address {:?}", addr);
-        let sock = UdpSocket::bind(addr).await?;
-        bind_tun::bind_to_tun(&sock)?;
-        Ok(Self(sock))
-    }
+impl DnsUdpSocket for TelioUdpSocket {
+    type Time = <tokio::net::UdpSocket as DnsUdpSocket>::Time;
 
     fn poll_recv_from(
         &self,
         cx: &mut std::task::Context<'_>,
         buf: &mut [u8],
     ) -> std::task::Poll<io::Result<(usize, std::net::SocketAddr)>> {
-        ProtoUdpSocket::poll_recv_from(&self.0, cx, buf)
+        DnsUdpSocket::poll_recv_from(&self.0, cx, buf)
     }
 
     fn poll_send_to(
@@ -70,7 +85,17 @@ impl ProtoUdpSocket for TelioUdpSocket {
         buf: &[u8],
         target: std::net::SocketAddr,
     ) -> std::task::Poll<io::Result<usize>> {
-        ProtoUdpSocket::poll_send_to(&self.0, cx, buf, target)
+        DnsUdpSocket::poll_send_to(&self.0, cx, buf, target)
+    }
+}
+
+#[async_trait]
+impl ProtoUdpSocket for TelioUdpSocket {
+    async fn bind(addr: std::net::SocketAddr) -> io::Result<Self> {
+        telio_log_trace!("binding to address {:?}", addr);
+        let sock = UdpSocket::bind(addr).await?;
+        bind_tun::bind_to_tun(&sock)?;
+        Ok(Self(sock))
     }
 
     /// setups up a "client" udp connection that will only receive packets from the associated address
@@ -112,11 +137,11 @@ impl ForwardAuthority {
     pub async fn try_from_config(
         origin: Name,
         _zone_type: ZoneType,
-        config: &ForwardConfig,
+        config: ForwardConfig,
     ) -> Result<Self, String> {
         telio_log_info!("loading forwarder config: {}", origin);
 
-        let name_servers = config.name_servers.clone();
+        let name_servers = config.name_servers;
         let mut options = config.options.unwrap_or_default();
 
         // See RFC 1034, Section 4.3.2:
@@ -140,8 +165,7 @@ impl ForwardAuthority {
 
         let config = ResolverConfig::from_parts(None, vec![], name_servers);
 
-        let resolver = TelioAsyncResolver::new(config, options, TokioHandle)
-            .map_err(|e| format!("error constructing new Resolver: {}", e))?;
+        let resolver = TelioAsyncResolver::new(config, options, GenericConnector::default());
 
         telio_log_info!("forward resolver configured: {}: ", origin);
 
