@@ -37,7 +37,6 @@ async def new_connection() -> AsyncIterator[Connection]:
         connection = SshConnection(ssh_connection, TargetOS.Windows)
 
         await _copy_binaries(ssh_connection, connection)
-        await _disable_firewall(connection)
 
         async def on_stdout(stdout: str) -> None:
             print(stdout)
@@ -55,12 +54,6 @@ async def new_connection() -> AsyncIterator[Connection]:
             yield connection
         finally:
             pass
-
-
-async def _disable_firewall(connection: Connection):
-    await connection.create_process(
-        ["netsh", "advfirewall", "set", "allprofiles", "state", "off"]
-    ).execute()
 
 
 async def _copy_binaries(
