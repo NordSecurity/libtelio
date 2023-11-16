@@ -19,6 +19,9 @@ jobs:
           - arch: x86_64
             target_os: windows
             runner: windows-2022
+          - arch: aarch64
+            target_os: windows
+            runner: windows-2022
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3

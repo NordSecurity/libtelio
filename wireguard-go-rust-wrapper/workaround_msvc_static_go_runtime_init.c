@@ -14,9 +14,9 @@
 #elif _M_AMD64
 #define RT0_CPUARCH_WINDOWS_LIB _rt0_amd64_windows_lib
 #elif _M_ARM
-#define RT0_CPUARCH_WINDOWS_LIB _rt0_arm_windows
+#define RT0_CPUARCH_WINDOWS_LIB _rt0_arm_windows_lib
 #elif (_M_ARM64 || _M_ARM64EC)
-#define RT0_CPUARCH_WINDOWS_LIB _rt0_arm64_windows
+#define RT0_CPUARCH_WINDOWS_LIB _rt0_arm64_windows_lib
 #else
 #error "Unsupported CPU architecture"
 #endif
