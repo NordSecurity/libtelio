@@ -1478,78 +1478,45 @@ impl Runtime {
         Ok(self.entities.socket_pool.clone())
     }
 
-    async fn peer_to_node(&self, peer: &uapi::Peer, state: Option<PeerState>) -> Option<Node> {
+    async fn peer_to_node<'a>(
+        &'a self,
+        peer: &uapi::Peer,
+        state: Option<PeerState>,
+    ) -> Option<Node> {
         let endpoint = peer.endpoint;
 
         // Check if ExitNode in requested state matches the node being reported by public
         // key
-        let exit_node = if let Some(exit_node) = self.requested_state.exit_node.clone() {
-            Some(exit_node)
-        } else {
-            self.requested_state.last_exit_node.clone()
-        }
-        .filter(|node| node.public_key == peer.public_key);
+        let exit_node = self.requested_state.exit_node.as_ref();
+        let exit_node = exit_node
+            .or(self.requested_state.last_exit_node.as_ref())
+            .filter(|node| node.public_key == peer.public_key);
 
         // Find a peer with matching public key in meshnet_config and retrieve the needed
         // information about it from there
-        let meshnet_peer: Option<Peer> = match self
-            .requested_state
-            .meshnet_config
-            .as_ref()
-            .and_then(|config| config.peers.clone())
-            .and_then(|config_peers| {
-                config_peers
-                    .iter()
-                    .cloned()
-                    .filter(|config_peer| config_peer.base.public_key == peer.public_key)
-                    .collect::<Vec<Peer>>()
-                    .first()
-                    .cloned()
-            }) {
-            Some(peer) => Some(peer),
-            None => self
-                .requested_state
-                .old_meshnet_config
-                .as_ref()
-                .and_then(|config| config.peers.clone())
-                .and_then(|config_peers| {
-                    config_peers
-                        .iter()
-                        .cloned()
-                        .filter(|config_peer| config_peer.base.public_key == peer.public_key)
-                        .collect::<Vec<Peer>>()
-                        .first()
-                        .cloned()
-                }),
+        let get_config_peer = |config: Option<&'a Config>| {
+            config
+                .and_then(|cfg| cfg.peers.as_ref())?
+                .iter()
+                .find(|&p| p.base.public_key == peer.public_key)
         };
+        let meshnet_peer: Option<&Peer> =
+            get_config_peer(self.requested_state.meshnet_config.as_ref())
+                .or_else(|| get_config_peer(self.requested_state.old_meshnet_config.as_ref()));
 
         // Resolve what type of path is used
         let path_type = {
-            let map = self
-                .entities
+            self.entities
                 .proxy
                 .get_endpoint_map()
                 .await
                 .unwrap_or_else(|err| {
                     telio_log_warn!("Failed to get proxy endpoint map: {}", err);
                     Default::default()
-                });
-            match &endpoint {
-                Some(actual) => map
-                    .get(&peer.public_key)
-                    .map(|proxy| {
-                        if proxy == actual {
-                            PathType::Relay
-                        } else {
-                            PathType::Direct
-                        }
-                    })
-                    .unwrap_or(PathType::Direct),
-                None => {
-                    // TODO: Maybe we should introduce None state after all ?
-                    PathType::Direct
-                }
-            }
+                })
+                .get(&peer.public_key)
+                .and_then(|proxy| endpoint.filter(|actual| proxy == actual))
+                .map_or(PathType::Direct, |_| PathType::Relay)
         };
 
         // Build a node to report event about, we need to report about either meshnet peers
@@ -1559,17 +1526,15 @@ impl Runtime {
             (Some(meshnet_peer), _) => {
                 // Meshnet peer
                 Some(Node {
-                    identifier: meshnet_peer.base.identifier,
+                    identifier: meshnet_peer.base.identifier.clone(),
                     public_key: meshnet_peer.base.public_key,
                     state: state.unwrap_or_else(|| peer.state()),
-                    is_exit: self
-                        .requested_state
-                        .exit_node
-                        .as_ref()
-                        .filter(|node| node.public_key == peer.public_key)
-                        .is_some(),
+                    is_exit: peer
+                        .allowed_ips
+                        .iter()
+                        .any(|network| network.ip().is_unspecified()),
                     is_vpn: false,
-                    ip_addresses: meshnet_peer.base.ip_addresses.unwrap_or_default(),
+                    ip_addresses: meshnet_peer.base.ip_addresses.clone().unwrap_or_default(),
                     allowed_ips: peer.allowed_ips.clone(),
                     endpoint,
                     hostname: Some(meshnet_peer.base.hostname.clone()),
@@ -1581,7 +1546,7 @@ impl Runtime {
             (None, Some(exit_node)) => {
                 // Exit node
                 Some(Node {
-                    identifier: exit_node.identifier,
+                    identifier: exit_node.identifier.clone(),
                     public_key: exit_node.public_key,
                     state: state.unwrap_or_else(|| peer.state()),
                     is_exit: true,

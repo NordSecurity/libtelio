@@ -42,6 +42,7 @@
 * LLT-4515: Add nordvpn app version to moose context
 * LLT-3923: Change DERP and STUN identifiers
 * LLT-4202: Do not answer DNS request if forward lookup fails
+* LLT-4427: Fix issue with malformed disconnect event
 
 <br>
 
