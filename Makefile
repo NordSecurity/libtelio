@@ -30,11 +30,12 @@ CS_NS := NordSec.Telio
 
 PATH := $(PATH):$(HELP_DIR)
 
+HOST_OS := $(shell uname -s)
 MIN_MAKE_VERSION := 4.3
 all: check_version bindings
 
 check_version:
-	if [ `echo "$(MIN_MAKE_VERSION)>$(MAKE_VERSION)"|bc` -eq 1 ]; then \
+	if [ `printf "$(MIN_MAKE_VERSION)\n$(MAKE_VERSION)" | sort -V | head -n 1 | tr -d '\n'` != "$(MIN_MAKE_VERSION)" ]; then \
         echo "Use Make version greater than $(MIN_MAKE_VERSION)"; \
 		echo "You version is $(MAKE_VERSION)"; \
 		exit 1; \
@@ -70,8 +71,13 @@ base_$(OS): binding_c
 binding_go_$(OS): base_$(OS)
 	mkdir -p $(GD)
 	$(SWIG) -go -module $(GO_MODULE) -intgosize 32 -cgo -outdir $(GD) -o $(WD)/go_wrap.c $(CFG)
-	sed -i 's/^\(#include <stdint.h>\)$$$$/\1\n#include "callbacks.h"/' $(GD)/teliogo.go
-	sed -i 's/type swig_gostring struct { p uintptr; n int }/type swig_gostring struct { p uintptr; n int32 }/' $(GD)/teliogo.go
+	if [ "$(HOST_OS)" = "Darwin" ]; then \
+		sed -i '' 's/^\(#include <stdint.h>\)$$$$/\1\n#include "callbacks.h"/' $(GD)/teliogo.go; \
+		sed -i '' 's/type swig_gostring struct { p uintptr; n int }/type swig_gostring struct { p uintptr; n int32 }/' $(GD)/teliogo.go; \
+	else \
+		sed -i 's/^\(#include <stdint.h>\)$$$$/\1\n#include "callbacks.h"/' $(GD)/teliogo.go; \
+		sed -i 's/type swig_gostring struct { p uintptr; n int }/type swig_gostring struct { p uintptr; n int32 }/' $(GD)/teliogo.go; \
+	fi
 	cp $(HELP_DIR)/go/* $(GD)
 	# Generate list of exported functions
 	./generate_wrap_exports.sh $(WD)/go_wrap
@@ -82,7 +88,11 @@ binding_csharp_$(OS): base_$(OS)
 	$(SWIG) -csharp -namespace $(CS_NS) -outdir /dev -outfile null -o $(WD)/csharp_wrap.c $(CFG)
 	# Generate just C# wrapper, since cscode works only in -c++ mode
 	$(SWIG) -D_WIN32 -c++ -csharp -namespace $(CS_NS) -outdir $(SD) -outfile Telio.cs -o /dev/null $(CFG)
-	sed -i 's/"libtelio"/"telio"/' $(SD)/Telio.cs
+	if [ "$(HOST_OS)" = "Darwin" ]; then \
+		sed -i '' 's/"libtelio"/"telio"/' $(SD)/Telio.cs; \
+	else \
+		sed -i 's/"libtelio"/"telio"/' $(SD)/Telio.cs; \
+	fi
 	# Generate list of exported functions
 	./generate_wrap_exports.sh $(WD)/csharp_wrap
 
@@ -90,7 +100,11 @@ binding_java_$(OS): base_$(OS)
 	mkdir -p $(JD)/$(JAVA_PATH)
 	$(SWIG) -java -package $(JAVA_PKG) -outdir $(JD)/$(JAVA_PATH) -o $(WD)/java_wrap.c $(CFG)
 	cp $(HELP_DIR)/java/* $(JD)/$(JAVA_PATH)
-	sed -i 's/%JAVA_PKG%/$(JAVA_PKG)/' $(JD)/$(JAVA_PATH)/I*.java
+	if [ "$(HOST_OS)" = "Darwin" ]; then \
+		sed -i '' 's/%JAVA_PKG%/$(JAVA_PKG)/' $(JD)/$(JAVA_PATH)/I*.java; \
+	else \
+		sed -i 's/%JAVA_PKG%/$(JAVA_PKG)/' $(JD)/$(JAVA_PATH)/I*.java; \
+	fi
 	rm $(JD)/$(JAVA_PATH)/libtelio.java  #remove empty java class from artifacts
 	# Generate list of exported functions
 	./generate_wrap_exports.sh $(WD)/java_wrap
