@@ -56,7 +56,7 @@ def fetch_moose_dependencies(opsys: str, arch: str):
         _download_moose_file(opsys, arch, "libsqlite3.so")
 
 
-def create_msvc_import_library():
+def create_msvc_import_library(arch: str):
     def execute_dumpbin(file_path: str) -> list[str]:
         output = subprocess.check_output(["dumpbin", "/EXPORTS", file_path])
         output_lines = output.decode().split("\n")[19:]
@@ -73,19 +73,27 @@ def create_msvc_import_library():
             for export in exports:
                 f.write(f"    {export}\n")
 
-    def create_lib(def_path: str, lib_path: str):
+    def create_lib(def_path: str, lib_path: str, arch: str):
+        arch_upd = ""
+        if arch == "x86_64":
+            arch_upd = "X64"
+        elif arch == "aarch64":
+            arch_upd = "ARM64"
+        else:
+            print(f"Unsupported architecture: {arch}")
+
         subprocess.check_call(
-            ["lib", "/DEF:" + def_path, "/OUT:" + lib_path, "/MACHINE:X64"]
+            ["lib", "/DEF:" + def_path, "/OUT:" + lib_path, "/MACHINE:" + arch_upd]
         )
 
-    output_dir = _output_dir("windows", "x86_64")
+    output_dir = _output_dir("windows", arch)
     dll_path = os.path.join(output_dir, "sqlite3.dll")
     def_path = os.path.join(output_dir, "sqlite3.def")
     lib_path = os.path.join(output_dir, "sqlite3.lib")
 
     exports = execute_dumpbin(dll_path)
     write_exports(exports, def_path)
-    create_lib(def_path, lib_path)
+    create_lib(def_path, lib_path, arch)
 
 
 def _write_file(file_name, contents):
