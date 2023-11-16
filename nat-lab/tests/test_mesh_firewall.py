@@ -522,6 +522,7 @@ async def test_mesh_firewall_file_share_port(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4553")
 @pytest.mark.parametrize(
     "alpha_ip_stack,beta_ip_stack",
     [
@@ -667,6 +668,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4553")
 @pytest.mark.parametrize(
     "alpha_ip_stack,beta_ip_stack",
     [

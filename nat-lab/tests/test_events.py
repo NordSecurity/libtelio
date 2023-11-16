@@ -348,7 +348,10 @@ async def test_event_content_vpn_connection(
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
             ),
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - see JIRA issue LLT-4559"),
+            ],
         ),
         pytest.param(
             SetupParameters(
@@ -359,7 +362,10 @@ async def test_event_content_vpn_connection(
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
             ),
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - see JIRA issue LLT-4559"),
+            ],
         ),
         pytest.param(
             SetupParameters(
@@ -470,6 +476,7 @@ async def test_event_content_exit_through_peer(
                 features=TelioFeatures(direct=Direct(providers=["stun"])),
             ),
             "10.0.254.1",
+            marks=pytest.mark.flaky("Test is flaky - JIRA issue LLT-4558"),
         ),
         pytest.param(
             SetupParameters(
