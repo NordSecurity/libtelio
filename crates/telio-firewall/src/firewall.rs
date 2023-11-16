@@ -1311,7 +1311,10 @@ impl Default for StatefullFirewall {
 pub mod tests {
     use super::*;
     use pnet_packet::{
-        icmp::{IcmpType, MutableIcmpPacket},
+        icmp::{
+            destination_unreachable::{self, DestinationUnreachablePacket},
+            IcmpType, MutableIcmpPacket,
+        },
         icmpv6::{Icmpv6Type, MutableIcmpv6Packet},
         ip::IpNextHeaderProtocol,
         ipv4::MutableIpv4Packet,
@@ -3067,5 +3070,65 @@ pub mod tests {
         assert_eq!(tcppkgs[2].get_source(), 54321);
         assert_eq!(tcppkgs[2].get_destination(), 12345);
         assert_eq!(tcppkgs[2].get_sequence(), 1);
+    }
+
+    #[test]
+    fn firewall_udp_conns_reset() {
+        let fw = StatefullFirewall::new(false, false);
+        let peer = make_peer();
+        fw.add_to_port_whitelist(PublicKey(peer), FILE_SEND_PORT);
+
+        let test_udppkg = make_udp("127.0.0.2:12345", "101.101.101.101:54321");
+        // Outbound connection
+        assert!(fw.process_outbound_packet(&peer, &test_udppkg,));
+
+        #[derive(Default)]
+        struct Sink4 {
+            pkgs: Vec<Vec<u8>>,
+        }
+
+        impl io::Write for Sink4 {
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                self.pkgs.push(buf.to_vec());
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let mut sink4 = Sink4::default();
+        fw.reset_connections(
+            &PublicKey(peer),
+            StdIpv4Addr::new(10, 5, 0, 2),
+            &mut sink4,
+            &mut std::io::sink(),
+        ); // We do not test IPv6 yet
+
+        assert_eq!(sink4.pkgs.len(), 1);
+
+        let ip = Ipv4Packet::new(&sink4.pkgs[0]).unwrap();
+
+        // Check common conditions
+        assert_eq!(ip.get_version(), 4);
+        assert_eq!(ip.get_header_length(), 5);
+        assert_eq!(ip.get_next_level_protocol(), IpNextHeaderProtocols::Icmp);
+
+        let icmp = IcmpPacket::new(ip.payload()).unwrap();
+
+        assert_eq!(icmp.get_icmp_type(), IcmpTypes::DestinationUnreachable);
+        assert_eq!(
+            icmp.get_icmp_code(),
+            destination_unreachable::IcmpCodes::DestinationPortUnreachable
+        );
+
+        let icmp = DestinationUnreachablePacket::new(ip.payload()).unwrap();
+
+        // Check specifics
+        assert_eq!(ip.get_source(), Ipv4Addr::new(10, 5, 0, 2));
+        assert_eq!(ip.get_destination(), Ipv4Addr::new(127, 0, 0, 2));
+
+        assert_eq!(icmp.payload(), &test_udppkg);
     }
 }
