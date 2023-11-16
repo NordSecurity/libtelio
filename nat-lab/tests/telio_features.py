@@ -51,6 +51,12 @@ class Nurse(DataClassJsonMixin):
     enable_nat_type_collection: bool = False
 
 
+@dataclass_json
+@dataclass
+class NoLinkDetection(DataClassJsonMixin):
+    rtt_seconds: Optional[int] = None
+
+
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
 class TelioFeatures(DataClassJsonMixin):
@@ -64,3 +70,4 @@ class TelioFeatures(DataClassJsonMixin):
     ipv6: bool = False
     nicknames: bool = False
     boringtun_reset_connections: bool = False
+    no_link_detection: Optional[NoLinkDetection] = None

@@ -27,6 +27,11 @@ class State(Enum):
     Connected = "connected"
 
 
+class LinkState(Enum):
+    Down = "down"
+    Up = "up"
+
+
 # Equivalent of `libtelio/crates/telio-model/src/api_config.rs:PathType`
 class PathType(Enum):
     Relay = "relay"
@@ -75,6 +80,7 @@ class PeerInfo(DataClassJsonMixin):
     identifier: str = ""
     public_key: str = ""
     state: State = State.Disconnected
+    link_state: Optional[LinkState] = None
     is_exit: bool = False
     is_vpn: bool = False
     ip_addresses: List[str] = field(default_factory=lambda: [])
@@ -92,6 +98,7 @@ class PeerInfo(DataClassJsonMixin):
                 self.identifier,
                 self.public_key,
                 self.state,
+                self.link_state,
                 self.is_exit,
                 self.is_vpn,
                 tuple(self.ip_addresses),
@@ -112,6 +119,11 @@ class PeerInfo(DataClassJsonMixin):
             self.identifier == other.identifier
             and self.public_key == other.public_key
             and self.state == other.state
+            and (
+                self.link_state is None
+                or other.link_state is None
+                or self.link_state == other.link_state
+            )
             and self.is_exit == other.is_exit
             and self.is_vpn == other.is_vpn
             and self.ip_addresses == other.ip_addresses
@@ -224,6 +236,26 @@ class Runtime:
                 and peer.state in states
                 and is_exit == peer.is_exit
                 and is_vpn == peer.is_vpn
+            ]
+
+        old_events = _get_events()
+
+        while True:
+            new_events = _get_events()[len(old_events) :]
+            if new_events:
+                return
+            await asyncio.sleep(0.1)
+
+    async def notify_link_state_event(
+        self, public_key: str, link_states: List[LinkState]
+    ) -> None:
+        def _get_events() -> List[PeerInfo]:
+            return [
+                peer
+                for peer in self._peer_state_events
+                if peer
+                and peer.public_key == public_key
+                and peer.link_state in link_states
             ]
 
         old_events = _get_events()
@@ -398,6 +430,17 @@ class Events:
             timeout if timeout else 60 if PathType.Direct in paths else 30,
         )
 
+    async def wait_for_link_state_event(
+        self,
+        public_key: str,
+        link_states: List[LinkState],
+        timeout: Optional[float] = None,
+    ) -> None:
+        await asyncio.wait_for(
+            self._runtime.notify_link_state_event(public_key, link_states),
+            timeout if timeout else 30,
+        )
+
     async def wait_for_state_derp(
         self, server_ip: str, states: List[State], timeout: Optional[float] = None
     ) -> None:
@@ -566,6 +609,16 @@ class Client:
             is_exit,
             is_vpn,
             timeout,
+        )
+
+    async def wait_for_link_state_event(
+        self,
+        public_key: str,
+        link_states: List[LinkState],
+        timeout: Optional[float] = None,
+    ) -> None:
+        await self.get_events().wait_for_link_state_event(
+            public_key, link_states, timeout
         )
 
     async def wait_for_state_derp(
