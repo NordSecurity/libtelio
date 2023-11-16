@@ -38,18 +38,6 @@ async def new_connection() -> AsyncIterator[Connection]:
 
         await _copy_binaries(ssh_connection, connection)
 
-        async def on_stdout(stdout: str) -> None:
-            print(stdout)
-
-        await connection.create_process(["route", "print"]).execute(
-            stdout_callback=on_stdout,
-            stderr_callback=on_stdout,
-        )
-        await connection.create_process(["ipconfig/all"]).execute(
-            stdout_callback=on_stdout,
-            stderr_callback=on_stdout,
-        )
-
         try:
             yield connection
         finally:
