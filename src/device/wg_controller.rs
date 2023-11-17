@@ -1227,6 +1227,7 @@ mod tests {
                     validate_keys: Default::default(),
                     ipv6: false,
                     nicknames: false,
+                    boringtun_reset_connections: Default::default(),
                 },
             }
         }

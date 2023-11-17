@@ -63,3 +63,4 @@ class TelioFeatures(DataClassJsonMixin):
     nurse: Optional[Nurse] = None
     ipv6: bool = False
     nicknames: bool = False
+    boringtun_reset_connections: bool = False

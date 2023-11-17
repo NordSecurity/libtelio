@@ -3,8 +3,10 @@ use boringtun::device::{tun::TunSocket, DeviceConfig, DeviceHandle};
 use futures::future::BoxFuture;
 use slog::{o, Drain};
 use slog_stdlog::StdLog;
-use std::ops::Deref;
 use std::sync::Arc;
+use std::{io, ops::Deref};
+use telio_crypto::PublicKey;
+use telio_utils::telio_log_debug;
 use tokio::sync::RwLock;
 
 use super::{Adapter, Error as AdapterError, Tun as NativeTun};
@@ -19,6 +21,7 @@ pub type FirewallCb = Option<Arc<dyn Fn(&[u8; 32], &[u8]) -> bool + Send + Sync>
 
 pub struct BoringTun {
     device: RwLock<DeviceHandle>,
+    reset_conns_cb: super::FirewallResetConnsCb,
 }
 
 impl BoringTun {
@@ -29,6 +32,7 @@ impl BoringTun {
         socket_pool: Arc<SocketPool>,
         firewall_process_inbound_callback: FirewallCb,
         firewall_process_outbound_callback: FirewallCb,
+        firewall_reset_connections_callback: super::FirewallResetConnsCb,
     ) -> Result<Self, AdapterError> {
         let config = DeviceConfig {
             n_threads: 4,
@@ -54,6 +58,7 @@ impl BoringTun {
 
         Ok(BoringTun {
             device: RwLock::new(device),
+            reset_conns_cb: firewall_reset_connections_callback,
         })
     }
 
@@ -80,5 +85,50 @@ impl Adapter for BoringTun {
     async fn stop(&self) {
         self.device.read().await.trigger_exit();
         self.device.write().await.wait();
+    }
+
+    async fn inject_reset_packets(&self, exit: &PublicKey) {
+        let Some(cb) = self.reset_conns_cb.as_ref() else {
+            return;
+        };
+
+        telio_log_debug!("Reseting existing connection with packet injection");
+
+        struct Sink4<'a> {
+            tun: &'a TunSocket,
+        }
+
+        struct Sink6<'a> {
+            tun: &'a TunSocket,
+        }
+
+        impl<'a> io::Write for Sink4<'a> {
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                Ok(self.tun.write4(buf))
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        impl<'a> io::Write for Sink6<'a> {
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                Ok(self.tun.write6(buf))
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let dev = self.device.read().await;
+        let dev = dev.device.read();
+        let tun = dev.iface();
+
+        let mut sink4 = Sink4 { tun };
+        let mut sink6 = Sink6 { tun };
+
+        cb(exit, &mut sink4, &mut sink6);
     }
 }

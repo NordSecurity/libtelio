@@ -19,6 +19,7 @@ use async_trait::async_trait;
 #[cfg(any(test, feature = "test-adapter"))]
 pub use mockall::automock;
 use std::{io, str::FromStr, sync::Arc};
+use telio_crypto::PublicKey;
 use telio_sockets::{Protect, SocketPool};
 use thiserror::Error as TError;
 
@@ -26,6 +27,10 @@ use crate::uapi::{self, Cmd, Response};
 
 /// Function pointer to Firewall Callback
 pub type FirewallCb = Option<Arc<dyn Fn(&[u8; 32], &[u8]) -> bool + Send + Sync>>;
+
+/// Function pointer for reseting all the connections
+pub type FirewallResetConnsCb =
+    Option<Arc<dyn Fn(&PublicKey, &mut dyn io::Write, &mut dyn io::Write) + Send + Sync>>;
 
 /// Tunnel file descriptor
 #[cfg(not(target_os = "windows"))]
@@ -58,6 +63,9 @@ pub trait Adapter: Send + Sync {
 
     /// Disconnect all connected peer sockets
     async fn drop_connected_sockets(&self) {}
+
+    /// Reset all the connections by injecting packets into the tunnel
+    async fn inject_reset_packets(&self, _exit: &PublicKey) {}
 }
 
 /// Enumeration of `Error` types for `Adapter` struct
@@ -190,6 +198,7 @@ pub(crate) fn start(
     socket_pool: Arc<SocketPool>,
     firewall_process_inbound_callback: FirewallCb,
     firewall_process_outbound_callback: FirewallCb,
+    firewall_reset_conns_callback: FirewallResetConnsCb,
 ) -> Result<Box<dyn Adapter>, Error> {
     #![allow(unused_variables)]
 
@@ -205,6 +214,7 @@ pub(crate) fn start(
                 socket_pool,
                 firewall_process_inbound_callback,
                 firewall_process_outbound_callback,
+                firewall_reset_conns_callback,
             )?))
         }
         AdapterType::LinuxNativeWg => {

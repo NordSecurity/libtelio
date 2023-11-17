@@ -48,7 +48,7 @@ use std::collections::HashMap;
 use std::{
     collections::{hash_map::Entry, HashSet},
     future::Future,
-    io::{Error as IoError, ErrorKind},
+    io::{self, Error as IoError, ErrorKind},
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
     time::Duration,
@@ -733,7 +733,11 @@ impl Runtime {
         features: Features,
         protect: Option<Protect>,
     ) -> Result<Self> {
-        let firewall = Arc::new(StatefullFirewall::new(features.ipv6));
+        let firewall = Arc::new(StatefullFirewall::new(
+            features.ipv6,
+            features.boringtun_reset_connections.0,
+        ));
+
         let firewall_filter_inbound_packets = {
             let fw = firewall.clone();
             move |peer: &[u8; 32], packet: &[u8]| fw.process_inbound_packet(peer, packet)
@@ -741,6 +745,18 @@ impl Runtime {
         let firewall_filter_outbound_packets = {
             let fw = firewall.clone();
             move |peer: &[u8; 32], packet: &[u8]| fw.process_outbound_packet(peer, packet)
+        };
+        let firewall_reset_connections = if features.boringtun_reset_connections.0 {
+            let fw = firewall.clone();
+            let cb =
+                move |peer: &PublicKey, sink4: &mut dyn io::Write, sink6: &mut dyn io::Write| {
+                    if let Err(err) = fw.reset_connections(peer, sink4, sink6) {
+                        telio_log_warn!("Failed to reset all connections: {err:?}");
+                    }
+                };
+            Some(Arc::new(cb) as Arc<_>)
+        } else {
+            None
         };
 
         let socket_pool = Arc::new({
@@ -802,6 +818,7 @@ impl Runtime {
                         firewall_process_outbound_callback: Some(Arc::new(
                             firewall_filter_outbound_packets,
                         )),
+                        firewall_reset_connections,
                     },
                 )?);
                 let wg_events = wg_events.rx;
@@ -821,6 +838,7 @@ impl Runtime {
                             firewall_process_outbound_callback: Some(Arc::new(
                                 firewall_filter_outbound_packets,
                             )),
+                            firewall_reset_connections,
                         }
                     ).await;
 
@@ -1422,9 +1440,23 @@ impl Runtime {
             return Err(Error::EndpointNotProvided);
         }
 
-        self.requested_state.exit_node = Some(exit_node);
+        let old_exit_node = self.requested_state.exit_node.replace(exit_node);
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
-            .await
+            .await?;
+
+        let old_exit_pubkey = old_exit_node
+            .as_ref()
+            .or(self.requested_state.last_exit_node.as_ref())
+            .map(|node| node.public_key);
+
+        if let Some(exit_pubkey) = old_exit_pubkey {
+            self.entities
+                .wireguard_interface
+                .reset_existing_connections(exit_pubkey)
+                .await?;
+        }
+
+        Ok(())
     }
 
     async fn disconnect_exit_node(&mut self, node_key: &PublicKey) -> Result {

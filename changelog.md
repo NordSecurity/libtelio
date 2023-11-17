@@ -43,6 +43,7 @@
 * LLT-3923: Change DERP and STUN identifiers
 * LLT-4202: Do not answer DNS request if forward lookup fails
 * LLT-4427: Fix issue with malformed disconnect event
+* LLT-4280: Implement TCP connection reset upon VPN server change for boringtun adapter
 
 <br>
 

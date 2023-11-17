@@ -6,20 +6,24 @@ use pnet_packet::{
     icmp::{IcmpPacket, IcmpType, IcmpTypes},
     icmpv6::{Icmpv6Packet, Icmpv6Type, Icmpv6Types},
     ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
-    ipv4::Ipv4Packet,
+    ipv4::{Ipv4Flags, Ipv4Packet, MutableIpv4Packet},
     ipv6::Ipv6Packet,
-    tcp::{TcpFlags, TcpPacket},
+    tcp::{MutableTcpPacket, TcpFlags, TcpPacket},
     udp::UdpPacket,
     Packet,
 };
 use std::{
     convert::TryInto,
     fmt::{Debug, Formatter},
+    io,
     net::{IpAddr as StdIpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr as StdIpv6Addr},
     sync::{Mutex, RwLock},
     time::Duration,
 };
-use telio_utils::lru_cache::{Entry, LruCache};
+use telio_utils::{
+    lru_cache::{Entry, LruCache},
+    telio_log_error,
+};
 
 use telio_crypto::PublicKey;
 use telio_utils::{telio_log_debug, telio_log_trace, telio_log_warn};
@@ -192,6 +196,15 @@ pub trait Firewall {
     /// Adds new connection to cache only if ip is whitelisted
     /// Allows all icmp packets except for request types
     fn process_inbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool;
+
+    /// Creates packets that are supposed to kill the existing connections.
+    /// The end goal here is to fore the client app sockets to reconnect.
+    fn reset_connections(
+        &self,
+        pubkey: &PublicKey,
+        sink4: &mut dyn io::Write,
+        sink6: &mut dyn io::Write,
+    ) -> io::Result<()>;
 }
 
 #[derive(Default)]
@@ -218,13 +231,16 @@ pub struct StatefullFirewall {
     /// Recent udp connections
     udp: Mutex<LruCache<IpConnWithPort, UdpConnectionInfo>>,
     /// Recent tcp connections
-    tcp: Mutex<LruCache<IpConnWithPort, TcpConnectionInfo>>,
+    tcp: Mutex<LruCache<TcpConn, TcpConnectionInfo>>,
     /// Recent icmp connections
     icmp: Mutex<LruCache<IcmpConn, ()>>,
     /// Whitelist of networks/peers allowed to connect
     whitelist: RwLock<Whitelist>,
     /// Indicates whether the firewall should use IPv6
     allow_ipv6: bool,
+    /// Wheter to still keep track of whitelisted TCP connections.
+    /// Used for connection reset mechanism
+    tcp_record_whitelisted: bool,
 }
 
 #[derive(Debug)]
@@ -237,6 +253,7 @@ struct TcpConnectionInfo {
     tx_alive: bool,
     rx_alive: bool,
     conn_remote_initiated: bool,
+    next_seq: Option<u32>,
 }
 
 #[derive(Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
@@ -283,6 +300,14 @@ impl Debug for IpConnWithPort {
             .field("local_port", &self.local_port)
             .finish()
     }
+}
+
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+struct TcpConn {
+    link: IpConnWithPort,
+    // This public key refers to source peer for inbound connections and
+    // destination peer for outbound connections
+    pubkey: PublicKey,
 }
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
@@ -343,8 +368,8 @@ macro_rules! unwrap_lock_or_return {
 
 impl StatefullFirewall {
     /// Constructs firewall with default timeout (2 mins) and capacity (4096 entries).
-    pub fn new(use_ipv6: bool) -> Self {
-        StatefullFirewall::new_custom(LRU_CAPACITY, LRU_TIMEOUT, use_ipv6)
+    pub fn new(use_ipv6: bool, tcp_record_whitelisted: bool) -> Self {
+        StatefullFirewall::new_custom(LRU_CAPACITY, LRU_TIMEOUT, use_ipv6, tcp_record_whitelisted)
     }
 
     #[cfg(feature = "test_utils")]
@@ -356,7 +381,7 @@ impl StatefullFirewall {
     }
 
     /// Constructs firewall with custom capacity and timeout in ms (for testing only).
-    fn new_custom(capacity: usize, ttl: u64, use_ipv6: bool) -> Self {
+    fn new_custom(capacity: usize, ttl: u64, use_ipv6: bool, tcp_record_whitelisted: bool) -> Self {
         let ttl = Duration::from_millis(ttl);
         Self {
             tcp: Mutex::new(LruCache::new(ttl, capacity)),
@@ -364,6 +389,7 @@ impl StatefullFirewall {
             icmp: Mutex::new(LruCache::new(ttl, capacity)),
             whitelist: RwLock::new(Whitelist::default()),
             allow_ipv6: use_ipv6,
+            tcp_record_whitelisted,
         }
     }
 
@@ -374,18 +400,24 @@ impl StatefullFirewall {
     ) -> bool {
         let ip = unwrap_option_or_return!(P::try_from(buffer), false);
         let peer: PublicKey = public_key.into();
-        {
-            // whitelist read-lock scope
-            let whitelist = unwrap_lock_or_return!(self.whitelist.read(), false);
+        let proto = ip.get_next_level_protocol();
 
-            // Fasttrack, if peer is whitelisted - skip any conntrack and allow immediately
-            if whitelist.peer_whitelist.contains(&peer) {
-                telio_log_trace!(
-                    "Outbound IP packet is for whitelisted peer, forwarding: {:?}",
-                    ip
-                );
-                return true;
+        // whitelist read-lock scope
+        let whitelist = unwrap_lock_or_return!(self.whitelist.read(), false);
+
+        // If peer is whitelisted - allow immediately
+        if whitelist.peer_whitelist.contains(&peer) {
+            telio_log_trace!(
+                "Outbound IP packet is for whitelisted peer, forwarding: {:?}",
+                ip
+            );
+
+            if self.tcp_record_whitelisted && matches!(proto, IpNextHeaderProtocols::Tcp) {
+                // We still need to track the state of TCP connections
+                self.handle_outbound_tcp(peer, &ip);
             }
+
+            return true;
         }
 
         if !ip.check_valid() {
@@ -393,12 +425,12 @@ impl StatefullFirewall {
             return false;
         }
 
-        match ip.get_next_level_protocol() {
+        match proto {
             IpNextHeaderProtocols::Udp => {
                 self.handle_outbound_udp(&ip);
             }
             IpNextHeaderProtocols::Tcp => {
-                self.handle_outbound_tcp(&ip);
+                self.handle_outbound_tcp(peer, &ip);
             }
             IpNextHeaderProtocols::Icmp => {
                 self.handle_outbound_icmp(&ip);
@@ -420,6 +452,8 @@ impl StatefullFirewall {
     ) -> bool {
         let ip = unwrap_option_or_return!(P::try_from(buffer), false);
         let peer: PublicKey = public_key.into();
+        let proto = ip.get_next_level_protocol();
+
         let whitelist = unwrap_lock_or_return!(self.whitelist.read(), false);
 
         // Fasttrack, if peer is whitelisted - skip any conntrack and allow immediately
@@ -428,6 +462,12 @@ impl StatefullFirewall {
                 "Inbound IP packet is for whitelisted peer, forwarding: {:?}",
                 ip
             );
+
+            // We still need to track the state of TCP connections
+            if self.tcp_record_whitelisted && matches!(proto, IpNextHeaderProtocols::Tcp) {
+                self.handle_inbound_tcp(|_port| true, peer, &ip);
+            }
+
             return true;
         }
 
@@ -438,11 +478,13 @@ impl StatefullFirewall {
 
         match ip.get_next_level_protocol() {
             IpNextHeaderProtocols::Udp => self.handle_inbound_udp(&whitelist, &peer, &ip),
-            IpNextHeaderProtocols::Tcp => self.handle_inbound_tcp(&whitelist, &peer, &ip),
-            IpNextHeaderProtocols::Icmp => self.handle_inbound_icmp(&peer, &ip),
-            IpNextHeaderProtocols::Icmpv6 if self.allow_ipv6 => {
-                self.handle_inbound_icmp(&peer, &ip)
-            }
+            IpNextHeaderProtocols::Tcp => self.handle_inbound_tcp(
+                |port| whitelist.is_port_whitelisted(&peer, port),
+                peer,
+                &ip,
+            ),
+            IpNextHeaderProtocols::Icmp => self.handle_inbound_icmp(peer, &ip),
+            IpNextHeaderProtocols::Icmpv6 if self.allow_ipv6 => self.handle_inbound_icmp(peer, &ip),
             _ => false,
         }
     }
@@ -460,18 +502,23 @@ impl StatefullFirewall {
         }
     }
 
-    fn handle_outbound_tcp<'a>(&self, ip: &impl IpPacket<'a>) {
-        let (key, flags) = unwrap_option_or_return!(Self::build_tcp_key(ip, false));
+    fn handle_outbound_tcp<'a>(&self, pubkey: PublicKey, ip: &impl IpPacket<'a>) {
+        let (link, packet) = unwrap_option_or_return!(Self::build_tcp_key(ip, false));
+        let key = TcpConn { link, pubkey };
+
+        let flags = packet.get_flags();
+
         let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock());
 
         if flags & TCP_FIRST_PKT_MASK == TcpFlags::SYN {
-            telio_log_trace!("Inserting TCP conntrack entry {:?}", key);
+            telio_log_trace!("Inserting TCP conntrack entry {:?}", key.link);
             tcp_cache.insert(
                 key,
                 TcpConnectionInfo {
                     tx_alive: true,
                     rx_alive: true,
                     conn_remote_initiated: false,
+                    next_seq: None,
                 },
             );
         } else if flags & TcpFlags::RST == TcpFlags::RST {
@@ -548,11 +595,14 @@ impl StatefullFirewall {
 
     fn handle_inbound_tcp<'a>(
         &self,
-        whitelist: &Whitelist,
-        peer: &PublicKey,
+        is_port_whitelisted: impl Fn(u16) -> bool,
+        pubkey: PublicKey,
         ip: &impl IpPacket<'a>,
     ) -> bool {
-        let (key, flags) = unwrap_option_or_return!(Self::build_tcp_key(ip, true), false);
+        let (link, packet) = unwrap_option_or_return!(Self::build_tcp_key(ip, true), false);
+        let key = TcpConn { link, pubkey };
+        let flags = packet.get_flags();
+
         let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock(), false);
 
         if let Some(connection_info) = tcp_cache.peek(&key) {
@@ -561,9 +611,7 @@ impl StatefullFirewall {
                 key,
                 connection_info
             );
-            if connection_info.conn_remote_initiated
-                && !whitelist.is_port_whitelisted(peer, key.local_port)
-            {
+            if connection_info.conn_remote_initiated && !is_port_whitelisted(key.link.local_port) {
                 telio_log_trace!("Removing TCP conntrack entry {:?}", key);
                 tcp_cache.remove(&key);
                 return false;
@@ -589,13 +637,21 @@ impl StatefullFirewall {
                 return false;
             }
             // restarts cache entry timeout
-            tcp_cache.get(&key);
-            telio_log_trace!("Accepting TCP packet {:?} {:?}", ip, peer);
+            if let Some(val) = tcp_cache.get_mut(&key) {
+                let next_seq = if flags & TcpFlags::SYN == TcpFlags::SYN {
+                    packet.get_sequence() + 1
+                } else {
+                    packet.get_sequence() + packet.payload().len() as u32
+                };
+
+                val.next_seq = Some(next_seq);
+            }
+            telio_log_trace!("Accepting TCP packet {:?} {:?}", ip, pubkey);
             return true;
         }
 
-        if !whitelist.is_port_whitelisted(peer, key.local_port) {
-            telio_log_trace!("Dropping TCP packet {:?} {:?}", key, peer);
+        if !is_port_whitelisted(key.link.local_port) {
+            telio_log_trace!("Dropping TCP packet {:?} {:?}", key, pubkey);
             return false;
         }
 
@@ -605,22 +661,23 @@ impl StatefullFirewall {
                 tx_alive: true,
                 rx_alive: true,
                 conn_remote_initiated: true,
+                next_seq: Some(packet.get_sequence() + 1),
             };
 
             telio_log_trace!(
                 "Updating TCP conntrack entry {:?} {:?} {:?}",
                 key,
-                peer,
+                pubkey,
                 conninfo
             );
             tcp_cache.insert(key, conninfo);
         }
 
-        telio_log_trace!("Accepting TCP packet {:?} {:?}", ip, peer);
+        telio_log_trace!("Accepting TCP packet {:?} {:?}", ip, pubkey);
         true
     }
 
-    fn handle_inbound_icmp<'a, P: IpPacket<'a>>(&self, peer: &PublicKey, ip: &P) -> bool {
+    fn handle_inbound_icmp<'a, P: IpPacket<'a>>(&self, peer: PublicKey, ip: &P) -> bool {
         let icmp_packet = unwrap_option_or_return!(IcmpPacket::new(ip.payload()), false);
 
         if P::Icmp::BLOCKED_TYPES.contains(&icmp_packet.get_icmp_type().0) {
@@ -642,7 +699,7 @@ impl StatefullFirewall {
             }
             Err(icmp_error_key) => {
                 telio_log_trace!("Encountered ICMP error packet, checking nested packet");
-                let should_accept = self.handle_icmp_error(icmp_error_key);
+                let should_accept = self.handle_icmp_error(peer, icmp_error_key);
                 if should_accept {
                     telio_log_trace!("Accepting ICMP packet {:?} {:?}", ip, peer);
                 }
@@ -677,7 +734,10 @@ impl StatefullFirewall {
         Some(key)
     }
 
-    fn build_tcp_key<'a, P: IpPacket<'a>>(ip: &P, inbound: bool) -> Option<(IpConnWithPort, u16)> {
+    fn build_tcp_key<'a, P: IpPacket<'a>>(
+        ip: &P,
+        inbound: bool,
+    ) -> Option<(IpConnWithPort, TcpPacket)> {
         let tcp_packet = match TcpPacket::new(ip.payload()) {
             Some(packet) => packet,
             _ => {
@@ -700,8 +760,7 @@ impl StatefullFirewall {
                 local_port: tcp_packet.get_source(),
             }
         };
-        let flags = tcp_packet.get_flags();
-        Some((key, flags))
+        Some((key, tcp_packet))
     }
 
     fn build_icmp_key<'a, P: IpPacket<'a>>(ip: &P, inbound: bool) -> IcmpKey {
@@ -832,7 +891,7 @@ impl StatefullFirewall {
         Err(icmp_error_key)
     }
 
-    fn handle_icmp_error(&self, error_key: IcmpErrorKey) -> bool {
+    fn handle_icmp_error(&self, pubkey: PublicKey, error_key: IcmpErrorKey) -> bool {
         match error_key {
             IcmpErrorKey::Icmp(Some(icmp_key)) => {
                 let mut icmp_cache = unwrap_lock_or_return!(self.icmp.lock(), false);
@@ -847,8 +906,11 @@ impl StatefullFirewall {
                 }
                 is_in_cache
             }
-            IcmpErrorKey::Tcp(Some(tcp_key)) => {
+            IcmpErrorKey::Tcp(Some(link)) => {
+                let tcp_key = TcpConn { link, pubkey };
+
                 let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock(), false);
+
                 let is_in_cache = tcp_cache.get(&tcp_key).is_some();
                 if is_in_cache {
                     telio_log_trace!(
@@ -931,6 +993,8 @@ impl Firewall for StatefullFirewall {
     }
 
     fn process_outbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool {
+        telio_log_debug!("Outbound packet");
+
         match unwrap_option_or_return!(buffer.first(), false) >> 4 {
             4 => self.process_outbound_ip_packet::<Ipv4Packet>(public_key, buffer),
             6 if self.allow_ipv6 => {
@@ -959,12 +1023,109 @@ impl Firewall for StatefullFirewall {
             }
         }
     }
+
+    fn reset_connections(
+        &self,
+        pubkey: &PublicKey,
+        sink4: &mut dyn io::Write,
+        _: &mut dyn io::Write,
+    ) -> io::Result<()> {
+        telio_log_debug!("Constructing connetion reset packets");
+
+        if let Ok(mut tcp_conn_cache) = self.tcp.lock() {
+            telio_log_debug!("TCP connections to reset: {}", tcp_conn_cache.len());
+
+            const IPV4_LEN: usize = 20;
+            const TCP_LEN: usize = 20;
+
+            let mut ipv4buf = [0u8; IPV4_LEN];
+            let mut tcpbuf = [0u8; TCP_LEN];
+
+            // Write most of the fields for TCP and IP packets upfront
+            #[allow(clippy::expect_used)]
+            let mut tcppkg =
+                MutableTcpPacket::new(&mut tcpbuf).expect("TCP buffer should not be too small");
+            tcppkg.set_flags(TcpFlags::RST);
+            tcppkg.set_data_offset(5);
+
+            #[allow(clippy::expect_used)]
+            let mut ipv4pkg =
+                MutableIpv4Packet::new(&mut ipv4buf).expect("IPv4 buffer should not be too small");
+            ipv4pkg.set_version(4);
+            ipv4pkg.set_header_length(5);
+            ipv4pkg.set_total_length((IPV4_LEN + TCP_LEN) as _);
+            ipv4pkg.set_flags(Ipv4Flags::DontFragment);
+            ipv4pkg.set_ttl(0xFF);
+            ipv4pkg.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
+
+            let mut ipv4pkgbuf = [0u8; IPV4_LEN + TCP_LEN];
+
+            let iter = tcp_conn_cache.iter().filter_map(|(k, v)| {
+                if k.pubkey == *pubkey {
+                    Some((&k.link, v))
+                } else {
+                    None
+                }
+            });
+
+            for (key, val) in iter {
+                let Some(seq) = val.next_seq else {
+                    // When we don't have the sequence number that means the
+                    // connection is half open and we don't have a response
+                    // from the remote peer yet. We need to skip this kind of
+                    // connections
+                    continue;
+                };
+
+                tcppkg.set_source(key.remote_port);
+                tcppkg.set_destination(key.local_port);
+                tcppkg.set_sequence(seq);
+
+                match (key.local_addr, key.remote_addr) {
+                    (IpAddr::Ipv4(local_addr), IpAddr::Ipv4(remote_addr)) => {
+                        let src = remote_addr.into();
+                        let dst = local_addr.into();
+
+                        ipv4pkg.set_source(src);
+                        ipv4pkg.set_destination(dst);
+
+                        tcppkg.set_checksum(pnet_packet::tcp::ipv4_checksum(
+                            &tcppkg.to_immutable(),
+                            &src,
+                            &dst,
+                        ));
+
+                        ipv4pkg.set_checksum(0);
+                        ipv4pkg.set_checksum(pnet_packet::ipv4::checksum(&ipv4pkg.to_immutable()));
+
+                        telio_log_debug!("Injecting IPv4 TCP RST packet {key:#?}");
+
+                        #[allow(index_access_check)]
+                        ipv4pkgbuf[..IPV4_LEN].copy_from_slice(ipv4pkg.packet());
+
+                        #[allow(index_access_check)]
+                        ipv4pkgbuf[IPV4_LEN..].copy_from_slice(tcppkg.packet());
+
+                        sink4.write_all(&ipv4pkgbuf)?;
+                    }
+                    (IpAddr::Ipv6(_), IpAddr::Ipv6(_)) => (), // TODO(msz): implement this pice when IPv4 will be fully supported
+                    _ => telio_log_warn!(
+                        "Local and remote IP addrs version missmatch, this should never happen"
+                    ),
+                }
+            }
+        } else {
+            telio_log_error!("TCP cache poisoned");
+        };
+
+        Ok(())
+    }
 }
 
 /// The default initialization of Firewall object
 impl Default for StatefullFirewall {
     fn default() -> Self {
-        Self::new(true)
+        Self::new(true, false)
     }
 }
 
@@ -1405,7 +1566,7 @@ pub mod tests {
             },
         ];
         for TestInput { src1, src2, src3, src4, src5, dst1, dst2, make_udp } in test_inputs {
-            let fw = StatefullFirewall::new_custom(3, LRU_TIMEOUT, true);
+            let fw = StatefullFirewall::new_custom(3, LRU_TIMEOUT, true, false);
 
             // Should FAIL (no matching outgoing connections yet)
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src1)), false);
@@ -1473,7 +1634,7 @@ pub mod tests {
             },
         ];
         for TestInput { src1, src2, src3, src4, src5, dst1, dst2, make_tcp } in test_inputs {
-            let fw = StatefullFirewall::new_custom(3, LRU_TIMEOUT, true);
+            let fw = StatefullFirewall::new_custom(3, LRU_TIMEOUT, true, false);
 
             // Should FAIL (no matching outgoing connections yet)
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(dst1, src1, TcpFlags::SYN)), false);
@@ -1544,7 +1705,7 @@ pub mod tests {
             },
         ];
         for TestInput { src1, src2, src3, src4, src5, dst1, dst2, make_udp , is_ipv4} in test_inputs {
-            let fw = StatefullFirewall::new_custom(3, LRU_TIMEOUT, false);
+            let fw = StatefullFirewall::new_custom(3, LRU_TIMEOUT, false, false);
 
             // Should FAIL (no matching outgoing connections yet)
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src1)), false);
@@ -1601,9 +1762,10 @@ pub mod tests {
             TestInput{ us: "[::1]:1111",     them: "[2001:4860:4860::8888]:8888",  make_tcp: &make_tcp6 },
         ];
         for test_input @ TestInput { us, them, make_tcp } in test_inputs {
-            let fw = StatefullFirewall::new_custom(3, LRU_TIMEOUT, true);
+            let fw = StatefullFirewall::new_custom(3, LRU_TIMEOUT, true, false);
+            let peer = make_peer();
 
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::SYN)), false);
+            assert_eq!(fw.process_inbound_packet(&peer, &make_tcp(them, us, TcpFlags::SYN)), false);
 
             let outgoing_init_packet = make_tcp(us, them, TcpFlags::SYN);
 
@@ -1611,14 +1773,16 @@ pub mod tests {
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), true);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::SYN)), true);
 
-            let conn_key = IpConnWithPort {
+            let link = IpConnWithPort {
                 remote_addr: test_input.them_ip(),
                 remote_port: test_input.them_port(),
                 local_addr: test_input.us_ip(),
                 local_port: test_input.us_port(),
             };
-            assert_eq!(fw.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: true, rx_alive: true, conn_remote_initiated: false
+            let tcp_key = TcpConn { link , pubkey: PublicKey(peer) };
+
+            assert_eq!(fw.tcp.lock().unwrap().get(&tcp_key), Some(&TcpConnectionInfo{
+                tx_alive: true, rx_alive: true, conn_remote_initiated: false, next_seq: Some(1)
             }));
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::RST)), true);
@@ -1663,34 +1827,36 @@ pub mod tests {
             TestInput{ us: "[::1]:1111",     them: "[2001:4860:4860::8888]:8888",  make_tcp: &make_tcp6 },
         ];
         for test_input @ TestInput { us, them, make_tcp } in test_inputs {
-            let fw = StatefullFirewall::new_custom(3, LRU_TIMEOUT, true);
+            let fw = StatefullFirewall::new_custom(3, LRU_TIMEOUT, true, false);
+            let peer = make_peer();
 
             let outgoing_init_packet = make_tcp(us, them, TcpFlags::SYN);
-            assert_eq!(fw.process_outbound_packet(&make_peer(), &outgoing_init_packet), true);
+            assert_eq!(fw.process_outbound_packet(&peer, &outgoing_init_packet), true);
             assert_eq!(fw.tcp.lock().unwrap().len(), 1);
-            let conn_key = IpConnWithPort {
+            let link = IpConnWithPort {
                 remote_addr: test_input.them_ip(),
                 remote_port: test_input.them_port(),
                 local_addr: test_input.us_ip(),
                 local_port: test_input.us_port(),
             };
+            let conn_key = TcpConn { link , pubkey: PublicKey(peer) };
 
             assert_eq!(fw.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: true, rx_alive: true, conn_remote_initiated: false
+                tx_alive: true, rx_alive: true, conn_remote_initiated: false, next_seq: None
             }));
 
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::FIN)), true);
             assert_eq!(fw.tcp.lock().unwrap().len(), 1);
 
             assert_eq!(fw.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: true, rx_alive: false, conn_remote_initiated: false
+                tx_alive: true, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12)
             }));
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::FIN)), true);
             assert_eq!(fw.tcp.lock().unwrap().len(), 1);
 
             assert_eq!(fw.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: false, rx_alive: false, conn_remote_initiated: false
+                tx_alive: false, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12)
             }));
 
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::ACK)), true);
@@ -1720,27 +1886,29 @@ pub mod tests {
         ];
         for test_input @ TestInput { us, them, make_tcp } in test_inputs {
             let ttl = 20;
-            let fw = StatefullFirewall::new_custom(3, ttl, true);
+            let fw = StatefullFirewall::new_custom(3, ttl, true, false);
+            let peer = make_peer();
 
             let outgoing_init_packet = make_tcp(us, them, TcpFlags::SYN);
             assert_eq!(fw.process_outbound_packet(&make_peer(), &outgoing_init_packet), true);
             assert_eq!(fw.tcp.lock().unwrap().len(), 1);
-            let conn_key = IpConnWithPort {
+            let link = IpConnWithPort {
                 remote_addr: test_input.them_ip(),
                 remote_port: test_input.them_port(),
                 local_addr: test_input.us_ip(),
                 local_port: test_input.us_port(),
             };
+            let conn_key = TcpConn { link , pubkey: PublicKey(peer) };
 
             assert_eq!(fw.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: true, rx_alive: true, conn_remote_initiated: false
+                tx_alive: true, rx_alive: true, conn_remote_initiated: false, next_seq: None
             }));
 
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::FIN)), true);
             assert_eq!(fw.tcp.lock().unwrap().len(), 1);
 
             assert_eq!(fw.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: true, rx_alive: false, conn_remote_initiated: false
+                tx_alive: true, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12)
             }));
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::FIN)), true);
@@ -1748,7 +1916,7 @@ pub mod tests {
 
             // update tcp cache entry timeout
             assert_eq!(fw.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: false, rx_alive: false, conn_remote_initiated: false
+                tx_alive: false, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12)
             }));
 
             // process inbound packet (should not update ttl, because not ACK, but entry should still exist)
@@ -1779,7 +1947,7 @@ pub mod tests {
             TestInput { src1: "2001:4860:4860::8888", src2: "2001:4860:4860::8844", src3: "2001:4860:4860::4444", dst: "::1",       make_icmp: &make_icmp6_with_body },
         ];
         for TestInput{ src1, src2, src3, dst, make_icmp } in test_inputs {
-            let fw = StatefullFirewall::new_custom(2, LRU_TIMEOUT, true);
+            let fw = StatefullFirewall::new_custom(2, LRU_TIMEOUT, true, false);
 
             let request1 = make_icmp(dst, src1, IcmpTypes::EchoRequest.into(), &[1, 0, 1, 0]);
             let request2 = make_icmp(dst, src2, IcmpTypes::EchoRequest.into(), &[1, 0, 1, 0]);
@@ -1819,7 +1987,7 @@ pub mod tests {
             TestInput { src: "2001:4860:4860::8888", dst: "::1",       make_icmp: &make_icmp6_with_body },
         ];
         for TestInput{ src, dst, make_icmp } in test_inputs {
-            let fw = StatefullFirewall::new(true);
+            let fw = StatefullFirewall::new(true, false);
             
             let request = make_icmp(dst, src, IcmpTypes::EchoRequest.into(), &[1, 0, 1, 0]);
             let reply1 = make_icmp(src, dst, IcmpTypes::EchoReply.into(), &[1, 0, 1, 0]);
@@ -1901,7 +2069,7 @@ pub mod tests {
                     if request_type == reply_type {
                         continue;
                     }
-                    let fw = StatefullFirewall::new(true);
+                    let fw = StatefullFirewall::new(true, false);
                     let outbound =
                         make_request_packet(src_ip, dst_ip, *request_type, &[1, 0, 1, 0]);
                     let inbound = make_reply_packet(dst_ip, src_ip, *reply_type, &[1, 0, 1, 0]);
@@ -1940,7 +2108,7 @@ pub mod tests {
                 &make_icmp6_with_body,
             ),
         ] {
-            let fw = StatefullFirewall::new(true);
+            let fw = StatefullFirewall::new(true, false);
 
             let actual_request = make_icmp(src, dst, request_type, &[1, 0, 1, 0]);
             let other_request = make_icmp(src, dst, request_type, &[2, 0, 3, 0]);
@@ -2015,7 +2183,7 @@ pub mod tests {
                 &make_icmp6_with_body,
             ),
         ] {
-            let fw = StatefullFirewall::new(true);
+            let fw = StatefullFirewall::new(true, false);
 
             let actual_request = make_tcp(src1_with_port, dst_with_port, TcpFlags::SYN);
             let other_request = make_tcp(src2_with_port, dst_with_port, TcpFlags::SYN);
@@ -2090,7 +2258,7 @@ pub mod tests {
                 &make_icmp6_with_body,
             ),
         ] {
-            let fw = StatefullFirewall::new(true);
+            let fw = StatefullFirewall::new(true, false);
 
             let actual_request = make_udp(src1_with_port, dst_with_port);
             let other_request = make_udp(src2_with_port, dst_with_port);
@@ -2134,7 +2302,7 @@ pub mod tests {
             TestInput { src1: "2001:4860:4860::8888",src2: "2001:4860:4860::8844", dst: "::1",       make_icmp: &make_icmp6, is_v4: false},
         ];
         for TestInput { src1, src2, dst, make_icmp, is_v4 } in test_inputs {
-            let fw = StatefullFirewall::new_custom(0, LRU_TIMEOUT, true);
+            let fw = StatefullFirewall::new_custom(0, LRU_TIMEOUT, true, false);
 
             // Firewall only allow inbound ICMP packets that are either whitelisted or that exist in the ICMP cache
             // The ICMP cache only accepts a small number of ICMP types, but unrelated to that, this test ignores the cache completely
@@ -2191,7 +2359,7 @@ pub mod tests {
         ];
 
         for TestInput { src, dst, make_udp } in test_inputs {
-            let fw = StatefullFirewall::new_custom(3, 100, true);
+            let fw = StatefullFirewall::new_custom(3, 100, true, false);
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_udp(src, dst)), true);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst, src)), true);
@@ -2214,7 +2382,7 @@ pub mod tests {
         ];
 
         for TestInput { src, dst, make_udp } in test_inputs {
-            let fw = StatefullFirewall::new_custom(capacity, ttl, true);
+            let fw = StatefullFirewall::new_custom(capacity, ttl, true, false);
 
             // Should PASS (adds 1111)
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_udp(src, dst)), true);
@@ -2237,7 +2405,7 @@ pub mod tests {
     #[rustfmt::skip]
     #[test]
     fn firewall_whitelist_crud() {
-        let fw = StatefullFirewall::new(true);
+        let fw = StatefullFirewall::new(true, false);
         assert!(fw.get_peer_whitelist().is_empty());
 
         let peer = make_random_peer();
@@ -2298,7 +2466,7 @@ pub mod tests {
             }
         ];
         for TestInput { src1, src2, src3, src4, src5, dst1, dst2, make_udp, make_tcp, make_icmp } in test_inputs {
-            let fw = StatefullFirewall::new(true);
+            let fw = StatefullFirewall::new(true, false);
             let peer1 = make_random_peer();
             let peer2 = make_random_peer();
 
@@ -2346,7 +2514,7 @@ pub mod tests {
         ];
         for TestInput { us, them, make_icmp, is_v4 } in test_inputs {
             // Set number of conntrack entries to 0 to test only the whitelist
-            let fw = StatefullFirewall::new_custom(0, 20, true);
+            let fw = StatefullFirewall::new_custom(0, 20, true, false);
 
             let peer = make_random_peer();
             assert_eq!(fw.process_outbound_packet(&peer.0, &make_icmp(us, them, IcmpTypes::EchoRequest.into())), true);
@@ -2380,7 +2548,7 @@ pub mod tests {
         ];
 
         for TestInput { us, them, make_udp } in test_inputs {
-            let fw = StatefullFirewall::new(true);
+            let fw = StatefullFirewall::new(true, false);
 
             let them_peer = make_random_peer();
 
@@ -2408,7 +2576,7 @@ pub mod tests {
         ];
 
         for TestInput { us, them, make_udp } in test_inputs {
-            let fw = StatefullFirewall::new(true);
+            let fw = StatefullFirewall::new(true, false);
 
             let them_peer = make_random_peer();
 
@@ -2434,7 +2602,7 @@ pub mod tests {
             TestInput{ us: "[::1]:1111",     them: "[2001:4860:4860::8888]:8888",  make_tcp: &make_tcp6, },
         ];
         for TestInput { us, them, make_tcp } in test_inputs {
-            let fw = StatefullFirewall::new(true);
+            let fw = StatefullFirewall::new(true, false);
 
             let them_peer = make_random_peer();
 
@@ -2464,7 +2632,7 @@ pub mod tests {
             TestInput{ us: "[::1]:1111",     them: "[2001:4860:4860::8888]:8888",  make_tcp: &make_tcp6, },
         ];
         for TestInput { us, them, make_tcp } in test_inputs {
-            let fw = StatefullFirewall::new(true);
+            let fw = StatefullFirewall::new(true, false);
 
             let them_peer = make_random_peer();
 
@@ -2515,7 +2683,7 @@ pub mod tests {
             }
         ];
         for TestInput { src1, src2, dst, make_udp, make_tcp, make_icmp } in test_inputs {
-            let fw = StatefullFirewall::new(true);
+            let fw = StatefullFirewall::new(true, false);
             assert!(fw.get_peer_whitelist().is_empty());
 
             let src2_ip = src2.parse::<StdSocketAddr>().unwrap().ip().to_string();
@@ -2570,7 +2738,7 @@ pub mod tests {
             }
         ];
         for test_input @ TestInput { src, dst, make_udp, make_tcp, make_icmp } in test_inputs {
-            let fw = StatefullFirewall::new(true);
+            let fw = StatefullFirewall::new(true, false);
             assert!(fw.get_peer_whitelist().is_empty());
             assert!(fw.get_port_whitelist().is_empty());
 
@@ -2596,5 +2764,126 @@ pub mod tests {
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(&test_input.src, &test_input.dst, IcmpTypes::EchoRequest.into())), false);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(&test_input.src_socket(11111), &test_input.dst_socket(FILE_SEND_PORT), TcpFlags::PSH)), false);
         }
+    }
+
+    #[test]
+    fn firewall_tcp_conns_reset() {
+        let fw = StatefullFirewall::new(false, false);
+        let peer = make_peer();
+        fw.add_to_port_whitelist(PublicKey(peer), FILE_SEND_PORT);
+
+        // Outbound half opened connection
+        assert!(fw.process_outbound_packet(
+            &peer,
+            &make_tcp("127.0.0.2:12345", "101.101.101.101:54321", TcpFlags::SYN),
+        ));
+        // Outbound opened connection
+        assert!(fw.process_outbound_packet(
+            &peer,
+            &make_tcp("127.0.0.4:12345", "103.103.103.103:54321", TcpFlags::SYN),
+        ));
+        assert!(fw.process_inbound_packet(
+            &peer,
+            &make_tcp(
+                "103.103.103.103:54321",
+                &"127.0.0.4:12345",
+                TcpFlags::SYN | TcpFlags::ACK
+            ),
+        ));
+        // Inbound connection
+        assert!(fw.process_inbound_packet(
+            &peer,
+            &make_tcp(
+                "100.100.100.100:12345",
+                &format!("127.0.0.1:{FILE_SEND_PORT}"),
+                TcpFlags::SYN
+            ),
+        ));
+        // Inbound with data
+        assert!(fw.process_inbound_packet(
+            &peer,
+            &make_tcp(
+                "102.102.102.102:12345",
+                &format!("127.0.0.3:{FILE_SEND_PORT}"),
+                TcpFlags::SYN
+            ),
+        ));
+        assert!(fw.process_inbound_packet(
+            &peer,
+            &make_tcp(
+                "102.102.102.102:12345",
+                &format!("127.0.0.3:{FILE_SEND_PORT}"),
+                TcpFlags::PSH
+            ),
+        ));
+
+        #[derive(Default)]
+        struct Sink4 {
+            pkgs: Vec<Vec<u8>>,
+        }
+
+        impl io::Write for Sink4 {
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                self.pkgs.push(buf.to_vec());
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let mut sink4 = Sink4::default();
+        fw.reset_connections(&PublicKey(peer), &mut sink4, &mut std::io::sink()); // We do not test IPv6 yet
+
+        assert_eq!(sink4.pkgs.len(), 3); // 3 packets in random order (without the half opened outbound one)
+
+        let mut ippkgs: Vec<_> = sink4
+            .pkgs
+            .iter()
+            .map(|buf| Ipv4Packet::new(&buf).unwrap())
+            .collect();
+
+        // Make it sorted by dest IP
+        ippkgs.sort_unstable_by_key(|ippkg| ippkg.get_destination());
+
+        let tcppkgs: Vec<_> = ippkgs
+            .iter()
+            .map(|ip| TcpPacket::new(ip.payload()).unwrap())
+            .collect();
+
+        // Check common conditions
+        for ip in &ippkgs {
+            assert_eq!(ip.get_version(), 4);
+            assert_eq!(ip.get_header_length(), 5);
+            assert_eq!(ip.get_next_level_protocol(), IpNextHeaderProtocols::Tcp);
+        }
+
+        for tcp in &tcppkgs {
+            assert_eq!(tcp.get_flags(), TcpFlags::RST);
+            assert_eq!(tcp.get_data_offset(), 5);
+        }
+
+        // Check specifics
+        assert_eq!(ippkgs[0].get_source(), Ipv4Addr::new(100, 100, 100, 100));
+        assert_eq!(ippkgs[0].get_destination(), Ipv4Addr::new(127, 0, 0, 1));
+
+        assert_eq!(tcppkgs[0].get_source(), 12345);
+        assert_eq!(tcppkgs[0].get_destination(), FILE_SEND_PORT);
+        assert_eq!(tcppkgs[0].get_sequence(), 1);
+
+        assert_eq!(ippkgs[1].get_source(), Ipv4Addr::new(102, 102, 102, 102));
+        assert_eq!(ippkgs[1].get_destination(), Ipv4Addr::new(127, 0, 0, 3));
+
+        assert_eq!(tcppkgs[1].get_source(), 12345);
+        assert_eq!(tcppkgs[1].get_destination(), FILE_SEND_PORT);
+        assert_eq!(tcppkgs[1].get_sequence(), 12);
+
+        assert_eq!(ippkgs[2].get_source(), Ipv4Addr::new(103, 103, 103, 103));
+        assert_eq!(ippkgs[2].get_destination(), Ipv4Addr::new(127, 0, 0, 4));
+
+        assert_eq!(tcppkgs[2].get_source(), 54321);
+        assert_eq!(tcppkgs[2].get_destination(), 12345);
+        assert_eq!(tcppkgs[2].get_sequence(), 1);
     }
 }

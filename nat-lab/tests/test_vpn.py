@@ -1,13 +1,17 @@
+import asyncio
 import config
 import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_connections
 from telio import AdapterType, Client
+from telio_features import TelioFeatures
 from utils import testing, stun
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
+from utils.output_notifier import OutputNotifier
 from utils.ping import Ping
+from utils.router import IPProto, IPStack
 
 
 async def _connect_vpn(
@@ -253,3 +257,147 @@ async def test_vpn_reconnect(
             alpha.ip_addresses[0],
             config.WG_SERVER_2,
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "setup_params",
+    [
+        # IPv4 public server
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
+                adapter_type=AdapterType.BoringTun,
+                ip_stack=IPStack.IPv4,
+                features=TelioFeatures(boringtun_reset_connections=True),
+            )
+        ),
+        # TODO(msz): IPv6 public server, it doesn't work with the current VPN implementation
+        # pytest.param(
+        #     SetupParameters(
+        #         connection_tag=ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
+        #         adapter_type=AdapterType.BoringTun,
+        #         ip_stack=IPStack.IPv6,
+        #         telio_features=TelioFeatures(boringtun_reset_connections=True),
+        #     )
+        # ),
+    ],
+)
+async def test_kill_external_tcp_conn_on_vpn_reconnect(
+    setup_params: SetupParameters,
+) -> None:
+    serv_ip = (
+        config.PHOTO_ALBUM_IPV6
+        if setup_params.ip_stack == IPStack.IPv6
+        else config.PHOTO_ALBUM_IP
+    )
+
+    async with AsyncExitStack() as exit_stack:
+        env = await exit_stack.enter_async_context(
+            setup_environment(exit_stack, [setup_params])
+        )
+
+        alpha, *_ = env.nodes
+        connection, *_ = [conn.connection for conn in env.connections]
+        client, *_ = env.clients
+
+        async def connect(
+            wg_server: dict,
+        ):
+            await client.connect_to_vpn(
+                wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
+            )
+
+            async with Ping(connection, serv_ip).run() as ping:
+                await testing.wait_long(ping.wait_for_next_ping())
+
+        await connect(
+            config.WG_SERVER,
+        )
+
+        output_notifier = OutputNotifier()
+
+        async def on_stdout(stdout: str) -> None:
+            for line in stdout.splitlines():
+                output_notifier.handle_output(line)
+
+        async def conntrack_on_stdout(stdout: str) -> None:
+            for line in stdout.splitlines():
+                if f"dst={serv_ip}" in line:
+                    output_notifier.handle_output(line)
+
+        sender_start_event = asyncio.Event()
+        close_wait_event = asyncio.Event()
+
+        output_notifier.notify_output(
+            "80 port [tcp/*] succeeded!",
+            sender_start_event,
+        )
+        output_notifier.notify_output("CLOSE", close_wait_event)
+
+        async with connection.create_process(
+            [
+                "conntrack",
+                "--family",
+                "ipv6" if setup_params.ip_stack == IPStack.IPv6 else "ipv4",
+                "-E",
+            ]
+        ).run(stdout_callback=conntrack_on_stdout) as conntrack_proc:
+            await testing.wait_normal(conntrack_proc.wait_stdin_ready())
+
+            ip_proto = (
+                IPProto.IPv6 if setup_params.ip_stack == IPStack.IPv6 else IPProto.IPv4
+            )
+            alpha_ip = testing.unpack_optional(alpha.get_ip_address(ip_proto))
+
+            await exit_stack.enter_async_context(
+                connection.create_process(
+                    [
+                        "nc",
+                        "-nv",
+                        "-6" if setup_params.ip_stack == IPStack.IPv6 else "-4",
+                        "-s",
+                        alpha_ip,
+                        serv_ip,
+                        str(80),
+                    ]
+                ).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
+            )
+
+            # Second client, this time sending some data to check proper TCP sequence number generation
+            proc = await exit_stack.enter_async_context(
+                connection.create_process(
+                    [
+                        "nc",
+                        "-nv",
+                        "-6" if setup_params.ip_stack == IPStack.IPv6 else "-4",
+                        "-s",
+                        alpha_ip,
+                        serv_ip,
+                        str(80),
+                    ]
+                ).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
+            )
+
+            await proc.wait_stdin_ready()
+            await asyncio.sleep(2.0)
+            # Without this sleep nc get EOF on stdin for some reason
+            await proc.write_stdin("GET")
+
+            # Wait for both netcat processes
+            await testing.wait_normal(sender_start_event.wait())
+            await testing.wait_normal(sender_start_event.wait())
+
+            await testing.wait_long(
+                client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
+            )
+
+            await connect(
+                config.WG_SERVER_2,
+            )
+
+            # if everything is correct -> conntrack should show FIN_WAIT -> CLOSE_WAIT
+            # or our connection killing mechanism will reset connection resulting in CLOSE output.
+            # Wait for close on both clients
+            await testing.wait_long(close_wait_event.wait())
+            await testing.wait_long(close_wait_event.wait())

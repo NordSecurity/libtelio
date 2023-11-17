@@ -244,6 +244,11 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
         None
     }
 
+    /// Returns an iterator over all (key, value) pairs
+    pub fn iter(&self) -> impl Iterator<Item = (&Key, &Value)> {
+        self.map.iter().map(|(key, val)| (key, &val.data))
+    }
+
     /// Removes expired items from the cache and returns all removed keys.
     fn remove_expired(&mut self) -> (Instant, Vec<Key>) {
         let now = Instant::now();
