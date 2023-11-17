@@ -1007,6 +1007,100 @@ impl StatefullFirewall {
         }
     }
 
+    fn reset_tcp_conns(&self, pubkey: &PublicKey, sink4: &mut dyn io::Write) -> io::Result<()> {
+        let Ok(mut tcp_conn_cache) = self.tcp.lock() else {
+            telio_log_error!("TCP cache poisoned");
+            return Ok(());
+        };
+
+        telio_log_debug!(
+            "Inspecting {} TCP connections for reset",
+            tcp_conn_cache.len()
+        );
+
+        const IPV4_LEN: usize = 20;
+        const TCP_LEN: usize = 20;
+
+        let mut ipv4buf = [0u8; IPV4_LEN];
+        let mut tcpbuf = [0u8; TCP_LEN];
+
+        // Write most of the fields for TCP and IP packets upfront
+        #[allow(clippy::expect_used)]
+        let mut tcppkg =
+            MutableTcpPacket::new(&mut tcpbuf).expect("TCP buffer should not be too small");
+        tcppkg.set_flags(TcpFlags::RST);
+        tcppkg.set_data_offset(5);
+
+        #[allow(clippy::expect_used)]
+        let mut ipv4pkg =
+            MutableIpv4Packet::new(&mut ipv4buf).expect("IPv4 buffer should not be too small");
+        ipv4pkg.set_version(4);
+        ipv4pkg.set_header_length(5);
+        ipv4pkg.set_total_length((IPV4_LEN + TCP_LEN) as _);
+        ipv4pkg.set_flags(Ipv4Flags::DontFragment);
+        ipv4pkg.set_ttl(0xFF);
+        ipv4pkg.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
+
+        let mut ipv4pkgbuf = [0u8; IPV4_LEN + TCP_LEN];
+
+        let iter = tcp_conn_cache.iter().filter_map(|(k, v)| {
+            if k.pubkey == *pubkey {
+                Some((&k.link, v))
+            } else {
+                None
+            }
+        });
+
+        for (key, val) in iter {
+            let Some(seq) = val.next_seq else {
+                // When we don't have the sequence number that means the
+                // connection is half open and we don't have a response
+                // from the remote peer yet. We need to skip this kind of
+                // connections
+                continue;
+            };
+
+            tcppkg.set_source(key.remote_port);
+            tcppkg.set_destination(key.local_port);
+            tcppkg.set_sequence(seq);
+
+            match (key.local_addr, key.remote_addr) {
+                (IpAddr::Ipv4(local_addr), IpAddr::Ipv4(remote_addr)) => {
+                    let src = remote_addr.into();
+                    let dst = local_addr.into();
+
+                    ipv4pkg.set_source(src);
+                    ipv4pkg.set_destination(dst);
+
+                    tcppkg.set_checksum(pnet_packet::tcp::ipv4_checksum(
+                        &tcppkg.to_immutable(),
+                        &src,
+                        &dst,
+                    ));
+
+                    ipv4pkg.set_checksum(0);
+                    ipv4pkg.set_checksum(pnet_packet::ipv4::checksum(&ipv4pkg.to_immutable()));
+
+                    telio_log_debug!("Injecting IPv4 TCP RST packet {key:#?}");
+
+                    #[allow(index_access_check)]
+                    ipv4pkgbuf[..IPV4_LEN].copy_from_slice(ipv4pkg.packet());
+
+                    #[allow(index_access_check)]
+                    ipv4pkgbuf[IPV4_LEN..].copy_from_slice(tcppkg.packet());
+
+                    sink4.write_all(&ipv4pkgbuf)?;
+                }
+                (IpAddr::Ipv6(_), IpAddr::Ipv6(_)) => (), // TODO(msz): implement this pice when IPv6 will be fully supported
+                _ => telio_log_warn!(
+                    "Local and remote IP addrs version missmatch, this should never happen"
+                ),
+            }
+        }
+
+        Ok(())
+    }
+
     fn reset_udp_conns(
         &self,
         pubkey: &PublicKey,
@@ -1204,95 +1298,7 @@ impl Firewall for StatefullFirewall {
     ) -> io::Result<()> {
         telio_log_debug!("Constructing connetion reset packets");
 
-        if let Ok(mut tcp_conn_cache) = self.tcp.lock() {
-            telio_log_debug!(
-                "Inspecting {} TCP connections for reset",
-                tcp_conn_cache.len()
-            );
-
-            const IPV4_LEN: usize = 20;
-            const TCP_LEN: usize = 20;
-
-            let mut ipv4buf = [0u8; IPV4_LEN];
-            let mut tcpbuf = [0u8; TCP_LEN];
-
-            // Write most of the fields for TCP and IP packets upfront
-            #[allow(clippy::expect_used)]
-            let mut tcppkg =
-                MutableTcpPacket::new(&mut tcpbuf).expect("TCP buffer should not be too small");
-            tcppkg.set_flags(TcpFlags::RST);
-            tcppkg.set_data_offset(5);
-
-            #[allow(clippy::expect_used)]
-            let mut ipv4pkg =
-                MutableIpv4Packet::new(&mut ipv4buf).expect("IPv4 buffer should not be too small");
-            ipv4pkg.set_version(4);
-            ipv4pkg.set_header_length(5);
-            ipv4pkg.set_total_length((IPV4_LEN + TCP_LEN) as _);
-            ipv4pkg.set_flags(Ipv4Flags::DontFragment);
-            ipv4pkg.set_ttl(0xFF);
-            ipv4pkg.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
-
-            let mut ipv4pkgbuf = [0u8; IPV4_LEN + TCP_LEN];
-
-            let iter = tcp_conn_cache.iter().filter_map(|(k, v)| {
-                if k.pubkey == *pubkey {
-                    Some((&k.link, v))
-                } else {
-                    None
-                }
-            });
-
-            for (key, val) in iter {
-                let Some(seq) = val.next_seq else {
-                    // When we don't have the sequence number that means the
-                    // connection is half open and we don't have a response
-                    // from the remote peer yet. We need to skip this kind of
-                    // connections
-                    continue;
-                };
-
-                tcppkg.set_source(key.remote_port);
-                tcppkg.set_destination(key.local_port);
-                tcppkg.set_sequence(seq);
-
-                match (key.local_addr, key.remote_addr) {
-                    (IpAddr::Ipv4(local_addr), IpAddr::Ipv4(remote_addr)) => {
-                        let src = remote_addr.into();
-                        let dst = local_addr.into();
-
-                        ipv4pkg.set_source(src);
-                        ipv4pkg.set_destination(dst);
-
-                        tcppkg.set_checksum(pnet_packet::tcp::ipv4_checksum(
-                            &tcppkg.to_immutable(),
-                            &src,
-                            &dst,
-                        ));
-
-                        ipv4pkg.set_checksum(0);
-                        ipv4pkg.set_checksum(pnet_packet::ipv4::checksum(&ipv4pkg.to_immutable()));
-
-                        telio_log_debug!("Injecting IPv4 TCP RST packet {key:#?}");
-
-                        #[allow(index_access_check)]
-                        ipv4pkgbuf[..IPV4_LEN].copy_from_slice(ipv4pkg.packet());
-
-                        #[allow(index_access_check)]
-                        ipv4pkgbuf[IPV4_LEN..].copy_from_slice(tcppkg.packet());
-
-                        sink4.write_all(&ipv4pkgbuf)?;
-                    }
-                    (IpAddr::Ipv6(_), IpAddr::Ipv6(_)) => (), // TODO(msz): implement this pice when IPv4 will be fully supported
-                    _ => telio_log_warn!(
-                        "Local and remote IP addrs version missmatch, this should never happen"
-                    ),
-                }
-            }
-        } else {
-            telio_log_error!("TCP cache poisoned");
-        };
-
+        self.reset_tcp_conns(pubkey, sink4)?;
         self.reset_udp_conns(pubkey, endpoint_ipv4, sink4)?;
 
         Ok(())
