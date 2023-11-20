@@ -18,3 +18,7 @@ protobuf == 3.20.3
 
 # Force latest (as of now) stable version to fix CVEs.
 cryptography ~= 41.0.1
+
+
+# transitive dependency lock:
+aiohttp==3.8.6
