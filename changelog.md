@@ -9,6 +9,7 @@
 * LLT-4850: Add missing VPN meshnet address to analytics
 * LLT-4917: Fix the issue with wireguard-go failing to bind to a port on some devices
 * LLT-4870: Bring back PQ
+* LLT-4406: Implement error handling for proxy egress
 
 <br>
 

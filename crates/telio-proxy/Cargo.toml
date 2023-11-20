@@ -25,6 +25,7 @@ telio-utils.workspace = true
 [dev-dependencies]
 mockall.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util", "time"] }
+anyhow.workspace = true
 
 telio-task = { workspace = true, features = ["test-util"] }
 telio-test.workspace = true
