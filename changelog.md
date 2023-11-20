@@ -6,6 +6,7 @@
 * LLT-4915: Update the moose tracker to v1.0.0-libtelioApp
 * LLT-4913: Skip qos analytics ping for unconnected peers
 * LLT-4916: Allow any case nicknames
+* LLT-4406: Implement error handling for proxy egress
 
 <br>
 
