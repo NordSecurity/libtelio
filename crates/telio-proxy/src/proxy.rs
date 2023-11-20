@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use futures::future::{pending, select_all, FutureExt};
 use std::{
     collections::{HashMap, HashSet},
+    io::ErrorKind,
     net::{Ipv4Addr, SocketAddr},
     sync::Arc,
     time::Duration,
@@ -19,7 +20,7 @@ use telio_task::{
 };
 use tokio::{net::UdpSocket, sync::mpsc::error::SendTimeoutError};
 
-use telio_utils::{telio_log_debug, PinnedSleep};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_info, PinnedSleep};
 
 type SocketMap = HashMap<PublicKey, Arc<UdpSocket>>;
 type SocketMuteMap = HashMap<PublicKey, (Arc<UdpSocket>, Option<PinnedSleep<PublicKey>>)>;
@@ -44,6 +45,39 @@ pub enum Error {
     /// Peer not found
     #[error("Peer not found error")]
     PeerNotFound,
+}
+
+#[derive(Debug, thiserror::Error)]
+/// Mapping proxy errors into 3 broad categories
+pub enum ErrorType {
+    /// Error will recover automatically
+    #[error("Recoverable Error")]
+    RecoverableError,
+    /// Error cannot be resolved in this module and
+    /// has to be handled externally
+    #[error("Unrecoverable Error")]
+    UnrecoverableError,
+    /// Socket IO error. Restart the WG socket and continue
+    #[error("Socket IO Error")]
+    SocketIOError,
+}
+
+impl From<std::io::Error> for ErrorType {
+    fn from(f: std::io::Error) -> ErrorType {
+        match f.kind() {
+            ErrorKind::PermissionDenied | ErrorKind::InvalidInput | ErrorKind::InvalidData => {
+                ErrorType::SocketIOError
+            }
+            ErrorKind::ConnectionRefused
+            | ErrorKind::ConnectionReset
+            | ErrorKind::ConnectionAborted
+            | ErrorKind::TimedOut
+            | ErrorKind::WriteZero
+            | ErrorKind::AddrNotAvailable => ErrorType::RecoverableError,
+            ErrorKind::BrokenPipe => ErrorType::UnrecoverableError,
+            _ => ErrorType::RecoverableError,
+        }
+    }
 }
 
 /// Proxy links incoming and outgoing WG Packets to
@@ -97,6 +131,7 @@ struct StateEgress {
     sockets: SocketMuteMap,
     input: Rx<(PublicKey, DataMsg)>,
     wg_addr: Option<SocketAddr>,
+    conn_state: Result<(), std::io::ErrorKind>,
 }
 
 impl UdpProxy {
@@ -112,6 +147,7 @@ impl UdpProxy {
                 sockets: HashMap::new(),
                 input: io.relay.rx,
                 wg_addr: None,
+                conn_state: Err(ErrorKind::NotConnected),
             }),
         }
     }
@@ -238,9 +274,59 @@ impl StateEgress {
     }
 
     async fn send_outbound_data(&mut self, pk: PublicKey, msg: DataMsg) {
-        // Outbound data (from telio to WG)
+        // if let Some((pk, msg)) = self.input.recv().await {
         if let (Some((socket, None)), Some(wg_addr)) = (self.sockets.get(&pk), self.wg_addr) {
-            let _ = socket.send_to(msg.get_payload(), wg_addr).await;
+            match socket.send_to(msg.get_payload(), wg_addr).await {
+                Ok(_) => {
+                    if self.conn_state.is_err() {
+                        self.conn_state = Ok(());
+                        telio_log_info!("Outbound conn telio -> WG working!");
+                    }
+                }
+                Err(err) => self.handle_error(err, Some(pk)).await,
+            }
+        } else {
+            self.handle_error(
+                std::io::Error::new(ErrorKind::AddrNotAvailable, "WG Address not available"),
+                Some(pk),
+            )
+            .await;
+        }
+    }
+
+    async fn handle_error(&mut self, err: std::io::Error, pk: Option<PublicKey>) {
+        match self.conn_state {
+            Ok(()) => telio_log_error!("Unable to send. {}", err),
+            Err(e) if e != err.kind() => telio_log_error!("Unable to send. {}", err),
+            Err(_) => (),
+        }
+        self.conn_state = Err(err.kind());
+
+        match ErrorType::from(err) {
+            ErrorType::RecoverableError => (),
+            ErrorType::UnrecoverableError => {
+                Self::sleep_forever().await;
+            }
+            ErrorType::SocketIOError => {
+                let socket = match SocketPool::new_udp(
+                    SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
+                    Some(UdpParams(SocketBufSizes {
+                        rx_buf_size: Some(SOCK_BUF_SZ),
+                        tx_buf_size: Some(SOCK_BUF_SZ),
+                    })),
+                )
+                .await
+                {
+                    Ok(skt) => skt,
+                    Err(err) => {
+                        telio_log_error!("Cannot open socket. {}", err);
+                        return;
+                    }
+                };
+                if let Some(pk) = pk {
+                    self.sockets.insert(pk, (Arc::new(socket), None));
+                }
+            }
         }
     }
 }
@@ -321,6 +407,12 @@ impl Runtime for StateEgress {
             // No sockets muted
             if let Some((pk, msg)) = self.input.recv().await {
                 self.send_outbound_data(pk, msg).await;
+            } else {
+                self.handle_error(
+                    std::io::Error::new(ErrorKind::BrokenPipe, "Broken input channel"),
+                    None,
+                )
+                .await;
             }
         } else {
             tokio::select! {
@@ -335,7 +427,6 @@ impl Runtime for StateEgress {
                 },
             }
         }
-
         Self::next()
     }
 }
@@ -401,12 +492,26 @@ mod tests {
 
         ts.stop().await;
     }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    #[allow(unwrap_check)]
+    async fn test_error_handling() {
+        let mut ts = TestSystem::start().await;
+
+        let _ = ts
+            .test_egress_recoverable_error_handling(&[
+                &[(DataMsg::new(b"my data"), b"my data")],
+                &[(DataMsg::new(b"my data"), b"my data")],
+            ])
+            .await;
+
+        ts.stop().await;
+    }
 
     /// Helper utils for tests
     mod helper {
         use futures::future::join_all;
         use rand::seq::SliceRandom;
-        use std::{panic, time::Duration};
+        use std::{panic, thread, time::Duration};
         use tokio::{
             sync::{mpsc::Receiver, mpsc::Sender, Mutex},
             time::{self, timeout},
@@ -585,6 +690,58 @@ mod tests {
                 unmuted().await;
 
                 self.clear_peers();
+            }
+
+            pub async fn test_egress_recoverable_error_handling(
+                &mut self,
+                relay_to_wg: &[&[(DataMsg, &[u8])]],
+            ) -> anyhow::Result<()> {
+                let peers = relay_to_wg.len();
+                let pks = self.create_peers(peers).await;
+
+                let (relay_to_wg, _expect_relay_to_wg) = flatten_tests(&pks, relay_to_wg);
+
+                let skt = task_exec!(&self.proxy.task_egress, async move |state| {
+                    let p = state.wg_addr;
+                    state.wg_addr = None;
+                    Ok(p)
+                })
+                .await?;
+
+                self.send_to_wg_via_relay(peers, &relay_to_wg, Err(ErrorKind::AddrNotAvailable))
+                    .await;
+
+                let _ = task_exec!(&self.proxy.task_egress, async move |state| {
+                    state.wg_addr = skt;
+                    Ok(())
+                })
+                .await;
+
+                self.send_to_wg_via_relay(peers, &relay_to_wg, Ok(())).await;
+
+                self.clear_peers();
+                Ok(())
+            }
+
+            pub async fn send_to_wg_via_relay(
+                &mut self,
+                peers: usize,
+                relay_to_wg: &Vec<(PublicKey, DataMsg)>,
+                res: Result<(), std::io::ErrorKind>,
+            ) {
+                for i in 0..peers {
+                    if i < relay_to_wg.len() {
+                        let (pk, msg) = &relay_to_wg[i];
+                        self.relay.send(*pk, msg.clone()).await;
+                        let duration = Duration::from_secs(1);
+                        thread::sleep(duration);
+                        let _ = task_exec!(&self.proxy.task_egress, async move |state| {
+                            assert_eq!(state.conn_state, res);
+                            Ok(())
+                        })
+                        .await;
+                    }
+                }
             }
 
             pub async fn create_peers(&mut self, peers: usize) -> Vec<PublicKey> {
