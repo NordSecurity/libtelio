@@ -2,17 +2,6 @@
 
 set -e
 
-# Disable return path filter. It blocks inbound traffic when using fwmark routing policy.
-# net.ipv4.conf.all.rp_filter.src_valid_mark=1 is supposed to fix this, but it doesn't
-# seem to work. So for now disable return path filter outright.
-sysctl -w net.ipv4.conf.all.rp_filter=0
-sysctl -w net.ipv4.conf.eth0.rp_filter=0
-
-# Enable IPv6, by default, docker has this set to '1'
-sysctl -w net.ipv6.conf.all.disable_ipv6=0
-sysctl -w net.ipv6.conf.default.disable_ipv6=0
-sysctl -w net.ipv6.conf.all.forwarding=1
-
 # Add conntrack states to iptables, since running dockers on ubuntu
 # conntrack doesn't find flow entries by default somehow. Works when running dockers on debian tho.
 # ref: https://serverfault.com/a/978715

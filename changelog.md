@@ -1,3 +1,9 @@
+### UNRELEASED
+----
+* LLT-4006: Restrict nat-lab containers capabilities
+
+<br>
+
 ### v4.2.0
 ### **Space-cakes**
 ---

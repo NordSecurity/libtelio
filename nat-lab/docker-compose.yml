@@ -11,12 +11,102 @@ services:
     profiles:
       - base
 
+  # Create gateway for first cone network
+  cone-gw-01: &common-gw
+    hostname: cone-gw-01
+    image: nat-lab:base
+    entrypoint: /opt/bin/cone-gw
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    sysctls:
+      - net.ipv4.ip_forward=1
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      internet:
+        ipv4_address: 10.0.254.1
+        priority: 1000
+      cone-net-01:
+        ipv4_address: 192.168.101.254
+        priority: 900
+  # Create one client for cone network, this client will use
+  # the above gateway as its route to the "internet"
+  cone-client-01: &common-client
+    hostname: cone-client-01
+    image: nat-lab:base
+    entrypoint: /opt/bin/client
+    devices:
+      - "/dev/net/tun"
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+      - NET_BIND_SERVICE
+      - SETUID
+      - SETGID
+    sysctls:
+      # Disable return path filter. It blocks inbound traffic when using fwmark routing policy.
+      # net.ipv4.conf.all.rp_filter.src_valid_mark=1 is supposed to fix this, but it doesn't
+      # seem to work. So for now disable return path filter outright.
+      - net.ipv4.conf.all.rp_filter=0
+      - net.ipv4.conf.eth0.rp_filter=0
+      # Enable IPv6, by default, docker has this set to '1'
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv6.conf.default.disable_ipv6=0
+      - net.ipv6.conf.all.forwarding=1
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      cone-net-01:
+        ipv4_address: 192.168.101.104
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.101.254
+    extra_hosts:
+      - "photo-album:10.0.80.80"
+      - "stun-01:10.0.1.1"
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+    volumes:
+      - ../:/libtelio
+
+  # Create gateway for second cone network
+  cone-gw-02:
+    hostname: cone-gw-02
+    <<: *common-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.2
+        priority: 1000
+      cone-net-02:
+        ipv4_address: 192.168.102.254
+        priority: 900
+  # Create one client for cone network, this client will use
+  # the above gateway as its route to the "internet"
+  cone-client-02:
+    hostname: cone-client-02
+    <<: *common-client
+    networks:
+      cone-net-02:
+        ipv4_address: 192.168.102.54
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.102.254
+
   # Just some publicly-routable service over TCP. To access
   # it just simply run `curl photo-album`
   photo-album:
     hostname: photo-album
     image: nat-lab:base
     entrypoint: "/usr/bin/python3 -m http.server --bind :: --directory /srv/www 80"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     networks:
       internet:
         ipv4_address: 10.0.80.80
@@ -44,7 +134,12 @@ services:
     hostname: stun-01
     image: nat-lab:base
     entrypoint: /opt/bin/stun-server
-    privileged: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
     networks:
       internet:
         # This container requires two IP addresses to operate,
@@ -55,11 +150,15 @@ services:
       options:
         max-size: 50m
 
-  # Run two DERP servers configured to run in a cluster
-  derp-01:
+  # Run three DERP servers configured to run in a cluster
+  derp-01: &common-derp
     hostname: derp-01
     image: nat-lab:base
     entrypoint: /opt/bin/derp-server
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     networks:
       internet:
         ipv4_address: 10.0.10.1
@@ -68,111 +167,79 @@ services:
     working_dir: /etc/nordderper
   derp-02:
     hostname: derp-02
-    image: nat-lab:base
-    entrypoint: /opt/bin/derp-server
+    <<: *common-derp
     networks:
       internet:
         ipv4_address: 10.0.10.2
     volumes:
       - ./data/nordderper/config2.yml:/etc/nordderper/config.yml
-    working_dir: /etc/nordderper
   derp-03:
     hostname: derp-03
-    image: nat-lab:base
-    entrypoint: /opt/bin/derp-server
+    <<: *common-derp
     networks:
       internet:
         ipv4_address: 10.0.10.3
     volumes:
       - ./data/nordderper/config3.yml:/etc/nordderper/config.yml
-    working_dir: /etc/nordderper
 
   # Two VPN servers
-  vpn-01:
+  vpn-01: &common-vpn
     hostname: vpn-01
     image: nat-lab:base
     entrypoint: /opt/bin/vpn-server
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv6.conf.default.disable_ipv6=0
+      - net.ipv6.conf.all.forwarding=1
+      - net.ipv4.ip_forward=1
+    security_opt:
+      - no-new-privileges:true
     networks:
       internet:
         ipv4_address: 10.0.100.1
     environment:
       CLIENT_GATEWAY_PRIMARY: none
-    privileged: true
     volumes:
       - ../:/libtelio
   vpn-02:
     hostname: vpn-02
-    image: nat-lab:base
-    entrypoint: /opt/bin/vpn-server
+    <<: *common-vpn
     networks:
       internet:
         ipv4_address: 10.0.100.2
-    environment:
-      CLIENT_GATEWAY_PRIMARY: none
-    privileged: true
-    volumes:
-      - ../:/libtelio
-
-  # Create gateway for first cone network
-  cone-gw-01:
-    hostname: cone-gw-01
-    image: nat-lab:base
-    entrypoint: /opt/bin/cone-gw
-    privileged: true
-    networks:
-      internet:
-        ipv4_address: 10.0.254.1
-        priority: 1000
-      cone-net-01:
-        ipv4_address: 192.168.101.254
-        priority: 900
 
   # Create one open internet client for
   # cryptography tests
   open-internet-client-01:
     hostname: open-client-01
-    image: nat-lab:base
-    entrypoint: /opt/bin/client
-    privileged: true
+    <<: *common-client
     networks:
       internet:
         ipv4_address: 10.0.11.2
     environment:
       CLIENT_GATEWAY_PRIMARY: none
-    extra_hosts:
-      - "derp-01:10.0.10.1"
-      - "derp-02:10.0.10.2"
-      - "derp-03:10.0.10.3"
-      - "derp-00:10.0.10.245"
-    volumes:
-      - ../:/libtelio
+
   # Create one open internet client for
   # cryptography tests
   open-internet-client-02:
     hostname: open-client-02
-    image: nat-lab:base
-    entrypoint: /opt/bin/client
-    privileged: true
+    <<: *common-client
     networks:
       internet:
         ipv4_address: 10.0.11.3
     environment:
       CLIENT_GATEWAY_PRIMARY: none
-    extra_hosts:
-      - "derp-01:10.0.10.1"
-      - "derp-02:10.0.10.2"
-      - "derp-03:10.0.10.3"
-      - "derp-00:10.0.10.245"
-    volumes:
-      - ../:/libtelio
 
   # Create one open internet client for
   # cryptography tests
   open-internet-client-dual-stack:
     hostname: open-client-dual-stack
-    image: nat-lab:base
-    entrypoint: /opt/bin/client
-    privileged: true
+    <<: *common-client
     networks:
       internet:
         ipv4_address: 10.0.11.4
@@ -185,73 +252,11 @@ services:
       - "derp-02:10.0.10.2"
       - "derp-03:10.0.10.3"
       - "derp-00:10.0.10.245"
-    volumes:
-      - ../:/libtelio
-
-  # Create one client for cone network, this client will use
-  # the above gateway as its route to the "internet"
-  cone-client-01:
-    hostname: cone-client-01
-    image: nat-lab:base
-    entrypoint: /opt/bin/client
-    privileged: true
-    networks:
-      cone-net-01:
-        ipv4_address: 192.168.101.104
-    environment:
-      CLIENT_GATEWAY_PRIMARY: 192.168.101.254
-    extra_hosts:
-      - "photo-album:10.0.80.80"
-      - "stun-01:10.0.1.1"
-      - "stun-02:10.0.1.245"
-      - "derp-01:10.0.10.1"
-      - "derp-02:10.0.10.2"
-      - "derp-03:10.0.10.3"
-      - "derp-00:10.0.10.245"
-    volumes:
-      - ../:/libtelio
-
-  # Create gateway for second cone network
-  cone-gw-02:
-    hostname: cone-gw-02
-    image: nat-lab:base
-    entrypoint: /opt/bin/cone-gw
-    privileged: true
-    networks:
-      internet:
-        ipv4_address: 10.0.254.2
-        priority: 1000
-      cone-net-02:
-        ipv4_address: 192.168.102.254
-        priority: 900
-  # Create one client for cone network, this client will use
-  # the above gateway as its route to the "internet"
-  cone-client-02:
-    hostname: cone-client-02
-    image: nat-lab:base
-    entrypoint: /opt/bin/client
-    privileged: true
-    networks:
-      cone-net-02:
-        ipv4_address: 192.168.102.54
-    environment:
-      CLIENT_GATEWAY_PRIMARY: 192.168.102.254
-    extra_hosts:
-      - "photo-album:10.0.80.80"
-      - "stun-01:10.0.1.1"
-      - "stun-02:10.0.1.245"
-      - "derp-01:10.0.10.1"
-      - "derp-02:10.0.10.2"
-      - "derp-03:10.0.10.3"
-      - "derp-00:10.0.10.245"
-    volumes:
-      - ../:/libtelio
 
   symmetric-gw-01:
     hostname: symmetric-gw-01
-    image: nat-lab:base
+    <<: *common-gw
     entrypoint: /opt/bin/symmetric-gw
-    privileged: true
     networks:
       internet:
         ipv4_address: 10.0.254.3
@@ -262,30 +267,17 @@ services:
 
   symmetric-client-01:
     hostname: symmetric-client-01
-    image: nat-lab:base
-    entrypoint: /opt/bin/client
-    privileged: true
+    <<: *common-client
     networks:
       hsymmetric-net-01:
         ipv4_address: 192.168.103.88
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.103.254
-    extra_hosts:
-      - "photo-album:10.0.80.80"
-      - "stun-01:10.0.1.1"
-      - "stun-02:10.0.1.245"
-      - "derp-01:10.0.10.1"
-      - "derp-02:10.0.10.2"
-      - "derp-03:10.0.10.3"
-      - "derp-00:10.0.10.245"
-    volumes:
-      - ../:/libtelio
 
   symmetric-gw-02:
     hostname: symmetric-gw-02
-    image: nat-lab:base
+    <<: *common-gw
     entrypoint: /opt/bin/symmetric-gw
-    privileged: true
     networks:
       internet:
         ipv4_address: 10.0.254.4
@@ -296,32 +288,17 @@ services:
 
   symmetric-client-02:
     hostname: symmetric-client-02
-    image: nat-lab:base
-    entrypoint: /opt/bin/client
-    privileged: true
+    <<: *common-client
     networks:
       hsymmetric-net-02:
         ipv4_address: 192.168.104.88
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.104.254
-    extra_hosts:
-      - "photo-album:10.0.80.80"
-      - "stun-01:10.0.1.1"
-      - "stun-02:10.0.1.245"
-      - "derp-01:10.0.10.1"
-      - "derp-02:10.0.10.2"
-      - "derp-03:10.0.10.3"
-      - "derp-00:10.0.10.245"
-    volumes:
-      - ../:/libtelio
 
   fullcone-gw-01:
     hostname: fullcone-gw-01
-    image: nat-lab:base
+    <<: *common-gw
     entrypoint: /opt/bin/fullcone-gw
-    privileged: true
-    cap_add:
-      - ALL
     networks:
       internet:
         ipv4_address: 10.0.254.9
@@ -332,32 +309,17 @@ services:
 
   fullcone-client-01:
     hostname: fullcone-client-01
-    image: nat-lab:base
-    entrypoint: /opt/bin/client
-    privileged: true
+    <<: *common-client
     networks:
       fullcone-net-01:
         ipv4_address: 192.168.109.88
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.109.254
-    extra_hosts:
-      - "photo-album:10.0.80.80"
-      - "stun-01:10.0.1.1"
-      - "stun-02:10.0.1.245"
-      - "derp-01:10.0.10.1"
-      - "derp-02:10.0.10.2"
-      - "derp-03:10.0.10.3"
-      - "derp-00:10.0.10.245"
-    volumes:
-      - ../:/libtelio
 
   fullcone-gw-02:
     hostname: fullcone-gw-02
-    image: nat-lab:base
+    <<: *common-gw
     entrypoint: /opt/bin/fullcone-gw
-    privileged: true
-    cap_add:
-      - ALL
     networks:
       internet:
         ipv4_address: 10.0.254.6
@@ -368,30 +330,17 @@ services:
 
   fullcone-client-02:
     hostname: fullcone-client-02
-    image: nat-lab:base
-    entrypoint: /opt/bin/client
-    privileged: true
+    <<: *common-client
     networks:
       fullcone-net-02:
         ipv4_address: 192.168.106.88
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.106.254
-    extra_hosts:
-      - "photo-album:10.0.80.80"
-      - "stun-01:10.0.1.1"
-      - "stun-02:10.0.1.245"
-      - "derp-01:10.0.10.1"
-      - "derp-02:10.0.10.2"
-      - "derp-03:10.0.10.3"
-      - "derp-00:10.0.10.245"
-    volumes:
-      - ../:/libtelio
 
   upnp-gw-01:
     hostname: upnp-gw-01
-    image: nat-lab:base
+    <<: *common-gw
     entrypoint: /opt/bin/upnp-gw
-    privileged: true
     networks:
       internet:
         ipv4_address: 10.0.254.5
@@ -402,30 +351,16 @@ services:
 
   upnp-client-01:
     hostname: upnp-client-01
-    image: nat-lab:base
-    entrypoint: /opt/bin/client
-    privileged: true
+    <<: *common-client
     networks:
       upnp-net-01:
         ipv4_address: 192.168.105.88
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.105.254
-    extra_hosts:
-      - "photo-album:10.0.80.80"
-      - "stun-01:10.0.1.1"
-      - "stun-02:10.0.1.245"
-      - "derp-01:10.0.10.1"
-      - "derp-02:10.0.10.2"
-      - "derp-03:10.0.10.3"
-      - "derp-00:10.0.10.245"
-    volumes:
-      - ../:/libtelio
 
   shared-client-01:
     hostname: shared-client-01
-    image: nat-lab:base
-    entrypoint: /opt/bin/client
-    privileged: true
+    <<: *common-client
     networks:
       cone-net-01:
         ipv4_address: 192.168.101.67
@@ -434,44 +369,21 @@ services:
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.101.254
       CLIENT_GATEWAY_SECONDARY: 192.168.113.254
-    extra_hosts:
-      - "photo-album:10.0.80.80"
-      - "stun-01:10.0.1.1"
-      - "stun-02:10.0.1.245"
-      - "derp-01:10.0.10.1"
-      - "derp-02:10.0.10.2"
-      - "derp-03:10.0.10.3"
-      - "derp-00:10.0.10.245"
-    volumes:
-      - ../:/libtelio
 
   udp-block-client-01:
     hostname: udp-block-client-01
-    image: nat-lab:base
-    entrypoint: /opt/bin/client
-    privileged: true
+    <<: *common-client
     networks:
       udp-block-net-01:
         ipv4_address: 192.168.110.100
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.110.254
-    extra_hosts:
-      - "photo-album:10.0.80.80"
-      - "stun-01:10.0.1.1"
-      - "stun-02:10.0.1.245"
-      - "derp-01:10.0.10.1"
-      - "derp-02:10.0.10.2"
-      - "derp-03:10.0.10.3"
-      - "derp-00:10.0.10.245"
-    volumes:
-      - ../:/libtelio
 
   # Create gateway which block all udp traffic
   udp-block-gw-01:
     hostname: udp-block-gw-01
-    image: nat-lab:base
+    <<: *common-gw
     entrypoint: /opt/bin/udp-block-gw
-    privileged: true
     networks:
       internet:
         ipv4_address: 10.0.254.10
@@ -482,31 +394,18 @@ services:
 
   udp-block-client-02:
     hostname: udp-block-client-02
-    image: nat-lab:base
-    entrypoint: /opt/bin/client
-    privileged: true
+    <<: *common-client
     networks:
       udp-block-net-02:
         ipv4_address: 192.168.111.100
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.111.254
-    extra_hosts:
-      - "photo-album:10.0.80.80"
-      - "stun-01:10.0.1.1"
-      - "stun-02:10.0.1.245"
-      - "derp-01:10.0.10.1"
-      - "derp-02:10.0.10.2"
-      - "derp-03:10.0.10.3"
-      - "derp-00:10.0.10.245"
-    volumes:
-      - ../:/libtelio
 
   # Create gateway which block all udp traffic
   udp-block-gw-02:
     hostname: udp-block-gw-02
-    image: nat-lab:base
+    <<: *common-gw
     entrypoint: /opt/bin/udp-block-gw
-    privileged: true
     networks:
       internet:
         ipv4_address: 10.0.254.11
@@ -519,9 +418,7 @@ services:
   # docker network through these gateways.
   cone-gw-03:
     hostname: cone-gw-03
-    image: nat-lab:base
-    entrypoint: /opt/bin/cone-gw
-    privileged: true
+    <<: *common-gw
     networks:
       internet:
         ipv4_address: 10.0.254.7
@@ -531,9 +428,7 @@ services:
         priority: 900
   cone-gw-04:
     hostname: cone-gw-04
-    image: nat-lab:base
-    entrypoint: /opt/bin/cone-gw
-    privileged: true
+    <<: *common-gw
     networks:
       internet:
         ipv4_address: 10.0.254.8
@@ -544,9 +439,8 @@ services:
 
   upnp-gw-02:
     hostname: upnp-gw-02
-    image: nat-lab:base
+    <<: *common-gw
     entrypoint: /opt/bin/upnp-gw
-    privileged: true
     networks:
       internet:
         ipv4_address: 10.0.254.12
@@ -557,30 +451,16 @@ services:
 
   upnp-client-02:
     hostname: upnp-client-02
-    image: nat-lab:base
-    entrypoint: /opt/bin/client
-    privileged: true
+    <<: *common-client
     networks:
       upnp-net-02:
         ipv4_address: 192.168.112.88
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.112.254
-    extra_hosts:
-      - "photo-album:10.0.80.80"
-      - "stun-01:10.0.1.1"
-      - "stun-02:10.0.1.245"
-      - "derp-01:10.0.10.1"
-      - "derp-02:10.0.10.2"
-      - "derp-03:10.0.10.3"
-      - "derp-00:10.0.10.245"
-    volumes:
-      - ../:/libtelio
 
   cone-gw-05:
     hostname: cone-gw-05
-    image: nat-lab:base
-    entrypoint: /opt/bin/cone-gw
-    privileged: true
+    <<: *common-gw
     networks:
       internet:
         ipv4_address: 10.0.254.13
@@ -591,9 +471,8 @@ services:
 
   internal-symmetric-gw-01:
     hostname: internal-symmetric-gw-01
-    image: nat-lab:base
+    <<: *common-gw
     entrypoint: /opt/bin/internal-symmetric-gw
-    privileged: true
     environment:
       CLIENT_GATEWAY_SECONDARY: 192.168.103.254
     networks:
@@ -606,26 +485,13 @@ services:
 
   internal-symmetric-client-01:
     hostname: internal-symmetric-client-01
-    image: nat-lab:base
-    entrypoint: /opt/bin/client
-    privileged: true
+    <<: *common-client
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.114.254
       INTERMEDIATE_NETWORK: 192.168.103.0/24
     networks:
       hsymmetric-internal-net-01:
         ipv4_address: 192.168.114.88
-    volumes:
-      - ../:/libtelio
-    extra_hosts:
-      - "photo-album:10.0.80.80"
-      - "stun-01:10.0.1.1"
-      - "stun-02:10.0.1.245"
-      - "derp-01:10.0.10.1"
-      - "derp-02:10.0.10.2"
-      - "derp-03:10.0.10.3"
-      - "derp-00:10.0.10.245"
-
 
 networks:
   # Network representing public internet,

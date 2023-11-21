@@ -2,13 +2,6 @@
 
 set -euxo pipefail
 
-# Enable IPv6, by default, docker has this set to '1'
-sysctl -w net.ipv6.conf.all.disable_ipv6=0
-sysctl -w net.ipv6.conf.default.disable_ipv6=0
-sysctl -w net.ipv6.conf.all.forwarding=1
-
-echo 1 > /proc/sys/net/ipv4/ip_forward
-
 # Configure standart linux NAT, this will be port restricted cone NAT
 iptables -t nat -A POSTROUTING -s 100.64.0.0/10 ! -o wg0 -j MASQUERADE
 

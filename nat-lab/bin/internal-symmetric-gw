@@ -2,8 +2,6 @@
 
 set -e
 
-echo 1 > /proc/sys/net/ipv4/ip_forward
-
 # Configure standard FW
 iptables -t filter -A INPUT -i lo -j ACCEPT
 iptables -t filter -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
