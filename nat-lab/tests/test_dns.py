@@ -712,7 +712,6 @@ async def test_dns_update(alpha_ip_stack: IPStack) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="Test is flaky - JIRA issue LLT-4563")
 async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
     async with AsyncExitStack() as exit_stack:
         FIRST_DNS_SERVER = "8.8.8.8"
