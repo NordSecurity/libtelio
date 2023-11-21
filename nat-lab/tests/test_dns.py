@@ -761,13 +761,11 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
 
         tcpdump_stdout = process.get_stdout()
         results = re.findall(
-            r".* IP .* > (?P<dest_ip>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,5}): .* A\?.*",
+            r".* IP .* > (?P<dest_ip>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,5}: .* A\?.*",
             tcpdump_stdout,
         )  # fmt: skip
 
-        assert results, tcpdump_stdout
-        assert [result for result in results if FIRST_DNS_SERVER in result]
-        assert not ([result for result in results if SECOND_DNS_SERVER in result])
+        assert results in ([FIRST_DNS_SERVER], [SECOND_DNS_SERVER]), tcpdump_stdout
 
 
 @pytest.mark.asyncio
