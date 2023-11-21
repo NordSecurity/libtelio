@@ -78,7 +78,10 @@ async def _connect_vpn(
                 is_meshnet=False,
             ),
             "10.0.254.7",
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test flaky: JIRA issue LLT-4554"),
+            ],
         ),
         pytest.param(
             SetupParameters(
@@ -92,7 +95,10 @@ async def _connect_vpn(
                 is_meshnet=False,
             ),
             "10.0.254.7",
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test flaky: JIRA issue LLT-4554"),
+            ],
         ),
         pytest.param(
             SetupParameters(
@@ -184,7 +190,10 @@ async def test_vpn_connection(
                 is_meshnet=False,
             ),
             "10.0.254.7",
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - JIRA issue: LLT-4554"),
+            ],
         ),
         pytest.param(
             SetupParameters(

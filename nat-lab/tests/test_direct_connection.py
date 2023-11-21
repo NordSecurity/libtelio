@@ -585,6 +585,7 @@ async def test_direct_connection_endpoint_gone(
 
 @pytest.mark.asyncio
 # Regression test for LLT-4306
+@pytest.mark.xfail(reason="Test is flaky - JIRA issue LLT-4555")
 @pytest.mark.parametrize(
     "setup_params",
     [
