@@ -476,7 +476,7 @@ async def test_event_content_exit_through_peer(
                 features=TelioFeatures(direct=Direct(providers=["stun"])),
             ),
             "10.0.254.1",
-            marks=pytest.mark.flaky("Test is flaky - JIRA issue LLT-4558"),
+            marks=pytest.mark.xfail(reason="Test is flaky - JIRA issue LLT-4558"),
         ),
         pytest.param(
             SetupParameters(

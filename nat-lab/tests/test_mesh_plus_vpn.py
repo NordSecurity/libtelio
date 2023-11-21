@@ -533,7 +533,7 @@ async def test_vpn_plus_mesh_over_direct(
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(150)
-@pytest.mark.xfail("Test is flaky - JIRA issue LLT-4560")
+@pytest.mark.xfail(reason="Test is flaky - JIRA issue LLT-4560")
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
