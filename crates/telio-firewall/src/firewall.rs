@@ -3137,4 +3137,37 @@ pub mod tests {
 
         assert_eq!(icmp.payload(), &test_udppkg);
     }
+
+    #[test]
+    fn firewall_icmp_ddos_vulnerability() {
+        let src1 = "8.8.8.8:8888";
+        let src2 = "8.8.8.8";
+        let dst1 = "127.0.0.1:2000";
+        let dst2 = "127.0.0.1";
+
+        let fw = StatefullFirewall::new_custom(2, LRU_TIMEOUT, false, false);
+
+        let good_peer = make_random_peer();
+        let bad_peer = make_random_peer();
+
+        let tcp_syn_outbound = make_tcp(src1, dst1, TcpFlags::SYN);
+        let tcp_ack_inbound = make_tcp(dst1, src1, TcpFlags::ACK);
+
+        let udp_outbound = make_udp(src1, dst1);
+        let udp_inbound = make_udp(dst1, src1);
+
+        let mut data = vec![1, 0, 0, 1];
+        let tcp = make_tcp(src1, dst1, TcpFlags::ACK);
+        data.extend_from_slice(&tcp);
+
+        let icmp_tcp_error_inbound =
+            make_icmp4_with_body(dst2, src2, IcmpTypes::DestinationUnreachable.into(), &data);
+
+        // tcp & udp outbound: allowed
+        assert!(fw.process_outbound_packet(&good_peer.0, &tcp_syn_outbound));
+        // inject error package from bad peer
+        assert!(!fw.process_inbound_packet(&bad_peer.0, &icmp_tcp_error_inbound));
+        // expect that connection continues normally
+        assert!(fw.process_inbound_packet(&good_peer.0, &tcp_ack_inbound));
+    }
 }
