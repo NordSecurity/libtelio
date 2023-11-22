@@ -1,4 +1,4 @@
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use std::ops::Deref;
@@ -114,6 +114,8 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
         ext_socket_addr: Ipv4Addr,
     ) {
         let _ = task_exec!(&self.task, async move |s| {
+            // Check if we are running on the same IP stack
+            // as is requested by new config
             let ip_version_changed = s
                 .sockets
                 .as_ref()
@@ -126,17 +128,19 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
                 })
                 .unwrap_or(false);
 
+            // Precalculate IP address to correct IP stack
+            let int_socket_addr = if use_ipv6 {
+                IpAddr::V6(Ipv6Addr::UNSPECIFIED)
+            } else {
+                IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+            };
+
+            // Create internal and external socket for STUN operation
             if s.sockets.is_none() || ip_version_changed {
                 s.sockets = match (
-                    if use_ipv6 {
-                        socket_pool
-                            .new_internal_udp((Ipv6Addr::UNSPECIFIED, 0), None)
-                            .await
-                    } else {
-                        socket_pool
-                            .new_internal_udp((Ipv4Addr::UNSPECIFIED, 0), None)
-                            .await
-                    },
+                    socket_pool
+                        .new_internal_udp((int_socket_addr, 0), None)
+                        .await,
                     socket_pool
                         .new_external_udp((ext_socket_addr, 0), None)
                         .await,
@@ -159,8 +163,8 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
                 };
             }
 
+            // Update server list
             servers.sort_by_key(|s| (s.weight, s.public_key));
-
             if s.servers != servers {
                 servers.retain(|server| {
                     if server.stun_plaintext_port == 0 {
@@ -184,10 +188,9 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
                 }
             }
 
+            // Update STUN state
             s.exponential_backoff.reset();
-
             s.transition_to_wait_for_wg();
-
             s.try_transition_to_searching_for_server().await;
 
             Ok(())
