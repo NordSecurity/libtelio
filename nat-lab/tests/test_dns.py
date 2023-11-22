@@ -826,8 +826,8 @@ async def test_dns_nickname() -> None:
             conn.connection for conn in env.connections
         ]
 
-        await client_alpha.enable_magic_dns(["1.1.1.1"])
-        await client_beta.enable_magic_dns(["1.1.1.1"])
+        await client_alpha.enable_magic_dns([])
+        await client_beta.enable_magic_dns([])
 
         alpha_response = await testing.wait_long(
             connection_alpha.create_process(
@@ -860,3 +860,111 @@ async def test_dns_nickname() -> None:
         )
         for ip in beta.ip_addresses:
             assert ip in beta_response.get_stdout()
+
+
+@pytest.mark.asyncio
+async def test_dns_change_nickname() -> None:
+    async with AsyncExitStack() as exit_stack:
+        api, (alpha, beta) = setup_api(
+            [(False, IPStack.IPv4v6), (False, IPStack.IPv4v6)]
+        )
+        api.assign_nickname(alpha.id, "johnny")
+        api.assign_nickname(beta.id, "yoko")
+        env = await setup_mesh_nodes(
+            exit_stack,
+            [
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_1,
+                        derp_1_limits=ConnectionLimits(1, 1),
+                    ),
+                    features=TelioFeatures(nicknames=True),
+                ),
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_2,
+                        derp_1_limits=ConnectionLimits(1, 1),
+                    ),
+                    features=TelioFeatures(nicknames=True),
+                ),
+            ],
+            provided_api=api,
+        )
+        client_alpha, client_beta = env.clients
+        connection_alpha, connection_beta = [
+            conn.connection for conn in env.connections
+        ]
+
+        await client_alpha.enable_magic_dns([])
+        await client_beta.enable_magic_dns([])
+        api.assign_nickname(alpha.id, "rotten")
+        api.assign_nickname(beta.id, "ono")
+        await client_alpha.set_meshmap(api.get_meshmap(alpha.id, derp_servers=[]))
+        await client_beta.set_meshmap(api.get_meshmap(beta.id, derp_servers=[]))
+
+        alpha_response = await testing.wait_long(
+            connection_alpha.create_process(
+                ["nslookup", "ono.nord", config.LIBTELIO_DNS_IPV4]
+            ).execute()
+        )
+        for ip in beta.ip_addresses:
+            assert ip in alpha_response.get_stdout()
+
+        alpha_response = await testing.wait_long(
+            connection_alpha.create_process(
+                ["nslookup", "rotten.nord", config.LIBTELIO_DNS_IPV4]
+            ).execute()
+        )
+        for ip in alpha.ip_addresses:
+            assert ip in alpha_response.get_stdout()
+
+        beta_response = await testing.wait_long(
+            connection_beta.create_process(
+                ["nslookup", "rotten.nord", config.LIBTELIO_DNS_IPV4]
+            ).execute()
+        )
+        for ip in alpha.ip_addresses:
+            assert ip in beta_response.get_stdout()
+
+        beta_response = await testing.wait_long(
+            connection_beta.create_process(
+                ["nslookup", "ono.nord", config.LIBTELIO_DNS_IPV4]
+            ).execute()
+        )
+        for ip in beta.ip_addresses:
+            assert ip in beta_response.get_stdout()
+
+        api.reset_nickname(alpha.id)
+        api.reset_nickname(beta.id)
+        await client_alpha.set_meshmap(api.get_meshmap(alpha.id, derp_servers=[]))
+        await client_beta.set_meshmap(api.get_meshmap(beta.id, derp_servers=[]))
+
+        with pytest.raises(ProcessExecError):
+            alpha_response = await testing.wait_long(
+                connection_alpha.create_process(
+                    ["nslookup", "ono.nord", config.LIBTELIO_DNS_IPV4]
+                ).execute()
+            )
+
+        with pytest.raises(ProcessExecError):
+            alpha_response = await testing.wait_long(
+                connection_alpha.create_process(
+                    ["nslookup", "rotten.nord", config.LIBTELIO_DNS_IPV4]
+                ).execute()
+            )
+
+        with pytest.raises(ProcessExecError):
+            beta_response = await testing.wait_long(
+                connection_beta.create_process(
+                    ["nslookup", "rotten.nord", config.LIBTELIO_DNS_IPV4]
+                ).execute()
+            )
+
+        with pytest.raises(ProcessExecError):
+            beta_response = await testing.wait_long(
+                connection_beta.create_process(
+                    ["nslookup", "ono.nord", config.LIBTELIO_DNS_IPV4]
+                ).execute()
+            )
