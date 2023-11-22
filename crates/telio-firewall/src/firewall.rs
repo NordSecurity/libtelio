@@ -3198,4 +3198,50 @@ pub mod tests {
         ),);
         assert!(fw.process_inbound_packet(&peer_good, &make_tcp(them, us, TcpFlags::SYN)),);
     }
+
+    #[test]
+    fn firewall_udp_spoffing_and_injection_vulnerability() {
+        struct TestInput {
+            src: &'static str,
+            dst: &'static str,
+            make_udp: MakeUdp,
+        }
+
+        let test_inputs = [
+            TestInput {
+                src: "127.0.0.1:1111",
+                dst: "8.8.8.8:8888",
+                make_udp: &make_udp,
+            },
+            TestInput {
+                src: "[::1]:1111",
+                dst: "[2001:4860:4860::8888]:8888",
+                make_udp: &make_udp6,
+            },
+        ];
+
+        for TestInput { src, dst, make_udp } in test_inputs {
+            let fw = StatefullFirewall::new_custom(3, LRU_TIMEOUT, true, false);
+
+            let outgoing_packet = make_udp(src, dst);
+            let incoming_packet = make_udp(dst, src);
+
+            let peer_bad = make_random_peer();
+            let peer_good = make_random_peer();
+
+            fw.add_to_peer_whitelist(peer_good);
+            fw.add_to_port_whitelist(peer_good, 1111);
+
+            // Should Pass as it is inbound for trusted peer
+            assert!(fw.process_inbound_packet(&peer_good.0, &incoming_packet),);
+            assert!(fw.process_outbound_packet(&peer_good.0, &outgoing_packet),);
+
+            // Should FAIL as it is a spoofed package
+            assert!(!fw.process_inbound_packet(&peer_bad.0, &incoming_packet),);
+
+            // Good peers should still communicate normaly
+            assert!(fw.process_inbound_packet(&peer_good.0, &incoming_packet),);
+            assert!(fw.process_outbound_packet(&peer_good.0, &outgoing_packet),);
+        }
+    }
 }
