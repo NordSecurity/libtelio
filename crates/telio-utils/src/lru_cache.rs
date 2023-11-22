@@ -154,6 +154,20 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
         self.map.is_empty()
     }
 
+    #[cfg(test)]
+    pub fn len_slow(&mut self) -> usize {
+        let now = Instant::now();
+        self.map
+            .iter()
+            .filter(|(_, timed_value)| !timed_value.is_expired(self.ttl, now))
+            .count()
+    }
+
+    #[cfg(test)]
+    pub fn is_empty_slow(&mut self) -> bool {
+        self.len_slow() == 0
+    }
+
     /// Gets the given key’s corresponding entry in the map for in-place manipulation.
     #[inline(always)]
     pub fn entry(&mut self, key: Key) -> Entry<'_, Key, Value> {
@@ -162,7 +176,17 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
         let hash = state.finish();
         match self.map.raw_entry_mut().from_key_hashed_nocheck(hash, &key) {
             RawEntryMut::Occupied(mut e) => {
-                Self::update_last_time(&mut e, Instant::now());
+                let now = Instant::now();
+                if e.get_key_value().1.is_expired(self.ttl, now) {
+                    e.remove();
+                    return Entry::Vacant(VacantEntry {
+                        key,
+                        hash,
+                        map: &mut self.map,
+                        max_map_size: self.capacity,
+                    });
+                }
+                Self::update_last_time(&mut e, now);
                 Entry::Occupied(OccupiedEntry {
                     key,
                     hash,
@@ -557,8 +581,8 @@ mod tests {
         }
 
         fn verify_equality(new: &mut LruCache<Key, u32>, old: &mut OldLruCache<Key, u32>) {
-            assert_eq!(new.is_empty(), old.is_empty());
-            assert_eq!(new.len(), old.len());
+            assert_eq!(new.is_empty_slow(), old.is_empty());
+            assert_eq!(new.len_slow(), old.len());
             let keys: Vec<_> = new.map.keys().collect();
             for key in keys {
                 assert_eq!(new.peek(&key), old.peek(&key));
