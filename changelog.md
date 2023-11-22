@@ -46,6 +46,7 @@
 * LLT-4280: Implement TCP and UDP connection reset upon VPN server change for boringtun adapter
 * LLT-4124: Add IPv6 feature flag
 * LLT-3950: Enable IPv6 for wg-stun.
+* LLT-4502: Implement ICMP, UDP and TCP conntrack tracking for each peer separately
 
 <br>
 
