@@ -3175,4 +3175,27 @@ pub mod tests {
         // expect that connection continues normally
         assert!(fw.process_inbound_packet(&good_peer.0, &tcp_ack_inbound));
     }
+
+    #[test]
+    fn firewall_tcp_rst_attack_vulnerability() {
+        let us = "127.0.0.1:1111";
+        let them = "8.8.8.8:8888";
+        let random = "192.168.0.1:7777";
+
+        let fw = StatefullFirewall::new_custom(3, LRU_TIMEOUT, false, false);
+
+        let outgoing_init_packet = make_tcp(us, them, TcpFlags::SYN);
+        let incoming_rst_packet = make_tcp(them, us, TcpFlags::RST);
+
+        let peer_bad = make_random_peer();
+        let peer_good = make_peer();
+
+        assert!(fw.process_outbound_packet(&peer_good, &outgoing_init_packet),);
+        assert!(!fw.process_inbound_packet(&peer_bad.0, &incoming_rst_packet),);
+        assert!(fw.process_inbound_packet(
+            &peer_good,
+            &make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)
+        ),);
+        assert!(fw.process_inbound_packet(&peer_good, &make_tcp(them, us, TcpFlags::SYN)),);
+    }
 }
