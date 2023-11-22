@@ -11,29 +11,12 @@ services:
     profiles:
       - base
 
-  # Create gateway for first cone network
-  cone-gw-01: &common-gw
-    hostname: cone-gw-01
-    image: nat-lab:base
-    entrypoint: /opt/bin/cone-gw
-    cap_drop:
-      - ALL
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-    sysctls:
-      - net.ipv4.ip_forward=1
-    security_opt:
-      - no-new-privileges:true
-    networks:
-      internet:
-        ipv4_address: 10.0.254.1
-        priority: 1000
-      cone-net-01:
-        ipv4_address: 192.168.101.254
-        priority: 900
-  # Create one client for cone network, this client will use
-  # the above gateway as its route to the "internet"
+
+  ###########################################################
+  #                         CLIENTS                         #
+  ###########################################################
+  # Clients for cone network, they'll use cone gateways
+  # as their route to the open internet
   cone-client-01: &common-client
     hostname: cone-client-01
     image: nat-lab:base
@@ -74,8 +57,164 @@ services:
       - "derp-00:10.0.10.245"
     volumes:
       - ../:/libtelio
+  cone-client-02:
+    hostname: cone-client-02
+    <<: *common-client
+    networks:
+      cone-net-02:
+        ipv4_address: 192.168.102.54
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.102.254
+  # Client that shares two cone networks on different interfaces
+  shared-client-01:
+    hostname: shared-client-01
+    <<: *common-client
+    networks:
+      cone-net-01:
+        ipv4_address: 192.168.101.67
+      cone-net-05:
+        ipv4_address: 192.168.113.67
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.101.254
+      CLIENT_GATEWAY_SECONDARY: 192.168.113.254
 
-  # Create gateway for second cone network
+  # Open internet clients used in cryptography tests
+  open-internet-client-01:
+    hostname: open-client-01
+    <<: *common-client
+    networks:
+      internet:
+        ipv4_address: 10.0.11.2
+    environment:
+      CLIENT_GATEWAY_PRIMARY: none
+  open-internet-client-02:
+    hostname: open-client-02
+    <<: *common-client
+    networks:
+      internet:
+        ipv4_address: 10.0.11.3
+    environment:
+      CLIENT_GATEWAY_PRIMARY: none
+  # Open internet client used on ipv6 tests
+  open-internet-client-dual-stack:
+    hostname: open-client-dual-stack
+    <<: *common-client
+    networks:
+      internet:
+        ipv4_address: 10.0.11.4
+        ipv6_address: 2001:db8:85a4::dead:beef:ceed
+    environment:
+      CLIENT_GATEWAY_PRIMARY: none
+    extra_hosts:
+      - "photo-album:2001:db8:85a4::adda:edde:5"
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+
+  fullcone-client-01:
+    hostname: fullcone-client-01
+    <<: *common-client
+    networks:
+      fullcone-net-01:
+        ipv4_address: 192.168.109.88
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.109.254
+  fullcone-client-02:
+    hostname: fullcone-client-02
+    <<: *common-client
+    networks:
+      fullcone-net-02:
+        ipv4_address: 192.168.106.88
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.106.254
+
+  upnp-client-01:
+    hostname: upnp-client-01
+    <<: *common-client
+    networks:
+      upnp-net-01:
+        ipv4_address: 192.168.105.88
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.105.254
+  upnp-client-02:
+    hostname: upnp-client-02
+    <<: *common-client
+    networks:
+      upnp-net-02:
+        ipv4_address: 192.168.112.88
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.112.254
+
+  symmetric-client-01:
+    hostname: symmetric-client-01
+    <<: *common-client
+    networks:
+      hsymmetric-net-01:
+        ipv4_address: 192.168.103.88
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.103.254
+  symmetric-client-02:
+    hostname: symmetric-client-02
+    <<: *common-client
+    networks:
+      hsymmetric-net-02:
+        ipv4_address: 192.168.104.88
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.104.254
+  internal-symmetric-client-01:
+    hostname: internal-symmetric-client-01
+    <<: *common-client
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.114.254
+      INTERMEDIATE_NETWORK: 192.168.103.0/24
+    networks:
+      hsymmetric-internal-net-01:
+        ipv4_address: 192.168.114.88
+
+  udp-block-client-01:
+    hostname: udp-block-client-01
+    <<: *common-client
+    networks:
+      udp-block-net-01:
+        ipv4_address: 192.168.110.100
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.110.254
+  udp-block-client-02:
+    hostname: udp-block-client-02
+    <<: *common-client
+    networks:
+      udp-block-net-02:
+        ipv4_address: 192.168.111.100
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.111.254
+
+
+  ###########################################################
+  #                        GATEWAYS                         #
+  ###########################################################
+  # Gateways acting like VM network routers, intended to route VM traffic through
+  # docker network.
+  cone-gw-01: &common-gw
+    hostname: cone-gw-01
+    image: nat-lab:base
+    entrypoint: /opt/bin/cone-gw
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    sysctls:
+      - net.ipv4.ip_forward=1
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      internet:
+        ipv4_address: 10.0.254.1
+        priority: 1000
+      cone-net-01:
+        ipv4_address: 192.168.101.254
+        priority: 900
   cone-gw-02:
     hostname: cone-gw-02
     <<: *common-gw
@@ -85,72 +224,149 @@ services:
         priority: 1000
       cone-net-02:
         ipv4_address: 192.168.102.254
+        priority: 90
+  cone-gw-03:
+    hostname: cone-gw-03
+    <<: *common-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.7
+        priority: 1000
+      cone-net-03:
+        ipv4_address: 192.168.107.254
         priority: 900
-  # Create one client for cone network, this client will use
-  # the above gateway as its route to the "internet"
-  cone-client-02:
-    hostname: cone-client-02
-    <<: *common-client
+  cone-gw-04:
+    hostname: cone-gw-04
+    <<: *common-gw
     networks:
-      cone-net-02:
-        ipv4_address: 192.168.102.54
+      internet:
+        ipv4_address: 10.0.254.8
+        priority: 1000
+      cone-net-04:
+        ipv4_address: 192.168.108.254
+        priority: 900
+  cone-gw-05:
+    hostname: cone-gw-05
+    <<: *common-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.13
+        priority: 1000
+      cone-net-05:
+        ipv4_address: 192.168.113.254
+        priority: 900
+
+  fullcone-gw-01:
+    hostname: fullcone-gw-01
+    <<: *common-gw
+    entrypoint: /opt/bin/fullcone-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.9
+        priority: 1000
+      fullcone-net-01:
+        ipv4_address: 192.168.109.254
+        priority: 900
+  fullcone-gw-02:
+    hostname: fullcone-gw-02
+    <<: *common-gw
+    entrypoint: /opt/bin/fullcone-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.6
+        priority: 1000
+      fullcone-net-02:
+        ipv4_address: 192.168.106.254
+        priority: 900
+
+  symmetric-gw-01:
+    hostname: symmetric-gw-01
+    <<: *common-gw
+    entrypoint: /opt/bin/symmetric-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.3
+        priority: 1000
+      hsymmetric-net-01:
+        ipv4_address: 192.168.103.254
+        priority: 900
+  symmetric-gw-02:
+    hostname: symmetric-gw-02
+    <<: *common-gw
+    entrypoint: /opt/bin/symmetric-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.4
+        priority: 1000
+      hsymmetric-net-02:
+        ipv4_address: 192.168.104.254
+        priority: 900
+  internal-symmetric-gw-01:
+    hostname: internal-symmetric-gw-01
+    <<: *common-gw
+    entrypoint: /opt/bin/internal-symmetric-gw
     environment:
-      CLIENT_GATEWAY_PRIMARY: 192.168.102.254
-
-  # Just some publicly-routable service over TCP. To access
-  # it just simply run `curl photo-album`
-  photo-album:
-    hostname: photo-album
-    image: nat-lab:base
-    entrypoint: "/usr/bin/python3 -m http.server --bind :: --directory /srv/www 80"
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
+      CLIENT_GATEWAY_SECONDARY: 192.168.103.254
     networks:
-      internet:
-        ipv4_address: 10.0.80.80
-        ipv6_address: 2001:db8:85a4::adda:edde:5
+      hsymmetric-net-01:
+        ipv4_address: 192.168.103.44
+      hsymmetric-internal-net-01:
+        ipv4_address: 192.168.114.254
     volumes:
-      - type: bind
-        source: ./data/photo.png
-        target: /srv/www/photo.png
-        read_only: true
+      - ../:/libtelio
 
-  # Just some publicly-routable UDP server. To access
-  # it just simply run `nc -u udp-server 2000`
-  udp-server:
-    hostname: udp-server
-    image: nat-lab:base
-    entrypoint: "/usr/bin/nc -unkl46 2000"
+  upnp-gw-01:
+    hostname: upnp-gw-01
+    <<: *common-gw
+    entrypoint: /opt/bin/upnp-gw
     networks:
       internet:
-        ipv4_address: 10.0.80.81
-        ipv6_address: 2001:db8:85a4::adda:edde:6
-
-  # Plain STUN server. This can be used for doing some simple testing,
-  # but note that for libtelio, we are not using plaintext STUN.
-  stun-01:
-    hostname: stun-01
-    image: nat-lab:base
-    entrypoint: /opt/bin/stun-server
-    cap_drop:
-      - ALL
-    cap_add:
-      - NET_ADMIN
-    security_opt:
-      - no-new-privileges:true
+        ipv4_address: 10.0.254.5
+        priority: 1000
+      upnp-net-01:
+        ipv4_address: 192.168.105.254
+        priority: 900
+  upnp-gw-02:
+    hostname: upnp-gw-02
+    <<: *common-gw
+    entrypoint: /opt/bin/upnp-gw
     networks:
       internet:
-        # This container requires two IP addresses to operate,
-        # therefore it takes the specified IP address and an
-        # IP address + 1. The logic for this is inside bin/stun-server.
-        ipv4_address: 10.0.1.1
-    logging:
-      options:
-        max-size: 50m
+        ipv4_address: 10.0.254.12
+        priority: 1000
+      upnp-net-02:
+        ipv4_address: 192.168.112.254
+        priority: 900
 
-  # Run three DERP servers configured to run in a cluster
+  # Gateways which block udp traffic
+  udp-block-gw-01:
+    hostname: udp-block-gw-01
+    <<: *common-gw
+    entrypoint: /opt/bin/udp-block-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.10
+        priority: 1000
+      udp-block-net-01:
+        ipv4_address: 192.168.110.254
+        priority: 900
+  udp-block-gw-02:
+    hostname: udp-block-gw-02
+    <<: *common-gw
+    entrypoint: /opt/bin/udp-block-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.11
+        priority: 1000
+      udp-block-net-02:
+        ipv4_address: 192.168.111.254
+        priority: 900
+
+
+  ###########################################################
+  #                       MISC SERVERS                      #
+  ###########################################################
+  # Three DERP servers configured to run in a cluster
   derp-01: &common-derp
     hostname: derp-01
     image: nat-lab:base
@@ -181,6 +397,28 @@ services:
         ipv4_address: 10.0.10.3
     volumes:
       - ./data/nordderper/config3.yml:/etc/nordderper/config.yml
+
+  # Plain STUN server. This can be used for doing some simple testing,
+  # but note that for libtelio, we are not using plaintext STUN.
+  stun-01:
+    hostname: stun-01
+    image: nat-lab:base
+    entrypoint: /opt/bin/stun-server
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      internet:
+        # This container requires two IP addresses to operate,
+        # therefore it takes the specified IP address and an
+        # IP address + 1. The logic for this is inside bin/stun-server.
+        ipv4_address: 10.0.1.1
+    logging:
+      options:
+        max-size: 50m
 
   # Two VPN servers
   vpn-01: &common-vpn
@@ -213,285 +451,41 @@ services:
       internet:
         ipv4_address: 10.0.100.2
 
-  # Create one open internet client for
-  # cryptography tests
-  open-internet-client-01:
-    hostname: open-client-01
-    <<: *common-client
+  # Just some publicly-routable service over TCP. To access
+  # it just simply run `curl photo-album`
+  photo-album:
+    hostname: photo-album
+    image: nat-lab:base
+    entrypoint: "/usr/bin/python3 -m http.server --bind :: --directory /srv/www 80"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     networks:
       internet:
-        ipv4_address: 10.0.11.2
-    environment:
-      CLIENT_GATEWAY_PRIMARY: none
-
-  # Create one open internet client for
-  # cryptography tests
-  open-internet-client-02:
-    hostname: open-client-02
-    <<: *common-client
-    networks:
-      internet:
-        ipv4_address: 10.0.11.3
-    environment:
-      CLIENT_GATEWAY_PRIMARY: none
-
-  # Create one open internet client for
-  # cryptography tests
-  open-internet-client-dual-stack:
-    hostname: open-client-dual-stack
-    <<: *common-client
-    networks:
-      internet:
-        ipv4_address: 10.0.11.4
-        ipv6_address: 2001:db8:85a4::dead:beef:ceed
-    environment:
-      CLIENT_GATEWAY_PRIMARY: none
-    extra_hosts:
-      - "photo-album:2001:db8:85a4::adda:edde:5"
-      - "derp-01:10.0.10.1"
-      - "derp-02:10.0.10.2"
-      - "derp-03:10.0.10.3"
-      - "derp-00:10.0.10.245"
-
-  symmetric-gw-01:
-    hostname: symmetric-gw-01
-    <<: *common-gw
-    entrypoint: /opt/bin/symmetric-gw
-    networks:
-      internet:
-        ipv4_address: 10.0.254.3
-        priority: 1000
-      hsymmetric-net-01:
-        ipv4_address: 192.168.103.254
-        priority: 900
-
-  symmetric-client-01:
-    hostname: symmetric-client-01
-    <<: *common-client
-    networks:
-      hsymmetric-net-01:
-        ipv4_address: 192.168.103.88
-    environment:
-      CLIENT_GATEWAY_PRIMARY: 192.168.103.254
-
-  symmetric-gw-02:
-    hostname: symmetric-gw-02
-    <<: *common-gw
-    entrypoint: /opt/bin/symmetric-gw
-    networks:
-      internet:
-        ipv4_address: 10.0.254.4
-        priority: 1000
-      hsymmetric-net-02:
-        ipv4_address: 192.168.104.254
-        priority: 900
-
-  symmetric-client-02:
-    hostname: symmetric-client-02
-    <<: *common-client
-    networks:
-      hsymmetric-net-02:
-        ipv4_address: 192.168.104.88
-    environment:
-      CLIENT_GATEWAY_PRIMARY: 192.168.104.254
-
-  fullcone-gw-01:
-    hostname: fullcone-gw-01
-    <<: *common-gw
-    entrypoint: /opt/bin/fullcone-gw
-    networks:
-      internet:
-        ipv4_address: 10.0.254.9
-        priority: 1000
-      fullcone-net-01:
-        ipv4_address: 192.168.109.254
-        priority: 900
-
-  fullcone-client-01:
-    hostname: fullcone-client-01
-    <<: *common-client
-    networks:
-      fullcone-net-01:
-        ipv4_address: 192.168.109.88
-    environment:
-      CLIENT_GATEWAY_PRIMARY: 192.168.109.254
-
-  fullcone-gw-02:
-    hostname: fullcone-gw-02
-    <<: *common-gw
-    entrypoint: /opt/bin/fullcone-gw
-    networks:
-      internet:
-        ipv4_address: 10.0.254.6
-        priority: 1000
-      fullcone-net-02:
-        ipv4_address: 192.168.106.254
-        priority: 900
-
-  fullcone-client-02:
-    hostname: fullcone-client-02
-    <<: *common-client
-    networks:
-      fullcone-net-02:
-        ipv4_address: 192.168.106.88
-    environment:
-      CLIENT_GATEWAY_PRIMARY: 192.168.106.254
-
-  upnp-gw-01:
-    hostname: upnp-gw-01
-    <<: *common-gw
-    entrypoint: /opt/bin/upnp-gw
-    networks:
-      internet:
-        ipv4_address: 10.0.254.5
-        priority: 1000
-      upnp-net-01:
-        ipv4_address: 192.168.105.254
-        priority: 900
-
-  upnp-client-01:
-    hostname: upnp-client-01
-    <<: *common-client
-    networks:
-      upnp-net-01:
-        ipv4_address: 192.168.105.88
-    environment:
-      CLIENT_GATEWAY_PRIMARY: 192.168.105.254
-
-  shared-client-01:
-    hostname: shared-client-01
-    <<: *common-client
-    networks:
-      cone-net-01:
-        ipv4_address: 192.168.101.67
-      cone-net-05:
-        ipv4_address: 192.168.113.67
-    environment:
-      CLIENT_GATEWAY_PRIMARY: 192.168.101.254
-      CLIENT_GATEWAY_SECONDARY: 192.168.113.254
-
-  udp-block-client-01:
-    hostname: udp-block-client-01
-    <<: *common-client
-    networks:
-      udp-block-net-01:
-        ipv4_address: 192.168.110.100
-    environment:
-      CLIENT_GATEWAY_PRIMARY: 192.168.110.254
-
-  # Create gateway which block all udp traffic
-  udp-block-gw-01:
-    hostname: udp-block-gw-01
-    <<: *common-gw
-    entrypoint: /opt/bin/udp-block-gw
-    networks:
-      internet:
-        ipv4_address: 10.0.254.10
-        priority: 1000
-      udp-block-net-01:
-        ipv4_address: 192.168.110.254
-        priority: 900
-
-  udp-block-client-02:
-    hostname: udp-block-client-02
-    <<: *common-client
-    networks:
-      udp-block-net-02:
-        ipv4_address: 192.168.111.100
-    environment:
-      CLIENT_GATEWAY_PRIMARY: 192.168.111.254
-
-  # Create gateway which block all udp traffic
-  udp-block-gw-02:
-    hostname: udp-block-gw-02
-    <<: *common-gw
-    entrypoint: /opt/bin/udp-block-gw
-    networks:
-      internet:
-        ipv4_address: 10.0.254.11
-        priority: 1000
-      udp-block-net-02:
-        ipv4_address: 192.168.111.254
-        priority: 900
-
-  # These gateways are dedicated for VM network routing. VM traffic is gonna be routed into
-  # docker network through these gateways.
-  cone-gw-03:
-    hostname: cone-gw-03
-    <<: *common-gw
-    networks:
-      internet:
-        ipv4_address: 10.0.254.7
-        priority: 1000
-      cone-net-03:
-        ipv4_address: 192.168.107.254
-        priority: 900
-  cone-gw-04:
-    hostname: cone-gw-04
-    <<: *common-gw
-    networks:
-      internet:
-        ipv4_address: 10.0.254.8
-        priority: 1000
-      cone-net-04:
-        ipv4_address: 192.168.108.254
-        priority: 900
-
-  upnp-gw-02:
-    hostname: upnp-gw-02
-    <<: *common-gw
-    entrypoint: /opt/bin/upnp-gw
-    networks:
-      internet:
-        ipv4_address: 10.0.254.12
-        priority: 1000
-      upnp-net-02:
-        ipv4_address: 192.168.112.254
-        priority: 900
-
-  upnp-client-02:
-    hostname: upnp-client-02
-    <<: *common-client
-    networks:
-      upnp-net-02:
-        ipv4_address: 192.168.112.88
-    environment:
-      CLIENT_GATEWAY_PRIMARY: 192.168.112.254
-
-  cone-gw-05:
-    hostname: cone-gw-05
-    <<: *common-gw
-    networks:
-      internet:
-        ipv4_address: 10.0.254.13
-        priority: 1000
-      cone-net-05:
-        ipv4_address: 192.168.113.254
-        priority: 900
-
-  internal-symmetric-gw-01:
-    hostname: internal-symmetric-gw-01
-    <<: *common-gw
-    entrypoint: /opt/bin/internal-symmetric-gw
-    environment:
-      CLIENT_GATEWAY_SECONDARY: 192.168.103.254
-    networks:
-      hsymmetric-net-01:
-        ipv4_address: 192.168.103.44
-      hsymmetric-internal-net-01:
-        ipv4_address: 192.168.114.254
+        ipv4_address: 10.0.80.80
+        ipv6_address: 2001:db8:85a4::adda:edde:5
     volumes:
-      - ../:/libtelio
+      - type: bind
+        source: ./data/photo.png
+        target: /srv/www/photo.png
+        read_only: true
 
-  internal-symmetric-client-01:
-    hostname: internal-symmetric-client-01
-    <<: *common-client
-    environment:
-      CLIENT_GATEWAY_PRIMARY: 192.168.114.254
-      INTERMEDIATE_NETWORK: 192.168.103.0/24
+  # Just some publicly-routable UDP server. To access
+  # it just simply run `nc -u udp-server 2000`
+  udp-server:
+    hostname: udp-server
+    image: nat-lab:base
+    entrypoint: "/usr/bin/nc -unkl46 2000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     networks:
-      hsymmetric-internal-net-01:
-        ipv4_address: 192.168.114.88
+      internet:
+        ipv4_address: 10.0.80.81
+        ipv6_address: 2001:db8:85a4::adda:edde:6
+
 
 networks:
   # Network representing public internet,
@@ -508,8 +502,8 @@ networks:
         - subnet: 10.0.0.0/16
         - subnet: 2001:db8:85a4::/48
 
-  # Define two separate networks for use with cone NATs
-  # gateways on these networks must implement restricted-cone NAT.
+  # Networks for use with cone NATs.
+  # Gateways on these networks must implement restricted-cone NAT.
   cone-net-01:
     driver: bridge
     ipam:
@@ -522,33 +516,56 @@ networks:
       driver: default
       config:
         - subnet: 192.168.102.0/24
+  cone-net-03:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.107.0/24
+  cone-net-04:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.108.0/24
+  cone-net-05:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.113.0/24
 
-  # Define separate network for use with symmetric NATs
-  # gateways on these networks must implement symmetric NAT.
-  # name starts with letter H prefix, because docker doesn't let name to start with letter S, idk why
+  # Network for use with symmetric NATs.
+  # Gateways on these networks must implement symmetric NAT.
+  # Name starts with letter 'H' prefix because for some reason docker doesn't let name
+  # to start with letter 'S'.
   hsymmetric-net-01:
     driver: bridge
     ipam:
       driver: default
       config:
         - subnet: 192.168.103.0/24
-
   hsymmetric-net-02:
     driver: bridge
     ipam:
       driver: default
       config:
         - subnet: 192.168.104.0/24
+  hsymmetric-internal-net-01:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.114.0/24
 
-  # Define separate network for use with full-cone NATs
-  # gateways on these networks must implement full-cone NAT.
+  # Define separate network to use with full-cone NATs.
+  # Gateways on these networks must implement full-cone NAT.
   fullcone-net-01:
     driver: bridge
     ipam:
       driver: default
       config:
         - subnet: 192.168.109.0/24
-
   fullcone-net-02:
     driver: bridge
     ipam:
@@ -562,35 +579,6 @@ networks:
       driver: default
       config:
         - subnet: 192.168.105.0/24
-
-  udp-block-net-01:
-    driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: 192.168.110.0/24
-
-  udp-block-net-02:
-    driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: 192.168.111.0/24
-
-  cone-net-03:
-    driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: 192.168.107.0/24
-
-  cone-net-04:
-    driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: 192.168.108.0/24
-
   upnp-net-02:
     driver: bridge
     ipam:
@@ -598,16 +586,15 @@ networks:
       config:
         - subnet: 192.168.112.0/24
 
-  cone-net-05:
+  udp-block-net-01:
     driver: bridge
     ipam:
       driver: default
       config:
-        - subnet: 192.168.113.0/24
-
-  hsymmetric-internal-net-01:
+        - subnet: 192.168.110.0/24
+  udp-block-net-02:
     driver: bridge
     ipam:
       driver: default
       config:
-        - subnet: 192.168.114.0/24
+        - subnet: 192.168.111.0/24
