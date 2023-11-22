@@ -333,6 +333,9 @@ struct IcmpConn {
     local_addr: IpAddr,
     response_type: u8,
     identifier_sequence: u32,
+    // This public key refers to source peer for inbound connections and
+    // destination peer for outbound connections
+    pubkey: PublicKey,
 }
 
 type IcmpKey = Result<IcmpConn, IcmpErrorKey>;
@@ -458,10 +461,10 @@ impl StatefullFirewall {
                 self.handle_outbound_tcp(peer, &ip);
             }
             IpNextHeaderProtocols::Icmp => {
-                self.handle_outbound_icmp(&ip);
+                self.handle_outbound_icmp(peer, &ip);
             }
             IpNextHeaderProtocols::Icmpv6 => {
-                self.handle_outbound_icmp(&ip);
+                self.handle_outbound_icmp(peer, &ip);
             }
             _ => (),
         };
@@ -596,9 +599,9 @@ impl StatefullFirewall {
         }
     }
 
-    fn handle_outbound_icmp<'a>(&self, ip: &impl IpPacket<'a>) {
+    fn handle_outbound_icmp<'a>(&self, peer: PublicKey, ip: &impl IpPacket<'a>) {
         let mut icmp_cache = unwrap_lock_or_return!(self.icmp.lock());
-        if let Ok(key) = Self::build_icmp_key(ip, false) {
+        if let Ok(key) = Self::build_icmp_key(peer, ip, false) {
             // If key already exists, dont change the value, just update timer with entry
             if let Entry::Vacant(e) = icmp_cache.entry(key) {
                 telio_log_trace!("Inserting new ICMP conntrack entry {:?}", e.key());
@@ -751,7 +754,7 @@ impl StatefullFirewall {
             return false;
         }
 
-        match Self::build_icmp_key(ip, true) {
+        match Self::build_icmp_key(peer, ip, true) {
             Ok(key) => {
                 let mut icmp_cache = unwrap_lock_or_return!(self.icmp.lock(), false);
                 let is_in_cache = icmp_cache.get(&key).is_some();
@@ -829,7 +832,7 @@ impl StatefullFirewall {
         Some((key, tcp_packet))
     }
 
-    fn build_icmp_key<'a, P: IpPacket<'a>>(ip: &P, inbound: bool) -> IcmpKey {
+    fn build_icmp_key<'a, P: IpPacket<'a>>(pubkey: PublicKey, ip: &P, inbound: bool) -> IcmpKey {
         let icmp_packet = match IcmpPacket::new(ip.payload()) {
             Some(packet) => packet,
             _ => {
@@ -857,14 +860,14 @@ impl StatefullFirewall {
                     || it == v4::ParameterProblem.0)
                     && ip.get_next_level_protocol() == IpNextHeaderProtocols::Icmp
                 {
-                    return Self::build_icmp_error_key(icmp_packet, true);
+                    return Self::build_icmp_error_key(pubkey, icmp_packet, true);
                 } else if (it == v6::DestinationUnreachable.0
                     || it == v6::PacketTooBig.0
                     || it == v6::ParameterProblem.0
                     || it == v6::TimeExceeded.0)
                     && ip.get_next_level_protocol() == IpNextHeaderProtocols::Icmpv6
                 {
-                    return Self::build_icmp_error_key(icmp_packet, false);
+                    return Self::build_icmp_error_key(pubkey, icmp_packet, false);
                 } else {
                     return Err(IcmpErrorKey::None);
                 }
@@ -901,11 +904,13 @@ impl StatefullFirewall {
             local_addr,
             response_type,
             identifier_sequence,
+            pubkey,
         };
+
         Ok(key)
     }
 
-    fn build_icmp_error_key(icmp_packet: IcmpPacket, is_v4: bool) -> IcmpKey {
+    fn build_icmp_error_key(pubkey: PublicKey, icmp_packet: IcmpPacket, is_v4: bool) -> IcmpKey {
         let inner_packet = match icmp_packet.payload().get(4..) {
             Some(bytes) => bytes,
             None => {
@@ -929,7 +934,7 @@ impl StatefullFirewall {
                     IcmpErrorKey::Tcp(Self::build_tcp_conn_info(&packet, false).map(|(key, _)| key))
                 }
                 IpNextHeaderProtocols::Icmp => {
-                    IcmpErrorKey::Icmp(Self::build_icmp_key(&packet, false).ok())
+                    IcmpErrorKey::Icmp(Self::build_icmp_key(pubkey, &packet, false).ok())
                 }
                 _ => IcmpErrorKey::None,
             }
@@ -949,7 +954,7 @@ impl StatefullFirewall {
                     IcmpErrorKey::Tcp(Self::build_tcp_conn_info(&packet, false).map(|(key, _)| key))
                 }
                 IpNextHeaderProtocols::Icmpv6 => {
-                    IcmpErrorKey::Icmp(Self::build_icmp_key(&packet, false).ok())
+                    IcmpErrorKey::Icmp(Self::build_icmp_key(pubkey, &packet, false).ok())
                 }
                 _ => IcmpErrorKey::None,
             }
