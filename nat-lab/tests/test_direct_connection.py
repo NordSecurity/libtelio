@@ -10,11 +10,7 @@ from telio_features import TelioFeatures, Direct, SkipUnresponsivePeers
 from typing import List, Tuple
 from utils import testing
 from utils.asyncio_util import run_async_context
-from utils.connection_util import (
-    ConnectionTag,
-    generate_connection_tracker_config,
-    ConnectionLimits,
-)
+from utils.connection_util import ConnectionTag
 from utils.ping import Ping
 
 ANY_PROVIDERS = ["local", "stun"]
@@ -43,15 +39,7 @@ def _generate_setup_parameter_pair(
                     skip_unresponsive_peers=SkipUnresponsivePeers(
                         no_handshake_threshold_secs=10
                     ),
-                )
-            ),
-            connection_tracker_config=generate_connection_tracker_config(
-                conn_tag,
-                derp_0_limits=ConnectionLimits(0, 1),
-                derp_1_limits=ConnectionLimits(1, 3),
-                derp_2_limits=ConnectionLimits(0, 3),
-                derp_3_limits=ConnectionLimits(0, 3),
-                ping_limits=ConnectionLimits(0, 5),
+                ),
             ),
         )
         for conn_tag, endpoint_providers in cfg
@@ -310,6 +298,46 @@ async def test_direct_working_paths(
     setup_params: List[SetupParameters],
     _reflexive_ip: str,
 ) -> None:
+    async with AsyncExitStack() as exit_stack:
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+        _, beta = env.nodes
+        alpha_client, beta_client = env.clients
+        alpha_connection, _ = [conn.connection for conn in env.connections]
+
+        for server in DERP_SERVERS:
+            await exit_stack.enter_async_context(
+                alpha_client.get_router().break_tcp_conn_to_host(str(server["ipv4"]))
+            )
+            await exit_stack.enter_async_context(
+                beta_client.get_router().break_tcp_conn_to_host(str(server["ipv4"]))
+            )
+
+        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
+            await testing.wait_long(ping.wait_for_next_ping())
+
+
+@pytest.mark.asyncio
+async def test_direct_working_paths_stun_ipv6() -> None:
+    # This test only checks if stun works well with IPv6, no need to add more setups here
+    setup_params = [
+        SetupParameters(
+            connection_tag=conn_tag,
+            adapter_type=telio.AdapterType.BoringTun,
+            features=TelioFeatures(
+                direct=Direct(
+                    providers=["stun"],
+                    skip_unresponsive_peers=SkipUnresponsivePeers(
+                        no_handshake_threshold_secs=10
+                    ),
+                ),
+                ipv6=True,
+            ),
+        )
+        for conn_tag in [
+            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1),
+            (ConnectionTag.DOCKER_FULLCONE_CLIENT_2),
+        ]
+    ]
     async with AsyncExitStack() as exit_stack:
         env = await setup_mesh_nodes(exit_stack, setup_params)
         _, beta = env.nodes

@@ -1,3 +1,4 @@
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use std::ops::Deref;
@@ -8,6 +9,7 @@ use stun_codec::TransactionId;
 use telio_crypto::PublicKey;
 use telio_model::config::Server;
 use telio_proto::{Session, WGPort};
+use telio_sockets::SocketPool;
 use telio_sockets::{native::AsNativeSocket, External};
 use telio_task::{io::chan, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
@@ -44,16 +46,12 @@ impl<Wg: WireGuard> StunEndpointProvider<Wg> {
     /// - `exponential_backoff_bounds` - Config for exponential backoff
     ///   controlling intervals between consequtive queries to the STUN server
     pub fn start(
-        tun_socket: UdpSocket,
-        ext_socket: External<UdpSocket>,
         wg: Arc<Wg>,
         exponential_backoff_bounds: ExponentialBackoffBounds,
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
         stun_peer_publisher: chan::Tx<Option<StunServer>>,
     ) -> Result<Self, Error> {
         Ok(Self::start_with_exp_backoff(
-            tun_socket,
-            ext_socket,
             wg,
             ExponentialBackoff::new(exponential_backoff_bounds)?,
             ping_pong_handler,
@@ -73,25 +71,16 @@ impl<Wg: WireGuard> StunEndpointProvider<Wg> {
 
 impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
     fn start_with_exp_backoff(
-        tun_socket: UdpSocket,
-        ext_socket: External<UdpSocket>,
         wg: Arc<Wg>,
         exponential_backoff: E,
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
         stun_peer_publisher: chan::Tx<Option<StunServer>>,
     ) -> Self {
         telio_log_info!("Starting stun endpoint provider");
-        telio_log_debug!(
-            "tun_socket: {:?}, ext_socket: {}",
-            tun_socket.as_native_socket(),
-            ext_socket.deref().as_native_socket()
-        );
         Self {
             task: Task::start(State {
                 servers: vec![],
                 current_server_index: 0,
-                tun_socket,
-                ext_socket,
                 wg,
                 change_event: None,
                 pong_event: None,
@@ -102,14 +91,80 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
                 ping_pong_tracker: ping_pong_handler,
                 stun_peer_publisher,
                 stun_state: StunState::WaitingForWg,
+                sockets: None,
             }),
         }
     }
 
-    pub async fn configure(&self, mut servers: Vec<Server>) {
-        let _ = task_exec!(&self.task, async move |s| {
-            servers.sort_by_key(|s| (s.weight, s.public_key));
+    pub async fn configure(
+        &self,
+        servers: Vec<Server>,
+        use_ipv6: bool,
+        socket_pool: Arc<SocketPool>,
+    ) {
+        self.configure_with_ext_socket_addr(servers, use_ipv6, socket_pool, Ipv4Addr::UNSPECIFIED)
+            .await
+    }
 
+    async fn configure_with_ext_socket_addr(
+        &self,
+        mut servers: Vec<Server>,
+        use_ipv6: bool,
+        socket_pool: Arc<SocketPool>,
+        ext_socket_addr: Ipv4Addr,
+    ) {
+        let _ = task_exec!(&self.task, async move |s| {
+            // Check if we are running on the same IP stack
+            // as is requested by new config
+            let ip_version_changed = s
+                .sockets
+                .as_ref()
+                .and_then(|sockets| {
+                    sockets
+                        .tun_socket
+                        .local_addr()
+                        .map(|addr| addr.is_ipv6() != use_ipv6)
+                        .ok()
+                })
+                .unwrap_or(false);
+
+            // Precalculate IP address to correct IP stack
+            let int_socket_addr = if use_ipv6 {
+                IpAddr::V6(Ipv6Addr::UNSPECIFIED)
+            } else {
+                IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+            };
+
+            // Create internal and external socket for STUN operation
+            if s.sockets.is_none() || ip_version_changed {
+                s.sockets = match (
+                    socket_pool
+                        .new_internal_udp((int_socket_addr, 0), None)
+                        .await,
+                    socket_pool
+                        .new_external_udp((ext_socket_addr, 0), None)
+                        .await,
+                ) {
+                    (Ok(tun_socket), Ok(ext_socket)) => {
+                        telio_log_debug!(
+                            "tun_socket: {:?}, ext_socket: {}",
+                            tun_socket.as_native_socket(),
+                            ext_socket.deref().as_native_socket()
+                        );
+                        Some(StunSockets {
+                            tun_socket,
+                            ext_socket,
+                        })
+                    }
+                    _ => {
+                        telio_log_debug!("Could not create the sockets for stun");
+                        None
+                    }
+                };
+            }
+
+            // Update server list
+            servers.sort_by_key(|s| (s.weight, s.public_key));
             if s.servers != servers {
                 servers.retain(|server| {
                     if server.stun_plaintext_port == 0 {
@@ -133,10 +188,9 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
                 }
             }
 
+            // Update STUN state
             s.exponential_backoff.reset();
-
             s.transition_to_wait_for_wg();
-
             s.try_transition_to_searching_for_server().await;
 
             Ok(())
@@ -146,6 +200,20 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
 
     pub async fn stop(self) {
         let _ = self.task.stop().await.resume_unwind();
+    }
+
+    #[cfg(test)]
+    pub async fn get_ext_socket_addr(&self) -> Option<SocketAddr> {
+        task_exec!(&self.task, async move |s| {
+            s.sockets.as_ref().ok_or(()).and_then(
+                |StunSockets {
+                     tun_socket: _,
+                     ext_socket,
+                 }| ext_socket.local_addr().map_err(|_| ()),
+            )
+        })
+        .await
+        .ok()
     }
 }
 
@@ -186,7 +254,10 @@ impl<Wg: WireGuard, E: Backoff + 'static> EndpointProvider for StunEndpointProvi
 
             if let StunState::HasEndpoints = s.stun_state {
                 if s.stun_session.is_none() {
-                    let _ = s.start_stun_session().await;
+                    let err = s.start_stun_session().await;
+                    if err.is_err() {
+                        telio_log_error!("Starting session failed: {:?}", err)
+                    }
                 }
             }
 
@@ -256,12 +327,17 @@ enum StunState {
     HasEndpoints,
 }
 
+pub struct StunSockets {
+    pub tun_socket: UdpSocket,
+    pub ext_socket: External<UdpSocket>,
+}
+
 struct State<Wg: WireGuard, E: Backoff> {
     servers: Vec<Server>,
+    sockets: Option<StunSockets>,
+
     current_server_index: usize,
 
-    tun_socket: UdpSocket,
-    ext_socket: External<UdpSocket>,
     wg: Arc<Wg>,
     ping_pong_tracker: Arc<Mutex<PingPongHandler>>,
 
@@ -279,14 +355,19 @@ struct State<Wg: WireGuard, E: Backoff> {
 
 impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
     async fn start_stun_session(&mut self) -> Result<(), Error> {
-        if self.stun_session.is_none() {
-            let (wg, udp) = self.get_stun_endpoints().await?;
-            self.stun_session =
-                Some(StunSession::start(&self.tun_socket, wg, &self.ext_socket, udp).await?);
-            self.current_timeout = PinnedSleep::new(STUN_TIMEOUT, ());
-        }
+        if let Some(sockets) = self.sockets.as_ref() {
+            if self.stun_session.is_none() {
+                let (wg, udp) = self.get_stun_endpoints().await?;
+                self.stun_session = Some(
+                    StunSession::start(&sockets.tun_socket, wg, &sockets.ext_socket, udp).await?,
+                );
+                self.current_timeout = PinnedSleep::new(STUN_TIMEOUT, ());
+            }
 
-        Ok(())
+            Ok(())
+        } else {
+            Err(Error::StunNotConfigured)
+        }
     }
 
     async fn send_ping(
@@ -295,17 +376,21 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
         session_id: Session,
         public_key: &PublicKey,
     ) -> Result<(), Error> {
-        self.ping_pong_tracker
-            .lock()
-            .await
-            .send_ping(
-                addr,
-                self.get_wg_port(),
-                &self.ext_socket,
-                session_id,
-                public_key,
-            )
-            .await
+        if let Some(sockets) = self.sockets.as_ref() {
+            self.ping_pong_tracker
+                .lock()
+                .await
+                .send_ping(
+                    addr,
+                    self.get_wg_port(),
+                    &sockets.ext_socket,
+                    session_id,
+                    public_key,
+                )
+                .await
+        } else {
+            Err(Error::StunNotConfigured)
+        }
     }
 
     async fn reconnect(&mut self) {
@@ -349,28 +434,45 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
 
     /// Get endpoint's for stuns (WgStun, PlaintextStun)
     async fn get_stun_endpoints(&self) -> Result<(SocketAddr, SocketAddr), Error> {
-        if let Some(server) = self.servers.get(self.current_server_index) {
-            let interface = self.wg.get_interface().await?;
+        if let Some(sockets) = self.sockets.as_ref() {
+            if let Some(server) = self.servers.get(self.current_server_index) {
+                let interface = self.wg.get_interface().await?;
 
-            let stun_peer = interface
-                .peers
-                .get(&server.public_key)
-                .ok_or(Error::NoStunPeer)?;
+                let stun_peer = interface
+                    .peers
+                    .get(&server.public_key)
+                    .ok_or(Error::NoStunPeer)?;
 
-            let wg_ip = stun_peer
-                .allowed_ips
-                .first()
-                .ok_or(Error::BadStunPeer)?
-                .ip();
+                let use_ipv6 = sockets
+                    .tun_socket
+                    .local_addr()
+                    .map(|addr| addr.is_ipv6())
+                    .unwrap_or(false);
 
-            let udp_ip = stun_peer.endpoint.ok_or(Error::BadStunPeer)?.ip();
+                let wg_ip = stun_peer
+                    .allowed_ips
+                    .iter()
+                    .find(|addr| {
+                        if use_ipv6 {
+                            addr.is_ipv6()
+                        } else {
+                            addr.is_ipv4()
+                        }
+                    })
+                    .ok_or(Error::BadStunPeer)?
+                    .ip();
 
-            Ok((
-                (wg_ip, server.stun_port).into(),
-                (udp_ip, server.stun_plaintext_port).into(),
-            ))
+                let udp_ip = stun_peer.endpoint.ok_or(Error::BadStunPeer)?.ip();
+
+                Ok((
+                    (wg_ip, server.stun_port).into(),
+                    (udp_ip, server.stun_plaintext_port).into(),
+                ))
+            } else {
+                Err(Error::NoStunPeer)
+            }
         } else {
-            Err(Error::NoStunPeer)
+            Err(Error::StunNotConfigured)
         }
     }
 
@@ -412,19 +514,23 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
         encrypted_buf: &[u8],
         addr: &SocketAddr,
     ) -> Result<(), Error> {
-        let wg_port = self.get_wg_port();
-        self.ping_pong_tracker
-            .lock()
-            .await
-            .handle_rx_packet(
-                encrypted_buf,
-                addr,
-                wg_port,
-                &self.ext_socket,
-                &self.pong_event,
-                telio_model::api_config::EndpointProvider::Stun,
-            )
-            .await
+        if let Some(sockets) = self.sockets.as_ref() {
+            let wg_port = self.get_wg_port();
+            self.ping_pong_tracker
+                .lock()
+                .await
+                .handle_rx_packet(
+                    encrypted_buf,
+                    addr,
+                    wg_port,
+                    &sockets.ext_socket,
+                    &self.pong_event,
+                    telio_model::api_config::EndpointProvider::Stun,
+                )
+                .await
+        } else {
+            Err(Error::StunNotConfigured)
+        }
     }
 
     fn transition_to_wait_for_wg(&mut self) {
@@ -435,7 +541,10 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
     async fn try_transition_to_searching_for_server(&mut self) {
         if !self.servers.is_empty() && self.is_wg_ready().await {
             self.stun_state = StunState::SearchingForServer;
-            let _ = self.start_stun_session().await;
+            let err = self.start_stun_session().await;
+            if err.is_err() {
+                telio_log_error!("Starting session failed: {:?}", err)
+            }
         }
     }
 
@@ -512,23 +621,29 @@ impl<Wg: WireGuard, E: Backoff> Runtime for State<Wg, E> {
 
         pin!(updated);
 
-        //If no STUN servers are configured -> nothing to do.
-        //NOTE: this will get cancelled on reconfiguration attempt
-        if self.servers.is_empty() {
-            tokio::select! {
-                _ = pending() => {},
-                update = &mut updated => {
-                    return update(self).await;
+        // We must ensure that sockets are created and that we have a populated
+        // server list, before we can continue doing anything.
+        let sockets = match (self.sockets.as_ref(), self.servers.is_empty()) {
+            (Some(sockets), false) => sockets,
+            (_, _) => {
+                //If no STUN servers or sockets are configured -> nothing to do.
+                //NOTE: this will get cancelled on reconfiguration attempt
+                tokio::select! {
+                    _ = pending() => {},
+                    update = &mut updated => {
+                        return update(self).await;
+                    }
                 }
+                return Ok(());
             }
-        }
+        };
 
         tokio::select! {
             // Reading data from UDP socket (passed by node, that is awaiting on socket's receive)
-            Ok((size, src_addr)) = self.ext_socket.recv_from(&mut ext_buf) => {
+            Ok((size, src_addr)) = sockets.ext_socket.recv_from(&mut ext_buf) => {
                 let _ = self.handle_rx(ext_buf.get(..size).ok_or(())?, &src_addr).await;
             }
-            Ok((size, src_addr)) = self.tun_socket.recv_from(&mut tun_buf) => {
+            Ok((size, src_addr)) = sockets.tun_socket.recv_from(&mut tun_buf) => {
                 // We will not pinging through wireguard.
                 let _ = self.try_handle_stun_rx(tun_buf.get(..size).ok_or(())?, &src_addr).await;
             }
@@ -567,7 +682,7 @@ impl<Wg: WireGuard, E: Backoff> Runtime for State<Wg, E> {
             else => {
                 return Ok(());
             },
-        };
+        }
 
         Ok(())
     }
@@ -742,7 +857,7 @@ mod tests {
     use mockall::mock;
     use std::{
         cell::RefCell,
-        net::{Ipv4Addr, SocketAddr},
+        net::{Ipv4Addr, Ipv6Addr, SocketAddr},
         rc::Rc,
     };
     use stun_codec::rfc5389::{
@@ -772,7 +887,7 @@ mod tests {
     #[tokio::test]
     async fn timeouts_on_happy_path() {
         const DEFAULT_POLL_INTERVAL_MILLIS: u64 = 1000;
-        let mut env = prepare_test_env(Some([DEFAULT_POLL_INTERVAL_MILLIS; 6])).await;
+        let mut env = prepare_test_env(Some([DEFAULT_POLL_INTERVAL_MILLIS; 6]), false).await;
         env.configure_env().await;
 
         let udp_endpoint = SocketAddr::new([1, 1, 1, 1].into(), 11111);
@@ -826,7 +941,40 @@ mod tests {
 
     #[tokio::test]
     async fn collect_stun_endpoints_on_configure() {
-        let mut env = prepare_test_env(None).await;
+        let mut env = prepare_test_env(None, false).await;
+
+        env.configure_env().await;
+
+        let udp_endpoint = SocketAddr::new([1, 1, 1, 1].into(), 11111);
+        let wg_endpoint = SocketAddr::new([2, 2, 2, 2].into(), 22222);
+
+        await_timeout!(stun_reply(
+            &env.peers[0].stun_sock,
+            XorMappedAddress::new(udp_endpoint)
+        ));
+        await_timeout!(stun_reply(
+            &env.peers[0].peer_sock,
+            MappedAddress::new(wg_endpoint)
+        ));
+
+        let event = await_timeout!(env.change_event.recv());
+        let (provider, candidates) = event.expect("got event");
+        assert_eq!(provider, EndpointProviderType::Stun);
+        assert_eq!(
+            candidates,
+            vec![EndpointCandidate {
+                udp: udp_endpoint,
+                wg: wg_endpoint,
+            }]
+        );
+
+        env.stun_provider.stop().await;
+    }
+
+    #[tokio::test]
+    async fn collect_stun_endpoints_on_configure_ipv6() {
+        // Just to make sure that it works well when given IPv6 socket
+        let mut env = prepare_test_env(None, true).await;
 
         env.configure_env().await;
 
@@ -858,7 +1006,7 @@ mod tests {
 
     #[tokio::test]
     async fn collect_stun_endpoints_on_change() {
-        let mut env = prepare_test_env(None).await;
+        let mut env = prepare_test_env(None, false).await;
 
         env.configure_env().await;
 
@@ -939,7 +1087,7 @@ mod tests {
 
     #[tokio::test]
     async fn report_empty_candidate_list_on_stun_failure() {
-        let mut env = prepare_test_env(None).await;
+        let mut env = prepare_test_env(None, false).await;
         let mut buf = [0; MAX_PACKET_SIZE];
 
         env.configure_env().await;
@@ -1030,7 +1178,7 @@ mod tests {
 
     #[tokio::test]
     async fn pongs_propagated_through_the_channel() {
-        let mut env = prepare_test_env(None).await;
+        let mut env = prepare_test_env(None, false).await;
 
         env.configure_env().await;
 
@@ -1157,9 +1305,15 @@ mod tests {
 
     #[tokio::test]
     async fn provider_replies_to_ping() {
-        let env = prepare_test_env(None).await;
+        let env = prepare_test_env(None, false).await;
 
         env.configure_env().await;
+
+        let provider_ext_addr = env
+            .stun_provider
+            .get_ext_socket_addr()
+            .await
+            .expect("Socket address should be available");
 
         let wg_port = WGPort(123);
         let session_id = 456;
@@ -1182,13 +1336,13 @@ mod tests {
 
         env.peers[0]
             .ping_sock
-            .send_to(&encrypted_buf, env.provider_ext_addr)
+            .send_to(&encrypted_buf, provider_ext_addr)
             .await
             .expect("ping");
 
         let mut buf = [0u8; MAX_PACKET_SIZE];
         let (len, addr) = env.peers[0].ping_sock.recv_from(&mut buf).await.unwrap();
-        assert_eq!(addr, env.provider_ext_addr);
+        assert_eq!(addr, provider_ext_addr);
 
         let pong = PartialPongerMsg::decode_and_decrypt(&buf[..len], |_, b| Ok((b.to_vec(), None)))
             .unwrap();
@@ -1237,13 +1391,13 @@ mod tests {
 
         env.peers[0]
             .ping_sock
-            .send_to(&encrypted_buf, env.provider_ext_addr)
+            .send_to(&encrypted_buf, provider_ext_addr)
             .await
             .expect("ping");
 
         let (len, addr) = await_timeout!(env.peers[0].ping_sock.recv_from(&mut buf)).unwrap();
 
-        assert_eq!(addr, env.provider_ext_addr);
+        assert_eq!(addr, provider_ext_addr);
 
         let pong = PartialPongerMsg::decode_and_decrypt(&buf[..len], |_, b| Ok((b.to_vec(), None)))
             .unwrap();
@@ -1261,7 +1415,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn server_changed_when_current_connection_is_broken() {
-        let mut env = prepare_test_env_with_server_weights(None, vec![100, 200, 10]).await;
+        let mut env = prepare_test_env_with_server_weights(None, vec![100, 200, 10], false).await;
         let poll_interval = Duration::from_secs(10000);
 
         env.configure_env().await;
@@ -1289,7 +1443,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn server_maintained_when_current_connection_is_active() {
-        let mut env = prepare_test_env_with_server_weights(None, vec![100, 200, 10]).await;
+        let mut env = prepare_test_env_with_server_weights(None, vec![100, 200, 10], false).await;
         let poll_interval = Duration::from_millis(10000);
 
         env.configure_env().await;
@@ -1325,7 +1479,7 @@ mod tests {
     async fn exponential_backoff() {
         // We need to prepare some more complex mock to test if it is used properly
         let backoff_array = [4000, 12000, 44444, 7654, 10000, 765432];
-        let env = prepare_test_env(Some(backoff_array)).await;
+        let env = prepare_test_env(Some(backoff_array), false).await;
 
         env.configure_env().await;
 
@@ -1388,6 +1542,7 @@ mod tests {
             }],
             Vec::new(),
             wg,
+            false,
         )
         .await;
 
@@ -1489,6 +1644,7 @@ mod tests {
             stun_servers,
             stun_peers,
             wg,
+            false,
         )
         .await;
 
@@ -1570,12 +1726,11 @@ mod tests {
     #[allow(dead_code)]
     struct Env {
         // Dependencies
-        socket_pool: SocketPool,
+        socket_pool: Arc<SocketPool>,
 
         // Tested system
-        provider_tun_addr: SocketAddr,
-        provider_ext_addr: SocketAddr,
         stun_provider: StunEndpointProvider<MockWg, MockBackoff>,
+        ipv6: bool,
 
         // External behavior
         stun_peer_subscriber: chan::Rx<Option<StunServer>>,
@@ -1589,13 +1744,14 @@ mod tests {
         local_sk: SecretKey,
     }
 
-    async fn prepare_test_env(backoff_array: Option<[u64; 6]>) -> Env {
-        prepare_test_env_with_server_weights(backoff_array, vec![100]).await
+    async fn prepare_test_env(backoff_array: Option<[u64; 6]>, ipv6: bool) -> Env {
+        prepare_test_env_with_server_weights(backoff_array, vec![100], ipv6).await
     }
 
     async fn prepare_test_env_with_server_weights(
         backoff_array: Option<[u64; 6]>,
         server_weights: Vec<u32>,
+        ipv6: bool,
     ) -> Env {
         let mut wg = MockWg::default();
         let wg_port = 12345;
@@ -1605,9 +1761,12 @@ mod tests {
         let mut wg_peers = Vec::<(PublicKey, Peer)>::new();
 
         for weight in server_weights {
-            let peer_sock = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
-                .await
-                .expect("peer sock");
+            let peer_sock = if ipv6 {
+                UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await
+            } else {
+                UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await
+            }
+            .expect("peer sock");
 
             let stun_sock = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
                 .await
@@ -1659,8 +1818,14 @@ mod tests {
             })
         });
 
-        prepare_test_env_with_server_weights_and_mockwg(backoff_array, stun_servers, stun_peers, wg)
-            .await
+        prepare_test_env_with_server_weights_and_mockwg(
+            backoff_array,
+            stun_servers,
+            stun_peers,
+            wg,
+            ipv6,
+        )
+        .await
     }
 
     async fn prepare_test_env_with_server_weights_and_mockwg(
@@ -1668,6 +1833,7 @@ mod tests {
         stun_servers: Vec<Server>,
         stun_peers: Vec<StunPeerSockets>,
         wg: MockWg,
+        ipv6: bool,
     ) -> Env {
         let socket_pool = SocketPool::new(
             NativeProtector::new(
@@ -1676,20 +1842,6 @@ mod tests {
             )
             .unwrap(),
         );
-
-        let provider_ext_socket = socket_pool
-            .new_external_udp((Ipv4Addr::LOCALHOST, 0), None)
-            .await
-            .expect("Cannot create UdpSocket");
-        let provider_ext_addr = provider_ext_socket.local_addr().expect("provider ext addr");
-        println!("ext_sock: {}", provider_ext_addr);
-
-        let provider_tun_socket = socket_pool
-            .new_internal_udp((Ipv4Addr::LOCALHOST, 0), None)
-            .await
-            .expect("crate tun socket");
-        let provider_tun_addr = provider_tun_socket.local_addr().expect("provider tun addr");
-        println!("tun_sock: {}", provider_tun_addr);
 
         let Chan {
             rx: stun_peer_subscriber,
@@ -1702,8 +1854,6 @@ mod tests {
         let backoff_array = backoff_array.unwrap_or([10000, 10000, 10000, 10000, 10000, 10000]);
 
         let stun_provider = StunEndpointProvider::start_with_exp_backoff(
-            provider_tun_socket,
-            provider_ext_socket,
             Arc::new(wg),
             {
                 let mut result = MockBackoff::default();
@@ -1737,11 +1887,10 @@ mod tests {
             .await;
 
         Env {
-            socket_pool,
+            socket_pool: Arc::new(socket_pool),
 
             stun_provider,
-            provider_ext_addr,
-            provider_tun_addr,
+            ipv6,
 
             local_sk: secret_key,
 
@@ -1807,7 +1956,12 @@ mod tests {
     impl Env {
         async fn configure_env(&self) {
             self.stun_provider
-                .configure(self.stun_servers.clone())
+                .configure_with_ext_socket_addr(
+                    self.stun_servers.clone(),
+                    self.ipv6,
+                    self.socket_pool.clone(),
+                    Ipv4Addr::LOCALHOST,
+                )
                 .await;
         }
 

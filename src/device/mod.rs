@@ -525,7 +525,11 @@ impl Device {
     pub fn set_config(&self, config: &Option<Config>) -> Result {
         let config = config.clone();
         self.art()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt.set_config(&config).await)).await?
+            task_exec!(self.rt()?, async move |rt| Ok(Box::pin(
+                rt.set_config(&config)
+            )
+            .await))
+            .await?
         })
     }
 
@@ -948,12 +952,6 @@ impl Runtime {
             // Create Stun Endpoint Provider
             let stun_endpoint_provider = if has_provider(Stun) {
                 let ep = Arc::new(StunEndpointProvider::start(
-                    socket_pool
-                        .new_internal_udp((Ipv4Addr::UNSPECIFIED, 0), None)
-                        .await?,
-                    socket_pool
-                        .new_external_udp((Ipv4Addr::UNSPECIFIED, 0), None)
-                        .await?,
                     wireguard_interface.clone(),
                     ExponentialBackoffBounds {
                         initial: Duration::from_secs(
@@ -1329,8 +1327,21 @@ impl Runtime {
             // Refresh the lists of servers for STUN endpoint provider
             if let Some(direct) = self.entities.direct.as_ref() {
                 if let Some(stun_ep) = direct.stun_endpoint_provider.as_ref() {
+                    let use_ipv6 = self.features.ipv6 && {
+                        config
+                            .this
+                            .ip_addresses
+                            .as_ref()
+                            .map(|vec| vec.iter().any(|addr| addr.is_ipv6()))
+                            .unwrap_or(false)
+                    };
+
                     stun_ep
-                        .configure(config.derp_servers.clone().unwrap_or_default())
+                        .configure(
+                            config.derp_servers.clone().unwrap_or_default(),
+                            use_ipv6,
+                            self.get_socket_pool().await?,
+                        )
                         .await;
                 }
             }
@@ -1352,7 +1363,9 @@ impl Runtime {
             // Refresh the lists of servers for STUN endpoint provider
             if let Some(direct) = self.entities.direct.as_ref() {
                 if let Some(stun_ep) = direct.stun_endpoint_provider.as_ref() {
-                    stun_ep.configure(vec![]).await;
+                    stun_ep
+                        .configure(vec![], false, self.get_socket_pool().await?)
+                        .await;
                 }
             }
         }
@@ -1407,7 +1420,8 @@ impl Runtime {
                 .and_then(|servers| servers.iter().min_by_key(|server| server.weight))
         }) {
             // Copy the lowest weight server to log nat in a separate future
-            let stun_server_skt = SocketAddr::new(IpAddr::V4(server.ipv4), server.stun_port);
+            let stun_server_skt =
+                SocketAddr::new(IpAddr::V4(server.ipv4), server.stun_plaintext_port);
             tokio::spawn(async move {
                 if let Ok(data) = retrieve_single_nat(stun_server_skt).await {
                     telio_log_debug!("Nat Type - {:?}", data.nat_type)
