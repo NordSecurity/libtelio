@@ -752,12 +752,14 @@ impl Runtime {
         };
         let firewall_reset_connections = if features.boringtun_reset_connections.0 {
             let fw = firewall.clone();
-            let cb =
-                move |peer: &PublicKey, sink4: &mut dyn io::Write, sink6: &mut dyn io::Write| {
-                    if let Err(err) = fw.reset_connections(peer, sink4, sink6) {
-                        telio_log_warn!("Failed to reset all connections: {err:?}");
-                    }
-                };
+            let cb = move |exit_pubkey: &PublicKey,
+                           exit_ipv4: Ipv4Addr,
+                           sink4: &mut dyn io::Write,
+                           sink6: &mut dyn io::Write| {
+                if let Err(err) = fw.reset_connections(exit_pubkey, exit_ipv4, sink4, sink6) {
+                    telio_log_warn!("Failed to reset all connections: {err:?}");
+                }
+            };
             Some(Arc::new(cb) as Arc<_>)
         } else {
             None
@@ -1458,15 +1460,41 @@ impl Runtime {
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
             .await?;
 
-        let old_exit_pubkey = old_exit_node
+        if let Some(last_exit) = old_exit_node
             .as_ref()
             .or(self.requested_state.last_exit_node.as_ref())
-            .map(|node| node.public_key);
+        {
+            let ipv4 = if let Some(cfg) = self.requested_state.meshnet_config.as_ref() {
+                let find_ip = || {
+                    let peers = cfg.peers.as_deref()?;
+                    let peer = peers
+                        .iter()
+                        .find(|pr| pr.public_key == last_exit.public_key)?;
 
-        if let Some(exit_pubkey) = old_exit_pubkey {
+                    peer.ip_addresses
+                        .as_deref()?
+                        .iter()
+                        .find_map(|ip| match ip {
+                            IpAddr::V4(ip) => Some(*ip),
+                            IpAddr::V6(_) => None,
+                        })
+                };
+
+                if let Some(ipv4) = find_ip() {
+                    // Exit node is a meshnet peer
+                    ipv4
+                } else {
+                    // The meshnet is ON
+                    Ipv4Addr::new(100, 64, 0, 1)
+                }
+            } else {
+                // The meshnet is OFF
+                Ipv4Addr::new(10, 5, 0, 1)
+            };
+
             self.entities
                 .wireguard_interface
-                .reset_existing_connections(exit_pubkey)
+                .reset_existing_connections(last_exit.public_key, ipv4)
                 .await?;
         }
 

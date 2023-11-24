@@ -619,7 +619,7 @@ mod tests {
             async fn time_since_last_rx(&self, public_key: PublicKey) -> Result1<Option<Duration>>;
             async fn time_since_last_endpoint_change(&self, public_key: PublicKey) -> Result1<Option<Duration>>;
             async fn stop(self);
-            async fn reset_existing_connections(&self, exit: PublicKey) -> Result1<()>;
+            async fn reset_existing_connections(&self, exit_pubkey: PublicKey, exit_ipv4: Ipv4Addr) -> Result1<()>;
         }
     }
 

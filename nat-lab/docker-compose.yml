@@ -27,6 +27,17 @@ services:
         target: /srv/www/photo.png
         read_only: true
 
+  # Just some publicly-routable UDP server. To access
+  # it just simply run `nc -u udp-server 2000`
+  udp-server:
+    hostname: udp-server
+    image: nat-lab:base
+    entrypoint: "/usr/bin/nc -unkl46 2000"
+    networks:
+      internet:
+        ipv4_address: 10.0.80.81
+        ipv6_address: 2001:db8:85a4::adda:edde:6
+
   # Plain STUN server. This can be used for doing some simple testing,
   # but note that for libtelio, we are not using plaintext STUN.
   stun-01:

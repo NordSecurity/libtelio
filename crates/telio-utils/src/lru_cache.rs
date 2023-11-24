@@ -41,6 +41,20 @@ impl<'a, K: Hash + Eq, V> OccupiedEntry<'a, K, V> {
         &mut self.occupied_entry().into_mut().data
     }
 
+    /// Gets a immutable reference to the value in the entry.
+    #[inline(always)]
+    pub fn get(&self) -> &V {
+        if let Some((_, tv)) = self
+            .map
+            .raw_entry()
+            .from_key_hashed_nocheck(self.hash, &self.key)
+        {
+            &tv.data
+        } else {
+            unreachable!()
+        }
+    }
+
     /// Removes the entry from the map.
     #[inline(always)]
     pub fn remove(&mut self) {
