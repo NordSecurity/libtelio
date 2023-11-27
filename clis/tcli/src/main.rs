@@ -9,7 +9,7 @@ use clap::Parser;
 use dirs::home_dir;
 use parking_lot::Mutex;
 use regex::Regex;
-use std::{io::Write, sync::Arc};
+use std::{io::Write, sync::Arc, time::SystemTime};
 use telio_model::{api_config::Features, config::Server, event::Event as DevEvent};
 
 #[derive(Parser)]
@@ -83,19 +83,11 @@ fn main() -> Result<()> {
             use cli::Resp::*;
             match resp {
                 Info(i) => println!("- {}", i),
-                Event(e) => match *e {
-                    DevEvent::Node { body: Some(b) } => {
-                        println!(
-                            "event node: {:?}",
-                            serde_json::to_string(&b).unwrap_or_else(|_| "".to_string())
-                        );
-                    }
+                Event { ts, event } => match *event {
+                    DevEvent::Node { body: Some(b) } => print_event(ts, "node", &b)?,
                     DevEvent::Relay { body } => {
                         if let Some(b) = body.as_ref() {
-                            println!(
-                                "event relay: {}",
-                                serde_json::to_string(&b).unwrap_or_else(|_| "".to_string())
-                            );
+                            print_event(ts, "relay", &b)?;
                         }
                     }
                     _ => (),
@@ -123,4 +115,22 @@ fn main() -> Result<()> {
             println!("MESSAGE_DONE={}", idx);
         }
     }
+}
+
+fn print_event(
+    ts: SystemTime,
+    ty: impl std::fmt::Display,
+    ev: &impl serde::Serialize,
+) -> anyhow::Result<()> {
+    let mut stdout = std::io::stdout().lock();
+
+    write!(&mut stdout, "event [")?;
+    time::OffsetDateTime::from(ts)
+        .format_into(&mut stdout, &time::format_description::well_known::Rfc3339)?;
+
+    write!(&mut stdout, "] {ty}: ")?;
+    serde_json::to_writer(&mut stdout, ev)?;
+
+    writeln!(&mut stdout)?;
+    Ok(())
 }
