@@ -101,7 +101,6 @@ async def test_network_switcher(
             ),
             marks=[
                 pytest.mark.mac,
-                pytest.mark.xfail(reason="Flaky: LLT-1134"),
             ],
         ),
     ],
@@ -184,7 +183,6 @@ async def test_mesh_network_switch(
             ),
             marks=[
                 pytest.mark.mac,
-                pytest.mark.skip(reason="Flaky: LLT-1134"),
             ],
         ),
     ],

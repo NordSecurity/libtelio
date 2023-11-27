@@ -14,6 +14,10 @@ class NetworkSwitcherMac(NetworkSwitcher):
             ["route", "add", "default", config.LINUX_VM_PRIMARY_GATEWAY]
         ).execute()
 
+        await self._connection.create_process(
+            ["route", "add", "-inet", config.VPN_SERVER_SUBNET, config.LINUX_VM_PRIMARY_GATEWAY]
+        ).execute()
+
     async def switch_to_secondary_network(self) -> None:
         await self._delete_existing_route()
 
@@ -21,5 +25,10 @@ class NetworkSwitcherMac(NetworkSwitcher):
             ["route", "add", "default", config.LINUX_VM_SECONDARY_GATEWAY]
         ).execute()
 
+        await self._connection.create_process(
+                ["route", "add", "-inet", config.VPN_SERVER_SUBNET, config.LINUX_VM_SECONDARY_GATEWAY]
+            ).execute()
+
     async def _delete_existing_route(self) -> None:
         await self._connection.create_process(["route", "delete", "default"]).execute()
+        await self._connection.create_process(["route", "delete", "-inet", config.VPN_SERVER_SUBNET]).execute()

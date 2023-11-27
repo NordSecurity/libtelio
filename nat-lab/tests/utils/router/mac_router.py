@@ -2,13 +2,13 @@ from .router import Router, IPStack, IPProto
 from config import (
     LIBTELIO_IPV6_WG_SUBNET,
     LINUX_VM_PRIMARY_GATEWAY,
+    LINUX_VM_SECONDARY_GATEWAY,
     DERP_SERVERS,
     VPN_SERVER_SUBNET,
 )
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, List
 from utils.connection import Connection
-
 
 class MacRouter(Router):
     _connection: Connection
@@ -64,16 +64,6 @@ class MacRouter(Router):
                 ],
             ).execute()
 
-            for derp in DERP_SERVERS:
-                await self._connection.create_process(
-                    [
-                        "route",
-                        "add",
-                        str(derp.get("ipv4")) + "/32",
-                        LINUX_VM_PRIMARY_GATEWAY,
-                    ],
-                ).execute()
-
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
             await self._connection.create_process(
                 [
@@ -89,15 +79,7 @@ class MacRouter(Router):
     async def create_vpn_route(self) -> None:
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
             await self._connection.create_process(
-                ["route", "delete", "-inet", "default"]
-            ).execute()
-
-            await self._connection.create_process(
-                ["route", "add", "-inet", "default", "-interface", self._interface_name]
-            ).execute()
-
-            await self._connection.create_process(
-                ["route", "add", "-inet", VPN_SERVER_SUBNET, LINUX_VM_PRIMARY_GATEWAY]
+                ["route", "add", "-inet", "10.0.0.0/16", "-interface", self._interface_name]
             ).execute()
 
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
@@ -118,11 +100,7 @@ class MacRouter(Router):
     async def delete_vpn_route(self) -> None:
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
             await self._connection.create_process(
-                ["route", "delete", "-inet", "default"]
-            ).execute()
-
-            await self._connection.create_process(
-                ["route", "add", "-inet", "default", LINUX_VM_PRIMARY_GATEWAY]
+                ["route", "delete", "-inet", "10.0.0.0/16"]
             ).execute()
 
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
