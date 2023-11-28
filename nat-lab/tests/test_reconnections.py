@@ -10,6 +10,7 @@ from utils.ping import Ping
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4593")
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
