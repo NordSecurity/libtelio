@@ -184,7 +184,9 @@ enum DevCmd {
     },
     #[clap(about = "Connect to node")]
     Con {
+        /// Public key of node
         public_key: PublicKey,
+        /// IP:PORT of Endpoint. Must be specified for a regular VPN server. Not needed for a peer.
         endpoint: Option<SocketAddr>,
         allowed_ips: Vec<IpNetwork>,
     },
