@@ -365,6 +365,7 @@ async def run_default_scenario(
 
 @pytest.mark.moose
 @pytest.mark.asyncio
+@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4591")
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
 async def test_lana_with_same_meshnet(
     alpha_ip_stack: IPStack, beta_ip_stack: IPStack
