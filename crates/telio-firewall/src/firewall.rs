@@ -333,6 +333,9 @@ struct IcmpConn {
     local_addr: IpAddr,
     response_type: u8,
     identifier_sequence: u32,
+    // This public key refers to source peer for inbound connections and
+    // destination peer for outbound connections
+    pubkey: PublicKey,
 }
 
 type IcmpKey = Result<IcmpConn, IcmpErrorKey>;
@@ -458,10 +461,10 @@ impl StatefullFirewall {
                 self.handle_outbound_tcp(peer, &ip);
             }
             IpNextHeaderProtocols::Icmp => {
-                self.handle_outbound_icmp(&ip);
+                self.handle_outbound_icmp(peer, &ip);
             }
             IpNextHeaderProtocols::Icmpv6 => {
-                self.handle_outbound_icmp(&ip);
+                self.handle_outbound_icmp(peer, &ip);
             }
             _ => (),
         };
@@ -596,9 +599,9 @@ impl StatefullFirewall {
         }
     }
 
-    fn handle_outbound_icmp<'a>(&self, ip: &impl IpPacket<'a>) {
+    fn handle_outbound_icmp<'a>(&self, peer: PublicKey, ip: &impl IpPacket<'a>) {
         let mut icmp_cache = unwrap_lock_or_return!(self.icmp.lock());
-        if let Ok(key) = Self::build_icmp_key(ip, false) {
+        if let Ok(key) = Self::build_icmp_key(peer, ip, false) {
             // If key already exists, dont change the value, just update timer with entry
             if let Entry::Vacant(e) = icmp_cache.entry(key) {
                 telio_log_trace!("Inserting new ICMP conntrack entry {:?}", e.key());
@@ -751,7 +754,7 @@ impl StatefullFirewall {
             return false;
         }
 
-        match Self::build_icmp_key(ip, true) {
+        match Self::build_icmp_key(peer, ip, true) {
             Ok(key) => {
                 let mut icmp_cache = unwrap_lock_or_return!(self.icmp.lock(), false);
                 let is_in_cache = icmp_cache.get(&key).is_some();
@@ -829,7 +832,7 @@ impl StatefullFirewall {
         Some((key, tcp_packet))
     }
 
-    fn build_icmp_key<'a, P: IpPacket<'a>>(ip: &P, inbound: bool) -> IcmpKey {
+    fn build_icmp_key<'a, P: IpPacket<'a>>(pubkey: PublicKey, ip: &P, inbound: bool) -> IcmpKey {
         let icmp_packet = match IcmpPacket::new(ip.payload()) {
             Some(packet) => packet,
             _ => {
@@ -857,14 +860,14 @@ impl StatefullFirewall {
                     || it == v4::ParameterProblem.0)
                     && ip.get_next_level_protocol() == IpNextHeaderProtocols::Icmp
                 {
-                    return Self::build_icmp_error_key(icmp_packet, true);
+                    return Self::build_icmp_error_key(pubkey, icmp_packet, true);
                 } else if (it == v6::DestinationUnreachable.0
                     || it == v6::PacketTooBig.0
                     || it == v6::ParameterProblem.0
                     || it == v6::TimeExceeded.0)
                     && ip.get_next_level_protocol() == IpNextHeaderProtocols::Icmpv6
                 {
-                    return Self::build_icmp_error_key(icmp_packet, false);
+                    return Self::build_icmp_error_key(pubkey, icmp_packet, false);
                 } else {
                     return Err(IcmpErrorKey::None);
                 }
@@ -901,11 +904,13 @@ impl StatefullFirewall {
             local_addr,
             response_type,
             identifier_sequence,
+            pubkey,
         };
+
         Ok(key)
     }
 
-    fn build_icmp_error_key(icmp_packet: IcmpPacket, is_v4: bool) -> IcmpKey {
+    fn build_icmp_error_key(pubkey: PublicKey, icmp_packet: IcmpPacket, is_v4: bool) -> IcmpKey {
         let inner_packet = match icmp_packet.payload().get(4..) {
             Some(bytes) => bytes,
             None => {
@@ -929,7 +934,7 @@ impl StatefullFirewall {
                     IcmpErrorKey::Tcp(Self::build_tcp_conn_info(&packet, false).map(|(key, _)| key))
                 }
                 IpNextHeaderProtocols::Icmp => {
-                    IcmpErrorKey::Icmp(Self::build_icmp_key(&packet, false).ok())
+                    IcmpErrorKey::Icmp(Self::build_icmp_key(pubkey, &packet, false).ok())
                 }
                 _ => IcmpErrorKey::None,
             }
@@ -949,7 +954,7 @@ impl StatefullFirewall {
                     IcmpErrorKey::Tcp(Self::build_tcp_conn_info(&packet, false).map(|(key, _)| key))
                 }
                 IpNextHeaderProtocols::Icmpv6 => {
-                    IcmpErrorKey::Icmp(Self::build_icmp_key(&packet, false).ok())
+                    IcmpErrorKey::Icmp(Self::build_icmp_key(pubkey, &packet, false).ok())
                 }
                 _ => IcmpErrorKey::None,
             }
@@ -3136,5 +3141,107 @@ pub mod tests {
         assert_eq!(ip.get_destination(), Ipv4Addr::new(127, 0, 0, 2));
 
         assert_eq!(icmp.payload(), &test_udppkg);
+    }
+
+    #[test]
+    fn firewall_icmp_ddos_vulnerability() {
+        let src1 = "8.8.8.8:8888";
+        let src2 = "8.8.8.8";
+        let dst1 = "127.0.0.1:2000";
+        let dst2 = "127.0.0.1";
+
+        let fw = StatefullFirewall::new_custom(2, LRU_TIMEOUT, false, false);
+
+        let good_peer = make_random_peer();
+        let bad_peer = make_random_peer();
+
+        let tcp_syn_outbound = make_tcp(src1, dst1, TcpFlags::SYN);
+        let tcp_ack_inbound = make_tcp(dst1, src1, TcpFlags::ACK);
+
+        let udp_outbound = make_udp(src1, dst1);
+        let udp_inbound = make_udp(dst1, src1);
+
+        let mut data = vec![1, 0, 0, 1];
+        let tcp = make_tcp(src1, dst1, TcpFlags::ACK);
+        data.extend_from_slice(&tcp);
+
+        let icmp_tcp_error_inbound =
+            make_icmp4_with_body(dst2, src2, IcmpTypes::DestinationUnreachable.into(), &data);
+
+        // tcp & udp outbound: allowed
+        assert!(fw.process_outbound_packet(&good_peer.0, &tcp_syn_outbound));
+        // inject error package from bad peer
+        assert!(!fw.process_inbound_packet(&bad_peer.0, &icmp_tcp_error_inbound));
+        // expect that connection continues normally
+        assert!(fw.process_inbound_packet(&good_peer.0, &tcp_ack_inbound));
+    }
+
+    #[test]
+    fn firewall_tcp_rst_attack_vulnerability() {
+        let us = "127.0.0.1:1111";
+        let them = "8.8.8.8:8888";
+        let random = "192.168.0.1:7777";
+
+        let fw = StatefullFirewall::new_custom(3, LRU_TIMEOUT, false, false);
+
+        let outgoing_init_packet = make_tcp(us, them, TcpFlags::SYN);
+        let incoming_rst_packet = make_tcp(them, us, TcpFlags::RST);
+
+        let peer_bad = make_random_peer();
+        let peer_good = make_peer();
+
+        assert!(fw.process_outbound_packet(&peer_good, &outgoing_init_packet),);
+        assert!(!fw.process_inbound_packet(&peer_bad.0, &incoming_rst_packet),);
+        assert!(fw.process_inbound_packet(
+            &peer_good,
+            &make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)
+        ),);
+        assert!(fw.process_inbound_packet(&peer_good, &make_tcp(them, us, TcpFlags::SYN)),);
+    }
+
+    #[test]
+    fn firewall_udp_spoffing_and_injection_vulnerability() {
+        struct TestInput {
+            src: &'static str,
+            dst: &'static str,
+            make_udp: MakeUdp,
+        }
+
+        let test_inputs = [
+            TestInput {
+                src: "127.0.0.1:1111",
+                dst: "8.8.8.8:8888",
+                make_udp: &make_udp,
+            },
+            TestInput {
+                src: "[::1]:1111",
+                dst: "[2001:4860:4860::8888]:8888",
+                make_udp: &make_udp6,
+            },
+        ];
+
+        for TestInput { src, dst, make_udp } in test_inputs {
+            let fw = StatefullFirewall::new_custom(3, LRU_TIMEOUT, true, false);
+
+            let outgoing_packet = make_udp(src, dst);
+            let incoming_packet = make_udp(dst, src);
+
+            let peer_bad = make_random_peer();
+            let peer_good = make_random_peer();
+
+            fw.add_to_peer_whitelist(peer_good);
+            fw.add_to_port_whitelist(peer_good, 1111);
+
+            // Should Pass as it is inbound for trusted peer
+            assert!(fw.process_inbound_packet(&peer_good.0, &incoming_packet),);
+            assert!(fw.process_outbound_packet(&peer_good.0, &outgoing_packet),);
+
+            // Should FAIL as it is a spoofed package
+            assert!(!fw.process_inbound_packet(&peer_bad.0, &incoming_packet),);
+
+            // Good peers should still communicate normaly
+            assert!(fw.process_inbound_packet(&peer_good.0, &incoming_packet),);
+            assert!(fw.process_outbound_packet(&peer_good.0, &outgoing_packet),);
+        }
     }
 }
