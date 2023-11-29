@@ -20,9 +20,7 @@ use telio_traversal::{
     cross_ping_check::CrossPingCheckTrait, SessionKeeperTrait, UpgradeSyncTrait,
     WireGuardEndpointCandidateChangeEvent,
 };
-use telio_utils::{
-    dual_target::Target as SessionKeeperTarget, telio_log_debug, telio_log_info, telio_log_warn,
-};
+use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn};
 use telio_wg::{uapi::Peer, WireGuard};
 use thiserror::Error as TError;
 use tokio::sync::Mutex;
@@ -221,13 +219,19 @@ async fn consolidate_wg_peers<
                     requested_peer.peer.allowed_ips.get(0),
                     requested_peer.peer.allowed_ips.get(1),
                 ) {
-                    let target: SessionKeeperTarget =
+                    let target = if features.ipv6 {
                         match (mesh_ip1.ip(), maybe_mesh_ip2.map(|ip| ip.ip())) {
                             (IpAddr::V4(ip4), Some(IpAddr::V6(ip6))) => (Some(ip4), Some(ip6)),
                             (IpAddr::V6(ip6), Some(IpAddr::V4(ip4))) => (Some(ip4), Some(ip6)),
                             (IpAddr::V4(ip4), _) => (Some(ip4), None),
                             (IpAddr::V6(ip6), _) => (None, Some(ip6)),
-                        };
+                        }
+                    } else {
+                        match mesh_ip1.ip() {
+                            IpAddr::V4(ip4) => (Some(ip4), None),
+                            _ => (None, None),
+                        }
+                    };
 
                     // Start persistent keepalives
                     sk.add_node(
@@ -1424,7 +1428,7 @@ mod tests {
                     }
                 };
 
-                let ip6: Option<Ipv6Addr> = {
+                let ip6 = {
                     match i.2 {
                         Some(ip) => match ip {
                             IpAddr::V4(_ip4) => panic!("Only ip6 is allowed"),
@@ -1525,6 +1529,7 @@ mod tests {
     #[tokio::test]
     async fn when_upgrade_requested_by_peer_then_upgrade() {
         let mut f = Fixture::new();
+        f.features.ipv6 = true;
 
         let pub_key = SecretKey::gen().public();
         let ip1 = IpAddr::from([1, 2, 3, 4]);
@@ -1570,6 +1575,7 @@ mod tests {
     #[tokio::test]
     async fn when_cross_check_vailidated_then_upgrade() {
         let mut f = Fixture::new();
+        f.features.ipv6 = true;
 
         let pub_key = SecretKey::gen().public();
         let ip1 = IpAddr::from([1, 2, 3, 4]);
@@ -1882,6 +1888,7 @@ mod tests {
     #[tokio::test]
     async fn when_connection_timeout_changed_during_upgrade() {
         let mut f = Fixture::new();
+        f.features.ipv6 = true;
 
         let pub_key = SecretKey::gen().public();
         let ip1 = IpAddr::from([1, 2, 3, 4]);

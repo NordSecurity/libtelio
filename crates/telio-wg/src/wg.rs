@@ -724,9 +724,7 @@ impl State {
                         }
                     }
 
-                    // I see no reason to filter the IPv6 in analytics if we already
-                    // have it in the allowed IPs, so just set ipv6 usage to true
-                    let endpoint = match dual_target::DualTarget::new(target, true) {
+                    let endpoint = match dual_target::DualTarget::new(target) {
                         Ok(dt) => dt,
                         Err(_) => continue,
                     };

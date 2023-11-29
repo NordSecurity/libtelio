@@ -134,9 +134,9 @@ pub enum Error {
     TraversalError(#[from] telio_traversal::Error),
     #[error("Task execution error")]
     TaskExecError(#[from] telio_task::ExecError),
-    #[error("Session keeper error")]
+    #[error("Session keeper error: {0}")]
     SessionKeeperError(#[from] telio_traversal::session_keeper::Error),
-    #[error("Session keeper error")]
+    #[error("Upgrade sync error: {0}")]
     UpgradeSyncError(#[from] telio_traversal::upgrade_sync::Error),
     #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
     #[error("Socket pool error")]
@@ -1053,8 +1053,7 @@ impl Runtime {
                 Duration::from_secs(5),
             )?);
 
-            let session_keeper =
-                Arc::new(SessionKeeper::start(socket_pool.clone(), features.ipv6)?);
+            let session_keeper = Arc::new(SessionKeeper::start(socket_pool.clone())?);
 
             Some(DirectEntities {
                 local_interfaces_endpoint_provider,
