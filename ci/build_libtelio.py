@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 
 import os
-import shutil
 import sys
 import subprocess
-import urllib.request
-import zipfile
 import moose_utils
 from pathlib import Path
 
@@ -35,42 +32,6 @@ PROJECT_CONFIG = rutils.Project(
     root_dir=PROJECT_ROOT,
     working_dir=WORKING_DIR,
 )
-
-
-def finalize_win(config, moose):
-    def get_dependency(url, name, dll_name):
-        zip_name = name + ".zip"
-        with urllib.request.urlopen(url) as f:
-            with open(zip_name, "wb") as w:
-                w.write(f.read())
-        with zipfile.ZipFile(zip_name, "r") as zip_ref:
-            zip_ref.extractall(".")
-        shutil.copyfile(
-            name + "/bin/amd64/" + dll_name,
-            PROJECT_CONFIG.get_distribution_path(
-                config.target_os, config.arch, dll_name, config.debug
-            ),
-        )
-        shutil.rmtree(name)
-        os.remove(zip_name)
-
-    get_dependency(
-        "https://www.wintun.net/builds/wintun-0.14.1.zip", "wintun", "wintun.dll"
-    )
-    get_dependency(
-        "https://download.wireguard.com/wireguard-nt/wireguard-nt-0.10.1.zip",
-        "wireguard-nt",
-        "wireguard.dll",
-    )
-
-    if moose:
-        sqlite_path = f"{PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/windows/{config.arch}/sqlite3.dll"
-        shutil.copyfile(
-            sqlite_path,
-            PROJECT_CONFIG.get_distribution_path(
-                config.target_os, config.arch, "sqlite3.dll", config.debug
-            ),
-        )
 
 
 def copy_bindings(config):
@@ -198,24 +159,12 @@ LIBTELIO_CONFIG = {
     },
     "linux": {
         "archs": {
-            "x86_64": {
-                "strip_path": "/usr/bin/strip"
-            },
-            "aarch64": {
-                "strip_path": "/usr/aarch64-linux-gnu/bin/strip"
-            },
-            "arm64": {
-                "strip_path": "/usr/aarch64-linux-gnu/bin/strip"
-            },
-            "i686": {
-                "strip_path": "/usr/i686-linux-gnu/bin/strip"
-            },
-            "armv7": {
-                "strip_path": "/usr/arm-linux-gnueabihf/bin/strip"
-            },
-            "armv5": {
-                "strip_path": "/usr/arm-linux-gnueabi/bin/strip"
-            }
+            "x86_64": {"strip_path": "/usr/bin/strip"},
+            "aarch64": {"strip_path": "/usr/aarch64-linux-gnu/bin/strip"},
+            "arm64": {"strip_path": "/usr/aarch64-linux-gnu/bin/strip"},
+            "i686": {"strip_path": "/usr/i686-linux-gnu/bin/strip"},
+            "armv7": {"strip_path": "/usr/arm-linux-gnueabihf/bin/strip"},
+            "armv5": {"strip_path": "/usr/arm-linux-gnueabi/bin/strip"},
         },
         "env": {
             "RUSTFLAGS": ([" -C debuginfo=2 "], "set"),
@@ -252,7 +201,9 @@ def main() -> None:
     parser = rutils.create_cli_parser()
     build_parser = parser._subparsers._group_actions[0].choices["build"]
     build_parser.add_argument("--moose", action="store_true", help="Use libmoose")
-    build_parser.add_argument("--msvc", action="store_true", help="Use MSVC toolchain for Windows build")
+    build_parser.add_argument(
+        "--msvc", action="store_true", help="Use MSVC toolchain for Windows build"
+    )
 
     args = parser.parse_args()
 
@@ -300,8 +251,13 @@ def exec_build(args):
         moose_utils.unset_cargo_dependencies()
 
     if args.msvc:
-        GLOBAL_CONFIG["windows"]["archs"]["x86_64"]["rust_target"] = "x86_64-pc-windows-msvc"
-        GLOBAL_CONFIG["windows"]["env"]["RUSTFLAGS"] = ([" -C target-feature=-crt-static "], "set")
+        GLOBAL_CONFIG["windows"]["archs"]["x86_64"][
+            "rust_target"
+        ] = "x86_64-pc-windows-msvc"
+        GLOBAL_CONFIG["windows"]["env"]["RUSTFLAGS"] = (
+            [" -C target-feature=-crt-static "],
+            "set",
+        )
         if args.moose:
             moose_utils.create_msvc_import_library()
 
@@ -312,9 +268,6 @@ def exec_build(args):
     )
     rutils.check_config(config)
     call_build(config)
-
-    if args.os == "windows":
-        finalize_win(config, args.moose)
 
 
 def create_debug_symbols(config):
@@ -366,6 +319,7 @@ def create_debug_symbols(config):
         )
         _create_debug_symbol(f"{dist_dir}/{renamed_arch}/{lib_name}", strip_bin=strip)
 
+
 def strip_binaries(config):
     if config.debug or config.target_os != "linux":
         return
@@ -388,9 +342,12 @@ def strip_binaries(config):
         subprocess.check_call(strip_debug_symbols)
 
     strip = LIBTELIO_CONFIG["linux"]["archs"][config.arch]["strip_path"]
-    binaries = [bin for bin in LIBTELIO_CONFIG["linux"]["packages"].keys() if bin != NAME]
+    binaries = [
+        bin for bin in LIBTELIO_CONFIG["linux"]["packages"].keys() if bin != NAME
+    ]
     for binary in binaries:
         _strip_debug_symbols(f"{dist_dir}/{binary}", strip_bin=strip)
+
 
 def call_build(config):
     rutils.config_local_env_vars(config, LIBTELIO_CONFIG)

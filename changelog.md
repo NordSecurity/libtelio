@@ -47,6 +47,7 @@
 * LLT-4124: Add IPv6 feature flag
 * LLT-3950: Enable IPv6 for wg-stun.
 * LLT-4502: Implement ICMP, UDP and TCP conntrack tracking for each peer separately
+* LLT-4508: Fetch windows dependencies from local gitlab registry
 
 <br>
 
