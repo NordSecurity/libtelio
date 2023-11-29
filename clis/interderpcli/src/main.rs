@@ -12,6 +12,7 @@ use telio_relay::{
 };
 use telio_sockets::{NativeProtector, SocketPool};
 use tokio::{net::lookup_host, time::timeout};
+use tracing::{debug, info};
 use url::{Host, Url};
 
 #[derive(Parser)]
@@ -75,9 +76,9 @@ async fn resolve_domain_name(domain: &str) -> Result<SocketAddr> {
     };
     let hostport = format!("{}:{}", hostname, port);
 
-    log::debug!("Resolving {}", hostname);
+    debug!("Resolving {}", hostname);
     let addrs = lookup_host(hostport).await?.collect::<Vec<SocketAddr>>();
-    log::debug!("Got Addresses: {:?} for {:?}", addrs, hostname);
+    debug!("Got Addresses: {:?} for {:?}", addrs, hostname);
 
     addrs
         .first()
@@ -90,7 +91,7 @@ async fn connect_client(
     hostname: String,
     private_key: SecretKey,
 ) -> Result<DerpConnection> {
-    log::debug!("Connecting to {:?} ({:?})", hostname, addr);
+    debug!("Connecting to {:?} ({:?})", hostname, addr);
 
     let pool = Arc::new(SocketPool::new(NativeProtector::new(
         #[cfg(target_os = "macos")]
@@ -118,7 +119,7 @@ async fn ping_each_other(
     key_2: &SecretKey,
     client_2: &mut DerpConnection,
 ) -> Result<()> {
-    log::info!("Sending client 1 -> client 2...");
+    info!("Sending client 1 -> client 2...");
     let mut tx_msg1 = vec![0, 1, 2, 3];
     SystemRandom::new()
         .fill(&mut tx_msg1[..])
@@ -131,7 +132,7 @@ async fn ping_each_other(
             .await?;
     }
 
-    log::info!("Sending client 2 -> client 1...");
+    info!("Sending client 2 -> client 1...");
     let mut tx_msg2 = vec![0; 4];
     SystemRandom::new()
         .fill(&mut tx_msg2[..])
@@ -144,7 +145,7 @@ async fn ping_each_other(
             .await?;
     }
 
-    log::info!("Try to receive message on client 1");
+    info!("Try to receive message on client 1");
     timeout(Duration::from_secs(3), async move {
         loop {
             let rx_msg1 = client_1
@@ -161,7 +162,7 @@ async fn ping_each_other(
     .await
     .context("First client did not receive the ping message from the second client in 10s")??;
 
-    log::info!("Try to receive message on client 2");
+    info!("Try to receive message on client 2");
     timeout(Duration::from_secs(3), async move {
         loop {
             let rx_msg2 = client_2
@@ -187,11 +188,11 @@ async fn test_pair(
     host_2: String,
     key_2: SecretKey,
 ) -> Result<()> {
-    log::info!("Resolving server domains");
+    info!("Resolving server domains");
     let addr_1 = resolve_domain_name(&host_1).await?;
     let addr_2 = resolve_domain_name(&host_2).await?;
 
-    log::info!("Starting clients");
+    info!("Starting clients");
     let mut client_1 = Box::pin(connect_client(addr_1, host_1.clone(), key_1))
         .await
         .context("Failed to connect to first server")?;
@@ -199,7 +200,7 @@ async fn test_pair(
         .await
         .context("Failed to connect to second server")?;
 
-    log::info!("Ping each other");
+    info!("Ping each other");
     ping_each_other(&key_1, &mut client_1, &key_2, &mut client_2).await
 }
 
@@ -271,20 +272,20 @@ async fn main() -> Result<()> {
         // The single check scenario used for automatic validation
         // This should not print anything and just use the exit code
         // to reveal the result
-        log::info!("Single check scenario");
+        info!("Single check scenario");
         match single_check_scenario(opt).await {
             Ok(_) => {
-                log::info!("Success");
+                info!("Success");
                 std::process::exit(0);
             }
             Err(e) => {
-                log::info!("Error: {}", e);
+                info!("Error: {}", e);
                 std::process::exit(1);
             }
         }
     } else {
         // The main scenario this tool has been created for
-        log::info!("Config file scenario");
+        info!("Config file scenario");
         config_file_scenario(
             opt.config_file
                 .ok_or_else(|| anyhow!("Missing config file"))?,

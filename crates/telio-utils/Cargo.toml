@@ -12,7 +12,6 @@ sn_fake_clock = ["dep:sn_fake_clock"]
 [dependencies]
 futures.workspace = true
 hashlink.workspace = true
-log.workspace = true
 mockall = { workspace = true, optional = true }
 parking_lot.workspace = true
 rustc-hash.workspace = true
