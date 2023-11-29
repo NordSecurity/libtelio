@@ -20,6 +20,7 @@ rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 slog.workspace = true
+socket2.workspace = true
 surge-ping.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["net", "sync"] }
