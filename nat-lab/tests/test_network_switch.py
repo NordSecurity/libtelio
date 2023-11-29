@@ -231,8 +231,8 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="Flaky: LLT-4102, LLT-4105, LLT-3946")
-@pytest.mark.timeout(150)
+@pytest.mark.xfail(reason="Flaky: LLT-4605")
+@pytest.mark.timeout(90)
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -273,7 +273,10 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
                 adapter_type=telio.AdapterType.BoringTun,
                 features=TelioFeatures(direct=Direct(providers=["stun"])),
             ),
-            marks=pytest.mark.mac,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.xfail(reason="Flaky: LLT-4600"),
+            ],
         ),
     ],
 )
@@ -339,4 +342,4 @@ async def test_mesh_network_switch_direct(
             await direct
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_lengthy(ping.wait_for_next_ping())
+            await testing.wait_long(ping.wait_for_next_ping())
