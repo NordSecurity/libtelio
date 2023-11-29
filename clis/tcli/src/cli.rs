@@ -22,6 +22,7 @@ use tokio::{
 use crate::nord::{Error as NordError, Nord, OAuth};
 
 use std::str::FromStr;
+use std::time::SystemTime;
 use std::{
     fs,
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -115,7 +116,10 @@ pub struct Cli {
 
 pub enum Resp {
     Info(String),
-    Event(Box<DevEvent>),
+    Event {
+        ts: SystemTime,
+        event: Box<DevEvent>,
+    },
     Error(Box<Error>),
     Quit,
 }
@@ -366,12 +370,16 @@ impl Cli {
                 let sender = sender.clone();
                 #[allow(unwrap_check)]
                 #[allow(clippy::unwrap_used)]
-                move |e: Box<DevEvent>| {
-                    if let DevEvent::Relay { body } = *e.clone() {
-                        *derp_server_lambda.lock() =
-                            body.filter(|s| s.conn_state != RelayState::Disconnected);
+                move |event: Box<DevEvent>| {
+                    let ts = SystemTime::now();
+
+                    if let DevEvent::Relay { body } = &*event {
+                        *derp_server_lambda.lock() = body
+                            .as_ref()
+                            .filter(|s| s.conn_state != RelayState::Disconnected)
+                            .cloned();
                     }
-                    sender.send(Resp::Event(e)).unwrap()
+                    sender.send(Resp::Event { ts, event }).unwrap()
                 }
             },
             None,

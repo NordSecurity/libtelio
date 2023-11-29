@@ -285,6 +285,23 @@ class Runtime:
         assert peer.public_key in self.allowed_pub_keys
         self._peer_state_events.append(peer)
 
+    def _extract_event_tokens(self, line: str, event_type: str) -> Optional[List[str]]:
+        if not line.startswith("event "):
+            return None
+
+        line = line.split("event ")[-1]
+
+        if line.startswith("["):
+            # Includes timestamp
+            line = line.split("] ")[-1]
+
+        if not line.startswith(f"{event_type}: "):
+            return None
+
+        tokens = line.split(f"{event_type}: ")
+
+        return tokens
+
     def _handle_node_event(self, line) -> bool:
         def _check_node_event(node_event: PeerInfo):
             assert node_event.is_exit or (
@@ -292,9 +309,10 @@ class Runtime:
                 and "::/0" not in node_event.allowed_ips
             )
 
-        if not line.startswith("event node: "):
+        tokens = self._extract_event_tokens(line, "node")
+        if tokens is None:
             return False
-        tokens = line.split("event node: ")
+
         json_string = tokens[1].strip()
         result = re.search("{(.*)}", json_string)
         if result:
@@ -311,9 +329,10 @@ class Runtime:
         self._derp_state_events.append(derp)
 
     def _handle_derp_event(self, line) -> bool:
-        if not line.startswith("event relay: "):
+        tokens = self._extract_event_tokens(line, "relay")
+        if tokens is None:
             return False
-        tokens = line.split("event relay: ")
+
         json_string = tokens[1].strip()
         result = re.search("{(.*)}", json_string)
         if result:
