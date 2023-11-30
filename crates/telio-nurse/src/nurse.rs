@@ -251,6 +251,8 @@ impl State {
             qos_data.rtt_loss,
             qos_data.tx
         );
+
+        let _ = lana!(flush_changes);
     }
 
     fn meshnet_id() -> Uuid {
