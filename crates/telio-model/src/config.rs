@@ -3,6 +3,7 @@
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::{from_value, Error, Value};
+use telio_utils::Hidden;
 
 use std::{
     net::{IpAddr, Ipv4Addr},
@@ -19,7 +20,7 @@ pub struct PeerBase {
     /// Public key of the peer
     pub public_key: PublicKey,
     /// Hostname of the peer
-    pub hostname: String,
+    pub hostname: Hidden<String>,
     /// Ip address of peer
     pub ip_addresses: Option<Vec<IpAddr>>,
     /// Nickname for the peer
@@ -177,7 +178,6 @@ impl PartialConfig {
 
 /// Rust representation of [meshnet map]
 /// A network map of all the Peers and the servers
-/// [meshnet map]: https://docs.nordvpn.com/client-api/#get-map
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Config {
     #[serde(flatten)]
@@ -332,7 +332,7 @@ mod tests {
                 public_key: "qj1pru+cP0mU9K0FrU8e0JYtTaPo0YiQG8O2NbFHeH4="
                     .parse()
                     .unwrap(),
-                hostname: "everest-alice.nord".to_owned(),
+                hostname: telio_utils::Hidden("everest-alice.nord".to_owned()),
                 ip_addresses: Some(vec!["198.51.100.42".parse().unwrap()]),
                 nickname: Some("bunnyg".to_owned()),
             },
@@ -343,7 +343,7 @@ mod tests {
                         public_key: "LRrbraNJXOrVdnpXy6gA/XcpmxymE0oMZlzP5Pqi20I="
                             .parse()
                             .unwrap(),
-                        hostname: "everest-bob.nord".to_owned(),
+                        hostname: telio_utils::Hidden("everest-bob.nord".to_owned()),
                         ip_addresses: Some(vec!["198.51.100.43".parse().unwrap()]),
                         nickname: Some("".to_owned()),
                     },
@@ -357,7 +357,7 @@ mod tests {
                         public_key: "LRrbraNJXOrVdnpXy6gA/XcpmxymE0oMZlzP5Pqi20I="
                             .parse()
                             .unwrap(),
-                        hostname: "everest-alice.nord".to_owned(),
+                        hostname: telio_utils::Hidden("everest-alice.nord".to_owned()),
                         ip_addresses: Some(vec!["198.51.100.43".parse().unwrap()]),
                         nickname: None,
                     },

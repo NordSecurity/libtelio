@@ -111,7 +111,7 @@ impl From<&PeerBase> for Node {
                 .as_ref()
                 .map(|ips| ips.iter().map(|a| (*a).into()).collect())
                 .unwrap_or_default(),
-            hostname: Some(peer.hostname.to_owned()),
+            hostname: Some(peer.hostname.0.to_owned().to_string()),
             ..Default::default()
         }
     }
@@ -126,7 +126,7 @@ impl From<&Peer> for Node {
                 .as_ref()
                 .map(|ips| ips.iter().map(|a| (*a).into()).collect())
                 .unwrap_or_default(),
-            hostname: Some(peer.hostname.to_owned()),
+            hostname: Some(peer.hostname.0.to_owned().to_string()),
             allow_incoming_connections: peer.allow_incoming_connections,
             allow_peer_send_files: peer.allow_peer_send_files,
             ..Default::default()

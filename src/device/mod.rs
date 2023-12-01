@@ -704,7 +704,7 @@ impl RequestedState {
             .filter_map(|v| {
                 v.ip_addresses
                     .as_ref()
-                    .map(|ips| (v.hostname.to_owned(), ips.clone()))
+                    .map(|ips| (v.hostname.0.to_owned().to_string(), ips.clone()))
             })
             .collect()
     }
@@ -1629,7 +1629,7 @@ impl Runtime {
                     ip_addresses: meshnet_peer.base.ip_addresses.clone().unwrap_or_default(),
                     allowed_ips: peer.allowed_ips.clone(),
                     endpoint,
-                    hostname: Some(meshnet_peer.base.hostname.clone()),
+                    hostname: Some(meshnet_peer.base.hostname.0.clone().to_string()),
                     allow_incoming_connections: meshnet_peer.allow_incoming_connections,
                     allow_peer_send_files: meshnet_peer.allow_peer_send_files,
                     path: path_type,
@@ -1861,7 +1861,7 @@ mod tests {
         nickname: Option<String>,
     ) -> PeerBase {
         PeerBase {
-            hostname,
+            hostname: telio_utils::Hidden(hostname),
             ip_addresses,
             nickname,
             ..Default::default()
@@ -2171,7 +2171,7 @@ mod tests {
         let peer_base = PeerBase {
             identifier: "identifier".to_owned(),
             public_key: pubkey,
-            hostname: "hostname".to_owned(),
+            hostname: telio_utils::Hidden("hostname".to_owned()),
             ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
             nickname: Some("nickname".to_owned()),
         };
@@ -2247,7 +2247,7 @@ mod tests {
             this: PeerBase {
                 identifier: "identifier".to_owned(),
                 public_key: private_key.public(),
-                hostname: "hostname".to_owned(),
+                hostname: telio_utils::Hidden("hostname".to_owned()),
                 ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
                 nickname: Some("nickname".to_owned()),
             },
@@ -2336,7 +2336,7 @@ mod tests {
         let peer_base = PeerBase {
             identifier: "identifier".to_owned(),
             public_key: pubkey,
-            hostname: "hostname".to_owned(),
+            hostname: telio_utils::Hidden("hostname".to_owned()),
             ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
             nickname: Some("nickname".to_owned()),
         };
@@ -2529,7 +2529,7 @@ mod tests {
             let peer_base = PeerBase {
                 identifier: "identifier".to_owned(),
                 public_key,
-                hostname: "hostname".to_owned(),
+                hostname: telio_utils::Hidden("hostname".to_owned()),
                 ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
                 nickname: Some("nickname".to_owned()),
             };
@@ -2593,7 +2593,7 @@ mod tests {
         let peer_base = PeerBase {
             identifier: "identifier".to_owned(),
             public_key: new_private_key.public(),
-            hostname: "hostname".to_owned(),
+            hostname: telio_utils::Hidden("hostname".to_owned()),
             ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
             nickname: Some("nickname".to_owned()),
         };
@@ -2703,7 +2703,7 @@ mod tests {
         let peer_base = PeerBase {
             identifier: "identifier".to_owned(),
             public_key: private_key.public(),
-            hostname: "hostname".to_owned(),
+            hostname: telio_utils::Hidden("hostname".to_owned()),
             ip_addresses: Some(vec![
                 IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
                 IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0xc00a, 0x2ff)),

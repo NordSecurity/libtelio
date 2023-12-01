@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// When printed in release mode it will not reveal inner data instead
 /// replacing it with `****`.
-#[derive(Deserialize, Serialize, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default, Deserialize, Serialize, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(transparent)]
 pub struct Hidden<T>(pub T);
 
