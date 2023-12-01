@@ -4,7 +4,8 @@ use base64::{decode as base64decode, encode as base64encode};
 use ffi_helpers::{error_handling, panic as panic_handling};
 use ipnetwork::IpNetwork;
 use libc::c_char;
-use telio_crypto::SecretKey;
+use rand::Rng;
+use telio_crypto::{PublicKey, SecretKey};
 use telio_wg::AdapterType;
 use tracing::{error, trace, Subscriber};
 
@@ -30,11 +31,12 @@ use std::{
 
 use self::types::*;
 use crate::device::{Device, DeviceConfig, Result as DevResult};
-use telio_model::{config::PartialConfig, event::*, mesh::ExitNode};
+use telio_model::{api_config::Features, config::PartialConfig, event::*, mesh::ExitNode};
 
 // debug tools
 use telio_utils::{
-    commit_sha, telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn, version_tag,
+    commit_sha, telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn,
+    version_tag,
 };
 
 const DEFAULT_PANIC_MSG: &str = "libtelio panicked";
@@ -84,7 +86,10 @@ lazy_static::lazy_static! {
 }
 
 #[allow(non_camel_case_types)]
-pub struct telio(Mutex<Device>);
+pub struct telio {
+    inner: Mutex<Device>,
+    id: usize,
+}
 
 /// cbindgen:ignore
 static PANIC_HOOK: Once = Once::new();
@@ -111,9 +116,10 @@ pub extern "C" fn telio_new(
         fortify_source();
     }
 
+    let features = ffi_try!(deserialize_features(features));
     let ret = telio_new_common(
         dev,
-        features,
+        &features,
         events,
         log_level,
         logger,
@@ -121,18 +127,28 @@ pub extern "C" fn telio_new(
         None,
     );
 
-    match ret {
-        // TELIO_RES_ALREADY_STARTED should not be returned here ever
-        TELIO_RES_ALREADY_STARTED => telio_log_debug!("Device is already started (telio_new)"),
-        TELIO_RES_INVALID_KEY => telio_log_debug!("Cannot parse key as base64 string (telio_new)"),
-        TELIO_RES_BAD_CONFIG => telio_log_debug!("Cannot Parse Configuration (telio_new)"),
-        TELIO_RES_LOCK_ERROR => telio_log_debug!("Cannot lock a mutex (telio_new)"),
-        TELIO_RES_INVALID_STRING => telio_log_debug!("Cannot parse a string (telio_new)"),
-        TELIO_RES_ERROR => telio_log_debug!("Unknown error (telio_new)"),
-        TELIO_RES_OK => telio_log_debug!("Operation was succesful (telio_new)"),
-    };
-
+    log_entry(features, events, log_level, logger, ret, dev);
     ret
+}
+
+fn char_to_str<'a>(char_ptr: *const c_char) -> Result<&'a str, telio_result> {
+    if !char_ptr.is_null() {
+        let cstr = unsafe { CStr::from_ptr(char_ptr) };
+        cstr.to_str().map_err(|e| {
+            telio_log_error!("{}", e);
+            TELIO_RES_INVALID_STRING
+        })
+    } else {
+        telio_log_error!("Null input parameter");
+        Err(TELIO_RES_INVALID_STRING)
+    }
+}
+
+fn deserialize_features(features: *const c_char) -> Result<Features, telio_result> {
+    match char_to_str(features) {
+        Ok(s) => Ok(serde_json::from_str(s)?),
+        Err(_) => Ok(Default::default()),
+    }
 }
 
 #[cfg(target_os = "android")] // to avoid one-liner
@@ -152,12 +168,38 @@ pub extern "C" fn telio_new_with_protect(
     logger: telio_logger_cb,
     protect: telio_protect_cb,
 ) -> telio_result {
-    telio_new_common(dev, features, events, log_level, logger, Some(protect))
+    let features = ffi_try!(deserialize_features(features));
+    let ret = telio_new_common(dev, &features, events, log_level, logger, Some(protect));
+    log_entry(features, events, log_level, logger, ret, dev);
+    ret
+}
+
+fn get_instance_id_from_ptr(dev: *mut *mut telio) -> Option<usize> {
+    unsafe { dev.as_ref().and_then(|p| p.as_ref()).map(|p| p.id) }
+}
+
+fn log_entry(
+    features: Features,
+    events: telio_event_cb,
+    log_level: telio_log_level,
+    logger: telio_logger_cb,
+    ret: telio_result,
+    dev: *mut *mut telio,
+) {
+    telio_log_info!(
+        "telio_new entry with instance id: {:?}. features: {:?}. Log level: {:?}. Event_ptr: {:?}. Logger_ptr: {:?}. Return value: {}",
+        get_instance_id_from_ptr(dev),
+        features,
+        log_level,
+        events,
+        logger,
+        ret
+    );
 }
 
 fn telio_new_common(
     dev: *mut *mut telio,
-    features: *const c_char,
+    features: &Features,
     events: telio_event_cb,
     log_level: telio_log_level,
     logger: telio_logger_cb,
@@ -216,16 +258,6 @@ fn telio_new_common(
         }));
     });
 
-    let features = if !features.is_null() {
-        let features = ffi_try!(unsafe { CStr::from_ptr(features) }
-            .to_str()
-            .map_err(|_| TELIO_RES_INVALID_STRING));
-
-        ffi_try!(serde_json::from_str(features))
-    } else {
-        Default::default()
-    };
-
     ffi_catch_panic!({
         // TODO: Update windows ffi to take in void*, for protect
         #[cfg(not(target_os = "android"))]
@@ -238,9 +270,14 @@ fn telio_new_common(
             None => None,
         };
 
-        let device = ffi_try!(Device::new(features, event_dispatcher, protect));
+        let device = ffi_try!(Device::new((*features).clone(), event_dispatcher, protect));
 
-        unsafe { *dev = Box::into_raw(Box::new(telio(Mutex::new(device)))) };
+        unsafe {
+            *dev = Box::into_raw(Box::new(telio {
+                inner: Mutex::new(device),
+                id: rand::thread_rng().gen::<usize>(),
+            }))
+        };
 
         TELIO_RES_OK
     })
@@ -250,7 +287,7 @@ fn telio_new_common(
 /// Completely stop and uninit telio lib.
 pub extern "C" fn telio_destroy(dev: *mut telio) {
     let dev = unsafe { Box::from_raw(dev) };
-    let mut dev = match dev.0.lock() {
+    let mut dev = match dev.inner.lock() {
         Ok(dev) => dev,
         Err(poisoned) => {
             telio_log_debug!("main telio lock has been poisoned");
@@ -265,7 +302,7 @@ pub extern "C" fn telio_destroy(dev: *mut telio) {
 /// Explicitly deallocate telio object and shutdown async rt.
 pub extern "C" fn telio_destroy_hard(dev: *mut telio) -> telio_result {
     let dev_b = unsafe { Box::from_raw(dev) };
-    let device = dev_b.0.into_inner().unwrap_or_else(|e| e.into_inner());
+    let device = dev_b.inner.into_inner().unwrap_or_else(|e| e.into_inner());
 
     let res = device.try_shutdown(Duration::from_millis(1000));
 
@@ -293,12 +330,17 @@ pub extern "C" fn telio_start(
     private_key: *const c_char,
     adapter: telio_adapter_type,
 ) -> telio_result {
-    ffi_catch_panic!({
-        let mut dev = ffi_try!(dev.0.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
+    let private_key = ffi_try!(char_ptr_to_type::<SecretKey>(private_key));
+    telio_log_info!(
+        "telio_start entry with instance id: {}. Public key: {:?}. Adapter: {:?}",
+        dev.id,
+        private_key.public(),
+        &adapter
+    );
 
-        let cstr = unsafe { CStr::from_ptr(private_key) };
-        let private_key = ffi_try!(cstr.to_str().map_err(|_| TELIO_RES_INVALID_STRING));
-        let private_key = ffi_try!(private_key.parse().map_err(|_| TELIO_RES_INVALID_STRING));
+    ffi_catch_panic!({
+        let mut dev = ffi_try!(dev.inner.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
+
         dev.start(&DeviceConfig {
             private_key,
             adapter: adapter.into(),
@@ -321,13 +363,10 @@ pub extern "C" fn telio_start_named(
     name: *const c_char,
 ) -> telio_result {
     ffi_catch_panic!({
-        let mut dev = ffi_try!(dev.0.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
+        let mut dev = ffi_try!(dev.inner.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
 
-        let cstr = unsafe { CStr::from_ptr(private_key) };
-        let private_key = ffi_try!(cstr.to_str().map_err(|_| TELIO_RES_INVALID_STRING));
-        let private_key = ffi_try!(private_key.parse().map_err(|_| TELIO_RES_INVALID_STRING));
-        let cstr_name = unsafe { CStr::from_ptr(name) };
-        let name = ffi_try!(cstr_name.to_str().map_err(|_| TELIO_RES_INVALID_STRING)).to_owned();
+        let private_key = ffi_try!(char_ptr_to_type::<SecretKey>(private_key));
+        let name = ffi_try!(char_ptr_to_type::<String>(name));
         dev.start(&DeviceConfig {
             private_key,
             adapter: adapter.into(),
@@ -357,10 +396,8 @@ pub extern "C" fn telio_start_with_tun(
     tun: c_int,
 ) -> telio_result {
     ffi_catch_panic!({
-        let mut dev = ffi_try!(dev.0.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
-        let cstr = unsafe { CStr::from_ptr(private_key) };
-        let private_key = ffi_try!(cstr.to_str().map_err(|_| TELIO_RES_INVALID_STRING));
-        let private_key = ffi_try!(private_key.parse().map_err(|_| TELIO_RES_INVALID_STRING));
+        let mut dev = ffi_try!(dev.inner.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
+        let private_key = ffi_try!(char_ptr_to_type::<SecretKey>(private_key));
         dev.start(&DeviceConfig {
             private_key,
             adapter: adapter.into(),
@@ -375,8 +412,9 @@ pub extern "C" fn telio_start_with_tun(
 #[no_mangle]
 /// Stop telio device.
 pub extern "C" fn telio_stop(dev: &telio) -> telio_result {
+    telio_log_info!("telio_stop entry with instance id: {}.", dev.id,);
     ffi_catch_panic!({
-        let mut dev = match dev.0.lock() {
+        let mut dev = match dev.inner.lock() {
             Ok(dev) => dev,
             Err(poisoned) => poisoned.into_inner(),
         };
@@ -388,13 +426,23 @@ pub extern "C" fn telio_stop(dev: &telio) -> telio_result {
 #[no_mangle]
 /// get device luid.
 pub extern "C" fn telio_get_adapter_luid(dev: &telio) -> u64 {
-    match dev.0.lock() {
+    match dev.inner.lock() {
         Ok(mut d) => d.get_adapter_luid(),
         Err(e) => {
             telio_log_error!("telio_get_adapter_luid() failed {:?}", e);
             0
         }
     }
+}
+
+fn char_ptr_to_type<T: std::str::FromStr>(value: *const c_char) -> Result<T, telio_result>
+where
+    <T as std::str::FromStr>::Err: std::fmt::Debug,
+{
+    char_to_str(value)?.parse().map_err(|e| {
+        telio_log_error!("{:?}", e);
+        TELIO_RES_INVALID_STRING
+    })
 }
 
 #[no_mangle]
@@ -406,11 +454,15 @@ pub extern "C" fn telio_get_adapter_luid(dev: &telio) -> u64 {
 /// - `private_key`: Base64 encoded WireGuard private key, must not be NULL.
 ///
 pub extern "C" fn telio_set_private_key(dev: &telio, private_key: *const c_char) -> telio_result {
+    let private_key = ffi_try!(char_ptr_to_type::<SecretKey>(private_key));
+
+    telio_log_info!(
+        "telio_set_private_key entry with instance id: {}. Public key: {:?}",
+        dev.id,
+        private_key.public()
+    );
     ffi_catch_panic!({
-        let dev = ffi_try!(dev.0.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
-        let cstr = unsafe { CStr::from_ptr(private_key) };
-        let private_key = ffi_try!(cstr.to_str().map_err(|_| TELIO_RES_INVALID_STRING));
-        let private_key = ffi_try!(private_key.parse().map_err(|_| TELIO_RES_INVALID_STRING));
+        let dev = ffi_try!(dev.inner.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
         ffi_try!(dev.set_private_key(&private_key));
         TELIO_RES_OK
     })
@@ -418,7 +470,7 @@ pub extern "C" fn telio_set_private_key(dev: &telio, private_key: *const c_char)
 
 #[no_mangle]
 pub extern "C" fn telio_get_private_key(dev: &telio) -> *mut c_char {
-    let dev = match dev.0.lock() {
+    let dev = match dev.inner.lock() {
         Ok(dev) => dev,
         Err(err) => {
             telio_log_error!("telio_get_private_key: dev.get_private_key: {}", err);
@@ -444,7 +496,12 @@ pub extern "C" fn telio_get_private_key(dev: &telio) -> *mut c_char {
 ///
 pub extern "C" fn telio_set_fwmark(dev: &telio, fwmark: c_uint) -> telio_result {
     ffi_catch_panic!({
-        let dev = ffi_try!(dev.0.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
+        telio_log_info!(
+            "telio_set_fwmark entry with instance id: {}. fwmark: {}",
+            dev.id,
+            fwmark
+        );
+        let dev = ffi_try!(dev.inner.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
         ffi_try!(dev.set_fwmark(fwmark));
         TELIO_RES_OK
     })
@@ -462,8 +519,12 @@ pub extern "C" fn telio_notify_network_change(
 ) -> telio_result {
     #![allow(unused_variables)]
 
+    telio_log_info!(
+        "telio_notify_network_change entry with instance id: {}.",
+        dev.id
+    );
     ffi_catch_panic!({
-        let dev = ffi_try!(dev.0.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
+        let dev = ffi_try!(dev.inner.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
         dev.notify_network_change()
             .telio_log_result("telio_notify_network_change")
     })
@@ -477,6 +538,10 @@ pub extern "C" fn telio_connect_to_exit_node(
     allowed_ips: *const c_char,
     endpoint: *const c_char,
 ) -> telio_result {
+    telio_log_info!(
+        "telio_connect_to_exit_node entry with instance id :{}. Public Key: {:?}. Allowed IP: {:?}. Endpoint: {:?}",
+        dev.id, ffi_try!(char_ptr_to_type::<PublicKey>(public_key)), ffi_try!(char_ptr_to_type::<String>(allowed_ips)), ffi_try!(char_ptr_to_type::<SocketAddr>(endpoint))
+    );
     telio_connect_to_exit_node_with_id(dev, null(), public_key, allowed_ips, endpoint)
 }
 
@@ -528,7 +593,7 @@ pub extern "C" fn telio_connect_to_exit_node_with_id(
     endpoint: *const c_char,
 ) -> telio_result {
     ffi_catch_panic!({
-        let dev = ffi_try!(dev.0.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
+        let dev = ffi_try!(dev.inner.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
         let identifier = if !identifier.is_null() {
             let cstr = ffi_try!(unsafe { CStr::from_ptr(identifier) }
                 .to_str()
@@ -539,10 +604,7 @@ pub extern "C" fn telio_connect_to_exit_node_with_id(
         };
 
         let public_key = if !public_key.is_null() {
-            let cstr = ffi_try!(unsafe { CStr::from_ptr(public_key) }
-                .to_str()
-                .map_err(|_| TELIO_RES_INVALID_STRING));
-            ffi_try!(cstr.parse().map_err(|_| TELIO_RES_INVALID_STRING))
+            ffi_try!(char_ptr_to_type::<PublicKey>(public_key))
         } else {
             telio_log_error!("Public Key is NULL");
             return TELIO_RES_ERROR;
@@ -610,12 +672,15 @@ pub extern "C" fn telio_enable_magic_dns(
     dev: &telio,
     forward_servers: *const c_char,
 ) -> telio_result {
+    let servers_str = ffi_try!(char_to_str(forward_servers));
+    let servers: Vec<IpAddr> = ffi_try!(serde_json::from_str(servers_str));
+    telio_log_info!(
+        "telio_enable_magic_dns entry with instance id: {}. DNS Server: {:?}",
+        dev.id,
+        servers
+    );
     ffi_catch_panic!({
-        let dev = ffi_try!(dev.0.lock().map_err(|_| TELIO_RES_BAD_CONFIG));
-        let servers_str = ffi_try!(unsafe { CStr::from_ptr(forward_servers) }
-            .to_str()
-            .map_err(|_| TELIO_RES_INVALID_STRING));
-        let servers: Vec<IpAddr> = ffi_try!(serde_json::from_str(servers_str));
+        let dev = ffi_try!(dev.inner.lock().map_err(|_| TELIO_RES_BAD_CONFIG));
         dev.enable_magic_dns(&servers)
             .telio_log_result("telio_enable_magic_dns")
     })
@@ -624,8 +689,12 @@ pub extern "C" fn telio_enable_magic_dns(
 #[no_mangle]
 /// Disables magic DNS if it was enabled.
 pub extern "C" fn telio_disable_magic_dns(dev: &telio) -> telio_result {
+    telio_log_info!(
+        "telio_disable_magic_dns entry with instance id: {}.",
+        dev.id
+    );
     ffi_catch_panic!({
-        let dev = ffi_try!(dev.0.lock().map_err(|_| TELIO_RES_BAD_CONFIG));
+        let dev = ffi_try!(dev.inner.lock().map_err(|_| TELIO_RES_BAD_CONFIG));
 
         dev.disable_magic_dns()
             .telio_log_result("telio_disable_magic_dns")
@@ -642,13 +711,15 @@ pub extern "C" fn telio_disconnect_from_exit_node(
     dev: &telio,
     public_key: *const c_char,
 ) -> telio_result {
+    telio_log_info!(
+        "telio_disconnect_from_exit_node entry with instance id: {}. Public Key: {:?}",
+        dev.id,
+        public_key
+    );
     ffi_catch_panic!({
-        let dev = ffi_try!(dev.0.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
+        let dev = ffi_try!(dev.inner.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
         let public_key = if !public_key.is_null() {
-            let cstr = ffi_try!(unsafe { CStr::from_ptr(public_key) }
-                .to_str()
-                .map_err(|_| TELIO_RES_INVALID_STRING));
-            ffi_try!(cstr.parse().map_err(|_| TELIO_RES_INVALID_STRING))
+            ffi_try!(char_ptr_to_type::<PublicKey>(public_key))
         } else {
             telio_log_debug!("Public Key is NULL");
             return TELIO_RES_ERROR;
@@ -662,8 +733,12 @@ pub extern "C" fn telio_disconnect_from_exit_node(
 #[no_mangle]
 /// Disconnects from all exit nodes with no parameters required.
 pub extern "C" fn telio_disconnect_from_exit_nodes(dev: &telio) -> telio_result {
+    telio_log_info!(
+        "telio_disconnect_from_exit_nodes entry with instance id: {}.",
+        dev.id
+    );
     ffi_catch_panic!({
-        let dev = ffi_try!(dev.0.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
+        let dev = ffi_try!(dev.inner.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
 
         dev.disconnect_exit_nodes()
             .telio_log_result("telio_disconnect_from_exit_nodes")
@@ -679,11 +754,13 @@ pub extern "C" fn telio_disconnect_from_exit_nodes(dev: &telio) -> telio_result 
 ///
 pub extern "C" fn telio_set_meshnet(dev: &telio, cfg: *const c_char) -> telio_result {
     ffi_catch_panic!({
-        let dev = ffi_try!(dev.0.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
+        let telio_dev = ffi_try!(dev.inner.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
 
         if cfg.is_null() {
             telio_log_debug!("Stopping meshnet due to empty config");
-            dev.set_config(&None).telio_log_result("telio_set_meshnet")
+            telio_dev
+                .set_config(&None)
+                .telio_log_result("telio_set_meshnet")
         } else {
             let cfg_str = ffi_try!(unsafe { CStr::from_ptr(cfg) }
                 .to_str()
@@ -701,7 +778,14 @@ pub extern "C" fn telio_set_meshnet(dev: &telio, cfg: *const c_char) -> telio_re
             for failure in peer_deserialization_failures {
                 telio_log_warn!("Failed to deserialize one of the peers: {}", failure);
             }
-            dev.set_config(&Some(cfg))
+
+            telio_log_info!(
+                "telio_set_meshnet entry with instance id: {}. Meshmap: {:?}",
+                dev.id,
+                &cfg
+            );
+            telio_dev
+                .set_config(&Some(cfg))
                 .telio_log_result("telio_set_meshnet")
         }
     })
@@ -710,8 +794,9 @@ pub extern "C" fn telio_set_meshnet(dev: &telio, cfg: *const c_char) -> telio_re
 #[no_mangle]
 /// Disables the meshnet functionality by closing all the connections.
 pub extern "C" fn telio_set_meshnet_off(dev: &telio) -> telio_result {
+    telio_log_info!("telio_set_meshnet_off entry with instance id: {}.", dev.id);
     ffi_catch_panic!({
-        let dev = ffi_try!(dev.0.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
+        let dev = ffi_try!(dev.inner.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
 
         dev.set_config(&None)
             .telio_log_result("telio_set_meshnet_off")
@@ -763,7 +848,7 @@ pub extern "C" fn telio_get_commit_sha() -> *mut c_char {
 #[no_mangle]
 pub extern "C" fn telio_get_status_map(dev: &telio) -> *mut c_char {
     trace!("acquiring dev lock");
-    let dev = match dev.0.lock() {
+    let dev = match dev.inner.lock() {
         Ok(dev) => dev,
         Err(err) => {
             error!("telio_get_status_map: dev lock: {}", err);
@@ -805,7 +890,7 @@ pub extern "C" fn telio_get_last_error(_dev: &telio) -> *mut c_char {
 /// For testing only.
 pub extern "C" fn __telio_generate_stack_panic(dev: &telio) -> telio_result {
     ffi_catch_panic!({
-        let dev = ffi_try!(dev.0.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
+        let dev = ffi_try!(dev.inner.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
 
         if dev.is_running() {
             panic!("runtime_panic_test_call_stack");
@@ -820,7 +905,7 @@ pub extern "C" fn __telio_generate_stack_panic(dev: &telio) -> telio_result {
 /// For testing only.
 pub extern "C" fn __telio_generate_thread_panic(dev: &telio) -> telio_result {
     ffi_catch_panic!({
-        let dev = ffi_try!(dev.0.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
+        let dev = ffi_try!(dev.inner.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
 
         if dev.is_running() {
             let res = dev._panic();
@@ -1061,7 +1146,10 @@ mod tests {
     fn telio_set_meshnet_rejects_too_long_configs() -> anyhow::Result<()> {
         let features = Features::default();
         let event_cb = Box::new(|_event| {});
-        let telio_dev = telio(Mutex::new(Device::new(features, event_cb, None)?));
+        let telio_dev = telio {
+            inner: Mutex::new(Device::new(features, event_cb, None)?),
+            id: rand::thread_rng().gen::<usize>(),
+        };
 
         let cfg = "a".repeat(MAX_CONFIG_LENGTH);
         assert_eq!(
@@ -1136,10 +1224,32 @@ mod tests {
     fn test_bytes_to_zero_terminated_unmanaged_bytes() {
         let inputs: [(&[u8], &[u8]); 3] = [(&[], &[0]), (&[0], &[0, 0]), (&[1, 2], &[1, 2, 0])];
         for (input, expected_output) in inputs {
-            let output = bytes_to_zero_terminated_unmanaged_bytes(&input);
+            let output = bytes_to_zero_terminated_unmanaged_bytes(input);
             let output =
                 unsafe { Vec::from_raw_parts(output as *mut u8, input.len() + 1, input.len() + 1) };
             assert_eq!(output, expected_output);
         }
+    }
+
+    #[test]
+    fn test_logging_when_telio_dev_empty() -> anyhow::Result<()> {
+        let telio_dev: *mut *mut telio = ptr::null_mut();
+        let res = get_instance_id_from_ptr(telio_dev);
+        assert_eq!(res, None);
+
+        let telio_dev: *mut *mut telio = Box::into_raw(Box::new(ptr::null_mut()));
+        let res = get_instance_id_from_ptr(telio_dev);
+        assert_eq!(res, None);
+
+        let features = Features::default();
+        let event_cb = Box::new(|_event| {});
+        let id = rand::thread_rng().gen::<usize>();
+        let telio_dev: *mut *mut telio = Box::into_raw(Box::new(Box::into_raw(Box::new(telio {
+            inner: Mutex::new(Device::new(features, event_cb, None)?),
+            id,
+        }))));
+        let res = get_instance_id_from_ptr(telio_dev);
+        assert_eq!(res, Some(id));
+        Ok(())
     }
 }

@@ -31,7 +31,15 @@ pub enum telio_result {
 impl std::error::Error for telio_result {}
 impl std::fmt::Display for telio_result {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        match self {
+            TELIO_RES_ALREADY_STARTED => write!(f, "Device is already started"),
+            TELIO_RES_INVALID_KEY => write!(f, "Cannot parse key as base64 string"),
+            TELIO_RES_BAD_CONFIG => write!(f, "Cannot Parse Configuration "),
+            TELIO_RES_LOCK_ERROR => write!(f, "Cannot lock a mutex"),
+            TELIO_RES_INVALID_STRING => write!(f, "Cannot parse a string"),
+            TELIO_RES_ERROR => write!(f, "Unknown error"),
+            TELIO_RES_OK => write!(f, "Operation was successful"),
+        }
     }
 }
 pub use telio_result::*;
@@ -72,7 +80,7 @@ pub type telio_event_fn = unsafe extern "C" fn(*mut c_void, *const c_char);
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 /// Event callback
 pub struct telio_event_cb {
     /// Context to pass to callback.
@@ -87,7 +95,7 @@ pub type telio_logger_fn = unsafe extern "C" fn(*mut c_void, telio_log_level, *c
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 /// Logging callback
 pub struct telio_logger_cb {
     /// Context to pass to callback.

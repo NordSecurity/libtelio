@@ -3,6 +3,7 @@
 * LLT-4662: Update rustix dependency
 * LLT-4667: Fix panic in boringtun
 * LLT-4663: Update zerocopy dependency
+* LLT-4543: Log ffi calls
 
 ### v4.2.1
 ----
