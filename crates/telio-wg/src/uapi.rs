@@ -3,7 +3,7 @@
 use ipnetwork::{IpNetwork, IpNetworkError};
 use serde::{Deserialize, Serialize};
 use telio_crypto::{KeyDecodeError, PublicKey, SecretKey};
-use telio_model::mesh::{LinkState, Node, NodeState};
+use telio_model::mesh::{Node, NodeState};
 use telio_utils::{telio_log_warn, DualTarget};
 use wireguard_uapi::{get, xplatform::set};
 
@@ -228,8 +228,6 @@ pub type PeerState = NodeState;
 pub struct Event {
     /// The state of the Peer
     pub state: PeerState,
-    /// The hint of link state of this Peer
-    pub link_state: Option<LinkState>,
     /// Details regarding the Peer
     pub peer: Peer,
 }
