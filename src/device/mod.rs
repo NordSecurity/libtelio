@@ -51,7 +51,7 @@ use std::{
     io::{self, Error as IoError, ErrorKind},
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use cfg_if::cfg_if;
@@ -434,6 +434,19 @@ impl Device {
         if let Some(rt) = self.rt.take() {
             if let Some(art) = &self.art {
                 let _ = art.block_on(rt.stop());
+                self.flush_events();
+            }
+        }
+    }
+
+    fn flush_events(&self) {
+        if let Some(timeout) = self.features.flush_events_on_stop_timeout_seconds {
+            let start_time = Instant::now();
+            while !self.event.is_empty() {
+                std::thread::sleep(Duration::from_millis(100));
+                if timeout > 0 && start_time.elapsed().as_secs() >= timeout {
+                    break;
+                }
             }
         }
     }
