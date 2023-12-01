@@ -461,6 +461,11 @@ pub mod moose {
         }
     }
 
+    /// Mocked moose function
+    pub fn flush_changes() -> std::result::Result<Result, Error> {
+        Ok(Result::Success)
+    }
+
     /// Mocked moose function.
     pub fn fetch_specific_context(name: &str) -> std::result::Result<String, Error> {
         match super::event_log("fetch_specific_context", Some(vec![name])) {
