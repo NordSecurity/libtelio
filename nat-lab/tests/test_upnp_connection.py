@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 from contextlib import AsyncExitStack
-from helpers import SetupParameters, setup_mesh_nodes
+from helpers import SetupParameters, setup_mesh_nodes, setup_environment
 from telio import AdapterType, PathType, State
 from telio_features import Direct, TelioFeatures
 from utils import testing
@@ -83,3 +83,98 @@ async def test_upnp_route_removed(
             await testing.wait_lengthy(ping.wait_for_next_ping())
         async with Ping(alpha_conn.connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_lengthy(ping.wait_for_next_ping())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "alpha_setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type=AdapterType.BoringTun,
+            ),
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type=AdapterType.LinuxNativeWg,
+            ),
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM,
+                adapter_type=AdapterType.WindowsNativeWg,
+            ),
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM,
+                adapter_type=AdapterType.WireguardGo,
+            ),
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.MAC_VM,
+                adapter_type=AdapterType.BoringTun,
+            ),
+            marks=pytest.mark.mac,
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "beta_setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                adapter_type=AdapterType.BoringTun,
+                features=TelioFeatures(direct=Direct(providers=["upnp"])),
+            )
+        )
+    ],
+)
+async def test_upnp_without_support(
+    alpha_setup_params: SetupParameters, beta_setup_params: SetupParameters
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        env = await exit_stack.enter_async_context(
+            setup_environment(exit_stack, [alpha_setup_params, beta_setup_params])
+        )
+        (alpha_node, beta_node) = env.nodes
+        (alpha_client, beta_client) = env.clients
+        (alpha_conn_mgr, beta_conn_mgr) = env.connections
+
+        await asyncio.gather(
+            alpha_client.wait_for_state_on_any_derp([State.Connected]),
+            beta_client.wait_for_state_on_any_derp([State.Connected]),
+        )
+
+        # Giving time for upnp gateway search to start
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.gather(
+                alpha_client.wait_for_event_peer(
+                    beta_node.public_key,
+                    [State.Connected],
+                    [PathType.Direct],
+                    timeout=10,
+                ),
+                beta_client.wait_for_event_peer(
+                    alpha_node.public_key,
+                    [State.Connected],
+                    [PathType.Direct],
+                    timeout=10,
+                ),
+            )
+
+        async with Ping(
+            beta_conn_mgr.connection, alpha_node.ip_addresses[0]
+        ).run() as ping:
+            await testing.wait_long(ping.wait_for_next_ping())
+        async with Ping(
+            alpha_conn_mgr.connection, beta_node.ip_addresses[0]
+        ).run() as ping:
+            await testing.wait_long(ping.wait_for_next_ping())
