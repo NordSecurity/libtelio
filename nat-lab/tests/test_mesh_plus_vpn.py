@@ -175,7 +175,10 @@ async def test_mesh_plus_vpn_one_peer(
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
             ),
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
+            ],
         ),
         pytest.param(
             SetupParameters(
@@ -291,13 +294,19 @@ async def test_mesh_plus_vpn_both_peers(
             ConnectionTag.WINDOWS_VM,
             AdapterType.WindowsNativeWg,
             "10.0.254.7",
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
+            ],
         ),
         pytest.param(
             ConnectionTag.WINDOWS_VM,
             AdapterType.WireguardGo,
             "10.0.254.7",
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
+            ],
         ),
         pytest.param(
             ConnectionTag.MAC_VM,

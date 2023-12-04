@@ -222,12 +222,18 @@ async def test_mesh_exit_through_peer(
         pytest.param(
             ConnectionTag.WINDOWS_VM,
             telio.AdapterType.WindowsNativeWg,
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
+            ],
         ),
         pytest.param(
             ConnectionTag.WINDOWS_VM,
             telio.AdapterType.WireguardGo,
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
+            ],
         ),
         pytest.param(
             ConnectionTag.MAC_VM, telio.AdapterType.Default, marks=pytest.mark.mac
