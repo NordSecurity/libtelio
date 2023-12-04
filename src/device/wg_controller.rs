@@ -360,6 +360,7 @@ async fn build_requested_peers_list<
         upgrade_sync,
         proxy_endpoints,
         remote_peer_states,
+        features,
     )
     .await?;
     let mut exit_node_exists = false;
@@ -425,10 +426,14 @@ async fn build_requested_peers_list<
         let endpoint = SocketAddr::new(IpAddr::V4(wg_stun_server.ipv4), wg_stun_server.stun_port);
         telio_log_debug!("Configuring wg-stun peer: {}, at {}", public_key, endpoint);
         let persistent_keepalive_interval = requested_state.keepalive_periods.stun;
-        let allowed_ips = vec![
-            IpNetwork::V4("100.64.0.4/32".parse()?),
-            IpNetwork::V6("fd74:656c:696f::4/128".parse()?),
-        ];
+        let allowed_ips = if features.ipv6 {
+            vec![
+                IpNetwork::V4("100.64.0.4/32".parse()?),
+                IpNetwork::V6("fd74:656c:696f::4/128".parse()?),
+            ]
+        } else {
+            vec![IpNetwork::V4("100.64.0.4/32".parse()?)]
+        };
         requested_peers.insert(
             public_key,
             RequestedPeer {
@@ -461,6 +466,7 @@ async fn build_requested_meshnet_peers_list<
     upgrade_sync: Option<&Arc<U>>,
     proxy_endpoints: &EndpointMap,
     remote_peer_states: &PeersStatesMap,
+    features: &Features,
 ) -> Result<BTreeMap<PublicKey, RequestedPeer>> {
     // Retrieve meshnet config. If it is not set, no peers are requested
     let meshnet_config = match &requested_state.meshnet_config {
@@ -490,11 +496,11 @@ async fn build_requested_meshnet_peers_list<
                 .remove(&public_key)
                 .map_or(vec![], |ips| {
                     ips.iter()
-                        .map(|ip| match ip {
-                            IpAddr::V4(_) => IpNetwork::new(*ip, 32),
-                            IpAddr::V6(_) => IpNetwork::new(*ip, 128),
+                        .filter_map(|ip| match ip {
+                            IpAddr::V4(_) => IpNetwork::new(*ip, 32).ok(),
+                            IpAddr::V6(_) if features.ipv6 => IpNetwork::new(*ip, 128).ok(),
+                            IpAddr::V6(_) => None,
                         })
-                        .filter_map(|ip_res| ip_res.ok())
                         .collect()
                 });
             telio_log_debug!(
@@ -1225,7 +1231,7 @@ mod tests {
                     is_test_env: Some(true),
                     derp: None,
                     validate_keys: Default::default(),
-                    ipv6: false,
+                    ipv6: true,
                     nicknames: false,
                     boringtun_reset_connections: Default::default(),
                     flush_events_on_stop_timeout_seconds: None,
