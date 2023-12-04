@@ -22,7 +22,7 @@ use telio_traversal::{
         self, local::LocalInterfacesEndpointProvider, stun::StunEndpointProvider, stun::StunServer,
         upnp::UpnpEndpointProvider, EndpointProvider,
     },
-    last_handshake_time_provider::{LastHandshakeTimeProvider, WireGuardLastHandshakeTimeProvider},
+    last_rx_time_provider::{TimeSinceLastRxProvider, WireGuardTimeSinceLastRxProvider},
     ping_pong_handler::PingPongHandler,
     SessionKeeper, UpgradeRequestChangeEvent, UpgradeSync, WireGuardEndpointCandidateChangeEvent,
 };
@@ -1168,12 +1168,12 @@ impl Runtime {
                     .await;
             }
 
-            let last_handshake_time_provider: Option<Arc<dyn LastHandshakeTimeProvider>> =
+            let last_rx_time_provider: Option<Arc<dyn TimeSinceLastRxProvider>> =
                 if let Some(skip_unresponsive_peers) = &direct.skip_unresponsive_peers {
-                    Some(Arc::new(WireGuardLastHandshakeTimeProvider {
+                    Some(Arc::new(WireGuardTimeSinceLastRxProvider {
                         wg: self.entities.wireguard_interface.clone(),
                         threshold: Duration::from_secs(
-                            skip_unresponsive_peers.no_handshake_threshold_secs,
+                            skip_unresponsive_peers.no_rx_threshold_secs,
                         ),
                     }))
                 } else {
@@ -1191,7 +1191,7 @@ impl Runtime {
                     intercoms: multiplexer.get_channel().await?,
                 },
                 endpoint_providers.clone(),
-                last_handshake_time_provider.clone(),
+                last_rx_time_provider.clone(),
                 Duration::from_secs(2),
                 ping_pong_tracker,
                 Default::default(),
@@ -2738,7 +2738,7 @@ mod tests {
                 providers: Some(providers),
                 endpoint_interval_secs: None,
                 skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
-                    no_handshake_threshold_secs: 42,
+                    no_rx_threshold_secs: 42,
                 }),
             }),
             ..Default::default()

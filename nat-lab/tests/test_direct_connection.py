@@ -6,7 +6,7 @@ from config import DERP_SERVERS
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
 from telio import PathType, State
-from telio_features import TelioFeatures, Direct, SkipUnresponsivePeers
+from telio_features import TelioFeatures, Direct, SkipUnresponsivePeers, Wireguard
 from typing import List, Tuple
 from utils import testing
 from utils.asyncio_util import run_async_context
@@ -34,12 +34,7 @@ def _generate_setup_parameter_pair(
             connection_tag=conn_tag,
             adapter_type=telio.AdapterType.BoringTun,
             features=TelioFeatures(
-                direct=Direct(
-                    providers=endpoint_providers,
-                    skip_unresponsive_peers=SkipUnresponsivePeers(
-                        no_handshake_threshold_secs=10
-                    ),
-                ),
+                direct=Direct(providers=endpoint_providers),
             ),
         )
         for conn_tag, endpoint_providers in cfg
@@ -326,9 +321,6 @@ async def test_direct_working_paths_stun_ipv6() -> None:
             features=TelioFeatures(
                 direct=Direct(
                     providers=["stun"],
-                    skip_unresponsive_peers=SkipUnresponsivePeers(
-                        no_handshake_threshold_secs=10
-                    ),
                 ),
                 ipv6=True,
             ),
@@ -451,6 +443,16 @@ async def test_direct_working_paths_with_skip_unresponsive_peers(
     setup_params: List[SetupParameters], _reflexive_ip: str
 ) -> None:
     async with AsyncExitStack() as exit_stack:
+        # Force shorter unresponsive peer handshake threshold
+        # and adjust wireguard keepalives accordingly too
+        # in order to allow for three packet drops
+        for param in setup_params:
+            assert param.features.direct is not None
+            param.features.direct.skip_unresponsive_peers = SkipUnresponsivePeers(
+                no_rx_threshold_secs=16
+            )
+            param.features.wireguard = Wireguard(proxying=5, direct=5)
+
         env = await setup_mesh_nodes(exit_stack, setup_params)
         api = env.api
         alpha, beta = env.nodes
