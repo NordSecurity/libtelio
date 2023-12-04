@@ -466,6 +466,7 @@ async def test_lana_with_same_meshnet(
 
 @pytest.mark.moose
 @pytest.mark.asyncio
+@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4616")
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
 async def test_lana_with_external_node(
     alpha_ip_stack: IPStack, beta_ip_stack: IPStack
@@ -581,6 +582,7 @@ async def test_lana_with_external_node(
 
 @pytest.mark.moose
 @pytest.mark.asyncio
+@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4616")
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
 async def test_lana_all_external(
     alpha_ip_stack: IPStack, beta_ip_stack: IPStack
@@ -677,6 +679,7 @@ async def test_lana_all_external(
 
 @pytest.mark.moose
 @pytest.mark.asyncio
+@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4616")
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
 async def test_lana_with_vpn_connections(
     alpha_ip_stack: IPStack, beta_ip_stack: IPStack
