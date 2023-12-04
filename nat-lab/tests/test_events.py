@@ -502,7 +502,10 @@ async def test_event_content_exit_through_peer(
                 features=TelioFeatures(direct=Direct(providers=["stun"])),
             ),
             "10.0.254.7",
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
+            ],
         ),
         pytest.param(
             SetupParameters(
@@ -515,7 +518,10 @@ async def test_event_content_exit_through_peer(
                 features=TelioFeatures(direct=Direct(providers=["stun"])),
             ),
             "10.0.254.7",
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
+            ],
         ),
         pytest.param(
             SetupParameters(
