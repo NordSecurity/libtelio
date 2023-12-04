@@ -93,12 +93,14 @@ async def test_upnp_route_removed(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 adapter_type=AdapterType.BoringTun,
+                features=TelioFeatures(direct=Direct(providers=["upnp"])),
             ),
         ),
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 adapter_type=AdapterType.LinuxNativeWg,
+                features=TelioFeatures(direct=Direct(providers=["upnp"])),
             ),
             marks=pytest.mark.linux_native,
         ),
@@ -106,6 +108,7 @@ async def test_upnp_route_removed(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM,
                 adapter_type=AdapterType.WindowsNativeWg,
+                features=TelioFeatures(direct=Direct(providers=["upnp"])),
             ),
             marks=pytest.mark.windows,
         ),
@@ -113,6 +116,7 @@ async def test_upnp_route_removed(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM,
                 adapter_type=AdapterType.WireguardGo,
+                features=TelioFeatures(direct=Direct(providers=["upnp"])),
             ),
             marks=pytest.mark.windows,
         ),
@@ -120,6 +124,7 @@ async def test_upnp_route_removed(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
                 adapter_type=AdapterType.BoringTun,
+                features=TelioFeatures(direct=Direct(providers=["upnp"])),
             ),
             marks=pytest.mark.mac,
         ),

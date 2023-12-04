@@ -5,11 +5,16 @@ use crate::endpoint_providers::{
 use crate::ping_pong_handler::PingPongHandler;
 use async_trait::async_trait;
 use futures::prelude::*;
-use igd::{search_gateway, Gateway, PortMappingProtocol};
+use igd::{
+    aio::{search_gateway, Gateway},
+    PortMappingProtocol,
+};
 use ipnet::Ipv4Net;
 use rand::Rng;
 use rupnp::Error::HttpErrorCode;
+use std::fmt::Debug;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use telio_crypto::PublicKey;
@@ -25,45 +30,55 @@ use tokio::{net::UdpSocket, sync::Mutex};
 
 #[cfg(test)]
 use mockall::automock;
-#[cfg(test)]
-const UPNP_INTERVAL: Duration = Duration::from_millis(100);
 
 const MAX_SUPPORTED_PACKET_SIZE: usize = 1500;
-#[cfg(not(test))]
-const UPNP_INTERVAL: Duration = Duration::from_secs(5);
-const GET_INTERFACE_TIMEOUT: u64 = 2;
+const GET_INTERFACE_TIMEOUT_S: Duration = Duration::from_secs(2);
 
 type Result<T> = std::result::Result<T, Error>;
 
-#[async_trait]
 #[cfg_attr(test, automock)]
-pub trait UpnpEpCommands: Send + Sync + Default + 'static {
-    fn check_endpoint_routes(&self, proxy_port: u16, wg_port: u16) -> Result<bool>;
-    fn add_any_endpoint_routes(
+#[async_trait]
+pub trait UpnpEpCommands: Send + Default + 'static {
+    async fn check_endpoint_routes(&self, proxy_port: u16, wg_port: u16) -> Result<bool>;
+    async fn add_any_endpoint_routes(
         &self,
         ip_addr: Ipv4Addr,
         proxy_port: u16,
         wg_port: u16,
     ) -> Result<(u16, u16)>;
-    fn extend_endpoint_duration(
+    async fn extend_endpoint_duration(
         &self,
         ip_addr: Ipv4Addr,
         proxy_port: PortMapping,
         wg_port: PortMapping,
     ) -> Result<()>;
-    fn delete_endpoint_routes(&self, proxy_port: u16, wg_port: u16) -> Result<()>;
-    fn get_igd_gateway(&mut self) -> Result<()>;
-    fn get_external_ip(&self) -> Result<Ipv4Addr>;
+    async fn delete_endpoint_routes(&self, proxy_port: u16, wg_port: u16) -> Result<()>;
+    async fn get_external_ip(&self) -> Result<Ipv4Addr>;
+    async fn ensure_igd_gateway(&mut self) -> Result<()>;
+    fn has_igd_gateway(&self) -> bool;
+    fn drop_igd_gateway(&mut self);
 }
 
-#[derive(Default, Debug, Clone)]
+type GatewaySearch = Pin<Box<dyn Future<Output = Result<Gateway>> + Send + Sync + 'static>>;
+
+#[derive(Default)]
 pub struct IgdGateway {
+    search: Option<GatewaySearch>,
     gw: Option<Gateway>,
+}
+
+impl Debug for IgdGateway {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("IgdGateway")
+            .field("search", &self.search.is_some())
+            .field("gw", &self.gw)
+            .finish()
+    }
 }
 
 #[async_trait]
 impl UpnpEpCommands for IgdGateway {
-    fn check_endpoint_routes(&self, proxy_port: u16, wg_port: u16) -> Result<bool> {
+    async fn check_endpoint_routes(&self, proxy_port: u16, wg_port: u16) -> Result<bool> {
         let mut i = 0;
         let mut map_ok: (bool, bool) = (false, false);
         let mut extend_timeout: bool = false;
@@ -72,7 +87,7 @@ impl UpnpEpCommands for IgdGateway {
             None => return Err(Error::NoIGDGateway),
         };
 
-        while let Ok(resp) = gw.get_generic_port_mapping_entry(i) {
+        while let Ok(resp) = gw.get_generic_port_mapping_entry(i).await {
             i += 1;
 
             if resp.lease_duration < 10 * 60 {
@@ -94,7 +109,7 @@ impl UpnpEpCommands for IgdGateway {
         ))
     }
 
-    fn extend_endpoint_duration(
+    async fn extend_endpoint_duration(
         &self,
         ip_addr: Ipv4Addr,
         proxy_port: PortMapping,
@@ -110,18 +125,20 @@ impl UpnpEpCommands for IgdGateway {
             SocketAddrV4::new(ip_addr, proxy_port.internal),
             3600,
             "libminiupnp",
-        )?;
+        )
+        .await?;
         gw.add_port(
             PortMappingProtocol::UDP,
             wg_port.external,
             SocketAddrV4::new(ip_addr, wg_port.internal),
             3600,
             "libminiupnp",
-        )?;
+        )
+        .await?;
         Ok(())
     }
 
-    fn add_any_endpoint_routes(
+    async fn add_any_endpoint_routes(
         &self,
         ip_addr: Ipv4Addr,
         proxy_port: u16,
@@ -132,46 +149,73 @@ impl UpnpEpCommands for IgdGateway {
             Some(gw) => gw,
             None => return Err(Error::NoIGDGateway),
         };
-        new_ext_port.0 = gw.add_any_port(
-            PortMappingProtocol::UDP,
-            SocketAddrV4::new(ip_addr, proxy_port),
-            3600,
-            "libminiupnp",
-        )?;
-        new_ext_port.1 = gw.add_any_port(
-            PortMappingProtocol::UDP,
-            SocketAddrV4::new(ip_addr, wg_port),
-            3600,
-            "libminiupnp",
-        )?;
+        new_ext_port.0 = gw
+            .add_any_port(
+                PortMappingProtocol::UDP,
+                SocketAddrV4::new(ip_addr, proxy_port),
+                3600,
+                "libminiupnp",
+            )
+            .await?;
+        new_ext_port.1 = gw
+            .add_any_port(
+                PortMappingProtocol::UDP,
+                SocketAddrV4::new(ip_addr, wg_port),
+                3600,
+                "libminiupnp",
+            )
+            .await?;
         Ok(new_ext_port)
     }
 
-    fn delete_endpoint_routes(&self, proxy_port: u16, wg_port: u16) -> Result<()> {
+    async fn delete_endpoint_routes(&self, proxy_port: u16, wg_port: u16) -> Result<()> {
         let gw = match &self.gw {
             Some(gw) => gw,
             None => return Err(Error::NoIGDGateway),
         };
-        gw.remove_port(PortMappingProtocol::UDP, wg_port)?;
-        gw.remove_port(PortMappingProtocol::UDP, proxy_port)?;
+        gw.remove_port(PortMappingProtocol::UDP, wg_port).await?;
+        gw.remove_port(PortMappingProtocol::UDP, proxy_port).await?;
         Ok(())
     }
 
-    fn get_igd_gateway(&mut self) -> Result<()> {
-        self.gw = Some(search_gateway(Default::default())?);
+    async fn ensure_igd_gateway(&mut self) -> Result<()> {
+        if self.gw.is_some() {
+            return Ok(());
+        }
+
+        if self.search.is_none() {
+            self.search = Some(Box::pin(
+                search_gateway(Default::default()).map_err(|e| e.into()),
+            ));
+        }
+
+        if let Some(search) = &mut self.search {
+            let result = search.await;
+            self.search = None;
+            self.gw = Some(result?);
+        }
+
         Ok(())
     }
 
-    fn get_external_ip(&self) -> Result<Ipv4Addr> {
+    async fn get_external_ip(&self) -> Result<Ipv4Addr> {
         let gw = match &self.gw {
             Some(gw) => gw,
             None => return Err(Error::NoIGDGateway),
         };
 
-        match gw.get_external_ip() {
+        match gw.get_external_ip().await {
             Ok(ip) => Ok(ip),
             Err(_e) => Err(Error::NoIGDGateway),
         }
+    }
+
+    fn has_igd_gateway(&self) -> bool {
+        self.gw.is_some()
+    }
+
+    fn drop_igd_gateway(&mut self) {
+        self.gw = None;
     }
 }
 
@@ -242,6 +286,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
     ) -> Self {
         let udp_socket = Arc::new(udp_socket);
         let rx_buff = vec![0u8; MAX_SUPPORTED_PACKET_SIZE];
+        let initial_upnp_interval = exponential_backoff.get_backoff();
 
         Self {
             task: Task::start(State {
@@ -254,7 +299,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
                 pong_events_tx: None,
                 epc_event_tx: None,
                 exponential_backoff,
-                upnp_interval: PinnedSleep::new(UPNP_INTERVAL, ()),
+                upnp_interval: PinnedSleep::new(initial_upnp_interval, ()),
                 rx_buff,
                 igd_gw,
                 ping_pong_handler,
@@ -289,10 +334,11 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
     pub async fn stop(self) {
         let _ = task_exec!(&self.task, async move |s| {
             if s.endpoint_candidate.is_some() {
-                let _ = s.igd_gw.delete_endpoint_routes(
+                let delete = s.igd_gw.delete_endpoint_routes(
                     s.proxy_port_mapping.external,
                     s.wg_port_mapping.external,
                 );
+                let _ = delete.await;
             };
             Ok(())
         })
@@ -415,7 +461,9 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
 
     async fn check_endpoint_candidate(&mut self) -> Result<()> {
         if self.endpoint_candidate.is_none() {
-            return self.create_endpoint_candidate().await;
+            self.igd_gw.drop_igd_gateway();
+
+            return Err(Error::NoIGDGateway);
         };
 
         match self.is_current_endpoint_valid().await {
@@ -424,11 +472,12 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
                     telio_log_info!(
                         "Upnp lease duration is less than 10 minutes. Extending duration."
                     );
-                    self.igd_gw.extend_endpoint_duration(
+                    let extend = self.igd_gw.extend_endpoint_duration(
                         self.ip_addr,
                         self.proxy_port_mapping,
                         self.wg_port_mapping,
-                    )?;
+                    );
+                    extend.await?;
                 } else {
                     telio_log_info!("The current Upnp endpoint is valid.");
                 }
@@ -441,25 +490,28 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
                     telio_log_info!("Error: {}", e);
 
                     telio_log_info!("Deleting a old Upnp endpoint");
-
-                    let _ = self.igd_gw.delete_endpoint_routes(
+                    let detete = self.igd_gw.delete_endpoint_routes(
                         self.proxy_port_mapping.external,
                         self.wg_port_mapping.external,
                     );
+                    let _ = detete.await;
                 }
 
                 telio_log_info!("Creating a new Upnp endpoint");
-                return self.create_endpoint_candidate().await;
+                self.igd_gw.drop_igd_gateway();
+
+                return Err(Error::NoIGDGateway);
             }
         };
         Ok(())
     }
 
     async fn is_current_endpoint_valid(&mut self) -> Result<bool> {
-        self.igd_gw.check_endpoint_routes(
+        let check = self.igd_gw.check_endpoint_routes(
             self.proxy_port_mapping.internal,
             self.wg_port_mapping.internal,
-        )
+        );
+        check.await
     }
 
     fn create_random_endpoint_ports(&mut self) {
@@ -479,22 +531,26 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
 
         self.wg_port_mapping.internal = self
             .wg
-            .wait_for_listen_port(Duration::from_secs(GET_INTERFACE_TIMEOUT))
+            .wait_for_listen_port(GET_INTERFACE_TIMEOUT_S)
             .await?;
 
-        self.igd_gw.get_igd_gateway()?;
-
-        let ext_ip = self.igd_gw.get_external_ip()?;
+        let ext_ip = {
+            let get = self.igd_gw.get_external_ip();
+            get.await?
+        };
         self.ip_addr = get_my_local_endpoints(ext_ip)?;
 
         (
             self.proxy_port_mapping.external,
             self.wg_port_mapping.external,
-        ) = self.igd_gw.add_any_endpoint_routes(
-            self.ip_addr,
-            self.proxy_port_mapping.internal,
-            self.wg_port_mapping.internal,
-        )?;
+        ) = {
+            let add = self.igd_gw.add_any_endpoint_routes(
+                self.ip_addr,
+                self.proxy_port_mapping.internal,
+                self.wg_port_mapping.internal,
+            );
+            add.await?
+        };
 
         self.endpoint_candidate = Some(EndpointCandidate {
             wg: SocketAddr::new(IpAddr::V4(ext_ip), self.wg_port_mapping.external),
@@ -556,12 +612,22 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
                 let buff = self.rx_buff.clone();
                 let _ = self.handle_ping_rx(&buff[..len], &addr).await;
             }
-            _ = &mut self.upnp_interval => {
-                if self.check_endpoint_candidate().await.is_ok(){
+            result = self.igd_gw.ensure_igd_gateway(), if !self.igd_gw.has_igd_gateway() => {
+                if result.is_ok() {
+                    if self.create_endpoint_candidate().await.is_err() {
+                        self.igd_gw.drop_igd_gateway();
+                    }
+                    self.exponential_backoff.reset();
                     self.upnp_interval =  PinnedSleep::new(self.exponential_backoff.get_backoff(), ());
-                } else {
-                    self.exponential_backoff.next_backoff();
-                };
+                }
+            }
+            _ = &mut self.upnp_interval => {
+                self.upnp_interval =  PinnedSleep::new(self.exponential_backoff.get_backoff(), ());
+
+                match self.check_endpoint_candidate().await {
+                    Ok (_) => self.exponential_backoff.reset(),
+                    Err(_) => self.exponential_backoff.next_backoff(),
+                }
             }
             // Incoming task
             update = update => {
@@ -579,7 +645,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
 #[cfg(test)]
 mod tests {
     use crate::endpoint_providers::upnp::{
-        async_trait, EndpointCandidate, MockUpnpEpCommands, UpnpEndpointProvider, UPNP_INTERVAL,
+        async_trait, EndpointCandidate, MockUpnpEpCommands, UpnpEndpointProvider,
     };
     use crate::endpoint_providers::Error;
     use crate::ping_pong_handler::PingPongHandler;
@@ -625,7 +691,7 @@ mod tests {
 
     lazy_static! {
         static ref SEQUENTIAL_LOCK: Arc<TMutex<bool>> = Arc::new(TMutex::new(true));
-        static ref IGD_IS_AVAILABLE: Arc<Mutex<bool>> = Arc::new(Mutex::new(true));
+        static ref IGD_IS_AVAILABLE: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
         static ref ENDPOINT: Arc<Mutex<EndpointCandidate>> =
             Arc::new(Mutex::new(EndpointCandidate {
                 wg: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)), 1000),
@@ -637,7 +703,7 @@ mod tests {
         if ENDPOINT.lock().wg.port() == proxy && ENDPOINT.lock().udp.port() == wg {
             return Ok(false);
         }
-        return Err(Error::FailedToGetUpnpService);
+        Err(Error::FailedToGetUpnpService)
     }
 
     fn add_any_endpoint(wg: u16, proxy: u16) -> Result<(u16, u16)> {
@@ -654,16 +720,21 @@ mod tests {
         Ok(())
     }
 
-    fn get_igd_gateway() -> Result<()> {
-        if *IGD_IS_AVAILABLE.lock() {
-            return Ok(());
-        } else {
-            return Err(Error::NoIGDGateway);
-        }
+    fn search_igd_gateway() -> Result<()> {
+        *IGD_IS_AVAILABLE.lock() = true;
+        Ok(())
     }
 
     fn get_external_ip() -> Result<Ipv4Addr> {
         Ok(Ipv4Addr::new(0, 0, 0, 0))
+    }
+
+    fn has_igd_gateway() -> bool {
+        *IGD_IS_AVAILABLE.lock()
+    }
+
+    fn drop_igd_gateway() {
+        *IGD_IS_AVAILABLE.lock() = false;
     }
 
     pub async fn prepare_test_setup(
@@ -689,7 +760,7 @@ mod tests {
         let mut wg = MockWg::default();
         let wg_port = 12345;
         let wg_peers = Vec::<(PublicKey, Peer)>::new();
-        let backoff_array = [4000, 12000, 44444, 7654, 10000, 765432];
+        let backoff_array = [100, 200, 400, 800, 1600, 3200];
         wg.expect_get_interface().returning(move || {
             Ok(Interface {
                 listen_port: Some(wg_port),
@@ -698,19 +769,20 @@ mod tests {
             })
         });
         wg.expect_wait_for_listen_port()
-            .returning(move |_| Ok(wg_port.clone()));
+            .returning(move |_| Ok(wg_port));
 
         let mut mock = MockUpnpEpCommands::new();
         mock.expect_add_any_endpoint_routes()
-            .returning(move |_, proxy_port, wg_port| add_any_endpoint(proxy_port, wg_port));
+            .returning(move |_, wg_port, proxy_port| add_any_endpoint(wg_port, proxy_port));
         mock.expect_delete_endpoint_routes()
             .returning(move |_, _| delete_endpoint_routes());
-        mock.expect_get_igd_gateway()
-            .returning(move || get_igd_gateway());
-        mock.expect_get_external_ip()
-            .returning(move || get_external_ip());
+        mock.expect_has_igd_gateway().returning(has_igd_gateway);
+        mock.expect_drop_igd_gateway().returning(drop_igd_gateway);
+        mock.expect_ensure_igd_gateway()
+            .returning(search_igd_gateway);
+        mock.expect_get_external_ip().returning(get_external_ip);
         mock.expect_check_endpoint_routes()
-            .returning(move |proxy_port, wg_port| check_endpoint_route(proxy_port, wg_port));
+            .returning(check_endpoint_route);
 
         UpnpEndpointProvider::start_with(
             udp_socket,
@@ -740,6 +812,9 @@ mod tests {
     async fn create_upnp_endpoint() {
         let _quard = SEQUENTIAL_LOCK.lock().await;
         let upnp = prepare_test_setup().await;
+
+        tokio::time::sleep(Duration::from_millis(100 + 20)).await;
+
         let epc = upnp.get_endpoint_candidate().await;
         let sock = upnp.get_internal_socket().await;
 
@@ -751,7 +826,7 @@ mod tests {
     async fn check_igd_function_execution() {
         let _quard = SEQUENTIAL_LOCK.lock().await;
         let upnp = prepare_test_setup().await;
-        tokio::time::sleep(UPNP_INTERVAL + Duration::from_millis(20)).await;
+        tokio::time::sleep(Duration::from_millis(100 + 20)).await;
 
         // Upnp will change the static port to a random port
         assert!(ENDPOINT.lock().wg.port() != 1000);
@@ -764,15 +839,16 @@ mod tests {
     #[tokio::test]
     async fn test_no_igd_on_router() {
         let _quard = SEQUENTIAL_LOCK.lock().await;
-        *IGD_IS_AVAILABLE.lock() = false;
+        // Avoid initial search
+        *IGD_IS_AVAILABLE.lock() = true;
         let _upnp = prepare_test_setup().await;
-        tokio::time::sleep(UPNP_INTERVAL + Duration::from_millis(20)).await;
+        tokio::time::sleep(Duration::from_millis(20)).await;
 
         // When IGD is off the port should be unchanged
         assert!(ENDPOINT.lock().wg.port() == 1000);
 
-        *IGD_IS_AVAILABLE.lock() = true;
-        tokio::time::sleep(UPNP_INTERVAL + Duration::from_millis(20)).await;
+        *IGD_IS_AVAILABLE.lock() = false;
+        tokio::time::sleep(Duration::from_millis(100 + 20)).await;
         assert!(ENDPOINT.lock().wg.port() != 1000);
     }
 
@@ -780,17 +856,18 @@ mod tests {
     async fn test_upnp_route_corruption_on_router() {
         let _quard = SEQUENTIAL_LOCK.lock().await;
         let _upnp = prepare_test_setup().await;
-        tokio::time::sleep(UPNP_INTERVAL + Duration::from_millis(20)).await;
+        tokio::time::sleep(Duration::from_millis(100 + 20)).await;
 
-        // // Upnp will change the static port to a random port
+        // Upnp will change the static port to a random port
         assert!(ENDPOINT.lock().wg.port() != 1000);
 
         // Save current route port and corrupt it
         let old_port = ENDPOINT.lock().wg.port();
-        ENDPOINT.lock().wg.set_port(1000);
+        ENDPOINT.lock().wg.set_port(10123);
+        assert!(ENDPOINT.lock().wg.port() == 10123);
 
-        // Wait for upnp to detect that the route is corrupted and create a new one
-        tokio::time::sleep(UPNP_INTERVAL + Duration::from_millis(20)).await;
-        assert!(ENDPOINT.lock().wg.port() != old_port);
+        // Wait Upnp to invalidate corrupted port
+        tokio::time::sleep(Duration::from_millis(200 + 20)).await;
+        assert!(ENDPOINT.lock().wg.port() == old_port);
     }
 }
