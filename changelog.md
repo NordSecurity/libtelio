@@ -1,45 +1,31 @@
 ### UNRELEASED
 ---
-* LLT-3777: Apply rebinding logic to all Apple platforms
-* LLT-4002: Review log-levels of spammy log messages
-* LLT-3990: Add initial heartbeat interval to feature config
 * LLT-4008: Add support for AAAA records in telio-dns
 * LLT-4012: Fix firewall being stuck on LAST_ACK after FIN
 * LLT-4023: Add validation that meshnet and device keys match
 * LLT-4056: Add git commit requirements
 * LLT-3948: Add IPv6 functionality and fallback to session_keeper module
 * LLT-3629: Add IPv6 support to nat-lab
-* LLT-4119: Fix multiple bugs in telio-firewall. Mainly whitelist vpn server
-* LLT-4166: Bump tokio-rustls version
 * LLT-3913: Deduplicate IPs of external wireguard peers
 * LLT-3869: Turn off relayed traffic to offline peers
 * LLT-3775: Add test for lana validators
 * LLT-4050: Add support for IPv6 packet handling in telio-dns
 * LLT-3875: Don't reconnect to Derp when Multiplexer channel is closed.
-* LLT-4204: Add `meshnet_enabled` field
 * LLT-4128: Add integration tests for IPv6 MagicDNS service
 * LLT-3316: Improve usage of peer-reflexive endpoints
 * LLT-4246: Add self nordname as well as self IP address to the DNS records
-* LLT-4179: Fix issue where first WG-STUN request would fail due to missing WG-STUN peer
-* LLT-4233: Add moose init callback validation
 * LLT-4136: Migrate Natlab VMs to use libvirt
-* LLT-4266: Add exit node clearing when disabling meshnet
 * LLT-4159: Clarify purpose of hardcoded secrets in repo
 * LLT-3451: Use workspace dependencies
-* LLT-4306: Prevent infinite loop in STUN handler on socket error
 * LLT-3628: Enable IPv6 and add tests for it (unit and nat-lab).
 * LLT-4042: IPv6 firewall nat-lab tests.
-* LLT-3914: Add apple tvOS support
 * LLT-4013: Add conntrack rules for icmp
 * LLT-4152: Suspend SessionKeeper and CrossPingCheck for unresponsive peers
-* LLT-4360: Bump rust version to 1.72
 * LLT-4286: Add icmp error packet handling to firewall
-* LLT-4432: Use forked system-configuration crate to prevent iOS linking errors
 * LLT-3951: IPv6 analytics.
 * LLT-4409: Wait for listen port only if meshnet is enabled
 * LLT-4375: Add meshmap config support for custom peer names
 * LLT-4376: Add magicdns support for two dns bindings
-* LLT-4515: Add nordvpn app version to moose context
 * LLT-3923: Change DERP and STUN identifiers
 * LLT-4202: Do not answer DNS request if forward lookup fails
 * LLT-4427: Fix issue with malformed disconnect event
@@ -49,6 +35,61 @@
 * LLT-4502: Implement ICMP, UDP and TCP conntrack tracking for each peer separately
 * LLT-4508: Fetch windows dependencies from local gitlab registry
 * LLT-4552: Add way to flush events when stopping
+
+<br>
+
+### v4.1.3
+---
+* LLT-4515: Add nordvpn app version to moose context
+
+<br>
+
+### v4.1.2
+---
+* LLT-4432: Use forked system-configuration crate to prevent iOS linking errors
+* LLT-4433: Bump moose version to v0.8.2
+
+<br>
+
+### v4.1.1
+---
+* LLT-3777: Apply rebinding logic to all Apple platforms
+
+<br>
+
+### v4.1.0
+---
+* LLT-3914: Add apple tvOS support
+* LLT-4360: Bump rust version to 1.72
+
+<br>
+
+### v4.0.9
+---
+* LLT-4179: Fix issue where first WG-STUN request would fail due to missing WG-STUN peer
+* LLT-4233: Add moose init callback validation
+* LLT-4266: Add exit node clearing when disabling meshnet
+* LLT-4306: Prevent infinite loop in STUN handler on socket error
+
+<br>
+
+### v4.0.8
+---
+* LLT-3990: Add initial heartbeat interval to feature config
+* LLT-4166: Bump tokio-rustls version
+* LLT-4204: Add `meshnet_enabled` field
+
+<br>
+
+### v4.0.7
+---
+* LLT-4119: Fix multiple bugs in telio-firewall. Mainly whitelist vpn server
+* LLT-4002: Review log-levels of spammy log messages
+
+<br>
+
+### v4.0.6
+---
 
 <br>
 
