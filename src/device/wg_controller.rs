@@ -1228,6 +1228,7 @@ mod tests {
                     ipv6: false,
                     nicknames: false,
                     boringtun_reset_connections: Default::default(),
+                    flush_events_on_stop_timeout_seconds: None,
                 },
             }
         }

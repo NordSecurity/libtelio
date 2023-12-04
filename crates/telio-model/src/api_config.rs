@@ -302,6 +302,8 @@ pub struct Features {
     /// Flag to turn on connection reset upon VPN server change for boringtun adapter
     #[serde(default)]
     pub boringtun_reset_connections: FeatureBoringtunResetConns,
+    /// If and for how long to flush events when stopping telio. Setting to Some(0) means waiting until all events have been flushed, regardless of how long it takes
+    pub flush_events_on_stop_timeout_seconds: Option<u64>,
 }
 
 impl FeaturePaths {
@@ -453,6 +455,7 @@ mod tests {
         ipv6: true,
         nicknames: true,
         boringtun_reset_connections: FeatureBoringtunResetConns(true),
+        flush_events_on_stop_timeout_seconds: None,
     });
 
     static EXPECTED_FEATURES_WITHOUT_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
@@ -494,6 +497,7 @@ mod tests {
         ipv6: false,
         nicknames: false,
         boringtun_reset_connections: FeatureBoringtunResetConns(false),
+        flush_events_on_stop_timeout_seconds: None,
     });
 
     #[test]
@@ -664,6 +668,7 @@ mod tests {
             ipv6: false,
             nicknames: false,
             boringtun_reset_connections: Default::default(),
+            flush_events_on_stop_timeout_seconds: None,
         };
 
         let empty_qos_features = Features {
@@ -689,6 +694,7 @@ mod tests {
             ipv6: false,
             nicknames: false,
             boringtun_reset_connections: Default::default(),
+            flush_events_on_stop_timeout_seconds: None,
         };
 
         let no_qos_features = Features {
@@ -709,6 +715,7 @@ mod tests {
             ipv6: false,
             nicknames: false,
             boringtun_reset_connections: Default::default(),
+            flush_events_on_stop_timeout_seconds: None,
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -748,6 +755,7 @@ mod tests {
             ipv6: false,
             nicknames: false,
             boringtun_reset_connections: Default::default(),
+            flush_events_on_stop_timeout_seconds: None,
         };
 
         let empty_features = Features {
@@ -764,6 +772,7 @@ mod tests {
             ipv6: false,
             nicknames: false,
             boringtun_reset_connections: Default::default(),
+            flush_events_on_stop_timeout_seconds: None,
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -804,6 +813,7 @@ mod tests {
             ipv6: false,
             nicknames: false,
             boringtun_reset_connections: Default::default(),
+            flush_events_on_stop_timeout_seconds: None,
         };
 
         assert_eq!(Features::default(), expected_defaults);
