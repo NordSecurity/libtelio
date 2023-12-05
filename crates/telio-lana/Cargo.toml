@@ -10,7 +10,7 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-tracing.workspace = true
+log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

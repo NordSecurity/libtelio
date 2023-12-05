@@ -12,7 +12,7 @@ socket2 = "0.5"
 boringtun.workspace = true
 futures.workspace = true
 libc.workspace = true
-tracing.workspace = true
+log.workspace = true
 parking_lot.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["full"] }

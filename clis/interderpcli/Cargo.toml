@@ -16,7 +16,7 @@ crypto_box.workspace = true
 env_logger.workspace = true
 futures.workspace = true
 itertools.workspace = true
-tracing.workspace = true
+log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["io-util", "net", "sync", "macros", "rt-multi-thread", "io-std", "time"] }
