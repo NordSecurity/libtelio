@@ -2,6 +2,7 @@
 
 mod ffi;
 pub use ffi::types as ffi_types;
+pub use ffi::TelioTracingSubscriber;
 
 /// cbindgen:ignore
 pub mod device;

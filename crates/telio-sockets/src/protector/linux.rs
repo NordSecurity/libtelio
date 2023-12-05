@@ -44,7 +44,6 @@ impl Protector for NativeProtector {
 }
 
 fn set_fwmark(fd: i32, fwmark: u32) -> io::Result<()> {
-    let fwmark = fwmark;
     let fwmark_ptr = &fwmark as *const u32 as *const libc::c_void;
 
     let res = unsafe { libc::setsockopt(fd, libc::SOL_SOCKET, libc::SO_MARK, fwmark_ptr, 4_u32) };

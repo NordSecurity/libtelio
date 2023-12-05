@@ -19,7 +19,7 @@ x25519-dalek.workspace = true
 ipnetwork.workspace = true
 lazy_static.workspace = true
 libc.workspace = true
-log.workspace = true
+tracing.workspace = true
 mockall = { workspace = true, optional = true }
 pnet_packet.workspace = true
 tokio = { workspace = true, features = ["rt", "net", "sync", "macros"] }
