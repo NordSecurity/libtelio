@@ -64,6 +64,7 @@ slog-term = "2.8"
 mockall.workspace = true
 ntest.workspace = true
 pretty_assertions.workspace = true
+rstest.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 
 telio-dns = { workspace = true, features = ["mockall"] }

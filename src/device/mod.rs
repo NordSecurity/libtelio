@@ -1845,6 +1845,7 @@ fn set_tunnel_interface(socket_pool: &Arc<SocketPool>, config: &DeviceConfig) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::*;
     use std::net::Ipv6Addr;
     use telio_model::api_config::FeatureDirect;
     use telio_model::config::{Peer, PeerBase};
@@ -2669,5 +2670,84 @@ mod tests {
 
         assert!(rt.set_private_key(&pk).await.is_ok());
         assert!(rt.set_config(&None).await.is_ok());
+    }
+
+    #[cfg(not(windows))]
+    #[rstest]
+    #[case(true)]
+    #[case(false)]
+    #[tokio::test(start_paused = true)]
+    async fn test_ipv6_feature(#[case] ipv6: bool) {
+        let (sender, _receiver) = tokio::sync::broadcast::channel(1);
+
+        let mut features = Features::default();
+        features.ipv6 = ipv6;
+        let private_key = SecretKey::gen();
+        let mut rt = Runtime::start(
+            sender,
+            &DeviceConfig {
+                private_key,
+                ..Default::default()
+            },
+            features,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let peer_base = PeerBase {
+            identifier: "identifier".to_owned(),
+            public_key: private_key.public(),
+            hostname: "hostname".to_owned(),
+            ip_addresses: Some(vec![
+                IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+                IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0xc00a, 0x2ff)),
+            ]),
+            nickname: Some("nickname".to_owned()),
+        };
+        let config = Config {
+            this: peer_base.clone(),
+            peers: Some(vec![Peer {
+                base: peer_base.clone(),
+                ..Default::default()
+            }]),
+            derp_servers: None,
+            dns: None,
+        };
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        rt.entities
+            .wireguard_interface
+            .set_listen_port(1234)
+            .await
+            .unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+
+        assert!(rt.set_config(&Some(config)).await.is_ok());
+
+        let has_ipv6_address = rt
+            .entities
+            .wireguard_interface
+            .get_interface()
+            .await
+            .unwrap()
+            .peers
+            .values()
+            .any(|p| {
+                p.allowed_ips.iter().any(|ip| match ip {
+                    ipnetwork::IpNetwork::V4(_) => false,
+                    ipnetwork::IpNetwork::V6(_) => true,
+                })
+            });
+
+        assert_eq!(ipv6, has_ipv6_address);
     }
 }
