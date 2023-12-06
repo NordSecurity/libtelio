@@ -1,4 +1,5 @@
-### UNRELEASED
+### v4.2.0
+### **Space-cakes**
 ---
 * LLT-3777: Apply rebinding logic to all Apple platforms
 * LLT-4002: Review log-levels of spammy log messages
