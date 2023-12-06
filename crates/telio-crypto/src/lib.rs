@@ -81,7 +81,8 @@ impl SecretKey {
         Self::gen_with(&mut rand::rngs::StdRng::from_entropy())
     }
 
-    pub(crate) fn gen_with(rng: &mut (impl RngCore + CryptoRng)) -> Self {
+    /// Generates a new random SecretKey with provided RNG
+    pub fn gen_with(rng: &mut (impl RngCore + CryptoRng)) -> Self {
         let mut key = SecretKey([0u8; KEY_SIZE]);
         rng.fill_bytes(&mut key.0);
         // Key clamping
