@@ -10,6 +10,7 @@ use crypto_box::{
     aead::{Aead, AeadCore},
     PublicKey as BoxPublicKey, SalsaBox,
 };
+use log::{log_enabled, Level::Trace};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use std::{
     convert::TryFrom,
@@ -20,7 +21,6 @@ use std::{
 };
 use telio_crypto::{PublicKey, SecretKey, KEY_SIZE};
 use telio_utils::{telio_log_debug, telio_log_trace};
-use tracing::{enabled, Level};
 
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
@@ -165,7 +165,7 @@ pub async fn start_read<R: AsyncRead + Unpin>(
                 let public_key =
                     <PublicKey as TryFrom<&[u8]>>::try_from(data.drain(0..KEY_SIZE).as_slice())?;
 
-                if enabled!(Level::TRACE) {
+                if log_enabled!(Trace) {
                     // Glance at first byte, which describes the destination
                     let chan = FrameChannel::try_from(
                         *data.first().unwrap_or(&(FrameChannel::Unknown as u8)),
@@ -215,7 +215,7 @@ pub async fn start_write<W: AsyncWrite + Unpin>(
                     buf.write_all(public_key.as_ref()).await?;
                     buf.write_all(&data).await?;
 
-                    if enabled!(Level::TRACE) {
+                    if log_enabled!(Trace) {
                         // Glance at first byte, which describes the destination
                         let chan =
                             FrameChannel::try_from(*data.first().unwrap_or(&(FrameChannel::Unknown as u8)));

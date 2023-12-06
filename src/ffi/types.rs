@@ -1,7 +1,7 @@
 use libc::c_char;
+use log::Level;
 use telio_crypto::KeyDecodeError;
 use telio_utils::map_enum;
-use tracing::Level;
 
 use std::ffi::c_void;
 
@@ -216,21 +216,21 @@ map_enum! {
 // 2 levels
 map_enum! {
     Level -> telio_log_level,
-    ERROR = TELIO_LOG_ERROR,
-    WARN = TELIO_LOG_WARNING,
-    INFO = TELIO_LOG_INFO,
-    DEBUG = TELIO_LOG_DEBUG,
-    TRACE = TELIO_LOG_TRACE,
+    Error = TELIO_LOG_ERROR,
+    Warn = TELIO_LOG_WARNING,
+    Info = TELIO_LOG_INFO,
+    Debug = TELIO_LOG_DEBUG,
+    Trace = TELIO_LOG_TRACE,
 }
 
 map_enum! {
     telio_log_level -> Level,
-    TELIO_LOG_CRITICAL = ERROR,
-    TELIO_LOG_ERROR = ERROR,
-    TELIO_LOG_WARNING = WARN,
-    TELIO_LOG_INFO = INFO,
-    TELIO_LOG_DEBUG = DEBUG,
-    TELIO_LOG_TRACE = TRACE,
+    TELIO_LOG_CRITICAL = Error,
+    TELIO_LOG_ERROR = Error,
+    TELIO_LOG_WARNING = Warn,
+    TELIO_LOG_INFO = Info,
+    TELIO_LOG_DEBUG = Debug,
+    TELIO_LOG_TRACE = Trace,
 }
 
 unsafe impl Sync for telio_event_cb {}

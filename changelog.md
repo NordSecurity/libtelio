@@ -49,8 +49,6 @@
 * LLT-4502: Implement ICMP, UDP and TCP conntrack tracking for each peer separately
 * LLT-4508: Fetch windows dependencies from local gitlab registry
 * LLT-4552: Add way to flush events when stopping
-* LLT-4545: Add no-link detection mechanism
-* LLT-4225: Migrate Telio to use the tracing crate instead of log crate
 
 <br>
 

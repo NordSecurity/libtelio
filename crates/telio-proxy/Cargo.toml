@@ -10,7 +10,7 @@ publish = false
 async-trait.workspace = true
 crypto_box.workspace = true
 futures.workspace = true
-tracing.workspace = true
+log.workspace = true
 mockall = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["net", "sync"] }

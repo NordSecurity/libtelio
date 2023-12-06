@@ -1,6 +1,7 @@
 //! Telio firewall component used to track open connections
 //! with other devices§
 
+use log::error;
 use pnet_packet::{
     icmp::{
         destination_unreachable::IcmpCodes, IcmpPacket, IcmpType, IcmpTypes, MutableIcmpPacket,
@@ -25,7 +26,6 @@ use telio_utils::{
     lru_cache::{Entry, LruCache},
     telio_log_error,
 };
-use tracing::error;
 
 use telio_crypto::PublicKey;
 use telio_utils::{telio_log_debug, telio_log_trace, telio_log_warn};
