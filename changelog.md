@@ -57,6 +57,7 @@
 * LLT-4552: Add way to flush events when stopping
 * LLT-4583: Don't add IPv6 addresses to wireguard when IPv6 feature is disabled
 * LLT-4613: Fix boringtun performs spurious rekeying
+* LLT-1113: Add no-link detection mechanism
 
 <br>
 

@@ -6,7 +6,7 @@ use std::{
     collections::HashMap,
     net::{Ipv4Addr, SocketAddr},
 };
-use telio_model::mesh::ExitNode;
+use telio_model::{api_config::FeatureNoLinkDetection, mesh::ExitNode};
 use telio_sockets::{NativeProtector, SocketPool};
 use telio_utils::{
     dual_target, telio_err_with_log, telio_log_debug, telio_log_trace, telio_log_warn,
@@ -16,6 +16,7 @@ use tokio::time::{self, sleep, Instant, Interval};
 use wireguard_uapi::xplatform::set;
 
 use telio_crypto::{PublicKey, SecretKey};
+use telio_model::{config, mesh::LinkState};
 use telio_task::{
     io::chan::{Rx, Tx},
     io::mc_chan,
@@ -29,6 +30,11 @@ use crate::{
 };
 
 use std::{collections::HashSet, future::Future, io, sync::Arc, time::Duration};
+
+/// Default wireguard keepalive duration
+const WG_KEEPALIVE: Duration = Duration::from_secs(10);
+/// Default configurable rtt value (15 sec)
+const DEFAULT_CONFIGURABLE_RTT: Duration = Duration::from_secs(15);
 
 /// WireGuard adapter interface
 #[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
@@ -102,6 +108,57 @@ pub struct Io {
     pub analytics_tx: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
 }
 
+/// No link detection mechanism config
+#[derive(Clone)]
+pub enum NoLinkDetection {
+    /// No link detection mechanism is disabled
+    Disabled,
+    /// No link detection mechanism is enabled
+    /// Which means that events with link_state will be emitted
+    Enabled {
+        /// Configurable rtt
+        rtt: Duration,
+    },
+}
+
+impl From<Option<FeatureNoLinkDetection>> for NoLinkDetection {
+    fn from(value: Option<FeatureNoLinkDetection>) -> Self {
+        match value {
+            None => NoLinkDetection::Disabled,
+            Some(FeatureNoLinkDetection { rtt_seconds: None }) => NoLinkDetection::Enabled {
+                rtt: DEFAULT_CONFIGURABLE_RTT,
+            },
+            Some(FeatureNoLinkDetection {
+                rtt_seconds: Some(rtt),
+            }) => NoLinkDetection::Enabled {
+                rtt: Duration::from_secs(rtt),
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct NoLinkDetectionInfo {
+    last_tx_timestamp: Instant,
+    last_rx_timestamp: Instant,
+    last_tx_bytes: u64,
+    last_rx_bytes: u64,
+    last_link_state: LinkState,
+}
+
+impl Default for NoLinkDetectionInfo {
+    fn default() -> Self {
+        let now = Instant::now();
+        NoLinkDetectionInfo {
+            last_tx_timestamp: now,
+            last_rx_timestamp: now,
+            last_tx_bytes: 0,
+            last_rx_bytes: 0,
+            last_link_state: LinkState::Down,
+        }
+    }
+}
+
 struct State {
     #[cfg(unix)]
     cfg: Config,
@@ -109,7 +166,6 @@ struct State {
     interval: Interval,
     interface: Interface,
     event: Tx<Box<Event>>,
-    last_rx_timestamp: HashMap<PublicKey, (Instant, u64)>,
     last_endpoint_change: HashMap<PublicKey, Instant>,
     analytics_tx: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
 
@@ -117,6 +173,11 @@ struct State {
     // We won't be notified of any errors, but a periodic call to get_config_uapi() will return a Win32 error code != 0.
     uapi_failed_last_call: bool,
     uapi_fail_counter: i32,
+
+    // No link detection mechanism config
+    no_link_detection: NoLinkDetection,
+    // Information used for no-link detection mechanism
+    no_link_detection_info: HashMap<PublicKey, NoLinkDetectionInfo>,
 }
 
 const POLL_MILLIS: u64 = 1000;
@@ -154,7 +215,7 @@ impl DynamicWg {
     /// use telio_firewall::firewall::{StatefullFirewall, Firewall};
     /// use telio_sockets::{native::NativeSocket, Protector, SocketPool, Protect};
     /// use telio_task::io::Chan;
-    /// pub use telio_wg::{AdapterType, DynamicWg, Tun, Io, Config};
+    /// pub use telio_wg::{AdapterType, DynamicWg, NoLinkDetection, Tun, Io, Config};
     /// use tokio::runtime::Runtime;
     /// use mockall::mock;
     ///
@@ -202,21 +263,27 @@ impl DynamicWg {
     ///                 Some(Arc::new(firewall_filter_outbound_packets)),
     ///             firewall_reset_connections: None,
     ///         },
+    ///         NoLinkDetection::Disabled,
     ///     );
     /// }
     /// ```
-    pub fn start(io: Io, cfg: Config) -> Result<Self, Error>
+    pub fn start(io: Io, cfg: Config, no_link_detection: NoLinkDetection) -> Result<Self, Error>
     where
         Self: Sized,
     {
         let adapter = Self::start_adapter(cfg.try_clone()?)?;
         #[cfg(unix)]
-        return Ok(Self::start_with(io, adapter, cfg));
+        return Ok(Self::start_with(io, adapter, no_link_detection, cfg));
         #[cfg(windows)]
-        return Ok(Self::start_with(io, adapter));
+        return Ok(Self::start_with(io, adapter, no_link_detection));
     }
 
-    fn start_with(io: Io, adapter: Box<dyn Adapter>, #[cfg(unix)] cfg: Config) -> Self {
+    fn start_with(
+        io: Io,
+        adapter: Box<dyn Adapter>,
+        no_link_detection: NoLinkDetection,
+        #[cfg(unix)] cfg: Config,
+    ) -> Self {
         let interval = time::interval(Duration::from_millis(POLL_MILLIS));
 
         Self {
@@ -227,11 +294,12 @@ impl DynamicWg {
                 interval,
                 interface: Default::default(),
                 event: io.events,
-                last_rx_timestamp: Default::default(),
                 last_endpoint_change: Default::default(),
                 analytics_tx: io.analytics_tx,
                 uapi_failed_last_call: false,
                 uapi_fail_counter: 0,
+                no_link_detection,
+                no_link_detection_info: Default::default(),
             }),
         }
     }
@@ -299,7 +367,7 @@ impl WireGuard for DynamicWg {
         Ok(task_exec!(&self.task, async move |s| {
             let mut to = s.interface.clone();
             to.private_key = Some(key);
-            s.update(&to, true).await;
+            let _ = s.update(&to, true).await;
             Ok(())
         })
         .await?)
@@ -309,7 +377,7 @@ impl WireGuard for DynamicWg {
         Ok(task_exec!(&self.task, async move |s| {
             let mut to = s.interface.clone();
             to.fwmark = fwmark;
-            s.update(&to, true).await;
+            let _ = s.update(&to, true).await;
             Ok(())
         })
         .await?)
@@ -350,7 +418,7 @@ impl WireGuard for DynamicWg {
             }
 
             to.peers.insert(new_peer.public_key, new_peer);
-            s.update(&to, true).await;
+            let _ = s.update(&to, true).await;
             Ok(())
         })
         .await?)
@@ -360,7 +428,7 @@ impl WireGuard for DynamicWg {
         Ok(task_exec!(&self.task, async move |s| {
             let mut to = s.interface.clone();
             to.peers.remove(&key);
-            s.update(&to, true).await;
+            let _ = s.update(&to, true).await;
             Ok(())
         })
         .await?)
@@ -501,57 +569,99 @@ impl State {
     }
 
     fn time_since_last_rx(&self, public_key: PublicKey) -> Option<Duration> {
-        self.last_rx_timestamp
+        self.no_link_detection_info
             .get(&public_key)
-            .map(|v| Instant::now() - v.0)
+            .map(|p| p.last_rx_timestamp.elapsed())
+    }
+
+    async fn send_event(
+        &self,
+        state: PeerState,
+        link_state: Option<LinkState>,
+        peer: Peer,
+    ) -> Result<(), Error> {
+        // If the feature is disabled, the link_state field must be None
+        let link_state = if matches!(self.no_link_detection, NoLinkDetection::Disabled) {
+            None
+        } else if state != PeerState::Connected {
+            // If the peer is not connected, the link state must always be down
+            Some(LinkState::Down)
+        } else {
+            link_state
+        };
+
+        self.event
+            .send(Box::new(Event {
+                state,
+                link_state,
+                peer,
+            }))
+            .await
+            .map_err(|_| Error::InternalError("Failed to send node event"))
     }
 
     #[allow(mpsc_blocking_send)]
     async fn update_send_notification_events(
-        &self,
+        &mut self,
         to: &uapi::Interface,
         diff_keys: &DiffKeys,
-    ) -> bool {
+    ) -> Result<(), Error> {
         let from = &self.interface;
-
-        // Setup
-        let try_send = |state, peer| {
-            self.event
-                .send(Box::new(Event { state, peer }))
-                .map(|r| r.is_ok())
-        };
+        self.no_link_detection_info
+            .retain(|key, _| to.peers.contains_key(key));
 
         // Notify all disconnects
         for key in &diff_keys.delete_keys {
-            if !try_send(
-                PeerState::Disconnected,
-                if let Some(peer) = from.peers.get(key) {
-                    peer.clone()
-                } else {
-                    return false;
-                },
-            )
-            .await
-            {
-                return false;
-            }
+            let peer = from.peers.get(key).cloned().ok_or(Error::InternalError(
+                "Disconnected peer missing from old list",
+            ))?;
+
+            self.send_event(PeerState::Disconnected, Some(LinkState::Down), peer)
+                .await?;
         }
 
         // Notify all new connections
         for key in &diff_keys.insert_keys {
-            let peer = if let Some(peer) = to.peers.get(key) {
-                peer
-            } else {
-                return false;
-            };
-            if !try_send(PeerState::Connecting, peer.clone()).await {
-                return false;
-            }
+            let peer = to
+                .peers
+                .get(key)
+                .cloned()
+                .ok_or(Error::InternalError("New peer missing from new list"))?;
 
-            if peer.is_connected() && !try_send(PeerState::Connected, peer.clone()).await {
-                return false;
+            // Node is new and default LinkState is down. Save it before sending the event
+            self.no_link_detection_info
+                .insert(*key, NoLinkDetectionInfo::default());
+
+            self.send_event(PeerState::Connecting, Some(LinkState::Down), peer.clone())
+                .await?;
+
+            if peer.is_connected() {
+                // If the new peer is connected, update last link state to Up.
+                let info = if let (Some(rx), Some(tx)) = (peer.rx_bytes, peer.tx_bytes) {
+                    NoLinkDetectionInfo {
+                        last_rx_bytes: rx,
+                        last_tx_bytes: tx,
+                        last_link_state: LinkState::Up,
+                        ..Default::default()
+                    }
+                } else {
+                    NoLinkDetectionInfo {
+                        last_link_state: LinkState::Up,
+                        ..Default::default()
+                    }
+                };
+
+                self.no_link_detection_info.insert(*key, info);
+
+                self.send_event(PeerState::Connected, Some(LinkState::Up), peer.clone())
+                    .await?;
             }
         }
+
+        let configurable_rtt = match self.no_link_detection {
+            NoLinkDetection::Disabled => DEFAULT_CONFIGURABLE_RTT,
+            NoLinkDetection::Enabled { rtt } => rtt,
+        };
 
         // Check for updates, and notify
         for key in &diff_keys.update_keys {
@@ -559,16 +669,62 @@ impl State {
                 let old_state = old.state();
                 let new_state = new.state();
 
-                #[allow(clippy::collapsible_if)]
-                if !old.is_same_event(new) || old_state != new_state {
-                    if !try_send(new_state, new.clone()).await {
-                        return false;
+                let new_node_info =
+                    if let Some(old_node_info) = self.no_link_detection_info.get(key) {
+                        if let (Some(new_rx), Some(new_tx)) = (new.rx_bytes, new.tx_bytes) {
+                            Some(State::compute_new_node_info(
+                                old_node_info,
+                                new_tx,
+                                new_rx,
+                                configurable_rtt,
+                            ))
+                        } else {
+                            telio_log_warn!("Number of bytes missing from wg peer {}", key);
+                            None
+                        }
+                    } else {
+                        telio_log_warn!("old_node_info is missing for {}", key);
+                        None
+                    };
+
+                let old_link_state = self
+                    .no_link_detection_info
+                    .get(key)
+                    .map(|i| i.last_link_state);
+                let new_link_state = new_node_info.as_ref().map(|i| i.last_link_state);
+
+                let should_notify_link_state_change: bool =
+                    if matches!(self.no_link_detection, NoLinkDetection::Disabled) {
+                        false
+                    } else if new_link_state.is_none() {
+                        telio_log_warn!("new_link_state is None and it shouldn't for {}", key);
+                        false
+                    } else {
+                        new_state == PeerState::Connected && old_link_state != new_link_state
+                    };
+
+                // Update info hashmap
+                match new_node_info {
+                    Some(node_info) => {
+                        self.no_link_detection_info.insert(*key, node_info);
                     }
+                    None => {
+                        self.no_link_detection_info.remove(key);
+                    }
+                }
+
+                #[allow(clippy::collapsible_if)]
+                if !old.is_same_event(new)
+                    || old_state != new_state
+                    || should_notify_link_state_change
+                {
+                    self.send_event(new_state, new_link_state, new.clone())
+                        .await?;
                 }
             }
         }
 
-        true
+        Ok(())
     }
 
     fn update_construct_set_device(
@@ -631,7 +787,7 @@ impl State {
     }
 
     #[allow(mpsc_blocking_send)]
-    async fn update(&mut self, to: &uapi::Interface, push: bool) -> bool {
+    async fn update(&mut self, to: &uapi::Interface, push: bool) -> Result<bool, Error> {
         // Diff and report events
 
         //
@@ -646,16 +802,16 @@ impl State {
         // PLEASE NOTE the alias: let from = &self.interface;
         //
         if &self.interface == to {
-            return false;
+            return Err(Error::InternalError(
+                "Same interface received in update function",
+            ));
         }
 
         let diff_keys = self.update_calculate_changes(to);
 
         self.update_endpoint_change_timestamps(&diff_keys, to);
 
-        if !self.update_send_notification_events(to, &diff_keys).await {
-            return false;
-        }
+        self.update_send_notification_events(to, &diff_keys).await?;
 
         let mut success = true;
         if push {
@@ -666,33 +822,6 @@ impl State {
                 .await
                 .map(|r| r.errno == 0)
                 .unwrap_or_default();
-        } else {
-            // If we are pulling data from WG - update last rx timestamps
-            let peers: HashSet<PublicKey> = to.peers.keys().cloned().collect();
-            self.last_rx_timestamp.retain(|pk, _| peers.contains(pk));
-            for peer in peers {
-                let old_rxed_bytes: Option<u64> = self.last_rx_timestamp.get(&peer).map(|ts| ts.1);
-                let new_rxed_bytes: Option<u64> = to.peers.get(&peer).and_then(|p| p.rx_bytes);
-
-                if old_rxed_bytes != new_rxed_bytes {
-                    match new_rxed_bytes {
-                        Some(new_rxed_bytes) if new_rxed_bytes > 0 => {
-                            telio_log_debug!(
-                                "updating peer last rx timestamp {:?} {:?}",
-                                peer,
-                                new_rxed_bytes
-                            );
-                            self.last_rx_timestamp
-                                .insert(peer, (Instant::now(), new_rxed_bytes));
-                        }
-                        _ => {
-                            if self.last_rx_timestamp.remove(&peer).is_some() {
-                                telio_log_debug!("removed peer last rx timestamp {:?}", peer);
-                            }
-                        }
-                    }
-                }
-            }
         }
 
         if let Some(analytics_tx) = &self.analytics_tx {
@@ -746,7 +875,53 @@ impl State {
 
         self.interface = to.clone();
 
-        success
+        Ok(success)
+    }
+
+    fn compute_new_node_info(
+        old_info: &NoLinkDetectionInfo,
+        new_tx: u64,
+        new_rx: u64,
+        configurable_rtt: Duration,
+    ) -> NoLinkDetectionInfo {
+        let now = Instant::now();
+
+        let (rx_bytes, rx_ts) = if new_rx > old_info.last_rx_bytes {
+            (new_rx, now)
+        } else {
+            (old_info.last_rx_bytes, old_info.last_rx_timestamp)
+        };
+
+        let (tx_bytes, tx_ts) = if new_tx > old_info.last_tx_bytes {
+            // Ignore the keepalive messages
+            // This only works in a limited fashion because we poll every second and
+            // the detection might not work as intended if there are more packets within that time window.
+            // On the sender side persistent-keepalives might interfere as those are emitted regardless the activity,
+            // meaning for example if persistent-keepalive is set at 5seconds then it might interfere with the
+            // passive-keepalive which is a constant of 10seconds.
+            let tx_ts = if new_tx - old_info.last_tx_bytes == 32 {
+                old_info.last_tx_timestamp
+            } else {
+                now
+            };
+            (new_tx, tx_ts)
+        } else {
+            (old_info.last_tx_bytes, old_info.last_tx_timestamp)
+        };
+
+        let link_state = if tx_ts <= rx_ts || rx_ts.elapsed() < WG_KEEPALIVE + configurable_rtt {
+            LinkState::Up
+        } else {
+            LinkState::Down
+        };
+
+        NoLinkDetectionInfo {
+            last_tx_timestamp: tx_ts,
+            last_rx_timestamp: rx_ts,
+            last_tx_bytes: tx_bytes,
+            last_rx_bytes: rx_bytes,
+            last_link_state: link_state,
+        }
     }
 }
 
@@ -799,7 +974,7 @@ pub mod tests {
             Ok(task_exec!(&self.task, async move |s| {
                 let mut ifc = s.interface.clone();
                 ifc.listen_port = Some(port);
-                s.update(&ifc, true).await;
+                let _ = s.update(&ifc, true).await;
                 Ok(())
             })
             .await?)
@@ -903,6 +1078,7 @@ pub mod tests {
                 analytics_tx: analytics_ch.clone(),
             },
             Box::new(adapter.clone()),
+            NoLinkDetection::Disabled,
             #[cfg(all(unix, test))]
             Config::new().unwrap(),
             #[cfg(all(unix, not(test)))]
@@ -998,6 +1174,7 @@ pub mod tests {
         assert_eq!(
             Some(Box::new(Event {
                 state: PeerState::Connecting,
+                link_state: None,
                 peer: peer.clone()
             })),
             event.recv().await
@@ -1033,6 +1210,7 @@ pub mod tests {
         assert_eq!(
             Some(Box::new(Event {
                 state: PeerState::Connecting,
+                link_state: None,
                 peer: peer.clone()
             })),
             event.recv().await
@@ -1058,6 +1236,7 @@ pub mod tests {
         assert_eq!(
             Some(Box::new(Event {
                 state: PeerState::Connected,
+                link_state: None,
                 peer: peer.clone()
             })),
             event.recv().await
@@ -1091,6 +1270,7 @@ pub mod tests {
         assert_eq!(
             Some(Box::new(Event {
                 state: PeerState::Connecting,
+                link_state: None,
                 peer: peer.clone()
             })),
             event.recv().await
@@ -1119,6 +1299,7 @@ pub mod tests {
         assert_eq!(
             Some(Box::new(Event {
                 state: PeerState::Connected,
+                link_state: None,
                 peer: peer.clone()
             })),
             event.recv().await
@@ -1143,6 +1324,7 @@ pub mod tests {
         assert_eq!(
             Some(Box::new(Event {
                 state: PeerState::Connecting,
+                link_state: None,
                 peer: peer.clone()
             })),
             event.recv().await
