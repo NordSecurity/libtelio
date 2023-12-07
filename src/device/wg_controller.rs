@@ -1318,6 +1318,7 @@ mod tests {
                         exit_dns: None,
                         ttl_value: TtlValue(60),
                     },
+                    link_detection: None,
                 },
             }
         }

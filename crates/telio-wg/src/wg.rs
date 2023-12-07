@@ -6,7 +6,7 @@ use std::{
     collections::HashMap,
     net::{IpAddr, Ipv4Addr, SocketAddr},
 };
-use telio_model::mesh::ExitNode;
+use telio_model::{api_config::FeatureLinkDetection, mesh::ExitNode};
 use telio_sockets::{NativeProtector, SocketPool};
 use telio_utils::{
     dual_target::{DualTarget, DualTargetError},
@@ -17,6 +17,7 @@ use tokio::time::{self, sleep, Instant, Interval, MissedTickBehavior};
 use wireguard_uapi::xplatform::set;
 
 use telio_crypto::{PublicKey, SecretKey};
+use telio_model::{config, mesh::LinkState};
 use telio_task::{
     io::chan::{Rx, Tx},
     io::mc_chan,
@@ -25,6 +26,7 @@ use telio_task::{
 
 use crate::{
     adapter::{self, Adapter, AdapterType, Error, FirewallResetConnsCb, Tun},
+    link_detection::{LinkDetection, LinkDetectionUpdateResult},
     uapi::{self, AnalyticsEvent, Cmd, Event, Interface, Peer, PeerState, Response},
     FirewallCb,
 };
@@ -114,7 +116,6 @@ struct State {
     interval: Interval,
     interface: Interface,
     event: Tx<Box<Event>>,
-    last_rx_timestamp: HashMap<PublicKey, (Instant, u64)>,
     last_endpoint_change: HashMap<PublicKey, Instant>,
     analytics_tx: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
 
@@ -122,6 +123,9 @@ struct State {
     // We won't be notified of any errors, but a periodic call to get_config_uapi() will return a Win32 error code != 0.
     uapi_failed_last_call: bool,
     uapi_fail_counter: i32,
+
+    // No link detection mechanism
+    no_link_detection: LinkDetection,
 }
 
 const POLL_MILLIS: u64 = 1000;
@@ -207,21 +211,31 @@ impl DynamicWg {
     ///                 Some(Arc::new(firewall_filter_outbound_packets)),
     ///             firewall_reset_connections: None,
     ///         },
+    ///         None,
     ///     );
     /// }
     /// ```
-    pub fn start(io: Io, cfg: Config) -> Result<Self, Error>
+    pub fn start(
+        io: Io,
+        cfg: Config,
+        no_link_detection: Option<FeatureLinkDetection>,
+    ) -> Result<Self, Error>
     where
         Self: Sized,
     {
         let adapter = Self::start_adapter(cfg.try_clone()?)?;
         #[cfg(unix)]
-        return Ok(Self::start_with(io, adapter, cfg));
+        return Ok(Self::start_with(io, adapter, no_link_detection, cfg));
         #[cfg(windows)]
-        return Ok(Self::start_with(io, adapter));
+        return Ok(Self::start_with(io, adapter, no_link_detection));
     }
 
-    fn start_with(io: Io, adapter: Box<dyn Adapter>, #[cfg(unix)] cfg: Config) -> Self {
+    fn start_with(
+        io: Io,
+        adapter: Box<dyn Adapter>,
+        no_link_detection: Option<FeatureLinkDetection>,
+        #[cfg(unix)] cfg: Config,
+    ) -> Self {
         let mut interval = time::interval(Duration::from_millis(POLL_MILLIS));
         interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
@@ -233,11 +247,11 @@ impl DynamicWg {
                 interval,
                 interface: Default::default(),
                 event: io.events,
-                last_rx_timestamp: Default::default(),
                 last_endpoint_change: Default::default(),
                 analytics_tx: io.analytics_tx,
                 uapi_failed_last_call: false,
                 uapi_fail_counter: 0,
+                no_link_detection: LinkDetection::new(no_link_detection),
             }),
         }
     }
@@ -526,55 +540,76 @@ impl State {
     }
 
     fn time_since_last_rx(&self, public_key: PublicKey) -> Option<Duration> {
-        self.last_rx_timestamp
-            .get(&public_key)
-            .map(|v| Instant::now() - v.0)
+        self.no_link_detection.time_since_last_rx(&public_key)
+    }
+
+    async fn send_event(
+        &self,
+        state: PeerState,
+        link_state: Option<LinkState>,
+        peer: Peer,
+    ) -> Result<(), Error> {
+        let link_state = link_state.and_then(|s| {
+            if self.no_link_detection.is_disabled() {
+                None
+            } else {
+                Some(s)
+            }
+        });
+
+        self.event
+            .send(Box::new(Event {
+                state,
+                link_state,
+                peer,
+            }))
+            .await
+            .map_err(|_| Error::InternalError("Failed to send node event"))
     }
 
     #[allow(mpsc_blocking_send)]
     async fn update_send_notification_events(
-        &self,
+        &mut self,
         to: &uapi::Interface,
         diff_keys: &DiffKeys,
-    ) -> bool {
+        push: bool,
+    ) -> Result<(), Error> {
         let from = &self.interface;
-
-        // Setup
-        let try_send = |state, peer| {
-            self.event
-                .send(Box::new(Event { state, peer }))
-                .map(|r| r.is_ok())
-        };
 
         // Notify all disconnects
         for key in &diff_keys.delete_keys {
-            if !try_send(
-                PeerState::Disconnected,
-                if let Some(peer) = from.peers.get(key) {
-                    peer.clone()
-                } else {
-                    return false;
-                },
-            )
-            .await
-            {
-                return false;
-            }
+            let peer = from.peers.get(key).cloned().ok_or(Error::InternalError(
+                "Disconnected peer missing from old list",
+            ))?;
+
+            // Remove all disconnected peers from no link detection mechanism
+            self.no_link_detection.remove(key);
+
+            self.send_event(PeerState::Disconnected, Some(LinkState::Down), peer)
+                .await?;
         }
 
         // Notify all new connections
         for key in &diff_keys.insert_keys {
-            let peer = if let Some(peer) = to.peers.get(key) {
-                peer
-            } else {
-                return false;
-            };
-            if !try_send(PeerState::Connecting, peer.clone()).await {
-                return false;
-            }
+            let peer = to
+                .peers
+                .get(key)
+                .ok_or(Error::InternalError("New peer missing from new list"))?;
 
-            if peer.is_connected() && !try_send(PeerState::Connected, peer.clone()).await {
-                return false;
+            // Node is new and default LinkState is down. Save it before sending the event
+            self.no_link_detection
+                .insert(key, None, None, LinkState::Down);
+
+            self.send_event(PeerState::Connecting, Some(LinkState::Down), peer.clone())
+                .await?;
+
+            if peer.is_connected() {
+                // If the new peer is connected, update last link state to Up.
+                self.no_link_detection
+                    .insert(key, peer.rx_bytes, peer.tx_bytes, LinkState::Up);
+
+                self.send_event(PeerState::Connected, Some(LinkState::Up), peer.clone())
+                    .await?;
             }
         }
 
@@ -584,16 +619,25 @@ impl State {
                 let old_state = old.state();
                 let new_state = new.state();
 
-                #[allow(clippy::collapsible_if)]
-                if !old.is_same_event(new) || old_state != new_state {
-                    if !try_send(new_state, new.clone()).await {
-                        return false;
-                    }
+                let no_link_detection_update_result =
+                    self.no_link_detection
+                        .update(key, new.rx_bytes, new.tx_bytes, new_state, push);
+
+                if !old.is_same_event(new)
+                    || old_state != new_state
+                    || no_link_detection_update_result.should_notify
+                {
+                    self.send_event(
+                        new_state,
+                        no_link_detection_update_result.link_state,
+                        new.clone(),
+                    )
+                    .await?;
                 }
             }
         }
 
-        true
+        Ok(())
     }
 
     fn update_calculate_set_listen_port(
@@ -703,7 +747,8 @@ impl State {
 
         self.update_endpoint_change_timestamps(&diff_keys, &to);
 
-        self.update_send_notification_events(&to, &diff_keys).await;
+        self.update_send_notification_events(&to, &diff_keys, push)
+            .await?;
 
         let mut success = true;
         if push {
@@ -714,33 +759,6 @@ impl State {
                 .await
                 .map(|r| r.errno == 0)
                 .unwrap_or_default();
-        } else {
-            // If we are pulling data from WG - update last rx timestamps
-            let peers: HashSet<PublicKey> = to.peers.keys().cloned().collect();
-            self.last_rx_timestamp.retain(|pk, _| peers.contains(pk));
-            for peer in peers {
-                let old_rxed_bytes: Option<u64> = self.last_rx_timestamp.get(&peer).map(|ts| ts.1);
-                let new_rxed_bytes: Option<u64> = to.peers.get(&peer).and_then(|p| p.rx_bytes);
-
-                if old_rxed_bytes != new_rxed_bytes {
-                    match new_rxed_bytes {
-                        Some(new_rxed_bytes) if new_rxed_bytes > 0 => {
-                            telio_log_debug!(
-                                "updating peer last rx timestamp {:?} {:?}",
-                                peer,
-                                new_rxed_bytes
-                            );
-                            self.last_rx_timestamp
-                                .insert(peer, (Instant::now(), new_rxed_bytes));
-                        }
-                        _ => {
-                            if self.last_rx_timestamp.remove(&peer).is_some() {
-                                telio_log_debug!("removed peer last rx timestamp {:?}", peer);
-                            }
-                        }
-                    }
-                }
-            }
         }
 
         if let Some(analytics_tx) = &self.analytics_tx {
@@ -967,6 +985,7 @@ pub mod tests {
                 analytics_tx: analytics_ch.clone(),
             },
             Box::new(adapter.clone()),
+            None,
             #[cfg(all(unix, test))]
             Config::new().unwrap(),
             #[cfg(all(unix, not(test)))]
@@ -1062,6 +1081,7 @@ pub mod tests {
         assert_eq!(
             Some(Box::new(Event {
                 state: PeerState::Connecting,
+                link_state: None,
                 peer: peer.clone()
             })),
             event.recv().await
@@ -1097,6 +1117,7 @@ pub mod tests {
         assert_eq!(
             Some(Box::new(Event {
                 state: PeerState::Connecting,
+                link_state: None,
                 peer: peer.clone()
             })),
             event.recv().await
@@ -1122,6 +1143,7 @@ pub mod tests {
         assert_eq!(
             Some(Box::new(Event {
                 state: PeerState::Connected,
+                link_state: None,
                 peer: peer.clone()
             })),
             event.recv().await
@@ -1155,6 +1177,7 @@ pub mod tests {
         assert_eq!(
             Some(Box::new(Event {
                 state: PeerState::Connecting,
+                link_state: None,
                 peer: peer.clone()
             })),
             event.recv().await
@@ -1183,6 +1206,7 @@ pub mod tests {
         assert_eq!(
             Some(Box::new(Event {
                 state: PeerState::Connected,
+                link_state: None,
                 peer: peer.clone()
             })),
             event.recv().await
@@ -1207,6 +1231,7 @@ pub mod tests {
         assert_eq!(
             Some(Box::new(Event {
                 state: PeerState::Connecting,
+                link_state: None,
                 peer: peer.clone()
             })),
             event.recv().await

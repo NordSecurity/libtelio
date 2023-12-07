@@ -2,6 +2,7 @@
 ---
 * LLT-5002: Fix preshared key parsing logic
 * LLT-5004: Wireguard go oscillation
+* LLT-1113: Add no-link detection mechanism
 
 <br>
 
