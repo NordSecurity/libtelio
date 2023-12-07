@@ -1,4 +1,5 @@
-### UNRELEASED
+### v4.2.0
+### **Space-cakes**
 ---
 * LLT-4008: Add support for AAAA records in telio-dns
 * LLT-4012: Fix firewall being stuck on LAST_ACK after FIN
