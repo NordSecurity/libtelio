@@ -53,6 +53,12 @@ class Nurse(DataClassJsonMixin):
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
+class LinkDetection(DataClassJsonMixin):
+    rtt_seconds: Optional[int] = None
+
+
+@dataclass_json(undefined=Undefined.EXCLUDE)
+@dataclass
 class Wireguard(DataClassJsonMixin):
     proxying: Optional[int] = 25
     direct: Optional[int] = 5
@@ -73,4 +79,5 @@ class TelioFeatures(DataClassJsonMixin):
     ipv6: bool = False
     nicknames: bool = False
     boringtun_reset_connections: bool = False
+    link_detection: Optional[LinkDetection] = None
     wireguard: Optional[Wireguard] = None
