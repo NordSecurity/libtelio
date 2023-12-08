@@ -3998,6 +3998,7 @@ dependencies = [
  "rstest",
  "rupnp",
  "sm",
+ "socket2 0.5.4",
  "strum",
  "stun_codec",
  "surge-ping",

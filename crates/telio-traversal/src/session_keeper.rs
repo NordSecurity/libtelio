@@ -1,10 +1,12 @@
 use async_trait::async_trait;
 use futures::Future;
+use socket2::Type;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use std::time::Duration;
 use surge_ping::{
-    Client as PingerClient, Config as PingerConfig, PingIdentifier, PingSequence, SurgeError, ICMP,
+    Client as PingerClient, Config as PingerConfig, ConfigBuilder, PingIdentifier, PingSequence,
+    SurgeError, ICMP,
 };
 use telio_crypto::PublicKey;
 use telio_sockets::SocketPool;
@@ -58,26 +60,8 @@ pub struct SessionKeeper {
 impl SessionKeeper {
     pub fn start(sock_pool: Arc<SocketPool>) -> Result<Self> {
         let (client_v4, client_v6) = (
-            PingerClient::new(
-                &{
-                    let mut config_builder = PingerConfig::builder().kind(ICMP::V4);
-                    if cfg!(not(target_os = "android")) {
-                        config_builder = config_builder.bind((Ipv4Addr::UNSPECIFIED, 0).into());
-                    }
-                    config_builder
-                }
-                .build(),
-            )?,
-            PingerClient::new(
-                &{
-                    let mut config_builder = PingerConfig::builder().kind(ICMP::V6);
-                    if cfg!(not(target_os = "android")) {
-                        config_builder = config_builder.bind((Ipv6Addr::UNSPECIFIED, 0).into());
-                    }
-                    config_builder
-                }
-                .build(),
-            )?,
+            PingerClient::new(&Self::make_builder(ICMP::V4).build())?,
+            PingerClient::new(&Self::make_builder(ICMP::V6).build())?,
         );
 
         sock_pool.make_internal(client_v4.get_socket().get_native_sock())?;
@@ -90,6 +74,28 @@ impl SessionKeeper {
                 keepalive_actions: RepeatedActions::default(),
             }),
         })
+    }
+
+    fn make_builder(proto: ICMP) -> ConfigBuilder {
+        let mut config_builder = PingerConfig::builder().kind(proto);
+        if cfg!(any(
+            target_os = "ios",
+            target_os = "macos",
+            target_os = "tvos",
+        )) {
+            config_builder = config_builder.sock_type_hint(Type::RAW);
+        }
+        if cfg!(not(target_os = "android")) {
+            match proto {
+                ICMP::V4 => {
+                    config_builder = config_builder.bind((Ipv4Addr::UNSPECIFIED, 0).into());
+                }
+                ICMP::V6 => {
+                    config_builder = config_builder.bind((Ipv6Addr::UNSPECIFIED, 0).into());
+                }
+            }
+        }
+        config_builder
     }
 
     pub async fn stop(self) {
