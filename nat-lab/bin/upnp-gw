@@ -4,14 +4,11 @@ set -e
 
 upnpd eth0 eth1
 
-echo 1 > /proc/sys/net/ipv4/ip_forward
-
 # Acquire public IP address
 public_itf=$(ip route show | awk '/10.0.0.0\/16.*dev [a-z0-0]+/ {print $3}')
 
 # Configure standart linux NAT, this will be port restricted cone NAT
 iptables -t nat -A POSTROUTING -o $public_itf -j MASQUERADE
-
 
 sleep infinity
 

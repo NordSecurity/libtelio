@@ -2,8 +2,6 @@
 
 set -e
 
-echo 1 > /proc/sys/net/ipv4/ip_forward
-
 # Acquire public IP address
 public_itf=$(ip route show | awk '/10.0.0.0\/16.*dev [a-z0-0]+/ {print $3}')
 
