@@ -234,7 +234,6 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="Flaky: LLT-4605")
 @pytest.mark.timeout(90)
 @pytest.mark.parametrize(
     "alpha_setup_params",
@@ -315,18 +314,15 @@ async def test_mesh_network_switch_direct(
         derp_connected_future = alpha_client.wait_for_event_on_any_derp(
             [State.Connected]
         )
+
+        # Beta doesn't change its endpoint, so WG roaming may be used by alpha node to restore
+        # the connection, so no node event is logged in that case
         peers_connected_relay_future = asyncio.gather(
-            alpha_client.wait_for_event_peer(
-                beta.public_key, [State.Connected], [PathType.Relay]
-            ),
             beta_client.wait_for_event_peer(
                 alpha.public_key, [State.Connected], [PathType.Relay]
             ),
         )
         peers_connected_direct_future = asyncio.gather(
-            alpha_client.wait_for_event_peer(
-                beta.public_key, [State.Connected], [PathType.Direct]
-            ),
             beta_client.wait_for_event_peer(
                 alpha.public_key, [State.Connected], [PathType.Direct]
             ),
