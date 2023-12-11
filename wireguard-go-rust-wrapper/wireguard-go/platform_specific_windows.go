@@ -59,11 +59,12 @@ func PlatformSpecific_Bind(b Binder) {
 type FullBind interface {
 	conn.Bind
 	conn.BindSocketToInterface
+	OpenOnLocalhost(port uint16) ([]conn.ReceiveFunc, uint16, error)
 }
 
 type Binder struct {
 	FullBind
-	local_bind conn.Bind
+	local_bind FullBind
 	watcher    *interfaceWatcher
 }
 
@@ -73,7 +74,7 @@ func (b Binder) Open(port uint16) (fns []conn.ReceiveFunc, actualPort uint16, er
 		return recv_fns, actual_port, err
 	}
 
-	recv_fns_local, actual_port, err := b.local_bind.(*WinRingBind).OpenOnLocalhost(port)
+	recv_fns_local, actual_port, err := b.local_bind.OpenOnLocalhost(port)
 	recv_fns = append(recv_fns, recv_fns_local...)
 
 	if err != nil {

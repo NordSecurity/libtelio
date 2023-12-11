@@ -82,11 +82,12 @@ type WinRingBind struct {
 	isOpen uint32
 }
 
-func NewDefaultBind() conn.Bind { return NewWinRingBind() }
+func NewDefaultBind() FullBind { return NewWinRingBind() }
 
-func NewWinRingBind() conn.Bind {
+func NewWinRingBind() FullBind {
 	if !winrio.Initialize() {
-		return conn.NewStdNetBind()
+		warningf("Failed to initialize winrio. Falling back to StdNetBind implementation.")
+		return NewStdNetBind()
 	}
 	return new(WinRingBind)
 }
@@ -506,6 +507,46 @@ func (bind *WinRingBind) Send(buf []byte, endpoint conn.Endpoint) error {
 		}
 		return bind.v6.Send(buf, nend, &bind.isOpen)
 	}
+	return nil
+}
+
+func (bind *StdNetBind) BindSocketToInterface4(interfaceIndex uint32, blackhole bool) error {
+	bind.mu.Lock()
+	defer bind.mu.Unlock()
+	sysconn, err := bind.ipv4.SyscallConn()
+	if err != nil {
+		return err
+	}
+	err2 := sysconn.Control(func(fd uintptr) {
+		err = bindSocketToInterface4(windows.Handle(fd), interfaceIndex)
+	})
+	if err2 != nil {
+		return err2
+	}
+	if err != nil {
+		return err
+	}
+	bind.blackhole4 = blackhole
+	return nil
+}
+
+func (bind *StdNetBind) BindSocketToInterface6(interfaceIndex uint32, blackhole bool) error {
+	bind.mu.Lock()
+	defer bind.mu.Unlock()
+	sysconn, err := bind.ipv6.SyscallConn()
+	if err != nil {
+		return err
+	}
+	err2 := sysconn.Control(func(fd uintptr) {
+		err = bindSocketToInterface6(windows.Handle(fd), interfaceIndex)
+	})
+	if err2 != nil {
+		return err2
+	}
+	if err != nil {
+		return err
+	}
+	bind.blackhole6 = blackhole
 	return nil
 }
 
