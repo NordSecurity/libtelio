@@ -20,3 +20,16 @@ Any faulty code will automatically be declined by the CI.
 ```
 mypy . && pylint .
 ```
+
+## Dependency lock / upgrade
+All dependencies and transitive dependencies should be locked to prevent breaking things. Also has to be updated from time to time, to keep things fresh.
+
+#### How to lock
+```
+$ pipenv lock
+```
+
+#### How to upgrade
+```
+$ pipenv upgrade <package>
+```
