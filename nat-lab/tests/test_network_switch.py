@@ -101,7 +101,6 @@ async def test_network_switcher(
             ),
             marks=[
                 pytest.mark.mac,
-                pytest.mark.xfail(reason="Flaky: LLT-1134"),
             ],
         ),
     ],
@@ -187,7 +186,6 @@ async def test_mesh_network_switch(
             ),
             marks=[
                 pytest.mark.mac,
-                pytest.mark.skip(reason="Flaky: LLT-1134"),
             ],
         ),
     ],
@@ -203,7 +201,6 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
         network_switcher = alpha_conn_mngr.network_switcher
 
         wg_server = config.WG_SERVER
-
         await client_alpha.connect_to_vpn(
             str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
         )
@@ -213,11 +210,9 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
 
         ip = await testing.wait_long(stun.get(alpha_connection, config.STUN_SERVER))
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
-
         assert network_switcher
         await network_switcher.switch_to_secondary_network()
         await client_alpha.notify_network_change()
-
         # This is really silly.. For some reason, adding a short sleep here allows the VPN
         # connection to be restored faster. The difference is almost 5 seconds. Without
         # the sleep, the test fails often due to timeouts. Its as if feeding data into

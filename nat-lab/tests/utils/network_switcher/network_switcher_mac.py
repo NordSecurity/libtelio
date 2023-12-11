@@ -1,5 +1,11 @@
 import config
 from .network_switcher import NetworkSwitcher
+from config import (
+    DERP_SERVERS,
+    LINUX_VM_PRIMARY_GATEWAY,
+    LINUX_VM_SECONDARY_GATEWAY,
+    VPN_SERVER_SUBNET,
+)
 from utils.connection import Connection
 
 
@@ -11,15 +17,54 @@ class NetworkSwitcherMac(NetworkSwitcher):
         await self._delete_existing_route()
 
         await self._connection.create_process(
-            ["route", "add", "default", config.LINUX_VM_PRIMARY_GATEWAY]
+            ["route", "add", "default", LINUX_VM_PRIMARY_GATEWAY]
         ).execute()
+
+        await self._connection.create_process(
+            ["route", "add", "-inet", VPN_SERVER_SUBNET, LINUX_VM_PRIMARY_GATEWAY]
+        ).execute()
+
+        for derp in DERP_SERVERS:
+            await self._connection.create_process(
+                [
+                    "route",
+                    "add",
+                    str(derp.get("ipv4")) + "/32",
+                    LINUX_VM_PRIMARY_GATEWAY,
+                ],
+            ).execute()
 
     async def switch_to_secondary_network(self) -> None:
         await self._delete_existing_route()
 
         await self._connection.create_process(
-            ["route", "add", "default", config.LINUX_VM_SECONDARY_GATEWAY]
+            ["route", "add", "default", LINUX_VM_SECONDARY_GATEWAY]
         ).execute()
+
+        await self._connection.create_process(
+            ["route", "add", "-inet", VPN_SERVER_SUBNET, LINUX_VM_SECONDARY_GATEWAY]
+        ).execute()
+
+        for derp in config.DERP_SERVERS:
+            await self._connection.create_process(
+                [
+                    "route",
+                    "add",
+                    str(derp.get("ipv4")) + "/32",
+                    LINUX_VM_SECONDARY_GATEWAY,
+                ],
+            ).execute()
 
     async def _delete_existing_route(self) -> None:
         await self._connection.create_process(["route", "delete", "default"]).execute()
+        await self._connection.create_process(
+            ["route", "delete", "-inet", VPN_SERVER_SUBNET]
+        ).execute()
+        for derp in DERP_SERVERS:
+            await self._connection.create_process(
+                [
+                    "route",
+                    "delete",
+                    str(derp.get("ipv4")) + "/32",
+                ],
+            ).execute()
