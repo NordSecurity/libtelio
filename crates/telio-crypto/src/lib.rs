@@ -27,7 +27,7 @@ use std::{convert::TryInto, fmt};
 use rand::prelude::*;
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 
-/// Secret/Public key size in bytes
+/// Secret, Public and Wireguard Preshared key size in bytes
 pub const KEY_SIZE: usize = 32;
 
 /// Secret key type
@@ -41,6 +41,12 @@ pub struct SecretKey([u8; KEY_SIZE]);
     Default, PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone, DeserializeFromStr, SerializeDisplay,
 )]
 pub struct PublicKey(pub [u8; KEY_SIZE]);
+
+/// Preshared key type
+#[derive(
+    Default, PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone, DeserializeFromStr, SerializeDisplay,
+)]
+pub struct PresharedKey(pub [u8; KEY_SIZE]);
 
 /// Error returned when parsing fails for SecretKey or PublicKey.
 #[derive(Debug, thiserror::Error)]
@@ -123,6 +129,13 @@ impl SecretKey {
 }
 
 impl PublicKey {
+    /// Create new key from bytes
+    pub const fn new(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+}
+
+impl PresharedKey {
     /// Create new key from bytes
     pub const fn new(bytes: [u8; 32]) -> Self {
         Self(bytes)
@@ -282,7 +295,7 @@ macro_rules! gen_common {
         gen_common!($($tt),+);
     };
 }
-gen_common!(SecretKey, PublicKey);
+gen_common!(SecretKey, PublicKey, PresharedKey);
 
 #[cfg(test)]
 mod tests {

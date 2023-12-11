@@ -769,6 +769,7 @@ fn compare_peers(a: &telio_wg::uapi::Peer, b: &telio_wg::uapi::Peer) -> bool {
         && a.endpoint == b.endpoint
         && a.persistent_keepalive_interval == b.persistent_keepalive_interval
         && a.allowed_ips == b.allowed_ips
+        && a.preshared_key == b.preshared_key
 }
 
 fn is_peer_proxying(
@@ -1384,6 +1385,7 @@ mod tests {
                         rx_bytes: None,
                         tx_bytes: None,
                         time_since_last_handshake: None,
+                        preshared_key: None,
                     }))
                     .return_once(|_| Ok(()));
             }
