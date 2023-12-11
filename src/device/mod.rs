@@ -141,6 +141,8 @@ pub enum Error {
     #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
     #[error("Socket pool error")]
     SocketPoolError(#[from] telio_sockets::protector::platform::Error),
+    #[error(transparent)]
+    PostQuantum(#[from] telio_wg::pq::Error),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -193,6 +195,8 @@ pub struct RequestedState {
 
     // Requested keepalive periods
     pub(crate) keepalive_periods: FeaturePersistentKeepalive,
+
+    pub postquantum_wg: Option<wg::pq::PqKeys>,
 }
 
 pub struct Entities {
@@ -572,8 +576,7 @@ impl Device {
                 rt.connect_exit_node(&node).await?;
                 Ok(rt.entities.wireguard_interface.clone())
             })
-            .await
-            .map_err(Error::from)?;
+            .await?;
 
             // TODO: delete this as sockets are protected from within boringtun itself
             #[cfg(not(windows))]
@@ -1465,12 +1468,38 @@ impl Runtime {
             .map(|peers| peers.iter().any(|p| p.public_key == exit_node.public_key))
             .unwrap_or_default();
 
+        self.requested_state.postquantum_wg = None;
+
         if is_meshnet_exit_node {
             if let Some(dns) = &self.entities.dns.lock().await.resolver {
                 self.reconfigure_dns_peer(dns, &dns.get_default_dns_servers())
                     .await?;
             }
-        } else if exit_node.endpoint.is_none() {
+        } else if let Some(addr) = exit_node.endpoint {
+            if let Some(pq_conf) = &self.features.post_quantum_vpn {
+                telio_log_debug!("Initializing PQ hanshake");
+
+                let fetch_keys = Box::pin(wg::pq::fetch_keys(
+                    &self.entities.socket_pool,
+                    addr,
+                    &self.requested_state.device_config.private_key,
+                    &exit_node.public_key,
+                )); // The future is large, let's move it onto the heap
+
+                let keys = tokio::time::timeout(
+                    Duration::from_secs(pq_conf.handshake_timeout_s as _),
+                    fetch_keys,
+                )
+                .await
+                .map_err(|_| {
+                    telio_log_warn!("PQ hanshake timeout");
+                    wg::pq::Error::Generic("Fetching PQ keys timeout".into())
+                })??;
+
+                self.requested_state.postquantum_wg = Some(keys);
+                telio_log_debug!("PQ hanshake finished succesfully");
+            }
+        } else {
             return Err(Error::EndpointNotProvided);
         }
 
@@ -1552,6 +1581,8 @@ impl Runtime {
             )
             .await?;
         }
+
+        self.requested_state.postquantum_wg.take();
 
         Ok(())
     }
