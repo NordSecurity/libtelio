@@ -968,3 +968,106 @@ async def test_dns_change_nickname() -> None:
                     ["nslookup", "ono.nord", config.LIBTELIO_DNS_IPV4]
                 ).execute()
             )
+
+
+@pytest.mark.asyncio
+async def test_dns_wildcard() -> None:
+    async with AsyncExitStack() as exit_stack:
+        api, (alpha, beta) = setup_api(
+            [(False, IPStack.IPv4v6), (False, IPStack.IPv4v6)]
+        )
+        api.assign_nickname(alpha.id, "johnny")
+        api.assign_nickname(beta.id, "yoko")
+        env = await setup_mesh_nodes(
+            exit_stack,
+            [
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_1,
+                        derp_1_limits=ConnectionLimits(1, 1),
+                    ),
+                    features=TelioFeatures(nicknames=True),
+                ),
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_2,
+                        derp_1_limits=ConnectionLimits(1, 1),
+                    ),
+                    features=TelioFeatures(nicknames=True),
+                ),
+            ],
+            provided_api=api,
+        )
+        client_alpha, client_beta = env.clients
+        connection_alpha, connection_beta = [
+            conn.connection for conn in env.connections
+        ]
+
+        await client_alpha.enable_magic_dns([])
+        await client_beta.enable_magic_dns([])
+
+        alpha_response = await testing.wait_long(
+            connection_alpha.create_process(
+                ["nslookup", "alpha.nord", config.LIBTELIO_DNS_IPV4]
+            ).execute()
+        )
+        for ip in alpha.ip_addresses:
+            assert ip in alpha_response.get_stdout()
+
+        alpha_response = await testing.wait_long(
+            connection_alpha.create_process(
+                ["nslookup", "myservice.alpha.nord", config.LIBTELIO_DNS_IPV4]
+            ).execute()
+        )
+        for ip in alpha.ip_addresses:
+            assert ip in alpha_response.get_stdout()
+
+        alpha_response = await testing.wait_long(
+            connection_alpha.create_process(
+                ["nslookup", "johnny.nord", config.LIBTELIO_DNS_IPV4]
+            ).execute()
+        )
+        for ip in alpha.ip_addresses:
+            assert ip in alpha_response.get_stdout()
+
+        alpha_response = await testing.wait_long(
+            connection_alpha.create_process(
+                ["nslookup", "myservice.johnny.nord", config.LIBTELIO_DNS_IPV4]
+            ).execute()
+        )
+        for ip in alpha.ip_addresses:
+            assert ip in alpha_response.get_stdout()
+
+        alpha_response = await testing.wait_long(
+            connection_alpha.create_process(
+                ["nslookup", "yoko.nord", config.LIBTELIO_DNS_IPV4]
+            ).execute()
+        )
+        for ip in beta.ip_addresses:
+            assert ip in alpha_response.get_stdout()
+
+        alpha_response = await testing.wait_long(
+            connection_alpha.create_process(
+                ["nslookup", "herservice.yoko.nord", config.LIBTELIO_DNS_IPV4]
+            ).execute()
+        )
+        for ip in beta.ip_addresses:
+            assert ip in alpha_response.get_stdout()
+
+        beta_response = await testing.wait_long(
+            connection_beta.create_process(
+                ["nslookup", "johnny.nord", config.LIBTELIO_DNS_IPV4]
+            ).execute()
+        )
+        for ip in alpha.ip_addresses:
+            assert ip in beta_response.get_stdout()
+
+        beta_response = await testing.wait_long(
+            connection_beta.create_process(
+                ["nslookup", "hisservice.johnny.nord", config.LIBTELIO_DNS_IPV4]
+            ).execute()
+        )
+        for ip in alpha.ip_addresses:
+            assert ip in beta_response.get_stdout()
