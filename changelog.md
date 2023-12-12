@@ -45,6 +45,7 @@
 * LLT-4552: Add way to flush events when stopping
 * LLT-4225: Migrate Telio to use the tracing crate instead of log crate
 * LLT-4583: Don't add IPv6 addresses to wireguard when IPv6 feature is disabled
+* LLT-4613: Fix boringtun performs spurious rekeying
 
 <br>
 
