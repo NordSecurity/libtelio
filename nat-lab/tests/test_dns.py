@@ -4,10 +4,13 @@ import asyncio
 import config
 import pytest
 import re
+from config import LIBTELIO_DNS_IPV4, LIBTELIO_DNS_IPV6
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_api, setup_environment, setup_mesh_nodes
 from telio import AdapterType, TelioFeatures
+from typing import List, Optional
 from utils import testing
+from utils.connection import Connection
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import ConnectionTag, generate_connection_tracker_config
 from utils.process import ProcessExecError
@@ -16,10 +19,32 @@ from utils.router import IPStack
 
 def get_dns_server_address(ip_stack: IPStack) -> str:
     return (
-        config.LIBTELIO_DNS_IPV4
+        LIBTELIO_DNS_IPV4
         if ip_stack in [IPStack.IPv4, IPStack.IPv4v6]
-        else config.LIBTELIO_DNS_IPV6
+        else LIBTELIO_DNS_IPV6
     )
+
+
+async def query_dns(
+    connection: Connection,
+    host_name: str,
+    expected_output: Optional[List[str]] = None,
+    dns_server: Optional[str] = None,
+    options: Optional[str] = None,
+) -> None:
+    response = await testing.wait_normal(
+        connection.create_process(
+            [
+                "nslookup",
+                options if options else "-retry=1",
+                host_name,
+                dns_server if dns_server else LIBTELIO_DNS_IPV4,
+            ]
+        ).execute()
+    )
+    if expected_output:
+        for expected_str in expected_output:
+            assert expected_str in response.get_stdout()
 
 
 @pytest.mark.asyncio
@@ -64,9 +89,7 @@ async def test_dns(
     async with AsyncExitStack() as exit_stack:
         dns_server_address_alpha = get_dns_server_address(alpha_ip_stack)
         dns_server_address_beta = (
-            config.LIBTELIO_DNS_IPV4
-            if beta_ip_stack == IPStack.IPv4
-            else config.LIBTELIO_DNS_IPV6
+            LIBTELIO_DNS_IPV4 if beta_ip_stack == IPStack.IPv4 else LIBTELIO_DNS_IPV6
         )
         env = await setup_mesh_nodes(
             exit_stack,
@@ -95,59 +118,38 @@ async def test_dns(
 
         # These calls should timeout without returning anything, but cache the peer addresses
         with pytest.raises(asyncio.TimeoutError):
-            await testing.wait_long(
-                connection_alpha.create_process(
-                    ["nslookup", "google.com", dns_server_address_alpha]
-                ).execute()
+            await query_dns(
+                connection_alpha, "google.com", dns_server=dns_server_address_alpha
             )
 
         with pytest.raises(asyncio.TimeoutError):
-            await testing.wait_long(
-                connection_beta.create_process(
-                    ["nslookup", "google.com", dns_server_address_beta]
-                ).execute()
+            await query_dns(
+                connection_beta, "google.com", dns_server=dns_server_address_beta
             )
 
         await client_alpha.enable_magic_dns(["1.1.1.1"])
         await client_beta.enable_magic_dns(["1.1.1.1"])
 
         # If everything went correctly, these calls should not timeout
-        await testing.wait_long(
-            connection_alpha.create_process(
-                ["nslookup", "google.com", dns_server_address_alpha]
-            ).execute()
+        await query_dns(
+            connection_alpha, "google.com", dns_server=dns_server_address_alpha
         )
-        await testing.wait_long(
-            connection_beta.create_process(
-                ["nslookup", "google.com", dns_server_address_beta]
-            ).execute()
+        await query_dns(
+            connection_beta, "google.com", dns_server=dns_server_address_beta
         )
 
         # If the previous calls didn't fail, we can assume that the resolver is running so no need to wait for the timeout and test the validity of the response
-        alpha_response = await testing.wait_long(
-            connection_alpha.create_process(
-                ["nslookup", "beta.nord", dns_server_address_alpha]
-            ).execute()
+        await query_dns(
+            connection_alpha, "beta.nord", beta.ip_addresses, dns_server_address_alpha
         )
-        for ip in beta.ip_addresses:
-            assert ip in alpha_response.get_stdout()
-
-        beta_response = await testing.wait_long(
-            connection_beta.create_process(
-                ["nslookup", "alpha.nord", dns_server_address_beta]
-            ).execute()
+        await query_dns(
+            connection_beta, "alpha.nord", alpha.ip_addresses, dns_server_address_beta
         )
-        for ip in alpha.ip_addresses:
-            assert ip in beta_response.get_stdout()
 
         # Testing if instance can get the IP of self from DNS. See LLT-4246 for more details.
-        alpha_response = await testing.wait_long(
-            connection_alpha.create_process(
-                ["nslookup", "alpha.nord", dns_server_address_alpha]
-            ).execute()
+        await query_dns(
+            connection_alpha, "alpha.nord", alpha.ip_addresses, dns_server_address_alpha
         )
-        for ip in alpha.ip_addresses:
-            assert ip in alpha_response.get_stdout()
 
         # Now we disable magic dns
         await client_alpha.disable_magic_dns()
@@ -155,16 +157,12 @@ async def test_dns(
 
         # And as a result these calls should timeout again
         with pytest.raises(asyncio.TimeoutError):
-            await testing.wait_long(
-                connection_alpha.create_process(
-                    ["nslookup", "google.com", dns_server_address_alpha]
-                ).execute()
+            await query_dns(
+                connection_alpha, "google.com", dns_server=dns_server_address_alpha
             )
         with pytest.raises(asyncio.TimeoutError):
-            await testing.wait_long(
-                connection_beta.create_process(
-                    ["nslookup", "google.com", dns_server_address_beta]
-                ).execute()
+            await query_dns(
+                connection_beta, "google.com", dns_server=dns_server_address_beta
             )
 
 
@@ -338,40 +336,28 @@ async def test_vpn_dns(alpha_ip_stack: IPStack) -> None:
         await client_alpha.enable_magic_dns(["1.1.1.1"])
 
         # Test to see if the module is working correctly
-        await testing.wait_normal(
-            connection.create_process(
-                ["nslookup", "google.com", dns_server_address]
-            ).execute()
-        )
+        await query_dns(connection, "google.com", dns_server=dns_server_address)
 
         # Test if the DNS module preserves CNAME records
-        dns_response = await testing.wait_normal(
-            connection.create_process(
-                ["nslookup", "-q=CNAME", "www.microsoft.com", dns_server_address]
-            ).execute()
+        await query_dns(
+            connection,
+            "www.microsoft.com",
+            ["canonical name"],
+            dns_server_address,
+            "-q=CNAME",
         )
-        assert "canonical name" in dns_response.get_stdout()
 
         # Turn off the module and see if it worked
         await client_alpha.disable_magic_dns()
 
         with pytest.raises(asyncio.TimeoutError):
-            await testing.wait_normal(
-                connection.create_process(
-                    ["nslookup", "google.com", dns_server_address]
-                ).execute()
-            )
+            await query_dns(connection, "google.com", dns_server=dns_server_address)
 
         # Test interop with meshnet
         await client_alpha.enable_magic_dns(["1.1.1.1"])
-
         await client_alpha.set_meshmap(api.get_meshmap(alpha.id, derp_servers=[]))
 
-        await testing.wait_normal(
-            connection.create_process(
-                ["nslookup", "google.com", dns_server_address]
-            ).execute()
-        )
+        await query_dns(connection, "google.com", dns_server=dns_server_address)
 
 
 @pytest.mark.asyncio
@@ -417,46 +403,30 @@ async def test_dns_after_mesh_off(alpha_ip_stack: IPStack) -> None:
 
         # These calls should timeout without returning anything, but cache the peer addresses
         with pytest.raises(asyncio.TimeoutError):
-            await testing.wait_normal(
-                connection_alpha.create_process(
-                    ["nslookup", "google.com", dns_server_address]
-                ).execute()
+            await query_dns(
+                connection_alpha, "google.com", dns_server=dns_server_address
             )
 
         await client_alpha.enable_magic_dns(["1.1.1.1"])
 
         # If everything went correctly, these calls should not timeout
-        await testing.wait_normal(
-            connection_alpha.create_process(
-                ["nslookup", "google.com", dns_server_address]
-            ).execute()
-        )
+        await query_dns(connection_alpha, "google.com", dns_server=dns_server_address)
 
         # If the previous calls didn't fail, we can assume that the resolver is running so no need to wait for the timeout and test the validity of the response
-        alpha_response = await testing.wait_normal(
-            connection_alpha.create_process(
-                ["nslookup", "beta.nord", dns_server_address]
-            ).execute()
+        await query_dns(
+            connection_alpha, "beta.nord", beta.ip_addresses, dns_server_address
         )
-        for ip in beta.ip_addresses:
-            assert ip in alpha_response.get_stdout()
 
         # Now we disable magic dns
         await client_alpha.set_mesh_off()
 
         # If everything went correctly, these calls should not timeout
-        await testing.wait_normal(
-            connection_alpha.create_process(
-                ["nslookup", "google.com", dns_server_address]
-            ).execute()
-        )
+        await query_dns(connection_alpha, "google.com", dns_server=dns_server_address)
 
         # After mesh off, .nord names should not be resolved anymore, therefore nslookup should fail
         try:
-            await testing.wait_normal(
-                connection_alpha.create_process(
-                    ["nslookup", "beta.nord", dns_server_address]
-                ).execute()
+            await query_dns(
+                connection_alpha, "beta.nord", dns_server=dns_server_address
             )
         except ProcessExecError as e:
             assert "server can't find beta.nord" in e.stdout
@@ -516,63 +486,27 @@ async def test_dns_stability(alpha_ip_stack: IPStack) -> None:
         await client_alpha.enable_magic_dns(["1.1.1.1"])
         await client_beta.enable_magic_dns(["1.1.1.1"])
 
-        await testing.wait_normal(
-            connection_alpha.create_process(
-                ["nslookup", "google.com", dns_server_address]
-            ).execute()
-        )
+        await query_dns(connection_alpha, "google.com", dns_server=dns_server_address)
+        await query_dns(connection_beta, "google.com", dns_server=dns_server_address)
 
-        await testing.wait_normal(
-            connection_beta.create_process(
-                ["nslookup", "google.com", dns_server_address]
-            ).execute()
+        await query_dns(
+            connection_alpha, "beta.nord", beta.ip_addresses, dns_server_address
         )
-
-        alpha_response = await testing.wait_normal(
-            connection_alpha.create_process(
-                ["nslookup", "beta.nord", dns_server_address]
-            ).execute()
+        await query_dns(
+            connection_beta, "alpha.nord", alpha.ip_addresses, dns_server_address
         )
-        for ip in beta.ip_addresses:
-            assert ip in alpha_response.get_stdout()
-
-        beta_response = await testing.wait_normal(
-            connection_beta.create_process(
-                ["nslookup", "alpha.nord", dns_server_address]
-            ).execute()
-        )
-        for ip in alpha.ip_addresses:
-            assert ip in beta_response.get_stdout()
 
         await asyncio.sleep(60 * 5)
 
-        await testing.wait_normal(
-            connection_alpha.create_process(
-                ["nslookup", "google.com", dns_server_address]
-            ).execute()
-        )
+        await query_dns(connection_alpha, "google.com", dns_server=dns_server_address)
+        await query_dns(connection_beta, "google.com", dns_server=dns_server_address)
 
-        await testing.wait_normal(
-            connection_beta.create_process(
-                ["nslookup", "google.com", dns_server_address]
-            ).execute()
+        await query_dns(
+            connection_alpha, "beta.nord", beta.ip_addresses, dns_server_address
         )
-
-        alpha_response = await testing.wait_normal(
-            connection_alpha.create_process(
-                ["nslookup", "beta.nord", dns_server_address]
-            ).execute()
+        await query_dns(
+            connection_beta, "alpha.nord", alpha.ip_addresses, dns_server_address
         )
-        for ip in beta.ip_addresses:
-            assert ip in alpha_response.get_stdout()
-
-        beta_response = await testing.wait_normal(
-            connection_beta.create_process(
-                ["nslookup", "alpha.nord", dns_server_address]
-            ).execute()
-        )
-        for ip in alpha.ip_addresses:
-            assert ip in beta_response.get_stdout()
 
 
 @pytest.mark.asyncio
@@ -622,10 +556,8 @@ async def test_set_meshmap_dns_update(
 
         # We should not be able to resolve beta yet, since it's not registered
         try:
-            await testing.wait_normal(
-                connection_alpha.create_process(
-                    ["nslookup", "beta.nord", dns_server_address]
-                ).execute()
+            await query_dns(
+                connection_alpha, "beta.nord", dns_server=dns_server_address
             )
         except ProcessExecError as e:
             assert "server can't find beta.nord" in e.stdout
@@ -635,12 +567,9 @@ async def test_set_meshmap_dns_update(
         # Check if setting meshnet updates nord names for dns resolver
         await client_alpha.set_meshmap(api.get_meshmap(alpha.id, derp_servers=[]))
 
-        alpha_response = await testing.wait_normal(
-            connection_alpha.create_process(
-                ["nslookup", "beta.nord", dns_server_address]
-            ).execute()
+        await query_dns(
+            connection_alpha, "beta.nord", [beta.ip_addresses[0]], dns_server_address
         )
-        assert beta.ip_addresses[0] in alpha_response.get_stdout()
 
 
 @pytest.mark.asyncio
@@ -693,22 +622,14 @@ async def test_dns_update(alpha_ip_stack: IPStack) -> None:
         await client_alpha.enable_magic_dns([])
 
         with pytest.raises(asyncio.TimeoutError):
-            await testing.wait_normal(
-                connection.create_process(
-                    ["nslookup", "google.com", dns_server_address]
-                ).execute()
-            )
+            await query_dns(connection, "google.com", dns_server=dns_server_address)
 
         # Update forward dns and check if it works now
         await client_alpha.enable_magic_dns(["1.1.1.1"])
 
-        alpha_response = await testing.wait_normal(
-            connection.create_process(
-                ["nslookup", "google.com", dns_server_address]
-            ).execute()
+        await query_dns(
+            connection, "google.com", ["Name:	google.com\nAddress:"], dns_server_address
         )
-        # Check if some address was found
-        assert "Name:	google.com\nAddress:" in alpha_response.get_stdout()
 
 
 @pytest.mark.asyncio
@@ -752,11 +673,7 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
         await client_alpha.enable_magic_dns([FIRST_DNS_SERVER, SECOND_DNS_SERVER])
         await asyncio.sleep(1)
 
-        await testing.wait_long(
-            connection_alpha.create_process(
-                ["nslookup", "google.com", config.LIBTELIO_DNS_IPV4]
-            ).execute()
-        )
+        await query_dns(connection_alpha, "google.com")
         await asyncio.sleep(1)
 
         tcpdump_stdout = process.get_stdout()
@@ -780,14 +697,7 @@ async def test_dns_aaaa_records() -> None:
 
         await client_alpha.enable_magic_dns(["1.1.1.1"])
 
-        alpha_response = await testing.wait_long(
-            connection_alpha.create_process(
-                ["nslookup", "beta.nord", config.LIBTELIO_DNS_IPV4]
-            ).execute()
-        )
-
-        assert beta.ip_addresses[0] in alpha_response.get_stdout()
-        assert beta.ip_addresses[1] in alpha_response.get_stdout()
+        await query_dns(connection_alpha, "beta.nord", beta.ip_addresses)
 
 
 @pytest.mark.asyncio
@@ -829,37 +739,11 @@ async def test_dns_nickname() -> None:
         await client_alpha.enable_magic_dns([])
         await client_beta.enable_magic_dns([])
 
-        alpha_response = await testing.wait_long(
-            connection_alpha.create_process(
-                ["nslookup", "yoko.nord", config.LIBTELIO_DNS_IPV4]
-            ).execute()
-        )
-        for ip in beta.ip_addresses:
-            assert ip in alpha_response.get_stdout()
+        await query_dns(connection_alpha, "yoko.nord", beta.ip_addresses)
+        await query_dns(connection_alpha, "johnny.nord", alpha.ip_addresses)
 
-        alpha_response = await testing.wait_long(
-            connection_alpha.create_process(
-                ["nslookup", "johnny.nord", config.LIBTELIO_DNS_IPV4]
-            ).execute()
-        )
-        for ip in alpha.ip_addresses:
-            assert ip in alpha_response.get_stdout()
-
-        beta_response = await testing.wait_long(
-            connection_beta.create_process(
-                ["nslookup", "johnny.nord", config.LIBTELIO_DNS_IPV4]
-            ).execute()
-        )
-        for ip in alpha.ip_addresses:
-            assert ip in beta_response.get_stdout()
-
-        beta_response = await testing.wait_long(
-            connection_beta.create_process(
-                ["nslookup", "yoko.nord", config.LIBTELIO_DNS_IPV4]
-            ).execute()
-        )
-        for ip in beta.ip_addresses:
-            assert ip in beta_response.get_stdout()
+        await query_dns(connection_beta, "johnny.nord", alpha.ip_addresses)
+        await query_dns(connection_beta, "yoko.nord", beta.ip_addresses)
 
 
 @pytest.mark.asyncio
@@ -899,175 +783,42 @@ async def test_dns_change_nickname() -> None:
 
         await client_alpha.enable_magic_dns([])
         await client_beta.enable_magic_dns([])
+
+        # Set new meshmap with different nicknames
         api.assign_nickname(alpha.id, "rotten")
         api.assign_nickname(beta.id, "ono")
         await client_alpha.set_meshmap(api.get_meshmap(alpha.id, derp_servers=[]))
         await client_beta.set_meshmap(api.get_meshmap(beta.id, derp_servers=[]))
 
-        alpha_response = await testing.wait_long(
-            connection_alpha.create_process(
-                ["nslookup", "ono.nord", config.LIBTELIO_DNS_IPV4]
-            ).execute()
-        )
-        for ip in beta.ip_addresses:
-            assert ip in alpha_response.get_stdout()
+        with pytest.raises(ProcessExecError):
+            await query_dns(connection_alpha, "yoko.nord")
+        with pytest.raises(ProcessExecError):
+            await query_dns(connection_alpha, "johnny.nord")
+        with pytest.raises(ProcessExecError):
+            await query_dns(connection_beta, "yoko.nord")
+        with pytest.raises(ProcessExecError):
+            await query_dns(connection_beta, "johnny.nord")
 
-        alpha_response = await testing.wait_long(
-            connection_alpha.create_process(
-                ["nslookup", "rotten.nord", config.LIBTELIO_DNS_IPV4]
-            ).execute()
-        )
-        for ip in alpha.ip_addresses:
-            assert ip in alpha_response.get_stdout()
+        await query_dns(connection_alpha, "ono.nord", beta.ip_addresses)
+        await query_dns(connection_alpha, "rotten.nord", alpha.ip_addresses)
 
-        beta_response = await testing.wait_long(
-            connection_beta.create_process(
-                ["nslookup", "rotten.nord", config.LIBTELIO_DNS_IPV4]
-            ).execute()
-        )
-        for ip in alpha.ip_addresses:
-            assert ip in beta_response.get_stdout()
+        await query_dns(connection_beta, "rotten.nord", alpha.ip_addresses)
+        await query_dns(connection_beta, "ono.nord", beta.ip_addresses)
 
-        beta_response = await testing.wait_long(
-            connection_beta.create_process(
-                ["nslookup", "ono.nord", config.LIBTELIO_DNS_IPV4]
-            ).execute()
-        )
-        for ip in beta.ip_addresses:
-            assert ip in beta_response.get_stdout()
-
+        # Set new meshmap removing nicknames
         api.reset_nickname(alpha.id)
         api.reset_nickname(beta.id)
         await client_alpha.set_meshmap(api.get_meshmap(alpha.id, derp_servers=[]))
         await client_beta.set_meshmap(api.get_meshmap(beta.id, derp_servers=[]))
 
         with pytest.raises(ProcessExecError):
-            alpha_response = await testing.wait_long(
-                connection_alpha.create_process(
-                    ["nslookup", "ono.nord", config.LIBTELIO_DNS_IPV4]
-                ).execute()
-            )
+            await query_dns(connection_alpha, "ono.nord")
 
         with pytest.raises(ProcessExecError):
-            alpha_response = await testing.wait_long(
-                connection_alpha.create_process(
-                    ["nslookup", "rotten.nord", config.LIBTELIO_DNS_IPV4]
-                ).execute()
-            )
+            await query_dns(connection_alpha, "rotten.nord")
 
         with pytest.raises(ProcessExecError):
-            beta_response = await testing.wait_long(
-                connection_beta.create_process(
-                    ["nslookup", "rotten.nord", config.LIBTELIO_DNS_IPV4]
-                ).execute()
-            )
+            await query_dns(connection_beta, "rotten.nord")
 
         with pytest.raises(ProcessExecError):
-            beta_response = await testing.wait_long(
-                connection_beta.create_process(
-                    ["nslookup", "ono.nord", config.LIBTELIO_DNS_IPV4]
-                ).execute()
-            )
-
-
-@pytest.mark.asyncio
-async def test_dns_wildcard() -> None:
-    async with AsyncExitStack() as exit_stack:
-        api, (alpha, beta) = setup_api(
-            [(False, IPStack.IPv4v6), (False, IPStack.IPv4v6)]
-        )
-        api.assign_nickname(alpha.id, "johnny")
-        api.assign_nickname(beta.id, "yoko")
-        env = await setup_mesh_nodes(
-            exit_stack,
-            [
-                SetupParameters(
-                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    connection_tracker_config=generate_connection_tracker_config(
-                        ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        derp_1_limits=ConnectionLimits(1, 1),
-                    ),
-                    features=TelioFeatures(nicknames=True),
-                ),
-                SetupParameters(
-                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    connection_tracker_config=generate_connection_tracker_config(
-                        ConnectionTag.DOCKER_CONE_CLIENT_2,
-                        derp_1_limits=ConnectionLimits(1, 1),
-                    ),
-                    features=TelioFeatures(nicknames=True),
-                ),
-            ],
-            provided_api=api,
-        )
-        client_alpha, client_beta = env.clients
-        connection_alpha, connection_beta = [
-            conn.connection for conn in env.connections
-        ]
-
-        await client_alpha.enable_magic_dns([])
-        await client_beta.enable_magic_dns([])
-
-        alpha_response = await testing.wait_long(
-            connection_alpha.create_process(
-                ["nslookup", "alpha.nord", config.LIBTELIO_DNS_IPV4]
-            ).execute()
-        )
-        for ip in alpha.ip_addresses:
-            assert ip in alpha_response.get_stdout()
-
-        alpha_response = await testing.wait_long(
-            connection_alpha.create_process(
-                ["nslookup", "myservice.alpha.nord", config.LIBTELIO_DNS_IPV4]
-            ).execute()
-        )
-        for ip in alpha.ip_addresses:
-            assert ip in alpha_response.get_stdout()
-
-        alpha_response = await testing.wait_long(
-            connection_alpha.create_process(
-                ["nslookup", "johnny.nord", config.LIBTELIO_DNS_IPV4]
-            ).execute()
-        )
-        for ip in alpha.ip_addresses:
-            assert ip in alpha_response.get_stdout()
-
-        alpha_response = await testing.wait_long(
-            connection_alpha.create_process(
-                ["nslookup", "myservice.johnny.nord", config.LIBTELIO_DNS_IPV4]
-            ).execute()
-        )
-        for ip in alpha.ip_addresses:
-            assert ip in alpha_response.get_stdout()
-
-        alpha_response = await testing.wait_long(
-            connection_alpha.create_process(
-                ["nslookup", "yoko.nord", config.LIBTELIO_DNS_IPV4]
-            ).execute()
-        )
-        for ip in beta.ip_addresses:
-            assert ip in alpha_response.get_stdout()
-
-        alpha_response = await testing.wait_long(
-            connection_alpha.create_process(
-                ["nslookup", "herservice.yoko.nord", config.LIBTELIO_DNS_IPV4]
-            ).execute()
-        )
-        for ip in beta.ip_addresses:
-            assert ip in alpha_response.get_stdout()
-
-        beta_response = await testing.wait_long(
-            connection_beta.create_process(
-                ["nslookup", "johnny.nord", config.LIBTELIO_DNS_IPV4]
-            ).execute()
-        )
-        for ip in alpha.ip_addresses:
-            assert ip in beta_response.get_stdout()
-
-        beta_response = await testing.wait_long(
-            connection_beta.create_process(
-                ["nslookup", "hisservice.johnny.nord", config.LIBTELIO_DNS_IPV4]
-            ).execute()
-        )
-        for ip in alpha.ip_addresses:
-            assert ip in beta_response.get_stdout()
+            await query_dns(connection_beta, "ono.nord")
