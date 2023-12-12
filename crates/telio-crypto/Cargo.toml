@@ -10,7 +10,7 @@ publish = false
 base64.workspace = true
 crypto_box.workspace = true
 hex.workspace = true
-tracing.workspace = true
+log.workspace = true
 rand = { workspace = true, features = ["std", "std_rng"] }
 serde.workspace = true
 serde_with.workspace = true

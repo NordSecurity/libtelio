@@ -1,6 +1,8 @@
 use crate::derp::{DerpClient, DerpClientCmd};
 use clap::Parser;
+use flexi_logger::{DeferredNow, FileSpec, Logger, Record, WriteMode};
 use ipnetwork::IpNetwork;
+use log::error;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use telio::crypto::{PublicKey, SecretKey};
@@ -16,15 +18,9 @@ use tokio::{
     runtime::Runtime,
     time::{sleep, Duration},
 };
-use tracing::error;
-use tracing::level_filters::LevelFilter;
-use tracing_appender;
-use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber;
 
 use crate::nord::{Error as NordError, Nord, OAuth};
 
-use std::fs::File;
 use std::str::FromStr;
 use std::time::SystemTime;
 use std::{
@@ -116,7 +112,6 @@ pub struct Cli {
     meshmap: Option<MeshMap>,
     derp_client: DerpClient,
     derp_server: Arc<Mutex<Option<Server>>>,
-    _tracing_worker_guard: WorkerGuard,
 }
 
 pub enum Resp {
@@ -323,21 +318,48 @@ macro_rules! cli_try {
     };
 }
 
+fn custom_format(
+    w: &mut dyn std::io::Write,
+    now: &mut DeferredNow,
+    record: &Record,
+) -> Result<(), std::io::Error> {
+    write!(
+        w,
+        "{} {} {} {:#?}:{:#?} {} {}",
+        now.now().month(),
+        now.now().day(),
+        now.now().time(),
+        record.module_path().unwrap_or("unknown module"),
+        record.line().unwrap_or(0),
+        record.level(),
+        record.args()
+    )
+}
+
 impl Cli {
     pub fn new(
         features: Features,
         token: Option<String>,
         derp_server: Arc<Mutex<Option<Server>>>,
     ) -> anyhow::Result<Self> {
-        let (non_blocking_writer, _tracing_worker_guard) =
-            tracing_appender::non_blocking(File::create("tcli.log")?);
-        tracing_subscriber::fmt()
-            .with_max_level(LevelFilter::TRACE)
-            .with_writer(non_blocking_writer)
-            .with_ansi(false)
-            .with_line_number(true)
-            .with_level(true)
-            .init();
+        let base_name = "tcli";
+        let suffix = "log";
+        if let Ok(logger) = Logger::try_with_str("debug") {
+            if let Err(err) = logger
+                .log_to_file(
+                    FileSpec::default()
+                        .basename(base_name)
+                        .suppress_timestamp()
+                        .suffix(suffix),
+                )
+                .format(custom_format)
+                .write_mode(WriteMode::BufferAndFlush)
+                .use_utc()
+                .start()
+            {
+                error!("{}", err);
+            }
+        }
 
         let (sender, resp) = mpsc::channel();
 
@@ -387,7 +409,6 @@ impl Cli {
             meshmap: None,
             derp_client: DerpClient::new(),
             derp_server,
-            _tracing_worker_guard,
         })
     }
 

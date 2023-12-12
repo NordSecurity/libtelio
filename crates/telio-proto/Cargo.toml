@@ -10,7 +10,7 @@ publish = false
 protobuf = "2"
 
 bytes.workspace = true
-tracing.workspace = true
+log.workspace = true
 strum.workspace = true
 thiserror.workspace = true
 

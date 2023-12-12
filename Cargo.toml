@@ -1,6 +1,6 @@
 [package]
 name = "telio"
-version = "4.0.5"
+version = "4.2.0"
 authors = ["info@nordvpn.com"]
 edition = "2018"
 license = "GPL-3.0-only"
@@ -30,6 +30,7 @@ futures.workspace = true
 ipnetwork.workspace = true
 lazy_static.workspace = true
 libc.workspace = true
+log.workspace = true
 modifier.workspace = true
 parking_lot.workspace = true
 serde.workspace = true
@@ -63,6 +64,7 @@ slog-term = "2.8"
 mockall.workspace = true
 ntest.workspace = true
 pretty_assertions.workspace = true
+rstest.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 
 telio-dns = { workspace = true, features = ["mockall"] }
@@ -139,8 +141,7 @@ surge-ping = { version = "0.8.0" }
 thiserror = "1.0"
 time = { version = "0.3.9", features = ["formatting"] }
 tokio = ">=1.22"
-tracing-subscriber = { version = "0.3.17", features = ["local-time"] }
-tracing-appender = "0.2.3"
+tracing = { version = "0.1.37", features = ["release_max_level_debug"] }
 url = "2.2.2"
 uuid = { version = "1.1.2", features = ["v4"] }
 winapi = { version = "0.3", features = ["netioapi", "ws2def"] }
