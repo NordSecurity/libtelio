@@ -111,7 +111,7 @@ ipnetwork = "0.18"
 itertools = "0.10"
 lazy_static = "1.4.0"
 libc = "0.2.112"
-tracing = { version = "0.1.37", features = ["max_level_trace", "release_max_level_info"] }
+tracing = { version = "0.1.37", features = ["max_level_trace", "release_max_level_debug"] }
 maplit = "1"
 mockall = "0.11.3"
 modifier = "0.1.0"
