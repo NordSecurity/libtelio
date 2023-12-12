@@ -1,3 +1,11 @@
+### v4.1.4
+### **Bruschetta**
+---
+### Changelog
+* LLT-4586: Fix wireguard-go initialization crash
+
+<br>
+
 ### v4.1.3
 ### **Bruschetta**
 ---
