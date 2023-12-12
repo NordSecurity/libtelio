@@ -822,3 +822,50 @@ async def test_dns_change_nickname() -> None:
 
         with pytest.raises(ProcessExecError):
             await query_dns(connection_beta, "ono.nord")
+
+
+@pytest.mark.asyncio
+async def test_dns_wildcarded_records() -> None:
+    async with AsyncExitStack() as exit_stack:
+        api, (alpha, beta) = setup_api(
+            [(False, IPStack.IPv4v6), (False, IPStack.IPv4v6)]
+        )
+        api.assign_nickname(alpha.id, "johnny")
+        api.assign_nickname(beta.id, "yoko")
+        env = await setup_mesh_nodes(
+            exit_stack,
+            [
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_1,
+                        derp_1_limits=ConnectionLimits(1, 1),
+                    ),
+                    features=TelioFeatures(nicknames=True),
+                ),
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_2,
+                        derp_1_limits=ConnectionLimits(1, 1),
+                    ),
+                    features=TelioFeatures(nicknames=True),
+                ),
+            ],
+            provided_api=api,
+        )
+        client_alpha, client_beta = env.clients
+        connection_alpha, connection_beta = [
+            conn.connection for conn in env.connections
+        ]
+
+        await client_alpha.enable_magic_dns([])
+        await client_beta.enable_magic_dns([])
+
+        await query_dns(connection_alpha, "myserviceA.alpha.nord", alpha.ip_addresses)
+        await query_dns(connection_alpha, "myserviceB.johnny.nord", alpha.ip_addresses)
+        await query_dns(connection_alpha, "herservice.yoko.nord", beta.ip_addresses)
+
+        await query_dns(connection_beta, "myserviceC.beta.nord", beta.ip_addresses)
+        await query_dns(connection_beta, "myserviceD.yoko.nord", beta.ip_addresses)
+        await query_dns(connection_beta, "hisservice.johnny.nord", alpha.ip_addresses)
