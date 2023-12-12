@@ -92,7 +92,10 @@ async def test_network_switcher(
                 connection_tag=ConnectionTag.WINDOWS_VM,
                 adapter_type=telio.AdapterType.WireguardGo,
             ),
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
+            ],
         ),
         pytest.param(
             SetupParameters(
