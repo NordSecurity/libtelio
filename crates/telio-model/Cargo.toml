@@ -15,7 +15,7 @@ strum_macros = "0.24"
 
 ipnetwork.workspace = true
 itertools.workspace = true
-log.workspace = true
+tracing.workspace = true
 modifier.workspace = true
 num_enum.workspace = true
 serde.workspace = true

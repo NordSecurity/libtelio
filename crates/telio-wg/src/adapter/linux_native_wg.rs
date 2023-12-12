@@ -158,8 +158,6 @@ impl LinuxNativeWg {
                 telio_log_error!("LinuxNativeWg: [SET01] {}", e);
                 1
             }
-            // Err(err::SetDeviceError::NlSerError(_e)) => 1,
-            // Err(err::SetDeviceError::NlError(_e)) => 1,
         }
     }
 }

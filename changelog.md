@@ -1,6 +1,7 @@
 ### UNRELEASED
 ----
 * LLT-4006: Restrict nat-lab containers capabilities
+* LLT-4225: Migrate Telio to use the tracing crate instead of log crate
 
 <br>
 
@@ -42,7 +43,6 @@
 * LLT-4502: Implement ICMP, UDP and TCP conntrack tracking for each peer separately
 * LLT-4508: Fetch windows dependencies from local gitlab registry
 * LLT-4552: Add way to flush events when stopping
-* LLT-4225: Migrate Telio to use the tracing crate instead of log crate
 * LLT-4583: Don't add IPv6 addresses to wireguard when IPv6 feature is disabled
 
 <br>

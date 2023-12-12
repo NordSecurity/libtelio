@@ -4,9 +4,9 @@ use base64::{decode as base64decode, encode as base64encode};
 use ffi_helpers::{error_handling, panic as panic_handling};
 use ipnetwork::IpNetwork;
 use libc::c_char;
-use log::{error, Level, Metadata, Record};
 use telio_crypto::SecretKey;
 use telio_wg::AdapterType;
+use tracing::{error, trace, Subscriber};
 
 #[cfg(target_os = "linux")]
 use libc::c_uint;
@@ -19,6 +19,7 @@ use uuid::Uuid;
 
 use std::{
     ffi::{CStr, CString},
+    fmt,
     net::{IpAddr, SocketAddr},
     panic,
     process::abort,
@@ -162,19 +163,14 @@ fn telio_new_common(
     logger: telio_logger_cb,
     #[cfg(target_os = "android")] protect_cb: Option<telio_protect_cb>,
 ) -> telio_result {
-    // Set up `log` crate to use `logger` as 'sink' and if that works set up `tracing` to forward
-    // events to be logged via `log`.
-    if let Err(err) = log::set_boxed_logger(Box::new(logger)) {
-        eprintln!("{}", err)
-    } else if let Err(err) =
-        tracing::subscriber::set_global_default(telio_utils::tracing::TracingToLogConverter)
-    {
-        error!("{}", err);
+    let tracing_subscriber = TelioTracingSubscriber {
+        callback: logger,
+        max_level: log_level.into(),
+    };
+    if tracing::subscriber::set_global_default(tracing_subscriber).is_err() {
+        telio_log_warn!("Could not set logger, because logger had already been set by previous libtelio instance");
     }
 
-    log::set_max_level(
-        (<types::telio_log_level as Into<Level>>::into(log_level) as Level).to_level_filter(),
-    );
     let event_dispatcher = move |e: Box<Event>| {
         let _ = CString::new(
             e.to_json()
@@ -766,31 +762,31 @@ pub extern "C" fn telio_get_commit_sha() -> *mut c_char {
 
 #[no_mangle]
 pub extern "C" fn telio_get_status_map(dev: &telio) -> *mut c_char {
-    log::trace!("acquiring dev lock");
+    trace!("acquiring dev lock");
     let dev = match dev.0.lock() {
         Ok(dev) => dev,
         Err(err) => {
-            log::error!("telio_get_status_map: dev lock: {}", err);
+            error!("telio_get_status_map: dev lock: {}", err);
             return std::ptr::null_mut();
         }
     };
-    log::trace!("retrieving external nodes");
+    trace!("retrieving external nodes");
     let nodes = match dev.external_nodes() {
         Ok(nodes) => nodes,
         Err(err) => {
-            log::error!("telio_get_status_map: external_nodes: {}", err);
+            error!("telio_get_status_map: external_nodes: {}", err);
             return std::ptr::null_mut();
         }
     };
-    log::trace!("serializing");
+    trace!("serializing");
     let json = match serde_json::to_string(&nodes) {
         Ok(json) => json,
         Err(err) => {
-            log::error!("telio_get_status_map: to_string: {}", err);
+            error!("telio_get_status_map: to_string: {}", err);
             return std::ptr::null_mut();
         }
     };
-    log::trace!("converting to char pointer");
+    trace!("converting to char pointer");
     bytes_to_zero_terminated_unmanaged_bytes(json.as_bytes())
 }
 
@@ -867,29 +863,90 @@ fn filter_log_message(msg: String) -> Option<String> {
     None
 }
 
-impl log::Log for telio_logger_cb {
-    fn enabled(&self, metadata: &Metadata) -> bool {
-        metadata.level() <= log::max_level()
+/// Visitor for `tracing` events that converts one field with name equal to `field_name`
+/// value to a message string.
+pub struct TraceFieldVisitor<'a> {
+    field_name: &'static str,
+    metadata: &'a tracing::Metadata<'a>,
+    message: String,
+}
+
+impl<'a> tracing::field::Visit for TraceFieldVisitor<'a> {
+    #[track_caller]
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn fmt::Debug) {
+        // For now we're handling only the message field value, because other fields are not yet used.
+        if field.name() == self.field_name {
+            self.message = format!(
+                "{:#?}:{:#?} {:?}",
+                self.metadata.module_path().unwrap_or("unknown module"),
+                self.metadata.line().unwrap_or(0),
+                value,
+            );
+        }
+    }
+}
+
+pub struct TelioTracingSubscriber {
+    callback: telio_logger_cb,
+    max_level: tracing::Level,
+}
+
+impl TelioTracingSubscriber {
+    pub fn new(callback: telio_logger_cb, max_level: tracing::Level) -> Self {
+        TelioTracingSubscriber {
+            callback,
+            max_level,
+        }
+    }
+}
+
+impl Subscriber for TelioTracingSubscriber {
+    fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
+        metadata.level() <= &tracing::level_filters::STATIC_MAX_LEVEL
+            && metadata.level() <= &self.max_level
     }
 
-    fn log(&self, record: &Record) {
-        if !self.enabled(record.metadata()) {
+    fn new_span(&self, _span: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        // TODO using a placeholder for now
+        tracing::span::Id::from_u64(1337)
+    }
+
+    fn record(&self, _span: &tracing::span::Id, _values: &tracing::span::Record<'_>) {
+        // TODO
+    }
+
+    fn record_follows_from(&self, _span: &tracing::span::Id, _follows: &tracing::span::Id) {
+        // TODO
+    }
+
+    fn event(&self, event: &tracing::Event<'_>) {
+        if !self.enabled(event.metadata()) {
             return;
         }
 
-        if let Some(filtered_msg) = filter_log_message(format!(
-            "{:#?}:{:#?} {}",
-            record.module_path().unwrap_or("unknown module"),
-            record.line().unwrap_or(0),
-            record.args()
-        )) {
+        let level = *event.metadata().level();
+        let mut visitor = TraceFieldVisitor {
+            // hardcoded name of the field where tracing stores the messages passed to tracing::info! etc
+            field_name: "message",
+            metadata: event.metadata(),
+            message: String::new(),
+        };
+        event.record(&mut visitor);
+
+        if let Some(filtered_msg) = filter_log_message(visitor.message) {
             if let Ok(cstr) = CString::new(filtered_msg) {
-                unsafe { (self.cb)(self.ctx, record.level().into(), cstr.as_ptr()) };
+                unsafe { (self.callback.cb)(self.callback.ctx, level.into(), cstr.as_ptr()) };
             }
         }
     }
 
-    fn flush(&self) {}
+    fn enter(&self, _span: &tracing::span::Id) {
+        // TODO
+    }
+
+    fn exit(&self, _span: &tracing::span::Id) {
+        // TODO
+    }
 }
 
 trait FFILog {
