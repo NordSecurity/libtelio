@@ -1049,6 +1049,7 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
 @pytest.mark.moose
 @pytest.mark.asyncio
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
+@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4616")
 async def test_lana_same_meshnet_id_is_reported_after_a_restart(
     alpha_ip_stack: IPStack, beta_ip_stack: IPStack
 ):
