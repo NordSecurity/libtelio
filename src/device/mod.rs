@@ -91,6 +91,8 @@ pub enum Error {
     AlreadyStarted,
     #[error("Driver not started.")]
     NotStarted,
+    #[error("Meshnet not configured.")]
+    MeshnetNotConfigured,
     #[error("Adapter is misconfigured: {0}.")]
     AdapterConfig(String),
     #[error("Private key does not match meshnet config's public key.")]
@@ -204,6 +206,17 @@ pub struct RequestedState {
     pub postquantum_wg: Option<wg::pq::PqKeys>,
 }
 
+pub struct MeshnetEntites {
+    // DERP Relay client
+    derp: Arc<DerpRelay>,
+
+    // UDP proxy for supporting relayed WireGuard connections
+    proxy: Arc<UdpProxy>,
+
+    // Entities for direct wireguard connections
+    direct: Option<DirectEntities>,
+}
+
 pub struct Entities {
     // Wireguard interface
     wireguard_interface: Arc<DynamicWg>,
@@ -217,14 +230,8 @@ pub struct Entities {
     // Multiplexer for inter-node-coms and rendezvous points for other components
     multiplexer: Arc<Multiplexer>,
 
-    // DERP Relay client
-    derp: Arc<DerpRelay>,
-
-    // UDP proxy for supporting relayed WireGuard connections
-    proxy: Arc<UdpProxy>,
-
-    // Entities for direct wireguard connections
-    direct: Option<DirectEntities>,
+    // Entities for meshnet connections
+    meshnet: Option<MeshnetEntites>,
 
     // A place to control the sockets used by the libtelio
     // It is handy whenever sockets needs to be bound to some interface, fwmark'ed or just
@@ -237,22 +244,32 @@ pub struct Entities {
 
 impl Entities {
     pub fn cross_ping_check(&self) -> Option<&Arc<CrossPingCheck>> {
-        self.direct.as_ref().map(|d| &d.cross_ping_check)
+        self.meshnet
+            .as_ref()
+            .and_then(|m| m.direct.as_ref().map(|d| &d.cross_ping_check))
     }
 
     pub fn session_keeper(&self) -> Option<&Arc<SessionKeeper>> {
-        self.direct.as_ref().map(|d| &d.session_keeper)
+        self.meshnet
+            .as_ref()
+            .and_then(|m| m.direct.as_ref().map(|d| &d.session_keeper))
     }
 
     fn endpoint_providers(&self) -> Vec<&Arc<dyn EndpointProvider>> {
-        self.direct
+        self.meshnet
             .as_ref()
-            .map(|d| d.endpoint_providers.iter().collect())
+            .and_then(|m| {
+                m.direct
+                    .as_ref()
+                    .map(|d| d.endpoint_providers.iter().collect())
+            })
             .unwrap_or_default()
     }
 
     pub fn upgrade_sync(&self) -> Option<&Arc<UpgradeSync>> {
-        self.direct.as_ref().map(|d| &d.upgrade_sync)
+        self.meshnet
+            .as_ref()
+            .and_then(|m| m.direct.as_ref().map(|d| &d.upgrade_sync))
     }
 }
 
@@ -1085,9 +1102,11 @@ impl Runtime {
                 dns,
                 firewall,
                 multiplexer,
-                derp,
-                proxy,
-                direct,
+                meshnet: Some(MeshnetEntites {
+                    derp,
+                    proxy,
+                    direct,
+                }),
                 socket_pool,
                 nurse,
             },
@@ -1163,15 +1182,19 @@ impl Runtime {
             return Err(Error::DnsNotDisabled);
         }
 
-        self.requested_state.device_config.private_key = *private_key;
+        if let Some(m_entities) = self.entities.meshnet.as_ref() {
+            m_entities
+                .derp
+                .configure(m_entities.derp.get_config().await.map(|c| DerpConfig {
+                    secret_key: *private_key,
+                    ..c
+                }))
+                .await;
+        } else {
+            return Err(Error::MeshnetNotConfigured);
+        }
 
-        self.entities
-            .derp
-            .configure(self.entities.derp.get_config().await.map(|c| DerpConfig {
-                secret_key: *private_key,
-                ..c
-            }))
-            .await;
+        self.requested_state.device_config.private_key = *private_key;
 
         if let Some(nurse) = &self.entities.nurse {
             nurse.set_private_key(*private_key).await;
@@ -1206,13 +1229,16 @@ impl Runtime {
             .drop_connected_sockets()
             .await?;
 
-        if let Some(direct) = &self.entities.direct {
-            if let Some(stun) = &direct.stun_endpoint_provider {
-                stun.reconnect().await;
+        if let Some(meshnet_entities) = self.entities.meshnet.as_ref() {
+            if let Some(direct) = &meshnet_entities.direct {
+                if let Some(stun) = &direct.stun_endpoint_provider {
+                    stun.reconnect().await;
+                }
             }
+
+            meshnet_entities.derp.reconnect().await;
         }
 
-        self.entities.derp.reconnect().await;
         self.log_nat().await;
         Ok(())
     }
@@ -1327,86 +1353,91 @@ impl Runtime {
                 .wireguard_interface
                 .wait_for_listen_port(Duration::from_secs(1))
                 .await?;
+            if let Some(m_entities) = self.entities.meshnet.as_ref() {
+                let proxy_config = ProxyConfig {
+                    wg_port: Some(wg_port),
+                    peers: peers.clone(),
+                };
 
-            let proxy_config = ProxyConfig {
-                wg_port: Some(wg_port),
-                peers: peers.clone(),
-            };
-            self.entities.proxy.configure(proxy_config).await?;
+                m_entities.proxy.configure(proxy_config).await?;
 
-            let derp_config = DerpConfig {
-                secret_key,
-                servers: SortedServers::new(config.derp_servers.clone().unwrap_or_default()),
-                allowed_pk: peers,
-                timeout: Duration::from_secs(10), //TODO: make configurable
-                server_keepalives: DerpKeepaliveConfig::from(&self.features.derp),
-                enable_polling: self
-                    .features
-                    .derp
-                    .clone()
-                    .unwrap_or_default()
-                    .enable_polling
-                    .unwrap_or_default(),
-                meshnet_peers: config
-                    .peers
-                    .as_ref()
-                    .map(|peers| peers.iter().map(|peer| peer.public_key).collect())
-                    .unwrap_or_default(),
-                use_built_in_root_certificates: self
-                    .features
-                    .derp
-                    .clone()
-                    .unwrap_or_default()
-                    .use_built_in_root_certificates,
-            };
+                let derp_config = DerpConfig {
+                    secret_key,
+                    servers: SortedServers::new(config.derp_servers.clone().unwrap_or_default()),
+                    allowed_pk: peers,
+                    timeout: Duration::from_secs(10), //TODO: make configurable
+                    server_keepalives: DerpKeepaliveConfig::from(&self.features.derp),
+                    enable_polling: self
+                        .features
+                        .derp
+                        .clone()
+                        .unwrap_or_default()
+                        .enable_polling
+                        .unwrap_or_default(),
+                    meshnet_peers: config
+                        .peers
+                        .as_ref()
+                        .map(|peers| peers.iter().map(|peer| peer.public_key).collect())
+                        .unwrap_or_default(),
+                    use_built_in_root_certificates: self
+                        .features
+                        .derp
+                        .clone()
+                        .unwrap_or_default()
+                        .use_built_in_root_certificates,
+                };
 
-            // Update configuration for DERP client
-            self.entities.derp.configure(Some(derp_config)).await;
+                // Update configuration for DERP client
+                m_entities.derp.configure(Some(derp_config)).await;
 
-            // Refresh the lists of servers for STUN endpoint provider
-            if let Some(direct) = self.entities.direct.as_ref() {
-                if let Some(stun_ep) = direct.stun_endpoint_provider.as_ref() {
-                    let use_ipv6 = self.features.ipv6 && {
-                        config
-                            .this
-                            .ip_addresses
-                            .as_ref()
-                            .map(|vec| vec.iter().any(|addr| addr.is_ipv6()))
-                            .unwrap_or(false)
-                    };
+                // Refresh the lists of servers for STUN endpoint provider
+                if let Some(direct) = m_entities.direct.as_ref() {
+                    if let Some(stun_ep) = direct.stun_endpoint_provider.as_ref() {
+                        let use_ipv6 = self.features.ipv6 && {
+                            config
+                                .this
+                                .ip_addresses
+                                .as_ref()
+                                .map(|vec| vec.iter().any(|addr| addr.is_ipv6()))
+                                .unwrap_or(false)
+                        };
 
-                    stun_ep
-                        .configure(
-                            config.derp_servers.clone().unwrap_or_default(),
-                            use_ipv6,
-                            self.get_socket_pool().await?,
-                        )
-                        .await;
+                        stun_ep
+                            .configure(
+                                config.derp_servers.clone().unwrap_or_default(),
+                                use_ipv6,
+                                self.get_socket_pool().await?,
+                            )
+                            .await;
+                    }
                 }
             }
 
             self.upsert_dns_peers().await?;
         } else {
-            self.entities
-                .proxy
-                .configure(ProxyConfig {
-                    wg_port: None,
-                    peers: HashSet::new(),
-                })
-                .await?;
+            // Just meshnet.take()
+            if let Some(m_entities) = self.entities.meshnet.as_ref() {
+                m_entities
+                    .proxy
+                    .configure(ProxyConfig {
+                        wg_port: None,
+                        peers: HashSet::new(),
+                    })
+                    .await?;
 
-            self.upsert_dns_peers().await?;
+                m_entities.derp.configure(None).await;
 
-            self.entities.derp.configure(None).await;
-
-            // Refresh the lists of servers for STUN endpoint provider
-            if let Some(direct) = self.entities.direct.as_ref() {
-                if let Some(stun_ep) = direct.stun_endpoint_provider.as_ref() {
-                    stun_ep
-                        .configure(vec![], false, self.get_socket_pool().await?)
-                        .await;
+                // Refresh the lists of servers for STUN endpoint provider
+                if let Some(direct) = m_entities.direct.as_ref() {
+                    if let Some(stun_ep) = direct.stun_endpoint_provider.as_ref() {
+                        stun_ep
+                            .configure(vec![], false, self.get_socket_pool().await?)
+                            .await;
+                    }
                 }
             }
+
+            self.upsert_dns_peers().await?;
         }
 
         if let Some(cpc) = self.entities.cross_ping_check() {
@@ -1645,18 +1676,22 @@ impl Runtime {
                 .or_else(|| get_config_peer(self.requested_state.old_meshnet_config.as_ref()));
 
         // Resolve what type of path is used
-        let path_type = {
-            self.entities
-                .proxy
-                .get_endpoint_map()
-                .await
-                .unwrap_or_else(|err| {
-                    telio_log_warn!("Failed to get proxy endpoint map: {}", err);
-                    Default::default()
-                })
-                .get(&peer.public_key)
-                .and_then(|proxy| endpoint.filter(|actual| proxy == actual))
-                .map_or(PathType::Direct, |_| PathType::Relay)
+        let path_type = if let Some(m) = self.entities.meshnet.as_ref() {
+            async {
+                m.proxy
+                    .get_endpoint_map()
+                    .await
+                    .unwrap_or_else(|err| {
+                        telio_log_warn!("Failed to get proxy endpoint map: {}", err);
+                        Default::default()
+                    })
+                    .get(&peer.public_key)
+                    .and_then(|proxy| endpoint.filter(|actual| proxy == actual))
+                    .map_or(PathType::Direct, |_| PathType::Relay)
+            }
+            .await
+        } else {
+            PathType::Relay
         };
 
         // Build a node to report event about, we need to report about either meshnet peers
@@ -1832,7 +1867,7 @@ impl TaskRuntime for Runtime {
         }
 
         let _ = self.stop_dns().await;
-        if let Some(direct) = self.entities.direct {
+        if let Some(direct) = self.entities.meshnet.as_mut().and_then(|m| m.direct.take()) {
             // Arc dependency on endpoint providers
             stop_arc_entity!(direct.cross_ping_check, "CrossPingCheck");
             drop(direct.endpoint_providers);
@@ -1859,8 +1894,10 @@ impl TaskRuntime for Runtime {
             stop_arc_entity!(nurse, "Nurse");
         }
 
-        stop_arc_entity!(self.entities.derp, "Derp");
-        stop_arc_entity!(self.entities.proxy, "UdpProxy");
+        if let Some(m_entities) = self.entities.meshnet {
+            stop_arc_entity!(m_entities.derp, "Derp");
+            stop_arc_entity!(m_entities.proxy, "UdpProxy");
+        }
 
         self.requested_state = Default::default();
     }
@@ -2477,11 +2514,13 @@ mod tests {
         .await
         .unwrap();
 
-        let entities = rt.entities.direct.as_ref().unwrap();
+        if let Some(m_entities) = rt.entities.meshnet {
+            let entities = m_entities.direct.as_ref().unwrap();
 
-        assert!(entities.upnp_endpoint_provider.is_none());
-        assert!(entities.local_interfaces_endpoint_provider.is_some());
-        assert!(entities.stun_endpoint_provider.is_some());
+            assert!(entities.upnp_endpoint_provider.is_none());
+            assert!(entities.local_interfaces_endpoint_provider.is_some());
+            assert!(entities.stun_endpoint_provider.is_some());
+        }
     }
 
     #[cfg(not(windows))]
@@ -2509,11 +2548,13 @@ mod tests {
         .await
         .unwrap();
 
-        let entities = rt.entities.direct.as_ref().unwrap();
+        if let Some(m_entities) = rt.entities.meshnet {
+            let entities = m_entities.direct.as_ref().unwrap();
 
-        assert!(entities.upnp_endpoint_provider.is_none());
-        assert!(entities.local_interfaces_endpoint_provider.is_none());
-        assert!(entities.stun_endpoint_provider.is_none());
+            assert!(entities.upnp_endpoint_provider.is_none());
+            assert!(entities.local_interfaces_endpoint_provider.is_none());
+            assert!(entities.stun_endpoint_provider.is_none());
+        }
     }
 
     #[cfg(not(windows))]
@@ -2551,11 +2592,13 @@ mod tests {
         .await
         .unwrap();
 
-        let entities = rt.entities.direct.as_ref().unwrap();
+        if let Some(m_entities) = rt.entities.meshnet {
+            let entities = m_entities.direct.as_ref().unwrap();
 
-        assert!(entities.upnp_endpoint_provider.is_some());
-        assert!(entities.local_interfaces_endpoint_provider.is_some());
-        assert!(entities.stun_endpoint_provider.is_some());
+            assert!(entities.upnp_endpoint_provider.is_some());
+            assert!(entities.local_interfaces_endpoint_provider.is_some());
+            assert!(entities.stun_endpoint_provider.is_some());
+        }
     }
 
     #[cfg(not(windows))]

@@ -54,21 +54,28 @@ pub async fn consolidate_wg_state(
     entities: &Entities,
     features: &Features,
 ) -> Result {
+    let remote_peer_states = if let Some(meshnet_entities) = entities.meshnet.as_ref() {
+        meshnet_entities.derp.get_remote_peer_states().await
+    } else {
+        Default::default()
+    };
+
     consolidate_wg_private_key(requested_state, &*entities.wireguard_interface).await?;
     consolidate_wg_fwmark(requested_state, &*entities.wireguard_interface).await?;
     consolidate_wg_peers(
         requested_state,
         &*entities.wireguard_interface,
-        &*entities.proxy,
+        entities.meshnet.as_ref().map(|m| &*m.proxy),
         entities.cross_ping_check(),
         entities.upgrade_sync(),
         entities.session_keeper(),
         &*entities.dns,
-        entities.derp.get_remote_peer_states().await,
-        entities
-            .direct
-            .as_ref()
-            .and_then(|direct| direct.stun_endpoint_provider.as_ref()),
+        remote_peer_states,
+        entities.meshnet.as_ref().and_then(|m| {
+            m.direct
+                .as_ref()
+                .and_then(|direct| direct.stun_endpoint_provider.as_ref())
+        }),
         features,
     )
     .await?;
@@ -118,7 +125,7 @@ async fn consolidate_wg_peers<
 >(
     requested_state: &RequestedState,
     wireguard_interface: &W,
-    proxy: &P,
+    proxy: Option<&P>,
     cross_ping_check: Option<&Arc<C>>,
     upgrade_sync: Option<&Arc<U>>,
     session_keeper: Option<&Arc<S>>,
@@ -127,7 +134,11 @@ async fn consolidate_wg_peers<
     stun_ep_provider: Option<&Arc<StunEndpointProvider>>,
     features: &Features,
 ) -> Result {
-    let proxy_endpoints = proxy.get_endpoint_map().await?;
+    let proxy_endpoints = if let Some(p) = proxy {
+        p.get_endpoint_map().await?
+    } else {
+        Default::default()
+    };
     let requested_peers = build_requested_peers_list(
         requested_state,
         wireguard_interface,
@@ -1494,7 +1505,7 @@ mod tests {
             consolidate_wg_peers(
                 &self.requested_state,
                 &self.wireguard_interface,
-                &self.proxy,
+                Some(&self.proxy),
                 Some(&cross_ping_check),
                 Some(&upgrade_sync),
                 Some(&session_keeper),
