@@ -1,6 +1,7 @@
 ### UNRELEASED
 ----
 * LLT-4006: Restrict nat-lab containers capabilities
+* LLT-4586: Fix wireguard-go initialization crash
 * LLT-4225: Migrate Telio to use the tracing crate instead of log crate
 
 <br>
@@ -44,6 +45,7 @@
 * LLT-4508: Fetch windows dependencies from local gitlab registry
 * LLT-4552: Add way to flush events when stopping
 * LLT-4583: Don't add IPv6 addresses to wireguard when IPv6 feature is disabled
+* LLT-4613: Fix boringtun performs spurious rekeying
 
 <br>
 
