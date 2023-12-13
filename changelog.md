@@ -11,6 +11,7 @@
 * LLT-4688: Add detailed logs on boringtun socket failures
 * LLT-4598: Introduce IPv6 -> IPv4 fallback in WG-STUN
 * LLT-4698: Fix exp. backoff in WG-STUN
+* LLT-4490: Ensure that meshnet entities are started only when meshnet is started
 
 ### v4.2.1
 ----

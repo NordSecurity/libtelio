@@ -1,11 +1,7 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use telio_crypto::{PublicKey, SecretKey};
 use telio_lana::*;
-use telio_model::{config::Server, event::Event};
-use telio_proto::HeartbeatMessage;
-use telio_relay::{multiplexer::Multiplexer, DerpRelay};
+use telio_model::event::Event;
 use telio_task::{
     io::{chan, mc_chan, Chan, McChan},
     task_exec, Runtime, RuntimeExt, Task, WaitResponse,
@@ -16,9 +12,12 @@ use telio_utils::{
 use telio_wg::uapi::AnalyticsEvent;
 use uuid::Uuid;
 
-use crate::data::{AnalyticsMessage, HeartbeatInfo};
 use crate::error::Error;
 use crate::{config::Config, data::MeshConfigUpdateEvent};
+use crate::{
+    data::{AnalyticsMessage, HeartbeatInfo},
+    heartbeat::MeshnetEntities,
+};
 
 use crate::heartbeat::Analytics as HeartbeatAnalytics;
 use crate::heartbeat::Io as HeartbeatIo;
@@ -29,12 +28,8 @@ use crate::qos::OutputData as QoSData;
 
 /// Input/output channels for Nurse
 pub struct NurseIo<'a> {
-    /// Event channel to gather derp events
-    pub derp_event_channel: &'a mc_chan::Tx<Box<Server>>,
     /// Event channel to gather wg events
     pub wg_event_channel: &'a mc_chan::Tx<Box<Event>>,
-    /// Relay multiplexer to be able to communicate with other nodes
-    pub relay_multiplexer: &'a Multiplexer,
     /// Event channel to gather wg data
     pub wg_analytics_channel: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
     /// Event channel to gather meshnet config update
@@ -50,15 +45,19 @@ pub struct Nurse {
 
 impl Nurse {
     /// Nurse's constructor
-    pub async fn start_with(
-        public_key: PublicKey,
-        derp: Arc<DerpRelay>,
-        config: Config,
-        io: NurseIo<'_>,
-    ) -> Self {
+    pub async fn start_with(public_key: PublicKey, config: Config, io: NurseIo<'_>) -> Self {
         Self {
-            task: Task::start(State::new(public_key, derp, config, io).await),
+            task: Task::start(State::new(public_key, config, io).await),
         }
+    }
+
+    /// Run when you change meshnet configuration
+    pub async fn configure_meshnet(&self, meshnet_entities: Option<MeshnetEntities>) {
+        let _ = task_exec!(&self.task, async move |state| {
+            state.configure_meshnet(meshnet_entities).await;
+            Ok(())
+        })
+        .await;
     }
 
     /// Update private key
@@ -100,12 +99,7 @@ impl State {
     /// # Returns
     ///
     /// A Nurse instance.
-    pub async fn new(
-        public_key: PublicKey,
-        derp: Arc<DerpRelay>,
-        config: Config,
-        io: NurseIo<'_>,
-    ) -> Self {
+    pub async fn new(public_key: PublicKey, config: Config, io: NurseIo<'_>) -> Self {
         let meshnet_id = Self::meshnet_id();
 
         // Analytics channel
@@ -121,12 +115,8 @@ impl State {
 
         // Heartbeat component
         let heartbeat_io = HeartbeatIo {
-            chan: io
-                .relay_multiplexer
-                .get_channel::<HeartbeatMessage>()
-                .await
-                .unwrap_or_default(),
-            derp_event_channel: io.derp_event_channel.subscribe(),
+            chan: None,
+            derp_event_channel: None,
             wg_event_channel: io.wg_event_channel.subscribe(),
             config_update_channel: config_update_channel.subscribe(),
             analytics_channel: analytics_channel.tx.clone(),
@@ -138,7 +128,6 @@ impl State {
             meshnet_id,
             config.heartbeat_config,
             heartbeat_io,
-            derp,
         );
 
         // Qos component
@@ -161,6 +150,22 @@ impl State {
             heartbeat: Task::start(heartbeat),
             qos,
         }
+    }
+
+    /// Inform Nurse that Derp service started.
+    ///
+    /// # Arguments
+    ///
+    /// * `derp` - The new Derp service pointer to use.
+    pub async fn configure_meshnet(&self, meshnet_entities: Option<MeshnetEntities>) {
+        let _ = task_exec!(&self.heartbeat, async move |state| {
+            state.configure_meshnet(meshnet_entities).await;
+
+            telio_log_debug!("Updated meshnet config");
+
+            Ok(())
+        })
+        .await;
     }
 
     /// Inform Nurse of the private key changing.
