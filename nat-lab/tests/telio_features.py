@@ -20,8 +20,8 @@ class SkipUnresponsivePeers(DataClassJsonMixin):
 class Direct(DataClassJsonMixin):
     providers: Optional[List[str]] = None
     endpoint_interval_secs: Optional[int] = 5
-    skip_unresponsive_peers: Optional[SkipUnresponsivePeers] = SkipUnresponsivePeers(
-        no_handshake_threshold_secs=180
+    skip_unresponsive_peers: Optional[SkipUnresponsivePeers] = field(
+        default_factory=lambda: SkipUnresponsivePeers(no_handshake_threshold_secs=180)
     )
 
 
