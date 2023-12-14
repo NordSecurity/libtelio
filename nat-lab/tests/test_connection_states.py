@@ -53,10 +53,7 @@ from utils.ping import Ping
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
             ),
-            marks=[
-                pytest.mark.windows,
-                pytest.mark.xfail(reason="Flaky: LLT-4064"),
-            ],
+            marks=pytest.mark.windows,
         ),
         pytest.param(
             SetupParameters(

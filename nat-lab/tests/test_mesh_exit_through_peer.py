@@ -70,10 +70,7 @@ PHOTO_ALBUM_IPV6 = config.LIBTELIO_IPV6_WAN_SUBNET + "::adda:edde:5"
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
             ),
-            marks=[
-                pytest.mark.windows,
-                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
-            ],
+            marks=pytest.mark.windows,
         ),
         pytest.param(
             SetupParameters(
