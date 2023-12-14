@@ -1119,13 +1119,19 @@ impl Runtime {
 
     async fn upsert_dns_peers(&self) -> Result {
         if let Some(dns) = &self.entities.dns.lock().await.resolver {
-            // hostnames have priority over nicknames (override if there's any conflict)
             let mut peers: Records = HashMap::new();
+            // Hostnames have priority over nicknames (override if there's any conflict)
             if self.features.nicknames {
                 peers = self.requested_state.collect_dns_nickname_records();
             }
-
             peers.extend(self.requested_state.collect_dns_records());
+
+            // Insert wildcard for subdomains
+            let wildcarded_peers: Records = peers
+                .iter()
+                .map(|(name, ip)| (format!("*.{}", name), ip.clone()))
+                .collect();
+            peers.extend(wildcarded_peers);
 
             dns.upsert("nord", &peers)
                 .await
