@@ -2,6 +2,7 @@
 ----
 * LLT-4006: Restrict nat-lab containers capabilities
 * LLT-4586: Fix wireguard-go initialization crash
+* LLT-4634: Add wildcarded domains to DNS records
 * LLT-4225: Migrate Telio to use the tracing crate instead of log crate
 
 <br>

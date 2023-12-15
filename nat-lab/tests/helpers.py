@@ -26,7 +26,9 @@ class SetupParameters:
         default=None
     )
     adapter_type: AdapterType = field(default=AdapterType.Default)
-    features: TelioFeatures = field(default=TelioFeatures())
+    features: TelioFeatures = field(
+        default_factory=lambda: TelioFeatures(is_test_env=True)
+    )
     is_meshnet: bool = field(default=True)
     derp_servers: Optional[List[Dict[str, Any]]] = field(default=None)
 
