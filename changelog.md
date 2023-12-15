@@ -1,4 +1,4 @@
-### UNRELEASED
+### v4.2.1
 ----
 * LLT-4006: Restrict nat-lab containers capabilities
 * LLT-4586: Fix wireguard-go initialization crash
