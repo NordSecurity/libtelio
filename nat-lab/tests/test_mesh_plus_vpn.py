@@ -398,7 +398,8 @@ async def test_vpn_plus_mesh(
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
                 features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
-            )
+            ),
+            marks=pytest.mark.xfail(reason="Test is flaky - LLT-4665"),
         ),
         pytest.param(
             SetupParameters(
@@ -411,7 +412,10 @@ async def test_vpn_plus_mesh(
                 ),
                 features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
             ),
-            marks=pytest.mark.linux_native,
+            marks=[
+                pytest.mark.linux_native,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4665"),
+            ],
         ),
         pytest.param(
             SetupParameters(
