@@ -1,3 +1,7 @@
+### UNRELEASED
+----
+* LLT-4662: Update rustix dependency
+
 ### v4.2.1
 ----
 * LLT-4006: Restrict nat-lab containers capabilities
