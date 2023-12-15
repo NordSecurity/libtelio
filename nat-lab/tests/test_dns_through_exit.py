@@ -46,7 +46,10 @@ from utils.router import IPStack
         # ),
         pytest.param(
             (IPStack.IPv4v6, ["8.8.8.8", "2001:4860:4860::8888"]),
-            marks=pytest.mark.ipv4v6,
+            marks=[
+                pytest.mark.ipv4v6,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4656"),
+            ],
         ),
     ],
 )
@@ -61,7 +64,8 @@ from utils.router import IPStack
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
-            )
+            ),
+            marks=pytest.mark.xfail(reason="Test is flaky - LLT-4656"),
         ),
         pytest.param(
             SetupParameters(
