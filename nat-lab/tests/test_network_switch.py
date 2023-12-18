@@ -313,30 +313,30 @@ async def test_mesh_network_switch_direct(
             [State.Connected]
         )
 
-        # # Beta doesn't change its endpoint, so WG roaming may be used by alpha node to restore
-        # # the connection, so no node event is logged in that case
-        # peers_connected_relay_future = asyncio.gather(
-        #     beta_client.wait_for_event_peer(
-        #         alpha.public_key, [State.Connected], [PathType.Relay]
-        #     ),
-        # )
-        # peers_connected_direct_future = asyncio.gather(
-        #     beta_client.wait_for_event_peer(
-        #         alpha.public_key, [State.Connected], [PathType.Direct]
-        #     ),
-        # )
-        # async with run_async_contexts(
-        #     [
-        #         derp_connected_future,
-        #         peers_connected_relay_future,
-        #         peers_connected_direct_future,
-        #     ]
-        # ) as (derp, relay, direct):
-        #     await network_switcher.switch_to_secondary_network()
-        #     await alpha_client.notify_network_change()
-        #     await derp
-        #     await relay
-        #     await direct
+        # Beta doesn't change its endpoint, so WG roaming may be used by alpha node to restore
+        # the connection, so no node event is logged in that case
+        peers_connected_relay_future = asyncio.gather(
+            beta_client.wait_for_event_peer(
+                alpha.public_key, [State.Connected], [PathType.Relay]
+            ),
+        )
+        peers_connected_direct_future = asyncio.gather(
+            beta_client.wait_for_event_peer(
+                alpha.public_key, [State.Connected], [PathType.Direct]
+            ),
+        )
+        async with run_async_contexts(
+            [
+                derp_connected_future,
+                peers_connected_relay_future,
+                peers_connected_direct_future,
+            ]
+        ) as (derp, relay, direct):
+            await network_switcher.switch_to_secondary_network()
+            await alpha_client.notify_network_change()
+            await derp
+            await relay
+            await direct
 
-        # async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-        #     await testing.wait_long(ping.wait_for_next_ping())
+        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
+            await testing.wait_long(ping.wait_for_next_ping())
