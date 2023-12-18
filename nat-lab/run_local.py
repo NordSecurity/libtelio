@@ -78,7 +78,7 @@ def main() -> int:
         run_command(["mypy", "."])
 
     if not args.notests:
-        pytest_cmd = ["pytest", "-vv", "--durations=0", f"--reruns={args.reruns}"]
+        pytest_cmd = ["pytest", "-vv", "--durations=0", f"--reruns={args.reruns}", f"--count=50", "-k test_mesh_network_switch_direct"]
 
         pytest_cmd += [
             f"--timeout={TEST_TIMEOUT}",
