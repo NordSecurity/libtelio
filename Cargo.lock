@@ -1233,23 +1233,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0870c84016d4b481be5c9f323c24f65e31e901ae618f0e80f4308fb00de1d2d"
 
 [[package]]
-name = "flexi_logger"
-version = "0.22.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c76a80dd14a27fc3d8bc696502132cb52b3f227256fd8601166c3a35e45f409"
-dependencies = [
- "ansi_term",
- "atty",
- "glob",
- "lazy_static",
- "log",
- "regex",
- "rustversion",
- "thiserror",
- "time",
-]
-
-[[package]]
 name = "float-cmp"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1805,7 +1788,6 @@ dependencies = [
  "env_logger",
  "futures",
  "itertools",
- "log",
  "ring",
  "serde",
  "serde_json",
@@ -1813,6 +1795,7 @@ dependencies = [
  "telio-relay",
  "telio-sockets",
  "tokio",
+ "tracing",
  "url",
 ]
 
@@ -2247,6 +2230,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nu-ansi-term"
+version = "0.46.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77a8165726e8236064dbb45459242600304b42a5ea24ee2948e18e023bf7ba84"
+dependencies = [
+ "overload",
+ "winapi",
+]
+
+[[package]]
 name = "num-traits"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2366,6 +2359,12 @@ checksum = "628223faebab4e3e40667ee0b2336d34a5b960ff60ea743ddfdbcf7770bcfb66"
 dependencies = [
  "winapi",
 ]
+
+[[package]]
+name = "overload"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 
 [[package]]
 name = "parking"
@@ -3279,6 +3278,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sharded-slab"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
+dependencies = [
+ "lazy_static",
+]
+
+[[package]]
 name = "shellwords"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3626,10 +3634,8 @@ dependencies = [
  "clap 3.2.25",
  "crypto_box",
  "dirs",
- "flexi_logger",
  "hex",
  "ipnetwork",
- "log",
  "parking_lot",
  "rand",
  "regex",
@@ -3654,6 +3660,9 @@ dependencies = [
  "thiserror",
  "time",
  "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -3671,7 +3680,6 @@ dependencies = [
  "ipnetwork",
  "lazy_static",
  "libc",
- "log",
  "mockall",
  "modifier",
  "ntest",
@@ -3717,12 +3725,12 @@ dependencies = [
  "bstr",
  "crypto_box",
  "hex",
- "log",
  "rand",
  "serde",
  "serde_with",
  "telio-utils",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -3740,7 +3748,6 @@ dependencies = [
  "ipnetwork",
  "lazy_static",
  "libc",
- "log",
  "mockall",
  "pnet_packet 0.28.0",
  "rand",
@@ -3749,6 +3756,7 @@ dependencies = [
  "telio-utils",
  "telio-wg",
  "tokio",
+ "tracing",
  "x25519-dalek 2.0.0",
 ]
 
@@ -3758,7 +3766,6 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "hashlink",
- "log",
  "mockall",
  "pnet_packet 0.28.0",
  "proptest",
@@ -3768,6 +3775,7 @@ dependencies = [
  "sn_fake_clock",
  "telio-crypto",
  "telio-utils",
+ "tracing",
 ]
 
 [[package]]
@@ -3775,13 +3783,13 @@ name = "telio-lana"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "log",
  "serde",
  "serde_json",
  "serial_test",
  "telio-utils",
  "thiserror",
  "time",
+ "tracing",
 ]
 
 [[package]]
@@ -3790,7 +3798,6 @@ version = "0.1.0"
 dependencies = [
  "ipnetwork",
  "itertools",
- "log",
  "modifier",
  "num_enum",
  "once_cell",
@@ -3803,13 +3810,13 @@ dependencies = [
  "telio-crypto",
  "telio-utils",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
 name = "telio-nat-detect"
 version = "0.1.0"
 dependencies = [
- "log",
  "nat-detect",
  "tokio",
 ]
@@ -3823,7 +3830,6 @@ dependencies = [
  "crypto_box",
  "futures",
  "histogram",
- "log",
  "md5",
  "nat-detect",
  "protobuf-codegen-pure",
@@ -3844,6 +3850,7 @@ dependencies = [
  "telio-wg",
  "thiserror",
  "tokio",
+ "tracing",
  "uuid",
 ]
 
@@ -3852,7 +3859,6 @@ name = "telio-proto"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "log",
  "protobuf",
  "protobuf-codegen-pure",
  "strum",
@@ -3860,6 +3866,7 @@ dependencies = [
  "telio-model",
  "telio-utils",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -3869,7 +3876,6 @@ dependencies = [
  "async-trait",
  "crypto_box",
  "futures",
- "log",
  "mockall",
  "telio-crypto",
  "telio-model",
@@ -3880,6 +3886,7 @@ dependencies = [
  "telio-utils",
  "thiserror",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -3897,7 +3904,6 @@ dependencies = [
  "httparse",
  "hyper",
  "libc",
- "log",
  "ntest",
  "num_enum",
  "rand",
@@ -3919,6 +3925,7 @@ dependencies = [
  "tokio-rustls",
  "tokio-stream",
  "tokio-util",
+ "tracing",
  "url",
  "webpki-roots",
 ]
@@ -3931,7 +3938,6 @@ dependencies = [
  "debug_panic",
  "futures",
  "libc",
- "log",
  "mockall",
  "nix 0.26.4",
  "objc",
@@ -3943,6 +3949,7 @@ dependencies = [
  "telio-utils",
  "thiserror",
  "tokio",
+ "tracing",
  "version-compare",
  "winapi",
  "windows",
@@ -3954,10 +3961,10 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "futures",
- "log",
  "telio-utils",
  "thiserror",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -3982,7 +3989,6 @@ dependencies = [
  "igd",
  "ipnet",
  "lazy_static",
- "log",
  "maplit",
  "mockall",
  "ntest",
@@ -4004,6 +4010,7 @@ dependencies = [
  "telio-wg",
  "thiserror",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -4012,7 +4019,6 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "hashlink",
- "log",
  "lru_time_cache",
  "maplit",
  "mockall",
@@ -4042,7 +4048,6 @@ dependencies = [
  "ipnetwork",
  "lazy_static",
  "libc",
- "log",
  "mockall",
  "ntest",
  "pretty_assertions",
@@ -4060,6 +4065,7 @@ dependencies = [
  "telio-utils",
  "thiserror",
  "tokio",
+ "tracing",
  "wg-go-rust-wrapper",
  "winapi",
  "wireguard-nt",
@@ -4302,6 +4308,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracing-appender"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3566e8ce28cc0a3fe42519fc80e6b4c943cc4c8cef275620eb8dac2d3d4e06cf"
+dependencies = [
+ "crossbeam-channel",
+ "thiserror",
+ "time",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "tracing-attributes"
 version = "0.1.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4319,6 +4337,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c06d3da6113f116aaee68e4d601191614c9053067f9ab7f6edbcb161237daa54"
 dependencies = [
  "once_cell",
+ "valuable",
+]
+
+[[package]]
+name = "tracing-log"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee855f1f400bd0e5c02d150ae5de3840039a3f54b025156404e34c23c03f47c3"
+dependencies = [
+ "log",
+ "once_cell",
+ "tracing-core",
+]
+
+[[package]]
+name = "tracing-subscriber"
+version = "0.3.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad0f048c97dbd9faa9b7df56362b8ebcaa52adb06b498c050d2f4e32f90a7a8b"
+dependencies = [
+ "nu-ansi-term",
+ "sharded-slab",
+ "smallvec",
+ "thread_local",
+ "time",
+ "tracing-core",
+ "tracing-log",
 ]
 
 [[package]]
@@ -4455,6 +4500,12 @@ checksum = "79daa5ed5740825c40b389c5e50312b9c86df53fccd33f281df655642b43869d"
 dependencies = [
  "getrandom",
 ]
+
+[[package]]
+name = "valuable"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "830b7e5d4d90034032940e4ace0d9a9a057e7a45cd94e6c007832e39edb82f6d"
 
 [[package]]
 name = "value-bag"

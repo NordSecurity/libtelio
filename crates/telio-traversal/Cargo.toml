@@ -22,7 +22,7 @@ futures.workspace = true
 httparse.workspace = true
 ipnet.workspace = true
 lazy_static.workspace = true
-log.workspace = true
+tracing.workspace = true
 mockall = { workspace = true, optional = true }
 parking_lot.workspace = true
 rand.workspace = true

@@ -7,6 +7,5 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-log.workspace = true
 nat-detect.workspace = true
 tokio = { workspace = true, features = ["full"] }

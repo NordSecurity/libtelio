@@ -35,10 +35,6 @@ pub use git::*;
 pub mod tokio;
 pub use ::tokio::*;
 
-/// Utils for dealing with tracing crate
-pub mod tracing;
-pub use ::tracing::*;
-
 /// Least Recently Used cache implementation
 pub mod lru_cache;
 pub use lru_cache::*;
