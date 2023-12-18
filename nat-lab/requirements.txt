@@ -13,6 +13,7 @@ flatten-json==0.1.14
 python-wireguard==0.2.2
 cryptography==41.0.7; python_version >= '3.7' # Force latest (as of now) stable version to fix CVEs.
 pipenv==2023.11.15
+pytest-repeat==0.9.3
 
 
 # transitive dependency lock:
