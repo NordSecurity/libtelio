@@ -2,8 +2,10 @@ use debug_panic::debug_panic;
 use parking_lot::Mutex;
 use parking_lot::RwLock;
 
+use socket2::Socket;
 use std::{
-    io, os,
+    io,
+    os::unix::io::FromRawFd,
     sync::{Arc, Weak},
 };
 
@@ -55,10 +57,22 @@ pub(crate) fn bind_to_tun(sock: NativeSocket, tunnel_interface: u64) -> io::Resu
 }
 
 pub(crate) fn bind(interface_index: u32, socket: i32) -> io::Result<()> {
+    let nz_index = std::num::NonZeroU32::new(interface_index);
+    if nz_index.is_none() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Invalid interface index",
+        ));
+    }
+
     if let Some(sock_addr) = getsockname::<SockaddrStorage>(socket)?.family() {
-        let (option, level) = match sock_addr {
-            AddressFamily::Inet6 => (libc::IPV6_BOUND_IF, libc::IPPROTO_IPV6),
-            AddressFamily::Inet => (libc::IP_BOUND_IF, libc::IPPROTO_IP),
+        match sock_addr {
+            AddressFamily::Inet => unsafe {
+                Socket::from_raw_fd(socket).bind_device_by_index_v4(nz_index)?;
+            },
+            AddressFamily::Inet6 => unsafe {
+                Socket::from_raw_fd(socket).bind_device_by_index_v6(nz_index)?;
+            },
             _ => {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::Other,
@@ -66,24 +80,10 @@ pub(crate) fn bind(interface_index: u32, socket: i32) -> io::Result<()> {
                 ))
             }
         };
-
-        const ARRAY_LEN: libc::size_t = std::mem::size_of::<u32>();
-        let array: [i8; ARRAY_LEN] = unsafe { std::mem::transmute(interface_index) };
-        unsafe {
-            if libc::setsockopt(
-                socket,
-                level,
-                option,
-                array.as_ptr() as *const os::raw::c_void,
-                std::mem::size_of_val(&array) as libc::socklen_t,
-            ) != 0
-            {
-                return Err(std::io::Error::last_os_error());
-            }
-        }
     } else {
         telio_log_warn!("Failed to find sock addr for socket : {}", socket);
     }
+
     Ok(())
 }
 

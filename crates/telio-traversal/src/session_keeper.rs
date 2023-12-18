@@ -1,10 +1,12 @@
 use async_trait::async_trait;
 use futures::Future;
-use std::net::Ipv4Addr;
+use socket2::Type;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use std::time::Duration;
 use surge_ping::{
-    Client as PingerClient, Config as PingerConfig, PingIdentifier, PingSequence, SurgeError, ICMP,
+    Client as PingerClient, Config as PingerConfig, ConfigBuilder, PingIdentifier, PingSequence,
+    SurgeError, ICMP,
 };
 use telio_crypto::PublicKey;
 use telio_sockets::SocketPool;
@@ -53,28 +55,47 @@ pub trait SessionKeeperTrait {
 
 pub struct SessionKeeper {
     task: Task<State>,
-    use_ipv6: bool,
 }
 
 impl SessionKeeper {
-    pub fn start(sock_pool: Arc<SocketPool>, use_ipv6: bool) -> Result<Self> {
-        let mut config_builder = PingerConfig::builder();
-        config_builder = config_builder.kind(ICMP::V4);
-        if cfg!(not(target_os = "android")) {
-            config_builder = config_builder.bind((Ipv4Addr::UNSPECIFIED, 0).into());
-        }
+    pub fn start(sock_pool: Arc<SocketPool>) -> Result<Self> {
+        let (client_v4, client_v6) = (
+            PingerClient::new(&Self::make_builder(ICMP::V4).build())?,
+            PingerClient::new(&Self::make_builder(ICMP::V6).build())?,
+        );
 
-        let pinger_client = PingerClient::new(&config_builder.build())?;
-
-        sock_pool.make_internal(pinger_client.get_socket().get_native_sock())?;
+        sock_pool.make_internal(client_v4.get_socket().get_native_sock())?;
+        sock_pool.make_internal(client_v6.get_socket().get_native_sock())?;
 
         Ok(Self {
             task: Task::start(State {
-                pinger_client,
+                pinger_client_v4: client_v4,
+                pinger_client_v6: client_v6,
                 keepalive_actions: RepeatedActions::default(),
             }),
-            use_ipv6,
         })
+    }
+
+    fn make_builder(proto: ICMP) -> ConfigBuilder {
+        let mut config_builder = PingerConfig::builder().kind(proto);
+        if cfg!(any(
+            target_os = "ios",
+            target_os = "macos",
+            target_os = "tvos",
+        )) {
+            config_builder = config_builder.sock_type_hint(Type::RAW);
+        }
+        if cfg!(not(target_os = "android")) {
+            match proto {
+                ICMP::V4 => {
+                    config_builder = config_builder.bind((Ipv4Addr::UNSPECIFIED, 0).into());
+                }
+                ICMP::V6 => {
+                    config_builder = config_builder.bind((Ipv6Addr::UNSPECIFIED, 0).into());
+                }
+            }
+        }
+        config_builder
     }
 
     pub async fn stop(self) {
@@ -82,13 +103,16 @@ impl SessionKeeper {
     }
 
     #[cfg(test)]
-    async fn get_pinger_client(&self) -> Result<PingerClient> {
-        task_exec!(&self.task, async move |s| Ok(s.pinger_client.clone()))
-            .await
-            .map_err(Error::Task)
+    async fn get_pinger_client(&self, proto: ICMP) -> Result<PingerClient> {
+        task_exec!(&self.task, async move |s| {
+            Ok(match proto {
+                ICMP::V4 => s.pinger_client_v4.clone(),
+                ICMP::V6 => s.pinger_client_v6.clone(),
+            })
+        })
+        .await
+        .map_err(Error::Task)
     }
-
-    // TODO: add_nodes(), remove_nodes(), update_nodes()
 }
 
 #[async_trait]
@@ -100,7 +124,7 @@ impl SessionKeeperTrait for SessionKeeper {
         interval: Duration,
     ) -> Result<()> {
         let public_key = *public_key;
-        let dual_target = DualTarget::new(target, self.use_ipv6)?;
+        let dual_target = DualTarget::new(target)?;
 
         task_exec!(&self.task, async move |s| {
             if s.keepalive_actions.contains_action(&public_key) {
@@ -119,11 +143,15 @@ impl SessionKeeperTrait for SessionKeeper {
                             primary
                         );
 
-                        if let Err(e) = c
-                            .pinger_client
-                            .pinger(primary, PingIdentifier(112))
+                        let primary_client = match primary {
+                            IpAddr::V4(_) => &c.pinger_client_v4,
+                            IpAddr::V6(_) => &c.pinger_client_v6,
+                        };
+
+                        if let Err(e) = primary_client
+                            .pinger(primary, PingIdentifier(rand::random()))
                             .await
-                            .send_ping(PingSequence(211), &[0; PING_PAYLOAD_SIZE])
+                            .send_ping(PingSequence(0), &[0; PING_PAYLOAD_SIZE])
                             .await
                         {
                             telio_log_warn!("Primary target failed: {}", e.to_string());
@@ -134,11 +162,16 @@ impl SessionKeeperTrait for SessionKeeper {
                                     public_key,
                                     second
                                 );
-                                let _ = c
-                                    .pinger_client
-                                    .pinger(second, PingIdentifier(112))
+
+                                let secondary_client = match primary {
+                                    IpAddr::V4(_) => &c.pinger_client_v4,
+                                    IpAddr::V6(_) => &c.pinger_client_v6,
+                                };
+
+                                let _ = secondary_client
+                                    .pinger(second, PingIdentifier(rand::random()))
                                     .await
-                                    .send_ping(PingSequence(211), &[0; PING_PAYLOAD_SIZE])
+                                    .send_ping(PingSequence(0), &[0; PING_PAYLOAD_SIZE])
                                     .await?;
                             }
                         }
@@ -175,7 +208,8 @@ impl SessionKeeperTrait for SessionKeeper {
     }
 }
 struct State {
-    pinger_client: PingerClient,
+    pinger_client_v4: PingerClient,
+    pinger_client_v6: PingerClient,
     keepalive_actions: RepeatedActions<PublicKey, Self, Result<()>>,
 }
 
@@ -233,7 +267,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let sess_keep = SessionKeeper::start(socket_pool, true).unwrap();
+        let sess_keep = SessionKeeper::start(socket_pool).unwrap();
 
         let pk = "REjdn4zY2TFx2AMujoNGPffo9vDiRDXpGG4jHPtx2AY="
             .parse::<PublicKey>()
@@ -248,10 +282,14 @@ mod tests {
             .await
             .unwrap();
 
-        let sock = sess_keep.get_pinger_client().await.unwrap().get_socket();
+        let sock = sess_keep
+            .get_pinger_client(ICMP::V4)
+            .await
+            .unwrap()
+            .get_socket();
 
         // Drop the pinger client explicitly, for it to stop listening on ICMP socket
-        drop(sess_keep.get_pinger_client().await.unwrap());
+        drop(sess_keep.get_pinger_client(ICMP::V4).await.unwrap());
 
         // Runtime
         let _ = tokio::spawn(async move {

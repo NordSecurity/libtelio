@@ -22,11 +22,7 @@ pub struct DualTarget {
 
 impl DualTarget {
     /// [DualTarget] constructor
-    pub fn new(mut target: Target, use_ipv6: bool) -> Result<Self> {
-        if !use_ipv6 {
-            target.1 = None;
-        }
-
+    pub fn new(target: Target) -> Result<Self> {
         if target.0.is_none() && target.1.is_none() {
             return Err(DualTargetError::NoTarget);
         }
@@ -53,15 +49,14 @@ mod tests {
 
     #[test]
     fn test_dual_target() {
-        assert!(DualTarget::new((None, None), false).is_err());
-        assert!(DualTarget::new((None, None), true).is_err());
+        assert!(DualTarget::new((None, None)).is_err());
 
         assert_eq!(
             (
                 IpAddr::V6(Ipv6Addr::LOCALHOST),
                 Some(IpAddr::V4(Ipv4Addr::LOCALHOST))
             ),
-            DualTarget::new((Some(Ipv4Addr::LOCALHOST), Some(Ipv6Addr::LOCALHOST)), true)
+            DualTarget::new((Some(Ipv4Addr::LOCALHOST), Some(Ipv6Addr::LOCALHOST)))
                 .unwrap()
                 .get_targets()
                 .unwrap()
@@ -69,26 +64,7 @@ mod tests {
 
         assert_eq!(
             (IpAddr::V4(Ipv4Addr::LOCALHOST), None),
-            DualTarget::new(
-                (Some(Ipv4Addr::LOCALHOST), Some(Ipv6Addr::LOCALHOST)),
-                false
-            )
-            .unwrap()
-            .get_targets()
-            .unwrap()
-        );
-
-        assert_eq!(
-            (IpAddr::V4(Ipv4Addr::LOCALHOST), None),
-            DualTarget::new((Some(Ipv4Addr::LOCALHOST), None), true)
-                .unwrap()
-                .get_targets()
-                .unwrap()
-        );
-
-        assert_eq!(
-            (IpAddr::V4(Ipv4Addr::LOCALHOST), None),
-            DualTarget::new((Some(Ipv4Addr::LOCALHOST), None), false)
+            DualTarget::new((Some(Ipv4Addr::LOCALHOST), None))
                 .unwrap()
                 .get_targets()
                 .unwrap()
@@ -96,12 +72,12 @@ mod tests {
 
         assert_eq!(
             (IpAddr::V6(Ipv6Addr::LOCALHOST), None),
-            DualTarget::new((None, Some(Ipv6Addr::LOCALHOST)), true)
+            DualTarget::new((None, Some(Ipv6Addr::LOCALHOST)))
                 .unwrap()
                 .get_targets()
                 .unwrap()
         );
 
-        assert!(DualTarget::new((None, Some(Ipv6Addr::LOCALHOST)), false).is_err());
+        assert!(DualTarget::new((None, None)).is_err());
     }
 }

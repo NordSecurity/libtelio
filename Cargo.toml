@@ -135,6 +135,7 @@ serde_with = "1.10"
 sha2 = "0.10.6"
 slog = "2.7"
 sn_fake_clock = "0.4"
+socket2 = "0.5"
 strum = { version = "0.24.0", features = ["derive"] }
 surge-ping = { version = "0.8.0" }
 thiserror = "1.0"

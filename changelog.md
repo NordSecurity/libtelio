@@ -8,6 +8,8 @@
 * LLT-4586: Fix wireguard-go initialization crash
 * LLT-4634: Add wildcarded domains to DNS records
 * LLT-4225: Migrate Telio to use the tracing crate instead of log crate
+* LLT-4594: Fix session keeper's bug, to enable ICMP6 packets
+* LLT-4597: Fix QoS' IPv6 pinging
 
 <br>
 
