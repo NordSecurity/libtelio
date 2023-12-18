@@ -36,7 +36,9 @@ class DockerProcess(Process):
         stdout_callback: Optional[StreamCallback] = None,
         stderr_callback: Optional[StreamCallback] = None,
     ) -> "DockerProcess":
-        self._execute = await self._container.exec(self._command, stdin=True)
+        self._execute = await self._container.exec(
+            self._command, stdin=True, environment={"RUST_BACKTRACE": "full"}
+        )
         if self._execute is None:
             return self
         async with self._execute.start() as exe_stream:
