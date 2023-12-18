@@ -165,3 +165,6 @@ telio-test = { version = "1.0.0", path = "./crates/telio-test" }
 telio-traversal = { version = "0.1.0",  path = "./crates/telio-traversal" }
 telio-utils = { version = "0.1.0", path = "./crates/telio-utils" }
 telio-wg = { version = "0.1.0", path = "./crates/telio-wg" }
+
+[profile.release]
+debug = true
