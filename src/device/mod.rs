@@ -143,6 +143,8 @@ pub enum Error {
     SocketPoolError(#[from] telio_sockets::protector::platform::Error),
     #[error(transparent)]
     PostQuantum(#[from] telio_wg::pq::Error),
+    #[error("Cannot setup meshnet when the post quantum VPN is set up")]
+    MeshnetUnavailableWithPQ,
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -1283,6 +1285,11 @@ impl Runtime {
     }
 
     async fn set_config(&mut self, config: &Option<Config>) -> Result {
+        if self.features.post_quantum_vpn.is_some() && config.is_some() {
+            // Post quantum VPN is enabled and we're trying to set up the meshnet
+            return Err(Error::MeshnetUnavailableWithPQ);
+        }
+
         if let Some(cfg) = config {
             let should_validate_keys = self.features.validate_keys.0;
             let keys_match =
