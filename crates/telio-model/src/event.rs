@@ -216,6 +216,7 @@ mod tests {
         let node = Node {
             identifier: "f2b18d10-82ed-49a3-8b50-3356685ec5fa".to_owned(),
             public_key: PublicKey([1_u8; KEY_SIZE]),
+            nickname: Some(String::from("alpha")),
             state: NodeState::Connected,
             link_state: Some(LinkState::Up),
             is_exit: true,
@@ -269,7 +270,8 @@ mod tests {
             r#"{"type":"node","#,
             r#""body":"#,
             r#"{"identifier":"f2b18d10-82ed-49a3-8b50-3356685ec5fa","#,
-            r#""public_key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","state":"connected","link_state":"up","#,
+            r#""public_key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","nickname":"alpha","#,
+            r#""state":"connected","link_state":"up","#,
             r#""is_exit":true,"is_vpn":true,"ip_addresses":["127.0.0.1"],"allowed_ips":["127.0.0.1/32"],"#,
             r#""endpoint":"127.0.0.1:8080","hostname":"example.com","#,
             r#""allow_incoming_connections":false,"#,

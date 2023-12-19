@@ -40,6 +40,8 @@ pub struct Node {
     pub identifier: String,
     /// Public key of the Node
     pub public_key: PublicKey,
+    /// Nickname for the peer
+    pub nickname: Option<String>,
     /// State of the node (Connecting, connected, or disconnected)
     pub state: NodeState,
     /// Hint of the link state based on last rx timestamp (Up, down)
@@ -118,6 +120,7 @@ impl From<&PeerBase> for Node {
         Self {
             identifier: peer.identifier.clone(),
             public_key: peer.public_key,
+            nickname: peer.nickname.clone(),
             allowed_ips: peer
                 .ip_addresses
                 .as_ref()
@@ -133,6 +136,7 @@ impl From<&Peer> for Node {
     fn from(peer: &Peer) -> Self {
         Self {
             public_key: peer.public_key,
+            nickname: peer.nickname.clone(),
             allowed_ips: peer
                 .ip_addresses
                 .as_ref()
