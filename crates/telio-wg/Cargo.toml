@@ -8,6 +8,7 @@ publish = false
 
 [features]
 test-adapter = []
+fuzzing = []
 
 [dependencies]
 # pqcrypto version is fixed, because the newer version implements incompatible kyber kem according to draft specs

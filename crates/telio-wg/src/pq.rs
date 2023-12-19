@@ -190,6 +190,12 @@ async fn handshake(
     Ok(TunnelSock { tunn, sock })
 }
 
+/// Public function exposed for fuzzing framework
+#[cfg(feature = "fuzzing")]
+pub fn parse_get_response_fuzz(pkgbuf: &[u8]) -> Result<kyber768::Ciphertext, Error> {
+    parse_get_response(pkgbuf)
+}
+
 fn parse_get_response(pkgbuf: &[u8]) -> Result<kyber768::Ciphertext, Error> {
     let mut cipherbuf = [0; CIPHERTEXT_LEN as usize];
 
