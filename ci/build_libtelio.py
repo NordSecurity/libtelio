@@ -308,7 +308,7 @@ def exec_build(args):
     config = rutils.CargoConfig(
         args.os,
         args.arch,
-        args.debug,
+        True,
     )
     rutils.check_config(config)
     call_build(config)

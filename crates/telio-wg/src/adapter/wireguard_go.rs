@@ -1,4 +1,4 @@
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "android"))]
 use wg_go_rust_wrapper::{
     wg_go_free_cmd_res, wg_go_get_adapter_luid, wg_go_get_wg_socket, wg_go_log_cb, wg_go_logger_fn,
     wg_go_send_uapi_cmd, wg_go_start_named, wg_go_start_with_tun, wg_go_stop,

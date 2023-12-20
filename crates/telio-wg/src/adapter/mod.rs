@@ -7,8 +7,8 @@ mod boring;
 #[cfg_attr(docsrs, doc(cfg(target_os = "linux")))]
 mod linux_native_wg;
 
-#[cfg(any(windows, doc))]
-#[cfg_attr(docsrs, doc(cfg(windows)))]
+#[cfg(any(windows, target_os = "android", doc))]
+#[cfg_attr(docsrs, doc(cfg(windows, target_os = "android")))]
 mod wireguard_go;
 
 #[cfg(any(windows, doc))]
@@ -88,8 +88,8 @@ pub enum Error {
     LinuxNativeWg(#[from] linux_native_wg::Error),
 
     /// Error types from WireGuard Go implementation
-    #[cfg(any(windows, doc))]
-    #[cfg_attr(docsrs, doc(cfg(windows)))]
+    #[cfg(any(windows, target_os = "android", doc))]
+    #[cfg_attr(docsrs, doc(cfg(any(windows, target_os = "android"))))]
     #[error("WireguardGo adapter error {0}")]
     WireguardGo(#[from] wireguard_go::Error),
 
@@ -230,10 +230,10 @@ pub(crate) fn start(
             Ok(Box::new(linux_native_wg::LinuxNativeWg::start(name, tun)?))
         }
         AdapterType::WireguardGo => {
-            #[cfg(not(windows))]
+            #[cfg(not(any(windows, target_os = "android")))]
             return Err(Error::UnsupportedAdapter);
 
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "android"))]
             Ok(Box::new(wireguard_go::WireguardGo::start(name, tun)?))
         }
         AdapterType::WindowsNativeWg => {

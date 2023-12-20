@@ -5,8 +5,11 @@ use std::process::Command;
 fn main() {
     // wireguard-go is currently built on Windows only
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
-    if target_os != "windows" {
-        panic!("Only windows supported as target! {}", target_os);
+    if target_os != "windows" && target_os != "android" {
+        panic!(
+            "Only windows and android supported as target! {}",
+            target_os
+        );
     }
 
     // build.rs files are built to run as binaries on the host, so the [cfg(target_os)] here is actually the host OS
@@ -15,7 +18,7 @@ fn main() {
     #[cfg(not(target_os = "windows"))]
     let host_os = "other";
 
-    println!("cargo:rerun-if-changed=./");
+    //println!("cargo:rerun-if-changed=./");
 
     match std::env::var("OUT_DIR") {
         Ok(path) => {
