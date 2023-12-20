@@ -2,7 +2,7 @@
 
 use ipnetwork::{IpNetwork, IpNetworkError};
 use serde::{Deserialize, Serialize};
-use telio_crypto::{KeyDecodeError, PublicKey, SecretKey};
+use telio_crypto::{KeyDecodeError, PresharedKey, PublicKey, SecretKey};
 use telio_model::mesh::{Node, NodeState};
 use telio_utils::{telio_log_warn, DualTarget};
 use wireguard_uapi::{get, xplatform::set};
@@ -44,6 +44,8 @@ pub struct Peer {
     pub tx_bytes: Option<u64>,
     /// Time since last handshakeor `None`, differs from WireGuard field meaning
     pub time_since_last_handshake: Option<Duration>,
+    /// The peer's preshared key
+    pub preshared_key: Option<PresharedKey>,
 }
 
 impl From<get::Peer> for Peer {
@@ -64,6 +66,11 @@ impl From<get::Peer> for Peer {
             time_since_last_handshake: Peer::calculate_time_since_last_handshake(Some(
                 item.last_handshake_time,
             )),
+            preshared_key: if item.preshared_key == [0; 32] {
+                None
+            } else {
+                Some(PresharedKey(item.preshared_key))
+            },
         }
     }
 }
@@ -81,6 +88,7 @@ impl From<set::Peer> for Peer {
                 .map(|ip| IpNetwork::new(ip.ipaddr, ip.cidr_mask))
                 .collect::<Result<Vec<IpNetwork>, _>>()
                 .unwrap_or_default(),
+            preshared_key: item.preshared_key.map(PresharedKey),
             ..Default::default()
         }
     }
@@ -136,6 +144,7 @@ impl From<&Peer> for set::Peer {
                     cidr_mask: ip.prefix(),
                 })
                 .collect(),
+            preshared_key: item.preshared_key.map(|psk| psk.0),
             ..Default::default()
         }
     }
@@ -545,6 +554,11 @@ fn parse_peer<R: Read>(
                     } else {
                         last_handshake_time = Some(sec);
                     }
+                }
+                "preshared_key" => {
+                    peer.preshared_key = Some(val.parse().map_err(|e: KeyDecodeError| {
+                        Error::ParsingError("preshared_key", e.to_string())
+                    })?);
                 }
                 "public_key" => {
                     break (

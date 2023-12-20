@@ -80,7 +80,12 @@ async fn consolidate_wg_private_key<W: WireGuard>(
     requested_state: &RequestedState,
     wireguard_interface: &W,
 ) -> Result {
-    let private_key = requested_state.device_config.private_key;
+    let private_key = if let Some(pq) = &requested_state.postquantum_wg {
+        pq.wg_secret
+    } else {
+        requested_state.device_config.private_key
+    };
+
     let actual_private_key = wireguard_interface.get_interface().await?.private_key;
 
     if actual_private_key != Some(private_key) {
@@ -382,10 +387,16 @@ async fn build_requested_peers_list<
             .filter(|network| features.ipv6 || network.is_ipv4())
             .collect();
 
+        let preshared_key = requested_state
+            .postquantum_wg
+            .as_ref()
+            .map(|pq| pq.pq_shared);
+
         if let Some(meshnet_peer) = requested_peers.get_mut(&exit_node.public_key) {
             // Exit node is meshnet peer, so just promote already existing node to be exit node
             // with allowed ips change
             meshnet_peer.peer.allowed_ips = allowed_ips;
+            meshnet_peer.peer.preshared_key = preshared_key;
             exit_node_exists = true;
         } else {
             // Exit node is a fresh node, therefore - insert create new peer
@@ -400,6 +411,7 @@ async fn build_requested_peers_list<
                         endpoint,
                         persistent_keepalive_interval,
                         allowed_ips,
+                        preshared_key,
                         ..Default::default()
                     },
                     local_direct_endpoint: None,
@@ -769,6 +781,7 @@ fn compare_peers(a: &telio_wg::uapi::Peer, b: &telio_wg::uapi::Peer) -> bool {
         && a.endpoint == b.endpoint
         && a.persistent_keepalive_interval == b.persistent_keepalive_interval
         && a.allowed_ips == b.allowed_ips
+        && a.preshared_key == b.preshared_key
 }
 
 fn is_peer_proxying(
@@ -1239,6 +1252,7 @@ mod tests {
                     nicknames: false,
                     boringtun_reset_connections: Default::default(),
                     flush_events_on_stop_timeout_seconds: None,
+                    post_quantum_vpn: Default::default(),
                 },
             }
         }
@@ -1384,6 +1398,7 @@ mod tests {
                         rx_bytes: None,
                         tx_bytes: None,
                         time_since_last_handshake: None,
+                        preshared_key: None,
                     }))
                     .return_once(|_| Ok(()));
             }
