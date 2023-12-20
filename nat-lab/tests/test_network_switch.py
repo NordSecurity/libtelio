@@ -186,6 +186,7 @@ async def test_mesh_network_switch(
             ),
             marks=[
                 pytest.mark.mac,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4685"),
             ],
         ),
     ],

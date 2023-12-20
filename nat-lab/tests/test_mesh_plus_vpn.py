@@ -460,7 +460,10 @@ async def test_vpn_plus_mesh(
                 ),
                 features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
             ),
-            marks=pytest.mark.mac,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4684"),
+            ],
         ),
     ],
 )

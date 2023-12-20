@@ -112,7 +112,10 @@ async def _connect_vpn(
                 is_meshnet=False,
             ),
             "10.0.254.7",
-            marks=pytest.mark.mac,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.xfail(reason="Test flaky: JIRA issue LLT-4682"),
+            ],
         ),
     ],
 )

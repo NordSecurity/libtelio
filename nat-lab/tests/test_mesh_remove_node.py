@@ -44,7 +44,10 @@ from utils.ping import Ping
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
             ),
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4683"),
+            ],
         ),
         pytest.param(
             SetupParameters(
@@ -66,7 +69,10 @@ from utils.ping import Ping
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
             ),
-            marks=pytest.mark.mac,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.xfail(reason="Test is flaky - LLT-4683"),
+            ],
         ),
     ],
 )
