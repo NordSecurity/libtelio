@@ -1,6 +1,8 @@
 import re
 from config import STUN_BINARY_PATH_WINDOWS, STUN_BINARY_PATH_MAC
+from utils import testing
 from utils.connection import Connection, TargetOS
+from utils.router import IPProto, REG_IPV6ADDR, get_ip_address_type
 
 # For Linux, use the standard `stunclient` available on most distributions.
 #
@@ -14,52 +16,49 @@ from utils.connection import Connection, TargetOS
 async def get(
     connection: Connection, stun_server: str, stun_server_port: int = 3478
 ) -> str:
-    if connection.target_os == TargetOS.Linux:
-        process = await connection.create_process(
-            ["turnutils_stunclient", "-p", str(stun_server_port), stun_server]
-        ).execute()
+    ip_proto = testing.unpack_optional(get_ip_address_type(stun_server))
 
-        match = re.search(
-            r"UDP reflexive addr: (\d+\.\d+\.\d+\.\d+):(\d+)", process.get_stdout()
-        )
-        assert match, (
-            f"stun response missing XorMappedAddress, stdout {process.get_stdout()},"
-            f" stderr {process.get_stderr()}"
-        )
-        return match.group(1)
+    path = ""
 
     if connection.target_os == TargetOS.Windows:
         assert (
             stun_server_port == 3478
         ), "Non-standard Stun ports are supported only on Linux"
 
-        process = await connection.create_process(
-            [STUN_BINARY_PATH_WINDOWS, stun_server]
-        ).execute()
+        path = STUN_BINARY_PATH_WINDOWS
 
-        # Match: 'Mapped address: 10.0.0.1:53628'
-        match = re.search(r"Mapped address: (\d+.\d+.\d+.\d+)", process.get_stdout())
-        assert match, (
-            f"stun response missing Mapped address, stdout {process.get_stdout()},"
-            f" stderr {process.get_stderr()}"
-        )
-        return match.group(1)
-
-    if connection.target_os == TargetOS.Mac:
+    elif connection.target_os == TargetOS.Mac:
         assert (
             stun_server_port == 3478
         ), "Non-standard Stun ports are supported only on Linux"
 
-        process = await connection.create_process(
-            [STUN_BINARY_PATH_MAC, stun_server]
-        ).execute()
+        path = STUN_BINARY_PATH_MAC
 
-        # Match: 'Mapped address: 10.0.0.1:53628'
-        match = re.search(r"Mapped address: (\d+.\d+.\d+.\d+)", process.get_stdout())
-        assert match, (
-            f"stun response missing Mapped address, stdout {process.get_stdout()},"
-            f" stderr {process.get_stderr()}"
-        )
-        return match.group(1)
+    elif connection.target_os == TargetOS.Linux:
+        path = "stunclient"
+    else:
+        assert False, "unsupported os"
 
-    assert False, "unsupported os"
+    process = await connection.create_process(
+        [
+            path,
+            stun_server,
+            "--family",
+            ("4" if ip_proto == IPProto.IPv4 else "6"),
+            "--verbosity",
+            "2",
+        ]
+    ).execute()
+
+    # Match: 'Mapped address: 10.0.254.1:24295' or 'Mapped address: 2001:db8:85a4::dead:beef:ceed.44947'
+    match = re.search(
+        (
+            r"Mapped address: (\d+\.\d+\.\d+\.\d+):(\d+)"
+            if ip_proto == IPProto.IPv4
+            else r"Mapped address: " + REG_IPV6ADDR + r".(\d+)"
+        ),
+        process.get_stdout(),
+    )
+    assert match, "stun response missing the IP address: " + process.get_stdout()
+
+    return match.group((1 if ip_proto == IPProto.IPv4 else 0))

@@ -2124,8 +2124,7 @@ checksum = "41f5c9112cb662acd3b204077e0de5bc66305fa8df65c8019d5adb10e9ab6e58"
 [[package]]
 name = "nat-detect"
 version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69c60070cca764876f04e1451115800d8723d3464df61cb5217d698736dbbcd3"
+source = "git+https://github.com/NordSecurity/nat-detect.git?tag=v0.1.8#e1d39ec902dbec6958286d649999b7dbe7d49881"
 dependencies = [
  "bytecodec",
  "clap 3.2.25",

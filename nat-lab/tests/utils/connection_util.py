@@ -152,6 +152,12 @@ LAN_ADDR_MAP: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW: "192.168.114.254",
 }
 
+LAN_ADDR_MAP_V6: Dict[ConnectionTag, str] = {
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK: (
+        "2001:db8:85a4::dead:beef:ceed"
+    ),
+}
+
 
 @dataclass
 class ConnectionManager:
@@ -288,6 +294,7 @@ def generate_connection_tracker_config(
     vpn_1_limits: ConnectionLimits = ConnectionLimits(0, 0),
     vpn_2_limits: ConnectionLimits = ConnectionLimits(0, 0),
     stun_limits: ConnectionLimits = ConnectionLimits(0, 0),
+    stun6_limits: ConnectionLimits = ConnectionLimits(0, 0),
     ping_limits: ConnectionLimits = ConnectionLimits(0, 0),
     derp_0_limits: ConnectionLimits = ConnectionLimits(0, 0),
     derp_1_limits: ConnectionLimits = ConnectionLimits(0, 0),
@@ -295,7 +302,7 @@ def generate_connection_tracker_config(
     derp_3_limits: ConnectionLimits = ConnectionLimits(0, 0),
 ) -> List[ConnectionTrackerConfig]:
     lan_addr = LAN_ADDR_MAP[connection_tag]
-    return [
+    ctc_list = [
         ConnectionTrackerConfig(
             "vpn_1",
             vpn_1_limits,
@@ -368,3 +375,20 @@ def generate_connection_tracker_config(
             ),
         ),
     ]
+
+    # Add IPv6 configs
+    if connection_tag in LAN_ADDR_MAP_V6:
+        ctc_list.append(
+            ConnectionTrackerConfig(
+                "stun6",
+                stun6_limits,
+                FiveTuple(
+                    protocol="udp",
+                    src_ip=LAN_ADDR_MAP_V6[connection_tag],
+                    dst_ip=config.STUNV6_SERVER,
+                    dst_port=3478,
+                ),
+            )
+        )
+
+    return ctc_list
