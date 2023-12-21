@@ -1,3 +1,11 @@
+### v4.1.5
+### **Bruschetta**
+---
+### Changelog
+* LLT-4633: Bind to interfaces which has router property only on apple
+
+<br>
+
 ### v4.1.4
 ### **Bruschetta**
 ---
