@@ -1339,7 +1339,6 @@ impl Runtime {
                 servers: SortedServers::new(config.derp_servers.clone().unwrap_or_default()),
                 allowed_pk: peers,
                 timeout: Duration::from_secs(10), //TODO: make configurable
-                ca_pem_path: None,
                 server_keepalives: DerpKeepaliveConfig::from(&self.features.derp),
                 enable_polling: self
                     .features
@@ -1353,6 +1352,12 @@ impl Runtime {
                     .as_ref()
                     .map(|peers| peers.iter().map(|peer| peer.public_key).collect())
                     .unwrap_or_default(),
+                use_built_in_root_certificates: self
+                    .features
+                    .derp
+                    .clone()
+                    .unwrap_or_default()
+                    .use_built_in_root_certificates,
             };
 
             // Update configuration for DERP client

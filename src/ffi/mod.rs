@@ -151,6 +151,35 @@ fn deserialize_features(features: *const c_char) -> Result<Features, telio_resul
     }
 }
 
+#[cfg(target_os = "android")]
+#[no_mangle]
+/// Initialize OS certificate store, should be called only once. Without call to telio_init_cert_store
+/// telio will not be able to verify https certificates in the system certificate store.
+/// # Params
+/// - `env`:    see https://developer.android.com/training/articles/perf-jni#javavm-and-jnienv
+/// - `ctx`:    see https://developer.android.com/reference/android/content/Context
+pub extern "C" fn telio_init_cert_store(
+    env: *mut jni::sys::JNIEnv,
+    ctx: jni::sys::jobject,
+) -> telio_result {
+    use once_cell::sync::OnceCell;
+
+    static RESULT: OnceCell<telio_result> = OnceCell::new();
+    *RESULT.get_or_init(|| match unsafe { jni::JNIEnv::from_raw(env) } {
+        Ok(env) => match rustls_platform_verifier::android::init_hosted(&env, ctx.into()) {
+            Err(err) => {
+                telio_log_error!("Failed to initialize certificate store {err:?}");
+                TELIO_RES_ERROR
+            }
+            Ok(()) => TELIO_RES_OK,
+        },
+        Err(err) => {
+            telio_log_error!("Couldn't initialize certificate store: {err:?}");
+            TELIO_RES_ERROR
+        }
+    })
+}
+
 #[cfg(target_os = "android")] // to avoid one-liner
 #[no_mangle]
 /// Create new telio library instance

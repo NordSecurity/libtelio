@@ -7,7 +7,7 @@ libtelio-build-pipeline:
     LIBTELIO_PROJECT_PATH: $CI_PROJECT_PATH
     LIBTELIO_DEFAULT_BRANCH: $CI_DEFAULT_BRANCH
 
-    # Don't checkout libtelio submodule when using GIT_SUBMODULE_STRATEGY.
+    # Don't checkout libtelio submodule when using GIT_SUBMODULE_STRATEGY. 
     # This ensures that all jobs that use `libtelio` submodule are calling
     # `ci/checkout.sh`, which uses `LIBTELIO_COMMIT_SHA` to
     # checkout the correct libtelio REF.
@@ -15,5 +15,5 @@ libtelio-build-pipeline:
 
   trigger:
     project: $LIBTELIO_BUILD_PROJECT_PATH
-    branch: v0.4.8
+    branch: v0.4.9
     strategy: depend

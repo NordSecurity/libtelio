@@ -154,6 +154,18 @@ enum telio_result telio_new(struct telio **dev,
 
 #if defined(__ANDROID__)
 /**
+ * Initialize OS certificate store, should be called only once. Without call to telio_init_cert_store
+ * telio will not be able to verify https certificates in the system certificate store.
+ * # Params
+ * - `env`:    see https://developer.android.com/training/articles/perf-jni#javavm-and-jnienv
+ * - `ctx`:    see https://developer.android.com/reference/android/content/Context
+ */
+enum telio_result telio_init_cert_store(JNIEnv *env,
+                                        jobject ctx);
+#endif
+
+#if defined(__ANDROID__)
+/**
  * Create new telio library instance
  * # Parameters
  * - `events`:     Events callback

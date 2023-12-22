@@ -228,6 +228,9 @@ pub struct FeatureDerp {
     pub derp_keepalive: Option<u32>,
     /// Enable polling of remote peer states to reduce derp traffic
     pub enable_polling: Option<bool>,
+    /// Use Mozilla's root certificates instead of OS ones [default false]
+    #[serde(default)]
+    pub use_built_in_root_certificates: bool,
 }
 
 /// Whether to validate keys
@@ -480,6 +483,7 @@ mod tests {
             tcp_keepalive: Some(1),
             derp_keepalive: Some(2),
             enable_polling: Some(true),
+            use_built_in_root_certificates: false,
         }),
         validate_keys: FeatureValidateKeys(false),
         ipv6: true,

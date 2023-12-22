@@ -36,8 +36,8 @@ public class Telio {
     }
   }
 
-  public Telio(String features, ITelioEventCb events, TelioLogLevel level, ITelioLoggerCb logger, ITelioProtectCb protect) {
-    this(libtelioJNI.new_Telio(features, events, level.swigValue(), logger, protect), true);
+  public Telio(String features, ITelioEventCb events, TelioLogLevel level, ITelioLoggerCb logger, ITelioProtectCb protect, java.lang.Object ctx) {
+    this(libtelioJNI.new_Telio(features, events, level.swigValue(), logger, protect, ctx), true);
   }
 
   public static TelioAdapterType getDefaultAdapter() {

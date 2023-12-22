@@ -22,7 +22,7 @@ public class libtelioJNI {
   public final static native int RES_LOCK_ERROR_get();
   public final static native int RES_INVALID_STRING_get();
   public final static native int RES_ALREADY_STARTED_get();
-  public final static native long new_Telio(String jarg1, ITelioEventCb jarg2, int jarg3, ITelioLoggerCb jarg4, ITelioProtectCb jarg5);
+  public final static native long new_Telio(String jarg1, ITelioEventCb jarg2, int jarg3, ITelioLoggerCb jarg4, ITelioProtectCb jarg5, java.lang.Object jarg6);
   public final static native int Telio_getDefaultAdapter();
   public final static native void delete_Telio(long jarg1);
   public final static native int Telio_start(long jarg1, Telio jarg1_, String jarg2, int jarg3);
