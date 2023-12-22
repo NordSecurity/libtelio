@@ -42,7 +42,10 @@ use tokio::{
 use telio_dns::{DnsResolver, LocalDnsResolver, Records};
 
 use telio_dns::bind_tun;
-use wg::uapi::{self, PeerState};
+use wg::{
+    uapi::{self, PeerState},
+    NoLinkDetection,
+};
 
 use std::collections::HashMap;
 use std::{
@@ -70,7 +73,7 @@ use telio_model::{
     },
     config::{Config, Peer, PeerBase, Server as DerpServer},
     event::{Event, Set},
-    mesh::{ExitNode, Node},
+    mesh::{ExitNode, LinkState, Node},
     validation::validate_nickname,
 };
 
@@ -844,6 +847,7 @@ impl Runtime {
                         )),
                         firewall_reset_connections,
                     },
+                    NoLinkDetection::from(features.no_link_detection),
                 )?);
                 let wg_events = wg_events.rx;
             } else {
@@ -1114,7 +1118,7 @@ impl Runtime {
         let wgi = self.entities.wireguard_interface.get_interface().await?;
         let mut nodes = Vec::new();
         for peer in wgi.peers.values() {
-            if let Some(node) = self.peer_to_node(peer, None).await {
+            if let Some(node) = self.peer_to_node(peer, None, None).await {
                 nodes.push(node);
             }
         }
@@ -1612,6 +1616,7 @@ impl Runtime {
         &'a self,
         peer: &uapi::Peer,
         state: Option<PeerState>,
+        link_state: Option<LinkState>,
     ) -> Option<Node> {
         let endpoint = peer.endpoint;
 
@@ -1659,6 +1664,7 @@ impl Runtime {
                     identifier: meshnet_peer.base.identifier.clone(),
                     public_key: meshnet_peer.base.public_key,
                     state: state.unwrap_or_else(|| peer.state()),
+                    link_state,
                     is_exit: peer
                         .allowed_ips
                         .iter()
@@ -1679,6 +1685,7 @@ impl Runtime {
                     identifier: exit_node.identifier.clone(),
                     public_key: exit_node.public_key,
                     state: state.unwrap_or_else(|| peer.state()),
+                    link_state,
                     is_exit: true,
                     is_vpn: exit_node.endpoint.is_some(),
                     ip_addresses: vec![
@@ -1730,7 +1737,7 @@ impl TaskRuntime for Runtime {
             },
 
             Some(mesh_event) = self.event_listeners.wg_event_subscriber.recv() => {
-                let node = self.peer_to_node(&mesh_event.peer, Some(mesh_event.state)).await;
+                let node = self.peer_to_node(&mesh_event.peer, Some(mesh_event.state), mesh_event.link_state).await;
 
                 if let Some(node) = node {
                     // Publish WG event to app

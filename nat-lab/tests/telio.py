@@ -27,6 +27,11 @@ class State(Enum):
     Connected = "connected"
 
 
+class LinkState(Enum):
+    Down = "down"
+    Up = "up"
+
+
 # Equivalent of `libtelio/crates/telio-model/src/api_config.rs:PathType`
 class PathType(Enum):
     Relay = "relay"
@@ -75,6 +80,7 @@ class PeerInfo(DataClassJsonMixin):
     identifier: str = ""
     public_key: str = ""
     state: State = State.Disconnected
+    link_state: Optional[LinkState] = None
     is_exit: bool = False
     is_vpn: bool = False
     ip_addresses: List[str] = field(default_factory=lambda: [])
@@ -92,6 +98,7 @@ class PeerInfo(DataClassJsonMixin):
                 self.identifier,
                 self.public_key,
                 self.state,
+                self.link_state,
                 self.is_exit,
                 self.is_vpn,
                 tuple(self.ip_addresses),
@@ -112,6 +119,11 @@ class PeerInfo(DataClassJsonMixin):
             self.identifier == other.identifier
             and self.public_key == other.public_key
             and self.state == other.state
+            and (
+                self.link_state is None
+                or other.link_state is None
+                or self.link_state == other.link_state
+            )
             and self.is_exit == other.is_exit
             and self.is_vpn == other.is_vpn
             and self.ip_addresses == other.ip_addresses
@@ -233,6 +245,13 @@ class Runtime:
             if new_events:
                 return
             await asyncio.sleep(0.1)
+
+    def get_link_state_events(self, public_key: str) -> List[Optional[LinkState]]:
+        return [
+            peer.link_state
+            for peer in self._peer_state_events
+            if peer and peer.public_key == public_key
+        ]
 
     def get_peer_info(self, public_key: str) -> Optional[PeerInfo]:
         events = [
@@ -397,6 +416,9 @@ class Events:
             self._runtime.notify_peer_event(public_key, states, paths, is_exit, is_vpn),
             timeout if timeout else 60 if PathType.Direct in paths else 30,
         )
+
+    def get_link_state_events(self, public_key: str) -> List[Optional[LinkState]]:
+        return self._runtime.get_link_state_events(public_key)
 
     async def wait_for_state_derp(
         self, server_ip: str, states: List[State], timeout: Optional[float] = None
@@ -567,6 +589,9 @@ class Client:
             is_vpn,
             timeout,
         )
+
+    def get_link_state_events(self, public_key: str) -> List[Optional[LinkState]]:
+        return self.get_events().get_link_state_events(public_key)
 
     async def wait_for_state_derp(
         self, derp_ip, states: List[State], timeout: Optional[float] = None

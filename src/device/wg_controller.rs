@@ -1253,6 +1253,7 @@ mod tests {
                     boringtun_reset_connections: Default::default(),
                     flush_events_on_stop_timeout_seconds: None,
                     post_quantum_vpn: Default::default(),
+                    no_link_detection: None,
                 },
             }
         }

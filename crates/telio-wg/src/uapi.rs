@@ -3,7 +3,7 @@
 use ipnetwork::{IpNetwork, IpNetworkError};
 use serde::{Deserialize, Serialize};
 use telio_crypto::{KeyDecodeError, PresharedKey, PublicKey, SecretKey};
-use telio_model::mesh::{Node, NodeState};
+use telio_model::mesh::{LinkState, Node, NodeState};
 use telio_utils::{telio_log_warn, DualTarget};
 use wireguard_uapi::{get, xplatform::set};
 
@@ -237,6 +237,8 @@ pub type PeerState = NodeState;
 pub struct Event {
     /// The state of the Peer
     pub state: PeerState,
+    /// The hint of link state of this Peer
+    pub link_state: Option<LinkState>,
     /// Details regarding the Peer
     pub peer: Peer,
 }
@@ -320,7 +322,7 @@ impl Peer {
     /// Detects changes in endpoints and allowed ips
     pub fn is_same_event(&self, other: &Self) -> bool {
         (&self.public_key, &self.endpoint, &self.allowed_ips)
-            == (&self.public_key, &other.endpoint, &other.allowed_ips)
+            == (&other.public_key, &other.endpoint, &other.allowed_ips)
     }
 
     #[cfg(not(test))]

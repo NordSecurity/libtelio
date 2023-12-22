@@ -282,6 +282,13 @@ where
     Ok(Some(eps))
 }
 
+/// Turns on the no link detection mechanism
+#[derive(Default, Copy, Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct FeatureNoLinkDetection {
+    /// Configurable rtt in seconds
+    pub rtt_seconds: Option<u64>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 /// Encompasses all of the possible features that can be enabled
 pub struct Features {
@@ -321,6 +328,8 @@ pub struct Features {
     /// Flag to turn on post quantum VPN tunnel
     #[serde(default)]
     pub post_quantum_vpn: Option<FeaturePostQuantumVPN>,
+    /// No link detection mechanism
+    pub no_link_detection: Option<FeatureNoLinkDetection>,
 }
 
 impl FeaturePaths {
@@ -480,6 +489,7 @@ mod tests {
         post_quantum_vpn: Some(FeaturePostQuantumVPN {
             handshake_timeout_s: 16,
         }),
+        no_link_detection: None,
     });
 
     static EXPECTED_FEATURES_WITHOUT_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
@@ -523,6 +533,7 @@ mod tests {
         boringtun_reset_connections: FeatureBoringtunResetConns(false),
         flush_events_on_stop_timeout_seconds: None,
         post_quantum_vpn: None,
+        no_link_detection: None,
     });
 
     #[test]
@@ -695,6 +706,7 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
+            no_link_detection: None,
         };
 
         let empty_qos_features = Features {
@@ -722,6 +734,7 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
+            no_link_detection: None,
         };
 
         let no_qos_features = Features {
@@ -744,6 +757,7 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
+            no_link_detection: None,
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -785,6 +799,7 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
+            no_link_detection: None,
         };
 
         let empty_features = Features {
@@ -803,6 +818,7 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
+            no_link_detection: None,
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -845,6 +861,7 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
+            no_link_detection: None,
         };
 
         assert_eq!(Features::default(), expected_defaults);
