@@ -521,10 +521,7 @@ async def test_event_content_exit_through_peer(
                 features=TelioFeatures(direct=Direct(providers=["stun"])),
             ),
             "10.0.254.7",
-            marks=[
-                pytest.mark.mac,
-                pytest.mark.xfail(reason="Test is flaky - JIRA issue LLT-4648"),
-            ],
+            marks=[pytest.mark.mac],
         ),
     ],
 )
