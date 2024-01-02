@@ -30,6 +30,7 @@ def short_persistent_keepalive_periods() -> Wireguard:
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4695")
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -117,6 +118,7 @@ async def test_event_link_state_peers_idle_all_time(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4695")
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -185,6 +187,7 @@ async def test_event_link_state_peers_exchanging_data_for_a_long_time(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4695")
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -280,6 +283,7 @@ async def test_event_link_state_peers_exchanging_data_then_idling(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4695")
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -373,6 +377,7 @@ async def test_event_link_state_streaming_to_a_silent_peer(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4695")
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -476,6 +481,7 @@ async def test_event_link_state_peer_goes_offline(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4695")
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
