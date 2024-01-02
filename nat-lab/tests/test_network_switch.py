@@ -241,7 +241,6 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
                 features=TelioFeatures(direct=Direct(providers=["stun"])),
             ),
             marks=[
-                pytest.mark.windows,
                 pytest.mark.xfail(reason="Flaky: LLT-4677"),
             ],
         ),
