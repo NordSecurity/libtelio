@@ -1668,6 +1668,7 @@ impl Runtime {
                 Some(Node {
                     identifier: meshnet_peer.base.identifier.clone(),
                     public_key: meshnet_peer.base.public_key,
+                    nickname: meshnet_peer.base.nickname.clone(),
                     state: state.unwrap_or_else(|| peer.state()),
                     link_state,
                     is_exit: peer
@@ -1689,6 +1690,7 @@ impl Runtime {
                 Some(Node {
                     identifier: exit_node.identifier.clone(),
                     public_key: exit_node.public_key,
+                    nickname: None,
                     state: state.unwrap_or_else(|| peer.state()),
                     link_state,
                     is_exit: true,
