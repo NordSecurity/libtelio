@@ -10,7 +10,9 @@ use telio_task::{
     io::{chan, mc_chan, Chan, McChan},
     task_exec, Runtime, RuntimeExt, Task, WaitResponse,
 };
-use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
+use telio_utils::{
+    telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn,
+};
 use telio_wg::uapi::AnalyticsEvent;
 use uuid::Uuid;
 
@@ -239,7 +241,8 @@ impl State {
 
         let qos_data = QoSData::merge(internal_qos_data, external_qos_data);
 
-        let _ = lana!(
+        telio_log_info!("Attempting to send moose heartbeat event");
+        let r = lana!(
             send_serviceQuality_node_heartbeat,
             qos_data.connection_duration,
             0, // TODO(LLT-4205): Derp Connection Duration
@@ -251,8 +254,11 @@ impl State {
             qos_data.rtt_loss,
             qos_data.tx
         );
+        telio_log_info!("Moose heartbeat event result: {:?}", r);
 
-        let _ = lana!(flush_changes);
+        telio_log_info!("Attempting to flush moose changes");
+        let r = lana!(flush_changes);
+        telio_log_info!("Flushing moose changes result: {:?}", r);
     }
 
     fn meshnet_id() -> Uuid {
