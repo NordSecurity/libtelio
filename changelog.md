@@ -6,6 +6,7 @@
 * LLT-4543: Log ffi calls
 * LLT-4310: Change stun client/server to the one, which supports IPv6
 * LLT-4381: Use OS certificates instead of hardcoded mozilla list
+* LLT-4667: Fix libtelio panicking on linux + boringtun
 
 ### v4.2.1
 ----
