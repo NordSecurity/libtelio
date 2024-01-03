@@ -6,9 +6,10 @@ use std::{convert::TryInto, net::IpAddr};
 use surge_ping::{
     Client, Config as PingerConfig, ConfigBuilder, PingIdentifier, PingSequence, ICMP,
 };
-use telio_utils::{telio_log_debug, telio_log_error, DualTarget};
+use tokio::sync::mpsc;
 
-use crate::qos::NodeInfo;
+use telio_crypto::PublicKey;
+use telio_utils::{telio_log_debug, telio_log_error, DualTarget};
 
 /// Information needed to check the reachability of endpoints.
 ///
@@ -16,20 +17,20 @@ use crate::qos::NodeInfo;
 pub struct Ping {
     client_v4: Arc<Client>,
     client_v6: Arc<Client>,
-    no_of_tries: u32,
+    pub no_of_tries: u32,
 }
 
 #[derive(Debug, Clone)]
-struct PingResults {
-    successful_pings: u32,
-    unsuccessful_pings: u32,
-    avg_rtt: Option<Duration>,
+pub struct PingResults {
+    pub successful_pings: u32,
+    pub unsuccessful_pings: u32,
+    pub avg_rtt: Option<Duration>,
 }
 
-#[derive(Debug)]
-struct DualPingResults {
-    v4: Option<PingResults>,
-    v6: Option<PingResults>,
+#[derive(Clone, Debug)]
+pub struct DualPingResults {
+    pub v4: Option<PingResults>,
+    pub v6: Option<PingResults>,
 }
 
 impl Ping {
@@ -53,9 +54,13 @@ impl Ping {
     /// # Arguments
     ///
     /// * `node` - `NodeInfo` instance to get endpoint to ping and to store RTT information.
-    pub async fn perform(&self, node: &mut NodeInfo) {
+    pub async fn perform(
+        &self,
+        target: (PublicKey, DualTarget),
+        results_tx: mpsc::Sender<(PublicKey, DualPingResults)>,
+    ) {
         // TODO this needs some refinement
-        let dpr = self.perform_average_rtt(&node.endpoint).await;
+        let dpr = self.perform_average_rtt(&target.1).await;
 
         telio_log_debug!(
             "Ping results: {:?}, no_of_tries: {:?}",
@@ -63,31 +68,7 @@ impl Ping {
             self.no_of_tries
         );
 
-        if let Some(results_v4) = dpr.v4 {
-            let u64_avg = results_v4
-                .avg_rtt
-                .map_or(Duration::from_millis(0), |a| a)
-                .as_millis()
-                .try_into()
-                .unwrap_or(0u64);
-            let _ = node.rtt_histogram.increment(u64_avg);
-            let _ = node
-                .rtt_loss_histogram
-                .increment((100 * results_v4.unsuccessful_pings / self.no_of_tries) as u64);
-        }
-
-        if let Some(results_v6) = dpr.v6 {
-            let u64_avg = results_v6
-                .avg_rtt
-                .map_or(Duration::from_millis(0), |a| a)
-                .as_millis()
-                .try_into()
-                .unwrap_or(0u64);
-            let _ = node.rtt6_histogram.increment(u64_avg);
-            let _ = node
-                .rtt6_loss_histogram
-                .increment((100 * results_v6.unsuccessful_pings / self.no_of_tries) as u64);
-        }
+        let _ = results_tx.send((target.0, dpr)).await;
     }
 
     async fn perform_average_rtt(&self, target: &DualTarget) -> DualPingResults {
@@ -150,6 +131,8 @@ impl Ping {
         };
 
         pinger.timeout(Self::PING_TIMEOUT);
+        #[cfg(test)]
+        pinger.timeout(Duration::from_millis(10));
 
         let mut sum = Duration::default();
 
