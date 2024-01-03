@@ -14,4 +14,4 @@ jobs:
       - name: Verify download
         run: echo '564ea439a14eced45cdb3e50b55a463502d9fbfb7722535c5d0390b6577ce343  cargo-tarpaulin' | sha256sum --check --status
       - name: Run cargo-tarpaulin
-        run: ./cargo-tarpaulin -v --all --out Xml --offline --exclude-files '../3rd-party/*,clis/*'
+        run: sudo -E env "PATH=$PATH:/home/runner/.cargo" ./cargo-tarpaulin -v --all --out Xml --offline --exclude-files '../3rd-party/*,clis/*'

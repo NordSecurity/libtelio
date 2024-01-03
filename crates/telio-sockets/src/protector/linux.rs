@@ -66,7 +66,6 @@ mod tests {
 
     use super::*;
 
-    #[cfg(not(tarpaulin))]
     #[rstest]
     #[case(IpAddr::V4(Ipv4Addr::LOCALHOST))]
     #[case(IpAddr::V4(Ipv4Addr::UNSPECIFIED))]
@@ -85,6 +84,7 @@ mod tests {
             }
             Err(e) => panic!("Unexpected error: {:?}", e),
         };
+
         assert!(protector.make_external(socket.as_native_socket()).is_ok());
 
         let socket = match TcpListener::bind(addr) {
