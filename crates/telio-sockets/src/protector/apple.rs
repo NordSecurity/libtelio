@@ -26,7 +26,7 @@ use crate::native::interface_index_from_name;
 use crate::native::NativeSocket;
 use crate::Protector;
 use nix::sys::socket::{getsockname, AddressFamily, SockaddrLike, SockaddrStorage};
-use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_info, telio_log_warn};
 
 #[cfg(any(target_os = "ios", target_os = "tvos"))]
 use objc::{class, msg_send, runtime::Object, sel, sel_impl};
@@ -334,17 +334,27 @@ fn get_primary_interface_names() -> Vec<String> {
             let primary_service_dictionary = store
                 .get(format!("State:/Network/Service/{}/IPv4", service).as_str())
                 .and_then(CFPropertyList::downcast_into::<CFDictionary>);
+
             if let Some(primary_service_dictionary) = primary_service_dictionary {
-                let interface_name = primary_service_dictionary
-                    .find(unsafe { schema_definitions::kSCPropInterfaceName }.to_void())
-                    .map(|ptr| unsafe { CFString::wrap_under_get_rule(*ptr as CFStringRef) });
-                if let Some(interface_name) = interface_name {
-                    primary_interface_names.push(interface_name.to_string());
+                if primary_service_dictionary
+                    .find(unsafe { schema_definitions::kSCPropNetIPv4Router }.to_void())
+                    .is_some()
+                {
+                    let interface_name = primary_service_dictionary
+                        .find(unsafe { schema_definitions::kSCPropInterfaceName }.to_void())
+                        .map(|ptr| unsafe { CFString::wrap_under_get_rule(*ptr as CFStringRef) });
+                    if let Some(interface_name) = interface_name {
+                        primary_interface_names.push(interface_name.to_string());
+                    }
                 }
             }
         }
     }
 
+    telio_log_info!(
+        "Discovered these primary interfaces for use in socket binding: {:?}",
+        primary_interface_names
+    );
     primary_interface_names
 }
 
