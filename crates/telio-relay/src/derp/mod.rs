@@ -15,7 +15,6 @@ use futures::{future::select_all, Future};
 use generic_array::typenum::Unsigned;
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use telio_crypto::{PublicKey, SecretKey};
@@ -160,14 +159,14 @@ pub struct Config {
     pub allowed_pk: HashSet<PublicKey>,
     /// Timeout used for connecting to derp server
     pub timeout: Duration,
-    /// Path to certificate for tls connections
-    pub ca_pem_path: Option<PathBuf>,
     /// Keepalive values for derp connection
     pub server_keepalives: DerpKeepaliveConfig,
     /// Enable mechanism for turning off keepalive to offline peers
     pub enable_polling: bool,
     /// Derp polling will be done asking status of these meshnet peers
     pub meshnet_peers: Vec<PublicKey>,
+    /// Use Mozilla's root certificates instead of OS ones [default false]
+    pub use_built_in_root_certificates: bool,
 }
 
 impl Default for Config {
@@ -177,13 +176,13 @@ impl Default for Config {
             secret_key: Default::default(),
             allowed_pk: Default::default(),
             servers: Default::default(),
-            ca_pem_path: None,
             server_keepalives: DerpKeepaliveConfig {
                 tcp_keepalive: proto::DERP_TCP_KEEPALIVE_INTERVAL,
                 derp_keepalive: proto::DERP_KEEPALIVE_INTERVAL,
             },
             enable_polling: false,
             meshnet_peers: Default::default(),
+            use_built_in_root_certificates: false,
         }
     }
 }

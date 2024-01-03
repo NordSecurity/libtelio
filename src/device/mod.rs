@@ -42,7 +42,10 @@ use tokio::{
 use telio_dns::{DnsResolver, LocalDnsResolver, Records};
 
 use telio_dns::bind_tun;
-use wg::uapi::{self, PeerState};
+use wg::{
+    uapi::{self, PeerState},
+    NoLinkDetection,
+};
 
 use std::collections::HashMap;
 use std::{
@@ -70,7 +73,7 @@ use telio_model::{
     },
     config::{Config, Peer, PeerBase, Server as DerpServer},
     event::{Event, Set},
-    mesh::{ExitNode, Node},
+    mesh::{ExitNode, LinkState, Node},
     validation::validate_nickname,
 };
 
@@ -141,6 +144,10 @@ pub enum Error {
     #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
     #[error("Socket pool error")]
     SocketPoolError(#[from] telio_sockets::protector::platform::Error),
+    #[error(transparent)]
+    PostQuantum(#[from] telio_wg::pq::Error),
+    #[error("Cannot setup meshnet when the post quantum VPN is set up")]
+    MeshnetUnavailableWithPQ,
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -193,6 +200,8 @@ pub struct RequestedState {
 
     // Requested keepalive periods
     pub(crate) keepalive_periods: FeaturePersistentKeepalive,
+
+    pub postquantum_wg: Option<wg::pq::PqKeys>,
 }
 
 pub struct Entities {
@@ -572,8 +581,7 @@ impl Device {
                 rt.connect_exit_node(&node).await?;
                 Ok(rt.entities.wireguard_interface.clone())
             })
-            .await
-            .map_err(Error::from)?;
+            .await?;
 
             // TODO: delete this as sockets are protected from within boringtun itself
             #[cfg(not(windows))]
@@ -839,6 +847,7 @@ impl Runtime {
                         )),
                         firewall_reset_connections,
                     },
+                    NoLinkDetection::from(features.no_link_detection),
                 )?);
                 let wg_events = wg_events.rx;
             } else {
@@ -1109,7 +1118,7 @@ impl Runtime {
         let wgi = self.entities.wireguard_interface.get_interface().await?;
         let mut nodes = Vec::new();
         for peer in wgi.peers.values() {
-            if let Some(node) = self.peer_to_node(peer, None).await {
+            if let Some(node) = self.peer_to_node(peer, None, None).await {
                 nodes.push(node);
             }
         }
@@ -1280,6 +1289,11 @@ impl Runtime {
     }
 
     async fn set_config(&mut self, config: &Option<Config>) -> Result {
+        if self.features.post_quantum_vpn.is_some() && config.is_some() {
+            // Post quantum VPN is enabled and we're trying to set up the meshnet
+            return Err(Error::MeshnetUnavailableWithPQ);
+        }
+
         if let Some(cfg) = config {
             let should_validate_keys = self.features.validate_keys.0;
             let keys_match =
@@ -1325,7 +1339,6 @@ impl Runtime {
                 servers: SortedServers::new(config.derp_servers.clone().unwrap_or_default()),
                 allowed_pk: peers,
                 timeout: Duration::from_secs(10), //TODO: make configurable
-                ca_pem_path: None,
                 server_keepalives: DerpKeepaliveConfig::from(&self.features.derp),
                 enable_polling: self
                     .features
@@ -1339,6 +1352,12 @@ impl Runtime {
                     .as_ref()
                     .map(|peers| peers.iter().map(|peer| peer.public_key).collect())
                     .unwrap_or_default(),
+                use_built_in_root_certificates: self
+                    .features
+                    .derp
+                    .clone()
+                    .unwrap_or_default()
+                    .use_built_in_root_certificates,
             };
 
             // Update configuration for DERP client
@@ -1465,12 +1484,38 @@ impl Runtime {
             .map(|peers| peers.iter().any(|p| p.public_key == exit_node.public_key))
             .unwrap_or_default();
 
+        self.requested_state.postquantum_wg = None;
+
         if is_meshnet_exit_node {
             if let Some(dns) = &self.entities.dns.lock().await.resolver {
                 self.reconfigure_dns_peer(dns, &dns.get_default_dns_servers())
                     .await?;
             }
-        } else if exit_node.endpoint.is_none() {
+        } else if let Some(addr) = exit_node.endpoint {
+            if let Some(pq_conf) = &self.features.post_quantum_vpn {
+                telio_log_debug!("Initializing PQ hanshake");
+
+                let fetch_keys = Box::pin(wg::pq::fetch_keys(
+                    &self.entities.socket_pool,
+                    addr,
+                    &self.requested_state.device_config.private_key,
+                    &exit_node.public_key,
+                )); // The future is large, let's move it onto the heap
+
+                let keys = tokio::time::timeout(
+                    Duration::from_secs(pq_conf.handshake_timeout_s as _),
+                    fetch_keys,
+                )
+                .await
+                .map_err(|_| {
+                    telio_log_warn!("PQ hanshake timeout");
+                    wg::pq::Error::Generic("Fetching PQ keys timeout".into())
+                })??;
+
+                self.requested_state.postquantum_wg = Some(keys);
+                telio_log_debug!("PQ hanshake finished succesfully");
+            }
+        } else {
             return Err(Error::EndpointNotProvided);
         }
 
@@ -1553,6 +1598,8 @@ impl Runtime {
             .await?;
         }
 
+        self.requested_state.postquantum_wg.take();
+
         Ok(())
     }
 
@@ -1574,6 +1621,7 @@ impl Runtime {
         &'a self,
         peer: &uapi::Peer,
         state: Option<PeerState>,
+        link_state: Option<LinkState>,
     ) -> Option<Node> {
         let endpoint = peer.endpoint;
 
@@ -1621,6 +1669,7 @@ impl Runtime {
                     identifier: meshnet_peer.base.identifier.clone(),
                     public_key: meshnet_peer.base.public_key,
                     state: state.unwrap_or_else(|| peer.state()),
+                    link_state,
                     is_exit: peer
                         .allowed_ips
                         .iter()
@@ -1641,6 +1690,7 @@ impl Runtime {
                     identifier: exit_node.identifier.clone(),
                     public_key: exit_node.public_key,
                     state: state.unwrap_or_else(|| peer.state()),
+                    link_state,
                     is_exit: true,
                     is_vpn: exit_node.endpoint.is_some(),
                     ip_addresses: vec![
@@ -1692,7 +1742,7 @@ impl TaskRuntime for Runtime {
             },
 
             Some(mesh_event) = self.event_listeners.wg_event_subscriber.recv() => {
-                let node = self.peer_to_node(&mesh_event.peer, Some(mesh_event.state)).await;
+                let node = self.peer_to_node(&mesh_event.peer, Some(mesh_event.state), mesh_event.link_state).await;
 
                 if let Some(node) = node {
                     // Publish WG event to app

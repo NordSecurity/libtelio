@@ -416,6 +416,7 @@ services:
         # therefore it takes the specified IP address and an
         # IP address + 1. The logic for this is inside bin/stun-server.
         ipv4_address: 10.0.1.1
+        ipv6_address: 2001:db8:85a4::deed:6
     logging:
       options:
         max-size: 50m

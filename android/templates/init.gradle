@@ -1,0 +1,12 @@
+ext.findRustlsPlatformVerifierProject = {
+    def cmdProcessBuilder = new ProcessBuilder(new String[] { "/root/.cargo/bin/cargo", "metadata", "--format-version", "1", "--manifest-path", "$PATH_TO_DEPENDENT_CRATE" })
+    def dependencyInfoText = new StringBuffer()
+
+    def cmdProcess = cmdProcessBuilder.start()
+    cmdProcess.consumeProcessOutput(dependencyInfoText, null)
+    cmdProcess.waitFor()
+
+    def dependencyJson = new groovy.json.JsonSlurper().parseText(dependencyInfoText.toString())
+    def manifestPath = file(dependencyJson.packages.find { it.name == "rustls-platform-verifier" }.manifest_path)
+    return manifestPath.parent
+}

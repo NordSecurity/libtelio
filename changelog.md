@@ -4,6 +4,8 @@
 * LLT-4667: Fix panic in boringtun
 * LLT-4663: Update zerocopy dependency
 * LLT-4543: Log ffi calls
+* LLT-4310: Change stun client/server to the one, which supports IPv6
+* LLT-4381: Use OS certificates instead of hardcoded mozilla list
 
 ### v4.2.1
 ----
@@ -13,6 +15,7 @@
 * LLT-4225: Migrate Telio to use the tracing crate instead of log crate
 * LLT-4594: Fix session keeper's bug, to enable ICMP6 packets
 * LLT-4597: Fix QoS' IPv6 pinging
+* LLT-4614: Implement the post quantum VPN handshake
 
 <br>
 
@@ -56,6 +59,7 @@
 * LLT-4552: Add way to flush events when stopping
 * LLT-4583: Don't add IPv6 addresses to wireguard when IPv6 feature is disabled
 * LLT-4613: Fix boringtun performs spurious rekeying
+* LLT-1113: Add no-link detection mechanism
 
 <br>
 

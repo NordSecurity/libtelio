@@ -1,0 +1,30 @@
+[package]
+name = "telio-wg-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+license = "GPL-3.0-only"
+repository = "https://github.com/NordSecurity/libtelio"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.telio-wg]
+path = ".."
+features = ["fuzzing"]
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "parse_get_packet"
+path = "fuzz_targets/parse_get_packet.rs"
+test = false
+doc = false

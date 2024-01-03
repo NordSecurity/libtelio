@@ -21,12 +21,14 @@ static JavaVM *jvm = NULL;
 %extend telio {
 
 #if defined(__ANDROID__)
-    telio(const char* features, telio_event_cb events, enum telio_log_level level, telio_logger_cb logger, telio_protect_cb protect) {
+    telio(const char* features, telio_event_cb events, enum telio_log_level level, telio_logger_cb logger, telio_protect_cb protect, jobject ctx) {
         telio *t;
         JNIEnv *env = NULL;
         if ((*jvm)->GetEnv(jvm, (void**)&env, JNI_VERSION_1_6)) {
             exit(1);
         }
+
+        telio_init_cert_store(env, ctx);
 
         enum telio_result result;
         if ((result = telio_new_with_protect(&t, features, events, level, logger, protect)) != TELIO_RES_OK) {

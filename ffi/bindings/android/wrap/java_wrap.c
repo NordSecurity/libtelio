@@ -379,12 +379,14 @@ jint JNI_OnLoad(JavaVM *jvm, void *reserved) {
     return JNI_VERSION_1_6;
 }
 
-SWIGINTERN struct telio *new_telio(char const *features,telio_event_cb events,enum telio_log_level level,telio_logger_cb logger,telio_protect_cb protect){
+SWIGINTERN struct telio *new_telio(char const *features,telio_event_cb events,enum telio_log_level level,telio_logger_cb logger,telio_protect_cb protect,jobject ctx){
         telio *t;
         JNIEnv *env = NULL;
         if ((*jvm)->GetEnv(jvm, (void**)&env, JNI_VERSION_1_6)) {
             exit(1);
         }
+
+        telio_init_cert_store(env, ctx);
 
         enum telio_result result;
         if ((result = telio_new_with_protect(&t, features, events, level, logger, protect)) != TELIO_RES_OK) {
@@ -558,13 +560,14 @@ SWIGEXPORT jint JNICALL Java_com_nordsec_telio_libtelioJNI_RES_1ALREADY_1STARTED
 }
 
 
-SWIGEXPORT jlong JNICALL Java_com_nordsec_telio_libtelioJNI_new_1Telio(JNIEnv *jenv, jclass jcls, jstring jarg1, jobject jarg2, jint jarg3, jobject jarg4, jobject jarg5) {
+SWIGEXPORT jlong JNICALL Java_com_nordsec_telio_libtelioJNI_new_1Telio(JNIEnv *jenv, jclass jcls, jstring jarg1, jobject jarg2, jint jarg3, jobject jarg4, jobject jarg5, jobject jarg6) {
   jlong jresult = 0 ;
   char *arg1 = (char *) 0 ;
   telio_event_cb arg2 ;
   enum telio_log_level arg3 ;
   telio_logger_cb arg4 ;
   telio_protect_cb arg5 ;
+  jobject arg6 ;
   struct telio *result = 0 ;
   
   (void)jenv;
@@ -607,7 +610,8 @@ SWIGEXPORT jlong JNICALL Java_com_nordsec_telio_libtelioJNI_new_1Telio(JNIEnv *j
     };
     arg5 = cb;
   }
-  result = (struct telio *)new_telio((char const *)arg1,arg2,arg3,arg4,arg5);
+  arg6 = jarg6; 
+  result = (struct telio *)new_telio((char const *)arg1,arg2,arg3,arg4,arg5,arg6);
   *(struct telio **)&jresult = result; 
   if (arg1) (*jenv)->ReleaseStringUTFChars(jenv, jarg1, (const char *)arg1);
   return jresult;

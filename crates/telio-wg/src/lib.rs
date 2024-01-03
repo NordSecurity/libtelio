@@ -8,6 +8,8 @@ pub(crate) mod adapter;
 pub(crate) mod wg;
 pub(crate) mod windows;
 
+/// Post quantum primitives
+pub mod pq;
 pub mod uapi;
 
 pub use crate::{

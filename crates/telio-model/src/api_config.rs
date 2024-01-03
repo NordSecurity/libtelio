@@ -228,6 +228,9 @@ pub struct FeatureDerp {
     pub derp_keepalive: Option<u32>,
     /// Enable polling of remote peer states to reduce derp traffic
     pub enable_polling: Option<bool>,
+    /// Use Mozilla's root certificates instead of OS ones [default false]
+    #[serde(default)]
+    pub use_built_in_root_certificates: bool,
 }
 
 /// Whether to validate keys
@@ -244,6 +247,20 @@ impl Default for FeatureValidateKeys {
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(transparent)]
 pub struct FeatureBoringtunResetConns(pub bool);
+
+/// Turns on post quantum VPN tunnel
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub struct FeaturePostQuantumVPN {
+    /// Initial handshake timeout in seconds
+    #[serde(default = "FeaturePostQuantumVPN::default_handshake_timeout_s")]
+    pub handshake_timeout_s: u32,
+}
+
+impl FeaturePostQuantumVPN {
+    const fn default_handshake_timeout_s() -> u32 {
+        8
+    }
+}
 
 fn deserialize_providers<'de, D>(de: D) -> Result<Option<HashSet<EndpointProvider>>, D::Error>
 where
@@ -266,6 +283,13 @@ where
         .collect();
 
     Ok(Some(eps))
+}
+
+/// Turns on the no link detection mechanism
+#[derive(Default, Copy, Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct FeatureNoLinkDetection {
+    /// Configurable rtt in seconds
+    pub rtt_seconds: Option<u64>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
@@ -304,6 +328,11 @@ pub struct Features {
     pub boringtun_reset_connections: FeatureBoringtunResetConns,
     /// If and for how long to flush events when stopping telio. Setting to Some(0) means waiting until all events have been flushed, regardless of how long it takes
     pub flush_events_on_stop_timeout_seconds: Option<u64>,
+    /// Flag to turn on post quantum VPN tunnel
+    #[serde(default)]
+    pub post_quantum_vpn: Option<FeaturePostQuantumVPN>,
+    /// No link detection mechanism
+    pub no_link_detection: Option<FeatureNoLinkDetection>,
 }
 
 impl FeaturePaths {
@@ -407,7 +436,11 @@ mod tests {
             "validate_keys": false,
             "ipv6": true,
             "nicknames": true,
-            "boringtun_reset_connections": true
+            "boringtun_reset_connections": true,
+            "post_quantum_vpn":
+            {
+                "handshake_timeout_s": 16
+            }
         }"#;
 
     static EXPECTED_FEATURES: Lazy<Features> = Lazy::new(|| Features {
@@ -450,12 +483,17 @@ mod tests {
             tcp_keepalive: Some(1),
             derp_keepalive: Some(2),
             enable_polling: Some(true),
+            use_built_in_root_certificates: false,
         }),
         validate_keys: FeatureValidateKeys(false),
         ipv6: true,
         nicknames: true,
         boringtun_reset_connections: FeatureBoringtunResetConns(true),
         flush_events_on_stop_timeout_seconds: None,
+        post_quantum_vpn: Some(FeaturePostQuantumVPN {
+            handshake_timeout_s: 16,
+        }),
+        no_link_detection: None,
     });
 
     static EXPECTED_FEATURES_WITHOUT_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
@@ -498,6 +536,8 @@ mod tests {
         nicknames: false,
         boringtun_reset_connections: FeatureBoringtunResetConns(false),
         flush_events_on_stop_timeout_seconds: None,
+        post_quantum_vpn: None,
+        no_link_detection: None,
     });
 
     #[test]
@@ -669,6 +709,8 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            post_quantum_vpn: Default::default(),
+            no_link_detection: None,
         };
 
         let empty_qos_features = Features {
@@ -695,6 +737,8 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            post_quantum_vpn: Default::default(),
+            no_link_detection: None,
         };
 
         let no_qos_features = Features {
@@ -716,6 +760,8 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            post_quantum_vpn: Default::default(),
+            no_link_detection: None,
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -756,6 +802,8 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            post_quantum_vpn: Default::default(),
+            no_link_detection: None,
         };
 
         let empty_features = Features {
@@ -773,6 +821,8 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            post_quantum_vpn: Default::default(),
+            no_link_detection: None,
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -814,6 +864,8 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            post_quantum_vpn: Default::default(),
+            no_link_detection: None,
         };
 
         assert_eq!(Features::default(), expected_defaults);

@@ -306,3 +306,19 @@ async def test_ipv6_exit_node(
 
         assert alpha_conn_tracker.get_out_of_limits() is None
         assert beta_conn_tracker.get_out_of_limits() is None
+
+        ip_alpha = await testing.wait_long(
+            stun.get(connection_alpha, config.STUNV6_SERVER)
+        )
+        # Note: we cannot "see" stun6 event, because "beta_conn_tracker" receives event
+        # with mesh's IPv6 src_ip address.
+        # await testing.wait_long(beta_conn_tracker.wait_for_event("stun6"))
+
+        ip_beta = await testing.wait_long(
+            stun.get(connection_beta, config.STUNV6_SERVER)
+        )
+        # Note: we cannot "see" stun6 event, because "beta_conn_tracker" receives event
+        # with mesh's IPv6 src_ip address.
+        # await testing.wait_long(beta_conn_tracker.wait_for_event("stun6"))
+
+        assert ip_alpha == ip_beta

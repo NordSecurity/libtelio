@@ -70,8 +70,8 @@ pub struct Config {
     pub send_size_enabled: bool,
     // verbose output
     pub verbose: u64,
-    // CA pem file path
-    pub ca_pem_path: PathBuf,
+    // Instead of using OS certificate store, use the mozzila built in roots
+    pub use_built_in_root_certificates: bool,
     // path to config file used for stress-test
     pub stress_cfg_path: PathBuf,
 }
@@ -244,13 +244,10 @@ impl Config {
                     .short('o'),
             )
             .arg(
-                Arg::new("certificate_authority")
-                    .help("Path to certificate authority pem file")
+                Arg::new("use_built_in_root_certificates")
+                    .help("Instead of using OS certificate store, use the mozzila built in roots")
                     .required(false)
-                    .takes_value(true)
-                    .default_value("")
-                    .long("CA")
-                    .short('C'),
+                    .long("use_built_in_root_certificates"),
             )
             .get_matches();
 
@@ -279,11 +276,6 @@ impl Config {
             .unwrap_or_default()
             .parse::<u16>()
             .unwrap_or_default();
-
-        let ca_pem_path = matches
-            .value_of("certificate_authority")
-            .unwrap_or_default()
-            .to_string();
 
         let stress_cfg_path = matches.value_of("config").unwrap_or_default().to_string();
 
@@ -341,7 +333,7 @@ impl Config {
             send_size_enabled: matches.is_present("size"),
             verbose: matches.occurrences_of("verbose"),
             stress_cfg_path: Path::new(&stress_cfg_path).to_path_buf(),
-            ca_pem_path: Path::new(&ca_pem_path).to_path_buf(),
+            use_built_in_root_certificates: matches.is_present("use_built_in_root_certificates"),
         })
     }
 

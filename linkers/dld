@@ -7,7 +7,7 @@ LINKER=${LINKER#"d-"}
 ARGS=$@
 
 while (( "$#" )); do
-	if [[ $1 == *"-Wl,--version-script="* ]]; then
+	if [[ $1 == *"-Wl,--version-script="* && ! $ARGS =~ -o.*librustls_platform_verifier.* ]]; then
 		VERSION=${1#"-Wl,--version-script="}
 		SED_ARGS='s/global:/global:\n    Java*;\n    JNI_OnLoad;\n/'
 		if [ "$(uname)" != "Darwin" ]; then

@@ -74,7 +74,6 @@ use rand::{thread_rng, Rng};
 use std::{
     io::{self, Write},
     net::SocketAddr,
-    path::{Path, PathBuf},
     process::exit as process_exit,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -153,7 +152,6 @@ async fn connect_client(
     client: conf::ClientConfig,
     verbosity: u64,
     addrs: Vec<SocketAddr>,
-    ca_pem_path: PathBuf,
     stress_cfg: Arc<RwLock<conf::StressConfig>>,
     metrics: Arc<Mutex<Metrics>>,
     pinger: bool,
@@ -167,16 +165,6 @@ async fn connect_client(
         Config {
             secret_key: client.private_key,
             timeout: Duration::from_secs(10),
-            ca_pem_path: match ca_pem_path != Path::new("").to_path_buf() {
-                true => match ca_pem_path.exists() {
-                    false => {
-                        println!("ERROR: {:?} - does not exist", ca_pem_path);
-                        None
-                    }
-                    true => Some(ca_pem_path),
-                },
-                false => None,
-            },
             ..Default::default()
         },
     ))
@@ -357,16 +345,7 @@ async fn run_without_clients_config(config: conf::Config) -> Result<()> {
         Config {
             secret_key: config.my_key,
             timeout: Duration::from_secs(5),
-            ca_pem_path: match config.ca_pem_path != Path::new("").to_path_buf() {
-                true => match config.ca_pem_path.exists() {
-                    false => {
-                        println!("ERROR: {:?} - does not exist", config.ca_pem_path);
-                        None
-                    }
-                    true => Some(config.ca_pem_path.clone()),
-                },
-                false => None,
-            },
+            use_built_in_root_certificates: config.use_built_in_root_certificates,
             ..Default::default()
         },
     ))
@@ -517,7 +496,6 @@ async fn run_stress_test(config: conf::Config) {
             stress_cfg.clone(),
             metrics.clone(),
             app_is_running.clone(),
-            config.ca_pem_path.clone(),
             config.verbose,
             rx_packet_counter.clone(),
         )
@@ -535,7 +513,6 @@ async fn run_with_clients_config(
     stress_cfg: Arc<RwLock<conf::StressConfig>>,
     metrics: Arc<Mutex<Metrics>>,
     running: Arc<AtomicBool>,
-    ca_pem_path: PathBuf,
     verbose: u64,
     rx_packet_counter: Arc<RelaxedCounter>,
 ) -> Result<()> {
@@ -660,7 +637,6 @@ async fn run_with_clients_config(
                 client1,
                 verbose,
                 derps_resolved1.clone(),
-                ca_pem_path.clone(),
                 stress_cfg.clone(),
                 metrics.clone(),
                 client1_pinger,
@@ -671,7 +647,6 @@ async fn run_with_clients_config(
                 client2,
                 verbose,
                 derps_resolved2.clone(),
-                ca_pem_path.clone(),
                 stress_cfg.clone(),
                 metrics.clone(),
                 client2_pinger,
