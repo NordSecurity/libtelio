@@ -37,10 +37,7 @@ from utils.ping import Ping
             ConnectionTag.MAC_VM,
             "10.0.254.7",
             "10.0.254.8",
-            marks=[
-                pytest.mark.mac,
-                pytest.mark.xfail(reason="Flaky: LLT-2393"),
-            ],
+            marks=pytest.mark.mac,
         ),
     ],
 )
@@ -237,6 +234,9 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
                 adapter_type=telio.AdapterType.BoringTun,
                 features=TelioFeatures(direct=Direct(providers=["stun"])),
             ),
+            marks=[
+                pytest.mark.xfail(reason="Flaky: LLT-4677"),
+            ],
         ),
         pytest.param(
             SetupParameters(
@@ -252,7 +252,10 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
                 adapter_type=telio.AdapterType.WindowsNativeWg,
                 features=TelioFeatures(direct=Direct(providers=["stun"])),
             ),
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Flaky: LLT-4673"),
+            ],
         ),
         pytest.param(
             SetupParameters(

@@ -10,7 +10,6 @@ from utils.ping import Ping
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4593")
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -44,7 +43,10 @@ from utils.ping import Ping
                     derp_1_limits=ConnectionLimits(2, 2),
                 ),
             ),
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4593"),
+            ],
         ),
         pytest.param(
             SetupParameters(
@@ -55,7 +57,10 @@ from utils.ping import Ping
                     derp_1_limits=ConnectionLimits(2, 2),
                 ),
             ),
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4593"),
+            ],
         ),
         pytest.param(
             SetupParameters(

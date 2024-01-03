@@ -112,7 +112,10 @@ async def _connect_vpn(
                 is_meshnet=False,
             ),
             "10.0.254.7",
-            marks=pytest.mark.mac,
+            marks=[
+                pytest.mark.mac,
+                pytest.mark.xfail(reason="Test flaky: JIRA issue LLT-4682"),
+            ],
         ),
     ],
 )
@@ -190,7 +193,10 @@ async def test_vpn_connection(
                 is_meshnet=False,
             ),
             "10.0.254.7",
-            marks=pytest.mark.windows,
+            marks=[
+                pytest.mark.windows,
+                pytest.mark.xfail(reason="Flaky: LLT-4674"),
+            ],
         ),
         pytest.param(
             SetupParameters(

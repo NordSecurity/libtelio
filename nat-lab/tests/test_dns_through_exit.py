@@ -76,7 +76,12 @@ from utils.router import IPStack
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
             ),
-            marks=pytest.mark.linux_native,
+            marks=[
+                pytest.mark.linux_native,
+                # The exact flaky variant is test_dns_through_exit[beta_setup_params0-alpha_setup_params1-exit_info0-alpha_info1],
+                # but there's no way to add a mark to a combination of parameters, so adding it here only.
+                pytest.mark.xfail(reason="Flaky: LLT-4674"),
+            ],
         ),
         # This test is failing, but currently is non critical
         # pytest.param(
