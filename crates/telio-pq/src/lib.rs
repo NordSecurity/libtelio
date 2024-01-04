@@ -1,8 +1,11 @@
+mod conn;
+mod entity;
 mod proto;
 
 use std::io;
+use std::net::SocketAddr;
 
-pub use proto::fetch_keys;
+pub use entity::Entity;
 
 /// Post quantum keys retrived from hanshake
 #[derive(Clone, Copy)]
@@ -11,6 +14,12 @@ pub struct Keys {
     pub pq_shared: telio_crypto::PresharedKey,
     /// X25519 secret key
     pub wg_secret: telio_crypto::SecretKey,
+}
+
+#[derive(Copy, Clone)]
+pub enum Event {
+    Handshake(SocketAddr, Keys),
+    Rekey(Keys),
 }
 
 /// The PQ module error type
