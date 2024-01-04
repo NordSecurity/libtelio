@@ -47,5 +47,5 @@ impl From<tokio::time::error::Elapsed> for Error {
 /// Public functions exposed for fuzzing framework
 #[cfg(feature = "fuzzing")]
 pub mod fuzz {
-    pub use super::proto::parse_get_response;
+    pub use super::proto::{parse_get_response, parse_rekey_response};
 }

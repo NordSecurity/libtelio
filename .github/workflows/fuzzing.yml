@@ -45,3 +45,6 @@ jobs:
         - name: fuzz telio pq parse_get_packet
           working-directory: crates/telio-pq
           run: cargo fuzz run parse_get_packet -- -max_total_time=180
+        - name: fuzz telio pq parse_rekey_packet
+          working-directory: crates/telio-pq
+          run: cargo fuzz run parse_rekey_packet -- -max_total_time=180
