@@ -14,7 +14,7 @@ use pnet_packet::{
 };
 use pqcrypto_kyber::kyber768;
 use pqcrypto_traits::kem::{Ciphertext, PublicKey, SharedSecret};
-use rand::{prelude::Distribution, SeedableRng};
+use rand::{prelude::Distribution, RngCore, SeedableRng};
 use tokio::net::{ToSocketAddrs, UdpSocket};
 
 const SERVICE_PORT: u16 = 6480;
@@ -26,6 +26,8 @@ const CIPHERTEXT_LEN: u32 = kyber768::ciphertext_bytes() as _;
 
 const IPV4_HEADER_LEN: usize = 20;
 const UDP_HEADER_LEN: usize = 8;
+
+type RekeyStatus = u8;
 
 struct TunnelSock {
     tunn: Box<noise::Tunn>,
@@ -100,6 +102,44 @@ pub async fn fetch_keys(
     })
 }
 
+/// Establsh new PQ preshared key with the VPN server
+pub async fn rekey(
+    sock_pool: &telio_sockets::SocketPool,
+) -> super::Result<telio_crypto::PresharedKey> {
+    let mut preshared = [0u8; telio_crypto::KEY_SIZE];
+
+    let mut rng = rand::rngs::StdRng::from_entropy();
+    rng.fill_bytes(&mut preshared);
+    let preshared = telio_crypto::PresharedKey::new(preshared);
+
+    let mut pkgbuf = Vec::with_capacity(1024 * 4); // 4 KiB
+    push_rekey_method_udp_payload(&mut pkgbuf, &preshared);
+
+    let sock = sock_pool
+        .new_internal_udp((Ipv4Addr::UNSPECIFIED, 0), None)
+        .await?;
+    sock.connect((REMOTE_IP, SERVICE_PORT)).await?;
+
+    sock.send(&pkgbuf).await?;
+
+    let mut recvbuf = [0u8; 1024];
+    let read = sock.recv(&mut recvbuf).await?;
+
+    #[allow(index_access_check)]
+    let status = parse_rekey_response(&recvbuf[..read])?;
+
+    const SUCCESS_CODE: RekeyStatus = 0;
+    if status != SUCCESS_CODE {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("VPN server returned status code: {status}"),
+        )
+        .into());
+    }
+
+    Ok(preshared)
+}
+
 async fn handshake(
     sock_pool: &telio_sockets::SocketPool,
     endpoint: impl ToSocketAddrs,
@@ -148,6 +188,27 @@ async fn handshake(
     }
 
     Ok(TunnelSock { tunn, sock })
+}
+
+pub fn parse_rekey_response(pkgbuf: &[u8]) -> super::Result<RekeyStatus> {
+    let mut data = io::Cursor::new(pkgbuf);
+
+    let mut version = [0u8; 4];
+    data.read_exact(&mut version)?;
+    let version = u32::from_le_bytes(version);
+    if version != PQ_PROTO_VERSION {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Server responded with invalid PQ rekey version",
+        )
+        .into());
+    }
+
+    let mut code = [0u8; 1];
+    data.read_exact(&mut code)?;
+
+    #[allow(index_access_check)]
+    Ok(code[0])
 }
 
 pub fn parse_get_response(pkgbuf: &[u8]) -> super::Result<kyber768::Ciphertext> {
@@ -239,6 +300,27 @@ fn push_get_method_udp_payload(
     pkgbuf.extend_from_slice(wg_public);
     pkgbuf.extend_from_slice(&(pq_public.as_bytes().len() as u32).to_le_bytes());
     pkgbuf.extend_from_slice(pq_public.as_bytes());
+}
+
+/// The REKEY payload looks as follows:
+///
+/// --------------------------------
+///  version           , u32le, = 1
+/// --------------------------------
+///  method            , u32le, = 1
+/// --------------------------------
+///  WG preshared len  , u32le, = 32
+/// --------------------------------
+///  WG preshared bytes, [u8]
+/// --------------------------------
+fn push_rekey_method_udp_payload(pkgbuf: &mut Vec<u8>, preshared: &telio_crypto::PresharedKey) {
+    let method = 1u32; // rekey
+
+    // UDP packet payload
+    pkgbuf.extend_from_slice(&PQ_PROTO_VERSION.to_le_bytes());
+    pkgbuf.extend_from_slice(&method.to_le_bytes());
+    pkgbuf.extend_from_slice(&(preshared.len() as u32).to_le_bytes());
+    pkgbuf.extend_from_slice(preshared);
 }
 
 /// Sets up UDP and IP headers in the provided buffer
