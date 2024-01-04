@@ -8,6 +8,7 @@
 * LLT-4381: Use OS certificates instead of hardcoded mozilla list
 * LLT-4667: Fix libtelio panicking on linux + boringtun
 * LLT-4633: Bind to interfaces which has router property only on apple
+* LLT-4688: Add detailed logs on boringtun socket failures
 
 ### v4.2.1
 ----
