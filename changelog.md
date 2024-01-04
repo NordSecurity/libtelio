@@ -13,6 +13,7 @@
 * LLT-4698: Fix exp. backoff in WG-STUN
 * LLT-4490: Ensure that meshnet entities are started only when meshnet is started
 * LLT-4335: Make blocking upnp gw search async
+* LLT-4620: Implement the post quantum key rotation mechanism
 
 <br>
 
