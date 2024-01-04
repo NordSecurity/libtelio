@@ -9,8 +9,8 @@ from ipaddress import ip_address
 from typing import Dict, Any, List, Tuple, Optional
 from utils.router import IPStack, IPProto, get_ip_address_type
 
-if platform.system() == "Darwin":
-    import mac_wg as Key
+if platform.machine() != "x86_64":
+    import pure_wg as Key
 else:
     from python_wireguard import Key  # type: ignore
 
