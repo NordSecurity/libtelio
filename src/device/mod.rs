@@ -1432,7 +1432,7 @@ impl Runtime {
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
             .await?;
         for ep in self.entities.endpoint_providers().iter() {
-            if let Err(err) = ep.trigger_endpoint_candidates_discovery().await {
+            if let Err(err) = ep.trigger_endpoint_candidates_discovery(true).await {
                 // This can fail on first config, because it takes a bit of time to resolve
                 // stun endpoint for StunEndpointProvider for WgStunControll
                 telio_log_debug!("Failed to trigger: {}", err);

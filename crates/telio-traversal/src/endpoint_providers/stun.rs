@@ -256,15 +256,6 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
         .await
         .ok()
     }
-
-    #[cfg(test)]
-    pub async fn cancel_backoff(&self) {
-        let _ = task_exec!(&self.task, async move |s| {
-            let _ = s.reconnect().await;
-            Ok(())
-        })
-        .await;
-    }
 }
 
 #[async_trait]
@@ -292,8 +283,15 @@ impl<Wg: WireGuard, E: Backoff + 'static> EndpointProvider for StunEndpointProvi
         .await;
     }
 
-    async fn trigger_endpoint_candidates_discovery(&self) -> Result<(), Error> {
+    async fn trigger_endpoint_candidates_discovery(&self, force: bool) -> Result<(), Error> {
         task_exec!(&self.task, async move |s| {
+            // A guard, to prevent waking up from 'BackingOff', when stun peer is published
+            if force {
+                if let StunState::BackingOff = s.stun_state {
+                    s.transition_to_wait_for_wg();
+                }
+            }
+
             if let StunState::WaitingForWg = s.stun_state {
                 s.try_transition_to_searching_for_server().await;
             }
@@ -1182,7 +1180,7 @@ mod tests {
 
         // Trigger for same env does not send
         env.stun_provider
-            .trigger_endpoint_candidates_discovery()
+            .trigger_endpoint_candidates_discovery(false)
             .await
             .expect("triggered");
 
@@ -1204,7 +1202,7 @@ mod tests {
         let wg_endpoint = SocketAddr::new([4, 4, 4, 4].into(), 44444);
 
         env.stun_provider
-            .trigger_endpoint_candidates_discovery()
+            .trigger_endpoint_candidates_discovery(false)
             .await
             .expect("tiggered");
 
@@ -1276,9 +1274,8 @@ mod tests {
         let udp_endpoint = SocketAddr::new([1, 1, 1, 1].into(), 11111);
         let wg_endpoint = SocketAddr::new([2, 2, 2, 2].into(), 22222);
 
-        env.stun_provider.cancel_backoff().await;
         env.stun_provider
-            .trigger_endpoint_candidates_discovery()
+            .trigger_endpoint_candidates_discovery(true)
             .await
             .expect("triggered");
 
@@ -1310,9 +1307,8 @@ mod tests {
         );
 
         // Trigger again and receive timeout
-        env.stun_provider.cancel_backoff().await;
         env.stun_provider
-            .trigger_endpoint_candidates_discovery()
+            .trigger_endpoint_candidates_discovery(true)
             .await
             .expect("triggered");
 
@@ -1845,14 +1841,14 @@ mod tests {
 
         // There should be no session started after explicit trigger
         env.stun_provider
-            .trigger_endpoint_candidates_discovery()
+            .trigger_endpoint_candidates_discovery(false)
             .await
             .expect("tiggered");
         expect_receive_failure("Session should not be started when there is no WG peer corresponding to the selected stun server");
 
         // After adding a peer to WG mock, the session should finally appear
         env.stun_provider
-            .trigger_endpoint_candidates_discovery()
+            .trigger_endpoint_candidates_discovery(false)
             .await
             .expect("tiggered");
 

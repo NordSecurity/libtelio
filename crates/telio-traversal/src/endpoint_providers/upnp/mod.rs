@@ -328,7 +328,7 @@ impl<Wg: WireGuard> EndpointProvider for UpnpEndpointProvider<Wg> {
         .unwrap_or_default()
     }
 
-    async fn trigger_endpoint_candidates_discovery(&self) -> Result<()> {
+    async fn trigger_endpoint_candidates_discovery(&self, _force: bool) -> Result<()> {
         let _ = task_exec!(&self.task, async move |s| {
             let _ = s.send_endpoint_candidate().await;
             Ok(())

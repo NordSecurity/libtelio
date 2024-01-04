@@ -116,7 +116,7 @@ pub trait EndpointProvider: Sync + Send + 'static {
         &self,
         tx: chan::Tx<EndpointCandidatesChangeEvent>,
     );
-    async fn trigger_endpoint_candidates_discovery(&self) -> Result<(), Error>;
+    async fn trigger_endpoint_candidates_discovery(&self, force: bool) -> Result<(), Error>;
     async fn handle_endpoint_gone_notification(&self);
 
     async fn send_ping(

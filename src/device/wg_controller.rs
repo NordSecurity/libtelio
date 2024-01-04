@@ -164,7 +164,7 @@ async fn consolidate_wg_peers<
         if let Some(stun) = stun_ep_provider {
             if let Some(wg_stun_server) = requested_state.wg_stun_server.as_ref() {
                 if wg_stun_server.public_key == *key {
-                    stun.trigger_endpoint_candidates_discovery().await?;
+                    stun.trigger_endpoint_candidates_discovery(false).await?;
                 }
             }
         }
