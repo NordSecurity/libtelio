@@ -326,11 +326,10 @@ mod tests {
     }
 
     #[rstest]
-    #[case(IpAddr::V4(Ipv4Addr::LOCALHOST))]
     #[cfg(not(windows))]
+    #[case(IpAddr::V4(Ipv4Addr::LOCALHOST))]
     #[case(IpAddr::V4(Ipv4Addr::UNSPECIFIED))]
     #[case(IpAddr::V6(Ipv6Addr::LOCALHOST))]
-    #[cfg(not(any(windows, tarpaulin)))]
     #[case(IpAddr::V6(Ipv6Addr::UNSPECIFIED))]
     #[tokio::test]
     async fn internal_udp_socket_can_transfer_data(#[case] ip_addr: IpAddr) {
@@ -359,11 +358,10 @@ mod tests {
     }
 
     #[rstest]
-    #[case(IpAddr::V4(Ipv4Addr::LOCALHOST))]
     #[cfg(not(windows))]
+    #[case(IpAddr::V4(Ipv4Addr::LOCALHOST))]
     #[case(IpAddr::V4(Ipv4Addr::UNSPECIFIED))]
     #[case(IpAddr::V6(Ipv6Addr::LOCALHOST))]
-    #[cfg(not(any(windows, tarpaulin)))]
     #[case(IpAddr::V6(Ipv6Addr::UNSPECIFIED))]
     #[tokio::test]
     async fn external_udp_socket_can_transfer_data(#[case] ip_addr: IpAddr) {
