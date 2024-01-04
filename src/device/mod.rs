@@ -150,7 +150,7 @@ pub enum Error {
     #[error("Socket pool error")]
     SocketPoolError(#[from] telio_sockets::protector::platform::Error),
     #[error(transparent)]
-    PostQuantum(#[from] telio_wg::pq::Error),
+    PostQuantum(#[from] telio_pq::Error),
     #[error("Cannot setup meshnet when the post quantum VPN is set up")]
     MeshnetUnavailableWithPQ,
 }
@@ -206,7 +206,7 @@ pub struct RequestedState {
     // Requested keepalive periods
     pub(crate) keepalive_periods: FeaturePersistentKeepalive,
 
-    pub postquantum_wg: Option<wg::pq::PqKeys>,
+    pub postquantum_wg: Option<telio_pq::Keys>,
 }
 
 pub struct MeshnetEntites {
@@ -1606,7 +1606,7 @@ impl Runtime {
             if let Some(pq_conf) = &self.features.post_quantum_vpn {
                 telio_log_debug!("Initializing PQ hanshake");
 
-                let fetch_keys = Box::pin(wg::pq::fetch_keys(
+                let fetch_keys = Box::pin(telio_pq::fetch_keys(
                     &self.entities.socket_pool,
                     addr,
                     &self.requested_state.device_config.private_key,
@@ -1620,7 +1620,7 @@ impl Runtime {
                 .await
                 .map_err(|_| {
                     telio_log_warn!("PQ hanshake timeout");
-                    wg::pq::Error::Generic("Fetching PQ keys timeout".into())
+                    telio_pq::Error::Generic("Fetching PQ keys timeout".into())
                 })??;
 
                 self.requested_state.postquantum_wg = Some(keys);

@@ -1,15 +1,13 @@
 use std::{
-    collections::btree_map::Range,
     convert::TryInto,
-    io::{self, Read, Write},
-    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
+    io::{self, Read},
+    net::Ipv4Addr,
     ops::RangeInclusive,
-    time::Duration,
 };
 
 use boringtun::noise;
 use pnet_packet::{
-    ip::{self, IpNextHeaderProtocols},
+    ip::IpNextHeaderProtocols,
     ipv4::{self, Ipv4Flags, Ipv4Packet, MutableIpv4Packet},
     udp::{self, MutableUdpPacket, UdpPacket},
     Packet,
@@ -23,49 +21,11 @@ const SERVICE_PORT: u16 = 6480;
 const LOCAL_PORT_RANGE: RangeInclusive<u16> = 49152..=u16::MAX; // dynamic port range
 const LOCAL_IP: Ipv4Addr = Ipv4Addr::new(10, 5, 0, 2);
 const REMOTE_IP: Ipv4Addr = Ipv4Addr::new(10, 5, 0, 1);
-const HANDSHAKE_VERSION: u32 = 1;
+const PQ_PROTO_VERSION: u32 = 1;
 const CIPHERTEXT_LEN: u32 = kyber768::ciphertext_bytes() as _;
 
 const IPV4_HEADER_LEN: usize = 20;
 const UDP_HEADER_LEN: usize = 8;
-
-/// The PQ module error type
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    /// IO error
-    #[error("IO: {0:?}")]
-    Io(#[from] io::Error),
-    /// Generic unrecoverable error
-    #[error("Generic: {0}")]
-    Generic(String),
-}
-
-impl From<String> for Error {
-    fn from(value: String) -> Self {
-        Self::Generic(value)
-    }
-}
-
-impl From<&str> for Error {
-    fn from(value: &str) -> Self {
-        Self::Generic(value.to_string())
-    }
-}
-
-impl From<tokio::time::error::Elapsed> for Error {
-    fn from(value: tokio::time::error::Elapsed) -> Self {
-        Self::Io(io::Error::new(io::ErrorKind::TimedOut, value))
-    }
-}
-
-/// Post quantum keys retrived from hanshake
-#[derive(Clone, Copy)]
-pub struct PqKeys {
-    /// Kyber shared secret
-    pub pq_shared: telio_crypto::PresharedKey,
-    /// X25519 secret key
-    pub wg_secret: telio_crypto::SecretKey,
-}
 
 struct TunnelSock {
     tunn: Box<noise::Tunn>,
@@ -87,7 +47,7 @@ pub async fn fetch_keys(
     endpoint: impl ToSocketAddrs,
     secret: &telio_crypto::SecretKey,
     peers_pubkey: &telio_crypto::PublicKey,
-) -> Result<PqKeys, Error> {
+) -> super::Result<super::Keys> {
     let TunnelSock { tunn, sock } = handshake(sock_pool, endpoint, secret, peers_pubkey).await?;
 
     let mut rng = rand::rngs::StdRng::from_entropy();
@@ -134,7 +94,7 @@ pub async fn fetch_keys(
             .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?,
     );
 
-    Ok(PqKeys {
+    Ok(super::Keys {
         pq_shared,
         wg_secret,
     })
@@ -145,7 +105,7 @@ async fn handshake(
     endpoint: impl ToSocketAddrs,
     secret: &telio_crypto::SecretKey,
     peers_pubkey: &telio_crypto::PublicKey,
-) -> Result<TunnelSock, Error> {
+) -> super::Result<TunnelSock> {
     let sock = sock_pool
         .new_external_udp((Ipv4Addr::UNSPECIFIED, 0), None)
         .await?;
@@ -190,13 +150,7 @@ async fn handshake(
     Ok(TunnelSock { tunn, sock })
 }
 
-/// Public function exposed for fuzzing framework
-#[cfg(feature = "fuzzing")]
-pub fn parse_get_response_fuzz(pkgbuf: &[u8]) -> Result<kyber768::Ciphertext, Error> {
-    parse_get_response(pkgbuf)
-}
-
-fn parse_get_response(pkgbuf: &[u8]) -> Result<kyber768::Ciphertext, Error> {
+pub fn parse_get_response(pkgbuf: &[u8]) -> super::Result<kyber768::Ciphertext> {
     let mut cipherbuf = [0; CIPHERTEXT_LEN as usize];
 
     let ip = Ipv4Packet::new(pkgbuf).ok_or(io::Error::new(
@@ -214,7 +168,7 @@ fn parse_get_response(pkgbuf: &[u8]) -> Result<kyber768::Ciphertext, Error> {
     let mut version = [0u8; 4];
     data.read_exact(&mut version)?;
     let version = u32::from_le_bytes(version);
-    if version != HANDSHAKE_VERSION {
+    if version != PQ_PROTO_VERSION {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "Server responded with invalid PQ handshake version",
@@ -256,14 +210,14 @@ fn create_get_packet(
     pkgbuf
 }
 
-/// The payload looks as follows:
+/// The GET payload looks as follows:
 ///
 /// ---------------------------------
-///  version           , u32le , = 1
+///  version           , u32le, = 1
 /// ---------------------------------
-///  method            , u32le , = 0
+///  method            , u32le, = 0
 /// ---------------------------------
-///  WG pubkey len     , u32le , = 32
+///  WG pubkey len     , u32le, = 32
 /// ---------------------------------
 ///  WG pubkey bytes   , [u8]
 /// ---------------------------------
@@ -279,7 +233,7 @@ fn push_get_method_udp_payload(
     let method = 0u32; // get
 
     // UDP packet payload
-    pkgbuf.extend_from_slice(&HANDSHAKE_VERSION.to_le_bytes());
+    pkgbuf.extend_from_slice(&PQ_PROTO_VERSION.to_le_bytes());
     pkgbuf.extend_from_slice(&method.to_le_bytes());
     pkgbuf.extend_from_slice(&(wg_public.len() as u32).to_le_bytes());
     pkgbuf.extend_from_slice(wg_public);
