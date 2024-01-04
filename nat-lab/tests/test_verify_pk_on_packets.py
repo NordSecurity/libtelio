@@ -8,8 +8,8 @@ from typing import Optional
 from utils import testing
 from utils.connection_util import ConnectionTag, new_connection_by_tag
 
-if platform.system() == "Darwin":
-    import mac_wg as Key
+if platform.machine() != "x86_64":
+    import pure_wg as Key
 else:
     from python_wireguard import Key  # type: ignore
 

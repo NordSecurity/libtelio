@@ -2,8 +2,8 @@ import os
 import platform
 from typing import Dict, Union
 
-if platform.system() == "Darwin":
-    import mac_wg as Key
+if platform.machine() != "x86_64":
+    import pure_wg as Key
 else:
     from python_wireguard import Key  # type: ignore
 
