@@ -408,35 +408,42 @@ async fn build_requested_peers_list<
             .filter(|network| features.ipv6 || network.is_ipv4())
             .collect();
 
-        let preshared_key = post_quantum_vpn
-            .and_then(telio_pq::Entity::keys)
-            .map(|pq| pq.pq_shared);
-
         if let Some(meshnet_peer) = requested_peers.get_mut(&exit_node.public_key) {
             // Exit node is meshnet peer, so just promote already existing node to be exit node
             // with allowed ips change
             meshnet_peer.peer.allowed_ips = allowed_ips;
-            meshnet_peer.peer.preshared_key = preshared_key;
             exit_node_exists = true;
         } else {
             // Exit node is a fresh node, therefore - insert create new peer
             let public_key = exit_node.public_key;
             let endpoint = exit_node.endpoint;
             let persistent_keepalive_interval = requested_state.keepalive_periods.vpn;
-            requested_peers.insert(
-                exit_node.public_key,
-                RequestedPeer {
-                    peer: telio_wg::uapi::Peer {
-                        public_key,
-                        endpoint,
-                        persistent_keepalive_interval,
-                        allowed_ips,
-                        preshared_key,
-                        ..Default::default()
-                    },
-                    local_direct_endpoint: None,
-                },
-            );
+            // If the PQ VPN is set up we need to configure the preshared key
+
+            match post_quantum_vpn.map(telio_pq::Entity::keys) {
+                Some(None) => {
+                    // The post quantum state is not ready, we don't want to set up quantum
+                    // unsafe tunnel with this peer
+                }
+                pq_keys => {
+                    let preshared_key = pq_keys.flatten().map(|pq| pq.pq_shared);
+
+                    requested_peers.insert(
+                        exit_node.public_key,
+                        RequestedPeer {
+                            peer: telio_wg::uapi::Peer {
+                                public_key,
+                                endpoint,
+                                persistent_keepalive_interval,
+                                allowed_ips,
+                                preshared_key,
+                                ..Default::default()
+                            },
+                            local_direct_endpoint: None,
+                        },
+                    );
+                }
+            };
         }
     }
 
