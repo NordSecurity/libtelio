@@ -81,7 +81,7 @@ impl<T: WireGuard, G: GetIfAddrs> EndpointProvider for LocalInterfacesEndpointPr
         .unwrap_or_default();
     }
 
-    async fn trigger_endpoint_candidates_discovery(&self) -> Result<(), Error> {
+    async fn trigger_endpoint_candidates_discovery(&self, _force: bool) -> Result<(), Error> {
         task_exec!(&self.task, async move |s| {
             Ok(s.poll_local_endpoints().await)
         })
@@ -529,7 +529,7 @@ mod tests {
             );
 
             local_provider
-                .trigger_endpoint_candidates_discovery()
+                .trigger_endpoint_candidates_discovery(false)
                 .await
                 .unwrap();
         }

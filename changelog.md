@@ -9,6 +9,8 @@
 * LLT-4667: Fix libtelio panicking on linux + boringtun
 * LLT-4633: Bind to interfaces which has router property only on apple
 * LLT-4688: Add detailed logs on boringtun socket failures
+* LLT-4598: Introduce IPv6 -> IPv4 fallback in WG-STUN
+* LLT-4698: Fix exp. backoff in WG-STUN
 
 ### v4.2.1
 ----
