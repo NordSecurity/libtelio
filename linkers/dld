@@ -9,7 +9,7 @@ ARGS=$@
 while (( "$#" )); do
 	if [[ $1 == *"-Wl,--version-script="* && ! $ARGS =~ -o.*librustls_platform_verifier.* ]]; then
 		VERSION=${1#"-Wl,--version-script="}
-		SED_ARGS='s/global:/global:\n    Java*;\n    JNI_OnLoad;\n/'
+		SED_ARGS='s/global:/global:\n    Java*;\n    JNI_OnLoad*;\n    _wrap*;\n/'
 		if [ "$(uname)" != "Darwin" ]; then
 			sed -i "$SED_ARGS" "$VERSION"
 		else
@@ -20,5 +20,7 @@ while (( "$#" )); do
 
 	shift
 done
+
+ARGS="${ARGS//-lgo_wrap/-Wl,--whole-archive -lgo_wrap -Wl,--no-whole-archive}"
 
 exec $LINKER $ARGS
