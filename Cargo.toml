@@ -60,7 +60,7 @@ once_cell.workspace = true
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.19"
-rustls-platform-verifier = { git = "https://github.com/tomaszklak/rustls-platform-verifier.git", rev = "1eeed2dc3a4a7f437220875feb31e50cdec0bf07" }
+rustls-platform-verifier = { git = "https://github.com/tomaszklak/rustls-platform-verifier.git", rev = "2db68dd17d76eadb062176b913040341b99ef4f3" }
 
 [dev-dependencies]
 slog-async = "2.7"

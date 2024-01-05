@@ -56,7 +56,7 @@ skip-tree = []
 unknown-registry = "warn"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = ["https://github.com/tomaszklak/rustls-platform-verifier.git", "https://github.com/tomaszklak/rust-security-framework.git"]
+allow-git = ["https://github.com/tomaszklak/rustls-platform-verifier.git","https://github.com/kornelski/rust-security-framework"]
 
 [sources.allow-org]
 github = ["NordSecurity"]
