@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use bitflags::bitflags;
+use futures::FutureExt;
 use nat_detect::NatType;
 use std::collections::BTreeSet;
 use std::fmt::Write;
@@ -19,6 +20,7 @@ use telio_model::{
 };
 use telio_nat_detect::nat_detection::{retrieve_single_nat, NatData};
 use telio_proto::{HeartbeatMessage, HeartbeatNatType, HeartbeatStatus, HeartbeatType};
+use telio_relay::multiplexer::Multiplexer;
 use telio_relay::DerpRelay;
 use telio_task::{
     io::{chan, mc_chan, Chan},
@@ -85,9 +87,9 @@ impl Default for MeshLink {
 /// Input/output channel for Heartbeat
 pub struct Io {
     /// Channel sending and receiving heartbeat data
-    pub chan: Chan<(PublicKey, HeartbeatMessage)>,
+    pub chan: Option<Chan<(PublicKey, HeartbeatMessage)>>,
     /// Event channel to gather derp events
-    pub derp_event_channel: mc_chan::Rx<Box<Server>>,
+    pub derp_event_channel: Option<mc_chan::Rx<Box<Server>>>,
     /// Event channel to gather wg events
     pub wg_event_channel: mc_chan::Rx<Box<Event>>,
     /// Event channel to gather local nodes from mesh config updates
@@ -223,7 +225,7 @@ pub struct Analytics {
     collect_period: Pin<Box<Sleep>>,
 
     config: HeartbeatConfig,
-    io: Io,
+    pub io: Io,
 
     meshnet_id: Uuid,
     state: RuntimeState,
@@ -249,7 +251,7 @@ pub struct Analytics {
     meshnet_enabled: bool,
 
     /// DERP Server instance
-    derp: Arc<DerpRelay>,
+    pub derp: Option<Arc<DerpRelay>>,
 
     /// Our current IP stack
     ip_stack: Option<IpStack>,
@@ -262,6 +264,18 @@ impl Runtime for Analytics {
     type Err = ();
 
     async fn wait(&mut self) -> WaitResponse<'_, Self::Err> {
+        let derp_event_future = if let Some(channel) = self.io.derp_event_channel.as_mut() {
+            channel.recv().left_future()
+        } else {
+            futures::future::pending().right_future()
+        };
+
+        let multiplexer_future = if let Some(channel) = self.io.chan.as_mut() {
+            channel.rx.recv().left_future()
+        } else {
+            futures::future::pending().right_future()
+        };
+
         tokio::select! {
             // wg event, only in the `Monitoring` state
             Ok(event) = self.io.wg_event_channel.recv(), if self.state == RuntimeState::Monitoring =>
@@ -274,7 +288,7 @@ impl Runtime for Analytics {
                 ),
 
             // Derp event, only in the `Monitoring` state
-            Ok(event) = self.io.derp_event_channel.recv(), if self.state == RuntimeState::Monitoring =>
+            Ok(event) = derp_event_future, if self.state == RuntimeState::Monitoring =>
                 Self::guard(
                     async move {
                         self.handle_derp_event(*event).await;
@@ -314,7 +328,7 @@ impl Runtime for Analytics {
                 ),
 
             // Received data from node, Should always listen for incoming data
-            Some((pk, msg)) = self.io.chan.rx.recv() =>
+            Some((pk, msg)) = multiplexer_future =>
                 Self::guard(
                     async move {
                         self.message_handler((pk, msg)).await;
@@ -338,6 +352,18 @@ impl Runtime for Analytics {
     }
 }
 
+/// Additional configuration for Nurse provided when meshnet is configured
+pub struct MeshnetEntities {
+    /// Pointer to DerpRelay service
+    pub derp: Arc<DerpRelay>,
+
+    /// Pointer to Multiplexer
+    pub multiplexer: Arc<Multiplexer>,
+
+    /// Derp event channel
+    pub derp_event_channel: mc_chan::Tx<Box<Server>>,
+}
+
 impl Analytics {
     /// Create an empty Analytics instance.
     ///
@@ -351,13 +377,7 @@ impl Analytics {
     /// # Returns
     ///
     /// An empty Analytics instance with the given config
-    pub fn new(
-        public_key: PublicKey,
-        meshnet_id: Uuid,
-        config: HeartbeatConfig,
-        io: Io,
-        derp_server: Arc<DerpRelay>,
-    ) -> Self {
+    pub fn new(public_key: PublicKey, meshnet_id: Uuid, config: HeartbeatConfig, io: Io) -> Self {
         let start_time = if let Some(initial_timeout) = config.initial_collect_interval {
             Instant::now() + initial_timeout
         } else {
@@ -389,8 +409,34 @@ impl Analytics {
             fingerprints: HashMap::new(),
             derp_connection: false,
             meshnet_enabled: false,
-            derp: derp_server,
+            derp: None,
             ip_stack: None,
+        }
+    }
+
+    pub async fn configure_meshnet(&mut self, meshnet_entities: Option<MeshnetEntities>) {
+        if let Some(MeshnetEntities {
+            derp,
+            multiplexer,
+            derp_event_channel,
+        }) = meshnet_entities
+        {
+            self.derp = Some(derp);
+            self.io.chan = Some(
+                multiplexer
+                    .get_channel::<HeartbeatMessage>()
+                    .await
+                    .unwrap_or_default(),
+            );
+            self.io.derp_event_channel = Some(derp_event_channel.subscribe());
+
+            telio_log_debug!("Meshnet analytics enabled");
+        } else {
+            self.derp = None;
+            self.io.chan = None;
+            self.io.derp_event_channel = None;
+
+            telio_log_debug!("Meshnet analytics disabled");
         }
     }
 
@@ -488,22 +534,33 @@ impl Analytics {
         // Clear everything from the previous collection
         self.collection.clear();
 
-        for pk in self.local_nodes.keys() {
-            let heartbeat = HeartbeatMessage::request();
+        let mut requests_sent = false;
 
-            #[allow(mpsc_blocking_send)]
-            if self.io.chan.tx.send((*pk, heartbeat)).await.is_err() {
-                telio_log_warn!(
-                    "Failed to send Nurse mesh Heartbeat request to node :{:?}",
-                    pk
-                );
-            };
+        if let Some(chan) = self.io.chan.as_ref() {
+            for pk in self.local_nodes.keys() {
+                let heartbeat = HeartbeatMessage::request();
+
+                #[allow(mpsc_blocking_send)]
+                if chan.tx.send((*pk, heartbeat)).await.is_err() {
+                    telio_log_warn!(
+                        "Failed to send Nurse mesh Heartbeat request to node :{:?}",
+                        pk
+                    );
+                };
+
+                requests_sent = true;
+            }
         }
 
+        // Check whether there are any responses to wait for
+        let collection_deadline = if requests_sent {
+            Instant::now() + self.config.collect_answer_timeout
+        } else {
+            Instant::now()
+        };
+
         // Start collection timer before starting to aggregate the data
-        self.collect_period
-            .as_mut()
-            .reset(Instant::now() + self.config.collect_answer_timeout);
+        self.collect_period.as_mut().reset(collection_deadline);
 
         // Transition to the collection state
         self.state = RuntimeState::Collecting;
@@ -578,12 +635,14 @@ impl Analytics {
         );
 
         #[allow(mpsc_blocking_send)]
-        if self.io.chan.tx.send((pk, heartbeat)).await.is_err() {
-            telio_log_warn!(
-                "Failed to send Nurse mesh heartbeat message to node :{:?}",
-                pk
-            );
-        };
+        if let Some(chan) = self.io.chan.as_ref() {
+            if chan.tx.send((pk, heartbeat)).await.is_err() {
+                telio_log_warn!(
+                    "Failed to send Nurse mesh heartbeat message to node :{:?}",
+                    pk
+                );
+            };
+        }
     }
 
     async fn handle_response_message(&mut self, pk: PublicKey, message: &HeartbeatMessage) {
@@ -896,7 +955,11 @@ impl Analytics {
 
     async fn retrieve_nat(&mut self) -> NatType {
         if self.config.is_nat_type_collection_enabled {
-            if let Some(server) = self.derp.get_connected_server().await {
+            if let Some(server) = if let Some(derp_ptr) = self.derp.as_ref() {
+                derp_ptr.get_connected_server().await
+            } else {
+                None
+            } {
                 retrieve_single_nat(SocketAddr::new(IpAddr::V4(server.ipv4), server.stun_port))
                     .await
                     .unwrap_or(NatData {
@@ -937,7 +1000,7 @@ impl Analytics {
 #[cfg(test)]
 mod tests {
     use telio_model::mesh::Node;
-    use telio_sockets::{native::NativeSocket, Protector, SocketPool};
+    use telio_sockets::{native::NativeSocket, Protector};
     use telio_task::{io::McChan, Task};
     use telio_utils::sync::mpsc::Receiver;
     use tokio::time::timeout;
@@ -977,26 +1040,20 @@ mod tests {
         let pk = sk.public();
         let meshnet_id = Uuid::new_v4();
         let mut config = HeartbeatConfig::default();
-        let channel = Chan::new(1);
         if let Some(interval) = collect_interval {
             config.collect_interval = interval;
         }
 
         let analytics_channel = Chan::new(1);
         let io = Io {
-            chan: channel,
-            derp_event_channel: McChan::new(1).rx,
+            chan: None,
+            derp_event_channel: None,
             wg_event_channel: McChan::new(1).rx,
             config_update_channel: McChan::new(1).rx,
             analytics_channel: analytics_channel.tx,
             collection_trigger_channel: McChan::new(1).rx,
         };
-        let channel = Chan::new(1);
-        let fake_protector = FakeProtector;
-        let socket_pool = Arc::new(SocketPool::new(fake_protector));
-        let event = McChan::new(1);
-        let derp = Arc::new(DerpRelay::start_with(channel, socket_pool, event.tx));
-        let analytics = Analytics::new(pk, meshnet_id, config, io, derp);
+        let analytics = Analytics::new(pk, meshnet_id, config, io);
         State {
             public_key: pk,
             meshnet_id,

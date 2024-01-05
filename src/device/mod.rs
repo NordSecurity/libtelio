@@ -30,7 +30,10 @@ use telio_traversal::{
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 use telio_sockets::native;
 
-use telio_nurse::{config::Config as NurseConfig, data::MeshConfigUpdateEvent, Nurse, NurseIo};
+use telio_nurse::{
+    config::Config as NurseConfig, data::MeshConfigUpdateEvent,
+    MeshnetEntities as NurseMeshnetEntities, Nurse, NurseIo,
+};
 use telio_wg as wg;
 use thiserror::Error as TError;
 use tokio::{
@@ -91,6 +94,8 @@ pub enum Error {
     AlreadyStarted,
     #[error("Driver not started.")]
     NotStarted,
+    #[error("Meshnet not configured.")]
+    MeshnetNotConfigured,
     #[error("Adapter is misconfigured: {0}.")]
     AdapterConfig(String),
     #[error("Private key does not match meshnet config's public key.")]
@@ -204,17 +209,8 @@ pub struct RequestedState {
     pub postquantum_wg: Option<wg::pq::PqKeys>,
 }
 
-pub struct Entities {
-    // Wireguard interface
-    wireguard_interface: Arc<DynamicWg>,
-
-    // Internal DNS server
-    dns: Arc<Mutex<DNS>>,
-
-    // Internal firewall
-    firewall: Arc<StatefullFirewall>,
-
-    // Multiplexer for inter-node-coms and rendezvous points for other components
+pub struct MeshnetEntites {
+    // Relay Multiplexer
     multiplexer: Arc<Multiplexer>,
 
     // DERP Relay client
@@ -225,6 +221,20 @@ pub struct Entities {
 
     // Entities for direct wireguard connections
     direct: Option<DirectEntities>,
+}
+
+pub struct Entities {
+    // Wireguard interface
+    wireguard_interface: Arc<DynamicWg>,
+
+    // Internal DNS server
+    dns: Arc<Mutex<DNS>>,
+
+    // Internal firewall
+    firewall: Arc<StatefullFirewall>,
+
+    // Entities for meshnet connections
+    meshnet: Option<MeshnetEntites>,
 
     // A place to control the sockets used by the libtelio
     // It is handy whenever sockets needs to be bound to some interface, fwmark'ed or just
@@ -237,22 +247,32 @@ pub struct Entities {
 
 impl Entities {
     pub fn cross_ping_check(&self) -> Option<&Arc<CrossPingCheck>> {
-        self.direct.as_ref().map(|d| &d.cross_ping_check)
+        self.meshnet
+            .as_ref()
+            .and_then(|m| m.direct.as_ref().map(|d| &d.cross_ping_check))
     }
 
     pub fn session_keeper(&self) -> Option<&Arc<SessionKeeper>> {
-        self.direct.as_ref().map(|d| &d.session_keeper)
+        self.meshnet
+            .as_ref()
+            .and_then(|m| m.direct.as_ref().map(|d| &d.session_keeper))
     }
 
     fn endpoint_providers(&self) -> Vec<&Arc<dyn EndpointProvider>> {
-        self.direct
+        self.meshnet
             .as_ref()
-            .map(|d| d.endpoint_providers.iter().collect())
+            .and_then(|m| {
+                m.direct
+                    .as_ref()
+                    .map(|d| d.endpoint_providers.iter().collect())
+            })
             .unwrap_or_default()
     }
 
     pub fn upgrade_sync(&self) -> Option<&Arc<UpgradeSync>> {
-        self.direct.as_ref().map(|d| &d.upgrade_sync)
+        self.meshnet
+            .as_ref()
+            .and_then(|m| m.direct.as_ref().map(|d| &d.upgrade_sync))
     }
 }
 
@@ -291,6 +311,12 @@ pub struct EventPublishers {
 
     /// Used to manually trigger a nurse event collection
     nurse_collection_trigger_publisher: Option<Tx<Box<()>>>,
+
+    // Saved for meshnet entities
+    wg_endpoint_publish_event_publisher: chan::Tx<WireGuardEndpointCandidateChangeEvent>,
+    endpoint_upgrade_event_subscriber: chan::Tx<UpgradeRequestChangeEvent>,
+    stun_server_publisher: chan::Tx<Option<StunServer>>,
+    derp_events_publisher: mc_chan::Tx<Box<DerpServer>>,
 }
 
 // All of the instances and state required to run local DNS resolver for NordNames
@@ -751,6 +777,56 @@ impl RequestedState {
     }
 }
 
+impl MeshnetEntites {
+    async fn stop(mut self) {
+        macro_rules! stop_entity {
+            ($entity: expr, $name: expr) => {{
+                if let Ok(task) = $entity
+                    .map(|m| m.stop())
+                    .map_err(|_| {
+                        telio_log_warn!(
+                            "Oops, smething went wrong! Something is holding a strong reference to the {:?} instance.",
+                            $name
+                        );
+                    }) {
+                    task.await;
+                } else {
+                    telio_log_warn!("Oops, something went wrong while stopping {:?} tasks.", $name);
+                }
+            }}
+        }
+        macro_rules! stop_arc_entity {
+            ($entity: expr, $name: expr) => {{
+                stop_entity!(Arc::try_unwrap($entity), $name)
+            }};
+        }
+
+        if let Some(direct) = self.direct.take() {
+            // Arc dependency on endpoint providers
+            stop_arc_entity!(direct.cross_ping_check, "CrossPingCheck");
+            drop(direct.endpoint_providers);
+
+            // Arc dependency on wireguard
+            if let Some(local) = direct.local_interfaces_endpoint_provider {
+                stop_arc_entity!(local, "LocalInterfacesEndpointProvider");
+            }
+            if let Some(stun) = direct.stun_endpoint_provider {
+                stop_arc_entity!(stun, "StunEndpointProvider");
+            }
+            if let Some(upnp) = direct.upnp_endpoint_provider {
+                stop_arc_entity!(upnp, "UpnpEndpointProvider");
+            }
+
+            stop_arc_entity!(direct.session_keeper, "SessionKeeper");
+            stop_arc_entity!(direct.upgrade_sync, "UpgradeSync");
+        }
+
+        stop_arc_entity!(self.multiplexer, "Multiplexer");
+        stop_arc_entity!(self.derp, "Derp");
+        stop_arc_entity!(self.proxy, "UdpProxy");
+    }
+}
+
 impl Runtime {
     async fn start(
         libtelio_wide_event_publisher: Tx<Box<Event>>,
@@ -797,22 +873,7 @@ impl Runtime {
             }
         });
 
-        // Start multiplexer
-        let (multiplexer_derp_chan, derp_multiplexer_chan) = Chan::pipe();
-        let multiplexer = Arc::new(Multiplexer::start(multiplexer_derp_chan));
-
-        // Start UDP proxy
-        let proxy = Arc::new(UdpProxy::start(ProxyIo {
-            relay: multiplexer.get_channel().await?,
-        }));
-
-        // Start Derp client
         let derp_events = McChan::default();
-        let derp = Arc::new(DerpRelay::start_with(
-            derp_multiplexer_chan,
-            socket_pool.clone(),
-            derp_events.tx.clone(),
-        ));
 
         let (config_update_ch, collection_trigger_ch) = if features.nurse.is_some() {
             (
@@ -884,9 +945,7 @@ impl Runtime {
         let nurse = if telio_lana::is_lana_initialized() {
             if let Some(nurse_features) = &features.nurse {
                 let nurse_io = NurseIo {
-                    derp_event_channel: &derp_events.tx,
                     wg_event_channel: &libtelio_wide_event_publisher,
-                    relay_multiplexer: &multiplexer,
                     wg_analytics_channel: analytics_ch.clone(),
                     config_update_channel: config_update_ch.clone(),
                     collection_trigger_channel: collection_trigger_ch.clone(),
@@ -895,7 +954,6 @@ impl Runtime {
                 Some(Arc::new(
                     Nurse::start_with(
                         config.private_key.public(),
-                        Arc::clone(&derp),
                         NurseConfig::new(nurse_features),
                         nurse_io,
                     )
@@ -932,13 +990,81 @@ impl Runtime {
             virtual_host_tun_fd: None,
         }));
 
-        // Setup direct connection based on features
-        let endpoint_publish_events = Chan::default();
-        let pong_rxed_events = Chan::default();
         let wg_endpoint_publish_events = Chan::default();
         let wg_upgrade_sync = Chan::default();
         let stun_server_events = Chan::default();
-        let direct = if let Some(direct) = &features.direct {
+
+        Ok(Runtime {
+            features,
+            requested_state,
+            entities: Entities {
+                wireguard_interface: wireguard_interface.clone(),
+                dns,
+                firewall,
+                meshnet: None,
+                socket_pool,
+                nurse,
+            },
+            event_listeners: EventListeners {
+                wg_endpoint_publish_event_subscriber: wg_endpoint_publish_events.rx,
+                wg_event_subscriber: wg_events,
+                derp_event_subscriber: derp_events.rx,
+                endpoint_upgrade_event_subscriber: wg_upgrade_sync.rx,
+                stun_server_subscriber: stun_server_events.rx,
+            },
+            event_publishers: EventPublishers {
+                libtelio_event_publisher: libtelio_wide_event_publisher,
+                nurse_config_update_publisher: config_update_ch,
+                nurse_collection_trigger_publisher: collection_trigger_ch,
+                wg_endpoint_publish_event_publisher: wg_endpoint_publish_events.tx,
+                endpoint_upgrade_event_subscriber: wg_upgrade_sync.tx,
+                stun_server_publisher: stun_server_events.tx,
+                derp_events_publisher: derp_events.tx,
+            },
+            polling_interval: interval_at(tokio::time::Instant::now(), Duration::from_secs(5)),
+            #[cfg(test)]
+            test_env: wg::tests::Env {
+                analytics: analytics_ch,
+                event: Chan::default().rx,
+                wg: wireguard_interface,
+                adapter,
+            },
+        })
+    }
+
+    async fn start_meshnet_entities(&mut self) -> Result<MeshnetEntites> {
+        let endpoint_publish_events = Chan::default();
+        let pong_rxed_events = Chan::default();
+
+        // Start multiplexer
+        //
+        let (multiplexer_derp_chan, derp_multiplexer_chan) = Chan::pipe();
+        let multiplexer = Arc::new(Multiplexer::start(multiplexer_derp_chan));
+
+        // Start UDP proxy
+        let proxy = Arc::new(UdpProxy::start(ProxyIo {
+            relay: multiplexer.get_channel().await?,
+        }));
+
+        // Start Derp client
+        let derp = Arc::new(DerpRelay::start_with(
+            derp_multiplexer_chan,
+            self.entities.socket_pool.clone(),
+            self.event_publishers.derp_events_publisher.clone(),
+        ));
+
+        if let Some(nurse) = self.entities.nurse.as_ref() {
+            nurse
+                .configure_meshnet(Some(NurseMeshnetEntities {
+                    derp: derp.clone(),
+                    multiplexer: multiplexer.clone(),
+                    derp_event_channel: self.event_publishers.derp_events_publisher.clone(),
+                }))
+                .await;
+        }
+
+        // Start Direct entities if "direct" feature is on
+        let direct = if let Some(direct) = &self.features.direct {
             // Create endpoint providers
             let has_provider = |provider| {
                 // Default is all providers
@@ -950,16 +1076,19 @@ impl Runtime {
 
             use telio_model::api_config::EndpointProvider::*;
 
-            let ping_pong_tracker = Arc::new(Mutex::new(PingPongHandler::new(config.private_key)));
+            let ping_pong_tracker = Arc::new(Mutex::new(PingPongHandler::new(
+                self.requested_state.device_config.private_key,
+            )));
             let mut endpoint_providers: Vec<Arc<dyn EndpointProvider>> = Vec::new();
 
             // Create Local Interface Endpoint Provider
             let local_interfaces_endpoint_provider = if has_provider(Local) {
                 let ep = Arc::new(LocalInterfacesEndpointProvider::new(
-                    socket_pool
+                    self.entities
+                        .socket_pool
                         .new_external_udp((Ipv4Addr::UNSPECIFIED, 0), None)
                         .await?,
-                    wireguard_interface.clone(),
+                    self.entities.wireguard_interface.clone(),
                     Duration::from_secs(
                         direct
                             .endpoint_interval_secs
@@ -976,7 +1105,7 @@ impl Runtime {
             // Create Stun Endpoint Provider
             let stun_endpoint_provider = if has_provider(Stun) {
                 let ep = Arc::new(StunEndpointProvider::start(
-                    wireguard_interface.clone(),
+                    self.entities.wireguard_interface.clone(),
                     ExponentialBackoffBounds {
                         initial: Duration::from_secs(
                             direct
@@ -986,7 +1115,7 @@ impl Runtime {
                         maximal: Some(Duration::from_secs(120)),
                     },
                     ping_pong_tracker.clone(),
-                    stun_server_events.tx,
+                    self.event_publishers.stun_server_publisher.clone(),
                 )?);
                 endpoint_providers.push(ep.clone());
                 Some(ep)
@@ -997,10 +1126,11 @@ impl Runtime {
             // Create Upnp Endpoint Provider
             let upnp_endpoint_provider = if has_provider(Upnp) {
                 let ep = Arc::new(UpnpEndpointProvider::start(
-                    socket_pool
+                    self.entities
+                        .socket_pool
                         .new_external_udp((Ipv4Addr::UNSPECIFIED, 0), None)
                         .await?,
-                    wireguard_interface.clone(),
+                    self.entities.wireguard_interface.clone(),
                     ExponentialBackoffBounds {
                         initial: Duration::from_secs(
                             direct
@@ -1032,7 +1162,7 @@ impl Runtime {
             let last_handshake_time_provider: Option<Arc<dyn LastHandshakeTimeProvider>> =
                 if let Some(skip_unresponsive_peers) = &direct.skip_unresponsive_peers {
                     Some(Arc::new(WireGuardLastHandshakeTimeProvider {
-                        wg: wireguard_interface.clone(),
+                        wg: self.entities.wireguard_interface.clone(),
                         threshold: Duration::from_secs(
                             skip_unresponsive_peers.no_handshake_threshold_secs,
                         ),
@@ -1045,7 +1175,10 @@ impl Runtime {
                 CpcIo {
                     endpoint_change_subscriber: endpoint_publish_events.rx,
                     pong_rx_subscriber: pong_rxed_events.rx,
-                    wg_endpoint_publisher: wg_endpoint_publish_events.tx.clone(),
+                    wg_endpoint_publisher: self
+                        .event_publishers
+                        .wg_endpoint_publish_event_publisher
+                        .clone(),
                     intercoms: multiplexer.get_channel().await?,
                 },
                 endpoint_providers.clone(),
@@ -1057,12 +1190,14 @@ impl Runtime {
 
             // Create WireGuard connection upgrade synchronizer
             let upgrade_sync = Arc::new(UpgradeSync::new(
-                wg_upgrade_sync.tx,
+                self.event_publishers
+                    .endpoint_upgrade_event_subscriber
+                    .clone(),
                 multiplexer.get_channel().await?,
                 Duration::from_secs(5),
             )?);
 
-            let session_keeper = Arc::new(SessionKeeper::start(socket_pool.clone())?);
+            let session_keeper = Arc::new(SessionKeeper::start(self.entities.socket_pool.clone())?);
 
             Some(DirectEntities {
                 local_interfaces_endpoint_provider,
@@ -1077,40 +1212,11 @@ impl Runtime {
             None
         };
 
-        Ok(Runtime {
-            features,
-            requested_state,
-            entities: Entities {
-                wireguard_interface: wireguard_interface.clone(),
-                dns,
-                firewall,
-                multiplexer,
-                derp,
-                proxy,
-                direct,
-                socket_pool,
-                nurse,
-            },
-            event_listeners: EventListeners {
-                wg_endpoint_publish_event_subscriber: wg_endpoint_publish_events.rx,
-                wg_event_subscriber: wg_events,
-                derp_event_subscriber: derp_events.rx,
-                endpoint_upgrade_event_subscriber: wg_upgrade_sync.rx,
-                stun_server_subscriber: stun_server_events.rx,
-            },
-            event_publishers: EventPublishers {
-                libtelio_event_publisher: libtelio_wide_event_publisher,
-                nurse_config_update_publisher: config_update_ch,
-                nurse_collection_trigger_publisher: collection_trigger_ch,
-            },
-            polling_interval: interval_at(tokio::time::Instant::now(), Duration::from_secs(5)),
-            #[cfg(test)]
-            test_env: wg::tests::Env {
-                analytics: analytics_ch,
-                event: Chan::default().rx,
-                wg: wireguard_interface,
-                adapter,
-            },
+        Ok(MeshnetEntites {
+            multiplexer,
+            derp,
+            proxy,
+            direct,
         })
     }
 
@@ -1163,15 +1269,17 @@ impl Runtime {
             return Err(Error::DnsNotDisabled);
         }
 
-        self.requested_state.device_config.private_key = *private_key;
+        if let Some(m_entities) = self.entities.meshnet.as_ref() {
+            m_entities
+                .derp
+                .configure(m_entities.derp.get_config().await.map(|c| DerpConfig {
+                    secret_key: *private_key,
+                    ..c
+                }))
+                .await;
+        }
 
-        self.entities
-            .derp
-            .configure(self.entities.derp.get_config().await.map(|c| DerpConfig {
-                secret_key: *private_key,
-                ..c
-            }))
-            .await;
+        self.requested_state.device_config.private_key = *private_key;
 
         if let Some(nurse) = &self.entities.nurse {
             nurse.set_private_key(*private_key).await;
@@ -1206,13 +1314,16 @@ impl Runtime {
             .drop_connected_sockets()
             .await?;
 
-        if let Some(direct) = &self.entities.direct {
-            if let Some(stun) = &direct.stun_endpoint_provider {
-                stun.reconnect().await;
+        if let Some(meshnet_entities) = self.entities.meshnet.as_ref() {
+            if let Some(direct) = &meshnet_entities.direct {
+                if let Some(stun) = &direct.stun_endpoint_provider {
+                    stun.reconnect().await;
+                }
             }
+
+            meshnet_entities.derp.reconnect().await;
         }
 
-        self.entities.derp.reconnect().await;
         self.log_nat().await;
         Ok(())
     }
@@ -1328,11 +1439,18 @@ impl Runtime {
                 .wait_for_listen_port(Duration::from_secs(1))
                 .await?;
 
+            let meshnet_entities = if let Some(entities) = self.entities.meshnet.take() {
+                entities
+            } else {
+                self.start_meshnet_entities().await?
+            };
+
             let proxy_config = ProxyConfig {
                 wg_port: Some(wg_port),
                 peers: peers.clone(),
             };
-            self.entities.proxy.configure(proxy_config).await?;
+
+            meshnet_entities.proxy.configure(proxy_config).await?;
 
             let derp_config = DerpConfig {
                 secret_key,
@@ -1361,10 +1479,10 @@ impl Runtime {
             };
 
             // Update configuration for DERP client
-            self.entities.derp.configure(Some(derp_config)).await;
+            meshnet_entities.derp.configure(Some(derp_config)).await;
 
             // Refresh the lists of servers for STUN endpoint provider
-            if let Some(direct) = self.entities.direct.as_ref() {
+            if let Some(direct) = meshnet_entities.direct.as_ref() {
                 if let Some(stun_ep) = direct.stun_endpoint_provider.as_ref() {
                     let use_ipv6 = self.features.ipv6 && {
                         config
@@ -1385,28 +1503,20 @@ impl Runtime {
                 }
             }
 
+            self.entities.meshnet = Some(meshnet_entities);
+
             self.upsert_dns_peers().await?;
         } else {
-            self.entities
-                .proxy
-                .configure(ProxyConfig {
-                    wg_port: None,
-                    peers: HashSet::new(),
-                })
-                .await?;
+            // Nurse is keeping Arc to Derp, so we need to get rid of it before stopping Derp
+            if let Some(nurse) = self.entities.nurse.as_ref() {
+                nurse.configure_meshnet(None).await;
+            }
+
+            if let Some(meshnet_entities) = self.entities.meshnet.take() {
+                meshnet_entities.stop().await;
+            }
 
             self.upsert_dns_peers().await?;
-
-            self.entities.derp.configure(None).await;
-
-            // Refresh the lists of servers for STUN endpoint provider
-            if let Some(direct) = self.entities.direct.as_ref() {
-                if let Some(stun_ep) = direct.stun_endpoint_provider.as_ref() {
-                    stun_ep
-                        .configure(vec![], false, self.get_socket_pool().await?)
-                        .await;
-                }
-            }
         }
 
         if let Some(cpc) = self.entities.cross_ping_check() {
@@ -1431,6 +1541,7 @@ impl Runtime {
 
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
             .await?;
+
         for ep in self.entities.endpoint_providers().iter() {
             if let Err(err) = ep.trigger_endpoint_candidates_discovery(true).await {
                 // This can fail on first config, because it takes a bit of time to resolve
@@ -1645,18 +1756,23 @@ impl Runtime {
                 .or_else(|| get_config_peer(self.requested_state.old_meshnet_config.as_ref()));
 
         // Resolve what type of path is used
-        let path_type = {
-            self.entities
-                .proxy
-                .get_endpoint_map()
-                .await
-                .unwrap_or_else(|err| {
-                    telio_log_warn!("Failed to get proxy endpoint map: {}", err);
-                    Default::default()
-                })
-                .get(&peer.public_key)
-                .and_then(|proxy| endpoint.filter(|actual| proxy == actual))
-                .map_or(PathType::Direct, |_| PathType::Relay)
+        let path_type = if let Some(m) = self.entities.meshnet.as_ref() {
+            async {
+                m.proxy
+                    .get_endpoint_map()
+                    .await
+                    .unwrap_or_else(|err| {
+                        telio_log_warn!("Failed to get proxy endpoint map: {}", err);
+                        Default::default()
+                    })
+                    .get(&peer.public_key)
+                    .and_then(|proxy| endpoint.filter(|actual| proxy == actual))
+                    .map_or(PathType::Direct, |_| PathType::Relay)
+            }
+            .await
+        } else {
+            // If there is no proxy, peer must be VPN and connection Direct
+            PathType::Direct
         };
 
         // Build a node to report event about, we need to report about either meshnet peers
@@ -1832,35 +1948,21 @@ impl TaskRuntime for Runtime {
         }
 
         let _ = self.stop_dns().await;
-        if let Some(direct) = self.entities.direct {
-            // Arc dependency on endpoint providers
-            stop_arc_entity!(direct.cross_ping_check, "CrossPingCheck");
-            drop(direct.endpoint_providers);
 
-            // Arc dependency on wrireguard
-            if let Some(local) = direct.local_interfaces_endpoint_provider {
-                stop_arc_entity!(local, "LocalInterfacesEndpointProvider");
-            }
-            if let Some(stun) = direct.stun_endpoint_provider {
-                stop_arc_entity!(stun, "StunEndpointProvider");
-            }
-            if let Some(upnp) = direct.upnp_endpoint_provider {
-                stop_arc_entity!(upnp, "UpnpEndpointProvider");
-            }
+        // Nurse is keeping Arc to Derp, so we need to get rid of it before stopping Derp
+        if let Some(nurse) = self.entities.nurse.as_ref() {
+            nurse.configure_meshnet(None).await;
+        }
 
-            stop_arc_entity!(direct.session_keeper, "SessionKeeper");
-            stop_arc_entity!(direct.upgrade_sync, "UpgradeSync");
+        if let Some(meshnet_entities) = self.entities.meshnet {
+            meshnet_entities.stop().await;
         }
 
         stop_arc_entity!(self.entities.wireguard_interface, "WireguardInterface");
-        stop_arc_entity!(self.entities.multiplexer, "Multiplexer");
 
         if let Some(nurse) = self.entities.nurse {
             stop_arc_entity!(nurse, "Nurse");
         }
-
-        stop_arc_entity!(self.entities.derp, "Derp");
-        stop_arc_entity!(self.entities.proxy, "UdpProxy");
 
         self.requested_state = Default::default();
     }
@@ -2465,10 +2567,12 @@ mod tests {
             ..Default::default()
         };
 
-        let rt = Runtime::start(
+        let private_key = SecretKey::gen();
+
+        let mut rt = Runtime::start(
             sender,
             &DeviceConfig {
-                private_key: SecretKey::gen(),
+                private_key,
                 ..Default::default()
             },
             features,
@@ -2477,7 +2581,53 @@ mod tests {
         .await
         .unwrap();
 
-        let entities = rt.entities.direct.as_ref().unwrap();
+        assert!(
+            rt.entities.meshnet.is_none(),
+            "Meshnet is not configured yet"
+        );
+
+        let pubkey = private_key.public();
+        let peer_base = PeerBase {
+            identifier: "identifier".to_owned(),
+            public_key: pubkey,
+            hostname: telio_utils::Hidden("hostname".to_owned()),
+            ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
+            nickname: Some("nickname".to_owned()),
+        };
+        let config = Some(Config {
+            this: peer_base.clone(),
+            peers: Some(vec![Peer {
+                base: peer_base.clone(),
+                ..Default::default()
+            }]),
+            derp_servers: None,
+            dns: None,
+        });
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        rt.entities
+            .wireguard_interface
+            .set_listen_port(1234)
+            .await
+            .unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        rt.set_config(&config).await.unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        let entities = rt
+            .entities
+            .meshnet
+            .expect("Meshnet entities should be available when meshnet was configured")
+            .direct
+            .expect("Direct entities should be available when \"direct\" feature is on");
 
         assert!(entities.upnp_endpoint_provider.is_none());
         assert!(entities.local_interfaces_endpoint_provider.is_some());
@@ -2497,10 +2647,12 @@ mod tests {
             ..Default::default()
         };
 
-        let rt = Runtime::start(
+        let private_key = SecretKey::gen();
+
+        let mut rt = Runtime::start(
             sender,
             &DeviceConfig {
-                private_key: SecretKey::gen(),
+                private_key,
                 ..Default::default()
             },
             features,
@@ -2509,7 +2661,53 @@ mod tests {
         .await
         .unwrap();
 
-        let entities = rt.entities.direct.as_ref().unwrap();
+        assert!(
+            rt.entities.meshnet.is_none(),
+            "Meshnet is not configured yet"
+        );
+
+        let pubkey = private_key.public();
+        let peer_base = PeerBase {
+            identifier: "identifier".to_owned(),
+            public_key: pubkey,
+            hostname: telio_utils::Hidden("hostname".to_owned()),
+            ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
+            nickname: Some("nickname".to_owned()),
+        };
+        let config = Some(Config {
+            this: peer_base.clone(),
+            peers: Some(vec![Peer {
+                base: peer_base.clone(),
+                ..Default::default()
+            }]),
+            derp_servers: None,
+            dns: None,
+        });
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        rt.entities
+            .wireguard_interface
+            .set_listen_port(1234)
+            .await
+            .unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        rt.set_config(&config).await.unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        let entities = rt
+            .entities
+            .meshnet
+            .expect("Meshnet entities should be available when meshnet was configured")
+            .direct
+            .expect("Direct entities should be available when \"direct\" feature is on");
 
         assert!(entities.upnp_endpoint_provider.is_none());
         assert!(entities.local_interfaces_endpoint_provider.is_none());
@@ -2539,10 +2737,12 @@ mod tests {
             ..Default::default()
         };
 
-        let rt = Runtime::start(
+        let private_key = SecretKey::gen();
+
+        let mut rt = Runtime::start(
             sender,
             &DeviceConfig {
-                private_key: SecretKey::gen(),
+                private_key,
                 ..Default::default()
             },
             features,
@@ -2551,7 +2751,53 @@ mod tests {
         .await
         .unwrap();
 
-        let entities = rt.entities.direct.as_ref().unwrap();
+        assert!(
+            rt.entities.meshnet.is_none(),
+            "Meshnet is not configured yet"
+        );
+
+        let pubkey = private_key.public();
+        let peer_base = PeerBase {
+            identifier: "identifier".to_owned(),
+            public_key: pubkey,
+            hostname: telio_utils::Hidden("hostname".to_owned()),
+            ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
+            nickname: Some("nickname".to_owned()),
+        };
+        let config = Some(Config {
+            this: peer_base.clone(),
+            peers: Some(vec![Peer {
+                base: peer_base.clone(),
+                ..Default::default()
+            }]),
+            derp_servers: None,
+            dns: None,
+        });
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        rt.entities
+            .wireguard_interface
+            .set_listen_port(1234)
+            .await
+            .unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        rt.set_config(&config).await.unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        let entities = rt
+            .entities
+            .meshnet
+            .expect("Meshnet entities should be available when meshnet was configured")
+            .direct
+            .expect("Direct entities should be available when \"direct\" feature is on");
 
         assert!(entities.upnp_endpoint_provider.is_some());
         assert!(entities.local_interfaces_endpoint_provider.is_some());
