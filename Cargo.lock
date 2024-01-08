@@ -3191,7 +3191,7 @@ dependencies = [
 [[package]]
 name = "rustls-platform-verifier"
 version = "0.1.0"
-source = "git+https://github.com/tomaszklak/rustls-platform-verifier.git?rev=1eeed2dc3a4a7f437220875feb31e50cdec0bf07#1eeed2dc3a4a7f437220875feb31e50cdec0bf07"
+source = "git+https://github.com/tomaszklak/rustls-platform-verifier.git?rev=2db68dd17d76eadb062176b913040341b99ef4f3#2db68dd17d76eadb062176b913040341b99ef4f3"
 dependencies = [
  "core-foundation",
  "core-foundation-sys",
@@ -3201,8 +3201,8 @@ dependencies = [
  "rustls",
  "rustls-native-certs",
  "rustls-webpki",
- "security-framework 2.9.2 (git+https://github.com/tomaszklak/rust-security-framework.git?rev=8ad72839ab82c5dcdbadece710f3f813df76b5ce)",
- "security-framework-sys 2.9.1 (git+https://github.com/tomaszklak/rust-security-framework.git?rev=8ad72839ab82c5dcdbadece710f3f813df76b5ce)",
+ "security-framework 2.9.2 (git+https://github.com/kornelski/rust-security-framework.git?rev=67a610ec215d207cd158664ab5cf6eca9552ff9f)",
+ "security-framework-sys 2.9.1 (git+https://github.com/kornelski/rust-security-framework.git?rev=67a610ec215d207cd158664ab5cf6eca9552ff9f)",
  "webpki-roots",
  "winapi",
 ]
@@ -3323,14 +3323,14 @@ dependencies = [
 [[package]]
 name = "security-framework"
 version = "2.9.2"
-source = "git+https://github.com/tomaszklak/rust-security-framework.git?rev=8ad72839ab82c5dcdbadece710f3f813df76b5ce#8ad72839ab82c5dcdbadece710f3f813df76b5ce"
+source = "git+https://github.com/kornelski/rust-security-framework.git?rev=67a610ec215d207cd158664ab5cf6eca9552ff9f#67a610ec215d207cd158664ab5cf6eca9552ff9f"
 dependencies = [
  "bitflags 1.3.2",
  "core-foundation",
  "core-foundation-sys",
  "libc",
  "num-bigint",
- "security-framework-sys 2.9.1 (git+https://github.com/tomaszklak/rust-security-framework.git?rev=8ad72839ab82c5dcdbadece710f3f813df76b5ce)",
+ "security-framework-sys 2.9.1 (git+https://github.com/kornelski/rust-security-framework.git?rev=67a610ec215d207cd158664ab5cf6eca9552ff9f)",
 ]
 
 [[package]]
@@ -3346,7 +3346,7 @@ dependencies = [
 [[package]]
 name = "security-framework-sys"
 version = "2.9.1"
-source = "git+https://github.com/tomaszklak/rust-security-framework.git?rev=8ad72839ab82c5dcdbadece710f3f813df76b5ce#8ad72839ab82c5dcdbadece710f3f813df76b5ce"
+source = "git+https://github.com/kornelski/rust-security-framework.git?rev=67a610ec215d207cd158664ab5cf6eca9552ff9f#67a610ec215d207cd158664ab5cf6eca9552ff9f"
 dependencies = [
  "core-foundation-sys",
  "libc",
