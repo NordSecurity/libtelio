@@ -3902,6 +3902,7 @@ dependencies = [
  "telio-model",
  "telio-nat-detect",
  "telio-nurse",
+ "telio-pq",
  "telio-proto",
  "telio-proxy",
  "telio-relay",
@@ -4056,6 +4057,26 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "telio-pq"
+version = "0.1.0"
+dependencies = [
+ "base64 0.13.1",
+ "boringtun",
+ "pnet_packet 0.28.0",
+ "pqcrypto-kyber",
+ "pqcrypto-traits",
+ "rand",
+ "telio-crypto",
+ "telio-model",
+ "telio-sockets",
+ "telio-task",
+ "telio-utils",
+ "thiserror",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -4246,7 +4267,6 @@ name = "telio-wg"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "base64 0.13.1",
  "boringtun",
  "cc",
  "futures",
@@ -4257,9 +4277,6 @@ dependencies = [
  "libc",
  "mockall",
  "ntest",
- "pnet_packet 0.28.0",
- "pqcrypto-kyber",
- "pqcrypto-traits",
  "pretty_assertions",
  "rand",
  "serde",

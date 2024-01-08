@@ -60,7 +60,12 @@ pub async fn consolidate_wg_state(
         Default::default()
     };
 
-    consolidate_wg_private_key(requested_state, &*entities.wireguard_interface).await?;
+    consolidate_wg_private_key(
+        requested_state,
+        &*entities.wireguard_interface,
+        entities.postquantum_wg.as_ref(),
+    )
+    .await?;
     consolidate_wg_fwmark(requested_state, &*entities.wireguard_interface).await?;
     consolidate_wg_peers(
         requested_state,
@@ -76,6 +81,7 @@ pub async fn consolidate_wg_state(
                 .as_ref()
                 .and_then(|direct| direct.stun_endpoint_provider.as_ref())
         }),
+        entities.postquantum_wg.as_ref(),
         features,
     )
     .await?;
@@ -86,8 +92,9 @@ pub async fn consolidate_wg_state(
 async fn consolidate_wg_private_key<W: WireGuard>(
     requested_state: &RequestedState,
     wireguard_interface: &W,
+    post_quantum_vpn: Option<&telio_pq::Entity>,
 ) -> Result {
-    let private_key = if let Some(pq) = &requested_state.postquantum_wg {
+    let private_key = if let Some(pq) = post_quantum_vpn.and_then(telio_pq::Entity::keys) {
         pq.wg_secret
     } else {
         requested_state.device_config.private_key
@@ -132,6 +139,7 @@ async fn consolidate_wg_peers<
     dns: &Mutex<crate::device::DNS<D>>,
     remote_peer_states: PeersStatesMap,
     stun_ep_provider: Option<&Arc<StunEndpointProvider>>,
+    post_quantum_vpn: Option<&telio_pq::Entity>,
     features: &Features,
 ) -> Result {
     let proxy_endpoints = if let Some(p) = proxy {
@@ -147,6 +155,7 @@ async fn consolidate_wg_peers<
         dns,
         &proxy_endpoints,
         &remote_peer_states,
+        post_quantum_vpn,
         features,
     )
     .await?;
@@ -370,6 +379,7 @@ async fn build_requested_peers_list<
     dns: &Mutex<crate::device::DNS<D>>,
     proxy_endpoints: &EndpointMap,
     remote_peer_states: &PeersStatesMap,
+    post_quantum_vpn: Option<&telio_pq::Entity>,
     features: &Features,
 ) -> Result<BTreeMap<PublicKey, RequestedPeer>> {
     // Build a list of meshnet peers
@@ -398,36 +408,42 @@ async fn build_requested_peers_list<
             .filter(|network| features.ipv6 || network.is_ipv4())
             .collect();
 
-        let preshared_key = requested_state
-            .postquantum_wg
-            .as_ref()
-            .map(|pq| pq.pq_shared);
-
         if let Some(meshnet_peer) = requested_peers.get_mut(&exit_node.public_key) {
             // Exit node is meshnet peer, so just promote already existing node to be exit node
             // with allowed ips change
             meshnet_peer.peer.allowed_ips = allowed_ips;
-            meshnet_peer.peer.preshared_key = preshared_key;
             exit_node_exists = true;
         } else {
             // Exit node is a fresh node, therefore - insert create new peer
             let public_key = exit_node.public_key;
             let endpoint = exit_node.endpoint;
             let persistent_keepalive_interval = requested_state.keepalive_periods.vpn;
-            requested_peers.insert(
-                exit_node.public_key,
-                RequestedPeer {
-                    peer: telio_wg::uapi::Peer {
-                        public_key,
-                        endpoint,
-                        persistent_keepalive_interval,
-                        allowed_ips,
-                        preshared_key,
-                        ..Default::default()
-                    },
-                    local_direct_endpoint: None,
-                },
-            );
+            // If the PQ VPN is set up we need to configure the preshared key
+
+            match post_quantum_vpn.map(telio_pq::Entity::keys) {
+                Some(None) => {
+                    // The post quantum state is not ready, we don't want to set up quantum
+                    // unsafe tunnel with this peer
+                }
+                pq_keys => {
+                    let preshared_key = pq_keys.flatten().map(|pq| pq.pq_shared);
+
+                    requested_peers.insert(
+                        exit_node.public_key,
+                        RequestedPeer {
+                            peer: telio_wg::uapi::Peer {
+                                public_key,
+                                endpoint,
+                                persistent_keepalive_interval,
+                                allowed_ips,
+                                preshared_key,
+                                ..Default::default()
+                            },
+                            local_direct_endpoint: None,
+                        },
+                    );
+                }
+            };
         }
     }
 
@@ -905,7 +921,7 @@ mod tests {
             ..Default::default()
         };
 
-        consolidate_wg_private_key(&requested_state, &wg_mock)
+        consolidate_wg_private_key(&requested_state, &wg_mock, None)
             .await
             .unwrap();
     }
@@ -931,7 +947,7 @@ mod tests {
             ..Default::default()
         };
 
-        consolidate_wg_private_key(&requested_state, &wg_mock)
+        consolidate_wg_private_key(&requested_state, &wg_mock, None)
             .await
             .unwrap();
     }
@@ -1511,6 +1527,7 @@ mod tests {
                 Some(&session_keeper),
                 &self.dns,
                 HashMap::new(),
+                None,
                 None,
                 &self.features,
             )

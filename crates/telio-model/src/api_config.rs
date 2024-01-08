@@ -251,14 +251,22 @@ pub struct FeatureBoringtunResetConns(pub bool);
 /// Turns on post quantum VPN tunnel
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 pub struct FeaturePostQuantumVPN {
-    /// Initial handshake timeout in seconds
-    #[serde(default = "FeaturePostQuantumVPN::default_handshake_timeout_s")]
-    pub handshake_timeout_s: u32,
+    /// Initial handshake retry interval in seconds
+    #[serde(default = "FeaturePostQuantumVPN::default_handshake_retry_interval_s")]
+    pub handshake_retry_interval_s: u32,
+
+    /// Rekey interval in seconds
+    #[serde(default = "FeaturePostQuantumVPN::default_rekey_interval_s")]
+    pub rekey_interval_s: u32,
 }
 
 impl FeaturePostQuantumVPN {
-    const fn default_handshake_timeout_s() -> u32 {
+    const fn default_handshake_retry_interval_s() -> u32 {
         8
+    }
+
+    const fn default_rekey_interval_s() -> u32 {
+        90
     }
 }
 
@@ -439,7 +447,8 @@ mod tests {
             "boringtun_reset_connections": true,
             "post_quantum_vpn":
             {
-                "handshake_timeout_s": 16
+                "handshake_retry_interval_s": 16,
+                "rekey_interval_s": 120
             }
         }"#;
 
@@ -491,7 +500,8 @@ mod tests {
         boringtun_reset_connections: FeatureBoringtunResetConns(true),
         flush_events_on_stop_timeout_seconds: None,
         post_quantum_vpn: Some(FeaturePostQuantumVPN {
-            handshake_timeout_s: 16,
+            handshake_retry_interval_s: 16,
+            rekey_interval_s: 120,
         }),
         no_link_detection: None,
     });
