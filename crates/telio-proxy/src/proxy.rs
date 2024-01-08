@@ -4,6 +4,7 @@ use std::{
     collections::{HashMap, HashSet},
     net::{Ipv4Addr, SocketAddr},
     sync::Arc,
+    time::Duration,
 };
 use telio_crypto::PublicKey;
 use telio_model::EndpointMap;
@@ -18,9 +19,12 @@ use telio_task::{
 };
 use tokio::{net::UdpSocket, sync::mpsc::error::SendTimeoutError};
 
-use telio_utils::telio_log_debug;
+use telio_utils::{telio_log_debug, PinnedSleep};
 
+type Muted = bool;
 type SocketMap = HashMap<PublicKey, Arc<UdpSocket>>;
+type SocketMuteMap = HashMap<PublicKey, (Arc<UdpSocket>, Muted)>;
+type MuteMap = HashMap<PublicKey, PinnedSleep<PublicKey>>;
 
 const SOCK_BUF_SZ: usize = 212992;
 
@@ -39,6 +43,9 @@ pub enum Error {
     /// Send failed
     #[error(transparent)]
     Send(#[from] SendTimeoutError<(PublicKey, DataMsg)>),
+    /// Peer not found
+    #[error("Peer not found error")]
+    PeerNotFound,
 }
 
 /// Proxy links incoming and outgoing WG Packets to
@@ -48,6 +55,8 @@ pub enum Error {
 pub trait Proxy {
     /// Get currently mapped sockets
     async fn get_endpoint_map(&self) -> Result<EndpointMap, Error>;
+    /// Mute peer for duration (or unmute if duration is None)
+    async fn mute_peer(&self, pk: PublicKey, dur: Option<Duration>) -> Result<(), Error>;
 }
 
 /// `UdpProxy` struct wrapping its state in Task runtime
@@ -87,7 +96,8 @@ struct StateIngress {
 }
 
 struct StateEgress {
-    sockets: SocketMap,
+    sockets: SocketMuteMap,
+    mutes: MuteMap,
     input: Rx<(PublicKey, DataMsg)>,
     wg_addr: Option<SocketAddr>,
 }
@@ -103,6 +113,7 @@ impl UdpProxy {
             }),
             task_egress: Task::start(StateEgress {
                 sockets: HashMap::new(),
+                mutes: HashMap::new(),
                 input: io.relay.rx,
                 wg_addr: None,
             }),
@@ -136,6 +147,16 @@ impl Proxy for UdpProxy {
     async fn get_endpoint_map(&self) -> Result<EndpointMap, Error> {
         task_exec!(&self.task_ingress, async move |state| {
             Ok(state.get_endpoints_map().await)
+        })
+        .await?
+    }
+
+    async fn mute_peer(&self, pk: PublicKey, dur: Option<Duration>) -> Result<(), Error> {
+        task_exec!(&self.task_egress, async move |state| {
+            match dur {
+                Some(d) => Ok(state.try_mute(&pk, d)),
+                None => Ok(state.try_unmute(&pk)),
+            }
         })
         .await?
     }
@@ -187,9 +208,60 @@ impl StateEgress {
 
         self.wg_addr = wg_port.map(|p| (Ipv4Addr::LOCALHOST, p).into());
 
-        self.sockets = sockets;
+        let old_sockets = self.sockets.clone();
+        self.sockets = sockets
+            .clone()
+            .into_iter()
+            .map(|(pk, socket)| {
+                (
+                    pk,
+                    (
+                        socket,
+                        old_sockets
+                            .get(&pk)
+                            .map(|(_, muted)| *muted)
+                            .unwrap_or(false),
+                    ),
+                )
+            })
+            .collect();
 
         Ok(())
+    }
+
+    fn try_mute(&mut self, pk: &PublicKey, dur: Duration) -> Result<(), Error> {
+        if let Some((_, muted)) = self.sockets.get_mut(pk) {
+            telio_log_debug!("Muting peer: {:?} for {:?}", pk, dur);
+            self.mutes.insert(*pk, PinnedSleep::new(dur, *pk));
+            *muted = true;
+            return Ok(());
+        }
+
+        Err(Error::PeerNotFound)
+    }
+
+    fn try_unmute(&mut self, pk: &PublicKey) -> Result<(), Error> {
+        if let Some((_, muted)) = self.sockets.get_mut(pk) {
+            telio_log_debug!("Unmuting peer: {:?}", pk);
+            *muted = false;
+            self.mutes.remove(pk);
+            return Ok(());
+        }
+
+        Err(Error::PeerNotFound)
+    }
+
+    fn cleanup_mutes(&mut self) {
+        for (pk, mute) in self.mutes.iter() {
+            if mute.is_elapsed() {
+                // Cannot try_remove() here because of borrow checker
+                if let Some((_, muted)) = self.sockets.get_mut(pk) {
+                    telio_log_debug!("Cleaning mute from peer {:?}", pk);
+                    *muted = false;
+                }
+            }
+        }
+        self.mutes.retain(|_, mute| !mute.is_elapsed());
     }
 }
 
@@ -259,10 +331,35 @@ impl Runtime for StateEgress {
             return Self::sleep_forever().await;
         }
 
-        // Outbound data (from telio to WG)
-        if let Some((pk, msg)) = self.input.recv().await {
-            if let (Some(socket), Some(wg_addr)) = (self.sockets.get(&pk), self.wg_addr) {
-                let _ = socket.send_to(msg.get_payload(), wg_addr).await;
+        self.cleanup_mutes();
+        let dummy_sleep = &mut PinnedSleep::new(Duration::MAX, PublicKey::default());
+        let mute_futures = {
+            if self.mutes.is_empty() {
+                vec![dummy_sleep]
+            } else {
+                self.mutes
+                    .iter_mut()
+                    .map(|(_, mute)| mute)
+                    .collect::<Vec<_>>()
+            }
+        };
+
+        tokio::select! {
+            // Outbound data (from telio to WG)
+            Some((pk, msg)) = self.input.recv() => {
+                if let (Some((socket, muted)), Some(wg_addr)) = (self.sockets.get(&pk), self.wg_addr) {
+                    if !*muted {
+                        let _ = socket.send_to(msg.get_payload(), wg_addr).await;
+                    } else {
+                        telio_log_debug!("Peer {:?} is muted", pk);
+                    }
+                }
+            },
+            (pk, _, _) = select_all(mute_futures) => {
+                if let Some((_, muted)) = self.sockets.get_mut(&pk) {
+                    telio_log_debug!("Unmuting peer: {:?}", pk);
+                    *muted = false;
+                }
             }
         }
 
@@ -322,9 +419,32 @@ mod tests {
         ts.stop().await;
     }
 
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_muting_unmuting() {
+        let mut ts = TestSystem::start().await;
+
+        ts.test_data_muted(
+            // Relay -> WG
+            &[
+                // Peer 1
+                &[(DataMsg::new(b"b"), b"b"), (DataMsg::new(b"bb"), b"bb")],
+                // Peer 2
+                &[(DataMsg::new(b"d"), b"d"), (DataMsg::new(b"dd"), b"dd")],
+            ],
+        )
+        .await;
+
+        ts.stop().await;
+    }
+
     /// Helper utils for tests
     mod helper {
-        use tokio::sync::Mutex;
+        use rand::seq::SliceRandom;
+        use std::panic;
+        use tokio::{
+            sync::Mutex,
+            time::{self, timeout},
+        };
 
         use super::*;
 
@@ -424,6 +544,75 @@ mod tests {
                         self.wg.expect_recv(&[(pk, msg)]).await;
                     }
                 }
+
+                self.clear_peers();
+            }
+
+            pub async fn test_data_muted(&mut self, relay_to_wg: &[&[(DataMsg, &[u8])]]) {
+                let peers = relay_to_wg.len().max(relay_to_wg.len());
+                let pks = self.create_peers(peers).await;
+                let pk_to_mute = pks.choose(&mut rand::thread_rng()).unwrap();
+                let (relay_to_wg, expect_relay_to_wg) = flatten_tests(&pks, relay_to_wg);
+
+                let advance_by_secs_and_yield = |secs| async move {
+                    tokio::task::yield_now().await;
+                    time::pause();
+                    time::advance(Duration::from_secs(secs)).await;
+                    time::resume();
+                    tokio::task::yield_now().await;
+                };
+
+                let unmuted = || async {
+                    for i in 0..relay_to_wg.len() {
+                        let (pk, msg) = &relay_to_wg[i];
+                        self.relay.send(*pk, msg.clone()).await;
+                        let (pk, msg) = expect_relay_to_wg[i];
+                        self.wg.expect_recv(&[(pk, msg)]).await;
+                    }
+                };
+
+                let muted = || async {
+                    for i in 0..relay_to_wg.len() {
+                        let (pk, msg) = &relay_to_wg[i];
+                        self.relay.send(*pk, msg.clone()).await;
+                        let (pk, msg) = expect_relay_to_wg[i];
+                        if pk == *pk_to_mute {
+                            // Yield to allow relay to process packet
+                            tokio::task::yield_now().await;
+                            let mut buf = [0u8; 1024];
+                            assert!(self.wg.sock.try_recv_from(&mut buf).is_err());
+                        } else {
+                            self.wg.expect_recv(&[(pk, msg)]).await;
+                        }
+                    }
+                };
+
+                // Test unmuted initially
+                unmuted().await;
+
+                // Test unmute after 10 seconds
+                self.proxy
+                    .mute_peer(*pk_to_mute, Some(Duration::from_secs(10)))
+                    .await
+                    .unwrap();
+                // Should be muted after 1 second
+                advance_by_secs_and_yield(1).await;
+                muted().await;
+                // Should be unmuted after 10 + 1 seconds
+                advance_by_secs_and_yield(10).await;
+                unmuted().await;
+
+                // Test unmute manually
+                self.proxy
+                    .mute_peer(*pk_to_mute, Some(Duration::from_secs(10)))
+                    .await
+                    .unwrap();
+                advance_by_secs_and_yield(1).await;
+                muted().await;
+                // Unmute manually
+                self.proxy.mute_peer(*pk_to_mute, None).await.unwrap();
+                advance_by_secs_and_yield(1).await;
+                unmuted().await;
 
                 self.clear_peers();
             }

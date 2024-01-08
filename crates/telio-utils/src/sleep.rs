@@ -27,6 +27,11 @@ impl<T: Copy> PinnedSleep<T> {
     pub fn new(duration: Duration, ret: T) -> Self {
         Self(Box::pin(sleep(duration)), Box::pin(ret))
     }
+
+    /// Check if the sleep is elapsed
+    pub fn is_elapsed(&self) -> bool {
+        self.0.is_elapsed()
+    }
 }
 
 impl<T: Copy> Future for PinnedSleep<T> {

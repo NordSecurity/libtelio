@@ -146,8 +146,8 @@ impl State {
         telio_log_info!(
             "Requesting {:?} to upgrade endpoint to local WG: {:?}, remote WG: {:?}",
             public_key,
-            remote_endpoint,
             local_endpoint,
+            remote_endpoint,
         );
 
         // Send message to remote end

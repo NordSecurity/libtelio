@@ -24,6 +24,7 @@ crypto_box = { version = "0.8.2", features = ["std"] }
 ffi_helpers = "0.3.0"
 futures = "0.3"
 ipnetwork = "0.18"
+h2 = "=0.3.24" # RUSTSEC-2024-0003
 lazy_static = "1.4.0"
 libc = "0.2.99"
 log = {version = "0.4.14", features = ["release_max_level_debug"]}

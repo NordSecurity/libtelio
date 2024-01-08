@@ -27,3 +27,4 @@ telio-test = { version = "1.0.0", path = "../telio-test" }
 telio-task = { features = ["test-util"], path = "../telio-task" }
 tokio = { version = ">=1.22", features = ["macros", "rt-multi-thread", "time"] }
 mockall = "0.11.3"
+rand = "0.8"
