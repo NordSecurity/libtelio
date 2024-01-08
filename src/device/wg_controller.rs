@@ -221,6 +221,11 @@ async fn consolidate_wg_peers<
                 if let Some(sk) = session_keeper {
                     sk.remove_node(&requested_peer.peer.public_key).await?;
                 }
+
+                // Unmute pair to allow communication through proxy
+                if let Some(p) = proxy {
+                    p.mute_peer(requested_peer.peer.public_key, None).await?;
+                }
             }
 
             (true, false) => {
@@ -228,6 +233,7 @@ async fn consolidate_wg_peers<
                 // selected a new direct endpoint candidate -> notify the other node about our own
                 // local side endpoint, such that the other node can do this upgrade too.
                 let public_key = requested_peer.peer.public_key;
+
                 if let (Some(remote_endpoint), Some(local_direct_endpoint)) = (
                     requested_peer.peer.endpoint,
                     requested_peer.local_direct_endpoint,
@@ -236,6 +242,16 @@ async fn consolidate_wg_peers<
                         us.request_upgrade(&public_key, remote_endpoint, local_direct_endpoint)
                             .await?;
                     }
+                }
+
+                // TODO we're not completely sure that the other side has upgraded too and that we're in 'Upgrading' state.
+                // Mute pair to avoid oscillations
+                if let Some(p) = proxy {
+                    p.mute_peer(
+                        requested_peer.peer.public_key,
+                        Some(Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW)),
+                    )
+                    .await?;
                 }
 
                 // Initiate session keeper to start sending data between peers connected directly
@@ -1321,6 +1337,16 @@ mod tests {
                 .returning(move || Ok(proxy_endpoint_map.clone()));
         }
 
+        fn then_proxy_mute(&mut self, input: Vec<(PublicKey, Option<Duration>)>) {
+            for i in input {
+                self.proxy
+                    .expect_mute_peer()
+                    .once()
+                    .with(eq(i.0), eq(i.1))
+                    .return_once(|_, _| Ok(()));
+            }
+        }
+
         fn when_current_peers(&mut self, input: Vec<(PublicKey, SocketAddr, u32, AllowedIps)>) {
             let peers: BTreeMap<PublicKey, Peer> = input
                 .into_iter()
@@ -1610,6 +1636,10 @@ mod tests {
             direct_keepalive_period,
             allowed_ips.into_iter().map(|ip| ip.into()).collect(),
         )]);
+        f.then_proxy_mute(vec![(
+            pub_key,
+            Some(Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW)),
+        )]);
         f.then_keeper_add_node(vec![(pub_key, ip1, Some(ip1v6), direct_keepalive_period)]);
 
         f.consolidate_peers().await;
@@ -1663,6 +1693,10 @@ mod tests {
         )]);
         f.then_request_upgrade(vec![(pub_key, remote_wg_endpoint, local_wg_endpoint)]);
         f.then_keeper_add_node(vec![(pub_key, ip1, Some(ip1v6), direct_keepalive_period)]);
+        f.then_proxy_mute(vec![(
+            pub_key,
+            Some(Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW)),
+        )]);
 
         f.consolidate_peers().await;
     }
@@ -1804,7 +1838,7 @@ mod tests {
         )]);
         f.then_notify_failed_wg_connection(vec![pub_key]);
         f.then_keeper_remove_node(vec![pub_key]);
-
+        f.then_proxy_mute(vec![(pub_key, None)]);
         f.consolidate_peers().await;
     }
 
@@ -1971,7 +2005,10 @@ mod tests {
             DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.into_iter().map(|ip| ip.into()).collect(),
         )]);
-
+        f.then_proxy_mute(vec![(
+            pub_key,
+            Some(Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW)),
+        )]);
         f.then_keeper_add_node(vec![(
             pub_key,
             ip1,
