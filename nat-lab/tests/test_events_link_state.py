@@ -23,14 +23,12 @@ def long_persistent_keepalive_periods() -> Wireguard:
     )
 
 
-def short_persistent_keepalive_periods() -> Wireguard:
-    return Wireguard(
-        persistent_keepalive=PersistentKeepalive(vpn=5, direct=5, proxying=5, stun=5)
-    )
+# Scenarios with short keepalive periods have been removed due to LLT-4718
+# Sometimes nodes fail to connect when the persistent keepalive periods are set
+# to a low value, like 5 seconds.
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4695")
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -45,20 +43,6 @@ def short_persistent_keepalive_periods() -> Wireguard:
                 features=TelioFeatures(
                     no_link_detection=NoLinkDetection(rtt_seconds=1),
                     wireguard=long_persistent_keepalive_periods(),
-                ),
-            )
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.LinuxNativeWg,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
-                ),
-                features=TelioFeatures(
-                    no_link_detection=NoLinkDetection(rtt_seconds=1),
-                    wireguard=short_persistent_keepalive_periods(),
                 ),
             )
         ),
@@ -78,20 +62,6 @@ def short_persistent_keepalive_periods() -> Wireguard:
                 features=TelioFeatures(
                     no_link_detection=NoLinkDetection(rtt_seconds=1),
                     wireguard=long_persistent_keepalive_periods(),
-                ),
-            )
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-                adapter_type=AdapterType.LinuxNativeWg,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    derp_1_limits=ConnectionLimits(1, 1),
-                ),
-                features=TelioFeatures(
-                    no_link_detection=NoLinkDetection(rtt_seconds=1),
-                    wireguard=short_persistent_keepalive_periods(),
                 ),
             )
         ),
@@ -118,7 +88,6 @@ async def test_event_link_state_peers_idle_all_time(
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4695")
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -187,7 +156,6 @@ async def test_event_link_state_peers_exchanging_data_for_a_long_time(
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4695")
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -202,20 +170,6 @@ async def test_event_link_state_peers_exchanging_data_for_a_long_time(
                 features=TelioFeatures(
                     no_link_detection=NoLinkDetection(rtt_seconds=1),
                     wireguard=long_persistent_keepalive_periods(),
-                ),
-            )
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.LinuxNativeWg,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
-                ),
-                features=TelioFeatures(
-                    no_link_detection=NoLinkDetection(rtt_seconds=1),
-                    wireguard=short_persistent_keepalive_periods(),
                 ),
             )
         ),
@@ -235,20 +189,6 @@ async def test_event_link_state_peers_exchanging_data_for_a_long_time(
                 features=TelioFeatures(
                     no_link_detection=NoLinkDetection(rtt_seconds=1),
                     wireguard=long_persistent_keepalive_periods(),
-                ),
-            )
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-                adapter_type=AdapterType.LinuxNativeWg,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    derp_1_limits=ConnectionLimits(1, 1),
-                ),
-                features=TelioFeatures(
-                    no_link_detection=NoLinkDetection(rtt_seconds=1),
-                    wireguard=short_persistent_keepalive_periods(),
                 ),
             )
         ),
@@ -283,7 +223,6 @@ async def test_event_link_state_peers_exchanging_data_then_idling(
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4695")
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -298,20 +237,6 @@ async def test_event_link_state_peers_exchanging_data_then_idling(
                 features=TelioFeatures(
                     no_link_detection=NoLinkDetection(rtt_seconds=1),
                     wireguard=long_persistent_keepalive_periods(),
-                ),
-            )
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.LinuxNativeWg,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
-                ),
-                features=TelioFeatures(
-                    no_link_detection=NoLinkDetection(rtt_seconds=1),
-                    wireguard=short_persistent_keepalive_periods(),
                 ),
             )
         ),
@@ -331,20 +256,6 @@ async def test_event_link_state_peers_exchanging_data_then_idling(
                 features=TelioFeatures(
                     no_link_detection=NoLinkDetection(rtt_seconds=1),
                     wireguard=long_persistent_keepalive_periods(),
-                ),
-            )
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-                adapter_type=AdapterType.LinuxNativeWg,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    derp_1_limits=ConnectionLimits(1, 1),
-                ),
-                features=TelioFeatures(
-                    no_link_detection=NoLinkDetection(rtt_seconds=1),
-                    wireguard=short_persistent_keepalive_periods(),
                 ),
             )
         ),
@@ -377,7 +288,6 @@ async def test_event_link_state_streaming_to_a_silent_peer(
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4695")
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -392,20 +302,6 @@ async def test_event_link_state_streaming_to_a_silent_peer(
                 features=TelioFeatures(
                     no_link_detection=NoLinkDetection(rtt_seconds=1),
                     wireguard=long_persistent_keepalive_periods(),
-                ),
-            )
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.LinuxNativeWg,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
-                ),
-                features=TelioFeatures(
-                    no_link_detection=NoLinkDetection(rtt_seconds=1),
-                    wireguard=short_persistent_keepalive_periods(),
                 ),
             )
         ),
@@ -425,20 +321,6 @@ async def test_event_link_state_streaming_to_a_silent_peer(
                 features=TelioFeatures(
                     no_link_detection=NoLinkDetection(rtt_seconds=1),
                     wireguard=long_persistent_keepalive_periods(),
-                ),
-            )
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-                adapter_type=AdapterType.LinuxNativeWg,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    derp_1_limits=ConnectionLimits(1, 1),
-                ),
-                features=TelioFeatures(
-                    no_link_detection=NoLinkDetection(rtt_seconds=1),
-                    wireguard=short_persistent_keepalive_periods(),
                 ),
             )
         ),
@@ -481,7 +363,6 @@ async def test_event_link_state_peer_goes_offline(
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4695")
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -496,20 +377,6 @@ async def test_event_link_state_peer_goes_offline(
                 features=TelioFeatures(
                     no_link_detection=NoLinkDetection(rtt_seconds=1),
                     wireguard=long_persistent_keepalive_periods(),
-                ),
-            )
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.LinuxNativeWg,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
-                ),
-                features=TelioFeatures(
-                    no_link_detection=NoLinkDetection(rtt_seconds=1),
-                    wireguard=short_persistent_keepalive_periods(),
                 ),
             )
         ),
@@ -529,20 +396,6 @@ async def test_event_link_state_peer_goes_offline(
                 features=TelioFeatures(
                     no_link_detection=NoLinkDetection(rtt_seconds=1),
                     wireguard=long_persistent_keepalive_periods(),
-                ),
-            )
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-                adapter_type=AdapterType.LinuxNativeWg,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    derp_1_limits=ConnectionLimits(1, 1),
-                ),
-                features=TelioFeatures(
-                    no_link_detection=NoLinkDetection(rtt_seconds=1),
-                    wireguard=short_persistent_keepalive_periods(),
                 ),
             )
         ),
