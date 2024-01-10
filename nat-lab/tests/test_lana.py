@@ -105,13 +105,18 @@ def get_moose_db_file(container_tag, container_path, local_path):
 
 async def wait_for_event_dump(container, events_path, nr_events):
     start_time = asyncio.get_event_loop().time()
-
+    events = []
     while asyncio.get_event_loop().time() - start_time < DEFAULT_CHECK_TIMEOUT:
         get_moose_db_file(container, CONTAINER_EVENT_PATH, events_path)
         events = fetch_moose_events(events_path)
         if len(events) == nr_events:
+            print(f"Found db from {container} with the expected {nr_events}.")
             return events
         await asyncio.sleep(DEFAULT_CHECK_INTERVAL)
+    print(
+        f"Failed looking db from {container}, expected {nr_events} but"
+        f" {len(events)} were found."
+    )
     return None
 
 
@@ -303,12 +308,15 @@ async def run_default_scenario(
     alpha_events = await wait_for_event_dump(
         ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH, nr_events=1
     )
+    assert alpha_events
     beta_events = await wait_for_event_dump(
         ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=1
     )
+    assert beta_events
     gamma_events = await wait_for_event_dump(
         ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, GAMMA_EVENTS_PATH, nr_events=1
     )
+    assert gamma_events
 
     await asyncio.gather(
         client_alpha.stop_device(),
@@ -365,7 +373,6 @@ async def run_default_scenario(
 
 @pytest.mark.moose
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4591")
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
 async def test_lana_with_same_meshnet(
     alpha_ip_stack: IPStack, beta_ip_stack: IPStack
@@ -389,10 +396,6 @@ async def test_lana_with_same_meshnet(
             beta_ip_stack=beta_ip_stack,
             gamma_ip_stack=gamma_ip_stack,
         )
-
-        assert alpha_events
-        assert beta_events
-        assert gamma_events
 
         # Alpha has smallest public key when sorted lexicographically
         expected_meshnet_id = alpha_events[0].fp
@@ -466,7 +469,6 @@ async def test_lana_with_same_meshnet(
 
 @pytest.mark.moose
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4616")
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
 async def test_lana_with_external_node(
     alpha_ip_stack: IPStack, beta_ip_stack: IPStack
@@ -490,10 +492,6 @@ async def test_lana_with_external_node(
             beta_ip_stack=beta_ip_stack,
             gamma_ip_stack=gamma_ip_stack,
         )
-
-        assert alpha_events
-        assert beta_events
-        assert gamma_events
 
         alpha_validator = (
             basic_validator()
@@ -582,7 +580,6 @@ async def test_lana_with_external_node(
 
 @pytest.mark.moose
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4616")
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
 async def test_lana_all_external(
     alpha_ip_stack: IPStack, beta_ip_stack: IPStack
@@ -606,10 +603,6 @@ async def test_lana_all_external(
             beta_ip_stack=beta_ip_stack,
             gamma_ip_stack=gamma_ip_stack,
         )
-
-        assert alpha_events
-        assert beta_events
-        assert gamma_events
 
         alpha_validator = (
             basic_validator(node_fingerprint="alpha_fingerprint")
@@ -679,7 +672,6 @@ async def test_lana_all_external(
 
 @pytest.mark.moose
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4616")
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
 async def test_lana_with_vpn_connections(
     alpha_ip_stack: IPStack, beta_ip_stack: IPStack
@@ -706,10 +698,6 @@ async def test_lana_with_vpn_connections(
             beta_ip_stack=beta_ip_stack,
             gamma_ip_stack=gamma_ip_stack,
         )
-
-        assert alpha_events
-        assert beta_events
-        assert gamma_events
 
         # Alpha has smallest public key when sorted lexicographically
         expected_meshnet_id = alpha_events[0].fp
@@ -790,7 +778,6 @@ async def test_lana_with_vpn_connections(
 
 @pytest.mark.moose
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="test is flaky - LLT-4451")
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
 async def test_lana_with_disconnected_node(
     alpha_ip_stack: IPStack, beta_ip_stack: IPStack
@@ -1049,7 +1036,6 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
 @pytest.mark.moose
 @pytest.mark.asyncio
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
-@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4616")
 async def test_lana_same_meshnet_id_is_reported_after_a_restart(
     alpha_ip_stack: IPStack, beta_ip_stack: IPStack
 ):
@@ -1094,7 +1080,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
 
         await client_beta.trigger_event_collection()
         beta_events = await wait_for_event_dump(
-            ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=1
+            ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=2
         )
         assert beta_events
         second_beta_meshnet_id = beta_events[0].fp

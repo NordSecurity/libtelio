@@ -244,7 +244,7 @@ pub struct Event {
 }
 
 /// Analytics information to be conveyed
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct AnalyticsEvent {
     /// Public key of the Peer
     pub public_key: PublicKey,
