@@ -16,6 +16,7 @@
 * LLT-4620: Implement the post quantum key rotation mechanism
 * LLT-4616: Make nurse qos ping asynchronous
 * LLT-4652: Bump boringtun version to v1.1.10
+* LLT-4557: Document functions from helpers.py
 
 <br>
 

@@ -19,6 +19,21 @@ from utils.router import IPStack
 
 @dataclass
 class SetupParameters:
+    """
+    Setup parameters for a single Telio node
+
+    # Attributes
+
+    * ip_stack - the IP stack to be used - IPv4, IPv6 or IPv4v6 (dual stack)
+    * is_local - indicates whether the node should be marked as local or not
+    * connection_tag - connection tag of the used Docker container
+    * connection_tracker_config - Configuration of the tracking connections with a different nodes
+    * adapter_type - type of the used Wireguard adapter
+    * features - features used with the created Telio instance
+    * is_meshnet - indicates whether the node should receive meshnet config or not
+    * derp_servers - list of the provided Derp servers
+    """
+
     ip_stack: IPStack = field(default=IPStack.IPv4v6)
     is_local: bool = field(default=False)
     connection_tag: ConnectionTag = field(default=ConnectionTag.DOCKER_CONE_CLIENT_1)
@@ -35,6 +50,17 @@ class SetupParameters:
 
 @dataclass
 class Environment:
+    """
+    A class encapsulating the vital parts of the Telio test environment
+
+    # Attributes
+
+    * api - Core API mocks to imitate nodes registration, create meshnet configs etc.
+    * nodes - Configured meshnet nodes
+    * connections - Connections to the docker containers
+    * clients - Running Tcli clients
+    """
+
     api: API
     nodes: List[Node]
     connections: List[ConnectionManager]
@@ -42,6 +68,35 @@ class Environment:
 
 
 def setup_api(node_params: List[Tuple[bool, IPStack]]) -> Tuple[API, List[Node]]:
+    """Creates an API object with meshnet nodes according to a list of provided node parameters.
+
+    Usually it is called implicitly by `setup_environment` function, but it might be helpful
+    to call it separately when we need to do some extra meshnet config before setting up the clients.
+    For example, when we would like to modify a meshnet nickname of one of the nodes:
+    ```
+    api, (alpha, beta) = setup_api(
+        [(False, IPStack.IPv4v6), (False, IPStack.IPv4v6)]
+    )
+
+    api.assign_nickname(alpha.id, "some_custom_nickname")
+
+    env = await setup_mesh_nodes(
+        ...,
+        provided_api=api,
+    )
+    ```
+    As you can see, the created api is passed to the `setup_mesh_nodes` function as `provided_api` parameter,
+    so it is used and a new instance of an API object is not created.
+
+    # Arguments
+
+    * `node_params` - list of the configs for the wanted meshnet nodes
+
+    # Returns
+
+    A mocked Core API instance + a list of the meshnet nodes included in the config
+    """
+
     api = API()
     nodes = list(api.config_dynamic_nodes(node_params))
     for node, other_node in product(nodes, repeat=2):
@@ -58,11 +113,40 @@ async def setup_connections(
         ]
     ],
 ) -> List[ConnectionManager]:
+    """Creates connections to the containers corresponding to a given connection tags.
+
+    Useful for testing scenarios which do not involve running Tcli clients,
+    like testing the other parts of the infrastructure like STUN servers or just
+    the nat-lab architecture.
+
+    To give an example, let's assume that you want to connect to the Docker container just
+    to get its IP seen by the STUN server - you can use `setup_connections` function for that:
+    ```
+    conn_mngr, *_ = await setup_connections(exit_stack, [ConnectionTag.DOCKER_CONE_CLIENT_1])
+    stunned_ip = stun.get(conn_mngr.connection, config.STUN_SERVER)
+    ```
+
+    # Arguments
+
+    * `exit_stack` - contextlib.AsyncExitStack instance to manage the async context managers execution
+    * `connection_parameters` - list of the connection tags with optional conntracker configs
+
+    # Returns
+
+    A list of the Telio connection managers of the connections corresponding to the provided connection tags
+    """
+
     return await asyncio.gather(
         *[
-            exit_stack.enter_async_context(new_connection_manager_by_tag(param, None))
-            if isinstance(param, ConnectionTag)
-            else exit_stack.enter_async_context(new_connection_manager_by_tag(*param))
+            (
+                exit_stack.enter_async_context(
+                    new_connection_manager_by_tag(param, None)
+                )
+                if isinstance(param, ConnectionTag)
+                else exit_stack.enter_async_context(
+                    new_connection_manager_by_tag(*param)
+                )
+            )
             for param in connection_parameters
         ]
     )
@@ -80,6 +164,21 @@ async def setup_clients(
         ]
     ],
 ) -> List[Client]:
+    """Creates a list of clients for the given arguments.
+
+    By default it is called by `setup_environment` function and currently there are no usecases
+    for calling it separately.
+
+    # Arguments
+
+    * `exit_stack` - contextlib.AsyncExitStack instance to manage the async context managers execution
+    * `client_parameters` - list of the parameters for each Telio client to be created
+
+    # Returns
+
+    A list of the Telio clients references corresponding to the provided configs
+    """
+
     return await asyncio.gather(
         *[
             exit_stack.enter_async_context(
@@ -96,6 +195,59 @@ async def setup_environment(
     instances: List[SetupParameters],
     provided_api: Optional[API] = None,
 ) -> AsyncIterator[Environment]:
+    """Sets up the basic environment based on the given parameters.
+
+    It basically combines functionalities of the few functions:
+    * `setup_api` (creates mocked core API (if not provided)),
+    * `setup_connections` (sets up the connections to the docker containers) and
+    * `setup_clients` (creates clients using the given configuration)
+    which results in the fully prepared test configuration.
+    It also checks whether the number of connections is correct with the conntrackers.
+
+    Usually called from `setup_meshnet_nodes`, calling it separately is useful in all
+    scenarios in which you don't use meshnet connections from the beginning.
+
+    The most frequently used setups are already provided as default `SetupParameters` arguments,
+    so the most basic case is quite simplistic:
+    ```
+    env = await setup_environment(
+        exit_stack,
+        [SetupParameters()],
+    )
+    ```
+
+    Most of the setups needs at least two nodes (of course using different Docker containers
+    or VMs) and often we need to check whether the different Wireguard adapters behave properly,
+    in which case the call would look like:
+    ```
+        env = await setup_environment(
+            exit_stack,
+            [
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1
+                    adapter_type=AdapterType.BoringTun,
+                ),
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2
+                    adapter_type=AdapterType.BoringTun,
+                ),
+            ],
+        )
+    ```
+
+    For more configuration options see `SetupParameters` reference.
+
+    # Arguments
+
+    * `exit_stack` - contextlib.AsyncExitStack instance to manage the async context managers execution
+    * `instances` - list of the parameters for each meshnet node to be created
+    * `provided_api` - optional mocked Core API instance, if provided a new one won't be created
+
+    # Returns
+
+    A new `Environment` instance with the given configuration
+    """
+
     api, nodes = (
         (provided_api, list(provided_api.nodes.values()))
         if provided_api
@@ -149,6 +301,27 @@ async def setup_mesh_nodes(
     is_timeout_expected: bool = False,
     provided_api: Optional[API] = None,
 ) -> Environment:
+    """The default way of setting up the test environment.
+
+    Sets up the basic environment like `setup_environment` function and then it also connects
+    all of the clients to the Derp server and (if direct connection is supported) ensures that
+    the obtained connection is direct.
+
+    Because the overall behavior is quite similar to the `setup_env` function, its examples
+    work for this one quite well.
+
+    # Arguments
+
+    * `exit_stack` - contextlib.AsyncExitStack instance to manage the async context managers execution
+    * `instances` - list of the parameters for each meshnet node to be created
+    * `is_timeout_expected` - indicates whether the nodes connection should timeout
+    * `provided_api` - optional mocked Core API instance, if provided a new one won't be created
+
+    # Returns
+
+    A new `Environment` instance with the given configuration
+    """
+
     env = await exit_stack.enter_async_context(
         setup_environment(exit_stack, instances, provided_api)
     )
@@ -166,9 +339,11 @@ async def setup_mesh_nodes(
             client.wait_for_state_peer(
                 other_node.public_key,
                 [State.Connected],
-                [PathType.Direct]
-                if instance.features.direct and other_instance.features.direct
-                else [PathType.Relay],
+                (
+                    [PathType.Direct]
+                    if instance.features.direct and other_instance.features.direct
+                    else [PathType.Relay]
+                ),
             )
             for (client, node, instance), (
                 _,
