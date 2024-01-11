@@ -318,12 +318,6 @@ async def run_default_scenario(
     )
     assert gamma_events
 
-    await asyncio.gather(
-        client_alpha.stop_device(),
-        client_beta.stop_device(),
-        client_gamma.stop_device(),
-    )
-
     assert alpha_conn_tracker.get_out_of_limits() is None
     assert beta_conn_tracker.get_out_of_limits() is None
     assert gamma_conn_tracker.get_out_of_limits() is None
