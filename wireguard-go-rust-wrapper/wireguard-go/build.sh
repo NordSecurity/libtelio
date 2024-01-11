@@ -2,11 +2,6 @@
 
 set -eux
 
-if [[ $1 != windows ]]; then
-    echo "ERROR: Target OS $1 not supported"
-    exit 1
-fi
-
 export GOOS=windows
 export GOARCH=amd64
 export CC=x86_64-w64-mingw32-gcc
