@@ -24,14 +24,19 @@ class SetupParameters:
 
     # Attributes
 
-    * ip_stack - the IP stack to be used - IPv4, IPv6 or IPv4v6 (dual stack)
-    * is_local - indicates whether the node should be marked as local or not
-    * connection_tag - connection tag of the used Docker container
+    * ip_stack - the IP stack to be used - IPv4, IPv6 or IPv4v6 (default)
+    * is_local - indicates whether the node should be marked as local or not (turned off by default)
+    * connection_tag - connection tag of the used Docker container (DOCKER_CONE_CLIENT_1 by default)
     * connection_tracker_config - Configuration of the tracking connections with a different nodes
-    * adapter_type - type of the used Wireguard adapter
-    * features - features used with the created Telio instance
-    * is_meshnet - indicates whether the node should receive meshnet config or not
-    * derp_servers - list of the provided Derp servers
+                                  (None by default, which implies that connection checking is disabled)
+    * adapter_type - type of the used Wireguard adapter (the default value is AdapterType.Default, which
+                     allows Telio client to select the most feasible adapter for the given OS)
+    * features - features used with the created Telio instance (while only `is_test_env` is enabled by
+                 default, some of the features (like ipv6 support) might be enabled implicitly by other
+                 parts of the config)
+    * is_meshnet - indicates whether the node should receive meshnet config or not (True by default)
+    * derp_servers - list of the provided Derp servers (if not provided, config.DERP_SERVER is used in
+                     the meshnet config)
     """
 
     ip_stack: IPStack = field(default=IPStack.IPv4v6)
