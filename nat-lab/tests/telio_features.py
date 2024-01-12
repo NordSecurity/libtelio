@@ -1,10 +1,6 @@
 from dataclasses import dataclass, field
-from dataclasses_json import config, dataclass_json, Undefined, DataClassJsonMixin
+from dataclasses_json import dataclass_json, Undefined, DataClassJsonMixin
 from typing import Optional, List
-
-
-def ExcludeIfNone(value) -> bool:
-    return value is None
 
 
 @dataclass_json
@@ -55,27 +51,6 @@ class Nurse(DataClassJsonMixin):
     enable_nat_type_collection: bool = False
 
 
-@dataclass_json
-@dataclass
-class NoLinkDetection(DataClassJsonMixin):
-    rtt_seconds: Optional[int] = None
-
-
-@dataclass_json
-@dataclass
-class PersistentKeepalive:
-    vpn: Optional[int] = None
-    direct: int = 5
-    proxying: Optional[int] = None
-    stun: Optional[int] = None
-
-
-@dataclass_json
-@dataclass
-class Wireguard:
-    persistent_keepalive: PersistentKeepalive
-
-
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
 class TelioFeatures(DataClassJsonMixin):
@@ -89,7 +64,3 @@ class TelioFeatures(DataClassJsonMixin):
     ipv6: bool = False
     nicknames: bool = False
     boringtun_reset_connections: bool = False
-    no_link_detection: Optional[NoLinkDetection] = None
-    wireguard: Optional[Wireguard] = field(
-        default=None, metadata=config(exclude=ExcludeIfNone)
-    )
