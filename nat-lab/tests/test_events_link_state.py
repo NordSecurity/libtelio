@@ -46,6 +46,20 @@ def long_persistent_keepalive_periods() -> Wireguard:
                 ),
             )
         ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type=AdapterType.BoringTun,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+                features=TelioFeatures(
+                    no_link_detection=NoLinkDetection(rtt_seconds=1),
+                    wireguard=long_persistent_keepalive_periods(),
+                ),
+            )
+        ),
     ],
 )
 @pytest.mark.parametrize(
@@ -55,6 +69,20 @@ def long_persistent_keepalive_periods() -> Wireguard:
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                 adapter_type=AdapterType.LinuxNativeWg,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+                features=TelioFeatures(
+                    no_link_detection=NoLinkDetection(rtt_seconds=1),
+                    wireguard=long_persistent_keepalive_periods(),
+                ),
+            )
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                adapter_type=AdapterType.BoringTun,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -105,6 +133,20 @@ async def test_event_link_state_peers_idle_all_time(
                 ),
             )
         ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type=AdapterType.BoringTun,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+                features=TelioFeatures(
+                    no_link_detection=NoLinkDetection(rtt_seconds=1),
+                    wireguard=long_persistent_keepalive_periods(),
+                ),
+            )
+        ),
     ],
 )
 @pytest.mark.parametrize(
@@ -123,7 +165,21 @@ async def test_event_link_state_peers_idle_all_time(
                     wireguard=long_persistent_keepalive_periods(),
                 ),
             )
-        )
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                adapter_type=AdapterType.BoringTun,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+                features=TelioFeatures(
+                    no_link_detection=NoLinkDetection(rtt_seconds=1),
+                    wireguard=long_persistent_keepalive_periods(),
+                ),
+            )
+        ),
     ],
 )
 async def test_event_link_state_peers_exchanging_data_for_a_long_time(
