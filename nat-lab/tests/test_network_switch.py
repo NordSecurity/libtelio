@@ -44,6 +44,8 @@ from utils.ping import Ping
 async def test_network_switcher(
     connection_tag: ConnectionTag, primary_ip: str, secondary_ip: str
 ) -> None:
+    assert False
+
     async with AsyncExitStack() as exit_stack:
         conn_mngr, *_ = await setup_connections(exit_stack, [connection_tag])
         assert (
@@ -293,6 +295,8 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
 async def test_mesh_network_switch_direct(
     alpha_setup_params: SetupParameters, beta_setup_params: SetupParameters
 ) -> None:
+    assert False
+
     async with AsyncExitStack() as exit_stack:
         env = await setup_mesh_nodes(
             exit_stack, [alpha_setup_params, beta_setup_params]

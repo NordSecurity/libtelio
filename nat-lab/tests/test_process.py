@@ -212,6 +212,8 @@ async def test_process_run_cancel(
 async def test_process_run_general_exception(
     connection_tag: ConnectionTag, ping_command: list[str]
 ):
+    assert False
+
     async with AsyncExitStack() as exit_stack:
         connection = await exit_stack.enter_async_context(
             new_connection_by_tag(connection_tag)
