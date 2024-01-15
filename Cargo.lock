@@ -4220,6 +4220,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "telio-pmtu"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "pnet_packet",
+ "socket2 0.5.4",
+ "telio-utils",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "telio-proto"
 version = "0.1.0"
 dependencies = [
