@@ -4269,12 +4269,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "telio-pmtu"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "pnet_packet",
+ "rand",
+ "socket2 0.5.4",
+ "telio-utils",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "telio-pq"
 version = "0.1.0"
 dependencies = [
  "base64 0.13.1",
  "boringtun",
- "pnet_packet 0.28.0",
+ "pnet_packet",
  "pqcrypto-kyber",
  "pqcrypto-traits",
  "rand",
