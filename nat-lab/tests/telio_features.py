@@ -12,7 +12,7 @@ class ExitDns(DataClassJsonMixin):
 @dataclass_json
 @dataclass
 class SkipUnresponsivePeers(DataClassJsonMixin):
-    no_handshake_threshold_secs: int = 180
+    no_rx_threshold_secs: int = 180
 
 
 @dataclass_json
@@ -21,7 +21,7 @@ class Direct(DataClassJsonMixin):
     providers: Optional[List[str]] = None
     endpoint_interval_secs: Optional[int] = 5
     skip_unresponsive_peers: Optional[SkipUnresponsivePeers] = field(
-        default_factory=lambda: SkipUnresponsivePeers(no_handshake_threshold_secs=180)
+        default_factory=lambda: SkipUnresponsivePeers(no_rx_threshold_secs=180)
     )
 
 
@@ -53,6 +53,15 @@ class Nurse(DataClassJsonMixin):
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
+class Wireguard(DataClassJsonMixin):
+    proxying: Optional[int] = 25
+    direct: Optional[int] = 5
+    vpn: Optional[int] = 25
+    stun: Optional[int] = 25
+
+
+@dataclass_json(undefined=Undefined.EXCLUDE)
+@dataclass
 class TelioFeatures(DataClassJsonMixin):
     is_test_env: Optional[bool] = True
     exit_dns: Optional[ExitDns] = field(
@@ -64,3 +73,4 @@ class TelioFeatures(DataClassJsonMixin):
     ipv6: bool = False
     nicknames: bool = False
     boringtun_reset_connections: bool = False
+    wireguard: Optional[Wireguard] = None

@@ -27,7 +27,7 @@ async def test_telio_tasks_with_all_features() -> None:
                         direct=Direct(
                             providers=["stun", "local"],
                             skip_unresponsive_peers=SkipUnresponsivePeers(
-                                no_handshake_threshold_secs=150
+                                no_rx_threshold_secs=150
                             ),
                         ),
                         lana=Lana(prod=False, event_path="/some_path"),

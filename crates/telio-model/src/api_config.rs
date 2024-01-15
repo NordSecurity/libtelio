@@ -64,6 +64,16 @@ pub struct FeatureWireguard {
     pub persistent_keepalive: FeaturePersistentKeepalive,
 }
 
+impl FeatureWireguard {
+    fn default_on_null<'de, D>(deserializer: D) -> Result<FeatureWireguard, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let opt = Option::deserialize(deserializer)?;
+        Ok(opt.unwrap_or_default())
+    }
+}
+
 #[serde_with::serde_as]
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 /// QoS configuration options
@@ -200,13 +210,13 @@ impl FeatureDirect {
 /// Avoid sending periodic messages to peers with no traffic reported by wireguard
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct FeatureSkipUnresponsivePeers {
-    /// Time after which peers is considered unresponsive if it didn't receive any handshakes
-    #[serde(default = "FeatureSkipUnresponsivePeers::default_no_handshake_threshold_secs")]
-    pub no_handshake_threshold_secs: u64,
+    /// Time after which peers is considered unresponsive if it didn't receive any packets
+    #[serde(default = "FeatureSkipUnresponsivePeers::default_no_rx_threshold_secs")]
+    pub no_rx_threshold_secs: u64,
 }
 
 impl FeatureSkipUnresponsivePeers {
-    const fn default_no_handshake_threshold_secs() -> u64 {
+    const fn default_no_rx_threshold_secs() -> u64 {
         180
     }
 }
@@ -214,7 +224,7 @@ impl FeatureSkipUnresponsivePeers {
 impl Default for FeatureSkipUnresponsivePeers {
     fn default() -> Self {
         Self {
-            no_handshake_threshold_secs: Self::default_no_handshake_threshold_secs(),
+            no_rx_threshold_secs: Self::default_no_rx_threshold_secs(),
         }
     }
 }
@@ -297,7 +307,7 @@ where
 /// Encompasses all of the possible features that can be enabled
 pub struct Features {
     /// Additional wireguard configuration
-    #[serde(default)]
+    #[serde(default, deserialize_with = "FeatureWireguard::default_on_null")]
     pub wireguard: FeatureWireguard,
     /// Nurse features that can be configured for QoS
     pub nurse: Option<FeatureNurse>,
@@ -418,7 +428,7 @@ mod tests {
                 "skip_unresponsive_peers":
                 {
                     "enabled": true,
-                    "no_handshake_threshold_secs": 50
+                    "no_rx_threshold_secs": 50
                 }
             },
             "exit_dns":
@@ -471,7 +481,7 @@ mod tests {
             providers: None,
             endpoint_interval_secs: Some(10),
             skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
-                no_handshake_threshold_secs: 50,
+                no_rx_threshold_secs: 50,
             }),
         }),
         exit_dns: Some(FeatureExitDns {
@@ -546,7 +556,7 @@ mod tests {
             "providers": ["local", "stun"],
             "endpoint_interval_secs": 30,
             "skip_unresponsive_peers": {
-                "no_handshake_threshold_secs": 42
+                "no_rx_threshold_secs": 42
             }
         }"#;
 
@@ -563,7 +573,7 @@ mod tests {
             ),
             endpoint_interval_secs: Some(30),
             skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
-                no_handshake_threshold_secs: 42,
+                no_rx_threshold_secs: 42,
             }),
         };
 
@@ -821,6 +831,44 @@ mod tests {
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
         assert_eq!(from_str::<Features>(empty_json).unwrap(), empty_features);
+    }
+
+    #[test]
+    fn test_json_allow_null_for_wireguard() {
+        let empty_json = r#"
+        {
+            "wireguard": null
+        }"#;
+
+        let empty_features = Features {
+            wireguard: Default::default(),
+            nurse: None,
+            lana: None,
+            paths: None,
+            direct: None,
+            #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
+            is_test_env: None,
+            exit_dns: None,
+            derp: None,
+            validate_keys: Default::default(),
+            ipv6: false,
+            nicknames: false,
+            boringtun_reset_connections: Default::default(),
+            flush_events_on_stop_timeout_seconds: None,
+            post_quantum_vpn: Default::default(),
+        };
+
+        assert_eq!(from_str::<Features>(empty_json).unwrap(), empty_features);
+    }
+
+    #[test]
+    fn test_json_fail_on_invalid_wireguard() {
+        let empty_json = r#"
+        {
+            "wireguard": 123
+        }"#;
+
+        assert!(from_str::<Features>(empty_json).is_err());
     }
 
     #[test]
