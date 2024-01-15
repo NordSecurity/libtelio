@@ -8,11 +8,10 @@ from config import LIBTELIO_DNS_IPV4, LIBTELIO_DNS_IPV6
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_api, setup_environment, setup_mesh_nodes
 from telio import AdapterType, TelioFeatures
-from typing import List, Optional
 from utils import testing
-from utils.connection import Connection
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import ConnectionTag, generate_connection_tracker_config
+from utils.dns import query_dns
 from utils.process import ProcessExecError
 from utils.router import IPStack
 
@@ -23,28 +22,6 @@ def get_dns_server_address(ip_stack: IPStack) -> str:
         if ip_stack in [IPStack.IPv4, IPStack.IPv4v6]
         else LIBTELIO_DNS_IPV6
     )
-
-
-async def query_dns(
-    connection: Connection,
-    host_name: str,
-    expected_output: Optional[List[str]] = None,
-    dns_server: Optional[str] = None,
-    options: Optional[str] = None,
-) -> None:
-    response = await testing.wait_normal(
-        connection.create_process(
-            [
-                "nslookup",
-                options if options else "-retry=1",
-                host_name,
-                dns_server if dns_server else LIBTELIO_DNS_IPV4,
-            ]
-        ).execute()
-    )
-    if expected_output:
-        for expected_str in expected_output:
-            assert expected_str in response.get_stdout()
 
 
 @pytest.mark.asyncio
@@ -117,12 +94,12 @@ async def test_dns(
         ]
 
         # These calls should timeout without returning anything, but cache the peer addresses
-        with pytest.raises(asyncio.TimeoutError):
+        with pytest.raises(ProcessExecError):
             await query_dns(
                 connection_alpha, "google.com", dns_server=dns_server_address_alpha
             )
 
-        with pytest.raises(asyncio.TimeoutError):
+        with pytest.raises(ProcessExecError):
             await query_dns(
                 connection_beta, "google.com", dns_server=dns_server_address_beta
             )
@@ -156,11 +133,11 @@ async def test_dns(
         await client_beta.disable_magic_dns()
 
         # And as a result these calls should timeout again
-        with pytest.raises(asyncio.TimeoutError):
+        with pytest.raises(ProcessExecError):
             await query_dns(
                 connection_alpha, "google.com", dns_server=dns_server_address_alpha
             )
-        with pytest.raises(asyncio.TimeoutError):
+        with pytest.raises(ProcessExecError):
             await query_dns(
                 connection_beta, "google.com", dns_server=dns_server_address_beta
             )
@@ -214,7 +191,7 @@ async def test_dns_port(alpha_ip_stack: IPStack) -> None:
         connection_alpha, _ = [conn.connection for conn in env.connections]
 
         # These call should timeout without returning anything
-        with pytest.raises(asyncio.TimeoutError):
+        with pytest.raises(ProcessExecError):
             await testing.wait_normal(
                 connection_alpha.create_process(
                     ["dig", "@" + dns_server_address_alpha, "-p", "53", "google.com"]
@@ -232,7 +209,7 @@ async def test_dns_port(alpha_ip_stack: IPStack) -> None:
         )
 
         # A DNS request on a different port should timeout
-        with pytest.raises(asyncio.TimeoutError):
+        with pytest.raises(ProcessExecError):
             await testing.wait_normal(
                 connection_alpha.create_process(
                     ["dig", "@" + dns_server_address_alpha, "-p", "54", "google.com"]
@@ -258,7 +235,7 @@ async def test_dns_port(alpha_ip_stack: IPStack) -> None:
             assert ip in alpha_response.get_stdout()
 
         # Look for beta on a different port should timeout
-        with pytest.raises(asyncio.TimeoutError):
+        with pytest.raises(ProcessExecError):
             await testing.wait_normal(
                 connection_alpha.create_process(
                     ["dig", "@" + dns_server_address_alpha, "-p", "54", "beta.nord"]
@@ -270,14 +247,14 @@ async def test_dns_port(alpha_ip_stack: IPStack) -> None:
         await client_beta.disable_magic_dns()
 
         # And as a result these calls should timeout again
-        with pytest.raises(asyncio.TimeoutError):
+        with pytest.raises(ProcessExecError):
             await testing.wait_normal(
                 connection_alpha.create_process(
                     ["dig", "@" + dns_server_address_alpha, "-p", "53", "google.com"]
                 ).execute()
             )
 
-        with pytest.raises(asyncio.TimeoutError):
+        with pytest.raises(ProcessExecError):
             await testing.wait_normal(
                 connection_alpha.create_process(
                     ["dig", "@" + dns_server_address_alpha, "-p", "53", "beta.nord"]
@@ -351,7 +328,7 @@ async def test_vpn_dns(alpha_ip_stack: IPStack) -> None:
         # Turn off the module and see if it worked
         await client_alpha.disable_magic_dns()
 
-        with pytest.raises(asyncio.TimeoutError):
+        with pytest.raises(ProcessExecError):
             await query_dns(connection, "google.com", dns_server=dns_server_address)
 
         # Test interop with meshnet
@@ -403,7 +380,7 @@ async def test_dns_after_mesh_off(alpha_ip_stack: IPStack) -> None:
         client_alpha, *_ = env.clients
 
         # These calls should timeout without returning anything, but cache the peer addresses
-        with pytest.raises(asyncio.TimeoutError):
+        with pytest.raises(ProcessExecError):
             await query_dns(
                 connection_alpha, "google.com", dns_server=dns_server_address
             )
@@ -622,7 +599,7 @@ async def test_dns_update(alpha_ip_stack: IPStack) -> None:
         # Don't forward anything yet
         await client_alpha.enable_magic_dns([])
 
-        with pytest.raises(asyncio.TimeoutError):
+        with pytest.raises(ProcessExecError):
             await query_dns(connection, "google.com", dns_server=dns_server_address)
 
         # Update forward dns and check if it works now

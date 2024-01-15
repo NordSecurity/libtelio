@@ -1,7 +1,6 @@
 import asyncio
 import config
 import pytest
-import re
 import telio
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
@@ -9,6 +8,7 @@ from typing import List, Tuple
 from utils import testing
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
+from utils.dns import query_dns
 from utils.router import IPStack
 
 
@@ -46,10 +46,7 @@ from utils.router import IPStack
         # ),
         pytest.param(
             (IPStack.IPv4v6, ["8.8.8.8", "2001:4860:4860::8888"]),
-            marks=[
-                pytest.mark.ipv4v6,
-                pytest.mark.xfail(reason="Test is flaky - LLT-4656"),
-            ],
+            marks=pytest.mark.ipv4v6,
         ),
     ],
 )
@@ -65,7 +62,6 @@ from utils.router import IPStack
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
             ),
-            marks=pytest.mark.xfail(reason="Test is flaky - LLT-4656"),
         ),
         pytest.param(
             SetupParameters(
@@ -76,12 +72,7 @@ from utils.router import IPStack
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
             ),
-            marks=[
-                pytest.mark.linux_native,
-                # The exact flaky variant is test_dns_through_exit[beta_setup_params0-alpha_setup_params1-exit_info0-alpha_info1],
-                # but there's no way to add a mark to a combination of parameters, so adding it here only.
-                pytest.mark.xfail(reason="Flaky: LLT-4674"),
-            ],
+            marks=pytest.mark.linux_native,
         ),
         # This test is failing, but currently is non critical
         # pytest.param(
@@ -151,24 +142,16 @@ async def test_dns_through_exit(
         await client_exit.enable_magic_dns(exit_info[1])
 
         # if this times out dns forwarder failed to start
-        await testing.wait_normal(
-            connection_alpha.create_process(
-                ["nslookup", "google.com", dns_server_address_exit]
-            ).execute()
+        await query_dns(
+            connection_alpha, "google.com", dns_server=dns_server_address_exit
         )
 
         # sending dns straight to exit peer's dns forwarder(as will be done on linux/windows)
-        alpha_response = await testing.wait_normal(
-            connection_alpha.create_process(
-                ["nslookup", "google.com", dns_server_address_exit]
-            ).execute()
-        )
-        # Check if some address was found
-        assert (
-            re.search(
-                "Name:.*google.com.*Address", alpha_response.get_stdout(), re.DOTALL
-            )
-            is not None
+        await query_dns(
+            connection_alpha,
+            "google.com",
+            dns_server=dns_server_address_exit,
+            expected_output=["Name:.*google.com.*Address"],
         )
 
         await client_alpha.enable_magic_dns(alpha_info[1])
@@ -184,30 +167,18 @@ async def test_dns_through_exit(
         )
 
         # sending dns to local forwarder, which should forward it to exit dns forwarder(apple/android way)
-        alpha_response = await testing.wait_normal(
-            connection_alpha.create_process(
-                ["nslookup", "google.com", dns_server_address_local]
-            ).execute()
-        )
-        # Check if some address was found
-        assert (
-            re.search(
-                "Name:.*google.com.*Address", alpha_response.get_stdout(), re.DOTALL
-            )
-            is not None
+        await query_dns(
+            connection_alpha,
+            "google.com",
+            dns_server=dns_server_address_local,
+            expected_output=["Name:.*google.com.*Address"],
         )
         await client_alpha.disconnect_from_exit_node(exit_node.public_key)
 
         # local forwarder should resolve this, checking if forward ips are changed back correctly
-        alpha_response = await testing.wait_normal(
-            connection_alpha.create_process(
-                ["nslookup", "google.com", dns_server_address_local]
-            ).execute()
-        )
-        # Check if some address was found
-        assert (
-            re.search(
-                "Name:.*google.com.*Address", alpha_response.get_stdout(), re.DOTALL
-            )
-            is not None
+        await query_dns(
+            connection_alpha,
+            "google.com",
+            dns_server=dns_server_address_local,
+            expected_output=["Name:.*google.com.*Address"],
         )
