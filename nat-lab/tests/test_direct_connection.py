@@ -37,7 +37,7 @@ def _generate_setup_parameter_pair(
                 direct=Direct(
                     providers=endpoint_providers,
                     skip_unresponsive_peers=SkipUnresponsivePeers(
-                        no_handshake_threshold_secs=10
+                        no_handshake_threshold_secs=180
                     ),
                 ),
             ),
