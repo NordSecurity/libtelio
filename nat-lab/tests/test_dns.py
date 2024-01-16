@@ -104,8 +104,8 @@ async def test_dns(
                 connection_beta, "google.com", dns_server=dns_server_address_beta
             )
 
-        await client_alpha.enable_magic_dns(["1.1.1.1"])
-        await client_beta.enable_magic_dns(["1.1.1.1"])
+        await client_alpha.enable_magic_dns(["10.0.80.82"])
+        await client_beta.enable_magic_dns(["10.0.80.82"])
 
         # If everything went correctly, these calls should not timeout
         await query_dns(
@@ -191,15 +191,15 @@ async def test_dns_port(alpha_ip_stack: IPStack) -> None:
         connection_alpha, _ = [conn.connection for conn in env.connections]
 
         # These call should timeout without returning anything
-        with pytest.raises(ProcessExecError):
+        with pytest.raises(asyncio.TimeoutError):
             await testing.wait_normal(
                 connection_alpha.create_process(
                     ["dig", "@" + dns_server_address_alpha, "-p", "53", "google.com"]
                 ).execute()
             )
 
-        await client_alpha.enable_magic_dns(["1.1.1.1"])
-        await client_beta.enable_magic_dns(["1.1.1.1"])
+        await client_alpha.enable_magic_dns(["10.0.80.82"])
+        await client_beta.enable_magic_dns(["10.0.80.82"])
 
         # A DNS request on port 53 should work
         await testing.wait_normal(
@@ -209,7 +209,7 @@ async def test_dns_port(alpha_ip_stack: IPStack) -> None:
         )
 
         # A DNS request on a different port should timeout
-        with pytest.raises(ProcessExecError):
+        with pytest.raises(asyncio.TimeoutError):
             await testing.wait_normal(
                 connection_alpha.create_process(
                     ["dig", "@" + dns_server_address_alpha, "-p", "54", "google.com"]
@@ -235,7 +235,7 @@ async def test_dns_port(alpha_ip_stack: IPStack) -> None:
             assert ip in alpha_response.get_stdout()
 
         # Look for beta on a different port should timeout
-        with pytest.raises(ProcessExecError):
+        with pytest.raises(asyncio.TimeoutError):
             await testing.wait_normal(
                 connection_alpha.create_process(
                     ["dig", "@" + dns_server_address_alpha, "-p", "54", "beta.nord"]
@@ -247,14 +247,14 @@ async def test_dns_port(alpha_ip_stack: IPStack) -> None:
         await client_beta.disable_magic_dns()
 
         # And as a result these calls should timeout again
-        with pytest.raises(ProcessExecError):
+        with pytest.raises(asyncio.TimeoutError):
             await testing.wait_normal(
                 connection_alpha.create_process(
                     ["dig", "@" + dns_server_address_alpha, "-p", "53", "google.com"]
                 ).execute()
             )
 
-        with pytest.raises(ProcessExecError):
+        with pytest.raises(asyncio.TimeoutError):
             await testing.wait_normal(
                 connection_alpha.create_process(
                     ["dig", "@" + dns_server_address_alpha, "-p", "53", "beta.nord"]
@@ -311,7 +311,7 @@ async def test_vpn_dns(alpha_ip_stack: IPStack) -> None:
         )
 
         # After we connect to the VPN, enable magic DNS
-        await client_alpha.enable_magic_dns(["1.1.1.1"])
+        await client_alpha.enable_magic_dns(["10.0.80.82"])
 
         # Test to see if the module is working correctly
         await query_dns(connection, "google.com", dns_server=dns_server_address)
@@ -332,7 +332,7 @@ async def test_vpn_dns(alpha_ip_stack: IPStack) -> None:
             await query_dns(connection, "google.com", dns_server=dns_server_address)
 
         # Test interop with meshnet
-        await client_alpha.enable_magic_dns(["1.1.1.1"])
+        await client_alpha.enable_magic_dns(["10.0.80.82"])
         await client_alpha.set_meshmap(api.get_meshmap(alpha.id, derp_servers=[]))
 
         await query_dns(connection, "google.com", dns_server=dns_server_address)
@@ -385,7 +385,7 @@ async def test_dns_after_mesh_off(alpha_ip_stack: IPStack) -> None:
                 connection_alpha, "google.com", dns_server=dns_server_address
             )
 
-        await client_alpha.enable_magic_dns(["1.1.1.1"])
+        await client_alpha.enable_magic_dns(["10.0.80.82"])
 
         # If everything went correctly, these calls should not timeout
         await query_dns(connection_alpha, "google.com", dns_server=dns_server_address)
@@ -461,8 +461,8 @@ async def test_dns_stability(alpha_ip_stack: IPStack) -> None:
             conn.connection for conn in env.connections
         ]
 
-        await client_alpha.enable_magic_dns(["1.1.1.1"])
-        await client_beta.enable_magic_dns(["1.1.1.1"])
+        await client_alpha.enable_magic_dns(["10.0.80.82"])
+        await client_beta.enable_magic_dns(["10.0.80.82"])
 
         await query_dns(connection_alpha, "google.com", dns_server=dns_server_address)
         await query_dns(connection_beta, "google.com", dns_server=dns_server_address)
@@ -603,7 +603,7 @@ async def test_dns_update(alpha_ip_stack: IPStack) -> None:
             await query_dns(connection, "google.com", dns_server=dns_server_address)
 
         # Update forward dns and check if it works now
-        await client_alpha.enable_magic_dns(["1.1.1.1"])
+        await client_alpha.enable_magic_dns(["10.0.80.82"])
 
         await query_dns(
             connection, "google.com", ["Name:	google.com\nAddress:"], dns_server_address
@@ -613,8 +613,8 @@ async def test_dns_update(alpha_ip_stack: IPStack) -> None:
 @pytest.mark.asyncio
 async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
     async with AsyncExitStack() as exit_stack:
-        FIRST_DNS_SERVER = "8.8.8.8"
-        SECOND_DNS_SERVER = "1.1.1.1"
+        FIRST_DNS_SERVER = "10.0.80.83"
+        SECOND_DNS_SERVER = "10.0.80.82"
         env = await setup_mesh_nodes(
             exit_stack,
             [
@@ -673,7 +673,7 @@ async def test_dns_aaaa_records() -> None:
         connection_alpha, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
 
-        await client_alpha.enable_magic_dns(["1.1.1.1"])
+        await client_alpha.enable_magic_dns(["10.0.80.82"])
 
         await query_dns(connection_alpha, "beta.nord", beta.ip_addresses)
 

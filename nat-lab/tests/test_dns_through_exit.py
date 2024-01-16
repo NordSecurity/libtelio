@@ -18,7 +18,7 @@ from utils.router import IPStack
     "alpha_info",
     [
         pytest.param(
-            (IPStack.IPv4, ["1.1.1.1"]),
+            (IPStack.IPv4, ["10.0.80.82"]),
             marks=pytest.mark.ipv4,
         ),
         # We're not tesing IPv6 here, cause we do not have IPv6 connectivity on exit-node
@@ -27,7 +27,7 @@ from utils.router import IPStack
         #     marks=pytest.mark.ipv6,
         # ),
         pytest.param(
-            (IPStack.IPv4v6, ["1.1.1.1", "2606:4700:4700::1111"]),
+            (IPStack.IPv4v6, ["10.0.80.82", "2001:db8:85a4::adda:edde:7"]),
             marks=pytest.mark.ipv4v6,
         ),
     ],
@@ -36,7 +36,7 @@ from utils.router import IPStack
     "exit_info",
     [
         pytest.param(
-            (IPStack.IPv4, ["8.8.8.8"]),
+            (IPStack.IPv4, ["10.0.80.83"]),
             marks=pytest.mark.ipv4,
         ),
         # We're not tesing IPv6 here, cause we do not have IPv6 connectivity on exit-node
@@ -45,7 +45,7 @@ from utils.router import IPStack
         #     marks=pytest.mark.ipv6,
         # ),
         pytest.param(
-            (IPStack.IPv4v6, ["8.8.8.8", "2001:4860:4860::8888"]),
+            (IPStack.IPv4v6, ["10.0.80.83", "2001:db8:85a4::adda:edde:8"]),
             marks=pytest.mark.ipv4v6,
         ),
     ],
@@ -161,7 +161,7 @@ async def test_dns_through_exit(
                 client_exit.get_router().disable_path(addr)
             )
 
-        # blocking 1.1.1.1 and its ipv6 counterpart] to make sure requests go to 8.8.8.8
+        # blocking dns-server-1 and its ipv6 counterpart, to make sure requests go to dns-server-2
         await testing.wait_lengthy(
             asyncio.gather(*[disable_path(addr) for addr in alpha_info[1]])
         )
@@ -172,6 +172,7 @@ async def test_dns_through_exit(
             "google.com",
             dns_server=dns_server_address_local,
             expected_output=["Name:.*google.com.*Address"],
+            options="-timeout=5",
         )
         await client_alpha.disconnect_from_exit_node(exit_node.public_key)
 

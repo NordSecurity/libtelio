@@ -12,7 +12,7 @@ async def query_dns(
     dns_server: Optional[str] = None,
     options: Optional[str] = None,
 ) -> None:
-    response = await testing.wait_long(
+    response = await testing.wait_lengthy(
         connection.create_process(
             [
                 "nslookup",

@@ -487,6 +487,27 @@ services:
         ipv4_address: 10.0.80.81
         ipv6_address: 2001:db8:85a4::adda:edde:6
 
+  dns-server-1:
+    hostname: dns-server-1
+    image: nat-lab:base
+    entrypoint: /opt/bin/dns-server
+    environment:
+      PYTHONUNBUFFERED: 1
+    networks:
+      internet:
+        ipv4_address: 10.0.80.82
+        ipv6_address: 2001:db8:85a4::adda:edde:7
+  dns-server-2:
+    hostname: dns-server-2
+    image: nat-lab:base
+    entrypoint: /opt/bin/dns-server
+    environment:
+      PYTHONUNBUFFERED: 1
+    networks:
+      internet:
+        ipv4_address: 10.0.80.83
+        ipv6_address: 2001:db8:85a4::adda:edde:8
+
 
 networks:
   # Network representing public internet,
