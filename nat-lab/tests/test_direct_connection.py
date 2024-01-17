@@ -287,7 +287,6 @@ async def test_direct_failing_paths(setup_params: List[SetupParameters]) -> None
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4132")
 @pytest.mark.parametrize("setup_params, _reflexive_ip", UHP_WORKING_PATHS)
 async def test_direct_working_paths(
     setup_params: List[SetupParameters],
@@ -349,7 +348,6 @@ async def test_direct_working_paths_stun_ipv6() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4132")
 @pytest.mark.parametrize("setup_params, reflexive_ip", UHP_WORKING_PATHS)
 async def test_direct_short_connection_loss(
     setup_params: List[SetupParameters], reflexive_ip: str
@@ -437,7 +435,6 @@ async def test_direct_connection_loss_for_infinity(
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="test is flaky - LLT-4441")
 @pytest.mark.parametrize("setup_params, _reflexive_ip", UHP_WORKING_PATHS)
 async def test_direct_working_paths_with_skip_unresponsive_peers(
     setup_params: List[SetupParameters], _reflexive_ip: str
@@ -493,7 +490,6 @@ async def test_direct_working_paths_with_skip_unresponsive_peers(
 
 @pytest.mark.timeout(90)
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason="test is flaky - LLT-4115")
 @pytest.mark.parametrize(
     "setup_params",
     [
@@ -615,7 +611,6 @@ async def test_direct_connection_endpoint_gone(
 
 @pytest.mark.asyncio
 # Regression test for LLT-4306
-@pytest.mark.xfail(reason="Test is flaky - JIRA issue LLT-4555")
 @pytest.mark.parametrize(
     "setup_params",
     [

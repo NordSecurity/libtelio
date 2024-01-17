@@ -69,7 +69,6 @@ from utils.ping import Ping
             ),
             marks=[
                 pytest.mark.windows,
-                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
             ],
         ),
         pytest.param(
@@ -186,7 +185,6 @@ async def test_mesh_plus_vpn_one_peer(
             ),
             marks=[
                 pytest.mark.windows,
-                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
             ],
         ),
         pytest.param(
@@ -399,7 +397,6 @@ async def test_vpn_plus_mesh(
                 ),
                 features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
             ),
-            marks=pytest.mark.xfail(reason="Test is flaky - LLT-4665"),
         ),
         pytest.param(
             SetupParameters(
@@ -414,7 +411,6 @@ async def test_vpn_plus_mesh(
             ),
             marks=[
                 pytest.mark.linux_native,
-                pytest.mark.xfail(reason="Test is flaky - LLT-4665"),
             ],
         ),
         pytest.param(
@@ -430,7 +426,6 @@ async def test_vpn_plus_mesh(
             ),
             marks=[
                 pytest.mark.windows,
-                pytest.mark.xfail(reason="Test is flaky - LLT-4313"),
             ],
         ),
         pytest.param(
@@ -446,7 +441,6 @@ async def test_vpn_plus_mesh(
             ),
             marks=[
                 pytest.mark.windows,
-                pytest.mark.xfail(reason="Test is flaky - LLT-4313"),
             ],
         ),
         pytest.param(
@@ -462,7 +456,6 @@ async def test_vpn_plus_mesh(
             ),
             marks=[
                 pytest.mark.mac,
-                pytest.mark.xfail(reason="Test is flaky - LLT-4684"),
             ],
         ),
     ],
@@ -540,7 +533,6 @@ async def test_vpn_plus_mesh_over_direct(
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(150)
-@pytest.mark.xfail(reason="Test is flaky - JIRA issue LLT-4560")
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -595,7 +587,6 @@ async def test_vpn_plus_mesh_over_direct(
             ),
             marks=[
                 pytest.mark.windows,
-                pytest.mark.xfail(reason="test is flaky - LLT-4314"),
             ],
         ),
         pytest.param(
@@ -611,7 +602,6 @@ async def test_vpn_plus_mesh_over_direct(
             ),
             marks=[
                 pytest.mark.mac,
-                pytest.mark.xfail(reason="test is flaky - LLT-4116"),
             ],
         ),
     ],

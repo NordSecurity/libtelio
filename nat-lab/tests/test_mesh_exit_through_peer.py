@@ -221,7 +221,6 @@ async def test_mesh_exit_through_peer(
             telio.AdapterType.WindowsNativeWg,
             marks=[
                 pytest.mark.windows,
-                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
             ],
         ),
         pytest.param(
@@ -229,7 +228,6 @@ async def test_mesh_exit_through_peer(
             telio.AdapterType.WireguardGo,
             marks=[
                 pytest.mark.windows,
-                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
             ],
         ),
         pytest.param(

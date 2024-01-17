@@ -161,7 +161,6 @@ async def test_dns(
         ),
     ],
 )
-@pytest.mark.xfail(reason="Test is flaky - LLT-4656")
 async def test_dns_port(alpha_ip_stack: IPStack) -> None:
     async with AsyncExitStack() as exit_stack:
         dns_server_address_alpha = get_dns_server_address(alpha_ip_stack)
