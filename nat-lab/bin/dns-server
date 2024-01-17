@@ -1,0 +1,37 @@
+#!/bin/env python3
+
+from twisted.internet import defer, reactor
+from twisted.names import dns, server
+
+KNOWN = {
+    dns.AAAA: {
+        b"google.com": dns.Record_AAAA(address="2a00:1450:400e:80c::200e")
+    },
+    dns.A: {
+        b"google.com": dns.Record_A(address="142.250.179.206")
+    },
+    dns.CNAME: {
+        b"www.microsoft.com": dns.Record_CNAME(name="www.microsoft.com-c-3.edgekey.net.")
+    }
+}
+
+
+class DNSResolver:
+    def _reply(self, name, type, record):
+        print(f"Resolving name: {name} => {record}")
+        answer = dns.RRHeader(name=name, type=type, payload=record)
+        return [answer], [], []
+
+    def query(self, query, timeout=None):
+        print(f"query: {query}")
+        record = KNOWN[query.type][query.name.name]
+        return defer.succeed(self._reply(query.name.name, query.type, record))
+
+
+if __name__ == "__main__":
+    factory = server.DNSServerFactory(clients=[DNSResolver()])
+    protocol = dns.DNSDatagramProtocol(controller=factory)
+    reactor.listenUDP(53, protocol, interface='::')
+    reactor.listenTCP(53, factory, interface='::')
+    print(f"DNS server starting with known hostnames: {KNOWN}")
+    reactor.run()
