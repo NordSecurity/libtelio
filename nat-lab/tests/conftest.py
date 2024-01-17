@@ -1,5 +1,8 @@
 import asyncio
 import pytest
+from helpers import SetupParameters
+from typing import List, Tuple
+from utils.router import IPStack
 
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
@@ -38,3 +41,29 @@ def event_loop():
         finally:
             asyncio.events.set_event_loop(None)
             loop.close()
+
+
+def pytest_make_parametrize_id(config, val):
+    param_id = ""
+    if isinstance(val, (List, Tuple)):
+        for v in val:
+            res = pytest_make_parametrize_id(config, v)
+            if isinstance(res, str):
+                param_id += f"-{res}"
+        param_id = f"{param_id[1:]}"
+    elif isinstance(val, (SetupParameters,)):
+        param_id = f"{val.connection_tag.name }-{val.adapter_type}"
+        if val.features.direct is not None:
+            param_id += f"-{val.features.direct.providers}"
+    elif isinstance(val, IPStack):
+        if val == IPStack.IPv4:
+            param_id = "IPv4"
+        elif val == IPStack.IPv4v6:
+            param_id = "IPv4v6"
+        elif val == IPStack.IPv6:
+            param_id = "IPv6"
+    elif isinstance(val, str):
+        param_id = f"{val}"
+    else:
+        return None
+    return param_id
