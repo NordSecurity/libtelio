@@ -1,7 +1,9 @@
 import asyncio
 import pytest
 from helpers import SetupParameters
+from telio import AdapterType
 from typing import List, Tuple
+from utils.connection_util import ConnectionTag
 from utils.router import IPStack
 
 
@@ -48,13 +50,22 @@ def pytest_make_parametrize_id(config, val):
     if isinstance(val, (List, Tuple)):
         for v in val:
             res = pytest_make_parametrize_id(config, v)
-            if isinstance(res, str):
+            if isinstance(res, str) and res != "":
                 param_id += f"-{res}"
         param_id = f"{param_id[1:]}"
     elif isinstance(val, (SetupParameters,)):
-        param_id = f"{val.connection_tag.name }-{val.adapter_type}"
-        if val.features.direct is not None:
-            param_id += f"-{val.features.direct.providers}"
+        short_conn_tag_name = val.connection_tag.name.removeprefix("DOCKER_")
+        param_id = f"{short_conn_tag_name}-{val.adapter_type.name}"
+        if (
+            val.features.direct is not None
+            and val.features.direct.providers is not None
+        ):
+            for provider in val.features.direct.providers:
+                param_id += f"-{provider}"
+    elif isinstance(val, (ConnectionTag,)):
+        param_id = val.name.removeprefix("DOCKER_")
+    elif isinstance(val, (AdapterType,)):
+        param_id = val.name
     elif isinstance(val, IPStack):
         if val == IPStack.IPv4:
             param_id = "IPv4"
@@ -63,7 +74,10 @@ def pytest_make_parametrize_id(config, val):
         elif val == IPStack.IPv6:
             param_id = "IPv6"
     elif isinstance(val, str):
-        param_id = f"{val}"
+        if len(val) > 16:
+            param_id = f"{val[:14]}.."
+        else:
+            param_id = val
     else:
         return None
     return param_id

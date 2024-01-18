@@ -883,8 +883,18 @@ class Client:
             test_name = "".join(
                 [x if x.isalnum() else "_" for x in test_name.split(" ")[0]]
             )
+
+        filename = str(test_name) + "_" + container_id + ".log"
+        if len(filename.encode("utf-8")) > 256:
+            filename = f"{filename[:251]}.log"
+
+            i = 0
+            while os.path.exists(os.path.join(log_dir, filename)):
+                filename = f"{filename[:249]}_{i}.log"
+                i += 1
+
         with open(
-            os.path.join(log_dir, str(test_name) + "_" + container_id + ".log"),
+            os.path.join(log_dir, filename),
             "w",
             encoding="utf-8",
         ) as f:
