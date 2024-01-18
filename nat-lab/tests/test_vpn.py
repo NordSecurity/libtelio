@@ -80,7 +80,6 @@ async def _connect_vpn(
             "10.0.254.7",
             marks=[
                 pytest.mark.windows,
-                pytest.mark.xfail(reason="Test flaky: JIRA issue LLT-4554"),
             ],
         ),
         pytest.param(
@@ -97,7 +96,6 @@ async def _connect_vpn(
             "10.0.254.7",
             marks=[
                 pytest.mark.windows,
-                pytest.mark.xfail(reason="Test flaky: JIRA issue LLT-4554"),
             ],
         ),
         pytest.param(
@@ -114,7 +112,6 @@ async def _connect_vpn(
             "10.0.254.7",
             marks=[
                 pytest.mark.mac,
-                pytest.mark.xfail(reason="Test flaky: JIRA issue LLT-4682"),
             ],
         ),
     ],
@@ -195,7 +192,6 @@ async def test_vpn_connection(
             "10.0.254.7",
             marks=[
                 pytest.mark.windows,
-                pytest.mark.xfail(reason="Flaky: LLT-4674"),
             ],
         ),
         pytest.param(
@@ -213,7 +209,6 @@ async def test_vpn_connection(
             "10.0.254.7",
             marks=[
                 pytest.mark.windows,
-                pytest.mark.xfail(reason="Test flaky: JIRA issue LLT-4554"),
             ],
         ),
         pytest.param(

@@ -46,7 +46,6 @@ from utils.ping import Ping
             ),
             marks=[
                 pytest.mark.windows,
-                pytest.mark.xfail(reason="Test is flaky - LLT-4683"),
             ],
         ),
         pytest.param(
@@ -71,7 +70,6 @@ from utils.ping import Ping
             ),
             marks=[
                 pytest.mark.mac,
-                pytest.mark.xfail(reason="Test is flaky - LLT-4683"),
             ],
         ),
     ],

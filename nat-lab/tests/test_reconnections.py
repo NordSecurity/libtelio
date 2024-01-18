@@ -45,7 +45,6 @@ from utils.ping import Ping
             ),
             marks=[
                 pytest.mark.windows,
-                pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4593"),
             ],
         ),
         pytest.param(
@@ -59,7 +58,6 @@ from utils.ping import Ping
             ),
             marks=[
                 pytest.mark.windows,
-                pytest.mark.xfail(reason="test flaky - JIRA issue: LLT-4593"),
             ],
         ),
         pytest.param(

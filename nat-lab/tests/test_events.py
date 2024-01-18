@@ -211,7 +211,6 @@ async def test_event_content_meshnet(
             "10.0.254.7",
             marks=[
                 pytest.mark.windows,
-                pytest.mark.xfail(reason="Test is flaky - LLT-4522"),
             ],
         ),
         pytest.param(
@@ -228,7 +227,6 @@ async def test_event_content_meshnet(
             "10.0.254.7",
             marks=[
                 pytest.mark.windows,
-                pytest.mark.xfail(reason="Test is flaky - LLT-4522"),
             ],
         ),
         pytest.param(
@@ -474,7 +472,6 @@ async def test_event_content_exit_through_peer(
                 features=TelioFeatures(direct=Direct(providers=["stun"])),
             ),
             "10.0.254.1",
-            marks=pytest.mark.xfail(reason="Test is flaky - JIRA issue LLT-4686"),
         ),
         pytest.param(
             SetupParameters(

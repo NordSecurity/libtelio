@@ -91,7 +91,6 @@ async def test_network_switcher(
             ),
             marks=[
                 pytest.mark.windows,
-                pytest.mark.xfail(reason="Test is flaky - LLT-4357"),
             ],
         ),
         pytest.param(
@@ -180,7 +179,6 @@ async def test_mesh_network_switch(
             ),
             marks=[
                 pytest.mark.mac,
-                pytest.mark.xfail(reason="Test is flaky - LLT-4696"),
             ],
         ),
     ],
@@ -234,9 +232,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
                 adapter_type=telio.AdapterType.BoringTun,
                 features=TelioFeatures(direct=Direct(providers=["stun"])),
             ),
-            marks=[
-                pytest.mark.xfail(reason="Flaky: LLT-4677"),
-            ],
+            marks=[],
         ),
         pytest.param(
             SetupParameters(
@@ -254,7 +250,6 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
             ),
             marks=[
                 pytest.mark.windows,
-                pytest.mark.xfail(reason="Flaky: LLT-4673"),
             ],
         ),
         pytest.param(
@@ -273,7 +268,6 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
             ),
             marks=[
                 pytest.mark.mac,
-                pytest.mark.xfail(reason="Flaky: LLT-4600"),
             ],
         ),
     ],
