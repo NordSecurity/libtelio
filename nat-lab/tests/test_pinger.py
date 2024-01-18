@@ -48,12 +48,18 @@ async def send_ping_pong(ping_type) -> None:
 
 
 @pytest.mark.asyncio
-async def test_ping_pong() -> None:
+@pytest.mark.parametrize(
+    "node_params",
+    [
+        pytest.param(
+            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1)
+        ),
+        pytest.param(SetupParameters(connection_tag=ConnectionTag.MAC_VM)),
+    ],
+)
+async def test_ping_pong(node_params: SetupParameters) -> None:
     async with AsyncExitStack() as exit_stack:
-        env = await setup_mesh_nodes(
-            exit_stack,
-            [SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1)],
-        )
+        env = await setup_mesh_nodes(exit_stack, [node_params])
         client_alpha, *_ = env.clients
 
         pinger_event = client_alpha.wait_for_output("Pinger")
@@ -76,12 +82,18 @@ async def test_ping_pong() -> None:
 
 
 @pytest.mark.asyncio
-async def test_send_malform_pinger_packet() -> None:
+@pytest.mark.parametrize(
+    "node_params",
+    [
+        pytest.param(
+            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1)
+        ),
+        pytest.param(SetupParameters(connection_tag=ConnectionTag.MAC_VM)),
+    ],
+)
+async def test_send_malform_pinger_packet(node_params: SetupParameters) -> None:
     async with AsyncExitStack() as exit_stack:
-        env = await setup_mesh_nodes(
-            exit_stack,
-            [SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1)],
-        )
+        env = await setup_mesh_nodes(exit_stack, [node_params])
         client_alpha, *_ = env.clients
 
         unexpected_packet_event = client_alpha.wait_for_output("Unexpected packet: ")
