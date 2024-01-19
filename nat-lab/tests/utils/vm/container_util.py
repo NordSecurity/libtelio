@@ -26,7 +26,9 @@ async def _reset(connection: Connection) -> None:
 
 @asynccontextmanager
 async def get(docker: Docker, container_name: str) -> AsyncIterator[DockerConnection]:
-    connection = DockerConnection(await docker.containers.get(container_name))
+    connection = DockerConnection(
+        await docker.containers.get(container_name), container_name
+    )
     try:
         await _prepare(connection)
         yield connection
