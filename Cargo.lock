@@ -4229,6 +4229,7 @@ dependencies = [
  "telio-utils",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

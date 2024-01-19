@@ -13,3 +13,11 @@ pnet_packet.workspace = true
 tracing.workspace = true
 
 telio-utils.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["net", "macros", "rt"] }
+tracing-subscriber.workspace = true
+
+[[example]]
+name = "probe-pmtu"
+
