@@ -1,8 +1,8 @@
 from .connection import Connection, TargetOS
 from aiodocker.containers import DockerContainer
+from datetime import datetime
 from typing import List
 from utils.process import Process, DockerProcess
-from datetime import datetime
 
 
 class DockerConnection(Connection):

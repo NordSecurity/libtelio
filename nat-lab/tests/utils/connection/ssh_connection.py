@@ -1,10 +1,10 @@
 import asyncssh
 import shlex
 from .connection import Connection, TargetOS
+from datetime import datetime
 from typing import List
 from utils import cmd_exe_escape
 from utils.process import Process, SshProcess
-from datetime import datetime
 
 
 class SshConnection(Connection):
