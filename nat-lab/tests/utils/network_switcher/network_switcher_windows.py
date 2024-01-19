@@ -2,7 +2,7 @@ import config
 import re
 from .network_switcher import NetworkSwitcher
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 from utils.connection import Connection
 from utils.process import ProcessExecError
 
@@ -32,7 +32,7 @@ class Interface:
 
 
 class ConfiguredInterfaces:
-    def __init__(self, default: str, primary: str, secondary: str) -> None:
+    def __init__(self, default: Optional[str], primary: str, secondary: str) -> None:
         self.default = default
         self.primary = primary
         self.secondary = secondary
@@ -41,17 +41,20 @@ class ConfiguredInterfaces:
     async def create(connection: Connection) -> "ConfiguredInterfaces":
         interfaces = await Interface.get_network_interfaces(connection)
 
-        def find_interface(prefix: str) -> str:
+        def find_interface(prefix: str) -> Optional[str]:
             for interface in interfaces:
                 if interface.ipv4.startswith(prefix):
                     return interface.name
-            assert False, f"interface not found with prefix `{prefix}`, {interfaces}"
+            return None
 
-        return ConfiguredInterfaces(
-            find_interface(config.LIBVIRT_MANAGEMENT_NETWORK_PREFIX),
-            find_interface(config.PRIMARY_VM_NETWORK_PREFIX),
-            find_interface(config.SECONDARY_VM_NETWORK_PREFIX),
-        )
+        # Allow management interface to be shut down
+        management_itf = find_interface((config.LIBVIRT_MANAGEMENT_NETWORK_PREFIX))
+        primary_itf = find_interface(config.PRIMARY_VM_NETWORK_PREFIX)
+        secondary_itf = find_interface(config.SECONDARY_VM_NETWORK_PREFIX)
+        assert primary_itf is not None
+        assert secondary_itf is not None
+
+        return ConfiguredInterfaces(management_itf, primary_itf, secondary_itf)
 
 
 class NetworkSwitcherWindows(NetworkSwitcher):
@@ -104,7 +107,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
         # it possible to have multiple default routes at the same time: first default route
         # for LAN network, and second default route for VPN network.
 
-        await self._delete_route(self._interfaces.default)
+        await self._disable_management_interface()
         await self._delete_route(self._interfaces.primary)
         await self._delete_route(self._interfaces.secondary)
 
@@ -131,3 +134,16 @@ class NetworkSwitcherWindows(NetworkSwitcher):
                 pass
             else:
                 raise exception
+
+    async def _disable_management_interface(self) -> None:
+        if self._interfaces.default is not None:
+            await self._connection.create_process(
+                [
+                    "netsh",
+                    "interface",
+                    "set",
+                    "interface",
+                    self._interfaces.default,
+                    "disable",
+                ]
+            ).execute()
