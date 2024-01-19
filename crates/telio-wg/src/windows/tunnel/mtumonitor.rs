@@ -135,18 +135,14 @@ impl MtuMonitor {
         );
 
         let self_ptr = CallerContext as *mut MtuMonitor;
-        if (*self_ptr).route_cb_handle.clone().lock().is_ok() {
-            if 0 == (*Row).DestinationPrefix.PrefixLength {
-                // Result can be ignored
-                match (*self_ptr).do_it() {
-                    Ok(_) => {}
-                    Err(err) => {
-                        telio_log_trace!("MtuMonitor::do_it returned error {}", err);
-                    }
+        if 0 == (*Row).DestinationPrefix.PrefixLength {
+            // Result can be ignored
+            match (*self_ptr).do_it() {
+                Ok(_) => {}
+                Err(err) => {
+                    telio_log_trace!("MtuMonitor::do_it returned error {}", err);
                 }
             }
-        } else {
-            telio_log_error!("error obtaining lock");
         }
 
         telio_log_trace!(
@@ -171,18 +167,14 @@ impl MtuMonitor {
         );
 
         let self_ptr = CallerContext as *mut MtuMonitor;
-        if (*self_ptr).iface_cb_handle.clone().lock().is_ok() {
-            if NotificationType == MibParameterNotification {
-                // Result can be ignored
-                match (*self_ptr).do_it() {
-                    Ok(_) => {}
-                    Err(err) => {
-                        telio_log_trace!("MtuMonitor::do_it returned error {}", err);
-                    }
+        if NotificationType == MibParameterNotification {
+            // Result can be ignored
+            match (*self_ptr).do_it() {
+                Ok(_) => {}
+                Err(err) => {
+                    telio_log_trace!("MtuMonitor::do_it returned error {}", err);
                 }
             }
-        } else {
-            telio_log_error!("error obtaining lock");
         }
 
         telio_log_trace!(

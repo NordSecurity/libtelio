@@ -340,13 +340,9 @@ impl InterfaceWatcher {
         );
 
         let self_ptr = CallerContext as *mut InterfaceWatcher;
-        if (*self_ptr).iface_cb_handle.clone().lock().is_ok() {
-            if NotificationType == MibAddInstance {
-                (*self_ptr).mib_add_instance(Row);
-            };
-        } else {
-            telio_log_error!("error obtaining lock");
-        }
+        if NotificationType == MibAddInstance {
+            (*self_ptr).mib_add_instance(Row);
+        };
 
         telio_log_trace!(
             "--- InterfaceWatcher::interface_change_callback: CallerContext {:p}, Row {:p}, NotificationType {}",
