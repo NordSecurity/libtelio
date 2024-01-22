@@ -8,10 +8,9 @@ from config import LIBTELIO_DNS_IPV4, LIBTELIO_DNS_IPV6
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_api, setup_environment, setup_mesh_nodes
 from telio import AdapterType, TelioFeatures
-from utils import testing
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import ConnectionTag, generate_connection_tracker_config
-from utils.dns import query_dns
+from utils.dns import query_dns, query_dns_port
 from utils.process import ProcessExecError
 from utils.router import IPStack
 
@@ -190,55 +189,51 @@ async def test_dns_port(alpha_ip_stack: IPStack) -> None:
         connection_alpha, _ = [conn.connection for conn in env.connections]
 
         # These call should timeout without returning anything
-        with pytest.raises(asyncio.TimeoutError):
-            await testing.wait_normal(
-                connection_alpha.create_process(
-                    ["dig", "@" + dns_server_address_alpha, "-p", "53", "google.com"]
-                ).execute()
+        with pytest.raises(ProcessExecError):
+            await query_dns_port(
+                connection_alpha,
+                "53",
+                "www.google.com",
+                dns_server_address_alpha,
             )
 
         await client_alpha.enable_magic_dns(["10.0.80.82"])
         await client_beta.enable_magic_dns(["10.0.80.82"])
 
         # A DNS request on port 53 should work
-        await testing.wait_normal(
-            connection_alpha.create_process(
-                ["dig", "@" + dns_server_address_alpha, "-p", "53", "google.com"]
-            ).execute()
+        await query_dns_port(
+            connection_alpha,
+            "53",
+            "www.google.com",
+            dns_server_address_alpha,
         )
 
         # A DNS request on a different port should timeout
-        with pytest.raises(asyncio.TimeoutError):
-            await testing.wait_normal(
-                connection_alpha.create_process(
-                    ["dig", "@" + dns_server_address_alpha, "-p", "54", "google.com"]
-                ).execute()
+        with pytest.raises(ProcessExecError):
+            await query_dns_port(
+                connection_alpha,
+                "54",
+                "www.google.com",
+                dns_server_address_alpha,
             )
 
         # Look for beta on 53 port should work
-        alpha_response = await testing.wait_normal(
-            connection_alpha.create_process(
-                [
-                    "dig",
-                    "@" + dns_server_address_alpha,
-                    "-p",
-                    "53",
-                    "beta.nord",
-                    "A",
-                    "beta.nord",
-                    "AAAA",
-                ]
-            ).execute()
+        await query_dns_port(
+            connection_alpha,
+            "53",
+            "beta.nord",
+            dns_server_address_alpha,
+            beta.ip_addresses,
+            extra_host_options=["A", "beta.nord", "AAAA"],
         )
-        for ip in beta.ip_addresses:
-            assert ip in alpha_response.get_stdout()
 
         # Look for beta on a different port should timeout
-        with pytest.raises(asyncio.TimeoutError):
-            await testing.wait_normal(
-                connection_alpha.create_process(
-                    ["dig", "@" + dns_server_address_alpha, "-p", "54", "beta.nord"]
-                ).execute()
+        with pytest.raises(ProcessExecError):
+            await query_dns_port(
+                connection_alpha,
+                "54",
+                "beta.nord",
+                dns_server_address_alpha,
             )
 
         # Disable magic dns
@@ -246,18 +241,20 @@ async def test_dns_port(alpha_ip_stack: IPStack) -> None:
         await client_beta.disable_magic_dns()
 
         # And as a result these calls should timeout again
-        with pytest.raises(asyncio.TimeoutError):
-            await testing.wait_normal(
-                connection_alpha.create_process(
-                    ["dig", "@" + dns_server_address_alpha, "-p", "53", "google.com"]
-                ).execute()
+        with pytest.raises(ProcessExecError):
+            await query_dns_port(
+                connection_alpha,
+                "53",
+                "google.com",
+                dns_server_address_alpha,
             )
 
-        with pytest.raises(asyncio.TimeoutError):
-            await testing.wait_normal(
-                connection_alpha.create_process(
-                    ["dig", "@" + dns_server_address_alpha, "-p", "53", "beta.nord"]
-                ).execute()
+        with pytest.raises(ProcessExecError):
+            await query_dns_port(
+                connection_alpha,
+                "53",
+                "beta.nord",
+                dns_server_address_alpha,
             )
 
 
