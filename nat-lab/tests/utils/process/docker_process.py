@@ -1,5 +1,7 @@
 import asyncio
-import os
+import random
+import string
+import subprocess
 import sys
 from .process import Process, ProcessExecError, StreamCallback
 from aiodocker.containers import DockerContainer
@@ -20,6 +22,9 @@ class DockerProcess(Process):
     _is_done: asyncio.Event
     _stream: Optional[Stream]
     _execute: Optional[Exec]
+    _kill_id: (
+        str  # Private ID added to find the process easily when it needs to be killed
+    )
 
     def __init__(self, container: DockerContainer, command: List[str]) -> None:
         self._container = container
@@ -30,6 +35,9 @@ class DockerProcess(Process):
         self._is_done = asyncio.Event()
         self._stream = None
         self._execute = None
+        self._kill_id = "".join(
+            random.choices(string.ascii_uppercase + string.digits, k=12)
+        )
 
     async def execute(
         self,
@@ -37,7 +45,9 @@ class DockerProcess(Process):
         stderr_callback: Optional[StreamCallback] = None,
     ) -> "DockerProcess":
         self._execute = await self._container.exec(
-            self._command, stdin=True, environment={"RUST_BACKTRACE": "full"}
+            self._command,
+            stdin=True,
+            environment={"RUST_BACKTRACE": "full", "KILL_ID": self._kill_id},
         )
         if self._execute is None:
             return self
@@ -90,7 +100,16 @@ class DockerProcess(Process):
                         inspect = await self._execute.inspect()
                         await asyncio.sleep(0.01)
                     if inspect["ExitCode"] is None:
-                        os.system(f"sudo kill -9 {inspect['Pid']}")
+                        subprocess.run(
+                            [
+                                "docker",
+                                "exec",
+                                "--privileged",
+                                self._container.id,
+                                "/opt/bin/kill_process_by_natlab_id",
+                                self._kill_id,
+                            ]
+                        )
 
     async def _read_loop(
         self,
