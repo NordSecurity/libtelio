@@ -102,13 +102,16 @@ jobs:
       steps:
         - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
         - run: pip3 install -r ./requirements.txt
-        - run: pip3 install -r ./nat-lab/requirements.txt
+        - run: pipenv install --system
+          working-directory: nat-lab
         - run: pylint -f colorized .
           working-directory: nat-lab
   natlab-typecheck:
       runs-on: ubuntu-22.04
       steps:
         - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
-        - run: pip3 install -r ./nat-lab/requirements.txt
+        - run: pip3 install -r ./requirements.txt
+        - run: pipenv install --system
+          working-directory: nat-lab
         - run: mypy .
           working-directory: nat-lab

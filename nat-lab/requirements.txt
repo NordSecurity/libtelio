@@ -1,44 +1,41 @@
-# primary dependency lock:
+-i https://pypi.org/simple
 aiodocker==0.21.0; python_version >= '3.6'
-mypy==1.4.1; python_version >= '3.7'
-pytest==7.4.3; python_version >= '3.7'
-pytest-asyncio==0.23.2; python_version >= '3.8'
-pytest-html==3.2.0; python_version >= '3.6'
-asyncssh==2.14.1; python_version >= '3.6'
-pytest-rerunfailures==10.3; python_version >= '3.6'
-dataclasses-json==0.5.14; python_version < '3.13' and python_version >= '3.7'
-pytest-order==1.0.1; python_version >= '3.6'
-pytest-timeout==2.1.0; python_version >= '3.6'
-flatten-json==0.1.14
-python-wireguard==0.2.2
-cryptography==41.0.7; python_version >= '3.7' # Force latest (as of now) stable version to fix CVEs.
-pipenv==2023.11.15
-
-
-# transitive dependency lock:
-aiohttp==3.8.6; python_version >= '3.6'
+aiohttp==3.9.1; python_version >= '3.8'
 aiosignal==1.3.1; python_version >= '3.7'
 async-timeout==4.0.3; python_version >= '3.7'
-attrs==23.1.0; python_version >= '3.7'
+asyncssh>=2.14.2; python_version >= '3.6'
+attrs==23.2.0; python_version >= '3.7'
 cffi==1.16.0; python_version >= '3.8'
 charset-normalizer==3.3.2; python_full_version >= '3.7.0'
-exceptiongroup==1.2.0; python_version < '3.11'
-frozenlist==1.4.0; python_version >= '3.8'
+cryptography==41.0.7; python_version >= '3.7'
+dataclasses-json==0.6.3; python_version >= '3.7' and python_version < '4.0'
+exceptiongroup==1.2.0; python_version >= '3.7'
+flatten-json==0.1.14
+frozenlist==1.4.1; python_version >= '3.8'
 idna==3.6; python_version >= '3.5'
 iniconfig==2.0.0; python_version >= '3.7'
-marshmallow==3.20.1; python_version >= '3.8'
+jinja2==3.1.3; python_version >= '3.7'
+markupsafe==2.1.3; python_version >= '3.7'
+marshmallow==3.20.2; python_version >= '3.8'
 multidict==6.0.4; python_version >= '3.7'
+mypy==1.8.0; python_version >= '3.8'
 mypy-extensions==1.0.0; python_version >= '3.5'
 packaging==23.2; python_version >= '3.7'
 pluggy==1.3.0; python_version >= '3.8'
-protobuf==3.20.3; python_version >= '3.7' # Must match libprotoc version used to generate proto files
+protobuf==3.20.3; python_version >= '3.7'
 py==1.11.0; python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2, 3.3, 3.4'
 pycparser==2.21
+pytest==7.4.4; python_version >= '3.7'
+pytest-asyncio==0.23.3; python_version >= '3.8'
+pytest-html==4.1.1; python_version >= '3.8'
 pytest-metadata==3.0.0; python_version >= '3.7'
-pytest-order==1.0.1; python_version >= '3.6'
-six==1.16.0; python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2'
-tomli==2.0.1; python_version < '3.11'
-types-protobuf==3.19.21 # Latest version compatible with protobuf 3.20.3
+pytest-order==1.2.0; python_version >= '3.6'
+pytest-rerunfailures==13.0; python_version >= '3.7'
+pytest-timeout==2.2.0; python_version >= '3.7'
+python-wireguard==0.2.2
+six==1.16.0; python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2, 3.3'
+tomli==2.0.1; python_version >= '3.7'
+types-protobuf==3.19.21; python_version >= '3.7'
 typing-extensions==4.9.0; python_version >= '3.8'
 typing-inspect==0.9.0
 yarl==1.9.4; python_version >= '3.7'
