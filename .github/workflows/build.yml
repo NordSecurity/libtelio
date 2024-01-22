@@ -65,7 +65,7 @@ jobs:
     container: |-
       ${{ matrix.target_os == 'linux' && 'ghcr.io/nordsecurity/build-linux-rust1.72.1:v0.0.2' ||
           matrix.target_os == 'android' && 'ghcr.io/nordsecurity/build-android-rust1.72.1:v0.0.2' ||
-          'ghcr.io/nordsecurity/build-windows-rust1.72.1:v0.0.2' }}
+          'ghcr.io/nordsecurity/build-windows-rust1.72.1:v0.0.3' }}
     steps:
       - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
         with:

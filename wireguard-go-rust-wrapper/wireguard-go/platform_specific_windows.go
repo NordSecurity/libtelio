@@ -86,7 +86,7 @@ func (b Binder) Open(port uint16) (fns []conn.ReceiveFunc, actualPort uint16, er
 	return recv_fns, actual_port, err
 }
 
-func (b Binder) Send(buf []byte, ep conn.Endpoint) error {
+func (b Binder) Send(buf [][]byte, ep conn.Endpoint) error {
 	if ep.DstIP().IsLoopback() {
 		return b.local_bind.Send(buf, ep)
 	}
@@ -100,5 +100,9 @@ func (b Binder) Close() error {
 }
 
 func PlatformSpecific_GetBind(watcher *interfaceWatcher) conn.Bind {
-	return &Binder{NewDefaultBind().(FullBind), NewDefaultBind(), watcher}
+	return &Binder{
+		NewDefaultBind().(FullBind),
+		NewDefaultBind(),
+		watcher,
+	}
 }

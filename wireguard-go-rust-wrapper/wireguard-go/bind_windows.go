@@ -1,11 +1,10 @@
 /* SPDX-License-Identifier: MIT
  *
- * Copyright (C) 2017-2021 WireGuard LLC. All Rights Reserved.
+ * Copyright (C) 2017-2023 WireGuard LLC. All Rights Reserved.
  */
 
 /*
- * Original file from: https://git.zx2c4.com/wireguard-go  tag: 0.0.20211016
- * https://git.zx2c4.com/wireguard-go/tree/conn/bind_windows.go?h=0.0.20211016&id=f87e87af0d9a2d41e79770cf1422f01f7e8b303d
+ * Based on https://git.zx2c4.com/wireguard-go/plain/conn/bind_windows.go?id=12269c2761734b15625017d8565745096325392f
  */
 
 package main
@@ -14,6 +13,7 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"net/netip"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -79,14 +79,13 @@ type afWinRingBind struct {
 type WinRingBind struct {
 	v4, v6 afWinRingBind
 	mu     sync.RWMutex
-	isOpen uint32
+	isOpen atomic.Uint32 // 0, 1, or 2
 }
 
 func NewDefaultBind() FullBind { return NewWinRingBind() }
 
 func NewWinRingBind() FullBind {
 	if !winrio.Initialize() {
-		warningf("Failed to initialize winrio. Falling back to StdNetBind implementation.")
 		return NewStdNetBind()
 	}
 	return new(WinRingBind)
@@ -97,8 +96,10 @@ type WinRingEndpoint struct {
 	data   [30]byte
 }
 
-var _ conn.Bind = (*WinRingBind)(nil)
-var _ conn.Endpoint = (*WinRingEndpoint)(nil)
+var (
+	_ conn.Bind     = (*WinRingBind)(nil)
+	_ conn.Endpoint = (*WinRingEndpoint)(nil)
+)
 
 func (*WinRingBind) ParseEndpoint(s string) (conn.Endpoint, error) {
 	host, port, err := net.SplitHostPort(s)
@@ -135,18 +136,18 @@ func (*WinRingBind) ParseEndpoint(s string) (conn.Endpoint, error) {
 
 func (*WinRingEndpoint) ClearSrc() {}
 
-func (e *WinRingEndpoint) DstIP() net.IP {
+func (e *WinRingEndpoint) DstIP() netip.Addr {
 	switch e.family {
 	case windows.AF_INET:
-		return append([]byte{}, e.data[2:6]...)
+		return netip.AddrFrom4(*(*[4]byte)(e.data[2:6]))
 	case windows.AF_INET6:
-		return append([]byte{}, e.data[6:22]...)
+		return netip.AddrFrom16(*(*[16]byte)(e.data[6:22]))
 	}
-	return nil
+	return netip.Addr{}
 }
 
-func (e *WinRingEndpoint) SrcIP() net.IP {
-	return nil // not supported
+func (e *WinRingEndpoint) SrcIP() netip.Addr {
+	return netip.Addr{} // not supported
 }
 
 func (e *WinRingEndpoint) DstToBytes() []byte {
@@ -168,15 +169,13 @@ func (e *WinRingEndpoint) DstToBytes() []byte {
 func (e *WinRingEndpoint) DstToString() string {
 	switch e.family {
 	case windows.AF_INET:
-		addr := net.UDPAddr{IP: e.data[2:6], Port: int(binary.BigEndian.Uint16(e.data[0:2]))}
-		return addr.String()
+		return netip.AddrPortFrom(netip.AddrFrom4(*(*[4]byte)(e.data[2:6])), binary.BigEndian.Uint16(e.data[0:2])).String()
 	case windows.AF_INET6:
 		var zone string
 		if scope := *(*uint32)(unsafe.Pointer(&e.data[22])); scope > 0 {
 			zone = strconv.FormatUint(uint64(scope), 10)
 		}
-		addr := net.UDPAddr{IP: e.data[6:22], Zone: zone, Port: int(binary.BigEndian.Uint16(e.data[0:2]))}
-		return addr.String()
+		return netip.AddrPortFrom(netip.AddrFrom16(*(*[16]byte)(e.data[6:22])).WithZone(zone), binary.BigEndian.Uint16(e.data[0:2])).String()
 	}
 	return ""
 }
@@ -218,7 +217,7 @@ func (bind *afWinRingBind) CloseAndZero() {
 }
 
 func (bind *WinRingBind) closeAndZero() {
-	atomic.StoreUint32(&bind.isOpen, 0)
+	bind.isOpen.Store(0)
 	bind.v4.CloseAndZero()
 	bind.v6.CloseAndZero()
 }
@@ -274,7 +273,7 @@ func (bind *afWinRingBind) Open(family int32, sa windows.Sockaddr) (windows.Sock
 	return sa, nil
 }
 
-func (bind *WinRingBind) OpenOnAddr(ipv4addr [4]byte, ipv6addr [16]byte, port uint16) (recvFns []conn.ReceiveFunc, selectedPort uint16, err error) {
+func (bind *WinRingBind) Open(port uint16) (recvFns []conn.ReceiveFunc, selectedPort uint16, err error) {
 	bind.mu.Lock()
 	defer bind.mu.Unlock()
 	defer func() {
@@ -282,15 +281,15 @@ func (bind *WinRingBind) OpenOnAddr(ipv4addr [4]byte, ipv6addr [16]byte, port ui
 			bind.closeAndZero()
 		}
 	}()
-	if atomic.LoadUint32(&bind.isOpen) != 0 {
+	if bind.isOpen.Load() != 0 {
 		return nil, 0, conn.ErrBindAlreadyOpen
 	}
 	var sa windows.Sockaddr
-	sa, err = bind.v4.Open(windows.AF_INET, &windows.SockaddrInet4{Addr: ipv4addr, Port: int(port)})
+	sa, err = bind.v4.Open(windows.AF_INET, &windows.SockaddrInet4{Port: int(port)})
 	if err != nil {
 		return nil, 0, err
 	}
-	sa, err = bind.v6.Open(windows.AF_INET6, &windows.SockaddrInet6{Addr: ipv6addr, Port: sa.(*windows.SockaddrInet4).Port})
+	sa, err = bind.v6.Open(windows.AF_INET6, &windows.SockaddrInet6{Port: sa.(*windows.SockaddrInet4).Port})
 	if err != nil {
 		return nil, 0, err
 	}
@@ -305,25 +304,17 @@ func (bind *WinRingBind) OpenOnAddr(ipv4addr [4]byte, ipv6addr [16]byte, port ui
 			return nil, 0, err
 		}
 	}
-	atomic.StoreUint32(&bind.isOpen, 1)
+	bind.isOpen.Store(1)
 	return []conn.ReceiveFunc{bind.receiveIPv4, bind.receiveIPv6}, selectedPort, err
-}
-
-func (bind *WinRingBind) OpenOnLocalhost(port uint16) (recvFns []conn.ReceiveFunc, selectedPort uint16, err error) {
-	return bind.OpenOnAddr([4]byte{127, 0, 0, 1}, [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, port)
-}
-
-func (bind *WinRingBind) Open(port uint16) (recvFns []conn.ReceiveFunc, selectedPort uint16, err error) {
-	return bind.OpenOnAddr([4]byte{}, [16]byte{}, port)
 }
 
 func (bind *WinRingBind) Close() error {
 	bind.mu.RLock()
-	if atomic.LoadUint32(&bind.isOpen) != 1 {
+	if bind.isOpen.Load() != 1 {
 		bind.mu.RUnlock()
 		return nil
 	}
-	atomic.StoreUint32(&bind.isOpen, 2)
+	bind.isOpen.Store(2)
 	windows.PostQueuedCompletionStatus(bind.v4.rx.iocp, 0, 0, nil)
 	windows.PostQueuedCompletionStatus(bind.v4.tx.iocp, 0, 0, nil)
 	windows.PostQueuedCompletionStatus(bind.v6.rx.iocp, 0, 0, nil)
@@ -333,6 +324,13 @@ func (bind *WinRingBind) Close() error {
 	defer bind.mu.Unlock()
 	bind.closeAndZero()
 	return nil
+}
+
+// TODO: When all Binds handle IdealBatchSize, remove this dynamic function and
+// rename the IdealBatchSize constant to BatchSize.
+func (bind *WinRingBind) BatchSize() int {
+	// TODO: implement batching in and out of the ring
+	return 1
 }
 
 func (bind *WinRingBind) SetMark(mark uint32) error {
@@ -359,8 +357,8 @@ func (bind *afWinRingBind) InsertReceiveRequest() error {
 //go:linkname procyield runtime.procyield
 func procyield(cycles uint32)
 
-func (bind *afWinRingBind) Receive(buf []byte, isOpen *uint32) (int, conn.Endpoint, error) {
-	if atomic.LoadUint32(isOpen) != 1 {
+func (bind *afWinRingBind) Receive(buf []byte, isOpen *atomic.Uint32) (int, conn.Endpoint, error) {
+	if isOpen.Load() != 1 {
 		return 0, nil, net.ErrClosed
 	}
 	bind.rx.mu.Lock()
@@ -373,7 +371,7 @@ retry:
 	count = 0
 	for tries := 0; count == 0 && tries < receiveSpins; tries++ {
 		if tries > 0 {
-			if atomic.LoadUint32(isOpen) != 1 {
+			if isOpen.Load() != 1 {
 				return 0, nil, net.ErrClosed
 			}
 			procyield(1)
@@ -392,13 +390,12 @@ retry:
 		if err != nil {
 			return 0, nil, err
 		}
-		if atomic.LoadUint32(isOpen) != 1 {
+		if isOpen.Load() != 1 {
 			return 0, nil, net.ErrClosed
 		}
 		count = winrio.DequeueCompletion(bind.rx.cq, results[:])
 		if count == 0 {
 			return 0, nil, io.ErrNoProgress
-
 		}
 	}
 	bind.rx.Return(1)
@@ -410,7 +407,7 @@ retry:
 	// huge packets. Just try again when this happens. The infinite loop this could cause is still limited to
 	// attacker bandwidth, just like the rest of the receive path.
 	if windows.Errno(results[0].Status) == windows.WSAEMSGSIZE {
-		if atomic.LoadUint32(isOpen) != 1 {
+		if isOpen.Load() != 1 {
 			return 0, nil, net.ErrClosed
 		}
 		goto retry
@@ -424,20 +421,26 @@ retry:
 	return n, &ep, nil
 }
 
-func (bind *WinRingBind) receiveIPv4(buf []byte) (int, conn.Endpoint, error) {
+func (bind *WinRingBind) receiveIPv4(bufs [][]byte, sizes []int, eps []conn.Endpoint) (int, error) {
 	bind.mu.RLock()
 	defer bind.mu.RUnlock()
-	return bind.v4.Receive(buf, &bind.isOpen)
+	n, ep, err := bind.v4.Receive(bufs[0], &bind.isOpen)
+	sizes[0] = n
+	eps[0] = ep
+	return 1, err
 }
 
-func (bind *WinRingBind) receiveIPv6(buf []byte) (int, conn.Endpoint, error) {
+func (bind *WinRingBind) receiveIPv6(bufs [][]byte, sizes []int, eps []conn.Endpoint) (int, error) {
 	bind.mu.RLock()
 	defer bind.mu.RUnlock()
-	return bind.v6.Receive(buf, &bind.isOpen)
+	n, ep, err := bind.v6.Receive(bufs[0], &bind.isOpen)
+	sizes[0] = n
+	eps[0] = ep
+	return 1, err
 }
 
-func (bind *afWinRingBind) Send(buf []byte, nend *WinRingEndpoint, isOpen *uint32) error {
-	if atomic.LoadUint32(isOpen) != 1 {
+func (bind *afWinRingBind) Send(buf []byte, nend *WinRingEndpoint, isOpen *atomic.Uint32) error {
+	if isOpen.Load() != 1 {
 		return net.ErrClosed
 	}
 	if len(buf) > bytesPerPacket {
@@ -459,7 +462,7 @@ func (bind *afWinRingBind) Send(buf []byte, nend *WinRingEndpoint, isOpen *uint3
 		if err != nil {
 			return err
 		}
-		if atomic.LoadUint32(isOpen) != 1 {
+		if isOpen.Load() != 1 {
 			return net.ErrClosed
 		}
 		count = winrio.DequeueCompletion(bind.tx.cq, results[:])
@@ -488,32 +491,38 @@ func (bind *afWinRingBind) Send(buf []byte, nend *WinRingEndpoint, isOpen *uint3
 	return winrio.SendEx(bind.rq, dataBuffer, 1, nil, addressBuffer, nil, nil, 0, 0)
 }
 
-func (bind *WinRingBind) Send(buf []byte, endpoint conn.Endpoint) error {
+func (bind *WinRingBind) Send(bufs [][]byte, endpoint conn.Endpoint) error {
 	nend, ok := endpoint.(*WinRingEndpoint)
 	if !ok {
 		return conn.ErrWrongEndpointType
 	}
 	bind.mu.RLock()
 	defer bind.mu.RUnlock()
-	switch nend.family {
-	case windows.AF_INET:
-		if bind.v4.blackhole {
-			return nil
+	for _, buf := range bufs {
+		switch nend.family {
+		case windows.AF_INET:
+			if bind.v4.blackhole {
+				continue
+			}
+			if err := bind.v4.Send(buf, nend, &bind.isOpen); err != nil {
+				return err
+			}
+		case windows.AF_INET6:
+			if bind.v6.blackhole {
+				continue
+			}
+			if err := bind.v6.Send(buf, nend, &bind.isOpen); err != nil {
+				return err
+			}
 		}
-		return bind.v4.Send(buf, nend, &bind.isOpen)
-	case windows.AF_INET6:
-		if bind.v6.blackhole {
-			return nil
-		}
-		return bind.v6.Send(buf, nend, &bind.isOpen)
 	}
 	return nil
 }
 
-func (bind *StdNetBind) BindSocketToInterface4(interfaceIndex uint32, blackhole bool) error {
-	bind.mu.Lock()
-	defer bind.mu.Unlock()
-	sysconn, err := bind.ipv4.SyscallConn()
+func (s *StdNetBind) BindSocketToInterface4(interfaceIndex uint32, blackhole bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sysconn, err := s.ipv4.SyscallConn()
 	if err != nil {
 		return err
 	}
@@ -526,14 +535,14 @@ func (bind *StdNetBind) BindSocketToInterface4(interfaceIndex uint32, blackhole 
 	if err != nil {
 		return err
 	}
-	bind.blackhole4 = blackhole
+	s.blackhole4 = blackhole
 	return nil
 }
 
-func (bind *StdNetBind) BindSocketToInterface6(interfaceIndex uint32, blackhole bool) error {
-	bind.mu.Lock()
-	defer bind.mu.Unlock()
-	sysconn, err := bind.ipv6.SyscallConn()
+func (s *StdNetBind) BindSocketToInterface6(interfaceIndex uint32, blackhole bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sysconn, err := s.ipv6.SyscallConn()
 	if err != nil {
 		return err
 	}
@@ -546,14 +555,14 @@ func (bind *StdNetBind) BindSocketToInterface6(interfaceIndex uint32, blackhole 
 	if err != nil {
 		return err
 	}
-	bind.blackhole6 = blackhole
+	s.blackhole6 = blackhole
 	return nil
 }
 
 func (bind *WinRingBind) BindSocketToInterface4(interfaceIndex uint32, blackhole bool) error {
 	bind.mu.RLock()
 	defer bind.mu.RUnlock()
-	if atomic.LoadUint32(&bind.isOpen) != 1 {
+	if bind.isOpen.Load() != 1 {
 		return net.ErrClosed
 	}
 	err := bindSocketToInterface4(bind.v4.sock, interfaceIndex)
@@ -567,7 +576,7 @@ func (bind *WinRingBind) BindSocketToInterface4(interfaceIndex uint32, blackhole
 func (bind *WinRingBind) BindSocketToInterface6(interfaceIndex uint32, blackhole bool) error {
 	bind.mu.RLock()
 	defer bind.mu.RUnlock()
-	if atomic.LoadUint32(&bind.isOpen) != 1 {
+	if bind.isOpen.Load() != 1 {
 		return net.ErrClosed
 	}
 	err := bindSocketToInterface6(bind.v6.sock, interfaceIndex)
