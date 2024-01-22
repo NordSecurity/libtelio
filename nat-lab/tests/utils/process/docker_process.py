@@ -44,11 +44,7 @@ class DockerProcess(Process):
         async with self._execute.start() as exe_stream:
             self._stream = exe_stream
             self._stdin_ready.set()
-            try:
-                await self._read_loop(exe_stream, stdout_callback, stderr_callback)
-            except asyncio.CancelledError:
-                self._stream = None
-                return self
+            await self._read_loop(exe_stream, stdout_callback, stderr_callback)
             self._stream = None
 
         inspect = await self._execute.inspect()

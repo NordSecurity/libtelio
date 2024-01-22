@@ -52,8 +52,6 @@ class SshProcess(Process):
                 self._stdout_loop(self._process.stdout, stdout_callback),
                 self._stderr_loop(self._process.stderr, stderr_callback),
             )
-        except asyncio.CancelledError:
-            return self
         finally:
             self._running = False
 
