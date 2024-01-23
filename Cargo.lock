@@ -2737,29 +2737,11 @@ dependencies = [
 
 [[package]]
 name = "pnet_base"
-version = "0.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25488cd551a753dcaaa6fffc9f69a7610a412dd8954425bf7ffad5f7d1156fb8"
-
-[[package]]
-name = "pnet_base"
 version = "0.33.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "872e46346144ebf35219ccaa64b1dffacd9c6f188cd7d012bd6977a2a838f42e"
 dependencies = [
  "no-std-net",
-]
-
-[[package]]
-name = "pnet_macros"
-version = "0.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30490e0852e58402b8fae0d39897b08a24f493023a4d6cf56b2e30f31ed57548"
-dependencies = [
- "proc-macro2 1.0.78",
- "quote 1.0.35",
- "regex",
- "syn 1.0.109",
 ]
 
 [[package]]
@@ -2776,32 +2758,11 @@ dependencies = [
 
 [[package]]
 name = "pnet_macros_support"
-version = "0.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4714e10f30cab023005adce048f2d30dd4ac4f093662abf2220855655ef8f90"
-dependencies = [
- "pnet_base 0.28.0",
-]
-
-[[package]]
-name = "pnet_macros_support"
 version = "0.33.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6d932134f32efd7834eb8b16d42418dac87086347d1bc7d142370ef078582bc"
 dependencies = [
- "pnet_base 0.33.0",
-]
-
-[[package]]
-name = "pnet_packet"
-version = "0.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8588067671d03c9f4254b2e66fecb4d8b93b5d3e703195b84f311cd137e32130"
-dependencies = [
- "glob",
- "pnet_base 0.28.0",
- "pnet_macros 0.28.0",
- "pnet_macros_support 0.28.0",
+ "pnet_base",
 ]
 
 [[package]]
@@ -2811,9 +2772,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8bde678bbd85cb1c2d99dc9fc596e57f03aa725f84f3168b0eaf33eeccb41706"
 dependencies = [
  "glob",
- "pnet_base 0.33.0",
- "pnet_macros 0.33.0",
- "pnet_macros_support 0.33.0",
+ "pnet_base",
+ "pnet_macros",
+ "pnet_macros_support",
 ]
 
 [[package]]
@@ -3975,7 +3936,7 @@ checksum = "af341b2be485d647b5dc4cfb2da99efac35b5c95748a08fb7233480fedc5ead3"
 dependencies = [
  "hex",
  "parking_lot",
- "pnet_packet 0.33.0",
+ "pnet_packet",
  "rand",
  "socket2 0.5.4",
  "thiserror",
@@ -4200,7 +4161,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "mockall",
- "pnet_packet 0.28.0",
+ "pnet_packet",
  "rand",
  "telio-crypto",
  "telio-model",
@@ -4218,7 +4179,7 @@ dependencies = [
  "criterion",
  "hashlink",
  "mockall",
- "pnet_packet 0.28.0",
+ "pnet_packet",
  "proptest",
  "proptest-derive",
  "rand",
