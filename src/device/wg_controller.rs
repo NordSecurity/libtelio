@@ -14,6 +14,7 @@ use telio_model::EndpointMap;
 use telio_model::SocketAddr;
 use telio_proto::PeersStatesMap;
 use telio_proxy::Proxy;
+use telio_starcast::multicast_peer::MulticasterPeer;
 use telio_traversal::endpoint_providers::stun::StunEndpointProvider;
 use telio_traversal::endpoint_providers::EndpointProvider;
 use telio_traversal::{
@@ -75,6 +76,7 @@ pub async fn consolidate_wg_state(
         entities.upgrade_sync(),
         entities.session_keeper(),
         &*entities.dns,
+        entities.meshnet.as_ref().unwrap().multicaster.clone(),
         remote_peer_states,
         entities.meshnet.as_ref().and_then(|m| {
             m.direct
@@ -137,6 +139,7 @@ async fn consolidate_wg_peers<
     upgrade_sync: Option<&Arc<U>>,
     session_keeper: Option<&Arc<S>>,
     dns: &Mutex<crate::device::DNS<D>>,
+    multicaster: Arc<MulticasterPeer>,
     remote_peer_states: PeersStatesMap,
     stun_ep_provider: Option<&Arc<StunEndpointProvider>>,
     post_quantum_vpn: Option<&telio_pq::Entity>,
@@ -153,6 +156,7 @@ async fn consolidate_wg_peers<
         cross_ping_check,
         upgrade_sync,
         dns,
+        multicaster,
         &proxy_endpoints,
         &remote_peer_states,
         post_quantum_vpn,
@@ -377,6 +381,7 @@ async fn build_requested_peers_list<
     cross_ping_check: Option<&Arc<C>>,
     upgrade_sync: Option<&Arc<U>>,
     dns: &Mutex<crate::device::DNS<D>>,
+    multicaster: Arc<MulticasterPeer>,
     proxy_endpoints: &EndpointMap,
     remote_peer_states: &PeersStatesMap,
     post_quantum_vpn: Option<&telio_pq::Entity>,
@@ -463,6 +468,14 @@ async fn build_requested_peers_list<
         };
         requested_peers.insert(dns_peer_public_key, requested_peer);
     }
+
+    let multicast_peer = multicaster.get_peer().await;
+    let multicast_peer_public_key = multicast_peer.public_key;
+    let requested_multicast_peer = RequestedPeer {
+        peer: multicast_peer,
+        local_direct_endpoint: None,
+    };
+    requested_peers.insert(multicast_peer_public_key, requested_multicast_peer);
 
     if let Some(wg_stun_server) = &requested_state.wg_stun_server {
         let public_key = wg_stun_server.public_key;

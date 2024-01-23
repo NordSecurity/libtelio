@@ -405,6 +405,7 @@ dependencies = [
  "parking_lot",
  "rand_core 0.6.4",
  "ring",
+ "socket2 0.5.4",
  "thiserror",
  "tracing",
  "untrusted 0.9.0",
@@ -2557,6 +2558,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "pnet_base"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe4cf6fb3ab38b68d01ab2aea03ed3d1132b4868fa4e06285f29f16da01c5f4c"
+dependencies = [
+ "no-std-net",
+]
+
+[[package]]
 name = "pnet_macros"
 version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2581,6 +2591,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "pnet_macros"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "688b17499eee04a0408aca0aa5cba5fc86401d7216de8a63fdf7a4c227871804"
+dependencies = [
+ "proc-macro2 1.0.69",
+ "quote 1.0.33",
+ "regex",
+ "syn 2.0.38",
+]
+
+[[package]]
 name = "pnet_macros_support"
 version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2596,6 +2618,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6d932134f32efd7834eb8b16d42418dac87086347d1bc7d142370ef078582bc"
 dependencies = [
  "pnet_base 0.33.0",
+]
+
+[[package]]
+name = "pnet_macros_support"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eea925b72f4bd37f8eab0f221bbe4c78b63498350c983ffa9dd4bcde7e030f56"
+dependencies = [
+ "pnet_base 0.34.0",
 ]
 
 [[package]]
@@ -2620,6 +2651,40 @@ dependencies = [
  "pnet_base 0.33.0",
  "pnet_macros 0.33.0",
  "pnet_macros_support 0.33.0",
+]
+
+[[package]]
+name = "pnet_packet"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9a005825396b7fe7a38a8e288dbc342d5034dac80c15212436424fef8ea90ba"
+dependencies = [
+ "glob",
+ "pnet_base 0.34.0",
+ "pnet_macros 0.34.0",
+ "pnet_macros_support 0.34.0",
+]
+
+[[package]]
+name = "pnet_sys"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "417c0becd1b573f6d544f73671070b039051e5ad819cc64aa96377b536128d00"
+dependencies = [
+ "libc",
+ "winapi",
+]
+
+[[package]]
+name = "pnet_transport"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2637e14d7de974ee2f74393afccbc8704f3e54e6eb31488715e72481d1662cc3"
+dependencies = [
+ "libc",
+ "pnet_base 0.34.0",
+ "pnet_packet 0.34.0",
+ "pnet_sys",
 ]
 
 [[package]]
@@ -3907,6 +3972,7 @@ dependencies = [
  "telio-proxy",
  "telio-relay",
  "telio-sockets",
+ "telio-starcast",
  "telio-task",
  "telio-test",
  "telio-traversal",
@@ -4179,6 +4245,25 @@ dependencies = [
  "version-compare",
  "winapi",
  "windows",
+]
+
+[[package]]
+name = "telio-starcast"
+version = "0.1.0"
+dependencies = [
+ "base64 0.13.1",
+ "boringtun",
+ "ipnetwork",
+ "pnet_packet 0.28.0",
+ "pnet_transport",
+ "telio-crypto",
+ "telio-sockets",
+ "telio-task",
+ "telio-utils",
+ "telio-wg",
+ "tokio",
+ "tracing",
+ "x25519-dalek 2.0.0",
 ]
 
 [[package]]

@@ -51,3 +51,6 @@ pub use telio_lana;
 
 /// cbindgen:ignore
 pub use telio_firewall;
+
+/// cbindgen:ignore
+pub use telio_starcast;

@@ -11,6 +11,7 @@ use telio_relay::{
     SortedServers,
 };
 use telio_sockets::{NativeProtector, Protect, SocketPool};
+use telio_starcast::multicast_peer::MulticasterPeer;
 use telio_task::{
     io::{chan, mc_chan, mc_chan::Tx, Chan, McChan},
     task_exec, BoxAction, Runtime as TaskRuntime, Task,
@@ -48,6 +49,7 @@ use telio_dns::bind_tun;
 use wg::uapi::{self, PeerState};
 
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::{
     collections::{hash_map::Entry, HashSet},
     future::Future,
@@ -82,6 +84,7 @@ pub use wg::{
     FirewallCb, Tun, WireGuard,
 };
 
+use crate::device::Error::MulticasterError;
 #[cfg(test)]
 use wg::tests::AdapterExpectation;
 
@@ -150,6 +153,8 @@ pub enum Error {
     PostQuantum(#[from] telio_pq::Error),
     #[error("Cannot setup meshnet when the post quantum VPN is set up")]
     MeshnetUnavailableWithPQ,
+    #[error("Failed to initiate multicaster")]
+    MulticasterError(String),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -216,6 +221,9 @@ pub struct MeshnetEntites {
 
     // Entities for direct wireguard connections
     direct: Option<DirectEntities>,
+
+    // Multicaster
+    multicaster: Arc<MulticasterPeer>,
 }
 
 pub struct Entities {
@@ -1221,11 +1229,38 @@ impl Runtime {
             None
         };
 
+        // Initialize and start multicaster
+        let wg_port = self
+            .entities
+            .wireguard_interface
+            .wait_for_listen_port(Duration::from_secs(1))
+            .await?;
+        let itf = self.entities.wireguard_interface.get_interface().await?;
+        let public_key = itf
+            .private_key
+            .ok_or_else(|| Error::AdapterConfig("Adapter does not have a private key".to_owned()))?
+            .public();
+        let multicaster = Arc::new(
+            MulticasterPeer::new(
+                wg_port,
+                &public_key,
+                &itf.peers
+                    .values()
+                    .map(|peer| peer.allowed_ips[0].ip())
+                    .collect::<Vec<IpAddr>>(),
+                self.entities.socket_pool.clone(),
+            )
+            .await
+            .map_err(MulticasterError)?,
+        );
+        multicaster.start().await;
+
         Ok(MeshnetEntites {
             multiplexer,
             derp,
             proxy,
             direct,
+            multicaster,
         })
     }
 
