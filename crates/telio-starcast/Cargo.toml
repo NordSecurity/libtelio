@@ -1,0 +1,29 @@
+[package]
+name = "telio-starcast"
+version = "0.1.0"
+edition = "2018"
+license = "GPL-3.0-only"
+repository = "https://github.com/NordSecurity/libtelio"
+publish = false
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+default = []
+# Compile task crate for testing
+test-util = []
+
+[dependencies]
+tokio = { workspace = true, features = ["rt", "net", "sync", "macros"] }
+tracing.workspace = true
+boringtun.workspace = true
+x25519-dalek.workspace = true
+base64.workspace = true
+ipnetwork.workspace = true
+pnet_packet.workspace = true
+
+telio-utils.workspace = true
+telio-crypto.workspace = true
+telio-sockets.workspace = true
+telio-task.workspace = true
+telio-wg.workspace = true

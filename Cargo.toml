@@ -56,6 +56,7 @@ telio-proxy.workspace = true
 telio-pq.workspace = true
 telio-relay.workspace = true
 telio-sockets.workspace = true
+telio-starcast.workspace = true
 telio-task.workspace = true
 telio-traversal.workspace = true
 telio-utils.workspace = true
@@ -87,6 +88,7 @@ telio-pq = { workspace = true, features = ["mockall"] }
 telio-test.workspace = true
 telio-traversal = { workspace = true, features = ["mockall"] }
 telio-wg = { workspace = true, features = ["mockall", "test-adapter"] }
+telio-starcast = { workspace = true, features = ["test-util"] }
 
 [build-dependencies]
 anyhow.workspace = true
@@ -175,6 +177,7 @@ telio-proto = { version = "0.1.0", path = "./crates/telio-proto" }
 telio-proxy = { version = "0.1.0", path = "./crates/telio-proxy" }
 telio-relay = { version = "0.1.0", path = "./crates/telio-relay" }
 telio-sockets = { version = "0.1.0", path = "./crates/telio-sockets" }
+telio-starcast = { version = "0.1.0", path = "./crates/telio-starcast" }
 telio-task = { version = "0.1.0", path = "./crates/telio-task" }
 telio-test = { version = "1.0.0", path = "./crates/telio-test" }
 telio-traversal = { version = "0.1.0",  path = "./crates/telio-traversal" }

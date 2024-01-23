@@ -16,11 +16,11 @@ use telio_model::EndpointMap;
 use telio_model::SocketAddr;
 use telio_proto::{PeersStatesMap, Session};
 use telio_proxy::Proxy;
+use telio_starcast::multicast_peer::MulticasterPeer;
+use telio_traversal::endpoint_providers::stun::StunEndpointProvider;
+use telio_traversal::endpoint_providers::EndpointProvider;
 use telio_traversal::{
-    cross_ping_check::CrossPingCheckTrait,
-    endpoint_providers::{
-        stun::StunEndpointProvider, upnp::UpnpEndpointProvider, EndpointProvider,
-    },
+    cross_ping_check::CrossPingCheckTrait, endpoint_providers::upnp::UpnpEndpointProvider,
     SessionKeeperTrait, UpgradeSyncTrait, WireGuardEndpointCandidateChangeEvent,
 };
 use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn};
@@ -86,6 +86,7 @@ pub async fn consolidate_wg_state(
         entities.upgrade_sync(),
         entities.session_keeper(),
         &*entities.dns,
+        entities.meshnet.as_ref().map(|m| &*m.multicaster),
         remote_peer_states,
         entities.meshnet.as_ref().and_then(|m| {
             m.direct
@@ -101,7 +102,13 @@ pub async fn consolidate_wg_state(
         features,
     )
     .await?;
-    consolidate_firewall(requested_state, &*entities.firewall).await?;
+    let multicast_pub_key =
+        if let Some(multicaster) = entities.meshnet.as_ref().map(|m| &*m.multicaster) {
+            Some(multicaster.get_peer().await?.public_key)
+        } else {
+            None
+        };
+    consolidate_firewall(requested_state, &*entities.firewall, multicast_pub_key).await?;
     Ok(())
 }
 
@@ -153,6 +160,7 @@ async fn consolidate_wg_peers<
     upgrade_sync: Option<&Arc<U>>,
     session_keeper: Option<&Arc<S>>,
     dns: &Mutex<crate::device::DNS<D>>,
+    multicaster: Option<&MulticasterPeer>,
     remote_peer_states: PeersStatesMap,
     stun_ep_provider: Option<&Arc<StunEndpointProvider>>,
     upnp_ep_provider: Option<&Arc<UpnpEndpointProvider>>,
@@ -170,6 +178,7 @@ async fn consolidate_wg_peers<
         cross_ping_check,
         upgrade_sync,
         dns,
+        multicaster,
         &proxy_endpoints,
         &remote_peer_states,
         post_quantum_vpn,
@@ -355,6 +364,7 @@ fn iter_peers(
 async fn consolidate_firewall<F: Firewall>(
     requested_state: &RequestedState,
     firewall: &F,
+    multicast_pubkey: Option<PublicKey>,
 ) -> Result {
     let from_keys_peer_whitelist: HashSet<PublicKey> =
         firewall.get_peer_whitelist().iter().copied().collect();
@@ -387,7 +397,10 @@ async fn consolidate_firewall<F: Firewall>(
 
     // Consolidate peer-whitelist
     let delete_keys = &from_keys_peer_whitelist - &to_keys_peer_whitelist;
-    let add_keys = &to_keys_peer_whitelist - &from_keys_peer_whitelist;
+    let mut add_keys = &to_keys_peer_whitelist - &from_keys_peer_whitelist;
+    if let Some(pub_key) = multicast_pubkey {
+        add_keys.insert(pub_key);
+    }
     for key in delete_keys {
         firewall.remove_from_peer_whitelist(key);
     }
@@ -421,6 +434,7 @@ async fn build_requested_peers_list<
     cross_ping_check: Option<&Arc<C>>,
     upgrade_sync: Option<&Arc<U>>,
     dns: &Mutex<crate::device::DNS<D>>,
+    multicaster: Option<&MulticasterPeer>,
     proxy_endpoints: &EndpointMap,
     remote_peer_states: &PeersStatesMap,
     post_quantum_vpn: &impl telio_pq::PostQuantum,
@@ -519,6 +533,16 @@ async fn build_requested_peers_list<
             endpoint: None,
         };
         requested_peers.insert(dns_peer_public_key, requested_peer);
+    }
+
+    if let Some(multicaster) = multicaster {
+        let multicast_peer = multicaster.get_peer().await?;
+        let multicast_peer_public_key = multicast_peer.public_key;
+        let requested_multicast_peer = RequestedPeer {
+            peer: multicast_peer,
+            local_direct_endpoint: None,
+        };
+        requested_peers.insert(multicast_peer_public_key, requested_multicast_peer);
     }
 
     if let Some(wg_stun_server) = &requested_state.wg_stun_server {
@@ -1191,6 +1215,7 @@ mod tests {
     async fn add_newly_requested_peers_to_firewall() {
         let mut firewall = MockFirewall::new();
 
+        let vpeer_pub_key = SecretKey::gen().public();
         let pub_key_1 = SecretKey::gen().public();
         let pub_key_2 = SecretKey::gen().public();
         let pub_key_3 = SecretKey::gen().public();
@@ -1205,11 +1230,11 @@ mod tests {
 
         firewall
             .expect_get_peer_whitelist()
-            .return_once(|| Default::default());
+            .return_once(Default::default);
 
         firewall
             .expect_get_port_whitelist()
-            .return_once(|| Default::default());
+            .return_once(Default::default);
 
         expect_add_to_peer_whitelist(&mut firewall, pub_key_1);
         expect_add_to_port_whitelist(&mut firewall, pub_key_1);
@@ -1218,7 +1243,7 @@ mod tests {
 
         expect_add_to_port_whitelist(&mut firewall, pub_key_3);
 
-        consolidate_firewall(&requested_state, &firewall)
+        consolidate_firewall(&requested_state, &firewall, Some(vpeer_pub_key))
             .await
             .unwrap();
     }
@@ -1227,6 +1252,7 @@ mod tests {
     async fn update_permissions_for_requested_peers_in_firewall() {
         let mut firewall = MockFirewall::new();
 
+        let vpeer_pub_key = SecretKey::gen().public();
         let pub_key_1 = SecretKey::gen().public();
         let pub_key_2 = SecretKey::gen().public();
         let pub_key_3 = SecretKey::gen().public();
@@ -1251,7 +1277,7 @@ mod tests {
 
         firewall
             .expect_get_port_whitelist()
-            .return_once(|| Default::default());
+            .return_once(Default::default);
 
         expect_remove_from_port_whitelist(&mut firewall, pub_key_2);
 
@@ -1260,7 +1286,7 @@ mod tests {
         expect_remove_from_peer_whitelist(&mut firewall, pub_key_4);
         expect_remove_from_port_whitelist(&mut firewall, pub_key_4);
 
-        consolidate_firewall(&requested_state, &firewall)
+        consolidate_firewall(&requested_state, &firewall, Some(vpeer_pub_key))
             .await
             .unwrap();
     }
@@ -1269,6 +1295,7 @@ mod tests {
     async fn add_vpn_exit_node_to_firewall() {
         let mut firewall = MockFirewall::new();
 
+        let vpeer_pub_key = SecretKey::gen().public();
         let pub_key_1 = SecretKey::gen().public();
         let pub_key_2 = SecretKey::gen().public();
 
@@ -1286,7 +1313,7 @@ mod tests {
 
         expect_add_to_peer_whitelist(&mut firewall, pub_key_2);
 
-        consolidate_firewall(&requested_state, &firewall)
+        consolidate_firewall(&requested_state, &firewall, Some(vpeer_pub_key))
             .await
             .unwrap();
     }
@@ -1295,6 +1322,7 @@ mod tests {
     async fn do_not_add_meshnet_exit_node_to_firewall_if_it_does_not_allow_incoming_connections() {
         let mut firewall = MockFirewall::new();
 
+        let vpeer_pub_key = SecretKey::gen().public();
         let pub_key_1 = SecretKey::gen().public();
 
         let mut requested_state = create_requested_state(vec![(pub_key_1, vec![], false, false)]);
@@ -1307,7 +1335,7 @@ mod tests {
         expect_get_peer_whitelist(&mut firewall, vec![]);
         expect_get_port_whitelist(&mut firewall, vec![]);
 
-        consolidate_firewall(&requested_state, &firewall)
+        consolidate_firewall(&requested_state, &firewall, Some(vpeer_pub_key))
             .await
             .unwrap();
     }
@@ -1317,6 +1345,7 @@ mod tests {
     ) {
         let mut firewall = MockFirewall::new();
 
+        let vpeer_pub_key = SecretKey::gen().public();
         let pub_key_1 = SecretKey::gen().public();
 
         let mut requested_state = create_requested_state(vec![(pub_key_1, vec![], false, false)]);
@@ -1331,7 +1360,7 @@ mod tests {
 
         expect_remove_from_peer_whitelist(&mut firewall, pub_key_1);
 
-        consolidate_firewall(&requested_state, &firewall)
+        consolidate_firewall(&requested_state, &firewall, Some(vpeer_pub_key))
             .await
             .unwrap();
     }
@@ -1646,6 +1675,7 @@ mod tests {
                 Some(&upgrade_sync),
                 Some(&session_keeper),
                 &self.dns,
+                None,
                 HashMap::new(),
                 None,
                 None,

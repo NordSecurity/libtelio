@@ -4268,6 +4268,7 @@ dependencies = [
  "telio-proxy",
  "telio-relay",
  "telio-sockets",
+ "telio-starcast",
  "telio-task",
  "telio-test",
  "telio-traversal",
@@ -4567,6 +4568,24 @@ dependencies = [
  "version-compare",
  "winapi",
  "windows 0.34.0",
+]
+
+[[package]]
+name = "telio-starcast"
+version = "0.1.0"
+dependencies = [
+ "base64 0.13.1",
+ "boringtun",
+ "ipnetwork",
+ "pnet_packet",
+ "telio-crypto",
+ "telio-sockets",
+ "telio-task",
+ "telio-utils",
+ "telio-wg",
+ "tokio",
+ "tracing",
+ "x25519-dalek 2.0.1",
 ]
 
 [[package]]

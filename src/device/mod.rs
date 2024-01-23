@@ -13,6 +13,7 @@ use telio_relay::{
     SortedServers,
 };
 use telio_sockets::{NativeProtector, Protect, SocketPool};
+use telio_starcast::multicast_peer::MulticasterPeer;
 use telio_task::{
     io::{chan, mc_chan, mc_chan::Tx, Chan, McChan},
     task_exec, BoxAction, Runtime as TaskRuntime, Task,
@@ -52,6 +53,7 @@ use telio_dns::bind_tun;
 use wg::uapi::{self, AnalyticsEvent, PeerState};
 
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::{
     collections::{hash_map::Entry, HashSet},
     future::Future,
@@ -87,6 +89,7 @@ pub use wg::{
     FirewallCb, Tun, WireGuard,
 };
 
+use crate::device::Error::MulticasterError;
 #[cfg(test)]
 use wg::tests::AdapterExpectation;
 
@@ -159,6 +162,8 @@ pub enum Error {
     PmtuProbe(std::io::Error),
     #[error("Connection upgrade failed - there is no session for key {0:?}")]
     NoSessionForKey(PublicKey),
+    #[error("Failed to initiate multicaster")]
+    MulticasterError(String),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -225,6 +230,9 @@ pub struct MeshnetEntites {
 
     // Entities for direct wireguard connections
     direct: Option<DirectEntities>,
+
+    // Multicaster
+    multicaster: Arc<MulticasterPeer>,
 }
 
 pub struct Entities {
@@ -1355,11 +1363,29 @@ impl Runtime {
             None
         };
 
+        // Initialize and start multicaster
+        let itf = self.entities.wireguard_interface.get_interface().await?;
+        let public_key = itf
+            .private_key
+            .ok_or_else(|| Error::AdapterConfig("Adapter does not have a private key".to_owned()))?
+            .public();
+        let multicaster = Arc::new(
+            MulticasterPeer::new(
+                &public_key,
+                self.entities.wireguard_interface.clone(),
+                self.entities.socket_pool.clone(),
+            )
+            .await
+            .map_err(MulticasterError)?,
+        );
+        multicaster.start().await;
+
         Ok(MeshnetEntites {
             multiplexer,
             derp,
             proxy,
             direct,
+            multicaster,
         })
     }
 
@@ -2582,7 +2608,7 @@ mod tests {
 
         rt.test_env
             .adapter
-            .expect_send_uapi_cmd_generic_call(1)
+            .expect_send_uapi_cmd_generic_call(2)
             .await;
         assert!(rt.set_config(&Some(get_config)).await.is_ok());
         assert!(rt.requested_state.exit_node.is_none());
@@ -2676,7 +2702,7 @@ mod tests {
 
         rt.test_env
             .adapter
-            .expect_send_uapi_cmd_generic_call(2)
+            .expect_send_uapi_cmd_generic_call(3)
             .await;
         assert!(matches!(rt.set_config(&Some(config)).await, Ok(())));
         rt.test_env.adapter.lock().await.checkpoint();
@@ -2747,7 +2773,7 @@ mod tests {
 
         rt.test_env
             .adapter
-            .expect_send_uapi_cmd_generic_call(1)
+            .expect_send_uapi_cmd_generic_call(2)
             .await;
         assert!(rt.set_config(&config).await.is_ok());
         assert!(rt.requested_state.exit_node.is_none());
@@ -2848,7 +2874,7 @@ mod tests {
 
         rt.test_env
             .adapter
-            .expect_send_uapi_cmd_generic_call(1)
+            .expect_send_uapi_cmd_generic_call(2)
             .await;
         rt.set_config(&config).await.unwrap();
         rt.test_env.adapter.lock().await.checkpoint();
@@ -2929,7 +2955,7 @@ mod tests {
 
         rt.test_env
             .adapter
-            .expect_send_uapi_cmd_generic_call(1)
+            .expect_send_uapi_cmd_generic_call(2)
             .await;
         rt.set_config(&config).await.unwrap();
         rt.test_env.adapter.lock().await.checkpoint();
@@ -3021,7 +3047,7 @@ mod tests {
 
         rt.test_env
             .adapter
-            .expect_send_uapi_cmd_generic_call(1)
+            .expect_send_uapi_cmd_generic_call(2)
             .await;
         rt.set_config(&config).await.unwrap();
         rt.test_env.adapter.lock().await.checkpoint();
@@ -3092,7 +3118,7 @@ mod tests {
 
         rt.test_env
             .adapter
-            .expect_send_uapi_cmd_generic_call(1)
+            .expect_send_uapi_cmd_generic_call(2)
             .await;
 
         assert!(rt.set_config(&valid_cfg).await.is_ok());
@@ -3160,7 +3186,7 @@ mod tests {
 
         rt.test_env
             .adapter
-            .expect_send_uapi_cmd_generic_call(1)
+            .expect_send_uapi_cmd_generic_call(2)
             .await;
         rt.set_config(&config).await.unwrap();
         assert!(matches!(
@@ -3265,7 +3291,7 @@ mod tests {
 
         rt.test_env
             .adapter
-            .expect_send_uapi_cmd_generic_call(1)
+            .expect_send_uapi_cmd_generic_call(2)
             .await;
 
         assert!(rt.set_config(&Some(config)).await.is_ok());
@@ -3279,10 +3305,15 @@ mod tests {
             .peers
             .values()
             .any(|p| {
-                p.allowed_ips.iter().any(|ip| match ip {
-                    ipnetwork::IpNetwork::V4(_) => false,
-                    ipnetwork::IpNetwork::V6(_) => true,
-                })
+                if !p.is_multicast_peer() {
+                    p.allowed_ips.iter().any(|ip| match ip {
+                        ipnetwork::IpNetwork::V4(_) => false,
+                        ipnetwork::IpNetwork::V6(_) => true,
+                    })
+                // Ignore multicast peer
+                } else {
+                    false
+                }
             });
 
         assert_eq!(ipv6, has_ipv6_address);

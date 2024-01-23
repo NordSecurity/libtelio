@@ -1,6 +1,6 @@
 //! API to convert WireGuard components <=> telio components
 
-use ipnetwork::{IpNetwork, IpNetworkError};
+use ipnetwork::{IpNetwork, IpNetworkError, Ipv4Network};
 use serde::{Deserialize, Serialize};
 use telio_crypto::{KeyDecodeError, PresharedKey, PublicKey, SecretKey};
 use telio_model::mesh::{LinkState, Node, NodeState};
@@ -11,7 +11,7 @@ use std::{
     collections::BTreeMap,
     fmt::{self, Display, Formatter},
     io::{BufRead, BufReader, Read},
-    net::{AddrParseError, IpAddr, SocketAddr},
+    net::{AddrParseError, IpAddr, Ipv4Addr, SocketAddr},
     num::ParseIntError,
     panic,
     str::FromStr,
@@ -467,6 +467,26 @@ impl Peer {
             });
         }
         dual_ip_addresses
+    }
+
+    /// Returns whether the peer is a virtual peer for multicast
+    pub fn is_multicast_peer(&self) -> bool {
+        for ips in &self.allowed_ips {
+            if ips.network().eq(&Ipv4Addr::new(100, 64, 0, 5))
+                || ips.network().eq(&Ipv4Addr::new(224, 0, 0, 4))
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Returns whether the peer is stun
+    pub fn is_stun_peer(&self) -> bool {
+        self.allowed_ips
+            .get(0)
+            .map(|ip| ip.network().eq(&Ipv4Addr::new(100, 64, 0, 4)))
+            .unwrap_or(false)
     }
 }
 

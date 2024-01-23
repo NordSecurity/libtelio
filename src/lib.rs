@@ -463,3 +463,5 @@ mod uniffi_libtelio {
         }
     }
 }
+/// cbindgen:ignore
+pub use telio_starcast;
