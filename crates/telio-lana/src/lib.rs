@@ -23,7 +23,7 @@ pub use event_log::*;
 /// App name used to initialize moose with
 pub const LANA_APP_NAME: &str = "libtelio";
 /// Version of the tracker used, should be updated everytime the tracker library is updated
-pub const LANA_MOOSE_VERSION: &str = "0.11.0";
+pub const LANA_MOOSE_VERSION: &str = "0.11.1";
 /// Timeout for moose to send init error, if any, through callback
 pub const LANA_MOOSE_MAX_INIT_TIME: u8 = 10;
 
