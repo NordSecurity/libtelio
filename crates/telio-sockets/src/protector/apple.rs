@@ -197,7 +197,6 @@ impl Protector for NativeProtector {
         if let Some(ref sw) = self.socket_watcher {
             let mut socks = sw.sockets.lock();
             socks.sockets.retain(|s| s != &socket);
-            socks.notify.notify_waiters();
         }
     }
 
