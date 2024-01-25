@@ -1,5 +1,40 @@
+
 ext.findRustlsPlatformVerifierProject = {
-    def cmdProcessBuilder = new ProcessBuilder(new String[] { "/root/.cargo/bin/cargo", "metadata", "--format-version", "1", "--manifest-path", "$PATH_TO_DEPENDENT_CRATE" })
+    // This template is run by libetlio-build's package-aar and upload-maven
+    // jobs.
+    // In these jobs, gradle project is located in diffent places:
+    // - package-aar - in libtelio project
+    // - upload-maven - in libetlio-build project
+    // 
+    // [file(..)](https://docs.gradle.org/current/javadoc/org/gradle/api/Project.html#file-java.lang.Object-)
+    // will get path relative to android_aar/ or android_aar/main dir. So we can check if any of them have manifest we need
+    //
+    def findManifest = {
+        println("root: " + file(".").absolutePath)
+        def files = [
+            file("../Cargo.toml"), 
+            file("../../Cargo.toml"), 
+            file("../libtelio/Cargo.toml"), 
+            file("../../libtelio/Cargo.toml"),
+        ]
+        println("looking in:")
+        println(files)
+        
+        def path = files.find { it.exists() }?.absolutePath
+
+        println("found path: " + path)
+        if (path == null) {
+            println("failed to find Cargo.toml")
+            throw new RuntimeException("could not find Cargo.toml")
+        }
+        path
+    }
+
+    def cmdProcessBuilder = new ProcessBuilder(new String[] { 
+        "/root/.cargo/bin/cargo", "metadata", 
+        "--format-version", "1", 
+        "--manifest-path", findManifest()
+    })
     def dependencyInfoText = new StringBuffer()
 
     def cmdProcess = cmdProcessBuilder.start()
