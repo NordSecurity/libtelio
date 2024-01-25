@@ -11,12 +11,17 @@ ext.findRustlsPlatformVerifierProject = {
     //
     def findManifest = {
         def files = [file("../../Cargo.toml"), file("../../libtelio/Cargo.toml")]
+        println("files")
+        println(files)
         def path = files.find { it.exists() }?.absolutePath
+        println("path: " + path)
         if (path == null) {
             throw new RuntimeException("could not find Cargo.toml")
         }
         path
     }
+
+    println("found: " + findManifest)
 
     def cmdProcessBuilder = new ProcessBuilder(new String[] { 
         "/root/.cargo/bin/cargo", "metadata", 
