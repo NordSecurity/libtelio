@@ -18,6 +18,7 @@
 * LLT-4652: Bump boringtun version to v1.1.10
 * LLT-4557: Document functions from helpers.py
 * LLT-4661: Update wireguard-go and related Go dependencies
+* LLT-4528: Mute peers in proxy when upgrading to direct connection
 
 <br>
 

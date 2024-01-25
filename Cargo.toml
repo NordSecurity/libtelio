@@ -21,6 +21,7 @@ cfg-if = "1.0.0"
 ffi_helpers = "0.3.0"
 num_cpus = "1.15.0"
 wasm-bindgen = "=0.2.83" # Only for compatability with moose wasm version
+h2 = "=0.3.24" # RUSTSEC-2024-0003
 
 anyhow.workspace = true
 async-trait.workspace = true
