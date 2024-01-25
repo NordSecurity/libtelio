@@ -300,4 +300,15 @@ func wg_go_get_adapter_luid(handle C.int32_t) C.uint64_t {
 	return C.uint64_t(luid)
 }
 
+// This function is added in order to have a way of validating during link time
+// that the proper version of wireguard-go library is linked.
+// In the past we had an accident where some old version of wireguard-go was linked
+// into libtelio in the release build. The root-cause is not found yet.
+// When changes to the wireguard-go are done the version number should be updated.
+// There is wireguard-go-version-update-check job in GitHub Actions validating
+// that this version was updated when there was a change in the wireguard-go code.
+//
+//export wg_go_version_4_2_2
+func wg_go_version_4_2_2() {}
+
 func main() {}
