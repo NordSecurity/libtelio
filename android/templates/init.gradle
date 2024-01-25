@@ -10,7 +10,9 @@ ext.findRustlsPlatformVerifierProject = {
     // will get path relative to android_aar/main dir. So we can check if any of them have manifest we need
     //
     def findManifest = {
-        def files = [file("../../Cargo.toml"), file("../../libtelio/Cargo.toml")]
+        println("project dir: " + file(".").absolutePath)
+        
+        def files = [file("../../Cargo.toml"), file("../libtelio/Cargo.toml")]
         println("files")
         println(files)
         def path = files.find { it.exists() }?.absolutePath
