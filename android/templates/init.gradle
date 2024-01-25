@@ -21,12 +21,12 @@ ext.findRustlsPlatformVerifierProject = {
         path
     }
 
-    println("found: " + findManifest)
+    println("found: " + findManifest())
 
     def cmdProcessBuilder = new ProcessBuilder(new String[] { 
         "/root/.cargo/bin/cargo", "metadata", 
         "--format-version", "1", 
-        "--manifest-path", findManifest
+        "--manifest-path", findManifest()
     })
     def dependencyInfoText = new StringBuffer()
 
