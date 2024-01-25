@@ -2,6 +2,10 @@
 #[path = "linux.rs"]
 mod platform;
 
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[path = "apple.rs"]
+mod platform;
+
 use std::ops::Range;
 
 use socket2::{Domain, Protocol, Socket, Type};
