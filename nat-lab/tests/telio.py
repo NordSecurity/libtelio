@@ -862,6 +862,18 @@ class Client:
         await process.execute()
         return process.get_stdout()
 
+    async def get_network_info(self) -> str:
+        if self._connection.target_os == TargetOS.Mac:
+            interface_info = self._connection.create_process(["ifconfig", "-a"])
+            await interface_info.execute()
+            routing_table_info = self._connection.create_process(["netstat", "-rn"])
+            await routing_table_info.execute()
+            syslog_info = self._connection.create_process(["syslog"])
+            await syslog_info.execute()
+            return routing_table_info.get_stdout() + interface_info.get_stdout() + '\n'.join(syslog_info.get_stdout().splitlines()[-20:])
+        else:
+            return ""
+
     async def save_logs(self) -> None:
         if os.environ.get("NATLAB_SAVE_LOGS") is None:
             return
@@ -870,7 +882,7 @@ class Client:
         os.makedirs(log_dir, exist_ok=True)
 
         log_content = await self.get_log()
-
+        network_info_info = await self.get_network_info()
         if self._connection.target_os == TargetOS.Linux:
             process = self._connection.create_process(["cat", "/etc/hostname"])
             await process.execute()
@@ -893,9 +905,26 @@ class Client:
                 filename = f"{filename[:249]}_{i}.log"
                 i += 1
 
+        ni_filename = str(test_name) + "_" + container_id + "_network_info"
+        if len(filename.encode("utf-8")) > 256:
+            filename = f"{filename[:251]}.log"
+
+            i = 0
+            while os.path.exists(os.path.join(log_dir, filename)):
+                filename = f"{filename[:249]}_{i}.log"
+                i += 1
+
         with open(
             os.path.join(log_dir, filename),
             "w",
             encoding="utf-8",
         ) as f:
             f.write(log_content)
+
+        if self._connection.target_os == TargetOS.Mac:
+            with open(
+                os.path.join(log_dir, ni_filename),
+                "w",
+                encoding="utf-8",
+            ) as f:
+                f.write(network_info_info)
