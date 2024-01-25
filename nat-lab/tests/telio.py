@@ -870,9 +870,12 @@ class Client:
             await routing_table_info.execute()
             syslog_info = self._connection.create_process(["syslog"])
             await syslog_info.execute()
-            return routing_table_info.get_stdout() + interface_info.get_stdout() + '\n'.join(syslog_info.get_stdout().splitlines()[-20:])
-        else:
-            return ""
+            return (
+                routing_table_info.get_stdout()
+                + interface_info.get_stdout()
+                + "\n".join(syslog_info.get_stdout().splitlines()[-20:])
+            )
+        return ""
 
     async def save_logs(self) -> None:
         if os.environ.get("NATLAB_SAVE_LOGS") is None:
