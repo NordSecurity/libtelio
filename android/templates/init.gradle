@@ -7,16 +7,21 @@ ext.findRustlsPlatformVerifierProject = {
     // - upload-maven - in libetlio-build project
     // 
     // [file(..)](https://docs.gradle.org/current/javadoc/org/gradle/api/Project.html#file-java.lang.Object-)
-    // will get path relative to android_aar/main dir. So we can check if any of them have manifest we need
+    // will get path relative to android_aar/ or android_aar/main dir. So we can check if any of them have manifest we need
     //
     def findManifest = {
-        println("project dir: " + file(".").absolutePath)
-        
-        def files = [file("../Cargo.toml"), file("../libtelio/Cargo.toml")]
-        println("looking for:")
+        println("root: " + file(".").absolutePath)
+        def files = [
+            file("../Cargo.toml"), 
+            file("../../Cargo.toml"), 
+            file("../libtelio/Cargo.toml"), 
+            file("../../libtelio/Cargo.toml"),
+        ]
+        println("looking in:")
         println(files)
         
         def path = files.find { it.exists() }?.absolutePath
+
         println("found path: " + path)
         if (path == null) {
             println("failed to find Cargo.toml")
