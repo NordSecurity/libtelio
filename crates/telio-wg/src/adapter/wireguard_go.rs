@@ -1,7 +1,7 @@
 #[cfg(windows)]
 use wg_go_rust_wrapper::{
     wg_go_free_cmd_res, wg_go_get_adapter_luid, wg_go_get_wg_socket, wg_go_log_cb, wg_go_logger_fn,
-    wg_go_send_uapi_cmd, wg_go_start_named, wg_go_start_with_tun, wg_go_stop,
+    wg_go_send_uapi_cmd, wg_go_start_named, wg_go_start_with_tun, wg_go_stop, wg_go_version_4_1_5,
     CallWindowsStaticGoRuntimeInit,
 };
 
@@ -61,6 +61,10 @@ impl WireguardGo {
             // Workaround for hanging wireguard-go due to missing Go runtime init when building with MSVC toolchain.
             #[cfg(windows)]
             CallWindowsStaticGoRuntimeInit();
+
+            // This call to wg_go_version_x_y_z does not do anything, but this function needs to be called somewhere
+            // where it's not optimized away by linker.
+            wg_go_version_4_1_5();
         }
 
         let handle = unsafe {
