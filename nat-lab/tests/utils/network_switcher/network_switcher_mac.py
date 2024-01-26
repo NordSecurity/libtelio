@@ -6,6 +6,8 @@ from config import (
     LINUX_VM_SECONDARY_GATEWAY,
     VPN_SERVER_SUBNET,
 )
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
 from utils.connection import Connection
 
 
@@ -13,7 +15,8 @@ class NetworkSwitcherMac(NetworkSwitcher):
     def __init__(self, connection: Connection) -> None:
         self._connection = connection
 
-    async def switch_to_primary_network(self) -> None:
+    @asynccontextmanager
+    async def switch_to_primary_network(self) -> AsyncIterator:
         await self._delete_existing_route()
 
         await self._connection.create_process(
@@ -33,8 +36,10 @@ class NetworkSwitcherMac(NetworkSwitcher):
                     LINUX_VM_PRIMARY_GATEWAY,
                 ],
             ).execute()
+        yield
 
-    async def switch_to_secondary_network(self) -> None:
+    @asynccontextmanager
+    async def switch_to_secondary_network(self) -> AsyncIterator:
         await self._delete_existing_route()
 
         await self._connection.create_process(
@@ -54,6 +59,7 @@ class NetworkSwitcherMac(NetworkSwitcher):
                     LINUX_VM_SECONDARY_GATEWAY,
                 ],
             ).execute()
+        yield
 
     async def _delete_existing_route(self) -> None:
         await self._connection.create_process(["route", "delete", "default"]).execute()
