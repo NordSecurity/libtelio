@@ -1,24 +1,25 @@
 import asyncio
+import datetime
 import json
 import os
 import re
 import shlex
-import datetime
 from collections import Counter
-from config import DERP_PRIMARY, DERP_SERVERS
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from dataclasses_json import dataclass_json, DataClassJsonMixin
 from enum import Enum
-from mesh_api import Node, Meshmap
+from typing import AsyncIterator, List, Optional, Set
+
+from config import DERP_PRIMARY, DERP_SERVERS
+from dataclasses_json import DataClassJsonMixin, dataclass_json
+from mesh_api import Meshmap, Node
 from telio_features import TelioFeatures
-from typing import List, Set, Optional, AsyncIterator
 from utils import asyncio_util
 from utils.connection import Connection, TargetOS
 from utils.connection_util import get_libtelio_binary_path
 from utils.output_notifier import OutputNotifier
 from utils.process import Process
-from utils.router import Router, new_router, IPStack
+from utils.router import IPStack, Router, new_router
 
 
 # Equivalent of `libtelio/telio-wg/src/uapi.rs`
