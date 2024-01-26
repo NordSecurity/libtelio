@@ -52,13 +52,12 @@ async def test_network_switcher(
         )
 
         assert conn_mngr.network_switcher
-        async with conn_mngr.network_switcher.switch_to_secondary_network():
-            assert (
-                await testing.wait_long(
-                    stun.get(conn_mngr.connection, config.STUN_SERVER)
-                )
-                == secondary_ip
-            )
+        await conn_mngr.network_switcher.switch_to_secondary_network()
+
+        assert (
+            await testing.wait_long(stun.get(conn_mngr.connection, config.STUN_SERVER))
+            == secondary_ip
+        )
 
 
 @pytest.mark.asyncio
@@ -130,13 +129,11 @@ async def test_mesh_network_switch(
             await testing.wait_long(ping.wait_for_next_ping())
 
         assert alpha_conn_mngr.network_switcher
-        async with alpha_conn_mngr.network_switcher.switch_to_secondary_network():
-            await client_alpha.notify_network_change()
+        await alpha_conn_mngr.network_switcher.switch_to_secondary_network()
+        await client_alpha.notify_network_change()
 
-            async with Ping(
-                alpha_conn_mngr.connection, beta.ip_addresses[0]
-            ).run() as ping:
-                await testing.wait_long(ping.wait_for_next_ping())
+        async with Ping(alpha_conn_mngr.connection, beta.ip_addresses[0]).run() as ping:
+            await testing.wait_long(ping.wait_for_next_ping())
 
 
 @pytest.mark.asyncio
@@ -207,23 +204,21 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
         ip = await testing.wait_long(stun.get(alpha_connection, config.STUN_SERVER))
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
         assert network_switcher
-        async with network_switcher.switch_to_secondary_network():
-            await client_alpha.notify_network_change()
-            # This is really silly.. For some reason, adding a short sleep here allows the VPN
-            # connection to be restored faster. The difference is almost 5 seconds. Without
-            # the sleep, the test fails often due to timeouts. Its as if feeding data into
-            # a connection, which is being restored, bogs down the connection and it takes
-            # more time for the connection to be restored.
-            if alpha_connection.target_os == TargetOS.Windows:
-                await asyncio.sleep(1.0)
+        await network_switcher.switch_to_secondary_network()
+        await client_alpha.notify_network_change()
+        # This is really silly.. For some reason, adding a short sleep here allows the VPN
+        # connection to be restored faster. The difference is almost 5 seconds. Without
+        # the sleep, the test fails often due to timeouts. Its as if feeding data into
+        # a connection, which is being restored, bogs down the connection and it takes
+        # more time for the connection to be restored.
+        if alpha_connection.target_os == TargetOS.Windows:
+            await asyncio.sleep(1.0)
 
-            async with Ping(alpha_connection, config.PHOTO_ALBUM_IP).run() as ping:
-                await testing.wait_long(ping.wait_for_next_ping())
+        async with Ping(alpha_connection, config.PHOTO_ALBUM_IP).run() as ping:
+            await testing.wait_long(ping.wait_for_next_ping())
 
-            ip = await testing.wait_long(stun.get(alpha_connection, config.STUN_SERVER))
-            assert (
-                ip == wg_server["ipv4"]
-            ), f"wrong public IP when connected to VPN {ip}"
+        ip = await testing.wait_long(stun.get(alpha_connection, config.STUN_SERVER))
+        assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
 
 @pytest.mark.asyncio
@@ -329,9 +324,7 @@ async def test_mesh_network_switch_direct(
                 peers_connected_direct_future,
             ]
         ) as (derp, relay, direct):
-            await exit_stack.enter_async_context(
-                network_switcher.switch_to_secondary_network()
-            )
+            await network_switcher.switch_to_secondary_network()
             await alpha_client.notify_network_change()
             await derp
             await relay
