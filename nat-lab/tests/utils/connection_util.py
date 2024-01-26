@@ -163,7 +163,7 @@ LAN_ADDR_MAP_V6: Dict[ConnectionTag, str] = {
 class ConnectionManager:
     connection: Connection
     gw_connection: Optional[Connection]
-    network_switcher: NetworkSwitcher
+    network_switcher: Optional[NetworkSwitcher]
     tracker: ConnectionTracker
 
 
@@ -202,7 +202,7 @@ async def new_connection_raw(tag: ConnectionTag) -> AsyncIterator[Connection]:
 
 async def create_network_switcher(
     tag: ConnectionTag, connection: Connection
-) -> NetworkSwitcher:
+) -> Optional[NetworkSwitcher]:
     if tag in DOCKER_SERVICE_IDS:
         return NetworkSwitcherDocker(connection)
 
@@ -212,7 +212,7 @@ async def create_network_switcher(
     if tag == ConnectionTag.MAC_VM:
         return NetworkSwitcherMac(connection)
 
-    assert False, f"tag {tag} not supported"
+    return None
 
 
 @asynccontextmanager
@@ -222,31 +222,29 @@ async def new_connection_manager_by_tag(
 ) -> AsyncIterator[ConnectionManager]:
     async with new_connection_raw(tag) as connection:
         network_switcher = await create_network_switcher(tag, connection)
-        async with network_switcher.switch_to_primary_network():
-            if tag in DOCKER_GW_MAP:
-                async with new_connection_raw(DOCKER_GW_MAP[tag]) as gw_connection:
-                    async with ConnectionTracker(
-                        gw_connection, conn_tracker_config
-                    ).run() as conn_tracker:
-                        yield ConnectionManager(
-                            connection,
-                            gw_connection,
-                            network_switcher,
-                            conn_tracker,
-                        )
-            else:
+        if network_switcher:
+            await network_switcher.switch_to_primary_network()
+        if tag in DOCKER_GW_MAP:
+            async with new_connection_raw(DOCKER_GW_MAP[tag]) as gw_connection:
                 async with ConnectionTracker(
-                    connection, conn_tracker_config
+                    gw_connection, conn_tracker_config
                 ).run() as conn_tracker:
                     yield ConnectionManager(
-                        connection, None, network_switcher, conn_tracker
+                        connection, gw_connection, network_switcher, conn_tracker
                     )
+        else:
+            async with ConnectionTracker(
+                connection, conn_tracker_config
+            ).run() as conn_tracker:
+                yield ConnectionManager(
+                    connection, None, network_switcher, conn_tracker
+                )
 
 
 @asynccontextmanager
 async def new_connection_with_network_switcher(
     tag: ConnectionTag,
-) -> AsyncIterator[Tuple[Connection, NetworkSwitcher]]:
+) -> AsyncIterator[Tuple[Connection, Optional[NetworkSwitcher]]]:
     async with new_connection_manager_by_tag(tag) as conn_manager:
         yield (conn_manager.connection, conn_manager.network_switcher)
 
