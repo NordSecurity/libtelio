@@ -25,6 +25,7 @@ import (
 	"math"
 	"math/rand"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -132,8 +133,16 @@ func get_tunnel_entry(handle int32) (*TunnelEntry, error) {
 	return nil, InvalidHandle
 }
 
+func logStackTraceOnPanic() {
+	if r := recover(); r != nil {
+		criticalf("wireguard-go panicked:\n" + string(debug.Stack()))
+	}
+}
+
 //export wg_go_start_named
 func wg_go_start_named(name *C.char, log C.wg_go_log_cb) C.int32_t {
+	defer logStackTraceOnPanic()
+
 	var watcher *interfaceWatcher
 	var err error
 	if loggerFunc == 0 {
@@ -142,7 +151,6 @@ func wg_go_start_named(name *C.char, log C.wg_go_log_cb) C.int32_t {
 	}
 
 	ifname := C.GoString(name)
-
 	if runtime.GOOS == "windows" {
 		watcher, err = watchInterface()
 		if err != nil {
@@ -227,6 +235,8 @@ func get_errno_from_error(err error) int64 {
 
 //export wg_go_send_uapi_cmd
 func wg_go_send_uapi_cmd(handle C.int32_t, cmd *C.char) *C.char {
+	defer logStackTraceOnPanic()
+
 	entry, err := get_tunnel_entry(int32(handle))
 	if err != nil || entry == nil {
 		errorf("entry is nil or error: %v", err)
@@ -256,16 +266,19 @@ func wg_go_send_uapi_cmd(handle C.int32_t, cmd *C.char) *C.char {
 
 //export wg_go_start_with_tun
 func wg_go_start_with_tun(fd C.int32_t, log C.wg_go_log_cb) C.int32_t {
+	defer logStackTraceOnPanic()
 	return PlatformSpecific_StartWithTun(fd, log)
 }
 
 //export wg_go_get_wg_socket
 func wg_go_get_wg_socket(handle C.int32_t, ipv6 bool, cmd *C.char) *C.char {
+	defer logStackTraceOnPanic()
 	return PlatformSpecific_GetWgSocket(handle, ipv6)
 }
 
 //export wg_go_free_cmd_res
 func wg_go_free_cmd_res(resp *C.char) {
+	defer logStackTraceOnPanic()
 	if resp != nil {
 		C.free(unsafe.Pointer(resp))
 	}
@@ -273,6 +286,8 @@ func wg_go_free_cmd_res(resp *C.char) {
 
 //export wg_go_stop
 func wg_go_stop(handle C.int32_t) {
+	defer logStackTraceOnPanic()
+
 	entry, err := get_tunnel_entry(int32(handle))
 	if err != nil || entry == nil {
 		errorf("entry is nil or error: %v", err)
@@ -290,6 +305,8 @@ func wg_go_stop(handle C.int32_t) {
 
 //export wg_go_get_adapter_luid
 func wg_go_get_adapter_luid(handle C.int32_t) C.uint64_t {
+	defer logStackTraceOnPanic()
+
 	entry, err := get_tunnel_entry(int32(handle))
 	if err != nil || entry == nil {
 		errorf("entry is nil or error: %v", err)
@@ -299,5 +316,16 @@ func wg_go_get_adapter_luid(handle C.int32_t) C.uint64_t {
 	luid := PlatformSpecific_GetLUID(entry)
 	return C.uint64_t(luid)
 }
+
+// This function is added in order to have a way of validating during link time
+// that the proper version of wireguard-go library is linked.
+// In the past we had an accident where some old version of wireguard-go was linked
+// into libtelio in the release build. The root-cause is not found yet.
+// When changes to the wireguard-go are done the version number should be updated.
+// There is wireguard-go-version-update-check job in GitHub Actions validating
+// that this version was updated when there was a change in the wireguard-go code.
+//
+//export wg_go_version_4_2_2
+func wg_go_version_4_2_2() {}
 
 func main() {}
