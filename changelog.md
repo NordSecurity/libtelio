@@ -1,4 +1,4 @@
-### UNRELEASED
+### v4.2.2
 ----
 * LLT-4662: Update rustix dependency
 * LLT-4667: Fix panic in boringtun
