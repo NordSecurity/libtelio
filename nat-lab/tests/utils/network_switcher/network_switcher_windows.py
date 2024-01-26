@@ -1,9 +1,8 @@
 import config
 import re
 from .network_switcher import NetworkSwitcher
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import AsyncIterator, List, Optional
+from typing import List, Optional
 from utils.connection import Connection
 from utils.process import ProcessExecError
 
@@ -20,23 +19,14 @@ class Interface:
             ["netsh", "interface", "ipv4", "show", "addresses"]
         ).execute()
 
-        stdout = process.get_stdout()
-        print(stdout)
-
-        matches = re.finditer(
-            r'Configuration for interface "([^"]+)"\s+(.*?)InterfaceMetric',
-            stdout,
-            re.DOTALL,
+        matches = re.findall(
+            r"Configuration for interface \"(.*)\"[\s\S]*?IP Address:\s*([\d.]*)",
+            process.get_stdout(),
         )
 
         result: List[Interface] = []
         for match in matches:
-            name = match.group(1)
-            ip_address_match = re.search(
-                r"IP Address:\s+(\d+\.\d+\.\d+\.\d+)", match.group(2)
-            )
-            ip_address = ip_address_match.group(1) if ip_address_match else ""
-            result.append(Interface(name, ip_address))
+            result.append(Interface(match[0], match[1]))
 
         return result
 
@@ -80,9 +70,9 @@ class NetworkSwitcherWindows(NetworkSwitcher):
             connection, await ConfiguredInterfaces.create(connection)
         )
 
-    @asynccontextmanager
-    async def switch_to_primary_network(self) -> AsyncIterator:
+    async def switch_to_primary_network(self) -> None:
         await self._delete_existing_route()
+
         await self._connection.create_process(
             [
                 "netsh",
@@ -95,14 +85,10 @@ class NetworkSwitcherWindows(NetworkSwitcher):
                 f"nexthop={config.LINUX_VM_PRIMARY_GATEWAY}",
             ]
         ).execute()
-        try:
-            yield
-        finally:
-            await self._enable_management_interface()
 
-    @asynccontextmanager
-    async def switch_to_secondary_network(self) -> AsyncIterator:
+    async def switch_to_secondary_network(self) -> None:
         await self._delete_existing_route()
+
         await self._connection.create_process(
             [
                 "netsh",
@@ -115,10 +101,6 @@ class NetworkSwitcherWindows(NetworkSwitcher):
                 f"nexthop={config.LINUX_VM_SECONDARY_GATEWAY}",
             ]
         ).execute()
-        try:
-            yield
-        finally:
-            await self._enable_management_interface()
 
     async def _delete_existing_route(self) -> None:
         # Deleting routes by interface name instead of network destination (0.0.0.0/0) makes
@@ -163,18 +145,5 @@ class NetworkSwitcherWindows(NetworkSwitcher):
                     "interface",
                     self._interfaces.default,
                     "disable",
-                ]
-            ).execute()
-
-    async def _enable_management_interface(self) -> None:
-        if self._interfaces.default is not None:
-            await self._connection.create_process(
-                [
-                    "netsh",
-                    "interface",
-                    "set",
-                    "interface",
-                    self._interfaces.default,
-                    "enable",
                 ]
             ).execute()
