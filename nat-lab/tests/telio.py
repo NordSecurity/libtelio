@@ -3,6 +3,7 @@ import json
 import os
 import re
 import shlex
+import datetime
 from collections import Counter
 from config import DERP_PRIMARY, DERP_SERVERS
 from contextlib import asynccontextmanager
@@ -435,7 +436,7 @@ class Client:
         self._adapter_type = adapter_type
         self._telio_features = telio_features
         self._quit = False
-
+        self._start_time = datetime.datetime.now()
         # Automatically enables IPv6 feature when the IPv6 stack is enabled
         if (
             self._node.ip_stack in (IPStack.IPv4v6, IPStack.IPv6)
@@ -868,12 +869,26 @@ class Client:
             await interface_info.execute()
             routing_table_info = self._connection.create_process(["netstat", "-rn"])
             await routing_table_info.execute()
+            # syslog does not provide a way to filter events by timestamp, so only using the last 20 lines.
             syslog_info = self._connection.create_process(["syslog"])
             await syslog_info.execute()
+            start_time_str = self._start_time.strftime("%Y-%m-%d %H:%M:%S")
+            log_info = self._connection.create_process(["log", "show", "--start", start_time_str])
+            await log_info.execute()
             return (
-                routing_table_info.get_stdout()
+                start_time_str
+                + "\n"
+                + "\n"
+                + routing_table_info.get_stdout()
+                + "\n"
                 + interface_info.get_stdout()
+                + "\n"
                 + "\n".join(syslog_info.get_stdout().splitlines()[-20:])
+                + "\n"
+                + "\n"
+                + log_info.get_stdout()
+                + "\n"
+                + "\n"
             )
         return ""
 
