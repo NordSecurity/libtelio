@@ -1,3 +1,11 @@
+### v4.1.6
+### **Bruschetta**
+---
+### Changelog
+* LLT-4827: Release builds v4.1.4 and v4.1.5 contain wrong version of wireguard-go. This release fixes that.
+
+<br>
+
 ### v4.1.5
 ### **Bruschetta**
 ---
