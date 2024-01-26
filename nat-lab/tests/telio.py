@@ -5,15 +5,14 @@ import os
 import re
 import shlex
 from collections import Counter
+from config import DERP_PRIMARY, DERP_SERVERS
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import AsyncIterator, List, Optional, Set
-
-from config import DERP_PRIMARY, DERP_SERVERS
 from dataclasses_json import DataClassJsonMixin, dataclass_json
+from enum import Enum
 from mesh_api import Meshmap, Node
 from telio_features import TelioFeatures
+from typing import AsyncIterator, List, Optional, Set
 from utils import asyncio_util
 from utils.connection import Connection, TargetOS
 from utils.connection_util import get_libtelio_binary_path
