@@ -885,7 +885,7 @@ class Client:
         os.makedirs(log_dir, exist_ok=True)
 
         log_content = await self.get_log()
-        network_info_info = await self.get_network_info()
+
         if self._connection.target_os == TargetOS.Linux:
             process = self._connection.create_process(["cat", "/etc/hostname"])
             await process.execute()
@@ -917,6 +917,7 @@ class Client:
                 filename = f"{filename[:249]}_{i}.log"
                 i += 1
 
+        network_info_info = await self.get_network_info()
         with open(
             os.path.join(log_dir, filename),
             "w",
