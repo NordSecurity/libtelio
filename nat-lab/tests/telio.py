@@ -873,7 +873,9 @@ class Client:
             syslog_info = self._connection.create_process(["syslog"])
             await syslog_info.execute()
             start_time_str = self._start_time.strftime("%Y-%m-%d %H:%M:%S")
-            log_info = self._connection.create_process(["log", "show", "--start", start_time_str])
+            log_info = self._connection.create_process(
+                ["log", "show", "--start", start_time_str]
+            )
             await log_info.execute()
             return (
                 start_time_str
