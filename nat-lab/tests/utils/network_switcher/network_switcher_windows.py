@@ -23,15 +23,20 @@ class Interface:
         stdout = process.get_stdout()
         print(stdout)
 
-        matches = re.findall(
-            r"Configuration for interface \"(.*)\"[\s\S]*?IP Address:\s*([\d.]*)",
+        matches = re.finditer(
+            r'Configuration for interface "([^"]+)"\s+(.*?)InterfaceMetric',
             stdout,
+            re.DOTALL,
         )
 
         result: List[Interface] = []
         for match in matches:
-            print(match)
-            result.append(Interface(match[0], match[1]))
+            name = match.group(1)
+            ip_address_match = re.search(
+                r"IP Address:\s+(\d+\.\d+\.\d+\.\d+)", match.group(2)
+            )
+            ip_address = ip_address_match.group(1) if ip_address_match else ""
+            result.append(Interface(name, ip_address))
 
         return result
 
