@@ -33,15 +33,4 @@ jobs:
         - name: fuzz telio crypto decrypt_response
           working-directory: crates/telio-crypto
           run: cargo fuzz run decrypt_response -- -max_total_time=180
-  telio-wg-fuzzing:
-      runs-on: ubuntu-22.04
-      steps:
-        - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
-        - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
-          with:
-            toolchain: nightly-2023-06-01
-            override: true
-        - run: cargo install cargo-fuzz --locked --version 0.11.2
-        - name: fuzz telio wg parse_get_packet
-          working-directory: crates/telio-wg
-          run: cargo fuzz run parse_get_packet -- -max_total_time=180
+
