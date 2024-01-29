@@ -7,6 +7,8 @@ use telio::TelioTracingSubscriber;
 mod test_module {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use telio::SubscriberCallback;
+
     use super::*;
 
     #[test]
@@ -20,7 +22,7 @@ mod test_module {
             assert_eq!(telio::ffi_types::telio_log_level::TELIO_LOG_INFO, level);
             let message = CStr::from_ptr(message);
             assert_eq!(
-                r#""logger::test_module":36 test message"#,
+                r#""logger::test_module":39 test message"#,
                 message.to_str().unwrap()
             );
             let call_count: &AtomicUsize = &*(ctx as *const AtomicUsize);
@@ -30,7 +32,8 @@ mod test_module {
             ctx: &call_count as *const AtomicUsize as *mut c_void,
             cb: test_telio_logger_fn,
         };
-        let tracing_subscriber = TelioTracingSubscriber::new(logger, tracing::Level::INFO);
+        let tracing_subscriber =
+            TelioTracingSubscriber::new(SubscriberCallback::Swig(logger), tracing::Level::INFO);
         tracing::subscriber::set_global_default(tracing_subscriber).unwrap();
 
         tracing::info!("test message");

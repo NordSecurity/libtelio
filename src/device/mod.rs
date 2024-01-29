@@ -499,7 +499,7 @@ impl Device {
         }
     }
 
-    pub fn try_shutdown(mut self, timeout: Duration) -> Result {
+    pub fn try_shutdown(&mut self, timeout: Duration) -> Result {
         let art = self.art.take().ok_or(Error::NotStarted)?;
         let art = Arc::try_unwrap(art);
         match art {
@@ -2595,7 +2595,7 @@ mod tests {
         let (sender, _receiver) = tokio::sync::broadcast::channel(1);
         let features = Features {
             direct: Some(FeatureDirect {
-                providers: Some(HashSet::<telio_model::api_config::EndpointProvider>::new()),
+                providers: Some(HashSet::new()),
                 endpoint_interval_secs: None,
                 skip_unresponsive_peers: Default::default(),
             }),
@@ -2676,10 +2676,11 @@ mod tests {
 
         let (sender, _receiver) = tokio::sync::broadcast::channel(1);
 
-        let mut providers = HashSet::<telio_model::api_config::EndpointProvider>::new();
-        providers.insert(telio_model::api_config::EndpointProvider::Stun);
-        providers.insert(telio_model::api_config::EndpointProvider::Upnp);
-        providers.insert(telio_model::api_config::EndpointProvider::Local);
+        let providers = maplit::hashset! {
+            telio_model::api_config::EndpointProvider::Stun,
+            telio_model::api_config::EndpointProvider::Upnp,
+            telio_model::api_config::EndpointProvider::Local,
+        };
 
         let features = Features {
             direct: Some(FeatureDirect {

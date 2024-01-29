@@ -1258,8 +1258,12 @@ mod tests {
                     paths: None,
                     direct: None,
                     exit_dns: None,
-                    #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
-                    is_test_env: Some(true),
+                    is_test_env: if cfg!(any(target_os = "macos", feature = "pretend_to_be_macos"))
+                    {
+                        Some(true)
+                    } else {
+                        None
+                    },
                     derp: None,
                     validate_keys: Default::default(),
                     ipv6: true,

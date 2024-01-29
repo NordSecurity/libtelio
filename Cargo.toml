@@ -63,7 +63,11 @@ once_cell.workspace = true
 jni = "0.19"
 rustls-platform-verifier = { git = "https://github.com/tomaszklak/rustls-platform-verifier.git", rev = "2db68dd17d76eadb062176b913040341b99ef4f3" }
 
+[target.'cfg(windows)'.dependencies]
+winapi = { workspace = true, features = ["ntdef", "winerror"] }
+
 [dev-dependencies]
+maplit.workspace = true
 slog-async = "2.7"
 slog-term = "2.8"
 
@@ -83,9 +87,6 @@ telio-wg = { workspace = true, features = ["mockall", "test-adapter"] }
 [build-dependencies]
 anyhow.workspace = true
 cc.workspace = true
-
-[target.'cfg(windows)'.dependencies]
-winapi = { workspace = true, features = ["ntdef", "winerror"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"

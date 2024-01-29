@@ -15,6 +15,9 @@ pub const DEFAULT_PERSISTENT_KEEPALIVE_PERIOD: u32 = 25;
 /// Default keepalive period for direct peers
 pub const DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD: u32 = 5;
 
+/// Type alias for UniFFI
+pub type EndpointProviders = HashSet<EndpointProvider>;
+
 /// Configurable persistent keepalive periods for different types of peers
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct FeaturePersistentKeepalive {
@@ -183,7 +186,7 @@ pub struct FeatureDirect {
     /// Endpoint providers [default all]
     #[serde(default)]
     #[serde(deserialize_with = "deserialize_providers")]
-    pub providers: Option<HashSet<EndpointProvider>>,
+    pub providers: Option<EndpointProviders>,
     /// Polling interval for endpoints [default 10s]
     pub endpoint_interval_secs: Option<u64>,
     /// Configuration options for skipping unresponsive peers
@@ -244,7 +247,8 @@ pub struct FeatureDerp {
 }
 
 /// Whether to validate keys
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(transparent)]
 pub struct FeatureValidateKeys(pub bool);
 
 impl Default for FeatureValidateKeys {
@@ -258,7 +262,7 @@ impl Default for FeatureValidateKeys {
 #[serde(transparent)]
 pub struct FeatureBoringtunResetConns(pub bool);
 
-fn deserialize_providers<'de, D>(de: D) -> Result<Option<HashSet<EndpointProvider>>, D::Error>
+fn deserialize_providers<'de, D>(de: D) -> Result<Option<EndpointProviders>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -299,7 +303,6 @@ pub struct Features {
     pub direct: Option<FeatureDirect>,
     /// Test environment (natlab) requires binding feature disabled
     /// TODO: Remove it once mac integration tests support the binding mechanism
-    #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
     pub is_test_env: Option<bool>,
     /// Derp server specific configuration
     pub derp: Option<FeatureDerp>,
@@ -423,7 +426,7 @@ mod tests {
             "boringtun_reset_connections": true
         }"#;
 
-    static EXPECTED_FEATURES: Lazy<Features> = Lazy::new(|| Features {
+    static EXPECTED_FEATURES_WITH_IS_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
         wireguard: FeatureWireguard {
             persistent_keepalive: FeaturePersistentKeepalive {
                 vpn: None,
@@ -457,7 +460,6 @@ mod tests {
         exit_dns: Some(FeatureExitDns {
             auto_switch_dns_ips: Some(true),
         }),
-        #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
         is_test_env: Some(true),
         derp: Some(FeatureDerp {
             tcp_keepalive: Some(1),
@@ -471,8 +473,7 @@ mod tests {
         boringtun_reset_connections: FeatureBoringtunResetConns(true),
         flush_events_on_stop_timeout_seconds: None,
     });
-
-    static EXPECTED_FEATURES_WITHOUT_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
+    static EXPECTED_FEATURES_WITHOUT_IS_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
         wireguard: FeatureWireguard {
             persistent_keepalive: FeaturePersistentKeepalive {
                 vpn: None,
@@ -504,7 +505,6 @@ mod tests {
         exit_dns: Some(FeatureExitDns {
             auto_switch_dns_ips: None,
         }),
-        #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
         is_test_env: None,
         derp: None,
         validate_keys: Default::default(),
@@ -677,6 +677,7 @@ mod tests {
             paths: None,
             direct: None,
             exit_dns: None,
+            is_test_env: None,
             derp: None,
             validate_keys: Default::default(),
             ipv6: false,
@@ -703,6 +704,7 @@ mod tests {
             paths: None,
             direct: None,
             exit_dns: None,
+            is_test_env: None,
             derp: None,
             validate_keys: Default::default(),
             ipv6: false,
@@ -724,6 +726,7 @@ mod tests {
             paths: None,
             direct: None,
             exit_dns: None,
+            is_test_env: None,
             derp: None,
             validate_keys: Default::default(),
             ipv6: false,
@@ -764,6 +767,7 @@ mod tests {
             exit_dns: Some(FeatureExitDns {
                 auto_switch_dns_ips: Some(true),
             }),
+            is_test_env: None,
             derp: None,
             validate_keys: Default::default(),
             ipv6: false,
@@ -781,6 +785,7 @@ mod tests {
             exit_dns: Some(FeatureExitDns {
                 auto_switch_dns_ips: None,
             }),
+            is_test_env: None,
             derp: None,
             validate_keys: Default::default(),
             ipv6: false,
@@ -806,7 +811,6 @@ mod tests {
             lana: None,
             paths: None,
             direct: None,
-            #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
             is_test_env: None,
             exit_dns: None,
             derp: None,
@@ -834,10 +838,9 @@ mod tests {
     fn test_json_without_is_test_env_to_feature_set() {
         let deserialization: Result<Features, _> =
             from_str(CORRECT_FEATURES_JSON_WITHOUT_IS_TEST_ENV);
-
         assert_eq!(
             deserialization.unwrap(),
-            *EXPECTED_FEATURES_WITHOUT_TEST_ENV
+            *EXPECTED_FEATURES_WITHOUT_IS_TEST_ENV
         );
     }
 
@@ -846,7 +849,10 @@ mod tests {
         let deserialization: Result<Features, _> =
             from_str(CORRECT_FEATURES_JSON_WITH_ALL_OPTIONAL);
 
-        assert_eq!(deserialization.unwrap(), *EXPECTED_FEATURES);
+        assert_eq!(
+            deserialization.unwrap(),
+            *EXPECTED_FEATURES_WITH_IS_TEST_ENV
+        );
     }
 
     #[test]
@@ -859,6 +865,7 @@ mod tests {
             paths: None,
             exit_dns: None,
             direct: None,
+            is_test_env: None,
             derp: None,
             validate_keys: Default::default(),
             ipv6: false,
