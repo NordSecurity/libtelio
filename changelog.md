@@ -1,3 +1,9 @@
+### v4.2.3
+---
+* LLT-4869: Fix maven upload
+
+<br>
+
 ### v4.2.2
 ----
 * LLT-4662: Update rustix dependency
