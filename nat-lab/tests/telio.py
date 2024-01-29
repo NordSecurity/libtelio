@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import json
 import os
 import re
@@ -7,17 +8,17 @@ from collections import Counter
 from config import DERP_PRIMARY, DERP_SERVERS
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from dataclasses_json import dataclass_json, DataClassJsonMixin
+from dataclasses_json import DataClassJsonMixin, dataclass_json
 from enum import Enum
-from mesh_api import Node, Meshmap
+from mesh_api import Meshmap, Node
 from telio_features import TelioFeatures
-from typing import List, Set, Optional, AsyncIterator
+from typing import AsyncIterator, List, Optional, Set
 from utils import asyncio_util
 from utils.connection import Connection, TargetOS
 from utils.connection_util import get_libtelio_binary_path
 from utils.output_notifier import OutputNotifier
 from utils.process import Process
-from utils.router import Router, new_router, IPStack
+from utils.router import IPStack, Router, new_router
 
 
 # Equivalent of `libtelio/telio-wg/src/uapi.rs`
@@ -435,7 +436,7 @@ class Client:
         self._adapter_type = adapter_type
         self._telio_features = telio_features
         self._quit = False
-
+        self._start_time = datetime.datetime.now()
         # Automatically enables IPv6 feature when the IPv6 stack is enabled
         if (
             self._node.ip_stack in (IPStack.IPv4v6, IPStack.IPv6)
@@ -862,6 +863,37 @@ class Client:
         await process.execute()
         return process.get_stdout()
 
+    async def get_network_info(self) -> str:
+        if self._connection.target_os == TargetOS.Mac:
+            interface_info = self._connection.create_process(["ifconfig", "-a"])
+            await interface_info.execute()
+            routing_table_info = self._connection.create_process(["netstat", "-rn"])
+            await routing_table_info.execute()
+            # syslog does not provide a way to filter events by timestamp, so only using the last 20 lines.
+            syslog_info = self._connection.create_process(["syslog"])
+            await syslog_info.execute()
+            start_time_str = self._start_time.strftime("%Y-%m-%d %H:%M:%S")
+            log_info = self._connection.create_process(
+                ["log", "show", "--start", start_time_str]
+            )
+            await log_info.execute()
+            return (
+                start_time_str
+                + "\n"
+                + "\n"
+                + routing_table_info.get_stdout()
+                + "\n"
+                + interface_info.get_stdout()
+                + "\n"
+                + "\n".join(syslog_info.get_stdout().splitlines()[-20:])
+                + "\n"
+                + "\n"
+                + log_info.get_stdout()
+                + "\n"
+                + "\n"
+            )
+        return ""
+
     async def save_logs(self) -> None:
         if os.environ.get("NATLAB_SAVE_LOGS") is None:
             return
@@ -893,9 +925,27 @@ class Client:
                 filename = f"{filename[:249]}_{i}.log"
                 i += 1
 
+        ni_filename = str(test_name) + "_" + container_id + "_network_info"
+        if len(filename.encode("utf-8")) > 256:
+            filename = f"{filename[:251]}.log"
+
+            i = 0
+            while os.path.exists(os.path.join(log_dir, filename)):
+                filename = f"{filename[:249]}_{i}.log"
+                i += 1
+
+        network_info_info = await self.get_network_info()
         with open(
             os.path.join(log_dir, filename),
             "w",
             encoding="utf-8",
         ) as f:
             f.write(log_content)
+
+        if self._connection.target_os == TargetOS.Mac:
+            with open(
+                os.path.join(log_dir, ni_filename),
+                "w",
+                encoding="utf-8",
+            ) as f:
+                f.write(network_info_info)
