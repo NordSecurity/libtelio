@@ -933,7 +933,6 @@ class Client:
         ) as f:
             f.write(log_content)
 
-
     async def save_mac_network_info(self) -> None:
         if os.environ.get("NATLAB_SAVE_LOGS") is None:
             return
