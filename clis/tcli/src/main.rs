@@ -93,7 +93,7 @@ fn main() -> Result<()> {
                     _ => (),
                 },
                 Error(e) => {
-                    println!("error: {e:#?}")
+                    println!("error: {}", e)
                 }
                 Quit => {
                     if let Some(idx) = message_idx {
