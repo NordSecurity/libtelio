@@ -1,5 +1,5 @@
 [package]
-name = "telio-pq-fuzz"
+name = "telio-wg-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2021"
@@ -12,7 +12,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 
-[dependencies.telio-pq]
+[dependencies.telio-wg]
 path = ".."
 features = ["fuzzing"]
 
@@ -26,11 +26,5 @@ debug = 1
 [[bin]]
 name = "parse_get_packet"
 path = "fuzz_targets/parse_get_packet.rs"
-test = false
-doc = false
-
-[[bin]]
-name = "parse_rekey_packet"
-path = "fuzz_targets/parse_rekey_packet.rs"
 test = false
 doc = false
