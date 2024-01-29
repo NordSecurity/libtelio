@@ -509,6 +509,7 @@ class Client:
                         await self.set_meshmap(meshmap)
                     yield self
             finally:
+                await self.save_mac_network_info()
                 if self._process.is_executing():
                     await self.stop_device()
                     self._quit = True
@@ -925,7 +926,35 @@ class Client:
                 filename = f"{filename[:249]}_{i}.log"
                 i += 1
 
-        ni_filename = str(test_name) + "_" + container_id + "_network_info"
+        with open(
+            os.path.join(log_dir, filename),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            f.write(log_content)
+
+
+    async def save_mac_network_info(self) -> None:
+        if os.environ.get("NATLAB_SAVE_LOGS") is None:
+            return
+
+        if self._connection.target_os != TargetOS.Mac:
+            return
+
+        log_dir = "logs"
+        os.makedirs(log_dir, exist_ok=True)
+
+        network_info_info = await self.get_network_info()
+
+        container_id = str(self._connection.target_os)
+
+        test_name = os.environ.get("PYTEST_CURRENT_TEST")
+        if test_name is not None:
+            test_name = "".join(
+                [x if x.isalnum() else "_" for x in test_name.split(" ")[0]]
+            )
+
+        filename = str(test_name) + "_" + container_id + "_network_info"
         if len(filename.encode("utf-8")) > 256:
             filename = f"{filename[:251]}.log"
 
@@ -934,18 +963,9 @@ class Client:
                 filename = f"{filename[:249]}_{i}.log"
                 i += 1
 
-        network_info_info = await self.get_network_info()
         with open(
             os.path.join(log_dir, filename),
             "w",
             encoding="utf-8",
         ) as f:
-            f.write(log_content)
-
-        if self._connection.target_os == TargetOS.Mac:
-            with open(
-                os.path.join(log_dir, ni_filename),
-                "w",
-                encoding="utf-8",
-            ) as f:
-                f.write(network_info_info)
+            f.write(network_info_info)
