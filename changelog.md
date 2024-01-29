@@ -1,6 +1,7 @@
 ### v4.2.3
 ---
 * LLT-4869: Fix maven upload
+* LLT-4870: Revert post quantum
 
 <br>
 
