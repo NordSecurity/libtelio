@@ -42,8 +42,8 @@ types-protobuf = "==3.19.21"
 typing-extensions = "*"
 typing-inspect = "*"
 yarl = "*"
+pytest-repeat = "*"
 
 [dev-packages]
 
 [requires]
-
