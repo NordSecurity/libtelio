@@ -63,4 +63,14 @@ async def _copy_binaries(
         (ssh_connection, f"{VM_TCLI_DIR}"),
     )
     await connection.create_process(["chmod", "+x", f"{VM_TCLI_DIR}/tcli"]).execute()
+
+    await connection.create_process(["mkdir", "-p", "/opt/bin"]).execute()
+    await asyncssh.scp(
+        get_root_path("nat-lab/bin/inject-icmp-host-unreachable"),
+        (ssh_connection, "/opt/bin"),
+    )
+    await connection.create_process(
+        ["chmod", "+x", "/opt/bin/inject-icmp-host-unreachable"]
+    ).execute()
+
     FILES_COPIED = True

@@ -967,3 +967,8 @@ class Client:
             encoding="utf-8",
         ) as f:
             f.write(network_info_info)
+
+    async def probe_pmtu(self, host: str, expected: int):
+        ev = self.wait_for_output(f"PMTU -> {host}: {expected}")
+        await self._write_command(["pmtu", host])
+        await ev.wait()
