@@ -86,6 +86,8 @@ fn compile_and_enforce_bindings_export(target_os: &str, lang_wrapper: &str) -> R
 }
 
 fn main() -> Result<()> {
+    uniffi::generate_scaffolding("./src/libtelio.udl")?;
+
     let target_os = env::var("CARGO_CFG_TARGET_OS")?;
 
     let langs: HashSet<&str> = HashSet::from_iter(["GO", "JAVA", "CS"].iter().copied());

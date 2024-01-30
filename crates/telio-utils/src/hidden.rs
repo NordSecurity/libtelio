@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 #[serde(transparent)]
 pub struct Hidden<T>(pub T);
 
+/// Type alias for UniFFI
+pub type HiddenString = Hidden<String>;
+
 impl<T> fmt::Debug for Hidden<T>
 where
     T: fmt::Debug,
