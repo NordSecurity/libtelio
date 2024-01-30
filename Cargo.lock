@@ -4885,8 +4885,8 @@ checksum = "fc72304796d0818e357ead4e000d19c9c174ab23dc11093ac919054d20a6a7fc"
 
 [[package]]
 name = "uniffi"
-version = "0.25.0"
-source = "git+https://github.com/NordSecurity/uniffi-rs.git?tag=v0.25.0-1#de1e773204d0ddcda58faac0a77570f1f8056679"
+version = "0.3.1+v0.25.0"
+source = "git+https://github.com/NordSecurity/uniffi-rs.git?tag=v0.3.1+v0.25.0#1a5dc527165589456c3d7233107917e065192b03"
 dependencies = [
  "anyhow",
  "uniffi_build",
@@ -4896,8 +4896,8 @@ dependencies = [
 
 [[package]]
 name = "uniffi_bindgen"
-version = "0.25.0"
-source = "git+https://github.com/NordSecurity/uniffi-rs.git?tag=v0.25.0-1#de1e773204d0ddcda58faac0a77570f1f8056679"
+version = "0.3.1+v0.25.0"
+source = "git+https://github.com/NordSecurity/uniffi-rs.git?tag=v0.3.1+v0.25.0#1a5dc527165589456c3d7233107917e065192b03"
 dependencies = [
  "anyhow",
  "askama",
@@ -4919,8 +4919,8 @@ dependencies = [
 
 [[package]]
 name = "uniffi_build"
-version = "0.25.0"
-source = "git+https://github.com/NordSecurity/uniffi-rs.git?tag=v0.25.0-1#de1e773204d0ddcda58faac0a77570f1f8056679"
+version = "0.3.1+v0.25.0"
+source = "git+https://github.com/NordSecurity/uniffi-rs.git?tag=v0.3.1+v0.25.0#1a5dc527165589456c3d7233107917e065192b03"
 dependencies = [
  "anyhow",
  "camino",
@@ -4929,8 +4929,8 @@ dependencies = [
 
 [[package]]
 name = "uniffi_checksum_derive"
-version = "0.25.0"
-source = "git+https://github.com/NordSecurity/uniffi-rs.git?tag=v0.25.0-1#de1e773204d0ddcda58faac0a77570f1f8056679"
+version = "0.3.1+v0.25.0"
+source = "git+https://github.com/NordSecurity/uniffi-rs.git?tag=v0.3.1+v0.25.0#1a5dc527165589456c3d7233107917e065192b03"
 dependencies = [
  "quote 1.0.35",
  "syn 2.0.48",
@@ -4939,7 +4939,7 @@ dependencies = [
 [[package]]
 name = "uniffi_core"
 version = "0.25.0"
-source = "git+https://github.com/NordSecurity/uniffi-rs.git?tag=v0.25.0-1#de1e773204d0ddcda58faac0a77570f1f8056679"
+source = "git+https://github.com/NordSecurity/uniffi-rs.git?tag=v0.3.1+v0.25.0#1a5dc527165589456c3d7233107917e065192b03"
 dependencies = [
  "anyhow",
  "bytes",
@@ -4953,8 +4953,8 @@ dependencies = [
 
 [[package]]
 name = "uniffi_macros"
-version = "0.25.0"
-source = "git+https://github.com/NordSecurity/uniffi-rs.git?tag=v0.25.0-1#de1e773204d0ddcda58faac0a77570f1f8056679"
+version = "0.3.1+v0.25.0"
+source = "git+https://github.com/NordSecurity/uniffi-rs.git?tag=v0.3.1+v0.25.0#1a5dc527165589456c3d7233107917e065192b03"
 dependencies = [
  "bincode",
  "camino",
@@ -4971,8 +4971,8 @@ dependencies = [
 
 [[package]]
 name = "uniffi_meta"
-version = "0.25.0"
-source = "git+https://github.com/NordSecurity/uniffi-rs.git?tag=v0.25.0-1#de1e773204d0ddcda58faac0a77570f1f8056679"
+version = "0.3.1+v0.25.0"
+source = "git+https://github.com/NordSecurity/uniffi-rs.git?tag=v0.3.1+v0.25.0#1a5dc527165589456c3d7233107917e065192b03"
 dependencies = [
  "anyhow",
  "bytes",
@@ -4982,8 +4982,8 @@ dependencies = [
 
 [[package]]
 name = "uniffi_testing"
-version = "0.25.0"
-source = "git+https://github.com/NordSecurity/uniffi-rs.git?tag=v0.25.0-1#de1e773204d0ddcda58faac0a77570f1f8056679"
+version = "0.3.1+v0.25.0"
+source = "git+https://github.com/NordSecurity/uniffi-rs.git?tag=v0.3.1+v0.25.0#1a5dc527165589456c3d7233107917e065192b03"
 dependencies = [
  "anyhow",
  "camino",
@@ -4994,8 +4994,8 @@ dependencies = [
 
 [[package]]
 name = "uniffi_udl"
-version = "0.25.0"
-source = "git+https://github.com/NordSecurity/uniffi-rs.git?tag=v0.25.0-1#de1e773204d0ddcda58faac0a77570f1f8056679"
+version = "0.3.1+v0.25.0"
+source = "git+https://github.com/NordSecurity/uniffi-rs.git?tag=v0.3.1+v0.25.0#1a5dc527165589456c3d7233107917e065192b03"
 dependencies = [
  "anyhow",
  "uniffi_meta",
@@ -5201,7 +5201,7 @@ checksum = "14247bb57be4f377dfb94c72830b8ce8fc6beac03cf4bf7b9732eadd414123fc"
 [[package]]
 name = "weedle2"
 version = "4.0.0"
-source = "git+https://github.com/NordSecurity/uniffi-rs.git?tag=v0.25.0-1#de1e773204d0ddcda58faac0a77570f1f8056679"
+source = "git+https://github.com/NordSecurity/uniffi-rs.git?tag=v0.3.1+v0.25.0#1a5dc527165589456c3d7233107917e065192b03"
 dependencies = [
  "nom",
 ]
