@@ -3,7 +3,7 @@
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::{from_value, Error, Value};
-use telio_utils::Hidden;
+use telio_utils::{telio_log_error, telio_log_warn, Hidden};
 
 use std::{
     net::{IpAddr, Ipv4Addr},
@@ -11,6 +11,8 @@ use std::{
 };
 
 use telio_crypto::PublicKey;
+
+const MAX_CONFIG_LENGTH: usize = 16 * 1024 * 1024;
 
 /// Characterstics descriping a peer
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -207,11 +209,65 @@ impl Deref for Config {
     }
 }
 
+impl Config {
+    /// Deserialize string to `Config`, with `PartialConfig` as an intermediate step
+    pub fn new_from_str(value: &str) -> Result<(Self, usize), ConfigParseError> {
+        if value.is_empty() {
+            telio_log_error!("config string was empty");
+            return Err(ConfigParseError::EmptyString);
+        } else if value.len() > MAX_CONFIG_LENGTH {
+            telio_log_error!(
+                "config string exceeds maximum allowed length ({}): {}",
+                MAX_CONFIG_LENGTH,
+                value.len()
+            );
+            return Err(ConfigParseError::TooLongString);
+        }
+        let cfg: PartialConfig =
+            serde_json::from_str(value).map_err(|_| ConfigParseError::BadConfig)?;
+        let (cfg, peer_deserialization_failures) = cfg.to_config();
+        let res = (cfg, peer_deserialization_failures.len());
+        for failure in peer_deserialization_failures {
+            telio_log_warn!("Failed to deserialize one of the peers: {}", failure);
+        }
+        Ok(res)
+    }
+}
+
+/// Represents the possible issues when deserializing a json-string to a config object
+#[derive(Copy, Clone, Debug)]
+pub enum ConfigParseError {
+    /// The passed string was empty
+    EmptyString,
+    /// The passed string was longer than the allowed max length
+    TooLongString,
+    /// The string did not represent a valid Config
+    BadConfig,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
-    use serde_json::from_str;
+
+    #[test]
+    fn test_string_meshnet_config_empty_string() {
+        let actual = Config::new_from_str("").unwrap_err();
+        assert!(matches!(actual, ConfigParseError::EmptyString));
+    }
+
+    #[test]
+    fn test_string_meshnet_config_too_long_string() {
+        let actual = Config::new_from_str(&"a".repeat(MAX_CONFIG_LENGTH + 1)).unwrap_err();
+        dbg!(actual);
+        assert!(matches!(actual, ConfigParseError::TooLongString));
+    }
+
+    #[test]
+    fn test_string_meshnet_config_invalid_string() {
+        let actual = Config::new_from_str(r#"{"invalid": "field"}"#).unwrap_err();
+        assert!(matches!(actual, ConfigParseError::BadConfig));
+    }
 
     #[test]
     fn json_to_config() {
@@ -386,10 +442,9 @@ mod tests {
             }),
         };
 
-        let partial_config: PartialConfig = from_str(json).unwrap();
-        let (full_config, peer_deserialization_failures) = partial_config.to_config();
+        let (full_config, peer_deserialization_failure_count) = Config::new_from_str(json).unwrap();
 
-        assert_eq!(peer_deserialization_failures.len(), 3);
+        assert_eq!(peer_deserialization_failure_count, 3);
         assert_eq!(full_config, expected_config);
     }
 }

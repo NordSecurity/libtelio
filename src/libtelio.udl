@@ -119,6 +119,15 @@ namespace libtelio {
 
     /// Get the public key that corresponds to a given private key.
     PublicKey generate_public_key(SecretKey secret_key);
+
+    /// Utility function to create a `Features` object from a json-string
+    /// Passing an empty string will return the default feature config
+    [Throws=TelioError]
+    Features string_to_features(string fstr);
+
+    /// Utility function to create a `Config` object from a json-string
+    [Throws=TelioError]
+    Config string_to_meshnet_config(string cfg_str);
 };
 
 interface telio {

@@ -37,7 +37,7 @@ use self::types::*;
 use crate::device::{Device, DeviceConfig, Result as DevResult};
 use telio_model::{
     api_config::Features,
-    config::{Config, PartialConfig},
+    config::{Config, ConfigParseError},
     event::*,
     mesh::{ExitNode, Node},
 };
@@ -158,7 +158,29 @@ pub fn generate_public_key(secret_key: SecretKey) -> PublicKey {
     secret_key.public()
 }
 
+/// Utility function to create a `Features` object from a json-string
+/// Passing an empty string will return the default feature config
+pub fn string_to_features(fstr: String) -> FFIResult<Features> {
+    if fstr.is_empty() {
+        Ok(Features::default())
+    } else {
+        serde_json::from_str(&fstr).map_err(|_| TelioError::InvalidString)
+    }
+}
+
+/// Utility function to create a `Config` object from a json-string
+pub fn string_to_meshnet_config(cfg_str: String) -> FFIResult<Config> {
+    match Config::new_from_str(&cfg_str) {
+        Ok((cfg, _)) => Ok(cfg),
+        Err(e) => match e {
+            ConfigParseError::BadConfig => Err(TelioError::BadConfig),
+            _ => Err(TelioError::InvalidString),
+        },
+    }
+}
+
 // TODO(Mathias): Remove this in cleanup PR
+// TODO(Mathias): Rename telio->Telio
 #[allow(non_camel_case_types)]
 pub struct telio {
     inner: Mutex<Option<Device>>,
@@ -664,7 +686,7 @@ impl telio {
             self.device_op(true, |dev| {
                 let cfg = cfg.clone();
                 let cfg = Some(cfg);
-                dev.set_config(&cfg).log_result("telio_set_meshnet")
+                dev.set_config(&cfg).log_result("Telio::set_meshnet")
             })
         })
     }
@@ -1476,19 +1498,15 @@ pub extern "C" fn telio_set_meshnet(dev: &telio, cfg: *const c_char) -> telio_re
                 let cfg_str = ffi_try!(unsafe { CStr::from_ptr(cfg) }
                     .to_str()
                     .map_err(|_| TELIO_RES_INVALID_STRING));
-                if cfg_str.as_bytes().len() > MAX_CONFIG_LENGTH {
-                    telio_log_error!(
-                        "config string exceeds maximum allowed length ({}): {}",
-                        MAX_CONFIG_LENGTH,
-                        cfg_str.as_bytes().len()
-                    );
-                    return TELIO_RES_INVALID_STRING;
-                }
-                let cfg: PartialConfig = ffi_try!(serde_json::from_str(cfg_str));
-                let (cfg, peer_deserialization_failures) = cfg.to_config();
-                for failure in peer_deserialization_failures {
-                    telio_log_warn!("Failed to deserialize one of the peers: {}", failure);
-                }
+                let cfg = match Config::new_from_str(cfg_str) {
+                    Ok((cfg, _)) => cfg,
+                    Err(e) => {
+                        return match e {
+                            ConfigParseError::BadConfig => TELIO_RES_BAD_CONFIG,
+                            _ => TELIO_RES_INVALID_STRING,
+                        }
+                    }
+                };
 
                 telio_log_info!(
                     "telio_set_meshnet entry with instance id: {}. Meshmap: {:?}",
@@ -1996,5 +2014,18 @@ mod tests {
         let res = get_instance_id_from_ptr(telio_dev);
         assert_eq!(res, Some(id));
         Ok(())
+    }
+
+    #[test]
+    fn test_string_to_features_empty_string() {
+        let actual = string_to_features("".to_owned()).unwrap();
+        let expected = Features::default();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_string_to_features_valid_string() {
+        let actual = string_to_features(CORRECT_FEATURES_JSON_WITHOUT_IS_TEST_ENV.to_owned());
+        assert!(actual.is_ok());
     }
 }
