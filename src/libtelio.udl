@@ -1,0 +1,558 @@
+/// Mesh connection path type
+enum PathType {
+    /// Nodes connected via a middle-man relay
+    "Relay",
+    /// Nodes connected directly via WG
+    "Direct",
+};
+
+/// Available Endpoint Providers for meshnet direct connections
+enum EndpointProvider {
+    /// Use local interface ips as possible endpoints
+    "Local",
+    /// Use stun and wg-stun results as possible endpoints
+    "Stun",
+    /// Use IGD and upnp to generate endpoints
+    "Upnp",
+};
+
+[Error]
+enum TelioError {
+    "UnknownError",
+    "InvalidKey",
+    "BadConfig",
+    "LockError",
+    "InvalidString",
+    "AlreadyStarted",
+    "NotStarted"
+};
+
+/// Possible adapters.
+enum TelioAdapterType {
+    /// Userland rust implementation.
+    "BoringTun",
+    /// Linux in-kernel WireGuard implementation
+    "LinuxNativeTun",
+    /// WireguardGo implementation
+    "WireguardGoTun",
+    /// WindowsNativeWireguardNt implementation
+    "WindowsNativeTun",
+};
+
+/// Possible log levels.
+enum TelioLogLevel {
+    "Error",
+    "Warning",
+    "Info",
+    "Debug",
+    "Trace",
+};
+
+/// Connection state of the node
+enum NodeState {
+    /// Node is disconnected
+    "Disconnected",
+    /// Trying to connect to the Node
+    "Connecting",
+    /// Node is connected
+    "Connected",
+};
+
+/// The currrent state of our connection to derp server
+enum RelayState {
+    /// Disconnected from the Derp server
+    "Disconnected",
+    /// Connecting to the Derp server
+    "Connecting",
+    /// Connected to the Derp server
+    "Connected",
+};
+
+[Custom]
+typedef bytes PublicKey;
+
+[Custom]
+typedef bytes SecretKey;
+
+[Custom]
+typedef string IpAddr;
+
+[Custom]
+typedef string IpNetwork;
+
+[Custom]
+typedef string Ipv4Addr;
+
+[Custom]
+typedef string SocketAddr;
+
+[Custom]
+typedef string HiddenString;
+
+[Custom]
+typedef sequence<EndpointProvider> EndpointProviders;
+
+[Custom]
+typedef boolean FeatureValidateKeys;
+
+[Custom]
+typedef boolean FeatureBoringtunResetConns;
+
+namespace libtelio {
+    /// Set the global logger.
+    /// # Parameters
+    /// - `log_level`: Max log level to log.
+    /// - `logger`: Callback to handle logging events.
+    void set_global_logger(TelioLogLevel log_level, TelioLoggerCb logger);
+
+    /// Get default recommended adapter type for platform.
+    TelioAdapterType uniffi_telio_get_default_adapter();
+
+    /// Get current version tag.
+    string uniffi_telio_get_version_tag();
+
+    /// Get current commit sha.
+    string uniffi_telio_get_commit_sha();
+
+    /// Generate a new secret key.
+    SecretKey generate_secret_key();
+
+    /// Get the public key that corresponds to a given private key.
+    PublicKey generate_public_key(SecretKey secret_key);
+};
+
+interface telio {
+    /// Create new telio library instance
+    /// # Parameters
+    /// - `events`:     Events callback
+    /// - `features`:   JSON string of enabled features
+    [Throws=TelioError]
+    constructor(Features features, TelioEventCb events);
+
+    /// Create new telio library instance
+    /// # Parameters
+    /// - `events`:     Events callback
+    /// - `features`:   JSON string of enabled features
+    /// - `protect`:    Callback executed after exit-node connect (for VpnService::protectFromVpn())
+    [Name=new_with_protect, Throws=TelioError]
+    constructor(Features features, TelioEventCb events, TelioProtectCb protect);
+
+    /// Completely stop and uninit telio lib.
+    [Throws=TelioError]
+    void destroy();
+
+    /// Explicitly deallocate telio object and shutdown async rt.
+    [Throws=TelioError]
+    void destroy_hard();
+
+    /// Stop telio device.
+    [Throws=TelioError]
+    void stop();
+
+    /// Start telio with specified adapter.
+    ///
+    /// Adapter will attempt to open its own tunnel.
+    [Throws=TelioError]
+    void start(SecretKey secret_key, TelioAdapterType adapter);
+
+    /// Start telio with specified adapter and name.
+    ///
+    /// Adapter will attempt to open its own tunnel.
+    [Throws=TelioError]
+    void start_named(SecretKey secret_key, TelioAdapterType adapter, string name);
+
+    /// Start telio device with specified adapter and already open tunnel.
+    ///
+    /// Telio will take ownership of tunnel , and close it on stop.
+    ///
+    /// # Parameters
+    /// - `private_key`: base64 encoded private_key.
+    /// - `adapter`: Adapter type.
+    /// - `tun`: A valid filedescriptor to tun device.
+    ///
+    [Throws=TelioError]
+    void start_with_tun(SecretKey secret_key, TelioAdapterType adapter, i32 tun);
+
+    /// get device luid.
+    u64 get_adapter_luid();
+
+    /// Sets private key for started device.
+    ///
+    /// If private_key is not set, device will never connect.
+    ///
+    /// # Parameters
+    /// - `private_key`: WireGuard private key.
+    ///
+    [Throws=TelioError]
+    void set_secret_key([ByRef] SecretKey secret_key);
+
+
+    SecretKey get_secret_key();
+
+    /// Sets fmark for started device.
+    ///
+    /// # Parameters
+    /// - `fwmark`: unsigned 32-bit integer
+    ///
+    [Throws=TelioError]
+    void set_fwmark(u32 fwmark);
+
+    /// Notify telio with network state changes.
+    ///
+    /// # Parameters
+    /// - `network_info`: Json encoded network sate info.
+    ///                   Format to be decided, pass empty string for now.
+    [Throws=TelioError]
+    void notify_network_change(string network_info);
+
+    /// Wrapper for `telio_connect_to_exit_node_with_id` that doesn't take an identifier
+    [Throws=TelioError]
+    void connect_to_exit_node(PublicKey public_key, sequence<IpNetwork>? allowed_ips, SocketAddr? endpoint);
+    
+    /// Connects to an exit node. (VPN if endpoint is not NULL, Peer if endpoint is NULL)
+    ///
+    /// Routing should be set by the user accordingly.
+    ///
+    /// # Parameters
+    /// - `identifier`: String that identifies the exit node, will be generated if null is passed.
+    /// - `public_key`: WireGuard public key for an exit node.
+    /// - `allowed_ips`: List of subnets which will be routed to the exit node.
+    ///                  Can be None, same as "0.0.0.0/0".
+    /// - `endpoint`: An endpoint to an exit node. Can be None, must contain a port.
+    ///
+    /// # Examples
+    ///
+    /// ```c
+    /// // Connects to VPN exit node.
+    /// telio_connect_to_exit_node_with_id(
+    ///     "5e0009e1-75cf-4406-b9ce-0cbb4ea50366",
+    ///     "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=",
+    ///     "0.0.0.0/0", // Equivalent
+    ///     "1.2.3.4:5678"
+    /// );
+    ///
+    /// // Connects to VPN exit node, with specified allowed_ips.
+    /// telio_connect_to_exit_node_with_id(
+    ///     "5e0009e1-75cf-4406-b9ce-0cbb4ea50366",
+    ///     "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=",
+    ///     "100.100.0.0/16;10.10.23.0/24",
+    ///     "1.2.3.4:5678"
+    /// );
+    ///
+    /// // Connect to exit peer via DERP
+    /// telio_connect_to_exit_node_with_id(
+    ///     "5e0009e1-75cf-4406-b9ce-0cbb4ea50366",
+    ///     "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=",
+    ///     "0.0.0.0/0",
+    ///     NULL
+    /// );
+    /// ```
+    ///
+    [Throws=TelioError]
+    void connect_to_exit_node_with_id(string? identifier, PublicKey public_key, sequence<IpNetwork>? allowed_ips, SocketAddr? endpoint);
+    
+    /// Disconnects from specified exit node.
+    ///
+    /// # Parameters
+    /// - `public_key`: WireGuard public key for exit node.
+    ///
+    [Throws=TelioError]
+    void disconnect_from_exit_node([ByRef] PublicKey public_key);
+    
+    /// Disconnects from all exit nodes with no parameters required.
+    [Throws=TelioError]
+    void disconnect_from_exit_nodes();
+
+    /// Enables magic DNS if it was not enabled yet,
+    ///
+    /// Routing should be set by the user accordingly.
+    ///
+    /// # Parameters
+    /// - 'forward_servers': List of DNS servers to route the requests trough.
+    ///
+    /// # Examples
+    ///
+    /// ```c
+    /// // Enable magic dns with some forward servers
+    /// telio_enable_magic_dns("[\"1.1.1.1\", \"8.8.8.8\"]");
+    ///
+    /// // Enable magic dns with no forward server
+    /// telio_enable_magic_dns("[\"\"]");
+    /// ```
+    [Throws=TelioError]
+    void enable_magic_dns([ByRef] sequence<IpAddr> forward_servers);
+    
+    /// Disables magic DNS if it was enabled.
+    [Throws=TelioError]
+    void disable_magic_dns();
+
+    /// Enables meshnet if it is not enabled yet.
+    /// In case meshnet is enabled, this updates the peer map with the specified one.
+    ///
+    /// # Parameters
+    /// - `cfg`: Output of GET /v1/meshnet/machines/{machineIdentifier}/map
+    ///
+    [Throws=TelioError]
+    void set_meshnet(Config cfg);
+    
+    /// Disables the meshnet functionality by closing all the connections.
+    [Throws=TelioError]
+    void set_meshnet_off();
+    
+    
+    sequence<Node> get_status_map();
+    
+    /// Get last error's message length, including trailing null
+    string get_last_error();
+
+    /// For testing only.
+    [Throws=TelioError]
+    void generate_stack_panic();
+    
+    /// For testing only.
+    [Throws=TelioError]
+    void generate_thread_panic();
+};
+
+callback interface TelioEventCb {
+    void event(string payload);
+};
+
+callback interface TelioLoggerCb {
+    void log(TelioLogLevel log_level, string payload);
+};
+
+callback interface TelioProtectCb {
+    void protect(i32 payload);
+};
+
+/// Encompasses all of the possible features that can be enabled
+dictionary Features {
+    /// Additional wireguard configuration
+    FeatureWireguard wireguard;
+    /// Nurse features that can be configured for QoS
+    FeatureNurse? nurse;
+    /// Event logging configurable features
+    FeatureLana? lana;
+    /// Deprecated by direct since 4.0.0
+    FeaturePaths? paths;
+    /// Configure options for exit dns
+    FeatureExitDns? exit_dns;
+    /// Configure options for direct WG connections
+    FeatureDirect? direct;
+    /// Should only be set for macos sideload
+    boolean? is_test_env;
+    /// Derp server specific configuration
+    FeatureDerp? derp;
+    /// Flag to specify if keys should be validated
+    FeatureValidateKeys validate_keys;
+    /// IPv6 support
+    boolean ipv6;
+    /// Nicknames support
+    boolean nicknames;
+    /// Flag to turn on connection reset upon VPN server change for boringtun adapter
+    FeatureBoringtunResetConns boringtun_reset_connections;
+    /// If and for how long to flush events when stopping telio. Setting to Some(0) means waiting until all events have been flushed, regardless of how long it takes
+    u64? flush_events_on_stop_timeout_seconds;
+};
+
+/// Configurable features for Wireguard peers
+dictionary FeatureWireguard {
+    /// Configurable persistent keepalive periods for wireguard peers
+    FeaturePersistentKeepalive persistent_keepalive;
+};
+
+/// Configurable persistent keepalive periods for different types of peers
+dictionary FeaturePersistentKeepalive {
+    /// Persistent keepalive period given for VPN peers (in seconds) [default 15s]
+    u32? vpn;
+    /// Persistent keepalive period for direct peers (in seconds) [default 5s]
+    u32 direct;
+    /// Persistent keepalive period for proxying peers (in seconds) [default 25s]
+    u32? proxying;
+    /// Persistent keepalive period for stun peers (in seconds) [default 25s]
+    u32? stun;
+};
+
+/// Configurable features for Nurse module
+dictionary FeatureNurse {
+    /// The unique identifier of the device, used for meshnet ID
+    string fingerprint;
+    /// Heartbeat interval in seconds. Default value is 3600.
+    u32? heartbeat_interval;
+    /// Initial heartbeat interval in seconds. Default value is None.
+    u32? initial_heartbeat_interval;
+    /// QoS configuration for Nurse
+    FeatureQoS? qos;
+    /// Enable/disable collecting nat type
+    boolean? enable_nat_type_collection;
+};
+
+/// QoS configuration options
+dictionary FeatureQoS {
+    /// How often to collect rtt data in seconds. Default value is 300.
+    u32? rtt_interval;
+    /// Number of tries for each node. Default value is 3.
+    u32? rtt_tries;
+    /// Types of rtt analytics. Default is Ping.
+    sequence<string>? rtt_types;
+    /// Number of buckets used for rtt and throughput. Default value is 5.
+    u32? buckets;
+};
+
+/// Configurable features for Lana module
+dictionary FeatureLana {
+    /// Path of the file where events will be stored. If such file does not exist, it will be created, otherwise reused
+    string event_path;
+    /// Whether the events should be sent to produciton or not
+    boolean prod;
+};
+
+/// Enable wanted paths for telio
+dictionary FeaturePaths {
+    /// Enable paths in increasing priority: 0 is worse then 1 is worse then 2 ...
+    /// [PathType::Relay] always assumed as -1
+    sequence<PathType> priority;
+    /// Force only one specific path to be used.
+    PathType? force;
+};
+
+/// Configurable features for exit Dns
+dictionary FeatureExitDns {
+    /// Controls if it is allowed to reconfigure DNS peer when exit node is
+    /// (dis)connected.
+    boolean? auto_switch_dns_ips;
+};
+
+/// Enable meshent direct connection
+dictionary FeatureDirect {
+    /// Endpoint providers [default all]
+    EndpointProviders? providers;
+    /// Polling interval for endpoints [default 10s]
+    u64? endpoint_interval_secs;
+    /// Configuration options for skipping unresponsive peers
+    FeatureSkipUnresponsivePeers? skip_unresponsive_peers;
+};
+
+/// Avoid sending periodic messages to peers with no traffic reported by wireguard
+dictionary FeatureSkipUnresponsivePeers {
+    /// Time after which peers is considered unresponsive if it didn't receive any packets
+    u64 no_rx_threshold_secs;
+};
+
+/// Configure derp behaviour
+dictionary FeatureDerp {
+    /// Tcp keepalive set on derp server's side [default 15s]
+    u32? tcp_keepalive;
+    /// Derp will send empty messages after this many seconds of not sending/receiving any data [default 60s]
+    u32? derp_keepalive;
+    /// Enable polling of remote peer states to reduce derp traffic
+    boolean? enable_polling;
+    /// Use Mozilla's root certificates instead of OS ones [default false]
+    boolean use_built_in_root_certificates;
+};
+
+/// Rust representation of [meshnet map]
+/// A network map of all the Peers and the servers
+dictionary Config {
+    /// Description of the local peer
+    PeerBase this;
+    /// List of connected peers
+    sequence<Peer>? peers;
+    /// List of available derp servers
+    sequence<Server>? derp_servers;
+    /// Dns configuration
+    DnsConfig? dns;
+};
+
+/// Characterstics describing a peer
+dictionary PeerBase {
+    /// 32-character identifier of the peer
+    string identifier;
+    /// Public key of the peer
+    PublicKey public_key;
+    /// Hostname of the peer
+    HiddenString hostname;
+    /// Ip address of peer
+    sequence<IpAddr>? ip_addresses;
+    /// Nickname for the peer
+    string? nickname;
+};
+
+/// Description of a peer
+dictionary Peer {
+    /// The base object describing a peer
+    PeerBase base;
+    /// The peer is local, when the flag is set
+    boolean is_local;
+    /// Flag to control whether the peer allows incoming connections
+    boolean allow_incoming_connections;
+    /// Flag to control whether the peer allows incoming files
+    boolean allow_peer_send_files;
+};
+
+/// Representation of a server, which might be used
+/// both as a Relay server and Stun Server
+dictionary Server {
+    /// Server region code
+    string region_code;
+    /// Short name for the server
+    string name;
+    /// Hostname of the server
+    string hostname;
+    /// IP address of the server
+    Ipv4Addr ipv4;
+    /// Port on which server listens to relay requests
+    u16 relay_port;
+    /// Port on which server listens to stun requests
+    u16 stun_port;
+    /// Port on which server listens for unencrypted stun requests
+    u16 stun_plaintext_port;
+    /// Server public key
+    PublicKey public_key;
+    /// Determines in which order the client tries to connect to the derp servers
+    u32 weight;
+
+    /// When enabled the connection to servers is not encrypted
+    boolean use_plain_text;
+
+    /// Status of the connection with the server
+    RelayState conn_state;
+};
+
+/// Representation of DNS configuration
+dictionary DnsConfig {
+    /// List of DNS servers
+    sequence<IpAddr>? dns_servers;
+};
+
+/// Description of a Node
+dictionary Node {
+    /// An identifier for a node
+    /// Makes it possible to distinguish different nodes in the presence of key reuse
+    string identifier;
+    /// Public key of the Node
+    PublicKey public_key;
+    /// Nickname for the peer
+    string? nickname;   
+    /// State of the node (Connecting, connected, or disconnected)
+    NodeState state;
+    /// Is the node exit node
+    boolean is_exit;
+    /// Is the node is a vpn server.
+    boolean is_vpn;
+    /// IP addresses of the node
+    sequence<IpAddr> ip_addresses;
+    /// List of IP's which can connect to the node
+    sequence<IpNetwork> allowed_ips;
+    /// Endpoint used by node
+    SocketAddr? endpoint;
+    /// Hostname of the node
+    string? hostname;
+    /// Flag to control whether the Node allows incoming connections
+    boolean allow_incoming_connections;
+    /// Flag to control whether the Node allows incoming files
+    boolean allow_peer_send_files;
+    /// Connection type in the network mesh (through Relay or hole punched directly)
+    PathType path;
+};
