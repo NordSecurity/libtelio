@@ -50,6 +50,7 @@ telio-lana.workspace = true
 telio-model.workspace = true
 telio-nat-detect.workspace = true
 telio-nurse.workspace = true
+telio-pmtu.workspace = true
 telio-proto.workspace = true
 telio-proxy.workspace = true
 telio-pq.workspace = true
@@ -179,3 +180,4 @@ telio-traversal = { version = "0.1.0",  path = "./crates/telio-traversal" }
 telio-utils = { version = "0.1.0", path = "./crates/telio-utils" }
 telio-wg = { version = "0.1.0", path = "./crates/telio-wg" }
 telio-pq = { version = "0.1.0", path = "./crates/telio-pq" }
+telio-pmtu = { version = "0.1.0", path = "./crates/telio-pmtu" }

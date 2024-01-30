@@ -151,6 +151,8 @@ pub enum Error {
     PostQuantum(#[from] telio_pq::Error),
     #[error("Cannot setup meshnet when the post quantum VPN is set up")]
     MeshnetUnavailableWithPQ,
+    #[error(transparent)]
+    PmtuProbe(std::io::Error),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -706,6 +708,44 @@ impl Device {
                 .trigger_analytics_event()
                 .await))
             .await?
+        })
+    }
+
+    /// Used by tcli only
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub fn probe_pmtu(&self, host: IpAddr) -> Result<u32> {
+        use std::os::fd::AsRawFd;
+
+        self.art()?.block_on(async {
+            let sock = telio_pmtu::PMTUSocket::new(
+                host,
+                Duration::from_secs(
+                    self.features
+                        .pmtu_discovery
+                        .unwrap_or_default()
+                        .response_wait_timeout_s as _,
+                ),
+            )?;
+            telio_log_debug!("PMTU socket created");
+
+            match self.rt() {
+                Ok(rt) => {
+                    task_exec!(rt, async move |rt| {
+                        let future = async {
+                            telio_log_debug!("Making PMTU socket external");
+                            rt.entities.socket_pool.make_external(sock.as_raw_fd());
+                            sock.probe_pmtu().await
+                        };
+
+                        Ok(future.await.map_err(Error::PmtuProbe))
+                    })
+                    .await?
+                }
+                Err(_) => {
+                    // The device is not started. No need to make socket external
+                    sock.probe_pmtu().await.map_err(Error::PmtuProbe)
+                }
+            }
         })
     }
 }
