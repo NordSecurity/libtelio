@@ -1,3 +1,4 @@
+import asyncio
 import config
 import re
 from .network_switcher import NetworkSwitcher
@@ -178,3 +179,27 @@ class NetworkSwitcherWindows(NetworkSwitcher):
                     "enable",
                 ]
             ).execute()
+
+            # wait for interface to appear in the list
+            while not bool(
+                [
+                    iface
+                    for iface in await Interface.get_network_interfaces(
+                        self._connection
+                    )
+                    if self._interfaces.default == iface.name
+                ]
+            ):
+                await asyncio.sleep(0.1)
+
+            # wait for interface's ip to be assigned
+            while bool(
+                [
+                    iface
+                    for iface in await Interface.get_network_interfaces(
+                        self._connection
+                    )
+                    if Interface(self._interfaces.default, "").ipv4 == iface.ipv4
+                ]
+            ):
+                await asyncio.sleep(0.1)
