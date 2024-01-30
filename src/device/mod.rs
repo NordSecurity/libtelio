@@ -146,6 +146,8 @@ pub enum Error {
     #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
     #[error("Socket pool error")]
     SocketPoolError(#[from] telio_sockets::protector::platform::Error),
+    #[error(transparent)]
+    PmtuProbe(std::io::Error),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -696,6 +698,37 @@ impl Device {
                 .trigger_analytics_event()
                 .await))
             .await?
+        })
+    }
+
+    /// Used by tcli only
+    #[cfg(unix)]
+    pub fn probe_pmtu(&self, host: IpAddr) -> Result<u32> {
+        use std::os::fd::AsRawFd;
+
+        self.art()?.block_on(async {
+            match self.rt() {
+                Ok(rt) => {
+                    task_exec!(rt, async move |rt| {
+                        let future = async {
+                            let sock = telio_pmtu::PMTUSocket::new(host)?;
+                            telio_log_debug!("Making PMTU socket external");
+                            rt.entities.socket_pool.make_external(sock.as_raw_fd());
+                            sock.probe_pmtu().await
+                        };
+
+                        Ok(future.await.map_err(Error::PmtuProbe))
+                    })
+                    .await?
+                }
+                Err(_) => {
+                    // The device is not started. Let us create runtime then
+                    telio_pmtu::PMTUSocket::new(host)?
+                        .probe_pmtu()
+                        .await
+                        .map_err(Error::PmtuProbe)
+                }
+            }
         })
     }
 }

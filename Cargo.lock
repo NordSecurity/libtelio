@@ -4062,6 +4062,7 @@ dependencies = [
  "telio-model",
  "telio-nat-detect",
  "telio-nurse",
+ "telio-pmtu",
  "telio-proto",
  "telio-proxy",
  "telio-relay",

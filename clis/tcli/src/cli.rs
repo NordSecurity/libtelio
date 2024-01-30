@@ -159,6 +159,11 @@ enum Cmd {
     Nat(DetectCmd),
     #[clap(subcommand)]
     Derp(DerpClientCmd),
+    #[cfg(unix)]
+    #[clap(about = "Probe PMTU")]
+    Pmtu {
+        host: String,
+    },
     Quit,
 }
 
@@ -425,6 +430,8 @@ impl Cli {
             Cmd::Nat(cmd) => cli_res!(res; (j self.exec_nat_detect(cmd))),
             Cmd::Derp(cmd) => cli_res!(res; (j self.derp_client.exec_cmd(cmd))),
             Cmd::Quit => cli_res!(res; q),
+            #[cfg(unix)]
+            Cmd::Pmtu { host } => cli_res!(res; (j self.exec_pmtu(&host))),
         }
         res
     }
@@ -746,6 +753,21 @@ impl Cli {
         }
 
         res
+    }
+
+    #[cfg(unix)]
+    fn exec_pmtu(&mut self, host: &str) -> Vec<Resp> {
+        use std::{io, net::ToSocketAddrs};
+
+        let iter = cli_try!((host, 0u16).to_socket_addrs());
+        let host = cli_try!(iter
+            .into_iter()
+            .next()
+            .ok_or(io::Error::new(io::ErrorKind::NotFound, "Unrecognized host")));
+        let host = host.ip();
+
+        let mtu = cli_try!(self.telio.probe_pmtu(host));
+        vec![Resp::Info(format!("PMTU -> {host}: {mtu}"))]
     }
 
     fn start_telio(

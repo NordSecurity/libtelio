@@ -67,6 +67,9 @@ rustls-platform-verifier = { git = "https://github.com/tomaszklak/rustls-platfor
 [target.'cfg(windows)'.dependencies]
 winapi = { workspace = true, features = ["ntdef", "winerror"] }
 
+[target.'cfg(unix)'.dependencies]
+telio-pmtu.workspace = true
+
 [dev-dependencies]
 maplit.workspace = true
 slog-async = "2.7"
@@ -177,3 +180,4 @@ telio-test = { version = "1.0.0", path = "./crates/telio-test" }
 telio-traversal = { version = "0.1.0",  path = "./crates/telio-traversal" }
 telio-utils = { version = "0.1.0", path = "./crates/telio-utils" }
 telio-wg = { version = "0.1.0", path = "./crates/telio-wg" }
+telio-pmtu = { version = "0.1.0", path = "./crates/telio-pmtu" }
