@@ -1249,7 +1249,7 @@ pub extern "C" fn telio_connect_to_exit_node(
 ) -> telio_result {
     telio_log_info!(
         "telio_connect_to_exit_node entry with instance id :{}. Public Key: {:?}. Allowed IP: {:?}. Endpoint: {:?}",
-        dev.id, ffi_try!(char_ptr_to_type::<PublicKey>(public_key)), ffi_try!(char_ptr_to_type::<String>(allowed_ips)), ffi_try!(char_ptr_to_type::<SocketAddr>(endpoint))
+        dev.id, char_ptr_to_type::<PublicKey>(public_key), char_ptr_to_type::<String>(allowed_ips), char_ptr_to_type::<SocketAddr>(endpoint)
     );
     telio_connect_to_exit_node_with_id(dev, null(), public_key, allowed_ips, endpoint)
 }
