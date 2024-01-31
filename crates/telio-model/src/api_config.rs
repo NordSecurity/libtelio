@@ -285,6 +285,20 @@ where
     Ok(Some(eps))
 }
 
+/// Turns on the no link detection mechanism
+#[derive(Default, Copy, Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct FeatureLinkDetection {
+    /// Configurable rtt in seconds
+    #[serde(default = "FeatureLinkDetection::default_configurable_rtt")]
+    pub rtt_seconds: u64,
+}
+
+impl FeatureLinkDetection {
+    const fn default_configurable_rtt() -> u64 {
+        15
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 /// Encompasses all of the possible features that can be enabled
 pub struct Features {
@@ -320,6 +334,9 @@ pub struct Features {
     pub boringtun_reset_connections: FeatureBoringtunResetConns,
     /// If and for how long to flush events when stopping telio. Setting to Some(0) means waiting until all events have been flushed, regardless of how long it takes
     pub flush_events_on_stop_timeout_seconds: Option<u64>,
+    /// No link detection mechanism
+    #[serde(default)]
+    pub link_detection: Option<FeatureLinkDetection>,
 }
 
 impl FeaturePaths {
@@ -472,6 +489,7 @@ mod tests {
         nicknames: true,
         boringtun_reset_connections: FeatureBoringtunResetConns(true),
         flush_events_on_stop_timeout_seconds: None,
+        link_detection: None,
     });
     static EXPECTED_FEATURES_WITHOUT_IS_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
         wireguard: FeatureWireguard {
@@ -512,6 +530,7 @@ mod tests {
         nicknames: false,
         boringtun_reset_connections: FeatureBoringtunResetConns(false),
         flush_events_on_stop_timeout_seconds: None,
+        link_detection: None,
     });
 
     #[test]
@@ -684,6 +703,7 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            link_detection: None,
         };
 
         let empty_qos_features = Features {
@@ -711,6 +731,7 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            link_detection: None,
         };
 
         let no_qos_features = Features {
@@ -733,6 +754,7 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            link_detection: None,
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -774,6 +796,7 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            link_detection: None,
         };
 
         let empty_features = Features {
@@ -792,6 +815,7 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            link_detection: None,
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -819,6 +843,7 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            link_detection: Default::default(),
         };
 
         assert_eq!(from_str::<Features>(empty_json).unwrap(), empty_features);
@@ -872,6 +897,7 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            link_detection: None,
         };
 
         assert_eq!(Features::default(), expected_defaults);

@@ -44,6 +44,8 @@ pub struct Node {
     pub nickname: Option<String>,
     /// State of the node (Connecting, connected, or disconnected)
     pub state: NodeState,
+    /// Hint of the link state based on last rx timestamp (Up, down)
+    pub link_state: Option<LinkState>,
     /// Is the node exit node
     pub is_exit: bool,
     /// Is the node is a vpn server.
@@ -90,6 +92,16 @@ pub enum NodeState {
     Connecting,
     /// Node is connected
     Connected,
+}
+
+/// This is a hint state computed based on the last_rx_timestamp
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LinkState {
+    /// Link is Down
+    Down,
+    /// Link is Up
+    Up,
 }
 
 /// Network mesh map of all the nodes
