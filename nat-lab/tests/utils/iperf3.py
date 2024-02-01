@@ -45,17 +45,15 @@ class IperfServer:
         self._stdout = ""
         self._output_notifier = OutputNotifier()
         self._verbose = verbose
-        self._process = connection.create_process(
-            [
-                get_iperf_binary(connection.target_os),
-                "-s",
-                "-f",
-                "k",
-                "-i",
-                "1",
-                "" if protocol == Protocol.Tcp else "--udp-counters-64bit",
-            ]
-        )
+        self._process = connection.create_process([
+            get_iperf_binary(connection.target_os),
+            "-s",
+            "-f",
+            "k",
+            "-i",
+            "1",
+            "" if protocol == Protocol.Tcp else "--udp-counters-64bit",
+        ])
 
     def get_stdout(self) -> str:
         return self._stdout
@@ -111,26 +109,24 @@ class IperfClient:
         self._send = send
         self._protocol = protocol
         self._transmit_time = transmit_time
-        self._process = connection.create_process(
-            [
-                get_iperf_binary(connection.target_os),
-                "-c",
-                server_ip,
-                "-t",
-                f"{transmit_time}s",
-                "-l",
-                f"{buf_length}",
-                "-i",
-                "1",
-                "-f",
-                "k",
-                "" if protocol == Protocol.Tcp else "-u",
-                "" if protocol == Protocol.Tcp else "--udp-counters-64bit",
-                "-b",
-                "10G",
-                "" if send else "-R",
-            ]
-        )
+        self._process = connection.create_process([
+            get_iperf_binary(connection.target_os),
+            "-c",
+            server_ip,
+            "-t",
+            f"{transmit_time}s",
+            "-l",
+            f"{buf_length}",
+            "-i",
+            "1",
+            "-f",
+            "k",
+            "" if protocol == Protocol.Tcp else "-u",
+            "" if protocol == Protocol.Tcp else "--udp-counters-64bit",
+            "-b",
+            "10G",
+            "" if send else "-R",
+        ])
 
     async def done(self) -> None:
         event = Event()

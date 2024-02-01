@@ -628,19 +628,17 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
         client_alpha, *_ = env.clients
 
         process = await exit_stack.enter_async_context(
-            connection_alpha.create_process(
-                [
-                    "tcpdump",
-                    "--immediate-mode",
-                    "-ni",
-                    "eth0",
-                    "udp",
-                    "and",
-                    "port",
-                    "53",
-                    "-l",
-                ]
-            ).run()
+            connection_alpha.create_process([
+                "tcpdump",
+                "--immediate-mode",
+                "-ni",
+                "eth0",
+                "udp",
+                "and",
+                "port",
+                "53",
+                "-l",
+            ]).run()
         )
         await asyncio.sleep(1)
 

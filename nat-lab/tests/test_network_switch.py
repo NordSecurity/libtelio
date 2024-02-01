@@ -322,13 +322,11 @@ async def test_mesh_network_switch_direct(
                 alpha.public_key, [State.Connected], [PathType.Direct]
             ),
         )
-        async with run_async_contexts(
-            [
-                derp_connected_future,
-                peers_connected_relay_future,
-                peers_connected_direct_future,
-            ]
-        ) as (derp, relay, direct):
+        async with run_async_contexts([
+            derp_connected_future,
+            peers_connected_relay_future,
+            peers_connected_direct_future,
+        ]) as (derp, relay, direct):
             await exit_stack.enter_async_context(
                 network_switcher.switch_to_secondary_network()
             )

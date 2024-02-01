@@ -862,17 +862,15 @@ async def test_lana_with_disconnected_node(
                 exists=True,
                 no_of_connections=1,
                 all_connections_up=False,
-                expected_states=[
-                    (
-                        DERP_BIT
-                        | WG_BIT
-                        | ip_stack_to_bits(
-                            testing.unpack_optional(
-                                choose_peer_stack(alpha_ip_stack, beta_ip_stack)
-                            )
+                expected_states=[(
+                    DERP_BIT
+                    | WG_BIT
+                    | ip_stack_to_bits(
+                        testing.unpack_optional(
+                            choose_peer_stack(alpha_ip_stack, beta_ip_stack)
                         )
                     )
-                ],
+                )],
             )
             .add_members_validator(
                 exists=True, contains=["alpha_fingerprint", "beta_fingerprint"]
@@ -890,17 +888,15 @@ async def test_lana_with_disconnected_node(
                 exists=True,
                 no_of_connections=1,
                 all_connections_up=False,
-                expected_states=[
-                    (
-                        DERP_BIT
-                        | WG_BIT
-                        | ip_stack_to_bits(
-                            testing.unpack_optional(
-                                choose_peer_stack(beta_ip_stack, alpha_ip_stack)
-                            )
+                expected_states=[(
+                    DERP_BIT
+                    | WG_BIT
+                    | ip_stack_to_bits(
+                        testing.unpack_optional(
+                            choose_peer_stack(beta_ip_stack, alpha_ip_stack)
                         )
                     )
-                ],
+                )],
             )
             .add_members_validator(
                 exists=True, contains=["alpha_fingerprint", "beta_fingerprint"]
