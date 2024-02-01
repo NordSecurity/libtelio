@@ -12,6 +12,7 @@ pylint = "*"
 pyyaml = "*"
 requests = "*"
 pipenv = "*"
+dill = "*"
 
 [dev-packages]
 
