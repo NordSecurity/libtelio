@@ -4067,6 +4067,7 @@ dependencies = [
  "base64 0.13.1",
  "boringtun",
  "pnet_packet 0.28.0",
+ "pqcrypto-internals",
  "pqcrypto-kyber",
  "pqcrypto-traits",
  "rand",

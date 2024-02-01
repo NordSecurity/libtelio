@@ -28,6 +28,7 @@ rand.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+pqcrypto-internals = "0.2.5"
 
 [dev-dependencies]
 base64.workspace = true
