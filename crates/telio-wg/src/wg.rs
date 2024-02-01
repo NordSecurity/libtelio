@@ -598,15 +598,19 @@ impl State {
 
             // Node is new and default LinkState is down. Save it before sending the event
             self.no_link_detection
-                .insert(key, None, None, LinkState::Down);
+                .insert(key, None, None, PeerState::Connecting);
 
             self.send_event(PeerState::Connecting, Some(LinkState::Down), peer.clone())
                 .await?;
 
             if peer.is_connected() {
                 // If the new peer is connected, update last link state to Up.
-                self.no_link_detection
-                    .insert(key, peer.rx_bytes, peer.tx_bytes, LinkState::Up);
+                self.no_link_detection.insert(
+                    key,
+                    peer.rx_bytes,
+                    peer.tx_bytes,
+                    PeerState::Connected,
+                );
 
                 self.send_event(PeerState::Connected, Some(LinkState::Up), peer.clone())
                     .await?;
