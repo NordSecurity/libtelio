@@ -1,0 +1,19 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+black = "*"
+isort = "*"
+autoflake = "*"
+mypy = "*"
+pylint = "*"
+pyyaml = "*"
+requests = "*"
+pipenv = "*"
+dill = "*"
+
+[dev-packages]
+
+[requires]

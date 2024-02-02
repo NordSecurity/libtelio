@@ -481,15 +481,13 @@ async def test_mesh_firewall_file_share_port(
 
         # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
         await exit_stack.enter_async_context(
-            connection_alpha.create_process(
-                [
-                    "nc",
-                    "-nluv",
-                    "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
-                    CLIENT_ALPHA_IP,
-                    str(PORT),
-                ]
-            ).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
+            connection_alpha.create_process([
+                "nc",
+                "-nluv",
+                "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
+                CLIENT_ALPHA_IP,
+                str(PORT),
+            ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
         )
 
         # wait for listening to start
@@ -497,17 +495,15 @@ async def test_mesh_firewall_file_share_port(
 
         # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
         await exit_stack.enter_async_context(
-            connection_beta.create_process(
-                [
-                    "nc",
-                    "-nuvz",
-                    "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
-                    "-s",
-                    CLIENT_BETA_IP,
-                    CLIENT_ALPHA_IP,
-                    str(PORT),
-                ]
-            ).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
+            connection_beta.create_process([
+                "nc",
+                "-nuvz",
+                "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
+                "-s",
+                CLIENT_BETA_IP,
+                CLIENT_ALPHA_IP,
+                str(PORT),
+            ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
         )
 
         # wait for sender to start
@@ -621,39 +617,33 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
         output_notifier.notify_output("FIN_WAIT", last_ack_event)
         output_notifier.notify_output("CLOSE_WAIT", time_wait_event)
 
-        async with connection_beta.create_process(
-            [
-                "conntrack",
-                "--family",
-                "ipv4" if CLIENT_PROTO == IPProto.IPv4 else "ipv6",
-                "-E",
-            ]
-        ).run(stdout_callback=conntrack_on_stdout) as conntrack_proc:
+        async with connection_beta.create_process([
+            "conntrack",
+            "--family",
+            "ipv4" if CLIENT_PROTO == IPProto.IPv4 else "ipv6",
+            "-E",
+        ]).run(stdout_callback=conntrack_on_stdout) as conntrack_proc:
             await testing.wait_normal(conntrack_proc.wait_stdin_ready())
             # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
-            async with connection_alpha.create_process(
-                [
-                    "nc",
-                    "-nlv",
-                    "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
-                    CLIENT_ALPHA_IP,
-                    str(PORT),
-                ]
-            ).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as listener:
+            async with connection_alpha.create_process([
+                "nc",
+                "-nlv",
+                "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
+                CLIENT_ALPHA_IP,
+                str(PORT),
+            ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as listener:
                 await testing.wait_normal(listener.wait_stdin_ready())
                 await testing.wait_normal(listening_start_event.wait())
                 await exit_stack.enter_async_context(
-                    connection_beta.create_process(
-                        [
-                            "nc",
-                            "-nv",
-                            "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
-                            "-s",
-                            CLIENT_BETA_IP,
-                            CLIENT_ALPHA_IP,
-                            str(PORT),
-                        ]
-                    ).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
+                    connection_beta.create_process([
+                        "nc",
+                        "-nv",
+                        "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
+                        "-s",
+                        CLIENT_BETA_IP,
+                        CLIENT_ALPHA_IP,
+                        str(PORT),
+                    ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
                 )
                 await testing.wait_normal(sender_start_event.wait())
                 await testing.wait_normal(connected_event.wait())
@@ -765,38 +755,32 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
         output_notifier.notify_output("LAST_ACK", last_ack_event)
         output_notifier.notify_output("TIME_WAIT", time_wait_event)
 
-        async with connection_beta.create_process(
-            [
-                "conntrack",
-                "--family",
-                "ipv4" if CLIENT_PROTO == IPProto.IPv4 else "ipv6",
-                "-E",
-            ]
-        ).run(stdout_callback=conntrack_on_stdout) as conntrack_proc:
+        async with connection_beta.create_process([
+            "conntrack",
+            "--family",
+            "ipv4" if CLIENT_PROTO == IPProto.IPv4 else "ipv6",
+            "-E",
+        ]).run(stdout_callback=conntrack_on_stdout) as conntrack_proc:
             await testing.wait_normal(conntrack_proc.wait_stdin_ready())
-            async with connection_alpha.create_process(
-                [
-                    "nc",
-                    "-nlv",
-                    "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
-                    CLIENT_ALPHA_IP,
-                    str(PORT),
-                ]
-            ).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as listener:
+            async with connection_alpha.create_process([
+                "nc",
+                "-nlv",
+                "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
+                CLIENT_ALPHA_IP,
+                str(PORT),
+            ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as listener:
                 await testing.wait_normal(listener.wait_stdin_ready())
                 await testing.wait_normal(listening_start_event.wait())
                 # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
-                async with connection_beta.create_process(
-                    [
-                        "nc",
-                        "-nv",
-                        "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
-                        "-s",
-                        CLIENT_BETA_IP,
-                        CLIENT_ALPHA_IP,
-                        str(PORT),
-                    ]
-                ).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as client:
+                async with connection_beta.create_process([
+                    "nc",
+                    "-nv",
+                    "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
+                    "-s",
+                    CLIENT_BETA_IP,
+                    CLIENT_ALPHA_IP,
+                    str(PORT),
+                ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as client:
                     await testing.wait_normal(client.wait_stdin_ready())
                     await testing.wait_normal(sender_start_event.wait())
                     await testing.wait_normal(connected_event.wait())

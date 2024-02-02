@@ -39,16 +39,14 @@ class DerpClient:
     _process: Process
 
     def __init__(self, connection: Connection, server: str, data: str) -> None:
-        self._process = connection.create_process(
-            [
-                get_libtelio_binary_path("derpcli", connection),
-                "-s",
-                server,
-                "-vv",
-                "-a",
-                data,
-            ]
-        )
+        self._process = connection.create_process([
+            get_libtelio_binary_path("derpcli", connection),
+            "-s",
+            server,
+            "-vv",
+            "-a",
+            data,
+        ])
 
     async def execute(self) -> None:
         await self._process.execute()
