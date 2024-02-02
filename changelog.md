@@ -26,6 +26,7 @@
 * LLT-4698: Fix exp. backoff in WG-STUN
 * LLT-4490: Ensure that meshnet entities are started only when meshnet is started
 * LLT-4335: Make blocking upnp gw search async
+* LLT-4620: Implement the post quantum key rotation mechanism
 * LLT-4616: Make nurse qos ping asynchronous
 * LLT-4652: Bump boringtun version to v1.1.10
 * LLT-4557: Document functions from helpers.py
@@ -44,6 +45,7 @@
 * LLT-4225: Migrate Telio to use the tracing crate instead of log crate
 * LLT-4594: Fix session keeper's bug, to enable ICMP6 packets
 * LLT-4597: Fix QoS' IPv6 pinging
+* LLT-4614: Implement the post quantum VPN handshake
 
 <br>
 
