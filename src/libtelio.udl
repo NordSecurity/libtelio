@@ -449,12 +449,22 @@ dictionary FeatureDirect {
     u64? endpoint_interval_secs;
     /// Configuration options for skipping unresponsive peers
     FeatureSkipUnresponsivePeers? skip_unresponsive_peers;
+    /// Parameters to optimize battery lifetime
+    FeatureEndpointProvidersOptimization? endpoint_providers_optimization;
 };
 
 /// Avoid sending periodic messages to peers with no traffic reported by wireguard
 dictionary FeatureSkipUnresponsivePeers {
     /// Time after which peers is considered unresponsive if it didn't receive any packets
     u64 no_rx_threshold_secs;
+};
+
+/// Control which battery optimizations are turned on
+dictionary FeatureEndpointProvidersOptimization {
+    /// Controls whether Stun endpoint provider should be turned off when there are no proxying peers
+    boolean optimize_direct_upgrade_stun;
+    /// Controls whether Upnp endpoint provider should be turned off when there are no proxying peers
+    boolean optimize_direct_upgrade_upnp;
 };
 
 /// Configure derp behaviour
