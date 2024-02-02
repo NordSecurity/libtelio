@@ -285,6 +285,23 @@ async def new_connection_by_tag(tag: ConnectionTag) -> AsyncIterator[Connection]
         yield conn_manager.connection
 
 
+@asynccontextmanager
+async def new_connection_with_node_tracker(
+    tag: ConnectionTag, conn_tracker_config: Optional[List[ConnectionTrackerConfig]]
+) -> AsyncIterator[Tuple[Connection, ConnectionTracker]]:
+    if tag in DOCKER_SERVICE_IDS:
+        async with new_connection_raw(tag) as connection:
+            network_switcher = await create_network_switcher(tag, connection)
+            async with network_switcher.switch_to_primary_network():
+                async with ConnectionTracker(
+                    connection, conn_tracker_config
+                ).run() as conn_tracker:
+                    yield (connection, conn_tracker)
+
+    else:
+        assert False, f"tag {tag} not supported with node tracker"
+
+
 def container_id(tag: ConnectionTag) -> str:
     if tag in DOCKER_SERVICE_IDS:
         return f"nat-lab-{DOCKER_SERVICE_IDS[tag]}-1"
@@ -298,6 +315,7 @@ def generate_connection_tracker_config(
     stun_limits: ConnectionLimits = ConnectionLimits(0, 0),
     stun6_limits: ConnectionLimits = ConnectionLimits(0, 0),
     ping_limits: ConnectionLimits = ConnectionLimits(0, 0),
+    ping6_limits: ConnectionLimits = ConnectionLimits(0, 0),
     derp_0_limits: ConnectionLimits = ConnectionLimits(0, 0),
     derp_1_limits: ConnectionLimits = ConnectionLimits(0, 0),
     derp_2_limits: ConnectionLimits = ConnectionLimits(0, 0),
@@ -336,6 +354,7 @@ def generate_connection_tracker_config(
             ),
         ),
         ConnectionTrackerConfig("ping", ping_limits, FiveTuple(protocol="icmp")),
+        ConnectionTrackerConfig("ping6", ping6_limits, FiveTuple(protocol="icmpv6")),
         ConnectionTrackerConfig(
             "derp_0",
             derp_0_limits,
