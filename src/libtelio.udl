@@ -371,6 +371,8 @@ dictionary Features {
     u64? flush_events_on_stop_timeout_seconds;
     /// No-link detection mechanism
     FeatureLinkDetection? link_detection;
+    /// Post quantum VPN tunnel configuration
+    FeaturePostQuantumVPN? post_quantum_vpn;
 };
 
 /// Configurable features for Wireguard peers
@@ -484,6 +486,15 @@ dictionary FeatureLinkDetection {
     /// Configurable rtt in seconds
     u64 rtt_seconds;
 };
+
+/// Turns on post quantum VPN tunnel
+dictionary FeaturePostQuantumVPN {
+    /// Initial handshake retry interval in seconds
+    u32 handshake_retry_interval_s;
+    /// Rekey interval in seconds
+    u32 rekey_interval_s;
+};
+
 
 /// Rust representation of [meshnet map]
 /// A network map of all the Peers and the servers
