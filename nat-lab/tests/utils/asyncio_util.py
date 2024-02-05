@@ -14,7 +14,7 @@ async def run_async_context(coroutine: Union[Coroutine, Future]) -> AsyncIterato
 
 @asynccontextmanager
 async def run_async_contexts(
-    coroutines: List[Union[Coroutine, Future]],
+    coroutines: List[Union[Coroutine, Future]]
 ) -> AsyncIterator[List[Task]]:
     futures = [ensure_future(coroutine) for coroutine in coroutines]
     try:

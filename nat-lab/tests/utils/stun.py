@@ -39,14 +39,16 @@ async def get(
     else:
         assert False, "unsupported os"
 
-    process = await connection.create_process([
-        path,
-        stun_server,
-        "--family",
-        ("4" if ip_proto == IPProto.IPv4 else "6"),
-        "--verbosity",
-        "2",
-    ]).execute()
+    process = await connection.create_process(
+        [
+            path,
+            stun_server,
+            "--family",
+            ("4" if ip_proto == IPProto.IPv4 else "6"),
+            "--verbosity",
+            "2",
+        ]
+    ).execute()
 
     # Match: 'Mapped address: 10.0.254.1:24295' or 'Mapped address: 2001:db8:85a4::dead:beef:ceed.44947'
     match = re.search(

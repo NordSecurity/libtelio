@@ -57,19 +57,21 @@ class DerpServer(DataClassJsonMixin):
     used: bool = False
 
     def __hash__(self):
-        return hash((
-            self.region_code,
-            self.name,
-            self.hostname,
-            self.ipv4,
-            self.relay_port,
-            self.stun_port,
-            self.stun_plaintext_port,
-            self.public_key,
-            self.weight,
-            self.use_plain_text,
-            self.conn_state,
-        ))
+        return hash(
+            (
+                self.region_code,
+                self.name,
+                self.hostname,
+                self.ipv4,
+                self.relay_port,
+                self.stun_port,
+                self.stun_plaintext_port,
+                self.public_key,
+                self.weight,
+                self.use_plain_text,
+                self.conn_state,
+            )
+        )
 
 
 # Equivalent of `libtelio/crates/telio-model/src/mesh.rs:Node`
@@ -92,22 +94,24 @@ class PeerInfo(DataClassJsonMixin):
     path: PathType = PathType.Relay
 
     def __hash__(self):
-        return hash((
-            self.identifier,
-            self.public_key,
-            self.state,
-            self.link_state,
-            self.is_exit,
-            self.is_vpn,
-            tuple(self.ip_addresses),
-            tuple(self.allowed_ips),
-            self.nickname,
-            self.endpoint,
-            self.hostname,
-            self.allow_incoming_connections,
-            self.allow_peer_send_files,
-            self.path,
-        ))
+        return hash(
+            (
+                self.identifier,
+                self.public_key,
+                self.state,
+                self.link_state,
+                self.is_exit,
+                self.is_vpn,
+                tuple(self.ip_addresses),
+                tuple(self.allowed_ips),
+                self.nickname,
+                self.endpoint,
+                self.hostname,
+                self.allow_incoming_connections,
+                self.allow_peer_send_files,
+                self.path,
+            )
+        )
 
     def __eq__(self, other):
         if not isinstance(other, PeerInfo):
@@ -493,17 +497,21 @@ class Client:
         self._events = Events(self._runtime)
         self._router = new_router(self._connection, self._node.ip_stack)
         if telio_v3:
-            self._process = self._connection.create_process([
-                "/opt/bin/tcli-3.6",
-                "--less-spam",
-                '-f { "paths": { "priority": ["relay", "udp-hole-punch"]} }',
-            ])
+            self._process = self._connection.create_process(
+                [
+                    "/opt/bin/tcli-3.6",
+                    "--less-spam",
+                    '-f { "paths": { "priority": ["relay", "udp-hole-punch"]} }',
+                ]
+            )
         else:
-            self._process = self._connection.create_process([
-                tcli_path,
-                "--less-spam",
-                f"-f {self._telio_features.to_json()}",
-            ])
+            self._process = self._connection.create_process(
+                [
+                    tcli_path,
+                    "--less-spam",
+                    f"-f {self._telio_features.to_json()}",
+                ]
+            )
         async with self._process.run(
             stdout_callback=on_stdout, stderr_callback=on_stderr
         ):
@@ -595,10 +603,14 @@ class Client:
     async def wait_for_state_on_any_derp(
         self, states: List[State], timeout: Optional[float] = None
     ) -> None:
-        async with asyncio_util.run_async_contexts([
-            self.get_events().wait_for_state_derp(str(derp["ipv4"]), states, timeout)
-            for derp in DERP_SERVERS
-        ]) as futures:
+        async with asyncio_util.run_async_contexts(
+            [
+                self.get_events().wait_for_state_derp(
+                    str(derp["ipv4"]), states, timeout
+                )
+                for derp in DERP_SERVERS
+            ]
+        ) as futures:
             try:
                 while not any(fut.done() for fut in futures):
                     await asyncio.sleep(0.01)
@@ -608,12 +620,14 @@ class Client:
     async def wait_for_every_derp_disconnection(
         self, timeout: Optional[float] = None
     ) -> None:
-        async with asyncio_util.run_async_contexts([
-            self.get_events().wait_for_state_derp(
-                str(derp["ipv4"]), [State.Disconnected, State.Connecting], timeout
-            )
-            for derp in DERP_SERVERS
-        ]) as futures:
+        async with asyncio_util.run_async_contexts(
+            [
+                self.get_events().wait_for_state_derp(
+                    str(derp["ipv4"]), [State.Disconnected, State.Connecting], timeout
+                )
+                for derp in DERP_SERVERS
+            ]
+        ) as futures:
             try:
                 while not all(fut.done() for fut in futures):
                     await asyncio.sleep(0.1)
@@ -628,10 +642,14 @@ class Client:
     async def wait_for_event_on_any_derp(
         self, states: List[State], timeout: Optional[float] = None
     ) -> None:
-        async with asyncio_util.run_async_contexts([
-            self.get_events().wait_for_event_derp(str(derp["ipv4"]), states, timeout)
-            for derp in DERP_SERVERS
-        ]) as futures:
+        async with asyncio_util.run_async_contexts(
+            [
+                self.get_events().wait_for_event_derp(
+                    str(derp["ipv4"]), states, timeout
+                )
+                for derp in DERP_SERVERS
+            ]
+        ) as futures:
             try:
                 while not any(fut.done() for fut in futures):
                     await asyncio.sleep(0.1)
@@ -673,10 +691,12 @@ class Client:
         ) as event:
             self.get_runtime().allowed_pub_keys.add(public_key)
             await asyncio.wait_for(
-                asyncio.gather(*[
-                    self._write_command(["dev", "con", public_key, f"{ip}:{port}"]),
-                    event,
-                ]),
+                asyncio.gather(
+                    *[
+                        self._write_command(["dev", "con", public_key, f"{ip}:{port}"]),
+                        event,
+                    ]
+                ),
                 timeout,
             )
 
@@ -691,11 +711,13 @@ class Client:
             )
         ) as event:
             await asyncio.wait_for(
-                asyncio.gather(*[
-                    self._write_command(["vpn", "off"]),
-                    event,
-                    self.get_router().delete_vpn_route(),
-                ]),
+                asyncio.gather(
+                    *[
+                        self._write_command(["vpn", "off"]),
+                        event,
+                        self.get_router().delete_vpn_route(),
+                    ]
+                ),
                 timeout,
             )
 
@@ -706,11 +728,13 @@ class Client:
             self.wait_for_event_peer(public_key, [State.Connected], list(PathType))
         ) as event:
             await asyncio.wait_for(
-                asyncio.gather(*[
-                    self._write_command(["vpn", "off"]),
-                    event,
-                    self.get_router().delete_vpn_route(),
-                ]),
+                asyncio.gather(
+                    *[
+                        self._write_command(["vpn", "off"]),
+                        event,
+                        self.get_router().delete_vpn_route(),
+                    ]
+                ),
                 timeout,
             )
 
@@ -742,10 +766,12 @@ class Client:
             )
         ) as event:
             await asyncio.wait_for(
-                asyncio.gather(*[
-                    self._write_command(["dev", "con", public_key]),
-                    event,
-                ]),
+                asyncio.gather(
+                    *[
+                        self._write_command(["dev", "con", public_key]),
+                        event,
+                    ]
+                ),
                 timeout,
             )
 

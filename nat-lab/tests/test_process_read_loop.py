@@ -10,11 +10,13 @@ async def test_docker_process_read_loop() -> None:
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
         )
         TESTING_STRING = "☠"
-        process = connection.create_process([
-            "bash",
-            "-c",
-            "for i in {0..1000000}; do printf '" + TESTING_STRING + "'; done",
-        ])
+        process = connection.create_process(
+            [
+                "bash",
+                "-c",
+                "for i in {0..1000000}; do printf '" + TESTING_STRING + "'; done",
+            ]
+        )
         await process.execute()
         assert process.get_stdout().count(TESTING_STRING) == 1000001
 
@@ -26,11 +28,13 @@ async def test_docker_process_read_loop_invalid_utf() -> None:
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
         )
         VALID_UTF = "☠"
-        process = connection.create_process([
-            "bash",
-            "-c",
-            "for i in {0..1000000}; do printf '" + "\\xF8" + VALID_UTF + "'; done",
-        ])
+        process = connection.create_process(
+            [
+                "bash",
+                "-c",
+                "for i in {0..1000000}; do printf '" + "\\xF8" + VALID_UTF + "'; done",
+            ]
+        )
         await process.execute()
         assert process.get_stdout().count(VALID_UTF) == 1000001
         assert process.get_stdout().count("\\xF8") == 0

@@ -27,7 +27,7 @@ DOCKER_UPNP_CLIENT_2_IP = "10.0.254.12"
 
 
 def _generate_setup_parameter_pair(
-    cfg: List[Tuple[ConnectionTag, List[str]]],
+    cfg: List[Tuple[ConnectionTag, List[str]]]
 ) -> List[SetupParameters]:
     return [
         SetupParameters(
@@ -43,166 +43,214 @@ def _generate_setup_parameter_pair(
 
 UHP_WORKING_PATHS = [
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["stun"]),
-            (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, ["stun"]),
-        ]),
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["stun"]),
+                (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, ["stun"]),
+            ]
+        ),
         DOCKER_FULLCONE_GW_2_IP,
     ),
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ["stun"]),
-            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["stun"]),
-        ]),
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ["stun"]),
+                (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["stun"]),
+            ]
+        ),
         DOCKER_FULLCONE_GW_1_IP,
     ),
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["stun"]),
-            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["stun"]),
-        ]),
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["stun"]),
+                (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["stun"]),
+            ]
+        ),
         DOCKER_FULLCONE_GW_1_IP,
     ),
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
-            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["stun"]),
-        ]),
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
+                (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["stun"]),
+            ]
+        ),
         DOCKER_FULLCONE_GW_1_IP,
     ),
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
-            (ConnectionTag.DOCKER_CONE_CLIENT_2, ["stun"]),
-        ]),
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
+                (ConnectionTag.DOCKER_CONE_CLIENT_2, ["stun"]),
+            ]
+        ),
         DOCKER_CONE_GW_2_IP,
     ),
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["stun"]),
-        ]),
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["stun"]),
+            ]
+        ),
         DOCKER_OPEN_INTERNET_CLIENT_1_IP,
     ),
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["stun"]),
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2, ["stun"]),
-        ]),
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["stun"]),
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2, ["stun"]),
+            ]
+        ),
         DOCKER_OPEN_INTERNET_CLIENT_2_IP,
     ),
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ["stun"]),
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["stun"]),
-        ]),
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ["stun"]),
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["stun"]),
+            ]
+        ),
         DOCKER_OPEN_INTERNET_CLIENT_1_IP,
     ),
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_UPNP_CLIENT_1, ["upnp"]),
-            (ConnectionTag.DOCKER_UPNP_CLIENT_2, ["upnp"]),
-        ]),
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_UPNP_CLIENT_1, ["upnp"]),
+                (ConnectionTag.DOCKER_UPNP_CLIENT_2, ["upnp"]),
+            ]
+        ),
         DOCKER_UPNP_CLIENT_2_IP,
     ),
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK, ["stun"]),
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2, ["stun"]),
-        ]),
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK, ["stun"]),
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2, ["stun"]),
+            ]
+        ),
         DOCKER_OPEN_INTERNET_CLIENT_2_IP,
     ),
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["stun"]),
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK, ["stun"]),
-        ]),
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["stun"]),
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK, ["stun"]),
+            ]
+        ),
         DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK_IP,
     ),
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ["local"]),
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
-        ]),
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ["local"]),
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+            ]
+        ),
         DOCKER_OPEN_INTERNET_CLIENT_1_IP,
     ),
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, ["local"]),
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
-        ]),
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, ["local"]),
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+            ]
+        ),
         DOCKER_OPEN_INTERNET_CLIENT_1_IP,
     ),
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["local"]),
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
-        ]),
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["local"]),
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+            ]
+        ),
         DOCKER_OPEN_INTERNET_CLIENT_1_IP,
     ),
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT, ["local"]),
-            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ["local"]),
-        ]),
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT, ["local"]),
+                (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ["local"]),
+            ]
+        ),
         DOCKER_SYMMETRIC_CLIENT_1_IP,
     ),
 ]
 
 UHP_FAILING_PATHS = [
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, ANY_PROVIDERS),
-            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ANY_PROVIDERS),
-        ])
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, ANY_PROVIDERS),
+                (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ANY_PROVIDERS),
+            ]
+        )
     ),
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, ANY_PROVIDERS),
-            (ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1, ANY_PROVIDERS),
-        ])
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, ANY_PROVIDERS),
+                (ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1, ANY_PROVIDERS),
+            ]
+        )
     ),
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ANY_PROVIDERS),
-            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2, ANY_PROVIDERS),
-        ])
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ANY_PROVIDERS),
+                (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2, ANY_PROVIDERS),
+            ]
+        )
     ),
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ANY_PROVIDERS),
-            (ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1, ANY_PROVIDERS),
-        ])
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ANY_PROVIDERS),
+                (ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1, ANY_PROVIDERS),
+            ]
+        )
     ),
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ANY_PROVIDERS),
-            (ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1, ANY_PROVIDERS),
-        ])
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ANY_PROVIDERS),
+                (ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1, ANY_PROVIDERS),
+            ]
+        )
     ),
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1, ANY_PROVIDERS),
-            (ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2, ANY_PROVIDERS),
-        ])
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1, ANY_PROVIDERS),
+                (ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2, ANY_PROVIDERS),
+            ]
+        )
     ),
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
-            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["local"]),
-        ])
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+                (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["local"]),
+            ]
+        )
     ),
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, ["local"]),
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
-        ])
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, ["local"]),
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+            ]
+        )
     ),
     pytest.param(
-        _generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ["local"]),
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
-        ])
+        _generate_setup_parameter_pair(
+            [
+                (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ["local"]),
+                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+            ]
+        )
     ),
 ]
 
@@ -446,34 +494,44 @@ async def test_direct_working_paths_with_skip_unresponsive_peers(
     "setup_params",
     [
         pytest.param(
-            _generate_setup_parameter_pair([
-                (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
-                (ConnectionTag.DOCKER_CONE_CLIENT_2, ["stun"]),
-            ])
+            _generate_setup_parameter_pair(
+                [
+                    (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
+                    (ConnectionTag.DOCKER_CONE_CLIENT_2, ["stun"]),
+                ]
+            )
         ),
         pytest.param(
-            _generate_setup_parameter_pair([
-                (ConnectionTag.DOCKER_UPNP_CLIENT_1, ["upnp"]),
-                (ConnectionTag.DOCKER_UPNP_CLIENT_2, ["upnp"]),
-            ])
+            _generate_setup_parameter_pair(
+                [
+                    (ConnectionTag.DOCKER_UPNP_CLIENT_1, ["upnp"]),
+                    (ConnectionTag.DOCKER_UPNP_CLIENT_2, ["upnp"]),
+                ]
+            )
         ),
         pytest.param(
-            _generate_setup_parameter_pair([
-                (ConnectionTag.DOCKER_UPNP_CLIENT_1, ["upnp"]),
-                (ConnectionTag.DOCKER_CONE_CLIENT_2, ["stun"]),
-            ])
+            _generate_setup_parameter_pair(
+                [
+                    (ConnectionTag.DOCKER_UPNP_CLIENT_1, ["upnp"]),
+                    (ConnectionTag.DOCKER_CONE_CLIENT_2, ["stun"]),
+                ]
+            )
         ),
         pytest.param(
-            _generate_setup_parameter_pair([
-                (ConnectionTag.DOCKER_UPNP_CLIENT_1, ["upnp"]),
-                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
-            ])
+            _generate_setup_parameter_pair(
+                [
+                    (ConnectionTag.DOCKER_UPNP_CLIENT_1, ["upnp"]),
+                    (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+                ]
+            )
         ),
         pytest.param(
-            _generate_setup_parameter_pair([
-                (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
-                (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
-            ])
+            _generate_setup_parameter_pair(
+                [
+                    (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
+                    (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+                ]
+            )
         ),
     ],
 )
@@ -579,19 +637,21 @@ async def test_infinite_stun_loop(setup_params: List[SetupParameters]) -> None:
 
         # 3478 and 3479 are STUN ports in natlab containers
         tcpdump = await exit_stack.enter_async_context(
-            alpha_connection.create_process([
-                "tcpdump",
-                "--immediate-mode",
-                "-l",
-                "-i",
-                "any",
-                "(",
-                "port",
-                "3478",
-                "or",
-                "3479",
-                ")",
-            ]).run()
+            alpha_connection.create_process(
+                [
+                    "tcpdump",
+                    "--immediate-mode",
+                    "-l",
+                    "-i",
+                    "any",
+                    "(",
+                    "port",
+                    "3478",
+                    "or",
+                    "3479",
+                    ")",
+                ]
+            ).run()
         )
         await asyncio.sleep(5)
 
