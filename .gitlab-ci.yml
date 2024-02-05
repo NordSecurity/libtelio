@@ -15,5 +15,5 @@ libtelio-build-pipeline:
 
   trigger:
     project: $LIBTELIO_BUILD_PROJECT_PATH
-    branch: LLT4813_lock_python_deps
+    branch: v0.4.13
     strategy: depend
