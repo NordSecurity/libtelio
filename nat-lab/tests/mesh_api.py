@@ -312,11 +312,13 @@ class API:
         beta_ip_stack: IPStack = IPStack.IPv4,
         gamma_ip_stack: IPStack = IPStack.IPv4,
     ) -> Tuple[Node, Node, Node]:
-        alpha, beta, gamma, *_ = self.config_dynamic_nodes([
-            (alpha_is_local, alpha_ip_stack),
-            (beta_is_local, beta_ip_stack),
-            (gamma_is_local, gamma_ip_stack),
-        ])
+        alpha, beta, gamma, *_ = self.config_dynamic_nodes(
+            [
+                (alpha_is_local, alpha_ip_stack),
+                (beta_is_local, beta_ip_stack),
+                (gamma_is_local, gamma_ip_stack),
+            ]
+        )
         alpha.set_peer_firewall_settings(gamma.id, allow_incoming_connections=True)
         alpha.set_peer_firewall_settings(beta.id, allow_incoming_connections=True)
         beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
@@ -377,8 +379,12 @@ class API:
                 is_local=is_local,
                 ip_stack=ip_stack,
             )
-            ipv4 = f"100.{random.randint(64, 127)}.{random.randint(0, 255)}.{random.randint(8, 254)}"
-            ipv6 = f"{LIBTELIO_IPV6_WG_SUBNET}:0:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(8, 0xFFFF), 'x')}"
+            ipv4 = (
+                f"100.{random.randint(64, 127)}.{random.randint(0, 255)}.{random.randint(8, 254)}"
+            )
+            ipv6 = (
+                f"{LIBTELIO_IPV6_WG_SUBNET}:0:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(8, 0xFFFF), 'x')}"
+            )
 
             if ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
                 self.assign_ip(node.id, ipv4)

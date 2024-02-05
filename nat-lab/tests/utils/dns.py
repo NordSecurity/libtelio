@@ -13,12 +13,14 @@ async def query_dns(
     options: Optional[str] = None,
 ) -> None:
     response = await testing.wait_lengthy(
-        connection.create_process([
-            "nslookup",
-            options if options else "-timeout=1",
-            host_name,
-            dns_server if dns_server else LIBTELIO_DNS_IPV4,
-        ]).execute()
+        connection.create_process(
+            [
+                "nslookup",
+                options if options else "-timeout=1",
+                host_name,
+                dns_server if dns_server else LIBTELIO_DNS_IPV4,
+            ]
+        ).execute()
     )
     dns_output = response.get_stdout()
     if expected_output:

@@ -84,16 +84,18 @@ class NetworkSwitcherWindows(NetworkSwitcher):
     @asynccontextmanager
     async def switch_to_primary_network(self) -> AsyncIterator:
         await self._delete_existing_route()
-        await self._connection.create_process([
-            "netsh",
-            "interface",
-            "ipv4",
-            "add",
-            "route",
-            "0.0.0.0/0",
-            self._interfaces.primary,
-            f"nexthop={config.LINUX_VM_PRIMARY_GATEWAY}",
-        ]).execute()
+        await self._connection.create_process(
+            [
+                "netsh",
+                "interface",
+                "ipv4",
+                "add",
+                "route",
+                "0.0.0.0/0",
+                self._interfaces.primary,
+                f"nexthop={config.LINUX_VM_PRIMARY_GATEWAY}",
+            ]
+        ).execute()
         try:
             yield
         finally:
@@ -102,16 +104,18 @@ class NetworkSwitcherWindows(NetworkSwitcher):
     @asynccontextmanager
     async def switch_to_secondary_network(self) -> AsyncIterator:
         await self._delete_existing_route()
-        await self._connection.create_process([
-            "netsh",
-            "interface",
-            "ipv4",
-            "add",
-            "route",
-            "0.0.0.0/0",
-            self._interfaces.secondary,
-            f"nexthop={config.LINUX_VM_SECONDARY_GATEWAY}",
-        ]).execute()
+        await self._connection.create_process(
+            [
+                "netsh",
+                "interface",
+                "ipv4",
+                "add",
+                "route",
+                "0.0.0.0/0",
+                self._interfaces.secondary,
+                f"nexthop={config.LINUX_VM_SECONDARY_GATEWAY}",
+            ]
+        ).execute()
         try:
             yield
         finally:
@@ -128,15 +132,17 @@ class NetworkSwitcherWindows(NetworkSwitcher):
 
     async def _delete_route(self, interface_name: str) -> None:
         try:
-            await self._connection.create_process([
-                "netsh",
-                "interface",
-                "ipv4",
-                "delete",
-                "route",
-                "0.0.0.0/0",
-                interface_name,
-            ]).execute()
+            await self._connection.create_process(
+                [
+                    "netsh",
+                    "interface",
+                    "ipv4",
+                    "delete",
+                    "route",
+                    "0.0.0.0/0",
+                    interface_name,
+                ]
+            ).execute()
         except ProcessExecError as exception:
             if (
                 "The filename, directory name, or volume label syntax is incorrect"
@@ -150,38 +156,50 @@ class NetworkSwitcherWindows(NetworkSwitcher):
 
     async def _disable_management_interface(self) -> None:
         if self._interfaces.default is not None:
-            await self._connection.create_process([
-                "netsh",
-                "interface",
-                "set",
-                "interface",
-                self._interfaces.default,
-                "disable",
-            ]).execute()
+            await self._connection.create_process(
+                [
+                    "netsh",
+                    "interface",
+                    "set",
+                    "interface",
+                    self._interfaces.default,
+                    "disable",
+                ]
+            ).execute()
 
     async def _enable_management_interface(self) -> None:
         if self._interfaces.default is not None:
-            await self._connection.create_process([
-                "netsh",
-                "interface",
-                "set",
-                "interface",
-                self._interfaces.default,
-                "enable",
-            ]).execute()
+            await self._connection.create_process(
+                [
+                    "netsh",
+                    "interface",
+                    "set",
+                    "interface",
+                    self._interfaces.default,
+                    "enable",
+                ]
+            ).execute()
 
             # wait for interface to appear in the list
-            while not bool([
-                iface
-                for iface in await Interface.get_network_interfaces(self._connection)
-                if self._interfaces.default == iface.name
-            ]):
+            while not bool(
+                [
+                    iface
+                    for iface in await Interface.get_network_interfaces(
+                        self._connection
+                    )
+                    if self._interfaces.default == iface.name
+                ]
+            ):
                 await asyncio.sleep(0.1)
 
             # wait for interface's ip to be assigned
-            while bool([
-                iface
-                for iface in await Interface.get_network_interfaces(self._connection)
-                if Interface(self._interfaces.default, "").ipv4 == iface.ipv4
-            ]):
+            while bool(
+                [
+                    iface
+                    for iface in await Interface.get_network_interfaces(
+                        self._connection
+                    )
+                    if Interface(self._interfaces.default, "").ipv4 == iface.ipv4
+                ]
+            ):
                 await asyncio.sleep(0.1)

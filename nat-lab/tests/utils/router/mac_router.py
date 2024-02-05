@@ -73,32 +73,38 @@ class MacRouter(Router):
 
     async def create_vpn_route(self) -> None:
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
-            await self._connection.create_process([
-                "route",
-                "add",
-                "-inet",
-                "0/1",
-                "-interface",
-                self._interface_name,
-            ]).execute()
-            await self._connection.create_process([
-                "route",
-                "add",
-                "-inet",
-                "128/1",
-                "-interface",
-                self._interface_name,
-            ]).execute()
+            await self._connection.create_process(
+                [
+                    "route",
+                    "add",
+                    "-inet",
+                    "0/1",
+                    "-interface",
+                    self._interface_name,
+                ]
+            ).execute()
+            await self._connection.create_process(
+                [
+                    "route",
+                    "add",
+                    "-inet",
+                    "128/1",
+                    "-interface",
+                    self._interface_name,
+                ]
+            ).execute()
 
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
-            await self._connection.create_process([
-                "route",
-                "add",
-                "-inet6",
-                "default",
-                "-interface",
-                self._interface_name,
-            ]).execute()
+            await self._connection.create_process(
+                [
+                    "route",
+                    "add",
+                    "-inet6",
+                    "default",
+                    "-interface",
+                    self._interface_name,
+                ]
+            ).execute()
 
     async def delete_interface(self) -> None:
         pass

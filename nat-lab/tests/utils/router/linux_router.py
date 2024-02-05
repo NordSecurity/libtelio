@@ -92,34 +92,38 @@ class LinuxRouter(Router):
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
             for network in ["10.0.0.0/16", "100.64.0.1"]:
                 try:
-                    await self._connection.create_process([
-                        "ip",
-                        "route",
-                        "add",
-                        network,
-                        "dev",
-                        self._interface_name,
-                        "table",
-                        ROUTING_TABLE_ID,
-                    ]).execute()
+                    await self._connection.create_process(
+                        [
+                            "ip",
+                            "route",
+                            "add",
+                            network,
+                            "dev",
+                            self._interface_name,
+                            "table",
+                            ROUTING_TABLE_ID,
+                        ]
+                    ).execute()
                 except ProcessExecError as exception:
                     if exception.stderr.find("File exists") < 0:
                         raise exception
 
-            await self._connection.create_process([
-                "ip",
-                "rule",
-                "add",
-                "priority",
-                ROUTING_PRIORITY,
-                "not",
-                "from",
-                "all",
-                "fwmark",
-                FWMARK_VALUE,
-                "lookup",
-                ROUTING_TABLE_ID,
-            ]).execute()
+            await self._connection.create_process(
+                [
+                    "ip",
+                    "rule",
+                    "add",
+                    "priority",
+                    ROUTING_PRIORITY,
+                    "not",
+                    "from",
+                    "all",
+                    "fwmark",
+                    FWMARK_VALUE,
+                    "lookup",
+                    ROUTING_TABLE_ID,
+                ]
+            ).execute()
 
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
             for network in [
@@ -129,36 +133,40 @@ class LinuxRouter(Router):
                 config.LIBTELIO_IPV6_WG_SUBNET + "::1",
             ]:
                 try:
-                    await self._connection.create_process([
-                        "ip",
-                        "-6",
-                        "route",
-                        "add",
-                        network,
-                        "dev",
-                        self._interface_name,
-                        "table",
-                        ROUTING_TABLE_ID,
-                    ]).execute()
+                    await self._connection.create_process(
+                        [
+                            "ip",
+                            "-6",
+                            "route",
+                            "add",
+                            network,
+                            "dev",
+                            self._interface_name,
+                            "table",
+                            ROUTING_TABLE_ID,
+                        ]
+                    ).execute()
                 except ProcessExecError as exception:
                     if exception.stderr.find("File exists") < 0:
                         raise exception
 
-            await self._connection.create_process([
-                "ip",
-                "-6",
-                "rule",
-                "add",
-                "priority",
-                ROUTING_PRIORITY,
-                "not",
-                "from",
-                "all",
-                "fwmark",
-                FWMARK_VALUE,
-                "lookup",
-                ROUTING_TABLE_ID,
-            ]).execute()
+            await self._connection.create_process(
+                [
+                    "ip",
+                    "-6",
+                    "rule",
+                    "add",
+                    "priority",
+                    ROUTING_PRIORITY,
+                    "not",
+                    "from",
+                    "all",
+                    "fwmark",
+                    FWMARK_VALUE,
+                    "lookup",
+                    ROUTING_TABLE_ID,
+                ]
+            ).execute()
 
     async def delete_interface(self) -> None:
         try:
@@ -200,20 +208,22 @@ class LinuxRouter(Router):
 
     async def create_exit_node_route(self) -> None:
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
-            await self._connection.create_process([
-                "iptables",
-                "-t",
-                "nat",
-                "-A",
-                "POSTROUTING",
-                "-s",
-                "100.64.0.0/10",
-                "!",
-                "-o",
-                self._interface_name,
-                "-j",
-                "MASQUERADE",
-            ]).execute()
+            await self._connection.create_process(
+                [
+                    "iptables",
+                    "-t",
+                    "nat",
+                    "-A",
+                    "POSTROUTING",
+                    "-s",
+                    "100.64.0.0/10",
+                    "!",
+                    "-o",
+                    self._interface_name,
+                    "-j",
+                    "MASQUERADE",
+                ]
+            ).execute()
 
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
             await self._connection.create_process(
@@ -292,54 +302,62 @@ class LinuxRouter(Router):
 
         iptables_string = ("ip" if addr_proto == IPProto.IPv4 else "ip6") + "tables"
 
-        await self._connection.create_process([
-            iptables_string,
-            "-t",
-            "filter",
-            "-A",
-            "INPUT",
-            "-s",
-            address,
-            "-j",
-            "DROP",
-        ]).execute()
-        await self._connection.create_process([
-            iptables_string,
-            "-t",
-            "filter",
-            "-A",
-            "OUTPUT",
-            "-d",
-            address,
-            "-j",
-            "DROP",
-        ]).execute()
-
-        try:
-            yield
-        finally:
-            await self._connection.create_process([
+        await self._connection.create_process(
+            [
                 iptables_string,
                 "-t",
                 "filter",
-                "-D",
+                "-A",
                 "INPUT",
                 "-s",
                 address,
                 "-j",
                 "DROP",
-            ]).execute()
-            await self._connection.create_process([
+            ]
+        ).execute()
+        await self._connection.create_process(
+            [
                 iptables_string,
                 "-t",
                 "filter",
-                "-D",
+                "-A",
                 "OUTPUT",
                 "-d",
                 address,
                 "-j",
                 "DROP",
-            ]).execute()
+            ]
+        ).execute()
+
+        try:
+            yield
+        finally:
+            await self._connection.create_process(
+                [
+                    iptables_string,
+                    "-t",
+                    "filter",
+                    "-D",
+                    "INPUT",
+                    "-s",
+                    address,
+                    "-j",
+                    "DROP",
+                ]
+            ).execute()
+            await self._connection.create_process(
+                [
+                    iptables_string,
+                    "-t",
+                    "filter",
+                    "-D",
+                    "OUTPUT",
+                    "-d",
+                    address,
+                    "-j",
+                    "DROP",
+                ]
+            ).execute()
 
     @asynccontextmanager
     async def break_tcp_conn_to_host(self, address: str) -> AsyncIterator:
@@ -350,30 +368,12 @@ class LinuxRouter(Router):
 
         iptables_string = ("ip" if addr_proto == IPProto.IPv4 else "ip6") + "tables"
 
-        await self._connection.create_process([
-            iptables_string,
-            "-t",
-            "filter",
-            "-A",
-            "OUTPUT",
-            "--destination",
-            address,
-            "-p",
-            "tcp",
-            "-j",
-            "REJECT",
-            "--reject-with",
-            "tcp-reset",
-        ]).execute()
-
-        try:
-            yield
-        finally:
-            await self._connection.create_process([
+        await self._connection.create_process(
+            [
                 iptables_string,
                 "-t",
                 "filter",
-                "-D",
+                "-A",
                 "OUTPUT",
                 "--destination",
                 address,
@@ -383,7 +383,29 @@ class LinuxRouter(Router):
                 "REJECT",
                 "--reject-with",
                 "tcp-reset",
-            ]).execute()
+            ]
+        ).execute()
+
+        try:
+            yield
+        finally:
+            await self._connection.create_process(
+                [
+                    iptables_string,
+                    "-t",
+                    "filter",
+                    "-D",
+                    "OUTPUT",
+                    "--destination",
+                    address,
+                    "-p",
+                    "tcp",
+                    "-j",
+                    "REJECT",
+                    "--reject-with",
+                    "tcp-reset",
+                ]
+            ).execute()
 
     @asynccontextmanager
     async def break_udp_conn_to_host(self, address: str) -> AsyncIterator:
@@ -394,30 +416,12 @@ class LinuxRouter(Router):
 
         iptables_string = ("ip" if addr_proto == IPProto.IPv4 else "ip6") + "tables"
 
-        await self._connection.create_process([
-            iptables_string,
-            "-t",
-            "filter",
-            "-A",
-            "OUTPUT",
-            "--destination",
-            address,
-            "-p",
-            "udp",
-            "-j",
-            "REJECT",
-            "--reject-with",
-            "icmp-host-unreachable",
-        ]).execute()
-
-        try:
-            yield
-        finally:
-            await self._connection.create_process([
+        await self._connection.create_process(
+            [
                 iptables_string,
                 "-t",
                 "filter",
-                "-D",
+                "-A",
                 "OUTPUT",
                 "--destination",
                 address,
@@ -427,7 +431,29 @@ class LinuxRouter(Router):
                 "REJECT",
                 "--reject-with",
                 "icmp-host-unreachable",
-            ]).execute()
+            ]
+        ).execute()
+
+        try:
+            yield
+        finally:
+            await self._connection.create_process(
+                [
+                    iptables_string,
+                    "-t",
+                    "filter",
+                    "-D",
+                    "OUTPUT",
+                    "--destination",
+                    address,
+                    "-p",
+                    "udp",
+                    "-j",
+                    "REJECT",
+                    "--reject-with",
+                    "icmp-host-unreachable",
+                ]
+            ).execute()
 
     @asynccontextmanager
     async def reset_upnpd(self) -> AsyncIterator:

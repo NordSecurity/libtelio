@@ -141,14 +141,20 @@ async def setup_connections(
     A list of the Telio connection managers of the connections corresponding to the provided connection tags
     """
 
-    return await asyncio.gather(*[
-        (
-            exit_stack.enter_async_context(new_connection_manager_by_tag(param, None))
-            if isinstance(param, ConnectionTag)
-            else exit_stack.enter_async_context(new_connection_manager_by_tag(*param))
-        )
-        for param in connection_parameters
-    ])
+    return await asyncio.gather(
+        *[
+            (
+                exit_stack.enter_async_context(
+                    new_connection_manager_by_tag(param, None)
+                )
+                if isinstance(param, ConnectionTag)
+                else exit_stack.enter_async_context(
+                    new_connection_manager_by_tag(*param)
+                )
+            )
+            for param in connection_parameters
+        ]
+    )
 
 
 async def setup_clients(
@@ -178,12 +184,14 @@ async def setup_clients(
     A list of the Telio clients references corresponding to the provided configs
     """
 
-    return await asyncio.gather(*[
-        exit_stack.enter_async_context(
-            Client(connection, node, adapter_type, features).run(meshmap)
-        )
-        for connection, node, adapter_type, features, meshmap in client_parameters
-    ])
+    return await asyncio.gather(
+        *[
+            exit_stack.enter_async_context(
+                Client(connection, node, adapter_type, features).run(meshmap)
+            )
+            for connection, node, adapter_type, features, meshmap in client_parameters
+        ]
+    )
 
 
 @asynccontextmanager
@@ -323,31 +331,35 @@ async def setup_mesh_nodes(
         setup_environment(exit_stack, instances, provided_api)
     )
 
-    await asyncio.gather(*[
-        client.wait_for_state_on_any_derp([State.Connected])
-        for client, instance in zip_longest(env.clients, instances)
-        if instance.derp_servers != []
-    ])
+    await asyncio.gather(
+        *[
+            client.wait_for_state_on_any_derp([State.Connected])
+            for client, instance in zip_longest(env.clients, instances)
+            if instance.derp_servers != []
+        ]
+    )
 
-    connection_future = asyncio.gather(*[
-        client.wait_for_state_peer(
-            other_node.public_key,
-            [State.Connected],
-            (
-                [PathType.Direct]
-                if instance.features.direct and other_instance.features.direct
-                else [PathType.Relay]
-            ),
-        )
-        for (client, node, instance), (
-            _,
-            other_node,
-            other_instance,
-        ) in product(zip_longest(env.clients, env.nodes, instances), repeat=2)
-        if node != other_node
-        and instance.derp_servers != []
-        and other_instance.derp_servers != []
-    ])
+    connection_future = asyncio.gather(
+        *[
+            client.wait_for_state_peer(
+                other_node.public_key,
+                [State.Connected],
+                (
+                    [PathType.Direct]
+                    if instance.features.direct and other_instance.features.direct
+                    else [PathType.Relay]
+                ),
+            )
+            for (client, node, instance), (
+                _,
+                other_node,
+                other_instance,
+            ) in product(zip_longest(env.clients, env.nodes, instances), repeat=2)
+            if node != other_node
+            and instance.derp_servers != []
+            and other_instance.derp_servers != []
+        ]
+    )
     if is_timeout_expected:
         with pytest.raises(asyncio.TimeoutError):
             await connection_future

@@ -345,12 +345,14 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
         )
         output_notifier.notify_output("CLOSE", close_wait_event)
 
-        async with connection.create_process([
-            "conntrack",
-            "--family",
-            "ipv6" if setup_params.ip_stack == IPStack.IPv6 else "ipv4",
-            "-E",
-        ]).run(stdout_callback=conntrack_on_stdout) as conntrack_proc:
+        async with connection.create_process(
+            [
+                "conntrack",
+                "--family",
+                "ipv6" if setup_params.ip_stack == IPStack.IPv6 else "ipv4",
+                "-E",
+            ]
+        ).run(stdout_callback=conntrack_on_stdout) as conntrack_proc:
             await testing.wait_normal(conntrack_proc.wait_stdin_ready())
 
             ip_proto = (
@@ -359,28 +361,32 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
             alpha_ip = testing.unpack_optional(alpha.get_ip_address(ip_proto))
 
             await exit_stack.enter_async_context(
-                connection.create_process([
-                    "nc",
-                    "-nv",
-                    "-6" if setup_params.ip_stack == IPStack.IPv6 else "-4",
-                    "-s",
-                    alpha_ip,
-                    serv_ip,
-                    str(80),
-                ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
+                connection.create_process(
+                    [
+                        "nc",
+                        "-nv",
+                        "-6" if setup_params.ip_stack == IPStack.IPv6 else "-4",
+                        "-s",
+                        alpha_ip,
+                        serv_ip,
+                        str(80),
+                    ]
+                ).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
             )
 
             # Second client, this time sending some data to check proper TCP sequence number generation
             proc = await exit_stack.enter_async_context(
-                connection.create_process([
-                    "nc",
-                    "-nv",
-                    "-6" if setup_params.ip_stack == IPStack.IPv6 else "-4",
-                    "-s",
-                    alpha_ip,
-                    serv_ip,
-                    str(80),
-                ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
+                connection.create_process(
+                    [
+                        "nc",
+                        "-nv",
+                        "-6" if setup_params.ip_stack == IPStack.IPv6 else "-4",
+                        "-s",
+                        alpha_ip,
+                        serv_ip,
+                        str(80),
+                    ]
+                ).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
             )
 
             await proc.wait_stdin_ready()
@@ -481,15 +487,17 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
         )
         alpha_ip = testing.unpack_optional(alpha.get_ip_address(ip_proto))
 
-        proc = connection.create_process([
-            "nc",
-            "-nuv",
-            "-6" if setup_params.ip_stack == IPStack.IPv6 else "-4",
-            "-s",
-            alpha_ip,
-            serv_ip,
-            str(2000),
-        ])
+        proc = connection.create_process(
+            [
+                "nc",
+                "-nuv",
+                "-6" if setup_params.ip_stack == IPStack.IPv6 else "-4",
+                "-s",
+                alpha_ip,
+                serv_ip,
+                str(2000),
+            ]
+        )
 
         await exit_stack.enter_async_context(
             proc.run(stdout_callback=on_stdout, stderr_callback=on_stdout)
