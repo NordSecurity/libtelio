@@ -127,26 +127,4 @@ pub trait EndpointProvider: Sync + Send + 'static {
     ) -> Result<(), Error>;
 
     async fn get_current_endpoints(&self) -> Option<Vec<EndpointCandidate>>;
-
-    /// Pause the endpoint provider.
-    ///
-    /// In a situation where no peers are eligible for connection upgrade (e.g. all are already
-    /// upgraded or offline - there is no need to run endpoint provider, thus by pausing it we can
-    /// preserve some resources (e.g. network bandwith or battery)
-    ///
-    /// Note: This function implementation *MUST* be idempotent, meaning that it may be called
-    /// multiple times in a row even if the endpoint provider is already paused. In such a
-    /// situation, the function must do nothing.
-    async fn pause(&self) {}
-
-    /// Unpause the endpoint provider.
-    ///
-    /// In a situation where no peers are eligible for connection upgrade (e.g. all are already
-    /// upgraded or offline - there is no need to run endpoint provider. In case endpoint provider
-    /// is paused - this function unpauses it.
-    ///
-    /// Note: This function implementation *MUST* be idempotent, meaning that it may be called
-    /// multiple times in a row even if the endpoint provider is already unpaused. In such a
-    /// situation, the function must do nothing.
-    async fn unpause(&self) {}
 }
