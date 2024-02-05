@@ -24,6 +24,8 @@ fn main() {
         Err(_e) => {}
     }
 
+    println!("cargo:rustc-link-lib=static=wireguard-go");
+
     // Cannot execute PowerShell scripts on Windows the same way Shell scripts are run on Linux.
     // Here, PowerShell needs to be called as the actual command and the script path be passed as argument.
     if host_os == "windows" {
