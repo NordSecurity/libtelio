@@ -25,7 +25,6 @@ use super::{EndpointCandidate, EndpointCandidatesChangeEvent, EndpointProvider, 
 
 pub type StunServer = telio_model::config::Server;
 
-const STUN_TIMEOUT_PAUSED: Duration = Duration::from_secs(600);
 #[cfg(not(test))]
 const STUN_TIMEOUT: Duration = Duration::from_secs(5);
 #[cfg(test)]
@@ -61,14 +60,12 @@ impl<Wg: WireGuard> StunEndpointProvider<Wg> {
         exponential_backoff_bounds: ExponentialBackoffBounds,
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
         stun_peer_publisher: chan::Tx<Option<StunServer>>,
-        is_battery_optimization_on: bool,
     ) -> Result<Self, Error> {
         Ok(Self::start_with_exp_backoff(
             wg,
             ExponentialBackoff::new(exponential_backoff_bounds)?,
             ping_pong_handler,
             stun_peer_publisher,
-            is_battery_optimization_on,
         ))
     }
 
@@ -88,7 +85,6 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
         exponential_backoff: E,
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
         stun_peer_publisher: chan::Tx<Option<StunServer>>,
-        is_battery_optimization_on: bool,
     ) -> Self {
         telio_log_info!("Starting stun endpoint provider");
         Self {
@@ -97,16 +93,15 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
                 current_server_index: 0,
                 current_proto: IpProto::IPv6,
                 wg,
-                ping_pong_tracker: ping_pong_handler,
                 change_event: None,
                 pong_event: None,
                 stun_session: None,
                 exponential_backoff,
                 current_timeout: PinnedSleep::new(STUN_TIMEOUT, ()),
                 last_candidates: Vec::new(),
-                stun_state: StunState::WaitingForWg,
-                is_battery_optimization_on,
+                ping_pong_tracker: ping_pong_handler,
                 stun_peer_publisher,
+                stun_state: StunState::WaitingForWg,
                 sockets: None,
             }),
         }
@@ -233,10 +228,6 @@ impl<Wg: WireGuard, E: Backoff> StunEndpointProvider<Wg, E> {
                 }
             }
 
-            if s.stun_state == StunState::Paused {
-                return Ok(());
-            }
-
             // Update STUN state
             s.exponential_backoff.reset();
             s.transition_to_wait_for_wg();
@@ -353,31 +344,6 @@ impl<Wg: WireGuard, E: Backoff + 'static> EndpointProvider for StunEndpointProvi
         .await
         .unwrap_or(None)
     }
-
-    async fn pause(&self) {
-        let _ = task_exec!(&self.task, async move |s| {
-            if !s.is_battery_optimization_on {
-                telio_log_debug!("Skipping pause, battery optimization not set");
-                return Ok(());
-            }
-            s.stun_state = StunState::Paused;
-            s.current_timeout = PinnedSleep::new(STUN_TIMEOUT_PAUSED, ());
-            Ok(())
-        })
-        .await;
-    }
-
-    async fn unpause(&self) {
-        let _ = task_exec!(&self.task, async move |s| {
-            if s.stun_state == StunState::Paused {
-                s.exponential_backoff.reset();
-                s.transition_to_wait_for_wg();
-                s.try_transition_to_searching_for_server().await;
-            }
-            Ok(())
-        })
-        .await;
-    }
 }
 
 //                                -------------
@@ -386,30 +352,23 @@ impl<Wg: WireGuard, E: Backoff + 'static> EndpointProvider for StunEndpointProvi
 // +------------------+     +--------------+  |
 // |SearchingForServer|---->| HasEndpoints |---
 // +------------------+     +--------------+
-//          ^     ^  |            |       |
-//          |     |  |            |       v
-// +--------------+  |            |     +--------------+
-// | WaitingForWG |<-|------------| ----|    Paused    |
-// +--------------+  |            |     +--------------+
+//          ^        |            |
+//          |        |            |
+// +--------------+  |            |
+// | WaitingForWG |  |            |
+// +--------------+  |            |
 //          ^        |            |
 //          |        |            |
 //          v        V            |
 //      +-------------+           |
 //      | BackingOff  |<-----------
 //      +-------------+
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+#[derive(Debug)]
 enum StunState {
     WaitingForWg,
     SearchingForServer,
     BackingOff,
     HasEndpoints,
-    Paused,
-}
-
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
-enum StunSkipReason {
-    NotConfigured,
-    ModulePaused,
 }
 
 pub struct StunSockets {
@@ -436,7 +395,6 @@ struct State<Wg: WireGuard, E: Backoff> {
     current_timeout: PinnedSleep<()>,
     last_candidates: Vec<EndpointCandidate>,
     stun_state: StunState,
-    is_battery_optimization_on: bool,
 
     stun_peer_publisher: chan::Tx<Option<StunServer>>,
 }
@@ -482,14 +440,11 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
     }
 
     async fn reconnect(&mut self) {
-        match self.stun_state {
-            StunState::BackingOff | StunState::Paused => {
-                self.transition_to_wait_for_wg();
-                self.exponential_backoff.reset();
-                self.try_transition_to_searching_for_server().await;
-            }
-            _ => {}
-        };
+        if let StunState::BackingOff = self.stun_state {
+            self.transition_to_wait_for_wg();
+            self.exponential_backoff.reset();
+            self.try_transition_to_searching_for_server().await;
+        }
     }
 
     /// Get wg port identified by stun
@@ -632,10 +587,7 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
     }
 
     async fn try_transition_to_searching_for_server(&mut self) {
-        if !self.servers.is_empty()
-            && self.stun_state != StunState::Paused
-            && self.is_wg_ready().await
-        {
+        if !self.servers.is_empty() && self.is_wg_ready().await {
             self.stun_state = StunState::SearchingForServer;
             let err = self.start_stun_session().await;
             if err.is_err() {
@@ -645,7 +597,7 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
     }
 
     async fn transition_to_has_endpoints_state(&mut self, candidate: EndpointCandidate) {
-        // Announce the new candidates
+        // Anounce the new candidates
         let candidates = vec![candidate];
         if self.last_candidates != candidates {
             self.last_candidates = candidates.clone();
@@ -760,20 +712,9 @@ impl<Wg: WireGuard, E: Backoff> Runtime for State<Wg, E> {
 
         // We must ensure that sockets are created and that we have a populated
         // server list, before we can continue doing anything.
-        let sockets = match (
-            self.sockets.as_ref(),
-            self.servers.is_empty() || self.stun_state == StunState::Paused,
-        ) {
+        let sockets = match (self.sockets.as_ref(), self.servers.is_empty()) {
             (Some(sockets), false) => sockets,
             (_, _) => {
-                let reason = if self.stun_state == StunState::Paused {
-                    StunSkipReason::ModulePaused
-                } else {
-                    StunSkipReason::NotConfigured
-                };
-                telio_log_debug!(
-                    "Skipping getting endpoint via STUN endpoint provider({reason:?})"
-                );
                 //If no STUN servers or sockets are configured -> nothing to do.
                 //NOTE: this will get cancelled on reconfiguration attempt
                 tokio::select! {
@@ -829,16 +770,13 @@ impl<Wg: WireGuard, E: Backoff> Runtime for State<Wg, E> {
                             // This is a stun timeout. We should back off and move to the next server.
                             self.transition_to_backing_off_state_or_change_proto().await;
                         } else {
-                            // This is a poll interval. We're still in HasEndpoints state
+                            // This is a poll interval. We're still in HasEndpoints state.
                             let res = self.start_stun_session().await;
                             if let Err(err) = res {
                                 telio_log_error!("Starting STUN session failed with error: {:?}", err);
                                 self.transition_to_backing_off_state_or_change_proto().await;
                             }
                         }
-                    },
-                    StunState::Paused => {
-                        telio_log_debug!("Skipping the processing of STUN request (paused)");
                     },
                 }
             }
@@ -1659,7 +1597,7 @@ mod tests {
             .stun_peer_subscriber
             .try_recv()
             .expect("Some server should be published just after configure");
-        assert_eq!(received, Some(env.stun_servers[2].clone()));
+        assert!(received == Some(env.stun_servers[2].clone()));
 
         env.expect_server_after_session_timeout(0).await;
 
@@ -1687,7 +1625,7 @@ mod tests {
             .stun_peer_subscriber
             .try_recv()
             .expect("Some server should be published just after configure");
-        assert_eq!(received, Some(env.stun_servers[2].clone()));
+        assert!(received == Some(env.stun_servers[2].clone()));
 
         env.reply_on_both_sockets(2, IpProto::IPv4).await;
 
@@ -2132,7 +2070,6 @@ mod tests {
             },
             ping_pong_handler.clone(),
             stun_peer_publisher,
-            false,
         );
 
         let candidates_channel = Chan::<EndpointCandidatesChangeEvent>::default();
@@ -2236,7 +2173,7 @@ mod tests {
                 .stun_peer_subscriber
                 .try_recv()
                 .expect("Should receive a STUN peer");
-            assert_eq!(received, Some(self.stun_servers[server_num].clone()));
+            assert!(received == Some(self.stun_servers[server_num].clone()));
         }
 
         async fn reply_on_both_sockets(&self, server_num: usize, peer_sock_proto: IpProto) {

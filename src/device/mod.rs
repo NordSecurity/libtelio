@@ -58,7 +58,6 @@ use std::{
 };
 
 use cfg_if::cfg_if;
-use futures::FutureExt;
 
 use telio_utils::{
     commit_sha,
@@ -596,7 +595,7 @@ impl Device {
         self.art()?.block_on(async {
             let node = node.clone();
             let _wireguard_interface: Arc<DynamicWg> = task_exec!(self.rt()?, async move |rt| {
-                rt.connect_exit_node(&node).boxed().await?;
+                rt.connect_exit_node(&node).await?;
                 Ok(rt.entities.wireguard_interface.clone())
             })
             .await
@@ -1109,13 +1108,6 @@ impl Runtime {
                     },
                     ping_pong_tracker.clone(),
                     self.event_publishers.stun_server_publisher.clone(),
-                    self.features
-                        .direct
-                        .clone()
-                        .unwrap_or_default()
-                        .endpoint_providers_optimization
-                        .unwrap_or_default()
-                        .optimize_direct_upgrade_stun,
                 )?);
                 endpoint_providers.push(ep.clone());
                 Some(ep)
@@ -1140,13 +1132,6 @@ impl Runtime {
                         maximal: Some(Duration::from_secs(120)),
                     },
                     ping_pong_tracker.clone(),
-                    self.features
-                        .direct
-                        .clone()
-                        .unwrap_or_default()
-                        .endpoint_providers_optimization
-                        .unwrap_or_default()
-                        .optimize_direct_upgrade_upnp,
                 )?);
                 endpoint_providers.push(ep.clone());
                 Some(ep)
@@ -1324,12 +1309,7 @@ impl Runtime {
         if let Some(meshnet_entities) = self.entities.meshnet.as_ref() {
             if let Some(direct) = &meshnet_entities.direct {
                 if let Some(stun) = &direct.stun_endpoint_provider {
-                    // this unpauses provider if paused
                     stun.reconnect().await;
-                }
-
-                if let Some(upnp) = &direct.upnp_endpoint_provider {
-                    upnp.unpause().await;
                 }
             }
 
@@ -2542,7 +2522,6 @@ mod tests {
                 providers: None,
                 endpoint_interval_secs: None,
                 skip_unresponsive_peers: Default::default(),
-                endpoint_providers_optimization: None,
             }),
             ..Default::default()
         };
@@ -2623,7 +2602,6 @@ mod tests {
                 providers: Some(HashSet::new()),
                 endpoint_interval_secs: None,
                 skip_unresponsive_peers: Default::default(),
-                endpoint_providers_optimization: None,
             }),
             ..Default::default()
         };
@@ -2715,7 +2693,6 @@ mod tests {
                 skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
                     no_rx_threshold_secs: 42,
                 }),
-                endpoint_providers_optimization: None,
             }),
             ..Default::default()
         };

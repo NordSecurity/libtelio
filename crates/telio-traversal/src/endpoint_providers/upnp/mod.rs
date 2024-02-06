@@ -4,7 +4,6 @@ use crate::endpoint_providers::{
 };
 use crate::ping_pong_handler::PingPongHandler;
 use async_trait::async_trait;
-use futures::future::pending;
 use futures::prelude::*;
 use igd::{
     aio::{search_gateway, Gateway},
@@ -27,7 +26,7 @@ use telio_utils::{
     telio_log_debug, telio_log_info, PinnedSleep,
 };
 use telio_wg::{DynamicWg, WireGuard};
-use tokio::{net::UdpSocket, pin, sync::Mutex};
+use tokio::{net::UdpSocket, sync::Mutex};
 
 #[cfg(test)]
 use mockall::automock;
@@ -266,7 +265,6 @@ impl<Wg: WireGuard> UpnpEndpointProvider<Wg> {
         wg: Arc<Wg>,
         exponential_backoff_bounds: ExponentialBackoffBounds,
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
-        is_battery_optimization_on: bool,
     ) -> Result<Self> {
         Ok(Self::start_with(
             udp_socket,
@@ -274,7 +272,6 @@ impl<Wg: WireGuard> UpnpEndpointProvider<Wg> {
             ExponentialBackoff::new(exponential_backoff_bounds)?,
             ping_pong_handler,
             IgdGateway::default(),
-            is_battery_optimization_on,
         ))
     }
 }
@@ -286,7 +283,6 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
         exponential_backoff: E,
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
         igd_gw: I,
-        is_battery_optimization_on: bool,
     ) -> Self {
         let udp_socket = Arc::new(udp_socket);
         let rx_buff = vec![0u8; MAX_SUPPORTED_PACKET_SIZE];
@@ -304,8 +300,6 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
                 epc_event_tx: None,
                 exponential_backoff,
                 upnp_interval: PinnedSleep::new(initial_upnp_interval, ()),
-                is_battery_optimization_on,
-                is_endpoint_provider_paused: false,
                 rx_buff,
                 igd_gw,
                 ping_pong_handler,
@@ -420,24 +414,6 @@ impl<Wg: WireGuard> EndpointProvider for UpnpEndpointProvider<Wg> {
         .await
         .unwrap_or(None)
     }
-
-    async fn pause(&self) {
-        let _ = task_exec!(&self.task, async move |s| {
-            if s.is_battery_optimization_on {
-                s.is_endpoint_provider_paused = true;
-            }
-            Ok(())
-        })
-        .await;
-    }
-
-    async fn unpause(&self) {
-        let _ = task_exec!(&self.task, async move |s| {
-            s.is_endpoint_provider_paused = false;
-            Ok(())
-        })
-        .await;
-    }
 }
 
 struct State<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> {
@@ -451,8 +427,6 @@ struct State<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> {
     epc_event_tx: Option<Tx<EndpointCandidatesChangeEvent>>,
     exponential_backoff: E,
     upnp_interval: PinnedSleep<()>,
-    is_battery_optimization_on: bool,
-    is_endpoint_provider_paused: bool,
     rx_buff: Vec<u8>,
     igd_gw: I,
     ping_pong_handler: Arc<Mutex<PingPongHandler>>,
@@ -629,23 +603,10 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
     type Err = ();
 
     #[allow(index_access_check)]
-    async fn wait_with_update<F>(&mut self, updated: F) -> std::result::Result<(), Self::Err>
+    async fn wait_with_update<F>(&mut self, update: F) -> std::result::Result<(), Self::Err>
     where
         F: Future<Output = BoxAction<Self, std::result::Result<(), Self::Err>>> + Send,
     {
-        pin!(updated);
-
-        if self.is_endpoint_provider_paused {
-            telio_log_debug!("Skipping getting endpoint via UPNP endpoint provider(ModulePaused)");
-            tokio::select! {
-                _ = pending() => {},
-                update = &mut updated => {
-                    return update(self).await;
-                }
-            }
-            return Ok(());
-        }
-
         tokio::select! {
             Ok((len, addr)) = self.udp_socket.recv_from(&mut self.rx_buff) => {
                 let buff = self.rx_buff.clone();
@@ -669,7 +630,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
                 }
             }
             // Incoming task
-            update = updated => {
+            update = update => {
                 return update(self).await;
             }
             else => {
@@ -844,7 +805,6 @@ mod tests {
             },
             Arc::new(TMutex::new(PingPongHandler::new(SecretKey::gen()))),
             mock,
-            false,
         )
     }
 

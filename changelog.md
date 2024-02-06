@@ -1,7 +1,6 @@
 ### UNRELEASED
 ---
 * LLT-1113: Add no-link detection mechanism
-* LLT-4154: Optimize Upnp/Stun providers
 
 <br>
 

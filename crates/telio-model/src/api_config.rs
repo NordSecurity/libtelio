@@ -192,18 +192,14 @@ pub struct FeatureDirect {
     /// Configuration options for skipping unresponsive peers
     #[serde(default = "FeatureDirect::default_skip_unresponsive_peers")]
     pub skip_unresponsive_peers: Option<FeatureSkipUnresponsivePeers>,
-    /// Parameters to optimize battery lifetime
-    #[serde(default)]
-    pub endpoint_providers_optimization: Option<FeatureEndpointProvidersOptimization>,
 }
 
 impl Default for FeatureDirect {
     fn default() -> Self {
         Self {
+            skip_unresponsive_peers: Self::default_skip_unresponsive_peers(),
             providers: Default::default(),
             endpoint_interval_secs: Default::default(),
-            skip_unresponsive_peers: Self::default_skip_unresponsive_peers(),
-            endpoint_providers_optimization: Default::default(),
         }
     }
 }
@@ -258,24 +254,6 @@ pub struct FeatureValidateKeys(pub bool);
 impl Default for FeatureValidateKeys {
     fn default() -> Self {
         Self(true)
-    }
-}
-
-/// Control which battery optimizations are turned on
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
-pub struct FeatureEndpointProvidersOptimization {
-    /// Controls whether Stun endpoint provider should be turned off when there are no proxying peers
-    #[serde(default = "FeatureEndpointProvidersOptimization::default_optimization_variant")]
-    pub optimize_direct_upgrade_stun: bool,
-    /// Controls whether Upnp endpoint provider should be turned off when there are no proxying peers
-    #[serde(default = "FeatureEndpointProvidersOptimization::default_optimization_variant")]
-    pub optimize_direct_upgrade_upnp: bool,
-}
-
-impl FeatureEndpointProvidersOptimization {
-    /// Turning optimizations on by default if feature itself is enabled
-    pub fn default_optimization_variant() -> bool {
-        true
     }
 }
 
@@ -495,7 +473,6 @@ mod tests {
             skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
                 no_rx_threshold_secs: 50,
             }),
-            endpoint_providers_optimization: None,
         }),
         exit_dns: Some(FeatureExitDns {
             auto_switch_dns_ips: Some(true),
@@ -542,7 +519,6 @@ mod tests {
             providers: None,
             endpoint_interval_secs: None,
             skip_unresponsive_peers: Some(Default::default()),
-            endpoint_providers_optimization: None,
         }),
         exit_dns: Some(FeatureExitDns {
             auto_switch_dns_ips: None,
@@ -583,14 +559,12 @@ mod tests {
             skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
                 no_rx_threshold_secs: 42,
             }),
-            endpoint_providers_optimization: None,
         };
 
         let partial_features = FeatureDirect {
             providers: Some(vec![EndpointProvider::Local].into_iter().collect()),
             endpoint_interval_secs: None,
             skip_unresponsive_peers: Some(Default::default()),
-            endpoint_providers_optimization: None,
         };
 
         assert_eq!(from_str::<FeatureDirect>(full_json).unwrap(), full_features);
