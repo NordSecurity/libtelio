@@ -52,6 +52,12 @@ class SshProcess(Process):
                 self._stdout_loop(self._process.stdout, stdout_callback),
                 self._stderr_loop(self._process.stderr, stderr_callback),
             )
+        except:
+            if self._process and self._process.returncode is None:
+                self._process.kill()
+                self._process.close()
+                await self._process.wait_closed()
+            raise
         finally:
             self._running = False
 
