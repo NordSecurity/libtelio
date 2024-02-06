@@ -2,7 +2,6 @@ use libc::{c_char, c_int, int32_t};
 use std::ffi::c_void;
 use std::sync::Once;
 
-#[link(name = "wireguard-go", kind = "static")]
 extern "C" {
     pub fn wg_go_start_named(name: *const c_char, log: wg_go_log_cb) -> i32;
     pub fn wg_go_start_with_tun(fd: i32, log: wg_go_log_cb) -> i32;
@@ -11,7 +10,6 @@ extern "C" {
     pub fn wg_go_free_cmd_res(resp: *const c_char);
     pub fn wg_go_stop(handle: i32);
     pub fn wg_go_get_adapter_luid(handle: i32) -> u64;
-    pub fn wg_go_version_4_2_2();
 }
 
 #[allow(non_camel_case_types)]
