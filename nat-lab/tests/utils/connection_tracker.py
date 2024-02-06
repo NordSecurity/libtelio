@@ -115,25 +115,24 @@ class ConnectionTracker:
 
         await self._process.execute(stdout_callback=self.on_stdout)
 
-    def get_out_of_limits(self) -> Optional[Dict[str, int]]:
+    def get_out_of_limits(self) -> Optional[Dict[str, tuple[int, List[FiveTuple]]]]:
         if platform.system() == "Darwin":
             return None
         if not self._config:
             return None
 
-        out_of_limit_connections: Dict[str, int] = {}
+        out_of_limit_connections: Dict[str, tuple[int, List[FiveTuple]]] = {}
 
         for cfg in self._config:
-            count = len(
-                [event for event in self._events if cfg.target.partial_eq(event)]
-            )
+            events = [event for event in self._events if cfg.target.partial_eq(event)]
+            count = len(events)
             if cfg.limits.max is not None:
                 if count > cfg.limits.max:
-                    out_of_limit_connections[cfg.key] = count
+                    out_of_limit_connections[cfg.key] = (count, events)
                     continue
             if cfg.limits.min is not None:
                 if count < cfg.limits.min:
-                    out_of_limit_connections[cfg.key] = count
+                    out_of_limit_connections[cfg.key] = (count, events)
                     continue
 
         return out_of_limit_connections if bool(out_of_limit_connections) else None
