@@ -40,6 +40,9 @@ class ConnectionTrackerConfig:
     limits: ConnectionLimits
     target: FiveTuple
 
+    def get_key(self) -> str:
+        return self.key
+
 
 def parse_input(input_string) -> FiveTuple:
     five_tuple = FiveTuple()

@@ -337,7 +337,7 @@ class API:
         ]
 
     @classmethod
-    def setup_wg_servers(cls, node_list: List[Node], server_config: Dict[str, Any]):
+    def setup_vpn_servers(cls, node_list: List[Node], server_config: Dict[str, Any]):
         def generate_peer_config(node: Node, allowed_ips: str) -> str:
             return (
                 f"[Peer]\nPublicKey = {node.public_key}\nAllowedIPs = {allowed_ips}\n\n"
@@ -349,16 +349,28 @@ class API:
         )
 
         for node in node_list:
-            wg_conf += generate_peer_config(
-                node, ", ".join(cls.get_allowed_ip_list(node.ip_addresses))
-            )
+            if "type" in server_config and server_config["type"] == "nordlynx":
+                priv_key = server_config["private_key"]
+                commands = [
+                    f"echo {priv_key} > /etc/nordlynx/private.key",
+                    "nlx set nordlynx0 private-key /etc/nordlynx/private.key",
+                ]
 
-        full_command = (
-            f"docker exec -d --privileged {server_config['container']} bash -c 'echo"
-            f' "{wg_conf}" > /etc/wireguard/wg0.conf; wg-quick down'
-            " /etc/wireguard/wg0.conf; wg-quick up /etc/wireguard/wg0.conf'"
-        )
-        os.system(full_command)
+                for cmd in commands:
+                    os.system(
+                        f"docker exec -d --privileged {server_config['container']} bash -c '{cmd}'"
+                    )
+
+            else:
+                wg_conf += generate_peer_config(
+                    node, ", ".join(cls.get_allowed_ip_list(node.ip_addresses))
+                )
+                cmd = (
+                    f"docker exec -d --privileged {server_config['container']} bash -c"
+                    f' \'echo "{wg_conf}" > /etc/wireguard/wg0.conf; wg-quick down'
+                    " /etc/wireguard/wg0.conf; wg-quick up /etc/wireguard/wg0.conf'"
+                )
+                os.system(cmd)
 
     def config_dynamic_nodes(
         self, node_configs: List[Tuple[bool, IPStack]]
@@ -385,7 +397,7 @@ class API:
                 self.assign_ip(node.id, ipv6)
 
         for wg_server in WG_SERVERS:
-            self.setup_wg_servers(list(self.nodes.values()), wg_server)
+            self.setup_vpn_servers(list(self.nodes.values()), wg_server)
 
         assert (len(node_configs) + current_node_list_len) == len(self.nodes)
 

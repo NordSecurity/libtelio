@@ -52,6 +52,7 @@ class ConnectionTag(Enum):
     DOCKER_UPNP_GW_2 = auto()
     DOCKER_VPN_1 = auto()
     DOCKER_VPN_2 = auto()
+    DOCKER_NLX_1 = auto()
     DOCKER_INTERNAL_SYMMETRIC_GW = auto()
 
 
@@ -85,6 +86,7 @@ DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_UDP_BLOCK_GW_2: "udp-block-gw-02",
     ConnectionTag.DOCKER_UPNP_GW_1: "upnp-gw-01",
     ConnectionTag.DOCKER_UPNP_GW_2: "upnp-gw-02",
+    ConnectionTag.DOCKER_NLX_1: "nlx-01",
     ConnectionTag.DOCKER_VPN_1: "vpn-01",
     ConnectionTag.DOCKER_VPN_2: "vpn-02",
     ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW: "internal-symmetric-gw-01",
@@ -150,6 +152,8 @@ LAN_ADDR_MAP: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_UPNP_GW_1: "192.168.105.254",
     ConnectionTag.DOCKER_UPNP_GW_2: "192.168.112.254",
     ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW: "192.168.114.254",
+    ConnectionTag.DOCKER_VPN_1: "10.0.100.1",
+    ConnectionTag.DOCKER_NLX_1: "10.0.100.51",
 }
 
 LAN_ADDR_MAP_V6: Dict[ConnectionTag, str] = {
@@ -310,6 +314,7 @@ def container_id(tag: ConnectionTag) -> str:
 
 def generate_connection_tracker_config(
     connection_tag,
+    nlx_1_limits: ConnectionLimits = ConnectionLimits(0, 0),
     vpn_1_limits: ConnectionLimits = ConnectionLimits(0, 0),
     vpn_2_limits: ConnectionLimits = ConnectionLimits(0, 0),
     stun_limits: ConnectionLimits = ConnectionLimits(0, 0),
@@ -323,6 +328,16 @@ def generate_connection_tracker_config(
 ) -> List[ConnectionTrackerConfig]:
     lan_addr = LAN_ADDR_MAP[connection_tag]
     ctc_list = [
+        ConnectionTrackerConfig(
+            "nlx_1",
+            nlx_1_limits,
+            FiveTuple(
+                protocol="udp",
+                src_ip=lan_addr,
+                dst_ip=str(config.NLX_SERVER.get("ipv4")),
+                dst_port=51820,
+            ),
+        ),
         ConnectionTrackerConfig(
             "vpn_1",
             vpn_1_limits,
