@@ -63,7 +63,14 @@ class DockerProcess(Process):
                         inspect = await self._execute.inspect()
                         await asyncio.sleep(0.01)
                     if inspect["ExitCode"] is None:
-                        os.system(f"sudo kill -9 {inspect['Pid']}")
+                        subprocess.run([
+                            "docker",
+                            "exec",
+                            "--privileged",
+                            self._container.id,
+                            "/opt/bin/kill_process_by_natlab_id",
+                            self._kill_id,
+                        ])
                 raise
             finally:
                 self._stream = None
@@ -100,16 +107,14 @@ class DockerProcess(Process):
                         inspect = await self._execute.inspect()
                         await asyncio.sleep(0.01)
                     if inspect["ExitCode"] is None:
-                        subprocess.run(
-                            [
-                                "docker",
-                                "exec",
-                                "--privileged",
-                                self._container.id,
-                                "/opt/bin/kill_process_by_natlab_id",
-                                self._kill_id,
-                            ]
-                        )
+                        subprocess.run([
+                            "docker",
+                            "exec",
+                            "--privileged",
+                            self._container.id,
+                            "/opt/bin/kill_process_by_natlab_id",
+                            self._kill_id,
+                        ])
 
     async def _read_loop(
         self,
