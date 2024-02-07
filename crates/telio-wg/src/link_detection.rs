@@ -603,4 +603,55 @@ mod tests {
         assert_eq!(possible_down.current_link_state(), LinkState::Up);
         assert_eq!(up.current_link_state(), LinkState::Up);
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_bytes_and_timestamps_is_link_up() {
+        let long_time_ago = Instant::now().checked_sub(Duration::from_secs(20)).unwrap();
+        let longer_time_ago = Instant::now().checked_sub(Duration::from_secs(21)).unwrap();
+        let a_second_ago = Instant::now().checked_sub(Duration::from_secs(1)).unwrap();
+
+        let mut stats = BytesAndTimestamps::new(None, None);
+
+        stats.rx_ts = long_time_ago;
+        stats.tx_ts = longer_time_ago;
+        assert_eq!(stats.is_link_up(ONE_SECOND), true);
+
+        stats.rx_ts = longer_time_ago;
+        stats.tx_ts = long_time_ago;
+        assert_eq!(stats.is_link_up(ONE_SECOND), false);
+
+        stats.rx_ts = Instant::now();
+        stats.tx_ts = a_second_ago;
+        assert_eq!(stats.is_link_up(ONE_SECOND), true);
+
+        stats.rx_ts = a_second_ago;
+        stats.tx_ts = Instant::now();
+        assert_eq!(stats.is_link_up(ONE_SECOND), true);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_bytes_and_timestamps_update() {
+        let a_second_ago = Instant::now().checked_sub(Duration::from_secs(1)).unwrap();
+        let mut stats = BytesAndTimestamps::new(Some(0), Some(0));
+
+        stats.rx_ts = a_second_ago;
+        stats.tx_ts = a_second_ago;
+        stats.update(1, 0);
+        assert_eq!(stats.rx_ts, Instant::now());
+        assert_eq!(stats.tx_ts, a_second_ago);
+
+        stats.rx_bytes = 0;
+        stats.rx_ts = a_second_ago;
+        stats.tx_ts = a_second_ago;
+        stats.update(0, 1);
+        assert_eq!(stats.rx_ts, a_second_ago);
+        assert_eq!(stats.tx_ts, Instant::now());
+
+        stats.tx_bytes = 0;
+        stats.rx_ts = a_second_ago;
+        stats.tx_ts = a_second_ago;
+        stats.update(0, KEEPALIVE_PACKET_SIZE);
+        assert_eq!(stats.rx_ts, a_second_ago);
+        assert_eq!(stats.tx_ts, a_second_ago);
+    }
 }
