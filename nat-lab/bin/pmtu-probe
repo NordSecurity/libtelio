@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+set -euxo pipefail
+
+iptables -I INPUT -m length --length 1301:1500 -j DROP
+
+sleep infinity

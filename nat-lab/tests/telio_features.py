@@ -90,6 +90,12 @@ class Wireguard(DataClassJsonMixin):
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
+class PmtuDiscovery(DataClassJsonMixin):
+    response_wait_timeout_s: Optional[int] = 1
+
+
+@dataclass_json(undefined=Undefined.EXCLUDE)
+@dataclass
 class TelioFeatures(DataClassJsonMixin):
     is_test_env: Optional[bool] = True
     direct: Optional[Direct] = None
@@ -106,3 +112,4 @@ class TelioFeatures(DataClassJsonMixin):
             ttl_value=60,
         )
     )
+    pmtu_discovery: Optional[PmtuDiscovery] = None

@@ -1,0 +1,33 @@
+#!/usr/bin/python3
+
+import argparse
+from scapy.all import *
+
+NEXTHOP = 1300
+
+
+def callback(pkt):
+    if not pkt.haslayer(ICMP):
+        return
+
+    if pkt[ICMP].type == 8: # ICMP Echo Request
+        pkt2 = (
+            IP(dst=pkt[IP].src, src=pkt[IP].dst)
+            / ICMP(type=3, code=4, nexthopmtu=NEXTHOP)
+            / bytes(pkt[IP])[:256]
+        )
+        pkt2.show()
+        send(pkt2)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Simulate Host Unreachable, Fragmentation needed ICMP message"
+    )
+    parser.add_argument("-n", action="store_true", help="Disable next hop ICMP field")
+
+    args = parser.parse_args()
+    if args.n:
+        NEXTHOP = 0
+
+    sniff(prn=callback, store=0, filter="ip and greater 1301")
