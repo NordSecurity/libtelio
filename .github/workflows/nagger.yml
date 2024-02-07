@@ -9,4 +9,4 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 #v4.1.1
-      - run: RUSTFLAGS="-Dwarnings" DYLINT_LIBRARY_PATH=${NAGGER_PATH} cargo dylint --workspace --all
+      - run: CARGO_CFG_CURVE25519_DALEK_BACKEND="serial" RUSTFLAGS="-Dwarnings" DYLINT_LIBRARY_PATH=${NAGGER_PATH} cargo dylint --workspace --all
