@@ -4283,6 +4283,7 @@ dependencies = [
  "histogram",
  "md5",
  "nat-detect",
+ "parking_lot",
  "protobuf-codegen-pure",
  "rand",
  "serde",
