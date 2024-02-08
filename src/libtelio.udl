@@ -374,6 +374,8 @@ dictionary Features {
     FeatureLinkDetection? link_detection;
     /// Feature configuration for DNS
     FeatureDns dns;
+    /// Post quantum VPN tunnel configuration
+    FeaturePostQuantumVPN? post_quantum_vpn;
 };
 
 /// Configurable features for Wireguard peers
@@ -452,12 +454,22 @@ dictionary FeatureDirect {
     u64? endpoint_interval_secs;
     /// Configuration options for skipping unresponsive peers
     FeatureSkipUnresponsivePeers? skip_unresponsive_peers;
+    /// Parameters to optimize battery lifetime
+    FeatureEndpointProvidersOptimization? endpoint_providers_optimization;
 };
 
 /// Avoid sending periodic messages to peers with no traffic reported by wireguard
 dictionary FeatureSkipUnresponsivePeers {
     /// Time after which peers is considered unresponsive if it didn't receive any packets
     u64 no_rx_threshold_secs;
+};
+
+/// Control which battery optimizations are turned on
+dictionary FeatureEndpointProvidersOptimization {
+    /// Controls whether Stun endpoint provider should be turned off when there are no proxying peers
+    boolean optimize_direct_upgrade_stun;
+    /// Controls whether Upnp endpoint provider should be turned off when there are no proxying peers
+    boolean optimize_direct_upgrade_upnp;
 };
 
 /// Configure derp behaviour
@@ -485,6 +497,15 @@ dictionary FeatureDns {
     /// Configure options for exit dns [default None]
     FeatureExitDns? exit_dns;
 };
+
+/// Turns on post quantum VPN tunnel
+dictionary FeaturePostQuantumVPN {
+    /// Initial handshake retry interval in seconds
+    u32 handshake_retry_interval_s;
+    /// Rekey interval in seconds
+    u32 rekey_interval_s;
+};
+
 
 /// Rust representation of [meshnet map]
 /// A network map of all the Peers and the servers

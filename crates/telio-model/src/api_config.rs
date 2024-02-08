@@ -192,14 +192,18 @@ pub struct FeatureDirect {
     /// Configuration options for skipping unresponsive peers
     #[serde(default = "FeatureDirect::default_skip_unresponsive_peers")]
     pub skip_unresponsive_peers: Option<FeatureSkipUnresponsivePeers>,
+    /// Parameters to optimize battery lifetime
+    #[serde(default)]
+    pub endpoint_providers_optimization: Option<FeatureEndpointProvidersOptimization>,
 }
 
 impl Default for FeatureDirect {
     fn default() -> Self {
         Self {
-            skip_unresponsive_peers: Self::default_skip_unresponsive_peers(),
             providers: Default::default(),
             endpoint_interval_secs: Default::default(),
+            skip_unresponsive_peers: Self::default_skip_unresponsive_peers(),
+            endpoint_providers_optimization: Default::default(),
         }
     }
 }
@@ -257,10 +261,50 @@ impl Default for FeatureValidateKeys {
     }
 }
 
+/// Control which battery optimizations are turned on
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+pub struct FeatureEndpointProvidersOptimization {
+    /// Controls whether Stun endpoint provider should be turned off when there are no proxying peers
+    #[serde(default = "FeatureEndpointProvidersOptimization::default_optimization_variant")]
+    pub optimize_direct_upgrade_stun: bool,
+    /// Controls whether Upnp endpoint provider should be turned off when there are no proxying peers
+    #[serde(default = "FeatureEndpointProvidersOptimization::default_optimization_variant")]
+    pub optimize_direct_upgrade_upnp: bool,
+}
+
+impl FeatureEndpointProvidersOptimization {
+    /// Turning optimizations on by default if feature itself is enabled
+    pub fn default_optimization_variant() -> bool {
+        true
+    }
+}
+
 /// Turns on connection resets upon VPN server change
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(transparent)]
 pub struct FeatureBoringtunResetConns(pub bool);
+
+/// Turns on post quantum VPN tunnel
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub struct FeaturePostQuantumVPN {
+    /// Initial handshake retry interval in seconds
+    #[serde(default = "FeaturePostQuantumVPN::default_handshake_retry_interval_s")]
+    pub handshake_retry_interval_s: u32,
+
+    /// Rekey interval in seconds
+    #[serde(default = "FeaturePostQuantumVPN::default_rekey_interval_s")]
+    pub rekey_interval_s: u32,
+}
+
+impl FeaturePostQuantumVPN {
+    const fn default_handshake_retry_interval_s() -> u32 {
+        8
+    }
+
+    const fn default_rekey_interval_s() -> u32 {
+        90
+    }
+}
 
 fn deserialize_providers<'de, D>(de: D) -> Result<Option<EndpointProviders>, D::Error>
 where
@@ -354,6 +398,9 @@ pub struct Features {
     pub boringtun_reset_connections: FeatureBoringtunResetConns,
     /// If and for how long to flush events when stopping telio. Setting to Some(0) means waiting until all events have been flushed, regardless of how long it takes
     pub flush_events_on_stop_timeout_seconds: Option<u64>,
+    /// Post quantum VPN tunnel configuration
+    #[serde(default)]
+    pub post_quantum_vpn: Option<FeaturePostQuantumVPN>,
     /// No link detection mechanism
     #[serde(default)]
     pub link_detection: Option<FeatureLinkDetection>,
@@ -459,7 +506,12 @@ mod tests {
             "validate_keys": false,
             "ipv6": true,
             "nicknames": true,
-            "boringtun_reset_connections": true
+            "boringtun_reset_connections": true,
+            "post_quantum_vpn":
+            {
+                "handshake_retry_interval_s": 16,
+                "rekey_interval_s": 120
+            },
             "dns":
             {
                 "exit_dns":
@@ -467,7 +519,7 @@ mod tests {
                     "auto_switch_dns_ips": true
                 },
                 "ttl_value": 60,
-            }
+            },
         }"#;
 
     static EXPECTED_FEATURES_WITH_IS_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
@@ -500,6 +552,7 @@ mod tests {
             skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
                 no_rx_threshold_secs: 50,
             }),
+            endpoint_providers_optimization: None,
         }),
         is_test_env: Some(true),
         derp: Some(FeatureDerp {
@@ -513,6 +566,10 @@ mod tests {
         nicknames: true,
         boringtun_reset_connections: FeatureBoringtunResetConns(true),
         flush_events_on_stop_timeout_seconds: None,
+        post_quantum_vpn: Some(FeaturePostQuantumVPN {
+            handshake_retry_interval_s: 16,
+            rekey_interval_s: 120,
+        }),
         link_detection: None,
         dns: FeatureDns {
             exit_dns: Some(FeatureExitDns {
@@ -549,6 +606,7 @@ mod tests {
             providers: None,
             endpoint_interval_secs: None,
             skip_unresponsive_peers: Some(Default::default()),
+            endpoint_providers_optimization: None,
         }),
         is_test_env: None,
         derp: None,
@@ -557,6 +615,7 @@ mod tests {
         nicknames: false,
         boringtun_reset_connections: FeatureBoringtunResetConns(false),
         flush_events_on_stop_timeout_seconds: None,
+        post_quantum_vpn: None,
         link_detection: None,
         dns: FeatureDns {
             exit_dns: Some(FeatureExitDns {
@@ -592,12 +651,14 @@ mod tests {
             skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
                 no_rx_threshold_secs: 42,
             }),
+            endpoint_providers_optimization: None,
         };
 
         let partial_features = FeatureDirect {
             providers: Some(vec![EndpointProvider::Local].into_iter().collect()),
             endpoint_interval_secs: None,
             skip_unresponsive_peers: Some(Default::default()),
+            endpoint_providers_optimization: None,
         };
 
         assert_eq!(from_str::<FeatureDirect>(full_json).unwrap(), full_features);
@@ -735,6 +796,7 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            post_quantum_vpn: Default::default(),
             link_detection: None,
             dns: FeatureDns {
                 exit_dns: None,
@@ -766,6 +828,7 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            post_quantum_vpn: Default::default(),
             link_detection: None,
             dns: FeatureDns {
                 exit_dns: None,
@@ -792,6 +855,7 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            post_quantum_vpn: Default::default(),
             link_detection: None,
             dns: FeatureDns {
                 exit_dns: None,
@@ -835,6 +899,7 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            post_quantum_vpn: Default::default(),
             link_detection: None,
             dns: FeatureDns {
                 exit_dns: Some(FeatureExitDns {
@@ -857,6 +922,7 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            post_quantum_vpn: Default::default(),
             link_detection: None,
             dns: FeatureDns {
                 exit_dns: Some(FeatureExitDns {
@@ -890,6 +956,7 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            post_quantum_vpn: Default::default(),
             link_detection: Default::default(),
             dns: FeatureDns {
                 exit_dns: None,
@@ -947,6 +1014,7 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            post_quantum_vpn: Default::default(),
             link_detection: None,
             dns: FeatureDns {
                 exit_dns: None,

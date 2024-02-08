@@ -58,6 +58,7 @@ use std::{
 };
 
 use cfg_if::cfg_if;
+use futures::FutureExt;
 
 use telio_utils::{
     commit_sha,
@@ -146,6 +147,10 @@ pub enum Error {
     #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
     #[error("Socket pool error")]
     SocketPoolError(#[from] telio_sockets::protector::platform::Error),
+    #[error(transparent)]
+    PostQuantum(#[from] telio_pq::Error),
+    #[error("Cannot setup meshnet when the post quantum VPN is set up")]
+    MeshnetUnavailableWithPQ,
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -234,6 +239,8 @@ pub struct Entities {
 
     // Nurse
     nurse: Option<Arc<Nurse>>,
+
+    postquantum_wg: Option<telio_pq::Entity>,
 }
 
 impl Entities {
@@ -292,6 +299,7 @@ pub struct EventListeners {
     derp_event_subscriber: mc_chan::Rx<Box<DerpServer>>,
     endpoint_upgrade_event_subscriber: chan::Rx<UpgradeRequestChangeEvent>,
     stun_server_subscriber: chan::Rx<Option<StunServer>>,
+    post_quantum_subscriber: chan::Rx<telio_pq::Event>,
 }
 
 pub struct EventPublishers {
@@ -308,6 +316,9 @@ pub struct EventPublishers {
     endpoint_upgrade_event_subscriber: chan::Tx<UpgradeRequestChangeEvent>,
     stun_server_publisher: chan::Tx<Option<StunServer>>,
     derp_events_publisher: mc_chan::Tx<Box<DerpServer>>,
+
+    /// Passed down the PQ key rotation task
+    post_quantum_publisher: chan::Tx<telio_pq::Event>,
 }
 
 // All of the instances and state required to run local DNS resolver for NordNames
@@ -595,11 +606,10 @@ impl Device {
         self.art()?.block_on(async {
             let node = node.clone();
             let _wireguard_interface: Arc<DynamicWg> = task_exec!(self.rt()?, async move |rt| {
-                rt.connect_exit_node(&node).await?;
+                rt.connect_exit_node(&node).boxed().await?;
                 Ok(rt.entities.wireguard_interface.clone())
             })
-            .await
-            .map_err(Error::from)?;
+            .await?;
 
             // TODO: delete this as sockets are protected from within boringtun itself
             #[cfg(not(windows))]
@@ -986,6 +996,12 @@ impl Runtime {
         let wg_upgrade_sync = Chan::default();
         let stun_server_events = Chan::default();
 
+        let post_quantum = Chan::default();
+
+        let postquantum_wg = features
+            .post_quantum_vpn
+            .map(|pq_features| telio_pq::Entity::new(pq_features, socket_pool.clone()));
+
         Ok(Runtime {
             features,
             requested_state,
@@ -996,6 +1012,7 @@ impl Runtime {
                 meshnet: None,
                 socket_pool,
                 nurse,
+                postquantum_wg,
             },
             event_listeners: EventListeners {
                 wg_endpoint_publish_event_subscriber: wg_endpoint_publish_events.rx,
@@ -1003,6 +1020,7 @@ impl Runtime {
                 derp_event_subscriber: derp_events.rx,
                 endpoint_upgrade_event_subscriber: wg_upgrade_sync.rx,
                 stun_server_subscriber: stun_server_events.rx,
+                post_quantum_subscriber: post_quantum.rx,
             },
             event_publishers: EventPublishers {
                 libtelio_event_publisher: libtelio_wide_event_publisher,
@@ -1012,6 +1030,7 @@ impl Runtime {
                 endpoint_upgrade_event_subscriber: wg_upgrade_sync.tx,
                 stun_server_publisher: stun_server_events.tx,
                 derp_events_publisher: derp_events.tx,
+                post_quantum_publisher: post_quantum.tx,
             },
             polling_interval: interval_at(tokio::time::Instant::now(), Duration::from_secs(5)),
             #[cfg(test)]
@@ -1108,6 +1127,13 @@ impl Runtime {
                     },
                     ping_pong_tracker.clone(),
                     self.event_publishers.stun_server_publisher.clone(),
+                    self.features
+                        .direct
+                        .clone()
+                        .unwrap_or_default()
+                        .endpoint_providers_optimization
+                        .unwrap_or_default()
+                        .optimize_direct_upgrade_stun,
                 )?);
                 endpoint_providers.push(ep.clone());
                 Some(ep)
@@ -1132,6 +1158,13 @@ impl Runtime {
                         maximal: Some(Duration::from_secs(120)),
                     },
                     ping_pong_tracker.clone(),
+                    self.features
+                        .direct
+                        .clone()
+                        .unwrap_or_default()
+                        .endpoint_providers_optimization
+                        .unwrap_or_default()
+                        .optimize_direct_upgrade_upnp,
                 )?);
                 endpoint_providers.push(ep.clone());
                 Some(ep)
@@ -1309,7 +1342,12 @@ impl Runtime {
         if let Some(meshnet_entities) = self.entities.meshnet.as_ref() {
             if let Some(direct) = &meshnet_entities.direct {
                 if let Some(stun) = &direct.stun_endpoint_provider {
+                    // this unpauses provider if paused
                     stun.reconnect().await;
+                }
+
+                if let Some(upnp) = &direct.upnp_endpoint_provider {
+                    upnp.unpause().await;
                 }
             }
 
@@ -1392,6 +1430,11 @@ impl Runtime {
     }
 
     async fn set_config(&mut self, config: &Option<Config>) -> Result {
+        if self.features.post_quantum_vpn.is_some() && config.is_some() {
+            // Post quantum VPN is enabled and we're trying to set up the meshnet
+            return Err(Error::MeshnetUnavailableWithPQ);
+        }
+
         if let Some(cfg) = config {
             let should_validate_keys = self.features.validate_keys.0;
             let keys_match =
@@ -1587,7 +1630,16 @@ impl Runtime {
                 self.reconfigure_dns_peer(dns, &dns.get_default_dns_servers())
                     .await?;
             }
-        } else if exit_node.endpoint.is_none() {
+        } else if let Some(addr) = exit_node.endpoint {
+            if let Some(pq_entt) = &mut self.entities.postquantum_wg {
+                pq_entt.start(
+                    self.event_publishers.post_quantum_publisher.clone(),
+                    addr,
+                    self.requested_state.device_config.private_key,
+                    exit_node.public_key,
+                );
+            }
+        } else {
             return Err(Error::EndpointNotProvided);
         }
 
@@ -1668,6 +1720,10 @@ impl Runtime {
                 &self.features,
             )
             .await?;
+        }
+
+        if let Some(pq_entt) = &mut self.entities.postquantum_wg {
+            pq_entt.stop();
         }
 
         Ok(())
@@ -1860,6 +1916,22 @@ impl TaskRuntime for Runtime {
                         |e| {
                             telio_log_warn!("WireGuard controller failure: {:?}. Ignoring", e);
                         });
+                Ok(())
+            },
+
+            Some(pq_event) = self.event_listeners.post_quantum_subscriber.recv() => {
+                telio_log_debug!("WG consolidation triggered by PQ event");
+
+                if let Some(pq_entt) = &mut self.entities.postquantum_wg {
+                    pq_entt.on_event(pq_event);
+                }
+
+                if let Err(err) = wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
+                    .await
+                {
+                    telio_log_warn!("WireGuard controller failure: {err:?}. Ignoring");
+                }
+
                 Ok(())
             },
 
@@ -2522,6 +2594,7 @@ mod tests {
                 providers: None,
                 endpoint_interval_secs: None,
                 skip_unresponsive_peers: Default::default(),
+                endpoint_providers_optimization: None,
             }),
             ..Default::default()
         };
@@ -2602,6 +2675,7 @@ mod tests {
                 providers: Some(HashSet::new()),
                 endpoint_interval_secs: None,
                 skip_unresponsive_peers: Default::default(),
+                endpoint_providers_optimization: None,
             }),
             ..Default::default()
         };
@@ -2693,6 +2767,7 @@ mod tests {
                 skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
                     no_rx_threshold_secs: 42,
                 }),
+                endpoint_providers_optimization: None,
             }),
             ..Default::default()
         };

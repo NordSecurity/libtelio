@@ -149,11 +149,8 @@ impl DnsResolver for LocalDnsResolver {
         Peer {
             public_key: self.public_key(),
             endpoint: Some(([127, 0, 0, 1], self.socket_port).into()),
-            persistent_keepalive_interval: None,
             allowed_ips,
-            rx_bytes: None,
-            tx_bytes: None,
-            time_since_last_handshake: None,
+            ..Default::default()
         }
     }
 
