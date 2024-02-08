@@ -37,14 +37,15 @@ class Direct(DataClassJsonMixin):
     skip_unresponsive_peers: Optional[SkipUnresponsivePeers] = field(
         default_factory=lambda: SkipUnresponsivePeers(no_rx_threshold_secs=180)
     )
-    endpoint_providers_optimization: Optional[
-        FeatureEndpointProvidersOptimization
-    ] = field(
-        default_factory=lambda: FeatureEndpointProvidersOptimization(
-            optimize_direct_upgrade_stun=True,
-            optimize_direct_upgrade_upnp=True,
+    endpoint_providers_optimization: Optional[FeatureEndpointProvidersOptimization] = (
+        field(
+            default_factory=lambda: FeatureEndpointProvidersOptimization(
+                optimize_direct_upgrade_stun=True,
+                optimize_direct_upgrade_upnp=True,
+            )
         )
     )
+
 
 
 @dataclass_json
