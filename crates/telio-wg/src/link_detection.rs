@@ -213,9 +213,24 @@ pub struct LinkDetectionUpdateResult {
     pub link_state: Option<LinkState>,
 }
 
+// +--------------+
+// |      Down    |---------------------+
+// +--------------+                     |
+//         |                +----------------------+
+//         |                |     PossibleDown     |
+//         |                +----------------------+
+//         |                            |
+//  +--------------+                    |
+//  |     Up       |--------------------+
+//  +--------------+
+// NodeState != Connected should act as a reset "button" on the fsm
+// Whenever it is detected, it will reset the fsm into StateVariant::Down
+// Transitions to StateVariant::Up are straight forward, when the is_link_up condition is true
+// Transition from StateVariant::Up to StateVariant::Down is made through an additional state
+// StateVariant::PossibleDown which introduces a little delay of 3 seconds until we report link state Down
 enum StateVariant {
     Down,
-    PossibleDown { count: usize },
+    PossibleDown { deadline: Instant },
     Up,
 }
 struct State {
@@ -224,7 +239,7 @@ struct State {
 }
 
 impl State {
-    const POSSIBLE_DOWN_COUNT: usize = 3;
+    const POSSIBLE_DOWN_DELAY: Duration = Duration::from_secs(3);
 
     fn new(rx_bytes: Option<u64>, tx_bytes: Option<u64>, node_state: NodeState) -> Self {
         let stats = BytesAndTimestamps::new(rx_bytes, tx_bytes);
@@ -278,20 +293,18 @@ impl State {
                 }
             }
 
-            StateVariant::PossibleDown { count } => {
+            StateVariant::PossibleDown { deadline } => {
                 if is_link_up {
                     // Transition to Up
                     // No notify
                     self.variant = StateVariant::Up;
                     Self::build_result(false, LinkState::Up)
-                } else if *count == 0 {
+                } else if Instant::now() >= *deadline {
                     // Transition to Down
                     // Report link state Down
                     self.variant = StateVariant::Down;
                     Self::build_result(true, LinkState::Down)
                 } else {
-                    // Decrement the counter
-                    *count -= 1;
                     Self::build_result(false, LinkState::Up)
                 }
             }
@@ -301,7 +314,9 @@ impl State {
                     // Transition to PossibleDown
                     // No notify for now
                     self.variant = StateVariant::PossibleDown {
-                        count: Self::POSSIBLE_DOWN_COUNT,
+                        deadline: Instant::now()
+                            .checked_add(Self::POSSIBLE_DOWN_DELAY)
+                            .unwrap_or_else(Instant::now),
                     };
                 }
 
@@ -527,57 +542,54 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn test_state_transition_from_possible_down_to_down() {
-        let a_second_ago = Instant::now().checked_sub(Duration::from_secs(1)).unwrap();
+        let longer_ago = Instant::now().checked_sub(Duration::from_secs(1)).unwrap();
+        let long_ago = Instant::now();
+        // Make sure the Keepalive period and rtt has passed
+        time::advance(Duration::from_secs(20)).await;
+
         let mut state = State {
             stats: BytesAndTimestamps {
                 rx_bytes: 0,
                 tx_bytes: 0,
-                rx_ts: a_second_ago, // Received ealier than sended
-                tx_ts: Instant::now(),
+                rx_ts: longer_ago, // Received ealier than sended
+                tx_ts: long_ago,
             },
-            variant: StateVariant::PossibleDown { count: 3 },
+            variant: StateVariant::PossibleDown {
+                deadline: Instant::now().checked_add(Duration::from_secs(3)).unwrap(),
+            },
         };
 
-        // Make sure the Keepalive period and rtt has passed
-        time::advance(Duration::from_secs(20)).await;
-
+        time::advance(ONE_SECOND).await;
         state.update(Some(0), Some(1), NodeState::Connected, ONE_SECOND);
-        assert!(matches!(
-            state.variant,
-            StateVariant::PossibleDown { count: 2 }
-        ));
+        assert!(matches!(state.variant, StateVariant::PossibleDown { .. }));
 
+        time::advance(ONE_SECOND).await;
         state.update(Some(0), Some(1), NodeState::Connected, ONE_SECOND);
-        assert!(matches!(
-            state.variant,
-            StateVariant::PossibleDown { count: 1 }
-        ));
+        assert!(matches!(state.variant, StateVariant::PossibleDown { .. }));
 
-        state.update(Some(0), Some(1), NodeState::Connected, ONE_SECOND);
-        assert!(matches!(
-            state.variant,
-            StateVariant::PossibleDown { count: 0 }
-        ));
-
+        time::advance(ONE_SECOND).await;
         state.update(Some(0), Some(1), NodeState::Connected, ONE_SECOND);
         assert!(matches!(state.variant, StateVariant::Down));
     }
 
     #[tokio::test(start_paused = true)]
     async fn test_state_transition_from_possible_down_to_up() {
-        let a_second_ago = Instant::now().checked_sub(Duration::from_secs(1)).unwrap();
+        let longer_ago = Instant::now().checked_sub(Duration::from_secs(1)).unwrap();
+        let long_ago = Instant::now();
+        // Make sure the Keepalive period and rtt has passed
+        time::advance(Duration::from_secs(20)).await;
+
         let mut state = State {
             stats: BytesAndTimestamps {
                 rx_bytes: 0,
                 tx_bytes: 0,
-                rx_ts: a_second_ago, // Received ealier than sended
-                tx_ts: Instant::now(),
+                rx_ts: longer_ago, // Received ealier than sended
+                tx_ts: long_ago,
             },
-            variant: StateVariant::PossibleDown { count: 3 },
+            variant: StateVariant::PossibleDown {
+                deadline: Instant::now().checked_add(Duration::from_secs(3)).unwrap(),
+            },
         };
-
-        // Make sure the Keepalive period and rtt has passed
-        time::advance(Duration::from_secs(20)).await;
 
         // Receive some data
         state.update(Some(1), Some(1), NodeState::Connected, ONE_SECOND);
@@ -592,7 +604,9 @@ mod tests {
         };
         let possible_down = State {
             stats: BytesAndTimestamps::new(None, None),
-            variant: StateVariant::PossibleDown { count: 3 },
+            variant: StateVariant::PossibleDown {
+                deadline: Instant::now(),
+            },
         };
         let up = State {
             stats: BytesAndTimestamps::new(None, None),
