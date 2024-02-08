@@ -4277,6 +4277,7 @@ dependencies = [
  "pnet_packet",
  "rand",
  "socket2 0.5.4",
+ "telio-lana",
  "telio-sockets",
  "telio-utils",
  "tokio",

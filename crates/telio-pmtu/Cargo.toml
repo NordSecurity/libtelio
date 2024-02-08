@@ -16,6 +16,7 @@ pnet_packet.workspace = true
 rand.workspace = true
 tracing.workspace = true
 
+telio-lana.workspace = true
 telio-utils.workspace = true
 telio-sockets.workspace = true
 

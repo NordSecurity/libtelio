@@ -105,6 +105,17 @@ pub mod moose {
         pub config: MeshnetappContextApplicationConfig,
     }
 
+    /// Mock of moose::LibtelioappLogLevel.
+    #[derive(Debug, Clone, Deserialize, PartialEq, Serialize)]
+    /// value of 'log_level'
+    #[serde(rename_all = "lowercase")]
+    pub enum LibtelioappLogLevel {
+        Info,
+        Debug,
+        Error,
+        Critical,
+    }
+
     /// Logger error
     #[derive(thiserror::Error, Debug)]
     pub enum Error {
@@ -383,5 +394,28 @@ pub mod moose {
     /// Mocked moose function
     pub fn flush_changes() -> std::result::Result<Result, Error> {
         Ok(Result::Success)
+    }
+
+    #[allow(non_snake_case)]
+    /// Mocked moose function.
+    pub fn send_developer_logging_log(
+        arbitraryIntegerValue: i32,
+        logLevel: LibtelioappLogLevel,
+        message: String,
+    ) -> std::result::Result<Result, Error> {
+        let arbitraryIntegerValue = arbitraryIntegerValue.to_string();
+        let logLevel = format!("{logLevel:?}");
+
+        match super::event_log(
+            "send_developer_logging_log",
+            Some(vec![
+                arbitraryIntegerValue.as_str(),
+                logLevel.as_str(),
+                message.as_str(),
+            ]),
+        ) {
+            Ok(_) => Ok(Result::Success),
+            _ => Err(Error::EventLogError),
+        }
     }
 }

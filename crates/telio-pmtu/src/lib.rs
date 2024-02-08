@@ -53,7 +53,7 @@ impl Entity {
 
         use std::os::fd::AsRawFd;
 
-        use telio_utils::{telio_log_info, telio_log_warn};
+        use telio_lana::*;
 
         async fn probe(
             socket_pool: &telio_sockets::SocketPool,
@@ -76,8 +76,17 @@ impl Entity {
                 timer.tick().await;
 
                 match probe(&pool, host, timeout).await {
-                    Ok(pmtu) => telio_log_info!("PMTU -> {host}: {pmtu}"),
-                    Err(err) => telio_log_warn!("Failed to probe PMTU: {err:?}"),
+                    Ok(pmtu) => {
+                        telio_utils::telio_log_info!("PMTU -> {host}: {pmtu}");
+
+                        let _ = lana! {
+                            send_developer_logging_log,
+                            pmtu as i32,
+                            telio_lana::moose::LibtelioappLogLevel::Info,
+                            format!("PMTU, OS: {}, ARCH: {}", std::env::consts::OS, std::env::consts::ARCH)
+                        };
+                    }
+                    Err(err) => telio_utils::telio_log_warn!("Failed to probe PMTU: {err:?}"),
                 }
             }
         });
