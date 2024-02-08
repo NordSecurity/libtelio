@@ -52,6 +52,7 @@ telio-nat-detect.workspace = true
 telio-nurse.workspace = true
 telio-proto.workspace = true
 telio-proxy.workspace = true
+telio-pq.workspace = true
 telio-relay.workspace = true
 telio-sockets.workspace = true
 telio-task.workspace = true
@@ -177,3 +178,4 @@ telio-test = { version = "1.0.0", path = "./crates/telio-test" }
 telio-traversal = { version = "0.1.0",  path = "./crates/telio-traversal" }
 telio-utils = { version = "0.1.0", path = "./crates/telio-utils" }
 telio-wg = { version = "0.1.0", path = "./crates/telio-wg" }
+telio-pq = { version = "0.1.0", path = "./crates/telio-pq" }

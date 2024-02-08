@@ -284,6 +284,28 @@ impl FeatureEndpointProvidersOptimization {
 #[serde(transparent)]
 pub struct FeatureBoringtunResetConns(pub bool);
 
+/// Turns on post quantum VPN tunnel
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub struct FeaturePostQuantumVPN {
+    /// Initial handshake retry interval in seconds
+    #[serde(default = "FeaturePostQuantumVPN::default_handshake_retry_interval_s")]
+    pub handshake_retry_interval_s: u32,
+
+    /// Rekey interval in seconds
+    #[serde(default = "FeaturePostQuantumVPN::default_rekey_interval_s")]
+    pub rekey_interval_s: u32,
+}
+
+impl FeaturePostQuantumVPN {
+    const fn default_handshake_retry_interval_s() -> u32 {
+        8
+    }
+
+    const fn default_rekey_interval_s() -> u32 {
+        90
+    }
+}
+
 fn deserialize_providers<'de, D>(de: D) -> Result<Option<EndpointProviders>, D::Error>
 where
     D: Deserializer<'de>,
@@ -356,6 +378,9 @@ pub struct Features {
     pub boringtun_reset_connections: FeatureBoringtunResetConns,
     /// If and for how long to flush events when stopping telio. Setting to Some(0) means waiting until all events have been flushed, regardless of how long it takes
     pub flush_events_on_stop_timeout_seconds: Option<u64>,
+    /// Post quantum VPN tunnel configuration
+    #[serde(default)]
+    pub post_quantum_vpn: Option<FeaturePostQuantumVPN>,
     /// No link detection mechanism
     #[serde(default)]
     pub link_detection: Option<FeatureLinkDetection>,
@@ -462,7 +487,12 @@ mod tests {
             "validate_keys": false,
             "ipv6": true,
             "nicknames": true,
-            "boringtun_reset_connections": true
+            "boringtun_reset_connections": true,
+            "post_quantum_vpn":
+            {
+                "handshake_retry_interval_s": 16,
+                "rekey_interval_s": 120
+            }
         }"#;
 
     static EXPECTED_FEATURES_WITH_IS_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
@@ -512,6 +542,10 @@ mod tests {
         nicknames: true,
         boringtun_reset_connections: FeatureBoringtunResetConns(true),
         flush_events_on_stop_timeout_seconds: None,
+        post_quantum_vpn: Some(FeaturePostQuantumVPN {
+            handshake_retry_interval_s: 16,
+            rekey_interval_s: 120,
+        }),
         link_detection: None,
     });
     static EXPECTED_FEATURES_WITHOUT_IS_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
@@ -554,6 +588,7 @@ mod tests {
         nicknames: false,
         boringtun_reset_connections: FeatureBoringtunResetConns(false),
         flush_events_on_stop_timeout_seconds: None,
+        post_quantum_vpn: None,
         link_detection: None,
     });
 
@@ -729,6 +764,7 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            post_quantum_vpn: Default::default(),
             link_detection: None,
         };
 
@@ -757,6 +793,7 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            post_quantum_vpn: Default::default(),
             link_detection: None,
         };
 
@@ -780,6 +817,7 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            post_quantum_vpn: Default::default(),
             link_detection: None,
         };
 
@@ -822,6 +860,7 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            post_quantum_vpn: Default::default(),
             link_detection: None,
         };
 
@@ -841,6 +880,7 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            post_quantum_vpn: Default::default(),
             link_detection: None,
         };
 
@@ -869,6 +909,7 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            post_quantum_vpn: Default::default(),
             link_detection: Default::default(),
         };
 
@@ -923,6 +964,7 @@ mod tests {
             nicknames: false,
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
+            post_quantum_vpn: Default::default(),
             link_detection: None,
         };
 
