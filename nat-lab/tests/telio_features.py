@@ -47,7 +47,6 @@ class Direct(DataClassJsonMixin):
     )
 
 
-
 @dataclass_json
 @dataclass
 class Lana(DataClassJsonMixin):
