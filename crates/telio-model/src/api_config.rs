@@ -460,7 +460,9 @@ mod tests {
                 "force": "relay"
             },
             "direct": {},
-            "exit_dns": {}
+            "dns": {
+                "exit_dns": {}
+            }
         }"#;
 
     const CORRECT_FEATURES_JSON_WITH_ALL_OPTIONAL: &str = r#"
@@ -518,8 +520,8 @@ mod tests {
                 {
                     "auto_switch_dns_ips": true
                 },
-                "ttl_value": 60,
-            },
+                "ttl_value": 60
+            }
         }"#;
 
     static EXPECTED_FEATURES_WITH_IS_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
@@ -876,14 +878,18 @@ mod tests {
     fn test_json_to_exit_dns_feature_set() {
         let full_json = r#"
         {
-            "exit_dns": {
-                "auto_switch_dns_ips": true
+            "dns": {
+                "exit_dns": {
+                    "auto_switch_dns_ips": true
+                }
             }
         }"#;
 
         let empty_json = r#"
         {
-            "exit_dns": {}
+            "dns": {
+                "exit_dns": {}
+            }
         }"#;
 
         let full_features = Features {
