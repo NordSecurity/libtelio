@@ -1239,7 +1239,7 @@ impl Runtime {
                 .collect();
             peers.extend(wildcarded_peers);
 
-            dns.upsert("nord", &peers, self.features.dns.ttl_value.0)
+            dns.upsert("nord", &peers, self.features.dns.ttl_value)
                 .await
                 .map_err(Error::DnsResolverError)?;
         }

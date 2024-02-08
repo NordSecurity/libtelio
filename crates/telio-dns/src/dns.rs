@@ -10,7 +10,7 @@ use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
 use x25519_dalek::{PublicKey as PublicKeyDalek, StaticSecret};
 
-use telio_model::api_config::FeatureExitDns;
+use telio_model::api_config::{FeatureExitDns, TtlValue};
 
 //debug tools
 use telio_utils::{telio_log_debug, telio_log_error};
@@ -24,7 +24,7 @@ pub trait DnsResolver {
     /// Stop the server.
     async fn stop(&self);
     /// Insert or update zone records used by the server.
-    async fn upsert(&self, zone: &str, records: &Records, ttl_value: u32) -> Result<(), String>;
+    async fn upsert(&self, zone: &str, records: &Records, ttl_value: TtlValue) -> Result<(), String>;
     /// Configure list of forward DNS servers for zone '.'.
     async fn forward(&self, to: &[IpAddr]) -> Result<(), String>;
     /// Get public key of this DNS server.
@@ -126,7 +126,7 @@ impl DnsResolver for LocalDnsResolver {
         self.nameserver.stop().await;
     }
 
-    async fn upsert(&self, zone: &str, records: &Records, ttl_value: u32) -> Result<(), String> {
+    async fn upsert(&self, zone: &str, records: &Records, ttl_value: TtlValue) -> Result<(), String> {
         telio_log_debug!("Dns - upsert {:?} {:?}", zone, records);
         Ok(self.nameserver.upsert(zone, records, ttl_value).await?)
     }
