@@ -1263,8 +1263,6 @@ impl Firewall for StatefullFirewall {
     }
 
     fn process_outbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool {
-        telio_log_debug!("Outbound packet");
-
         match unwrap_option_or_return!(buffer.first(), false) >> 4 {
             4 => self.process_outbound_ip_packet::<Ipv4Packet>(public_key, buffer),
             6 if self.allow_ipv6 => {

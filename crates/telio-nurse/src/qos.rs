@@ -12,7 +12,7 @@ use telio_crypto::PublicKey;
 use telio_task::{io::mc_chan, Runtime, RuntimeExt, WaitResponse};
 use telio_wg::uapi::{AnalyticsEvent, PeerState};
 
-use telio_utils::{telio_log_debug, DualTarget};
+use telio_utils::{telio_log_debug, telio_log_trace, DualTarget};
 
 use crate::config::QoSConfig;
 
@@ -371,7 +371,7 @@ impl Analytics {
     ///
     /// * `event` - Received WG event.
     async fn handle_wg_event(&mut self, event: AnalyticsEvent) {
-        telio_log_debug!("WG event: {:?}", event);
+        telio_log_trace!("WG event: {:?}", event);
         self.nodes
             .entry(event.public_key)
             .and_modify(|n| {
@@ -397,6 +397,15 @@ impl Analytics {
             self.ping_channel_tx = ping_channel_tx.downgrade();
 
             for (_, node) in self.nodes.iter() {
+                if node.peer_state != PeerState::Connected {
+                    telio_log_debug!(
+                        "{:?} is in {:?} state, skipping analytics ping.",
+                        node.public_key,
+                        node.peer_state
+                    );
+                    continue;
+                }
+
                 let (pk, endpoint) = (node.public_key, node.endpoint);
                 let pinger = Arc::clone(&self.ping_backend);
                 let ping_channel_tx = ping_channel_tx.clone();
