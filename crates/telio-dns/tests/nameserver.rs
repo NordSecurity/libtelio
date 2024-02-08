@@ -324,7 +324,12 @@ impl DnsTestType {
     }
 }
 
-async fn dns_test(query: &str, test_type: DnsTestType, local_records: Option<(String, Records)>, ttl_value: u32) {
+async fn dns_test(
+    query: &str,
+    test_type: DnsTestType,
+    local_records: Option<(String, Records)>,
+    ttl_value: u32,
+) {
     let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])
         .await
         .expect("Failed to create a LocalNameServer");
@@ -391,7 +396,12 @@ async fn dns_request_local_ipv4() {
     let zone = String::from("nord");
     timeout(
         Duration::from_secs(60),
-        dns_test("test.nord", DnsTestType::CorrectIpv4, Some((zone, records)), 60),
+        dns_test(
+            "test.nord",
+            DnsTestType::CorrectIpv4,
+            Some((zone, records)),
+            60,
+        ),
     )
     .await
     .expect("Test timeout");
@@ -410,7 +420,12 @@ async fn dns_request_local_ipv6() {
     let zone = String::from("nord");
     timeout(
         Duration::from_secs(60),
-        dns_test("test.nord", DnsTestType::CorrectIpv6, Some((zone, records)), 60),
+        dns_test(
+            "test.nord",
+            DnsTestType::CorrectIpv6,
+            Some((zone, records)),
+            60,
+        ),
     )
     .await
     .expect("Test timeout");

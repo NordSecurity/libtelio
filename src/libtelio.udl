@@ -354,8 +354,6 @@ dictionary Features {
     FeatureLana? lana;
     /// Deprecated by direct since 4.0.0
     FeaturePaths? paths;
-    /// Configure options for exit dns
-    FeatureExitDns? exit_dns;
     /// Configure options for direct WG connections
     FeatureDirect? direct;
     /// Should only be set for macos sideload
@@ -486,7 +484,7 @@ dictionary FeatureDns {
     TtlValue ttl_value;
     /// Configure options for exit dns [default None]
     FeatureExitDns? exit_dns;
-}
+};
 
 /// Rust representation of [meshnet map]
 /// A network map of all the Peers and the servers

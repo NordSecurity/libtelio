@@ -12,6 +12,7 @@ use hickory_server::{
 };
 use std::{
     collections::{HashMap, HashSet},
+    convert::TryInto,
     net::IpAddr,
     str::FromStr,
 };
@@ -56,7 +57,9 @@ impl AuthoritativeZone {
                     Name::parse("support.nordsec.com.", None)?,
                     2015082403,
                     7200,
-                    ttl_value as i32, // TODO this might overflow, but is this value really supposed to be here?
+                    ttl_value.try_into().map_err(|e| {
+                        format!("Failed to convert ttl value from u32 to i32: {}", e)
+                    })?,
                     1209600,
                     ttl_value,
                 ))))
