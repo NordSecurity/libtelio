@@ -896,7 +896,8 @@ mod tests {
     use telio_dns::MockDnsResolver;
     use telio_firewall::firewall::{MockFirewall, FILE_SEND_PORT};
     use telio_model::api_config::{
-        DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD, DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
+        FeatureDns, TtlValue, DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
+        DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
     };
     use telio_model::config::{Config, PeerBase, Server};
     use telio_model::mesh::ExitNode;
@@ -1286,7 +1287,6 @@ mod tests {
                     lana: None,
                     paths: None,
                     direct: None,
-                    exit_dns: None,
                     #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
                     is_test_env: Some(true),
                     derp: None,
@@ -1296,6 +1296,10 @@ mod tests {
                     boringtun_reset_connections: Default::default(),
                     flush_events_on_stop_timeout_seconds: None,
                     post_quantum_vpn: Default::default(),
+                    dns: FeatureDns {
+                        exit_dns: None,
+                        ttl_value: TtlValue(60),
+                    },
                 },
             }
         }

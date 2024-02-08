@@ -1256,7 +1256,7 @@ impl Runtime {
                 .collect();
             peers.extend(wildcarded_peers);
 
-            dns.upsert("nord", &peers)
+            dns.upsert("nord", &peers, self.features.dns.ttl_value)
                 .await
                 .map_err(Error::DnsResolverError)?;
         }
@@ -1369,7 +1369,7 @@ impl Runtime {
                         .await?,
                     upstream_dns_servers,
                     dns_entity.virtual_host_tun_fd,
-                    self.features.exit_dns.clone(),
+                    self.features.dns.exit_dns.clone(),
                 )
                 .await
                 .map_err(Error::DnsResolverError)?;

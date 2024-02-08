@@ -303,6 +303,28 @@ where
     Ok(Some(eps))
 }
 
+/// Newtype for TTL value to ensure that the default function returns the actual default value and not 0.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(transparent)]
+pub struct TtlValue(pub u32);
+
+impl Default for TtlValue {
+    fn default() -> Self {
+        Self(60)
+    }
+}
+
+/// Feature configuration for DNS.
+#[derive(Default, Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct FeatureDns {
+    /// TTL for SOA record and for A and AAAA records.
+    #[serde(default)]
+    pub ttl_value: TtlValue,
+    /// Configure options for exit dns
+    #[serde(default)]
+    pub exit_dns: Option<FeatureExitDns>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 /// Encompasses all of the possible features that can be enabled
 pub struct Features {
@@ -315,8 +337,6 @@ pub struct Features {
     pub lana: Option<FeatureLana>,
     /// Deprecated by direct since 4.0.0
     pub paths: Option<FeaturePaths>,
-    /// Configure options for exit dns
-    pub exit_dns: Option<FeatureExitDns>,
     /// Configure options for direct WG connections
     pub direct: Option<FeatureDirect>,
     /// Test environment (natlab) requires binding feature disabled
@@ -342,6 +362,9 @@ pub struct Features {
     /// Post quantum VPN tunnel configuration
     #[serde(default)]
     pub post_quantum_vpn: Option<FeaturePostQuantumVPN>,
+    /// Feature configuration for DNS.
+    #[serde(default)]
+    pub dns: FeatureDns,
 }
 
 impl FeaturePaths {
@@ -395,7 +418,9 @@ mod tests {
                 "force": "relay"
             },
             "direct": {},
-            "exit_dns": {}
+            "dns": {
+                "exit_dns": {}
+            }
         }"#;
 
     const CORRECT_FEATURES_JSON_WITH_ALL_OPTIONAL: &str = r#"
@@ -431,10 +456,6 @@ mod tests {
                     "no_rx_threshold_secs": 50
                 }
             },
-            "exit_dns":
-            {
-                "auto_switch_dns_ips": true
-            },
             "is_test_env": true,
             "derp":
             {
@@ -450,6 +471,14 @@ mod tests {
             {
                 "handshake_retry_interval_s": 16,
                 "rekey_interval_s": 120
+            },
+            "dns":
+            {
+                "exit_dns":
+                {
+                    "auto_switch_dns_ips": true
+                },
+                "ttl_value": 60
             }
         }"#;
 
@@ -484,9 +513,6 @@ mod tests {
                 no_rx_threshold_secs: 50,
             }),
         }),
-        exit_dns: Some(FeatureExitDns {
-            auto_switch_dns_ips: Some(true),
-        }),
         #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
         is_test_env: Some(true),
         derp: Some(FeatureDerp {
@@ -504,6 +530,12 @@ mod tests {
             handshake_retry_interval_s: 16,
             rekey_interval_s: 120,
         }),
+        dns: FeatureDns {
+            exit_dns: Some(FeatureExitDns {
+                auto_switch_dns_ips: Some(true),
+            }),
+            ttl_value: TtlValue::default(),
+        },
     });
 
     static EXPECTED_FEATURES_WITHOUT_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
@@ -535,9 +567,6 @@ mod tests {
             endpoint_interval_secs: None,
             skip_unresponsive_peers: Some(Default::default()),
         }),
-        exit_dns: Some(FeatureExitDns {
-            auto_switch_dns_ips: None,
-        }),
         #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
         is_test_env: None,
         derp: None,
@@ -547,6 +576,12 @@ mod tests {
         boringtun_reset_connections: FeatureBoringtunResetConns(false),
         flush_events_on_stop_timeout_seconds: None,
         post_quantum_vpn: None,
+        dns: FeatureDns {
+            exit_dns: Some(FeatureExitDns {
+                auto_switch_dns_ips: None,
+            }),
+            ttl_value: TtlValue::default(),
+        },
     });
 
     #[test]
@@ -711,7 +746,6 @@ mod tests {
             lana: None,
             paths: None,
             direct: None,
-            exit_dns: None,
             derp: None,
             validate_keys: Default::default(),
             ipv6: false,
@@ -719,6 +753,10 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
+            dns: FeatureDns {
+                exit_dns: None,
+                ttl_value: TtlValue::default(),
+            },
         };
 
         let empty_qos_features = Features {
@@ -738,7 +776,6 @@ mod tests {
             lana: None,
             paths: None,
             direct: None,
-            exit_dns: None,
             derp: None,
             validate_keys: Default::default(),
             ipv6: false,
@@ -746,6 +783,10 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
+            dns: FeatureDns {
+                exit_dns: None,
+                ttl_value: TtlValue::default(),
+            },
         };
 
         let no_qos_features = Features {
@@ -760,7 +801,6 @@ mod tests {
             lana: None,
             paths: None,
             direct: None,
-            exit_dns: None,
             derp: None,
             validate_keys: Default::default(),
             ipv6: false,
@@ -768,6 +808,10 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
+            dns: FeatureDns {
+                exit_dns: None,
+                ttl_value: TtlValue::default(),
+            },
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -783,14 +827,18 @@ mod tests {
     fn test_json_to_exit_dns_feature_set() {
         let full_json = r#"
         {
-            "exit_dns": {
-                "auto_switch_dns_ips": true
+            "dns": {
+                "exit_dns": {
+                    "auto_switch_dns_ips": true
+                }
             }
         }"#;
 
         let empty_json = r#"
         {
-            "exit_dns": {}
+            "dns": {
+                "exit_dns": {}
+            }
         }"#;
 
         let full_features = Features {
@@ -799,9 +847,6 @@ mod tests {
             lana: None,
             paths: None,
             direct: None,
-            exit_dns: Some(FeatureExitDns {
-                auto_switch_dns_ips: Some(true),
-            }),
             derp: None,
             validate_keys: Default::default(),
             ipv6: false,
@@ -809,6 +854,12 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
+            dns: FeatureDns {
+                exit_dns: Some(FeatureExitDns {
+                    auto_switch_dns_ips: Some(true),
+                }),
+                ttl_value: TtlValue::default(),
+            },
         };
 
         let empty_features = Features {
@@ -817,9 +868,6 @@ mod tests {
             lana: None,
             paths: None,
             direct: None,
-            exit_dns: Some(FeatureExitDns {
-                auto_switch_dns_ips: None,
-            }),
             derp: None,
             validate_keys: Default::default(),
             ipv6: false,
@@ -827,6 +875,12 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
+            dns: FeatureDns {
+                exit_dns: Some(FeatureExitDns {
+                    auto_switch_dns_ips: None,
+                }),
+                ttl_value: TtlValue::default(),
+            },
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -848,7 +902,6 @@ mod tests {
             direct: None,
             #[cfg(any(target_os = "macos", feature = "pretend_to_be_macos"))]
             is_test_env: None,
-            exit_dns: None,
             derp: None,
             validate_keys: Default::default(),
             ipv6: false,
@@ -856,6 +909,10 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
+            dns: FeatureDns {
+                exit_dns: None,
+                ttl_value: TtlValue::default(),
+            },
         };
 
         assert_eq!(from_str::<Features>(empty_json).unwrap(), empty_features);
@@ -898,7 +955,6 @@ mod tests {
             nurse: None,
             lana: None,
             paths: None,
-            exit_dns: None,
             direct: None,
             derp: None,
             validate_keys: Default::default(),
@@ -907,6 +963,10 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
+            dns: FeatureDns {
+                exit_dns: None,
+                ttl_value: TtlValue::default(),
+            },
         };
 
         assert_eq!(Features::default(), expected_defaults);

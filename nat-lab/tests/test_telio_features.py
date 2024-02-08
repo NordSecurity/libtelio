@@ -1,4 +1,4 @@
-from telio_features import TelioFeatures, Direct, Lana, Nurse, Qos, ExitDns
+from telio_features import TelioFeatures, Direct, Lana, Nurse, Qos, ExitDns, Dns
 
 
 def test_telio_features():
@@ -11,7 +11,7 @@ def test_telio_features():
 
     direct_features = TelioFeatures(direct=Direct(providers=["stun", "local"]))
     expected_direct = TelioFeatures.from_json(
-        """{"is_test_env": true, "exit_dns": {"auto_switch_dns_ips": true}, 
+        """{"is_test_env": true, "exit_dns": {"auto_switch_dns_ips": true},
         "direct": {"providers": ["stun", "local"]}}"""
     )
     assert direct_features == expected_direct
@@ -47,7 +47,6 @@ def test_telio_features():
 
     full_features = TelioFeatures(
         is_test_env=False,
-        exit_dns=ExitDns(auto_switch_dns_ips=True),
         direct=Direct(providers=["stun", "local"]),
         lana=Lana(prod=False, event_path="/"),
         nurse=Nurse(
@@ -55,6 +54,10 @@ def test_telio_features():
             qos=Qos(rtt_interval=5, rtt_tries=3, rtt_types=["Ping"], buckets=5),
             heartbeat_interval=3600,
             initial_heartbeat_interval=10,
+        ),
+        dns=Dns(
+            exit_dns=ExitDns(auto_switch_dns_ips=True),
+            ttl_value=60,
         ),
     )
     expected_full = TelioFeatures.from_json(
