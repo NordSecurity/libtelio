@@ -243,6 +243,8 @@ pub struct Entities {
     nurse: Option<Arc<Nurse>>,
 
     postquantum_wg: Option<telio_pq::Entity>,
+
+    pmtu_detection: Option<telio_pmtu::Entity>,
 }
 
 impl Entities {
@@ -1045,6 +1047,13 @@ impl Runtime {
         let mut polling_interval = interval_at(tokio::time::Instant::now(), Duration::from_secs(5));
         polling_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
+        let pmtu_detection = features.pmtu_discovery.map(|cfg| {
+            telio_pmtu::Entity::new(
+                socket_pool.clone(),
+                Duration::from_secs(cfg.response_wait_timeout_s as _),
+            )
+        });
+
         Ok(Runtime {
             features,
             requested_state,
@@ -1056,6 +1065,7 @@ impl Runtime {
                 socket_pool,
                 nurse,
                 postquantum_wg,
+                pmtu_detection,
             },
             event_listeners: EventListeners {
                 wg_endpoint_publish_event_subscriber: wg_endpoint_publish_events.rx,
@@ -1682,6 +1692,10 @@ impl Runtime {
                     exit_node.public_key,
                 );
             }
+
+            if let Some(pmtud) = &mut self.entities.pmtu_detection {
+                pmtud.run(addr.ip()).await;
+            }
         } else {
             return Err(Error::EndpointNotProvided);
         }
@@ -1767,6 +1781,10 @@ impl Runtime {
 
         if let Some(pq_entt) = &mut self.entities.postquantum_wg {
             pq_entt.stop();
+        }
+
+        if let Some(pmtud) = &mut self.entities.pmtu_detection {
+            pmtud.stop().await;
         }
 
         Ok(())

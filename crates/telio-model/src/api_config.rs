@@ -381,6 +381,32 @@ pub struct FeatureDns {
     pub exit_dns: Option<FeatureExitDns>,
 }
 
+/// PMTU discovery configuration for VPN connection
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct FeaturePmtuDiscovery {
+    /// A timeout for wait for the ICMP response packet
+    #[serde(default = "FeaturePmtuDiscovery::default_response_wait_timeout_s")]
+    pub response_wait_timeout_s: u32,
+}
+
+impl FeaturePmtuDiscovery {
+    const fn default_response_wait_timeout_s() -> u32 {
+        5
+    }
+
+    fn serde_default() -> Option<Self> {
+        Some(Self::default())
+    }
+}
+
+impl Default for FeaturePmtuDiscovery {
+    fn default() -> Self {
+        Self {
+            response_wait_timeout_s: Self::default_response_wait_timeout_s(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 /// Encompasses all of the possible features that can be enabled
 pub struct Features {
@@ -423,6 +449,9 @@ pub struct Features {
     /// Feature configuration for DNS.
     #[serde(default)]
     pub dns: FeatureDns,
+    /// PMTU discovery configuration, enabled by default
+    #[serde(default = "FeaturePmtuDiscovery::serde_default")]
+    pub pmtu_discovery: Option<FeaturePmtuDiscovery>,
 }
 
 impl FeaturePaths {
@@ -537,7 +566,8 @@ mod tests {
                     "auto_switch_dns_ips": true
                 },
                 "ttl_value": 60
-            }
+            },
+            "pmtu_discovery": null
         }"#;
 
     static EXPECTED_FEATURES_WITH_IS_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
@@ -597,6 +627,7 @@ mod tests {
             }),
             ttl_value: TtlValue::default(),
         },
+        pmtu_discovery: None,
     });
     static EXPECTED_FEATURES_WITHOUT_IS_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
         wireguard: FeatureWireguard {
@@ -645,6 +676,7 @@ mod tests {
             }),
             ttl_value: TtlValue::default(),
         },
+        pmtu_discovery: Some(Default::default()),
     });
 
     #[test]
@@ -828,6 +860,7 @@ mod tests {
                 exit_dns: None,
                 ttl_value: TtlValue::default(),
             },
+            pmtu_discovery: Some(Default::default()),
         };
 
         let empty_qos_features = Features {
@@ -862,6 +895,7 @@ mod tests {
                 exit_dns: None,
                 ttl_value: TtlValue::default(),
             },
+            pmtu_discovery: Some(Default::default()),
         };
 
         let no_qos_features = Features {
@@ -891,6 +925,7 @@ mod tests {
                 exit_dns: None,
                 ttl_value: TtlValue::default(),
             },
+            pmtu_discovery: Some(Default::default()),
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -941,6 +976,7 @@ mod tests {
                 }),
                 ttl_value: TtlValue::default(),
             },
+            pmtu_discovery: Some(Default::default()),
         };
 
         let empty_features = Features {
@@ -964,6 +1000,7 @@ mod tests {
                 }),
                 ttl_value: TtlValue::default(),
             },
+            pmtu_discovery: Some(Default::default()),
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -996,6 +1033,7 @@ mod tests {
                 exit_dns: None,
                 ttl_value: TtlValue::default(),
             },
+            pmtu_discovery: Some(Default::default()),
         };
 
         assert_eq!(from_str::<Features>(empty_json).unwrap(), empty_features);
@@ -1054,6 +1092,7 @@ mod tests {
                 exit_dns: None,
                 ttl_value: TtlValue::default(),
             },
+            pmtu_discovery: Default::default(),
         };
 
         assert_eq!(Features::default(), expected_defaults);

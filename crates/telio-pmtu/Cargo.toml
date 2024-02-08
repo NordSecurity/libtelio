@@ -17,6 +17,7 @@ rand.workspace = true
 tracing.workspace = true
 
 telio-utils.workspace = true
+telio-sockets.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["net", "macros", "rt"] }
