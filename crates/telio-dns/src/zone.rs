@@ -10,14 +10,14 @@ use hickory_server::{
     server::{Request, RequestInfo, ResponseHandler, ResponseInfo},
     store::{forwarder::ForwardConfig, in_memory::InMemoryAuthority},
 };
-use telio_model::api_config::TtlValue;
-use telio_utils::telio_log_warn;
 use std::{
     collections::{HashMap, HashSet},
     convert::TryInto,
     net::IpAddr,
     str::FromStr,
 };
+use telio_model::api_config::TtlValue;
+use telio_utils::telio_log_warn;
 
 use crate::forward::ForwardAuthority;
 
@@ -38,7 +38,11 @@ pub(crate) struct AuthoritativeZone {
 }
 
 impl AuthoritativeZone {
-    pub(crate) async fn new(name: &str, records: &Records, ttl_value: TtlValue) -> Result<Self, String> {
+    pub(crate) async fn new(
+        name: &str,
+        records: &Records,
+        ttl_value: TtlValue,
+    ) -> Result<Self, String> {
         // TODO: rewrite code so that this assert is not needed.
         for domain in records.keys() {
             if !domain.contains(name) {
@@ -52,7 +56,7 @@ impl AuthoritativeZone {
             Err(_) => {
                 telio_log_warn!("TTL value could not be converted from u32 to i32 without data loss, so using default value");
                 TtlValue::default().0 as i32
-            },
+            }
         };
         zone.upsert(
             Record::new()

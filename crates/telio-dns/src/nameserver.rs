@@ -15,12 +15,12 @@ use pnet_packet::{
     udp::{ipv4_checksum, ipv6_checksum, MutableUdpPacket, UdpPacket},
     Packet,
 };
-use telio_model::api_config::TtlValue;
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     str::FromStr,
     sync::Arc,
 };
+use telio_model::api_config::TtlValue;
 use tokio::net::UdpSocket;
 use tokio::sync::{RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, Semaphore};
 use tokio::task::JoinHandle;
@@ -46,7 +46,12 @@ pub trait NameServer {
     /// Configure list of forward DNS servers for zone '.'.
     async fn forward(&self, to: &[IpAddr]) -> Result<(), String>;
     /// Insert or update zone records used by the server.
-    async fn upsert(&self, zone: &str, records: &Records, ttl_value: TtlValue) -> Result<(), String>;
+    async fn upsert(
+        &self,
+        zone: &str,
+        records: &Records,
+        ttl_value: TtlValue,
+    ) -> Result<(), String>;
 }
 
 /// Local name server.
@@ -507,7 +512,12 @@ impl WithZones for Arc<RwLock<LocalNameServer>> {
 
 #[async_trait]
 impl NameServer for Arc<RwLock<LocalNameServer>> {
-    async fn upsert(&self, zone: &str, records: &Records, ttl_value: TtlValue) -> Result<(), String> {
+    async fn upsert(
+        &self,
+        zone: &str,
+        records: &Records,
+        ttl_value: TtlValue,
+    ) -> Result<(), String> {
         let azone = Arc::new(AuthoritativeZone::new(zone, records, ttl_value).await?);
 
         self.zones_mut()
