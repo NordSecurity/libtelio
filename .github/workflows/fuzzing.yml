@@ -44,7 +44,7 @@ jobs:
         - run: cargo install cargo-fuzz --locked --version 0.11.2
         - name: fuzz telio pq parse_get_packet
           working-directory: crates/telio-pq
-          run: cargo fuzz run parse_get_packet -- -max_total_time=180
+          run: CARGO_CFG_CURVE25519_DALEK_BACKEND="serial" cargo fuzz run parse_get_packet -- -max_total_time=180
         - name: fuzz telio pq parse_rekey_packet
           working-directory: crates/telio-pq
-          run: cargo fuzz run parse_rekey_packet -- -max_total_time=180
+          run: CARGO_CFG_CURVE25519_DALEK_BACKEND="serial" cargo fuzz run parse_rekey_packet -- -max_total_time=180
