@@ -102,6 +102,9 @@ typedef sequence<EndpointProvider> EndpointProviders;
 typedef boolean FeatureValidateKeys;
 
 [Custom]
+typedef u32 TtlValue;
+
+[Custom]
 typedef boolean FeatureBoringtunResetConns;
 
 namespace libtelio {
@@ -223,7 +226,7 @@ interface telio {
     /// Wrapper for `telio_connect_to_exit_node_with_id` that doesn't take an identifier
     [Throws=TelioError]
     void connect_to_exit_node(PublicKey public_key, sequence<IpNetwork>? allowed_ips, SocketAddr? endpoint);
-    
+
     /// Connects to an exit node. (VPN if endpoint is not NULL, Peer if endpoint is NULL)
     ///
     /// Routing should be set by the user accordingly.
@@ -265,7 +268,7 @@ interface telio {
     ///
     [Throws=TelioError]
     void connect_to_exit_node_with_id(string? identifier, PublicKey public_key, sequence<IpNetwork>? allowed_ips, SocketAddr? endpoint);
-    
+
     /// Disconnects from specified exit node.
     ///
     /// # Parameters
@@ -273,7 +276,7 @@ interface telio {
     ///
     [Throws=TelioError]
     void disconnect_from_exit_node([ByRef] PublicKey public_key);
-    
+
     /// Disconnects from all exit nodes with no parameters required.
     [Throws=TelioError]
     void disconnect_from_exit_nodes();
@@ -296,7 +299,7 @@ interface telio {
     /// ```
     [Throws=TelioError]
     void enable_magic_dns([ByRef] sequence<IpAddr> forward_servers);
-    
+
     /// Disables magic DNS if it was enabled.
     [Throws=TelioError]
     void disable_magic_dns();
@@ -309,21 +312,21 @@ interface telio {
     ///
     [Throws=TelioError]
     void set_meshnet(Config cfg);
-    
+
     /// Disables the meshnet functionality by closing all the connections.
     [Throws=TelioError]
     void set_meshnet_off();
-    
-    
+
+
     sequence<Node> get_status_map();
-    
+
     /// Get last error's message length, including trailing null
     string get_last_error();
 
     /// For testing only.
     [Throws=TelioError]
     void generate_stack_panic();
-    
+
     /// For testing only.
     [Throws=TelioError]
     void generate_thread_panic();
@@ -371,6 +374,8 @@ dictionary Features {
     u64? flush_events_on_stop_timeout_seconds;
     /// No-link detection mechanism
     FeatureLinkDetection? link_detection;
+    /// Feature configuration for DNS
+    FeatureDns dns;
 };
 
 /// Configurable features for Wireguard peers
@@ -475,6 +480,14 @@ dictionary FeatureLinkDetection {
     u64 rtt_seconds;
 };
 
+/// Feature configuration for DNS
+dictionary FeatureDns {
+    /// TTL for SOA record and for A and AAAA records [default 60s]
+    TtlValue ttl_value;
+    /// Configure options for exit dns [default None]
+    FeatureExitDns? exit_dns;
+}
+
 /// Rust representation of [meshnet map]
 /// A network map of all the Peers and the servers
 dictionary Config {
@@ -557,7 +570,7 @@ dictionary Node {
     /// Public key of the Node
     PublicKey public_key;
     /// Nickname for the peer
-    string? nickname;   
+    string? nickname;
     /// State of the node (Connecting, connected, or disconnected)
     NodeState state;
     /// Link state hint (Down, Up)

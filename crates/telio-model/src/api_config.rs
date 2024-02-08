@@ -1,7 +1,7 @@
 //! Object descriptions of various
 //! telio configurable features via API
 
-use std::{collections::HashSet, fmt};
+use std::{collections::HashSet, default, fmt};
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{de::IntoDeserializer, Deserialize, Deserializer, Serialize};
@@ -299,6 +299,28 @@ impl FeatureLinkDetection {
     }
 }
 
+/// Newtype for TTL value to ensure that the default function returns the actual default value and not 0.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(transparent)]
+pub struct TtlValue(pub u32);
+
+impl Default for TtlValue {
+    fn default() -> Self {
+        Self(60)
+    }
+}
+
+/// Feature configuration for DNS.
+#[derive(Default, Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct FeatureDns {
+    /// TTL for SOA record and for A and AAAA records.
+    #[serde(default)]
+    pub ttl_value: TtlValue,
+    /// Configure options for exit dns
+    #[serde(default)]
+    pub exit_dns: Option<FeatureExitDns>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 /// Encompasses all of the possible features that can be enabled
 pub struct Features {
@@ -311,8 +333,6 @@ pub struct Features {
     pub lana: Option<FeatureLana>,
     /// Deprecated by direct since 4.0.0
     pub paths: Option<FeaturePaths>,
-    /// Configure options for exit dns
-    pub exit_dns: Option<FeatureExitDns>,
     /// Configure options for direct WG connections
     pub direct: Option<FeatureDirect>,
     /// Test environment (natlab) requires binding feature disabled
@@ -337,6 +357,9 @@ pub struct Features {
     /// No link detection mechanism
     #[serde(default)]
     pub link_detection: Option<FeatureLinkDetection>,
+    /// Feature configuration for DNS.
+    #[serde(default)]
+    pub dns: FeatureDns,
 }
 
 impl FeaturePaths {
@@ -416,7 +439,7 @@ mod tests {
                 "priority": ["relay", "direct"],
                 "force": "relay"
             },
-            "direct": 
+            "direct":
             {
                 "providers": 42,
                 "endpoint_interval_secs": 10,
@@ -425,10 +448,6 @@ mod tests {
                     "enabled": true,
                     "no_rx_threshold_secs": 50
                 }
-            },
-            "exit_dns":
-            {
-                "auto_switch_dns_ips": true
             },
             "is_test_env": true,
             "derp":
@@ -441,6 +460,14 @@ mod tests {
             "ipv6": true,
             "nicknames": true,
             "boringtun_reset_connections": true
+            "dns":
+            {
+                "exit_dns":
+                {
+                    "auto_switch_dns_ips": true
+                },
+                "ttl_value": 60,
+            }
         }"#;
 
     static EXPECTED_FEATURES_WITH_IS_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
@@ -474,9 +501,6 @@ mod tests {
                 no_rx_threshold_secs: 50,
             }),
         }),
-        exit_dns: Some(FeatureExitDns {
-            auto_switch_dns_ips: Some(true),
-        }),
         is_test_env: Some(true),
         derp: Some(FeatureDerp {
             tcp_keepalive: Some(1),
@@ -490,6 +514,12 @@ mod tests {
         boringtun_reset_connections: FeatureBoringtunResetConns(true),
         flush_events_on_stop_timeout_seconds: None,
         link_detection: None,
+        dns: FeatureDns {
+            exit_dns: Some(FeatureExitDns {
+                auto_switch_dns_ips: Some(true),
+            }),
+            ttl_value: TtlValue::default(),
+        },
     });
     static EXPECTED_FEATURES_WITHOUT_IS_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
         wireguard: FeatureWireguard {
@@ -520,9 +550,6 @@ mod tests {
             endpoint_interval_secs: None,
             skip_unresponsive_peers: Some(Default::default()),
         }),
-        exit_dns: Some(FeatureExitDns {
-            auto_switch_dns_ips: None,
-        }),
         is_test_env: None,
         derp: None,
         validate_keys: Default::default(),
@@ -531,6 +558,12 @@ mod tests {
         boringtun_reset_connections: FeatureBoringtunResetConns(false),
         flush_events_on_stop_timeout_seconds: None,
         link_detection: None,
+        dns: FeatureDns {
+            exit_dns: Some(FeatureExitDns {
+                auto_switch_dns_ips: None,
+            }),
+            ttl_value: TtlValue::default(),
+        },
     });
 
     #[test]
@@ -695,7 +728,6 @@ mod tests {
             lana: None,
             paths: None,
             direct: None,
-            exit_dns: None,
             is_test_env: None,
             derp: None,
             validate_keys: Default::default(),
@@ -704,6 +736,10 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             link_detection: None,
+            dns: FeatureDns {
+                exit_dns: None,
+                ttl_value: TtlValue::default(),
+            },
         };
 
         let empty_qos_features = Features {
@@ -723,7 +759,6 @@ mod tests {
             lana: None,
             paths: None,
             direct: None,
-            exit_dns: None,
             is_test_env: None,
             derp: None,
             validate_keys: Default::default(),
@@ -732,6 +767,10 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             link_detection: None,
+            dns: FeatureDns {
+                exit_dns: None,
+                ttl_value: TtlValue::default(),
+            },
         };
 
         let no_qos_features = Features {
@@ -746,7 +785,6 @@ mod tests {
             lana: None,
             paths: None,
             direct: None,
-            exit_dns: None,
             is_test_env: None,
             derp: None,
             validate_keys: Default::default(),
@@ -755,6 +793,10 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             link_detection: None,
+            dns: FeatureDns {
+                exit_dns: None,
+                ttl_value: TtlValue::default(),
+            },
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -786,9 +828,6 @@ mod tests {
             lana: None,
             paths: None,
             direct: None,
-            exit_dns: Some(FeatureExitDns {
-                auto_switch_dns_ips: Some(true),
-            }),
             is_test_env: None,
             derp: None,
             validate_keys: Default::default(),
@@ -797,6 +836,12 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             link_detection: None,
+            dns: FeatureDns {
+                exit_dns: Some(FeatureExitDns {
+                    auto_switch_dns_ips: Some(true),
+                }),
+                ttl_value: TtlValue::default(),
+            },
         };
 
         let empty_features = Features {
@@ -805,9 +850,6 @@ mod tests {
             lana: None,
             paths: None,
             direct: None,
-            exit_dns: Some(FeatureExitDns {
-                auto_switch_dns_ips: None,
-            }),
             is_test_env: None,
             derp: None,
             validate_keys: Default::default(),
@@ -816,6 +858,12 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             link_detection: None,
+            dns: FeatureDns {
+                exit_dns: Some(FeatureExitDns {
+                    auto_switch_dns_ips: None,
+                }),
+                ttl_value: TtlValue::default(),
+            },
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -836,7 +884,6 @@ mod tests {
             paths: None,
             direct: None,
             is_test_env: None,
-            exit_dns: None,
             derp: None,
             validate_keys: Default::default(),
             ipv6: false,
@@ -844,6 +891,10 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             link_detection: Default::default(),
+            dns: FeatureDns {
+                exit_dns: None,
+                ttl_value: TtlValue::default(),
+            },
         };
 
         assert_eq!(from_str::<Features>(empty_json).unwrap(), empty_features);
@@ -888,7 +939,6 @@ mod tests {
             nurse: None,
             lana: None,
             paths: None,
-            exit_dns: None,
             direct: None,
             is_test_env: None,
             derp: None,
@@ -898,6 +948,10 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             link_detection: None,
+            dns: FeatureDns {
+                exit_dns: None,
+                ttl_value: TtlValue::default(),
+            },
         };
 
         assert_eq!(Features::default(), expected_defaults);

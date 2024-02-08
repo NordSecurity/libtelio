@@ -35,7 +35,7 @@ pub(crate) struct AuthoritativeZone {
 }
 
 impl AuthoritativeZone {
-    pub(crate) async fn new(name: &str, records: &Records) -> Result<Self, String> {
+    pub(crate) async fn new(name: &str, records: &Records, ttl_value: u32) -> Result<Self, String> {
         // TODO: rewrite code so that this assert is not needed.
         for domain in records.keys() {
             if !domain.contains(name) {
@@ -48,7 +48,7 @@ impl AuthoritativeZone {
         zone.upsert(
             Record::new()
                 .set_name(zone_name)
-                .set_ttl(3600)
+                .set_ttl(ttl_value)
                 .set_rr_type(RecordType::SOA)
                 .set_dns_class(DNSClass::IN)
                 .set_data(Some(RData::SOA(SOA::new(
@@ -56,9 +56,9 @@ impl AuthoritativeZone {
                     Name::parse("support.nordsec.com.", None)?,
                     2015082403,
                     7200,
-                    3600,
+                    ttl_value as i32, // TODO this might overflow, but is this value really supposed to be here?
                     1209600,
-                    3600,
+                    ttl_value,
                 ))))
                 .clone(),
             0,
@@ -68,7 +68,7 @@ impl AuthoritativeZone {
         let build_record = |name: Name, ty: RecordType, data: RData| -> Record {
             Record::new()
                 .set_name(name)
-                .set_ttl(900)
+                .set_ttl(ttl_value)
                 .set_rr_type(ty)
                 .set_dns_class(DNSClass::IN)
                 .set_data(Some(data))
@@ -346,7 +346,7 @@ mod tests {
         records.insert(String::from("beta.nord"), vec![IpAddr::V4(beta_ipv4)]);
         records.insert(String::from("gamma.nord"), vec![IpAddr::V6(gamma_ipv6)]);
 
-        let zone = AuthoritativeZone::new("nord", &records).await.unwrap();
+        let zone = AuthoritativeZone::new("nord", &records, 60).await.unwrap();
 
         validate_record(&zone, "alpha.nord", Some(alpha_ipv4), Some(alpha_ipv6)).await;
         validate_record(&zone, "beta.nord", Some(beta_ipv4), None).await;

@@ -189,6 +189,18 @@ mod uniffi_libtelio {
         }
     }
 
+    impl UniffiCustomTypeConverter for TtlValue {
+        type Builtin = u32;
+
+        fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
+            Ok(TtlValue(val))
+        }
+
+        fn from_custom(obj: Self) -> Self::Builtin {
+            obj.0
+        }
+    }
+
     impl UniffiCustomTypeConverter for FeatureBoringtunResetConns {
         type Builtin = bool;
 
@@ -395,6 +407,28 @@ mod uniffi_libtelio {
         fn test_from_feature_validate_keys(#[case] val: bool) {
             let expected = val;
             let actual = FeatureValidateKeys::from_custom(FeatureValidateKeys(val));
+
+            assert_eq!(actual, expected);
+        }
+
+        #[rstest]
+        #[case(60)]
+        #[case(3600)]
+        #[case(0)]
+        fn test_to_feature_ttl_value(#[case] val: u32) {
+            let expected = TtlValue(val);
+            let actual = TtlValue::into_custom(val).unwrap();
+
+            assert_eq!(actual, expected);
+        }
+
+        #[rstest]
+        #[case(60)]
+        #[case(3600)]
+        #[case(0)]
+        fn test_from_feature_ttl_value(#[case] val: u32) {
+            let expected = val;
+            let actual = TtlValue::from_custom(TtlValue(val));
 
             assert_eq!(actual, expected);
         }
