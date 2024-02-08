@@ -436,7 +436,7 @@ async fn dns_request_local_ipv6() {
 async fn dns_request_forward() {
     timeout(
         Duration::from_secs(60),
-        dns_test("google.com", DnsTestType::CorrectIpv4, None, 60),
+        dns_test("google.com", DnsTestType::CorrectIpv4, None, TtlValue(60)),
     )
     .await
     .expect("Test timeout");
@@ -487,7 +487,7 @@ async fn dns_request_to_non_responding_forward_server() {
 async fn dns_request_bad_ip_checksum_ipv4() {
     timeout(
         Duration::from_secs(60),
-        dns_test("google.com", DnsTestType::BadIpChecksumIpv4, None, 60),
+        dns_test("google.com", DnsTestType::BadIpChecksumIpv4, None, TtlValue(60)),
     )
     .await
     .expect("Test timeout");
@@ -497,7 +497,7 @@ async fn dns_request_bad_ip_checksum_ipv4() {
 async fn dns_request_bad_udp_checksum_ipv4() {
     timeout(
         Duration::from_secs(60),
-        dns_test("google.com", DnsTestType::BadUdpChecksumIpv4, None, 60),
+        dns_test("google.com", DnsTestType::BadUdpChecksumIpv4, None, TtlValue(60)),
     )
     .await
     .expect("Test timeout");
@@ -507,7 +507,7 @@ async fn dns_request_bad_udp_checksum_ipv4() {
 async fn dns_request_bad_udp_checksum_ipv6() {
     timeout(
         Duration::from_secs(60),
-        dns_test("google.com", DnsTestType::BadUdpChecksumIpv6, None, 60),
+        dns_test("google.com", DnsTestType::BadUdpChecksumIpv6, None, TtlValue(60)),
     )
     .await
     .expect("Test timeout");
@@ -517,7 +517,7 @@ async fn dns_request_bad_udp_checksum_ipv6() {
 async fn dns_request_bad_udp_port_ipv4() {
     timeout(
         Duration::from_secs(60),
-        dns_test("google.com", DnsTestType::BadUdpPortIpv4, None, 60),
+        dns_test("google.com", DnsTestType::BadUdpPortIpv4, None, TtlValue(60)),
     )
     .await
     .expect("Test timeout");
@@ -527,7 +527,7 @@ async fn dns_request_bad_udp_port_ipv4() {
 async fn dns_request_bad_udp_port_ipv6() {
     timeout(
         Duration::from_secs(60),
-        dns_test("google.com", DnsTestType::BadUdpPortIpv6, None, 60),
+        dns_test("google.com", DnsTestType::BadUdpPortIpv6, None, TtlValue(60)),
     )
     .await
     .expect("Test timeout");
