@@ -147,7 +147,7 @@ impl Ping {
                 }
                 Err(e) => {
                     results.unsuccessful_pings += 1;
-                    telio_log_error!("Ping error: {}", e.to_string());
+                    telio_log_debug!("Ping {} error: {}", host, e.to_string());
                 }
             }
         }
