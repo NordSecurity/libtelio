@@ -781,6 +781,8 @@ pub mod tests {
 
     use lazy_static::lazy_static;
     use mockall::predicate;
+    use rand::{RngCore, SeedableRng};
+    use telio_crypto::PresharedKey;
     use telio_sockets::NativeProtector;
     use tokio::{runtime::Handle, sync::Mutex, task, time::sleep};
 
@@ -1228,10 +1230,24 @@ pub mod tests {
         } = setup().await;
         let mut iface = Interface::default();
         let pubkey = SecretKey::gen().public();
+
+        let mut rng = rand::rngs::StdRng::from_seed(Default::default());
+        let preshared1 = PresharedKey::new({
+            let mut bytes = [0u8; 32];
+            rng.fill_bytes(&mut bytes);
+            bytes
+        });
+        let preshared2 = PresharedKey::new({
+            let mut bytes = [0u8; 32];
+            rng.fill_bytes(&mut bytes);
+            bytes
+        });
+
         let mut peer = Peer {
             public_key: pubkey,
             endpoint: Some(([1, 1, 1, 1], 123).into()),
             persistent_keepalive_interval: Some(25),
+            preshared_key: Some(preshared1),
             ..Default::default()
         };
 
@@ -1257,6 +1273,7 @@ pub mod tests {
         assert_eq!(iface.clone(), wg.get_interface().await.unwrap());
 
         peer.endpoint = Some(([1, 1, 1, 1], 124).into());
+        peer.preshared_key = Some(preshared2);
 
         iface.peers.insert(pubkey, peer.clone());
 
