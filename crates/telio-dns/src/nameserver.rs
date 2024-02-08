@@ -593,7 +593,10 @@ mod tests {
         let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])
             .await
             .unwrap();
-        nameserver.upsert("nord", &records, 60).await.unwrap();
+        nameserver
+            .upsert("nord", &records, TtlValue(60))
+            .await
+            .unwrap();
         let request = dns_request(entry_name.clone());
         let resolver = Resolver::new();
         nameserver
@@ -626,7 +629,10 @@ mod tests {
             .await
             .unwrap();
         let raw_read_ptr1 = Arc::as_ptr(&nameserver.zones().await);
-        nameserver.upsert("nord", &records, 60).await.unwrap();
+        nameserver
+            .upsert("nord", &records, TtlValue(60))
+            .await
+            .unwrap();
         let raw_read_ptr2 = Arc::as_ptr(&nameserver.zones().await);
         assert_eq!(raw_read_ptr1, raw_read_ptr2);
 
@@ -638,7 +644,10 @@ mod tests {
         );
 
         let read_ptr3 = nameserver.zones().await;
-        nameserver.upsert("nord2", &records, 60).await.unwrap();
+        nameserver
+            .upsert("nord2", &records, TtlValue(60))
+            .await
+            .unwrap();
         let raw_read_ptr4 = Arc::as_ptr(&nameserver.zones().await);
         assert_ne!(Arc::as_ptr(&read_ptr3), raw_read_ptr4);
 
@@ -658,7 +667,10 @@ mod tests {
         let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])
             .await
             .unwrap();
-        nameserver.upsert("nord.", &records, 60).await.unwrap();
+        nameserver
+            .upsert("nord.", &records, TtlValue(60))
+            .await
+            .unwrap();
 
         let zones = nameserver.zones().await;
         assert!(zones.contains(&LowerName::from_str(".").unwrap()));

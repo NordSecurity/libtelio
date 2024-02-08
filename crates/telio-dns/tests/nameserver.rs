@@ -14,6 +14,7 @@ use std::{
     sync::Arc,
 };
 use telio_dns::{LocalNameServer, NameServer, Records};
+use telio_model::api_config::TtlValue;
 use tokio::sync::RwLock;
 use tokio::time::sleep;
 use tokio::{
@@ -328,7 +329,7 @@ async fn dns_test(
     query: &str,
     test_type: DnsTestType,
     local_records: Option<(String, Records)>,
-    ttl_value: u32,
+    ttl_value: TtlValue,
 ) {
     let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])
         .await
@@ -342,7 +343,7 @@ async fn dns_test_with_server(
     test_type: DnsTestType,
     local_records: Option<(String, Records)>,
     nameserver: Arc<RwLock<LocalNameServer>>,
-    ttl_value: u32,
+    ttl_value: TtlValue,
 ) {
     if let Some((zone, records)) = local_records {
         nameserver
@@ -400,7 +401,7 @@ async fn dns_request_local_ipv4() {
             "test.nord",
             DnsTestType::CorrectIpv4,
             Some((zone, records)),
-            60,
+            TtlValue(60),
         ),
     )
     .await
@@ -424,7 +425,7 @@ async fn dns_request_local_ipv6() {
             "test.nord",
             DnsTestType::CorrectIpv6,
             Some((zone, records)),
-            60,
+            TtlValue(60),
         ),
     )
     .await
@@ -453,7 +454,7 @@ async fn dns_request_forward_to_slow_server() {
         DnsTestType::NonRespondingForwardServer,
         None,
         nameserver.clone(),
-        60,
+        TtlValue(60),
     ));
 
     // Let it reach the state where we are waiting for external
@@ -477,7 +478,7 @@ async fn dns_request_to_non_responding_forward_server() {
         DnsTestType::NonRespondingForwardServer,
         None,
         nameserver.clone(),
-        60,
+        TtlValue(60),
     )
     .await;
 }

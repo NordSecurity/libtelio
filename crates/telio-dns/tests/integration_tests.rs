@@ -9,6 +9,7 @@ use std::{
 };
 use telio_crypto::{PublicKey, SecretKey};
 use telio_dns::{LocalNameServer, NameServer, Records};
+use telio_model::api_config::TtlValue;
 use tokio::net::UdpSocket;
 use x25519_dalek::{PublicKey as PublicDalek, StaticSecret};
 
@@ -130,7 +131,10 @@ async fn dns_over_wireguard() {
     let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])
         .await
         .unwrap();
-    nameserver.upsert("nord", &records, 60).await.unwrap();
+    nameserver
+        .upsert("nord", &records, TtlValue(60))
+        .await
+        .unwrap();
 
     let dns_socket = Arc::new(UdpSocket::bind("127.0.0.1:51821").await.unwrap());
     let dns_wireguard = Arc::from(
@@ -158,7 +162,10 @@ async fn dns_over_wireguard() {
         vec![IpAddr::V4(Ipv4Addr::new(100, 64, 0, 213))],
     );
 
-    nameserver.upsert("nord", &records, 60).await.unwrap();
+    nameserver
+        .upsert("nord", &records, TtlValue(60))
+        .await
+        .unwrap();
 
     assert!(drill("100.100.100.102", "bob.nord").contains("100.64.0.213"));
 }

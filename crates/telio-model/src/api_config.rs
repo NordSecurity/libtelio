@@ -1,7 +1,7 @@
 //! Object descriptions of various
 //! telio configurable features via API
 
-use std::{collections::HashSet, default, fmt};
+use std::{collections::HashSet, fmt};
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{de::IntoDeserializer, Deserialize, Deserializer, Serialize};

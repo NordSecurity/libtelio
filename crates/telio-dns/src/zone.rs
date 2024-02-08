@@ -359,7 +359,9 @@ mod tests {
         records.insert(String::from("beta.nord"), vec![IpAddr::V4(beta_ipv4)]);
         records.insert(String::from("gamma.nord"), vec![IpAddr::V6(gamma_ipv6)]);
 
-        let zone = AuthoritativeZone::new("nord", &records, 60).await.unwrap();
+        let zone = AuthoritativeZone::new("nord", &records, TtlValue(60))
+            .await
+            .unwrap();
 
         validate_record(&zone, "alpha.nord", Some(alpha_ipv4), Some(alpha_ipv6)).await;
         validate_record(&zone, "beta.nord", Some(beta_ipv4), None).await;
