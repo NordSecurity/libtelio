@@ -1,6 +1,7 @@
 mod wg_controller;
 
 use async_trait::async_trait;
+use futures::FutureExt;
 use telio_crypto::{PublicKey, SecretKey};
 use telio_firewall::firewall::{Firewall, StatefullFirewall};
 use telio_lana::init_lana;
@@ -605,7 +606,7 @@ impl Device {
         self.art()?.block_on(async {
             let node = node.clone();
             let _wireguard_interface: Arc<DynamicWg> = task_exec!(self.rt()?, async move |rt| {
-                rt.connect_exit_node(&node).await?;
+                rt.connect_exit_node(&node).boxed().await?;
                 Ok(rt.entities.wireguard_interface.clone())
             })
             .await?;

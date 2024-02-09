@@ -149,6 +149,10 @@ pub enum Error {
     /// Parsing AdapterType from string failed
     #[error("Parsing AdapterType from string failed")]
     AdapterTypeParsingError,
+
+    /// Internal Error
+    #[error("Internal error: {0}")]
+    InternalError(&'static str),
 }
 
 /// Enumeration of types for `Adapter` struct

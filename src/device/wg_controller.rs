@@ -3,13 +3,14 @@ use ipnetwork::IpNetwork;
 use std::collections::HashMap;
 use std::collections::{BTreeMap, HashSet};
 use std::iter::FromIterator;
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use std::time::Duration;
 use telio_crypto::PublicKey;
 use telio_dns::DnsResolver;
 use telio_firewall::firewall::{Firewall, FILE_SEND_PORT};
 use telio_model::api_config::Features;
+use telio_model::constants::{VPN_EXTERNAL_IPV4, VPN_INTERNAL_IPV4, VPN_INTERNAL_IPV6};
 use telio_model::EndpointMap;
 use telio_model::SocketAddr;
 use telio_proto::PeersStatesMap;
@@ -433,9 +434,15 @@ async fn build_requested_peers_list<
             // Exit node is a fresh node, therefore - insert create new peer
             let public_key = exit_node.public_key;
             let endpoint = exit_node.endpoint;
-            let persistent_keepalive_interval = requested_state.keepalive_periods.vpn;
-            // If the PQ VPN is set up we need to configure the preshared key
 
+            let mut ip_addresses = vec![IpAddr::V4(Ipv4Addr::from(VPN_INTERNAL_IPV4))];
+            if features.ipv6 {
+                ip_addresses.push(IpAddr::V6(Ipv6Addr::from(VPN_INTERNAL_IPV6)));
+            }
+            ip_addresses.push(IpAddr::V4(Ipv4Addr::from(VPN_EXTERNAL_IPV4)));
+            let persistent_keepalive_interval = requested_state.keepalive_periods.vpn;
+
+            // If the PQ VPN is set up we need to configure the preshared key
             match post_quantum_vpn.map(telio_pq::Entity::keys) {
                 Some(None) => {
                     // The post quantum state is not ready, we don't want to set up quantum
@@ -450,6 +457,7 @@ async fn build_requested_peers_list<
                             peer: telio_wg::uapi::Peer {
                                 public_key,
                                 endpoint,
+                                ip_addresses,
                                 persistent_keepalive_interval,
                                 allowed_ips,
                                 preshared_key,
@@ -493,12 +501,15 @@ async fn build_requested_peers_list<
         } else {
             vec![IpNetwork::V4("100.64.0.4/32".parse()?)]
         };
+        let ip_addresses = allowed_ips.iter().copied().map(|ip| ip.ip()).collect();
+
         requested_peers.insert(
             public_key,
             RequestedPeer {
                 peer: telio_wg::uapi::Peer {
                     public_key,
                     endpoint: Some(endpoint),
+                    ip_addresses,
                     persistent_keepalive_interval,
                     allowed_ips,
                     ..Default::default()
@@ -550,6 +561,12 @@ async fn build_requested_meshnet_peers_list<
             let persistent_keepalive_interval = requested_state.keepalive_periods.proxying;
             let endpoint = proxy_endpoints.get(&public_key).cloned();
 
+            // Keep track of meshnet IP needed for instance for QoS analytics
+            let ip_addresses = match deduplicated_peer_ips.get(&public_key) {
+                Some(ips) => ips.clone(),
+                None => vec![],
+            };
+
             // Retrieve node's meshnet IP from config, and convert it into `/32` network type for v4, and `/128` for v6
             let allowed_ips = deduplicated_peer_ips
                 .remove(&public_key)
@@ -575,6 +592,7 @@ async fn build_requested_meshnet_peers_list<
                     peer: telio_wg::uapi::Peer {
                         public_key,
                         endpoint,
+                        ip_addresses,
                         persistent_keepalive_interval,
                         allowed_ips,
                         ..Default::default()
@@ -1442,14 +1460,18 @@ mod tests {
                 .returning(move || Ok(map.clone()));
         }
 
-        fn then_add_peer(&mut self, input: Vec<(PublicKey, SocketAddr, u32, Vec<IpNetwork>)>) {
+        fn then_add_peer(
+            &mut self,
+            input: Vec<(PublicKey, SocketAddr, u32, Vec<IpNetwork>, Vec<IpAddr>)>,
+        ) {
             for i in input {
                 self.wireguard_interface
                     .expect_add_peer()
                     .once()
                     .with(eq(Peer {
                         public_key: i.0,
-                        endpoint: Some(i.1.into()),
+                        endpoint: Some(i.1),
+                        ip_addresses: i.4,
                         persistent_keepalive_interval: Some(i.2),
                         allowed_ips: i.3,
                         rx_bytes: None,
@@ -1593,7 +1615,8 @@ mod tests {
             pub_key,
             proxy_endpoint,
             proxying_keepalive_time,
-            allowed_ips.into_iter().map(|ip| ip.into()).collect(),
+            allowed_ips.iter().copied().map(|ip| ip.into()).collect(),
+            allowed_ips,
         )]);
 
         f.consolidate_peers().await;
@@ -1638,7 +1661,8 @@ mod tests {
             pub_key,
             remote_wg_endpoint,
             direct_keepalive_period,
-            allowed_ips.into_iter().map(|ip| ip.into()).collect(),
+            allowed_ips.iter().copied().map(|ip| ip.into()).collect(),
+            allowed_ips,
         )]);
         f.then_proxy_mute(vec![(
             pub_key,
@@ -1693,7 +1717,8 @@ mod tests {
             pub_key,
             remote_wg_endpoint,
             direct_keepalive_period,
-            allowed_ips.into_iter().map(|ip| ip.into()).collect(),
+            allowed_ips.iter().copied().map(|ip| ip.into()).collect(),
+            allowed_ips,
         )]);
         f.then_request_upgrade(vec![(pub_key, remote_wg_endpoint, local_wg_endpoint)]);
         f.then_keeper_add_node(vec![(pub_key, ip1, Some(ip1v6), direct_keepalive_period)]);
@@ -1739,7 +1764,8 @@ mod tests {
             pub_key,
             proxy_endpoint,
             proxying_keepalive_period,
-            allowed_ips.into_iter().map(|ip| ip.into()).collect(),
+            allowed_ips.iter().copied().map(|ip| ip.into()).collect(),
+            allowed_ips,
         )]);
 
         f.consolidate_peers().await;
@@ -1838,7 +1864,8 @@ mod tests {
             pub_key,
             proxy_endpoint,
             proxying_keepalive_period,
-            allowed_ips.into_iter().map(|ip| ip.into()).collect(),
+            allowed_ips.iter().copied().map(|ip| ip.into()).collect(),
+            allowed_ips,
         )]);
         f.then_notify_failed_wg_connection(vec![pub_key]);
         f.then_keeper_remove_node(vec![pub_key]);
@@ -1888,6 +1915,11 @@ mod tests {
             )
             .unwrap(),
         ];
+        let ip_addresses = vec![
+            IpAddr::V4(Ipv4Addr::from(VPN_INTERNAL_IPV4)),
+            IpAddr::V6(Ipv6Addr::from(VPN_INTERNAL_IPV6)),
+            IpAddr::V4(Ipv4Addr::from(VPN_EXTERNAL_IPV4)),
+        ];
 
         let endpoint_raw = SocketAddr::from(([192, 168, 0, 1], 13));
         let endpoint = Some(endpoint_raw);
@@ -1915,6 +1947,7 @@ mod tests {
             endpoint_raw,
             vpn_persistent_keepalive,
             allowed_ips,
+            ip_addresses,
         )]);
 
         f.consolidate_peers().await;
@@ -1934,6 +1967,7 @@ mod tests {
             )
             .unwrap(),
         ];
+        let ip_addresses = allowed_ips.iter().copied().map(|ip| ip.network()).collect();
 
         let stun_port = 1234;
         let endpoint_ip = Ipv4Addr::from([100, 10, 0, 17]);
@@ -1961,6 +1995,7 @@ mod tests {
             endpoint_raw,
             stun_persistent_keepalive,
             allowed_ips,
+            ip_addresses,
         )]);
 
         f.consolidate_peers().await;
@@ -2007,7 +2042,8 @@ mod tests {
             pub_key,
             remote_wg_endpoint,
             DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
-            allowed_ips.into_iter().map(|ip| ip.into()).collect(),
+            allowed_ips.iter().copied().map(|ip| ip.into()).collect(),
+            allowed_ips,
         )]);
         f.then_proxy_mute(vec![(
             pub_key,

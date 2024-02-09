@@ -37,7 +37,7 @@ pub struct NodeInfo {
     pub connected_time: Duration,
 
     // RTT
-    pub endpoint: DualTarget,
+    pub ip_addresses: Vec<DualTarget>,
     pub rtt_histogram: Histogram,
     pub rtt_loss_histogram: Histogram,
     pub rtt6_histogram: Histogram,
@@ -95,7 +95,7 @@ impl From<AnalyticsEvent> for NodeInfo {
             last_event: event.timestamp,
             last_wg_event: event.timestamp,
             connected_time: Duration::default(),
-            endpoint: event.endpoint,
+            ip_addresses: event.dual_ip_addresses,
             rtt_histogram: Histogram::new(),
             rtt_loss_histogram: Histogram::new(),
             rtt6_histogram: Histogram::new(),
@@ -194,7 +194,7 @@ impl Runtime for Analytics {
             // Wireguard event
             Ok(wg_event) = self.io.wg_channel.recv() => {
                 Self::guard(async move {
-                    self.handle_wg_event(*wg_event).await;
+                    self.handle_wg_event(&wg_event).await;
                     Ok(())
                 })
             },
@@ -370,7 +370,7 @@ impl Analytics {
     /// # Arguments
     ///
     /// * `event` - Received WG event.
-    async fn handle_wg_event(&mut self, event: AnalyticsEvent) {
+    async fn handle_wg_event(&mut self, event: &AnalyticsEvent) {
         telio_log_trace!("WG event: {:?}", event);
         self.nodes
             .entry(event.public_key)
@@ -378,15 +378,15 @@ impl Analytics {
                 // Check if peer was not paused
                 let pause: bool = (event.timestamp - n.last_event).as_secs() > 10;
                 // Update current state
-                n.update_connection_duration(&event, pause);
-                // Update rtt info
-                n.endpoint = event.endpoint;
+                n.update_connection_duration(event, pause);
+                // Update rtt info (mesh address)
+                n.ip_addresses = event.dual_ip_addresses.clone();
                 // Update throughput info
-                n.update_throughput_info(&event);
+                n.update_throughput_info(event);
                 // Update last event timestamp
                 n.last_event = event.timestamp;
             })
-            .or_insert_with(|| NodeInfo::from(event));
+            .or_insert_with(|| NodeInfo::from(event.clone()));
     }
 
     /// Launch ping task for every node.
@@ -406,13 +406,40 @@ impl Analytics {
                     continue;
                 }
 
-                let (pk, endpoint) = (node.public_key, node.endpoint);
+                let (pk, ip_addresses) = (node.public_key, node.ip_addresses.clone());
                 let pinger = Arc::clone(&self.ping_backend);
                 let ping_channel_tx = ping_channel_tx.clone();
 
                 tokio::spawn(async move {
                     if let Some(pinger) = &*pinger {
-                        Box::pin(pinger.perform((pk, endpoint), ping_channel_tx)).await;
+                        let mut dpr = DualPingResults::default();
+                        let mut ip_addresses = ip_addresses.iter().peekable();
+
+                        while let Some(ip_address) = ip_addresses.next() {
+                            dpr = Box::pin(pinger.perform((pk, *ip_address))).await;
+
+                            if let Some(results_v4) = &dpr.v4 {
+                                if results_v4.successful_pings != 0 {
+                                    break;
+                                }
+                            }
+                            if let Some(results_v6) = &dpr.v6 {
+                                if results_v6.successful_pings != 0 {
+                                    break;
+                                }
+                            }
+
+                            if let Some(next_ip) = ip_addresses.peek() {
+                                let _ = ping_channel_tx.send((pk, dpr.clone())).await;
+                                telio_log_debug!(
+                                    "Node was not reachable through {:?}, trying {:?}.",
+                                    ip_address,
+                                    next_ip
+                                );
+                            }
+                        }
+
+                        let _ = ping_channel_tx.send((pk, dpr)).await;
                     }
                 });
             }
@@ -423,17 +450,18 @@ impl Analytics {
         if let Some(pinger) = &*self.ping_backend {
             self.nodes.entry(dpr.0).and_modify(|node| {
                 if let Some(results_v4) = dpr.1.v4 {
-                    let u64_avg = std::convert::TryInto::try_into(
+                    let rtt_avg = std::convert::TryInto::try_into(
                         results_v4
                             .avg_rtt
                             .map_or(Duration::from_millis(0), |a| a)
                             .as_millis(),
                     )
                     .unwrap_or(0u64);
-                    let _ = node.rtt_histogram.increment(u64_avg);
-                    let _ = node.rtt_loss_histogram.increment(
-                        (100 * results_v4.unsuccessful_pings / pinger.no_of_tries) as u64,
-                    );
+                    let rtt_loss =
+                        (100 * results_v4.unsuccessful_pings / pinger.no_of_tries) as u64;
+
+                    let _ = node.rtt_histogram.increment(rtt_avg);
+                    let _ = node.rtt_loss_histogram.increment(rtt_loss);
                 }
 
                 if let Some(results_v6) = dpr.1.v6 {
@@ -561,7 +589,7 @@ mod tests {
         let mut event = generate_event();
 
         // assert that node is inserted successfully
-        analytics.handle_wg_event(event).await;
+        analytics.handle_wg_event(&event).await;
         let node = analytics.nodes.get(&event.public_key).unwrap();
 
         assert_eq!(analytics.nodes.len(), 1);
@@ -569,7 +597,7 @@ mod tests {
         assert_eq!(node.peer_state, PeerState::Connected);
         assert_eq!(node.last_event, event.timestamp);
         assert_eq!(node.last_wg_event, event.timestamp);
-        assert_eq!(node.endpoint, event.endpoint);
+        assert_eq!(node.ip_addresses, event.dual_ip_addresses);
 
         // histograms should be empty
         let mut expected_output = OutputData::new(analytics.buckets);
@@ -579,16 +607,16 @@ mod tests {
 
         // update node with different data
         event.timestamp += Duration::from_secs(2);
-        event.endpoint = DualTarget::new((
+        event.dual_ip_addresses = vec![DualTarget::new((
             Some(Ipv4Addr::new(192, 168, 1, 1)),
             Some(Ipv6Addr::new(0xfc02, 0, 0, 0, 0, 0, 0, 0x01)),
         ))
-        .unwrap();
+        .unwrap()];
         event.peer_state = PeerState::Disconnected;
         event.tx_bytes = 10;
         event.rx_bytes = 20;
 
-        analytics.handle_wg_event(event).await;
+        analytics.handle_wg_event(&event).await;
         let node = analytics.nodes.get(&event.public_key).unwrap();
 
         assert_eq!(analytics.nodes.len(), 1);
@@ -596,7 +624,7 @@ mod tests {
         assert_eq!(node.peer_state, PeerState::Disconnected);
         assert_eq!(node.last_event, event.timestamp);
         assert_eq!(node.last_wg_event, event.timestamp);
-        assert_eq!(node.endpoint, event.endpoint);
+        assert_eq!(node.ip_addresses, event.dual_ip_addresses);
         assert_eq!(node.connected_time, Duration::from_secs(2));
 
         // throughput in B/sec, so it's split by half as connected time is 2s
@@ -620,7 +648,7 @@ mod tests {
         let mut event = generate_event();
 
         // insert node through first event
-        analytics.handle_wg_event(event).await;
+        analytics.handle_wg_event(&event).await;
 
         // perform a couple of pings to fill up histograms
         for _ in 0..4 {
@@ -635,20 +663,20 @@ mod tests {
         assert_eq!(output, OutputData::new(analytics.buckets));
 
         // Add invalid ipv6 address and some dummy data
-        event.endpoint = DualTarget::new((
+        event.dual_ip_addresses = vec![DualTarget::new((
             Some(Ipv4Addr::new(127, 0, 0, 1)),
             Some(Ipv6Addr::new(0xfc02, 0, 0, 0, 0, 0, 0, 0x01)),
         ))
-        .unwrap();
+        .unwrap()];
         event.timestamp += Duration::from_secs(2);
         event.tx_bytes = 10;
         event.rx_bytes = 20;
-        analytics.handle_wg_event(event).await;
+        analytics.handle_wg_event(&event).await;
 
         event.timestamp += Duration::from_secs(5);
         event.tx_bytes = 50;
         event.rx_bytes = 80;
-        analytics.handle_wg_event(event).await;
+        analytics.handle_wg_event(&event).await;
 
         // perform ping with new data
         analytics.perform_ping();
@@ -661,7 +689,7 @@ mod tests {
         assert_eq!(node.last_event, event.timestamp);
         assert_eq!(node.last_wg_event, event.timestamp);
         assert_eq!(node.connected_time, Duration::from_secs(7));
-        assert_eq!(node.endpoint, event.endpoint);
+        assert_eq!(node.ip_addresses, event.dual_ip_addresses);
         assert_eq!(node.last_tx_bytes, 50);
         assert_eq!(node.last_rx_bytes, 80);
 
@@ -698,14 +726,14 @@ mod tests {
         let sk = SecretKey::gen();
         let pk = sk.public();
         let timestamp = Instant::now();
-        let endpoint = DualTarget::new((
+        let dual_ip_addresses = vec![DualTarget::new((
             Some(Ipv4Addr::new(127, 0, 0, 1)),
             Some(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
         ))
-        .unwrap();
+        .unwrap()];
         AnalyticsEvent {
             public_key: pk,
-            endpoint,
+            dual_ip_addresses,
             peer_state: PeerState::Connected,
             timestamp,
             tx_bytes: Default::default(),
@@ -732,7 +760,7 @@ mod tests {
             last_event: Instant::now(),
             last_wg_event: Instant::now(),
             connected_time,
-            endpoint: DualTarget::new((Some(Ipv4Addr::new(127, 0, 0, 1)), None)).unwrap(),
+            ip_addresses: vec![DualTarget::new((Some(Ipv4Addr::new(127, 0, 0, 1)), None)).unwrap()],
             rtt_histogram: histogram.clone(),
             rtt_loss_histogram: histogram.clone(),
             rtt6_histogram: histogram.clone(),
