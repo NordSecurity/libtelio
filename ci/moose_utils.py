@@ -101,8 +101,8 @@ def set_cargo_dependencies():
     if libtelio_env_sec_gitlab_repository is None:
         raise ValueError("LIBTELIO_ENV_SEC_GITLAB_REPOSITORY not set.")
 
-    MOOSEMESHNETAPP_DEP = (
-        r"\nmoosemeshnetapp = { "
+    MOOSELIBTELIOAPP_DEP = (
+        r"\nmooselibtelioapp = { "
         f'git = "https://{libtelio_env_sec_gitlab_repository}/low-level-hacks/moose/moose-events",'
         f' tag = "{LIBTELIO_ENV_MOOSE_RELEASE_TAG}" }}'
     )
@@ -129,7 +129,7 @@ def set_cargo_dependencies():
                 )
                 _write_file("./Cargo.toml", cargo_contents)
 
-    # add moosemeshnetapp and moose feature dependency to telio-lana/Cargo.toml
+    # add mooselibtelioapp and moose feature dependency to telio-lana/Cargo.toml
     with open(f"{PROJECT_ROOT}/crates/telio-lana/Cargo.toml", "r") as lana_cargo_file:
         lana_cargo_contents = lana_cargo_file.read()
 
@@ -140,10 +140,10 @@ def set_cargo_dependencies():
             else:
                 lana_cargo_contents += "\n[features]\nmoose = []\n"
 
-        if "moosemeshnetapp" not in lana_cargo_contents:
+        if "mooselibtelioapp" not in lana_cargo_contents:
             match_dependencies = re.search(r"\[dependencies\]", lana_cargo_contents)
             replaced_dependencies = re.sub(
-                r"$", MOOSEMESHNETAPP_DEP, match_dependencies.group(0)
+                r"$", MOOSELIBTELIOAPP_DEP, match_dependencies.group(0)
             )
             lana_cargo_contents = lana_cargo_contents.replace(
                 match_dependencies.group(0), replaced_dependencies
@@ -169,12 +169,12 @@ def unset_cargo_dependencies():
                 )
             _write_file(f"{PROJECT_ROOT}/Cargo.toml", replaced_moose)
 
-    # remove moosemeshnetapp dependency from telio-lana/Cargo.toml
+    # remove mooselibtelioapp dependency from telio-lana/Cargo.toml
     with open(f"{PROJECT_ROOT}/crates/telio-lana/Cargo.toml", "r") as lana_cargo_file:
         lana_cargo_contents = lana_cargo_file.read()
-        if "moosemeshnetapp" in lana_cargo_contents:
+        if "mooselibtelioapp" in lana_cargo_contents:
             lana_cargo_contents = re.sub(
-                r"\nmoosemeshnetapp.*\n", "\n", lana_cargo_contents
+                r"\nmooselibtelioapp.*\n", "\n", lana_cargo_contents
             )
             _write_file(
                 f"{PROJECT_ROOT}/crates/telio-lana/Cargo.toml", lana_cargo_contents

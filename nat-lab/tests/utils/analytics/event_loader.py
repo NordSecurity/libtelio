@@ -20,24 +20,22 @@ class Event(DataClassJsonMixin):
     datetime_local: str = field(metadata=json_config(field_name="event_datetime_local"))
     external_links: str = field(
         metadata=json_config(
-            field_name="context_application_config_current_state_external_links"
+            field_name="context_application_libtelioapp_config_external_links"
         )
     )
     connectivity_matrix: str = field(
         metadata=json_config(
-            field_name="context_application_config_current_state_internal_meshnet_connectivity_matrix"
+            field_name="context_application_libtelioapp_config_internal_meshnet_connectivity_matrix"
         )
     )
     fp: str = field(
         metadata=json_config(
-            field_name="context_application_config_current_state_internal_meshnet_fp"
+            field_name="context_application_libtelioapp_config_internal_meshnet_fp"
         )
     )
     members: str = field(
         metadata=json_config(
-            field_name=(
-                "context_application_config_current_state_internal_meshnet_members"
-            )
+            field_name="context_application_libtelioapp_config_internal_meshnet_members"
         )
     )
     connection_duration: str = field(
@@ -54,15 +52,13 @@ class Event(DataClassJsonMixin):
     sent_data: str = field(metadata=json_config(field_name="body_sent_data"))
     nat_type: str = field(
         metadata=json_config(
-            field_name=(
-                "context_application_config_current_state_internal_meshnet_fp_nat"
-            )
+            field_name="context_application_libtelioapp_config_internal_meshnet_fp_nat"
         )
     )
     mem_nat_types: str = field(
         metadata=json_config(
             field_name=(
-                "context_application_config_current_state_internal_meshnet_members_nat"
+                "context_application_libtelioapp_config_internal_meshnet_members_nat"
             )
         )
     )
@@ -80,6 +76,11 @@ def fetch_moose_events(database_name):
         for event in events:
             event_json = json.loads(event[0])
             flatten_event_json = flatten(event_json)
+
+            # Skip init event
+            if flatten_event_json["event_name"] == "init":
+                continue
+
             flatten_json_str = json.dumps(flatten_event_json).replace("'", '"')
             event_list.append(Event.from_json(flatten_json_str))
     except sqlite3.OperationalError:
