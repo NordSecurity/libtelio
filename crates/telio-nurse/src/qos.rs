@@ -395,6 +395,15 @@ impl Analytics {
             self.ping_channel_tx = ping_channel_tx.downgrade();
 
             for (_, node) in self.nodes.iter() {
+                if node.peer_state != PeerState::Connected {
+                    telio_log_debug!(
+                        "{:?} is in {:?} state, skipping analytics ping.",
+                        node.public_key,
+                        node.peer_state
+                    );
+                    continue;
+                }
+
                 let (pk, endpoint) = (node.public_key, node.endpoint);
                 let pinger = Arc::clone(&self.ping_backend);
                 let ping_channel_tx = ping_channel_tx.clone();
