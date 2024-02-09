@@ -2,6 +2,7 @@
 //! Crate containing models of various components
 pub mod api_config;
 pub mod config;
+pub mod constants;
 pub mod event;
 pub mod mesh;
 pub mod validation;
