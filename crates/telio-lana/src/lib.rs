@@ -22,8 +22,7 @@ pub use event_log::*;
 
 /// App name used to initialize moose with
 pub const LANA_APP_NAME: &str = "libtelio";
-/// Version of the tracker used, should be updated everytime the tracker library is updated
-pub const LANA_MOOSE_VERSION: &str = "0.11.1";
+
 /// Timeout for moose to send init error, if any, through callback
 pub const LANA_MOOSE_MAX_INIT_TIME: u8 = 10;
 
@@ -89,7 +88,6 @@ pub fn init_lana(
             Ok(init_result) => {
                 if init_result {
                     MOOSE_INITIALIZED.store(true, DEFAULT_ORDERING);
-                    init_context_info();
                     Ok(moose::Result::Success)
                 } else {
                     Err(moose::Error::NotInitiatedError)
@@ -148,9 +146,6 @@ pub fn init_moose(
         if let Some(mock) = test::STUB.try_lock().unwrap().as_ref() {
             return mock.init(
                 event_path,
-                LANA_APP_NAME.to_string(),
-                app_version,
-                LANA_MOOSE_VERSION.to_string(),
                 prod,
                 Box::new(moose_callbacks::MooseInitCallback {
                     init_success_tx: tx,
@@ -161,16 +156,25 @@ pub fn init_moose(
     }
     moose::init(
         event_path,
-        LANA_APP_NAME.to_string(),
-        app_version,
-        LANA_MOOSE_VERSION.to_string(),
         prod,
         Box::new(moose_callbacks::MooseInitCallback {
             init_success_tx: tx,
         }),
         Box::new(moose_callbacks::MooseErrorCallback),
-    )
+    )?;
+    moose::set_context_application_version(app_version)?;
+    moose::set_context_application_name(LANA_APP_NAME.to_string())
 }
+
+/// Fetches context string from moose
+pub fn fetch_context_string(path: String) -> Option<String> {
+    if is_lana_initialized() {
+        moose::moose_libtelioapp_fetch_context_string(path)
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod test {
     use serial_test::serial;
@@ -211,9 +215,6 @@ mod test {
         pub fn init(
             &self,
             _event_path: String,
-            _app_name: String,
-            _app_version: String,
-            _exp_moose_ver: String,
             _prod: bool,
             init_cb: Box<(dyn InitCallback + 'static)>,
             _error_cb: Box<(dyn ErrorCallback + Sync + std::marker::Send + 'static)>,

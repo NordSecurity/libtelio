@@ -1,6 +1,6 @@
-pub use crate::event_log::moose::{ErrorCallback, MooseError, MooseErrorLevel, TrackerState};
-
-pub use crate::event_log::moose::InitCallback;
+pub use crate::event_log::moose::{
+    ErrorCallback, InitCallback, MooseError, MooseErrorLevel, TrackerState,
+};
 
 use std::sync::mpsc::SyncSender;
 pub use telio_utils::{telio_log_error, telio_log_info, telio_log_warn};
