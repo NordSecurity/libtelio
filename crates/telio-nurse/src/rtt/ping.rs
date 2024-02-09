@@ -20,14 +20,15 @@ pub struct Ping {
     pub no_of_tries: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct PingResults {
+    pub host: Option<IpAddr>,
     pub successful_pings: u32,
     pub unsuccessful_pings: u32,
     pub avg_rtt: Option<Duration>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct DualPingResults {
     pub v4: Option<PingResults>,
     pub v6: Option<PingResults>,
@@ -59,20 +60,15 @@ impl Ping {
         target: (PublicKey, DualTarget),
         results_tx: mpsc::Sender<(PublicKey, DualPingResults)>,
     ) {
-        // TODO this needs some refinement
         let dpr = self.perform_average_rtt(&target.1).await;
 
-        telio_log_debug!(
-            "Ping results: {:?}, no_of_tries: {:?}",
-            dpr,
-            self.no_of_tries
-        );
+        telio_log_debug!("{:?}, no_of_tries: {}", dpr, self.no_of_tries);
 
         let _ = results_tx.send((target.0, dpr)).await;
     }
 
     async fn perform_average_rtt(&self, target: &DualTarget) -> DualPingResults {
-        let mut dpresults = DualPingResults { v4: None, v6: None };
+        let mut dpresults = DualPingResults::default();
 
         match target.get_targets() {
             Ok(t) => {
@@ -94,8 +90,6 @@ impl Ping {
                             dpresults.v6 = Some(self.ping_action(secondary).await);
                         }
                     }
-                } else {
-                    telio_log_debug!("No secondary target");
                 }
             }
             Err(_) => {
@@ -108,9 +102,8 @@ impl Ping {
 
     async fn ping_action(&self, host: IpAddr) -> PingResults {
         let mut results = PingResults {
-            successful_pings: 0,
-            unsuccessful_pings: 0,
-            avg_rtt: None,
+            host: Some(host),
+            ..Default::default()
         };
 
         telio_log_debug!("Trying to ping {:?} host", host);
