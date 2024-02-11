@@ -136,7 +136,9 @@ impl LinkDetectionEnabled {
     }
 
     fn time_since_last_rx(&self, public_key: &PublicKey) -> Option<Duration> {
-        self.peers.get(public_key).map(|p| p.time_since_last_rx())
+        self.peers
+            .get(public_key)
+            .and_then(|p| p.time_since_last_rx())
     }
 
     fn push_update(
@@ -165,14 +167,19 @@ pub struct LinkDetectionDisabled {
     last_rx_info: HashMap<PublicKey, (u64, Instant)>,
 }
 
+// Old time since last rx logic
 impl LinkDetectionDisabled {
     fn time_since_last_rx(&self, public_key: &PublicKey) -> Option<Duration> {
         self.last_rx_info.get(public_key).map(|n| n.1.elapsed())
     }
 
     fn insert(&mut self, public_key: &PublicKey, rx_bytes: Option<u64>) {
-        self.last_rx_info
-            .insert(*public_key, (rx_bytes.unwrap_or_default(), Instant::now()));
+        if let Some(rx_bytes) = rx_bytes {
+            if rx_bytes > 0 {
+                self.last_rx_info
+                    .insert(*public_key, (rx_bytes, Instant::now()));
+            }
+        }
     }
 
     fn update(
@@ -195,10 +202,11 @@ impl LinkDetectionDisabled {
 
     fn update_last_rx_info(&mut self, public_key: &PublicKey, rx_bytes: Option<u64>) {
         if let Some((old_rx, _old_ts)) = self.last_rx_info.get(public_key) {
-            let new_rx = rx_bytes.unwrap_or_default();
-            if *old_rx != new_rx {
-                self.last_rx_info
-                    .insert(*public_key, (new_rx, Instant::now()));
+            if let Some(new_rx) = rx_bytes {
+                if *old_rx != new_rx && new_rx > 0 {
+                    self.last_rx_info
+                        .insert(*public_key, (new_rx, Instant::now()));
+                }
             }
         } else {
             // Somehow we missed the node when it was new. We should recover from it.
@@ -326,8 +334,12 @@ impl State {
         }
     }
 
-    fn time_since_last_rx(&self) -> Duration {
-        self.stats.rx_ts.elapsed()
+    fn time_since_last_rx(&self) -> Option<Duration> {
+        if self.stats.rx_bytes > 0 {
+            Some(self.stats.rx_ts.elapsed())
+        } else {
+            None
+        }
     }
 
     fn current_link_state(&self) -> LinkState {
@@ -421,7 +433,7 @@ mod tests {
 
         // Insert
         ld.insert(&key, None);
-        assert_eq!(ld.time_since_last_rx(&key), Some(Instant::now().elapsed()));
+        assert_eq!(ld.time_since_last_rx(&key), None);
         ld.remove(&key);
 
         time::advance(Duration::from_secs(1)).await;
@@ -453,7 +465,7 @@ mod tests {
 
         // Insert
         ld.insert(&key, None, None, NodeState::Connecting);
-        assert_eq!(ld.time_since_last_rx(&key), Some(Instant::now().elapsed()));
+        assert_eq!(ld.time_since_last_rx(&key), None);
         ld.remove(&key);
 
         time::advance(Duration::from_secs(1)).await;
