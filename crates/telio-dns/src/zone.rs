@@ -12,9 +12,12 @@ use hickory_server::{
 };
 use std::{
     collections::{HashMap, HashSet},
+    convert::TryInto,
     net::IpAddr,
     str::FromStr,
 };
+use telio_model::api_config::TtlValue;
+use telio_utils::telio_log_warn;
 
 use crate::forward::ForwardAuthority;
 
@@ -35,7 +38,11 @@ pub(crate) struct AuthoritativeZone {
 }
 
 impl AuthoritativeZone {
-    pub(crate) async fn new(name: &str, records: &Records) -> Result<Self, String> {
+    pub(crate) async fn new(
+        name: &str,
+        records: &Records,
+        ttl_value: TtlValue,
+    ) -> Result<Self, String> {
         // TODO: rewrite code so that this assert is not needed.
         for domain in records.keys() {
             if !domain.contains(name) {
@@ -44,11 +51,17 @@ impl AuthoritativeZone {
         }
         let zone_name = Name::from_str(name)?;
         let zone = InMemoryAuthority::empty(zone_name.clone(), ZoneType::Primary, false);
-
+        let ttl_value_signed: i32 = match ttl_value.0.try_into() {
+            Ok(ttl_value) => ttl_value,
+            Err(_) => {
+                telio_log_warn!("TTL value could not be converted from u32 to i32 without data loss, so using default value");
+                TtlValue::default().0 as i32
+            }
+        };
         zone.upsert(
             Record::new()
                 .set_name(zone_name)
-                .set_ttl(3600)
+                .set_ttl(ttl_value.0)
                 .set_rr_type(RecordType::SOA)
                 .set_dns_class(DNSClass::IN)
                 .set_data(Some(RData::SOA(SOA::new(
@@ -56,9 +69,9 @@ impl AuthoritativeZone {
                     Name::parse("support.nordsec.com.", None)?,
                     2015082403,
                     7200,
-                    3600,
+                    ttl_value_signed,
                     1209600,
-                    3600,
+                    ttl_value.0,
                 ))))
                 .clone(),
             0,
@@ -68,7 +81,7 @@ impl AuthoritativeZone {
         let build_record = |name: Name, ty: RecordType, data: RData| -> Record {
             Record::new()
                 .set_name(name)
-                .set_ttl(900)
+                .set_ttl(ttl_value.0)
                 .set_rr_type(ty)
                 .set_dns_class(DNSClass::IN)
                 .set_data(Some(data))
@@ -346,7 +359,9 @@ mod tests {
         records.insert(String::from("beta.nord"), vec![IpAddr::V4(beta_ipv4)]);
         records.insert(String::from("gamma.nord"), vec![IpAddr::V6(gamma_ipv6)]);
 
-        let zone = AuthoritativeZone::new("nord", &records).await.unwrap();
+        let zone = AuthoritativeZone::new("nord", &records, TtlValue(60))
+            .await
+            .unwrap();
 
         validate_record(&zone, "alpha.nord", Some(alpha_ipv4), Some(alpha_ipv6)).await;
         validate_record(&zone, "beta.nord", Some(beta_ipv4), None).await;

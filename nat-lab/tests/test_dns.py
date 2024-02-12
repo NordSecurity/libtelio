@@ -8,6 +8,7 @@ from config import LIBTELIO_DNS_IPV4, LIBTELIO_DNS_IPV6
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_api, setup_environment, setup_mesh_nodes
 from telio import AdapterType, TelioFeatures
+from telio_features import Dns
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import ConnectionTag, generate_connection_tracker_config
 from utils.dns import query_dns, query_dns_port
@@ -845,3 +846,62 @@ async def test_dns_wildcarded_records() -> None:
         await query_dns(connection_beta, "myserviceC.beta.nord", beta.ip_addresses)
         await query_dns(connection_beta, "myserviceD.yoko.nord", beta.ip_addresses)
         await query_dns(connection_beta, "hisservice.johnny.nord", alpha.ip_addresses)
+
+
+@pytest.mark.asyncio
+async def test_dns_ttl_value() -> None:
+    async with AsyncExitStack() as exit_stack:
+        FIRST_DNS_SERVER = "10.0.80.83"
+        SECOND_DNS_SERVER = "10.0.80.82"
+
+        EXPECTED_TTL_VALUE = 1234
+
+        api, (_, _) = setup_api([(False, IPStack.IPv4v6), (False, IPStack.IPv4v6)])
+        env = await setup_mesh_nodes(
+            exit_stack,
+            [
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_1,
+                        derp_1_limits=ConnectionLimits(1, 1),
+                    ),
+                    features=TelioFeatures(
+                        dns=Dns(exit_dns=None, ttl_value=EXPECTED_TTL_VALUE)
+                    ),
+                ),
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_2,
+                        derp_1_limits=ConnectionLimits(1, 1),
+                    ),
+                ),
+            ],
+            provided_api=api,
+        )
+        client_alpha, *_ = env.clients
+        connection_alpha, *_ = [conn.connection for conn in env.connections]
+
+        await client_alpha.enable_magic_dns([FIRST_DNS_SERVER, SECOND_DNS_SERVER])
+        await asyncio.sleep(1)
+
+        process = await exit_stack.enter_async_context(
+            connection_alpha.create_process([
+                "dig",
+                "+noall",
+                "+nocmd",
+                "+answer",
+                "alpha.nord",
+                "@100.64.0.2",
+            ]).run()
+        )
+        await asyncio.sleep(1)
+        dig_stdout = process.get_stdout()
+        dig_stderr = process.get_stderr()
+
+        actual_ttl_value = int(dig_stdout.strip().split()[1])
+
+        assert (
+            actual_ttl_value == EXPECTED_TTL_VALUE
+        ), f"tcpdump stdout:\n{dig_stdout}\ntcpdump stderr:\n{dig_stderr}"

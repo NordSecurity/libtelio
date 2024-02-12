@@ -9,6 +9,7 @@ from telio_features import (
     Nurse,
     Qos,
     ExitDns,
+    Dns,
     SkipUnresponsivePeers,
 )
 from utils.connection_util import ConnectionTag
@@ -23,7 +24,6 @@ async def test_telio_tasks_with_all_features() -> None:
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                     features=TelioFeatures(
-                        exit_dns=ExitDns(auto_switch_dns_ips=True),
                         direct=Direct(
                             providers=["stun", "local"],
                             skip_unresponsive_peers=SkipUnresponsivePeers(
@@ -41,6 +41,10 @@ async def test_telio_tasks_with_all_features() -> None:
                                 rtt_types=["Ping"],
                                 buckets=5,
                             ),
+                        ),
+                        dns=Dns(
+                            exit_dns=ExitDns(auto_switch_dns_ips=True),
+                            ttl_value=60,
                         ),
                     ),
                 )
