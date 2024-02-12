@@ -7,7 +7,7 @@ use parking_lot::RwLock;
 use serde::{ser::SerializeTuple, Serialize, Serializer};
 
 use telio_crypto::PublicKey;
-use telio_model::HashMap;
+use telio_model::{api_config::FeatureNurse, HashMap};
 use telio_utils::telio_log_warn;
 use telio_wg::{uapi::AnalyticsEvent, WireGuard};
 
@@ -83,8 +83,8 @@ impl Serialize for ConnectionData {
                     (conn_data.initiator_ep_type as u64) * 4 + (conn_data.reciever_ep_type as u64);
                 let mut seq = serializer.serialize_tuple(3)?;
                 seq.serialize_element(&strategy_id)?;
-                seq.serialize_element(&(conn_data.rx_bytes as u64))?;
-                seq.serialize_element(&(conn_data.tx_bytes as u64))?;
+                seq.serialize_element(&conn_data.rx_bytes)?;
+                seq.serialize_element(&conn_data.tx_bytes)?;
                 seq.end()
             }
         }
@@ -96,6 +96,16 @@ impl Serialize for ConnectionData {
 pub struct ExtAnalyticsEvent {
     event: AnalyticsEvent,
     state: ConnectionState,
+}
+
+impl ExtAnalyticsEvent {
+    pub fn is_relay(&self) -> bool {
+        matches!(self.state, ConnectionState::Relay(..))
+    }
+
+    pub fn is_nat_traversal(&self) -> bool {
+        matches!(self.state, ConnectionState::Peer(..))
+    }
 }
 
 // Ready to send data about some period of the
@@ -112,20 +122,31 @@ pub struct ConnectivityDataAggregator<W: WireGuard> {
     current_peers_events: RwLock<HashMap<PublicKey, ExtAnalyticsEvent>>,
     unacknowledged_segments: RwLock<HashSet<ConnectionSegmentData>>,
 
+    aggregate_relay_events: bool,
+    aggregate_nat_traversal_events: bool,
+
     wg_interface: W,
 }
 
 impl<W: WireGuard> ConnectivityDataAggregator<W> {
     // Create a new DataConnectivityAggregator instance
-    pub fn new(wg_interface: W) -> ConnectivityDataAggregator<W> {
+    pub fn new(nurse_features: &FeatureNurse, wg_interface: W) -> ConnectivityDataAggregator<W> {
         ConnectivityDataAggregator {
             current_peers_events: parking_lot::RwLock::new(HashMap::new()),
             unacknowledged_segments: parking_lot::RwLock::new(HashSet::new()),
+            aggregate_relay_events: nurse_features.enable_relay_conn_data,
+            aggregate_nat_traversal_events: nurse_features.enable_nat_traversal_conn_data,
             wg_interface,
         }
     }
 
     pub fn add_state_change(&mut self, event: ExtAnalyticsEvent) {
+        if (event.is_relay() && !self.aggregate_relay_events)
+            || (event.is_nat_traversal() && !self.aggregate_nat_traversal_events)
+        {
+            return;
+        }
+
         let mut events_guard = self.current_peers_events.write();
 
         match events_guard.entry(event.event.public_key) {

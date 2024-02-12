@@ -104,6 +104,22 @@ pub struct FeatureNurse {
     pub qos: Option<FeatureQoS>,
     /// Enable/disable collecting nat type
     pub enable_nat_type_collection: Option<bool>,
+    /// Enable/disable Relay connection data
+    #[serde(default = "FeatureNurse::get_default_enable_relay_conn_data")]
+    pub enable_relay_conn_data: bool,
+    /// Enable/disable NAT-traversal connections data
+    #[serde(default = "FeatureNurse::get_default_enable_nat_traversal_conn_data")]
+    pub enable_nat_traversal_conn_data: bool,
+}
+
+impl FeatureNurse {
+    fn get_default_enable_relay_conn_data() -> bool {
+        true
+    }
+
+    fn get_default_enable_nat_traversal_conn_data() -> bool {
+        true
+    }
 }
 
 /// Configurable features for Lana module
@@ -539,6 +555,8 @@ mod tests {
             initial_heartbeat_interval: None,
             qos: None,
             enable_nat_type_collection: None,
+            enable_relay_conn_data: true,
+            enable_nat_traversal_conn_data: true,
         }),
         lana: Some(FeatureLana {
             event_path: "path/to/some/event/data".to_string(),
@@ -595,6 +613,8 @@ mod tests {
             initial_heartbeat_interval: None,
             qos: None,
             enable_nat_type_collection: None,
+            enable_relay_conn_data: true,
+            enable_nat_traversal_conn_data: true,
         }),
         lana: Some(FeatureLana {
             event_path: "path/to/some/event/data".to_string(),
@@ -770,7 +790,9 @@ mod tests {
         let no_qos_json = r#"
         {
             "nurse": {
-                "fingerprint": "fingerprint_test"
+                "fingerprint": "fingerprint_test",
+                "enable_relay_conn_data": false,
+                "enable_nat_traversal_conn_data": false
             }
         }"#;
 
@@ -787,6 +809,8 @@ mod tests {
                     buckets: Some(5),
                 }),
                 enable_nat_type_collection: None,
+                enable_relay_conn_data: true,
+                enable_nat_traversal_conn_data: true,
             }),
             lana: None,
             paths: None,
@@ -819,6 +843,8 @@ mod tests {
                     buckets: None,
                 }),
                 enable_nat_type_collection: None,
+                enable_relay_conn_data: true,
+                enable_nat_traversal_conn_data: true,
             }),
             lana: None,
             paths: None,
@@ -846,6 +872,8 @@ mod tests {
                 initial_heartbeat_interval: None,
                 qos: None,
                 enable_nat_type_collection: None,
+                enable_relay_conn_data: false,
+                enable_nat_traversal_conn_data: false,
             }),
             lana: None,
             paths: None,
