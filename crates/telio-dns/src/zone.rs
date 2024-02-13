@@ -54,8 +54,9 @@ impl AuthoritativeZone {
         let ttl_value_signed: i32 = match ttl_value.0.try_into() {
             Ok(ttl_value) => ttl_value,
             Err(_) => {
-                telio_log_warn!("TTL value could not be converted from u32 to i32 without data loss, so using default value");
-                TtlValue::default().0 as i32
+                let default = TtlValue::default().0 as i32;
+                telio_log_warn!("TTL value could not be converted from u32 to i32 without data loss, so using default value: {default}");
+                default
             }
         };
         zone.upsert(
