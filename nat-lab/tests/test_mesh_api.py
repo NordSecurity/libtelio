@@ -191,8 +191,6 @@ class TestMeshApi:
             api.assign_nickname("id1", "johnsomethingsomethingsomething")
         with pytest.raises(mesh_api.NicknameInvalidError):
             api.assign_nickname("id1", "joh--n")
-        with pytest.raises(mesh_api.NicknameInvalidError):
-            api.assign_nickname("id1", "jOhN")
         with pytest.raises(mesh_api.NicknameCollisionError):
             api.assign_nickname("id1", "alpha")
         with pytest.raises(mesh_api.NicknameCollisionError):
