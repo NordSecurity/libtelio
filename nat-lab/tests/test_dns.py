@@ -886,17 +886,15 @@ async def test_dns_ttl_value() -> None:
         await client_alpha.enable_magic_dns([FIRST_DNS_SERVER, SECOND_DNS_SERVER])
         await asyncio.sleep(1)
 
-        process = await exit_stack.enter_async_context(
-            connection_alpha.create_process([
-                "dig",
-                "+noall",
-                "+nocmd",
-                "+answer",
-                "alpha.nord",
-                "@100.64.0.2",
-            ]).run()
-        )
-        await asyncio.sleep(1)
+        process = await connection_alpha.create_process([
+            "dig",
+            "+noall",
+            "+nocmd",
+            "+answer",
+            "alpha.nord",
+            "@100.64.0.2",
+        ]).execute()
+
         dig_stdout = process.get_stdout()
         dig_stderr = process.get_stderr()
 
@@ -904,4 +902,4 @@ async def test_dns_ttl_value() -> None:
 
         assert (
             actual_ttl_value == EXPECTED_TTL_VALUE
-        ), f"tcpdump stdout:\n{dig_stdout}\ntcpdump stderr:\n{dig_stderr}"
+        ), f"dig stdout:\n{dig_stdout}\ndig stderr:\n{dig_stderr}"
