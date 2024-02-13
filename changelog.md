@@ -1,3 +1,9 @@
+### UNRELEASED
+---
+* LLT-4908: Lowered DNS TTL time for nicknames and NXDomain responses
+
+<br>
+
 ### v4.2.4
 ---
 * LLT-4878: Fix FFI layer which forbids NULL for `telio_connect_to_exit_node()` calls

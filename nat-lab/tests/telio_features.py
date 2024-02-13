@@ -11,6 +11,13 @@ class ExitDns(DataClassJsonMixin):
 
 @dataclass_json
 @dataclass
+class Dns(DataClassJsonMixin):
+    exit_dns: Optional[ExitDns]
+    ttl_value: int
+
+
+@dataclass_json
+@dataclass
 class SkipUnresponsivePeers(DataClassJsonMixin):
     no_rx_threshold_secs: int = 180
 
@@ -64,9 +71,6 @@ class Wireguard(DataClassJsonMixin):
 @dataclass
 class TelioFeatures(DataClassJsonMixin):
     is_test_env: Optional[bool] = True
-    exit_dns: Optional[ExitDns] = field(
-        default_factory=lambda: ExitDns(auto_switch_dns_ips=True)
-    )
     direct: Optional[Direct] = None
     lana: Optional[Lana] = None
     nurse: Optional[Nurse] = None
@@ -74,3 +78,9 @@ class TelioFeatures(DataClassJsonMixin):
     nicknames: bool = False
     boringtun_reset_connections: bool = False
     wireguard: Optional[Wireguard] = None
+    dns: Dns = field(
+        default_factory=lambda: Dns(
+            exit_dns=ExitDns(auto_switch_dns_ips=True),
+            ttl_value=60,
+        )
+    )
