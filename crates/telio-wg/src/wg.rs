@@ -572,6 +572,23 @@ impl State {
         true
     }
 
+    fn update_calculate_set_listen_port(
+        from_listen_port: Option<u16>,
+        to_listen_port: Option<u16>,
+    ) -> Option<u16> {
+        match (from_listen_port, to_listen_port) {
+            (Some(from), Some(to)) => {
+                if from != to {
+                    Some(to)
+                } else {
+                    None
+                }
+            }
+            (None, Some(to)) => Some(to),
+            _ => None,
+        }
+    }
+
     fn update_construct_set_device(
         &self,
         to: &uapi::Interface,
@@ -597,7 +614,10 @@ impl State {
 
         set::Device {
             private_key: to.private_key.map(|key| key.into_bytes()),
-            listen_port: to.listen_port,
+            listen_port: Self::update_calculate_set_listen_port(
+                self.interface.listen_port,
+                to.listen_port,
+            ),
             fwmark: match to.fwmark {
                 0 => None,
                 x => Some(x),
@@ -1420,5 +1440,23 @@ pub mod tests {
 
         adapter.lock().await.expect_stop().return_once(|| ());
         wg.stop().await;
+    }
+
+    #[test]
+    fn test_update_calculate_set_listen_port() {
+        assert_eq!(State::update_calculate_set_listen_port(None, None), None);
+        assert_eq!(State::update_calculate_set_listen_port(Some(1), None), None);
+        assert_eq!(
+            State::update_calculate_set_listen_port(Some(1), Some(1)),
+            None
+        );
+        assert_eq!(
+            State::update_calculate_set_listen_port(None, Some(1)),
+            Some(1)
+        );
+        assert_eq!(
+            State::update_calculate_set_listen_port(Some(1), Some(2)),
+            Some(2)
+        );
     }
 }

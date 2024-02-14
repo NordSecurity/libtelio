@@ -5,6 +5,7 @@
 * LLT-4948: Change missed tick behavior from burst to delay
 * LLT-4967: Clear leftover STUN peer after meshnet is turned off
 * LLT-4913: Skip qos analytics ping for unconnected peers
+* LLT-4917: Fix the issue with wireguard-go failing to bind to a port on some devices
 
 <br>
 
