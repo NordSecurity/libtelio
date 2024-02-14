@@ -96,7 +96,7 @@ async def test_event_content_meshnet(
         api = env.api
         alpha, beta = env.nodes
         alpha.nickname = "alpha"
-        beta.nickname = "beta"
+        beta.nickname = "BETA"
         client_alpha, client_beta = env.clients
         connection_alpha, connection_beta = [
             conn.connection for conn in env.connections
@@ -115,7 +115,7 @@ async def test_event_content_meshnet(
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
             allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
-            nickname="beta",
+            nickname="BETA",
             endpoint=None,
             hostname=beta.name + ".nord",
             allow_incoming_connections=True,
@@ -157,7 +157,7 @@ async def test_event_content_meshnet(
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
             allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
-            nickname="beta",
+            nickname="BETA",
             endpoint=None,
             hostname=beta.name + ".nord",
             allow_incoming_connections=True,
@@ -397,7 +397,7 @@ async def test_event_content_exit_through_peer(
             [(False, IPStack.IPv4v6), (False, IPStack.IPv4v6)]
         )
         alpha.nickname = "alpha"
-        beta.nickname = "beta"
+        beta.nickname = "BETA"
         alpha.set_peer_firewall_settings(beta.id)
         env = await setup_mesh_nodes(
             exit_stack, [alpha_setup_params, beta_setup_params], provided_api=api
@@ -418,7 +418,7 @@ async def test_event_content_exit_through_peer(
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
             allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
-            nickname="beta",
+            nickname="BETA",
             endpoint=None,
             hostname=beta.name + ".nord",
             allow_incoming_connections=False,
@@ -447,7 +447,7 @@ async def test_event_content_exit_through_peer(
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
             allowed_ips=["0.0.0.0/0", "::/0"],
-            nickname="beta",
+            nickname="BETA",
             endpoint=None,
             hostname=beta.name + ".nord",
             allow_incoming_connections=False,
@@ -556,7 +556,7 @@ async def test_event_content_meshnet_node_upgrade_direct(
         api = env.api
         alpha, beta = env.nodes
         alpha.nickname = "alpha"
-        beta.nickname = "beta"
+        beta.nickname = "BETA"
         connection_alpha, connection_beta = [
             conn.connection for conn in env.connections
         ]
@@ -577,7 +577,7 @@ async def test_event_content_meshnet_node_upgrade_direct(
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
             allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
-            nickname="beta",
+            nickname="BETA",
             endpoint=None,
             hostname=beta.name + ".nord",
             allow_incoming_connections=True,
@@ -647,7 +647,7 @@ async def test_event_content_meshnet_node_upgrade_direct(
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
             allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
-            nickname="beta",
+            nickname="BETA",
             endpoint=None,
             hostname=beta.name + ".nord",
             allow_incoming_connections=True,

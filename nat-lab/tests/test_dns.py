@@ -2,6 +2,7 @@
 
 import asyncio
 import config
+import itertools
 import pytest
 import re
 from config import LIBTELIO_DNS_IPV4, LIBTELIO_DNS_IPV6
@@ -9,6 +10,7 @@ from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_api, setup_environment, setup_mesh_nodes
 from telio import AdapterType, TelioFeatures
 from telio_features import Dns
+from typing import List
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import ConnectionTag, generate_connection_tracker_config
 from utils.dns import query_dns, query_dns_port
@@ -684,7 +686,7 @@ async def test_dns_nickname() -> None:
             [(False, IPStack.IPv4v6), (False, IPStack.IPv4v6)]
         )
         api.assign_nickname(alpha.id, "johnny")
-        api.assign_nickname(beta.id, "yoko")
+        api.assign_nickname(beta.id, "yOKo")
 
         env = await setup_mesh_nodes(
             exit_stack,
@@ -720,7 +722,7 @@ async def test_dns_nickname() -> None:
         await query_dns(connection_alpha, "johnny.nord", alpha.ip_addresses)
 
         await query_dns(connection_beta, "johnny.nord", alpha.ip_addresses)
-        await query_dns(connection_beta, "yoko.nord", beta.ip_addresses)
+        await query_dns(connection_beta, "yOKo.nord", beta.ip_addresses)
 
 
 @pytest.mark.asyncio
@@ -903,3 +905,32 @@ async def test_dns_ttl_value() -> None:
         assert (
             actual_ttl_value == EXPECTED_TTL_VALUE
         ), f"dig stdout:\n{dig_stdout}\ndig stderr:\n{dig_stderr}"
+
+
+@pytest.mark.asyncio
+async def test_dns_nickname_in_any_case() -> None:
+    async with AsyncExitStack() as exit_stack:
+        api, (_, beta) = setup_api([(False, IPStack.IPv4v6), (False, IPStack.IPv4v6)])
+
+        api.assign_nickname(beta.id, "yoko")
+
+        env = await exit_stack.enter_async_context(
+            setup_environment(exit_stack, [SetupParameters()], provided_api=api)
+        )
+        connection_alpha, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
+
+        await client_alpha.enable_magic_dns([])
+
+        queries = [
+            query_dns(connection_alpha, f"{name}.nord", beta.ip_addresses)
+            for name in all_cases("yoko")
+        ]
+
+        asyncio.gather(*queries)
+
+
+def all_cases(name: str) -> List[str]:
+    return [
+        "".join(i) for i in itertools.product(*([c.lower(), c.upper()] for c in name))
+    ]

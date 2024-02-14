@@ -5,6 +5,7 @@
 * LLT-4908: Lowered DNS TTL time for nicknames and NXDomain responses
 * LLT-4915: Update the moose tracker to v1.0.0-libtelioApp
 * LLT-4913: Skip qos analytics ping for unconnected peers
+* LLT-4916: Allow any case nicknames
 
 <br>
 
