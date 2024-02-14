@@ -28,3 +28,10 @@ class Connection(ABC):
     @target_os.setter
     def target_os(self, target_os: TargetOS) -> None:
         self._target_os = target_os
+
+    async def get_ip_address(self) -> tuple[str, str]:
+        ip = "127.0.0.1"
+        return (ip, ip)
+
+    async def mapped_ports(self) -> tuple[str, str]:
+        return ("0", "0")

@@ -337,7 +337,7 @@ async def test_vpn_reconnect(
         # IPv4 public server
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 adapter_type=AdapterType.BoringTun,
                 ip_stack=IPStack.IPv4,
                 features=TelioFeatures(boringtun_reset_connections=True),
@@ -474,7 +474,7 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
         # IPv4 public server
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 adapter_type=AdapterType.BoringTun,
                 ip_stack=IPStack.IPv4,
                 features=TelioFeatures(boringtun_reset_connections=True),
