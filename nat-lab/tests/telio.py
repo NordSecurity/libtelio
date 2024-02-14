@@ -20,11 +20,11 @@ from uniffi.libtelio_proxy import LibtelioProxy
 from utils import asyncio_util
 from utils.connection import Connection, TargetOS
 from utils.connection_util import get_libtelio_binary_path, get_uniffi_path
-from utils.router.linux_router import LinuxRouter
-from utils.router.mac_router import MacRouter
 from utils.output_notifier import OutputNotifier
 from utils.process import Process
 from utils.router import IPStack, Router, new_router
+from utils.router.linux_router import LinuxRouter
+from utils.router.mac_router import MacRouter
 from utils.router.windows_router import WindowsRouter
 
 
