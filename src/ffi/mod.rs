@@ -55,8 +55,9 @@ where
             Err(err)
         }
         Err(err) => {
-            error_handling::update_last_error(anyhow!(err.to_string()));
-            Err(TelioError::UnknownError(anyhow!(err)))
+            let err_string = err.to_string();
+            error_handling::update_last_error(anyhow!(err_string.clone()));
+            Err(TelioError::UnknownError { inner: err_string })
         }
     }
 }
@@ -210,7 +211,10 @@ impl Telio {
             let payload = e
                 .to_json()
                 .unwrap_or_else(|_| String::from("event_to_json error"));
-            events.event(payload);
+            let event_res = events.event(payload);
+            if let Err(err) = event_res {
+                telio_log_error!("Could not call event callback due to error: {:?}", err);
+            }
         };
 
         let panic_event_dispatcher = event_dispatcher.clone();
@@ -254,10 +258,13 @@ impl Telio {
         let protect = None;
         #[cfg(target_os = "android")]
         let protect: Option<Protect> = match protect_cb {
-            Some(protect) if cfg!(windows) => {
+            Some(protect) => {
                 let protect = protect;
                 Some(Arc::new(move |fd| {
-                    protect.protect(fd);
+                    let protect_res = protect.protect(fd);
+                    if let Err(err) = protect_res {
+                        telio_log_error!("Could not call protect callback due to {:?}", err);
+                    }
                 }))
             }
             _ => None,
@@ -336,9 +343,9 @@ impl Telio {
         }
 
         telio_log_debug!("Unknown error - Telio::destroy_hard");
-        Err(TelioError::UnknownError(anyhow!(
-            "Unknown error - Telio::destroy_hard"
-        )))
+        Err(TelioError::UnknownError {
+            inner: "Unknown error - Telio::destroy_hard".to_owned(),
+        })
     }
 
     /// Start telio with specified adapter.
@@ -762,6 +769,28 @@ impl Telio {
         error_handling::error_message().unwrap_or_else(|| "".to_owned())
     }
 
+    pub fn is_running(&self) -> FFIResult<bool> {
+        self.device_op(true, |dev| Ok(dev.is_running()))
+    }
+
+    pub fn trigger_analytics_event(&self) -> FFIResult<()> {
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                dev.trigger_analytics_event()
+                    .log_result("Telio::trigger_analytics_event")
+            })
+        })
+    }
+
+    pub fn trigger_qos_collection(&self) -> FFIResult<()> {
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                dev.trigger_qos_collection()
+                    .log_result("Telio::trigger_qos_collection")
+            })
+        })
+    }
+
     #[allow(clippy::panic)]
     /// For testing only.
     pub fn generate_stack_panic(&self) -> FFIResult<()> {
@@ -770,7 +799,9 @@ impl Telio {
                 panic!("runtime_panic_test_call_stack");
             }
             telio_log_debug!("Unknown error ( Telio::generate_stack_panic )");
-            Err(TelioError::UnknownError(anyhow!("")))
+            Err(TelioError::UnknownError {
+                inner: "".to_owned(),
+            })
         })
     }
 
@@ -785,7 +816,9 @@ impl Telio {
                     }
                 }
                 telio_log_debug!("Unknown error ( Telio::generate_thread_panic )");
-                Err(TelioError::UnknownError(anyhow!("")))
+                Err(TelioError::UnknownError {
+                    inner: "".to_owned(),
+                })
             })
         })
     }
@@ -897,7 +930,7 @@ impl Subscriber for TelioTracingSubscriber {
         event.record(&mut visitor);
 
         if let Some(filtered_msg) = filter_log_message(visitor.message) {
-            self.callback.log(level.into(), filtered_msg);
+            let _ = self.callback.log(level.into(), filtered_msg);
         }
     }
 
@@ -1012,8 +1045,8 @@ mod tests {
         #[derive(Debug)]
         struct Events;
         impl TelioEventCb for Events {
-            fn event(&self, _payload: String) {
-                // do nothing
+            fn event(&self, _payload: String) -> std::result::Result<(), TelioError> {
+                Ok(())
             }
         }
 
@@ -1033,8 +1066,8 @@ mod tests {
         #[derive(Debug)]
         struct Events;
         impl TelioEventCb for Events {
-            fn event(&self, _payload: String) {
-                // do nothing
+            fn event(&self, _payload: String) -> std::result::Result<(), TelioError> {
+                Ok(())
             }
         }
 

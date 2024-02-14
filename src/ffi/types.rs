@@ -2,30 +2,28 @@ use telio_crypto::KeyDecodeError;
 use telio_utils::map_enum;
 use tracing::Level;
 
-use anyhow::anyhow;
-
 use std::panic::RefUnwindSafe;
 
 use crate::device::{AdapterType, Error as DevError};
 
 pub trait TelioEventCb: Send + Sync + std::fmt::Debug {
-    fn event(&self, payload: String);
+    fn event(&self, payload: String) -> FFIResult<()>;
 }
 
 pub trait TelioLoggerCb: Send + Sync + std::fmt::Debug {
-    fn log(&self, log_level: TelioLogLevel, payload: String);
+    fn log(&self, log_level: TelioLogLevel, payload: String) -> FFIResult<()>;
 }
 
 pub trait TelioProtectCb: Send + Sync + RefUnwindSafe + std::fmt::Debug {
-    fn protect(&self, payload: i32);
+    fn protect(&self, payload: i32) -> FFIResult<()>;
 }
 
 pub type FFIResult<T> = Result<T, TelioError>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TelioError {
-    #[error("UnknownError: {0}")]
-    UnknownError(#[source] anyhow::Error),
+    #[error("UnknownError: {inner}")]
+    UnknownError { inner: String },
     #[error("InvalidKey")]
     InvalidKey,
     #[error("BadConfig")]
@@ -94,7 +92,9 @@ impl From<DevError> for TelioError {
         match err {
             DevError::AlreadyStarted => Self::AlreadyStarted,
             DevError::BadPublicKey => Self::InvalidKey,
-            _ => Self::UnknownError(anyhow!(err)),
+            _ => Self::UnknownError {
+                inner: format!("{err:?}"),
+            },
         }
     }
 }
@@ -105,7 +105,9 @@ impl From<&DevError> for TelioError {
         match err {
             DevError::AlreadyStarted => Self::AlreadyStarted,
             DevError::BadPublicKey => Self::InvalidKey,
-            _ => Self::UnknownError(anyhow!(err.to_string())),
+            _ => Self::UnknownError {
+                inner: format!("{err:?}"),
+            },
         }
     }
 }
