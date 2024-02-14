@@ -26,8 +26,8 @@ use telio_utils::{
     exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
     telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn,
 };
-use tokio::sync::Mutex;
 use tokio::time::{interval_at, Instant, Interval};
+use tokio::{sync::Mutex, time::MissedTickBehavior};
 
 const CPC_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -180,6 +180,8 @@ impl<E: Backoff> CrossPingCheck<E> {
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
         exponential_backoff_helper_provider: ExponentialBackoffProvider<E>,
     ) -> Self {
+        let mut poll_timer = interval_at(tokio::time::Instant::now(), poll_period);
+        poll_timer.set_missed_tick_behavior(MissedTickBehavior::Delay);
         Self {
             task: Task::start(State {
                 io,
@@ -188,7 +190,7 @@ impl<E: Backoff> CrossPingCheck<E> {
                 endpoint_connectivity_check_state: Default::default(),
                 node_cache: Default::default(),
                 local_endpoint_cache: Default::default(),
-                poll_timer: interval_at(tokio::time::Instant::now(), poll_period),
+                poll_timer,
                 ping_pong_handler,
                 exponential_backoff_helper_provider,
             }),

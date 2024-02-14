@@ -12,7 +12,7 @@ use telio_utils::{
     dual_target, telio_err_with_log, telio_log_debug, telio_log_trace, telio_log_warn,
 };
 use thiserror::Error as TError;
-use tokio::time::{self, sleep, Instant, Interval};
+use tokio::time::{self, sleep, Instant, Interval, MissedTickBehavior};
 use wireguard_uapi::xplatform::set;
 
 use telio_crypto::{PublicKey, SecretKey};
@@ -231,7 +231,8 @@ impl DynamicWg {
         no_link_detection: Option<FeatureLinkDetection>,
         #[cfg(unix)] cfg: Config,
     ) -> Self {
-        let interval = time::interval(Duration::from_millis(POLL_MILLIS));
+        let mut interval = time::interval(Duration::from_millis(POLL_MILLIS));
+        interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
         Self {
             task: Task::start(State {

@@ -18,7 +18,7 @@ use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn};
 use telio_wg::{DynamicWg, WireGuard};
 use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
-use tokio::time::{interval_at, Interval};
+use tokio::time::{interval_at, Interval, MissedTickBehavior};
 
 #[cfg(test)]
 use mockall::automock;
@@ -137,12 +137,14 @@ impl<T: WireGuard, G: GetIfAddrs> LocalInterfacesEndpointProvider<T, G> {
         get_if_addr: G,
     ) -> Self {
         telio_log_info!("Starting local interfaces endpoint provider");
+        let mut poll_timer = interval_at(tokio::time::Instant::now(), poll_interval);
+        poll_timer.set_missed_tick_behavior(MissedTickBehavior::Delay);
         Self {
             task: Task::start(State {
                 endpoint_candidates_change_publisher: None,
                 pong_publisher: None,
                 last_endpoint_candidates_event: vec![],
-                poll_timer: interval_at(tokio::time::Instant::now(), poll_interval),
+                poll_timer,
                 wireguard_interface,
                 udp_socket,
                 ping_pong_handler,
