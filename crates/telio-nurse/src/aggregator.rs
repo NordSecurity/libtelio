@@ -1,4 +1,4 @@
-use std::{collections::HashSet, time::Duration};
+use std::{mem, thread::current, time::Duration};
 
 use tokio::time::Instant;
 
@@ -80,18 +80,15 @@ pub enum RelayConnectionChangeReason {
 // Possible connectivity state changes
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 #[allow(dead_code)]
-pub enum ConnectionState {
-    Relay(RelayConnectionChangeReason),
-    Peer {
-        initiator_ep: EndpointType,
-        responder_ep: EndpointType,
-    },
+pub struct PeerConnectionState {
+    initiator_ep: EndpointType,
+    responder_ep: EndpointType,
 }
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub struct PeerConnectionData {
-    initiator_ep_type: EndpointType,
-    reciever_ep_type: EndpointType,
+    initiator_ep: EndpointType,
+    responder_ep: EndpointType,
     rx_bytes: u64,
     tx_bytes: u64,
 }
@@ -108,13 +105,22 @@ pub enum ConnectionData {
 pub struct ConnectionSegmentData {
     node: PublicKey,
     start: Instant, // to ensure the segments are unique
-    length: Duration,
+    duration: Duration,
     connection_data: ConnectionData,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct RelayEvent {
+    public_key: PublicKey,
+    peer_state: PeerState,
+    timestamp: Instant,
+    reason: RelayConnectionChangeReason,
+}
+
 struct AggregatorData {
-    current_events: HashMap<PublicKey, (AnalyticsEvent, ConnectionState)>,
-    unacknowledged_segments: HashSet<ConnectionSegmentData>,
+    current_relay_event: Option<RelayEvent>,
+    current_peer_events: HashMap<PublicKey, (AnalyticsEvent, PeerConnectionState)>,
+    unacknowledged_segments: Vec<ConnectionSegmentData>,
 }
 
 // A container to store the connectivity data for our meshnet peers
@@ -134,8 +140,9 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
     pub fn new(nurse_features: &FeatureNurse, wg_interface: W) -> ConnectivityDataAggregator<W> {
         ConnectivityDataAggregator {
             data: parking_lot::RwLock::new(AggregatorData {
-                current_events: HashMap::new(),
-                unacknowledged_segments: HashSet::new(),
+                current_relay_event: None,
+                current_peer_events: HashMap::new(),
+                unacknowledged_segments: Vec::new(),
             }),
             aggregate_relay_events: nurse_features.enable_relay_conn_data,
             aggregate_nat_traversal_events: nurse_features.enable_nat_traversal_conn_data,
@@ -169,39 +176,29 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
         }
 
         let mut data_guard = self.data.write();
-        let new_segment = match data_guard.current_events.entry(event.public_key) {
+        let new_segment = match data_guard.current_peer_events.entry(event.public_key) {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 let (old_event, old_state) = entry.get().clone();
 
-                let connection_data = match old_state {
-                    ConnectionState::Relay(_) => {
-                        telio_log_warn!("Peer event for the relay server pubkey - discarding");
-                        return;
-                    }
-                    ConnectionState::Peer {
-                        initiator_ep: ep1,
-                        responder_ep: ep2,
-                    } => {
-                        if old_event.peer_state == event.peer_state
-                            && ep1 == initiator_ep
-                            && ep2 == responder_ep
-                        {
-                            // Peers state remains unchanged - skipping the segment addition
-                            return;
-                        }
-                        ConnectionData::Peer(PeerConnectionData {
-                            initiator_ep_type: ep1,
-                            reciever_ep_type: ep2,
-                            rx_bytes: event.rx_bytes - old_event.rx_bytes,
-                            tx_bytes: event.tx_bytes - old_event.tx_bytes,
-                        })
-                    }
+                let connection_data = if old_event.peer_state == event.peer_state
+                    && old_state.initiator_ep == initiator_ep
+                    && old_state.responder_ep == responder_ep
+                {
+                    // Peers state remains unchanged - skipping the segment addition
+                    return;
+                } else {
+                    ConnectionData::Peer(PeerConnectionData {
+                        initiator_ep: old_state.initiator_ep,
+                        responder_ep: old_state.responder_ep,
+                        rx_bytes: event.rx_bytes - old_event.rx_bytes,
+                        tx_bytes: event.tx_bytes - old_event.tx_bytes,
+                    })
                 };
 
                 if event.peer_state == PeerState::Connected {
                     entry.insert((
                         event,
-                        ConnectionState::Peer {
+                        PeerConnectionState {
                             initiator_ep,
                             responder_ep,
                         },
@@ -213,7 +210,7 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
                 Some(ConnectionSegmentData {
                     node: event.public_key,
                     start: old_event.timestamp.into(),
-                    length: event.timestamp - old_event.timestamp,
+                    duration: event.timestamp - old_event.timestamp,
                     connection_data,
                 })
             }
@@ -221,7 +218,7 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
                 if event.peer_state == PeerState::Connected {
                     entry.insert((
                         event,
-                        ConnectionState::Peer {
+                        PeerConnectionState {
                             initiator_ep,
                             responder_ep,
                         },
@@ -232,7 +229,7 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
         };
 
         if let Some(segment) = new_segment {
-            data_guard.unacknowledged_segments.insert(segment);
+            data_guard.unacknowledged_segments.push(segment);
         }
     }
 
@@ -246,99 +243,113 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
             return;
         }
 
+        let relay_event = RelayEvent {
+            public_key: event.public_key,
+            peer_state: event.peer_state,
+            timestamp: event.timestamp.into(),
+            reason,
+        };
+
         let mut data_guard = self.data.write();
-        let new_segment = match data_guard.current_events.entry(event.public_key) {
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                let (old_event, old_state) = entry.get().clone();
 
-                let segment_connection_data = match old_state {
-                    ConnectionState::Relay(reason) => {
-                        if old_event.peer_state == event.peer_state {
-                            // The state remains unchanged
-                            return;
-                        }
-                        ConnectionData::Relay(RelayConnectionData {
-                            state: old_event.peer_state.into(),
-                            reason,
-                        })
-                    }
-                    ConnectionState::Peer { .. } => {
-                        telio_log_warn!("Relay event for the meshnet node pubkey - discarding");
-                        return;
-                    }
-                };
-
-                entry.insert((event, ConnectionState::Relay(reason)));
-
+        let new_segment = if let Some(old_relay_event) = data_guard.current_relay_event.as_ref() {
+            if old_relay_event.public_key != event.public_key
+                || old_relay_event.peer_state != event.peer_state
+            {
                 Some(ConnectionSegmentData {
-                    node: event.public_key,
-                    start: old_event.timestamp.into(),
-                    length: event.timestamp.duration_since(old_event.timestamp),
-                    connection_data: segment_connection_data,
+                    node: old_relay_event.public_key,
+                    start: old_relay_event.timestamp,
+                    duration: event
+                        .timestamp
+                        .duration_since(old_relay_event.timestamp.into()),
+                    connection_data: ConnectionData::Relay(RelayConnectionData {
+                        state: old_relay_event.peer_state.into(),
+                        reason: old_relay_event.reason,
+                    }),
                 })
-            }
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert((event, ConnectionState::Relay(reason)));
+            } else {
                 None
             }
+        } else {
+            data_guard.current_relay_event = Some(relay_event);
+            None
         };
 
         if let Some(segment) = new_segment {
-            data_guard.unacknowledged_segments.insert(segment);
+            data_guard.current_relay_event = Some(relay_event);
+            data_guard.unacknowledged_segments.push(segment);
         }
     }
 
     #[allow(dead_code)]
     pub async fn collect_unacknowledged_segments(&self) -> Vec<ConnectionSegmentData> {
         let mut data_guard = self.data.write();
-        if let Ok(wg_peers) = self.wg_interface.get_interface().await.map(|wgi| wgi.peers) {
-            let current_timestamp = Instant::now();
+        let current_timestamp = Instant::now();
 
+        println!("Current timestamp: {:?}", current_timestamp);
+        println!("Current realy event: {:?}", data_guard.current_relay_event);
+
+        // Handle long-lasting relay events
+        let new_relay_segment = data_guard
+            .current_relay_event
+            .as_mut()
+            .map(|e| (current_timestamp.duration_since(e.timestamp), e))
+            .filter(|(duration, _)| {
+                println!("Filtering");
+                *duration > DAY_DURATION
+            })
+            .map(|(duration, relay_event)| {
+                println!("Yeah, we are here!");
+                let segment = ConnectionSegmentData {
+                    node: relay_event.public_key,
+                    start: relay_event.timestamp,
+                    duration,
+                    connection_data: ConnectionData::Relay(RelayConnectionData {
+                        state: relay_event.peer_state.into(),
+                        reason: relay_event.reason,
+                    }),
+                };
+                relay_event.timestamp = current_timestamp;
+                segment
+            });
+        data_guard.unacknowledged_segments.extend(new_relay_segment);
+
+        // Handle long-lasting peer events
+        if let Ok(wg_peers) = self.wg_interface.get_interface().await.map(|wgi| wgi.peers) {
             let mut new_segments = Vec::new();
-            for (peer_event, peer_state) in data_guard.current_events.values_mut() {
+            for (peer_event, peer_state) in data_guard.current_peer_events.values_mut() {
                 let since_last_event =
                     current_timestamp.duration_since(Instant::from_std(peer_event.timestamp));
                 if since_last_event > DAY_DURATION {
-                    match peer_state {
-                        ConnectionState::Relay(reason) => {
-                            Some(ConnectionData::Relay(RelayConnectionData {
-                                state: peer_event.peer_state.into(),
-                                reason: *reason,
-                            }))
-                        }
-                        ConnectionState::Peer {
-                            initiator_ep,
-                            responder_ep,
-                        } => wg_peers
-                            .get(&peer_event.public_key)
-                            .and_then(|wg_peer| wg_peer.rx_bytes.zip(wg_peer.tx_bytes))
-                            .map(|(rx_bytes, tx_bytes)| {
-                                let d_rx_bytes = rx_bytes - peer_event.rx_bytes;
-                                let d_tx_bytes = tx_bytes - peer_event.tx_bytes;
-                                peer_event.rx_bytes = rx_bytes;
-                                peer_event.tx_bytes = tx_bytes;
-                                ConnectionData::Peer(PeerConnectionData {
-                                    initiator_ep_type: *initiator_ep,
-                                    reciever_ep_type: *responder_ep,
-                                    rx_bytes: d_rx_bytes,
-                                    tx_bytes: d_tx_bytes,
-                                })
-                            }),
-                    }
-                    .map_or_else(
-                        || {
-                            telio_log_warn!("Unable to get transfer data for peer");
-                        },
-                        |connection_data| {
-                            new_segments.push(ConnectionSegmentData {
-                                node: peer_event.public_key,
-                                start: peer_event.timestamp.into(),
-                                length: since_last_event,
-                                connection_data,
-                            });
-                            peer_event.timestamp = current_timestamp.into();
-                        },
-                    );
+                    wg_peers
+                        .get(&peer_event.public_key)
+                        .and_then(|wg_peer| wg_peer.rx_bytes.zip(wg_peer.tx_bytes))
+                        .map(|(rx_bytes, tx_bytes)| {
+                            let d_rx_bytes = rx_bytes - peer_event.rx_bytes;
+                            let d_tx_bytes = tx_bytes - peer_event.tx_bytes;
+                            peer_event.rx_bytes = rx_bytes;
+                            peer_event.tx_bytes = tx_bytes;
+                            ConnectionData::Peer(PeerConnectionData {
+                                initiator_ep: peer_state.initiator_ep,
+                                responder_ep: peer_state.responder_ep,
+                                rx_bytes: d_rx_bytes,
+                                tx_bytes: d_tx_bytes,
+                            })
+                        })
+                        .map_or_else(
+                            || {
+                                telio_log_warn!("Unable to get transfer data for peer");
+                            },
+                            |connection_data| {
+                                new_segments.push(ConnectionSegmentData {
+                                    node: peer_event.public_key,
+                                    start: peer_event.timestamp.into(),
+                                    duration: since_last_event,
+                                    connection_data,
+                                });
+                                peer_event.timestamp = current_timestamp.into();
+                            },
+                        );
                 }
             }
             data_guard
@@ -348,24 +359,7 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
             telio_log_warn!("Getting wireguard interfaces failed");
         }
 
-        data_guard
-            .unacknowledged_segments
-            .clone()
-            .into_iter()
-            .collect()
-    }
-
-    #[allow(dead_code)]
-    pub fn acknowledge_segments_transmission<T>(&mut self, segment_set: T)
-    where
-        T: IntoIterator<Item = ConnectionSegmentData>,
-    {
-        let mut data_guard = self.data.write();
-        segment_set.into_iter().for_each(|segment| {
-            if !data_guard.unacknowledged_segments.remove(&segment) {
-                telio_log_warn!("Connectivity event for the given peer and timestamp not found");
-            }
-        })
+        mem::take(&mut data_guard.unacknowledged_segments)
     }
 }
 
@@ -412,7 +406,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_aggregator_basic_scenario_relay() {
+    async fn test_aggregator_relay_multiple_servers() {
         let mut wg_interface = MockWireGuard::new();
         wg_interface
             .expect_get_interface()
@@ -427,6 +421,23 @@ mod tests {
             RelayConnectionChangeReason::ConfigurationChange,
         );
 
+        // Repeated state after some time
+        current_relay_event.timestamp += Duration::from_secs(60);
+        aggregator.change_relay_state(
+            current_relay_event,
+            RelayConnectionChangeReason::ConfigurationChange,
+        );
+
+        // Change server event
+        let old_pubkey = current_relay_event.public_key;
+        current_relay_event.timestamp += Duration::from_secs(60);
+        let second_segment_start = current_relay_event.timestamp;
+        current_relay_event.public_key = PublicKey(*b"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
+        aggregator.change_relay_state(
+            current_relay_event,
+            RelayConnectionChangeReason::ConfigurationChange,
+        );
+
         // And after 60 seconds some disconnect due to network error
         current_relay_event.timestamp += Duration::from_secs(60);
         current_relay_event.peer_state = PeerState::Connecting;
@@ -436,21 +447,34 @@ mod tests {
         );
 
         let segments = aggregator.collect_unacknowledged_segments().await;
-        assert_eq!(segments.len(), 1);
+        assert_eq!(segments.len(), 2);
+
+        println!("Our segments: {:?} {:?}", segments[0], segments[1]);
+
         assert_eq!(
             segments[0],
             ConnectionSegmentData {
-                node: current_relay_event.public_key,
+                node: old_pubkey,
                 start: segment_start.into(),
-                length: Duration::from_secs(60),
+                duration: Duration::from_secs(120),
                 connection_data: ConnectionData::Relay(RelayConnectionData {
                     state: RelayConnectionState::Connected,
                     reason: RelayConnectionChangeReason::ConfigurationChange
                 })
             }
         );
-
-        aggregator.acknowledge_segments_transmission(segments);
+        assert_eq!(
+            segments[1],
+            ConnectionSegmentData {
+                node: current_relay_event.public_key,
+                start: second_segment_start.into(),
+                duration: Duration::from_secs(60),
+                connection_data: ConnectionData::Relay(RelayConnectionData {
+                    state: RelayConnectionState::Connected,
+                    reason: RelayConnectionChangeReason::ConfigurationChange
+                })
+            }
+        );
 
         let segments = aggregator.collect_unacknowledged_segments().await;
         assert_eq!(segments.len(), 0);
@@ -483,17 +507,15 @@ mod tests {
             ConnectionSegmentData {
                 node: current_peer_event.public_key,
                 start: segment_start.into(),
-                length: Duration::from_secs(60),
+                duration: Duration::from_secs(60),
                 connection_data: ConnectionData::Peer(PeerConnectionData {
-                    initiator_ep_type: EndpointType::Relay,
-                    reciever_ep_type: EndpointType::Relay,
+                    initiator_ep: EndpointType::Relay,
+                    responder_ep: EndpointType::Relay,
                     rx_bytes: 1000,
                     tx_bytes: 2000
                 })
             }
         );
-
-        aggregator.acknowledge_segments_transmission(segments);
 
         let segments = aggregator.collect_unacknowledged_segments().await;
         assert_eq!(segments.len(), 0);
@@ -529,17 +551,15 @@ mod tests {
             ConnectionSegmentData {
                 node: current_peer_event.public_key,
                 start: segment_start.into(),
-                length: Duration::from_secs(60),
+                duration: Duration::from_secs(60),
                 connection_data: ConnectionData::Peer(PeerConnectionData {
-                    initiator_ep_type: EndpointType::UPnP,
-                    reciever_ep_type: EndpointType::Local,
+                    initiator_ep: EndpointType::UPnP,
+                    responder_ep: EndpointType::Local,
                     rx_bytes: 1000,
                     tx_bytes: 2000
                 })
             }
         );
-
-        aggregator.acknowledge_segments_transmission(segments);
 
         let segments = aggregator.collect_unacknowledged_segments().await;
         assert_eq!(segments.len(), 0);
@@ -624,24 +644,22 @@ mod tests {
             ConnectionSegmentData {
                 node: current_peer_event.public_key,
                 start: segment_start.into(),
-                length: Duration::from_secs(120),
+                duration: Duration::from_secs(120),
                 connection_data: ConnectionData::Peer(PeerConnectionData {
-                    initiator_ep_type: EndpointType::UPnP,
-                    reciever_ep_type: EndpointType::Local,
+                    initiator_ep: EndpointType::UPnP,
+                    responder_ep: EndpointType::Local,
                     rx_bytes: 2000,
                     tx_bytes: 4000
                 })
             }
         );
 
-        aggregator.acknowledge_segments_transmission(segments);
-
         let segments = aggregator.collect_unacknowledged_segments().await;
         assert_eq!(segments.len(), 0);
     }
 
     #[tokio::test(start_paused = true)]
-    async fn test_aggregator_24h_segment() {
+    async fn test_aggregator_24h_segment_peer() {
         // Initial event
         let current_peer_event = create_basic_event(1);
         let segment_start = current_peer_event.timestamp;
@@ -682,17 +700,55 @@ mod tests {
             ConnectionSegmentData {
                 node: current_peer_event.public_key,
                 start: segment_start.into(),
-                length: Duration::from_secs(24 * 60 * 60 + 1),
+                duration: Duration::from_secs(24 * 60 * 60 + 1),
                 connection_data: ConnectionData::Peer(PeerConnectionData {
-                    initiator_ep_type: EndpointType::Relay,
-                    reciever_ep_type: EndpointType::Relay,
+                    initiator_ep: EndpointType::Relay,
+                    responder_ep: EndpointType::Relay,
                     rx_bytes: 3333,
                     tx_bytes: 1111
                 })
             }
         );
 
-        aggregator.acknowledge_segments_transmission(segments);
+        let segments = aggregator.collect_unacknowledged_segments().await;
+        assert_eq!(segments.len(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_aggregator_24h_segment_relay() {
+        let current_relay_event = create_basic_event(1);
+        let segment_start = current_relay_event.timestamp;
+
+        let mut wg_interface = MockWireGuard::new();
+        wg_interface
+            .expect_get_interface()
+            .returning(move || Ok(Default::default()));
+        let mut aggregator = create_aggregator(true, false, wg_interface).await;
+
+        aggregator.change_relay_state(
+            current_relay_event,
+            RelayConnectionChangeReason::ConfigurationChange,
+        );
+
+        let segments = aggregator.collect_unacknowledged_segments().await;
+        assert_eq!(segments.len(), 0);
+
+        time::advance(Duration::from_secs(24 * 60 * 60 + 1)).await;
+
+        let segments = aggregator.collect_unacknowledged_segments().await;
+        assert_eq!(segments.len(), 1);
+        assert_eq!(
+            segments[0],
+            ConnectionSegmentData {
+                node: current_relay_event.public_key,
+                start: segment_start.into(),
+                duration: Duration::from_secs(24 * 60 * 60 + 1),
+                connection_data: ConnectionData::Relay(RelayConnectionData {
+                    state: RelayConnectionState::Connected,
+                    reason: RelayConnectionChangeReason::ConfigurationChange
+                })
+            }
+        );
 
         let segments = aggregator.collect_unacknowledged_segments().await;
         assert_eq!(segments.len(), 0);
