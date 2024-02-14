@@ -8,6 +8,7 @@ from utils.connection import Connection, SshConnection, TargetOS
 from utils.process import ProcessExecError
 
 VM_TCLI_DIR = config.LIBTELIO_BINARY_PATH_MAC_VM
+VM_UNIFFI_DIR = config.UNIFFI_PATH_MAC_VM
 FILES_COPIED = False
 
 
@@ -53,6 +54,7 @@ async def _copy_binaries(
 
     try:
         await connection.create_process(["rm", "-rf", VM_TCLI_DIR]).execute()
+        await connection.create_process(["rm", "-rf", VM_UNIFFI_DIR]).execute()
     except ProcessExecError as exception:
         if exception.stderr.find("The system cannot find the file specified.") < 0:
             raise exception
@@ -63,4 +65,17 @@ async def _copy_binaries(
         (ssh_connection, f"{VM_TCLI_DIR}"),
     )
     await connection.create_process(["chmod", "+x", f"{VM_TCLI_DIR}/tcli"]).execute()
+
+    await connection.create_process(["mkdir", "-p", VM_UNIFFI_DIR]).execute()
+    uniffi_files = [
+        "libtelio.py",
+        "libtelio_remote.py",
+        "libuniffi_libtelio.dylib",
+    ]
+    for file in uniffi_files:
+        await asyncssh.scp(
+            get_root_path(f"libtelio/nat-lab/tests/uniffi/{file}"),
+            (ssh_connection, VM_UNIFFI_DIR),
+        )
+
     FILES_COPIED = True

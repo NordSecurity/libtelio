@@ -90,6 +90,7 @@ where
     let result = panic::catch_unwind(AssertUnwindSafe(expr)).map_err(|e| {
         let message = panic_handling::recover_panic_message(e)
             .unwrap_or_else(|| DEFAULT_PANIC_MSG.to_string());
+        println!("Panic error message: {message}");
         anyhow::Error::from(panic_handling::Panic { message })
     });
     match result {
@@ -99,8 +100,9 @@ where
             Err(err)
         }
         Err(err) => {
-            error_handling::update_last_error(anyhow!(err.to_string()));
-            Err(TelioError::UnknownError(anyhow!(err)))
+            let err_string = err.to_string();
+            error_handling::update_last_error(anyhow!(err_string.clone()));
+            Err(TelioError::UnknownError { inner: err_string })
         }
     }
 }
@@ -228,7 +230,10 @@ impl telio {
             let payload = e
                 .to_json()
                 .unwrap_or_else(|_| String::from("event_to_json error"));
-            events.event(payload);
+            let event_res = events.event(payload);
+            if let Err(err) = event_res {
+                telio_log_error!("Could not call event callback due to error: {:?}", err);
+            }
         };
 
         let panic_event_dispatcher = event_dispatcher.clone();
@@ -275,7 +280,10 @@ impl telio {
             Some(protect) if cfg!(windows) => {
                 let protect = protect;
                 Some(Arc::new(move |fd| {
-                    protect.protect(fd);
+                    let protect_res = protect.protect(fd);
+                    if let Err(err) = protect_res {
+                        telio_log_error!("Could not call protect callback due to {:?}", err);
+                    }
                 }))
             }
             _ => None,
@@ -354,9 +362,9 @@ impl telio {
         }
 
         telio_log_debug!("Unknown error - Telio::destroy_hard");
-        Err(TelioError::UnknownError(anyhow!(
-            "Unknown error - Telio::destroy_hard"
-        )))
+        Err(TelioError::UnknownError {
+            inner: "Unknown error - Telio::destroy_hard".to_owned(),
+        })
     }
 
     /// Start telio with specified adapter.
@@ -720,6 +728,19 @@ impl telio {
         error_handling::error_message().unwrap_or_else(|| "".to_owned())
     }
 
+    pub fn is_running(&self) -> FFIResult<bool> {
+        self.device_op(true, |dev| Ok(dev.is_running()))
+    }
+
+    pub fn trigger_analytics_event(&self) -> FFIResult<()> {
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                dev.trigger_analytics_event()
+                    .log_result("Telio::trigger_analytics_event")
+            })
+        })
+    }
+
     #[allow(clippy::panic)]
     /// For testing only.
     pub fn generate_stack_panic(&self) -> FFIResult<()> {
@@ -728,7 +749,9 @@ impl telio {
                 panic!("runtime_panic_test_call_stack");
             }
             telio_log_debug!("Unknown error ( Telio::generate_stack_panic )");
-            Err(TelioError::UnknownError(anyhow!("")))
+            Err(TelioError::UnknownError {
+                inner: "".to_owned(),
+            })
         })
     }
 
@@ -743,7 +766,9 @@ impl telio {
                     }
                 }
                 telio_log_debug!("Unknown error ( Telio::generate_thread_panic )");
-                Err(TelioError::UnknownError(anyhow!("")))
+                Err(TelioError::UnknownError {
+                    inner: "".to_owned(),
+                })
             })
         })
     }
@@ -1708,7 +1733,10 @@ impl SubscriberCallback {
                 }
             }
             SubscriberCallback::Uniffi(cb) => {
-                cb.log(level.into(), message);
+                let log_res = cb.log(level.into(), message);
+                if let Err(err) = log_res {
+                    telio_log_error!("Could not call log callback due to error: {:?}", err);
+                }
             }
         }
     }

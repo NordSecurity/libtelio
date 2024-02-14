@@ -16,3 +16,14 @@ class DockerConnection(Connection):
     def create_process(self, command: List[str]) -> "Process":
         print(datetime.now(), "Executing", command, "on", self._name)
         return DockerProcess(self._container, command)
+
+    async def get_ip_address(self) -> str:
+        details = await self._container.show()
+        networks = details["NetworkSettings"]["Networks"]
+        if not networks.values():
+            raise Exception(
+                "Docker container '" + self._container["Name"] + "' has no ip addresses"
+            )
+        networks = list(networks.values())
+        ip_address = networks[0]["IPAMConfig"]["IPv4Address"]
+        return ip_address

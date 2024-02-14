@@ -28,3 +28,6 @@ class Connection(ABC):
     @target_os.setter
     def target_os(self, target_os: TargetOS) -> None:
         self._target_os = target_os
+
+    async def get_ip_address(self) -> str:
+        return "127.0.0.1"
