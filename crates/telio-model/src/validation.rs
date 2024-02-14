@@ -36,9 +36,5 @@ pub fn validate_nickname(name: &str) -> bool {
         telio_log_debug!("Nickname starts with a hyphen");
         return false;
     }
-    if !name.eq(name.to_lowercase().as_str()) {
-        telio_log_debug!("Nickname is not in lowercase");
-        return false;
-    }
     true
 }

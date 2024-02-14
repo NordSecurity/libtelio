@@ -240,8 +240,6 @@ class API:
             raise NicknameInvalidError(nickname)
         if nickname.startswith("-"):
             raise NicknameInvalidError(nickname)
-        if not nickname.islower():
-            raise NicknameInvalidError(nickname)
 
         for _, node in self.nodes.items():
             if nickname == node.nickname:

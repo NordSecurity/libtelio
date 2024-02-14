@@ -1,6 +1,7 @@
 ### UNRELEASED
 ---
 * LLT-4908: Lowered DNS TTL time for nicknames and NXDomain responses
+* LLT-4916: Allow any case nicknames
 
 <br>
 

@@ -2107,7 +2107,7 @@ mod tests {
                 Some("bond-jamesbond".to_owned()),
             ),
             build_peer(
-                String::from("gamma.nord"),
+                String::from("gaMMa.nord"),
                 Some(vec![IpAddr::V6(gamma_ipv6)]),
                 None,
             ),
@@ -2133,7 +2133,7 @@ mod tests {
             vec![IpAddr::V4(beta_ipv4)]
         );
 
-        assert_eq!(records["gamma.nord"].clone(), vec![IpAddr::V6(gamma_ipv6)]);
+        assert_eq!(records["gaMMa.nord"].clone(), vec![IpAddr::V6(gamma_ipv6)]);
 
         assert!(!records.contains_key("theta.nord"));
 
@@ -2182,12 +2182,6 @@ mod tests {
                     valid_hostname.to_owned(),
                     valid_ipv4.clone(),
                     Some("johnny--rotten".to_owned()),
-                ),
-                // Contains a uppercase char
-                build_peer(
-                    valid_hostname.to_owned(),
-                    valid_ipv4.clone(),
-                    Some("jOhnnyrotten".to_owned()),
                 ),
                 // Ends with "."
                 build_peer(
