@@ -4,7 +4,7 @@ use tokio::time::Instant;
 
 use parking_lot::RwLock;
 
-use serde::Serialize;
+use serde::{ser::SerializeTuple, Serialize};
 
 use telio_crypto::PublicKey;
 use telio_model::{
@@ -84,19 +84,6 @@ pub struct PeerEndpointTypes {
     responder_ep: EndpointType,
 }
 
-const ENDPOINT_BIT_FIELD_WIDTH: u16 = 4;
-
-impl Serialize for PeerEndpointTypes {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let initiator_repr = self.initiator_ep as u16;
-        let responder_repr = self.responder_ep as u16;
-        serializer.serialize_u16((initiator_repr << ENDPOINT_BIT_FIELD_WIDTH) + responder_repr)
-    }
-}
-
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 #[allow(dead_code)]
 pub enum ConnectionData {
@@ -109,6 +96,40 @@ pub enum ConnectionData {
         rx_bytes: u64,
         tx_bytes: u64,
     },
+}
+
+const ENDPOINT_BIT_FIELD_WIDTH: u16 = 4;
+const RELAY_TUPLE_LEN: usize = 2;
+const PEER_TUPLE_LEN: usize = 3;
+
+impl Serialize for ConnectionData {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            ConnectionData::Relay { state, reason } => {
+                let mut seq = serializer.serialize_tuple(RELAY_TUPLE_LEN)?;
+                seq.serialize_element(&(*state as u64))?;
+                seq.serialize_element(&(*reason as u64))?;
+                seq.end()
+            }
+            ConnectionData::Peer {
+                endpoints,
+                rx_bytes,
+                tx_bytes,
+            } => {
+                let initiator_repr = endpoints.initiator_ep as u16;
+                let responder_repr = endpoints.responder_ep as u16;
+                let strategy_id = (initiator_repr << ENDPOINT_BIT_FIELD_WIDTH) + responder_repr;
+                let mut seq = serializer.serialize_tuple(PEER_TUPLE_LEN)?;
+                seq.serialize_element(&strategy_id)?;
+                seq.serialize_element(&rx_bytes)?;
+                seq.serialize_element(&tx_bytes)?;
+                seq.end()
+            }
+        }
+    }
 }
 
 // Ready to send connection data for some period of time
@@ -353,6 +374,7 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
 mod tests {
     use std::net::Ipv4Addr;
 
+    use csv::WriterBuilder;
     use telio_utils::DualTarget;
     use telio_wg::{
         uapi::{Interface, Peer, PeerState},
@@ -750,5 +772,37 @@ mod tests {
 
         let segments = aggregator.collect_unacknowledged_segments().await;
         assert_eq!(segments.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_conn_data_serialization() {
+        let mut writer = WriterBuilder::new()
+            .flexible(true)
+            .delimiter(b':')
+            .terminator(csv::Terminator::Any(b','))
+            .from_writer(vec![]);
+
+        let conn_datas = vec![
+            ConnectionData::Relay {
+                state: RelayConnectionState::Connected,
+                reason: RelayConnectionChangeReason::ConfigurationChange,
+            },
+            ConnectionData::Peer {
+                endpoints: PeerEndpointTypes {
+                    initiator_ep: EndpointType::UPnP,
+                    responder_ep: EndpointType::Local,
+                },
+                rx_bytes: 1000,
+                tx_bytes: 500,
+            },
+        ];
+
+        for conn_data in conn_datas {
+            writer.serialize(("prefix", conn_data)).unwrap();
+        }
+
+        let str_result = String::from_utf8(writer.into_inner().unwrap()).unwrap();
+
+        assert_eq!(str_result, "prefix:257:101,prefix:49:1000:500,");
     }
 }
