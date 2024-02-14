@@ -7,6 +7,7 @@
 * LLT-4913: Skip qos analytics ping for unconnected peers
 * LLT-4968: Make the default nurse initial_heartbeat_interval to be 5 minutes
 * LLT-4850: Add missing VPN meshnet address to analytics
+* LLT-4917: Fix the issue with wireguard-go failing to bind to a port on some devices
 
 <br>
 
