@@ -26,6 +26,9 @@ def run_command(command: List[str], env: Optional[Dict[str, Any]] = None) -> Non
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "-o", type=str, default="linux", help="Pass the host OS [default: linux])"
+    )
+    parser.add_argument(
         "--restart", action="store_true", help="Restart build container"
     )
     parser.add_argument(
@@ -74,8 +77,12 @@ def main() -> int:
 
     if not args.nobuild:
         run_build_command("linux", args)
+        # Run windows tests on WinVM
         if args.windows:
             run_build_command("windows", args)
+        # Run nat-lab natively on macOS (TODO: Add windows support)
+        if args.o == "darwin":
+            run_build_command("darwin", args)
 
     if not args.notypecheck:
         run_command(["mypy", "."])
@@ -99,7 +106,20 @@ def main() -> int:
 
 
 def run_build_command(operating_system, args):
-    command = ["../../ci/build.sh", "--default", operating_system]
+    if operating_system == "darwin":
+        command = [
+            "../ci/build_libtelio.py",
+            "build",
+            "macos",
+            "aarch64",
+        ]
+    else:
+        command = [
+            "../../ci/build.sh",
+            "--default",
+            operating_system,
+        ]
+    command.extend(["--uniffi-test-bindings"])
     if args.restart:
         command.append("--restart")
     if args.moose:

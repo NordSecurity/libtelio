@@ -256,11 +256,18 @@ def main() -> None:
     build_parser.add_argument(
         "--msvc", action="store_true", help="Use MSVC toolchain for Windows build"
     )
+    build_parser.add_argument(
+        "--uniffi-test-bindings",
+        action="store_true",
+        help="Generate python bindings with uniffi",
+    )
 
     args = parser.parse_args()
 
     if args.command == "build":
         exec_build(args)
+        if args.uniffi_test_bindings:
+            copy_uniffi_files_for_testing(args)
     elif args.command == "bindings":
         rutils.generate_uniffi_bindings(
             PROJECT_CONFIG,
@@ -480,6 +487,31 @@ def exec_lipo(args):
             target_os,
             LIBTELIO_CONFIG[target_os]["packages"],
         )
+
+
+def copy_uniffi_files_for_testing(args):
+    uniffi_dir = "nat-lab/tests/uniffi/"
+
+    bindings_src = "src/telio.py"
+    bindings_dest = f"{uniffi_dir}telio_bindings.py"
+
+    copy_binaries = True
+    arch = "aarch64" if args.arch == "arm64" else args.arch
+    if args.os == "linux":
+        binary_src = f"target/{arch}-unknown-linux-gnu/release/libtelio.so"
+        binary_dest = f"{uniffi_dir}libtelio.so"
+    elif args.os == "macos":
+        binary_src = f"target/{arch}-apple-darwin/release/libtelio.dylib"
+        binary_dest = f"{uniffi_dir}libtelio.dylib"
+    elif args.os == "windows":
+        binary_src = f"target/x86_64-pc-windows-gnu/release/telio.dll"
+        binary_dest = f"{uniffi_dir}telio.dll"
+    else:
+        pass
+
+    rutils.copy_tree_or_file(bindings_src, bindings_dest)
+    if copy_binaries:
+        rutils.copy_tree_or_file(binary_src, binary_dest)
 
 
 if __name__ == "__main__":

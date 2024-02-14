@@ -382,7 +382,7 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
             ),
         )
 
-        pred = ".* telio_nurse::aggregator: \\d+: (.* peer state change for .* will be reported)"
+        pred = '.* "telio_nurse::aggregator":\\d+ (.* peer state change for .* will be reported)'
         # We need to compare the decoded forms, not the base64 encoded strings
         if base64.b64decode(alpha.public_key) < base64.b64decode(beta.public_key):
             losing_key = beta.public_key

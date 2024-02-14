@@ -21,8 +21,9 @@ use telio::{ffi::*, types::*};
 #[derive(Debug)]
 struct Logger;
 impl TelioLoggerCb for Logger {
-    fn log(&self, log_level: TelioLogLevel, payload: String) {
+    fn log(&self, log_level: TelioLogLevel, payload: String) -> FFIResult<()> {
         // report log level and payload to the app
+        Ok(())
     }
 }
 // Global function
@@ -34,7 +35,7 @@ import github.com/nordsecurity/telio
 
 type Logger struct {}
 
-func (l Logger) Log(logLevel TelioLogLevel, payload string) {
+func (l Logger) Log(logLevel TelioLogLevel, payload string) *TelioError {
     // report log level and payload to the app
 }
 
@@ -45,7 +46,7 @@ SetGlobalLogger(TelioLogLevel.Debug, Logger{})
 import libtelio
 
 class Logger: TelioLoggerCb {
-    func log(logLevel: TelioLogLevel, payload: String) {
+    func log(logLevel: TelioLogLevel, payload: String) throws {
         // report log level and payload to the app
     }
 }
@@ -94,7 +95,9 @@ use telio::{ffi::*, types::*};
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: String) {}
+    fn event(&self, payload: String) -> FFIResult<()> {
+        Ok(())
+    }
 }
 
 let telio = Telio::new(Default::default(), Box::new(EventHandler)).unwrap();
@@ -155,7 +158,9 @@ if let Some(nurse) = &mut feature_config.nurse {
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: String) {}
+    fn event(&self, payload: String) -> FFIResult<()> {
+        Ok(())
+    }
 }
 
 let telio = Telio::new(feature_config, Box::new(EventHandler)).unwrap();
@@ -237,9 +242,10 @@ use telio::{ffi::*, types::*};
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: String) {
+    fn event(&self, payload: String) -> FFIResult<()> {
         // deserialize json payload
         // pass deserialized event to app
+        Ok(())
     }
 }
 
@@ -251,7 +257,7 @@ import github.com/nordsecurity/telio
 
 type EventHandler struct {}
 
-func (eh EventHandler) Event(payload String) {
+func (eh EventHandler) Event(payload String) *TelioError {
     // deserialize json payload
     // pass deserialized event to app
 }
@@ -266,7 +272,7 @@ _, err = Telio {
 import libtelio
 
 class EventHandler: TelioEventCb {
-    func event(payload: string) {
+    func event(payload: string) throws {
         // deserialize json payload
         // pass deserialized event to app
     }
@@ -321,7 +327,9 @@ use telio::{ffi::*, types::*};
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: String) {}
+    fn event(&self, payload: String) -> FFIResult<()> {
+        Ok(())
+    }
 }
 
 let sk = generate_secret_key();
@@ -429,7 +437,9 @@ use telio_crypto::PublicKey;
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: String) {}
+    fn event(&self, payload: String) -> FFIResult<()> {
+        Ok(())
+    }
 }
 
 let sk = generate_secret_key();
@@ -575,7 +585,9 @@ use telio::{ffi::*, types::*};
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: String) {}
+    fn event(&self, payload: String) -> FFIResult<()> {
+        Ok(())
+    }
 }
 
 let sk = generate_secret_key();
@@ -718,7 +730,9 @@ use telio::{ffi::*, types::*};
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: String) {}
+    fn event(&self, payload: String) -> FFIResult<()> {
+        Ok(())
+    }
 }
 
 let sk = generate_secret_key();
@@ -850,7 +864,9 @@ use telio_crypto::PublicKey;
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: String) {}
+    fn event(&self, payload: String) -> FFIResult<()> {
+        Ok(())
+    }
 }
 
 let sk = generate_secret_key();
