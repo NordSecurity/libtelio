@@ -2,8 +2,11 @@ import asyncio
 import datetime
 import json
 import os
+import random
 import re
 import shlex
+import uniffi.libtelio as libtelio
+import uuid
 from collections import Counter
 from config import DERP_PRIMARY, DERP_SERVERS
 from contextlib import asynccontextmanager
@@ -13,19 +16,16 @@ from enum import Enum
 from mesh_api import Meshmap, Node
 from telio_features import TelioFeatures
 from typing import AsyncIterator, List, Optional, Set
+from uniffi.libtelio_proxy import LibtelioProxy
 from utils import asyncio_util
 from utils.connection import Connection, TargetOS
-from utils.connection_util import get_libtelio_binary_path
+from utils.connection_util import get_libtelio_binary_path, get_uniffi_path
+from utils.router.linux_router import LinuxRouter
+from utils.router.mac_router import MacRouter
 from utils.output_notifier import OutputNotifier
 from utils.process import Process
 from utils.router import IPStack, Router, new_router
-from uniffi.libtelio_proxy import LibtelioProxy
-import uniffi.libtelio as libtelio  # type: ignore
-import uuid
-import random
-from utils.linux_router import LinuxRouter
-from utils.windows_router import WindowsRouter
-from utils.mac_router import MacRouter
+from utils.router.windows_router import WindowsRouter
 
 
 # Equivalent of `libtelio/telio-wg/src/uapi.rs`
@@ -168,17 +168,15 @@ class AdapterType(Enum):
     def convert_adapter_type(self, router: Router) -> libtelio.TelioAdapterType:
         if self == AdapterType.BoringTun:
             return libtelio.TelioAdapterType.BORING_TUN
-        elif self == AdapterType.LinuxNativeWg:
+        if self == AdapterType.LinuxNativeWg:
             return libtelio.TelioAdapterType.LINUX_NATIVE_TUN
-        elif self == AdapterType.WireguardGo:
+        if self == AdapterType.WireguardGo:
             return libtelio.TelioAdapterType.WIREGUARD_GO_TUN
-        elif self == AdapterType.WindowsNativeWg:
+        if self == AdapterType.WindowsNativeWg:
             return libtelio.TelioAdapterType.WINDOWS_NATIVE_TUN
-        else:
-            if type(router) == WindowsRouter:
-                return libtelio.TelioAdapterType.WIREGUARD_GO_TUN
-            else:
-                return libtelio.TelioAdapterType.BORING_TUN
+        if isinstance(router, WindowsRouter):
+            return libtelio.TelioAdapterType.WIREGUARD_GO_TUN
+        return libtelio.TelioAdapterType.BORING_TUN
 
 
 class Runtime:
@@ -341,10 +339,9 @@ class Runtime:
             tokens = line.split(f"{event_type}: ")
 
             return tokens
-        elif line.startswith(f'{{"type":"{event_type}","body":'):
+        if line.startswith(f'{{"type":"{event_type}","body":'):
             return line[:-1].split(f'{{"type":"{event_type}","body":')
-        else:
-            return None
+        return None
 
     def _handle_node_event(self, line) -> bool:
         def _check_node_event(node_event: PeerInfo):
@@ -524,14 +521,14 @@ class Client:
         container_ip = await self._connection.get_ip_address()
         port = str(random.randrange(10000, 65000))
         object_uri = f"PYRO:{object_name}@{container_ip}:{port}"
-        if type(self.get_router()) == WindowsRouter:
+        if isinstance(self.get_router(), WindowsRouter):
             python_cmd = "python"
         else:
             python_cmd = "python3"
-        uniffi_path = connection_util.get_uniffi_path(connection)
+        uniffi_path = get_uniffi_path(self._connection)
 
-        if type(self.get_router()) == MacRouter:
-            uniprocess = connection.create_process(["/bin/sh"])
+        if isinstance(self.get_router(), MacRouter):
+            uniprocess = self._connection.create_process(["/bin/sh"])
         else:
             uniprocess = self._connection.create_process(
                 [
@@ -570,7 +567,7 @@ class Client:
                     await self._process.wait_stdin_ready()
                     await uniprocess.wait_stdin_ready()
 
-                    if type(self.get_router()) == MacRouter:
+                    if isinstance(self.get_router(), MacRouter):
                         await uniprocess.escape_and_write_stdin(
                             ["source", "/etc/profile"]
                         )
@@ -599,7 +596,7 @@ class Client:
                         ),
                         name=self.get_router().get_interface_name(),
                     )
-                    if type(self.get_router()) == LinuxRouter:
+                    if isinstance(self.get_router(), LinuxRouter):
                         self.get_proxy().set_fwmark(11673110)
 
                     async with asyncio_util.run_async_context(
@@ -629,7 +626,7 @@ class Client:
             adapter=self._adapter_type.convert_adapter_type(self.get_router()),
             name=self.get_router().get_interface_name(),
         )
-        if type(self.get_router()) == LinuxRouter:
+        if isinstance(self.get_router(), LinuxRouter):
             self.get_proxy().set_fwmark(11673110)
 
     async def wait_for_state_peer(

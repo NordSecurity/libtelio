@@ -1,23 +1,21 @@
 import time
-
-import Pyro5.api  # type: ignore
 from Pyro5.api import Proxy  # type: ignore
 
 
 def handle_error(f):
     def wrap(*args, **kwargs):
         fn_res = f(*args, **kwargs)
-        if fn_res == None:
+        if fn_res is None:
             return None
         (res, err) = fn_res
-        if err != None:
+        if err is not None:
             raise Exception(err)
         return res
 
     return wrap
 
 
-class LibtelioProxy(object):
+class LibtelioProxy:
     def __init__(self, object_uri: str, features: str):
         self._uri = object_uri
         iterations = 20
@@ -27,9 +25,8 @@ class LibtelioProxy(object):
                 return
             except Exception as err:
                 if i == iterations - 1:
-                    raise Exception(f"Couldn't connect to remote uri due to: {err}")
-                else:
-                    time.sleep(0.25)
+                    raise Exception(f"Couldn't connect to remote uri due to: {err}") from err
+                time.sleep(0.25)
 
     @handle_error
     def _create(self, features: str):

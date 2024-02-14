@@ -1,13 +1,10 @@
-import sys
-import json
 import base64
-import time
-from typing import List
-
+import libtelio  # type: ignore
 import Pyro5.api  # type: ignore
 import Pyro5.server  # type: ignore
-
-import libtelio  # type: ignore
+import sys
+import time
+from typing import List
 
 
 def serialize_error(f):
@@ -36,7 +33,7 @@ class TelioEventCbImpl(libtelio.TelioEventCb):
 
 @Pyro5.api.expose
 @Pyro5.server.behavior(instance_mode="single")
-class LibtelioWrapper(object):
+class LibtelioWrapper:
     def __init__(self):
         self._libtelio = None
         self._event_cb = TelioEventCbImpl()
@@ -104,9 +101,13 @@ class LibtelioWrapper(object):
         self._libtelio.trigger_analytics_event()
 
 
-def main(object_name, container_ip, port):
+def main():
+    object_name = sys.argv[1]
+    container_ip = sys.argv[2]
+    port = int(sys.argv[3])
+
     daemon = Pyro5.server.Daemon(host=container_ip, port=port)
-    uri = daemon.register(LibtelioWrapper, objectId=object_name)
+    daemon.register(LibtelioWrapper, objectId=object_name)
 
     start_time = time.time()
 
@@ -118,7 +119,4 @@ def main(object_name, container_ip, port):
 
 
 if __name__ == "__main__":
-    object_name = sys.argv[1]
-    container_ip = sys.argv[2]
-    port = int(sys.argv[3])
-    main(object_name, container_ip, port)
+    main()
