@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use tokio::sync::mpsc;
-use tokio::time::{interval_at, Duration, Interval};
+use tokio::time::{interval_at, Duration, Interval, MissedTickBehavior};
 
 use telio_crypto::PublicKey;
 use telio_task::{io::mc_chan, Runtime, RuntimeExt, WaitResponse};
@@ -233,9 +233,11 @@ impl Analytics {
         } else {
             Arc::new(None)
         };
+        let mut rtt_interval = interval_at(tokio::time::Instant::now(), config.rtt_interval);
+        rtt_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
         Self {
-            rtt_interval: interval_at(tokio::time::Instant::now(), config.rtt_interval),
+            rtt_interval,
             io,
             nodes: HashMap::new(),
             ping_backend,
