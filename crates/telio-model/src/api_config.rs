@@ -106,19 +106,19 @@ pub struct FeatureNurse {
     pub enable_nat_type_collection: Option<bool>,
     /// Enable/disable Relay connection data
     #[serde(default = "FeatureNurse::get_default_enable_relay_conn_data")]
-    pub enable_relay_conn_data: bool,
+    pub enable_relay_conn_data: Option<bool>,
     /// Enable/disable NAT-traversal connections data
     #[serde(default = "FeatureNurse::get_default_enable_nat_traversal_conn_data")]
-    pub enable_nat_traversal_conn_data: bool,
+    pub enable_nat_traversal_conn_data: Option<bool>,
 }
 
 impl FeatureNurse {
-    fn get_default_enable_relay_conn_data() -> bool {
-        true
+    fn get_default_enable_relay_conn_data() -> Option<bool> {
+        Some(true)
     }
 
-    fn get_default_enable_nat_traversal_conn_data() -> bool {
-        true
+    fn get_default_enable_nat_traversal_conn_data() -> Option<bool> {
+        Some(true)
     }
 }
 
@@ -555,8 +555,8 @@ mod tests {
             initial_heartbeat_interval: None,
             qos: None,
             enable_nat_type_collection: None,
-            enable_relay_conn_data: true,
-            enable_nat_traversal_conn_data: true,
+            enable_relay_conn_data: Some(true),
+            enable_nat_traversal_conn_data: Some(true),
         }),
         lana: Some(FeatureLana {
             event_path: "path/to/some/event/data".to_string(),
@@ -613,8 +613,8 @@ mod tests {
             initial_heartbeat_interval: None,
             qos: None,
             enable_nat_type_collection: None,
-            enable_relay_conn_data: true,
-            enable_nat_traversal_conn_data: true,
+            enable_relay_conn_data: Some(true),
+            enable_nat_traversal_conn_data: Some(true),
         }),
         lana: Some(FeatureLana {
             event_path: "path/to/some/event/data".to_string(),
@@ -809,8 +809,8 @@ mod tests {
                     buckets: Some(5),
                 }),
                 enable_nat_type_collection: None,
-                enable_relay_conn_data: true,
-                enable_nat_traversal_conn_data: true,
+                enable_relay_conn_data: Some(true),
+                enable_nat_traversal_conn_data: Some(true),
             }),
             lana: None,
             paths: None,
@@ -843,8 +843,8 @@ mod tests {
                     buckets: None,
                 }),
                 enable_nat_type_collection: None,
-                enable_relay_conn_data: true,
-                enable_nat_traversal_conn_data: true,
+                enable_relay_conn_data: Some(true),
+                enable_nat_traversal_conn_data: Some(true),
             }),
             lana: None,
             paths: None,
@@ -872,8 +872,8 @@ mod tests {
                 initial_heartbeat_interval: None,
                 qos: None,
                 enable_nat_type_collection: None,
-                enable_relay_conn_data: false,
-                enable_nat_traversal_conn_data: false,
+                enable_relay_conn_data: Some(false),
+                enable_nat_traversal_conn_data: Some(false),
             }),
             lana: None,
             paths: None,

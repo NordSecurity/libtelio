@@ -409,9 +409,9 @@ dictionary FeatureNurse {
     /// Enable/disable collecting nat type
     boolean? enable_nat_type_collection;
     /// Enable/disable Relay connection data
-    boolean enable_relay_conn_data;
+    boolean? enable_relay_conn_data;
     /// Enable/disable NAT-traversal connections data
-    boolean enable_nat_traversal_conn_data;
+    boolean? enable_nat_traversal_conn_data;
 };
 
 /// QoS configuration options
