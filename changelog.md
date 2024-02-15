@@ -7,6 +7,7 @@
 * LLT-4913: Skip qos analytics ping for unconnected peers
 * LLT-4916: Allow any case nicknames
 * LLT-4406: Implement error handling for proxy egress
+* LLT-4948: Change missed tick behavior from burst to delay
 
 <br>
 
