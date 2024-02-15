@@ -39,7 +39,7 @@ use thiserror::Error as TError;
 use tokio::{
     runtime::{Builder, Runtime as AsyncRuntime},
     sync::Mutex,
-    time::{interval_at, Interval},
+    time::{interval_at, Interval, MissedTickBehavior},
 };
 
 use telio_dns::{DnsResolver, LocalDnsResolver, Records};
@@ -1000,6 +1000,9 @@ impl Runtime {
             .post_quantum_vpn
             .map(|pq_features| telio_pq::Entity::new(pq_features, socket_pool.clone()));
 
+        let mut polling_interval = interval_at(tokio::time::Instant::now(), Duration::from_secs(5));
+        polling_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
         Ok(Runtime {
             features,
             requested_state,
@@ -1030,7 +1033,7 @@ impl Runtime {
                 derp_events_publisher: derp_events.tx,
                 post_quantum_publisher: post_quantum.tx,
             },
-            polling_interval: interval_at(tokio::time::Instant::now(), Duration::from_secs(5)),
+            polling_interval,
             #[cfg(test)]
             test_env: wg::tests::Env {
                 analytics: analytics_ch,
