@@ -8,6 +8,7 @@
 * LLT-4916: Allow any case nicknames
 * LLT-4406: Implement error handling for proxy egress
 * LLT-4948: Change missed tick behavior from burst to delay
+* LLT-4855: Add Aggregator struct for connectivity events gathering
 
 <br>
 
