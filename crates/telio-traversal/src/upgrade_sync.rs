@@ -9,7 +9,7 @@ use telio_task::{io::chan, io::Chan, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{telio_log_info, telio_log_warn};
 use tokio::{
     sync::mpsc::error::SendError,
-    time::{interval_at, Instant, Interval},
+    time::{interval_at, Instant, Interval, MissedTickBehavior},
 };
 
 /// Possible [UpgradeSync] errors.
@@ -74,13 +74,15 @@ impl UpgradeSync {
         expiration_period: Duration,
     ) -> Result<Self> {
         telio_log_info!("Starting Upgrade sync module");
+        let mut poll_timer = interval_at(Instant::now(), expiration_period / 2);
+        poll_timer.set_missed_tick_behavior(MissedTickBehavior::Delay);
         Ok(Self {
             task: Task::start(State {
                 upgrade_request_publisher,
                 intercoms,
                 upgrade_requests: Default::default(),
                 expiration_period,
-                poll_timer: interval_at(Instant::now(), expiration_period / 2),
+                poll_timer,
             }),
         })
     }

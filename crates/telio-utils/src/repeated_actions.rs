@@ -10,7 +10,7 @@ use futures::{
     stream::{FuturesUnordered, StreamExt},
     FutureExt,
 };
-use tokio::time::{interval, interval_at, Duration, Instant, Interval};
+use tokio::time::{interval, interval_at, Duration, Instant, Interval, MissedTickBehavior};
 
 /// Possible [RepeatedAction] errors.
 #[derive(ThisError, Debug)]
@@ -84,7 +84,9 @@ where
         self.actions.get_mut(key).map_or_else(
             || Err(RepeatedActionError::RepeatedActionNotFound),
             |a| {
-                a.0 = interval_at(Instant::now() + dur, dur);
+                let mut interval = interval_at(Instant::now() + dur, dur);
+                interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+                a.0 = interval;
                 Ok(())
             },
         )
