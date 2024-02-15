@@ -2,6 +2,7 @@
 ---
 * LLT-4908: Lowered DNS TTL time for nicknames and NXDomain responses
 * LLT-4916: Allow any case nicknames
+* LLT-4948: Change missed tick behavior from burst to delay
 
 <br>
 
