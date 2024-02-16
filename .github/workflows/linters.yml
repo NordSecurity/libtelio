@@ -113,7 +113,7 @@ jobs:
         - run: autoflake --check .
           working-directory: nat-lab
   python-lint:
-      needs: uniffi-bindings
+      #needs: uniffi-bindings
       runs-on: ubuntu-22.04
       steps:
         - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
