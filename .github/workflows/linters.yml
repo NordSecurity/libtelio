@@ -11,9 +11,9 @@ jobs:
         - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
         - run: uniffi-bindgen generate src/libtelio.udl --language python
         - run: ls src/
-        - run: cp src/libtelio.py dist/uniffi/libtelio.py
         - run: ls dist/
         - run: ls dist/uniffi/
+        - run: cp src/libtelio.py dist/uniffi/libtelio.py
         - uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
           with:
             name: libtelio.py
