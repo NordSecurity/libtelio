@@ -323,7 +323,10 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
     }
 
     #[allow(dead_code)]
-    pub async fn collect_unacknowledged_segments(&self) -> AggregatorCollectedSegments {
+    pub async fn collect_unacknowledged_segments(
+        &self,
+        force_close: bool,
+    ) -> AggregatorCollectedSegments {
         // Getting wg_interface is first, so it won't await while mutex is locked
         let wg_interface = self.wg_interface.get_interface().await;
         let mut data_guard = self.data.lock().await;
@@ -337,11 +340,17 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
             .as_mut()
             .filter(|relay_event| {
                 current_timestamp.duration_since(relay_event.timestamp) > DAY_DURATION
+                    || force_close
             })
         {
             new_relay_segments.push(ConnectionSegmentData::new_relay(event, current_timestamp));
             event.timestamp = current_timestamp;
         }
+
+        if force_close {
+            data_guard.current_relay_event.take();
+        }
+
         data_guard.relay_segments.extend(new_relay_segments);
         data_guard
             .relay_segments
@@ -353,7 +362,7 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
             for (peer_event, peer_state) in data_guard.current_peer_events.values_mut() {
                 let since_last_event =
                     current_timestamp.duration_since(Instant::from_std(peer_event.timestamp));
-                if since_last_event > DAY_DURATION {
+                if since_last_event > DAY_DURATION || force_close {
                     wg_peers
                         .get(&peer_event.public_key)
                         .and_then(|wg_peer| wg_peer.rx_bytes.zip(wg_peer.tx_bytes))
@@ -378,6 +387,10 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
             }
         } else {
             telio_log_warn!("Getting wireguard interfaces failed");
+        }
+
+        if force_close {
+            data_guard.current_peer_events.clear();
         }
 
         data_guard
@@ -510,7 +523,10 @@ mod tests {
             )
             .await;
 
-        let segments = aggregator.collect_unacknowledged_segments().await.relay;
+        let segments = aggregator
+            .collect_unacknowledged_segments(false)
+            .await
+            .relay;
         assert_eq!(segments.len(), 4);
 
         assert_eq!(
@@ -562,7 +578,10 @@ mod tests {
             }
         );
 
-        let segments = aggregator.collect_unacknowledged_segments().await.relay;
+        let segments = aggregator
+            .collect_unacknowledged_segments(false)
+            .await
+            .relay;
         assert_eq!(segments.len(), 0);
     }
 
@@ -593,7 +612,7 @@ mod tests {
             .change_peer_state_relayed(current_peer_event)
             .await;
 
-        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        let segments = aggregator.collect_unacknowledged_segments(false).await.peer;
         assert_eq!(segments.len(), 0);
     }
 
@@ -628,7 +647,7 @@ mod tests {
             )
             .await;
 
-        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        let segments = aggregator.collect_unacknowledged_segments(false).await.peer;
         assert_eq!(segments.len(), 0);
 
         // And after 60 seconds some disconnect
@@ -650,7 +669,7 @@ mod tests {
             .await;
 
         // We don't gather periods of time when peer is disconnected, so we should have here only one segment
-        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        let segments = aggregator.collect_unacknowledged_segments(false).await.peer;
         assert_eq!(segments.len(), 1);
         assert_eq!(
             segments[0],
@@ -669,7 +688,7 @@ mod tests {
             }
         );
 
-        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        let segments = aggregator.collect_unacknowledged_segments(false).await.peer;
         assert_eq!(segments.len(), 0);
     }
 
@@ -707,12 +726,12 @@ mod tests {
             .change_peer_state_relayed(current_peer_event)
             .await;
 
-        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        let segments = aggregator.collect_unacknowledged_segments(false).await.peer;
         assert_eq!(segments.len(), 0);
 
         time::advance(expected_first_segment_duration).await;
 
-        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        let segments = aggregator.collect_unacknowledged_segments(false).await.peer;
         assert_eq!(segments.len(), 1);
         assert_eq!(
             segments[0],
@@ -731,13 +750,13 @@ mod tests {
             }
         );
 
-        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        let segments = aggregator.collect_unacknowledged_segments(false).await.peer;
         assert_eq!(segments.len(), 0);
 
         time::advance(expected_second_segment_duration).await;
 
         let expected_second_segment_start = segment_start + expected_first_segment_duration;
-        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        let segments = aggregator.collect_unacknowledged_segments(false).await.peer;
         assert_eq!(segments.len(), 1);
         assert_eq!(
             segments[0],
@@ -756,7 +775,7 @@ mod tests {
             }
         );
 
-        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        let segments = aggregator.collect_unacknowledged_segments(false).await.peer;
         assert_eq!(segments.len(), 0);
     }
 
@@ -780,12 +799,18 @@ mod tests {
             )
             .await;
 
-        let segments = aggregator.collect_unacknowledged_segments().await.relay;
+        let segments = aggregator
+            .collect_unacknowledged_segments(false)
+            .await
+            .relay;
         assert_eq!(segments.len(), 0);
 
         time::advance(expected_first_segment_duration).await;
 
-        let segments = aggregator.collect_unacknowledged_segments().await.relay;
+        let segments = aggregator
+            .collect_unacknowledged_segments(false)
+            .await
+            .relay;
         assert_eq!(segments.len(), 1);
         assert_eq!(
             segments[0],
@@ -801,13 +826,19 @@ mod tests {
         );
 
         // Let's make a second round to see if the first one left a valid state
-        let segments = aggregator.collect_unacknowledged_segments().await.relay;
+        let segments = aggregator
+            .collect_unacknowledged_segments(false)
+            .await
+            .relay;
         assert_eq!(segments.len(), 0);
 
         time::advance(expected_second_segment_duration).await;
 
         let expected_second_segment_start = segment_start + expected_first_segment_duration;
-        let segments = aggregator.collect_unacknowledged_segments().await.relay;
+        let segments = aggregator
+            .collect_unacknowledged_segments(false)
+            .await
+            .relay;
         assert_eq!(segments.len(), 1);
         assert_eq!(
             segments[0],
@@ -822,7 +853,109 @@ mod tests {
             }
         );
 
-        let segments = aggregator.collect_unacknowledged_segments().await.relay;
+        let segments = aggregator
+            .collect_unacknowledged_segments(false)
+            .await
+            .relay;
+        assert_eq!(segments.len(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_aggregator_force_close() {
+        let state_start_difference = Duration::from_secs(5);
+        let expected_segment_duration = Duration::from_secs(721);
+        let expected_second_segment_duration = DAY_DURATION + Duration::from_secs(2);
+
+        let current_relay_event = create_basic_event(1);
+
+        // Just to make sure the order will be correct
+        time::advance(state_start_difference).await;
+
+        let current_peer_event = create_basic_event(2);
+
+        let mut wg_interface = MockWireGuard::new();
+        let lambda_pk = current_peer_event.public_key;
+        wg_interface.expect_get_interface().returning(move || {
+            Ok(Interface {
+                peers: vec![(
+                    lambda_pk,
+                    Peer {
+                        public_key: lambda_pk,
+                        endpoint: None,
+                        rx_bytes: Some(3333),
+                        tx_bytes: Some(1111),
+                        ..Default::default()
+                    },
+                )]
+                .into_iter()
+                .collect(),
+                ..Default::default()
+            })
+        });
+        let mut aggregator = create_aggregator(true, true, wg_interface).await;
+
+        aggregator
+            .change_relay_state(
+                current_relay_event,
+                RelayConnectionChangeReason::ConfigurationChange,
+            )
+            .await;
+
+        aggregator.collect_unacknowledged_segments(false).await;
+
+        aggregator
+            .change_peer_state_direct(
+                current_peer_event,
+                EndpointProvider::Upnp,
+                EndpointProvider::Stun,
+            )
+            .await;
+
+        time::advance(expected_segment_duration).await;
+
+        let AggregatorCollectedSegments {
+            relay: relay_segments,
+            peer: peer_segments,
+        } = aggregator.collect_unacknowledged_segments(true).await;
+        assert_eq!(relay_segments.len(), 1);
+        assert_eq!(
+            relay_segments[0],
+            ConnectionSegmentData {
+                node: current_relay_event.public_key,
+                start: current_relay_event.timestamp.into(),
+                duration: state_start_difference + expected_segment_duration,
+                connection_data: ConnectionData::Relay {
+                    state: RelayConnectionState::Connected,
+                    reason: RelayConnectionChangeReason::ConfigurationChange
+                }
+            },
+        );
+        assert_eq!(peer_segments.len(), 1);
+        assert_eq!(
+            peer_segments[0],
+            ConnectionSegmentData {
+                node: current_peer_event.public_key,
+                start: current_peer_event.timestamp.into(),
+                duration: expected_segment_duration,
+                connection_data: ConnectionData::Peer {
+                    endpoints: PeerEndpointTypes {
+                        initiator_ep: EndpointType::UPnP,
+                        responder_ep: EndpointType::Stun,
+                    },
+                    rx_bytes: 3333,
+                    tx_bytes: 1111
+                }
+            }
+        );
+
+        // Now let's move forward by more than one day to make sure that there are no events left
+        time::advance(expected_second_segment_duration).await;
+
+        // Make sure that the state was cleaned up
+        let segments = aggregator
+            .collect_unacknowledged_segments(false)
+            .await
+            .relay;
         assert_eq!(segments.len(), 0);
     }
 
