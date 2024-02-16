@@ -10,7 +10,7 @@ jobs:
       steps:
         - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
         - run: uniffi-bindgen generate src/libtelio.udl --language python
-        - run: cp src/libtelio.py ../dist/uniffi/libtelio.py
+        - run: cp src/libtelio.py dist/uniffi/libtelio.py
         - uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
           with:
             name: libtelio.py
@@ -131,9 +131,15 @@ jobs:
         - run: pylint -f colorized .
           working-directory: nat-lab
   natlab-typecheck:
+      needs: uniffi-bindings
       runs-on: ubuntu-22.04
       steps:
         - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        - uses: actions/download-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+          with:
+            name: libtelio.py
+            path: dist/uniffi
+        - run: cp dist/uniffi/libtelio.py nat-lab/tests/uniffi/libtelio.py
         - run: pip3 install --no-deps -r requirements.txt
         - run: pipenv install --system
         - run: pipenv install --system
