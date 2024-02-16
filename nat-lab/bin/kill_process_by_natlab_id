@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+if [[ "$#" -ne 1 ]]; then
+    echo "Wrong number of parameters"
+    exit 1
+fi
+
+NATLAB_ID=$1
+
+for pid in $(ps -e -o pid=); do
+    if grep --null-data --text KILL_ID=${NATLAB_ID} /proc/${pid}/environ; then
+        echo "Killing ${pid}"
+        kill "${pid}"
+        exit 0
+    fi
+done
+
+echo "The process to kill not found"
