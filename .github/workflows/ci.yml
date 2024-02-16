@@ -31,7 +31,7 @@ jobs:
     needs: trigger
     uses: ./.github/workflows/build.yml
   linters:
-    needs: uniffi-bindings
+    needs: trigger
     uses: ./.github/workflows/linters.yml
   tests:
     needs: trigger
