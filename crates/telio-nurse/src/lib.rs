@@ -21,6 +21,9 @@ pub mod error;
 /// Main nurse module
 mod nurse;
 
+/// Connectivity data aggregator module
+mod aggregator;
+
 mod heartbeat;
 mod qos;
 mod rtt;

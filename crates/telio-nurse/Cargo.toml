@@ -37,7 +37,11 @@ telio-utils.workspace = true
 telio-wg.workspace = true
 
 [dev-dependencies]
+csv = "1.1"
+
 telio-sockets.workspace = true
+telio-wg = { workspace = true, features = ["mockall"] }
+tokio = { workspace = true, features = ["net", "sync", "test-util"] }
 
 [build-dependencies]
 protobuf-codegen-pure.workspace = true
