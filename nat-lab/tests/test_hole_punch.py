@@ -22,20 +22,23 @@ async def test_hole_punch() -> None:
         PUBLIC_IP = "10.0.254.5"
         LOCAL_PORT = 1000
         PUBLIC_PORT = 1001
-        process = connection_1.create_process([
-            "upnpc",
-            "-i",
-            "-a",
-            "192.168.105.88",
-            str(LOCAL_PORT),
-            str(PUBLIC_PORT),
-            "udp",
-        ])
+        process = connection_1.create_process(
+            [
+                "upnpc",
+                "-i",
+                "-a",
+                "192.168.105.88",
+                str(LOCAL_PORT),
+                str(PUBLIC_PORT),
+                "udp",
+            ]
+        )
         await testing.wait_long(process.execute())
 
         assert (
             f"external {PUBLIC_IP}:1001 UDP is redirected to internal"
-            " 192.168.105.88:1000 (duration=0)" in process.get_stdout()
+            " 192.168.105.88:1000 (duration=0)"
+            in process.get_stdout()
         )
 
         event = asyncio.Event()

@@ -198,6 +198,13 @@ LIBTELIO_CONFIG = {
 
 
 def main() -> None:
+    uniffi_test = False 
+    for arg in sys.argv:
+        if arg == "uniffi-test":
+            uniffi_test = True 
+            sys.argv.remove("uniffi-test")
+            break
+
     parser = rutils.create_cli_parser()
     build_parser = parser._subparsers._group_actions[0].choices["build"]
     build_parser.add_argument("--moose", action="store_true", help="Use libmoose")
@@ -206,6 +213,9 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    if uniffi_test:
+        exec_uniffi(args)
 
     if args.command == "build":
         exec_build(args)
@@ -402,6 +412,47 @@ def exec_lipo(args):
             target_os,
             LIBTELIO_CONFIG[target_os]["packages"],
         )
+
+
+def copy_uniffi_files_for_testing(target_os):
+    uniffi_dir = f"nat-lab/tests/uniffi/"
+
+    bindings_src = f"src/libtelio.py"
+    bindings_dest = f"{uniffi_dir}libtelio.py"
+
+    if target_os == "linux":
+        binary_src = f"target/release/libtelio.so"
+        binary_dest = f"{uniffi_dir}libuniffi_libtelio.so"
+    elif target_os == "windows":
+        binary_src = f"target/release/telio.dll"
+        binary_dest = f"{uniffi_dir}uniffi_libtelio.dll"
+    elif target_os == "macos":
+        binary_src = f"target/release/libtelio.dylib"
+        binary_dest = f"{uniffi_dir}libuniffi_libtelio.dylib"
+    else:
+        raise Exception("Unsupported platform for uniffi")
+
+    rutils.copy_tree_or_file(
+        binary_src,
+        binary_dest
+    )
+    rutils.copy_tree_or_file(
+        bindings_src,
+        bindings_dest
+    )
+
+
+def exec_uniffi(args):
+    config = rutils.CargoConfig(
+        args.os,
+        args.arch,
+        args.debug,
+    )
+    cmd_args = ["cargo", "build"]
+    if not args.debug:
+        cmd_args.append("--release")
+    rutils.run_command(cmd_args)
+    copy_uniffi_files_for_testing(config.target_os)
 
 
 if __name__ == "__main__":

@@ -2,8 +2,11 @@ import asyncio
 import datetime
 import json
 import os
+import random
 import re
 import shlex
+import uniffi.libtelio as libtelio
+import uuid
 from collections import Counter
 from config import DERP_PRIMARY, DERP_SERVERS
 from contextlib import asynccontextmanager
@@ -13,12 +16,16 @@ from enum import Enum
 from mesh_api import Meshmap, Node
 from telio_features import TelioFeatures
 from typing import AsyncIterator, List, Optional, Set
+from uniffi.libtelio_proxy import LibtelioProxy
 from utils import asyncio_util
 from utils.connection import Connection, TargetOS
-from utils.connection_util import get_libtelio_binary_path
+from utils.connection_util import get_libtelio_binary_path, get_uniffi_path
 from utils.output_notifier import OutputNotifier
 from utils.process import Process
 from utils.router import IPStack, Router, new_router
+from utils.router.linux_router import LinuxRouter
+from utils.router.mac_router import MacRouter
+from utils.router.windows_router import WindowsRouter
 
 
 # Equivalent of `libtelio/telio-wg/src/uapi.rs`
@@ -57,19 +64,21 @@ class DerpServer(DataClassJsonMixin):
     used: bool = False
 
     def __hash__(self):
-        return hash((
-            self.region_code,
-            self.name,
-            self.hostname,
-            self.ipv4,
-            self.relay_port,
-            self.stun_port,
-            self.stun_plaintext_port,
-            self.public_key,
-            self.weight,
-            self.use_plain_text,
-            self.conn_state,
-        ))
+        return hash(
+            (
+                self.region_code,
+                self.name,
+                self.hostname,
+                self.ipv4,
+                self.relay_port,
+                self.stun_port,
+                self.stun_plaintext_port,
+                self.public_key,
+                self.weight,
+                self.use_plain_text,
+                self.conn_state,
+            )
+        )
 
 
 # Equivalent of `libtelio/crates/telio-model/src/mesh.rs:Node`
@@ -92,22 +101,24 @@ class PeerInfo(DataClassJsonMixin):
     path: PathType = PathType.Relay
 
     def __hash__(self):
-        return hash((
-            self.identifier,
-            self.public_key,
-            self.state,
-            self.link_state,
-            self.is_exit,
-            self.is_vpn,
-            tuple(self.ip_addresses),
-            tuple(self.allowed_ips),
-            self.nickname,
-            self.endpoint,
-            self.hostname,
-            self.allow_incoming_connections,
-            self.allow_peer_send_files,
-            self.path,
-        ))
+        return hash(
+            (
+                self.identifier,
+                self.public_key,
+                self.state,
+                self.link_state,
+                self.is_exit,
+                self.is_vpn,
+                tuple(self.ip_addresses),
+                tuple(self.allowed_ips),
+                self.nickname,
+                self.endpoint,
+                self.hostname,
+                self.allow_incoming_connections,
+                self.allow_peer_send_files,
+                self.path,
+            )
+        )
 
     def __eq__(self, other):
         if not isinstance(other, PeerInfo):
@@ -153,6 +164,19 @@ class AdapterType(Enum):
     LinuxNativeWg = "linux-native"
     WireguardGo = "wireguard-go"
     WindowsNativeWg = "wireguard-nt"
+
+    def convert_adapter_type(self, router: Router) -> libtelio.TelioAdapterType:
+        if self == AdapterType.BoringTun:
+            return libtelio.TelioAdapterType.BORING_TUN
+        if self == AdapterType.LinuxNativeWg:
+            return libtelio.TelioAdapterType.LINUX_NATIVE_TUN
+        if self == AdapterType.WireguardGo:
+            return libtelio.TelioAdapterType.WIREGUARD_GO_TUN
+        if self == AdapterType.WindowsNativeWg:
+            return libtelio.TelioAdapterType.WINDOWS_NATIVE_TUN
+        if isinstance(router, WindowsRouter):
+            return libtelio.TelioAdapterType.WIREGUARD_GO_TUN
+        return libtelio.TelioAdapterType.BORING_TUN
 
 
 class Runtime:
@@ -302,21 +326,22 @@ class Runtime:
         self._peer_state_events.append(peer)
 
     def _extract_event_tokens(self, line: str, event_type: str) -> Optional[List[str]]:
-        if not line.startswith("event "):
-            return None
+        if line.startswith("event "):
+            line = line.split("event ")[-1]
 
-        line = line.split("event ")[-1]
+            if line.startswith("["):
+                # Includes timestamp
+                line = line.split("] ")[-1]
 
-        if line.startswith("["):
-            # Includes timestamp
-            line = line.split("] ")[-1]
+            if not line.startswith(f"{event_type}: "):
+                return None
 
-        if not line.startswith(f"{event_type}: "):
-            return None
+            tokens = line.split(f"{event_type}: ")
 
-        tokens = line.split(f"{event_type}: ")
-
-        return tokens
+            return tokens
+        if line.startswith(f'{{"type":"{event_type}","body":'):
+            return line[:-1].split(f'{{"type":"{event_type}","body":')
+        return None
 
     def _handle_node_event(self, line) -> bool:
         def _check_node_event(node_event: PeerInfo):
@@ -455,6 +480,7 @@ class Client:
         self._telio_features = telio_features
         self._quit = False
         self._start_time = datetime.datetime.now()
+        self._libtelio_proxy: Optional[LibtelioProxy] = None
         # Automatically enables IPv6 feature when the IPv6 stack is enabled
         if (
             self._node.ip_stack in (IPStack.IPv4v6, IPStack.IPv6)
@@ -487,66 +513,121 @@ class Client:
                 if self._runtime:
                     self._runtime.handle_output_line(line)
 
-        tcli_path = get_libtelio_binary_path("tcli", self._connection)
-
         self._runtime = Runtime()
         self._events = Events(self._runtime)
         self._router = new_router(self._connection, self._node.ip_stack)
-        if telio_v3:
-            self._process = self._connection.create_process([
-                "/opt/bin/tcli-3.6",
-                "--less-spam",
-                '-f { "paths": { "priority": ["relay", "udp-hole-punch"]} }',
-            ])
+
+        object_name = str(uuid.uuid4()).replace("-", "")
+        container_ip = await self._connection.get_ip_address()
+        port = str(random.randrange(10000, 65000))
+        object_uri = f"PYRO:{object_name}@{container_ip}:{port}"
+        if isinstance(self.get_router(), WindowsRouter):
+            python_cmd = "python"
         else:
-            self._process = self._connection.create_process([
-                tcli_path,
-                "--less-spam",
-                f"-f {self._telio_features.to_json()}",
-            ])
+            python_cmd = "python3"
+        uniffi_path = get_uniffi_path(self._connection)
+
+        if isinstance(self.get_router(), MacRouter):
+            uniprocess = self._connection.create_process(["/bin/sh"])
+        else:
+            uniprocess = self._connection.create_process(
+                [
+                    python_cmd,
+                    uniffi_path,
+                    object_name,
+                    container_ip,
+                    port,
+                ]
+            )
+
+        tcli_path = get_libtelio_binary_path("tcli", self._connection)
+        if telio_v3:
+            self._process = self._connection.create_process(
+                [
+                    "/opt/bin/tcli-3.6",
+                    "--less-spam",
+                    '-f { "paths": { "priority": ["relay", "udp-hole-punch"]} }',
+                ]
+            )
+        else:
+            self._process = self._connection.create_process(
+                [
+                    tcli_path,
+                    "--less-spam",
+                    f"-f {self._telio_features.to_json()}",
+                ]
+            )
         async with self._process.run(
             stdout_callback=on_stdout, stderr_callback=on_stderr
         ):
-            try:
-                await self._process.wait_stdin_ready()
-                await self._write_command(
-                    [
-                        "dev",
-                        "start",
-                        self._adapter_type.value,
-                        self._router.get_interface_name(),
-                        self._node.private_key,
-                    ],
-                )
-                async with asyncio_util.run_async_context(self._event_request_loop()):
-                    if meshmap:
-                        await self.set_meshmap(meshmap)
-                    yield self
-            finally:
-                await self.save_mac_network_info()
-                if self._process.is_executing():
-                    await self.stop_device()
-                    self._quit = True
-                if self._router:
-                    await self._router.delete_vpn_route()
-                    await self._router.delete_exit_node_route()
-                    await self._router.delete_interface()
-                await self.save_logs()
+            async with uniprocess.run(
+                stdout_callback=on_stdout, stderr_callback=on_stderr
+            ):
+                try:
+                    await self._process.wait_stdin_ready()
+                    await uniprocess.wait_stdin_ready()
+
+                    if isinstance(self.get_router(), MacRouter):
+                        await uniprocess.escape_and_write_stdin(
+                            ["source", "/etc/profile"]
+                        )
+                        await uniprocess.escape_and_write_stdin(
+                            [
+                                python_cmd,
+                                uniffi_path,
+                                object_name,
+                                container_ip,
+                                port,
+                            ]
+                        )
+
+                    try:
+                        self._libtelio_proxy = LibtelioProxy(
+                            object_uri, self._telio_features.to_json()
+                        )
+                    except Exception as err:
+                        print(f"Failed to initialize proxy: {str(err)}")
+                        raise err
+
+                    self.get_proxy().start_named(
+                        private_key=self._node.private_key,
+                        adapter=self._adapter_type.convert_adapter_type(
+                            self.get_router()
+                        ),
+                        name=self.get_router().get_interface_name(),
+                    )
+                    if isinstance(self.get_router(), LinuxRouter):
+                        self.get_proxy().set_fwmark(11673110)
+
+                    async with asyncio_util.run_async_context(
+                        self._event_request_loop()
+                    ):
+                        if meshmap:
+                            await self.set_meshmap(meshmap)
+                        yield self
+                finally:
+                    await self.save_mac_network_info()
+                    if self._process.is_executing():
+                        await self.stop_device()
+                        self._quit = True
+                    if self._router:
+                        await self._router.delete_vpn_route()
+                        await self._router.delete_exit_node_route()
+                        await self._router.delete_interface()
+                    await self.save_logs()
 
     async def quit(self):
         self._quit = True
         await self._write_command(["quit"])
 
     async def simple_start(self):
-        await self._write_command(
-            [
-                "dev",
-                "start",
-                self._adapter_type.value,
-                self.get_router().get_interface_name(),
-                self._node.private_key,
-            ],
+        self.get_proxy().start_named(
+            private_key=self._node.private_key,
+            adapter=self._adapter_type.convert_adapter_type(self.get_router()),
+            name=self.get_router().get_interface_name(),
         )
+        if isinstance(self.get_router(), LinuxRouter):
+            self.get_proxy().set_fwmark(11673110)
 
     async def wait_for_state_peer(
         self,
@@ -653,10 +734,10 @@ class Client:
             for peer in peers:
                 self.get_runtime().allowed_pub_keys.add(peer["public_key"])
 
-        await self._write_command(["mesh", "config", json.dumps(meshmap)])
+        self.get_proxy().set_meshnet(json.dumps(meshmap))
 
     async def set_mesh_off(self):
-        await self._write_command(["mesh", "off"])
+        self.get_proxy().set_meshnet_off()
 
     async def receive_ping(self):
         await self._write_command(["mesh", "ping"])
@@ -673,10 +754,16 @@ class Client:
         ) as event:
             self.get_runtime().allowed_pub_keys.add(public_key)
             await asyncio.wait_for(
-                asyncio.gather(*[
-                    self._write_command(["dev", "con", public_key, f"{ip}:{port}"]),
-                    event,
-                ]),
+                asyncio.gather(
+                    *[
+                        self.get_proxy().connect_to_exit_node(
+                            public_key=public_key,
+                            allowed_ips="",
+                            endpoint="{ip}:{port}",
+                        ),
+                        event,
+                    ]
+                ),
                 timeout,
             )
 
@@ -691,11 +778,13 @@ class Client:
             )
         ) as event:
             await asyncio.wait_for(
-                asyncio.gather(*[
-                    self._write_command(["vpn", "off"]),
-                    event,
-                    self.get_router().delete_vpn_route(),
-                ]),
+                asyncio.gather(
+                    *[
+                        self.get_proxy().disconnect_from_exit_nodes(),
+                        event,
+                        self.get_router().delete_vpn_route(),
+                    ]
+                ),
                 timeout,
             )
 
@@ -706,22 +795,24 @@ class Client:
             self.wait_for_event_peer(public_key, [State.Connected], list(PathType))
         ) as event:
             await asyncio.wait_for(
-                asyncio.gather(*[
-                    self._write_command(["vpn", "off"]),
-                    event,
-                    self.get_router().delete_vpn_route(),
-                ]),
+                asyncio.gather(
+                    *[
+                        self.get_proxy().disconnect_from_exit_nodes(),
+                        event,
+                        self.get_router().delete_vpn_route(),
+                    ]
+                ),
                 timeout,
             )
 
     async def enable_magic_dns(self, forward_servers: List[str]) -> None:
-        await self._write_command(["dns", "on"] + forward_servers)
+        self.get_proxy().enable_magic_dns(forward_servers)
 
     async def disable_magic_dns(self) -> None:
-        await self._write_command(["dns", "off"])
+        self.get_proxy().disable_magic_dns()
 
     async def notify_network_change(self) -> None:
-        await self._write_command(["dev", "notify-net-change"])
+        self.get_proxy().notify_network_change()
 
     async def _configure_interface(self) -> bool:
         if not self._interface_configured:
@@ -742,10 +833,14 @@ class Client:
             )
         ) as event:
             await asyncio.wait_for(
-                asyncio.gather(*[
-                    self._write_command(["dev", "con", public_key]),
-                    event,
-                ]),
+                asyncio.gather(
+                    *[
+                        self.get_proxy().connect_to_exit_node(
+                            public_key=public_key, allowed_ips="", endpoint=""
+                        ),
+                        event,
+                    ]
+                ),
                 timeout,
             )
 
@@ -761,6 +856,10 @@ class Client:
         assert self._process
         return self._process
 
+    def get_proxy(self) -> LibtelioProxy:
+        assert self._libtelio_proxy
+        return self._libtelio_proxy
+
     def get_events(self) -> Events:
         assert self._events
         return self._events
@@ -770,7 +869,8 @@ class Client:
         return self._process.get_stdout()
 
     async def stop_device(self, timeout: float = 5) -> None:
-        await asyncio.wait_for(self._write_command(["dev", "stop"]), timeout)
+        self.get_proxy().stop()
+        await asyncio.sleep(1)
         self._interface_configured = False
         assert Counter(self.get_runtime().get_started_tasks()) == Counter(
             self.get_runtime().get_stopped_tasks()
@@ -785,7 +885,15 @@ class Client:
     async def _event_request_loop(self) -> None:
         while True:
             try:
-                await self._write_command(["events"])
+                event = self.get_proxy().next_event()
+                while event:
+                    if self._runtime:
+                        print(
+                            f"[{self._node.name}]: event [{datetime.datetime.now()}]:"
+                            f" {event}"
+                        )
+                        self._runtime.handle_output_line(event)
+                        event = self.get_proxy().next_event()
                 await asyncio.sleep(1)
             except:
                 if self._quit:
@@ -820,7 +928,7 @@ class Client:
         await self._write_command(["derp", "send", pk] + data)
 
     async def trigger_event_collection(self) -> None:
-        await self._write_command(["dev", "analytics"])
+        self.get_proxy().trigger_analytics_event()
 
     async def _write_command(self, command: List[str]) -> None:
         idx = self._message_idx

@@ -4,7 +4,7 @@ from helpers import setup_environment, SetupParameters
 from telio_features import TelioFeatures, Direct
 
 ALL_DIRECT_FEATURES = ["upnp", "local", "stun"]
-EMPTY_PROVIDER = [""]
+EMPTY_PROVIDER = [""]  #: List[str] = []
 
 
 @pytest.mark.asyncio

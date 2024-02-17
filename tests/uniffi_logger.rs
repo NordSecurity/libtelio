@@ -7,7 +7,10 @@ mod test_module {
         Arc,
     };
 
-    use telio::{ffi_types::TelioLoggerCb, SubscriberCallback};
+    use telio::{
+        ffi_types::{FFIResult, TelioLoggerCb},
+        SubscriberCallback,
+    };
 
     use super::*;
 
@@ -20,10 +23,15 @@ mod test_module {
             call_count: Arc<AtomicUsize>,
         }
         impl TelioLoggerCb for TestLogger {
-            fn log(&self, log_level: telio::ffi_types::TelioLogLevel, payload: String) {
+            fn log(
+                &self,
+                log_level: telio::ffi_types::TelioLogLevel,
+                payload: String,
+            ) -> FFIResult<()> {
                 assert!(matches!(log_level, telio::ffi_types::TelioLogLevel::Info));
-                assert_eq!(r#""uniffi_logger::test_module":40 test message"#, payload);
+                assert_eq!(r#""uniffi_logger::test_module":48 test message"#, payload);
                 assert_eq!(0, self.call_count.fetch_add(1, Ordering::Relaxed));
+                Ok(())
             }
         }
 

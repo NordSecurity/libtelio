@@ -181,6 +181,15 @@ def get_libtelio_binary_path(path: str, connection: Connection) -> str:
     assert False, f"target_os not supported '{target_os}'"
 
 
+def get_uniffi_path(connection: Connection) -> str:
+    target_os = connection.target_os
+    if target_os == TargetOS.Linux:
+        return "/libtelio-build/libtelio/nat-lab/tests/uniffi/libtelio_remote.py"
+    if target_os in (TargetOS.Windows, TargetOS.Mac):
+        return "/workspace/uniffi/libtelio_remote.py"
+    assert False, f"target_os not supported '{target_os}'"
+
+
 @asynccontextmanager
 async def new_connection_raw(tag: ConnectionTag) -> AsyncIterator[Connection]:
     if tag in DOCKER_SERVICE_IDS:

@@ -43,6 +43,7 @@ typing-extensions = "*"
 typing-inspect = "*"
 yarl = "*"
 pytest-repeat = "*"
+pyro5 = "==5.15"
 
 [dev-packages]
 

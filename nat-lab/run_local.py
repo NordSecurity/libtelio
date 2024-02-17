@@ -96,7 +96,7 @@ def main() -> int:
 
 
 def run_build_command(operating_system, args):
-    command = ["../../ci/build.sh", "--default", operating_system]
+    command = ["../../ci/build.sh", "--default", operating_system, "--uniffi-test"]
     if args.restart:
         command.append("--restart")
     if args.moose:
