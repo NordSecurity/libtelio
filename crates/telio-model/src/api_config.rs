@@ -345,20 +345,6 @@ where
     Ok(Some(eps))
 }
 
-/// Turns on the no link detection mechanism
-#[derive(Default, Copy, Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct FeatureLinkDetection {
-    /// Configurable rtt in seconds
-    #[serde(default = "FeatureLinkDetection::default_configurable_rtt")]
-    pub rtt_seconds: u64,
-}
-
-impl FeatureLinkDetection {
-    const fn default_configurable_rtt() -> u64 {
-        15
-    }
-}
-
 /// Newtype for TTL value to ensure that the default function returns the actual default value and not 0.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(transparent)]
@@ -417,9 +403,6 @@ pub struct Features {
     /// Post quantum VPN tunnel configuration
     #[serde(default)]
     pub post_quantum_vpn: Option<FeaturePostQuantumVPN>,
-    /// No link detection mechanism
-    #[serde(default)]
-    pub link_detection: Option<FeatureLinkDetection>,
     /// Feature configuration for DNS.
     #[serde(default)]
     pub dns: FeatureDns,
@@ -590,7 +573,6 @@ mod tests {
             handshake_retry_interval_s: 16,
             rekey_interval_s: 120,
         }),
-        link_detection: None,
         dns: FeatureDns {
             exit_dns: Some(FeatureExitDns {
                 auto_switch_dns_ips: Some(true),
@@ -638,7 +620,6 @@ mod tests {
         boringtun_reset_connections: FeatureBoringtunResetConns(false),
         flush_events_on_stop_timeout_seconds: None,
         post_quantum_vpn: None,
-        link_detection: None,
         dns: FeatureDns {
             exit_dns: Some(FeatureExitDns {
                 auto_switch_dns_ips: None,
@@ -823,7 +804,6 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
-            link_detection: None,
             dns: FeatureDns {
                 exit_dns: None,
                 ttl_value: TtlValue::default(),
@@ -857,7 +837,6 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
-            link_detection: None,
             dns: FeatureDns {
                 exit_dns: None,
                 ttl_value: TtlValue::default(),
@@ -886,7 +865,6 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
-            link_detection: None,
             dns: FeatureDns {
                 exit_dns: None,
                 ttl_value: TtlValue::default(),
@@ -934,7 +912,6 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
-            link_detection: None,
             dns: FeatureDns {
                 exit_dns: Some(FeatureExitDns {
                     auto_switch_dns_ips: Some(true),
@@ -957,7 +934,6 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
-            link_detection: None,
             dns: FeatureDns {
                 exit_dns: Some(FeatureExitDns {
                     auto_switch_dns_ips: None,
@@ -991,7 +967,6 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
-            link_detection: Default::default(),
             dns: FeatureDns {
                 exit_dns: None,
                 ttl_value: TtlValue::default(),
@@ -1049,7 +1024,6 @@ mod tests {
             boringtun_reset_connections: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
-            link_detection: None,
             dns: FeatureDns {
                 exit_dns: None,
                 ttl_value: TtlValue::default(),

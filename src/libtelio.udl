@@ -58,12 +58,6 @@ enum NodeState {
     "Connected",
 };
 
-/// Link state hint
-enum LinkState {
-    "Down",
-    "Up",
-};
-
 /// The currrent state of our connection to derp server
 enum RelayState {
     /// Disconnected from the Derp server
@@ -370,8 +364,6 @@ dictionary Features {
     FeatureBoringtunResetConns boringtun_reset_connections;
     /// If and for how long to flush events when stopping telio. Setting to Some(0) means waiting until all events have been flushed, regardless of how long it takes
     u64? flush_events_on_stop_timeout_seconds;
-    /// No-link detection mechanism
-    FeatureLinkDetection? link_detection;
     /// Feature configuration for DNS
     FeatureDns dns;
     /// Post quantum VPN tunnel configuration
@@ -488,12 +480,6 @@ dictionary FeatureDerp {
     boolean use_built_in_root_certificates;
 };
 
-/// Link detection mechanism
-dictionary FeatureLinkDetection {
-    /// Configurable rtt in seconds
-    u64 rtt_seconds;
-};
-
 /// Feature configuration for DNS
 dictionary FeatureDns {
     /// TTL for SOA record and for A and AAAA records [default 60s]
@@ -596,8 +582,6 @@ dictionary Node {
     string? nickname;
     /// State of the node (Connecting, connected, or disconnected)
     NodeState state;
-    /// Link state hint (Down, Up)
-    LinkState? link_state;
     /// Is the node exit node
     boolean is_exit;
     /// Is the node is a vpn server.

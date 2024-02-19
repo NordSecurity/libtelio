@@ -1,6 +1,5 @@
 ### UNRELEASED
 ---
-* LLT-1113: Add no-link detection mechanism
 * LLT-4154: Optimize Upnp/Stun providers
 * LLT-4908: Lowered DNS TTL time for nicknames and NXDomain responses
 * LLT-4915: Update the moose tracker to v1.0.0-libtelioApp
