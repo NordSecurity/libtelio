@@ -1914,14 +1914,14 @@ mod tests {
             id: rand::thread_rng().gen::<usize>(),
         };
 
-        let cfg = "a".repeat(MAX_CONFIG_LENGTH);
+        let cfg = CString::new("a".repeat(MAX_CONFIG_LENGTH)).unwrap();
         assert_eq!(
-            telio_set_meshnet(&telio_dev, cfg.as_bytes().as_ptr() as *const c_char),
+            telio_set_meshnet(&telio_dev, cfg.as_ptr()),
             TELIO_RES_BAD_CONFIG
         );
-        let cfg = "a".repeat(MAX_CONFIG_LENGTH + 1);
+        let cfg = CString::new("a".repeat(MAX_CONFIG_LENGTH + 2)).unwrap();
         assert_eq!(
-            telio_set_meshnet(&telio_dev, cfg.as_bytes().as_ptr() as *const c_char),
+            telio_set_meshnet(&telio_dev, cfg.as_ptr()),
             TELIO_RES_INVALID_STRING
         );
         Ok(())
