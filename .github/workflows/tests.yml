@@ -24,7 +24,7 @@ jobs:
         with:
           command: test
           args: --all --lib -- --nocapture
-          
+
   test-mac:
     runs-on: macos-13
     steps:
@@ -51,3 +51,10 @@ jobs:
           cmake ..
           make
           sudo ./test_panic
+
+  test-replacement-script:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+      - name: Test replacement script
+        run: python3 ci/test_replace_string.py
