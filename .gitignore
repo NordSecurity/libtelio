@@ -1,6 +1,9 @@
 Cargo.lock
 tcli.log
-.*
+./*/
+!/.cargo
+!/.github
+!/.gitlab
 *.pyc
 *.box
 *.deb
