@@ -326,7 +326,7 @@ mod tests {
     }
 
     #[rstest]
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     #[case(IpAddr::V4(Ipv4Addr::LOCALHOST))]
     #[case(IpAddr::V4(Ipv4Addr::UNSPECIFIED))]
     #[case(IpAddr::V6(Ipv6Addr::LOCALHOST))]
@@ -358,7 +358,7 @@ mod tests {
     }
 
     #[rstest]
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     #[case(IpAddr::V4(Ipv4Addr::LOCALHOST))]
     #[case(IpAddr::V4(Ipv4Addr::UNSPECIFIED))]
     #[case(IpAddr::V6(Ipv6Addr::LOCALHOST))]
