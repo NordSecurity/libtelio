@@ -1,2 +1,7 @@
 #!/usr/bin/env bash
-which sudo &> /dev/null && sudo $@ || $@
+
+if command -v sudo &> /dev/null; then
+    sudo $@
+else
+    $@
+fi
