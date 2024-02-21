@@ -615,6 +615,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(not(target_os = "macos"))]
     async fn test_handle_wg_event_after_ping() {
         let mut analytics = setup();
         let mut event = generate_event();

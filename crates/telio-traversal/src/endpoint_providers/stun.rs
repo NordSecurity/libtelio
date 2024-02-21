@@ -1675,6 +1675,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    #[cfg(not(target_os = "macos"))]
     async fn server_maintained_when_current_connection_is_active() {
         let mut env = prepare_test_env_with_server_weights(None, vec![100, 200, 10], false).await;
         let poll_interval = Duration::from_millis(10000);
@@ -1709,6 +1710,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    #[cfg(not(target_os = "macos"))]
     async fn exponential_backoff() {
         // We need to prepare some more complex mock to test if it is used properly
         let backoff_array = [4000, 12000, 44444, 7654, 10000, 765432];
