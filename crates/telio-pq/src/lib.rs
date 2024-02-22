@@ -16,6 +16,12 @@ pub struct Keys {
     pub wg_secret: telio_crypto::SecretKey,
 }
 
+#[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
+pub trait PostQuantum {
+    fn keys(&self) -> Option<Keys>;
+    fn is_rotating_keys(&self) -> bool;
+}
+
 #[derive(Copy, Clone)]
 pub enum Event {
     Handshake(SocketAddr, Keys),

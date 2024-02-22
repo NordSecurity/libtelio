@@ -278,7 +278,7 @@ impl Default for FeatureValidateKeys {
 pub struct FeatureBoringtunResetConns(pub bool);
 
 /// Turns on post quantum VPN tunnel
-#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 pub struct FeaturePostQuantumVPN {
     /// Initial handshake retry interval in seconds
     #[serde(default = "FeaturePostQuantumVPN::default_handshake_retry_interval_s")]
@@ -287,6 +287,15 @@ pub struct FeaturePostQuantumVPN {
     /// Rekey interval in seconds
     #[serde(default = "FeaturePostQuantumVPN::default_rekey_interval_s")]
     pub rekey_interval_s: u32,
+}
+
+impl Default for FeaturePostQuantumVPN {
+    fn default() -> Self {
+        Self {
+            handshake_retry_interval_s: Self::default_handshake_retry_interval_s(),
+            rekey_interval_s: Self::default_rekey_interval_s(),
+        }
+    }
 }
 
 impl FeaturePostQuantumVPN {
@@ -380,7 +389,7 @@ pub struct Features {
     pub flush_events_on_stop_timeout_seconds: Option<u64>,
     /// Post quantum VPN tunnel configuration
     #[serde(default)]
-    pub post_quantum_vpn: Option<FeaturePostQuantumVPN>,
+    pub post_quantum_vpn: FeaturePostQuantumVPN,
     /// Feature configuration for DNS.
     #[serde(default)]
     pub dns: FeatureDns,
@@ -545,10 +554,10 @@ mod tests {
         nicknames: true,
         boringtun_reset_connections: FeatureBoringtunResetConns(true),
         flush_events_on_stop_timeout_seconds: None,
-        post_quantum_vpn: Some(FeaturePostQuantumVPN {
+        post_quantum_vpn: FeaturePostQuantumVPN {
             handshake_retry_interval_s: 16,
             rekey_interval_s: 120,
-        }),
+        },
         dns: FeatureDns {
             exit_dns: Some(FeatureExitDns {
                 auto_switch_dns_ips: Some(true),
@@ -594,7 +603,7 @@ mod tests {
         nicknames: false,
         boringtun_reset_connections: FeatureBoringtunResetConns(false),
         flush_events_on_stop_timeout_seconds: None,
-        post_quantum_vpn: None,
+        post_quantum_vpn: Default::default(),
         dns: FeatureDns {
             exit_dns: Some(FeatureExitDns {
                 auto_switch_dns_ips: None,
