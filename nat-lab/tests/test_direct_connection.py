@@ -13,6 +13,7 @@ from telio_features import (
     Wireguard,
     SkipUnresponsivePeers,
     FeatureEndpointProvidersOptimization,
+    PersistentKeepalive,
 )
 from typing import List, Tuple
 from utils import testing
@@ -407,7 +408,9 @@ async def test_direct_working_paths_with_skip_unresponsive_peers(
             param.features.direct.skip_unresponsive_peers = SkipUnresponsivePeers(
                 no_rx_threshold_secs=16
             )
-            param.features.wireguard = Wireguard(proxying=5, direct=5)
+            param.features.wireguard = Wireguard(
+                persistent_keepalive=PersistentKeepalive(proxying=5, direct=5)
+            )
 
         env = await setup_mesh_nodes(exit_stack, setup_params)
         api = env.api
