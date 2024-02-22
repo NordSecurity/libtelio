@@ -20,22 +20,24 @@ class Event(DataClassJsonMixin):
     datetime_local: str = field(metadata=json_config(field_name="event_datetime_local"))
     external_links: str = field(
         metadata=json_config(
-            field_name="context_application_libtelioapp_config_external_links"
+            field_name=(
+                "context_application_libtelioapp_config_current_state_external_links"
+            )
         )
     )
     connectivity_matrix: str = field(
         metadata=json_config(
-            field_name="context_application_libtelioapp_config_internal_meshnet_connectivity_matrix"
+            field_name="context_application_libtelioapp_config_current_state_internal_meshnet_connectivity_matrix"
         )
     )
     fp: str = field(
         metadata=json_config(
-            field_name="context_application_libtelioapp_config_internal_meshnet_fp"
+            field_name="context_application_libtelioapp_config_current_state_internal_meshnet_fp"
         )
     )
     members: str = field(
         metadata=json_config(
-            field_name="context_application_libtelioapp_config_internal_meshnet_members"
+            field_name="context_application_libtelioapp_config_current_state_internal_meshnet_members"
         )
     )
     connection_duration: str = field(
@@ -52,14 +54,12 @@ class Event(DataClassJsonMixin):
     sent_data: str = field(metadata=json_config(field_name="body_sent_data"))
     nat_type: str = field(
         metadata=json_config(
-            field_name="context_application_libtelioapp_config_internal_meshnet_fp_nat"
+            field_name="context_application_libtelioapp_config_current_state_internal_meshnet_fp_nat"
         )
     )
     mem_nat_types: str = field(
         metadata=json_config(
-            field_name=(
-                "context_application_libtelioapp_config_internal_meshnet_members_nat"
-            )
+            field_name="context_application_libtelioapp_config_current_state_internal_meshnet_members_nat"
         )
     )
 
