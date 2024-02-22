@@ -68,43 +68,6 @@ fn get_logfile() -> std::io::Result<File> {
 #[allow(missing_docs)]
 /// Module that mocks moose items.
 pub mod moose {
-    use serde::{Deserialize, Serialize};
-
-    /// Mock of moose::MeshnetappContext.
-    #[derive(Clone, Serialize, Deserialize)]
-    pub struct MeshnetappContext {
-        #[serde(rename = "application")]
-        pub application: MeshnetappContextApplication,
-    }
-
-    /// Mock of moose::MeshnetappContextApplicationConfig.
-    #[derive(Clone, Serialize, Deserialize)]
-    pub struct MeshnetappContextApplicationConfig {
-        #[serde(rename = "current_state")]
-        pub current_state: MeshnetappContextApplicationConfigCurrentState,
-    }
-
-    /// Mock of moose::MeshnetappContextApplicationConfigCurrentState.
-    #[derive(Clone, Serialize, Deserialize)]
-    pub struct MeshnetappContextApplicationConfigCurrentState {
-        #[serde(rename = "internal_meshnet")]
-        pub internal_meshnet: MeshnetappContextApplicationConfigCurrentStateInternalMeshnet,
-    }
-
-    /// Mock of moose::MeshnetappContextApplicationConfigCurrentStateInternalMeshnet.
-    #[derive(Clone, Serialize, Deserialize)]
-    pub struct MeshnetappContextApplicationConfigCurrentStateInternalMeshnet {
-        #[serde(rename = "fp")]
-        pub fp: Option<String>,
-    }
-
-    /// Mock of moose::MeshnetappContextApplication.
-    #[derive(Clone, Serialize, Deserialize)]
-    pub struct MeshnetappContextApplication {
-        #[serde(rename = "config")]
-        pub config: MeshnetappContextApplicationConfig,
-    }
-
     /// Logger error
     #[derive(thiserror::Error, Debug)]
     pub enum Error {
@@ -243,12 +206,12 @@ pub mod moose {
     }
 
     #[allow(non_snake_case)]
-    pub fn set_context_application_libtelioapp_config_meshnetEnabled(
+    pub fn set_context_application_libtelioapp_config_currentState_meshnetEnabled(
         val: bool,
     ) -> std::result::Result<Result, Error> {
         let val = val.to_string();
         match super::event_log(
-            "set_context_application_libtelioapp_config_meshnetEnabled",
+            "set_context_application_libtelioapp_config_currentState_meshnetEnabled",
             Some(vec![val.as_str()]),
         ) {
             Ok(_) => Ok(Result::Success),
@@ -258,11 +221,11 @@ pub mod moose {
 
     #[allow(non_snake_case)]
     /// Mocked moose function.
-    pub fn set_context_application_libtelioapp_config_internalMeshnet_fpNat(
+    pub fn set_context_application_libtelioapp_config_currentState_internalMeshnet_fpNat(
         val: String,
     ) -> std::result::Result<Result, Error> {
         match super::event_log(
-            "set_context_application_libtelioapp_config_internalMeshnet_fpNat",
+            "set_context_application_libtelioapp_config_currentState_internalMeshnet_fpNat",
             Some(vec![val.as_str()]),
         ) {
             Ok(_) => Ok(Result::Success),
@@ -272,11 +235,11 @@ pub mod moose {
 
     #[allow(non_snake_case)]
     /// Mocked moose function.
-    pub fn set_context_application_libtelioapp_config_internalMeshnet_membersNat(
+    pub fn set_context_application_libtelioapp_config_currentState_internalMeshnet_membersNat(
         val: String,
     ) -> std::result::Result<Result, Error> {
         match super::event_log(
-            "set_context_application_libtelioapp_config_internalMeshnet_membersNat",
+            "set_context_application_libtelioapp_config_currentState_internalMeshnet_membersNat",
             Some(vec![val.as_str()]),
         ) {
             Ok(_) => Ok(Result::Success),
@@ -286,11 +249,11 @@ pub mod moose {
 
     #[allow(non_snake_case)]
     /// Mocked moose function.
-    pub fn set_context_application_libtelioapp_config_externalLinks(
+    pub fn set_context_application_libtelioapp_config_currentState_externalLinks(
         val: String,
     ) -> std::result::Result<Result, Error> {
         match super::event_log(
-            "set_context_application_libtelioapp_config_externalLinks",
+            "set_context_application_libtelioapp_config_currentState_externalLinks",
             Some(vec![val.as_str()]),
         ) {
             Ok(_) => Ok(Result::Success),
@@ -300,11 +263,11 @@ pub mod moose {
 
     #[allow(non_snake_case)]
     /// Mocked moose function.
-    pub fn set_context_application_libtelioapp_config_internalMeshnet_fp(
+    pub fn set_context_application_libtelioapp_config_currentState_internalMeshnet_fp(
         val: String,
     ) -> std::result::Result<Result, Error> {
         match super::event_log(
-            "set_context_application_libtelioapp_config_internalMeshnet_fp",
+            "set_context_application_libtelioapp_config_currentState_internalMeshnet_fp",
             Some(vec![val.as_str()]),
         ) {
             Ok(_) => Ok(Result::Success),
@@ -314,11 +277,11 @@ pub mod moose {
 
     #[allow(non_snake_case)]
     /// Mocked moose function.
-    pub fn set_context_application_libtelioapp_config_internalMeshnet_members(
+    pub fn set_context_application_libtelioapp_config_currentState_internalMeshnet_members(
         val: String,
     ) -> std::result::Result<Result, Error> {
         match super::event_log(
-            "set_context_application_libtelioapp_config_internalMeshnet_members",
+            "set_context_application_libtelioapp_config_currentState_internalMeshnet_members",
             Some(vec![val.as_str()]),
         ) {
             Ok(_) => Ok(Result::Success),
@@ -328,11 +291,11 @@ pub mod moose {
 
     #[allow(non_snake_case)]
     /// Mocked moose function.
-    pub fn set_context_application_libtelioapp_config_internalMeshnet_connectivityMatrix(
+    pub fn set_context_application_libtelioapp_config_currentState_internalMeshnet_connectivityMatrix(
         val: String,
     ) -> std::result::Result<Result, Error> {
         match super::event_log(
-            "set_context_application_libtelioapp_config_internalMeshnet_connectivityMatrix",
+            "set_context_application_libtelioapp_config_currentState_internalMeshnet_connectivityMatrix",
             Some(vec![val.as_str()]),
         ) {
             Ok(_) => Ok(Result::Success),
