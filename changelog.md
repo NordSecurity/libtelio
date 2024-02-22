@@ -11,6 +11,7 @@
 * LLT-4855: Add Aggregator struct for connectivity events gathering
 * LLT-4917: Fix the issue with wireguard-go failing to bind to a port on some devices
 * LLT-2515: Implement PMTU discovery for VPN connection paths on Linux/Android
+* LLT-4978: Bump moose tracker to v2.0.0-libtelioApp
 
 <br>
 

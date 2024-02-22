@@ -186,40 +186,40 @@ impl State {
 
     async fn handle_heartbeat_event(&self, info: HeartbeatInfo) {
         let _ = lana!(
-            set_context_application_libtelioapp_config_meshnetEnabled,
+            set_context_application_libtelioapp_config_currentState_meshnetEnabled,
             info.meshnet_enabled
         );
 
         // Send off nominated fingerprint to moose
         let _ = lana!(
-            set_context_application_libtelioapp_config_internalMeshnet_fp,
+            set_context_application_libtelioapp_config_currentState_internalMeshnet_fp,
             info.meshnet_id.to_string()
         );
 
         // We pray that nothing goes wrong here
         let _ = lana!(
-            set_context_application_libtelioapp_config_internalMeshnet_members,
+            set_context_application_libtelioapp_config_currentState_internalMeshnet_members,
             info.fingerprints
         );
 
         // And send this off to moose
         let _ = lana!(
-            set_context_application_libtelioapp_config_internalMeshnet_connectivityMatrix,
+            set_context_application_libtelioapp_config_currentState_internalMeshnet_connectivityMatrix,
             info.connectivity_matrix
         );
 
         let _ = lana!(
-            set_context_application_libtelioapp_config_externalLinks,
+            set_context_application_libtelioapp_config_currentState_externalLinks,
             info.external_links
         );
 
         let _ = lana!(
-            set_context_application_libtelioapp_config_internalMeshnet_fpNat,
+            set_context_application_libtelioapp_config_currentState_internalMeshnet_fpNat,
             info.nat_type
         );
 
         let _ = lana!(
-            set_context_application_libtelioapp_config_internalMeshnet_membersNat,
+            set_context_application_libtelioapp_config_currentState_internalMeshnet_membersNat,
             info.peer_nat_types.join(",")
         );
 
@@ -265,7 +265,7 @@ impl State {
 
     fn meshnet_id() -> Uuid {
         telio_lana::fetch_context_string(String::from(
-            "context.application.libtelioapp.config.internal_meshnet.fp",
+            "context.application.libtelioapp.config.current_state.internal_meshnet.fp",
         ))
         .map(|fp| {
             Uuid::parse_str(&fp).unwrap_or_else(|_| {
