@@ -4291,6 +4291,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.13.1",
  "boringtun",
+ "mockall",
  "pnet_packet",
  "pqcrypto-kyber",
  "pqcrypto-traits",

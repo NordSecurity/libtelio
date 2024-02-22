@@ -83,6 +83,7 @@ tokio = { workspace = true, features = ["test-util"] }
 telio-dns = { workspace = true, features = ["mockall"] }
 telio-firewall = { workspace = true, features = ["mockall"] }
 telio-proxy = { workspace = true, features = ["mockall"] }
+telio-pq = { workspace = true, features = ["mockall"] }
 telio-test.workspace = true
 telio-traversal = { workspace = true, features = ["mockall"] }
 telio-wg = { workspace = true, features = ["mockall", "test-adapter"] }

@@ -603,6 +603,46 @@ impl telio {
         })
     }
 
+    /// Connects to the VPN exit node with post quantum tunnel
+    ///
+    /// Routing should be set by the user accordingly.
+    ///
+    /// # Parameters
+    /// - `identifier`: String that identifies the exit node, will be generated if null is passed.
+    /// - `public_key`: WireGuard public key for an exit node.
+    /// - `allowed_ips`: List of subnets which will be routed to the exit node.
+    ///                  Can be None, same as "0.0.0.0/0".
+    /// - `endpoint`: An endpoint to an exit node. Must contain a port.
+    pub fn connect_to_exit_node_postquantum(
+        &self,
+        identifier: Option<String>,
+        public_key: PublicKey,
+        allowed_ips: Option<Vec<IpNetwork>>,
+        endpoint: SocketAddr,
+    ) -> FFIResult<()> {
+        telio_log_info!(
+            "Telio::connect_to_exit_node_postquantum entry with instance id :{}. Identifier: {:?}, Public Key: {:?}. Allowed IP: {:?}. Endpoint: {:?}",
+            self.id,
+            identifier,
+            public_key,
+            allowed_ips,
+            endpoint,
+        );
+        let identifier = identifier.unwrap_or_else(|| Uuid::new_v4().to_string());
+        let node = ExitNode {
+            identifier,
+            public_key,
+            allowed_ips,
+            endpoint: Some(endpoint),
+        };
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                dev.connect_vpn_post_quantum(&node)
+                    .log_result("Telio::connect_vpn_post_quantum")
+            })
+        })
+    }
+
     /// Enables magic DNS if it was not enabled yet,
     ///
     /// Routing should be set by the user accordingly.
@@ -1379,6 +1419,104 @@ pub extern "C" fn telio_connect_to_exit_node_with_id(
         telio_device_op(dev, true, |dev| {
             dev.connect_exit_node(&node)
                 .telio_log_result("telio_connect_to_exit_node")
+        })
+    })
+}
+
+#[no_mangle]
+/// Connects to the VPN exit node with post quantum tunnel
+///
+/// Routing should be set by the user accordingly.
+///
+/// # Parameters
+/// - `identifier`: String that identifies the exit node, will be generated if null is passed.
+/// - `public_key`: Base64 encoded WireGuard public key for an exit node.
+/// - `allowed_ips`: Semicolon separated list of subnets which will be routed to the exit node.
+///                  Can be NULL, same as "0.0.0.0/0".
+/// - `endpoint`: An endpoint to an exit node. Must contain a port.
+///
+/// # Examples
+///
+/// ```c
+/// // Connects to VPN exit node.
+/// telio_connect_to_exit_node_postquantum(
+///     "5e0009e1-75cf-4406-b9ce-0cbb4ea50366",
+///     "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=",
+///     "0.0.0.0/0", // Equivalent
+///     "1.2.3.4:5678"
+/// );
+///
+/// // Connects to VPN exit node, with specified allowed_ips.
+/// telio_connect_to_exit_node_postquantum(
+///     "5e0009e1-75cf-4406-b9ce-0cbb4ea50366",
+///     "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=",
+///     "100.100.0.0/16;10.10.23.0/24",
+///     "1.2.3.4:5678"
+/// );
+/// ```
+///
+pub extern "C" fn telio_connect_to_exit_node_postquantum(
+    dev: &telio,
+    identifier: *const c_char,
+    public_key: *const c_char,
+    allowed_ips: *const c_char,
+    endpoint: *const c_char,
+) -> telio_result {
+    ffi_catch_panic!({
+        let identifier = if !identifier.is_null() {
+            let cstr = ffi_try!(unsafe { CStr::from_ptr(identifier) }
+                .to_str()
+                .map_err(|_| TELIO_RES_INVALID_STRING));
+            cstr.to_owned()
+        } else {
+            Uuid::new_v4().to_string()
+        };
+
+        let public_key = if !public_key.is_null() {
+            ffi_try!(char_ptr_to_type::<PublicKey>(public_key))
+        } else {
+            telio_log_error!("Public Key is NULL");
+            return TELIO_RES_ERROR;
+        };
+
+        let allowed_ips = if !allowed_ips.is_null() {
+            let cstr = ffi_try!(unsafe { CStr::from_ptr(allowed_ips) }
+                .to_str()
+                .map_err(|_| TELIO_RES_INVALID_STRING))
+            .split(';');
+            let allowed_ips: Vec<IpNetwork> = ffi_try!(cstr
+                .map(|net| net.parse())
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| TELIO_RES_INVALID_STRING));
+            Some(allowed_ips)
+        } else {
+            None
+        };
+
+        let parse_endpoint = || -> Result<SocketAddr, telio_result> {
+            if endpoint.is_null() {
+                return Err(TELIO_RES_INVALID_STRING);
+            }
+
+            let cstr = unsafe { CStr::from_ptr(endpoint) }
+                .to_str()
+                .map_err(|_| TELIO_RES_INVALID_STRING)?;
+
+            cstr.parse::<SocketAddr>()
+                .map_err(|_| TELIO_RES_INVALID_STRING)
+        };
+
+        let endpoint = ffi_try!(parse_endpoint());
+
+        let node = ExitNode {
+            identifier,
+            public_key,
+            allowed_ips,
+            endpoint: Some(endpoint),
+        };
+        telio_device_op(dev, true, |dev| {
+            dev.connect_vpn_post_quantum(&node)
+                .telio_log_result("connect_vpn_post_quantum")
         })
     })
 }
