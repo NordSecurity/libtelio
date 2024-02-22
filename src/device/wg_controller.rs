@@ -1345,6 +1345,7 @@ mod tests {
                         exit_dns: None,
                         ttl_value: TtlValue(60),
                     },
+                    pmtu_discovery: Default::default(),
                 },
             }
         }

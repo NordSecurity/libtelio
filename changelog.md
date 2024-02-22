@@ -10,6 +10,7 @@
 * LLT-4948: Change missed tick behavior from burst to delay
 * LLT-4855: Add Aggregator struct for connectivity events gathering
 * LLT-4917: Fix the issue with wireguard-go failing to bind to a port on some devices
+* LLT-2515: Implement PMTU discovery for VPN connection paths on Linux/Android
 
 <br>
 

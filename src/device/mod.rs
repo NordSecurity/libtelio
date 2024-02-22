@@ -151,6 +151,8 @@ pub enum Error {
     PostQuantum(#[from] telio_pq::Error),
     #[error("Cannot setup meshnet when the post quantum VPN is set up")]
     MeshnetUnavailableWithPQ,
+    #[error(transparent)]
+    PmtuProbe(std::io::Error),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -241,6 +243,8 @@ pub struct Entities {
     nurse: Option<Arc<Nurse>>,
 
     postquantum_wg: Option<telio_pq::Entity>,
+
+    pmtu_detection: Option<telio_pmtu::Entity>,
 }
 
 impl Entities {
@@ -708,6 +712,44 @@ impl Device {
             .await?
         })
     }
+
+    /// Used by tcli only
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub fn probe_pmtu(&self, host: IpAddr) -> Result<u32> {
+        use std::os::fd::AsRawFd;
+
+        self.art()?.block_on(async {
+            let sock = telio_pmtu::PMTUSocket::new(
+                host,
+                Duration::from_secs(
+                    self.features
+                        .pmtu_discovery
+                        .unwrap_or_default()
+                        .response_wait_timeout_s as _,
+                ),
+            )?;
+            telio_log_debug!("PMTU socket created");
+
+            match self.rt() {
+                Ok(rt) => {
+                    task_exec!(rt, async move |rt| {
+                        let future = async {
+                            telio_log_debug!("Making PMTU socket external");
+                            rt.entities.socket_pool.make_external(sock.as_raw_fd());
+                            sock.probe_pmtu().await
+                        };
+
+                        Ok(future.await.map_err(Error::PmtuProbe))
+                    })
+                    .await?
+                }
+                Err(_) => {
+                    // The device is not started. No need to make socket external
+                    sock.probe_pmtu().await.map_err(Error::PmtuProbe)
+                }
+            }
+        })
+    }
 }
 
 impl Drop for Device {
@@ -1005,6 +1047,13 @@ impl Runtime {
         let mut polling_interval = interval_at(tokio::time::Instant::now(), Duration::from_secs(5));
         polling_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
+        let pmtu_detection = features.pmtu_discovery.map(|cfg| {
+            telio_pmtu::Entity::new(
+                socket_pool.clone(),
+                Duration::from_secs(cfg.response_wait_timeout_s as _),
+            )
+        });
+
         Ok(Runtime {
             features,
             requested_state,
@@ -1016,6 +1065,7 @@ impl Runtime {
                 socket_pool,
                 nurse,
                 postquantum_wg,
+                pmtu_detection,
             },
             event_listeners: EventListeners {
                 wg_endpoint_publish_event_subscriber: wg_endpoint_publish_events.rx,
@@ -1642,6 +1692,10 @@ impl Runtime {
                     exit_node.public_key,
                 );
             }
+
+            if let Some(pmtud) = &mut self.entities.pmtu_detection {
+                pmtud.run(addr.ip()).await;
+            }
         } else {
             return Err(Error::EndpointNotProvided);
         }
@@ -1727,6 +1781,10 @@ impl Runtime {
 
         if let Some(pq_entt) = &mut self.entities.postquantum_wg {
             pq_entt.stop();
+        }
+
+        if let Some(pmtud) = &mut self.entities.pmtu_detection {
+            pmtud.stop().await;
         }
 
         Ok(())
