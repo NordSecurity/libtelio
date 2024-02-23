@@ -250,9 +250,19 @@ async fn consolidate_wg_peers<
                     requested_peer.peer.endpoint,
                     requested_peer.local_direct_endpoint,
                 ) {
-                    if let Some(us) = upgrade_sync {
-                        us.request_upgrade(&public_key, remote_endpoint, local_direct_endpoint)
-                            .await?;
+                    if let (Some(us), Some(cpc)) = (upgrade_sync, cross_ping_check) {
+                        match cpc.session_for_key(public_key).await? {
+                            Some(session) => {
+                                us.request_upgrade(
+                                    &public_key,
+                                    remote_endpoint,
+                                    local_direct_endpoint,
+                                    session,
+                                )
+                                .await?
+                            }
+                            None => return Err(super::Error::NoSessionForKey(public_key)),
+                        };
                     }
                 }
 
@@ -960,6 +970,7 @@ mod tests {
     use telio_model::config::{Config, PeerBase, Server};
     use telio_model::mesh::ExitNode;
     use telio_pq::MockPostQuantum;
+    use telio_proto::Session;
     use telio_proxy::MockProxy;
     use telio_traversal::cross_ping_check::MockCrossPingCheckTrait;
     use telio_traversal::{MockSessionKeeperTrait, MockUpgradeSyncTrait, UpgradeRequest};
@@ -1498,6 +1509,7 @@ mod tests {
         }
 
         fn when_upgrade_requests(&mut self, input: Vec<(PublicKey, SocketAddr, Instant)>) {
+            use rand::RngCore;
             let map: HashMap<PublicKey, UpgradeRequest> = input
                 .iter()
                 .map(|i| {
@@ -1506,6 +1518,7 @@ mod tests {
                         UpgradeRequest {
                             endpoint: i.1,
                             requested_at: i.2,
+                            session: rand::thread_rng().next_u64(),
                         },
                     )
                 })
@@ -1560,12 +1573,19 @@ mod tests {
         }
 
         fn then_request_upgrade(&mut self, input: Vec<(PublicKey, SocketAddr, SocketAddr)>) {
+            use rand::RngCore;
             for i in input {
+                let session: Session = rand::thread_rng().next_u64();
+                self.cross_ping_check
+                    .expect_session_for_key()
+                    .once()
+                    .with(eq(i.0))
+                    .return_once(move |_| Ok(Some(session)));
                 self.upgrade_sync
                     .expect_request_upgrade()
                     .once()
-                    .with(eq(i.0), eq(i.1), eq(i.2))
-                    .return_once(|_, _, _| Ok(()));
+                    .with(eq(i.0), eq(i.1), eq(i.2), eq(session))
+                    .return_once(|_, _, _, _| Ok(()));
             }
         }
 

@@ -13,7 +13,7 @@ pub use relayed::{
     pinger::PingerMsg,
     pinger::Timestamp,
     pinger::{PartialPongerMsg, PlaintextPongerMsg},
-    upgrade::UpgradeMsg,
+    upgrade::{Decision, UpgradeDecisionMsg, UpgradeMsg},
 };
 
 pub use control::derppoll::{DerpPollRequestMsg, DerpPollResponseMsg, PeersStatesMap};
@@ -79,6 +79,9 @@ pub enum PacketTypeRelayed {
     /// Ponger packet
     Ponger = 0x09,
 
+    /// Message with a reply for the Upgrade message
+    UpgradeDecision = 0x0a,
+
     /// Reserved for future, in case we use all byte values for types.
     Reserved = 0xfe,
 
@@ -109,6 +112,8 @@ pub enum PacketRelayed {
     Ponger(PartialPongerMsg),
     /// Upgrading connection
     Upgrade(UpgradeMsg),
+    /// Upgrading connection result
+    UpgradeDecision(UpgradeDecisionMsg),
 }
 
 impl PacketRelayed {
@@ -148,6 +153,7 @@ impl PacketRelayed {
                     Self::CallMeMaybeDeprecated(CallMeMaybeMsgDeprecated::decode(bytes)?)
                 }
                 Upgrade => Self::Upgrade(UpgradeMsg::decode(bytes)?),
+                UpgradeDecision => Self::UpgradeDecision(UpgradeDecisionMsg::decode(bytes)?),
                 // At this point a package already should be decrypted if is not Data
                 Reserved | Invalid | Encrypted => return Err(CodecError::DecodeFailed),
             },
@@ -166,6 +172,7 @@ impl Codec<PacketTypeRelayed> for PacketRelayed {
         PacketTypeRelayed::Pinger,
         PacketTypeRelayed::Upgrade,
         PacketTypeRelayed::Ponger,
+        PacketTypeRelayed::UpgradeDecision,
     ];
 
     fn decode(bytes: &[u8]) -> CodecResult<Self>
@@ -188,6 +195,7 @@ impl Codec<PacketTypeRelayed> for PacketRelayed {
                 CallMeMaybeMsgDeprecated::decode(bytes)?,
             )),
             Upgrade => Ok(Self::Upgrade(UpgradeMsg::decode(bytes)?)),
+            UpgradeDecision => Ok(Self::UpgradeDecision(UpgradeDecisionMsg::decode(bytes)?)),
             // At this point a package already should be decrypted if is not Data
             Reserved | Invalid | Encrypted => Err(CodecError::DecodeFailed),
         }
@@ -202,6 +210,7 @@ impl Codec<PacketTypeRelayed> for PacketRelayed {
             Self::Ponger(msg) => msg.encode(),
             Self::CallMeMaybeDeprecated(msg) => msg.encode(),
             Self::Upgrade(msg) => msg.encode(),
+            Self::UpgradeDecision(msg) => msg.encode(),
         }
     }
 
@@ -215,6 +224,7 @@ impl Codec<PacketTypeRelayed> for PacketRelayed {
             Self::Ponger(msg) => msg.packet_type(),
             Self::CallMeMaybeDeprecated(msg) => msg.packet_type(),
             Self::Upgrade(msg) => msg.packet_type(),
+            Self::UpgradeDecision(msg) => msg.packet_type(),
         }
     }
 }
@@ -355,6 +365,12 @@ impl From<UpgradeMsg> for PacketRelayed {
 impl From<PartialPongerMsg> for PacketRelayed {
     fn from(other: PartialPongerMsg) -> Self {
         Self::Ponger(other)
+    }
+}
+
+impl From<UpgradeDecisionMsg> for PacketRelayed {
+    fn from(other: UpgradeDecisionMsg) -> Self {
+        Self::UpgradeDecision(other)
     }
 }
 

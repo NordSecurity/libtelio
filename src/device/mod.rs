@@ -154,6 +154,8 @@ pub enum Error {
     MeshnetUnavailableWithPQ,
     #[error(transparent)]
     PmtuProbe(std::io::Error),
+    #[error("Connection upgrade failed - there is no session for key {0:?}")]
+    NoSessionForKey(PublicKey),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -651,7 +653,7 @@ impl Device {
         self.art()?.block_on(async {
             let node_key = *node_key;
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.disconnect_exit_node(&node_key).await)
+                Ok(Box::pin(rt.disconnect_exit_node(&node_key)).await)
             })
             .await?
             .map_err(Error::from)
@@ -687,7 +689,7 @@ impl Device {
         self.art()?.block_on(async {
             let upstream_servers = upstream_servers.to_vec();
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.start_dns(&upstream_servers).await)
+                Ok(Box::pin(rt.start_dns(&upstream_servers)).await)
             })
             .await?
         })
@@ -867,6 +869,8 @@ impl MeshnetEntites {
         }
 
         if let Some(direct) = self.direct.take() {
+            // Arc dependency on CrossPingCheck
+            stop_arc_entity!(direct.upgrade_sync, "UpgradeSync");
             // Arc dependency on endpoint providers
             stop_arc_entity!(direct.cross_ping_check, "CrossPingCheck");
             drop(direct.endpoint_providers);
@@ -883,7 +887,6 @@ impl MeshnetEntites {
             }
 
             stop_arc_entity!(direct.session_keeper, "SessionKeeper");
-            stop_arc_entity!(direct.upgrade_sync, "UpgradeSync");
         }
 
         stop_arc_entity!(self.multiplexer, "Multiplexer");
@@ -1295,6 +1298,8 @@ impl Runtime {
                     .clone(),
                 multiplexer.get_channel().await?,
                 Duration::from_secs(5),
+                cross_ping_check.clone(),
+                multiplexer.get_channel().await?,
             )?);
 
             let session_keeper = Arc::new(SessionKeeper::start(self.entities.socket_pool.clone())?);
@@ -2002,6 +2007,7 @@ impl TaskRuntime for Runtime {
                         |e| {
                             telio_log_warn!("WireGuard controller failure: {:?}. Ignoring", e);
                         });
+
                 Ok(())
             },
 

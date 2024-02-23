@@ -17,6 +17,7 @@
 * LLT-4850: Add missing VPN meshnet address to analytics
 * LLT-4980: Introduce synchronization for the endpoint map in telio-proxy
 * LLT-4970: PQ VPN is enabled by calling `telio_connect_to_exit_node_postquantum()`
+* LLT-4981: Add upgrade decision message
 
 <br>
 

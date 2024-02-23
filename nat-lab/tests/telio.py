@@ -523,6 +523,7 @@ class Client:
                         await self.set_meshmap(meshmap)
                     yield self
             finally:
+                await self.save_logs()
                 await self.save_mac_network_info()
                 if self._process.is_executing():
                     await self.stop_device()
@@ -531,7 +532,6 @@ class Client:
                     await self._router.delete_vpn_route()
                     await self._router.delete_exit_node_route()
                     await self._router.delete_interface()
-                await self.save_logs()
 
     async def quit(self):
         self._quit = True
