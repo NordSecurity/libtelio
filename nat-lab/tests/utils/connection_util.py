@@ -413,3 +413,40 @@ def generate_connection_tracker_config(
         )
 
     return ctc_list
+
+
+@asynccontextmanager
+async def add_outgoing_packets_delay(
+    connection: Connection, delay: str
+) -> AsyncIterator:
+    await remove_traffic_control_rules(connection)
+    await connection.create_process([
+        "tc",
+        "qdisc",
+        "add",
+        "dev",
+        "eth0",
+        "root",
+        "netem",
+        "delay",
+        delay,
+    ]).execute()
+    try:
+        yield
+    finally:
+        await remove_traffic_control_rules(connection)
+
+
+async def remove_traffic_control_rules(connection):
+    try:
+        await connection.create_process([
+            "tc",
+            "qdisc",
+            "del",
+            "dev",
+            "eth0",
+            "root",
+            "netem",
+        ]).execute()
+    except:
+        pass
