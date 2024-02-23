@@ -81,11 +81,17 @@ class LinkDetection(DataClassJsonMixin):
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
-class Wireguard(DataClassJsonMixin):
+class PersistentKeepalive(DataClassJsonMixin):
     proxying: Optional[int] = 25
     direct: Optional[int] = 5
     vpn: Optional[int] = 25
     stun: Optional[int] = 25
+
+
+@dataclass_json(undefined=Undefined.EXCLUDE)
+@dataclass
+class Wireguard(DataClassJsonMixin):
+    persistent_keepalive: PersistentKeepalive
 
 
 @dataclass_json(undefined=Undefined.EXCLUDE)

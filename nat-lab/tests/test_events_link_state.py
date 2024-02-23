@@ -3,7 +3,7 @@ import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from telio import AdapterType, LinkState
-from telio_features import TelioFeatures, LinkDetection, Wireguard
+from telio_features import TelioFeatures, LinkDetection, Wireguard, PersistentKeepalive
 from typing import List, Tuple
 from utils import testing
 from utils.connection_util import ConnectionTag
@@ -11,7 +11,11 @@ from utils.ping import Ping
 
 
 def long_persistent_keepalive_periods() -> Wireguard:
-    return Wireguard(proxying=3600, direct=3600, vpn=3600, stun=3600)
+    return Wireguard(
+        persistent_keepalive=PersistentKeepalive(
+            proxying=3600, direct=3600, vpn=3600, stun=3600
+        )
+    )
 
 
 def _generate_setup_paramete_pair(
