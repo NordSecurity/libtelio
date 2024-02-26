@@ -6,7 +6,6 @@ use std::{convert::TryInto, net::IpAddr};
 use surge_ping::{
     Client, Config as PingerConfig, ConfigBuilder, PingIdentifier, PingSequence, ICMP,
 };
-use tokio::sync::mpsc;
 
 use telio_crypto::PublicKey;
 use telio_utils::{telio_log_debug, telio_log_error, DualTarget};
@@ -55,16 +54,11 @@ impl Ping {
     /// # Arguments
     ///
     /// * `node` - `NodeInfo` instance to get endpoint to ping and to store RTT information.
-    pub async fn perform(
-        &self,
-        target: (PublicKey, DualTarget),
-        results_tx: mpsc::Sender<(PublicKey, DualPingResults)>,
-    ) {
+    pub async fn perform(&self, target: (PublicKey, DualTarget)) -> DualPingResults {
         let dpr = self.perform_average_rtt(&target.1).await;
-
         telio_log_debug!("{:?}, no_of_tries: {}", dpr, self.no_of_tries);
 
-        let _ = results_tx.send((target.0, dpr)).await;
+        dpr
     }
 
     async fn perform_average_rtt(&self, target: &DualTarget) -> DualPingResults {

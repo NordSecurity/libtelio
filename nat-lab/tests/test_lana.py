@@ -5,15 +5,16 @@ import base64
 import pytest
 import subprocess
 import telio
-from config import WG_SERVER
+from config import WG_SERVER, STUN_SERVER, STUNV6_SERVER
 from contextlib import AsyncExitStack
 from mesh_api import API, Node
 from telio_features import TelioFeatures, Nurse, Lana, Qos
-from typing import Optional
-from utils import testing
+from typing import List, Optional
+from utils import testing, stun
 from utils.analytics import (
     fetch_moose_events,
     basic_validator,
+    EventValidator,
     DERP_BIT,
     WG_BIT,
     IPV4_BIT,
@@ -27,6 +28,7 @@ from utils.connection_util import (
     container_id,
     new_connection_with_conn_tracker,
     new_connection_by_tag,
+    add_outgoing_packets_delay,
 )
 from utils.ping import Ping
 from utils.router import IPStack, IPProto
@@ -36,10 +38,16 @@ ALPHA_EVENTS_PATH = "./alpha-events.db"
 BETA_EVENTS_PATH = "./beta-events.db"
 GAMMA_EVENTS_PATH = "./gamma-events.db"
 
-DEFAULT_WAITING_TIME = 3
+ALPHA_FINGERPRINT = "alpha_fingerprint"
+BETA_FINGERPRINT = "beta_fingerprint"
+GAMMA_FINGERPRINT = "gamma_fingerprint"
+NODES_FINGERPRINTS = [ALPHA_FINGERPRINT, BETA_FINGERPRINT, GAMMA_FINGERPRINT]
+
+DEFAULT_WAITING_TIME = 5
 DEFAULT_CHECK_INTERVAL = 2
 DEFAULT_CHECK_TIMEOUT = 60
 COLLECT_NAT_TYPE = False
+RTT_INTERVAL = 10
 
 IP_STACK_TEST_CONFIGS = [
     pytest.param(
@@ -79,7 +87,7 @@ def build_telio_features(
             fingerprint=fingerprint,
             heartbeat_interval=3600,
             initial_heartbeat_interval=initial_heartbeat_interval,
-            qos=Qos(rtt_interval=10, buckets=5),
+            qos=Qos(rtt_interval=RTT_INTERVAL, buckets=5, rtt_tries=1),
             enable_nat_type_collection=COLLECT_NAT_TYPE,
         ),
     )
@@ -237,6 +245,10 @@ async def run_default_scenario(
         )
     )
 
+    await add_5ms_delay_to_connections(
+        exit_stack, [connection_alpha, connection_beta, connection_gamma]
+    )
+
     # Cleanup
     await clean_container(connection_alpha)
     await clean_container(connection_beta)
@@ -246,7 +258,7 @@ async def run_default_scenario(
         telio.Client(
             connection_alpha,
             alpha,
-            telio_features=build_telio_features("alpha_fingerprint"),
+            telio_features=build_telio_features(ALPHA_FINGERPRINT),
         ).run(api.get_meshmap(alpha.id))
     )
 
@@ -254,7 +266,7 @@ async def run_default_scenario(
         telio.Client(
             connection_beta,
             beta,
-            telio_features=build_telio_features("beta_fingerprint"),
+            telio_features=build_telio_features(BETA_FINGERPRINT),
         ).run(api.get_meshmap(beta.id))
     )
 
@@ -262,7 +274,7 @@ async def run_default_scenario(
         telio.Client(
             connection_gamma,
             gamma,
-            telio_features=build_telio_features("gamma_fingerprint"),
+            telio_features=build_telio_features(GAMMA_FINGERPRINT),
         ).run(api.get_meshmap(gamma.id))
     )
 
@@ -300,6 +312,14 @@ async def run_default_scenario(
     await ping_node(connection_gamma, gamma, alpha)
 
     await asyncio.sleep(DEFAULT_WAITING_TIME)
+    if True in [
+        alpha_has_vpn_connection,
+        beta_has_vpn_connection,
+        gamma_has_vpn_connection,
+    ]:
+        # VPN has an alternative address which QoS also tries to ping, therefore we should
+        # wait for one more icmp timeout if that's the case.
+        await asyncio.sleep(DEFAULT_WAITING_TIME)
 
     await client_alpha.trigger_event_collection()
     await client_beta.trigger_event_collection()
@@ -365,6 +385,77 @@ async def run_default_scenario(
     ]
 
 
+async def add_5ms_delay_to_connections(
+    exit_stack: AsyncExitStack,
+    connections: List[Connection],
+):
+    for connection in connections:
+        await exit_stack.enter_async_context(
+            add_outgoing_packets_delay(connection, "5ms")
+        )
+
+
+def add_rtt_validators(
+    validator: EventValidator,
+    ip_stacks: List[Optional[IPStack]],
+):
+    node_ip_stacks = dict(zip(NODES_FINGERPRINTS, ip_stacks))
+    primary_node_ip_stack = node_ip_stacks.pop(validator.node_fingerprint)
+
+    for fingerprint in node_ip_stacks:
+        secondary_node_ip_stack = node_ip_stacks.get(fingerprint)
+        if secondary_node_ip_stack is not None:
+            validator.add_rtt_validator(
+                exists=True,
+                members=[fingerprint],
+                does_not_contain=(
+                    ["0:0:0:0:0"]
+                    if primary_node_ip_stack is not IPStack.IPv6
+                    and secondary_node_ip_stack is not IPStack.IPv6
+                    else None
+                ),
+                contains=(
+                    ["0:0:0:0:0"]
+                    if primary_node_ip_stack is IPStack.IPv6
+                    or secondary_node_ip_stack is IPStack.IPv6
+                    else None
+                ),
+            ).add_rtt_loss_validator(
+                exists=True,
+                members=[fingerprint],
+                contains=(
+                    ["100:100:100:100:100"]
+                    if primary_node_ip_stack is IPStack.IPv6
+                    and secondary_node_ip_stack is not IPStack.IPv6
+                    else ["0:0:0:0:0"]
+                ),
+            ).add_rtt6_validator(
+                exists=True,
+                members=[fingerprint],
+                does_not_contain=(
+                    ["0:0:0:0:0"]
+                    if primary_node_ip_stack is not IPStack.IPv4
+                    and secondary_node_ip_stack is not IPStack.IPv4
+                    else None
+                ),
+                contains=(
+                    ["0:0:0:0:0"]
+                    if primary_node_ip_stack is IPStack.IPv4
+                    or secondary_node_ip_stack is IPStack.IPv4
+                    else None
+                ),
+            ).add_rtt6_loss_validator(
+                exists=True,
+                members=[fingerprint],
+                contains=(
+                    ["100:100:100:100:100"]
+                    if primary_node_ip_stack is IPStack.IPv4
+                    and secondary_node_ip_stack is not IPStack.IPv4
+                    else ["0:0:0:0:0"]
+                ),
+            )
+
+
 @pytest.mark.moose
 @pytest.mark.asyncio
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
@@ -395,7 +486,7 @@ async def test_lana_with_same_meshnet(
         expected_meshnet_id = alpha_events[0].fp
 
         alpha_validator = (
-            basic_validator(meshnet_id=expected_meshnet_id)
+            basic_validator(ALPHA_FINGERPRINT, meshnet_id=expected_meshnet_id)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
                 expected_states=alpha_expected_states,
@@ -405,19 +496,32 @@ async def test_lana_with_same_meshnet(
             )
             .add_members_validator(
                 exists=True,
-                contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
+                contains=NODES_FINGERPRINTS,
             )
             .add_nat_type_validators(
                 is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
                 nat_type="PortRestrictedCone",
                 nat_mem=["Symmetric", "PortRestrictedCone"],
             )
+            .add_sent_data_validator(
+                exists=True,
+                members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
+            .add_received_data_validator(
+                exists=True,
+                members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
         )
-
-        assert alpha_validator.validate(alpha_events[0])
+        add_rtt_validators(
+            alpha_validator, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack]
+        )
+        res = alpha_validator.validate(alpha_events[0])
+        assert res[0], res[1]
 
         beta_validator = (
-            basic_validator(meshnet_id=expected_meshnet_id)
+            basic_validator(BETA_FINGERPRINT, meshnet_id=expected_meshnet_id)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
                 exists=True,
@@ -427,19 +531,32 @@ async def test_lana_with_same_meshnet(
             )
             .add_members_validator(
                 exists=True,
-                contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
+                contains=NODES_FINGERPRINTS,
             )
             .add_nat_type_validators(
                 is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
                 nat_type="PortRestrictedCone",
                 nat_mem=["PortRestrictedCone", "Symmetric"],
             )
+            .add_sent_data_validator(
+                exists=True,
+                members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
+            .add_received_data_validator(
+                exists=True,
+                members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
         )
-
-        assert beta_validator.validate(beta_events[0])
+        add_rtt_validators(
+            beta_validator, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack]
+        )
+        res = beta_validator.validate(beta_events[0])
+        assert res[0], res[1]
 
         gamma_validator = (
-            basic_validator(meshnet_id=expected_meshnet_id)
+            basic_validator(GAMMA_FINGERPRINT, meshnet_id=expected_meshnet_id)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
                 exists=True,
@@ -449,16 +566,29 @@ async def test_lana_with_same_meshnet(
             )
             .add_members_validator(
                 exists=True,
-                contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
+                contains=NODES_FINGERPRINTS,
             )
             .add_nat_type_validators(
                 is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
                 nat_type="Symmetric",
                 nat_mem=["PortRestrictedCone", "PortRestrictedCone"],
             )
+            .add_sent_data_validator(
+                exists=True,
+                members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
+            .add_received_data_validator(
+                exists=True,
+                members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
         )
-
-        assert gamma_validator.validate(gamma_events[0])
+        add_rtt_validators(
+            gamma_validator, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack]
+        )
+        res = gamma_validator.validate(gamma_events[0])
+        assert res[0], res[1]
 
 
 @pytest.mark.moose
@@ -467,9 +597,9 @@ async def test_lana_with_same_meshnet(
 async def test_lana_with_external_node(
     alpha_ip_stack: IPStack, beta_ip_stack: IPStack
 ) -> None:
-    gamma_ip_stack = IPStack.IPv4v6
-
     async with AsyncExitStack() as exit_stack:
+        gamma_ip_stack = IPStack.IPv4v6
+
         [
             alpha_events,
             beta_events,
@@ -488,11 +618,11 @@ async def test_lana_with_external_node(
         )
 
         alpha_validator = (
-            basic_validator()
+            basic_validator(ALPHA_FINGERPRINT)
             .add_external_links_validator(
                 exists=True,
-                contains=["gamma_fingerprint"],
-                does_not_contain=["vpn", alpha_events[0].fp, "alpha_fingerprint"],
+                contains=[GAMMA_FINGERPRINT],
+                does_not_contain=["vpn", alpha_events[0].fp, ALPHA_FINGERPRINT],
                 all_connections_up=False,
                 no_of_connections=1,
                 expected_states=alpha_expected_states,
@@ -505,24 +635,37 @@ async def test_lana_with_external_node(
             )
             .add_members_validator(
                 exists=True,
-                contains=["alpha_fingerprint", "beta_fingerprint"],
-                does_not_contain=["gamma_fingerprint"],
+                contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                does_not_contain=[GAMMA_FINGERPRINT],
             )
             .add_nat_type_validators(
                 is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
                 nat_type="PortRestrictedCone",
                 nat_mem=["PortRestrictedCone", "Symmetric"],
             )
+            .add_sent_data_validator(
+                exists=True,
+                members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
+            .add_received_data_validator(
+                exists=True,
+                members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
         )
-
-        assert alpha_validator.validate(alpha_events[0])
+        add_rtt_validators(
+            alpha_validator, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack]
+        )
+        res = alpha_validator.validate(alpha_events[0])
+        assert res[0], res[1]
 
         beta_validator = (
-            basic_validator()
+            basic_validator(BETA_FINGERPRINT)
             .add_external_links_validator(
                 exists=True,
-                contains=["gamma_fingerprint"],
-                does_not_contain=["vpn", beta_events[0].fp, "beta_fingerprint"],
+                contains=[GAMMA_FINGERPRINT],
+                does_not_contain=["vpn", beta_events[0].fp, BETA_FINGERPRINT],
                 all_connections_up=False,
                 no_of_connections=1,
                 expected_states=beta_expected_states,
@@ -535,24 +678,37 @@ async def test_lana_with_external_node(
             )
             .add_members_validator(
                 exists=True,
-                contains=["alpha_fingerprint", "beta_fingerprint"],
-                does_not_contain=["gamma_fingerprint"],
+                contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                does_not_contain=[GAMMA_FINGERPRINT],
             )
             .add_nat_type_validators(
                 is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
                 nat_type="PortRestrictedCone",
                 nat_mem=["PortRestrictedCone", "Symmetric"],
             )
+            .add_sent_data_validator(
+                exists=True,
+                members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
+            .add_received_data_validator(
+                exists=True,
+                members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
         )
-
-        assert beta_validator.validate(beta_events[0])
+        add_rtt_validators(
+            beta_validator, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack]
+        )
+        res = beta_validator.validate(beta_events[0])
+        assert res[0], res[1]
 
         gamma_validator = (
-            basic_validator(node_fingerprint="gamma_fingerprint")
+            basic_validator(GAMMA_FINGERPRINT)
             .add_external_links_validator(
                 exists=True,
-                contains=["alpha_fingerprint", "beta_fingerprint"],
-                does_not_contain=["vpn", gamma_events[0].fp, "gamma_fingerprint"],
+                contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                does_not_contain=["vpn", gamma_events[0].fp, GAMMA_FINGERPRINT],
                 all_connections_up=False,
                 no_of_connections=2,
                 expected_states=gamma_expected_states,
@@ -563,9 +719,22 @@ async def test_lana_with_external_node(
                 nat_type="Symmetric",
                 nat_mem=["PortRestrictedCone", "PortRestrictedCone"],
             )
+            .add_sent_data_validator(
+                exists=True,
+                members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
+            .add_received_data_validator(
+                exists=True,
+                members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
         )
-
-        assert gamma_validator.validate(gamma_events[0])
+        add_rtt_validators(
+            gamma_validator, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack]
+        )
+        res = gamma_validator.validate(gamma_events[0])
+        assert res[0], res[1]
 
         # Validate alpha and beta have the same meshent id which is different from gamma's
         assert alpha_events[0].fp == beta_events[0].fp
@@ -599,11 +768,11 @@ async def test_lana_all_external(
         )
 
         alpha_validator = (
-            basic_validator(node_fingerprint="alpha_fingerprint")
+            basic_validator(ALPHA_FINGERPRINT)
             .add_external_links_validator(
                 exists=True,
-                contains=["beta_fingerprint", "gamma_fingerprint"],
-                does_not_contain=["vpn", alpha_events[0].fp, "alpha_fingerprint"],
+                contains=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
+                does_not_contain=["vpn", alpha_events[0].fp, ALPHA_FINGERPRINT],
                 all_connections_up=False,
                 no_of_connections=2,
                 expected_states=alpha_expected_states,
@@ -614,16 +783,29 @@ async def test_lana_all_external(
                 nat_type="PortRestrictedCone",
                 nat_mem=["Symmetric", "PortRestrictedCone"],
             )
+            .add_sent_data_validator(
+                exists=True,
+                members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
+            .add_received_data_validator(
+                exists=True,
+                members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
         )
-
-        assert alpha_validator.validate(alpha_events[0])
+        add_rtt_validators(
+            alpha_validator, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack]
+        )
+        res = alpha_validator.validate(alpha_events[0])
+        assert res[0], res[1]
 
         beta_validator = (
-            basic_validator(node_fingerprint="beta_fingerprint")
+            basic_validator(BETA_FINGERPRINT)
             .add_external_links_validator(
                 exists=True,
-                contains=["alpha_fingerprint", "gamma_fingerprint"],
-                does_not_contain=["vpn", beta_events[0].fp, "beta_fingerprint"],
+                contains=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
+                does_not_contain=["vpn", beta_events[0].fp, BETA_FINGERPRINT],
                 all_connections_up=False,
                 no_of_connections=2,
                 expected_states=beta_expected_states,
@@ -634,16 +816,29 @@ async def test_lana_all_external(
                 nat_type="PortRestrictedCone",
                 nat_mem=["PortRestrictedCone", "Symmetric"],
             )
+            .add_sent_data_validator(
+                exists=True,
+                members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
+            .add_received_data_validator(
+                exists=True,
+                members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
         )
-
-        assert beta_validator.validate(beta_events[0])
+        add_rtt_validators(
+            beta_validator, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack]
+        )
+        res = beta_validator.validate(beta_events[0])
+        assert res[0], res[1]
 
         gamma_validator = (
-            basic_validator(node_fingerprint="gamma_fingerprint")
+            basic_validator(GAMMA_FINGERPRINT)
             .add_external_links_validator(
                 exists=True,
-                contains=["alpha_fingerprint", "beta_fingerprint"],
-                does_not_contain=["vpn", gamma_events[0].fp, "gamma_fingerprint"],
+                contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                does_not_contain=["vpn", gamma_events[0].fp, GAMMA_FINGERPRINT],
                 all_connections_up=False,
                 no_of_connections=2,
                 expected_states=gamma_expected_states,
@@ -654,9 +849,22 @@ async def test_lana_all_external(
                 nat_type="Symmetric",
                 nat_mem=["PortRestrictedCone", "PortRestrictedCone"],
             )
+            .add_sent_data_validator(
+                exists=True,
+                members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
+            .add_received_data_validator(
+                exists=True,
+                members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
         )
-
-        assert gamma_validator.validate(gamma_events[0])
+        add_rtt_validators(
+            gamma_validator, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack]
+        )
+        res = gamma_validator.validate(gamma_events[0])
+        assert res[0], res[1]
 
         # Validate all meshent ids are different
         assert alpha_events[0].fp != beta_events[0].fp
@@ -667,7 +875,7 @@ async def test_lana_all_external(
 @pytest.mark.moose
 @pytest.mark.asyncio
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
-async def test_lana_with_vpn_connections(
+async def test_lana_with_vpn_connection(
     alpha_ip_stack: IPStack, beta_ip_stack: IPStack
 ) -> None:
     async with AsyncExitStack() as exit_stack:
@@ -697,7 +905,7 @@ async def test_lana_with_vpn_connections(
         expected_meshnet_id = alpha_events[0].fp
 
         alpha_validator = (
-            basic_validator(meshnet_id=expected_meshnet_id)
+            basic_validator(ALPHA_FINGERPRINT, meshnet_id=expected_meshnet_id)
             .add_external_links_validator(
                 exists=True,
                 contains=["vpn"],
@@ -714,19 +922,65 @@ async def test_lana_with_vpn_connections(
             )
             .add_members_validator(
                 exists=True,
-                contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
+                contains=NODES_FINGERPRINTS,
             )
             .add_nat_type_validators(
                 is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
                 nat_type="Symmetric",
                 nat_mem=["Symmetric", "PortRestrictedCone"],
             )
+            .add_rtt_validator(
+                exists=True,
+                members=["vpn"],
+                contains=["0:0:0:0:0"] if alpha_ip_stack is IPStack.IPv6 else None,
+                does_not_contain=(
+                    ["0:0:0:0:0"] if alpha_ip_stack is not IPStack.IPv6 else None
+                ),
+            )
+            .add_rtt_loss_validator(
+                exists=True,
+                members=["vpn"],
+                contains=(
+                    ["100:100:100:100:100"]
+                    if alpha_ip_stack is IPStack.IPv6
+                    else ["0:0:0:0:0"]
+                ),
+            )
+            .add_rtt6_validator(
+                exists=True,
+                members=["vpn"],
+                # TODO: At the moment VPN IPv6 Address is not reachable
+                contains=["0:0:0:0:0"],
+            )
+            .add_rtt6_loss_validator(
+                exists=True,
+                members=["vpn"],
+                # TODO: At the moment VPN IPv6 Address is not reachable
+                contains=(
+                    ["0:0:0:0:0"]
+                    if alpha_ip_stack is IPStack.IPv4
+                    else ["100:100:100:100:100"]
+                ),
+            )
+            .add_sent_data_validator(
+                exists=True,
+                members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT, "vpn"],
+                does_not_contain=["0:0:0:0:0"],
+            )
+            .add_received_data_validator(
+                exists=True,
+                members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT, "vpn"],
+                does_not_contain=["0:0:0:0:0"],
+            )
         )
-
-        assert alpha_validator.validate(alpha_events[0])
+        add_rtt_validators(
+            alpha_validator, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack]
+        )
+        res = alpha_validator.validate(alpha_events[0])
+        assert res[0], res[1]
 
         beta_validator = (
-            basic_validator(meshnet_id=expected_meshnet_id)
+            basic_validator(BETA_FINGERPRINT, meshnet_id=expected_meshnet_id)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
                 exists=True,
@@ -736,19 +990,32 @@ async def test_lana_with_vpn_connections(
             )
             .add_members_validator(
                 exists=True,
-                contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
+                contains=NODES_FINGERPRINTS,
             )
             .add_nat_type_validators(
                 is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
                 nat_type="PortRestrictedCone",
                 nat_mem=["Symmetric", "Symmetric"],
             )
+            .add_sent_data_validator(
+                exists=True,
+                members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
+            .add_received_data_validator(
+                exists=True,
+                members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
         )
-
-        assert beta_validator.validate(beta_events[0])
+        add_rtt_validators(
+            beta_validator, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack]
+        )
+        res = beta_validator.validate(beta_events[0])
+        assert res[0], res[1]
 
         gamma_validator = (
-            basic_validator(meshnet_id=expected_meshnet_id)
+            basic_validator(GAMMA_FINGERPRINT, meshnet_id=expected_meshnet_id)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
                 exists=True,
@@ -758,16 +1025,248 @@ async def test_lana_with_vpn_connections(
             )
             .add_members_validator(
                 exists=True,
-                contains=["alpha_fingerprint", "beta_fingerprint", "gamma_fingerprint"],
+                contains=NODES_FINGERPRINTS,
             )
             .add_nat_type_validators(
                 is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
                 nat_type="Symmetric",
                 nat_mem=["Symmetric", "PortRestrictedCone"],
             )
+            .add_sent_data_validator(
+                exists=True,
+                members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
+            .add_received_data_validator(
+                exists=True,
+                members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
+        )
+        add_rtt_validators(
+            gamma_validator, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack]
+        )
+        res = gamma_validator.validate(gamma_events[0])
+        assert res[0], res[1]
+
+
+@pytest.mark.moose
+@pytest.mark.asyncio
+@pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
+async def test_lana_with_meshnet_exit_node(
+    alpha_ip_stack: IPStack, beta_ip_stack: IPStack
+):
+    async with AsyncExitStack() as exit_stack:
+        is_stun6_needed = (
+            testing.unpack_optional(choose_peer_stack(alpha_ip_stack, beta_ip_stack))
+            is IPStack.IPv6
+        )
+        chosen_ip_stack = testing.unpack_optional(
+            choose_peer_stack(alpha_ip_stack, beta_ip_stack)
         )
 
-        assert gamma_validator.validate(gamma_events[0])
+        api = API()
+        (alpha, beta) = api.default_config_two_nodes(
+            True, True, alpha_ip_stack=alpha_ip_stack, beta_ip_stack=beta_ip_stack
+        )
+        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                ),
+            )
+        )
+        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
+                generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                    stun6_limits=(
+                        ConnectionLimits(1, 1)
+                        if is_stun6_needed
+                        else ConnectionLimits(0, 0)
+                    ),
+                    stun_limits=(
+                        ConnectionLimits(1, 1)
+                        if not is_stun6_needed
+                        else ConnectionLimits(0, 0)
+                    ),
+                    # Dual stack doesn't have a gw so conntrack is launched on its interface
+                    ping_limits=(
+                        ConnectionLimits(3, 3)
+                        if chosen_ip_stack is not IPStack.IPv6
+                        else ConnectionLimits(0, 0)
+                    ),
+                    ping6_limits=(
+                        ConnectionLimits(3, 3)
+                        if chosen_ip_stack == IPStack.IPv6
+                        else (
+                            ConnectionLimits(2, 2)
+                            if chosen_ip_stack == IPStack.IPv4v6
+                            else ConnectionLimits(0, 0)
+                        )
+                    ),
+                ),
+            )
+        )
+
+        await add_5ms_delay_to_connections(
+            exit_stack, [connection_alpha, connection_beta]
+        )
+
+        await clean_container(connection_alpha)
+        await clean_container(connection_beta)
+
+        client_alpha = await exit_stack.enter_async_context(
+            telio.Client(
+                connection_alpha,
+                alpha,
+                telio_features=build_telio_features(ALPHA_FINGERPRINT),
+            ).run(api.get_meshmap(alpha.id))
+        )
+        client_beta = await exit_stack.enter_async_context(
+            telio.Client(
+                connection_beta,
+                beta,
+                telio_features=build_telio_features(BETA_FINGERPRINT),
+            ).run(api.get_meshmap(beta.id))
+        )
+
+        await asyncio.gather(
+            client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
+            client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
+        )
+        await asyncio.gather(
+            client_alpha.wait_for_state_peer(beta.public_key, [telio.State.Connected]),
+            client_beta.wait_for_state_peer(alpha.public_key, [telio.State.Connected]),
+        )
+
+        async with Ping(
+            connection_alpha,
+            testing.unpack_optional(
+                beta.get_ip_address(IPProto.IPv6 if is_stun6_needed else IPProto.IPv4)
+            ),
+        ).run() as ping:
+            await testing.wait_long(ping.wait_for_next_ping())
+
+        await testing.wait_long(client_beta.get_router().create_exit_node_route())
+        await client_alpha.connect_to_exit_node(beta.public_key)
+        ip_alpha = await testing.wait_long(
+            stun.get(
+                connection_alpha, STUN_SERVER if not is_stun6_needed else STUNV6_SERVER
+            )
+        )
+        ip_beta = await testing.wait_long(
+            stun.get(
+                connection_beta, STUN_SERVER if not is_stun6_needed else STUNV6_SERVER
+            )
+        )
+        assert ip_alpha == ip_beta
+
+        await asyncio.sleep(DEFAULT_WAITING_TIME)
+
+        await client_alpha.trigger_event_collection()
+        await client_beta.trigger_event_collection()
+
+        alpha_events = await wait_for_event_dump(
+            ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH, nr_events=1
+        )
+        beta_events = await wait_for_event_dump(
+            ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
+            BETA_EVENTS_PATH,
+            nr_events=1,
+        )
+        assert alpha_events
+        assert beta_events
+
+        alpha_validator = (
+            basic_validator(ALPHA_FINGERPRINT)
+            .add_external_links_validator(exists=False)
+            .add_connectivity_matrix_validator(
+                exists=True,
+                no_of_connections=1,
+                all_connections_up=False,
+                expected_states=[(
+                    DERP_BIT
+                    | WG_BIT
+                    | ip_stack_to_bits(
+                        testing.unpack_optional(
+                            choose_peer_stack(alpha_ip_stack, beta_ip_stack)
+                        )
+                    )
+                )],
+            )
+            .add_members_validator(
+                exists=True, contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT]
+            )
+            .add_nat_type_validators(
+                is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
+                nat_type="PortRestrictedCone",
+                nat_mem=[],
+            )
+            .add_sent_data_validator(
+                exists=True,
+                members=[BETA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
+            .add_received_data_validator(
+                exists=True,
+                members=[BETA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
+        )
+        add_rtt_validators(alpha_validator, [alpha_ip_stack, beta_ip_stack, None])
+        res = alpha_validator.validate(alpha_events[0])
+        assert res[0], res[1]
+
+        beta_validator = (
+            basic_validator(BETA_FINGERPRINT)
+            .add_external_links_validator(exists=False)
+            .add_connectivity_matrix_validator(
+                exists=True,
+                no_of_connections=1,
+                all_connections_up=False,
+                expected_states=[(
+                    DERP_BIT
+                    | WG_BIT
+                    | ip_stack_to_bits(
+                        testing.unpack_optional(
+                            choose_peer_stack(beta_ip_stack, alpha_ip_stack)
+                        )
+                    )
+                )],
+            )
+            .add_members_validator(
+                exists=True, contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT]
+            )
+            .add_nat_type_validators(
+                is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
+                nat_type="PortRestrictedCone",
+                nat_mem=[],
+            )
+            .add_sent_data_validator(
+                exists=True,
+                members=[ALPHA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
+            .add_received_data_validator(
+                exists=True,
+                members=[ALPHA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
+        )
+        add_rtt_validators(beta_validator, [alpha_ip_stack, beta_ip_stack, None])
+        res = beta_validator.validate(beta_events[0])
+        assert res[0], res[1]
+
+        # Validate all nodes have the same meshnet id
+        assert alpha_events[0].fp == beta_events[0].fp
+
+        assert alpha_conn_tracker.get_out_of_limits() is None
+        assert beta_conn_tracker.get_out_of_limits() is None
 
 
 @pytest.mark.moose
@@ -800,6 +1299,10 @@ async def test_lana_with_disconnected_node(
             )
         )
 
+        await add_5ms_delay_to_connections(
+            exit_stack, [connection_alpha, connection_beta]
+        )
+
         await clean_container(connection_alpha)
         await clean_container(connection_beta)
 
@@ -807,14 +1310,14 @@ async def test_lana_with_disconnected_node(
             telio.Client(
                 connection_alpha,
                 alpha,
-                telio_features=build_telio_features("alpha_fingerprint"),
+                telio_features=build_telio_features(ALPHA_FINGERPRINT),
             ).run(api.get_meshmap(alpha.id))
         )
         client_beta = await exit_stack.enter_async_context(
             telio.Client(
                 connection_beta,
                 beta,
-                telio_features=build_telio_features("beta_fingerprint"),
+                telio_features=build_telio_features(BETA_FINGERPRINT),
             ).run(api.get_meshmap(beta.id))
         )
 
@@ -845,18 +1348,15 @@ async def test_lana_with_disconnected_node(
 
         # disconnect beta and trigger analytics on alpha
         await client_beta.stop_device()
-
-        await asyncio.sleep(DEFAULT_WAITING_TIME)
-
+        await asyncio.sleep(RTT_INTERVAL)
         await client_alpha.trigger_event_collection()
-
         alpha_events = await wait_for_event_dump(
             ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH, nr_events=2
         )
         assert alpha_events
 
         alpha_validator = (
-            basic_validator()
+            basic_validator(ALPHA_FINGERPRINT)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
                 exists=True,
@@ -873,16 +1373,27 @@ async def test_lana_with_disconnected_node(
                 )],
             )
             .add_members_validator(
-                exists=True, contains=["alpha_fingerprint", "beta_fingerprint"]
+                exists=True, contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT]
             )
             .add_nat_type_validators(
                 is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
                 nat_type="PortRestrictedCone",
                 nat_mem=[],
             )
+            .add_sent_data_validator(
+                exists=True,
+                members=[BETA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
+            .add_received_data_validator(
+                exists=True,
+                members=[BETA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
         )
+        add_rtt_validators(alpha_validator, [alpha_ip_stack, beta_ip_stack, None])
         beta_validator = (
-            basic_validator()
+            basic_validator(BETA_FINGERPRINT)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(
                 exists=True,
@@ -899,34 +1410,85 @@ async def test_lana_with_disconnected_node(
                 )],
             )
             .add_members_validator(
-                exists=True, contains=["alpha_fingerprint", "beta_fingerprint"]
+                exists=True, contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT]
             )
             .add_nat_type_validators(
                 is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
                 nat_type="PortRestrictedCone",
                 nat_mem=[],
             )
+            .add_sent_data_validator(
+                exists=True,
+                members=[ALPHA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
+            .add_received_data_validator(
+                exists=True,
+                members=[ALPHA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
         )
+        add_rtt_validators(beta_validator, [alpha_ip_stack, beta_ip_stack, None])
 
-        assert alpha_validator.validate(alpha_events[0])
-        assert beta_validator.validate(beta_events[0])
+        res = alpha_validator.validate(alpha_events[0])
+        assert res[0], res[1]
+        res = beta_validator.validate(beta_events[0])
+        assert res[0], res[1]
 
         # Connectivity matrix is not persistent, will be missing when peer is offline
         alpha_validator = (
-            basic_validator()
+            basic_validator(ALPHA_FINGERPRINT)
             .add_external_links_validator(exists=False)
             .add_connectivity_matrix_validator(exists=False)
             .add_members_validator(
-                exists=True, contains=["alpha_fingerprint", "beta_fingerprint"]
+                exists=True, contains=[ALPHA_FINGERPRINT, BETA_FINGERPRINT]
             )
             .add_nat_type_validators(
                 is_nat_type_collection_enabled=COLLECT_NAT_TYPE,
                 nat_type="PortRestrictedCone",
                 nat_mem=[],
             )
+            .add_rtt_validator(
+                exists=True,
+                members=[BETA_FINGERPRINT],
+                contains=["0:0:0:0:0"],
+            )
+            .add_rtt_loss_validator(
+                exists=True,
+                members=[BETA_FINGERPRINT],
+                contains=(
+                    ["100:100:100:100:100"]
+                    if beta_ip_stack is not IPStack.IPv6
+                    else ["0:0:0:0:0"]
+                ),
+            )
+            .add_rtt6_validator(
+                exists=True,
+                members=[BETA_FINGERPRINT],
+                contains=["0:0:0:0:0"],
+            )
+            .add_rtt6_loss_validator(
+                exists=True,
+                members=[BETA_FINGERPRINT],
+                contains=(
+                    ["100:100:100:100:100"]
+                    if beta_ip_stack is not IPStack.IPv4
+                    else ["0:0:0:0:0"]
+                ),
+            )
+            .add_sent_data_validator(
+                exists=True,
+                members=[BETA_FINGERPRINT],
+                does_not_contain=["0:0:0:0:0"],
+            )
+            .add_received_data_validator(
+                exists=True,
+                members=[BETA_FINGERPRINT],
+                contains=["0:0:0:0:0"],
+            )
         )
-
-        assert alpha_validator.validate(alpha_events[1])
+        res = alpha_validator.validate(alpha_events[1])
+        assert res[0], res[1]
 
         # Validate all nodes have the same meshnet id
         assert alpha_events[0].fp == alpha_events[1].fp == beta_events[0].fp
@@ -958,7 +1520,7 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
             telio.Client(
                 connection_beta,
                 beta,
-                telio_features=build_telio_features("beta_fingerprint"),
+                telio_features=build_telio_features(BETA_FINGERPRINT),
             ).run(api.get_meshmap(beta.id))
         )
 
@@ -985,7 +1547,7 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
             telio.Client(
                 connection_alpha,
                 alpha,
-                telio_features=build_telio_features("alpha_fingerprint"),
+                telio_features=build_telio_features(ALPHA_FINGERPRINT),
             ).run(api.get_meshmap(alpha.id))
         )
 
@@ -1041,7 +1603,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
             telio.Client(
                 connection_beta,
                 beta,
-                telio_features=build_telio_features("beta_fingerprint"),
+                telio_features=build_telio_features(BETA_FINGERPRINT),
             ).run(api.get_meshmap(beta.id))
         )
 
@@ -1064,7 +1626,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
             telio.Client(
                 connection_beta,
                 beta,
-                telio_features=build_telio_features("beta_fingerprint"),
+                telio_features=build_telio_features(BETA_FINGERPRINT),
             ).run(api.get_meshmap(beta.id))
         )
 
@@ -1100,7 +1662,7 @@ async def test_lana_initial_heartbeat_no_trigger(
                 connection_alpha,
                 alpha,
                 telio_features=build_telio_features(
-                    "alpha_fingerprint",
+                    ALPHA_FINGERPRINT,
                     initial_heartbeat_interval=initial_heartbeat_interval,
                 ),
             ).run(api.get_meshmap(alpha.id))

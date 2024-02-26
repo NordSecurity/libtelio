@@ -272,7 +272,7 @@ def test_mem_nat_type_validator() -> None:
 
 def test_lana_event_validator() -> None:
     test_validator = (
-        Validator.basic_validator(meshnet_id="86bee206-9082")
+        Validator.basic_validator("beta", meshnet_id="86bee206-9082")
         .add_connectivity_matrix_validator(
             exists=True,
             no_of_connections=3,
@@ -291,10 +291,12 @@ def test_lana_event_validator() -> None:
         .add_external_links_validator(
             exists=True,
             contains=["delta", "charlie"],
-            does_not_contain=["alpha"],
+            does_not_contain=["alpha", "beta", "gamma"],
             all_connections_up=True,
             no_of_connections=2,
         )
     )
-
-    check_validator(test_validator, TEST_EVENT, DUMMY_EVENT)
+    res = test_validator.validate(TEST_EVENT)
+    assert res[0], res[1]
+    res = test_validator.validate(DUMMY_EVENT)
+    assert not res[0], res[1]

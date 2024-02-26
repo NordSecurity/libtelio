@@ -16,8 +16,6 @@ from utils.connection_util import (
 from utils.ping import Ping
 from utils.router import IPProto, IPStack
 
-PHOTO_ALBUM_IPV6 = config.LIBTELIO_IPV6_WAN_SUBNET + "::adda:edde:5"
-
 
 # Marks in-tunnel stack only, exiting only through IPv4
 @pytest.mark.asyncio
@@ -130,14 +128,13 @@ async def test_mesh_exit_through_peer(
             conn.connection for conn in env.connections
         ]
 
-        if exit_ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
+        if exit_ip_stack is not IPStack.IPv6:
             async with Ping(
                 connection_alpha,
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv4)),
             ).run() as ping:
                 await testing.wait_long(ping.wait_for_next_ping())
-
-        if exit_ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
+        else:
             async with Ping(
                 connection_alpha,
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv6)),
@@ -263,7 +260,9 @@ async def test_ipv6_exit_node(
                 generate_connection_tracker_config(
                     ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
                     derp_1_limits=ConnectionLimits(1, 1),
-                    ping6_limits=ConnectionLimits(0, 2),
+                    # Dual stack doesn't have a gw so conntrack is launched on its interface
+                    stun6_limits=ConnectionLimits(1, 1),
+                    ping6_limits=ConnectionLimits(2, 2),
                 ),
             )
         )
@@ -302,24 +301,16 @@ async def test_ipv6_exit_node(
         await testing.wait_long(client_alpha.connect_to_exit_node(beta.public_key))
 
         # Ping out-tunnel target with IPv6
-        async with Ping(connection_alpha, PHOTO_ALBUM_IPV6).run() as ping6:
+        async with Ping(connection_alpha, config.PHOTO_ALBUM_IPV6).run() as ping6:
             await testing.wait_long(ping6.wait_for_next_ping())
-
-        assert alpha_conn_tracker.get_out_of_limits() is None
-        assert beta_conn_tracker.get_out_of_limits() is None
 
         ip_alpha = await testing.wait_long(
             stun.get(connection_alpha, config.STUNV6_SERVER)
         )
-        # Note: we cannot "see" stun6 event, because "beta_conn_tracker" receives event
-        # with mesh's IPv6 src_ip address.
-        # await testing.wait_long(beta_conn_tracker.wait_for_event("stun6"))
-
         ip_beta = await testing.wait_long(
             stun.get(connection_beta, config.STUNV6_SERVER)
         )
-        # Note: we cannot "see" stun6 event, because "beta_conn_tracker" receives event
-        # with mesh's IPv6 src_ip address.
-        # await testing.wait_long(beta_conn_tracker.wait_for_event("stun6"))
-
         assert ip_alpha == ip_beta
+
+        assert alpha_conn_tracker.get_out_of_limits() is None
+        assert beta_conn_tracker.get_out_of_limits() is None

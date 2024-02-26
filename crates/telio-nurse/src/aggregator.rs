@@ -225,7 +225,7 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
     #[allow(dead_code)]
     pub async fn change_peer_state_direct(
         &mut self,
-        event: AnalyticsEvent,
+        event: &AnalyticsEvent,
         initiator_ep: EndpointProvider,
         responder_ep: EndpointProvider,
     ) {
@@ -240,7 +240,7 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
     }
 
     #[allow(dead_code)]
-    pub async fn change_peer_state_relayed(&mut self, event: AnalyticsEvent) {
+    pub async fn change_peer_state_relayed(&mut self, event: &AnalyticsEvent) {
         self.change_peer_state_common(
             event,
             PeerEndpointTypes {
@@ -253,7 +253,7 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
 
     async fn change_peer_state_common(
         &mut self,
-        event: AnalyticsEvent,
+        event: &AnalyticsEvent,
         endpoints: PeerEndpointTypes,
     ) {
         if !self.aggregate_nat_traversal_events {
@@ -282,7 +282,7 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
                 entry.remove();
             }
         } else if let Entry::Vacant(entry) = event_entry {
-            entry.insert((event, endpoints));
+            entry.insert((event.clone(), endpoints));
         }
 
         data_guard.peer_segments.extend(new_segment);
@@ -291,7 +291,7 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
     #[allow(dead_code)]
     pub async fn change_relay_state(
         &mut self,
-        event: AnalyticsEvent,
+        event: &AnalyticsEvent,
         reason: RelayConnectionChangeReason,
     ) {
         if !self.aggregate_relay_events {
@@ -442,7 +442,9 @@ mod tests {
     fn create_basic_event(n: u8) -> AnalyticsEvent {
         AnalyticsEvent {
             public_key: PublicKey(*b"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
-            endpoint: DualTarget::new((Some(Ipv4Addr::from([n, n, n, n])), None)).unwrap(), // Whatever
+            dual_ip_addresses: vec![
+                DualTarget::new((Some(Ipv4Addr::from([n, n, n, n])), None)).unwrap()
+            ], // Whatever
             tx_bytes: 0, // Just start with no data sent
             rx_bytes: 0,
             peer_state: PeerState::Connected,
@@ -465,7 +467,7 @@ mod tests {
         let segment_start = current_relay_event.timestamp;
         aggregator
             .change_relay_state(
-                current_relay_event,
+                &current_relay_event,
                 RelayConnectionChangeReason::ConfigurationChange,
             )
             .await;
@@ -474,7 +476,7 @@ mod tests {
         current_relay_event.timestamp += Duration::from_secs(60);
         aggregator
             .change_relay_state(
-                current_relay_event,
+                &current_relay_event,
                 RelayConnectionChangeReason::ConfigurationChange,
             )
             .await;
@@ -485,7 +487,7 @@ mod tests {
         current_relay_event.public_key = second_pubkey;
         aggregator
             .change_relay_state(
-                current_relay_event,
+                &current_relay_event,
                 RelayConnectionChangeReason::ConfigurationChange,
             )
             .await;
@@ -496,7 +498,7 @@ mod tests {
         current_relay_event.peer_state = PeerState::Connecting;
         aggregator
             .change_relay_state(
-                current_relay_event,
+                &current_relay_event,
                 RelayConnectionChangeReason::NetworkError,
             )
             .await;
@@ -508,7 +510,7 @@ mod tests {
         current_relay_event.public_key = first_pubkey;
         aggregator
             .change_relay_state(
-                current_relay_event,
+                &current_relay_event,
                 RelayConnectionChangeReason::ConfigurationChange,
             )
             .await;
@@ -518,7 +520,7 @@ mod tests {
         current_relay_event.peer_state = PeerState::Disconnected;
         aggregator
             .change_relay_state(
-                current_relay_event,
+                &current_relay_event,
                 RelayConnectionChangeReason::NetworkError,
             )
             .await;
@@ -597,7 +599,7 @@ mod tests {
         let mut current_peer_event = create_basic_event(1);
         aggregator
             .change_peer_state_direct(
-                current_peer_event,
+                &current_peer_event,
                 EndpointProvider::Upnp,
                 EndpointProvider::Local,
             )
@@ -609,7 +611,7 @@ mod tests {
         current_peer_event.rx_bytes += 1000;
         current_peer_event.tx_bytes += 2000;
         aggregator
-            .change_peer_state_relayed(current_peer_event)
+            .change_peer_state_relayed(&current_peer_event)
             .await;
 
         let segments = aggregator.collect_unacknowledged_segments(false).await.peer;
@@ -629,7 +631,7 @@ mod tests {
         let segment_start = current_peer_event.timestamp;
         aggregator
             .change_peer_state_direct(
-                current_peer_event,
+                &current_peer_event,
                 EndpointProvider::Upnp,
                 EndpointProvider::Local,
             )
@@ -641,7 +643,7 @@ mod tests {
         current_peer_event.tx_bytes += 2000;
         aggregator
             .change_peer_state_direct(
-                current_peer_event,
+                &current_peer_event,
                 EndpointProvider::Upnp,
                 EndpointProvider::Local,
             )
@@ -656,7 +658,7 @@ mod tests {
         current_peer_event.rx_bytes += 1000;
         current_peer_event.tx_bytes += 2000;
         aggregator
-            .change_peer_state_relayed(current_peer_event)
+            .change_peer_state_relayed(&current_peer_event)
             .await;
 
         // And after 60 seconds connect again
@@ -665,7 +667,7 @@ mod tests {
         current_peer_event.rx_bytes += 1000;
         current_peer_event.tx_bytes += 2000;
         aggregator
-            .change_peer_state_relayed(current_peer_event)
+            .change_peer_state_relayed(&current_peer_event)
             .await;
 
         // We don't gather periods of time when peer is disconnected, so we should have here only one segment
@@ -723,7 +725,7 @@ mod tests {
 
         // Insert the first event
         aggregator
-            .change_peer_state_relayed(current_peer_event)
+            .change_peer_state_relayed(&current_peer_event)
             .await;
 
         let segments = aggregator.collect_unacknowledged_segments(false).await.peer;
@@ -794,7 +796,7 @@ mod tests {
 
         aggregator
             .change_relay_state(
-                current_relay_event,
+                &current_relay_event,
                 RelayConnectionChangeReason::ConfigurationChange,
             )
             .await;
@@ -896,7 +898,7 @@ mod tests {
 
         aggregator
             .change_relay_state(
-                current_relay_event,
+                &current_relay_event,
                 RelayConnectionChangeReason::ConfigurationChange,
             )
             .await;
@@ -905,7 +907,7 @@ mod tests {
 
         aggregator
             .change_peer_state_direct(
-                current_peer_event,
+                &current_peer_event,
                 EndpointProvider::Upnp,
                 EndpointProvider::Stun,
             )
