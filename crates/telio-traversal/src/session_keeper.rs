@@ -163,7 +163,7 @@ impl SessionKeeperTrait for SessionKeeper {
                                     second
                                 );
 
-                                let secondary_client = match primary {
+                                let secondary_client = match second {
                                     IpAddr::V4(_) => &c.pinger_client_v4,
                                     IpAddr::V6(_) => &c.pinger_client_v6,
                                 };
