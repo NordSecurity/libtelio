@@ -20,7 +20,7 @@ use telio_task::{
 };
 use tokio::{net::UdpSocket, sync::mpsc::error::SendTimeoutError};
 
-use telio_utils::{telio_log_debug, telio_log_error, telio_log_info, PinnedSleep};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_info, telio_log_warn, PinnedSleep};
 
 type SocketMap = HashMap<PublicKey, Arc<UdpSocket>>;
 type SocketMuteMap = HashMap<PublicKey, (Arc<UdpSocket>, Option<PinnedSleep<PublicKey>>)>;
@@ -125,6 +125,7 @@ struct StateIngress {
     sockets: SocketMap,
     output: Tx<(PublicKey, DataMsg)>,
     read_buf: Box<[u8; MAX_PACKET_SIZE]>,
+    updated_socket: Rx<(PublicKey, Arc<UdpSocket>)>,
 }
 
 struct StateEgress {
@@ -132,22 +133,30 @@ struct StateEgress {
     input: Rx<(PublicKey, DataMsg)>,
     wg_addr: Option<SocketAddr>,
     conn_state: Result<(), std::io::ErrorKind>,
+    update_socket: Tx<(PublicKey, Arc<UdpSocket>)>,
 }
 
 impl UdpProxy {
     /// Start `UdpProxy`
     pub fn start(io: Io) -> Self {
+        let Chan {
+            tx: update_socket,
+            rx: updated_socket,
+        } = Chan::new(16);
+
         UdpProxy {
             task_ingress: Task::start(StateIngress {
                 sockets: HashMap::new(),
                 output: io.relay.tx,
                 read_buf: Box::new([0u8; MAX_PACKET_SIZE]),
+                updated_socket,
             }),
             task_egress: Task::start(StateEgress {
                 sockets: HashMap::new(),
                 input: io.relay.rx,
                 wg_addr: None,
                 conn_state: Err(ErrorKind::NotConnected),
+                update_socket,
             }),
         }
     }
@@ -177,7 +186,7 @@ impl UdpProxy {
 #[async_trait]
 impl Proxy for UdpProxy {
     async fn get_endpoint_map(&self) -> Result<EndpointMap, Error> {
-        task_exec!(&self.task_ingress, async move |state| {
+        task_exec!(&self.task_egress, async move |state| {
             Ok(state.get_endpoints_map().await)
         })
         .await?
@@ -222,16 +231,6 @@ impl StateIngress {
 
         Ok(self.sockets.clone())
     }
-
-    async fn get_endpoints_map(&self) -> Result<EndpointMap, Error> {
-        let mut map = EndpointMap::new();
-
-        for (key, sock) in self.sockets.iter() {
-            map.insert(*key, sock.local_addr()?);
-        }
-
-        Ok(map)
-    }
 }
 
 impl StateEgress {
@@ -251,6 +250,16 @@ impl StateEgress {
         }
 
         Ok(())
+    }
+
+    async fn get_endpoints_map(&self) -> Result<EndpointMap, Error> {
+        let mut map = EndpointMap::new();
+
+        for (key, (sock, _)) in self.sockets.iter() {
+            map.insert(*key, sock.local_addr()?);
+        }
+
+        Ok(map)
     }
 
     fn try_mute(&mut self, pk: &PublicKey, dur: Duration) -> Result<(), Error> {
@@ -295,6 +304,8 @@ impl StateEgress {
     }
 
     async fn handle_error(&mut self, err: std::io::Error, pk: Option<PublicKey>) {
+        telio_log_error!("StateEgress: handling error {err:?} for {pk:?}");
+
         match self.conn_state {
             Ok(()) => telio_log_error!("Unable to send. {}", err),
             Err(e) if e != err.kind() => telio_log_error!("Unable to send. {}", err),
@@ -323,8 +334,18 @@ impl StateEgress {
                         return;
                     }
                 };
+
                 if let Some(pk) = pk {
-                    self.sockets.insert(pk, (Arc::new(socket), None));
+                    let socket = Arc::new(socket);
+
+                    if let Err(e) = self.update_socket.send((pk, socket.clone())).await {
+                        // May happen when they are being closed, but is not critical
+                        telio_log_warn!(
+                            "Failed to sync up proxy sockets due to closed channel: {e:?}"
+                        );
+                    }
+
+                    self.sockets.insert(pk, (socket, None));
                 }
             }
         }
@@ -364,17 +385,30 @@ impl Runtime for StateIngress {
             .collect::<Vec<_>>();
 
         // Inbound data (from WG to telio)
-        if let Some((permit, ((pk, socket), _, _))) =
-            wait_for_tx(&self.output, select_all(futures)).await
-        {
-            if let Ok(n) = socket.try_recv(self.read_buf.as_mut_slice()) {
-                let msg = DataMsg::new(if let Some(buf) = self.read_buf.get(..n) {
-                    buf
-                } else {
-                    return Self::error(());
-                });
-                let _ = permit.send((pk, msg));
+        tokio::select! {
+            Some((permit, ((pk, socket), _, _))) =
+                wait_for_tx(&self.output, select_all(futures)) =>
+            {
+                match socket.try_recv(self.read_buf.as_mut_slice()) {
+                    Ok(n) => {
+                        let msg = DataMsg::new(if let Some(buf) = self.read_buf.get(..n) {
+                            buf
+                        } else {
+                            return Self::error(());
+                        });
+                        let _ = permit.send((pk, msg));
+                    }
+                    Err(e) => {
+                        telio_log_error!("StateIngress: received error {e:?} for {pk:?}");
+                    }
+                }
             }
+            Some((pk, sock)) = self.updated_socket.recv() => {
+                telio_log_debug!("Updating socket mapping for {pk} to {sock:?}");
+
+                let _ = self.sockets.insert(pk, sock);
+            }
+
         }
 
         Self::next()

@@ -35,6 +35,9 @@ def main() -> int:
         "-m", type=str, help="Pass the name of mark to pytest (pytest -m)"
     )
     parser.add_argument(
+        "-x", action="store_true", help="Stop tests on first failure or error"
+    )
+    parser.add_argument(
         "-v",
         action="store_true",
         help="Show stdout (by default stdout is captured and not shown)",
@@ -113,6 +116,9 @@ def get_pytest_arguments(options) -> List[str]:
 
     if options.k:
         args.extend(["-k", options.k])
+
+    if options.x:
+        args.extend(["-x"])
 
     if options.m:
         args.extend(["-m", options.m])
