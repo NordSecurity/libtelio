@@ -1,7 +1,7 @@
 //! Object descriptions of various
 //! telio configurable features via API
 
-use std::{collections::HashSet, fmt};
+use std::{collections::HashSet, fmt, time::Duration};
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{de::IntoDeserializer, Deserialize, Deserializer, Serialize};
@@ -97,8 +97,10 @@ pub struct FeatureNurse {
     /// The unique identifier of the device, used for meshnet ID
     pub fingerprint: String,
     /// Heartbeat interval in seconds. Default value is 3600.
+    #[serde(default = "FeatureNurse::get_default_heartbeat_interval")]
     pub heartbeat_interval: Option<u32>,
-    /// Initial heartbeat interval in seconds. Default value is None.
+    /// Initial heartbeat interval in seconds. Default value is 300.
+    #[serde(default = "FeatureNurse::get_default_initial_heartbeat_interval")]
     pub initial_heartbeat_interval: Option<u32>,
     /// QoS configuration for Nurse
     pub qos: Option<FeatureQoS>,
@@ -113,12 +115,27 @@ pub struct FeatureNurse {
 }
 
 impl FeatureNurse {
+    /// One hour
+    pub const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(3600);
+    /// 5 minutes
+    pub const DEFAULT_INITIAL_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(300);
+
     fn get_default_enable_relay_conn_data() -> Option<bool> {
         Some(true)
     }
 
     fn get_default_enable_nat_traversal_conn_data() -> Option<bool> {
         Some(true)
+    }
+
+    fn get_default_heartbeat_interval() -> Option<u32> {
+        // 3600 seconds
+        Some(Self::DEFAULT_HEARTBEAT_INTERVAL.as_secs() as u32)
+    }
+
+    fn get_default_initial_heartbeat_interval() -> Option<u32> {
+        // 300 seconds
+        Some(Self::DEFAULT_INITIAL_HEARTBEAT_INTERVAL.as_secs() as u32)
     }
 }
 
@@ -581,8 +598,8 @@ mod tests {
         },
         nurse: Some(FeatureNurse {
             fingerprint: "fingerprint_test".to_string(),
-            heartbeat_interval: None,
-            initial_heartbeat_interval: None,
+            heartbeat_interval: Some(3600),
+            initial_heartbeat_interval: Some(300),
             qos: None,
             enable_nat_type_collection: None,
             enable_relay_conn_data: Some(true),
@@ -640,8 +657,8 @@ mod tests {
         },
         nurse: Some(FeatureNurse {
             fingerprint: "fingerprint_test".to_string(),
-            heartbeat_interval: None,
-            initial_heartbeat_interval: None,
+            heartbeat_interval: Some(3600),
+            initial_heartbeat_interval: Some(300),
             qos: None,
             enable_nat_type_collection: None,
             enable_relay_conn_data: Some(true),
@@ -802,6 +819,7 @@ mod tests {
             "nurse": {
                 "fingerprint": "fingerprint_test",
                 "heartbeat_interval": 3600,
+                "initial_heartbeat_interval": 300,
                 "qos": {
                     "rtt_interval": 3600,
                     "rtt_tries": 5,
@@ -833,7 +851,7 @@ mod tests {
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
                 heartbeat_interval: Some(3600),
-                initial_heartbeat_interval: None,
+                initial_heartbeat_interval: Some(300),
                 qos: Some(FeatureQoS {
                     rtt_interval: Some(3600),
                     rtt_tries: Some(5),
@@ -867,8 +885,8 @@ mod tests {
             wireguard: Default::default(),
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
-                heartbeat_interval: None,
-                initial_heartbeat_interval: None,
+                heartbeat_interval: Some(3600),
+                initial_heartbeat_interval: Some(300),
                 qos: Some(FeatureQoS {
                     rtt_interval: None,
                     rtt_tries: None,
@@ -902,8 +920,8 @@ mod tests {
             wireguard: Default::default(),
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
-                heartbeat_interval: None,
-                initial_heartbeat_interval: None,
+                heartbeat_interval: Some(3600),
+                initial_heartbeat_interval: Some(300),
                 qos: None,
                 enable_nat_type_collection: None,
                 enable_relay_conn_data: Some(false),

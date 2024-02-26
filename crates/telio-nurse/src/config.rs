@@ -25,7 +25,7 @@ impl Config {
 /// Configuration for Heartbeat component from Nurse
 pub struct HeartbeatConfig {
     /// Initial time period to wait until the first collection happens in seconds, if none, defaults to 'send_interval'
-    pub initial_collect_interval: Option<Duration>,
+    pub initial_collect_interval: Duration,
 
     /// How often to collect data, in seconds
     pub collect_interval: Duration,
@@ -41,19 +41,18 @@ pub struct HeartbeatConfig {
 }
 
 impl HeartbeatConfig {
-    const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(3600); // 60 minutes
-
     /// Create a new Heartbeat config
     fn new(features: &FeatureNurse) -> Self {
         let collect_interval = features
             .heartbeat_interval
-            .map(|interval| Duration::from_secs(interval.into()))
-            .unwrap_or(Self::DEFAULT_HEARTBEAT_INTERVAL);
+            .map_or(FeatureNurse::DEFAULT_HEARTBEAT_INTERVAL, |interval| {
+                Duration::from_secs(interval.into())
+            });
 
-        let initial_collect_interval = features
-            .initial_heartbeat_interval
-            .map(|interval| Some(Duration::from_secs(interval.into())))
-            .unwrap_or_default();
+        let initial_collect_interval = features.initial_heartbeat_interval.map_or(
+            FeatureNurse::DEFAULT_INITIAL_HEARTBEAT_INTERVAL,
+            |interval| Duration::from_secs(interval.into()),
+        );
 
         Self {
             initial_collect_interval,
@@ -68,8 +67,8 @@ impl HeartbeatConfig {
 impl Default for HeartbeatConfig {
     fn default() -> Self {
         Self {
-            initial_collect_interval: None,
-            collect_interval: Duration::from_secs(3600),
+            initial_collect_interval: FeatureNurse::DEFAULT_INITIAL_HEARTBEAT_INTERVAL,
+            collect_interval: FeatureNurse::DEFAULT_HEARTBEAT_INTERVAL,
             collect_answer_timeout: Duration::from_secs(10),
             fingerprint: String::new(),
             is_nat_type_collection_enabled: true,
