@@ -4,6 +4,7 @@
 * LLT-4916: Allow any case nicknames
 * LLT-4948: Change missed tick behavior from burst to delay
 * LLT-4967: Clear leftover STUN peer after meshnet is turned off
+* LLT-4913: Skip qos analytics ping for unconnected peers
 
 <br>
 

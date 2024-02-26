@@ -458,7 +458,7 @@ impl State {
 
     async fn uapi_request(&mut self, cmd: &Cmd) -> Result<Response, Error> {
         let ret = self.adapter.send_uapi_cmd(cmd).await?;
-        telio_log_debug!("UAPI request: {}, response: {}", &cmd.to_string(), &ret);
+        telio_log_debug!("UAPI request: {}, response: {:?}", &cmd.to_string(), &ret);
 
         // Count continuous adapter failures.
         // As observed on Windows, a vNIC driver might fail a call right after wake-up,
