@@ -146,6 +146,11 @@ public class Telio : global::System.IDisposable {
     return ret;
   }
 
+  public TelioResult ConnectToExitNodePostquantum(string identifier, string publicKey, string allowedIps, string endpoint) {
+    TelioResult ret = (TelioResult)libtelioPINVOKE.Telio_ConnectToExitNodePostquantum(swigCPtr, identifier, publicKey, allowedIps, endpoint);
+    return ret;
+  }
+
   public TelioResult DisconnectFromExitNode(string publicKey) {
     TelioResult ret = (TelioResult)libtelioPINVOKE.Telio_DisconnectFromExitNode(swigCPtr, publicKey);
     return ret;
@@ -425,6 +430,9 @@ class libtelioPINVOKE {
 
   [global::System.Runtime.InteropServices.DllImport("telio", EntryPoint="CSharp_NordSecfTelio_Telio_ConnectToExitNodeWithId___")]
   public static extern int Telio_ConnectToExitNodeWithId(global::System.Runtime.InteropServices.HandleRef jarg1, string jarg2, string jarg3, string jarg4, string jarg5);
+
+  [global::System.Runtime.InteropServices.DllImport("telio", EntryPoint="CSharp_NordSecfTelio_Telio_ConnectToExitNodePostquantum___")]
+  public static extern int Telio_ConnectToExitNodePostquantum(global::System.Runtime.InteropServices.HandleRef jarg1, string jarg2, string jarg3, string jarg4, string jarg5);
 
   [global::System.Runtime.InteropServices.DllImport("telio", EntryPoint="CSharp_NordSecfTelio_Telio_DisconnectFromExitNode___")]
   public static extern int Telio_DisconnectFromExitNode(global::System.Runtime.InteropServices.HandleRef jarg1, string jarg2);
