@@ -91,7 +91,7 @@ class PersistentKeepalive(DataClassJsonMixin):
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
 class Wireguard(DataClassJsonMixin):
-    persistent_keepalive: PersistentKeepalive
+    persistent_keepalive: PersistentKeepalive = PersistentKeepalive()
 
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
