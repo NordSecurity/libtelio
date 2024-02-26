@@ -10,6 +10,7 @@
 * LLT-4917: Fix the issue with wireguard-go failing to bind to a port on some devices
 * LLT-4870: Bring back PQ
 * LLT-4406: Implement error handling for proxy egress
+* LLT-4980: Introduce synchronization for the endpoint map in telio-proxy
 
 <br>
 
