@@ -251,7 +251,9 @@ async def test_ipv6_exit_node(
             new_connection_with_conn_tracker(
                 alpha_connection_tag,
                 generate_connection_tracker_config(
-                    alpha_connection_tag, derp_1_limits=ConnectionLimits(1, 1)
+                    alpha_connection_tag,
+                    derp_1_limits=ConnectionLimits(1, 1),
+                    ping6_limits=ConnectionLimits(0, 2),
                 ),
             )
         )
@@ -261,6 +263,7 @@ async def test_ipv6_exit_node(
                 generate_connection_tracker_config(
                     ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
                     derp_1_limits=ConnectionLimits(1, 1),
+                    ping6_limits=ConnectionLimits(0, 2),
                 ),
             )
         )
