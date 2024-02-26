@@ -4,7 +4,7 @@ import telio
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
 from telio import PathType, State
-from telio_features import TelioFeatures, Direct, Wireguard, Nurse, Qos, Lana
+from telio_features import TelioFeatures, Direct, Nurse, Qos, Lana
 from typing import Tuple, List
 from utils import testing
 from utils.connection import Connection
@@ -58,7 +58,6 @@ async def get_in_node_tracker(
                 ),
                 features=TelioFeatures(
                     direct=Direct(providers=["stun"]),
-                    wireguard=Wireguard(),
                     ipv6=True,
                 ),
             )
@@ -73,7 +72,6 @@ async def get_in_node_tracker(
                 ),
                 features=TelioFeatures(
                     direct=Direct(providers=["stun"]),
-                    wireguard=Wireguard(),
                     ipv6=True,
                 ),
             ),
@@ -99,7 +97,6 @@ async def get_in_node_tracker(
                 ip_stack=IPStack.IPv4v6,
                 features=TelioFeatures(
                     direct=Direct(providers=["stun"]),
-                    wireguard=Wireguard(),
                     ipv6=True,
                 ),
             )
