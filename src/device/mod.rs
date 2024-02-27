@@ -5,6 +5,7 @@ use telio_crypto::{PublicKey, SecretKey};
 use telio_firewall::firewall::{Firewall, StatefullFirewall};
 use telio_lana::init_lana;
 use telio_nat_detect::nat_detection::{retrieve_single_nat, NatData};
+use telio_pq::PostQuantum;
 use telio_proxy::{Config as ProxyConfig, Io as ProxyIo, Proxy, UdpProxy};
 use telio_relay::{
     derp::Config as DerpConfig, multiplexer::Multiplexer, DerpKeepaliveConfig, DerpRelay,
@@ -242,7 +243,7 @@ pub struct Entities {
     // Nurse
     nurse: Option<Arc<Nurse>>,
 
-    postquantum_wg: Option<telio_pq::Entity>,
+    postquantum_wg: telio_pq::Entity,
 
     pmtu_detection: Option<telio_pmtu::Entity>,
 }
@@ -320,9 +321,6 @@ pub struct EventPublishers {
     endpoint_upgrade_event_subscriber: chan::Tx<UpgradeRequestChangeEvent>,
     stun_server_publisher: chan::Tx<Option<StunServer>>,
     derp_events_publisher: mc_chan::Tx<Box<DerpServer>>,
-
-    /// Passed down the PQ key rotation task
-    post_quantum_publisher: chan::Tx<telio_pq::Event>,
 }
 
 // All of the instances and state required to run local DNS resolver for NordNames
@@ -611,6 +609,29 @@ impl Device {
             let node = node.clone();
             let _wireguard_interface: Arc<DynamicWg> = task_exec!(self.rt()?, async move |rt| {
                 rt.connect_exit_node(&node).boxed().await?;
+                Ok(rt.entities.wireguard_interface.clone())
+            })
+            .await?;
+
+            // TODO: delete this as sockets are protected from within boringtun itself
+            #[cfg(not(windows))]
+            self.protect_from_vpn(&*_wireguard_interface).await?;
+
+            Ok(())
+        })
+    }
+
+    /// Connect to exit node with post-quantum secure tunnel
+    ///
+    /// Exit node in this case may only be the VPN server.
+    /// A new node is created and WireGuard post-quantum tunnel is established to that node.
+    /// Meshnet is disallowed when forming a post-quantum tunnel and if it's enabled
+    /// this call will error out.
+    pub fn connect_vpn_post_quantum(&self, node: &ExitNode) -> Result {
+        self.art()?.block_on(async {
+            let node = node.clone();
+            let _wireguard_interface: Arc<DynamicWg> = task_exec!(self.rt()?, async move |rt| {
+                rt.connect_exit_node_pq(&node).boxed().await?;
                 Ok(rt.entities.wireguard_interface.clone())
             })
             .await?;
@@ -1040,9 +1061,11 @@ impl Runtime {
 
         let post_quantum = Chan::default();
 
-        let postquantum_wg = features
-            .post_quantum_vpn
-            .map(|pq_features| telio_pq::Entity::new(pq_features, socket_pool.clone()));
+        let postquantum_wg = telio_pq::Entity::new(
+            features.post_quantum_vpn,
+            socket_pool.clone(),
+            post_quantum.tx,
+        );
 
         let mut polling_interval = interval_at(tokio::time::Instant::now(), Duration::from_secs(5));
         polling_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -1083,7 +1106,6 @@ impl Runtime {
                 endpoint_upgrade_event_subscriber: wg_upgrade_sync.tx,
                 stun_server_publisher: stun_server_events.tx,
                 derp_events_publisher: derp_events.tx,
-                post_quantum_publisher: post_quantum.tx,
             },
             polling_interval,
             #[cfg(test)]
@@ -1483,7 +1505,7 @@ impl Runtime {
     }
 
     async fn set_config(&mut self, config: &Option<Config>) -> Result {
-        if self.features.post_quantum_vpn.is_some() && config.is_some() {
+        if self.entities.postquantum_wg.is_rotating_keys() && config.is_some() {
             // Post quantum VPN is enabled and we're trying to set up the meshnet
             return Err(Error::MeshnetUnavailableWithPQ);
         }
@@ -1663,8 +1685,34 @@ impl Runtime {
         }
     }
 
+    /// Connect ot exit node with post-quantum tunnel
+    async fn connect_exit_node_pq(&mut self, exit_node: &ExitNode) -> Result {
+        if self.requested_state.meshnet_config.is_some() {
+            // Meshnet is enabled and we're trying to set up the QP VPN connection
+            return Err(Error::MeshnetUnavailableWithPQ);
+        }
+
+        let Some(addr) = exit_node.endpoint else {
+            return Err(Error::EndpointNotProvided);
+        };
+
+        // This is required to silence the dylint error "error: large future with a size of 2048 bytes"
+        Box::pin(self.connect_exit_node(exit_node)).await?;
+
+        self.entities.postquantum_wg.start(
+            addr,
+            self.requested_state.device_config.private_key,
+            exit_node.public_key,
+        );
+
+        Ok(())
+    }
+
     async fn connect_exit_node(&mut self, exit_node: &ExitNode) -> Result {
         let exit_node = exit_node.clone();
+
+        // Stop post quantum key rotation task if it's running
+        self.entities.postquantum_wg.stop();
 
         // dns socket for macos should only be bound to tunnel interface when connected to exit,
         // otherwise with no exit dns peer will try to forward packets through tunnel and fail
@@ -1684,15 +1732,6 @@ impl Runtime {
                     .await?;
             }
         } else if let Some(addr) = exit_node.endpoint {
-            if let Some(pq_entt) = &mut self.entities.postquantum_wg {
-                pq_entt.start(
-                    self.event_publishers.post_quantum_publisher.clone(),
-                    addr,
-                    self.requested_state.device_config.private_key,
-                    exit_node.public_key,
-                );
-            }
-
             if let Some(pmtud) = &mut self.entities.pmtu_detection {
                 pmtud.run(addr.ip()).await;
             }
@@ -1779,9 +1818,7 @@ impl Runtime {
             .await?;
         }
 
-        if let Some(pq_entt) = &mut self.entities.postquantum_wg {
-            pq_entt.stop();
-        }
+        self.entities.postquantum_wg.stop();
 
         if let Some(pmtud) = &mut self.entities.pmtu_detection {
             pmtud.stop().await;
@@ -1983,9 +2020,7 @@ impl TaskRuntime for Runtime {
             Some(pq_event) = self.event_listeners.post_quantum_subscriber.recv() => {
                 telio_log_debug!("WG consolidation triggered by PQ event");
 
-                if let Some(pq_entt) = &mut self.entities.postquantum_wg {
-                    pq_entt.on_event(pq_event);
-                }
+                self.entities.postquantum_wg.on_event(pq_event);
 
                 if let Err(err) = wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
                     .await

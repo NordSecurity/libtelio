@@ -66,7 +66,7 @@ pub async fn consolidate_wg_state(
     consolidate_wg_private_key(
         requested_state,
         &*entities.wireguard_interface,
-        entities.postquantum_wg.as_ref(),
+        &entities.postquantum_wg,
     )
     .await?;
     consolidate_wg_fwmark(requested_state, &*entities.wireguard_interface).await?;
@@ -89,7 +89,7 @@ pub async fn consolidate_wg_state(
                 .as_ref()
                 .and_then(|direct| direct.upnp_endpoint_provider.as_ref())
         }),
-        entities.postquantum_wg.as_ref(),
+        &entities.postquantum_wg,
         features,
     )
     .await?;
@@ -100,9 +100,9 @@ pub async fn consolidate_wg_state(
 async fn consolidate_wg_private_key<W: WireGuard>(
     requested_state: &RequestedState,
     wireguard_interface: &W,
-    post_quantum_vpn: Option<&telio_pq::Entity>,
+    post_quantum_vpn: &impl telio_pq::PostQuantum,
 ) -> Result {
-    let private_key = if let Some(pq) = post_quantum_vpn.and_then(telio_pq::Entity::keys) {
+    let private_key = if let Some(pq) = post_quantum_vpn.keys() {
         pq.wg_secret
     } else {
         requested_state.device_config.private_key
@@ -148,7 +148,7 @@ async fn consolidate_wg_peers<
     remote_peer_states: PeersStatesMap,
     stun_ep_provider: Option<&Arc<StunEndpointProvider>>,
     upnp_ep_provider: Option<&Arc<UpnpEndpointProvider>>,
-    post_quantum_vpn: Option<&telio_pq::Entity>,
+    post_quantum_vpn: &impl telio_pq::PostQuantum,
     features: &Features,
 ) -> Result {
     let proxy_endpoints = if let Some(p) = proxy {
@@ -435,7 +435,7 @@ async fn build_requested_peers_list<
     dns: &Mutex<crate::device::DNS<D>>,
     proxy_endpoints: &EndpointMap,
     remote_peer_states: &PeersStatesMap,
-    post_quantum_vpn: Option<&telio_pq::Entity>,
+    post_quantum_vpn: &impl telio_pq::PostQuantum,
     features: &Features,
 ) -> Result<BTreeMap<PublicKey, RequestedPeer>> {
     // Build a list of meshnet peers
@@ -482,13 +482,13 @@ async fn build_requested_peers_list<
             let persistent_keepalive_interval = requested_state.keepalive_periods.vpn;
 
             // If the PQ VPN is set up we need to configure the preshared key
-            match post_quantum_vpn.map(telio_pq::Entity::keys) {
-                Some(None) => {
+            match (post_quantum_vpn.is_rotating_keys(), post_quantum_vpn.keys()) {
+                (true, None) => {
                     // The post quantum state is not ready, we don't want to set up quantum
                     // unsafe tunnel with this peer
                 }
-                pq_keys => {
-                    let preshared_key = pq_keys.flatten().map(|pq| pq.pq_shared);
+                (_, pq_keys) => {
+                    let preshared_key = pq_keys.map(|pq| pq.pq_shared);
 
                     requested_peers.insert(
                         exit_node.public_key,
@@ -506,7 +506,7 @@ async fn build_requested_peers_list<
                         },
                     );
                 }
-            };
+            }
         }
     }
 
@@ -959,6 +959,7 @@ mod tests {
     };
     use telio_model::config::{Config, PeerBase, Server};
     use telio_model::mesh::ExitNode;
+    use telio_pq::MockPostQuantum;
     use telio_proxy::MockProxy;
     use telio_traversal::cross_ping_check::MockCrossPingCheckTrait;
     use telio_traversal::{MockSessionKeeperTrait, MockUpgradeSyncTrait, UpgradeRequest};
@@ -973,6 +974,7 @@ mod tests {
     #[tokio::test]
     async fn update_wg_private_key_when_changed() {
         let mut wg_mock = MockWireGuard::new();
+        let mut pq_mock = MockPostQuantum::new();
         let secret_key_a = SecretKey::gen();
         let secret_key_b = SecretKey::gen();
 
@@ -988,6 +990,8 @@ mod tests {
             .with(predicate::eq(secret_key_b))
             .returning(|_| Ok(()));
 
+        pq_mock.expect_keys().returning(|| None);
+
         let requested_state = RequestedState {
             device_config: DeviceConfig {
                 private_key: secret_key_b,
@@ -996,7 +1000,7 @@ mod tests {
             ..Default::default()
         };
 
-        consolidate_wg_private_key(&requested_state, &wg_mock, None)
+        consolidate_wg_private_key(&requested_state, &wg_mock, &pq_mock)
             .await
             .unwrap();
     }
@@ -1004,6 +1008,7 @@ mod tests {
     #[tokio::test]
     async fn do_not_update_wg_private_key_when_not_changed() {
         let mut wg_mock = MockWireGuard::new();
+        let mut pq_mock = MockPostQuantum::new();
         let secret_key_a = SecretKey::gen();
         let secret_key_a_cpy = secret_key_a.clone();
 
@@ -1014,6 +1019,9 @@ mod tests {
             })
         });
 
+        pq_mock.expect_keys().returning(|| None);
+        pq_mock.expect_is_rotating_keys().returning(|| false);
+
         let requested_state = RequestedState {
             device_config: DeviceConfig {
                 private_key: secret_key_a,
@@ -1022,7 +1030,7 @@ mod tests {
             ..Default::default()
         };
 
-        consolidate_wg_private_key(&requested_state, &wg_mock, None)
+        consolidate_wg_private_key(&requested_state, &wg_mock, &pq_mock)
             .await
             .unwrap();
     }
@@ -1323,6 +1331,7 @@ mod tests {
         session_keeper: MockSessionKeeperTrait,
         dns: Mutex<DNS<MockDnsResolver>>,
         features: Features,
+        post_quantum: MockPostQuantum,
     }
 
     impl Fixture {
@@ -1365,6 +1374,7 @@ mod tests {
                     },
                     pmtu_discovery: Default::default(),
                 },
+                post_quantum: MockPostQuantum::new(),
             }
         }
 
@@ -1610,6 +1620,13 @@ mod tests {
             }
         }
 
+        fn then_post_quantum_is_checked(&mut self) {
+            self.post_quantum.expect_keys().returning(|| None);
+            self.post_quantum
+                .expect_is_rotating_keys()
+                .returning(|| false);
+        }
+
         async fn consolidate_peers(self) {
             let cross_ping_check = Arc::new(self.cross_ping_check);
             let upgrade_sync = Arc::new(self.upgrade_sync);
@@ -1626,7 +1643,7 @@ mod tests {
                 HashMap::new(),
                 None,
                 None,
-                None,
+                &self.post_quantum,
                 &self.features,
             )
             .await
@@ -1996,6 +2013,7 @@ mod tests {
             allowed_ips,
             ip_addresses,
         )]);
+        f.then_post_quantum_is_checked();
 
         f.consolidate_peers().await;
     }

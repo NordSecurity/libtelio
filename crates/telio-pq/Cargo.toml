@@ -24,6 +24,7 @@ telio-utils.workspace = true
 
 boringtun.workspace = true
 pnet_packet.workspace = true
+mockall = { workspace = true, optional = true }
 rand.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
@@ -31,3 +32,4 @@ tracing.workspace = true
 
 [dev-dependencies]
 base64.workspace = true
+mockall.workspace = true

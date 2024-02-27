@@ -269,6 +269,40 @@ interface telio {
     [Throws=TelioError]
     void connect_to_exit_node_with_id(string? identifier, PublicKey public_key, sequence<IpNetwork>? allowed_ips, SocketAddr? endpoint);
 
+    /// Connects to the VPN exit node with post quantum tunnel
+    ///
+    /// Routing should be set by the user accordingly.
+    ///
+    /// # Parameters
+    /// - `identifier`: String that identifies the exit node, will be generated if null is passed.
+    /// - `public_key`: Base64 encoded WireGuard public key for an exit node.
+    /// - `allowed_ips`: Semicolon separated list of subnets which will be routed to the exit node.
+    ///                  Can be NULL, same as "0.0.0.0/0".
+    /// - `endpoint`: An endpoint to an exit node. Must contain a port.
+    ///
+    /// # Examples
+    ///
+    /// ```c
+    /// // Connects to VPN exit node.
+    /// telio_connect_to_exit_node_postquantum(
+    ///     "5e0009e1-75cf-4406-b9ce-0cbb4ea50366",
+    ///     "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=",
+    ///     "0.0.0.0/0", // Equivalent
+    ///     "1.2.3.4:5678"
+    /// );
+    ///
+    /// // Connects to VPN exit node, with specified allowed_ips.
+    /// telio_connect_to_exit_node_postquantum(
+    ///     "5e0009e1-75cf-4406-b9ce-0cbb4ea50366",
+    ///     "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=",
+    ///     "100.100.0.0/16;10.10.23.0/24",
+    ///     "1.2.3.4:5678"
+    /// );
+    /// ```
+    ///
+    [Throws=TelioError]
+    void connect_to_exit_node_postquantum(string? identifier, PublicKey public_key, sequence<IpNetwork>? allowed_ips, SocketAddr endpoint);
+
     /// Disconnects from specified exit node.
     ///
     /// # Parameters
@@ -375,7 +409,7 @@ dictionary Features {
     /// Feature configuration for DNS
     FeatureDns dns;
     /// Post quantum VPN tunnel configuration
-    FeaturePostQuantumVPN? post_quantum_vpn;
+    FeaturePostQuantumVPN post_quantum_vpn;
     /// Enable PMTU discovery, enabled by default
     FeaturePmtuDiscovery? pmtu_discovery;
 };

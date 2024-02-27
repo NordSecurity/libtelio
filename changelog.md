@@ -15,6 +15,7 @@
 * LLT-4968: Make the default nurse initial_heartbeat_interval to be 5 minutes
 * LLT-4850: Add missing VPN meshnet address to analytics
 * LLT-4980: Introduce synchronization for the endpoint map in telio-proxy
+* LLT-4970: PQ VPN is enabled by calling `telio_connect_to_exit_node_postquantum()`
 
 <br>
 
