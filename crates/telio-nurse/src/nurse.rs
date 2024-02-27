@@ -152,11 +152,11 @@ impl State {
         }
     }
 
-    /// Inform Nurse that Derp service started.
+    /// Inform Nurse that Meshnet started or stopped.
     ///
     /// # Arguments
     ///
-    /// * `derp` - The new Derp service pointer to use.
+    /// * `meshnet_entities` - meshnet entities if meshnet started, None if it stopped.
     pub async fn configure_meshnet(&self, meshnet_entities: Option<MeshnetEntities>) {
         let _ = task_exec!(&self.heartbeat, async move |state| {
             state.configure_meshnet(meshnet_entities).await;

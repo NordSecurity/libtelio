@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, collections::hash_map::Entry, mem, time::Duration};
+use std::{borrow::Borrow, collections::hash_map::Entry, mem, sync::Arc, time::Duration};
 
 use tokio::{sync::Mutex, time::Instant};
 
@@ -7,6 +7,7 @@ use serde::{ser::SerializeTuple, Serialize};
 use telio_crypto::PublicKey;
 use telio_model::{
     api_config::{EndpointProvider, FeatureNurse},
+    config::{RelayConnectionChangeReason, RelayState, Server},
     HashMap,
 };
 use telio_utils::telio_log_warn;
@@ -15,23 +16,26 @@ use telio_wg::{
     WireGuard,
 };
 
+#[cfg(feature = "mockall")]
+use mockall::automock;
+
 const DAY_DURATION: Duration = Duration::from_secs(60 * 60 * 24);
 
 // Possible Relay connection states - because all of the first 8 bit combinations
 // are reserved for relay states, they need to have the 9th bit on
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 #[repr(u16)]
-pub enum RelayConnectionState {
+pub(crate) enum RelayConnectionState {
     Connecting = 256,
     Connected = 257,
 }
 
-impl From<PeerState> for RelayConnectionState {
-    fn from(value: PeerState) -> Self {
-        if let PeerState::Connected = value {
+impl From<RelayState> for RelayConnectionState {
+    fn from(value: RelayState) -> Self {
+        if let RelayState::Connected = value {
             RelayConnectionState::Connected
         } else {
-            if let PeerState::Disconnected = value {
+            if let RelayState::Disconnected = value {
                 telio_log_warn!("Got disconnected state for Relay server");
             }
             RelayConnectionState::Connecting
@@ -39,25 +43,10 @@ impl From<PeerState> for RelayConnectionState {
     }
 }
 
-// Possible disconnection reasons
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-#[allow(dead_code)]
-#[repr(u16)]
-pub enum RelayConnectionChangeReason {
-    // Numbers smaller than 200 for configuration changes
-    ConfigurationChange = 101,
-    DisabledByUser = 102,
-
-    // Numbers larger than 200 for network problems
-    ConnectionTimeout = 201,
-    ConnectionTerminatedByServer = 202,
-    NetworkError = 203,
-}
-
 // Possible endpoint connection types
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-pub enum EndpointType {
-    #[allow(dead_code)]
+#[allow(dead_code)]
+pub(crate) enum EndpointType {
     Relay = 0,
     Local = 1,
     Stun = 2,
@@ -76,15 +65,13 @@ impl From<EndpointProvider> for EndpointType {
 
 // Possible connectivity state changes
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-#[allow(dead_code)]
-pub struct PeerEndpointTypes {
+pub(crate) struct PeerEndpointTypes {
     initiator_ep: EndpointType,
     responder_ep: EndpointType,
 }
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-#[allow(dead_code)]
-pub enum ConnectionData {
+pub(crate) enum ConnectionData {
     Relay {
         state: RelayConnectionState,
         reason: RelayConnectionChangeReason,
@@ -132,7 +119,7 @@ impl Serialize for ConnectionData {
 
 // Ready to send connection data for some period of time
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-pub struct ConnectionSegmentData {
+pub(crate) struct ConnectionSegmentData {
     node: PublicKey,
     start: Instant, // to ensure the segments are unique
     duration: Duration,
@@ -140,19 +127,19 @@ pub struct ConnectionSegmentData {
 }
 
 impl ConnectionSegmentData {
-    pub fn new_relay(relay_event: &RelayEvent, target_timestamp: Instant) -> Self {
+    fn new_relay(relay_event: &RelayEvent, target_timestamp: Instant) -> Self {
         ConnectionSegmentData {
             node: relay_event.public_key,
             start: relay_event.timestamp,
             duration: target_timestamp.duration_since(relay_event.timestamp),
             connection_data: ConnectionData::Relay {
-                state: relay_event.peer_state.into(),
+                state: relay_event.state,
                 reason: relay_event.reason,
             },
         }
     }
 
-    pub fn new_peer(
+    fn new_peer(
         peer_event: &AnalyticsEvent,
         endpoints: PeerEndpointTypes,
         target_timestamp: Instant,
@@ -173,9 +160,9 @@ impl ConnectionSegmentData {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct RelayEvent {
+struct RelayEvent {
     public_key: PublicKey,
-    peer_state: PeerState,
+    state: RelayConnectionState,
     timestamp: Instant,
     reason: RelayConnectionChangeReason,
 }
@@ -187,26 +174,32 @@ struct AggregatorData {
     relay_segments: Vec<ConnectionSegmentData>,
 }
 
-// A container to store the connectivity data for our meshnet peers
+/// A container to store the connectivity data for the Meshnet peers used by Nurse
 #[allow(dead_code)]
-pub struct ConnectivityDataAggregator<W: WireGuard> {
+pub struct ConnectivityDataAggregator {
     data: Mutex<AggregatorData>,
 
     aggregate_relay_events: bool,
     aggregate_nat_traversal_events: bool,
 
-    wg_interface: W,
+    wg_interface: Arc<dyn WireGuard>,
 }
 
-pub struct AggregatorCollectedSegments {
-    pub relay: Vec<ConnectionSegmentData>,
-    pub peer: Vec<ConnectionSegmentData>,
+// Internal Nurse structure for prepared segment data collection
+#[allow(dead_code)]
+pub(crate) struct AggregatorCollectedSegments {
+    pub(crate) relay: Vec<ConnectionSegmentData>,
+    pub(crate) peer: Vec<ConnectionSegmentData>,
 }
 
-impl<W: WireGuard> ConnectivityDataAggregator<W> {
-    // Create a new DataConnectivityAggregator instance
-    #[allow(dead_code)]
-    pub fn new(nurse_features: &FeatureNurse, wg_interface: W) -> ConnectivityDataAggregator<W> {
+#[allow(dead_code)]
+#[cfg_attr(feature = "mockall", automock)]
+impl ConnectivityDataAggregator {
+    /// Create a new DataConnectivityAggregator instance
+    pub fn new(
+        nurse_features: &FeatureNurse,
+        wg_interface: Arc<dyn WireGuard>,
+    ) -> ConnectivityDataAggregator {
         ConnectivityDataAggregator {
             data: Mutex::new(AggregatorData {
                 current_relay_event: None,
@@ -222,9 +215,15 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
         }
     }
 
-    #[allow(dead_code)]
-    pub async fn change_peer_state_direct(
-        &mut self,
+    /// Inform Nurse about direct peer state change.
+    ///
+    /// # Arguments
+    ///
+    /// * `event` - Analytic event with the current direct peer state.
+    /// * `initiator_ep` - Endpoint provider used by the direct connection initiator.
+    /// * `responder_ep` - Endpoint provider used by the direct connection responder.
+    pub(crate) async fn change_peer_state_direct(
+        &self,
         event: &AnalyticsEvent,
         initiator_ep: EndpointProvider,
         responder_ep: EndpointProvider,
@@ -239,8 +238,12 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
         .await
     }
 
-    #[allow(dead_code)]
-    pub async fn change_peer_state_relayed(&mut self, event: &AnalyticsEvent) {
+    /// Inform Nurse about relayed peer state change.
+    ///
+    /// # Arguments
+    ///
+    /// * `event` - Analytic event with the current relayed peer state.
+    pub(crate) async fn change_peer_state_relayed(&self, event: &AnalyticsEvent) {
         self.change_peer_state_common(
             event,
             PeerEndpointTypes {
@@ -251,11 +254,7 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
         .await
     }
 
-    async fn change_peer_state_common(
-        &mut self,
-        event: &AnalyticsEvent,
-        endpoints: PeerEndpointTypes,
-    ) {
+    async fn change_peer_state_common(&self, event: &AnalyticsEvent, endpoints: PeerEndpointTypes) {
         if !self.aggregate_nat_traversal_events {
             return;
         }
@@ -288,15 +287,22 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
         data_guard.peer_segments.extend(new_segment);
     }
 
-    #[allow(dead_code)]
+    /// Inform Nurse about relay server state change.
+    ///
+    /// # Arguments
+    ///
+    /// * `server_state` - Current derp server state.
+    /// * `reason` - Reason of the state change.
     pub async fn change_relay_state(
-        &mut self,
-        event: &AnalyticsEvent,
+        &self,
+        server_state: Server,
         reason: RelayConnectionChangeReason,
     ) {
         if !self.aggregate_relay_events {
             return;
         }
+
+        let timestamp = Instant::now();
 
         let mut data_guard = self.data.lock().await;
 
@@ -304,9 +310,10 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
             .current_relay_event
             .as_ref()
             .filter(|old_event| {
-                old_event.public_key != event.public_key || old_event.peer_state != event.peer_state
+                old_event.public_key != server_state.public_key
+                    || old_event.state != server_state.conn_state.into()
             })
-            .map(|old_event| ConnectionSegmentData::new_relay(old_event, event.timestamp.into()));
+            .map(|old_event| ConnectionSegmentData::new_relay(old_event, timestamp));
 
         if let Some(segment) = new_segment {
             data_guard.relay_segments.push(segment);
@@ -314,16 +321,16 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
 
         if new_segment.is_some() || data_guard.current_relay_event.is_none() {
             data_guard.current_relay_event = Some(RelayEvent {
-                public_key: event.public_key,
-                peer_state: event.peer_state,
-                timestamp: event.timestamp.into(),
+                public_key: server_state.public_key,
+                state: server_state.conn_state.into(),
+                timestamp,
                 reason,
             })
         }
     }
 
     #[allow(dead_code)]
-    pub async fn collect_unacknowledged_segments(
+    pub(crate) async fn collect_unacknowledged_segments(
         &self,
         force_close: bool,
     ) -> AggregatorCollectedSegments {
@@ -424,8 +431,8 @@ mod tests {
     async fn create_aggregator(
         enable_relay_conn_data: bool,
         enable_nat_traversal_conn_data: bool,
-        wg_interface: MockWireGuard,
-    ) -> ConnectivityDataAggregator<MockWireGuard> {
+        wg_interface: Arc<dyn WireGuard>,
+    ) -> ConnectivityDataAggregator {
         let nurse_features = FeatureNurse {
             fingerprint: String::from("fingerprint_test"),
             heartbeat_interval: None,
@@ -439,7 +446,7 @@ mod tests {
         ConnectivityDataAggregator::new(&nurse_features, wg_interface)
     }
 
-    fn create_basic_event(n: u8) -> AnalyticsEvent {
+    fn create_basic_peer_event(n: u8) -> AnalyticsEvent {
         AnalyticsEvent {
             public_key: PublicKey(*b"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
             dual_ip_addresses: vec![
@@ -452,75 +459,95 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    fn create_basic_relay_event() -> Server {
+        Server {
+            public_key: PublicKey(*b"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+            conn_state: RelayState::Connected,
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn test_aggregator_relay_multiple_servers() {
         let mut wg_interface = MockWireGuard::new();
         wg_interface
             .expect_get_interface()
             .returning(|| Ok(Default::default()));
-        let mut aggregator = create_aggregator(true, false, wg_interface).await;
+        let aggregator = create_aggregator(true, false, Arc::new(wg_interface)).await;
+
+        // Expected segment lengths
+        let first_segment_length1 = Duration::from_secs(30);
+        let first_segment_length2 = Duration::from_secs(30);
+        let second_segment_length = Duration::from_secs(50);
+        let third_segment_lenght = Duration::from_secs(70);
+        let fourth_segment_length = Duration::from_secs(80);
 
         // Initial event
-        let mut current_relay_event = create_basic_event(1);
+        let mut current_relay_event = create_basic_relay_event();
         let first_pubkey = current_relay_event.public_key;
         let second_pubkey = PublicKey(*b"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
-        let segment_start = current_relay_event.timestamp;
+        let segment_start = Instant::now();
         aggregator
             .change_relay_state(
-                &current_relay_event,
+                current_relay_event.clone(),
                 RelayConnectionChangeReason::ConfigurationChange,
             )
             .await;
+
+        time::advance(first_segment_length1).await;
 
         // Repeated state after some time
-        current_relay_event.timestamp += Duration::from_secs(60);
         aggregator
             .change_relay_state(
-                &current_relay_event,
+                current_relay_event.clone(),
                 RelayConnectionChangeReason::ConfigurationChange,
             )
             .await;
 
+        time::advance(first_segment_length2).await;
+
         // Change server event
-        current_relay_event.timestamp += Duration::from_secs(60);
-        let second_segment_start = current_relay_event.timestamp;
+        let second_segment_start = Instant::now();
         current_relay_event.public_key = second_pubkey;
         aggregator
             .change_relay_state(
-                &current_relay_event,
+                current_relay_event.clone(),
                 RelayConnectionChangeReason::ConfigurationChange,
             )
             .await;
 
-        // And after 60 seconds some disconnect due to network error
-        current_relay_event.timestamp += Duration::from_secs(60);
-        let third_segment_start = current_relay_event.timestamp;
-        current_relay_event.peer_state = PeerState::Connecting;
+        time::advance(second_segment_length).await;
+
+        // And after 50 seconds some disconnect due to network error
+        let third_segment_start = Instant::now();
+        current_relay_event.conn_state = RelayState::Connecting;
         aggregator
             .change_relay_state(
-                &current_relay_event,
+                current_relay_event.clone(),
                 RelayConnectionChangeReason::NetworkError,
             )
             .await;
 
+        time::advance(third_segment_lenght).await;
+
         // We want to see also the connecting period, so let's make it connect in the end
-        current_relay_event.timestamp += Duration::from_secs(60);
-        let fourth_segment_start = current_relay_event.timestamp;
-        current_relay_event.peer_state = PeerState::Connected;
+        let fourth_segment_start = Instant::now();
+        current_relay_event.conn_state = RelayState::Connected;
         current_relay_event.public_key = first_pubkey;
         aggregator
             .change_relay_state(
-                &current_relay_event,
+                current_relay_event.clone(),
                 RelayConnectionChangeReason::ConfigurationChange,
             )
             .await;
 
+        time::advance(fourth_segment_length).await;
+
         // And let's add one more segment with the old pubkey
-        current_relay_event.timestamp += Duration::from_secs(30);
-        current_relay_event.peer_state = PeerState::Disconnected;
+        current_relay_event.conn_state = RelayState::Disconnected;
         aggregator
             .change_relay_state(
-                &current_relay_event,
+                current_relay_event,
                 RelayConnectionChangeReason::NetworkError,
             )
             .await;
@@ -536,7 +563,7 @@ mod tests {
             ConnectionSegmentData {
                 node: first_pubkey,
                 start: segment_start.into(),
-                duration: Duration::from_secs(120),
+                duration: first_segment_length1 + first_segment_length2,
                 connection_data: ConnectionData::Relay {
                     state: RelayConnectionState::Connected,
                     reason: RelayConnectionChangeReason::ConfigurationChange
@@ -548,7 +575,7 @@ mod tests {
             ConnectionSegmentData {
                 node: second_pubkey,
                 start: second_segment_start.into(),
-                duration: Duration::from_secs(60),
+                duration: second_segment_length,
                 connection_data: ConnectionData::Relay {
                     state: RelayConnectionState::Connected,
                     reason: RelayConnectionChangeReason::ConfigurationChange
@@ -560,7 +587,7 @@ mod tests {
             ConnectionSegmentData {
                 node: second_pubkey,
                 start: third_segment_start.into(),
-                duration: Duration::from_secs(60),
+                duration: third_segment_lenght,
                 connection_data: ConnectionData::Relay {
                     state: RelayConnectionState::Connecting,
                     reason: RelayConnectionChangeReason::NetworkError
@@ -572,7 +599,7 @@ mod tests {
             ConnectionSegmentData {
                 node: first_pubkey,
                 start: fourth_segment_start.into(),
-                duration: Duration::from_secs(30),
+                duration: fourth_segment_length,
                 connection_data: ConnectionData::Relay {
                     state: RelayConnectionState::Connected,
                     reason: RelayConnectionChangeReason::ConfigurationChange
@@ -593,10 +620,10 @@ mod tests {
         wg_interface
             .expect_get_interface()
             .returning(|| Ok(Default::default()));
-        let mut aggregator = create_aggregator(false, false, wg_interface).await;
+        let aggregator = create_aggregator(false, false, Arc::new(wg_interface)).await;
 
         // Initial event
-        let mut current_peer_event = create_basic_event(1);
+        let mut current_peer_event = create_basic_peer_event(1);
         aggregator
             .change_peer_state_direct(
                 &current_peer_event,
@@ -624,10 +651,10 @@ mod tests {
         wg_interface
             .expect_get_interface()
             .returning(|| Ok(Default::default()));
-        let mut aggregator = create_aggregator(false, true, wg_interface).await;
+        let aggregator = create_aggregator(false, true, Arc::new(wg_interface)).await;
 
         // Initial event
-        let mut current_peer_event = create_basic_event(1);
+        let mut current_peer_event = create_basic_peer_event(1);
         let segment_start = current_peer_event.timestamp;
         aggregator
             .change_peer_state_direct(
@@ -697,7 +724,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn test_aggregator_24h_segment_peer() {
         // Initial event
-        let current_peer_event = create_basic_event(1);
+        let current_peer_event = create_basic_peer_event(1);
         let segment_start = current_peer_event.timestamp;
         let expected_first_segment_duration = DAY_DURATION + Duration::from_secs(1);
         let expected_second_segment_duration = DAY_DURATION + Duration::from_secs(2);
@@ -721,7 +748,7 @@ mod tests {
                 ..Default::default()
             })
         });
-        let mut aggregator = create_aggregator(false, true, wg_interface).await;
+        let aggregator = create_aggregator(false, true, Arc::new(wg_interface)).await;
 
         // Insert the first event
         aggregator
@@ -783,8 +810,8 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn test_aggregator_24h_segment_relay() {
-        let current_relay_event = create_basic_event(1);
-        let segment_start = current_relay_event.timestamp;
+        let current_relay_event = create_basic_relay_event();
+        let segment_start = Instant::now();
         let expected_first_segment_duration = DAY_DURATION + Duration::from_secs(1);
         let expected_second_segment_duration = DAY_DURATION + Duration::from_secs(2);
 
@@ -792,11 +819,11 @@ mod tests {
         wg_interface
             .expect_get_interface()
             .returning(move || Ok(Default::default()));
-        let mut aggregator = create_aggregator(true, false, wg_interface).await;
+        let aggregator = create_aggregator(true, false, Arc::new(wg_interface)).await;
 
         aggregator
             .change_relay_state(
-                &current_relay_event,
+                current_relay_event.clone(),
                 RelayConnectionChangeReason::ConfigurationChange,
             )
             .await;
@@ -868,15 +895,11 @@ mod tests {
         let expected_segment_duration = Duration::from_secs(721);
         let expected_second_segment_duration = DAY_DURATION + Duration::from_secs(2);
 
-        let current_relay_event = create_basic_event(1);
-
-        // Just to make sure the order will be correct
-        time::advance(state_start_difference).await;
-
-        let current_peer_event = create_basic_event(2);
+        let current_relay_event = create_basic_relay_event();
+        let relay_segment_start = Instant::now();
 
         let mut wg_interface = MockWireGuard::new();
-        let lambda_pk = current_peer_event.public_key;
+        let lambda_pk = create_basic_peer_event(2).public_key;
         wg_interface.expect_get_interface().returning(move || {
             Ok(Interface {
                 peers: vec![(
@@ -894,16 +917,21 @@ mod tests {
                 ..Default::default()
             })
         });
-        let mut aggregator = create_aggregator(true, true, wg_interface).await;
+        let aggregator = create_aggregator(true, true, Arc::new(wg_interface)).await;
 
         aggregator
             .change_relay_state(
-                &current_relay_event,
+                current_relay_event.clone(),
                 RelayConnectionChangeReason::ConfigurationChange,
             )
             .await;
 
         aggregator.collect_unacknowledged_segments(false).await;
+
+        // Just to make sure the order will be correct
+        time::advance(state_start_difference).await;
+
+        let current_peer_event = create_basic_peer_event(2);
 
         aggregator
             .change_peer_state_direct(
@@ -924,7 +952,7 @@ mod tests {
             relay_segments[0],
             ConnectionSegmentData {
                 node: current_relay_event.public_key,
-                start: current_relay_event.timestamp.into(),
+                start: relay_segment_start,
                 duration: state_start_difference + expected_segment_duration,
                 connection_data: ConnectionData::Relay {
                     state: RelayConnectionState::Connected,

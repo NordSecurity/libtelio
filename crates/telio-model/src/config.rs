@@ -52,7 +52,7 @@ pub struct DnsConfig {
 }
 
 /// The currrent state of our connection to derp server
-#[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RelayState {
     /// Disconnected from the Derp server
@@ -143,6 +143,26 @@ impl Default for Server {
             conn_state: RelayState::Disconnected,
         }
     }
+}
+
+/// Possible relay server connectivity change reasons
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+pub enum RelayConnectionChangeReason {
+    // Numbers smaller than 200 for configuration changes
+    /// Generic reason used when everything goes right
+    ConfigurationChange = 101,
+    /// The connection was explicitely closed by user
+    DisabledByUser = 102,
+    /// Some kind of unexpected internal error
+    ClientError = 103,
+
+    // Numbers larger than 200 for network problems
+    /// Derp server connection timed out
+    ConnectionTimeout = 201,
+    /// Server rejected the connection
+    ConnectionTerminatedByServer = 202,
+    /// OS-level network error (e.g. socket failure)
+    NetworkError = 203,
 }
 
 /// [PartialConfig] is similar to [Config] but allows for `peers` to contain invalid entries.

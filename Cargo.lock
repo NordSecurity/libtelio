@@ -4245,6 +4245,7 @@ dependencies = [
  "futures",
  "histogram",
  "md5",
+ "mockall",
  "nat-detect",
  "protobuf-codegen-pure",
  "rand",
