@@ -1,4 +1,4 @@
-### UNRELEASED
+### v4.2.5
 ---
 * LLT-4908: Lowered DNS TTL time for nicknames and NXDomain responses
 * LLT-4916: Allow any case nicknames
@@ -8,6 +8,7 @@
 * LLT-4968: Make the default nurse initial_heartbeat_interval to be 5 minutes
 * LLT-4850: Add missing VPN meshnet address to analytics
 * LLT-4917: Fix the issue with wireguard-go failing to bind to a port on some devices
+* LLT-4870: Bring back PQ
 
 <br>
 
