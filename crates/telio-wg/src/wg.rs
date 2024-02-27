@@ -4,12 +4,13 @@ use ipnetwork::{IpNetwork, IpNetworkError};
 use slog::{o, Drain, Logger, Never};
 use std::{
     collections::HashMap,
-    net::{Ipv4Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
 };
 use telio_model::mesh::ExitNode;
 use telio_sockets::{NativeProtector, SocketPool};
 use telio_utils::{
-    dual_target, telio_err_with_log, telio_log_debug, telio_log_trace, telio_log_warn,
+    dual_target::{DualTarget, DualTargetError},
+    telio_err_with_log, telio_log_debug, telio_log_trace, telio_log_warn,
 };
 use thiserror::Error as TError;
 use tokio::time::{self, sleep, Instant, Interval, MissedTickBehavior};
@@ -300,7 +301,7 @@ impl WireGuard for DynamicWg {
         Ok(task_exec!(&self.task, async move |s| {
             let mut to = s.interface.clone();
             to.private_key = Some(key);
-            s.update(&to, true).await;
+            let _ = s.update(to, true).await;
             Ok(())
         })
         .await?)
@@ -310,7 +311,7 @@ impl WireGuard for DynamicWg {
         Ok(task_exec!(&self.task, async move |s| {
             let mut to = s.interface.clone();
             to.fwmark = fwmark;
-            s.update(&to, true).await;
+            let _ = s.update(to, true).await;
             Ok(())
         })
         .await?)
@@ -351,7 +352,7 @@ impl WireGuard for DynamicWg {
             }
 
             to.peers.insert(new_peer.public_key, new_peer);
-            s.update(&to, true).await;
+            let _ = s.update(to, true).await;
             Ok(())
         })
         .await?)
@@ -361,7 +362,7 @@ impl WireGuard for DynamicWg {
         Ok(task_exec!(&self.task, async move |s| {
             let mut to = s.interface.clone();
             to.peers.remove(&key);
-            s.update(&to, true).await;
+            let _ = s.update(to, true).await;
             Ok(())
         })
         .await?)
@@ -450,7 +451,7 @@ struct DiffKeys {
 impl State {
     async fn sync(&mut self) -> Result<(), Error> {
         if let Some(to) = self.uapi_request(&uapi::Cmd::Get).await?.interface {
-            let _ = self.update(&to, false).await;
+            let _ = self.update(to, false).await;
         }
 
         Ok(())
@@ -572,6 +573,23 @@ impl State {
         true
     }
 
+    fn update_calculate_set_listen_port(
+        from_listen_port: Option<u16>,
+        to_listen_port: Option<u16>,
+    ) -> Option<u16> {
+        match (from_listen_port, to_listen_port) {
+            (Some(from), Some(to)) => {
+                if from != to {
+                    Some(to)
+                } else {
+                    None
+                }
+            }
+            (None, Some(to)) => Some(to),
+            _ => None,
+        }
+    }
+
     fn update_construct_set_device(
         &self,
         to: &uapi::Interface,
@@ -597,7 +615,10 @@ impl State {
 
         set::Device {
             private_key: to.private_key.map(|key| key.into_bytes()),
-            listen_port: to.listen_port,
+            listen_port: Self::update_calculate_set_listen_port(
+                self.interface.listen_port,
+                to.listen_port,
+            ),
             fwmark: match to.fwmark {
                 0 => None,
                 x => Some(x),
@@ -632,35 +653,38 @@ impl State {
     }
 
     #[allow(mpsc_blocking_send)]
-    async fn update(&mut self, to: &uapi::Interface, push: bool) -> bool {
+    async fn update(&mut self, mut to: uapi::Interface, push: bool) -> Result<bool, Error> {
         // Diff and report events
 
-        //
+        // Adapter doesn't keep track of mesh addresses, therefore they are not retrieved from UAPI requests
+        // so we need to keep track of it.
+        for (pk, peer) in &mut to.peers {
+            if peer.ip_addresses.is_empty() {
+                if let Some(old_peer) = self.interface.peers.get(pk) {
+                    peer.ip_addresses = old_peer.ip_addresses.clone();
+                }
+            }
+        }
+
         // We need to track failed driver calls in uapi_request().
         // Because uapi_request() now needs a mut self, the mut borrow for self.uapi_request()
         // would collide with HashSet<&PublicKey> and with from=&self.interface,
         // which was used throughout this function for better readability.
-        //
-        // "from" was eliminated, the HashSets now contain PublicKeys instead of a ref
-        // and this function was split into multiple parts retaining the original semantics.
-        //
-        // PLEASE NOTE the alias: let from = &self.interface;
-        //
-        if &self.interface == to {
-            return false;
+        if self.interface == to {
+            return Err(Error::InternalError(
+                "Same interface received in update function",
+            ));
         }
 
-        let diff_keys = self.update_calculate_changes(to);
+        let diff_keys = self.update_calculate_changes(&to);
 
-        self.update_endpoint_change_timestamps(&diff_keys, to);
+        self.update_endpoint_change_timestamps(&diff_keys, &to);
 
-        if !self.update_send_notification_events(to, &diff_keys).await {
-            return false;
-        }
+        self.update_send_notification_events(&to, &diff_keys).await;
 
         let mut success = true;
         if push {
-            let dev = self.update_construct_set_device(to, &diff_keys);
+            let dev = self.update_construct_set_device(&to, &diff_keys);
             // mut self required here
             success = self
                 .uapi_request(&Cmd::Set(dev))
@@ -709,30 +733,44 @@ impl State {
                         PeerState::Connecting
                     };
 
+                    let mut dual_ip_addresses: Vec<DualTarget> = vec![];
                     let mut target = (None, None);
-                    for net in &peer.allowed_ips {
-                        match net {
-                            IpNetwork::V4(net4) => {
-                                if net4.prefix() == 32 && target.0.is_none() {
-                                    target.0 = Some(net4.ip());
+                    for ip in &peer.ip_addresses {
+                        match ip {
+                            IpAddr::V4(ipv4) => {
+                                if target.0.is_none() {
+                                    target.0 = Some(ipv4.to_owned());
+                                } else {
+                                    dual_ip_addresses.push(match DualTarget::new(target) {
+                                        Ok(dt) => dt,
+                                        Err(DualTargetError::NoTarget) => DualTarget::default(),
+                                    });
+                                    target = (Some(ipv4.to_owned()), None);
                                 }
                             }
-                            IpNetwork::V6(net6) => {
-                                if net6.prefix() == 128 && target.1.is_none() {
-                                    target.1 = Some(net6.ip());
+                            IpAddr::V6(ipv6) => {
+                                if target.1.is_none() {
+                                    target.1 = Some(ipv6.to_owned());
+                                } else {
+                                    dual_ip_addresses.push(match DualTarget::new(target) {
+                                        Ok(dt) => dt,
+                                        Err(DualTargetError::NoTarget) => DualTarget::default(),
+                                    });
+                                    target = (None, Some(ipv6.to_owned()));
                                 }
                             }
                         }
                     }
-
-                    let endpoint = match dual_target::DualTarget::new(target) {
-                        Ok(dt) => dt,
-                        Err(_) => continue,
-                    };
+                    if target != (None, None) {
+                        dual_ip_addresses.push(match DualTarget::new(target) {
+                            Ok(dt) => dt,
+                            Err(DualTargetError::NoTarget) => DualTarget::default(),
+                        });
+                    }
 
                     let event = AnalyticsEvent {
                         public_key: *pubkey,
-                        endpoint,
+                        dual_ip_addresses,
                         tx_bytes,
                         rx_bytes,
                         peer_state,
@@ -745,9 +783,9 @@ impl State {
             }
         }
 
-        self.interface = to.clone();
+        self.interface = to;
 
-        success
+        Ok(success)
     }
 }
 
@@ -802,7 +840,7 @@ pub mod tests {
             Ok(task_exec!(&self.task, async move |s| {
                 let mut ifc = s.interface.clone();
                 ifc.listen_port = Some(port);
-                s.update(&ifc, true).await;
+                let _ = s.update(ifc, true).await;
                 Ok(())
             })
             .await?)
@@ -1420,5 +1458,23 @@ pub mod tests {
 
         adapter.lock().await.expect_stop().return_once(|| ());
         wg.stop().await;
+    }
+
+    #[test]
+    fn test_update_calculate_set_listen_port() {
+        assert_eq!(State::update_calculate_set_listen_port(None, None), None);
+        assert_eq!(State::update_calculate_set_listen_port(Some(1), None), None);
+        assert_eq!(
+            State::update_calculate_set_listen_port(Some(1), Some(1)),
+            None
+        );
+        assert_eq!(
+            State::update_calculate_set_listen_port(None, Some(1)),
+            Some(1)
+        );
+        assert_eq!(
+            State::update_calculate_set_listen_port(Some(1), Some(2)),
+            Some(2)
+        );
     }
 }

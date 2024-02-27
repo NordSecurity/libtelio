@@ -15,9 +15,10 @@ pub type Result<T> = std::result::Result<T, DualTargetError>;
 pub type Target = (Option<Ipv4Addr>, Option<Ipv6Addr>);
 
 /// DualTarget wrapper
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct DualTarget {
-    target: Target,
+    /// Ipv4/Ipv6 tuple
+    pub target: Target,
 }
 
 impl DualTarget {

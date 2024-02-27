@@ -11,7 +11,7 @@ use std::{
     collections::BTreeMap,
     fmt::{self, Display, Formatter},
     io::{BufRead, BufReader, Read},
-    net::{AddrParseError, SocketAddr},
+    net::{AddrParseError, IpAddr, SocketAddr},
     num::ParseIntError,
     panic,
     str::FromStr,
@@ -34,6 +34,8 @@ pub struct Peer {
     pub public_key: PublicKey,
     /// Peer's endpoint with `IP address` and `UDP port` number
     pub endpoint: Option<SocketAddr>,
+    /// Mesh's IP addresses of peer
+    pub ip_addresses: Vec<IpAddr>,
     /// Keep alive interval, `seconds` or `None`
     pub persistent_keepalive_interval: Option<u32>,
     /// Vector of allowed IPs
@@ -54,6 +56,7 @@ impl From<get::Peer> for Peer {
         Self {
             public_key: PublicKey(item.public_key),
             endpoint: item.endpoint,
+            ip_addresses: Default::default(),
             persistent_keepalive_interval: Some(item.persistent_keepalive_interval.into()),
             allowed_ips: item
                 .allowed_ips
@@ -242,12 +245,12 @@ pub struct Event {
 }
 
 /// Analytics information to be conveyed
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct AnalyticsEvent {
     /// Public key of the Peer
     pub public_key: PublicKey,
     /// Mesh's IP target of peer
-    pub endpoint: DualTarget,
+    pub dual_ip_addresses: Vec<DualTarget>,
     /// Number of transmitted bytes
     pub tx_bytes: u64,
     /// Number of recieved bytes
