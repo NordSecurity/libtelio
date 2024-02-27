@@ -1,18 +1,37 @@
-### v4.2.5
+### v4.3.0-rc0
+### **Bravas**
 ---
-* LLT-4908: Lowered DNS TTL time for nicknames and NXDomain responses
 * LLT-4915: Update the moose tracker to v1.0.0-libtelioApp
 * LLT-4978: Bump moose tracker to v2.0.0-libtelioApp
 
 <br>
 
+### v4.2.5
+### **Space-cakes**
+---
+* LLT-4908: Lowered DNS TTL time for nicknames and NXDomain responses
+* LLT-4916: Allow any case nicknames
+* LLT-4948: Change missed tick behavior from burst to delay
+* LLT-4967: Clear leftover STUN peer after meshnet is turned off
+* LLT-4913: Skip qos analytics ping for unconnected peers
+* LLT-4968: Make the default nurse initial_heartbeat_interval to be 5 minutes
+* LLT-4850: Add missing VPN meshnet address to analytics
+* LLT-4917: Fix the issue with wireguard-go failing to bind to a port on some devices
+* LLT-4870: Bring back PQ
+* LLT-4406: Implement error handling for proxy egress
+* LLT-4980: Introduce synchronization for the endpoint map in telio-proxy
+
+<br>
+
 ### v4.2.4
+### **Space-cakes**
 ---
 * LLT-4878: Fix FFI layer which forbids NULL for `telio_connect_to_exit_node()` calls
 
 <br>
 
 ### v4.2.3
+### **Space-cakes**
 ---
 * LLT-4869: Fix maven upload
 * LLT-4870: Revert post quantum
@@ -20,6 +39,7 @@
 <br>
 
 ### v4.2.2
+### **Space-cakes**
 ----
 * LLT-4662: Update rustix dependency
 * LLT-4667: Fix panic in boringtun
@@ -46,6 +66,7 @@
 <br>
 
 ### v4.2.1
+### **Space-cakes**
 ----
 * LLT-4006: Restrict nat-lab containers capabilities
 * LLT-4586: Fix wireguard-go initialization crash
