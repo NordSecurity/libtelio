@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use bitflags::bitflags;
+use csv::WriterBuilder;
 use futures::FutureExt;
 use nat_detect::NatType;
 use std::collections::BTreeSet;
@@ -8,8 +9,11 @@ use std::net::{IpAddr, SocketAddr};
 use std::{
     collections::{HashMap, HashSet},
     convert::{TryFrom, TryInto},
+    error,
     hash::Hash,
+    io,
     pin::Pin,
+    sync::Arc,
 };
 use telio_crypto::{meshnet_canonical_key_order, PublicKey, SecretKey};
 use telio_model::config::Server;
@@ -28,6 +32,10 @@ use telio_wg::uapi::PeerState;
 use tokio::time::{interval_at, sleep, Duration, Instant, Interval, MissedTickBehavior, Sleep};
 use uuid::Uuid;
 
+#[mockall_double::double]
+use crate::aggregator::ConnectivityDataAggregator;
+
+use crate::aggregator::AggregatorCollectedSegments;
 use crate::config::HeartbeatConfig;
 use crate::data::{AnalyticsMessage, HeartbeatInfo, MeshConfigUpdateEvent};
 
@@ -250,6 +258,9 @@ pub struct Analytics {
 
     /// The type of the NAT we are behind
     nat_type: NatType,
+
+    /// Connectivity data aggregator
+    aggregator: Arc<ConnectivityDataAggregator>,
 }
 
 #[async_trait]
@@ -356,6 +367,14 @@ pub struct MeshnetEntities {
     pub derp_event_channel: mc_chan::Tx<Box<Server>>,
 }
 
+struct HeartbeatMeshmapInfo {
+    index_map_internal: HashMap<PublicKey, u8>,
+    index_map_full: HashMap<PublicKey, u8>,
+    internal_sorted_public_keys: BTreeSet<PublicKey>,
+    external_sorted_public_keys: BTreeSet<PublicKey>,
+    internal_sorted_fingerprints: Vec<String>,
+}
+
 impl Analytics {
     /// Create an empty Analytics instance.
     ///
@@ -369,7 +388,13 @@ impl Analytics {
     /// # Returns
     ///
     /// An empty Analytics instance with the given config
-    pub fn new(public_key: PublicKey, meshnet_id: Uuid, config: HeartbeatConfig, io: Io) -> Self {
+    pub fn new(
+        public_key: PublicKey,
+        meshnet_id: Uuid,
+        config: HeartbeatConfig,
+        io: Io,
+        aggregator: Arc<ConnectivityDataAggregator>,
+    ) -> Self {
         let start_time = Instant::now() + config.initial_collect_interval;
 
         let mut interval: Interval = interval_at(start_time, config.collect_interval);
@@ -396,6 +421,7 @@ impl Analytics {
             meshnet_enabled: false,
             ip_stack: None,
             nat_type: NatType::Unknown,
+            aggregator,
         }
     }
 
@@ -434,6 +460,19 @@ impl Analytics {
                 self.config_nodes.insert(self.public_key, true);
             }
         }
+    }
+
+    /// Get data from aggregator about current state
+    pub async fn get_disconnect_data(&mut self) -> Result<HeartbeatInfo, Box<dyn error::Error>> {
+        let mut hb = HeartbeatInfo {
+            meshnet_enabled: false,
+            ..Default::default()
+        };
+        self.update_current_meshmap_info().await;
+        let HeartbeatMeshmapInfo { index_map_full, .. } = self.get_current_meshmap_info().await;
+        self.fetch_conn_data(&mut hb, true, &index_map_full).await?;
+
+        Ok(hb)
     }
 
     async fn update_config(&mut self) {
@@ -686,25 +725,15 @@ impl Analytics {
         // Transition to the aggregation state
         self.state = RuntimeState::Aggregating;
 
-        // Add our temporary meshnet_id to collection before we try to resolve it
-        self.collection
-            .add_meshnet_id(self.public_key, self.meshnet_id);
-        let config_local_nodes = self
-            .config_nodes
-            .iter()
-            .filter(|(_, is_local)| **is_local)
-            .map(|(pk, _)| *pk)
-            .collect::<HashSet<_>>();
-        self.meshnet_id = self
-            .collection
-            .resolve_current_meshnet_id(&config_local_nodes);
+        self.update_current_meshmap_info().await;
 
-        // All local nodes will have the same meshnet id
-        for pk in config_local_nodes.iter() {
-            if let NodeInfo::Node { meshnet_id, .. } = self.local_nodes.entry(*pk).or_default() {
-                *meshnet_id = Some(self.meshnet_id);
-            }
-        }
+        let HeartbeatMeshmapInfo {
+            index_map_internal,
+            index_map_full,
+            internal_sorted_public_keys,
+            external_sorted_public_keys,
+            internal_sorted_fingerprints,
+        } = self.get_current_meshmap_info().await;
 
         let mut heartbeat_info = HeartbeatInfo {
             meshnet_id: self.meshnet_id.to_string(),
@@ -713,74 +742,12 @@ impl Analytics {
             ..Default::default()
         };
 
-        self.collection
-            .fingerprints
-            .insert(self.public_key, self.config.fingerprint.clone());
-
-        // Insert all the nodes from the config
-        for (node, _) in self.config_nodes.iter() {
-            self.collection
-                .fingerprints
-                .entry(*node)
-                .or_insert_with(|| String::from("null"));
-        }
-
-        // Update stored fingerprints
-        for (node, fp) in self.collection.fingerprints.iter() {
-            self.fingerprints
-                .entry(*node)
-                .and_modify(|stored_fp| {
-                    if *fp != "null" {
-                        *stored_fp = fp.clone()
-                    }
-                })
-                .or_insert_with(|| fp.clone());
-        }
-
-        // Drop nodes not present in the collection/config anymore
-        let nodes_to_retain: HashSet<_> = self.collection.fingerprints.keys().collect();
-        self.fingerprints
-            .retain(|pk, _| nodes_to_retain.contains(pk));
-
-        // Use BTreeSet to sort out the public keys
-        // We sort public keys, instead of sorting by fingerprints, since fingerprints can be empty or null, resulting in
-        // multiple same values, which make having a consistent layout for each node awkward to implement
-        let internal_sorted_public_keys = self
-            .fingerprints
-            .iter()
-            .map(|x| *x.0)
-            .filter(|pk| self.is_local(*pk))
-            .collect::<BTreeSet<_>>();
-
-        let mut external_sorted_public_keys = self
-            .fingerprints
-            .iter()
-            .map(|x| *x.0)
-            .filter(|pk| !self.is_local(*pk))
-            .collect::<BTreeSet<_>>();
-
-        self.local_nodes.iter().for_each(|(pk, node_info)| {
-            if let NodeInfo::Vpn { .. } = node_info {
-                external_sorted_public_keys.insert(*pk);
-            }
-        });
-
         heartbeat_info.internal_sorted_public_keys = internal_sorted_public_keys.clone();
         heartbeat_info.external_sorted_public_keys = external_sorted_public_keys.clone();
 
-        // Map node public keys to indices for the connectivity matrix alonside creating a sorted fingerprint list
-        let mut index_map: HashMap<PublicKey, u8> = HashMap::new();
-        let mut internal_sorted_fingerprints: Vec<String> = Vec::new();
-
-        for (i, pk) in internal_sorted_public_keys.iter().enumerate() {
-            // Since the public key array is already sorted, we can just insert the index from the `enumerate` iterator here
-            index_map.entry(*pk).or_insert(i as u8);
-
-            // By the same token, we can just insert the respective fingerprint into the list of sorted fingerprints
-            if let Some(fp) = self.fingerprints.get(pk).cloned() {
-                internal_sorted_fingerprints.push(fp);
-            }
-        }
+        let _ = self
+            .fetch_conn_data(&mut heartbeat_info, false, &index_map_full)
+            .await;
 
         // Construct a string containing all of the sorted fingerprints to send to moose
         heartbeat_info.fingerprints = internal_sorted_fingerprints
@@ -789,8 +756,8 @@ impl Analytics {
         heartbeat_info.fingerprints.pop();
 
         // Fill in the missing external links, in case we haven't gotten a response from some nodes
-        for i in index_map.keys() {
-            for j in index_map.keys() {
+        for i in index_map_internal.keys() {
+            for j in index_map_internal.keys() {
                 if i != &self.public_key && i != j {
                     self.collection.add_default_link(*i, *j);
                 }
@@ -799,8 +766,8 @@ impl Analytics {
 
         let mut connectivity_matrix = String::new();
         // Loop over all of the possible combinations of links, assuming that the directionality of the connection does not matter
-        for i in index_map.iter() {
-            for j in index_map.iter() {
+        for i in index_map_internal.iter() {
+            for j in index_map_internal.iter() {
                 if i.1 >= j.1 {
                     continue;
                 }
@@ -954,15 +921,191 @@ impl Analytics {
             _ => false,
         }
     }
+
+    async fn fetch_conn_data(
+        &self,
+        hb_info: &mut HeartbeatInfo,
+        disconnect: bool,
+        index_map: &HashMap<PublicKey, u8>,
+    ) -> Result<(), Box<dyn error::Error>> {
+        if disconnect {
+            self.aggregator.force_save_unacknowledged_segments().await;
+        }
+
+        let AggregatorCollectedSegments { relay, peer } =
+            self.aggregator.collect_unacknowledged_segments().await;
+
+        let (mut peers_str, mut relay_str) = (String::new(), String::new());
+        let index_us = *index_map.get(&self.public_key).ok_or(io::Error::new(
+            io::ErrorKind::NotFound,
+            "Our index not found",
+        ))?;
+
+        for p_segment in peer.iter() {
+            let mut writer = WriterBuilder::new()
+                .flexible(true)
+                .delimiter(b':')
+                .terminator(csv::Terminator::Any(b','))
+                .from_writer(vec![]);
+            let index_other = *index_map.get(&p_segment.node).ok_or(io::Error::new(
+                io::ErrorKind::NotFound,
+                "Node's index not found",
+            ))?;
+
+            writer.serialize((
+                &index_us,
+                &index_other,
+                &p_segment.duration.as_secs(),
+                p_segment.connection_data,
+            ))?;
+            peers_str.push_str(String::from_utf8(writer.into_inner()?)?.as_str());
+        }
+
+        for r_segment in relay.iter() {
+            let mut writer = WriterBuilder::new()
+                .flexible(true)
+                .delimiter(b':')
+                .terminator(csv::Terminator::Any(b','))
+                .from_writer(vec![]);
+
+            writer.serialize((
+                format!(
+                    "{:x}",
+                    md5::compute(r_segment.server_address.to_string().as_bytes())
+                ),
+                &r_segment.duration.as_secs(),
+                r_segment.connection_data,
+            ))?;
+            relay_str.push_str(String::from_utf8(writer.into_inner()?)?.as_str());
+        }
+
+        // Pop last ',' from 'peers_str' and 'relay_str
+        let _ = peers_str.pop();
+        let _ = relay_str.pop();
+
+        hb_info.nat_traversal_conn_info = peers_str.clone();
+        hb_info.derp_conn_info = relay_str.clone();
+
+        Ok(())
+    }
+
+    async fn update_current_meshmap_info(&mut self) {
+        // Add our temporary meshnet_id to collection before we try to resolve it
+        self.collection
+            .add_meshnet_id(self.public_key, self.meshnet_id);
+        let config_local_nodes = self
+            .config_nodes
+            .iter()
+            .filter(|(_, is_local)| **is_local)
+            .map(|(pk, _)| *pk)
+            .collect::<HashSet<_>>();
+        self.meshnet_id = self
+            .collection
+            .resolve_current_meshnet_id(&config_local_nodes);
+
+        // All local nodes will have the same meshnet id
+        for pk in config_local_nodes.iter() {
+            if let NodeInfo::Node { meshnet_id, .. } = self.local_nodes.entry(*pk).or_default() {
+                *meshnet_id = Some(self.meshnet_id);
+            }
+        }
+        self.collection
+            .fingerprints
+            .insert(self.public_key, self.config.fingerprint.clone());
+
+        // Insert all the nodes from the config
+        for (node, _) in self.config_nodes.iter() {
+            self.collection
+                .fingerprints
+                .entry(*node)
+                .or_insert_with(|| String::from("null"));
+        }
+
+        // Update stored fingerprints
+        for (node, fp) in self.collection.fingerprints.iter() {
+            self.fingerprints
+                .entry(*node)
+                .and_modify(|stored_fp| {
+                    if *fp != "null" {
+                        *stored_fp = fp.clone()
+                    }
+                })
+                .or_insert_with(|| fp.clone());
+        }
+
+        let nodes_to_retain: HashSet<_> = self.collection.fingerprints.keys().collect();
+        self.fingerprints
+            .retain(|pk, _| nodes_to_retain.contains(pk));
+    }
+
+    async fn get_current_meshmap_info(&self) -> HeartbeatMeshmapInfo {
+        // Use BTreeSet to sort out the public keys
+        // We sort public keys, instead of sorting by fingerprints, since fingerprints can be empty or null, resulting in
+        // multiple same values, which make having a consistent layout for each node awkward to implement
+        let (internal_sorted_public_keys, mut external_sorted_public_keys): (
+            BTreeSet<_>,
+            BTreeSet<_>,
+        ) = self
+            .fingerprints
+            .iter()
+            .map(|x| *x.0)
+            .partition(|pk| self.is_local(*pk));
+
+        self.local_nodes.iter().for_each(|(pk, node_info)| {
+            if let NodeInfo::Vpn { .. } = node_info {
+                external_sorted_public_keys.insert(*pk);
+            }
+        });
+
+        // Map node public keys to indices for the connectivity matrix alonside creating a sorted fingerprint list
+        let mut index_map_internal: HashMap<PublicKey, u8> = HashMap::new();
+        let mut internal_sorted_fingerprints: Vec<String> = Vec::new();
+        let mut sorted_index: usize = 0;
+
+        for (i, pk) in internal_sorted_public_keys.iter().enumerate() {
+            // Since the public key array is already sorted, we can just insert the index from the `enumerate` iterator here
+            index_map_internal.entry(*pk).or_insert(i as u8);
+
+            // By the same token, we can just insert the respective fingerprint into the list of sorted fingerprints
+            if let Some(fp) = self.fingerprints.get(pk).cloned() {
+                internal_sorted_fingerprints.push(fp);
+            }
+
+            sorted_index = i;
+        }
+
+        // Add external nodes to the index map (needed for aggregator to work properly)
+        let mut index_map_full = index_map_internal.clone();
+        for (i, pk) in external_sorted_public_keys.iter().enumerate() {
+            index_map_full
+                .entry(*pk)
+                .or_insert((i + sorted_index) as u8);
+        }
+
+        HeartbeatMeshmapInfo {
+            index_map_internal,
+            index_map_full,
+            internal_sorted_public_keys,
+            external_sorted_public_keys,
+            internal_sorted_fingerprints,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use telio_model::{features::FeatureNurse, mesh::Node};
     use telio_sockets::{native::NativeSocket, Protector};
     use telio_task::{io::McChan, Task};
     use telio_utils::sync::mpsc::Receiver;
-    use tokio::time::timeout;
+    use tokio::time::{self, timeout};
+
+    use crate::aggregator::{
+        EndpointType, PeerConnDataSegment, PeerConnectionData, PeerEndpointTypes,
+        RelayConnDataSegment, RelayConnectionData, RelayConnectionState,
+    };
+    use telio_model::config::RelayConnectionChangeReason;
 
     use super::*;
 
@@ -992,9 +1135,13 @@ mod tests {
         meshnet_id: Uuid,
         analytics_channel: Receiver<AnalyticsMessage>,
         analytics: Analytics,
+        _aggregator: Option<Arc<ConnectivityDataAggregator>>,
     }
 
-    fn setup(collect_interval: Option<Duration>) -> State {
+    fn setup(
+        collect_interval: Option<Duration>,
+        maybe_aggregator: Option<Arc<ConnectivityDataAggregator>>,
+    ) -> State {
         let sk = SecretKey::gen();
         let pk = sk.public();
         let meshnet_id = Uuid::new_v4();
@@ -1012,12 +1159,47 @@ mod tests {
             analytics_channel: analytics_channel.tx,
             collection_trigger_channel: McChan::new(1).rx,
         };
-        let analytics = Analytics::new(pk, meshnet_id, config, io);
+
+        let mut fake_aggregator = ConnectivityDataAggregator::default();
+        fake_aggregator
+            .expect_collect_unacknowledged_segments()
+            .returning(move || AggregatorCollectedSegments {
+                relay: vec![RelayConnDataSegment {
+                    server_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)), 1111),
+                    start: Instant::now(),
+                    duration: Duration::from_secs(60),
+                    connection_data: RelayConnectionData {
+                        state: RelayConnectionState::Connected,
+                        reason: RelayConnectionChangeReason::DisabledByUser,
+                    },
+                }],
+                peer: vec![PeerConnDataSegment {
+                    node: SecretKey::gen().public(),
+                    start: Instant::now(),
+                    duration: Duration::from_secs(60),
+                    connection_data: PeerConnectionData {
+                        endpoints: PeerEndpointTypes {
+                            local_ep: EndpointType::UPnP,
+                            remote_ep: EndpointType::Stun,
+                        },
+                        rx_bytes: 0,
+                        tx_bytes: 0,
+                    },
+                }],
+            });
+
+        let aggregator = maybe_aggregator
+            .unwrap_or_else(|| Arc::new(fake_aggregator))
+            .clone();
+
+        let analytics = Analytics::new(pk, meshnet_id, config, io, aggregator.clone());
+
         State {
             public_key: pk,
             meshnet_id,
             analytics_channel: analytics_channel.rx,
             analytics,
+            _aggregator: Some(aggregator),
         }
     }
 
@@ -1071,7 +1253,7 @@ mod tests {
             mut analytics_channel,
             mut analytics,
             ..
-        } = setup(None);
+        } = setup(None, None);
 
         analytics.handle_aggregation().await;
 
@@ -1086,7 +1268,7 @@ mod tests {
             mut analytics,
             meshnet_id,
             ..
-        } = setup(None);
+        } = setup(None, None);
 
         let peer_sk_1 = SecretKey::gen();
         let peer_sk_2 = SecretKey::gen();
@@ -1112,7 +1294,7 @@ mod tests {
             mut analytics_channel,
             mut analytics,
             ..
-        } = setup(None);
+        } = setup(None, None);
         let peer_sk_1 = SecretKey::gen();
         let peer_sk_2 = SecretKey::gen();
 
@@ -1141,7 +1323,8 @@ mod tests {
             mut analytics_channel,
             mut analytics,
             meshnet_id,
-        } = setup(None);
+            _aggregator: _,
+        } = setup(None, None);
 
         let peer_sk = SecretKey::gen();
 
@@ -1173,7 +1356,7 @@ mod tests {
             mut analytics_channel,
             mut analytics,
             ..
-        } = setup(None);
+        } = setup(None, None);
 
         let vpn_pk = SecretKey::gen().public();
 
@@ -1215,7 +1398,7 @@ mod tests {
             mut analytics_channel,
             mut analytics,
             ..
-        } = setup(None);
+        } = setup(None, None);
 
         let vpn_pk = SecretKey::gen().public();
 
@@ -1259,7 +1442,7 @@ mod tests {
             mut analytics_channel,
             mut analytics,
             ..
-        } = setup(Some(Duration::from_secs(5)));
+        } = setup(Some(Duration::from_secs(5)), None);
 
         // Reset analytic timer 25s in the past
         analytics
@@ -1282,5 +1465,179 @@ mod tests {
             .is_err());
 
         rt.stop().await;
+    }
+
+    #[tokio::test]
+    async fn test_analytics_reports_nat_derp_collection() {
+        let peer_sk = SecretKey::gen();
+        let peer_pk = peer_sk.public();
+
+        let mut aggregator = ConnectivityDataAggregator::default();
+        let now = Instant::now();
+        let now2 = now.clone();
+
+        aggregator
+            .expect_force_save_unacknowledged_segments()
+            .times(1)
+            .return_const(());
+
+        aggregator
+            .expect_collect_unacknowledged_segments()
+            .times(1)
+            .returning(move || AggregatorCollectedSegments {
+                relay: vec![
+                    RelayConnDataSegment {
+                        server_address: SocketAddr::new(
+                            IpAddr::V4(Ipv4Addr::new(2, 2, 2, 2)),
+                            2222,
+                        ),
+                        start: now.clone(),
+                        duration: Duration::from_secs(60),
+                        connection_data: RelayConnectionData {
+                            state: RelayConnectionState::Connected,
+                            reason: RelayConnectionChangeReason::DisabledByUser,
+                        },
+                    },
+                    RelayConnDataSegment {
+                        server_address: SocketAddr::new(
+                            IpAddr::V4(Ipv4Addr::new(2, 2, 2, 2)),
+                            2222,
+                        ),
+                        start: now.clone() + Duration::from_secs(60),
+                        duration: Duration::from_secs(60),
+                        connection_data: RelayConnectionData {
+                            state: RelayConnectionState::Connecting,
+                            reason: RelayConnectionChangeReason::DisabledByUser,
+                        },
+                    },
+                    RelayConnDataSegment {
+                        server_address: SocketAddr::new(
+                            IpAddr::V4(Ipv4Addr::new(2, 2, 2, 2)),
+                            2222,
+                        ),
+                        start: now.clone() + Duration::from_secs(120),
+                        duration: Duration::from_secs(60),
+                        connection_data: RelayConnectionData {
+                            state: RelayConnectionState::Connected,
+                            reason: RelayConnectionChangeReason::DisabledByUser,
+                        },
+                    },
+                ],
+                peer: vec![
+                    PeerConnDataSegment {
+                        node: peer_pk.clone(),
+                        start: now.clone(),
+                        duration: Duration::from_secs(60),
+                        connection_data: PeerConnectionData {
+                            endpoints: PeerEndpointTypes {
+                                local_ep: EndpointType::UPnP,
+                                remote_ep: EndpointType::Stun,
+                            },
+                            rx_bytes: 3333,
+                            tx_bytes: 1111,
+                        },
+                    },
+                    PeerConnDataSegment {
+                        node: peer_pk.clone(),
+                        start: now.clone() + Duration::from_secs(60),
+                        duration: Duration::from_secs(60),
+                        connection_data: PeerConnectionData {
+                            endpoints: PeerEndpointTypes {
+                                local_ep: EndpointType::UPnP,
+                                remote_ep: EndpointType::Stun,
+                            },
+                            rx_bytes: 3333,
+                            tx_bytes: 1111,
+                        },
+                    },
+                ],
+            });
+
+        aggregator
+            .expect_collect_unacknowledged_segments()
+            .times(1)
+            .returning(move || AggregatorCollectedSegments {
+                relay: vec![RelayConnDataSegment {
+                    server_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)), 1111),
+                    start: now2.clone(),
+                    duration: Duration::from_secs(120),
+                    connection_data: RelayConnectionData {
+                        state: RelayConnectionState::Connecting,
+                        reason: RelayConnectionChangeReason::ClientError,
+                    },
+                }],
+                peer: vec![PeerConnDataSegment {
+                    node: peer_pk.clone(),
+                    start: now2.clone() + Duration::from_secs(60),
+                    duration: Duration::from_secs(120),
+                    connection_data: PeerConnectionData {
+                        endpoints: PeerEndpointTypes {
+                            local_ep: EndpointType::UPnP,
+                            remote_ep: EndpointType::Stun,
+                        },
+                        rx_bytes: 444,
+                        tx_bytes: 222,
+                    },
+                }],
+            });
+
+        let mut state: State = setup(Some(Duration::from_secs(3600)), Some(Arc::new(aggregator)));
+
+        setup_local_nodes(&mut state.analytics, true, [peer_sk]).await;
+
+        state.analytics.handle_collection().await;
+        assert_eq!(RuntimeState::Collecting, state.analytics.state);
+
+        send_heartbeat_response(&mut state.analytics, peer_sk, Uuid::new_v4()).await;
+
+        state.analytics.handle_aggregation().await;
+        state.analytics.update_current_meshmap_info().await;
+        let HeartbeatMeshmapInfo { index_map_full, .. } =
+            state.analytics.get_current_meshmap_info().await;
+        let pubkey = state.public_key;
+        let hb_nat_str = format!(
+            "{}:{}:60:50:3333:1111,\
+            {}:{}:60:50:3333:1111",
+            index_map_full[&pubkey],
+            index_map_full[&peer_pk],
+            index_map_full[&pubkey],
+            index_map_full[&peer_pk],
+        );
+
+        let AnalyticsMessage::Heartbeat { heartbeat_info } = state
+            .analytics_channel
+            .recv()
+            .await
+            .expect("heartbeat data");
+
+        assert_eq!(hb_nat_str, heartbeat_info.nat_traversal_conn_info);
+        assert_eq!(
+            "3a71ac5dcb0e8e44b96645dbc335dae3:60:257:101,\
+            3a71ac5dcb0e8e44b96645dbc335dae3:60:256:101,\
+            3a71ac5dcb0e8e44b96645dbc335dae3:60:257:101",
+            heartbeat_info.derp_conn_info
+        );
+
+        time::pause();
+        time::advance(Duration::from_secs(10)).await;
+        time::resume();
+
+        let heartbeat_info_disconnect = state
+            .analytics
+            .get_disconnect_data()
+            .await
+            .expect("disconnect data");
+        let hb_nat_disc_str = format!(
+            "{}:{}:120:50:444:222",
+            index_map_full[&pubkey], index_map_full[&peer_pk]
+        );
+        assert_eq!(
+            hb_nat_disc_str,
+            heartbeat_info_disconnect.nat_traversal_conn_info
+        );
+        assert_eq!(
+            "a49ea8474525d845da07e6ef09d0f222:120:256:102",
+            heartbeat_info_disconnect.derp_conn_info
+        );
     }
 }

@@ -356,6 +356,44 @@ pub mod moose {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
+    #[allow(non_snake_case)]
+    /// Mocked moose function.
+    pub fn send_serviceQuality_node_disconnect(
+        connectionDuration: String,
+        rtt: String,
+        rtt_loss: String,
+        rtt6: String,
+        rtt6_loss: String,
+        sentData: String,
+        receivedData: String,
+        heartbeatInterval: i32,
+        derpConnectionDuration: i32,
+        nat_monitoring: String,
+        derp_monitoring: String,
+    ) -> std::result::Result<Result, Error> {
+        let heartbeatIntervalString = heartbeatInterval.to_string();
+        let derpConnectionDurationStr = derpConnectionDuration.to_string();
+        let args = vec![
+            connectionDuration.as_str(),
+            rtt.as_str(),
+            rtt_loss.as_str(),
+            rtt6.as_str(),
+            rtt6_loss.as_str(),
+            sentData.as_str(),
+            receivedData.as_str(),
+            heartbeatIntervalString.as_str(),
+            derpConnectionDurationStr.as_str(),
+            nat_monitoring.as_str(),
+            derp_monitoring.as_str(),
+        ];
+
+        match super::event_log("send_serviceQuality_node_disconnect", Some(args)) {
+            Ok(_) => Ok(Result::Success),
+            _ => Err(Error::EventLogError),
+        }
+    }
+
     /// Mocked moose function.
     pub fn moose_libtelioapp_fetch_context_string(_path: String) -> Option<String> {
         let _ = super::event_log("fetch_context_string", None);

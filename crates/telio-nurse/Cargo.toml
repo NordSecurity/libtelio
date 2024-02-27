@@ -10,6 +10,7 @@ publish = false
 bitflags = { version = "1.3.2" }
 histogram = "0.6.9"
 md5 = "0.7.0"
+csv = "1.1"
 
 async-trait.workspace = true
 crypto_box.workspace = true
@@ -37,12 +38,13 @@ telio-utils.workspace = true
 telio-wg.workspace = true
 once_cell.workspace = true
 
-[dev-dependencies]
-csv = "1.1"
+mockall_double = "0.3.1"
 
+[dev-dependencies]
 telio-sockets.workspace = true
 telio-wg = { workspace = true, features = ["mockall"] }
 tokio = { workspace = true, features = ["net", "sync", "test-util"] }
+telio-nurse = { workspace = true, features = ["mockall"] }
 
 [build-dependencies]
 protobuf-codegen-pure.workspace = true

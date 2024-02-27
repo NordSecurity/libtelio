@@ -34,8 +34,9 @@ use telio_traversal::{
 use telio_sockets::native;
 
 use telio_nurse::{
-    aggregator::ConnectivityDataAggregator, config::Config as NurseConfig,
-    data::MeshConfigUpdateEvent, MeshnetEntities as NurseMeshnetEntities, Nurse, NurseIo,
+    aggregator::ConnectivityDataAggregator, config::AggregatorConfig,
+    config::Config as NurseConfig, data::MeshConfigUpdateEvent,
+    MeshnetEntities as NurseMeshnetEntities, Nurse, NurseIo,
 };
 use telio_wg as wg;
 use thiserror::Error as TError;
@@ -1028,10 +1029,13 @@ impl Runtime {
         adapter.lock().await.checkpoint();
 
         let aggregator = Arc::new(ConnectivityDataAggregator::new(
-            features
-                .nurse
-                .clone()
-                .filter(|_| telio_lana::is_lana_initialized()),
+            AggregatorConfig::new(
+                &features
+                    .nurse
+                    .clone()
+                    .filter(|_| telio_lana::is_lana_initialized())
+                    .unwrap_or_default(),
+            ),
             wireguard_interface.clone(),
             config.private_key.public(),
         ));
@@ -1050,6 +1054,7 @@ impl Runtime {
                         config.private_key.public(),
                         NurseConfig::new(nurse_features),
                         nurse_io,
+                        aggregator.clone(),
                     )
                     .await,
                 ))

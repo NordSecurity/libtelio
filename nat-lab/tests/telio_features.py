@@ -71,6 +71,8 @@ class Nurse(DataClassJsonMixin):
     initial_heartbeat_interval: int = 300
     qos: Optional[Qos] = None
     enable_nat_type_collection: bool = False
+    enable_relay_conn_data: bool = False
+    enable_nat_traversal_conn_data: bool = False
 
 
 @dataclass_json(undefined=Undefined.EXCLUDE)

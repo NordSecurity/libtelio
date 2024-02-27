@@ -524,6 +524,7 @@ mod tests {
 
     use super::*;
     use telio_crypto::SecretKey;
+    use telio_nurse::config::AggregatorConfig;
     use telio_proto::Decision;
     use telio_wg::{uapi::Interface, MockWireGuard};
     use tokio::{
@@ -615,7 +616,7 @@ mod tests {
             upg_decision_us,
             our_public_key,
             Arc::new(ConnectivityDataAggregator::new(
-                None,
+                AggregatorConfig::default(),
                 wg.clone(),
                 our_public_key,
             )),
