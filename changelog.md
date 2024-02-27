@@ -12,6 +12,7 @@
 * LLT-4917: Fix the issue with wireguard-go failing to bind to a port on some devices
 * LLT-2515: Implement PMTU discovery for VPN connection paths on Linux/Android
 * LLT-4978: Bump moose tracker to v2.0.0-libtelioApp
+* LLT-4967: Clear leftover STUN peer after meshnet is turned off
 * LLT-4968: Make the default nurse initial_heartbeat_interval to be 5 minutes
 * LLT-4850: Add missing VPN meshnet address to analytics
 * LLT-4980: Introduce synchronization for the endpoint map in telio-proxy

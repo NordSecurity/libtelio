@@ -1621,6 +1621,8 @@ impl Runtime {
                 meshnet_entities.stop().await;
             }
 
+            self.requested_state.wg_stun_server = None;
+
             self.upsert_dns_peers().await?;
         }
 
