@@ -8,82 +8,6 @@ pub use telio_utils::telio_log_warn;
 
 const LOGFILE_PATH: &str = "events-moose.log";
 
-/// Mock for setting the device info on libmoose.
-/// Is logging every piece of info helpful or a general log would be enough?
-#[allow(unused_must_use)]
-pub fn init_context_info() {
-    let foreign_tracker = "nordvpnapp";
-
-    moose::fetch_specific_context(foreign_tracker);
-    event_log(
-        "set_context_application_config_currentState_nordvpnappVersion",
-        Some(vec!["NA"]),
-    );
-    event_log("set_context_device_brand", Some(vec!["NA"]));
-    event_log("set_context_device_fp", Some(vec!["NA"]));
-    event_log("set_context_device_location_city", Some(vec!["NA"]));
-    event_log("set_context_device_location_country", Some(vec!["NA"]));
-    event_log("set_context_device_location_region", Some(vec!["NA"]));
-    event_log("set_context_device_model", Some(vec!["NA"]));
-    event_log("set_context_device_os", Some(vec!["NA"]));
-    event_log("set_context_device_resolution", Some(vec!["NA"]));
-    event_log("set_context_device_timeZone", Some(vec!["NA"]));
-    event_log("set_context_device_type", Some(vec!["NA"]));
-    event_log(
-        "set_context_user_subscription_currentState_activationDate",
-        Some(vec!["NA"]),
-    );
-    event_log(
-        "set_context_user_subscription_currentState_frequencyInterval",
-        Some(vec!["NA"]),
-    );
-    event_log(
-        "set_context_user_subscription_currentState_frequencyUnit",
-        Some(vec!["NA"]),
-    );
-    event_log(
-        "set_context_user_subscription_currentState_isActive",
-        Some(vec!["NA"]),
-    );
-    event_log(
-        "set_context_user_subscription_currentState_isNewCustomer",
-        Some(vec!["NA"]),
-    );
-    event_log(
-        "set_context_user_subscription_currentState_merchantID",
-        Some(vec!["NA"]),
-    );
-    event_log(
-        "set_context_user_subscription_currentState_paymentAmount",
-        Some(vec!["NA"]),
-    );
-    event_log(
-        "set_context_user_subscription_currentState_paymentCurrency",
-        Some(vec!["NA"]),
-    );
-    event_log(
-        "set_context_user_subscription_currentState_paymentProvider",
-        Some(vec!["NA"]),
-    );
-    event_log(
-        "set_context_user_subscription_currentState_paymentStatus",
-        Some(vec!["NA"]),
-    );
-    event_log(
-        "set_context_user_subscription_currentState_planId",
-        Some(vec!["NA"]),
-    );
-    event_log(
-        "set_context_user_subscription_currentState_planType",
-        Some(vec!["NA"]),
-    );
-    event_log(
-        "set_context_user_subscription_currentState_subscriptionStatus",
-        Some(vec!["NA"]),
-    );
-    event_log("set_context_user_subscription_history", Some(vec!["NA"]));
-}
-
 /// Logs a function call and its arguments to file.
 ///
 /// Parameters:
@@ -144,43 +68,6 @@ fn get_logfile() -> std::io::Result<File> {
 #[allow(missing_docs)]
 /// Module that mocks moose items.
 pub mod moose {
-    use serde::{Deserialize, Serialize};
-
-    /// Mock of moose::MeshnetappContext.
-    #[derive(Clone, Serialize, Deserialize)]
-    pub struct MeshnetappContext {
-        #[serde(rename = "application")]
-        pub application: MeshnetappContextApplication,
-    }
-
-    /// Mock of moose::MeshnetappContextApplicationConfig.
-    #[derive(Clone, Serialize, Deserialize)]
-    pub struct MeshnetappContextApplicationConfig {
-        #[serde(rename = "current_state")]
-        pub current_state: MeshnetappContextApplicationConfigCurrentState,
-    }
-
-    /// Mock of moose::MeshnetappContextApplicationConfigCurrentState.
-    #[derive(Clone, Serialize, Deserialize)]
-    pub struct MeshnetappContextApplicationConfigCurrentState {
-        #[serde(rename = "internal_meshnet")]
-        pub internal_meshnet: MeshnetappContextApplicationConfigCurrentStateInternalMeshnet,
-    }
-
-    /// Mock of moose::MeshnetappContextApplicationConfigCurrentStateInternalMeshnet.
-    #[derive(Clone, Serialize, Deserialize)]
-    pub struct MeshnetappContextApplicationConfigCurrentStateInternalMeshnet {
-        #[serde(rename = "fp")]
-        pub fp: Option<String>,
-    }
-
-    /// Mock of moose::MeshnetappContextApplication.
-    #[derive(Clone, Serialize, Deserialize)]
-    pub struct MeshnetappContextApplication {
-        #[serde(rename = "config")]
-        pub config: MeshnetappContextApplicationConfig,
-    }
-
     /// Logger error
     #[derive(thiserror::Error, Debug)]
     pub enum Error {
@@ -260,31 +147,19 @@ pub mod moose {
     ///
     /// Parameters:
     /// * event_path    - path of the DB file where events would be stored.
-    /// * app_name      - Lana's application name
-    /// * app_version   - Semantic version of the application.
-    /// * exp_moose_ver - Eventual moose version
     /// * prod          - whether the events should be sent to production or not
     /// * init_cb       - callback by Moose after succesfull initialization
     /// * error_cb      - callback by Moose to record any errors
     #[allow(unused_variables)]
     pub fn init(
         event_path: String,
-        app_name: String,
-        app_version: String,
-        exp_moose_ver: String,
         prod: bool,
         init_cb: Box<(dyn InitCallback + 'static)>,
         error_cb: Box<(dyn ErrorCallback + Sync + std::marker::Send + 'static)>,
     ) -> std::result::Result<Result, Error> {
         let result = match super::event_log(
             "init",
-            Some(vec![
-                event_path.as_str(),
-                app_name.as_str(),
-                app_version.as_str(),
-                exp_moose_ver.as_str(),
-                prod.to_string().as_str(),
-            ]),
+            Some(vec![event_path.as_str(), prod.to_string().as_str()]),
         ) {
             Ok(_) => Ok(TrackerState::Ready),
             _ => Err(MooseError::NotInitiated),
@@ -298,6 +173,31 @@ pub mod moose {
         }
     }
 
+    /// Mocked moose function.
+    pub fn set_context_application_version(
+        app_version: String,
+    ) -> std::result::Result<Result, Error> {
+        match super::event_log(
+            "set_context_application_version",
+            Some(vec![app_version.as_str()]),
+        ) {
+            Ok(_) => Ok(Result::Success),
+            _ => Err(Error::EventLogError),
+        }
+    }
+
+    /// Mocked moose function.
+    pub fn set_context_application_name(app_name: String) -> std::result::Result<Result, Error> {
+        match super::event_log(
+            "set_context_application_name",
+            Some(vec![app_name.as_str()]),
+        ) {
+            Ok(_) => Ok(Result::Success),
+            _ => Err(Error::EventLogError),
+        }
+    }
+
+    /// Mocked moose function.
     pub fn moose_deinit() -> std::result::Result<Result, Error> {
         match super::event_log("moose_deinit", None) {
             Ok(_) => Ok(Result::Success),
@@ -306,12 +206,12 @@ pub mod moose {
     }
 
     #[allow(non_snake_case)]
-    pub fn set_context_application_config_currentState_meshnetEnabled(
+    pub fn set_context_application_libtelioapp_config_currentState_meshnetEnabled(
         val: bool,
     ) -> std::result::Result<Result, Error> {
         let val = val.to_string();
         match super::event_log(
-            "set_context_application_config_currentState_meshnetEnabled",
+            "set_context_application_libtelioapp_config_currentState_meshnetEnabled",
             Some(vec![val.as_str()]),
         ) {
             Ok(_) => Ok(Result::Success),
@@ -321,11 +221,11 @@ pub mod moose {
 
     #[allow(non_snake_case)]
     /// Mocked moose function.
-    pub fn set_context_application_config_currentState_internalMeshnet_fpNat(
+    pub fn set_context_application_libtelioapp_config_currentState_internalMeshnet_fpNat(
         val: String,
     ) -> std::result::Result<Result, Error> {
         match super::event_log(
-            "set_context_application_config_currentState_internalMeshnet_fpNat",
+            "set_context_application_libtelioapp_config_currentState_internalMeshnet_fpNat",
             Some(vec![val.as_str()]),
         ) {
             Ok(_) => Ok(Result::Success),
@@ -335,11 +235,11 @@ pub mod moose {
 
     #[allow(non_snake_case)]
     /// Mocked moose function.
-    pub fn set_context_application_config_currentState_internalMeshnet_membersNat(
+    pub fn set_context_application_libtelioapp_config_currentState_internalMeshnet_membersNat(
         val: String,
     ) -> std::result::Result<Result, Error> {
         match super::event_log(
-            "set_context_application_config_currentState_internalMeshnet_membersNat",
+            "set_context_application_libtelioapp_config_currentState_internalMeshnet_membersNat",
             Some(vec![val.as_str()]),
         ) {
             Ok(_) => Ok(Result::Success),
@@ -349,11 +249,11 @@ pub mod moose {
 
     #[allow(non_snake_case)]
     /// Mocked moose function.
-    pub fn set_context_application_config_currentState_externalLinks(
+    pub fn set_context_application_libtelioapp_config_currentState_externalLinks(
         val: String,
     ) -> std::result::Result<Result, Error> {
         match super::event_log(
-            "set_context_application_config_currentState_externalLinks",
+            "set_context_application_libtelioapp_config_currentState_externalLinks",
             Some(vec![val.as_str()]),
         ) {
             Ok(_) => Ok(Result::Success),
@@ -363,11 +263,11 @@ pub mod moose {
 
     #[allow(non_snake_case)]
     /// Mocked moose function.
-    pub fn set_context_application_config_currentState_internalMeshnet_fp(
+    pub fn set_context_application_libtelioapp_config_currentState_internalMeshnet_fp(
         val: String,
     ) -> std::result::Result<Result, Error> {
         match super::event_log(
-            "set_context_application_config_currentState_internalMeshnet_fp",
+            "set_context_application_libtelioapp_config_currentState_internalMeshnet_fp",
             Some(vec![val.as_str()]),
         ) {
             Ok(_) => Ok(Result::Success),
@@ -377,11 +277,11 @@ pub mod moose {
 
     #[allow(non_snake_case)]
     /// Mocked moose function.
-    pub fn set_context_application_config_currentState_internalMeshnet_members(
+    pub fn set_context_application_libtelioapp_config_currentState_internalMeshnet_members(
         val: String,
     ) -> std::result::Result<Result, Error> {
         match super::event_log(
-            "set_context_application_config_currentState_internalMeshnet_members",
+            "set_context_application_libtelioapp_config_currentState_internalMeshnet_members",
             Some(vec![val.as_str()]),
         ) {
             Ok(_) => Ok(Result::Success),
@@ -391,11 +291,11 @@ pub mod moose {
 
     #[allow(non_snake_case)]
     /// Mocked moose function.
-    pub fn set_context_application_config_currentState_internalMeshnet_connectivityMatrix(
+    pub fn set_context_application_libtelioapp_config_currentState_internalMeshnet_connectivityMatrix(
         val: String,
     ) -> std::result::Result<Result, Error> {
         match super::event_log(
-            "set_context_application_config_currentState_internalMeshnet_connectivityMatrix",
+            "set_context_application_libtelioapp_config_currentState_internalMeshnet_connectivityMatrix",
             Some(vec![val.as_str()]),
         ) {
             Ok(_) => Ok(Result::Success),
@@ -408,27 +308,27 @@ pub mod moose {
     /// Mocked moose function.
     pub fn send_serviceQuality_node_heartbeat(
         connectionDuration: String,
-        derpConnectionDuration: i32,
-        heartbeatInterval: i32,
-        receivedData: String,
         rtt: String,
+        rtt_loss: String,
         rtt6: String,
         rtt6_loss: String,
-        rtt_loss: String,
         sentData: String,
+        receivedData: String,
+        heartbeatInterval: i32,
+        derpConnectionDuration: i32,
     ) -> std::result::Result<Result, Error> {
         let heartbeatIntervalString = heartbeatInterval.to_string();
         let derpConnectionDurationStr = derpConnectionDuration.to_string();
         let args = vec![
             connectionDuration.as_str(),
-            derpConnectionDurationStr.as_str(),
-            heartbeatIntervalString.as_str(),
-            receivedData.as_str(),
             rtt.as_str(),
+            rtt_loss.as_str(),
             rtt6.as_str(),
             rtt6_loss.as_str(),
-            rtt_loss.as_str(),
             sentData.as_str(),
+            receivedData.as_str(),
+            heartbeatIntervalString.as_str(),
+            derpConnectionDurationStr.as_str(),
         ];
 
         match super::event_log("send_serviceQuality_node_heartbeat", Some(args)) {
@@ -438,39 +338,13 @@ pub mod moose {
     }
 
     /// Mocked moose function.
-    pub fn fetch_context() -> std::result::Result<MeshnetappContext, Error> {
-        match super::event_log("fetch_context", None) {
-            Ok(_) => Ok(empty_context()),
-            _ => Err(Error::EventLogError),
-        }
-    }
-
-    /// Mocked moose function.
-    fn empty_context() -> MeshnetappContext {
-        MeshnetappContext {
-            application: MeshnetappContextApplication {
-                config: MeshnetappContextApplicationConfig {
-                    current_state: MeshnetappContextApplicationConfigCurrentState {
-                        internal_meshnet:
-                            MeshnetappContextApplicationConfigCurrentStateInternalMeshnet {
-                                fp: None,
-                            },
-                    },
-                },
-            },
-        }
+    pub fn moose_libtelioapp_fetch_context_string(_path: String) -> Option<String> {
+        let _ = super::event_log("fetch_context_string", None);
+        None
     }
 
     /// Mocked moose function
     pub fn flush_changes() -> std::result::Result<Result, Error> {
         Ok(Result::Success)
-    }
-
-    /// Mocked moose function.
-    pub fn fetch_specific_context(name: &str) -> std::result::Result<String, Error> {
-        match super::event_log("fetch_specific_context", Some(vec![name])) {
-            Ok(_) => Ok(String::from("MockedDevice")),
-            _ => Err(Error::EventLogError),
-        }
     }
 }

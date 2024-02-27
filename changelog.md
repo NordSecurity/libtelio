@@ -1,4 +1,13 @@
+### v4.3.0-rc0
+### **Bravas**
+---
+* LLT-4915: Update the moose tracker to v1.0.0-libtelioApp
+* LLT-4978: Bump moose tracker to v2.0.0-libtelioApp
+
+<br>
+
 ### v4.2.5
+### **Space-cakes**
 ---
 * LLT-4908: Lowered DNS TTL time for nicknames and NXDomain responses
 * LLT-4916: Allow any case nicknames
@@ -15,12 +24,14 @@
 <br>
 
 ### v4.2.4
+### **Space-cakes**
 ---
 * LLT-4878: Fix FFI layer which forbids NULL for `telio_connect_to_exit_node()` calls
 
 <br>
 
 ### v4.2.3
+### **Space-cakes**
 ---
 * LLT-4869: Fix maven upload
 * LLT-4870: Revert post quantum
@@ -28,6 +39,7 @@
 <br>
 
 ### v4.2.2
+### **Space-cakes**
 ----
 * LLT-4662: Update rustix dependency
 * LLT-4667: Fix panic in boringtun
@@ -54,6 +66,7 @@
 <br>
 
 ### v4.2.1
+### **Space-cakes**
 ----
 * LLT-4006: Restrict nat-lab containers capabilities
 * LLT-4586: Fix wireguard-go initialization crash
