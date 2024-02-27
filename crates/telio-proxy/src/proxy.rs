@@ -304,7 +304,7 @@ impl StateEgress {
     }
 
     async fn handle_error(&mut self, err: std::io::Error, pk: Option<PublicKey>) {
-        telio_log_error!("StateEgress: handling error {err:?} for {pk:?}");
+        telio_log_warn!("StateEgress: handling error {err:?} for {pk:?}");
 
         match self.conn_state {
             Ok(()) => telio_log_error!("Unable to send. {}", err),
@@ -398,8 +398,11 @@ impl Runtime for StateIngress {
                         });
                         let _ = permit.send((pk, msg));
                     }
+                    Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                        // Blocking error is not an issue here
+                    }
                     Err(e) => {
-                        telio_log_error!("StateIngress: received error {e:?} for {pk:?}");
+                        telio_log_warn!("StateIngress: received error {e:?} for {pk:?}");
                     }
                 }
             }
