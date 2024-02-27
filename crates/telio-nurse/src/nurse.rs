@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use telio_crypto::{PublicKey, SecretKey};
 use telio_lana::*;
-use telio_model::event::Event;
+use telio_model::{api_config::EndpointProvider, event::Event};
 use telio_task::{
     io::{chan, mc_chan, Chan, McChan},
     task_exec, Runtime, RuntimeExt, Task, WaitResponse,
@@ -12,7 +12,10 @@ use telio_utils::{
 use telio_wg::uapi::AnalyticsEvent;
 use uuid::Uuid;
 
-use crate::error::Error;
+use crate::{
+    aggregator::{ConnectivityDataAggregator, RelayConnectionChangeReason},
+    error::Error,
+};
 use crate::{config::Config, data::MeshConfigUpdateEvent};
 use crate::{
     data::{AnalyticsMessage, HeartbeatInfo},
@@ -45,9 +48,14 @@ pub struct Nurse {
 
 impl Nurse {
     /// Nurse's constructor
-    pub async fn start_with(public_key: PublicKey, config: Config, io: NurseIo<'_>) -> Self {
+    pub async fn start_with(
+        public_key: PublicKey,
+        config: Config,
+        io: NurseIo<'_>,
+        aggregator: ConnectivityDataAggregator,
+    ) -> Self {
         Self {
-            task: Task::start(State::new(public_key, config, io).await),
+            task: Task::start(State::new(public_key, config, io, aggregator).await),
         }
     }
 
@@ -69,6 +77,60 @@ impl Nurse {
         .await;
     }
 
+    /// Inform Nurse about relay server state change.
+    ///
+    /// # Arguments
+    ///
+    /// * `event` - Analytic event with the current relay state.
+    /// * `reason` - Reason of the state change.
+    pub async fn change_relay_state(
+        &mut self,
+        event: AnalyticsEvent,
+        reason: RelayConnectionChangeReason,
+    ) {
+        let _ = task_exec!(&self.task, async move |state| {
+            state.aggregator.change_relay_state(event, reason).await;
+            Ok(())
+        })
+        .await;
+    }
+
+    /// Inform Nurse about direct peer state change.
+    ///
+    /// # Arguments
+    ///
+    /// * `event` - Analytic event with the current direct peer state.
+    /// * `initiator_ep` - Endpoint provider used by the direct connection initiator.
+    /// * `responder_ep` - Endpoint provider used by the direct connection responder.
+    pub async fn change_peer_state_direct(
+        &mut self,
+        event: AnalyticsEvent,
+        initiator_ep: EndpointProvider,
+        responder_ep: EndpointProvider,
+    ) {
+        let _ = task_exec!(&self.task, async move |state| {
+            state
+                .aggregator
+                .change_peer_state_direct(event, initiator_ep, responder_ep)
+                .await;
+            Ok(())
+        })
+        .await;
+    }
+
+    /// Inform Nurse about relayed peer state change.
+    ///
+    /// # Arguments
+    ///
+    /// * `event` - Analytic event with the current relayed peer state.
+    pub async fn change_peer_state_relayed(&mut self, event: AnalyticsEvent) {
+        let _ = task_exec!(&self.task, async move |state| {
+            state.aggregator.change_peer_state_relayed(event).await;
+            Ok(())
+        })
+        .await;
+    }
+
     /// Stop nurse
     pub async fn stop(self) {
         let _ = self.task.stop().await.resume_unwind();
@@ -81,10 +143,12 @@ impl Nurse {
 /// * Analytics channel
 /// * Heartbeat component
 /// * QoS component
+/// * Connectivity events aggregator
 pub struct State {
     analytics_channel: chan::Rx<AnalyticsMessage>,
     heartbeat: Task<HeartbeatAnalytics>,
     qos: Option<Task<QoSAnalytics>>,
+    aggregator: ConnectivityDataAggregator,
 }
 
 impl State {
@@ -99,7 +163,12 @@ impl State {
     /// # Returns
     ///
     /// A Nurse instance.
-    pub async fn new(public_key: PublicKey, config: Config, io: NurseIo<'_>) -> Self {
+    pub async fn new(
+        public_key: PublicKey,
+        config: Config,
+        io: NurseIo<'_>,
+        aggregator: ConnectivityDataAggregator,
+    ) -> Self {
         let meshnet_id = Self::meshnet_id();
 
         // Analytics channel
@@ -149,6 +218,7 @@ impl State {
             analytics_channel: analytics_channel.rx,
             heartbeat: Task::start(heartbeat),
             qos,
+            aggregator,
         }
     }
 

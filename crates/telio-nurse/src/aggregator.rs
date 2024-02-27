@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, collections::hash_map::Entry, mem, time::Duration};
+use std::{borrow::Borrow, collections::hash_map::Entry, mem, sync::Arc, time::Duration};
 
 use tokio::{sync::Mutex, time::Instant};
 
@@ -12,7 +12,7 @@ use telio_model::{
 use telio_utils::telio_log_warn;
 use telio_wg::{
     uapi::{AnalyticsEvent, PeerState},
-    WireGuard,
+    DynamicWg, WireGuard,
 };
 
 const DAY_DURATION: Duration = Duration::from_secs(60 * 60 * 24);
@@ -21,7 +21,7 @@ const DAY_DURATION: Duration = Duration::from_secs(60 * 60 * 24);
 // are reserved for relay states, they need to have the 9th bit on
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 #[repr(u16)]
-pub enum RelayConnectionState {
+pub(crate) enum RelayConnectionState {
     Connecting = 256,
     Connected = 257,
 }
@@ -39,25 +39,28 @@ impl From<PeerState> for RelayConnectionState {
     }
 }
 
-// Possible disconnection reasons
+/// Possible relay server connectivity change reasons
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-#[allow(dead_code)]
 #[repr(u16)]
 pub enum RelayConnectionChangeReason {
     // Numbers smaller than 200 for configuration changes
+    /// Generic reason used when everything goes right
     ConfigurationChange = 101,
+    /// The connection was explicitely closed by user
     DisabledByUser = 102,
 
     // Numbers larger than 200 for network problems
+    /// Derp server connection timed out
     ConnectionTimeout = 201,
+    /// Server rejected the connection
     ConnectionTerminatedByServer = 202,
+    /// OS-level network error (e.g. socket failure)
     NetworkError = 203,
 }
 
 // Possible endpoint connection types
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-pub enum EndpointType {
-    #[allow(dead_code)]
+pub(crate) enum EndpointType {
     Relay = 0,
     Local = 1,
     Stun = 2,
@@ -76,15 +79,13 @@ impl From<EndpointProvider> for EndpointType {
 
 // Possible connectivity state changes
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-#[allow(dead_code)]
-pub struct PeerEndpointTypes {
+pub(crate) struct PeerEndpointTypes {
     initiator_ep: EndpointType,
     responder_ep: EndpointType,
 }
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-#[allow(dead_code)]
-pub enum ConnectionData {
+pub(crate) enum ConnectionData {
     Relay {
         state: RelayConnectionState,
         reason: RelayConnectionChangeReason,
@@ -132,7 +133,7 @@ impl Serialize for ConnectionData {
 
 // Ready to send connection data for some period of time
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-pub struct ConnectionSegmentData {
+pub(crate) struct ConnectionSegmentData {
     node: PublicKey,
     start: Instant, // to ensure the segments are unique
     duration: Duration,
@@ -140,7 +141,7 @@ pub struct ConnectionSegmentData {
 }
 
 impl ConnectionSegmentData {
-    pub fn new_relay(relay_event: &RelayEvent, target_timestamp: Instant) -> Self {
+    fn new_relay(relay_event: &RelayEvent, target_timestamp: Instant) -> Self {
         ConnectionSegmentData {
             node: relay_event.public_key,
             start: relay_event.timestamp,
@@ -152,7 +153,7 @@ impl ConnectionSegmentData {
         }
     }
 
-    pub fn new_peer(
+    fn new_peer(
         peer_event: &AnalyticsEvent,
         endpoints: PeerEndpointTypes,
         target_timestamp: Instant,
@@ -173,7 +174,7 @@ impl ConnectionSegmentData {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct RelayEvent {
+struct RelayEvent {
     public_key: PublicKey,
     peer_state: PeerState,
     timestamp: Instant,
@@ -187,26 +188,29 @@ struct AggregatorData {
     relay_segments: Vec<ConnectionSegmentData>,
 }
 
-// A container to store the connectivity data for our meshnet peers
-#[allow(dead_code)]
-pub struct ConnectivityDataAggregator<W: WireGuard> {
+/// A container to store the connectivity data for the Meshnet peers used by Nurse
+pub struct ConnectivityDataAggregator<W: WireGuard = DynamicWg> {
     data: Mutex<AggregatorData>,
 
     aggregate_relay_events: bool,
     aggregate_nat_traversal_events: bool,
 
-    wg_interface: W,
+    wg_interface: Arc<W>,
 }
 
-pub struct AggregatorCollectedSegments {
-    pub relay: Vec<ConnectionSegmentData>,
-    pub peer: Vec<ConnectionSegmentData>,
+// Internal Nurse structure for prepared segment data collection
+#[allow(dead_code)]
+pub(crate) struct AggregatorCollectedSegments {
+    pub(crate) relay: Vec<ConnectionSegmentData>,
+    pub(crate) peer: Vec<ConnectionSegmentData>,
 }
 
 impl<W: WireGuard> ConnectivityDataAggregator<W> {
-    // Create a new DataConnectivityAggregator instance
-    #[allow(dead_code)]
-    pub fn new(nurse_features: &FeatureNurse, wg_interface: W) -> ConnectivityDataAggregator<W> {
+    /// Create a new DataConnectivityAggregator instance
+    pub fn new(
+        nurse_features: &FeatureNurse,
+        wg_interface: Arc<W>,
+    ) -> ConnectivityDataAggregator<W> {
         ConnectivityDataAggregator {
             data: Mutex::new(AggregatorData {
                 current_relay_event: None,
@@ -222,8 +226,7 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
         }
     }
 
-    #[allow(dead_code)]
-    pub async fn change_peer_state_direct(
+    pub(crate) async fn change_peer_state_direct(
         &mut self,
         event: AnalyticsEvent,
         initiator_ep: EndpointProvider,
@@ -239,8 +242,7 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
         .await
     }
 
-    #[allow(dead_code)]
-    pub async fn change_peer_state_relayed(&mut self, event: AnalyticsEvent) {
+    pub(crate) async fn change_peer_state_relayed(&mut self, event: AnalyticsEvent) {
         self.change_peer_state_common(
             event,
             PeerEndpointTypes {
@@ -288,8 +290,7 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
         data_guard.peer_segments.extend(new_segment);
     }
 
-    #[allow(dead_code)]
-    pub async fn change_relay_state(
+    pub(crate) async fn change_relay_state(
         &mut self,
         event: AnalyticsEvent,
         reason: RelayConnectionChangeReason,
@@ -323,7 +324,7 @@ impl<W: WireGuard> ConnectivityDataAggregator<W> {
     }
 
     #[allow(dead_code)]
-    pub async fn collect_unacknowledged_segments(
+    pub(crate) async fn collect_unacknowledged_segments(
         &self,
         force_close: bool,
     ) -> AggregatorCollectedSegments {
