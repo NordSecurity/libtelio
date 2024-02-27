@@ -79,3 +79,23 @@ impl QoSConfig {
         }
     }
 }
+
+/// Configuration for Aggregator component from Nurse
+#[derive(Clone, Default)]
+pub struct AggregatorConfig {
+    /// Collect relay events
+    pub relay_events: bool,
+
+    /// Collect nat traversal events
+    pub nat_traversal_events: bool,
+}
+
+impl AggregatorConfig {
+    /// Create a new Aggregator config
+    pub fn new(features: &FeatureNurse) -> Self {
+        Self {
+            relay_events: features.enable_relay_conn_data,
+            nat_traversal_events: features.enable_nat_traversal_conn_data,
+        }
+    }
+}

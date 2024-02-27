@@ -16,6 +16,8 @@ TEST_EVENT = Validator.Event(
     rtt6="0:0:0:0:0",
     rtt6_loss="0:0:0:0:0",
     sent_data="0:0:0:0:0",
+    nat_traversal_conn_info="1:2:120:49:2000:4000",
+    derp_conn_info="e086aa137fa19f67d27b39d0eca18610:120:257:101",
     nat_type="PortRestrictedCone",
     mem_nat_types="Symmetric,PortRestrictedCone",
 )
@@ -36,6 +38,8 @@ DUMMY_EVENT = Validator.Event(
     rtt6="",
     rtt6_loss="",
     sent_data="",
+    nat_traversal_conn_info="",
+    derp_conn_info="",
     nat_type="Symmetric",
     mem_nat_types="PortRestrictedCone,PortRestrictedCone",
 )
@@ -260,6 +264,14 @@ def test_nat_type_validator() -> None:
     check_validator(
         Validator.NatTypeValidator("PortRestrictedCone"), TEST_EVENT, DUMMY_EVENT
     )
+
+
+def test_nat_traversal_conn_info() -> None:
+    check_validator(Validator.NatTraversalConnInfoValidator(), TEST_EVENT, DUMMY_EVENT)
+
+
+def test_derp_conn_info() -> None:
+    check_validator(Validator.DerpConnInfoValidator(), TEST_EVENT, DUMMY_EVENT)
 
 
 def test_mem_nat_type_validator() -> None:

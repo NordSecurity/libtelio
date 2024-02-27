@@ -1,3 +1,4 @@
+from hashlib import md5
 from typing import List, Optional, Any
 from utils import testing
 
@@ -519,6 +520,89 @@ class ReceivedDataValidator:
         return True
 
 
+class NatTraversalConnInfoValidator:
+    def __init__(
+        self,
+        exists=True,
+        members: Optional[List[str]] = None,
+        equals="",
+        contains: Optional[List[str]] = None,
+        does_not_contain: Optional[List[str]] = None,
+    ):
+        self._members = members
+        if not members:
+            self._validator = StringValidator(exists=exists)
+        else:
+            self._validator = StringValidator(
+                exists=exists,
+                equals=equals,
+                contains=contains,
+                does_not_contain=does_not_contain,
+            )
+
+    def validate(self, event):
+        if not self._members:
+            return self._validator.validate(event.nat_traversal_conn_info)
+
+        nat_traversal_conn_info_list = event.nat_traversal_conn_info.split(",")
+        peers = event.members.split(",")
+        process_external_peers(event, peers)
+
+        peers_nat_traversal_conn_info = dict(zip(peers, nat_traversal_conn_info_list))
+
+        for member in self._members:
+            nat_traversal_conn_info = peers_nat_traversal_conn_info.get(member)
+            if nat_traversal_conn_info:
+                assert self._validator.validate(nat_traversal_conn_info), member
+            else:
+                assert False, member
+        return True
+
+
+class DerpConnInfoValidator:
+    def __init__(
+        self,
+        exists=True,
+        servers: Optional[List[str]] = None,
+        equals="",
+        contains: Optional[List[str]] = None,
+        does_not_contain: Optional[List[str]] = None,
+    ):
+        self._servers = servers
+        if not servers:
+            self._validator = StringValidator(exists=exists)
+        else:
+            self._validator = StringValidator(
+                exists=exists,
+                equals=equals,
+                contains=contains,
+                does_not_contain=does_not_contain,
+            )
+
+    def validate(self, event):
+        if not self._servers:
+            return self._validator.validate(event.derp_conn_info)
+
+        derp_conn_info_list = event.derp_conn_info.split(",")
+        servers_encoded_list = []
+
+        for derp_conn_info in derp_conn_info_list:
+            servers_encoded_list.append(derp_conn_info.split(":")[0])
+
+        for server in self._servers:
+            server_encoded = md5(server.encode()).hexdigest()
+            if server_encoded not in servers_encoded_list:
+                assert False, server
+            else:
+                break
+
+        for derp_conn_info in derp_conn_info_list:
+            if derp_conn_info:
+                assert self._validator.validate(derp_conn_info), derp_conn_info
+
+        return True
+
+
 class NatTypeValidator:
     def __init__(self, value):
         self._validator = StringValidator(equals=value)
@@ -731,6 +815,44 @@ class EventValidator:
             ReceivedDataValidator(
                 exists,
                 members,
+                equals,
+                contains,
+                does_not_contain,
+            )
+        )
+        return self
+
+    def add_nat_traversal_conn_info_validator(
+        self,
+        exists=True,
+        members: Optional[List[str]] = None,
+        equals="",
+        contains: Optional[List[str]] = None,
+        does_not_contain: Optional[List[str]] = None,
+    ):
+        self._validators.append(
+            NatTraversalConnInfoValidator(
+                exists,
+                members,
+                equals,
+                contains,
+                does_not_contain,
+            )
+        )
+        return self
+
+    def add_derp_conn_info_validator(
+        self,
+        exists=True,
+        servers: Optional[List[str]] = None,
+        equals="",
+        contains: Optional[List[str]] = None,
+        does_not_contain: Optional[List[str]] = None,
+    ):
+        self._validators.append(
+            DerpConnInfoValidator(
+                exists,
+                servers,
                 equals,
                 contains,
                 does_not_contain,

@@ -41,6 +41,8 @@ async def test_telio_tasks_with_all_features() -> None:
                                 rtt_types=["Ping"],
                                 buckets=5,
                             ),
+                            enable_relay_conn_data=True,
+                            enable_nat_type_collection=True,
                         ),
                         dns=Dns(
                             exit_dns=ExitDns(auto_switch_dns_ips=True),
