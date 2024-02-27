@@ -6,6 +6,7 @@ use telio_firewall::firewall::{Firewall, StatefullFirewall};
 use telio_lana::init_lana;
 use telio_nat_detect::nat_detection::{retrieve_single_nat, NatData};
 use telio_pq::PostQuantum;
+use telio_proto::HeartbeatMessage;
 use telio_proxy::{Config as ProxyConfig, Io as ProxyIo, Proxy, UdpProxy};
 use telio_relay::{
     derp::Config as DerpConfig, multiplexer::Multiplexer, DerpKeepaliveConfig, DerpRelay,
@@ -1142,8 +1143,10 @@ impl Runtime {
         if let Some(nurse) = self.entities.nurse.as_ref() {
             nurse
                 .configure_meshnet(Some(NurseMeshnetEntities {
-                    derp: derp.clone(),
-                    multiplexer: multiplexer.clone(),
+                    multiplexer_channel: multiplexer
+                        .get_channel::<HeartbeatMessage>()
+                        .await
+                        .unwrap_or_default(),
                     derp_event_channel: self.event_publishers.derp_events_publisher.clone(),
                 }))
                 .await;

@@ -5,7 +5,6 @@ use nat_detect::NatType;
 use std::collections::BTreeSet;
 use std::fmt::Write;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc;
 use std::{
     collections::{HashMap, HashSet},
     convert::{TryFrom, TryInto},
@@ -13,15 +12,13 @@ use std::{
     pin::Pin,
 };
 use telio_crypto::{PublicKey, SecretKey};
-use telio_model::config::{RelayState, Server};
+use telio_model::config::Server;
 use telio_model::{
     event::Event,
     mesh::{get_ip_stack, IpStack, NodeState},
 };
 use telio_nat_detect::nat_detection::{retrieve_single_nat, NatData};
 use telio_proto::{HeartbeatMessage, HeartbeatNatType, HeartbeatStatus, HeartbeatType};
-use telio_relay::multiplexer::Multiplexer;
-use telio_relay::DerpRelay;
 use telio_task::{
     io::{chan, mc_chan, Chan},
     Runtime, RuntimeExt, WaitResponse,
@@ -245,16 +242,14 @@ pub struct Analytics {
     // Fingerprint for each configured node
     fingerprints: HashMap<PublicKey, String>,
 
-    derp_connection: bool,
-
     /// Was meshnet enabled for this device
     meshnet_enabled: bool,
 
-    /// DERP Server instance
-    pub derp: Option<Arc<DerpRelay>>,
-
     /// Our current IP stack
     ip_stack: Option<IpStack>,
+
+    /// The type of the NAT we are behind
+    nat_type: NatType,
 }
 
 #[async_trait]
@@ -291,7 +286,7 @@ impl Runtime for Analytics {
             Ok(event) = derp_event_future, if self.state == RuntimeState::Monitoring =>
                 Self::guard(
                     async move {
-                        self.handle_derp_event(*event).await;
+                        self.discover_current_nat_type(*event).await;
                         telio_log_trace!("tokio::select! self.io.derp_event_channel.recv() branch");
                         Ok(())
                     }
@@ -354,11 +349,8 @@ impl Runtime for Analytics {
 
 /// Additional configuration for Nurse provided when meshnet is configured
 pub struct MeshnetEntities {
-    /// Pointer to DerpRelay service
-    pub derp: Arc<DerpRelay>,
-
-    /// Pointer to Multiplexer
-    pub multiplexer: Arc<Multiplexer>,
+    /// Multiplexer channel
+    pub multiplexer_channel: Chan<(PublicKey, HeartbeatMessage)>,
 
     /// Derp event channel
     pub derp_event_channel: mc_chan::Tx<Box<Server>>,
@@ -401,32 +393,23 @@ impl Analytics {
             local_nodes: HashMap::new(),
             config_nodes,
             fingerprints: HashMap::new(),
-            derp_connection: false,
             meshnet_enabled: false,
-            derp: None,
             ip_stack: None,
+            nat_type: NatType::Unknown,
         }
     }
 
     pub async fn configure_meshnet(&mut self, meshnet_entities: Option<MeshnetEntities>) {
         if let Some(MeshnetEntities {
-            derp,
-            multiplexer,
+            multiplexer_channel: multiplexer,
             derp_event_channel,
         }) = meshnet_entities
         {
-            self.derp = Some(derp);
-            self.io.chan = Some(
-                multiplexer
-                    .get_channel::<HeartbeatMessage>()
-                    .await
-                    .unwrap_or_default(),
-            );
+            self.io.chan = Some(multiplexer);
             self.io.derp_event_channel = Some(derp_event_channel.subscribe());
 
             telio_log_debug!("Meshnet analytics enabled");
         } else {
-            self.derp = None;
             self.io.chan = None;
             self.io.derp_event_channel = None;
 
@@ -508,8 +491,21 @@ impl Analytics {
         }
     }
 
-    async fn handle_derp_event(&mut self, event: Server) {
-        self.derp_connection = event.conn_state == RelayState::Connected;
+    async fn discover_current_nat_type(&mut self, derp_event: Server) {
+        self.nat_type = if self.config.is_nat_type_collection_enabled {
+            retrieve_single_nat(SocketAddr::new(
+                IpAddr::V4(derp_event.ipv4),
+                derp_event.stun_port,
+            ))
+            .await
+            .unwrap_or(NatData {
+                public_ip: SocketAddr::from(([0, 0, 0, 0], 80)),
+                nat_type: NatType::Unknown,
+            })
+            .nat_type
+        } else {
+            NatType::Unknown
+        };
     }
 
     async fn handle_config_update_event(&mut self, event: MeshConfigUpdateEvent) {
@@ -623,9 +619,7 @@ impl Analytics {
             self.meshnet_id.into_bytes().to_vec(),
             self.config.fingerprint.clone(),
             &links,
-            <telio_proto::HeartbeatNatType as crate::heartbeat::From<NatType>>::from(
-                self.retrieve_nat().await,
-            ),
+            <telio_proto::HeartbeatNatType as crate::heartbeat::From<NatType>>::from(self.nat_type),
         );
 
         #[allow(mpsc_blocking_send)]
@@ -903,7 +897,7 @@ impl Analytics {
         heartbeat_info.external_links = external_links;
 
         // Collect NAT type
-        heartbeat_info.nat_type = format!("{:?}", self.retrieve_nat().await);
+        heartbeat_info.nat_type = format!("{:?}", self.nat_type);
         // Collect peer NAT types
         self.copy_nat_type(
             &mut heartbeat_info.peer_nat_types,
@@ -944,29 +938,6 @@ impl Analytics {
             if let Some(nat_type) = self.collection.nat_type_peers.get(pk) {
                 nat_types.push(format!("{:?}", nat_type));
             };
-        }
-    }
-
-    async fn retrieve_nat(&mut self) -> NatType {
-        if self.config.is_nat_type_collection_enabled {
-            if let Some(server) = if let Some(derp_ptr) = self.derp.as_ref() {
-                derp_ptr.get_connected_server().await
-            } else {
-                None
-            } {
-                retrieve_single_nat(SocketAddr::new(IpAddr::V4(server.ipv4), server.stun_port))
-                    .await
-                    .unwrap_or(NatData {
-                        public_ip: SocketAddr::from(([0, 0, 0, 0], 80)),
-                        nat_type: NatType::Unknown,
-                    })
-                    .nat_type
-            } else {
-                telio_log_error!("Unable to get a connected derp server");
-                NatType::Unknown
-            }
-        } else {
-            NatType::Unknown
         }
     }
 

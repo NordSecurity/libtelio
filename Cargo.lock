@@ -4258,7 +4258,6 @@ dependencies = [
  "telio-model",
  "telio-nat-detect",
  "telio-proto",
- "telio-relay",
  "telio-sockets",
  "telio-task",
  "telio-utils",
