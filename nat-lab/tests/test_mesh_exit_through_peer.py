@@ -250,7 +250,7 @@ async def test_ipv6_exit_node(
                 generate_connection_tracker_config(
                     alpha_connection_tag,
                     derp_1_limits=ConnectionLimits(1, 1),
-                    ping6_limits=ConnectionLimits(0, 2),
+                    ping6_limits=ConnectionLimits(None, None),
                 ),
             )
         )
@@ -262,7 +262,7 @@ async def test_ipv6_exit_node(
                     derp_1_limits=ConnectionLimits(1, 1),
                     # Dual stack doesn't have a gw so conntrack is launched on its interface
                     stun6_limits=ConnectionLimits(1, 1),
-                    ping6_limits=ConnectionLimits(2, 2),
+                    ping6_limits=ConnectionLimits(None, None),
                 ),
             )
         )
