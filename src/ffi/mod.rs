@@ -1812,7 +1812,6 @@ fn filter_log_message(msg: String) -> Option<String> {
 /// Visitor for `tracing` events that converts one field with name equal to `field_name`
 /// value to a message string.
 pub struct TraceFieldVisitor<'a> {
-    field_name: &'static str,
     metadata: &'a tracing::Metadata<'a>,
     message: String,
 }
@@ -1821,13 +1820,15 @@ impl<'a> tracing::field::Visit for TraceFieldVisitor<'a> {
     #[track_caller]
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn fmt::Debug) {
         // For now we're handling only the message field value, because other fields are not yet used.
-        if field.name() == self.field_name {
+        if field.name() == "message" {
             self.message = format!(
                 "{:#?}:{:#?} {:?}",
                 self.metadata.module_path().unwrap_or("unknown module"),
                 self.metadata.line().unwrap_or(0),
                 value,
             );
+        } else {
+            self.message = format!("{}, {}: {:?}", self.message, field.name(), value);
         }
     }
 }
@@ -1900,8 +1901,6 @@ impl Subscriber for TelioTracingSubscriber {
 
         let level = *event.metadata().level();
         let mut visitor = TraceFieldVisitor {
-            // hardcoded name of the field where tracing stores the messages passed to tracing::info! etc
-            field_name: "message",
             metadata: event.metadata(),
             message: String::new(),
         };
