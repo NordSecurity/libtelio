@@ -1211,7 +1211,7 @@ mod tests {
                 },
         } = analytics_channel.recv().await.expect("message");
 
-        assert_eq!(false, meshnet_enabled);
+        assert!(!meshnet_enabled);
         assert_eq!("vpn:7600617f9f9db5691a8c2768bd9d8110:2", external_links);
     }
 
@@ -1253,7 +1253,7 @@ mod tests {
                 },
         } = analytics_channel.recv().await.expect("message");
 
-        assert_eq!(true, meshnet_enabled);
+        assert!(meshnet_enabled);
         assert_eq!("vpn:7600617f9f9db5691a8c2768bd9d8110:2", external_links);
     }
 
@@ -1278,20 +1278,14 @@ mod tests {
         let rt = Task::start(analytics);
 
         // Should succeed to get one analytic meesage
-        assert_eq!(
-            true,
-            timeout(Duration::from_secs(1), analytics_channel.recv())
-                .await
-                .is_ok()
-        );
+        assert!(timeout(Duration::from_secs(1), analytics_channel.recv())
+            .await
+            .is_ok());
 
         // Should timeout trying to get second analytic message
-        assert_eq!(
-            false,
-            timeout(Duration::from_secs(1), analytics_channel.recv())
-                .await
-                .is_ok()
-        );
+        assert!(timeout(Duration::from_secs(1), analytics_channel.recv())
+            .await
+            .is_err());
 
         rt.stop().await;
     }

@@ -496,6 +496,26 @@ impl Telio {
         })
     }
 
+    /// Notify telio system is going to sleep.
+    pub fn notify_sleep(&self) -> FFIResult<()> {
+        telio_log_info!("telio_notify_sleep entry with instance id: {}.", self.id);
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                dev.notify_sleep().log_result("Telio::notify_sleep")
+            })
+        })
+    }
+
+    /// Notify telio system has woken up.
+    pub fn notify_wakeup(&self) -> FFIResult<()> {
+        telio_log_info!("telio_notify_wakeup entry with instance id: {}.", self.id);
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                dev.notify_wakeup().log_result("Telio::notify_wakeup")
+            })
+        })
+    }
+
     /// Wrapper for `Telio::connect_to_exit_node_with_id` that doesn't take an identifier
     pub fn connect_to_exit_node(
         &self,

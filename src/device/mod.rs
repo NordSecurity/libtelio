@@ -606,6 +606,18 @@ impl Device {
         })
     }
 
+    pub fn notify_sleep(&self) -> Result {
+        self.art()?.block_on(async {
+            task_exec!(self.rt()?, async move |rt| Ok(rt.notify_sleep().await)).await?
+        })
+    }
+
+    pub fn notify_wakeup(&self) -> Result {
+        self.art()?.block_on(async {
+            task_exec!(self.rt()?, async move |rt| Ok(rt.notify_wakeup().await)).await?
+        })
+    }
+
     /// Connect to exit node
     ///
     /// Exit node in this case may be the VPN server or another meshnet node. In the former case,
@@ -1453,6 +1465,19 @@ impl Runtime {
         }
 
         self.log_nat().await;
+        Ok(())
+    }
+
+    async fn notify_sleep(&mut self) -> Result {
+        self.entities
+            .aggregator
+            .force_save_unacknowledged_segments()
+            .await;
+        Ok(())
+    }
+
+    async fn notify_wakeup(&mut self) -> Result {
+        self.entities.aggregator.clear_ongoinging_segments().await;
         Ok(())
     }
 
