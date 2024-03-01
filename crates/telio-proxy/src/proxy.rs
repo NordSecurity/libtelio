@@ -20,7 +20,10 @@ use telio_task::{
 };
 use tokio::{net::UdpSocket, sync::mpsc::error::SendTimeoutError};
 
-use telio_utils::{telio_log_debug, telio_log_error, telio_log_info, telio_log_warn, PinnedSleep};
+use telio_utils::{
+    exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
+    telio_log_debug, telio_log_error, telio_log_info, telio_log_warn, PinnedSleep,
+};
 
 type SocketMap = HashMap<PublicKey, Arc<UdpSocket>>;
 type SocketMuteMap = HashMap<PublicKey, (Arc<UdpSocket>, Option<PinnedSleep<PublicKey>>)>;
@@ -134,6 +137,8 @@ struct StateEgress {
     wg_addr: Option<SocketAddr>,
     conn_state: Result<(), std::io::ErrorKind>,
     update_socket: Tx<(PublicKey, Arc<UdpSocket>)>,
+    peer_socket_backoffs: HashMap<PublicKey, (ExponentialBackoff, PinnedSleep<PublicKey>)>,
+    replaced_sockets: EndpointMap,
 }
 
 impl UdpProxy {
@@ -157,6 +162,8 @@ impl UdpProxy {
                 wg_addr: None,
                 conn_state: Err(ErrorKind::NotConnected),
                 update_socket,
+                peer_socket_backoffs: HashMap::new(),
+                replaced_sockets: HashMap::new(),
             }),
         }
     }
@@ -171,6 +178,7 @@ impl UdpProxy {
         .await??;
 
         task_exec!(&self.task_egress, async move |state| {
+            state.reset_socket_limit().await;
             Ok(state.configure(sockets, port).await)
         })
         .await?
@@ -180,6 +188,15 @@ impl UdpProxy {
     pub async fn stop(self) {
         let _ = self.task_egress.stop().await.resume_unwind();
         let _ = self.task_ingress.stop().await.resume_unwind();
+    }
+
+    /// Notify proxy about network change
+    pub async fn on_network_change(&self) {
+        let _ = task_exec!(&self.task_egress, async move |state| {
+            state.reset_socket_limit().await;
+            Ok(())
+        })
+        .await;
     }
 }
 
@@ -252,11 +269,18 @@ impl StateEgress {
         Ok(())
     }
 
-    async fn get_endpoints_map(&self) -> Result<EndpointMap, Error> {
+    async fn reset_socket_limit(&mut self) {
+        self.peer_socket_backoffs.clear();
+        self.replaced_sockets.clear();
+    }
+
+    async fn get_endpoints_map(&mut self) -> Result<EndpointMap, Error> {
         let mut map = EndpointMap::new();
 
         for (key, (sock, _)) in self.sockets.iter() {
-            map.insert(*key, sock.local_addr()?);
+            let mut peer_endpoints = self.replaced_sockets.remove(key).unwrap_or_default();
+            peer_endpoints.insert(0, sock.local_addr()?);
+            map.insert(*key, peer_endpoints);
         }
 
         Ok(map)
@@ -283,23 +307,28 @@ impl StateEgress {
     }
 
     async fn send_outbound_data(&mut self, pk: PublicKey, msg: DataMsg) {
-        // if let Some((pk, msg)) = self.input.recv().await {
-        if let (Some((socket, None)), Some(wg_addr)) = (self.sockets.get(&pk), self.wg_addr) {
-            match socket.send_to(msg.get_payload(), wg_addr).await {
-                Ok(_) => {
-                    if self.conn_state.is_err() {
-                        self.conn_state = Ok(());
-                        telio_log_info!("Outbound conn telio -> WG working!");
+        match (self.sockets.get(&pk), self.wg_addr) {
+            (Some((socket, None)), Some(wg_addr)) => {
+                match socket.send_to(msg.get_payload(), wg_addr).await {
+                    Ok(_) => {
+                        if self.conn_state.is_err() {
+                            self.conn_state = Ok(());
+                            telio_log_info!("Outbound conn telio -> WG working!");
+                        }
+                        self.peer_socket_backoffs.remove(&pk);
+                    }
+                    Err(err) => {
+                        self.handle_error(err, Some(pk)).await;
                     }
                 }
-                Err(err) => self.handle_error(err, Some(pk)).await,
             }
-        } else {
-            self.handle_error(
-                std::io::Error::new(ErrorKind::AddrNotAvailable, "WG Address not available"),
-                Some(pk),
-            )
-            .await;
+            _ => {
+                self.handle_error(
+                    std::io::Error::new(ErrorKind::AddrNotAvailable, "WG Address not available"),
+                    Some(pk),
+                )
+                .await;
+            }
         }
     }
 
@@ -319,35 +348,58 @@ impl StateEgress {
                 Self::sleep_forever().await;
             }
             ErrorType::SocketIOError => {
-                let socket = match SocketPool::new_udp(
-                    SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
-                    Some(UdpParams(SocketBufSizes {
-                        rx_buf_size: Some(SOCK_BUF_SZ),
-                        tx_buf_size: Some(SOCK_BUF_SZ),
-                    })),
-                )
-                .await
-                {
-                    Ok(skt) => skt,
-                    Err(err) => {
-                        telio_log_error!("Cannot open socket. {}", err);
-                        return;
-                    }
-                };
-
                 if let Some(pk) = pk {
-                    let socket = Arc::new(socket);
-
-                    if let Err(e) = self.update_socket.send((pk, socket.clone())).await {
-                        // May happen when they are being closed, but is not critical
-                        telio_log_warn!(
-                            "Failed to sync up proxy sockets due to closed channel: {e:?}"
-                        );
+                    if self.peer_socket_backoffs.get_mut(&pk).is_none() {
+                        #[allow(clippy::expect_used)]
+                        let backoff = ExponentialBackoff::new(ExponentialBackoffBounds {
+                            initial: Duration::from_secs(1),
+                            maximal: Some(Duration::from_secs(30)),
+                        })
+                        .expect("Exponential backoff should be correctly configured");
+                        let timeout = PinnedSleep::new(backoff.get_backoff(), pk);
+                        self.peer_socket_backoffs.insert(pk, (backoff, timeout));
                     }
-
-                    self.sockets.insert(pk, (socket, None));
                 }
             }
+        }
+    }
+
+    async fn replace_socket(&mut self, pk: PublicKey) {
+        let socket = match SocketPool::new_udp(
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
+            Some(UdpParams(SocketBufSizes {
+                rx_buf_size: Some(SOCK_BUF_SZ),
+                tx_buf_size: Some(SOCK_BUF_SZ),
+            })),
+        )
+        .await
+        {
+            Ok(skt) => skt,
+            Err(err) => {
+                telio_log_error!("Cannot open socket. {}", err);
+                return;
+            }
+        };
+
+        let socket = Arc::new(socket);
+
+        if let Err(e) = self.update_socket.send((pk, socket.clone())).await {
+            // May happen when they are being closed, but is not critical
+            telio_log_warn!("Failed to sync up proxy sockets due to closed channel: {e:?}");
+        }
+
+        let peer_sockets = self.replaced_sockets.entry(pk).or_insert_with(Vec::new);
+        let old_socket_addr = self
+            .sockets
+            .get(&pk)
+            .and_then(|(old_socket, _)| old_socket.local_addr().ok());
+        if let Some(addr) = old_socket_addr {
+            peer_sockets.push(addr);
+        }
+        self.sockets.insert(pk, (socket, None));
+        if let Some((backoff, timeout)) = self.peer_socket_backoffs.get_mut(&pk) {
+            backoff.next_backoff();
+            *timeout = PinnedSleep::new(backoff.get_backoff(), pk);
         }
     }
 }
@@ -440,29 +492,37 @@ impl Runtime for StateEgress {
             .filter_map(|(_, (_, mute))| mute.as_mut())
             .collect();
 
-        if mute_futures.is_empty() {
-            // No sockets muted
-            if let Some((pk, msg)) = self.input.recv().await {
-                self.send_outbound_data(pk, msg).await;
-            } else {
-                self.handle_error(
-                    std::io::Error::new(ErrorKind::BrokenPipe, "Broken input channel"),
-                    None,
-                )
-                .await;
-            }
+        let sockets_to_update: Vec<&mut PinnedSleep<PublicKey>> = self
+            .peer_socket_backoffs
+            .iter_mut()
+            .map(|(_, (_, timeout))| timeout)
+            .collect();
+
+        let mute = if mute_futures.is_empty() {
+            futures::future::pending().left_future()
         } else {
-            tokio::select! {
-                Some((pk, msg)) = self.input.recv() => {
-                    self.send_outbound_data(pk, msg).await;
-                },
-                (pk, _, _) = select_all(mute_futures) => {
-                    if let Some((_, muted)) = self.sockets.get_mut(&pk) {
-                        telio_log_debug!("Unmuting peer: {:?}", pk);
-                        *muted = None;
-                    }
-                },
-            }
+            select_all(mute_futures).right_future()
+        };
+
+        let update = if sockets_to_update.is_empty() {
+            futures::future::pending().left_future()
+        } else {
+            select_all(sockets_to_update).right_future()
+        };
+
+        tokio::select! {
+            Some((pk, msg)) = self.input.recv() => {
+                self.send_outbound_data(pk, msg).await;
+            },
+            (pk, _, _) = mute => {
+                if let Some((_, muted)) = self.sockets.get_mut(&pk) {
+                    telio_log_debug!("Unmuting peer: {:?}", pk);
+                    *muted = None;
+                }
+            },
+            (pk, _, _)= update => {
+                self.replace_socket(pk).await;
+            },
         }
         Self::next()
     }
@@ -851,7 +911,7 @@ mod tests {
 
             pub async fn send(&self, pk: PublicKey, data: &[u8]) {
                 self.sock
-                    .send_to(data, self.peers[&pk])
+                    .send_to(data, self.peers[&pk][0])
                     .await
                     .expect("WG failed to send.");
             }
@@ -871,7 +931,7 @@ mod tests {
                     let (pk, _) = self
                         .peers
                         .iter()
-                        .find(|(_pk, addr)| *addr == &recvaddr)
+                        .find(|(_pk, addr)| addr.contains(&recvaddr))
                         .expect("Unknown addr");
                     let answer = (*pk, &recv_buf[..size]);
                     let found = data.binary_search(&answer).unwrap_or_else(|_| {
