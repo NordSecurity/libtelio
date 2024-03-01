@@ -460,12 +460,13 @@ impl Device {
 
         self.rt = Some(self.art()?.block_on(async {
             let t = Task::start(
-                Box::pin(Runtime::start(
+                Runtime::start(
                     self.event.clone(),
                     config,
                     self.features.clone(),
                     self.protect.clone(),
-                ))
+                )
+                .boxed()
                 .await?,
             );
             Ok::<Task<Runtime>, Error>(t)
@@ -582,10 +583,10 @@ impl Device {
     pub fn set_config(&self, config: &Option<Config>) -> Result {
         let config = config.clone();
         self.art()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(Box::pin(
-                rt.set_config(&config)
-            )
-            .await))
+            task_exec!(self.rt()?, async move |rt| Ok(rt
+                .set_config(&config)
+                .boxed()
+                .await))
             .await?
         })
     }
@@ -656,7 +657,7 @@ impl Device {
         self.art()?.block_on(async {
             let node_key = *node_key;
             task_exec!(self.rt()?, async move |rt| {
-                Ok(Box::pin(rt.disconnect_exit_node(&node_key)).await)
+                Ok(rt.disconnect_exit_node(&node_key).boxed().await)
             })
             .await?
             .map_err(Error::from)
@@ -668,7 +669,7 @@ impl Device {
     pub fn disconnect_exit_nodes(&self) -> Result {
         self.art()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.disconnect_exit_nodes().await)
+                Ok(rt.disconnect_exit_nodes().boxed().await)
             })
             .await?
             .map_err(Error::from)
@@ -692,7 +693,7 @@ impl Device {
         self.art()?.block_on(async {
             let upstream_servers = upstream_servers.to_vec();
             task_exec!(self.rt()?, async move |rt| {
-                Ok(Box::pin(rt.start_dns(&upstream_servers)).await)
+                Ok(rt.start_dns(&upstream_servers).boxed().await)
             })
             .await?
         })
@@ -1435,6 +1436,7 @@ impl Runtime {
             .await?;
 
         if let Some(meshnet_entities) = self.entities.meshnet.as_ref() {
+            meshnet_entities.proxy.on_network_change().await;
             if let Some(direct) = &meshnet_entities.direct {
                 if let Some(stun) = &direct.stun_endpoint_provider {
                     // this unpauses provider if paused
@@ -1719,7 +1721,7 @@ impl Runtime {
         };
 
         // This is required to silence the dylint error "error: large future with a size of 2048 bytes"
-        Box::pin(self.connect_exit_node(exit_node)).await?;
+        self.connect_exit_node(exit_node).boxed().await?;
 
         self.entities.postquantum_wg.start(
             addr,
@@ -1812,7 +1814,7 @@ impl Runtime {
                 self.entities
                     .firewall
                     .remove_from_peer_whitelist(exit_node.public_key);
-                self.disconnect_exit_nodes().await
+                self.disconnect_exit_nodes().boxed().await
             }
             _ => Err(Error::InvalidNode),
         }
@@ -1901,7 +1903,7 @@ impl Runtime {
                         Default::default()
                     })
                     .get(&peer.public_key)
-                    .and_then(|proxy| endpoint.filter(|actual| proxy == actual))
+                    .and_then(|proxy| endpoint.filter(|actual| proxy.contains(actual)))
                     .map_or(PathType::Direct, |_| PathType::Relay)
             }
             .await

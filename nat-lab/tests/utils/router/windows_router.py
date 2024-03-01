@@ -181,5 +181,11 @@ class WindowsRouter(Router):
         yield
 
     @asynccontextmanager
+    async def block_udp_port(
+        self, port: int  # pylint: disable=unused-argument
+    ) -> AsyncIterator:
+        yield
+
+    @asynccontextmanager
     async def reset_upnpd(self) -> AsyncIterator:
         yield
