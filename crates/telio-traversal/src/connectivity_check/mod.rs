@@ -7,7 +7,7 @@ use thiserror::Error as TError;
 use telio_model::SocketAddr;
 
 use telio_crypto::PublicKey;
-use telio_proto::CallMeMaybeMsg;
+use telio_proto::{CallMeMaybeMsg, Session};
 
 #[derive(Debug, TError)]
 pub enum Error {
@@ -36,4 +36,5 @@ pub struct WireGuardEndpointCandidateChangeEvent {
     pub public_key: PublicKey,
     pub remote_endpoint: SocketAddr,
     pub local_endpoint: SocketAddr,
+    pub session: Session,
 }

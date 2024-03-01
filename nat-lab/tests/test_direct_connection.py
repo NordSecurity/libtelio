@@ -271,6 +271,104 @@ async def test_direct_working_paths(
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize("setup_params, reflexive_ip", UHP_WORKING_PATHS)
+async def test_direct_working_paths_are_reestablished(
+    setup_params: List[SetupParameters],
+    reflexive_ip: str,
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+        alpha, beta = env.nodes
+        alpha_client, beta_client = env.clients
+        alpha_connection, _ = [conn.connection for conn in env.connections]
+
+        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
+            await testing.wait_long(ping.wait_for_next_ping())
+
+        # Break UHP
+        async with AsyncExitStack() as temp_exit_stack:
+            await temp_exit_stack.enter_async_context(
+                alpha_client.get_router().disable_path(reflexive_ip)
+            )
+
+            await asyncio.gather(
+                alpha_client.wait_for_state_peer(
+                    beta.public_key,
+                    [State.Connected],
+                    [PathType.Relay],
+                    timeout=60.0,
+                ),
+                beta_client.wait_for_state_peer(
+                    alpha.public_key,
+                    [State.Connected],
+                    [PathType.Relay],
+                    timeout=60.0,
+                ),
+            )
+
+            async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
+                await testing.wait_long(ping.wait_for_next_ping())
+
+        await asyncio.gather(
+            alpha_client.wait_for_state_peer(
+                beta.public_key,
+                [State.Connected],
+                [PathType.Direct],
+                timeout=60.0,
+            ),
+            beta_client.wait_for_state_peer(
+                alpha.public_key,
+                [State.Connected],
+                [PathType.Direct],
+                timeout=60.0,
+            ),
+        )
+
+        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
+            await testing.wait_long(ping.wait_for_next_ping())
+
+        # Break UHP
+        async with AsyncExitStack() as temp_exit_stack:
+            await temp_exit_stack.enter_async_context(
+                alpha_client.get_router().disable_path(reflexive_ip)
+            )
+
+            await asyncio.gather(
+                alpha_client.wait_for_state_peer(
+                    beta.public_key,
+                    [State.Connected],
+                    [PathType.Relay],
+                    timeout=60.0,
+                ),
+                beta_client.wait_for_state_peer(
+                    alpha.public_key,
+                    [State.Connected],
+                    [PathType.Relay],
+                    timeout=60.0,
+                ),
+            )
+
+            async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
+                await testing.wait_long(ping.wait_for_next_ping())
+
+        await asyncio.gather(
+            alpha_client.wait_for_state_peer(
+                beta.public_key,
+                [State.Connected],
+                [PathType.Direct],
+                timeout=60.0,
+            ),
+            beta_client.wait_for_state_peer(
+                alpha.public_key,
+                [State.Connected],
+                [PathType.Direct],
+                timeout=60.0,
+            ),
+        )
+
+
+@pytest.mark.asyncio
 async def test_direct_working_paths_stun_ipv6() -> None:
     # This test only checks if stun works well with IPv6, no need to add more setups here
     setup_params = [

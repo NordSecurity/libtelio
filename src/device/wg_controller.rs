@@ -14,7 +14,7 @@ use telio_model::constants::{VPN_EXTERNAL_IPV4, VPN_INTERNAL_IPV4, VPN_INTERNAL_
 use telio_model::mesh::NodeState::Connected;
 use telio_model::EndpointMap;
 use telio_model::SocketAddr;
-use telio_proto::PeersStatesMap;
+use telio_proto::{PeersStatesMap, Session};
 use telio_proxy::Proxy;
 use telio_traversal::{
     cross_ping_check::CrossPingCheckTrait,
@@ -49,7 +49,7 @@ enum PeerState {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct RequestedPeer {
     peer: Peer,
-    local_direct_endpoint: Option<SocketAddr>,
+    local_direct_endpoint: Option<(SocketAddr, Session)>,
 }
 
 pub async fn consolidate_wg_state(
@@ -250,19 +250,9 @@ async fn consolidate_wg_peers<
                     requested_peer.peer.endpoint,
                     requested_peer.local_direct_endpoint,
                 ) {
-                    if let (Some(us), Some(cpc)) = (upgrade_sync, cross_ping_check) {
-                        match cpc.session_for_key(public_key).await? {
-                            Some(session) => {
-                                us.request_upgrade(
-                                    &public_key,
-                                    remote_endpoint,
-                                    local_direct_endpoint,
-                                    session,
-                                )
-                                .await?
-                            }
-                            None => return Err(super::Error::NoSessionForKey(public_key)),
-                        };
+                    if let Some(us) = upgrade_sync {
+                        us.request_upgrade(&public_key, remote_endpoint, local_direct_endpoint)
+                            .await?
                     }
                 }
 
@@ -312,7 +302,7 @@ async fn consolidate_wg_peers<
                 }
             }
 
-            (_, _) => {}
+            _ => {}
         }
         telio_log_debug!(
             "peer {:?} proxying: {:?}, state: {:?}, lh: {:?}",
@@ -794,7 +784,7 @@ async fn select_endpoint_for_peer<'a>(
     checked_endpoint: &Option<WireGuardEndpointCandidateChangeEvent>,
     proxy_endpoint: &Option<SocketAddr>,
     upgrade_request_endpoint: &Option<SocketAddr>,
-) -> Result<(Option<SocketAddr>, Option<SocketAddr>)> {
+) -> Result<(Option<SocketAddr>, Option<(SocketAddr, Session)>)> {
     // Retrieve some helper information
     let actual_endpoint = actual_peer.clone().and_then(|p| p.endpoint);
 
@@ -857,7 +847,7 @@ async fn select_endpoint_for_peer<'a>(
             );
             Ok((
                 Some(checked_endpoint.remote_endpoint),
-                Some(checked_endpoint.local_endpoint), // << This endpoint will be advertised to the other side
+                Some((checked_endpoint.local_endpoint, checked_endpoint.session)), // << This endpoint will be advertised to the other side
             ))
         }
 
@@ -1487,7 +1477,7 @@ mod tests {
 
         fn when_cross_check_validated_endpoints(
             &mut self,
-            input: Vec<(PublicKey, SocketAddr, SocketAddr)>,
+            input: Vec<(PublicKey, SocketAddr, (SocketAddr, Session))>,
         ) {
             let map: HashMap<PublicKey, WireGuardEndpointCandidateChangeEvent> = input
                 .iter()
@@ -1497,7 +1487,8 @@ mod tests {
                         WireGuardEndpointCandidateChangeEvent {
                             public_key: i.0,
                             remote_endpoint: i.1,
-                            local_endpoint: i.2,
+                            local_endpoint: i.2 .0,
+                            session: i.2 .1,
                         },
                     )
                 })
@@ -1572,20 +1563,16 @@ mod tests {
             }
         }
 
-        fn then_request_upgrade(&mut self, input: Vec<(PublicKey, SocketAddr, SocketAddr)>) {
-            use rand::RngCore;
+        fn then_request_upgrade(
+            &mut self,
+            input: Vec<(PublicKey, SocketAddr, (SocketAddr, Session))>,
+        ) {
             for i in input {
-                let session: Session = rand::thread_rng().next_u64();
-                self.cross_ping_check
-                    .expect_session_for_key()
-                    .once()
-                    .with(eq(i.0))
-                    .return_once(move |_| Ok(Some(session)));
                 self.upgrade_sync
                     .expect_request_upgrade()
                     .once()
-                    .with(eq(i.0), eq(i.1), eq(i.2), eq(session))
-                    .return_once(|_, _, _, _| Ok(()));
+                    .with(eq(i.0), eq(i.1), eq(i.2))
+                    .return_once(|_, _, _| Ok(()));
             }
         }
 
@@ -1773,7 +1760,7 @@ mod tests {
         ]));
         let allowed_ips = vec![ip1, ip1v6, ip2, ip2v6];
         let remote_wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
-        let local_wg_endpoint = SocketAddr::from(([192, 168, 0, 2], 15));
+        let local_wg_endpoint = (SocketAddr::from(([192, 168, 0, 2], 15)), rand::random());
         let mapped_port = 12;
         let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
 
@@ -1825,7 +1812,7 @@ mod tests {
         let ip2v6 = IpAddr::from([5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8]);
         let allowed_ips = vec![ip1, ip1v6, ip2, ip2v6];
         let remote_wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
-        let local_wg_endpoint = SocketAddr::from(([192, 168, 0, 2], 15));
+        let local_wg_endpoint = (SocketAddr::from(([192, 168, 0, 2], 15)), rand::random());
         let mapped_port = 12;
         let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
 
@@ -2102,7 +2089,7 @@ mod tests {
         ]));
         let allowed_ips = vec![ip1, ip1v6, ip2, ip2v6];
         let remote_wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
-        let local_wg_endpoint = SocketAddr::from(([192, 168, 0, 2], 15));
+        let local_wg_endpoint = (SocketAddr::from(([192, 168, 0, 2], 15)), rand::random());
         let mapped_port = 12;
         let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
 

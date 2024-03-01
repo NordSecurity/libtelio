@@ -54,8 +54,7 @@ pub trait UpgradeSyncTrait {
         &self,
         public_key: &PublicKey,
         remote_endpoint: SocketAddr,
-        local_endpoint: SocketAddr,
-        session: Session,
+        local_direct_endpoint: (SocketAddr, Session),
     ) -> Result<()>;
 }
 
@@ -119,13 +118,12 @@ impl UpgradeSyncTrait for UpgradeSync {
         public_key: &PublicKey,
         remote_endpoint: SocketAddr, // The endpoint which will be added to local WG and points to
         // remote node
-        local_endpoint: SocketAddr, // The endpoint which will be added to remote WG and points to
-        // our local node
-        session: Session,
+        local_direct_endpoint: (SocketAddr, Session), // The endpoint which will be added to remote WG and points to
+                                                      // our local node with associated session
     ) -> Result<()> {
         let public_key = *public_key;
         task_exec!(&self.task, async move |s| {
-            s.request_upgrade(&public_key, remote_endpoint, local_endpoint, session)
+            s.request_upgrade(&public_key, remote_endpoint, local_direct_endpoint)
                 .await
                 .unwrap_or_else(|e| {
                     telio_log_warn!("Failed to send ping {:?}", e);
@@ -142,14 +140,14 @@ impl State {
         &mut self,
         public_key: &PublicKey,
         remote_endpoint: SocketAddr,
-        local_endpoint: SocketAddr,
-        session: Session,
+        local_direct_endpoint: (SocketAddr, Session),
     ) -> Result<()> {
         telio_log_info!(
-            "Requesting {:?} to upgrade endpoint to local WG: {:?}, remote WG: {:?}, for session: {session}",
+            "Requesting {:?} to upgrade endpoint to local WG: {:?}, remote WG: {:?}, for session: {}",
             public_key,
             remote_endpoint,
-            local_endpoint,
+            local_direct_endpoint.0,
+            local_direct_endpoint.1,
         );
 
         // Send message to remote end
@@ -159,8 +157,8 @@ impl State {
             .send((
                 *public_key,
                 UpgradeMsg {
-                    endpoint: local_endpoint,
-                    session,
+                    endpoint: local_direct_endpoint.0,
+                    session: local_direct_endpoint.1,
                 },
             ))
             .await
@@ -172,7 +170,7 @@ impl State {
             UpgradeRequest {
                 endpoint: remote_endpoint,
                 requested_at: Instant::now(),
-                session,
+                session: local_direct_endpoint.1,
             },
         );
 
@@ -576,7 +574,7 @@ mod tests {
         let session: Session = 42;
 
         upg_sync
-            .request_upgrade(&public_key, endpoint, endpoint, session)
+            .request_upgrade(&public_key, endpoint, (endpoint, session))
             .await
             .unwrap();
 
