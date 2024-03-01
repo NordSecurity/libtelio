@@ -559,7 +559,10 @@ async fn build_requested_meshnet_peers_list<
             // Retrieve public key
             let public_key = p.base.public_key;
             let persistent_keepalive_interval = requested_state.keepalive_periods.proxying;
-            let endpoint = proxy_endpoints.get(&public_key).cloned();
+            let endpoint = proxy_endpoints
+                .get(&public_key)
+                .and_then(|eps| eps.get(0))
+                .cloned();
 
             // Keep track of meshnet IP needed for instance for QoS analytics
             let ip_addresses = match deduplicated_peer_ips.get(&public_key) {
@@ -645,7 +648,10 @@ async fn build_requested_meshnet_peers_list<
             actual_peer,
             time_since_last_rx_or_handshake.as_ref(),
             time_since_last_endpoint_change.as_ref(),
-            proxy_endpoint,
+            match proxy_endpoint {
+                Some(eps) => eps,
+                None => &[],
+            },
             requested_state,
         );
 
@@ -664,7 +670,10 @@ async fn build_requested_meshnet_peers_list<
             &time_since_last_rx_or_handshake,
             peer_state,
             &checked_endpoint.cloned(),
-            &proxy_endpoint.cloned(),
+            match proxy_endpoint {
+                Some(eps) => eps,
+                None => &[],
+            },
             &upgrade_request_endpoint,
         )
         .await?;
@@ -742,7 +751,7 @@ async fn select_endpoint_for_peer<'a>(
     time_since_last_rx: &Option<Duration>,
     peer_state: PeerState,
     checked_endpoint: &Option<WireGuardEndpointCandidateChangeEvent>,
-    proxy_endpoint: &Option<SocketAddr>,
+    proxy_endpoint: &[SocketAddr],
     upgrade_request_endpoint: &Option<SocketAddr>,
 ) -> Result<(Option<SocketAddr>, Option<SocketAddr>)> {
     // Retrieve some helper information
@@ -761,9 +770,12 @@ async fn select_endpoint_for_peer<'a>(
                 telio_log_debug!("Our actual endpoint is: {:?}", peer.endpoint);
             }
 
+            #[allow(clippy::expect_used)]
             if (peer_state == PeerState::Upgrading || peer_state == PeerState::Direct)
                 && actual_endpoint.is_some()
-                && actual_endpoint != *proxy_endpoint
+                && !proxy_endpoint.contains(
+                    &actual_endpoint.expect("Previous check mandates there be an endpoint here"),
+                )
             {
                 telio_log_debug!("Keeping the current direct endpoint: {:?}", actual_endpoint);
                 Ok((actual_endpoint, None))
@@ -785,7 +797,7 @@ async fn select_endpoint_for_peer<'a>(
                 public_key,
                 time_since_last_rx,
             );
-            Ok((*proxy_endpoint, None))
+            Ok((proxy_endpoint.get(0).copied(), None))
         }
 
         // Just proxying, nothing to upgrade to...
@@ -795,7 +807,7 @@ async fn select_endpoint_for_peer<'a>(
                 public_key,
                 time_since_last_rx,
             );
-            Ok((*proxy_endpoint, None))
+            Ok((proxy_endpoint.get(0).copied(), None))
         }
 
         // Proxying, but we have something to upgrade to. Lets try to upgrade.
@@ -845,26 +857,25 @@ fn compare_peers(a: &telio_wg::uapi::Peer, b: &telio_wg::uapi::Peer) -> bool {
         && a.preshared_key == b.preshared_key
 }
 
-fn is_peer_proxying(
-    peer: &telio_wg::uapi::Peer,
-    proxy_endpoints: &HashMap<PublicKey, SocketAddr>,
-) -> bool {
-    // If proxy has no knowledge of the public key -> the node definately does not proxy
-    let proxy_endpoint = if let Some(proxy_endpoint) = proxy_endpoints.get(&peer.public_key) {
-        proxy_endpoint
+fn is_peer_proxying(peer: &telio_wg::uapi::Peer, proxy_endpoints: &EndpointMap) -> bool {
+    // If proxy has no knowledge of the public key -> the node definitely does not proxy
+    let proxy_endpoints = if let Some(proxy_endpoints) = proxy_endpoints.get(&peer.public_key) {
+        proxy_endpoints
     } else {
         return false;
     };
 
     // Otherwise, we are only proxying if peer endpoint matches proxy endpoint
-    peer.endpoint == Some(*proxy_endpoint)
+    peer.endpoint
+        .map(|ep| proxy_endpoints.contains(&ep))
+        .unwrap_or_default()
 }
 
 fn peer_state(
     peer: Option<&telio_wg::uapi::Peer>,
     time_since_last_rx: Option<&Duration>,
     time_since_last_endpoint_change: Option<&Duration>,
-    proxy_endpoint: Option<&SocketAddr>,
+    proxy_endpoints: &[SocketAddr],
     requested_state: &RequestedState,
 ) -> PeerState {
     // Define some useful constants
@@ -893,7 +904,10 @@ fn peer_state(
     };
 
     let has_contact = time_since_last_rx < &peer_connectivity_timeout;
-    let is_proxying = peer.endpoint.as_ref() == proxy_endpoint;
+    let is_proxying = peer
+        .endpoint
+        .map(|ep| proxy_endpoints.contains(&ep))
+        .unwrap_or_default();
     let is_in_upgrade_window = time_since_last_endpoint_change < &peer_upgrade_window;
 
     match (has_contact, is_proxying, is_in_upgrade_window) {
@@ -1360,7 +1374,7 @@ mod tests {
                 .map(|i| {
                     (
                         i.0,
-                        SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, i.1)),
+                        vec![SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, i.1))],
                     )
                 })
                 .collect();
