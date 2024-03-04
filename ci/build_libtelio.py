@@ -35,17 +35,19 @@ PROJECT_CONFIG = rutils.Project(
 
 
 def copy_bindings(config):
-    if "binding_src" in LIBTELIO_CONFIG[config.target_os]:
-        telio_bindings = f"{PROJECT_CONFIG.root_dir}/{LIBTELIO_CONFIG[config.target_os]['binding_src']}"
-        binding_destination = (
-            f"{PROJECT_CONFIG.root_dir}/{LIBTELIO_CONFIG[config.target_os]['binding_dest']}"
-            + telio_bindings.split("/")[-1]
-        )
-
-        if os.path.exists(binding_destination):
-            rutils.remove_tree_or_file(binding_destination)
-
-        rutils.copy_tree_or_file(telio_bindings, binding_destination)
+    # TODO(Mathias): reenable when packaging solution is done
+    pass
+    #if "binding_src" in LIBTELIO_CONFIG[config.target_os]:
+    #    telio_bindings = f"{PROJECT_CONFIG.root_dir}/{LIBTELIO_CONFIG[config.target_os]['binding_src']}"
+    #    binding_destination = (
+    #        f"{PROJECT_CONFIG.root_dir}/{LIBTELIO_CONFIG[config.target_os]['binding_dest']}"
+    #        + telio_bindings.split("/")[-1]
+    #    )
+#
+    #    if os.path.exists(binding_destination):
+    #        rutils.remove_tree_or_file(binding_destination)
+#
+    #    rutils.copy_tree_or_file(telio_bindings, binding_destination)
 
 
 """
@@ -106,9 +108,7 @@ LIBTELIO_CONFIG = {
             "derpcli": {"derpcli": "derpcli.exe"},
             "interderpcli": {"interderpcli": "interderpcli.exe"},
             NAME: {NAME: f"{NAME}.dll"},
-        },
-        "binding_src": f"ffi/bindings/windows/csharp",
-        "binding_dest": f"dist/windows/",
+        }
     },
     "android": {
         "archs": {
@@ -153,9 +153,7 @@ LIBTELIO_CONFIG = {
         },
         "packages": {
             NAME: {f"lib{NAME}": f"lib{NAME}.so"},
-        },
-        "binding_src": f"ffi/bindings/android/java",
-        "binding_dest": f"dist/android/",
+        }
     },
     "linux": {
         "archs": {
@@ -180,9 +178,7 @@ LIBTELIO_CONFIG = {
         "packages": {
             "tcli": {"tcli": "tcli"},
             NAME: {f"lib{NAME}": f"lib{NAME}.a"},
-        },
-        "binding_src": f"ffi/bindings/telio.h",
-        "binding_dest": f"dist/darwin/",
+        }
     },
     "ios": {
         "packages": {
@@ -214,29 +210,35 @@ def main() -> None:
     elif args.command == "aar":
         abu.generate_aar(PROJECT_CONFIG, args)
     elif args.command == "xcframework":
-        headers = {
-            Path("libtelio/module.modulemap"): PROJECT_CONFIG.get_root_dir()
-            / "contrib/darwin/module.modulemap",
-            Path("libtelio/telio.h"): PROJECT_CONFIG.get_root_dir()
-            / "ffi/bindings/telio.h",
-        }
-        dbu.create_xcframework(
-            PROJECT_CONFIG, args.debug, "libtelioFFI", headers, "libtelio.a"
-        )
+        # TODO(Mathias): reenable when packaging solution is done
+        pass
+        #headers = {
+        #    Path("libtelio/module.modulemap"): PROJECT_CONFIG.get_root_dir()
+        #    / "contrib/darwin/module.modulemap",
+        #    Path("libtelio/telio.h"): PROJECT_CONFIG.get_root_dir()
+        #    / "ffi/bindings/telio.h",
+        #}
+        #dbu.create_xcframework(
+        #    PROJECT_CONFIG, args.debug, "libtelioFFI", headers, "libtelio.a"
+        #)
     elif args.command == "build-ios-simulator-stubs":
-        dbu.build_stub_ios_simulator_libraries(
-            PROJECT_CONFIG,
-            args.debug,
-            args.header or PROJECT_CONFIG.get_root_dir() / "ffi/bindings/telio.h",
-            "libtelio.a",
-        )
+        # TODO(Mathias): reenable when packaging solution is done
+        pass
+        #dbu.build_stub_ios_simulator_libraries(
+        #    PROJECT_CONFIG,
+        #    args.debug,
+        #    args.header or PROJECT_CONFIG.get_root_dir() / "ffi/bindings/telio.h",
+        #    "libtelio.a",
+        #)
     elif args.command == "build-tvos-simulator-stubs":
-        dbu.build_stub_tvos_simulator_libraries(
-            PROJECT_CONFIG,
-            args.debug,
-            args.header or PROJECT_CONFIG.get_root_dir() / "ffi/bindings/telio.h",
-            "libtelio.a",
-        )
+        # TODO(Mathias): reenable when packaging solution is done
+        pass
+        #dbu.build_stub_tvos_simulator_libraries(
+        #    PROJECT_CONFIG,
+        #    args.debug,
+        #    args.header or PROJECT_CONFIG.get_root_dir() / "ffi/bindings/telio.h",
+        #    "libtelio.a",
+        #)
     else:
         assert False, f"command '{args.command}' not supported"
 

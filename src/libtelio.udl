@@ -115,13 +115,13 @@ namespace libtelio {
     void set_global_logger(TelioLogLevel log_level, TelioLoggerCb logger);
 
     /// Get default recommended adapter type for platform.
-    TelioAdapterType uniffi_telio_get_default_adapter();
+    TelioAdapterType get_default_adapter();
 
     /// Get current version tag.
-    string uniffi_telio_get_version_tag();
+    string get_version_tag();
 
     /// Get current commit sha.
-    string uniffi_telio_get_commit_sha();
+    string get_commit_sha();
 
     /// Generate a new secret key.
     SecretKey generate_secret_key();
@@ -139,7 +139,7 @@ namespace libtelio {
     Config string_to_meshnet_config(string cfg_str);
 };
 
-interface telio {
+interface Telio {
     /// Create new telio library instance
     /// # Parameters
     /// - `events`:     Events callback
@@ -223,7 +223,7 @@ interface telio {
     [Throws=TelioError]
     void notify_network_change(string network_info);
 
-    /// Wrapper for `telio_connect_to_exit_node_with_id` that doesn't take an identifier
+    /// Wrapper for `connect_to_exit_node_with_id` that doesn't take an identifier
     [Throws=TelioError]
     void connect_to_exit_node(PublicKey public_key, sequence<IpNetwork>? allowed_ips, SocketAddr? endpoint);
 
@@ -242,7 +242,7 @@ interface telio {
     ///
     /// ```c
     /// // Connects to VPN exit node.
-    /// telio_connect_to_exit_node_with_id(
+    /// telio.connect_to_exit_node_with_id(
     ///     "5e0009e1-75cf-4406-b9ce-0cbb4ea50366",
     ///     "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=",
     ///     "0.0.0.0/0", // Equivalent
@@ -250,7 +250,7 @@ interface telio {
     /// );
     ///
     /// // Connects to VPN exit node, with specified allowed_ips.
-    /// telio_connect_to_exit_node_with_id(
+    /// telio.connect_to_exit_node_with_id(
     ///     "5e0009e1-75cf-4406-b9ce-0cbb4ea50366",
     ///     "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=",
     ///     "100.100.0.0/16;10.10.23.0/24",
@@ -258,7 +258,7 @@ interface telio {
     /// );
     ///
     /// // Connect to exit peer via DERP
-    /// telio_connect_to_exit_node_with_id(
+    /// telio.connect_to_exit_node_with_id(
     ///     "5e0009e1-75cf-4406-b9ce-0cbb4ea50366",
     ///     "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=",
     ///     "0.0.0.0/0",
@@ -284,7 +284,7 @@ interface telio {
     ///
     /// ```c
     /// // Connects to VPN exit node.
-    /// telio_connect_to_exit_node_postquantum(
+    /// telio.connect_to_exit_node_postquantum(
     ///     "5e0009e1-75cf-4406-b9ce-0cbb4ea50366",
     ///     "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=",
     ///     "0.0.0.0/0", // Equivalent
@@ -292,7 +292,7 @@ interface telio {
     /// );
     ///
     /// // Connects to VPN exit node, with specified allowed_ips.
-    /// telio_connect_to_exit_node_postquantum(
+    /// telio.connect_to_exit_node_postquantum(
     ///     "5e0009e1-75cf-4406-b9ce-0cbb4ea50366",
     ///     "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=",
     ///     "100.100.0.0/16;10.10.23.0/24",
@@ -326,10 +326,10 @@ interface telio {
     ///
     /// ```c
     /// // Enable magic dns with some forward servers
-    /// telio_enable_magic_dns("[\"1.1.1.1\", \"8.8.8.8\"]");
+    /// telio.enable_magic_dns("[\"1.1.1.1\", \"8.8.8.8\"]");
     ///
     /// // Enable magic dns with no forward server
-    /// telio_enable_magic_dns("[\"\"]");
+    /// telio.enable_magic_dns("[\"\"]");
     /// ```
     [Throws=TelioError]
     void enable_magic_dns([ByRef] sequence<IpAddr> forward_servers);
