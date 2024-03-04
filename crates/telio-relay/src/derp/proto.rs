@@ -10,22 +10,24 @@ use crypto_box::{
     aead::{Aead, AeadCore},
     PublicKey as BoxPublicKey, SalsaBox,
 };
-use num_enum::{IntoPrimitive, TryFromPrimitive};
+use num_enum::{IntoPrimitive, TryFromPrimitive, TryFromPrimitiveError};
 use std::{
+    array::TryFromSliceError,
     convert::TryFrom,
-    error::Error as StdError,
     io::{Error as IoError, ErrorKind},
     net::SocketAddr,
+    num::TryFromIntError,
     time::Duration,
 };
 use telio_crypto::{PublicKey, SecretKey, KEY_SIZE};
 use telio_utils::{telio_log_debug, telio_log_trace};
+use thiserror::Error as TError;
 use tracing::{enabled, Level};
 
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     select,
-    sync::mpsc::{Receiver, Sender},
+    sync::mpsc::{error::SendError, Receiver, Sender},
 };
 
 #[cfg(windows)]
@@ -88,7 +90,7 @@ pub enum FrameChannel {
 // These should be updated once server is updated
 /// FrameType defines a type of a frame. Each frame type may have a different structure
 /// Note: values 0x0A - 0x0F are skipped
-enum FrameType {
+pub enum FrameType {
     /// 8B magic + 32B public key + (0+ bytes future use)
     ServerKey = 0x01,
     /// 32B pub key + 24B nonce + naclbox(json)
@@ -137,7 +139,39 @@ enum FrameType {
 }
 
 /// Error is a boxed std::error::Error
-pub type Error = Box<dyn StdError>;
+#[derive(Debug, TError)]
+pub enum Error {
+    /// Connection timed out
+    #[error("Connection timed out: {0}")]
+    ConnectionTimeoutError(#[from] tokio::time::error::Elapsed),
+    /// Unable to send DERP control message
+    #[error("Unable to send DERP control message: {0}")]
+    ControlMsgSendError(#[from] SendError<Vec<u8>>),
+    /// Unable to parse HTTP header
+    #[error("Unable to parse HTTP header: {0}")]
+    HttpParseError(#[from] httparse::Error),
+    /// Failed to parse the frame type
+    #[error("Failed to parse the frame type: {0}")]
+    FrameTypeParseError(#[from] TryFromPrimitiveError<FrameType>),
+    /// Invalid server name
+    #[error("Invalid server name")]
+    InvalidServerName,
+    /// I/O error
+    #[error("I/O Error: {0}")]
+    IoError(#[from] IoError),
+    /// PublicKey parse error
+    #[error("Cannot parse public key: {0}")]
+    PublicKeyParseError(#[from] TryFromSliceError),
+    /// Payload unexpectedly large
+    #[error("Payload unexpectedly large: {0}")]
+    PayloadTooLargeError(#[from] TryFromIntError),
+    /// Unable to send relayed message
+    #[error("Unable to send relayed message: {0}")]
+    RelayedMsgSendError(#[from] SendError<(PublicKey, Vec<u8>)>),
+    /// Url parse error
+    #[error("Url parse error: {0}")]
+    UrlParseError(#[from] url::ParseError),
+}
 
 /// Source and destination addresses for derp traffic
 #[derive(Copy, Clone)]
@@ -268,10 +302,9 @@ pub async fn exchange_keys<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
 pub async fn read_server_info<R: AsyncRead + Unpin>(reader: &mut R) -> Result<(), Error> {
     let (frame_type, mut _bytes) = read_frame(reader).await?;
     if frame_type != FrameType::ServerInfo {
-        return Err(Box::new(IoError::new(
-            ErrorKind::InvalidData,
-            "invalid frame type for server info",
-        )));
+        return Err(
+            IoError::new(ErrorKind::InvalidData, "invalid frame type for server info").into(),
+        );
     }
 
     Ok(())
@@ -295,7 +328,7 @@ async fn write_client_key<W: AsyncWrite + Unpin>(
 
     let ciphertext = b
         .encrypt(&nonce, &plain_text[..])
-        .map_err(|err| -> Error { Box::new(IoError::new(ErrorKind::Other, err.to_string())) })?;
+        .map_err(|err| -> Error { IoError::new(ErrorKind::Other, err.to_string()).into() })?;
 
     let mut buf = Vec::<u8>::new();
     buf.write_all(public_key.as_bytes()).await?;
@@ -307,29 +340,23 @@ async fn write_client_key<W: AsyncWrite + Unpin>(
 async fn read_server_key<R: AsyncRead + Unpin>(reader: &mut R) -> Result<PublicKey, Error> {
     let (frame_type, mut bytes) = read_frame(reader).await?;
     if frame_type != FrameType::ServerKey {
-        return Err(Box::new(IoError::new(
-            ErrorKind::InvalidData,
-            "invalid frame type for server key",
-        )));
+        return Err(
+            IoError::new(ErrorKind::InvalidData, "invalid frame type for server key").into(),
+        );
     }
     if bytes.len() < 40 {
-        return Err(Box::new(IoError::new(
-            ErrorKind::InvalidData,
-            "invalid server response length",
-        )));
+        return Err(IoError::new(ErrorKind::InvalidData, "invalid server response length").into());
     }
     if bytes.drain(0..MAGIC.len()).as_slice() != MAGIC {
-        return Err(Box::new(IoError::new(
+        return Err(IoError::new(
             ErrorKind::InvalidData,
             "server key should start with MAGIC sting",
-        )));
+        )
+        .into());
     }
 
     <PublicKey as TryFrom<Vec<u8>>>::try_from(bytes).map_err(|_| -> Error {
-        Box::new(IoError::new(
-            ErrorKind::InvalidData,
-            "invalid server public key",
-        ))
+        IoError::new(ErrorKind::InvalidData, "invalid server public key").into()
     })
 }
 
@@ -349,10 +376,7 @@ async fn read_frame<R: AsyncRead + Unpin>(reader: &mut R) -> Result<(FrameType, 
     let frame_type = FrameType::try_from(if let Some(b) = buf.first() {
         *b
     } else {
-        return Err(Box::new(IoError::new(
-            ErrorKind::InvalidData,
-            "invalid buffer",
-        )));
+        return Err(IoError::new(ErrorKind::InvalidData, "invalid buffer").into());
     })?;
 
     let mut buf = [0_u8; 4];
