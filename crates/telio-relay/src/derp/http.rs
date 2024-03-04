@@ -71,12 +71,7 @@ pub async fn connect_http_and_start(
 ) -> Result<DerpConnection, Error> {
     let u = Url::parse(addr)?;
     let hostname = match u.host() {
-        None => {
-            return Err(Box::new(IoError::new(
-                ErrorKind::Other,
-                "addr host is empty",
-            )))
-        }
+        None => return Err(IoError::new(ErrorKind::Other, "addr host is empty").into()),
         Some(hostname) => match hostname {
             Host::Domain(hostname) => String::from(hostname),
             Host::Ipv4(hostname) => hostname.to_string(),
@@ -147,7 +142,7 @@ pub async fn connect_http_and_start(
             };
 
             let server_name =
-                ServerName::try_from(hostname.as_str()).map_err(|_| "Invalid Server Name")?;
+                ServerName::try_from(hostname.as_str()).map_err(|_| Error::InvalidServerName)?;
 
             connect_and_start(
                 config.connect(server_name, stream).await?,
@@ -249,21 +244,13 @@ async fn connect_http<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     let mut res = httparse::Response::new(&mut headers);
     let res_len = match res.parse(&data)? {
         Status::Partial => {
-            return Err(Box::new(IoError::new(
-                ErrorKind::Other,
-                "HTTP Response not full",
-            )))
+            return Err(IoError::new(ErrorKind::Other, "HTTP Response not full").into())
         }
         Status::Complete(len) => len,
     };
     Ok(data
         .get(res_len..data_len)
-        .ok_or_else(|| {
-            Box::new(IoError::new(
-                ErrorKind::Other,
-                "Out of bounds index for data buffer",
-            ))
-        })?
+        .ok_or_else(|| IoError::new(ErrorKind::Other, "Out of bounds index for data buffer"))?
         .to_vec())
 }
 
