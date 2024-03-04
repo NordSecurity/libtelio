@@ -31,7 +31,6 @@ telio-lana.workspace = true
 telio-model.workspace = true
 telio-nat-detect.workspace = true
 telio-proto.workspace = true
-telio-relay.workspace = true
 telio-task.workspace = true
 telio-utils.workspace = true
 telio-wg.workspace = true
