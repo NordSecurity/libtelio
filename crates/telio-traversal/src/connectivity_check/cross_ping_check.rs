@@ -24,12 +24,14 @@ use telio_proto::{CallMeMaybeMsg, CallMeMaybeType, Session};
 use telio_task::{io::chan, io::Chan, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
     exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
-    telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn,
+    telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn, LruCache,
 };
 use tokio::time::{interval_at, Instant, Interval};
 use tokio::{sync::Mutex, time::MissedTickBehavior};
 
 const CPC_TIMEOUT: Duration = Duration::from_secs(10);
+const UPGRADE_TIMEOUT: Duration = Duration::from_secs(60);
+const MAX_SESSION_CANDIDATES: usize = 512;
 
 // Cross ping state machine definintion
 sm! {
@@ -83,16 +85,52 @@ macro_rules! do_state_transition {
 
 #[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
 #[async_trait]
-pub trait CrossPingCheckTrait {
+pub trait UpgradeController: Send + Sync {
+    async fn check_if_upgrade_is_allowed(
+        &self,
+        session: Session,
+        public_key: PublicKey,
+    ) -> Result<bool, Error>;
+    async fn notify_failed_wg_connection(&self, public_key: PublicKey) -> Result<(), Error>;
+}
+
+#[async_trait]
+pub trait CrossPingCheckTrait: UpgradeController {
     async fn configure(&self, config: Option<Config>) -> Result<(), Error>;
     async fn get_validated_endpoints(
         &self,
     ) -> Result<HashMap<PublicKey, WireGuardEndpointCandidateChangeEvent>, Error>;
-    async fn notify_failed_wg_connection(&self, public_key: PublicKey) -> Result<(), Error>;
     async fn notify_successfull_wg_connection_upgrade(
         &self,
         public_key: PublicKey,
     ) -> Result<(), Error>;
+}
+
+#[cfg(any(test, feature = "mockall"))]
+mockall::mock! {
+    pub CrossPingCheckTrait {}
+
+    #[async_trait]
+    impl CrossPingCheckTrait for CrossPingCheckTrait {
+        async fn configure(&self, config: Option<Config>) -> Result<(), Error>;
+        async fn get_validated_endpoints(
+            &self,
+        ) -> Result<HashMap<PublicKey, WireGuardEndpointCandidateChangeEvent>, Error>;
+        async fn notify_successfull_wg_connection_upgrade(
+            &self,
+            public_key: PublicKey,
+        ) -> Result<(), Error>;
+    }
+
+    #[async_trait]
+    impl UpgradeController for CrossPingCheckTrait {
+        async fn check_if_upgrade_is_allowed(
+            &self,
+            session: Session,
+            public_key: PublicKey,
+        ) -> Result<bool, Error>;
+        async fn notify_failed_wg_connection(&self, public_key: PublicKey) -> Result<(), Error>;
+    }
 }
 
 pub struct CrossPingCheck<E: Backoff = ExponentialBackoff> {
@@ -169,6 +207,9 @@ pub struct State<E: Backoff> {
     ///
     /// A closure which produces exponential backoff helpers for the cross ping check sessions.
     exponential_backoff_helper_provider: ExponentialBackoffProvider<E>,
+
+    /// Session IDs received from other nodes in CMM requests
+    session_id_candidates: LruCache<Session, PublicKey>,
 }
 
 impl<E: Backoff> CrossPingCheck<E> {
@@ -193,6 +234,7 @@ impl<E: Backoff> CrossPingCheck<E> {
                 poll_timer,
                 ping_pong_handler,
                 exponential_backoff_helper_provider,
+                session_id_candidates: LruCache::new(UPGRADE_TIMEOUT, MAX_SESSION_CANDIDATES),
             }),
         }
     }
@@ -235,48 +277,25 @@ impl CrossPingCheckTrait for CrossPingCheck {
             task_exec!(&self.task, async move |s| {
                 // TODO: update logic to maintain all endpoints instead of last one
                 Ok(s.endpoint_connectivity_check_state
-                    .values()
-                    .filter_map(|v| match (v.state.clone(), v.last_validated_enpoint) {
-                        (PublishedByPublish(_), Some(ep)) => Some((
-                            v.public_key,
-                            WireGuardEndpointCandidateChangeEvent {
-                                public_key: v.public_key,
-                                remote_endpoint: ep,
-                                local_endpoint: v.local_endpoint_candidate.wg,
-                            },
-                        )),
-                        _ => None,
-                    })
+                    .iter()
+                    .filter_map(
+                        |(session, v)| match (v.state.clone(), v.last_validated_enpoint) {
+                            (PublishedByPublish(_), Some(ep)) => Some((
+                                v.public_key,
+                                WireGuardEndpointCandidateChangeEvent {
+                                    public_key: v.public_key,
+                                    remote_endpoint: ep,
+                                    local_endpoint: v.local_endpoint_candidate.wg,
+                                    session: *session,
+                                },
+                            )),
+                            _ => None,
+                        },
+                    )
                     .collect())
             })
             .await
             .map_err(|e| e.into());
-        res
-    }
-
-    async fn notify_failed_wg_connection(&self, public_key: PublicKey) -> Result<(), Error> {
-        let res: Result<(), Error> = task_exec!(&self.task, async move |s| {
-            let sessions = s
-                .endpoint_connectivity_check_state
-                .values_mut()
-                .filter(|v| v.public_key == public_key);
-            for session in sessions {
-                session.handle_endpoint_gone_notification().await?;
-
-                for e in s.endpoint_providers.iter() {
-                    if let Some(current_endpoints) = e.get_current_endpoints().await {
-                        if current_endpoints.iter().any(|current_endpoint| {
-                            *current_endpoint == session.local_endpoint_candidate
-                        }) {
-                            e.handle_endpoint_gone_notification().await;
-                        }
-                    }
-                }
-            }
-            Ok(())
-        })
-        .await
-        .map_err(|e| e.into());
         res
     }
 
@@ -372,6 +391,7 @@ impl<E: Backoff> State<E> {
         // Create sessions for all new nodes
         for added_node in added_nodes {
             for endpoint in endpoints.iter() {
+                let session_id = rand::random::<Session>();
                 let session = EndpointConnectivityCheckState {
                     public_key: added_node,
                     local_endpoint_candidate: endpoint.clone(),
@@ -380,8 +400,8 @@ impl<E: Backoff> State<E> {
                     last_validated_enpoint: None,
                     last_rx_time_provider: self.last_rx_time_provider.clone(),
                     exponential_backoff: (self.exponential_backoff_helper_provider)()?,
+                    local_session: session_id,
                 };
-                let session_id = rand::random::<Session>();
 
                 // Store freshly created connectivity check session
                 telio_log_debug!("New session created: {:?} -> {:?}", session_id, session);
@@ -433,16 +453,17 @@ impl<E: Backoff> State<E> {
         // Create new sessions for all added endpoints
         for added_endpoint in added_endpoints {
             for node in self.gather_all_nodes()? {
+                let session_id = rand::random::<Session>();
                 let session = EndpointConnectivityCheckState {
                     public_key: node,
                     local_endpoint_candidate: added_endpoint.clone(),
+                    local_session: session_id,
                     state: Machine::new(Disconnected).as_enum(),
                     last_state_transition: Instant::now(),
                     last_validated_enpoint: None,
                     last_rx_time_provider: self.last_rx_time_provider.clone(),
                     exponential_backoff: (self.exponential_backoff_helper_provider)()?,
                 };
-                let session_id = rand::random::<Session>();
 
                 // Store freshly created connectivity check session
                 telio_log_debug!("New session created: {:?} -> {:?}", session_id, session);
@@ -507,6 +528,8 @@ impl<E: Backoff> State<E> {
                 }
 
                 let remote_session_id = message.get_session();
+                self.session_id_candidates
+                    .insert(remote_session_id, public_key);
 
                 // Next format and exchange CallMeMabe response message
                 let call_me_maybe_response = CallMeMaybeMsg::new(
@@ -576,6 +599,54 @@ impl<E: Backoff> State<E> {
         }
 
         Ok(())
+    }
+
+    pub fn check_if_upgrade_is_allowed(&mut self, session: Session, public_key: PublicKey) -> bool {
+        match self.session_id_candidates.remove(&session) {
+            Some(pk) => pk == public_key,
+            None => false,
+        }
+    }
+}
+
+#[async_trait]
+impl UpgradeController for CrossPingCheck {
+    async fn check_if_upgrade_is_allowed(
+        &self,
+        session: Session,
+        public_key: PublicKey,
+    ) -> Result<bool, Error> {
+        task_exec!(&self.task, async move |s| Ok(
+            s.check_if_upgrade_is_allowed(session, public_key)
+        ))
+        .await
+        .map_err(|e| e.into())
+    }
+
+    async fn notify_failed_wg_connection(&self, public_key: PublicKey) -> Result<(), Error> {
+        let res: Result<(), Error> = task_exec!(&self.task, async move |s| {
+            let sessions = s
+                .endpoint_connectivity_check_state
+                .values_mut()
+                .filter(|v| v.public_key == public_key);
+            for session in sessions {
+                session.handle_endpoint_gone_notification().await?;
+
+                for e in s.endpoint_providers.iter() {
+                    if let Some(current_endpoints) = e.get_current_endpoints().await {
+                        if current_endpoints.iter().any(|current_endpoint| {
+                            *current_endpoint == session.local_endpoint_candidate
+                        }) {
+                            e.handle_endpoint_gone_notification().await;
+                        }
+                    }
+                }
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|e| e.into());
+        res
     }
 }
 
@@ -656,6 +727,7 @@ impl<E: Backoff> Runtime for State<E> {
 pub struct EndpointConnectivityCheckState<E: Backoff> {
     public_key: PublicKey,
     local_endpoint_candidate: EndpointCandidate,
+    local_session: Session,
     state: EndpointState::Variant,
     last_state_transition: Instant,
     last_validated_enpoint: Option<SocketAddr>,
@@ -780,6 +852,7 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
                             public_key: self.public_key,
                             remote_endpoint,
                             local_endpoint: self.local_endpoint_candidate.wg,
+                            session: self.local_session,
                         };
                         telio_log_info!("Publishing validated WG endpoint: {:?}", wg_publish_event);
                         wg_ep_publisher.send(wg_publish_event).await?;
@@ -1066,6 +1139,7 @@ mod tests {
                 wg: endpoint,
                 udp: endpoint,
             },
+            local_session: rand::random(),
             state,
             last_state_transition: Instant::now(),
             last_validated_enpoint: None,
@@ -1432,7 +1506,6 @@ mod tests {
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080),
             last_rx_time_provider_mock.clone(),
         );
-        let pk = endpoint_connectivity_check_state.public_key;
         last_rx_time_provider_mock
             .lock()
             .await
@@ -1497,5 +1570,100 @@ mod tests {
         intercoms_rx
             .try_recv()
             .expect_err("CMM message should not be sent");
+    }
+
+    #[tokio::test]
+    async fn upgrade_is_allowed_only_for_sessions_received_in_cmm() {
+        let (checker, channels) = prepare_checker_test().unwrap();
+        let addrs = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080);
+        let session: Session = 42;
+        let pub_key = PublicKey(*b"ABBBBBBBBBBBBBBBBBBBAAAAAAAAAAAA");
+        assert!(!checker
+            .check_if_upgrade_is_allowed(session, pub_key)
+            .await
+            .unwrap());
+        channels
+            .endpoint_change_subscriber
+            .send((
+                EndpointProviderType::LocalInterfaces,
+                vec![EndpointCandidate {
+                    wg: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234),
+                    udp: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234),
+                }],
+            ))
+            .await
+            .unwrap();
+
+        wait_for_tick().await;
+
+        let mut peer = Peer::default();
+
+        peer.base.public_key = pub_key;
+
+        checker
+            .configure(Some(Config {
+                this: PeerBase::default(),
+                peers: Some(vec![peer]),
+                derp_servers: None,
+                dns: None,
+            }))
+            .await
+            .unwrap();
+
+        let msg = CallMeMaybeMsg::new(true, [addrs].iter().cloned(), session);
+        channels.intercoms.tx.send((pub_key, msg)).await.unwrap();
+        wait_for_tick().await;
+        assert!(checker
+            .check_if_upgrade_is_allowed(session, pub_key)
+            .await
+            .unwrap());
+    }
+
+    #[tokio::test]
+    async fn upgrade_is_rejected_when_session_is_correct_but_key_is_wrong() {
+        let (checker, channels) = prepare_checker_test().unwrap();
+        let addrs = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080);
+        let session: Session = 42;
+        let pub_key = PublicKey(*b"ABBBBBBBBBBBBBBBBBBBAAAAAAAAAAAA");
+        assert!(!checker
+            .check_if_upgrade_is_allowed(session, pub_key)
+            .await
+            .unwrap());
+        channels
+            .endpoint_change_subscriber
+            .send((
+                EndpointProviderType::LocalInterfaces,
+                vec![EndpointCandidate {
+                    wg: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234),
+                    udp: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234),
+                }],
+            ))
+            .await
+            .unwrap();
+
+        wait_for_tick().await;
+
+        let mut peer = Peer::default();
+
+        peer.base.public_key = pub_key;
+
+        checker
+            .configure(Some(Config {
+                this: PeerBase::default(),
+                peers: Some(vec![peer]),
+                derp_servers: None,
+                dns: None,
+            }))
+            .await
+            .unwrap();
+
+        let msg = CallMeMaybeMsg::new(true, [addrs].iter().cloned(), session);
+        channels.intercoms.tx.send((pub_key, msg)).await.unwrap();
+        wait_for_tick().await;
+        let other_pub_key = PublicKey(*b"CCCCBBBBBBBBBBBBBBBBAAAAAAAAAAAA");
+        assert!(!checker
+            .check_if_upgrade_is_allowed(session, other_pub_key)
+            .await
+            .unwrap());
     }
 }

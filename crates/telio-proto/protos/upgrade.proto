@@ -1,5 +1,17 @@
 syntax = "proto3";
 
+enum Decision {
+	Accepted = 0;
+	RejectedDueToUnknownSession = 1;
+	RejectedDueToConcurrentUpgrade = 2;
+}
+
 message Upgrade {
 	string endpoint = 1;
+	fixed64 session = 2;
+}
+
+message UpgradeDecision {
+	Decision decision = 1;
+	fixed64 session = 2;
 }
