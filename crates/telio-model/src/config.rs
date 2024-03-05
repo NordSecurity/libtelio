@@ -4,9 +4,10 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::{from_value, Error, Value};
 use telio_utils::{telio_log_error, telio_log_warn, Hidden};
+use tokio::time::Instant;
 
 use std::{
-    net::{IpAddr, Ipv4Addr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     ops::Deref,
 };
 
@@ -163,6 +164,34 @@ pub enum RelayConnectionChangeReason {
     ConnectionTerminatedByServer = 202,
     /// OS-level network error (e.g. socket failure)
     NetworkError = 203,
+}
+
+/// An event informing analytics about change in the Derp server state
+#[derive(Clone, Debug)]
+pub struct DerpAnalyticsEvent {
+    /// Derp analytic event uses server address as its ID
+    pub server_address: SocketAddr,
+
+    /// Current Derp server state
+    pub state: RelayState,
+
+    /// Reason why the Derp server state has changed
+    pub reason: RelayConnectionChangeReason,
+
+    /// Timestamp when event was created
+    pub timestamp: Instant,
+}
+
+impl DerpAnalyticsEvent {
+    /// Creates a new Derp analytics event for a given current Derp server state and reason
+    pub fn new(server: &Server, reason: RelayConnectionChangeReason) -> DerpAnalyticsEvent {
+        DerpAnalyticsEvent {
+            server_address: SocketAddr::new(server.ipv4.into(), server.relay_port),
+            state: server.conn_state,
+            reason,
+            timestamp: Instant::now(),
+        }
+    }
 }
 
 /// [PartialConfig] is similar to [Config] but allows for `peers` to contain invalid entries.

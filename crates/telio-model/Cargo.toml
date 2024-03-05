@@ -23,6 +23,7 @@ serde_with.workspace = true
 serde_json.workspace = true
 strum.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 
 telio-crypto.workspace = true
 telio-utils.workspace = true

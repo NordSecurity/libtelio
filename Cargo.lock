@@ -4223,6 +4223,7 @@ dependencies = [
  "telio-crypto",
  "telio-utils",
  "thiserror",
+ "tokio",
  "tracing",
 ]
 
