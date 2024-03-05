@@ -3,6 +3,7 @@ import libtelio  # type: ignore
 import Pyro5.api  # type: ignore
 import Pyro5.server  # type: ignore
 import sys
+import datetime
 import time
 from typing import List
 
@@ -30,6 +31,17 @@ class TelioEventCbImpl(libtelio.TelioEventCb):
             return self._events.pop(0)
         return None
 
+    
+class TelioLoggerCbImpl(libtelio.TelioLoggerCb):
+    def __init__(self):
+        self._log_file = open("tcli.log", "a")
+    
+    def __del__(self):
+        self._log_file.close()
+
+    def log(self, log_level, payload):
+        self._log_file.write(f"{datetime.datetime.now()} {log_level} {payload}\n")
+
 
 @Pyro5.api.expose
 @Pyro5.server.behavior(instance_mode="single")
@@ -37,6 +49,7 @@ class LibtelioWrapper:
     def __init__(self):
         self._libtelio = None
         self._event_cb = TelioEventCbImpl()
+        libtelio.set_global_logger(libtelio.TelioLogLevel.DEBUG, TelioLoggerCbImpl())
 
     @serialize_error
     def create(self, features: str):
