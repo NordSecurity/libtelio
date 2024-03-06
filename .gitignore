@@ -15,6 +15,7 @@ tcli.log
 /nat-lab/tests/uniffi/libtelio.py
 /nat-lab/tests/uniffi/libuniffi_libtelio.so
 /nat-lab/tests/uniffi/uniffi_libtelio.dll
+/src/libtelio.py
 /3rd-party/wireguard-go/*.lib
 /3rd-party/wireguard-go/*.h
 /3rd-party/wireguard-go/*.a

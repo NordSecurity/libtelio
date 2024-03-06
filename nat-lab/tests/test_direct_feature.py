@@ -2,6 +2,8 @@ import pytest
 from contextlib import AsyncExitStack
 from helpers import setup_environment, SetupParameters
 from telio_features import TelioFeatures, Direct
+import asyncio
+from telio import State
 
 ALL_DIRECT_FEATURES = ["upnp", "local", "stun"]
 EMPTY_PROVIDER = [""]  #: List[str] = []
@@ -14,6 +16,9 @@ async def test_default_direct_features() -> None:
             exit_stack,
             [SetupParameters(features=TelioFeatures(direct=Direct(providers=None)))],
         ) as env:
+            client = env.clients[0]
+            await client.wait_for_state_on_any_derp([State.Connected])
+
             started_tasks = env.clients[0].get_runtime().get_started_tasks()
             assert "UpnpEndpointProvider" not in started_tasks
             assert "LocalInterfacesEndpointProvider" in started_tasks
@@ -31,6 +36,9 @@ async def test_enable_all_direct_features() -> None:
                 )
             ],
         ) as env:
+            client = env.clients[0]
+            await client.wait_for_state_on_any_derp([State.Connected])
+
             started_tasks = env.clients[0].get_runtime().get_started_tasks()
             assert "UpnpEndpointProvider" in started_tasks
             assert "LocalInterfacesEndpointProvider" in started_tasks
@@ -48,6 +56,9 @@ async def test_check_features_with_empty_direct_providers() -> None:
                 )
             ],
         ) as env:
+            client = env.clients[0]
+            await client.wait_for_state_on_any_derp([State.Connected])
+            
             started_tasks = env.clients[0].get_runtime().get_started_tasks()
             assert "UpnpEndpointProvider" not in started_tasks
             assert "LocalInterfacesEndpointProvider" not in started_tasks
