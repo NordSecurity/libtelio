@@ -22,7 +22,7 @@ pub mod error;
 mod nurse;
 
 /// Connectivity data aggregator module
-mod aggregator;
+pub mod aggregator;
 
 mod heartbeat;
 mod qos;

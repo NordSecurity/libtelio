@@ -14,7 +14,7 @@ md5 = "0.7.0"
 async-trait.workspace = true
 crypto_box.workspace = true
 futures.workspace = true
-tracing.workspace = true
+mockall = { workspace = true, optional = true }
 nat-detect.workspace = true
 rand.workspace = true
 serde.workspace = true
@@ -24,6 +24,7 @@ socket2.workspace = true
 surge-ping.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["net", "sync"] }
+tracing.workspace = true
 uuid.workspace = true
 
 telio-crypto.workspace = true

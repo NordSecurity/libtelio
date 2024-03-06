@@ -4,9 +4,10 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::{from_value, Error, Value};
 use telio_utils::{telio_log_error, telio_log_warn, Hidden};
+use tokio::time::Instant;
 
 use std::{
-    net::{IpAddr, Ipv4Addr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     ops::Deref,
 };
 
@@ -52,7 +53,7 @@ pub struct DnsConfig {
 }
 
 /// The currrent state of our connection to derp server
-#[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RelayState {
     /// Disconnected from the Derp server
@@ -141,6 +142,54 @@ impl Default for Server {
             weight: 0,
             use_plain_text: false,
             conn_state: RelayState::Disconnected,
+        }
+    }
+}
+
+/// Possible relay server connectivity change reasons
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+pub enum RelayConnectionChangeReason {
+    // Numbers smaller than 200 for configuration changes
+    /// Generic reason used when everything goes right
+    ConfigurationChange = 101,
+    /// The connection was explicitely closed by user
+    DisabledByUser = 102,
+    /// Some kind of unexpected internal error
+    ClientError = 103,
+
+    // Numbers larger than 200 for network problems
+    /// Derp server connection timed out
+    ConnectionTimeout = 201,
+    /// Server rejected the connection
+    ConnectionTerminatedByServer = 202,
+    /// OS-level network error (e.g. socket failure)
+    NetworkError = 203,
+}
+
+/// An event informing analytics about change in the Derp server state
+#[derive(Clone, Debug)]
+pub struct DerpAnalyticsEvent {
+    /// Derp analytic event uses server address as its ID
+    pub server_address: SocketAddr,
+
+    /// Current Derp server state
+    pub state: RelayState,
+
+    /// Reason why the Derp server state has changed
+    pub reason: RelayConnectionChangeReason,
+
+    /// Timestamp when event was created
+    pub timestamp: Instant,
+}
+
+impl DerpAnalyticsEvent {
+    /// Creates a new Derp analytics event for a given current Derp server state and reason
+    pub fn new(server: &Server, reason: RelayConnectionChangeReason) -> DerpAnalyticsEvent {
+        DerpAnalyticsEvent {
+            server_address: SocketAddr::new(server.ipv4.into(), server.relay_port),
+            state: server.conn_state,
+            reason,
+            timestamp: Instant::now(),
         }
     }
 }

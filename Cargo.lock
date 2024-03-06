@@ -4223,6 +4223,7 @@ dependencies = [
  "telio-crypto",
  "telio-utils",
  "thiserror",
+ "tokio",
  "tracing",
 ]
 
@@ -4245,6 +4246,7 @@ dependencies = [
  "futures",
  "histogram",
  "md5",
+ "mockall",
  "nat-detect",
  "protobuf-codegen-pure",
  "rand",
