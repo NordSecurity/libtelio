@@ -2418,6 +2418,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "mockall_double"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1ca96e5ac35256ae3e13536edd39b172b88f41615e1d7b653c8ad24524113e8"
+dependencies = [
+ "cfg-if",
+ "proc-macro2 1.0.78",
+ "quote 1.0.35",
+ "syn 2.0.48",
+]
+
+[[package]]
 name = "modifier"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4431,6 +4443,7 @@ dependencies = [
  "httparse",
  "hyper",
  "libc",
+ "mockall_double",
  "ntest",
  "num_enum",
  "rand",
@@ -4443,6 +4456,7 @@ dependencies = [
  "strum",
  "telio-crypto",
  "telio-model",
+ "telio-nurse",
  "telio-proto",
  "telio-sockets",
  "telio-task",
