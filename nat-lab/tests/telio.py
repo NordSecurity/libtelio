@@ -753,17 +753,13 @@ class Client:
             )
         ) as event:
             self.get_runtime().allowed_pub_keys.add(public_key)
+            self.get_proxy().connect_to_exit_node(
+                public_key=public_key,
+                allowed_ips="",
+                endpoint="{ip}:{port}",
+            )
             await asyncio.wait_for(
-                asyncio.gather(
-                    *[
-                        self.get_proxy().connect_to_exit_node(
-                            public_key=public_key,
-                            allowed_ips="",
-                            endpoint="{ip}:{port}",
-                        ),
-                        event,
-                    ]
-                ),
+                event,
                 timeout,
             )
 
@@ -777,10 +773,10 @@ class Client:
                 is_vpn=True,
             )
         ) as event:
+            self.get_proxy().disconnect_from_exit_nodes()
             await asyncio.wait_for(
                 asyncio.gather(
                     *[
-                        self.get_proxy().disconnect_from_exit_nodes(),
                         event,
                         self.get_router().delete_vpn_route(),
                     ]
@@ -794,10 +790,10 @@ class Client:
         async with asyncio_util.run_async_context(
             self.wait_for_event_peer(public_key, [State.Connected], list(PathType))
         ) as event:
+            self.get_proxy().disconnect_from_exit_nodes()
             await asyncio.wait_for(
                 asyncio.gather(
                     *[
-                        self.get_proxy().disconnect_from_exit_nodes(),
                         event,
                         self.get_router().delete_vpn_route(),
                     ]
@@ -832,15 +828,11 @@ class Client:
                 public_key, [State.Connected], list(PathType), is_exit=True
             )
         ) as event:
+            self.get_proxy().connect_to_exit_node(
+                public_key=public_key, allowed_ips="", endpoint=""
+            )
             await asyncio.wait_for(
-                asyncio.gather(
-                    *[
-                        self.get_proxy().connect_to_exit_node(
-                            public_key=public_key, allowed_ips="", endpoint=""
-                        ),
-                        event,
-                    ]
-                ),
+                event,
                 timeout,
             )
 
