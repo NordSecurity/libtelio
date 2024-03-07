@@ -12,6 +12,7 @@
 * LLT-4406: Implement error handling for proxy egress
 * LLT-4980: Introduce synchronization for the endpoint map in telio-proxy
 * LLT-5002: Fix preshared key parsing logic
+* LLT-5004: Wireguard go oscillation
 
 <br>
 
