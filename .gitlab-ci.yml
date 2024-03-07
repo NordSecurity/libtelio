@@ -15,4 +15,4 @@ libtelio-build-pipeline:
 
   trigger:
     project: $LIBTELIO_BUILD_PROJECT_PATH
-    branch: snapshot-android-builds
+    branch: snapshot-android-builds-test
