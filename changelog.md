@@ -4,6 +4,7 @@
 * LLT-4915: Update the moose tracker to v1.0.0-libtelioApp
 * LLT-4978: Bump moose tracker to v2.0.0-libtelioApp
 * LLT-4970: PQ VPN is enabled by calling `telio_connect_to_exit_node_postquantum()`
+* LLT-5002: Fix preshared key parsing logic
 
 <br>
 

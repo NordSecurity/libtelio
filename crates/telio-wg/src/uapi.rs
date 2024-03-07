@@ -559,9 +559,13 @@ fn parse_peer<R: Read>(
                     }
                 }
                 "preshared_key" => {
-                    peer.preshared_key = Some(val.parse().map_err(|e: KeyDecodeError| {
+                    let preshared: PresharedKey = val.parse().map_err(|e: KeyDecodeError| {
                         Error::ParsingError("preshared_key", e.to_string())
-                    })?);
+                    })?;
+
+                    if preshared.0 != [0; 32] {
+                        peer.preshared_key = Some(preshared);
+                    }
                 }
                 "public_key" => {
                     break (
