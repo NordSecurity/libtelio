@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import argparse
+import sys
 
 
 def replace_string_in_file(file_path: str, original_str: str, new_str: str):
@@ -23,12 +24,12 @@ def replace_string_in_file(file_path: str, original_str: str, new_str: str):
             raise ValueError("New string is longer than the original string")
 
         # If the new string is shorter than the original, fill with null terminators
-        null_terminators = ""
+        null_terminators = b""
         if len(new_str) < len(original_str):
-            null_terminators = "\0" * (len(original_str) - len(new_str))
+            null_terminators = b"\x00" * (len(original_str) - len(new_str))
 
         content = content.replace(
-            original_str.encode(), (new_str + null_terminators).encode()
+            original_str.encode(), new_str.encode() + null_terminators
         )
 
         # Move the file pointer to the beginning and write the modified content
@@ -41,8 +42,10 @@ def main(args):
     try:
         replace_string_in_file(args.file, args.text, args.new_text)
         print("Replacement successful!")
+        return 0
     except ValueError as e:
         print(f"Error: {e}")
+        return 1
 
 
 if __name__ == "__main__":
@@ -54,4 +57,4 @@ if __name__ == "__main__":
     parser.add_argument(
         "-n", "--new_text", type=str, required=True, help="Original text replacement"
     )
-    main(parser.parse_args())
+    sys.exit(main(parser.parse_args()))

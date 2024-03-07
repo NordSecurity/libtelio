@@ -37,7 +37,7 @@ class TestReplaceStringInFile(unittest.TestCase):
 
         # Test when there are multiple original strings
         original_str = "original"
-        new_str = "new_string"
+        new_str = "lanigiro"
         with self.assertRaises(ValueError):
             replace_string_in_file(temp_file.name, original_str, new_str)
 
