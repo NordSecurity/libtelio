@@ -45,6 +45,17 @@ func PlatformSpecific_GetLUID(entry *TunnelEntry) C.size_t {
 	return C.size_t(entry.tun.LUID())
 }
 
+func PlatformSpecific_GetProxyListenPort(entry *TunnelEntry) uint16 {
+	bind, ok := entry.bind.(*Binder)
+	if ok {
+		return bind.local_port
+	} else {
+		errorf("Was not able to get windows Binder for entry %v", entry)
+		return 0
+	}
+
+}
+
 func PlatformSpecific_Bind(b Binder) {
 	if runtime.GOOS == "windows" {
 		if b.watcher.default4 != 0 {
@@ -66,6 +77,7 @@ type Binder struct {
 	FullBind
 	local_bind FullBind
 	watcher    *interfaceWatcher
+	local_port uint16
 }
 
 func (b Binder) Open(port uint16) (fns []conn.ReceiveFunc, actualPort uint16, err error) {
@@ -74,12 +86,14 @@ func (b Binder) Open(port uint16) (fns []conn.ReceiveFunc, actualPort uint16, er
 		return recv_fns, actual_port, err
 	}
 
-	recv_fns_local, actual_port, err := b.local_bind.OpenOnLocalhost(port)
+	recv_fns_local, local_port, err := b.local_bind.OpenOnLocalhost(port)
 	recv_fns = append(recv_fns, recv_fns_local...)
 
 	if err != nil {
 		return recv_fns, actual_port, err
 	}
+
+	b.local_port = local_port
 
 	PlatformSpecific_Bind(b)
 
@@ -104,5 +118,6 @@ func PlatformSpecific_GetBind(watcher *interfaceWatcher) conn.Bind {
 		NewDefaultBind().(FullBind),
 		NewDefaultBind(),
 		watcher,
+		0,
 	}
 }

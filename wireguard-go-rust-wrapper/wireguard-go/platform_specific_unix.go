@@ -26,6 +26,10 @@ func PlatformSpecific_GetLUID(entry *TunnelEntry) C.size_t {
 	return C.size_t(entry.handle)
 }
 
+func PlatformSpecific_GetProxyListenPort(_ *TunnelEntry) uint16 {
+	return 0
+}
+
 func PlatformSpecific_Bind(b Binder) {}
 
 func PlatformSpecific_GetBind(_ *interfaceWatcher) conn.Bind {
