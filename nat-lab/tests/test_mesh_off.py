@@ -53,8 +53,8 @@ async def test_mesh_off(
             "tun10",
         ]).execute()
 
-        dig_stdout = process.get_stdout()
+        wg_show_stdout = process.get_stdout()
 
         assert (
-            "peer:" not in dig_stdout.strip().split()
-        ), f"There are leftover WireGuard peers after mesh is set to off: {dig_stdout}"
+            "peer:" not in wg_show_stdout.strip().split()
+        ), f"There are leftover WireGuard peers after mesh is set to off: {wg_show_stdout}"
