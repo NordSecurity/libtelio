@@ -1,8 +1,8 @@
 #[cfg(windows)]
 use wg_go_rust_wrapper::{
-    wg_go_free_cmd_res, wg_go_get_adapter_luid, wg_go_get_wg_socket, wg_go_log_cb, wg_go_logger_fn,
-    wg_go_send_uapi_cmd, wg_go_start_named, wg_go_start_with_tun, wg_go_stop,
-    CallWindowsStaticGoRuntimeInit,
+    wg_go_free_cmd_res, wg_go_get_adapter_luid, wg_go_get_proxy_listen_port, wg_go_get_wg_socket,
+    wg_go_log_cb, wg_go_logger_fn, wg_go_send_uapi_cmd, wg_go_start_named, wg_go_start_with_tun,
+    wg_go_stop, CallWindowsStaticGoRuntimeInit,
 };
 
 pub struct WireguardGo {
@@ -103,7 +103,19 @@ impl WireguardGo {
 impl Adapter for WireguardGo {
     async fn send_uapi_cmd(&self, cmd: &Cmd) -> Result<Response, AdapterError> {
         let res = self.send_uapi_cmd_str(&cmd.to_string()).await;
-        Ok(uapi::response_from_str(&res)?)
+        let mut res = uapi::response_from_str(&res)?;
+
+        // Augment interface with aditional info on get
+        if matches!(cmd, Cmd::Get) {
+            let port = unsafe { wg_go_get_proxy_listen_port(self.handle) };
+            if port != 0 {
+                if let Some(interface) = &mut res.interface {
+                    interface.proxy_listen_port = Some(port);
+                }
+            }
+        }
+
+        Ok(res)
     }
 
     fn get_adapter_luid(&self) -> u64 {

@@ -19,6 +19,7 @@
 * LLT-4970: PQ VPN is enabled by calling `telio_connect_to_exit_node_postquantum()`
 * LLT-4981: Add upgrade decision message
 * LLT-5002: Fix preshared key parsing logic
+* LLT-5004: Wireguard go oscillation
 
 <br>
 

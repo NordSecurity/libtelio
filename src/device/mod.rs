@@ -1546,10 +1546,10 @@ impl Runtime {
 
         // Update for proxy and derp config
         if let Some(config) = config {
-            let wg_port = self
+            let wg_port_for_proxy = self
                 .entities
                 .wireguard_interface
-                .wait_for_listen_port(Duration::from_secs(1))
+                .wait_for_proxy_listen_port(Duration::from_secs(1))
                 .await?;
 
             let meshnet_entities = if let Some(entities) = self.entities.meshnet.take() {
@@ -1559,7 +1559,7 @@ impl Runtime {
             };
 
             let proxy_config = ProxyConfig {
-                wg_port: Some(wg_port),
+                wg_port: Some(wg_port_for_proxy),
                 peers: peers.clone(),
             };
 

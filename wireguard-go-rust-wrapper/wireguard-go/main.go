@@ -317,4 +317,18 @@ func wg_go_get_adapter_luid(handle C.int32_t) C.uint64_t {
 	return C.uint64_t(luid)
 }
 
+//export wg_go_get_proxy_listen_port
+func wg_go_get_proxy_listen_port(handle C.int32_t) C.uint16_t {
+	defer logStackTraceOnPanic()
+
+	entry, err := get_tunnel_entry(int32(handle))
+	if err != nil || entry == nil {
+		errorf("entry is nil or error: %v", err)
+		return 0
+	}
+
+	port := PlatformSpecific_GetProxyListenPort(entry)
+	return C.uint16_t(port)
+}
+
 func main() {}

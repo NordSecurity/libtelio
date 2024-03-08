@@ -10,6 +10,8 @@ extern "C" {
     pub fn wg_go_free_cmd_res(resp: *const c_char);
     pub fn wg_go_stop(handle: i32);
     pub fn wg_go_get_adapter_luid(handle: i32) -> u64;
+    /// Get a listen port bound to local uapi port
+    pub fn wg_go_get_proxy_listen_port(handle: i32) -> u16;
 }
 
 #[allow(non_camel_case_types)]
