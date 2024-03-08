@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package daemon_ipc;
+
+// The greeting service definition.
+service Ipc {
+  // Sends a greeting
+  rpc SendCommand (CommandRequest) returns (CommandReply) {}
+}
+
+// The request message containing the user's name.
+message CommandRequest {
+  string message = 1;
+}
+
+// The response message containing the greetings
+message CommandReply {
+  string message = 1;
+}

@@ -19,11 +19,11 @@ use tokio::{
 use tracing::error;
 use tracing::level_filters::LevelFilter;
 use tracing_appender;
-use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber;
 
 use crate::nord::{Error as NordError, Nord, OAuth};
 
+use std::fmt::Display;
 use std::fs::File;
 use std::str::FromStr;
 use std::time::SystemTime;
@@ -116,9 +116,10 @@ pub struct Cli {
     meshmap: Option<MeshMap>,
     derp_client: DerpClient,
     derp_server: Arc<Mutex<Option<Server>>>,
-    _tracing_worker_guard: WorkerGuard,
+    // _tracing_worker_guard: WorkerGuard,
 }
 
+#[derive(Debug)]
 pub enum Resp {
     Info(String),
     Event {
@@ -127,6 +128,25 @@ pub enum Resp {
     },
     Error(Box<Error>),
     Quit,
+}
+
+impl Display for Resp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Resp::Info(msg) => {
+                write!(f, "INFO: {}", msg)
+            }
+            Resp::Error(e) => {
+                write!(f, "ERROR: {:?}", e)
+            }
+            Resp::Quit => {
+                write!(f, "QUIT")
+            }
+            Resp::Event { ts, event } => {
+                write!(f, "EVENT: {:?}:{:?}", ts, event)
+            }
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -338,7 +358,7 @@ impl Cli {
         derp_server: Arc<Mutex<Option<Server>>>,
     ) -> anyhow::Result<Self> {
         let (non_blocking_writer, _tracing_worker_guard) =
-            tracing_appender::non_blocking(File::create("tcli.log")?);
+            tracing_appender::non_blocking(File::create("tcli.log").unwrap());
         tracing_subscriber::fmt()
             .with_max_level(LevelFilter::TRACE)
             .with_writer(non_blocking_writer)
@@ -395,7 +415,6 @@ impl Cli {
             meshmap: None,
             derp_client: DerpClient::new(),
             derp_server,
-            _tracing_worker_guard,
         })
     }
 
@@ -741,7 +760,7 @@ impl Cli {
     }
 
     fn exec_nat_detect(&mut self, cmd: DetectCmd) -> Vec<Resp> {
-        let mut res = Vec::new();
+        let res = Vec::new();
 
         match cmd {
             DetectCmd::Address {
@@ -751,13 +770,13 @@ impl Cli {
                 stun_server.parse::<IpAddr>().expect("Invalid IPv4 address"),
                 stun_port,
             )) {
-                Ok(data) => {
-                    cli_res!(res; (i"Public Address: {:?}", data.public_ip));
-                    cli_res!(res; (i"Nat Type: {:?}", data.nat_type));
+                Ok(_data) => {
+                    // cli_res!(res; (i"Public Address: {:?}", data.public_ip));
+                    // cli_res!(res; (i"Nat Type: {:?}", data.nat_type));
                 }
 
-                Err(error) => {
-                    cli_res!(res; (i"problem: {}", error));
+                Err(_error) => {
+                    // cli_res!(res; (i"problem: {}", error));
                 }
             },
         }

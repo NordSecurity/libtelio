@@ -1,8 +1,6 @@
 #![allow(unwrap_check)]
 
-mod cli;
-mod derp;
-mod nord;
+use common::{self, cli};
 
 use anyhow::{anyhow, Result};
 use clap::Parser;
@@ -93,7 +91,7 @@ fn main() -> Result<()> {
                     _ => (),
                 },
                 Error(e) => {
-                    println!("error: {e:#?}")
+                    println!("error: {}", e)
                 }
                 Quit => {
                     if let Some(idx) = message_idx {

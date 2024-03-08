@@ -159,8 +159,8 @@ impl Nord {
         let login = LoginInfo {
             token: token.to_string(),
         };
-
-        let client = Client::new();
+        let client = Client::builder().build();
+        let client = client.unwrap();
         let creds: Creds = client
             .get(&format!("{}/users/services/credentials", API_BASE))
             .header(header::AUTHORIZATION, format!("token:{}", &login.token))

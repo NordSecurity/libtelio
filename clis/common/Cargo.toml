@@ -1,24 +1,24 @@
 [package]
-name = "tcli"
+name = "common"
 version = "0.1.0"
-edition = "2018"
-license = "GPL-3.0-only"
-repository = "https://github.com/NordSecurity/libtelio"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dirs = "4.0.0"
-regex = "1.5.5"
 reqwest = { version = "0.11.16", default-features = false, features = [
     "json",
     "blocking",
     "rustls-tls",
 ] }
-rustyline = "11.0.0"
 shellwords = "1.1.0"
+dirs = "4.0.0"
 
-anyhow.workspace = true
-base64.workspace = true
 clap.workspace = true
+tokio = { workspace = true, features = ["full"] }
+anyhow.workspace = true
+
+base64.workspace = true
 crypto_box.workspace = true
 hex.workspace = true
 ipnetwork.workspace = true
@@ -33,7 +33,6 @@ serde_with.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 time.workspace = true
-tokio = { workspace = true, features = ["full"] }
 
 telio = { path = "../.." }
 telio-crypto.workspace = true
@@ -46,5 +45,3 @@ telio-task.workspace = true
 telio-traversal.workspace = true
 telio-utils.workspace = true
 telio-wg.workspace = true
-
-common = { path = "../common" }

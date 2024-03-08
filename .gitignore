@@ -24,6 +24,7 @@ tcli.log
 /3rd-party/wireguard-go/interfacewatcher_windows.go
 /build/
 /dist/
+/daemon/
 target/
 /target-android/
 /target-linux/

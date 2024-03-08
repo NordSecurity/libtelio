@@ -2,7 +2,7 @@
 rustflags = [ "-Aunknown_lints" ]
 
 [target.'cfg(unix)']
-runner = './test_runner.sh'
+runner = 'sudo -E ./test_runner.sh'
 
 [net]
 git-fetch-with-cli = true
