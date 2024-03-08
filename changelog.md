@@ -1,3 +1,10 @@
+### UNRELEASED
+---
+* LLT-5002: Fix preshared key parsing logic
+* LLT-5004: Wireguard go oscillation
+
+<br>
+
 ### v4.2.5
 ---
 * LLT-4908: Lowered DNS TTL time for nicknames and NXDomain responses
@@ -11,7 +18,6 @@
 * LLT-4870: Bring back PQ
 * LLT-4406: Implement error handling for proxy egress
 * LLT-4980: Introduce synchronization for the endpoint map in telio-proxy
-* LLT-5002: Fix preshared key parsing logic
 
 <br>
 
