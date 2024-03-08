@@ -17,12 +17,10 @@ use tokio::{
     time::{sleep, Duration},
 };
 use tracing::error;
-use tracing::level_filters::LevelFilter;
-use tracing_appender::non_blocking::WorkerGuard;
 
 use crate::nord::{Error as NordError, Nord, OAuth};
 
-use std::fs::File;
+use std::fmt::Display;
 use std::str::FromStr;
 use std::time::SystemTime;
 use std::{
@@ -114,9 +112,9 @@ pub struct Cli {
     meshmap: Option<MeshMap>,
     derp_client: DerpClient,
     derp_server: Arc<Mutex<Option<Server>>>,
-    _tracing_worker_guard: WorkerGuard,
 }
 
+#[derive(Debug)]
 pub enum Resp {
     Info(String),
     Event {
@@ -125,6 +123,25 @@ pub enum Resp {
     },
     Error(Box<Error>),
     Quit,
+}
+
+impl Display for Resp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Resp::Info(msg) => {
+                write!(f, "INFO: {}", msg)
+            }
+            Resp::Error(e) => {
+                write!(f, "ERROR: {:?}", e)
+            }
+            Resp::Quit => {
+                write!(f, "QUIT")
+            }
+            Resp::Event { ts, event } => {
+                write!(f, "EVENT: {:?}:{:?}", ts, event)
+            }
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -337,16 +354,6 @@ impl Cli {
         token: Option<String>,
         derp_server: Arc<Mutex<Option<Server>>>,
     ) -> anyhow::Result<Self> {
-        let (non_blocking_writer, _tracing_worker_guard) =
-            tracing_appender::non_blocking(File::create("tcli.log")?);
-        tracing_subscriber::fmt()
-            .with_max_level(LevelFilter::TRACE)
-            .with_writer(non_blocking_writer)
-            .with_ansi(false)
-            .with_line_number(true)
-            .with_level(true)
-            .init();
-
         let (sender, resp) = mpsc::channel();
 
         let derp_server_lambda = derp_server.clone();
@@ -395,8 +402,15 @@ impl Cli {
             meshmap: None,
             derp_client: DerpClient::new(),
             derp_server,
-            _tracing_worker_guard,
         })
+    }
+
+    /// Function for only handling the help message without extra overhead. Used by the TCLID API.
+    pub fn print_help(args: Vec<String>) -> anyhow::Result<String> {
+        match Cmd::try_parse_from(args) {
+            Err(e) => anyhow::Result::Ok(e.to_string()),
+            _ => Err(anyhow::anyhow!("This is not a help command")),
+        }
     }
 
     pub fn exec(&mut self, cmd: &str) -> Vec<Resp> {
@@ -405,16 +419,11 @@ impl Cli {
         args.insert(0, "tcli".to_owned());
 
         let parse_try_result = Cmd::try_parse_from(&args);
-
         match parse_try_result {
             Ok(cmd) => cli_res!(res; (j self.exec_cmd(cmd))),
-            Err(err) => match err.kind() {
-                clap::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
-                | clap::ErrorKind::DisplayHelp => {
-                    cli_res!(res; (i "{}", err));
-                }
-                e => cli_res!(res; (e Error::Parser(e))),
-            },
+            Err(err) => {
+                cli_res!(res; (i "{}", err));
+            }
         }
         res
     }
@@ -665,29 +674,25 @@ impl Cli {
                         Ok(udp_socket) => {
                             let udp_socket = Arc::new(udp_socket);
 
-                    // Timeout for stunner
-                    let sleep = sleep(Duration::from_secs(20));
-                    tokio::pin!(sleep);
-                    // let socket = udp_socket.clone();
-                    const MAX_PACKET: usize = 65536;
-                    let mut rx_buff = [0u8; MAX_PACKET];
-                    loop {
-                        tokio::select! {
-                            Ok((_len, _src_addr)) = udp_socket.recv_from(&mut rx_buff) => {
-                                match rx_buff.first().map(|b| PacketTypeRelayed::from(*b)) {
-                                    Some(PacketTypeRelayed::Pinger) => cli_res!(res; (i "Pinger message received")),
-                                    Some(PacketTypeRelayed::Ponger) => cli_res!(res; (i "Ponger message received")),
-                                    other => cli_res!(res; (i "Unexpected packet: {:?}", other)),
-                                }
-                                break;
-                            },
-                            () = &mut sleep => {
-                                cli_res!(res; (i "timeout"));
-                                break;
-                            },
+                            // Timeout for stunner
+                            let sleep = sleep(Duration::from_secs(20));
+                            tokio::pin!(sleep);
+                            // let socket = udp_socket.clone();
+                            const MAX_PACKET: usize = 65536;
+                            let mut rx_buff = [0u8; MAX_PACKET];
+                            tokio::select! {
+                                Ok((_len, _src_addr)) = udp_socket.recv_from(&mut rx_buff) => {
+                                    match rx_buff.first().map(|b| PacketTypeRelayed::from(*b)) {
+                                        Some(PacketTypeRelayed::Pinger) => cli_res!(res; (i "Pinger message received")),
+                                        Some(PacketTypeRelayed::Ponger) => cli_res!(res; (i "Ponger message received")),
+                                        other => cli_res!(res; (i "Unexpected packet: {:?}", other)),
+                                    }
+                                },
+                                () = &mut sleep => {
+                                    cli_res!(res; (i "timeout"));
+                                },
 
-                        }
-                    }
+                            }
                         }
                         Err(_) => {
                             cli_res!(res; (i "udp socket init error"));
@@ -756,12 +761,12 @@ impl Cli {
                 stun_port,
             )) {
                 Ok(data) => {
-                    cli_res!(res; (i"Public Address: {:?}", data.public_ip));
-                    cli_res!(res; (i"Nat Type: {:?}", data.nat_type));
+                    cli_res!(res; (i "Public Address: {:?}", data.public_ip));
+                    cli_res!(res; (i "Nat Type: {:?}", data.nat_type));
                 }
 
                 Err(error) => {
-                    cli_res!(res; (i"problem: {}", error));
+                    cli_res!(res; (i "problem: {}", error));
                 }
             },
         }
@@ -823,7 +828,10 @@ impl Cli {
                 })
         };
 
-        let ip: IpNetwork = ip_address.parse().unwrap();
+        let ip: IpNetwork = match ip_address.parse() {
+            Ok(ip) => ip,
+            Err(_) => return Err(Error::SettingIpFailed),
+        };
 
         if std::env::consts::OS == "windows" {
             let mut args = vec![
