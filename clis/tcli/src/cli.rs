@@ -198,6 +198,9 @@ enum DevCmd {
         /// IP:PORT of Endpoint. Must be specified for a regular VPN server. Not needed for a peer.
         endpoint: Option<SocketAddr>,
         allowed_ips: Vec<IpNetwork>,
+        /// Turns on the post-quantum tunnel
+        #[clap(long = "pq")]
+        postquantum: bool,
     },
     #[clap(about = "Disconnect from node")]
     Dis {
@@ -476,6 +479,7 @@ impl Cli {
                 public_key,
                 endpoint,
                 allowed_ips,
+                postquantum,
             } => {
                 if !self.telio.is_running() {
                     cli_res!(res; (e Error::NotStarted));
@@ -490,8 +494,14 @@ impl Cli {
                         Some(allowed_ips)
                     },
                 };
-                cli_res!(res; (i "connecting to node:\n{:#?}", node));
-                cli_try!(res; self.telio.connect_exit_node(&node));
+
+                if postquantum {
+                    cli_res!(res; (i "connecting to PQ node:\n{:#?}", node));
+                    cli_try!(res; self.telio.connect_vpn_post_quantum(&node));
+                } else {
+                    cli_res!(res; (i "connecting to node:\n{:#?}", node));
+                    cli_try!(res; self.telio.connect_exit_node(&node));
+                }
             }
             Dis { public_key } => {
                 if !self.telio.is_running() {

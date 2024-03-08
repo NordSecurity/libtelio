@@ -92,6 +92,10 @@ public class Telio {
     return TelioResult.swigToEnum(libtelioJNI.Telio_connectToExitNodeWithId(swigCPtr, this, identifier, publicKey, allowedIps, endpoint));
   }
 
+  public TelioResult connectToExitNodePostquantum(String identifier, String publicKey, String allowedIps, String endpoint) {
+    return TelioResult.swigToEnum(libtelioJNI.Telio_connectToExitNodePostquantum(swigCPtr, this, identifier, publicKey, allowedIps, endpoint));
+  }
+
   public TelioResult disconnectFromExitNode(String publicKey) {
     return TelioResult.swigToEnum(libtelioJNI.Telio_disconnectFromExitNode(swigCPtr, this, publicKey));
   }
