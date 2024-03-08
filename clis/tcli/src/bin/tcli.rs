@@ -1,16 +1,17 @@
 #![allow(unwrap_check)]
 
-mod cli;
-mod derp;
-mod nord;
+use std::{fs, io::Write, sync::Arc, time::SystemTime};
 
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use dirs::home_dir;
 use parking_lot::Mutex;
 use regex::Regex;
-use std::{io::Write, sync::Arc, time::SystemTime};
+use tracing::level_filters::LevelFilter;
+
 use telio_model::{config::Server, event::Event as DevEvent, features::Features};
+
+use tcli::cli;
 
 #[derive(Parser)]
 struct Args {
@@ -23,6 +24,16 @@ struct Args {
 
 fn main() -> Result<()> {
     let args = Args::parse();
+
+    let (non_blocking_writer, _tracing_worker_guard) =
+        tracing_appender::non_blocking(fs::File::create("tcli.log")?);
+    tracing_subscriber::fmt()
+        .with_max_level(LevelFilter::TRACE)
+        .with_writer(non_blocking_writer)
+        .with_ansi(false)
+        .with_line_number(true)
+        .with_level(true)
+        .init();
 
     let token = std::env::var("NORD_TOKEN").ok();
 
