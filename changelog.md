@@ -1,3 +1,12 @@
+### UNRELEASED
+### **Bravas**
+---
+* LLT-5002: Fix preshared key parsing logic
+* LLT-5004: Wireguard go oscillation
+
+<br>
+
+
 ### v4.3.0-rc0
 ### **Bravas**
 ---
