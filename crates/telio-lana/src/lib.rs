@@ -162,8 +162,8 @@ pub fn init_moose(
         }),
         Box::new(moose_callbacks::MooseErrorCallback),
     )?;
-    moose::set_context_application_version(app_version)?;
-    moose::set_context_application_name(LANA_APP_NAME.to_string())
+    moose::set_context_application_libtelioapp_version(app_version)?;
+    moose::set_context_application_libtelioapp_name(LANA_APP_NAME.to_string())
 }
 
 /// Fetches context string from moose
