@@ -8,7 +8,7 @@ repository = "https://github.com/NordSecurity/libtelio"
 
 [dependencies]
 clap = { version = "4.3.3", features = ["derive"] }
-ring = "0.16"
+ring = "0.17.5"
 
 anyhow.workspace = true
 base64.workspace = true
