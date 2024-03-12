@@ -20,7 +20,7 @@ telio-crypto.workspace = true
 telio-utils.workspace = true
 
 [dev-dependencies]
-criterion = "0.3"
+criterion = "0.5.1"
 
 mockall.workspace = true
 proptest.workspace = true
