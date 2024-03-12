@@ -76,7 +76,7 @@ int main(int argc, char **argv)
     TEST_FUNC(telio_new, TELIO_RES_OK, "telio_new", &device, NULL, events, log_lvl, logger);
     TEST_FUNC(telio_start, TELIO_RES_OK, "telio_start", device, priv_key, TELIO_ADAPTER_BORING_TUN);
 
-    __telio_generate_stack_panic(device);
+    telio_generate_stack_panic(device);
     assert(strstr(telio_get_last_error(device), panic_str_cs));
 
     telio_destroy(device);
