@@ -20,6 +20,7 @@
 * LLT-4981: Add upgrade decision message
 * LLT-5002: Fix preshared key parsing logic
 * LLT-5004: Wireguard go oscillation
+* LLT-4983: Expose telio_generate_stack_panic method
 
 <br>
 

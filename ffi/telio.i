@@ -7,7 +7,6 @@
 %rename("%(camelcase)s") "";
 %rename("$ignore", fullname=1) __telio_force_export;
 %rename("$ignore", fullname=1) __telio_generate_thread_panic;
-%rename("$ignore", fullname=1) __telio_generate_stack_panic;
 
 
 #if SWIGJAVA || SWIGCSHARP
@@ -121,6 +120,8 @@ struct telio {};
     enum telio_result set_meshnet(const char *cfg);
 
     enum telio_result set_meshnet_off();
+
+    enum telio_result generate_stack_panic();
 
     %newobject generate_secret_key;
     const char* generate_secret_key();

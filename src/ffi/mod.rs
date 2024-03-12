@@ -1749,14 +1749,14 @@ pub extern "C" fn telio_get_last_error(_dev: &telio) -> *mut c_char {
 #[allow(clippy::panic)]
 #[no_mangle]
 /// For testing only.
-pub extern "C" fn __telio_generate_stack_panic(dev: &telio) -> telio_result {
+pub extern "C" fn telio_generate_stack_panic(dev: &telio) -> telio_result {
     ffi_catch_panic!({
         telio_device_op(dev, true, |dev| {
             if dev.is_running() {
                 panic!("runtime_panic_test_call_stack");
             }
 
-            telio_log_debug!("Unknown error ( __telio_generate_stack_panic )");
+            telio_log_debug!("Unknown error ( telio_generate_stack_panic )");
             TELIO_RES_ERROR
         })
     })
