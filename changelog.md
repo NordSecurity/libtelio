@@ -3,6 +3,7 @@
 ---
 * LLT-5002: Fix preshared key parsing logic
 * LLT-5004: Wireguard go oscillation
+* LLT-4983: Expose telio_generate_stack_panic method
 
 <br>
 
