@@ -4,7 +4,7 @@ use crate::endpoint_providers;
 use telio_utils::exponential_backoff;
 use thiserror::Error as TError;
 
-use telio_model::SocketAddr;
+use telio_model::{features::EndpointProvider, SocketAddr};
 
 use telio_crypto::PublicKey;
 use telio_proto::{CallMeMaybeMsg, Session};
@@ -34,7 +34,7 @@ pub enum Error {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WireGuardEndpointCandidateChangeEvent {
     pub public_key: PublicKey,
-    pub remote_endpoint: SocketAddr,
-    pub local_endpoint: SocketAddr,
+    pub remote_endpoint: (SocketAddr, EndpointProvider),
+    pub local_endpoint: (SocketAddr, EndpointProvider),
     pub session: Session,
 }

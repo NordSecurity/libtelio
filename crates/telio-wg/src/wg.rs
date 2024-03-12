@@ -796,40 +796,7 @@ impl State {
                         PeerState::Connecting
                     };
 
-                    let mut dual_ip_addresses: Vec<DualTarget> = vec![];
-                    let mut target = (None, None);
-                    for ip in &peer.ip_addresses {
-                        match ip {
-                            IpAddr::V4(ipv4) => {
-                                if target.0.is_none() {
-                                    target.0 = Some(ipv4.to_owned());
-                                } else {
-                                    dual_ip_addresses.push(match DualTarget::new(target) {
-                                        Ok(dt) => dt,
-                                        Err(DualTargetError::NoTarget) => DualTarget::default(),
-                                    });
-                                    target = (Some(ipv4.to_owned()), None);
-                                }
-                            }
-                            IpAddr::V6(ipv6) => {
-                                if target.1.is_none() {
-                                    target.1 = Some(ipv6.to_owned());
-                                } else {
-                                    dual_ip_addresses.push(match DualTarget::new(target) {
-                                        Ok(dt) => dt,
-                                        Err(DualTargetError::NoTarget) => DualTarget::default(),
-                                    });
-                                    target = (None, Some(ipv6.to_owned()));
-                                }
-                            }
-                        }
-                    }
-                    if target != (None, None) {
-                        dual_ip_addresses.push(match DualTarget::new(target) {
-                            Ok(dt) => dt,
-                            Err(DualTargetError::NoTarget) => DualTarget::default(),
-                        });
-                    }
+                    let dual_ip_addresses = peer.get_dual_ip_addresses();
 
                     let event = AnalyticsEvent {
                         public_key: *pubkey,

@@ -9,6 +9,10 @@ enum Decision {
 message Upgrade {
 	string endpoint = 1;
 	fixed64 session = 2;
+	// endpoint type used by the sender
+	uint32 endpoint_type = 3;
+	// endpoint type selected for the receiver
+	uint32 receiver_endpoint_type = 4;
 }
 
 message UpgradeDecision {

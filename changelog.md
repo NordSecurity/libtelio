@@ -28,6 +28,7 @@
 * LLT-4687: Add PQ VPN nat-lab tests
 * LLT-5009: Enable QoS feature by default
 * LLT-4980: Add exponential backoff for socket updates on error
+* LLT-4858: NAT state analytics reporting
 
 <br>
 
