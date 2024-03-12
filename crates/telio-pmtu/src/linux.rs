@@ -1,3 +1,20 @@
+//! This module implements PMTU probing for Linux.
+//!
+//! It does it in the following way:
+//! * The kernel has an estimate of the PMTU, we read it to get a guess of our starting value
+//! * We perform the binary search of PMTUs within the `super::PMTU_RANGE` interval
+//! * we check the specific PMTU value by sending an ICMP Echo Request of a length equal to PMTU and await the response
+//! * there are the following possibilities:
+//!   - the response arrives out of order,
+//!   - the response is randomly dropped,
+//!   - the response is dropped because the true PMTU is lower than our guess,
+//!   - or the error message `Fragmentation needed` arrives with or without `Next hop MTU`,
+//!   - the proper response arrives indicating that our guess is lower or equal to the true PMTU
+//!
+//! There are some caveats though, documented in the relevant places in the code:
+//! * the kernel does some things in an unpredicted way, for example `send()` and `recv()` calls spuriously report errors when sending packets larger than the kernel's PMTU guess
+//! * the kernel can keep multiple error message
+
 use std::{ffi::c_int, io, net::IpAddr, os::fd::AsRawFd, time::Duration};
 
 use pnet_packet::{icmp, icmpv6, Packet};
@@ -29,27 +46,28 @@ impl PMTUSocket {
 
         telio_log_debug!("Connected to: {}", self.host);
 
-        let mut pmtu = read_pmtu(&self.sock, self.host.is_ipv6()).unwrap_or_else(|err| {
+        // Read the kernel's PMTU guess
+        let mut initial_guess = read_pmtu(&self.sock, self.host.is_ipv6()).unwrap_or_else(|err| {
             telio_log_warn!("Failed to fetch initial kernel PMTU estimate: {err:?}");
             (super::PMTU_RANGE.start + super::PMTU_RANGE.end) / 2
         });
 
-        if !super::PMTU_RANGE.contains(&pmtu) {
+        if !super::PMTU_RANGE.contains(&initial_guess) {
             // PMTU is not contained within our reasonable range,
             // let's probe from the top of the range
-            pmtu = super::PMTU_RANGE.end - 1;
+            initial_guess = super::PMTU_RANGE.end - 1;
         }
 
-        telio_log_debug!("Initial PMTU estimate: {pmtu}");
+        telio_log_debug!("Initial PMTU estimate: {initial_guess}");
 
         let mut msgbuf = vec![0xFF; super::PMTU_RANGE.end as usize];
 
         if self.host.is_ipv6() {
             let mut pkg = IcmpV6::new(&mut msgbuf)?;
-            self.probe_pmtu_internal(&mut pkg, pmtu).await
+            self.probe_pmtu_internal(&mut pkg, initial_guess).await
         } else {
             let mut pkg = IcmpV4::new(&mut msgbuf)?;
-            self.probe_pmtu_internal(&mut pkg, pmtu).await
+            self.probe_pmtu_internal(&mut pkg, initial_guess).await
         }
     }
 
@@ -67,41 +85,57 @@ impl PMTUSocket {
 
             pmtu = match check {
                 PmtuResult::Ok => {
+                    // the value we checked is less or equal to the true PMTU, let's narrow search space
                     pmtu_range.start = pmtu;
                     (pmtu_range.start + pmtu_range.end) / 2
                 }
                 PmtuResult::Dropped => {
+                    // the value we checked is largen than the true PMTU, let's narrow search space
                     pmtu_range.end = pmtu;
                     (pmtu_range.start + pmtu_range.end) / 2
                 }
                 PmtuResult::FragNeeded => {
-                    // Read the kernel PMTU estimate, since the kernel has the knowledge of error ICMP packet.
+                    // Read the kernel error queue, since the kernel has the knowledge of error ICMP packet.
                     // This can help estimate the true PMTU better than using binary search.
+                    // The `mtu` here is equal to the `Frag Needed` error response `Next hop MTU`
+                    // and might be equal 0 in case the router does not support `Next hop MTU`.
                     let mtu = read_error_pmtu(&self.sock, self.host.is_ipv6())?;
-                    telio_log_debug!("Kernel estimate of pmtu: {mtu}");
+                    telio_log_debug!("Frag needed next hop MTU: {mtu}");
 
-                    if mtu != pmtu {
-                        // Sometimes kernel return error for packet of size equal to MTU
+                    // Sometimes kernel return error for packet of size equal to MTU.
+                    // The value may be 0 in case `Frag Needed` does not contain `Next hop MTU`.
+                    // We should exclude this values since they are meaningless.
+                    if mtu != pmtu && mtu != 0 {
+                        // The error was valid, let's narrow the search space
                         pmtu_range.end = pmtu;
                     }
 
                     if mtu < pmtu_range.start {
-                        // Don't trust low values of nexthop MTU
+                        // Don't trust low values of nexthop MTU and use binary search
                         (pmtu_range.start + pmtu_range.end) / 2
                     } else if pmtu == mtu {
+                        // Kernel thinks the PMTU is equal to our packet but returned error.
+                        // We cannot trust this value because it is contradiction: if the packet length is equal to PMTU
+                        //  it should arrive to the destination without errors.
+                        // Try to send packet just above the PMTU limit to see if we can narrow the search space anyway.
+                        // This trick prevents us from looping infinitely with the same value.
                         mtu + 1
                     } else if pmtu == mtu + 1 {
+                        // We are one iteration after the step above. Continue the binary search.
                         (pmtu_range.start + pmtu_range.end) / 2
                     } else {
+                        // All edge cases exhausted. Let's use the estimate for the next probe
                         mtu
                     }
                 }
             };
 
             if pmtu_range.start + 1 >= pmtu_range.end {
+                // The search space is narrowed to a single value. It means we've finished
                 let found = pmtu_range.start;
 
                 return if found == super::PMTU_RANGE.start {
+                    // Found value is suspiciously low. Don't trust it
                     Err(io::ErrorKind::NotConnected.into())
                 } else {
                     Ok(found)
@@ -115,10 +149,15 @@ impl PMTUSocket {
         ))
     }
 
-    async fn is_pmtu_ok(&self, pkg: &mut impl IcmpPkg, pmtu: u32) -> io::Result<PmtuResult> {
-        let mut recvbuf = [0u8; 1024];
-
+    /// Sends ICMP Echo Request and tries to decide what happend.
+    /// Possible outcomes are:
+    /// * ICMP was dropped because it is larger than PMTU
+    /// * Frag Needed was reported
+    /// * the `pmtu` value is below the true PMTU and the response was received
+    async fn is_pmtu_ok<I: IcmpPkg>(&self, pkg: &mut I, pmtu: u32) -> io::Result<PmtuResult> {
+        // Try sending the request multiple times because it can be dropped randomly
         for count in 0..RETRIES {
+            // Use unique sequence number
             pkg.advance_seq();
             let seq = pkg.seq();
 
@@ -129,26 +168,14 @@ impl PMTUSocket {
 
             if let Err(err) = self.sock.send(pkg.bytes(pmtu)).await {
                 // The kernel might retun this error when the packet size == kernel's estimate of PMTU.
-                // But the packet is sent anyway
+                // But the packet is sent anyway it seems.
                 if err.raw_os_error() != Some(libc::EMSGSIZE) {
                     return Err(err);
                 }
             }
 
-            match tokio::time::timeout(self.response_timeout, self.sock.recv(&mut recvbuf)).await {
-                Ok(res) => {
-                    if let Err(err) = res {
-                        // The kernel might retun this error when the packet size == kernel's estimate of PMTU.
-                        if err.raw_os_error() == Some(libc::EMSGSIZE) {
-                            return Ok(PmtuResult::FragNeeded);
-                        } else {
-                            return Err(err);
-                        }
-                    } else {
-                        // Success, this PMTU works
-                        return Ok(PmtuResult::Ok);
-                    }
-                }
+            match tokio::time::timeout(self.response_timeout, self.recv::<I>(seq)).await {
+                Ok(res) => return res,
                 Err(_timeout) => {
                     // packet was most probably dropped
                     telio_log_debug!("ICMP recv() timeout, pmtu: {pmtu}, counter: {count}");
@@ -157,6 +184,42 @@ impl PMTUSocket {
         }
 
         Ok(PmtuResult::Dropped)
+    }
+
+    /// Try receive response for the ICMP Echo Request with the specified sequence `seq`
+    async fn recv<I: IcmpPkg>(&self, seq: u16) -> io::Result<PmtuResult> {
+        let mut recvbuf = [0u8; 1024];
+
+        loop {
+            match self.sock.recv(&mut recvbuf).await {
+                Err(err) => {
+                    // The kernel might retun this error when the packet size == kernel's estimate of PMTU.
+                    if err.raw_os_error() == Some(libc::EMSGSIZE) {
+                        return Ok(PmtuResult::FragNeeded);
+                    } else {
+                        return Err(err);
+                    }
+                }
+                Ok(size) => {
+                    #[allow(index_access_check)]
+                    match I::extract_seq(&recvbuf[..size]) {
+                        Ok(rseq) => {
+                            // Check the response `seq` number. We might get responses for older packets
+                            if rseq == seq {
+                                // Success, this PMTU works
+                                return Ok(PmtuResult::Ok);
+                            } else {
+                                telio_log_debug!("Seq number mismatch");
+                                // It's not the message we're looking for, let's continue
+                            }
+                        }
+                        Err(err) => {
+                            telio_log_debug!("Invalid ICMP message recv: {err:?}");
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -173,11 +236,13 @@ impl AsRawFd for PMTUSocket {
     }
 }
 
+/// This trait allows sharing code between IPv4 and IPv6 PMTU probing procedures
 trait IcmpPkg: Sized {
     fn set_ident(&mut self, ident: u16);
     fn advance_seq(&mut self);
     fn seq(&self) -> u16;
     fn bytes(&self, pmtu: u32) -> &[u8];
+    fn extract_seq(pkg: &[u8]) -> io::Result<u16>;
 }
 
 struct IcmpV4<'a>(icmp::echo_request::MutableEchoRequestPacket<'a>);
@@ -212,6 +277,15 @@ impl IcmpPkg for IcmpV4<'_> {
         const IP_HEADER_SIZE: usize = 20;
         #[allow(index_access_check)]
         &self.0.packet()[..(pmtu as usize - IP_HEADER_SIZE)]
+    }
+
+    fn extract_seq(pkg: &[u8]) -> io::Result<u16> {
+        let pkg = icmp::echo_request::EchoRequestPacket::new(pkg).ok_or(io::Error::new(
+            io::ErrorKind::Other,
+            "Too small packet buffer received",
+        ))?;
+
+        Ok(pkg.get_sequence_number())
     }
 }
 
@@ -248,8 +322,19 @@ impl IcmpPkg for IcmpV6<'_> {
         #[allow(index_access_check)]
         &self.0.packet()[..(pmtu as usize - IP_HEADER_SIZE)]
     }
+
+    fn extract_seq(pkg: &[u8]) -> io::Result<u16> {
+        let pkg = icmpv6::echo_request::EchoRequestPacket::new(pkg).ok_or(io::Error::new(
+            io::ErrorKind::Other,
+            "Too small packet buffer received",
+        ))?;
+
+        Ok(pkg.get_sequence_number())
+    }
 }
 
+/// Enable PMTU discovery for the socket. It's needed so that the kernel does
+/// not fragment packets automatically
 fn set_pmtu_on(sock: &impl AsRawFd, is_ipv6: bool) -> io::Result<()> {
     let (lvl, name, val) = if is_ipv6 {
         (
@@ -301,6 +386,7 @@ fn set_pmtu_on(sock: &impl AsRawFd, is_ipv6: bool) -> io::Result<()> {
     Ok(())
 }
 
+/// Read kernel's PMTU estimate
 fn read_pmtu(sock: &impl AsRawFd, is_ipv6: bool) -> io::Result<u32> {
     let mut mtu: c_int = 0;
     let mut size: libc::socklen_t = std::mem::size_of_val(&mtu) as _;
@@ -327,6 +413,8 @@ fn read_pmtu(sock: &impl AsRawFd, is_ipv6: bool) -> io::Result<u32> {
     }
 }
 
+/// Returns `Next hop MTU` value from last `Frag Needed` error response.
+/// It does it by reading the kernel's error queue.
 fn read_error_pmtu(sock: &impl AsRawFd, is_ipv6: bool) -> io::Result<u32> {
     let cmsg_lvl = if is_ipv6 {
         libc::SOL_IPV6
@@ -354,6 +442,8 @@ fn read_error_pmtu(sock: &impl AsRawFd, is_ipv6: bool) -> io::Result<u32> {
             msg_flags: 0,
         };
 
+        let mut last_value = None;
+
         loop {
             if libc::recvmsg(
                 sock.as_raw_fd(),
@@ -361,7 +451,13 @@ fn read_error_pmtu(sock: &impl AsRawFd, is_ipv6: bool) -> io::Result<u32> {
                 libc::MSG_DONTWAIT | libc::MSG_ERRQUEUE,
             ) == -1
             {
-                return Err(io::Error::last_os_error());
+                let err = io::Error::last_os_error();
+
+                match (err.kind(), last_value) {
+                    // Error queue is exhausted. No more data to read
+                    (io::ErrorKind::WouldBlock, Some(pmtu)) => return Ok(pmtu),
+                    _ => return Err(err),
+                }
             } else {
                 let mut cmsg = libc::CMSG_FIRSTHDR(&msghdr);
 
@@ -381,7 +477,7 @@ fn read_error_pmtu(sock: &impl AsRawFd, is_ipv6: bool) -> io::Result<u32> {
                         );
 
                         if err.ee_errno == libc::EMSGSIZE as u32 {
-                            return Ok(err.ee_info);
+                            last_value = Some(err.ee_info);
                         }
                     }
 
