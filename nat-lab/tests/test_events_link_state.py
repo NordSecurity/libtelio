@@ -35,12 +35,14 @@ def _generate_setup_paramete_pair(
 
 
 FEATURE_ENABLED_PARAMS = [
-    pytest.param(
-        _generate_setup_paramete_pair([
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.LinuxNativeWg),
-            (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.LinuxNativeWg),
-        ])
-    ),
+    # This scenario has been removed because it was causing flakyness due to LLT-5014.
+    # Add it back when the issue is fixed.
+    # pytest.param(
+    #     _generate_setup_paramete_pair([
+    #         (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.LinuxNativeWg),
+    #         (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.LinuxNativeWg),
+    #     ])
+    # ),
     pytest.param(
         _generate_setup_paramete_pair([
             (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.LinuxNativeWg),
@@ -59,11 +61,11 @@ FEATURE_DISABLED_PARAMS = [
     pytest.param([
         SetupParameters(
             connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-            adapter_type=AdapterType.LinuxNativeWg,
+            adapter_type=AdapterType.BoringTun,
         ),
         SetupParameters(
             connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-            adapter_type=AdapterType.LinuxNativeWg,
+            adapter_type=AdapterType.BoringTun,
         ),
     ])
 ]
