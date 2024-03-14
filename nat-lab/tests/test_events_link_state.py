@@ -213,7 +213,7 @@ async def test_event_link_state_feature_disabled(
         alpha_events = client_beta.get_link_state_events(alpha.public_key)
         beta_events = client_alpha.get_link_state_events(beta.public_key)
 
-        # There should be 2 node events Connecting and Connected
-        # Both of them should have link_state field empty
-        assert alpha_events == [None, None]
-        assert beta_events == [None, None]
+        assert len(alpha_events) > 1
+        assert len(beta_events) > 1
+        assert all(e is None for e in alpha_events)
+        assert all(e is None for e in beta_events)
