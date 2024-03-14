@@ -26,7 +26,6 @@ pub struct NodeInfo {
     pub last_event: Instant,
 
     // Connection duration
-    pub last_wg_event: Instant,
     pub connected_time: Duration,
 
     // RTT
@@ -71,12 +70,9 @@ impl NodeInfo {
     fn update_connection_duration(&mut self, event: &AnalyticsEvent, pause: bool) {
         if self.peer_state == PeerState::Connected && !pause {
             // Connected time
-            let duration = event.timestamp.checked_duration_since(self.last_wg_event);
+            let duration = event.timestamp.checked_duration_since(self.last_event);
             self.connected_time += duration.unwrap_or_default();
         }
-
-        self.peer_state = event.peer_state;
-        self.last_wg_event = event.timestamp;
     }
 }
 
@@ -86,7 +82,6 @@ impl From<AnalyticsEvent> for NodeInfo {
             public_key: event.public_key,
             peer_state: event.peer_state,
             last_event: event.timestamp,
-            last_wg_event: event.timestamp,
             connected_time: Duration::default(),
             ip_addresses: event.dual_ip_addresses,
             rtt_histogram: Histogram::new(),
@@ -384,6 +379,8 @@ impl Analytics {
                 n.update_throughput_info(event);
                 // Update last event timestamp
                 n.last_event = event.timestamp;
+                // Update peer state
+                n.peer_state = event.peer_state;
             })
             .or_insert_with(|| NodeInfo::from(event.clone()));
     }
@@ -598,7 +595,6 @@ mod tests {
         assert_eq!(node.public_key, event.public_key);
         assert_eq!(node.peer_state, PeerState::Connected);
         assert_eq!(node.last_event, event.timestamp);
-        assert_eq!(node.last_wg_event, event.timestamp);
         assert_eq!(node.ip_addresses, event.dual_ip_addresses);
 
         // histograms should be empty
@@ -625,7 +621,6 @@ mod tests {
         assert_eq!(node.public_key, event.public_key);
         assert_eq!(node.peer_state, PeerState::Disconnected);
         assert_eq!(node.last_event, event.timestamp);
-        assert_eq!(node.last_wg_event, event.timestamp);
         assert_eq!(node.ip_addresses, event.dual_ip_addresses);
         assert_eq!(node.connected_time, Duration::from_secs(2));
 
@@ -690,7 +685,6 @@ mod tests {
         assert_eq!(node.public_key, event.public_key);
         assert_eq!(node.peer_state, PeerState::Connected);
         assert_eq!(node.last_event, event.timestamp);
-        assert_eq!(node.last_wg_event, event.timestamp);
         assert_eq!(node.connected_time, Duration::from_secs(7));
         assert_eq!(node.ip_addresses, event.dual_ip_addresses);
         assert_eq!(node.last_tx_bytes, 50);
@@ -803,7 +797,6 @@ mod tests {
             public_key,
             peer_state: PeerState::Disconnected,
             last_event: Instant::now(),
-            last_wg_event: Instant::now(),
             connected_time,
             ip_addresses: vec![DualTarget::new((Some(Ipv4Addr::new(127, 0, 0, 1)), None)).unwrap()],
             rtt_histogram: histogram.clone(),
