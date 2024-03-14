@@ -586,6 +586,18 @@ SWIGEXPORT int SWIGSTDCALL CSharp_NordSecfTelio_Telio_SetMeshnetOff___(void * ja
 }
 
 
+SWIGEXPORT int SWIGSTDCALL CSharp_NordSecfTelio_Telio_GenerateStackPanic___(void * jarg1) {
+  int jresult ;
+  struct telio *arg1 = (struct telio *) 0 ;
+  enum telio_result result;
+  
+  arg1 = (struct telio *)jarg1; 
+  result = (enum telio_result)telio_generate_stack_panic(arg1);
+  jresult = (int)result; 
+  return jresult;
+}
+
+
 SWIGEXPORT char * SWIGSTDCALL CSharp_NordSecfTelio_Telio_GenerateSecretKey___(void * jarg1) {
   char * jresult ;
   struct telio *arg1 = (struct telio *) 0 ;
