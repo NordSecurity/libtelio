@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use async_trait::async_trait;
 use telio_crypto::{PublicKey, SecretKey};
 use telio_lana::*;
@@ -223,7 +225,6 @@ impl State {
             info.peer_nat_types.join(",")
         );
 
-        // TODO: Make it better
         let internal_sorted_public_keys = info.internal_sorted_public_keys;
         let external_sorted_public_keys = info.external_sorted_public_keys;
         let (internal_qos_data, external_qos_data) = if let Some(qos) = self.qos.as_ref() {
@@ -232,7 +233,14 @@ impl State {
                     state.get_data(&internal_sorted_public_keys),
                     state.get_data(&external_sorted_public_keys),
                 );
+                let every_node_in_config: HashSet<PublicKey> = internal_sorted_public_keys
+                    .into_iter()
+                    .chain(external_sorted_public_keys.into_iter())
+                    .collect();
+
+                state.clean_nodes_list(&every_node_in_config);
                 state.reset_cached_data();
+
                 Ok(result)
             })
             .await
