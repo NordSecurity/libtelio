@@ -11,7 +11,32 @@ services:
     profiles:
       - base
 
-
+  # Nordlynx servers
+  nlx-01: &common-nlx
+    hostname: nlx-01
+    privileged: true
+    build:
+      context: .
+      args:
+        LIBTELIO_ENV_SEC_CONTAINER_REGISTRY: $LIBTELIO_ENV_SEC_CONTAINER_REGISTRY
+        LIBTELIO_ENV_NAT_LAB_DEPS_TAG: $LIBTELIO_ENV_NAT_LAB_DEPS_TAG
+    entrypoint: /opt/bin/nordlynx
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv6.conf.all.disable_ipv6=0
+    networks:
+      internet:
+        ipv4_address: 10.0.100.51
+        priority: 1000
+    environment:
+      CLIENT_GATEWAY_PRIMARY: none    
+    volumes:
+      - ./:/sync
+      - ../:/libtelio
+  
   ###########################################################
   #                         CLIENTS                         #
   ###########################################################

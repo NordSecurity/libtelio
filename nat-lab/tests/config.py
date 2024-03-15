@@ -107,7 +107,19 @@ WG_SERVER_2: Dict[str, Union[str, int]] = {
     "container": "nat-lab-vpn-02-1",
 }
 
-WG_SERVERS = [WG_SERVER, WG_SERVER_2]
+# nlx-01
+NLX_SERVER: Dict[str, Union[str, int]] = {
+    "ipv4": "10.0.100.51",
+    "port": 51820,
+    **dict(
+        (key, str(val))
+        for key, val in zip(("private_key", "public_key"), Key.key_pair())
+    ),
+    "container": "nat-lab-nlx-01-1",
+    "type": "nordlynx",
+}
+
+WG_SERVERS = [WG_SERVER, WG_SERVER_2, NLX_SERVER]
 
 # TODO - bring here class DerpServer  from telio.py
 # and replace dictionaries with objects

@@ -1,13 +1,15 @@
 import asyncio
 import config
+import copy
 import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_connections
 from telio import AdapterType, Client
 from telio_features import TelioFeatures
+from typing import Optional
 from utils import testing, stun
 from utils.connection import Connection
-from utils.connection_tracker import ConnectionLimits
+from utils.connection_tracker import ConnectionLimits, ConnectionTrackerConfig
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.output_notifier import OutputNotifier
 from utils.ping import Ping
@@ -15,8 +17,8 @@ from utils.router import IPProto, IPStack
 
 
 async def _connect_vpn(
-    connection: Connection,
-    vpn_connection: Connection,
+    client_conn: Connection,
+    vpn_connection: Optional[Connection],
     client: Client,
     client_meshnet_ip: str,
     wg_server: dict,
@@ -25,17 +27,33 @@ async def _connect_vpn(
         wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
     )
 
-    async with Ping(connection, config.PHOTO_ALBUM_IP).run() as ping:
+    async with Ping(client_conn, config.PHOTO_ALBUM_IP).run() as ping:
         await testing.wait_long(ping.wait_for_next_ping())
 
-    async with Ping(vpn_connection, client_meshnet_ip).run() as ping:
-        await testing.wait_long(ping.wait_for_next_ping())
+    if vpn_connection is not None:
+        async with Ping(vpn_connection, client_meshnet_ip).run() as ping:
+            await testing.wait_long(ping.wait_for_next_ping())
 
-    ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+    ip = await testing.wait_long(stun.get(client_conn, config.STUN_SERVER))
     assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
 
-@pytest.mark.asyncio
+class VpnConfig:
+    # pinging the client is not a requirement and requires routing setup which might not be present
+    def __init__(
+        self,
+        server_conf,
+        conn_tag: ConnectionTag,
+        should_ping_client: bool,
+    ):
+        self.server_conf = server_conf
+        self.conn_tag = conn_tag
+        self.should_ping_client = should_ping_client
+
+    def __repr__(self) -> str:
+        return f"VpnConfig(server_conf={self.server_conf}, conn_tag={self.conn_tag}, should_ping_client={self.should_ping_client})"
+
+
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
     [
@@ -45,7 +63,6 @@ async def _connect_vpn(
                 adapter_type=AdapterType.BoringTun,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    vpn_1_limits=ConnectionLimits(1, 1),
                     stun_limits=ConnectionLimits(1, 1),
                 ),
                 is_meshnet=False,
@@ -58,7 +75,6 @@ async def _connect_vpn(
                 adapter_type=AdapterType.LinuxNativeWg,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    vpn_1_limits=ConnectionLimits(1, 1),
                     stun_limits=ConnectionLimits(1, 1),
                 ),
                 is_meshnet=False,
@@ -72,7 +88,6 @@ async def _connect_vpn(
                 adapter_type=AdapterType.WindowsNativeWg,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM,
-                    vpn_1_limits=ConnectionLimits(1, 1),
                     stun_limits=ConnectionLimits(1, 1),
                 ),
                 is_meshnet=False,
@@ -88,7 +103,6 @@ async def _connect_vpn(
                 adapter_type=AdapterType.WireguardGo,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM,
-                    vpn_1_limits=ConnectionLimits(1, 1),
                     stun_limits=ConnectionLimits(1, 1),
                 ),
                 is_meshnet=False,
@@ -104,44 +118,88 @@ async def _connect_vpn(
                 adapter_type=AdapterType.BoringTun,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
-                    vpn_1_limits=ConnectionLimits(1, 1),
                     stun_limits=ConnectionLimits(1, 1),
                 ),
                 is_meshnet=False,
             ),
             "10.0.254.7",
-            marks=[
-                pytest.mark.mac,
-            ],
+            marks=pytest.mark.mac,
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "vpn_conf",
+    [
+        pytest.param(
+            VpnConfig(config.WG_SERVER, ConnectionTag.DOCKER_VPN_1, True),
+            id="wg_server",
+        ),
+        pytest.param(
+            VpnConfig(config.NLX_SERVER, ConnectionTag.DOCKER_NLX_1, False),
+            id="nlx_server",
         ),
     ],
 )
 async def test_vpn_connection(
-    alpha_setup_params: SetupParameters, public_ip: str
+    alpha_setup_params: SetupParameters,
+    vpn_conf: VpnConfig,
+    public_ip: str,
 ) -> None:
+    def find_cfg_by_key(
+        params: SetupParameters, key: str
+    ) -> Optional[ConnectionTrackerConfig]:
+        if params.connection_tracker_config is not None:
+            for cfg in params.connection_tracker_config:
+                if cfg.get_key() == key:
+                    return cfg
+        return None
+
     async with AsyncExitStack() as exit_stack:
+        alpha_setup_params = copy.deepcopy(alpha_setup_params)
+
+        if vpn_conf.conn_tag == ConnectionTag.DOCKER_VPN_1:
+            cfg = find_cfg_by_key(alpha_setup_params, "vpn_1")
+            assert cfg is not None
+            cfg.limits = ConnectionLimits(1, 1)
+
+        elif vpn_conf.conn_tag == ConnectionTag.DOCKER_NLX_1:
+            cfg = find_cfg_by_key(alpha_setup_params, "nlx_1")
+            assert cfg is not None
+            cfg.limits = ConnectionLimits(1, 1)
+
+        else:
+            raise ValueError(f"Unknown connection tag {vpn_conf.conn_tag}")
+
         env = await exit_stack.enter_async_context(
             setup_environment(exit_stack, [alpha_setup_params])
         )
 
         alpha, *_ = env.nodes
-        connection, *_ = [conn.connection for conn in env.connections]
+        client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
 
-        vpn_connection, *_ = await setup_connections(
-            exit_stack, [ConnectionTag.DOCKER_VPN_1]
-        )
-
-        ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+        ip = await testing.wait_long(stun.get(client_conn, config.STUN_SERVER))
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
-        await _connect_vpn(
-            connection,
-            vpn_connection.connection,
-            client_alpha,
-            alpha.ip_addresses[0],
-            config.WG_SERVER,
-        )
+        if vpn_conf.should_ping_client:
+            vpn_connection, *_ = await setup_connections(
+                exit_stack, [vpn_conf.conn_tag]
+            )
+            await _connect_vpn(
+                client_conn,
+                vpn_connection.connection,
+                client_alpha,
+                alpha.ip_addresses[0],
+                vpn_conf.server_conf,
+            )
+        else:
+            await _connect_vpn(
+                client_conn,
+                None,
+                client_alpha,
+                alpha.ip_addresses[0],
+                vpn_conf.server_conf,
+            )
 
 
 @pytest.mark.asyncio
@@ -393,6 +451,7 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
             await testing.wait_normal(sender_start_event.wait())
 
             await testing.wait_long(
+                # the key is generated uniquely each time natlab runs
                 client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
             )
 
