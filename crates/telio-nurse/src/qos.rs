@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use histogram::Histogram;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -237,11 +237,7 @@ impl Analytics {
 
     /// Wrapper function around `Analytics::get_data_from_nodes_hashmap`.
     pub fn get_data(&mut self, sorted_public_keys_set: &BTreeSet<PublicKey>) -> OutputData {
-        Analytics::get_data_from_nodes_hashmap(
-            &mut self.nodes,
-            self.buckets,
-            sorted_public_keys_set,
-        )
+        Analytics::get_data_from_nodes_hashmap(&self.nodes, self.buckets, sorted_public_keys_set)
     }
 
     /// Get QoS data from the specified nodes in the meshnet.
@@ -256,7 +252,7 @@ impl Analytics {
     ///
     /// QoS data about the requested nodes
     pub fn get_data_from_nodes_hashmap(
-        nodes: &mut HashMap<PublicKey, NodeInfo>,
+        nodes: &HashMap<PublicKey, NodeInfo>,
         buckets: u32,
         sorted_public_keys: &BTreeSet<PublicKey>,
     ) -> OutputData {
@@ -352,6 +348,11 @@ impl Analytics {
             node.rx_histogram = Histogram::new();
             node.connected_time = Duration::default();
         }
+    }
+
+    /// Drop nodes no longer in the provided nodes_list.
+    pub fn clean_nodes_list(&mut self, nodes_pk_list: &HashSet<PublicKey>) {
+        self.nodes.retain(|pk, _| nodes_pk_list.contains(pk));
     }
 
     /// Update peer data from a received WG event.
@@ -560,7 +561,7 @@ mod tests {
         hashmap.insert(b_public_key, b_node);
 
         let output = Analytics::get_data_from_nodes_hashmap(
-            &mut hashmap,
+            &hashmap,
             5,
             &BTreeSet::<PublicKey>::from([
                 a_public_key,
@@ -743,6 +744,31 @@ mod tests {
 
         // Assert that the inserted nodes were the expected ones.
         let nodes_keys: HashSet<_> = analytics.nodes.keys().copied().collect();
+        assert_eq!(nodes_keys, expected_nodes_keys);
+    }
+
+    async fn test_node_list_cleanup() {
+        let mut analytics = setup();
+        let event1 = generate_event();
+        let event2 = generate_event();
+        let mut expected_nodes_keys = HashSet::new();
+        expected_nodes_keys.insert(event1.public_key);
+        expected_nodes_keys.insert(event2.public_key);
+
+        // Add 2 nodes to the list
+        analytics.handle_wg_event(&event1).await;
+        analytics.handle_wg_event(&event2).await;
+
+        // Assert nodes were inserted correctly
+        let mut nodes_keys: HashSet<_> = analytics.nodes.keys().copied().collect();
+        assert_eq!(nodes_keys, expected_nodes_keys);
+
+        // Remove one node
+        expected_nodes_keys.remove(&event2.public_key);
+        analytics.clean_nodes_list(&expected_nodes_keys);
+
+        // Assert node was removed correctly
+        nodes_keys = analytics.nodes.keys().copied().collect();
         assert_eq!(nodes_keys, expected_nodes_keys);
     }
 
