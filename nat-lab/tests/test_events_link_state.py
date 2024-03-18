@@ -44,30 +44,36 @@ FEATURE_ENABLED_PARAMS = [
     #     ])
     # ),
     pytest.param(
-        _generate_setup_paramete_pair([
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.LinuxNativeWg),
-            (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
-        ])
+        _generate_setup_paramete_pair(
+            [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.LinuxNativeWg),
+                (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
+            ]
+        )
     ),
     pytest.param(
-        _generate_setup_paramete_pair([
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
-            (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
-        ])
+        _generate_setup_paramete_pair(
+            [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
+                (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
+            ]
+        )
     ),
 ]
 
 FEATURE_DISABLED_PARAMS = [
-    pytest.param([
-        SetupParameters(
-            connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-            adapter_type=AdapterType.BoringTun,
-        ),
-        SetupParameters(
-            connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-            adapter_type=AdapterType.BoringTun,
-        ),
-    ])
+    pytest.param(
+        [
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type=AdapterType.BoringTun,
+            ),
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                adapter_type=AdapterType.BoringTun,
+            ),
+        ]
+    )
 ]
 
 
@@ -121,7 +127,6 @@ async def test_event_link_state_peers_exchanging_data_for_a_long_time(
 
 
 @pytest.mark.asyncio
-
 @pytest.mark.parametrize("setup_params", FEATURE_ENABLED_PARAMS)
 async def test_event_link_state_peers_exchanging_data_then_idling_then_resume(
     setup_params: List[SetupParameters],
