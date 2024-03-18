@@ -241,7 +241,7 @@ SWIGINTERN void delete_telio(struct telio *self){
 extern "C" {
 #endif
 
-void _wrap_Swig_free_teliogo_06eda8b43ed72304(void *_swig_go_0) {
+void _wrap_Swig_free_teliogo_f72470d6aeaeba90(void *_swig_go_0) {
   void *arg1 = (void *) 0 ;
   
   arg1 = *(void **)&_swig_go_0; 
@@ -251,7 +251,7 @@ void _wrap_Swig_free_teliogo_06eda8b43ed72304(void *_swig_go_0) {
 }
 
 
-void *_wrap_Swig_malloc_teliogo_06eda8b43ed72304(intgo _swig_go_0) {
+void *_wrap_Swig_malloc_teliogo_f72470d6aeaeba90(intgo _swig_go_0) {
   int arg1 ;
   void *result = 0 ;
   void *_swig_go_result;
@@ -264,7 +264,7 @@ void *_wrap_Swig_malloc_teliogo_06eda8b43ed72304(intgo _swig_go_0) {
 }
 
 
-intgo _wrap_TELIOADAPTERBORINGTUN_teliogo_06eda8b43ed72304() {
+intgo _wrap_TELIOADAPTERBORINGTUN_teliogo_f72470d6aeaeba90() {
   enum telio_adapter_type result;
   intgo _swig_go_result;
   
@@ -276,7 +276,7 @@ intgo _wrap_TELIOADAPTERBORINGTUN_teliogo_06eda8b43ed72304() {
 }
 
 
-intgo _wrap_TELIOADAPTERLINUXNATIVETUN_teliogo_06eda8b43ed72304() {
+intgo _wrap_TELIOADAPTERLINUXNATIVETUN_teliogo_f72470d6aeaeba90() {
   enum telio_adapter_type result;
   intgo _swig_go_result;
   
@@ -288,7 +288,7 @@ intgo _wrap_TELIOADAPTERLINUXNATIVETUN_teliogo_06eda8b43ed72304() {
 }
 
 
-intgo _wrap_TELIOADAPTERWIREGUARDGOTUN_teliogo_06eda8b43ed72304() {
+intgo _wrap_TELIOADAPTERWIREGUARDGOTUN_teliogo_f72470d6aeaeba90() {
   enum telio_adapter_type result;
   intgo _swig_go_result;
   
@@ -300,7 +300,7 @@ intgo _wrap_TELIOADAPTERWIREGUARDGOTUN_teliogo_06eda8b43ed72304() {
 }
 
 
-intgo _wrap_TELIOADAPTERWINDOWSNATIVETUN_teliogo_06eda8b43ed72304() {
+intgo _wrap_TELIOADAPTERWINDOWSNATIVETUN_teliogo_f72470d6aeaeba90() {
   enum telio_adapter_type result;
   intgo _swig_go_result;
   
@@ -312,7 +312,7 @@ intgo _wrap_TELIOADAPTERWINDOWSNATIVETUN_teliogo_06eda8b43ed72304() {
 }
 
 
-intgo _wrap_TELIOLOGCRITICAL_teliogo_06eda8b43ed72304() {
+intgo _wrap_TELIOLOGCRITICAL_teliogo_f72470d6aeaeba90() {
   enum telio_log_level result;
   intgo _swig_go_result;
   
@@ -324,7 +324,7 @@ intgo _wrap_TELIOLOGCRITICAL_teliogo_06eda8b43ed72304() {
 }
 
 
-intgo _wrap_TELIOLOGERROR_teliogo_06eda8b43ed72304() {
+intgo _wrap_TELIOLOGERROR_teliogo_f72470d6aeaeba90() {
   enum telio_log_level result;
   intgo _swig_go_result;
   
@@ -336,7 +336,7 @@ intgo _wrap_TELIOLOGERROR_teliogo_06eda8b43ed72304() {
 }
 
 
-intgo _wrap_TELIOLOGWARNING_teliogo_06eda8b43ed72304() {
+intgo _wrap_TELIOLOGWARNING_teliogo_f72470d6aeaeba90() {
   enum telio_log_level result;
   intgo _swig_go_result;
   
@@ -348,7 +348,7 @@ intgo _wrap_TELIOLOGWARNING_teliogo_06eda8b43ed72304() {
 }
 
 
-intgo _wrap_TELIOLOGINFO_teliogo_06eda8b43ed72304() {
+intgo _wrap_TELIOLOGINFO_teliogo_f72470d6aeaeba90() {
   enum telio_log_level result;
   intgo _swig_go_result;
   
@@ -360,7 +360,7 @@ intgo _wrap_TELIOLOGINFO_teliogo_06eda8b43ed72304() {
 }
 
 
-intgo _wrap_TELIOLOGDEBUG_teliogo_06eda8b43ed72304() {
+intgo _wrap_TELIOLOGDEBUG_teliogo_f72470d6aeaeba90() {
   enum telio_log_level result;
   intgo _swig_go_result;
   
@@ -372,7 +372,7 @@ intgo _wrap_TELIOLOGDEBUG_teliogo_06eda8b43ed72304() {
 }
 
 
-intgo _wrap_TELIOLOGTRACE_teliogo_06eda8b43ed72304() {
+intgo _wrap_TELIOLOGTRACE_teliogo_f72470d6aeaeba90() {
   enum telio_log_level result;
   intgo _swig_go_result;
   
@@ -384,7 +384,7 @@ intgo _wrap_TELIOLOGTRACE_teliogo_06eda8b43ed72304() {
 }
 
 
-intgo _wrap_TELIORESOK_teliogo_06eda8b43ed72304() {
+intgo _wrap_TELIORESOK_teliogo_f72470d6aeaeba90() {
   enum telio_result result;
   intgo _swig_go_result;
   
@@ -396,7 +396,7 @@ intgo _wrap_TELIORESOK_teliogo_06eda8b43ed72304() {
 }
 
 
-intgo _wrap_TELIORESERROR_teliogo_06eda8b43ed72304() {
+intgo _wrap_TELIORESERROR_teliogo_f72470d6aeaeba90() {
   enum telio_result result;
   intgo _swig_go_result;
   
@@ -408,7 +408,7 @@ intgo _wrap_TELIORESERROR_teliogo_06eda8b43ed72304() {
 }
 
 
-intgo _wrap_TELIORESINVALIDKEY_teliogo_06eda8b43ed72304() {
+intgo _wrap_TELIORESINVALIDKEY_teliogo_f72470d6aeaeba90() {
   enum telio_result result;
   intgo _swig_go_result;
   
@@ -420,7 +420,7 @@ intgo _wrap_TELIORESINVALIDKEY_teliogo_06eda8b43ed72304() {
 }
 
 
-intgo _wrap_TELIORESBADCONFIG_teliogo_06eda8b43ed72304() {
+intgo _wrap_TELIORESBADCONFIG_teliogo_f72470d6aeaeba90() {
   enum telio_result result;
   intgo _swig_go_result;
   
@@ -432,7 +432,7 @@ intgo _wrap_TELIORESBADCONFIG_teliogo_06eda8b43ed72304() {
 }
 
 
-intgo _wrap_TELIORESLOCKERROR_teliogo_06eda8b43ed72304() {
+intgo _wrap_TELIORESLOCKERROR_teliogo_f72470d6aeaeba90() {
   enum telio_result result;
   intgo _swig_go_result;
   
@@ -444,7 +444,7 @@ intgo _wrap_TELIORESLOCKERROR_teliogo_06eda8b43ed72304() {
 }
 
 
-intgo _wrap_TELIORESINVALIDSTRING_teliogo_06eda8b43ed72304() {
+intgo _wrap_TELIORESINVALIDSTRING_teliogo_f72470d6aeaeba90() {
   enum telio_result result;
   intgo _swig_go_result;
   
@@ -456,7 +456,7 @@ intgo _wrap_TELIORESINVALIDSTRING_teliogo_06eda8b43ed72304() {
 }
 
 
-intgo _wrap_TELIORESALREADYSTARTED_teliogo_06eda8b43ed72304() {
+intgo _wrap_TELIORESALREADYSTARTED_teliogo_f72470d6aeaeba90() {
   enum telio_result result;
   intgo _swig_go_result;
   
@@ -468,7 +468,7 @@ intgo _wrap_TELIORESALREADYSTARTED_teliogo_06eda8b43ed72304() {
 }
 
 
-void _wrap_TelioEventCb_Ctx_set_teliogo_06eda8b43ed72304(struct telio_event_cb *_swig_go_0, void *_swig_go_1) {
+void _wrap_TelioEventCb_Ctx_set_teliogo_f72470d6aeaeba90(struct telio_event_cb *_swig_go_0, void *_swig_go_1) {
   struct telio_event_cb *arg1 = (struct telio_event_cb *) 0 ;
   void *arg2 = (void *) 0 ;
   
@@ -480,7 +480,7 @@ void _wrap_TelioEventCb_Ctx_set_teliogo_06eda8b43ed72304(struct telio_event_cb *
 }
 
 
-void *_wrap_TelioEventCb_Ctx_get_teliogo_06eda8b43ed72304(struct telio_event_cb *_swig_go_0) {
+void *_wrap_TelioEventCb_Ctx_get_teliogo_f72470d6aeaeba90(struct telio_event_cb *_swig_go_0) {
   struct telio_event_cb *arg1 = (struct telio_event_cb *) 0 ;
   void *result = 0 ;
   void *_swig_go_result;
@@ -493,7 +493,7 @@ void *_wrap_TelioEventCb_Ctx_get_teliogo_06eda8b43ed72304(struct telio_event_cb 
 }
 
 
-void _wrap_TelioEventCb_Cb_set_teliogo_06eda8b43ed72304(struct telio_event_cb *_swig_go_0, void* _swig_go_1) {
+void _wrap_TelioEventCb_Cb_set_teliogo_f72470d6aeaeba90(struct telio_event_cb *_swig_go_0, void* _swig_go_1) {
   struct telio_event_cb *arg1 = (struct telio_event_cb *) 0 ;
   telio_event_fn arg2 = (telio_event_fn) 0 ;
   
@@ -505,7 +505,7 @@ void _wrap_TelioEventCb_Cb_set_teliogo_06eda8b43ed72304(struct telio_event_cb *_
 }
 
 
-void* _wrap_TelioEventCb_Cb_get_teliogo_06eda8b43ed72304(struct telio_event_cb *_swig_go_0) {
+void* _wrap_TelioEventCb_Cb_get_teliogo_f72470d6aeaeba90(struct telio_event_cb *_swig_go_0) {
   struct telio_event_cb *arg1 = (struct telio_event_cb *) 0 ;
   telio_event_fn result;
   void* _swig_go_result;
@@ -518,7 +518,7 @@ void* _wrap_TelioEventCb_Cb_get_teliogo_06eda8b43ed72304(struct telio_event_cb *
 }
 
 
-struct telio_event_cb *_wrap_new_TelioEventCb_teliogo_06eda8b43ed72304() {
+struct telio_event_cb *_wrap_new_TelioEventCb_teliogo_f72470d6aeaeba90() {
   struct telio_event_cb *result = 0 ;
   struct telio_event_cb *_swig_go_result;
   
@@ -529,7 +529,7 @@ struct telio_event_cb *_wrap_new_TelioEventCb_teliogo_06eda8b43ed72304() {
 }
 
 
-void _wrap_delete_TelioEventCb_teliogo_06eda8b43ed72304(struct telio_event_cb *_swig_go_0) {
+void _wrap_delete_TelioEventCb_teliogo_f72470d6aeaeba90(struct telio_event_cb *_swig_go_0) {
   struct telio_event_cb *arg1 = (struct telio_event_cb *) 0 ;
   
   arg1 = *(struct telio_event_cb **)&_swig_go_0; 
@@ -539,7 +539,7 @@ void _wrap_delete_TelioEventCb_teliogo_06eda8b43ed72304(struct telio_event_cb *_
 }
 
 
-void _wrap_TelioLoggerCb_Ctx_set_teliogo_06eda8b43ed72304(struct telio_logger_cb *_swig_go_0, void *_swig_go_1) {
+void _wrap_TelioLoggerCb_Ctx_set_teliogo_f72470d6aeaeba90(struct telio_logger_cb *_swig_go_0, void *_swig_go_1) {
   struct telio_logger_cb *arg1 = (struct telio_logger_cb *) 0 ;
   void *arg2 = (void *) 0 ;
   
@@ -551,7 +551,7 @@ void _wrap_TelioLoggerCb_Ctx_set_teliogo_06eda8b43ed72304(struct telio_logger_cb
 }
 
 
-void *_wrap_TelioLoggerCb_Ctx_get_teliogo_06eda8b43ed72304(struct telio_logger_cb *_swig_go_0) {
+void *_wrap_TelioLoggerCb_Ctx_get_teliogo_f72470d6aeaeba90(struct telio_logger_cb *_swig_go_0) {
   struct telio_logger_cb *arg1 = (struct telio_logger_cb *) 0 ;
   void *result = 0 ;
   void *_swig_go_result;
@@ -564,7 +564,7 @@ void *_wrap_TelioLoggerCb_Ctx_get_teliogo_06eda8b43ed72304(struct telio_logger_c
 }
 
 
-void _wrap_TelioLoggerCb_Cb_set_teliogo_06eda8b43ed72304(struct telio_logger_cb *_swig_go_0, void* _swig_go_1) {
+void _wrap_TelioLoggerCb_Cb_set_teliogo_f72470d6aeaeba90(struct telio_logger_cb *_swig_go_0, void* _swig_go_1) {
   struct telio_logger_cb *arg1 = (struct telio_logger_cb *) 0 ;
   telio_logger_fn arg2 = (telio_logger_fn) 0 ;
   
@@ -576,7 +576,7 @@ void _wrap_TelioLoggerCb_Cb_set_teliogo_06eda8b43ed72304(struct telio_logger_cb 
 }
 
 
-void* _wrap_TelioLoggerCb_Cb_get_teliogo_06eda8b43ed72304(struct telio_logger_cb *_swig_go_0) {
+void* _wrap_TelioLoggerCb_Cb_get_teliogo_f72470d6aeaeba90(struct telio_logger_cb *_swig_go_0) {
   struct telio_logger_cb *arg1 = (struct telio_logger_cb *) 0 ;
   telio_logger_fn result;
   void* _swig_go_result;
@@ -589,7 +589,7 @@ void* _wrap_TelioLoggerCb_Cb_get_teliogo_06eda8b43ed72304(struct telio_logger_cb
 }
 
 
-struct telio_logger_cb *_wrap_new_TelioLoggerCb_teliogo_06eda8b43ed72304() {
+struct telio_logger_cb *_wrap_new_TelioLoggerCb_teliogo_f72470d6aeaeba90() {
   struct telio_logger_cb *result = 0 ;
   struct telio_logger_cb *_swig_go_result;
   
@@ -600,7 +600,7 @@ struct telio_logger_cb *_wrap_new_TelioLoggerCb_teliogo_06eda8b43ed72304() {
 }
 
 
-void _wrap_delete_TelioLoggerCb_teliogo_06eda8b43ed72304(struct telio_logger_cb *_swig_go_0) {
+void _wrap_delete_TelioLoggerCb_teliogo_f72470d6aeaeba90(struct telio_logger_cb *_swig_go_0) {
   struct telio_logger_cb *arg1 = (struct telio_logger_cb *) 0 ;
   
   arg1 = *(struct telio_logger_cb **)&_swig_go_0; 
@@ -610,7 +610,7 @@ void _wrap_delete_TelioLoggerCb_teliogo_06eda8b43ed72304(struct telio_logger_cb 
 }
 
 
-intgo _wrap_Telio_GetDefaultAdapter_teliogo_06eda8b43ed72304() {
+intgo _wrap_Telio_GetDefaultAdapter_teliogo_f72470d6aeaeba90() {
   enum telio_adapter_type result;
   intgo _swig_go_result;
   
@@ -621,7 +621,7 @@ intgo _wrap_Telio_GetDefaultAdapter_teliogo_06eda8b43ed72304() {
 }
 
 
-struct telio *_wrap_new_Telio_teliogo_06eda8b43ed72304(_gostring_ _swig_go_0, telio_event_cb _swig_go_1, intgo _swig_go_2, telio_logger_cb _swig_go_3) {
+struct telio *_wrap_new_Telio_teliogo_f72470d6aeaeba90(_gostring_ _swig_go_0, telio_event_cb _swig_go_1, intgo _swig_go_2, telio_logger_cb _swig_go_3) {
   char *arg1 = (char *) 0 ;
   telio_event_cb arg2 ;
   enum telio_log_level arg3 ;
@@ -649,7 +649,7 @@ struct telio *_wrap_new_Telio_teliogo_06eda8b43ed72304(_gostring_ _swig_go_0, te
 }
 
 
-void _wrap_delete_Telio_teliogo_06eda8b43ed72304(struct telio *_swig_go_0) {
+void _wrap_delete_Telio_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0) {
   struct telio *arg1 = (struct telio *) 0 ;
   
   arg1 = *(struct telio **)&_swig_go_0; 
@@ -659,7 +659,7 @@ void _wrap_delete_Telio_teliogo_06eda8b43ed72304(struct telio *_swig_go_0) {
 }
 
 
-intgo _wrap_Telio_Start_teliogo_06eda8b43ed72304(struct telio *_swig_go_0, _gostring_ _swig_go_1, intgo _swig_go_2) {
+intgo _wrap_Telio_Start_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0, _gostring_ _swig_go_1, intgo _swig_go_2) {
   struct telio *arg1 = (struct telio *) 0 ;
   char *arg2 = (char *) 0 ;
   enum telio_adapter_type arg3 ;
@@ -681,7 +681,7 @@ intgo _wrap_Telio_Start_teliogo_06eda8b43ed72304(struct telio *_swig_go_0, _gost
 }
 
 
-intgo _wrap_Telio_StartNamed_teliogo_06eda8b43ed72304(struct telio *_swig_go_0, _gostring_ _swig_go_1, intgo _swig_go_2, _gostring_ _swig_go_3) {
+intgo _wrap_Telio_StartNamed_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0, _gostring_ _swig_go_1, intgo _swig_go_2, _gostring_ _swig_go_3) {
   struct telio *arg1 = (struct telio *) 0 ;
   char *arg2 = (char *) 0 ;
   enum telio_adapter_type arg3 ;
@@ -710,7 +710,7 @@ intgo _wrap_Telio_StartNamed_teliogo_06eda8b43ed72304(struct telio *_swig_go_0, 
 }
 
 
-intgo _wrap_Telio_StartWithTun_teliogo_06eda8b43ed72304(struct telio *_swig_go_0, _gostring_ _swig_go_1, intgo _swig_go_2, intgo _swig_go_3) {
+intgo _wrap_Telio_StartWithTun_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0, _gostring_ _swig_go_1, intgo _swig_go_2, intgo _swig_go_3) {
   struct telio *arg1 = (struct telio *) 0 ;
   char *arg2 = (char *) 0 ;
   enum telio_adapter_type arg3 ;
@@ -734,7 +734,7 @@ intgo _wrap_Telio_StartWithTun_teliogo_06eda8b43ed72304(struct telio *_swig_go_0
 }
 
 
-intgo _wrap_Telio_EnableMagicDns_teliogo_06eda8b43ed72304(struct telio *_swig_go_0, _gostring_ _swig_go_1) {
+intgo _wrap_Telio_EnableMagicDns_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0, _gostring_ _swig_go_1) {
   struct telio *arg1 = (struct telio *) 0 ;
   char *arg2 = (char *) 0 ;
   enum telio_result result;
@@ -754,7 +754,7 @@ intgo _wrap_Telio_EnableMagicDns_teliogo_06eda8b43ed72304(struct telio *_swig_go
 }
 
 
-intgo _wrap_Telio_DisableMagicDns_teliogo_06eda8b43ed72304(struct telio *_swig_go_0) {
+intgo _wrap_Telio_DisableMagicDns_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0) {
   struct telio *arg1 = (struct telio *) 0 ;
   enum telio_result result;
   intgo _swig_go_result;
@@ -767,7 +767,7 @@ intgo _wrap_Telio_DisableMagicDns_teliogo_06eda8b43ed72304(struct telio *_swig_g
 }
 
 
-intgo _wrap_Telio_Stop_teliogo_06eda8b43ed72304(struct telio *_swig_go_0) {
+intgo _wrap_Telio_Stop_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0) {
   struct telio *arg1 = (struct telio *) 0 ;
   enum telio_result result;
   intgo _swig_go_result;
@@ -780,7 +780,7 @@ intgo _wrap_Telio_Stop_teliogo_06eda8b43ed72304(struct telio *_swig_go_0) {
 }
 
 
-long long _wrap_Telio_GetAdapterLuid_teliogo_06eda8b43ed72304(struct telio *_swig_go_0) {
+long long _wrap_Telio_GetAdapterLuid_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0) {
   struct telio *arg1 = (struct telio *) 0 ;
   unsigned long long result;
   long long _swig_go_result;
@@ -793,7 +793,7 @@ long long _wrap_Telio_GetAdapterLuid_teliogo_06eda8b43ed72304(struct telio *_swi
 }
 
 
-intgo _wrap_Telio_SetPrivateKey_teliogo_06eda8b43ed72304(struct telio *_swig_go_0, _gostring_ _swig_go_1) {
+intgo _wrap_Telio_SetPrivateKey_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0, _gostring_ _swig_go_1) {
   struct telio *arg1 = (struct telio *) 0 ;
   char *arg2 = (char *) 0 ;
   enum telio_result result;
@@ -813,7 +813,7 @@ intgo _wrap_Telio_SetPrivateKey_teliogo_06eda8b43ed72304(struct telio *_swig_go_
 }
 
 
-_gostring_ _wrap_Telio_GetPrivateKey_teliogo_06eda8b43ed72304(struct telio *_swig_go_0) {
+_gostring_ _wrap_Telio_GetPrivateKey_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0) {
   struct telio *arg1 = (struct telio *) 0 ;
   char *result = 0 ;
   _gostring_ _swig_go_result;
@@ -826,7 +826,7 @@ _gostring_ _wrap_Telio_GetPrivateKey_teliogo_06eda8b43ed72304(struct telio *_swi
 }
 
 
-intgo _wrap_Telio_SetFwmark_teliogo_06eda8b43ed72304(struct telio *_swig_go_0, intgo _swig_go_1) {
+intgo _wrap_Telio_SetFwmark_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0, intgo _swig_go_1) {
   struct telio *arg1 = (struct telio *) 0 ;
   unsigned int arg2 ;
   enum telio_result result;
@@ -841,7 +841,7 @@ intgo _wrap_Telio_SetFwmark_teliogo_06eda8b43ed72304(struct telio *_swig_go_0, i
 }
 
 
-intgo _wrap_Telio_NotifyNetworkChange_teliogo_06eda8b43ed72304(struct telio *_swig_go_0, _gostring_ _swig_go_1) {
+intgo _wrap_Telio_NotifyNetworkChange_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0, _gostring_ _swig_go_1) {
   struct telio *arg1 = (struct telio *) 0 ;
   char *arg2 = (char *) 0 ;
   enum telio_result result;
@@ -861,7 +861,7 @@ intgo _wrap_Telio_NotifyNetworkChange_teliogo_06eda8b43ed72304(struct telio *_sw
 }
 
 
-intgo _wrap_Telio_ConnectToExitNode_teliogo_06eda8b43ed72304(struct telio *_swig_go_0, _gostring_ _swig_go_1, _gostring_ _swig_go_2, _gostring_ _swig_go_3) {
+intgo _wrap_Telio_ConnectToExitNode_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0, _gostring_ _swig_go_1, _gostring_ _swig_go_2, _gostring_ _swig_go_3) {
   struct telio *arg1 = (struct telio *) 0 ;
   char *arg2 = (char *) 0 ;
   char *arg3 = (char *) 0 ;
@@ -895,7 +895,7 @@ intgo _wrap_Telio_ConnectToExitNode_teliogo_06eda8b43ed72304(struct telio *_swig
 }
 
 
-intgo _wrap_Telio_ConnectToExitNodeWithId_teliogo_06eda8b43ed72304(struct telio *_swig_go_0, _gostring_ _swig_go_1, _gostring_ _swig_go_2, _gostring_ _swig_go_3, _gostring_ _swig_go_4) {
+intgo _wrap_Telio_ConnectToExitNodeWithId_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0, _gostring_ _swig_go_1, _gostring_ _swig_go_2, _gostring_ _swig_go_3, _gostring_ _swig_go_4) {
   struct telio *arg1 = (struct telio *) 0 ;
   char *arg2 = (char *) 0 ;
   char *arg3 = (char *) 0 ;
@@ -936,7 +936,7 @@ intgo _wrap_Telio_ConnectToExitNodeWithId_teliogo_06eda8b43ed72304(struct telio 
 }
 
 
-intgo _wrap_Telio_ConnectToExitNodePostquantum_teliogo_06eda8b43ed72304(struct telio *_swig_go_0, _gostring_ _swig_go_1, _gostring_ _swig_go_2, _gostring_ _swig_go_3, _gostring_ _swig_go_4) {
+intgo _wrap_Telio_ConnectToExitNodePostquantum_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0, _gostring_ _swig_go_1, _gostring_ _swig_go_2, _gostring_ _swig_go_3, _gostring_ _swig_go_4) {
   struct telio *arg1 = (struct telio *) 0 ;
   char *arg2 = (char *) 0 ;
   char *arg3 = (char *) 0 ;
@@ -977,7 +977,7 @@ intgo _wrap_Telio_ConnectToExitNodePostquantum_teliogo_06eda8b43ed72304(struct t
 }
 
 
-intgo _wrap_Telio_DisconnectFromExitNode_teliogo_06eda8b43ed72304(struct telio *_swig_go_0, _gostring_ _swig_go_1) {
+intgo _wrap_Telio_DisconnectFromExitNode_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0, _gostring_ _swig_go_1) {
   struct telio *arg1 = (struct telio *) 0 ;
   char *arg2 = (char *) 0 ;
   enum telio_result result;
@@ -997,7 +997,7 @@ intgo _wrap_Telio_DisconnectFromExitNode_teliogo_06eda8b43ed72304(struct telio *
 }
 
 
-intgo _wrap_Telio_DisconnectFromExitNodes_teliogo_06eda8b43ed72304(struct telio *_swig_go_0) {
+intgo _wrap_Telio_DisconnectFromExitNodes_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0) {
   struct telio *arg1 = (struct telio *) 0 ;
   enum telio_result result;
   intgo _swig_go_result;
@@ -1010,7 +1010,7 @@ intgo _wrap_Telio_DisconnectFromExitNodes_teliogo_06eda8b43ed72304(struct telio 
 }
 
 
-intgo _wrap_Telio_SetMeshnet_teliogo_06eda8b43ed72304(struct telio *_swig_go_0, _gostring_ _swig_go_1) {
+intgo _wrap_Telio_SetMeshnet_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0, _gostring_ _swig_go_1) {
   struct telio *arg1 = (struct telio *) 0 ;
   char *arg2 = (char *) 0 ;
   enum telio_result result;
@@ -1030,7 +1030,7 @@ intgo _wrap_Telio_SetMeshnet_teliogo_06eda8b43ed72304(struct telio *_swig_go_0, 
 }
 
 
-intgo _wrap_Telio_SetMeshnetOff_teliogo_06eda8b43ed72304(struct telio *_swig_go_0) {
+intgo _wrap_Telio_SetMeshnetOff_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0) {
   struct telio *arg1 = (struct telio *) 0 ;
   enum telio_result result;
   intgo _swig_go_result;
@@ -1043,7 +1043,20 @@ intgo _wrap_Telio_SetMeshnetOff_teliogo_06eda8b43ed72304(struct telio *_swig_go_
 }
 
 
-_gostring_ _wrap_Telio_GenerateSecretKey_teliogo_06eda8b43ed72304(struct telio *_swig_go_0) {
+intgo _wrap_Telio_GenerateStackPanic_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0) {
+  struct telio *arg1 = (struct telio *) 0 ;
+  enum telio_result result;
+  intgo _swig_go_result;
+  
+  arg1 = *(struct telio **)&_swig_go_0; 
+  
+  result = (enum telio_result)telio_generate_stack_panic(arg1);
+  _swig_go_result = (intgo)result; 
+  return _swig_go_result;
+}
+
+
+_gostring_ _wrap_Telio_GenerateSecretKey_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0) {
   struct telio *arg1 = (struct telio *) 0 ;
   char *result = 0 ;
   _gostring_ _swig_go_result;
@@ -1057,7 +1070,7 @@ _gostring_ _wrap_Telio_GenerateSecretKey_teliogo_06eda8b43ed72304(struct telio *
 }
 
 
-_gostring_ _wrap_Telio_GeneratePublicKey_teliogo_06eda8b43ed72304(struct telio *_swig_go_0, _gostring_ _swig_go_1) {
+_gostring_ _wrap_Telio_GeneratePublicKey_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0, _gostring_ _swig_go_1) {
   struct telio *arg1 = (struct telio *) 0 ;
   char *arg2 = (char *) 0 ;
   char *result = 0 ;
@@ -1078,7 +1091,7 @@ _gostring_ _wrap_Telio_GeneratePublicKey_teliogo_06eda8b43ed72304(struct telio *
 }
 
 
-_gostring_ _wrap_Telio_GetStatusMap_teliogo_06eda8b43ed72304(struct telio *_swig_go_0) {
+_gostring_ _wrap_Telio_GetStatusMap_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0) {
   struct telio *arg1 = (struct telio *) 0 ;
   char *result = 0 ;
   _gostring_ _swig_go_result;
@@ -1092,7 +1105,7 @@ _gostring_ _wrap_Telio_GetStatusMap_teliogo_06eda8b43ed72304(struct telio *_swig
 }
 
 
-_gostring_ _wrap_Telio_GetLastError_teliogo_06eda8b43ed72304(struct telio *_swig_go_0) {
+_gostring_ _wrap_Telio_GetLastError_teliogo_f72470d6aeaeba90(struct telio *_swig_go_0) {
   struct telio *arg1 = (struct telio *) 0 ;
   char *result = 0 ;
   _gostring_ _swig_go_result;
@@ -1106,7 +1119,7 @@ _gostring_ _wrap_Telio_GetLastError_teliogo_06eda8b43ed72304(struct telio *_swig
 }
 
 
-_gostring_ _wrap_Telio_GetVersionTag_teliogo_06eda8b43ed72304() {
+_gostring_ _wrap_Telio_GetVersionTag_teliogo_f72470d6aeaeba90() {
   char *result = 0 ;
   _gostring_ _swig_go_result;
   
@@ -1118,7 +1131,7 @@ _gostring_ _wrap_Telio_GetVersionTag_teliogo_06eda8b43ed72304() {
 }
 
 
-_gostring_ _wrap_Telio_GetCommitSha_teliogo_06eda8b43ed72304() {
+_gostring_ _wrap_Telio_GetCommitSha_teliogo_f72470d6aeaeba90() {
   char *result = 0 ;
   _gostring_ _swig_go_result;
   

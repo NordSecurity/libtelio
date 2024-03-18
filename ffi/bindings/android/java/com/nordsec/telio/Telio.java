@@ -112,6 +112,10 @@ public class Telio {
     return TelioResult.swigToEnum(libtelioJNI.Telio_setMeshnetOff(swigCPtr, this));
   }
 
+  public TelioResult generateStackPanic() {
+    return TelioResult.swigToEnum(libtelioJNI.Telio_generateStackPanic(swigCPtr, this));
+  }
+
   public String generateSecretKey() {
     return libtelioJNI.Telio_generateSecretKey(swigCPtr, this);
   }
