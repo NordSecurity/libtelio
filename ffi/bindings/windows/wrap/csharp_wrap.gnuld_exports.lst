@@ -20,6 +20,7 @@
     CSharp_NordSecfTelio_Telio_DisconnectFromExitNodes___;
     CSharp_NordSecfTelio_Telio_SetMeshnet___;
     CSharp_NordSecfTelio_Telio_SetMeshnetOff___;
+    CSharp_NordSecfTelio_Telio_GenerateStackPanic___;
     CSharp_NordSecfTelio_Telio_GenerateSecretKey___;
     CSharp_NordSecfTelio_Telio_GeneratePublicKey___;
     CSharp_NordSecfTelio_Telio_GetStatusMap___;

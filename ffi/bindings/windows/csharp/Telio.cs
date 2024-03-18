@@ -166,6 +166,11 @@ public class Telio : global::System.IDisposable {
     return ret;
   }
 
+  public TelioResult GenerateStackPanic() {
+    TelioResult ret = (TelioResult)libtelioPINVOKE.Telio_GenerateStackPanic(swigCPtr);
+    return ret;
+  }
+
   public string GenerateSecretKey() {
     string ret = libtelioPINVOKE.Telio_GenerateSecretKey(swigCPtr);
     return ret;
@@ -437,6 +442,9 @@ class libtelioPINVOKE {
 
   [global::System.Runtime.InteropServices.DllImport("telio", EntryPoint="CSharp_NordSecfTelio_Telio_SetMeshnetOff___")]
   public static extern int Telio_SetMeshnetOff(global::System.Runtime.InteropServices.HandleRef jarg1);
+
+  [global::System.Runtime.InteropServices.DllImport("telio", EntryPoint="CSharp_NordSecfTelio_Telio_GenerateStackPanic___")]
+  public static extern int Telio_GenerateStackPanic(global::System.Runtime.InteropServices.HandleRef jarg1);
 
   [global::System.Runtime.InteropServices.DllImport("telio", EntryPoint="CSharp_NordSecfTelio_Telio_GenerateSecretKey___")]
   public static extern string Telio_GenerateSecretKey(global::System.Runtime.InteropServices.HandleRef jarg1);

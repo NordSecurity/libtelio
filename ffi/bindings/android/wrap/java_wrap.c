@@ -1017,6 +1017,21 @@ SWIGEXPORT jint JNICALL Java_com_nordsec_telio_libtelioJNI_Telio_1setMeshnetOff(
 }
 
 
+SWIGEXPORT jint JNICALL Java_com_nordsec_telio_libtelioJNI_Telio_1generateStackPanic(JNIEnv *jenv, jclass jcls, jlong jarg1, jobject jarg1_) {
+  jint jresult = 0 ;
+  struct telio *arg1 = (struct telio *) 0 ;
+  enum telio_result result;
+  
+  (void)jenv;
+  (void)jcls;
+  (void)jarg1_;
+  arg1 = *(struct telio **)&jarg1; 
+  result = (enum telio_result)telio_generate_stack_panic(arg1);
+  jresult = (jint)result; 
+  return jresult;
+}
+
+
 SWIGEXPORT jstring JNICALL Java_com_nordsec_telio_libtelioJNI_Telio_1generateSecretKey(JNIEnv *jenv, jclass jcls, jlong jarg1, jobject jarg1_) {
   jstring jresult = 0 ;
   struct telio *arg1 = (struct telio *) 0 ;
