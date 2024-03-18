@@ -270,6 +270,41 @@ pub struct AnalyticsEvent {
     pub timestamp: Instant,
 }
 
+impl AnalyticsEvent {
+    /// Checks if event is related to a virtual peer
+    /// 100.64.0.2 | fd74:656c:696f::2 -> DNS virtual peer
+    /// 100.64.0.3 | fd74:656c:696f::3 -> DNS virtual peer on exit node
+    /// 100.64.0.4 | fd74:656c:696f::4 -> STUN server
+    /// 100.64.0.5 | fd74:656c:696f::5 -> Multicast virtual peer
+    /// 100.64.0.6 | fd74:656c:696f::6 -> Reserved
+    /// 100.64.0.7 | fd74:656c:696f::7 -> Reserved
+    pub fn is_from_virtual_peer(&self) -> bool {
+        let check_virtual_address_range = |addr| -> bool {
+            match addr {
+                IpAddr::V4(ipv4) => {
+                    matches!(ipv4.octets(), [100, 64, 0, 2..=7])
+                }
+                IpAddr::V6(ipv6) => {
+                    matches!(ipv6.segments(), [0xfd74, 0x656c, 0x696f, .., 2..=7])
+                }
+            }
+        };
+        for dual_addresses in &self.dual_ip_addresses {
+            if let Ok(addresses) = dual_addresses.get_targets() {
+                if check_virtual_address_range(addresses.0) {
+                    return true;
+                }
+                if let Some(secondary) = addresses.1 {
+                    if check_virtual_address_range(secondary) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+}
+
 impl Peer {
     /// Represents 2022-03-04 17:00:05
     #[cfg(test)]

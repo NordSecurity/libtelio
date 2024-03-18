@@ -518,7 +518,13 @@ async fn build_requested_peers_list<
         } else {
             resolver.get_default_dns_allowed_ips()
         };
-        let dns_peer = resolver.get_peer(dns_allowed_ips);
+        let mut dns_peer = resolver.get_peer(dns_allowed_ips);
+        dns_peer.ip_addresses = dns_peer
+            .allowed_ips
+            .iter()
+            .copied()
+            .map(|ip| ip.ip())
+            .collect();
         let dns_peer_public_key = dns_peer.public_key;
         let requested_peer = RequestedPeer {
             peer: dns_peer,

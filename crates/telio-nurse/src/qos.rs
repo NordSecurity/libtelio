@@ -371,7 +371,13 @@ impl Analytics {
     ///
     /// * `event` - Received WG event.
     async fn handle_wg_event(&mut self, event: &AnalyticsEvent) {
-        telio_log_trace!("WG event: {:?}", event);
+        if event.is_from_virtual_peer() {
+            telio_log_trace!("WG event (Virtual peer, skipped): {:?}", event);
+            return;
+        } else {
+            telio_log_trace!("WG event: {:?}", event);
+        }
+
         self.nodes
             .entry(event.public_key)
             .and_modify(|n| {
@@ -526,7 +532,10 @@ impl Analytics {
 mod tests {
     use super::*;
     use histogram::Histogram;
-    use std::net::{Ipv4Addr, Ipv6Addr};
+    use std::{
+        collections::HashSet,
+        net::{Ipv4Addr, Ipv6Addr},
+    };
     use telio_task::io::McChan;
 
     use telio_crypto::{PublicKey, SecretKey};
@@ -706,6 +715,48 @@ mod tests {
         };
 
         assert_eq!(output, expected_output);
+    }
+
+    #[tokio::test]
+    async fn test_handle_wg_event_from_virtual_peers() {
+        let mut analytics = setup();
+
+        let mut event = generate_event();
+        let mut event1 = generate_event();
+        let mut event2 = generate_event();
+        let mut event3 = generate_event();
+        let mut event4 = generate_event();
+        event.dual_ip_addresses =
+            vec![DualTarget::new((Some(Ipv4Addr::new(100, 64, 0, 1)), None)).unwrap()];
+        event1.dual_ip_addresses =
+            vec![DualTarget::new((Some(Ipv4Addr::new(100, 64, 0, 2)), None)).unwrap()];
+        event2.dual_ip_addresses = vec![DualTarget::new((
+            None,
+            Some(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 1)),
+        ))
+        .unwrap()];
+        event3.dual_ip_addresses = vec![DualTarget::new((
+            None,
+            Some(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 7)),
+        ))
+        .unwrap()];
+        event4.dual_ip_addresses =
+            vec![DualTarget::new((Some(Ipv4Addr::new(100, 64, 0, 8)), None)).unwrap()];
+
+        let mut expected_nodes_keys = HashSet::new();
+        expected_nodes_keys.insert(event.public_key);
+        expected_nodes_keys.insert(event2.public_key);
+        expected_nodes_keys.insert(event4.public_key);
+
+        analytics.handle_wg_event(&event).await;
+        analytics.handle_wg_event(&event1).await;
+        analytics.handle_wg_event(&event2).await;
+        analytics.handle_wg_event(&event3).await;
+        analytics.handle_wg_event(&event4).await;
+
+        // Assert that the inserted nodes were the expected ones.
+        let nodes_keys: HashSet<_> = analytics.nodes.keys().copied().collect();
+        assert_eq!(nodes_keys, expected_nodes_keys);
     }
 
     fn setup() -> Analytics {
