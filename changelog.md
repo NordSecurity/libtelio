@@ -25,6 +25,7 @@
 * LLT-5007: Bump moose tracker to v3.0.0-libtelioApp
 * LLT-4873: Remove old SWIG FFI bindings
 * LLT-4996: nurse: Stop adding virtual peers to qos
+* LLT-4687: Add PQ VPN nat-lab tests
 
 <br>
 
