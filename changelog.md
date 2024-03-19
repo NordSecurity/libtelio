@@ -21,6 +21,7 @@
 * LLT-5002: Fix preshared key parsing logic
 * LLT-5004: Wireguard go oscillation
 * LLT-4983: Expose telio_generate_stack_panic method
+* LLT-5007: Bump moose tracker to v3.0.0-libtelioApp
 
 <br>
 
