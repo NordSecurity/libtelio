@@ -1,39 +1,38 @@
-use std::ffi::CStr;
-
-use libc::{c_char, c_void};
 use telio;
 use telio::TelioTracingSubscriber;
 
 mod test_module {
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
 
-    use telio::SubscriberCallback;
+    use telio::ffi_types::TelioLoggerCb;
 
     use super::*;
 
     #[test]
     fn test_logger() {
-        let call_count = AtomicUsize::new(0);
-        unsafe extern "C" fn test_telio_logger_fn(
-            ctx: *mut c_void,
-            level: telio::ffi_types::telio_log_level,
-            message: *const c_char,
-        ) {
-            assert_eq!(telio::ffi_types::telio_log_level::TELIO_LOG_INFO, level);
-            let message = CStr::from_ptr(message);
-            assert_eq!(
-                r#""logger::test_module":39 test message"#,
-                message.to_str().unwrap()
-            );
-            let call_count: &AtomicUsize = &*(ctx as *const AtomicUsize);
-            assert_eq!(0, call_count.fetch_add(1, Ordering::Relaxed));
+        let call_count = Arc::new(AtomicUsize::new(0));
+
+        #[derive(Debug)]
+        struct TestLogger {
+            call_count: Arc<AtomicUsize>,
         }
-        let logger = telio::ffi_types::telio_logger_cb {
-            ctx: &call_count as *const AtomicUsize as *mut c_void,
-            cb: test_telio_logger_fn,
+        impl TelioLoggerCb for TestLogger {
+            fn log(&self, log_level: telio::ffi_types::TelioLogLevel, payload: String) {
+                assert!(matches!(log_level, telio::ffi_types::TelioLogLevel::Info));
+                assert_eq!(r#""logger::test_module":38 test message"#, payload);
+                assert_eq!(0, self.call_count.fetch_add(1, Ordering::Relaxed));
+            }
+        }
+
+        let logger = TestLogger {
+            call_count: call_count.clone(),
         };
+
         let tracing_subscriber =
-            TelioTracingSubscriber::new(SubscriberCallback::Swig(logger), tracing::Level::INFO);
+            TelioTracingSubscriber::new(Box::new(logger), tracing::Level::INFO);
         tracing::subscriber::set_global_default(tracing_subscriber).unwrap();
 
         tracing::info!("test message");

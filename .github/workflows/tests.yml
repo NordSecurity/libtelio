@@ -34,24 +34,6 @@ jobs:
           command: test
           args: --all --lib -- --nocapture
 
-  test-ffi:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
-        with:
-          submodules: true
-      - uses: Swatinem/rust-cache@b8a6852b4f997182bdea832df3f9e153038b5191 # v2.6.0
-      - name: Build libtelio
-        run: python3 ci/build_libtelio.py build linux x86_64
-      - name: Test FFI
-        run: |
-          cd ./ffi/tests
-          mkdir build
-          cd build
-          cmake ..
-          make
-          sudo ./test_panic
-
   test-replacement-script:
     runs-on: ubuntu-22.04
     steps:
