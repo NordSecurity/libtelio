@@ -344,6 +344,20 @@ pub struct FeatureDns {
     pub exit_dns: Option<FeatureExitDns>,
 }
 
+/// Turns on the no link detection mechanism
+#[derive(Default, Copy, Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct FeatureLinkDetection {
+    /// Configurable rtt in seconds
+    #[serde(default = "FeatureLinkDetection::default_configurable_rtt")]
+    pub rtt_seconds: u64,
+}
+
+impl FeatureLinkDetection {
+    const fn default_configurable_rtt() -> u64 {
+        15
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 /// Encompasses all of the possible features that can be enabled
 pub struct Features {
@@ -384,6 +398,9 @@ pub struct Features {
     /// Feature configuration for DNS.
     #[serde(default)]
     pub dns: FeatureDns,
+    /// No link detection mechanism
+    #[serde(default)]
+    pub link_detection: Option<FeatureLinkDetection>,
 }
 
 impl FeaturePaths {
@@ -555,6 +572,7 @@ mod tests {
             }),
             ttl_value: TtlValue::default(),
         },
+        link_detection: None,
     });
 
     static EXPECTED_FEATURES_WITHOUT_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
@@ -601,6 +619,7 @@ mod tests {
             }),
             ttl_value: TtlValue::default(),
         },
+        link_detection: None,
     });
 
     #[test]
@@ -777,6 +796,7 @@ mod tests {
                 exit_dns: None,
                 ttl_value: TtlValue::default(),
             },
+            link_detection: None,
         };
 
         let empty_qos_features = Features {
@@ -807,6 +827,7 @@ mod tests {
                 exit_dns: None,
                 ttl_value: TtlValue::default(),
             },
+            link_detection: None,
         };
 
         let no_qos_features = Features {
@@ -832,6 +853,7 @@ mod tests {
                 exit_dns: None,
                 ttl_value: TtlValue::default(),
             },
+            link_detection: None,
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -880,6 +902,7 @@ mod tests {
                 }),
                 ttl_value: TtlValue::default(),
             },
+            link_detection: None,
         };
 
         let empty_features = Features {
@@ -901,6 +924,7 @@ mod tests {
                 }),
                 ttl_value: TtlValue::default(),
             },
+            link_detection: None,
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -933,6 +957,7 @@ mod tests {
                 exit_dns: None,
                 ttl_value: TtlValue::default(),
             },
+            link_detection: Default::default(),
         };
 
         assert_eq!(from_str::<Features>(empty_json).unwrap(), empty_features);
@@ -987,6 +1012,7 @@ mod tests {
                 exit_dns: None,
                 ttl_value: TtlValue::default(),
             },
+            link_detection: None,
         };
 
         assert_eq!(Features::default(), expected_defaults);

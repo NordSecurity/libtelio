@@ -60,11 +60,23 @@ class Nurse(DataClassJsonMixin):
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
-class Wireguard(DataClassJsonMixin):
+class LinkDetection(DataClassJsonMixin):
+    rtt_seconds: Optional[int] = None
+
+
+@dataclass_json(undefined=Undefined.EXCLUDE)
+@dataclass
+class PersistentKeepalive(DataClassJsonMixin):
     proxying: Optional[int] = 25
     direct: Optional[int] = 5
     vpn: Optional[int] = 25
     stun: Optional[int] = 25
+
+
+@dataclass_json(undefined=Undefined.EXCLUDE)
+@dataclass
+class Wireguard(DataClassJsonMixin):
+    persistent_keepalive: PersistentKeepalive
 
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
@@ -77,6 +89,7 @@ class TelioFeatures(DataClassJsonMixin):
     ipv6: bool = False
     nicknames: bool = False
     boringtun_reset_connections: bool = False
+    link_detection: Optional[LinkDetection] = None
     wireguard: Optional[Wireguard] = None
     dns: Dns = field(
         default_factory=lambda: Dns(
