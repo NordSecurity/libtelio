@@ -21,6 +21,8 @@
 * LLT-5002: Fix preshared key parsing logic
 * LLT-5004: Wireguard go oscillation
 * LLT-4983: Expose telio_generate_stack_panic method
+* LLT-4509: Enable windows arm64 build.
+* LLT-5007: Bump moose tracker to v3.0.0-libtelioApp
 * LLT-4873: Remove old SWIG FFI bindings
 
 <br>

@@ -26,12 +26,23 @@ fn main() {
 
     println!("cargo:rustc-link-lib=static=wireguard-go");
 
+    // At this stage, target_arch will be used only in windows-native build 
+    let target_arch = {
+        match env::var("CARGO_CFG_TARGET_ARCH").unwrap().as_str() {
+            "x86_64" => "amd64",
+            "aarch64" => "arm64",
+            _ => {
+                panic!("Incompatible CARGO_CFG_TARGET_ARCH value!");
+            }
+        }
+    };
+
     // Cannot execute PowerShell scripts on Windows the same way Shell scripts are run on Linux.
     // Here, PowerShell needs to be called as the actual command and the script path be passed as argument.
     if host_os == "windows" {
         let output = Command::new("powershell.exe")
             .current_dir("wireguard-go")
-            .arg("./build.ps1")
+            .args(&["./build.ps1", target_arch])
             .output()
             .expect("failed to build");
         if !output.status.success() {

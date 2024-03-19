@@ -187,11 +187,11 @@ pub mod moose {
     }
 
     /// Mocked moose function.
-    pub fn set_context_application_version(
+    pub fn set_context_application_libtelioapp_version(
         app_version: String,
     ) -> std::result::Result<Result, Error> {
         match super::event_log(
-            "set_context_application_version",
+            "set_context_application_libtelioapp_version",
             Some(vec![app_version.as_str()]),
         ) {
             Ok(_) => Ok(Result::Success),
@@ -200,9 +200,11 @@ pub mod moose {
     }
 
     /// Mocked moose function.
-    pub fn set_context_application_name(app_name: String) -> std::result::Result<Result, Error> {
+    pub fn set_context_application_libtelioapp_name(
+        app_name: String,
+    ) -> std::result::Result<Result, Error> {
         match super::event_log(
-            "set_context_application_name",
+            "set_context_application_libtelioapp_name",
             Some(vec![app_name.as_str()]),
         ) {
             Ok(_) => Ok(Result::Success),
