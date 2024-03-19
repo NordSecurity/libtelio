@@ -21,6 +21,7 @@
 * LLT-5002: Fix preshared key parsing logic
 * LLT-5004: Wireguard go oscillation
 * LLT-4983: Expose telio_generate_stack_panic method
+* LLT-4873: Remove old SWIG FFI bindings
 
 <br>
 
