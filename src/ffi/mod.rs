@@ -917,7 +917,7 @@ pub extern "C" fn telio_get_last_error(_dev: &telio) -> *mut c_char {
 #[allow(clippy::panic)]
 #[no_mangle]
 /// For testing only.
-pub extern "C" fn __telio_generate_stack_panic(dev: &telio) -> telio_result {
+pub extern "C" fn telio_generate_stack_panic(dev: &telio) -> telio_result {
     ffi_catch_panic!({
         let dev = ffi_try!(dev.inner.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
 

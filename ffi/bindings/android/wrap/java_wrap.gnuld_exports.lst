@@ -31,6 +31,7 @@
     Java_com_nordsec_telio_libtelioJNI_Telio_1disconnectFromExitNodes;
     Java_com_nordsec_telio_libtelioJNI_Telio_1setMeshnet;
     Java_com_nordsec_telio_libtelioJNI_Telio_1setMeshnetOff;
+    Java_com_nordsec_telio_libtelioJNI_Telio_1generateStackPanic;
     Java_com_nordsec_telio_libtelioJNI_Telio_1generateSecretKey;
     Java_com_nordsec_telio_libtelioJNI_Telio_1generatePublicKey;
     Java_com_nordsec_telio_libtelioJNI_Telio_1getStatusMap;

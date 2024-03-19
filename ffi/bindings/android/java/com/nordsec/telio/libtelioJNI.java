@@ -41,6 +41,7 @@ public class libtelioJNI {
   public final static native int Telio_disconnectFromExitNodes(long jarg1, Telio jarg1_);
   public final static native int Telio_setMeshnet(long jarg1, Telio jarg1_, String jarg2);
   public final static native int Telio_setMeshnetOff(long jarg1, Telio jarg1_);
+  public final static native int Telio_generateStackPanic(long jarg1, Telio jarg1_);
   public final static native String Telio_generateSecretKey(long jarg1, Telio jarg1_);
   public final static native String Telio_generatePublicKey(long jarg1, Telio jarg1_, String jarg2);
   public final static native String Telio_getStatusMap(long jarg1, Telio jarg1_);
