@@ -6,7 +6,13 @@ from config import DERP_SERVERS
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
 from telio import PathType, State
-from telio_features import TelioFeatures, Direct, SkipUnresponsivePeers, Wireguard
+from telio_features import (
+    TelioFeatures,
+    Direct,
+    PersistentKeepalive,
+    SkipUnresponsivePeers,
+    Wireguard,
+)
 from typing import List, Tuple
 from utils import testing
 from utils.asyncio_util import run_async_context
@@ -27,7 +33,7 @@ DOCKER_UPNP_CLIENT_2_IP = "10.0.254.12"
 
 
 def _generate_setup_parameter_pair(
-    cfg: List[Tuple[ConnectionTag, List[str]]]
+    cfg: List[Tuple[ConnectionTag, List[str]]],
 ) -> List[SetupParameters]:
     return [
         SetupParameters(
@@ -448,7 +454,9 @@ async def test_direct_working_paths_with_skip_unresponsive_peers(
             param.features.direct.skip_unresponsive_peers = SkipUnresponsivePeers(
                 no_rx_threshold_secs=16
             )
-            param.features.wireguard = Wireguard(proxying=5, direct=5)
+            param.features.wireguard = Wireguard(
+                persistent_keepalive=PersistentKeepalive(proxying=5, direct=5)
+            )
 
         env = await setup_mesh_nodes(exit_stack, setup_params)
         api = env.api
