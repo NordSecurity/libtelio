@@ -5,6 +5,7 @@
 * LLT-5004: Wireguard go oscillation
 * LLT-4983: Expose telio_generate_stack_panic method
 * LLT-1113: Add no-link detection mechanism
+* LLT-5007: Bump moose tracker to v3.0.0-libtelioApp
 
 <br>
 
