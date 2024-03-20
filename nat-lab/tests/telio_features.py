@@ -42,18 +42,18 @@ class Lana(DataClassJsonMixin):
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
 class Qos(DataClassJsonMixin):
-    rtt_interval: Optional[int] = None
-    rtt_tries: Optional[int] = None
-    rtt_types: Optional[List[str]] = None
-    buckets: Optional[int] = None
+    rtt_interval: int = 300
+    rtt_tries: int = 3
+    rtt_types: List[str] = field(default_factory=lambda: ["Ping"])
+    buckets: int = 5
 
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
 class Nurse(DataClassJsonMixin):
     fingerprint: str
-    heartbeat_interval: Optional[int] = None
-    initial_heartbeat_interval: Optional[int] = None
+    heartbeat_interval: int = 3600
+    initial_heartbeat_interval: int = 300
     qos: Optional[Qos] = None
     enable_nat_type_collection: bool = False
 

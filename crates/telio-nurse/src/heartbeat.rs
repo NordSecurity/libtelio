@@ -993,7 +993,7 @@ impl Analytics {
 
 #[cfg(test)]
 mod tests {
-    use telio_model::mesh::Node;
+    use telio_model::{api_config::FeatureNurse, mesh::Node};
     use telio_sockets::{native::NativeSocket, Protector};
     use telio_task::{io::McChan, Task};
     use telio_utils::sync::mpsc::Receiver;
@@ -1033,7 +1033,7 @@ mod tests {
         let sk = SecretKey::gen();
         let pk = sk.public();
         let meshnet_id = Uuid::new_v4();
-        let mut config = HeartbeatConfig::default();
+        let mut config = HeartbeatConfig::new(&FeatureNurse::default());
         if let Some(interval) = collect_interval {
             config.collect_interval = interval;
         }

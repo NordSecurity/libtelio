@@ -71,7 +71,7 @@ IP_STACK_TEST_CONFIGS = [
 
 
 def build_telio_features(
-    fingerprint: str, initial_heartbeat_interval: Optional[int] = None
+    fingerprint: str, initial_heartbeat_interval: int = 300
 ) -> TelioFeatures:
     return TelioFeatures(
         lana=Lana(prod=False, event_path=CONTAINER_EVENT_PATH),
@@ -1085,10 +1085,10 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
 @pytest.mark.moose
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "initial_heartbeat_interval", [pytest.param(5), pytest.param(None)]
+    "initial_heartbeat_interval", [pytest.param(5), pytest.param(300)]
 )
 async def test_lana_initial_heartbeat_no_trigger(
-    initial_heartbeat_interval: Optional[int],
+    initial_heartbeat_interval: int,
 ):
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -1110,7 +1110,7 @@ async def test_lana_initial_heartbeat_no_trigger(
             ).run(api.get_meshmap(alpha.id))
         )
 
-        if initial_heartbeat_interval:
+        if initial_heartbeat_interval == 5:
             await asyncio.sleep(initial_heartbeat_interval)
             assert await wait_for_event_dump(
                 ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH, nr_events=1
