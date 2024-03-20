@@ -23,13 +23,13 @@ print_help() {
 wait_for_interface() {
     interface=$1
 
-    for i in {0..10}; do
+    for i in {0..5}; do
         if ip a show "$interface" up | grep -q inet; then
             echo "Network interface $interface is up."
             return
         else
             echo "Waiting for network interface $interface to be up..."
-            sleep 0.2
+            sleep 1
         fi
     done
 
