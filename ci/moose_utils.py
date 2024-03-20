@@ -33,20 +33,38 @@ def _download_moose_file(opsys: str, arch: str, file_name: str):
     if not os.path.isdir(os.path.dirname(output_path)):
         os.makedirs(os.path.dirname(output_path))
 
-    nexus_credentials = os.environ.get("LIBTELIO_ENV_SEC_NEXUS_CREDENTIALS", None)
-    nexus_url = os.environ.get("LIBTELIO_ENV_SEC_NEXUS_URL", None)
+    if opsys == "windows" and arch == "aarch64" and file_name == "sqlite3.dll":
+        token = os.environ["CI_JOB_TOKEN"]
+        
+        if "CI" in os.environ:
+            header = "JOB-TOKEN: {0}".format(token)
+        else:
+            header = "PRIVATE-TOKEN: {0}".format(token)
 
-    if nexus_credentials is None:
-        raise ValueError("LIBTELIO_ENV_SEC_NEXUS_CREDENTIALS not set")
+        gitlab_url = os.environ.get("LIBTELIO_ENV_SEC_GITLAB_REPOSITORY", None)
 
-    if nexus_url is None:
-        raise ValueError("LIBTELIO_ENV_SEC_NEXUS_URL not set")
+        if gitlab_url is None:
+            raise ValueError("LIBTELIO_ENV_SEC_GITLAB_REPOSITORY not set")
+        
+        url = f"https://{gitlab_url}/api/v4/projects/5585/packages/generic/sqlite_amalgamation/v3.41.2/windows_aarch64_sqlite3.dll"
 
-    url = f"{nexus_url}/repository/ll-gitlab-release/{MOOSE_PROJECT_ID}/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/{opsys}/{arch}/{file_name}"
+        subprocess.check_call(
+            ["curl", "-L", "-f", "--header", header, url, "-o", output_path]
+        )
+    else:
+        nexus_credentials = os.environ.get("LIBTELIO_ENV_SEC_NEXUS_CREDENTIALS", None)
+        nexus_url = os.environ.get("LIBTELIO_ENV_SEC_NEXUS_URL", None)
 
-    subprocess.check_call(
-        ["curl", "-f", "-u", nexus_credentials, url, "-o", output_path]
-    )
+        if nexus_credentials is None:
+            raise ValueError("LIBTELIO_ENV_SEC_NEXUS_CREDENTIALS not set")
+        if nexus_url is None:
+            raise ValueError("LIBTELIO_ENV_SEC_NEXUS_URL not set")
+
+        url = f"{nexus_url}/repository/ll-gitlab-release/{MOOSE_PROJECT_ID}/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/{opsys}/{arch}/{file_name}"
+
+        subprocess.check_call(
+            ["curl", "-f", "-u", nexus_credentials, url, "-o", output_path]
+        )
 
 
 def fetch_moose_dependencies(opsys: str, arch: str):
