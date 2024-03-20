@@ -100,6 +100,14 @@ LIBTELIO_CONFIG = {
                     )
                 }
             },
+            "aarch64": {
+                "env": {
+                    "RUSTFLAGS": (
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/windows/{MOOSE_MAP['aarch64']}",
+                        "set",
+                    )
+                }
+            },
         },
         "packages": {
             "tcli": {"tcli": "tcli.exe"},
@@ -260,16 +268,26 @@ def exec_build(args):
     else:
         moose_utils.unset_cargo_dependencies()
 
-    if args.msvc:
-        GLOBAL_CONFIG["windows"]["archs"]["x86_64"][
-            "rust_target"
-        ] = "x86_64-pc-windows-msvc"
-        GLOBAL_CONFIG["windows"]["env"]["RUSTFLAGS"] = (
-            [" -C target-feature=-crt-static "],
-            "set",
-        )
-        if args.moose:
-            moose_utils.create_msvc_import_library()
+    if args.os == "windows":
+        if args.msvc:
+            # Windows MSVC toolchain
+            if not "env" in GLOBAL_CONFIG["windows"]:
+                GLOBAL_CONFIG["windows"]["env"] = { "RUSTFLAGS": () }
+
+            if not "RUSTFLAGS" in GLOBAL_CONFIG["windows"]["env"]:
+                GLOBAL_CONFIG["windows"]["env"]["RUSTFLAGS"] = ()
+
+            GLOBAL_CONFIG["windows"]["env"]["RUSTFLAGS"] += (
+                [" -C target-feature=-crt-static "],
+                "set",
+            )
+            if args.moose:
+                moose_utils.create_msvc_import_library(args.arch)
+        else:
+            # Windows GNU toolchain
+            GLOBAL_CONFIG["windows"]["archs"][args.arch][
+                "rust_target"
+            ] = args.arch + "-pc-windows-gnu"
 
     config = rutils.CargoConfig(
         args.os,

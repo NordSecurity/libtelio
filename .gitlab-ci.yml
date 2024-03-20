@@ -15,5 +15,5 @@ libtelio-build-pipeline:
 
   trigger:
     project: $LIBTELIO_BUILD_PROJECT_PATH
-    branch: v0.4.16
+    branch: v0.5.0
     strategy: depend
