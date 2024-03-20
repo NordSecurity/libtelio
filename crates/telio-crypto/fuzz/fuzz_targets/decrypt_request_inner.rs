@@ -16,13 +16,12 @@ fuzz_target!(|data: &[u8]| {
     // This tests simulates case where attacker correctly generates random keys and applies outer layer
     // of encryption. We verify that we don't panic ragardless of what inner payload hides under outer
     // layer of encryption.
-
+    println!("data: {:?}", data);
     let outer_encrypted_payload = SECRET_BOX.encrypt(&(*OUTER_NONCE).into(), data).unwrap();
     let mut complete_outer_payload =
         Vec::with_capacity(EPHEMERAL_PK.len() + OUTER_NONCE.len() + outer_encrypted_payload.len());
     complete_outer_payload.extend_from_slice(&*EPHEMERAL_PK);
     complete_outer_payload.extend_from_slice(&*OUTER_NONCE);
     complete_outer_payload.extend(outer_encrypted_payload);
-
     decrypt_request(&complete_outer_payload, &*REMOTE_SK, |_| true);
 });
