@@ -662,7 +662,7 @@ class Client:
         await self._write_command(["mesh", "ping"])
 
     async def connect_to_vpn(
-        self, ip: str, port: int, public_key: str, timeout: float = 15
+        self, ip: str, port: int, public_key: str, timeout: float = 15, pq: bool = False
     ) -> None:
         await self._configure_interface()
         await self.get_router().create_vpn_route()
@@ -672,9 +672,14 @@ class Client:
             )
         ) as event:
             self.get_runtime().allowed_pub_keys.add(public_key)
+
+            cmd = ["dev", "con", public_key, f"{ip}:{port}"]
+            if pq:
+                cmd.append("--pq")
+
             await asyncio.wait_for(
                 asyncio.gather(*[
-                    self._write_command(["dev", "con", public_key, f"{ip}:{port}"]),
+                    self._write_command(cmd),
                     event,
                 ]),
                 timeout,
