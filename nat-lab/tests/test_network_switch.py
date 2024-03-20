@@ -335,8 +335,5 @@ async def test_mesh_network_switch_direct(
             await relay
             await direct
 
-        # TODO: workaround for LLT-4802, remove after that is fixed
-        await asyncio.sleep(25)
-
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())

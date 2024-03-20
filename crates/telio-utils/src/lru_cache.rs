@@ -264,6 +264,15 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
         self.map.remove(key).map(|v| v.data)
     }
 
+    /// Removes a key-value pair from the cache when predicate p
+    #[inline(always)]
+    pub fn retain<P>(&mut self, p: P)
+    where
+        P: Fn(&Key, &Value) -> bool,
+    {
+        self.map.retain(|k, v| p(k, &v.data));
+    }
+
     /// Returns a reference to the value with the given `key`, if present and not expired, without
     /// updating the timestamp.
     pub fn peek<Q: ?Sized>(&self, key: &Q) -> Option<&Value>

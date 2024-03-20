@@ -56,6 +56,7 @@ pub trait UpgradeSyncTrait {
         remote_endpoint: SocketAddr,
         local_direct_endpoint: (SocketAddr, Session),
     ) -> Result<()>;
+    async fn remove_sessions_for_peer(&self, public_key: PublicKey);
 }
 
 pub struct UpgradeSync {
@@ -132,6 +133,18 @@ impl UpgradeSyncTrait for UpgradeSync {
         })
         .await
         .map_err(Error::Task)
+    }
+
+    async fn remove_sessions_for_peer(&self, public_key: PublicKey) {
+        let _ = task_exec!(&self.task, async move |s| {
+            s.upgrade_requests.remove(&public_key);
+            let _ = s
+                .upgrade_controller
+                .remove_sessions_for_peer(public_key)
+                .await;
+            Ok(())
+        })
+        .await;
     }
 }
 

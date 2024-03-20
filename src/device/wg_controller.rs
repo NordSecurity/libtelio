@@ -246,13 +246,15 @@ async fn consolidate_wg_peers<
                 // local side endpoint, such that the other node can do this upgrade too.
                 let public_key = requested_peer.peer.public_key;
 
-                if let (Some(remote_endpoint), Some(local_direct_endpoint)) = (
-                    requested_peer.peer.endpoint,
-                    requested_peer.local_direct_endpoint,
-                ) {
-                    if let Some(us) = upgrade_sync {
+                if let Some(us) = upgrade_sync {
+                    if let (Some(remote_endpoint), Some(local_direct_endpoint)) = (
+                        requested_peer.peer.endpoint,
+                        requested_peer.local_direct_endpoint,
+                    ) {
                         us.request_upgrade(&public_key, remote_endpoint, local_direct_endpoint)
                             .await?
+                    } else {
+                        us.remove_sessions_for_peer(public_key).await;
                     }
                 }
 
@@ -700,14 +702,13 @@ async fn build_requested_meshnet_peers_list<
         // Select actual endpoint
         let (selected_remote_endpoint, selected_local_endpoint) = select_endpoint_for_peer(
             public_key,
-            &actual_peer.cloned(),
-            &time_since_last_rx_or_handshake,
+            actual_peer,
+            time_since_last_rx_or_handshake.as_ref(),
             peer_state,
-            &checked_endpoint.cloned(),
-            &proxy_endpoint.cloned(),
-            &upgrade_request_endpoint,
-        )
-        .await?;
+            checked_endpoint,
+            proxy_endpoint,
+            upgrade_request_endpoint.as_ref(),
+        );
 
         // Apply the selected endpoints, and save local endpoint because we may need to share it
         // with the other end
@@ -775,18 +776,17 @@ fn deduplicate_peer_ips(peers: &[telio_model::config::Peer]) -> HashMap<PublicKe
     peer_ips
 }
 
-// Select endpoint for peer
-async fn select_endpoint_for_peer<'a>(
+fn select_endpoint_for_peer(
     public_key: &PublicKey,
-    actual_peer: &Option<Peer>,
-    time_since_last_rx: &Option<Duration>,
+    actual_peer: Option<&Peer>,
+    time_since_last_rx: Option<&Duration>,
     peer_state: PeerState,
-    checked_endpoint: &Option<WireGuardEndpointCandidateChangeEvent>,
-    proxy_endpoint: &Option<SocketAddr>,
-    upgrade_request_endpoint: &Option<SocketAddr>,
-) -> Result<(Option<SocketAddr>, Option<(SocketAddr, Session)>)> {
+    checked_endpoint: Option<&WireGuardEndpointCandidateChangeEvent>,
+    proxy_endpoint: Option<&SocketAddr>,
+    upgrade_request_endpoint: Option<&SocketAddr>,
+) -> (Option<SocketAddr>, Option<(SocketAddr, Session)>) {
     // Retrieve some helper information
-    let actual_endpoint = actual_peer.clone().and_then(|p| p.endpoint);
+    let actual_endpoint = actual_peer.and_then(|p| p.endpoint);
 
     // Use match statement to cover all possible variants
     match (upgrade_request_endpoint, peer_state, checked_endpoint) {
@@ -803,16 +803,16 @@ async fn select_endpoint_for_peer<'a>(
 
             if (peer_state == PeerState::Upgrading || peer_state == PeerState::Direct)
                 && actual_endpoint.is_some()
-                && actual_endpoint != *proxy_endpoint
+                && actual_endpoint.as_ref() != proxy_endpoint
             {
                 telio_log_debug!("Keeping the current direct endpoint: {:?}", actual_endpoint);
-                Ok((actual_endpoint, None))
+                (actual_endpoint, None)
             } else {
                 telio_log_debug!(
                     "Changing endpoint to the one from update request: {:?}",
                     *upgrade_request_endpoint
                 );
-                Ok((Some(*upgrade_request_endpoint), None))
+                (Some(*upgrade_request_endpoint), None)
             }
         }
 
@@ -825,7 +825,7 @@ async fn select_endpoint_for_peer<'a>(
                 public_key,
                 time_since_last_rx,
             );
-            Ok((*proxy_endpoint, None))
+            (proxy_endpoint.cloned(), None)
         }
 
         // Just proxying, nothing to upgrade to...
@@ -835,7 +835,7 @@ async fn select_endpoint_for_peer<'a>(
                 public_key,
                 time_since_last_rx,
             );
-            Ok((*proxy_endpoint, None))
+            (proxy_endpoint.cloned(), None)
         }
 
         // Proxying, but we have something to upgrade to. Lets try to upgrade.
@@ -845,10 +845,10 @@ async fn select_endpoint_for_peer<'a>(
                 public_key,
                 time_since_last_rx,
             );
-            Ok((
+            (
                 Some(checked_endpoint.remote_endpoint),
                 Some((checked_endpoint.local_endpoint, checked_endpoint.session)), // << This endpoint will be advertised to the other side
-            ))
+            )
         }
 
         // Upgrading, means that we have some direct endpoint within WG. Keep it.
@@ -858,7 +858,7 @@ async fn select_endpoint_for_peer<'a>(
                 public_key,
                 time_since_last_rx,
             );
-            Ok((actual_endpoint, None))
+            (actual_endpoint, None)
         }
 
         // Direct connection is alive -> just keep it.
@@ -868,7 +868,7 @@ async fn select_endpoint_for_peer<'a>(
                 public_key,
                 time_since_last_rx,
             );
-            Ok((actual_endpoint, None))
+            (actual_endpoint, None)
         }
     }
 }

@@ -92,6 +92,7 @@ pub trait UpgradeController: Send + Sync {
         public_key: PublicKey,
     ) -> Result<bool, Error>;
     async fn notify_failed_wg_connection(&self, public_key: PublicKey) -> Result<(), Error>;
+    async fn remove_sessions_for_peer(&self, public_key: PublicKey);
 }
 
 #[async_trait]
@@ -130,6 +131,7 @@ mockall::mock! {
             public_key: PublicKey,
         ) -> Result<bool, Error>;
         async fn notify_failed_wg_connection(&self, public_key: PublicKey) -> Result<(), Error>;
+        async fn remove_sessions_for_peer(&self, public_key: PublicKey);
     }
 }
 
@@ -607,6 +609,13 @@ impl<E: Backoff> State<E> {
             None => false,
         }
     }
+
+    pub fn remove_sessions_for_peer(&mut self, public_key: &PublicKey) {
+        self.session_id_candidates
+            .retain(|_, pkey| pkey != public_key);
+        self.endpoint_connectivity_check_state
+            .retain(|_, state| state.public_key != *public_key);
+    }
 }
 
 #[async_trait]
@@ -647,6 +656,14 @@ impl UpgradeController for CrossPingCheck {
         .await
         .map_err(|e| e.into());
         res
+    }
+
+    async fn remove_sessions_for_peer(&self, public_key: PublicKey) {
+        let _ = task_exec!(&self.task, async move |s| {
+            s.remove_sessions_for_peer(&public_key);
+            Ok(())
+        })
+        .await;
     }
 }
 
