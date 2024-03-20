@@ -5,6 +5,7 @@ use std::{collections::HashSet, fmt, time::Duration};
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{de::IntoDeserializer, Deserialize, Deserializer, Serialize};
+use serde_with::{serde_as, DurationSeconds};
 use strum_macros::EnumCount;
 use telio_utils::telio_log_warn;
 
@@ -22,28 +23,28 @@ pub type EndpointProviders = HashSet<EndpointProvider>;
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct FeaturePersistentKeepalive {
     /// Persistent keepalive period given for VPN peers (in seconds) [default 15s]
-    #[serde(default = "FeaturePersistentKeepalive::get_default_keepalive_period")]
+    #[serde(default = "FeaturePersistentKeepalive::default_keepalive_period")]
     pub vpn: Option<u32>,
 
     /// Persistent keepalive period for direct peers (in seconds) [default 5s]
-    #[serde(default = "FeaturePersistentKeepalive::get_default_direct_keepalive_period")]
+    #[serde(default = "FeaturePersistentKeepalive::default_direct_keepalive_period")]
     pub direct: u32,
 
     /// Persistent keepalive period for proxying peers (in seconds) [default 25s]
-    #[serde(default = "FeaturePersistentKeepalive::get_default_keepalive_period")]
+    #[serde(default = "FeaturePersistentKeepalive::default_keepalive_period")]
     pub proxying: Option<u32>,
 
     /// Persistent keepalive period for stun peers (in seconds) [default 25s]
-    #[serde(default = "FeaturePersistentKeepalive::get_default_keepalive_period")]
+    #[serde(default = "FeaturePersistentKeepalive::default_keepalive_period")]
     pub stun: Option<u32>,
 }
 
 impl FeaturePersistentKeepalive {
-    fn get_default_keepalive_period() -> Option<u32> {
+    fn default_keepalive_period() -> Option<u32> {
         Some(DEFAULT_PERSISTENT_KEEPALIVE_PERIOD)
     }
 
-    fn get_default_direct_keepalive_period() -> u32 {
+    fn default_direct_keepalive_period() -> u32 {
         DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD
     }
 }
@@ -77,65 +78,127 @@ impl FeatureWireguard {
     }
 }
 
-#[serde_with::serde_as]
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+/// Enum denoting ways to calculate RTT.
+#[derive(Eq, PartialEq, Debug, Clone, Deserialize)]
+#[repr(u32)]
+pub enum RttType {
+    /// Simple ping request.
+    Ping,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 /// QoS configuration options
 pub struct FeatureQoS {
     /// How often to collect rtt data in seconds. Default value is 300.
-    pub rtt_interval: Option<u32>,
+    #[serde_as(as = "DurationSeconds<u64>")]
+    #[serde(default = "FeatureQoS::default_rtt_interval")]
+    pub rtt_interval: Duration,
     /// Number of tries for each node. Default value is 3.
-    pub rtt_tries: Option<u32>,
+    #[serde(default = "FeatureQoS::default_rtt_tries")]
+    pub rtt_tries: u32,
     /// Types of rtt analytics. Default is Ping.
-    pub rtt_types: Option<Vec<String>>,
+    #[serde(default = "FeatureQoS::default_rtt_types")]
+    pub rtt_types: Vec<RttType>,
     /// Number of buckets used for rtt and throughput. Default value is 5.
-    pub buckets: Option<u32>,
+    #[serde(default = "FeatureQoS::default_buckets")]
+    pub buckets: u32,
+}
+
+impl FeatureQoS {
+    fn default_rtt_interval() -> Duration {
+        Duration::from_secs(5 * 60)
+    }
+
+    fn default_rtt_tries() -> u32 {
+        3
+    }
+
+    fn default_rtt_types() -> Vec<RttType> {
+        vec![RttType::Ping]
+    }
+
+    fn default_buckets() -> u32 {
+        5
+    }
+}
+
+impl Default for FeatureQoS {
+    fn default() -> Self {
+        Self {
+            rtt_interval: FeatureQoS::default_rtt_interval(),
+            rtt_tries: FeatureQoS::default_rtt_tries(),
+            rtt_types: FeatureQoS::default_rtt_types(),
+            buckets: FeatureQoS::default_buckets(),
+        }
+    }
 }
 
 /// Configurable features for Nurse module
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde_as]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct FeatureNurse {
     /// The unique identifier of the device, used for meshnet ID
     pub fingerprint: String,
     /// Heartbeat interval in seconds. Default value is 3600.
-    #[serde(default = "FeatureNurse::get_default_heartbeat_interval")]
-    pub heartbeat_interval: Option<u32>,
+    #[serde_as(as = "DurationSeconds<u64>")]
+    #[serde(default = "FeatureNurse::default_heartbeat_interval")]
+    pub heartbeat_interval: Duration,
     /// Initial heartbeat interval in seconds. Default value is 300.
-    #[serde(default = "FeatureNurse::get_default_initial_heartbeat_interval")]
-    pub initial_heartbeat_interval: Option<u32>,
-    /// QoS configuration for Nurse
+    #[serde_as(as = "DurationSeconds<u64>")]
+    #[serde(default = "FeatureNurse::default_initial_heartbeat_interval")]
+    pub initial_heartbeat_interval: Duration,
+    /// QoS configuration for Nurse. Enabled by default.
+    #[serde(default = "FeatureNurse::default_qos")]
     pub qos: Option<FeatureQoS>,
-    /// Enable/disable collecting nat type
-    pub enable_nat_type_collection: Option<bool>,
-    /// Enable/disable Relay connection data
-    #[serde(default = "FeatureNurse::get_default_enable_relay_conn_data")]
-    pub enable_relay_conn_data: Option<bool>,
-    /// Enable/disable NAT-traversal connections data
-    #[serde(default = "FeatureNurse::get_default_enable_nat_traversal_conn_data")]
-    pub enable_nat_traversal_conn_data: Option<bool>,
+    /// Enable/disable collecting nat type. Disabled by default.
+    #[serde(default = "FeatureNurse::default_enable_nat_type_collection")]
+    pub enable_nat_type_collection: bool,
+    /// Enable/disable Relay connection data. Enabled by default.
+    #[serde(default = "FeatureNurse::default_enable_relay_conn_data")]
+    pub enable_relay_conn_data: bool,
+    /// Enable/disable NAT-traversal connections data. Enabled by default.
+    #[serde(default = "FeatureNurse::default_enable_nat_traversal_conn_data")]
+    pub enable_nat_traversal_conn_data: bool,
 }
 
 impl FeatureNurse {
-    /// One hour
-    pub const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(3600);
-    /// 5 minutes
-    pub const DEFAULT_INITIAL_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(300);
-
-    fn get_default_enable_relay_conn_data() -> Option<bool> {
-        Some(true)
+    fn default_heartbeat_interval() -> Duration {
+        Duration::from_secs(60 * 60)
     }
 
-    fn get_default_enable_nat_traversal_conn_data() -> Option<bool> {
-        Some(true)
+    fn default_initial_heartbeat_interval() -> Duration {
+        Duration::from_secs(5 * 60)
     }
 
-    fn get_default_heartbeat_interval() -> Option<u32> {
-        // 3600 seconds
-        Some(Self::DEFAULT_HEARTBEAT_INTERVAL.as_secs() as u32)
+    fn default_qos() -> Option<FeatureQoS> {
+        Some(Default::default())
     }
 
-    fn get_default_initial_heartbeat_interval() -> Option<u32> {
-        // 300 seconds
-        Some(Self::DEFAULT_INITIAL_HEARTBEAT_INTERVAL.as_secs() as u32)
+    fn default_enable_nat_type_collection() -> bool {
+        false
+    }
+
+    fn default_enable_relay_conn_data() -> bool {
+        true
+    }
+
+    fn default_enable_nat_traversal_conn_data() -> bool {
+        true
+    }
+}
+
+impl Default for FeatureNurse {
+    fn default() -> Self {
+        Self {
+            fingerprint: Default::default(),
+            heartbeat_interval: Self::default_heartbeat_interval(),
+            initial_heartbeat_interval: Self::default_initial_heartbeat_interval(),
+            qos: Self::default_qos(),
+            enable_nat_type_collection: Self::default_enable_nat_type_collection(),
+            enable_relay_conn_data: Self::default_enable_relay_conn_data(),
+            enable_nat_traversal_conn_data: Self::default_enable_nat_traversal_conn_data(),
+        }
     }
 }
 
@@ -607,12 +670,17 @@ mod tests {
         },
         nurse: Some(FeatureNurse {
             fingerprint: "fingerprint_test".to_string(),
-            heartbeat_interval: Some(3600),
-            initial_heartbeat_interval: Some(300),
-            qos: None,
-            enable_nat_type_collection: None,
-            enable_relay_conn_data: Some(true),
-            enable_nat_traversal_conn_data: Some(true),
+            heartbeat_interval: Duration::from_secs(3600),
+            initial_heartbeat_interval: Duration::from_secs(300),
+            qos: Some(FeatureQoS {
+                rtt_interval: Duration::from_secs(300),
+                rtt_tries: 3,
+                rtt_types: vec![RttType::Ping],
+                buckets: 5,
+            }),
+            enable_nat_type_collection: false,
+            enable_relay_conn_data: true,
+            enable_nat_traversal_conn_data: true,
         }),
         lana: Some(FeatureLana {
             event_path: "path/to/some/event/data".to_string(),
@@ -666,12 +734,17 @@ mod tests {
         },
         nurse: Some(FeatureNurse {
             fingerprint: "fingerprint_test".to_string(),
-            heartbeat_interval: Some(3600),
-            initial_heartbeat_interval: Some(300),
-            qos: None,
-            enable_nat_type_collection: None,
-            enable_relay_conn_data: Some(true),
-            enable_nat_traversal_conn_data: Some(true),
+            heartbeat_interval: Duration::from_secs(3600),
+            initial_heartbeat_interval: Duration::from_secs(300),
+            qos: Some(FeatureQoS {
+                rtt_interval: Duration::from_secs(300),
+                rtt_tries: 3,
+                rtt_types: vec![RttType::Ping],
+                buckets: 5,
+            }),
+            enable_nat_type_collection: false,
+            enable_relay_conn_data: true,
+            enable_nat_traversal_conn_data: true,
         }),
         lana: Some(FeatureLana {
             event_path: "path/to/some/event/data".to_string(),
@@ -789,9 +862,9 @@ mod tests {
         let full_json = r#"
         {
             "rtt_interval": 3600,
-            "rtt_tries": 5,
+            "rtt_tries": 10,
             "rtt_types": ["Ping"],
-            "buckets": 5
+            "buckets": 7
         }"#;
 
         let partial_json = r#"
@@ -800,17 +873,17 @@ mod tests {
         }"#;
 
         let full_features = FeatureQoS {
-            rtt_interval: Some(3600),
-            rtt_tries: Some(5),
-            rtt_types: Some(vec![String::from("Ping")]),
-            buckets: Some(5),
+            rtt_interval: Duration::from_secs(3600),
+            rtt_tries: 10,
+            rtt_types: vec![RttType::Ping],
+            buckets: 7,
         };
 
         let partial_features = FeatureQoS {
-            rtt_interval: Some(3600),
-            rtt_tries: None,
-            rtt_types: None,
-            buckets: None,
+            rtt_interval: Duration::from_secs(3600),
+            rtt_tries: FeatureQoS::default_rtt_tries(),
+            rtt_types: FeatureQoS::default_rtt_types(),
+            buckets: FeatureQoS::default_buckets(),
         };
 
         assert_eq!(from_str::<FeatureQoS>(full_json).unwrap(), full_features);
@@ -842,6 +915,8 @@ mod tests {
         {
             "nurse": {
                 "fingerprint": "fingerprint_test",
+                "enable_relay_conn_data": false,
+                "enable_nat_traversal_conn_data": true,
                 "qos": {}
             }
         }"#;
@@ -851,7 +926,17 @@ mod tests {
             "nurse": {
                 "fingerprint": "fingerprint_test",
                 "enable_relay_conn_data": false,
-                "enable_nat_traversal_conn_data": false
+                "enable_nat_traversal_conn_data": true
+            }
+        }"#;
+
+        let disabled_qos_json = r#"
+        {
+            "nurse": {
+                "fingerprint": "fingerprint_test",
+                "enable_relay_conn_data": false,
+                "enable_nat_traversal_conn_data": false,
+                "qos": null
             }
         }"#;
 
@@ -859,17 +944,17 @@ mod tests {
             wireguard: Default::default(),
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
-                heartbeat_interval: Some(3600),
-                initial_heartbeat_interval: Some(300),
+                heartbeat_interval: Duration::from_secs(3600),
+                initial_heartbeat_interval: Duration::from_secs(300),
                 qos: Some(FeatureQoS {
-                    rtt_interval: Some(3600),
-                    rtt_tries: Some(5),
-                    rtt_types: Some(vec![String::from("Ping")]),
-                    buckets: Some(5),
+                    rtt_interval: Duration::from_secs(3600),
+                    rtt_tries: 5,
+                    rtt_types: vec![RttType::Ping],
+                    buckets: 5,
                 }),
-                enable_nat_type_collection: None,
-                enable_relay_conn_data: Some(true),
-                enable_nat_traversal_conn_data: Some(true),
+                enable_nat_type_collection: false,
+                enable_relay_conn_data: true,
+                enable_nat_traversal_conn_data: true,
             }),
             lana: None,
             paths: None,
@@ -890,21 +975,21 @@ mod tests {
             pmtu_discovery: Some(Default::default()),
         };
 
-        let empty_qos_features = Features {
+        let empty_or_no_qos_features = Features {
             wireguard: Default::default(),
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
-                heartbeat_interval: Some(3600),
-                initial_heartbeat_interval: Some(300),
+                heartbeat_interval: Duration::from_secs(3600),
+                initial_heartbeat_interval: Duration::from_secs(300),
                 qos: Some(FeatureQoS {
-                    rtt_interval: None,
-                    rtt_tries: None,
-                    rtt_types: None,
-                    buckets: None,
+                    rtt_interval: Duration::from_secs(300),
+                    rtt_tries: FeatureQoS::default_rtt_tries(),
+                    rtt_types: FeatureQoS::default_rtt_types(),
+                    buckets: FeatureQoS::default_buckets(),
                 }),
-                enable_nat_type_collection: None,
-                enable_relay_conn_data: Some(true),
-                enable_nat_traversal_conn_data: Some(true),
+                enable_nat_type_collection: false,
+                enable_relay_conn_data: false,
+                enable_nat_traversal_conn_data: true,
             }),
             lana: None,
             paths: None,
@@ -925,16 +1010,16 @@ mod tests {
             pmtu_discovery: Some(Default::default()),
         };
 
-        let no_qos_features = Features {
+        let disabled_qos_features = Features {
             wireguard: Default::default(),
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
-                heartbeat_interval: Some(3600),
-                initial_heartbeat_interval: Some(300),
+                heartbeat_interval: Duration::from_secs(3600),
+                initial_heartbeat_interval: Duration::from_secs(300),
                 qos: None,
-                enable_nat_type_collection: None,
-                enable_relay_conn_data: Some(false),
-                enable_nat_traversal_conn_data: Some(false),
+                enable_nat_type_collection: false,
+                enable_relay_conn_data: false,
+                enable_nat_traversal_conn_data: false,
             }),
             lana: None,
             paths: None,
@@ -958,9 +1043,16 @@ mod tests {
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
         assert_eq!(
             from_str::<Features>(empty_qos_json).unwrap(),
-            empty_qos_features
+            empty_or_no_qos_features
         );
-        assert_eq!(from_str::<Features>(no_qos_json).unwrap(), no_qos_features);
+        assert_eq!(
+            from_str::<Features>(no_qos_json).unwrap(),
+            empty_or_no_qos_features
+        );
+        assert_eq!(
+            from_str::<Features>(disabled_qos_json).unwrap(),
+            disabled_qos_features
+        );
     }
 
     #[test]

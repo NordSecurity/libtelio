@@ -26,6 +26,7 @@
 * LLT-4873: Remove old SWIG FFI bindings
 * LLT-4996: nurse: Stop adding virtual peers to qos
 * LLT-4687: Add PQ VPN nat-lab tests
+* LLT-5009: Enable QoS feature by default
 
 <br>
 

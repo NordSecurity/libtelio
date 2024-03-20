@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use histogram::Histogram;
-use serde::Deserialize;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use std::time::Instant;
@@ -9,6 +8,7 @@ use tokio::sync::mpsc;
 use tokio::time::{interval_at, Duration, Interval, MissedTickBehavior};
 
 use telio_crypto::PublicKey;
+use telio_model::api_config::RttType;
 use telio_task::{io::mc_chan, Runtime, RuntimeExt, WaitResponse};
 use telio_wg::uapi::{AnalyticsEvent, PeerState};
 
@@ -17,13 +17,6 @@ use telio_utils::{telio_log_debug, telio_log_trace, DualTarget};
 use crate::config::QoSConfig;
 
 use crate::rtt::ping::{DualPingResults, Ping};
-
-/// Enum denoting ways to calculate RTT.
-#[derive(Eq, PartialEq, Debug, Deserialize)]
-pub enum RttType {
-    /// Simple ping request.
-    Ping,
-}
 
 /// Information about a node in the meshnet.
 #[derive(Clone)]

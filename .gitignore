@@ -40,5 +40,5 @@ event.db
 alpha-events.db
 beta-events.db
 gamma-events.db
-nat-lab/report.html
+nat-lab/**/report.html
 events-moose.log
