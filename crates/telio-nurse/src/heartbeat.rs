@@ -738,15 +738,9 @@ impl Analytics {
         }
 
         // Drop nodes not present in the collection/config anymore
-        let dropped_nodes: Vec<_> = self
-            .fingerprints
-            .iter()
-            .filter(|(node, _)| !self.collection.fingerprints.contains_key(node))
-            .map(|(node, _)| *node)
-            .collect();
-        for node in dropped_nodes {
-            self.fingerprints.remove(&node);
-        }
+        let nodes_to_retain: HashSet<_> = self.collection.fingerprints.keys().collect();
+        self.fingerprints
+            .retain(|pk, _| nodes_to_retain.contains(pk));
 
         // Use BTreeSet to sort out the public keys
         // We sort public keys, instead of sorting by fingerprints, since fingerprints can be empty or null, resulting in

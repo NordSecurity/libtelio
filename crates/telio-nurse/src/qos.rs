@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use histogram::Histogram;
 use serde::Deserialize;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -33,7 +33,6 @@ pub struct NodeInfo {
     pub last_event: Instant,
 
     // Connection duration
-    pub last_wg_event: Instant,
     pub connected_time: Duration,
 
     // RTT
@@ -78,12 +77,9 @@ impl NodeInfo {
     fn update_connection_duration(&mut self, event: &AnalyticsEvent, pause: bool) {
         if self.peer_state == PeerState::Connected && !pause {
             // Connected time
-            let duration = event.timestamp.checked_duration_since(self.last_wg_event);
+            let duration = event.timestamp.checked_duration_since(self.last_event);
             self.connected_time += duration.unwrap_or_default();
         }
-
-        self.peer_state = event.peer_state;
-        self.last_wg_event = event.timestamp;
     }
 }
 
@@ -93,7 +89,6 @@ impl From<AnalyticsEvent> for NodeInfo {
             public_key: event.public_key,
             peer_state: event.peer_state,
             last_event: event.timestamp,
-            last_wg_event: event.timestamp,
             connected_time: Duration::default(),
             ip_addresses: event.dual_ip_addresses,
             rtt_histogram: Histogram::new(),
@@ -249,11 +244,7 @@ impl Analytics {
 
     /// Wrapper function around `Analytics::get_data_from_nodes_hashmap`.
     pub fn get_data(&mut self, sorted_public_keys_set: &BTreeSet<PublicKey>) -> OutputData {
-        Analytics::get_data_from_nodes_hashmap(
-            &mut self.nodes,
-            self.buckets,
-            sorted_public_keys_set,
-        )
+        Analytics::get_data_from_nodes_hashmap(&self.nodes, self.buckets, sorted_public_keys_set)
     }
 
     /// Get QoS data from the specified nodes in the meshnet.
@@ -268,7 +259,7 @@ impl Analytics {
     ///
     /// QoS data about the requested nodes
     pub fn get_data_from_nodes_hashmap(
-        nodes: &mut HashMap<PublicKey, NodeInfo>,
+        nodes: &HashMap<PublicKey, NodeInfo>,
         buckets: u32,
         sorted_public_keys: &BTreeSet<PublicKey>,
     ) -> OutputData {
@@ -366,6 +357,11 @@ impl Analytics {
         }
     }
 
+    /// Drop nodes no longer in the provided nodes_list.
+    pub fn clean_nodes_list(&mut self, nodes_pk_list: &HashSet<PublicKey>) {
+        self.nodes.retain(|pk, _| nodes_pk_list.contains(pk));
+    }
+
     /// Update peer data from a received WG event.
     /// # Arguments
     ///
@@ -391,6 +387,8 @@ impl Analytics {
                 n.update_throughput_info(event);
                 // Update last event timestamp
                 n.last_event = event.timestamp;
+                // Update peer state
+                n.peer_state = event.peer_state;
             })
             .or_insert_with(|| NodeInfo::from(event.clone()));
     }
@@ -570,7 +568,7 @@ mod tests {
         hashmap.insert(b_public_key, b_node);
 
         let output = Analytics::get_data_from_nodes_hashmap(
-            &mut hashmap,
+            &hashmap,
             5,
             &BTreeSet::<PublicKey>::from([
                 a_public_key,
@@ -605,7 +603,6 @@ mod tests {
         assert_eq!(node.public_key, event.public_key);
         assert_eq!(node.peer_state, PeerState::Connected);
         assert_eq!(node.last_event, event.timestamp);
-        assert_eq!(node.last_wg_event, event.timestamp);
         assert_eq!(node.ip_addresses, event.dual_ip_addresses);
 
         // histograms should be empty
@@ -632,7 +629,6 @@ mod tests {
         assert_eq!(node.public_key, event.public_key);
         assert_eq!(node.peer_state, PeerState::Disconnected);
         assert_eq!(node.last_event, event.timestamp);
-        assert_eq!(node.last_wg_event, event.timestamp);
         assert_eq!(node.ip_addresses, event.dual_ip_addresses);
         assert_eq!(node.connected_time, Duration::from_secs(2));
 
@@ -697,7 +693,6 @@ mod tests {
         assert_eq!(node.public_key, event.public_key);
         assert_eq!(node.peer_state, PeerState::Connected);
         assert_eq!(node.last_event, event.timestamp);
-        assert_eq!(node.last_wg_event, event.timestamp);
         assert_eq!(node.connected_time, Duration::from_secs(7));
         assert_eq!(node.ip_addresses, event.dual_ip_addresses);
         assert_eq!(node.last_tx_bytes, 50);
@@ -759,6 +754,31 @@ mod tests {
         assert_eq!(nodes_keys, expected_nodes_keys);
     }
 
+    async fn test_node_list_cleanup() {
+        let mut analytics = setup();
+        let event1 = generate_event();
+        let event2 = generate_event();
+        let mut expected_nodes_keys = HashSet::new();
+        expected_nodes_keys.insert(event1.public_key);
+        expected_nodes_keys.insert(event2.public_key);
+
+        // Add 2 nodes to the list
+        analytics.handle_wg_event(&event1).await;
+        analytics.handle_wg_event(&event2).await;
+
+        // Assert nodes were inserted correctly
+        let mut nodes_keys: HashSet<_> = analytics.nodes.keys().copied().collect();
+        assert_eq!(nodes_keys, expected_nodes_keys);
+
+        // Remove one node
+        expected_nodes_keys.remove(&event2.public_key);
+        analytics.clean_nodes_list(&expected_nodes_keys);
+
+        // Assert node was removed correctly
+        nodes_keys = analytics.nodes.keys().copied().collect();
+        assert_eq!(nodes_keys, expected_nodes_keys);
+    }
+
     fn setup() -> Analytics {
         let wg_channel = McChan::new(1);
         let io = Io {
@@ -810,7 +830,6 @@ mod tests {
             public_key,
             peer_state: PeerState::Disconnected,
             last_event: Instant::now(),
-            last_wg_event: Instant::now(),
             connected_time,
             ip_addresses: vec![DualTarget::new((Some(Ipv4Addr::new(127, 0, 0, 1)), None)).unwrap()],
             rtt_histogram: histogram.clone(),
