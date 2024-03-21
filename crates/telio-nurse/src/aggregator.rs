@@ -6,8 +6,8 @@ use serde::{ser::SerializeTuple, Serialize};
 
 use telio_crypto::PublicKey;
 use telio_model::{
-    api_config::{EndpointProvider, FeatureNurse},
     config::{DerpAnalyticsEvent, RelayConnectionChangeReason, RelayState},
+    features::{EndpointProvider, FeatureNurse},
     HashMap,
 };
 use telio_utils::telio_log_warn;

@@ -616,7 +616,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
                 wg_port,
                 &self.udp_socket,
                 &self.pong_events_tx,
-                telio_model::api_config::EndpointProvider::Upnp,
+                telio_model::features::EndpointProvider::Upnp,
             )
             .await
     }

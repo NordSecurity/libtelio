@@ -23,9 +23,9 @@ use std::{
 use self::types::*;
 use crate::device::{Device, DeviceConfig, Result as DevResult};
 use telio_model::{
-    api_config::Features,
     config::{Config, ConfigParseError},
     event::*,
+    features::Features,
     mesh::{ExitNode, Node},
 };
 
@@ -880,7 +880,7 @@ impl FFILog for DevResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use telio_model::api_config::Features;
+    use telio_model::features::Features;
 
     // Same as in telio-model/src/config.rs
     const MAX_CONFIG_LENGTH: usize = 16 * 1024 * 1024;

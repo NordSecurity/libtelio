@@ -20,7 +20,7 @@ use std::{
     str::FromStr,
     sync::Arc,
 };
-use telio_model::api_config::TtlValue;
+use telio_model::features::TtlValue;
 use tokio::net::UdpSocket;
 use tokio::sync::{RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, Semaphore};
 use tokio::task::JoinHandle;

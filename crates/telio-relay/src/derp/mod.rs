@@ -22,8 +22,8 @@ use std::time::Duration;
 use telio_crypto::{PublicKey, SecretKey};
 use telio_model::config::{DerpAnalyticsEvent, RelayConnectionChangeReason};
 use telio_model::{
-    api_config::FeatureDerp,
     config::{RelayState, Server},
+    features::FeatureDerp,
 };
 #[double]
 use telio_nurse::aggregator::ConnectivityDataAggregator;

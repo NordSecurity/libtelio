@@ -964,7 +964,7 @@ impl Analytics {
 
 #[cfg(test)]
 mod tests {
-    use telio_model::{api_config::FeatureNurse, mesh::Node};
+    use telio_model::{features::FeatureNurse, mesh::Node};
     use telio_sockets::{native::NativeSocket, Protector};
     use telio_task::{io::McChan, Task};
     use telio_utils::sync::mpsc::Receiver;
