@@ -116,7 +116,6 @@ pub struct Cli {
     meshmap: Option<MeshMap>,
     derp_client: DerpClient,
     derp_server: Arc<Mutex<Option<Server>>>,
-    // _tracing_worker_guard: WorkerGuard,
 }
 
 #[derive(Debug)]

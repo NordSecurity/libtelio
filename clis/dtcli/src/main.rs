@@ -31,17 +31,17 @@ struct Args {
 // TODO for now this value had been chosen randomly.
 const DAEMON_GRPC_ADDRESS: &'static str = "[::1]:50051";
 
+// TODO Does not quit gracefully. See daemon.out.
+// TODO figure out appropriate dir for daemon folder.
 // TODO Sometimes getting a stream closed because of a broken pipe when calling quit. (added a delay and monitoring)
 // TODO figure out logging, because multiple tracing subscribers can't be used. Maybe reroute STDIO of daemon?
 // TODO add something better than strings for controlling daemon.
 // TODO Add tests.
 // TODO Test if features and help flags work properly.
-// TODO Maybe add auto completion support?
+// TODO Maybe add auto completion support? (probably won't work due to mixed parsing implementation)
 // TODO Try and make help and feature commands more user friendly like they were in TCLI.
 // TODO Figure out if running daemon with root privileges is a good idea.
-// TODO Make sure the new cargo runner with '-E' flag won't cause issues.
 // TODO Should probably replace all the eprintln's with error propagation.
-// TODO Sometimes getting connection refused when starting daemon.
 
 // OS does not create new threads when forking, so we need to initialize the Tokio runtime after forking.
 fn main() -> Result<()> {
@@ -74,8 +74,7 @@ fn main() -> Result<()> {
                 println!("DTCLI daemon is not running, run it by running `dtcli` or `dtcli start`");
             }
         }
-        // TODO There is probably a better way to handle feature flags, but even if not, it should be well documented
-        // That the -f flag must be the first and only flag.
+        // TODO There is probably a better way to handle feature flags, but even if not, it should be well documented that the -f flag must be the first and only flag.
         Some("-f") => {
             if !Daemon::is_running()? {
                 println!("Starting daemon with features...");
