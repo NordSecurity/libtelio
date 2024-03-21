@@ -1,6 +1,6 @@
 Cargo.lock
 tcli.log
-./*/
+/.*/
 !/.cargo
 !/.github
 !/.gitlab
