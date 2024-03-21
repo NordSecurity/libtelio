@@ -10,7 +10,7 @@ use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
 use x25519_dalek::{PublicKey as PublicKeyDalek, StaticSecret};
 
-use telio_model::api_config::{FeatureExitDns, TtlValue};
+use telio_model::features::{FeatureExitDns, TtlValue};
 
 //debug tools
 use telio_utils::{telio_log_debug, telio_log_error};

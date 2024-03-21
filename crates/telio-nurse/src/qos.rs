@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 use tokio::time::{interval_at, Duration, Interval, MissedTickBehavior};
 
 use telio_crypto::PublicKey;
-use telio_model::api_config::RttType;
+use telio_model::features::RttType;
 use telio_task::{io::mc_chan, Runtime, RuntimeExt, WaitResponse};
 use telio_wg::uapi::{AnalyticsEvent, PeerState};
 

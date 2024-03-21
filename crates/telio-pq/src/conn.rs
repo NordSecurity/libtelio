@@ -2,7 +2,7 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use tokio::task::JoinHandle;
 
-use telio_model::api_config::FeaturePostQuantumVPN;
+use telio_model::features::FeaturePostQuantumVPN;
 use telio_task::io::chan;
 use telio_utils::{telio_log_debug, telio_log_warn};
 

@@ -70,11 +70,11 @@ use telio_utils::{
 };
 
 use telio_model::{
-    api_config::{
-        FeaturePersistentKeepalive, Features, PathType, DEFAULT_ENDPOINT_POLL_INTERVAL_SECS,
-    },
     config::{Config, Peer, PeerBase, Server as DerpServer},
     event::{Event, Set},
+    features::{
+        FeaturePersistentKeepalive, Features, PathType, DEFAULT_ENDPOINT_POLL_INTERVAL_SECS,
+    },
     mesh::{ExitNode, LinkState, Node},
     validation::validate_nickname,
 };
@@ -1110,7 +1110,7 @@ impl Runtime {
                 }
             };
 
-            use telio_model::api_config::EndpointProvider::*;
+            use telio_model::features::EndpointProvider::*;
 
             let ping_pong_tracker = Arc::new(Mutex::new(PingPongHandler::new(
                 self.requested_state.device_config.private_key,
@@ -2058,8 +2058,8 @@ mod tests {
     use super::*;
     use rstest::*;
     use std::net::Ipv6Addr;
-    use telio_model::api_config::FeatureDirect;
     use telio_model::config::{Peer, PeerBase};
+    use telio_model::features::FeatureDirect;
 
     fn build_peer_base(
         hostname: String,
@@ -2686,7 +2686,7 @@ mod tests {
         let (sender, _receiver) = tokio::sync::broadcast::channel(1);
         let features = Features {
             direct: Some(FeatureDirect {
-                providers: Some(HashSet::<telio_model::api_config::EndpointProvider>::new()),
+                providers: Some(HashSet::<telio_model::features::EndpointProvider>::new()),
                 endpoint_interval_secs: None,
                 skip_unresponsive_peers: Default::default(),
             }),
@@ -2763,14 +2763,15 @@ mod tests {
     #[cfg(not(windows))]
     #[tokio::test(start_paused = true)]
     async fn test_enable_all_direct_features() {
-        use telio_model::api_config::FeatureSkipUnresponsivePeers;
+        use telio_model::features::EndpointProvider;
+        use telio_model::features::FeatureSkipUnresponsivePeers;
 
         let (sender, _receiver) = tokio::sync::broadcast::channel(1);
 
-        let mut providers = HashSet::<telio_model::api_config::EndpointProvider>::new();
-        providers.insert(telio_model::api_config::EndpointProvider::Stun);
-        providers.insert(telio_model::api_config::EndpointProvider::Upnp);
-        providers.insert(telio_model::api_config::EndpointProvider::Local);
+        let mut providers = HashSet::<EndpointProvider>::new();
+        providers.insert(EndpointProvider::Stun);
+        providers.insert(EndpointProvider::Upnp);
+        providers.insert(EndpointProvider::Local);
 
         let features = Features {
             direct: Some(FeatureDirect {

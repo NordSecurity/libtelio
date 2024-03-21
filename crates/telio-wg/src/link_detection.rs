@@ -3,7 +3,7 @@ use tokio::time::Instant;
 
 use telio_crypto::PublicKey;
 use telio_model::{
-    api_config::FeatureLinkDetection,
+    features::FeatureLinkDetection,
     mesh::{LinkState, NodeState},
 };
 
@@ -407,7 +407,7 @@ impl BytesAndTimestamps {
 mod tests {
     use super::*;
     use crate::link_detection;
-    use telio_model::{api_config::FeatureLinkDetection, mesh::Node};
+    use telio_model::{features::FeatureLinkDetection, mesh::Node};
     use tokio::time;
 
     const ONE_SECOND: Duration = Duration::from_secs(1);

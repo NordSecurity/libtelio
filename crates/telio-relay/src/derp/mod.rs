@@ -19,8 +19,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use telio_crypto::{PublicKey, SecretKey};
 use telio_model::{
-    api_config::FeatureDerp,
     config::{RelayState, Server},
+    features::FeatureDerp,
 };
 use telio_proto::{
     Codec, DerpPollRequestMsg, PacketControl, PacketRelayed, PacketTypeRelayed, PeersStatesMap,
