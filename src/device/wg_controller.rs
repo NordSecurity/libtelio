@@ -50,6 +50,7 @@ enum PeerState {
 pub struct RequestedPeer {
     peer: Peer,
     local_direct_endpoint: Option<(SocketAddr, Session)>,
+    just_changed: bool,
 }
 
 pub async fn consolidate_wg_state(
@@ -222,8 +223,9 @@ async fn consolidate_wg_peers<
         match (
             is_actual_peer_proxying,
             is_peer_proxying(&requested_peer.peer, &proxy_endpoints),
+            requested_peer.just_changed,
         ) {
-            (false, true) => {
+            (false, true, _) | (_, true, true) => {
                 // We have downgraded the connection. Notify cross ping check about that.
                 if let Some(cpc) = cross_ping_check {
                     cpc.notify_failed_wg_connection(requested_peer.peer.public_key)
@@ -240,7 +242,7 @@ async fn consolidate_wg_peers<
                 }
             }
 
-            (true, false) => {
+            (true, false, _) => {
                 // We have upgraded the connection. If the upgrade happened because we have
                 // selected a new direct endpoint candidate -> notify the other node about our own
                 // local side endpoint, such that the other node can do this upgrade too.
@@ -253,8 +255,6 @@ async fn consolidate_wg_peers<
                     ) {
                         us.request_upgrade(&public_key, remote_endpoint, local_direct_endpoint)
                             .await?
-                    } else {
-                        us.remove_sessions_for_peer(public_key).await;
                     }
                 }
 
@@ -505,6 +505,7 @@ async fn build_requested_peers_list<
                                 ..Default::default()
                             },
                             local_direct_endpoint: None,
+                            just_changed: false,
                         },
                     );
                 }
@@ -525,6 +526,7 @@ async fn build_requested_peers_list<
         let requested_peer = RequestedPeer {
             peer: dns_peer,
             local_direct_endpoint: None,
+            just_changed: false,
         };
         requested_peers.insert(dns_peer_public_key, requested_peer);
     }
@@ -556,6 +558,7 @@ async fn build_requested_peers_list<
                     ..Default::default()
                 },
                 local_direct_endpoint: None,
+                just_changed: false,
             },
         );
     } else {
@@ -640,6 +643,7 @@ async fn build_requested_meshnet_peers_list<
                         ..Default::default()
                     },
                     local_direct_endpoint: None,
+                    just_changed: false,
                 },
             )
         })
@@ -665,7 +669,12 @@ async fn build_requested_meshnet_peers_list<
         let time_since_last_endpoint_change = wireguard_interface
             .time_since_last_endpoint_change(*public_key)
             .await?;
-        let checked_endpoint = checked_endpoints.get(public_key);
+        let checked_endpoint = if let Some((_, true)) = time_since_last_endpoint_change {
+            // We just downgraded or just upgraded, shouldn't force endpoint
+            None
+        } else {
+            checked_endpoints.get(public_key)
+        };
         let proxy_endpoint = proxy_endpoints.get(public_key);
         let upgrade_request_endpoint = upgrade_request_endpoints
             .get(public_key)
@@ -714,6 +723,9 @@ async fn build_requested_meshnet_peers_list<
         // with the other end
         requested_peer.peer.endpoint = selected_remote_endpoint;
         requested_peer.local_direct_endpoint = selected_local_endpoint;
+        requested_peer.just_changed = time_since_last_endpoint_change
+            .map(|(_, fresh)| fresh)
+            .unwrap_or(false);
 
         // Adjust keepalive for direct and offline peers
         requested_peer.peer.persistent_keepalive_interval =
@@ -903,7 +915,7 @@ fn is_peer_proxying(
 fn peer_state(
     peer: Option<&telio_wg::uapi::Peer>,
     time_since_last_rx: Option<&Duration>,
-    time_since_last_endpoint_change: Option<&Duration>,
+    time_since_last_endpoint_change: Option<&(Duration, bool)>,
     proxy_endpoint: Option<&SocketAddr>,
     requested_state: &RequestedState,
 ) -> PeerState {
@@ -934,7 +946,7 @@ fn peer_state(
 
     let has_contact = time_since_last_rx < &peer_connectivity_timeout;
     let is_proxying = peer.endpoint.as_ref() == proxy_endpoint;
-    let is_in_upgrade_window = time_since_last_endpoint_change < &peer_upgrade_window;
+    let is_in_upgrade_window = time_since_last_endpoint_change.0 < peer_upgrade_window;
 
     match (has_contact, is_proxying, is_in_upgrade_window) {
         (false, _, _) => PeerState::Disconnected,
@@ -1464,14 +1476,13 @@ mod tests {
                 });
         }
 
-        fn when_time_since_last_endpoint_change(&mut self, input: Vec<(PublicKey, u64)>) {
+        fn when_time_since_last_endpoint_change(&mut self, input: Vec<(PublicKey, (u64, bool))>) {
             self.wireguard_interface
                 .expect_time_since_last_endpoint_change()
                 .returning(move |pk| {
-                    input
-                        .iter()
-                        .find(|i| i.0 == pk)
-                        .map_or(Ok(None), |i| Ok(Some(Duration::from_secs(i.1))))
+                    input.iter().find(|i| i.0 == pk).map_or(Ok(None), |i| {
+                        Ok(Some((Duration::from_secs(i.1 .0), i.1 .1)))
+                    })
                 });
         }
 
@@ -1724,7 +1735,7 @@ mod tests {
             allowed_ips.clone(),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 5)]);
-        f.when_time_since_last_endpoint_change(vec![(pub_key, 5)]);
+        f.when_time_since_last_endpoint_change(vec![(pub_key, (5, true))]);
         f.when_cross_check_validated_endpoints(vec![]);
         f.when_upgrade_requests(vec![(pub_key, remote_wg_endpoint, Instant::now())]);
 
@@ -1776,7 +1787,7 @@ mod tests {
             allowed_ips.clone(),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 5)]);
-        f.when_time_since_last_endpoint_change(vec![(pub_key, 5)]);
+        f.when_time_since_last_endpoint_change(vec![(pub_key, (5, false))]);
         f.when_cross_check_validated_endpoints(vec![(
             pub_key,
             remote_wg_endpoint,
@@ -1823,7 +1834,7 @@ mod tests {
         f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
         f.when_current_peers(vec![]);
         f.when_time_since_last_rx(vec![(pub_key, 100)]);
-        f.when_time_since_last_endpoint_change(vec![(pub_key, 100)]);
+        f.when_time_since_last_endpoint_change(vec![(pub_key, (100, true))]);
         f.when_cross_check_validated_endpoints(vec![(
             pub_key,
             remote_wg_endpoint,
@@ -1894,7 +1905,7 @@ mod tests {
             allowed_ips,
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 4)]);
-        f.when_time_since_last_endpoint_change(vec![(pub_key, 4)]);
+        f.when_time_since_last_endpoint_change(vec![(pub_key, (4, false))]);
         f.when_cross_check_validated_endpoints(vec![]);
         f.when_upgrade_requests(vec![]);
 
@@ -1927,7 +1938,7 @@ mod tests {
             allowed_ips.clone(),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 100)]);
-        f.when_time_since_last_endpoint_change(vec![(pub_key, 5)]);
+        f.when_time_since_last_endpoint_change(vec![(pub_key, (5, false))]);
         f.when_cross_check_validated_endpoints(vec![]);
         f.when_upgrade_requests(vec![]);
 
@@ -1964,7 +1975,10 @@ mod tests {
             allowed_ips.clone(),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 5)]);
-        f.when_time_since_last_endpoint_change(vec![(pub_key, DEFAULT_PEER_UPGRADE_WINDOW)]);
+        f.when_time_since_last_endpoint_change(vec![(
+            pub_key,
+            (DEFAULT_PEER_UPGRADE_WINDOW, false),
+        )]);
         f.when_cross_check_validated_endpoints(vec![]);
         f.when_upgrade_requests(vec![]);
 
@@ -2102,7 +2116,7 @@ mod tests {
             allowed_ips.clone(),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 20)]);
-        f.when_time_since_last_endpoint_change(vec![(pub_key, 100)]);
+        f.when_time_since_last_endpoint_change(vec![(pub_key, (100, false))]);
         f.when_cross_check_validated_endpoints(vec![(
             pub_key,
             remote_wg_endpoint,

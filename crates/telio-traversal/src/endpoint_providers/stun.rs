@@ -1946,7 +1946,7 @@ mod tests {
             async fn del_peer(&self, key: PublicKey) -> Result<(), Error>;
             async fn drop_connected_sockets(&self) -> Result<(), Error>;
             async fn time_since_last_rx(&self, public_key: PublicKey) -> Result<Option<Duration>, Error>;
-            async fn time_since_last_endpoint_change(&self, public_key: PublicKey) -> Result<Option<Duration>, Error>;
+            async fn time_since_last_endpoint_change(&self, public_key: PublicKey) -> Result<Option<(Duration, bool)>, Error>;
             async fn stop(self);
             async fn reset_existing_connections(&self, exit_pubkey: PublicKey, exit_ipv4: Ipv4Addr) -> Result<(), Error>;
         }
