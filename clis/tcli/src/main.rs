@@ -10,7 +10,7 @@ use dirs::home_dir;
 use parking_lot::Mutex;
 use regex::Regex;
 use std::{io::Write, sync::Arc, time::SystemTime};
-use telio_model::{api_config::Features, config::Server, event::Event as DevEvent};
+use telio_model::{config::Server, event::Event as DevEvent, features::Features};
 
 #[derive(Parser)]
 struct Args {

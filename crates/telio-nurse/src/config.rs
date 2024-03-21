@@ -1,7 +1,7 @@
-use telio_model::api_config::{FeatureNurse, FeatureQoS};
+use telio_model::features::{FeatureNurse, FeatureQoS};
 use tokio::time::Duration;
 
-use telio_model::api_config::RttType;
+use telio_model::features::RttType;
 
 /// Configuration for Nurse
 pub struct Config {

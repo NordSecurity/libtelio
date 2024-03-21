@@ -16,7 +16,7 @@ use std::{
     net::IpAddr,
     str::FromStr,
 };
-use telio_model::api_config::TtlValue;
+use telio_model::features::TtlValue;
 use telio_utils::telio_log_warn;
 
 use crate::forward::ForwardAuthority;

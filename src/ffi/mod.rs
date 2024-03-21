@@ -31,7 +31,7 @@ use std::{
 
 use self::types::*;
 use crate::device::{Device, DeviceConfig, Result as DevResult};
-use telio_model::{api_config::Features, config::PartialConfig, event::*, mesh::ExitNode};
+use telio_model::{config::PartialConfig, event::*, features::Features, mesh::ExitNode};
 
 // debug tools
 use telio_utils::{
@@ -1105,7 +1105,7 @@ mod tests {
     use super::*;
     use libc::c_void;
     use std::ptr;
-    use telio_model::api_config::Features;
+    use telio_model::features::Features;
 
     unsafe extern "C" fn test_telio_event_fn(_: *mut c_void, _: *const c_char) {}
 
