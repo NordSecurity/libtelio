@@ -157,7 +157,7 @@ impl Map {
             // TODO: check if endpoint already contains primary, assume it should stay primary
             //      think, how to check for old derp endpoint.
             if let Some(node) = self.nodes.get_mut(&key) {
-                node.endpoint = Some(endpoint);
+                node.endpoint = endpoint.get(0).copied();
             }
         }
     }

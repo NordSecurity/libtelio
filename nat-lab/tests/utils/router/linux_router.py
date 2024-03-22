@@ -455,6 +455,41 @@ class LinuxRouter(Router):
                 ]
             ).execute()
 
+    # This function blocks outgoing data for a specific port to simulate permission denied error for the socket bound to that port.
+    # It was added for LLT-4980, to test a specific code path in proxy.rs
+    @asynccontextmanager
+    async def block_udp_port(self, port: int) -> AsyncIterator:
+        await self._connection.create_process(
+            [
+                "iptables",
+                "-A",
+                "OUTPUT",
+                "-p",
+                "udp",
+                "--sport",
+                str(port),
+                "-j",
+                "DROP",
+            ]
+        ).execute()
+
+        try:
+            yield
+        finally:
+            await self._connection.create_process(
+                [
+                    "iptables",
+                    "-D",
+                    "OUTPUT",
+                    "-p",
+                    "udp",
+                    "--sport",
+                    str(port),
+                    "-j",
+                    "DROP",
+                ]
+            ).execute()
+
     @asynccontextmanager
     async def reset_upnpd(self) -> AsyncIterator:
         await self._connection.create_process(["killall", "upnpd"]).execute()

@@ -115,6 +115,11 @@ class Router(ABC):
 
     @abstractmethod
     @asynccontextmanager
+    async def block_udp_port(self, port: int) -> AsyncIterator:
+        yield
+
+    @abstractmethod
+    @asynccontextmanager
     async def reset_upnpd(self) -> AsyncIterator:
         yield
 

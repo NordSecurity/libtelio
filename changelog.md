@@ -1,4 +1,4 @@
-### UNRELEASED
+### v4.3.0-rc1
 ### **Bravas**
 ---
 * LLT-5002: Fix preshared key parsing logic
@@ -8,6 +8,7 @@
 * LLT-5007: Bump moose tracker to v3.0.0-libtelioApp
 * LLT-4509: Enable windows arm64 build.
 * LLT-5009: Enable QoS feature by default
+* LLT-4980: Add exponential backoff for socket updates on error
 
 <br>
 
