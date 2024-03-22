@@ -9,8 +9,8 @@ use std::time::Duration;
 use telio_crypto::PublicKey;
 use telio_dns::DnsResolver;
 use telio_firewall::firewall::{Firewall, FILE_SEND_PORT};
-use telio_model::api_config::Features;
 use telio_model::constants::{VPN_EXTERNAL_IPV4, VPN_INTERNAL_IPV4, VPN_INTERNAL_IPV6};
+use telio_model::features::Features;
 use telio_model::EndpointMap;
 use telio_model::SocketAddr;
 use telio_proto::PeersStatesMap;
@@ -913,11 +913,11 @@ mod tests {
     use telio_crypto::SecretKey;
     use telio_dns::MockDnsResolver;
     use telio_firewall::firewall::{MockFirewall, FILE_SEND_PORT};
-    use telio_model::api_config::{
+    use telio_model::config::{Config, PeerBase, Server};
+    use telio_model::features::{
         FeatureDns, TtlValue, DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
         DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
     };
-    use telio_model::config::{Config, PeerBase, Server};
     use telio_model::mesh::ExitNode;
     use telio_pq::MockPostQuantum;
     use telio_proxy::MockProxy;

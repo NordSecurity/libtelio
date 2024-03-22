@@ -4,7 +4,7 @@ use std::{
     net::{IpAddr, Ipv4Addr},
 };
 use telio_crypto::PublicKey;
-use telio_model::api_config::EndpointProvider;
+use telio_model::features::EndpointProvider;
 
 use crate::{
     messages::pinger::*, Codec, CodecError, CodecResult, DowncastPacket, PacketRelayed,

@@ -573,7 +573,7 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
                     wg_port,
                     &sockets.ext_socket,
                     &self.pong_event,
-                    telio_model::api_config::EndpointProvider::Stun,
+                    telio_model::features::EndpointProvider::Stun,
                 )
                 .await
         } else {
@@ -1382,7 +1382,7 @@ mod tests {
                 .pong(
                     msg.get_wg_port(),
                     &addr.ip(),
-                    telio_model::api_config::EndpointProvider::Stun,
+                    telio_model::features::EndpointProvider::Stun,
                 )
                 .unwrap();
 
@@ -1448,7 +1448,7 @@ mod tests {
                 .pong(
                     msg.get_wg_port(),
                     &addr.ip(),
-                    telio_model::api_config::EndpointProvider::Stun,
+                    telio_model::features::EndpointProvider::Stun,
                 )
                 .unwrap();
 

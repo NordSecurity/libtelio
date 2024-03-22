@@ -9,7 +9,7 @@ use std::{
 };
 use telio_crypto::{PublicKey, SecretKey};
 use telio_dns::{LocalNameServer, NameServer, Records};
-use telio_model::api_config::TtlValue;
+use telio_model::features::TtlValue;
 use tokio::net::UdpSocket;
 use x25519_dalek::{PublicKey as PublicDalek, StaticSecret};
 

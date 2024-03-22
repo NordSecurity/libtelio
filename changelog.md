@@ -7,9 +7,9 @@
 * LLT-1113: Add no-link detection mechanism
 * LLT-5007: Bump moose tracker to v3.0.0-libtelioApp
 * LLT-4509: Enable windows arm64 build.
+* LLT-5009: Enable QoS feature by default
 
 <br>
-
 
 ### v4.3.0-rc0
 ### **Bravas**
