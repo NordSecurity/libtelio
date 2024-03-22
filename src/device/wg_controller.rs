@@ -219,90 +219,66 @@ async fn consolidate_wg_peers<
         }
 
         let is_actual_peer_proxying = is_peer_proxying(actual_peer, &proxy_endpoints);
-        match (
-            is_actual_peer_proxying,
-            is_peer_proxying(&requested_peer.peer, &proxy_endpoints),
-        ) {
-            (false, true) => {
-                // We have downgraded the connection. Notify cross ping check about that.
-                if let Some(cpc) = cross_ping_check {
-                    cpc.notify_failed_wg_connection(requested_peer.peer.public_key)
-                        .await?;
-                }
+        if is_actual_peer_proxying && !is_peer_proxying(&requested_peer.peer, &proxy_endpoints) {
+            // We have upgraded the connection. If the upgrade happened because we have
+            // selected a new direct endpoint candidate -> notify the other node about our own
+            // local side endpoint, such that the other node can do this upgrade too.
+            let public_key = requested_peer.peer.public_key;
 
-                if let Some(sk) = session_keeper {
-                    sk.remove_node(&requested_peer.peer.public_key).await?;
-                }
-
-                // Unmute pair to allow communication through proxy
-                if let Some(p) = proxy {
-                    p.mute_peer(requested_peer.peer.public_key, None).await?;
+            if let (Some(remote_endpoint), Some(local_direct_endpoint)) = (
+                requested_peer.peer.endpoint,
+                requested_peer.local_direct_endpoint,
+            ) {
+                if let Some(us) = upgrade_sync {
+                    us.request_upgrade(&public_key, remote_endpoint, local_direct_endpoint)
+                        .await?
                 }
             }
 
-            (true, false) => {
-                // We have upgraded the connection. If the upgrade happened because we have
-                // selected a new direct endpoint candidate -> notify the other node about our own
-                // local side endpoint, such that the other node can do this upgrade too.
-                let public_key = requested_peer.peer.public_key;
+            // TODO we're not completely sure that the other side has upgraded too and that we're in 'Upgrading' state.
+            // Mute pair to avoid oscillations
+            if let Some(p) = proxy {
+                p.mute_peer(
+                    requested_peer.peer.public_key,
+                    Some(Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW)),
+                )
+                .await?;
+            }
 
-                if let (Some(remote_endpoint), Some(local_direct_endpoint)) = (
-                    requested_peer.peer.endpoint,
-                    requested_peer.local_direct_endpoint,
-                ) {
-                    if let Some(us) = upgrade_sync {
-                        us.request_upgrade(&public_key, remote_endpoint, local_direct_endpoint)
-                            .await?
+            // Initiate session keeper to start sending data between peers connected directly
+            if let (Some(sk), Some(mesh_ip1), maybe_mesh_ip2) = (
+                session_keeper,
+                requested_peer.peer.allowed_ips.get(0),
+                requested_peer.peer.allowed_ips.get(1),
+            ) {
+                let target = if features.ipv6 {
+                    match (mesh_ip1.ip(), maybe_mesh_ip2.map(|ip| ip.ip())) {
+                        (IpAddr::V4(ip4), Some(IpAddr::V6(ip6))) => (Some(ip4), Some(ip6)),
+                        (IpAddr::V6(ip6), Some(IpAddr::V4(ip4))) => (Some(ip4), Some(ip6)),
+                        (IpAddr::V4(ip4), _) => (Some(ip4), None),
+                        (IpAddr::V6(ip6), _) => (None, Some(ip6)),
                     }
-                }
+                } else {
+                    match mesh_ip1.ip() {
+                        IpAddr::V4(ip4) => (Some(ip4), None),
+                        _ => (None, None),
+                    }
+                };
 
-                // TODO we're not completely sure that the other side has upgraded too and that we're in 'Upgrading' state.
-                // Mute pair to avoid oscillations
-                if let Some(p) = proxy {
-                    p.mute_peer(
-                        requested_peer.peer.public_key,
-                        Some(Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW)),
-                    )
-                    .await?;
-                }
-
-                // Initiate session keeper to start sending data between peers connected directly
-                if let (Some(sk), Some(mesh_ip1), maybe_mesh_ip2) = (
-                    session_keeper,
-                    requested_peer.peer.allowed_ips.get(0),
-                    requested_peer.peer.allowed_ips.get(1),
-                ) {
-                    let target = if features.ipv6 {
-                        match (mesh_ip1.ip(), maybe_mesh_ip2.map(|ip| ip.ip())) {
-                            (IpAddr::V4(ip4), Some(IpAddr::V6(ip6))) => (Some(ip4), Some(ip6)),
-                            (IpAddr::V6(ip6), Some(IpAddr::V4(ip4))) => (Some(ip4), Some(ip6)),
-                            (IpAddr::V4(ip4), _) => (Some(ip4), None),
-                            (IpAddr::V6(ip6), _) => (None, Some(ip6)),
-                        }
-                    } else {
-                        match mesh_ip1.ip() {
-                            IpAddr::V4(ip4) => (Some(ip4), None),
-                            _ => (None, None),
-                        }
-                    };
-
-                    // Start persistent keepalives
-                    sk.add_node(
-                        &requested_peer.peer.public_key,
-                        target,
-                        Duration::from_secs(
-                            requested_peer
-                                .peer
-                                .persistent_keepalive_interval
-                                .unwrap_or(requested_state.keepalive_periods.direct)
-                                .into(),
-                        ),
-                    )
-                    .await?;
-                }
+                // Start persistent keepalives
+                sk.add_node(
+                    &requested_peer.peer.public_key,
+                    target,
+                    Duration::from_secs(
+                        requested_peer
+                            .peer
+                            .persistent_keepalive_interval
+                            .unwrap_or(requested_state.keepalive_periods.direct)
+                            .into(),
+                    ),
+                )
+                .await?;
             }
-
-            _ => {}
         }
         telio_log_debug!(
             "peer {:?} proxying: {:?}, state: {:?}, lh: {:?}",
@@ -1573,16 +1549,6 @@ mod tests {
             }
         }
 
-        fn then_notify_failed_wg_connection(&mut self, input: Vec<PublicKey>) {
-            for i in input {
-                self.cross_ping_check
-                    .expect_notify_failed_wg_connection()
-                    .once()
-                    .with(eq(i))
-                    .return_once(|_| Ok(()));
-            }
-        }
-
         fn then_request_upgrade(
             &mut self,
             input: Vec<(PublicKey, SocketAddr, (SocketAddr, Session))>,
@@ -1624,16 +1590,6 @@ mod tests {
                         eq(Duration::from_secs(i.3.into())),
                     )
                     .return_once(|_, _, _| Ok(()));
-            }
-        }
-
-        fn then_keeper_remove_node(&mut self, input: Vec<PublicKey>) {
-            for i in input {
-                self.session_keeper
-                    .expect_remove_node()
-                    .once()
-                    .with(eq(i))
-                    .return_once(|_| Ok(()));
             }
         }
 
@@ -1920,47 +1876,6 @@ mod tests {
 
         // then nothing happens
 
-        f.consolidate_peers().await;
-    }
-
-    #[tokio::test]
-    async fn when_connection_timedout_then_downgrade() {
-        let mut f = Fixture::new();
-
-        let pub_key = SecretKey::gen().public();
-        let ip1 = IpAddr::from([1, 2, 3, 4]);
-        let ip1v6 = IpAddr::from([5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8]);
-        let allowed_ips = vec![ip1, ip1v6];
-        let mapped_port = 12;
-        let wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
-        let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
-
-        let proxying_keepalive_period = 1234;
-        f.requested_state.keepalive_periods.proxying = Some(proxying_keepalive_period);
-
-        f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
-        f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
-        f.when_current_peers(vec![(
-            pub_key,
-            wg_endpoint,
-            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
-            allowed_ips.clone(),
-        )]);
-        f.when_time_since_last_rx(vec![(pub_key, 100)]);
-        f.when_time_since_last_endpoint_change(vec![(pub_key, 5)]);
-        f.when_cross_check_validated_endpoints(vec![]);
-        f.when_upgrade_requests(vec![]);
-
-        f.then_add_peer(vec![(
-            pub_key,
-            proxy_endpoint,
-            proxying_keepalive_period,
-            allowed_ips.iter().copied().map(|ip| ip.into()).collect(),
-            allowed_ips,
-        )]);
-        f.then_notify_failed_wg_connection(vec![pub_key]);
-        f.then_keeper_remove_node(vec![pub_key]);
-        f.then_proxy_mute(vec![(pub_key, None)]);
         f.consolidate_peers().await;
     }
 

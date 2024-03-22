@@ -251,6 +251,8 @@ pub struct Event {
     pub link_state: Option<LinkState>,
     /// Details regarding the Peer
     pub peer: Peer,
+    /// Previous info about the peer
+    pub old_peer: Option<Peer>,
 }
 
 /// Analytics information to be conveyed
