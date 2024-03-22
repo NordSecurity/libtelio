@@ -1,4 +1,4 @@
-### UNRELEASED
+### v4.3.0-rc1
 ### **Bravas**
 ---
 * LLT-5002: Fix preshared key parsing logic
