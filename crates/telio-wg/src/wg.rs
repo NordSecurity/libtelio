@@ -62,10 +62,11 @@ pub trait WireGuard: Send + Sync + 'static {
     /// Retrieve time since last RXed (and accepted) packet
     async fn time_since_last_rx(&self, public_key: PublicKey) -> Result<Option<Duration>, Error>;
     /// Retrieve time since last endpoint (either roamed or manual) change
+    /// Second parameter tells us whether this event change has been already read
     async fn time_since_last_endpoint_change(
         &self,
         public_key: PublicKey,
-    ) -> Result<Option<Duration>, Error>;
+    ) -> Result<Option<(Duration, bool)>, Error>;
     /// Stop adapter
     async fn stop(self);
     /// Inject apropiate packets into the tunel to reset exising connections.
@@ -116,7 +117,7 @@ struct State {
     interval: Interval,
     interface: Interface,
     event: Tx<Box<Event>>,
-    last_endpoint_change: HashMap<PublicKey, Instant>,
+    last_endpoint_change: HashMap<PublicKey, (Instant, bool)>,
     analytics_tx: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
 
     // Detecting unexpected driver failures, such as a malicious removal
@@ -423,11 +424,15 @@ impl WireGuard for DynamicWg {
     async fn time_since_last_endpoint_change(
         &self,
         public_key: PublicKey,
-    ) -> Result<Option<Duration>, Error> {
+    ) -> Result<Option<(Duration, bool)>, Error> {
         Ok(task_exec!(&self.task, async move |s| Ok(s
             .last_endpoint_change
-            .get(&public_key)
-            .map(|t| Instant::now() - *t)))
+            .get_mut(&public_key)
+            .map(|(t, is_fresh)| {
+                let result = ((Instant::now() - *t), *is_fresh);
+                *is_fresh = false;
+                result
+            })))
         .await?)
     }
 
@@ -714,7 +719,8 @@ impl State {
                     old_endpoint,
                     new_endpoint
                 );
-                self.last_endpoint_change.insert(*key, Instant::now());
+                self.last_endpoint_change
+                    .insert(*key, (Instant::now(), true));
             }
         }
 
@@ -1430,7 +1436,7 @@ pub mod tests {
                 .await
                 .unwrap()
                 .unwrap(),
-            Duration::from_millis(0)
+            (Duration::from_millis(0), true)
         );
 
         time::advance(Duration::from_millis(100)).await;
@@ -1439,7 +1445,7 @@ pub mod tests {
                 .await
                 .unwrap()
                 .unwrap(),
-            Duration::from_millis(100)
+            (Duration::from_millis(100), false)
         );
 
         // Add the same peer again - endpoint is the same,
@@ -1451,7 +1457,7 @@ pub mod tests {
                 .await
                 .unwrap()
                 .unwrap(),
-            Duration::from_millis(100)
+            (Duration::from_millis(100), false)
         );
 
         // Add a peer with different key, it shouldn't change the
@@ -1468,7 +1474,7 @@ pub mod tests {
                 .await
                 .unwrap()
                 .unwrap(),
-            Duration::from_millis(100)
+            (Duration::from_millis(100), false)
         );
 
         // Check if the time is still properly updated
@@ -1478,7 +1484,7 @@ pub mod tests {
                 .await
                 .unwrap()
                 .unwrap(),
-            Duration::from_millis(200)
+            (Duration::from_millis(200), false)
         );
 
         // Let's add a peer with the same pubkey and other endpoint
@@ -1497,7 +1503,7 @@ pub mod tests {
                 .await
                 .unwrap()
                 .unwrap(),
-            Duration::from_millis(0)
+            (Duration::from_millis(0), true)
         );
 
         // And in the end let's check if the time of the last
