@@ -33,8 +33,8 @@ use telio_traversal::{
 use telio_sockets::native;
 
 use telio_nurse::{
-    config::Config as NurseConfig, data::MeshConfigUpdateEvent,
-    MeshnetEntities as NurseMeshnetEntities, Nurse, NurseIo,
+    aggregator::ConnectivityDataAggregator, config::Config as NurseConfig,
+    data::MeshConfigUpdateEvent, MeshnetEntities as NurseMeshnetEntities, Nurse, NurseIo,
 };
 use telio_wg as wg;
 use thiserror::Error as TError;
@@ -245,6 +245,8 @@ pub struct Entities {
 
     // Nurse
     nurse: Option<Arc<Nurse>>,
+
+    aggregator: Arc<ConnectivityDataAggregator>,
 
     postquantum_wg: telio_pq::Entity,
 
@@ -1011,6 +1013,14 @@ impl Runtime {
         #[cfg(test)]
         adapter.lock().await.checkpoint();
 
+        let aggregator = Arc::new(ConnectivityDataAggregator::new(
+            features
+                .nurse
+                .clone()
+                .filter(|_| telio_lana::is_lana_initialized()),
+            wireguard_interface.clone(),
+        ));
+
         let nurse = if telio_lana::is_lana_initialized() {
             if let Some(nurse_features) = &features.nurse {
                 let nurse_io = NurseIo {
@@ -1091,6 +1101,7 @@ impl Runtime {
                 meshnet: None,
                 socket_pool,
                 nurse,
+                aggregator,
                 postquantum_wg,
                 pmtu_detection,
             },
@@ -1141,6 +1152,7 @@ impl Runtime {
             derp_multiplexer_chan,
             self.entities.socket_pool.clone(),
             self.event_publishers.derp_events_publisher.clone(),
+            Some(self.entities.aggregator.clone()),
         ));
 
         if let Some(nurse) = self.entities.nurse.as_ref() {
@@ -2096,11 +2108,13 @@ impl TaskRuntime for Runtime {
             meshnet_entities.stop().await;
         }
 
-        stop_arc_entity!(self.entities.wireguard_interface, "WireguardInterface");
-
         if let Some(nurse) = self.entities.nurse {
             stop_arc_entity!(nurse, "Nurse");
         }
+
+        drop(self.entities.aggregator);
+
+        stop_arc_entity!(self.entities.wireguard_interface, "WireguardInterface");
 
         self.requested_state = Default::default();
     }

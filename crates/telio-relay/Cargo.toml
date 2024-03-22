@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 generic-array = "0.14.5"
+mockall_double = "0.3.1"
 rand_core = { version = "0.6.3", features = ["getrandom"] }
 rustls-pemfile = "1.0.0"
 tokio-rustls = { version = "0.24.1", features = ["dangerous_configuration"] }
@@ -21,17 +22,18 @@ crypto_box.workspace = true
 futures.workspace = true
 httparse.workspace = true
 libc.workspace = true
-tracing.workspace = true
 num_enum.workspace = true
 rand.workspace = true
 serde.workspace = true
 strum.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "net", "sync"] }
+tracing.workspace = true
 url.workspace = true
 
 telio-crypto.workspace = true
 telio-model.workspace = true
+telio-nurse.workspace = true
 telio-proto.workspace = true
 telio-sockets.workspace = true
 telio-task.workspace = true
@@ -53,6 +55,7 @@ tokio = { workspace = true, features = [
     "test-util",
 ] }
 
+telio-nurse = { workspace = true, features = ["mockall"] }
 telio-task = { workspace = true, features = ["test-util"] }
 telio-test.workspace = true
 hyper = { version = "0.14.27", features = ["full", "http1", "backports"] }

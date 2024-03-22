@@ -7,6 +7,7 @@ use telio_utils::{telio_log_error, telio_log_warn, Hidden};
 use tokio::time::Instant;
 
 use std::{
+    io::ErrorKind,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     ops::Deref,
 };
@@ -151,19 +152,26 @@ impl Default for Server {
 pub enum RelayConnectionChangeReason {
     // Numbers smaller than 200 for configuration changes
     /// Generic reason used when everything goes right
-    ConfigurationChange = 101,
+    ConfigurationChange,
     /// The connection was explicitely closed by user
-    DisabledByUser = 102,
+    DisabledByUser,
     /// Some kind of unexpected internal error
-    ClientError = 103,
+    ClientError,
 
     // Numbers larger than 200 for network problems
     /// Derp server connection timed out
-    ConnectionTimeout = 201,
-    /// Server rejected the connection
-    ConnectionTerminatedByServer = 202,
-    /// OS-level network error (e.g. socket failure)
-    NetworkError = 203,
+    IoError(ErrorKind),
+}
+
+impl From<RelayConnectionChangeReason> for u64 {
+    fn from(reason: RelayConnectionChangeReason) -> u64 {
+        match reason {
+            RelayConnectionChangeReason::ConfigurationChange => 0,
+            RelayConnectionChangeReason::DisabledByUser => 101,
+            RelayConnectionChangeReason::ClientError => 102,
+            RelayConnectionChangeReason::IoError(io_err) => 200 + (io_err as u64),
+        }
+    }
 }
 
 /// An event informing analytics about change in the Derp server state

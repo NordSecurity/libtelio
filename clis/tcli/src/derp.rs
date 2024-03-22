@@ -144,6 +144,7 @@ impl DerpClient {
                                 rpacket,
                                 Arc::new(SocketPool::new(protector)),
                                 event_tx,
+                                None,
                             );
                             self.inst = Some(Instance {
                                 rt,

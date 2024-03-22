@@ -113,7 +113,7 @@ impl Serialize for RelayConnectionData {
         let RelayConnectionData { state, reason } = self;
         let mut seq = serializer.serialize_tuple(RELAY_TUPLE_LEN)?;
         seq.serialize_element(&(*state as u64))?;
-        seq.serialize_element(&(*reason as u64))?;
+        seq.serialize_element::<u64>(&(Into::into(*reason)))?;
         seq.end()
     }
 }
@@ -201,7 +201,7 @@ pub(crate) struct AggregatorCollectedSegments {
 impl ConnectivityDataAggregator {
     /// Create a new DataConnectivityAggregator instance
     pub fn new(
-        nurse_features: &FeatureNurse,
+        nurse_features: Option<FeatureNurse>,
         wg_interface: Arc<dyn WireGuard>,
     ) -> ConnectivityDataAggregator {
         ConnectivityDataAggregator {
@@ -211,9 +211,12 @@ impl ConnectivityDataAggregator {
                 peer_segments: Vec::new(),
                 relay_segments: Vec::new(),
             }),
-            aggregate_relay_events: nurse_features.enable_relay_conn_data.unwrap_or(false),
+            aggregate_relay_events: nurse_features
+                .as_ref()
+                .and_then(|features| features.enable_relay_conn_data)
+                .unwrap_or(false),
             aggregate_nat_traversal_events: nurse_features
-                .enable_nat_traversal_conn_data
+                .and_then(|features| features.enable_nat_traversal_conn_data)
                 .unwrap_or(false),
             wg_interface,
         }
@@ -411,7 +414,10 @@ impl ConnectivityDataAggregator {
 
 #[cfg(test)]
 mod tests {
-    use std::net::{IpAddr, Ipv4Addr};
+    use std::{
+        io::ErrorKind,
+        net::{IpAddr, Ipv4Addr},
+    };
 
     use csv::WriterBuilder;
     use telio_model::config::Server;
@@ -439,7 +445,7 @@ mod tests {
             enable_nat_traversal_conn_data: Some(enable_nat_traversal_conn_data),
         };
 
-        ConnectivityDataAggregator::new(&nurse_features, wg_interface)
+        ConnectivityDataAggregator::new(Some(nurse_features), wg_interface)
     }
 
     fn create_basic_peer_event(n: u8) -> AnalyticsEvent {
@@ -509,7 +515,7 @@ mod tests {
         // And after 50 seconds some disconnect due to network error
         current_relay_event.timestamp += second_segment_length;
         let third_segment_start = current_relay_event.timestamp;
-        current_relay_event.reason = RelayConnectionChangeReason::NetworkError;
+        current_relay_event.reason = RelayConnectionChangeReason::IoError(ErrorKind::BrokenPipe);
         current_relay_event.state = RelayState::Connecting;
         aggregator
             .change_relay_state(current_relay_event.clone())
@@ -527,7 +533,7 @@ mod tests {
 
         // And let's add one more segment with the old pubkey
         current_relay_event.timestamp += fourth_segment_length;
-        current_relay_event.reason = RelayConnectionChangeReason::NetworkError;
+        current_relay_event.reason = RelayConnectionChangeReason::IoError(ErrorKind::TimedOut);
         current_relay_event.state = RelayState::Disconnected;
         aggregator.change_relay_state(current_relay_event).await;
 
@@ -570,7 +576,7 @@ mod tests {
                 duration: third_segment_lenght,
                 connection_data: RelayConnectionData {
                     state: RelayConnectionState::Connecting,
-                    reason: RelayConnectionChangeReason::NetworkError
+                    reason: RelayConnectionChangeReason::IoError(ErrorKind::BrokenPipe)
                 }
             }
         );
@@ -979,7 +985,7 @@ mod tests {
             },
             RelayConnectionData {
                 state: RelayConnectionState::Connecting,
-                reason: RelayConnectionChangeReason::NetworkError,
+                reason: RelayConnectionChangeReason::IoError(ErrorKind::TimedOut),
             },
         ];
 
@@ -989,7 +995,7 @@ mod tests {
 
         let str_result = String::from_utf8(writer.into_inner().unwrap()).unwrap();
 
-        assert_eq!(str_result, "prefix:257:101,prefix:256:203,");
+        assert_eq!(str_result, "prefix:257:0,prefix:256:222,");
     }
 
     #[tokio::test]

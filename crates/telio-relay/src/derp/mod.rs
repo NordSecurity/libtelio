@@ -10,6 +10,8 @@
 pub mod http;
 pub mod proto;
 
+use mockall_double::double;
+
 use async_trait::async_trait;
 use futures::{future::select_all, Future};
 use generic_array::typenum::Unsigned;
@@ -18,10 +20,13 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 use telio_crypto::{PublicKey, SecretKey};
+use telio_model::config::{DerpAnalyticsEvent, RelayConnectionChangeReason};
 use telio_model::{
     api_config::FeatureDerp,
     config::{RelayState, Server},
 };
+#[double]
+use telio_nurse::aggregator::ConnectivityDataAggregator;
 use telio_proto::{
     Codec, DerpPollRequestMsg, PacketControl, PacketRelayed, PacketTypeRelayed, PeersStatesMap,
     Session,
@@ -115,6 +120,10 @@ struct State {
     derp_poll_session: Session,
     /// Cache the result of derp polling
     remote_peers_states: PeersStatesMap,
+    /// Connectivity data aggregator
+    aggregator: Option<Arc<ConnectivityDataAggregator>>,
+
+    last_disconnection_reason: RelayConnectionChangeReason,
 
     connecting: Option<JoinHandle<(Server, DerpConnection)>>,
 }
@@ -210,6 +219,9 @@ impl State {
         let event = self.event.clone();
         let socket_pool = self.socket_pool.clone();
 
+        let aggregator = self.aggregator.clone();
+        let mut last_disconnection_reason = self.last_disconnection_reason;
+
         let connection = async move {
             let mut sleep_time = 1f64;
             loop {
@@ -237,6 +249,14 @@ impl State {
 
                 server.conn_state = RelayState::Connecting;
                 let _ = event.send(Box::new(server.clone()));
+                if let Some(aggregator) = aggregator.as_ref() {
+                    aggregator
+                        .change_relay_state(DerpAnalyticsEvent::new(
+                            &server,
+                            last_disconnection_reason,
+                        ))
+                        .await;
+                }
 
                 // Try to establish connection
                 match Box::pin(connect_http_and_start(
@@ -250,10 +270,19 @@ impl State {
                     Ok(conn) => {
                         telio_log_info!("({}) Connected to {}", Self::NAME, server.get_address());
                         server.conn_state = RelayState::Connected;
+                        if let Some(aggregator) = aggregator.as_ref() {
+                            aggregator
+                                .change_relay_state(DerpAnalyticsEvent::new(
+                                    &server,
+                                    RelayConnectionChangeReason::ConfigurationChange,
+                                ))
+                                .await;
+                        }
                         break (server, conn);
                     }
                     Err(err) => {
                         telio_log_warn!("({}) Failed to connect: {}", Self::NAME, err);
+                        last_disconnection_reason = err.into();
                         continue;
                     }
                 }
@@ -269,6 +298,7 @@ impl DerpRelay {
         channel: Chan<(PublicKey, PacketRelayed)>,
         socket_pool: Arc<SocketPool>,
         event: Tx<Box<Server>>,
+        aggregator: Option<Arc<ConnectivityDataAggregator>>,
     ) -> Self {
         // generate random number used to encrypt control messages
         let rng = StdRng::from_entropy();
@@ -285,6 +315,8 @@ impl DerpRelay {
                 derp_poll_session: 0,
                 remote_peers_states: HashMap::new(),
                 connecting: None,
+                last_disconnection_reason: RelayConnectionChangeReason::ConfigurationChange,
+                aggregator,
             }),
         }
     }
@@ -679,8 +711,14 @@ impl Runtime for State {
 
                 tokio::select! {
                     // Connection returned, reconnect
-                    (_, _, _) = conn_join => {
+                    (err, _, _) = conn_join => {
                         telio_log_info!("Disconnecting from DERP server, due to transmission tasks error");
+
+                        self.last_disconnection_reason = match err {
+                            Ok(Ok(())) => RelayConnectionChangeReason::ConfigurationChange,
+                            Ok(Err(err)) => err.into(),
+                            _ => RelayConnectionChangeReason::ClientError,
+                        };
                         self.disconnect().await;
                     },
                     // Received payload from upper relay, forward it to DERP stream
@@ -691,11 +729,13 @@ impl Runtime for State {
                         Some((_, None)) => {
                             telio_log_debug!("Disconnecting from DERP server due to closed rx channel");
                             self.channel = None;
+                            self.last_disconnection_reason = RelayConnectionChangeReason::ClientError;
                             self.disconnect().await;
                         }
                         // If forwarding fails, disconnect
                         None => {
                             telio_log_info!("Disconnecting from DERP server");
+                            self.last_disconnection_reason = RelayConnectionChangeReason::ClientError;
                             self.disconnect().await;
                         }
                     },
@@ -744,11 +784,12 @@ impl Runtime for State {
                             Ok((server, conn)) => {
                                 self.server = Some(server.clone());
                                 self.conn = Some(conn);
-                                if let Err(err) = self.event.send(Box::new(server)) {
+                                if let Err(err) = self.event.send(Box::new(server.clone())) {
                                     telio_log_warn!("({}) sending new server info failed {}", Self::NAME, err)
                                 }
                             }
                             Err(err) => {
+                                self.last_disconnection_reason = RelayConnectionChangeReason::ClientError;
                                 telio_log_warn!("({}) connecting task failed {}", Self::NAME, err)
                             }
                         }
@@ -771,6 +812,7 @@ impl Runtime for State {
 mod tests {
     use super::*;
     use std::time::Duration;
+    use telio_nurse::aggregator::MockConnectivityDataAggregator;
     use telio_proto::DataMsg;
     use telio_sockets::NativeProtector;
     use telio_task::io::McChan;
@@ -877,6 +919,8 @@ mod tests {
 
         let (_derp_outter_ch, derp_inner_ch) = Chan::pipe();
 
+        let mocked_aggregator = MockConnectivityDataAggregator::default();
+
         let test_derp = DerpRelay::start_with(
             derp_inner_ch,
             Arc::new(SocketPool::new(
@@ -887,6 +931,7 @@ mod tests {
                 .unwrap(),
             )),
             devent_tx,
+            Some(Arc::new(mocked_aggregator)),
         );
         test_derp.configure(Some(config)).await;
 
@@ -931,6 +976,8 @@ mod tests {
 
         let (_derp_outter_ch, derp_inner_ch) = Chan::pipe();
 
+        let mocked_aggregator = MockConnectivityDataAggregator::default();
+
         let test_derp = DerpRelay::start_with(
             derp_inner_ch,
             Arc::new(SocketPool::new(
@@ -941,6 +988,7 @@ mod tests {
                 .unwrap(),
             )),
             devent_tx,
+            Some(Arc::new(mocked_aggregator)),
         );
         test_derp.configure(Some(config)).await;
 
@@ -974,6 +1022,8 @@ mod tests {
 
         let (mut derp_outer_ch, derp_inner_ch) = Chan::pipe();
 
+        let mocked_aggregator = MockConnectivityDataAggregator::default();
+
         let test_derp = DerpRelay::start_with(
             derp_inner_ch,
             Arc::new(SocketPool::new(
@@ -984,6 +1034,7 @@ mod tests {
                 .unwrap(),
             )),
             devent_tx,
+            Some(Arc::new(mocked_aggregator)),
         );
         test_derp.configure(Some(config)).await;
 

@@ -43,9 +43,9 @@ pub struct DerpConnection {
     /// Communication channel for Node <-> Derp communication
     pub comms_direct: Chan<Vec<u8>>,
     /// Handle for managing sender thread
-    pub join_sender: JoinHandle<Result<(), IoError>>,
+    pub join_sender: JoinHandle<Result<(), Error>>,
     /// Handle for managing receiver thread
-    pub join_receiver: JoinHandle<Result<(), IoError>>,
+    pub join_receiver: JoinHandle<Result<(), Error>>,
 
     /// For polling derp about remote peers states
     pub poll_timer: Interval,
@@ -193,14 +193,10 @@ async fn connect_and_start<RW: AsyncRead + AsyncWrite + Send + 'static>(
         comms_relayed: comm_side_relayed,
         comms_direct: comm_side_direct,
         join_sender: tokio::spawn(async move {
-            start_read(reader, sender_relayed, sender_direct, addr)
-                .await
-                .map_err(|err| IoError::new(ErrorKind::Other, err.to_string()))
+            start_read(reader, sender_relayed, sender_direct, addr).await
         }),
         join_receiver: tokio::spawn(async move {
-            start_write(writer, receiver_relayed, receiver_direct, addr)
-                .await
-                .map_err(|err| IoError::new(ErrorKind::Other, err.to_string()))
+            start_write(writer, receiver_relayed, receiver_direct, addr).await
         }),
         poll_timer: {
             let poll_interval = Duration::from_secs(server_keepalives.derp_keepalive as u64);

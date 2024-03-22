@@ -20,6 +20,7 @@ use std::{
     time::Duration,
 };
 use telio_crypto::{PublicKey, SecretKey, KEY_SIZE};
+use telio_model::config::RelayConnectionChangeReason;
 use telio_utils::{telio_log_debug, telio_log_trace};
 use thiserror::Error as TError;
 use tracing::{enabled, Level};
@@ -138,7 +139,7 @@ pub enum FrameType {
     ControlMessage = 0x14,
 }
 
-/// Error is a boxed std::error::Error
+/// Error types for derp module
 #[derive(Debug, TError)]
 pub enum Error {
     /// Connection timed out
@@ -171,6 +172,18 @@ pub enum Error {
     /// Url parse error
     #[error("Url parse error: {0}")]
     UrlParseError(#[from] url::ParseError),
+}
+
+impl From<Error> for RelayConnectionChangeReason {
+    fn from(err: Error) -> RelayConnectionChangeReason {
+        match err {
+            Error::IoError(err) => RelayConnectionChangeReason::IoError(err.kind()),
+            Error::ConnectionTimeoutError(_) => {
+                RelayConnectionChangeReason::IoError(ErrorKind::TimedOut)
+            }
+            _ => RelayConnectionChangeReason::ClientError,
+        }
+    }
 }
 
 /// Source and destination addresses for derp traffic
