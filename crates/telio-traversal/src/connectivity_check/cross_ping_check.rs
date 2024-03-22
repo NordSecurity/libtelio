@@ -841,8 +841,8 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
             PingByReceiveCallMeMaybeResponse(m) => {
                 let nice_ep_provider = matches!(
                     event.msg.get_ponging_ep_provider(),
-                    Ok(Some(telio_model::api_config::EndpointProvider::Local))
-                        | Ok(Some(telio_model::api_config::EndpointProvider::Upnp))
+                    Ok(Some(telio_model::features::EndpointProvider::Local))
+                        | Ok(Some(telio_model::features::EndpointProvider::Upnp))
                 );
                 if let Ok(ping_source) = event.msg.get_ping_source_address() {
                     if ping_source == self.local_endpoint_candidate.udp.ip() || nice_ep_provider {
@@ -1113,7 +1113,7 @@ mod tests {
             .pong(
                 WGPort(2),
                 &endpoint.ip(),
-                telio_model::api_config::EndpointProvider::Local,
+                telio_model::features::EndpointProvider::Local,
             )
             .unwrap();
         channels
@@ -1277,7 +1277,7 @@ mod tests {
             .pong(
                 WGPort(2),
                 &endpoint.ip(),
-                telio_model::api_config::EndpointProvider::Local,
+                telio_model::features::EndpointProvider::Local,
             )
             .unwrap();
         endpoint_connectivity_check_state

@@ -71,11 +71,11 @@ use telio_utils::{
 };
 
 use telio_model::{
-    api_config::{
-        FeaturePersistentKeepalive, Features, PathType, DEFAULT_ENDPOINT_POLL_INTERVAL_SECS,
-    },
     config::{Config, Peer, PeerBase, Server as DerpServer},
     event::{Event, Set},
+    features::{
+        FeaturePersistentKeepalive, Features, PathType, DEFAULT_ENDPOINT_POLL_INTERVAL_SECS,
+    },
     mesh::{ExitNode, LinkState, Node},
     validation::validate_nickname,
 };
@@ -1178,7 +1178,7 @@ impl Runtime {
                 }
             };
 
-            use telio_model::api_config::EndpointProvider::*;
+            use telio_model::features::EndpointProvider::*;
 
             let ping_pong_tracker = Arc::new(Mutex::new(PingPongHandler::new(
                 self.requested_state.device_config.private_key,
@@ -2158,8 +2158,8 @@ mod tests {
     use super::*;
     use rstest::*;
     use std::net::Ipv6Addr;
-    use telio_model::api_config::FeatureDirect;
     use telio_model::config::{Peer, PeerBase};
+    use telio_model::features::FeatureDirect;
 
     fn build_peer_base(
         hostname: String,
@@ -2865,14 +2865,14 @@ mod tests {
     #[cfg(not(windows))]
     #[tokio::test(start_paused = true)]
     async fn test_enable_all_direct_features() {
-        use telio_model::api_config::FeatureSkipUnresponsivePeers;
+        use telio_model::features::FeatureSkipUnresponsivePeers;
 
         let (sender, _receiver) = tokio::sync::broadcast::channel(1);
 
         let providers = maplit::hashset! {
-            telio_model::api_config::EndpointProvider::Stun,
-            telio_model::api_config::EndpointProvider::Upnp,
-            telio_model::api_config::EndpointProvider::Local,
+            telio_model::features::EndpointProvider::Stun,
+            telio_model::features::EndpointProvider::Upnp,
+            telio_model::features::EndpointProvider::Local,
         };
 
         let features = Features {

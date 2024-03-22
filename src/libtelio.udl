@@ -16,6 +16,12 @@ enum EndpointProvider {
     "Upnp",
 };
 
+/// Available ways to calculate RTT
+enum RttType {
+    /// Simple ping request
+    "Ping",
+};
+
 [Error]
 enum TelioError {
     "UnknownError",
@@ -437,29 +443,29 @@ dictionary FeatureNurse {
     /// The unique identifier of the device, used for meshnet ID
     string fingerprint;
     /// Heartbeat interval in seconds. Default value is 3600.
-    u32? heartbeat_interval;
+    duration heartbeat_interval;
     /// Initial heartbeat interval in seconds. Default value is None.
-    u32? initial_heartbeat_interval;
+    duration initial_heartbeat_interval;
     /// QoS configuration for Nurse
     FeatureQoS? qos;
     /// Enable/disable collecting nat type
-    boolean? enable_nat_type_collection;
+    boolean enable_nat_type_collection;
     /// Enable/disable Relay connection data
-    boolean? enable_relay_conn_data;
+    boolean enable_relay_conn_data;
     /// Enable/disable NAT-traversal connections data
-    boolean? enable_nat_traversal_conn_data;
+    boolean enable_nat_traversal_conn_data;
 };
 
 /// QoS configuration options
 dictionary FeatureQoS {
     /// How often to collect rtt data in seconds. Default value is 300.
-    u32? rtt_interval;
+    duration rtt_interval;
     /// Number of tries for each node. Default value is 3.
-    u32? rtt_tries;
+    u32 rtt_tries;
     /// Types of rtt analytics. Default is Ping.
-    sequence<string>? rtt_types;
+    sequence<RttType> rtt_types;
     /// Number of buckets used for rtt and throughput. Default value is 5.
-    u32? buckets;
+    u32 buckets;
 };
 
 /// Configurable features for Lana module

@@ -33,7 +33,7 @@ class LinkState(Enum):
     Up = "up"
 
 
-# Equivalent of `libtelio/crates/telio-model/src/api_config.rs:PathType`
+# Equivalent of `libtelio/crates/telio-model/src/features.rs:PathType`
 class PathType(Enum):
     Relay = "relay"
     Direct = "direct"

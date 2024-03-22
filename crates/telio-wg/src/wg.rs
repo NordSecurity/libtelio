@@ -6,7 +6,7 @@ use std::{
     collections::HashMap,
     net::{IpAddr, Ipv4Addr, SocketAddr},
 };
-use telio_model::{api_config::FeatureLinkDetection, mesh::ExitNode};
+use telio_model::{features::FeatureLinkDetection, mesh::ExitNode};
 use telio_sockets::{NativeProtector, SocketPool};
 use telio_utils::{
     dual_target::{DualTarget, DualTargetError},

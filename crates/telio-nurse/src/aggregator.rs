@@ -6,8 +6,8 @@ use serde::{ser::SerializeTuple, Serialize};
 
 use telio_crypto::PublicKey;
 use telio_model::{
-    api_config::{EndpointProvider, FeatureNurse},
     config::{DerpAnalyticsEvent, RelayConnectionChangeReason, RelayState},
+    features::{EndpointProvider, FeatureNurse},
     HashMap,
 };
 use telio_utils::telio_log_warn;
@@ -213,10 +213,10 @@ impl ConnectivityDataAggregator {
             }),
             aggregate_relay_events: nurse_features
                 .as_ref()
-                .and_then(|features| features.enable_relay_conn_data)
+                .map(|features| features.enable_relay_conn_data)
                 .unwrap_or(false),
             aggregate_nat_traversal_events: nurse_features
-                .and_then(|features| features.enable_nat_traversal_conn_data)
+                .map(|features| features.enable_nat_traversal_conn_data)
                 .unwrap_or(false),
             wg_interface,
         }
@@ -436,13 +436,9 @@ mod tests {
         wg_interface: Arc<dyn WireGuard>,
     ) -> ConnectivityDataAggregator {
         let nurse_features = FeatureNurse {
-            fingerprint: String::from("fingerprint_test"),
-            heartbeat_interval: None,
-            initial_heartbeat_interval: None,
-            qos: None,
-            enable_nat_type_collection: None,
-            enable_relay_conn_data: Some(enable_relay_conn_data),
-            enable_nat_traversal_conn_data: Some(enable_nat_traversal_conn_data),
+            enable_relay_conn_data: enable_relay_conn_data,
+            enable_nat_traversal_conn_data: enable_nat_traversal_conn_data,
+            ..Default::default()
         };
 
         ConnectivityDataAggregator::new(Some(nurse_features), wg_interface)

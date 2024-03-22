@@ -65,8 +65,8 @@ mod uniffi_libtelio {
     use super::crypto::{PublicKey, SecretKey};
     use super::*;
 
-    use telio_model::api_config::*;
     use telio_model::config::*;
+    use telio_model::features::*;
     use telio_model::mesh::*;
     use telio_utils::{Hidden, HiddenString};
 

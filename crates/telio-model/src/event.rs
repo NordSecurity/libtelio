@@ -227,7 +227,7 @@ mod tests {
             hostname: Some(String::from("example.com")),
             allow_incoming_connections: false,
             allow_peer_send_files: false,
-            path: crate::api_config::PathType::Relay,
+            path: crate::features::PathType::Relay,
         };
 
         let server = Server {

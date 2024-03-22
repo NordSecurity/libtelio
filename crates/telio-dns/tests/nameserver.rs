@@ -14,7 +14,7 @@ use std::{
     sync::Arc,
 };
 use telio_dns::{LocalNameServer, NameServer, Records};
-use telio_model::api_config::TtlValue;
+use telio_model::features::TtlValue;
 use tokio::sync::RwLock;
 use tokio::time::sleep;
 use tokio::{

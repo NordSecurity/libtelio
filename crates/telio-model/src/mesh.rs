@@ -2,7 +2,7 @@
 
 use super::EndpointMap as RelayEndpointMap;
 
-use crate::api_config::PathType;
+use crate::features::PathType;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, net::IpAddr};
 use telio_crypto::PublicKey;

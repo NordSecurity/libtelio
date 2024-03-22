@@ -1,7 +1,7 @@
-use telio_model::api_config::{FeatureNurse, FeatureQoS};
+use telio_model::features::{FeatureNurse, FeatureQoS};
 use tokio::time::Duration;
 
-use crate::qos::RttType;
+use telio_model::features::RttType;
 
 /// Configuration for Nurse
 pub struct Config {
@@ -42,36 +42,13 @@ pub struct HeartbeatConfig {
 
 impl HeartbeatConfig {
     /// Create a new Heartbeat config
-    fn new(features: &FeatureNurse) -> Self {
-        let collect_interval = features
-            .heartbeat_interval
-            .map_or(FeatureNurse::DEFAULT_HEARTBEAT_INTERVAL, |interval| {
-                Duration::from_secs(interval.into())
-            });
-
-        let initial_collect_interval = features.initial_heartbeat_interval.map_or(
-            FeatureNurse::DEFAULT_INITIAL_HEARTBEAT_INTERVAL,
-            |interval| Duration::from_secs(interval.into()),
-        );
-
+    pub(crate) fn new(features: &FeatureNurse) -> Self {
         Self {
-            initial_collect_interval,
+            initial_collect_interval: features.initial_heartbeat_interval,
             fingerprint: features.fingerprint.clone(),
-            collect_interval,
-            is_nat_type_collection_enabled: features.enable_nat_type_collection.unwrap_or(false),
-            ..Default::default()
-        }
-    }
-}
-
-impl Default for HeartbeatConfig {
-    fn default() -> Self {
-        Self {
-            initial_collect_interval: FeatureNurse::DEFAULT_INITIAL_HEARTBEAT_INTERVAL,
-            collect_interval: FeatureNurse::DEFAULT_HEARTBEAT_INTERVAL,
+            collect_interval: features.heartbeat_interval,
             collect_answer_timeout: Duration::from_secs(10),
-            fingerprint: String::new(),
-            is_nat_type_collection_enabled: true,
+            is_nat_type_collection_enabled: features.enable_nat_type_collection,
         }
     }
 }
@@ -92,57 +69,13 @@ pub struct QoSConfig {
 }
 
 impl QoSConfig {
-    const DEFAULT_RTT_COLLECT_INTERVAL: Duration = Duration::from_secs(300); // 5 minutes
-    const DEFAULT_RTT_TRIES: u32 = 3;
-    const DEFAULT_BUCKETS: u32 = 5;
-
     /// Create a new QoS config
     fn new(features: &FeatureQoS) -> Self {
-        let rtt_interval = features
-            .rtt_interval
-            .map(|x| Duration::from_secs(x.into()))
-            .unwrap_or_else(|| Self::DEFAULT_RTT_COLLECT_INTERVAL);
-
-        let rtt_tries = features.rtt_tries.unwrap_or(Self::DEFAULT_RTT_TRIES);
-
-        let rtt_types = features
-            .rtt_types
-            .as_ref()
-            .map(|types| {
-                let mut v = Vec::new();
-
-                for ty in types {
-                    if let Ok(t) = serde_json::from_str::<RttType>(ty) {
-                        v.push(t);
-                    }
-                }
-
-                if v.is_empty() {
-                    vec![RttType::Ping]
-                } else {
-                    v
-                }
-            })
-            .unwrap_or_else(|| vec![RttType::Ping]);
-
-        let buckets = features.buckets.unwrap_or(Self::DEFAULT_BUCKETS);
-
         Self {
-            rtt_interval,
-            rtt_tries,
-            rtt_types,
-            buckets,
-        }
-    }
-}
-
-impl Default for QoSConfig {
-    fn default() -> Self {
-        Self {
-            rtt_interval: Self::DEFAULT_RTT_COLLECT_INTERVAL,
-            rtt_tries: Self::DEFAULT_RTT_TRIES,
-            rtt_types: vec![RttType::Ping],
-            buckets: Self::DEFAULT_BUCKETS,
+            rtt_interval: features.rtt_interval,
+            rtt_tries: features.rtt_tries,
+            rtt_types: features.rtt_types.clone(),
+            buckets: features.buckets,
         }
     }
 }
