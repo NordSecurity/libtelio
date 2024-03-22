@@ -9,7 +9,7 @@ use telio_crypto::{
     encryption::{decrypt_request, decrypt_response, encrypt_request, encrypt_response},
     PublicKey, SecretKey,
 };
-use telio_model::api_config::EndpointProvider;
+use telio_model::features::EndpointProvider;
 use telio_proto::{
     CodecError, PacketRelayed, PacketTypeRelayed, PingerMsg, Session, Timestamp, WGPort,
 };

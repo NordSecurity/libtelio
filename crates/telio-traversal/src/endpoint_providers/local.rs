@@ -253,7 +253,7 @@ impl<T: WireGuard, G: GetIfAddrs> State<T, G> {
                 wg_port,
                 &self.udp_socket,
                 &self.pong_publisher,
-                telio_model::api_config::EndpointProvider::Local,
+                telio_model::features::EndpointProvider::Local,
             )
             .await
     }
@@ -595,7 +595,7 @@ mod tests {
             .pong(
                 msg.get_wg_port(),
                 &addr.ip(),
-                telio_model::api_config::EndpointProvider::Local,
+                telio_model::features::EndpointProvider::Local,
             )
             .unwrap();
         let mut rng = rand::thread_rng();
@@ -655,7 +655,7 @@ mod tests {
             .pong(
                 msg.get_wg_port(),
                 &addr.ip(),
-                telio_model::api_config::EndpointProvider::Local,
+                telio_model::features::EndpointProvider::Local,
             )
             .unwrap();
         let mut rng = rand::thread_rng();
