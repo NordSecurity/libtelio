@@ -12,4 +12,4 @@ pub use std::net::SocketAddr;
 pub use telio_crypto::PublicKey;
 
 /// Hashmap of public key of the endpoint with its socket information
-pub type EndpointMap = HashMap<PublicKey, SocketAddr>;
+pub type EndpointMap = HashMap<PublicKey, Vec<SocketAddr>>;
