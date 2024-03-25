@@ -185,8 +185,10 @@ def get_uniffi_path(connection: Connection) -> str:
     target_os = connection.target_os
     if target_os == TargetOS.Linux:
         return "/libtelio/nat-lab/tests/uniffi/libtelio_remote.py"
-    if target_os in (TargetOS.Windows, TargetOS.Mac):
-        return "/workspace/uniffi/libtelio_remote.py"
+    if target_os == TargetOS.Windows:
+        return "C:/workspace/uniffi/libtelio_remote.py".replace("/", "\\")
+    if target_os == TargetOS.Mac:
+        return "/var/root/workspace/uniffi/libtelio_remote.py"
     assert False, f"target_os not supported '{target_os}'"
 
 
