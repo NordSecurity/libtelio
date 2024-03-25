@@ -106,11 +106,11 @@ async def _copy_binaries(
         except:
             pass
         await asyncssh.scp(
-            get_root_path(f"libtelio/nat-lab/tests/uniffi/{file}"),
+            get_root_path(f"nat-lab/tests/uniffi/{file}"),
             (ssh_connection, VM_UNIFFI_DIR),
         )
         await asyncssh.scp(
-            get_root_path(f"libtelio/nat-lab/tests/uniffi/{file}"),
+            get_root_path(f"nat-lab/tests/uniffi/{file}"),
             (ssh_connection, VM_PYTHON_DIR),
         )
 

@@ -755,8 +755,8 @@ class Client:
             self.get_runtime().allowed_pub_keys.add(public_key)
             self.get_proxy().connect_to_exit_node(
                 public_key=public_key,
-                allowed_ips="",
-                endpoint="{ip}:{port}",
+                allowed_ips=None,
+                endpoint=f"{ip}:{port}",
             )
             await asyncio.wait_for(
                 event,
@@ -829,7 +829,7 @@ class Client:
             )
         ) as event:
             self.get_proxy().connect_to_exit_node(
-                public_key=public_key, allowed_ips="", endpoint=""
+                public_key=public_key, allowed_ips=None, endpoint=None
             )
             await asyncio.wait_for(
                 event,

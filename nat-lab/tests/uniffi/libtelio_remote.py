@@ -49,7 +49,8 @@ class LibtelioWrapper:
     def __init__(self):
         self._libtelio = None
         self._event_cb = TelioEventCbImpl()
-        libtelio.set_global_logger(libtelio.TelioLogLevel.DEBUG, TelioLoggerCbImpl())
+        self._logger_cb = TelioLoggerCbImpl()
+        libtelio.set_global_logger(libtelio.TelioLogLevel.DEBUG, self._logger_cb)
 
     @serialize_error
     def create(self, features: str):
