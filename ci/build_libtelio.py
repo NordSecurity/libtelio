@@ -221,7 +221,7 @@ def main() -> None:
             / "ffi/bindings/telio.h",
         }
         dbu.create_xcframework(
-            PROJECT_CONFIG, args.debug, "libtelioFFI", headers, "libtelio.a"
+            PROJECT_CONFIG, args.debug, "libtelioFFI", headers, "libtelio.a", ["macos", "ios", "ios-sim"]
         )
     elif args.command == "build-ios-simulator-stubs":
         dbu.build_stub_ios_simulator_libraries(
@@ -385,7 +385,7 @@ def exec_lipo(args):
     if args.build:
         darwin_build_all(args.debug)
 
-    for target_os in rutils.LIPO_TARGET_OSES:
+    for target_os in ["macos", "ios"]:
         dbu.lipo(
             PROJECT_CONFIG,
             args.debug,
