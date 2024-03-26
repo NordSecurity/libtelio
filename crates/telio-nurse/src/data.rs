@@ -6,7 +6,7 @@ use telio_model::{
 };
 
 /// Information about a heartbeat, for analytics.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct HeartbeatInfo {
     /// Is meshnet enabled
     pub meshnet_enabled: bool,

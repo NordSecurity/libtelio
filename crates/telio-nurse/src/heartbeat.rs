@@ -913,7 +913,8 @@ impl Analytics {
             &mut heartbeat_info.peer_nat_types,
             external_sorted_public_keys,
         );
-
+        telio_log_debug!("****** Going to send heartbeat to nurse! ******");
+        telio_log_debug!("{:?}", heartbeat_info);
         // Send heartbeat info to Nurse
         #[allow(mpsc_blocking_send)]
         if self

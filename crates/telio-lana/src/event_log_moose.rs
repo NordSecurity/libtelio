@@ -1,11 +1,41 @@
 //! This module serves an interface for libmoose.
 //!
+
 pub use moosemeshnetapp as moose;
 pub use moosemeshnetapp::Error;
 
 pub use telio_utils::{telio_log_debug, telio_log_warn};
 
 use serde_json::Value;
+
+trait CustomDebug {
+    fn custom_debug(&self) -> String;
+}
+
+impl CustomDebug for moose::MeshnetappContextApplicationConfigCurrentState {
+    fn custom_debug(&self) -> String {
+        format!(
+            "MeshnetappContextApplicationConfigCurrentState {{ nordvpnapp_version: {:?}, meshnet_enabled: {:?}, internal_meshnet: {:?}, external_links: {:?} }}",
+            self.nordvpnapp_version,
+            self.meshnet_enabled,
+            self.internal_meshnet.custom_debug(),
+            self.external_links
+        )
+    }
+}
+
+impl CustomDebug for moose::MeshnetappContextApplicationConfigCurrentStateInternalMeshnet {
+    fn custom_debug(&self) -> String {
+        format!(
+            "MeshnetappContextApplicationConfigCurrentStateInternalMeshnet {{ members: {:?}, members_nat: {:?}, fp: {:?}, fp_nat: {:?}, connectivity_matrix: {:?} }}",
+            self.members,
+            self.members_nat,
+            self.fp,
+            self.fp_nat,
+            self.connectivity_matrix
+        )
+    }
+}
 
 /// Wrapper to call a moose function with optional arguments.
 ///
@@ -59,8 +89,9 @@ pub fn init_context_info() {
     let foreign_tracker = "nordvpnapp";
 
     if let Ok(foreign_context) = moose::fetch_specific_context(foreign_tracker) {
+        telio_log_debug!("foreign_context: {}", foreign_context);
         let tracker_context_info = parse_foreign_context(&foreign_context);
-
+        telio_log_debug!("PARSED foreign_context: {:?}", tracker_context_info.application.config.current_state.custom_debug());
         set_context_fields!(
             set_context_application_config_currentState_nordvpnappVersion, tracker_context_info.application.version;
             set_context_device_brand, tracker_context_info.device.brand;

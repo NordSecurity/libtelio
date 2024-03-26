@@ -185,6 +185,7 @@ impl State {
     }
 
     async fn handle_heartbeat_event(&self, info: HeartbeatInfo) {
+        telio_log_debug!("****** HEARTBEAT EVENT ******");
         // Re-parse the foreign tracker before sending an event, in case it has changed since last time
         init_context_info();
 
@@ -241,6 +242,7 @@ impl State {
             .await
             .unwrap_or_default()
         } else {
+            telio_log_debug!("****** LANA NOT RUNNING! ******");
             (QoSData::default(), QoSData::default())
         };
 
