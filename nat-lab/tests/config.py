@@ -67,7 +67,7 @@ LIBTELIO_BINARY_PATH_WINDOWS_VM = "C:/workspace/binaries/".replace("/", "\\")
 LIBTELIO_BINARY_PATH_MAC_VM = "/var/root/workspace/binaries/"
 
 UNIFFI_PATH_WINDOWS_VM = "C:/workspace/uniffi/".replace("/", "\\")
-PYTHON_PATH_WINDOWS_VM = "C:/Python311/".replace("/", "\\")
+PYTHON_PATH_WINDOWS_VM = "C:/Python311".replace("/", "\\")
 UNIFFI_PATH_MAC_VM = "/var/root/workspace/uniffi/"
 
 LIBTELIO_IPV6_WG_SUBNET = "fd74:656c:696f"
