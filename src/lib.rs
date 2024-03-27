@@ -1,4 +1,13 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
+// Telio doc rs documentation pages:
+#![doc = include_str!["./doc/introduction.md"]]
+
+pub mod _telio_integration_documentation {
+    #![doc = include_str!["./doc/integrating_telio.md"]]
+}
+pub mod _telio_events_documentation {
+    #![doc = include_str!["./doc/telio_events.md"]]
+}
 
 mod ffi;
 use crate::ffi::*;
