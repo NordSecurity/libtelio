@@ -1,0 +1,6 @@
+[book]
+authors = ["Juozapas Bočkus"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Telio Book"
