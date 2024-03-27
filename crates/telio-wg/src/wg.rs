@@ -548,6 +548,7 @@ impl State {
         state: PeerState,
         link_state: Option<LinkState>,
         peer: Peer,
+        old_peer: Option<Peer>,
     ) -> Result<(), Error> {
         let link_state = link_state.and_then(|s| {
             if self.no_link_detection.is_disabled() {
@@ -562,6 +563,7 @@ impl State {
                 state,
                 link_state,
                 peer,
+                old_peer,
             }))
             .await
             .map_err(|_| Error::InternalError("Failed to send node event"))
@@ -585,8 +587,13 @@ impl State {
             // Remove all disconnected peers from no link detection mechanism
             self.no_link_detection.remove(key);
 
-            self.send_event(PeerState::Disconnected, Some(LinkState::Down), peer)
-                .await?;
+            self.send_event(
+                PeerState::Disconnected,
+                Some(LinkState::Down),
+                peer,
+                from.peers.get(key).cloned(),
+            )
+            .await?;
         }
 
         // Notify all new connections
@@ -600,8 +607,13 @@ impl State {
             self.no_link_detection
                 .insert(key, None, None, PeerState::Connecting);
 
-            self.send_event(PeerState::Connecting, Some(LinkState::Down), peer.clone())
-                .await?;
+            self.send_event(
+                PeerState::Connecting,
+                Some(LinkState::Down),
+                peer.clone(),
+                from.peers.get(key).cloned(),
+            )
+            .await?;
 
             if peer.is_connected() {
                 // If the new peer is connected, update last link state to Up.
@@ -612,8 +624,13 @@ impl State {
                     PeerState::Connected,
                 );
 
-                self.send_event(PeerState::Connected, Some(LinkState::Up), peer.clone())
-                    .await?;
+                self.send_event(
+                    PeerState::Connected,
+                    Some(LinkState::Up),
+                    peer.clone(),
+                    from.peers.get(key).cloned(),
+                )
+                .await?;
             }
         }
 
@@ -635,6 +652,7 @@ impl State {
                         new_state,
                         no_link_detection_update_result.link_state,
                         new.clone(),
+                        Some(old.clone()),
                     )
                     .await?;
                 }
@@ -1086,7 +1104,8 @@ pub mod tests {
             Some(Box::new(Event {
                 state: PeerState::Connecting,
                 link_state: None,
-                peer: peer.clone()
+                peer: peer.clone(),
+                old_peer: None
             })),
             event.recv().await
         );
@@ -1114,6 +1133,7 @@ pub mod tests {
             persistent_keepalive_interval: Some(25),
             ..Default::default()
         };
+        let old_peer = Some(peer.clone());
 
         ifa.peers.insert(pkc, peer.clone());
         adapter.expect_send_uapi_cmd_generic_call(1).await;
@@ -1122,7 +1142,8 @@ pub mod tests {
             Some(Box::new(Event {
                 state: PeerState::Connecting,
                 link_state: None,
-                peer: peer.clone()
+                peer: peer.clone(),
+                old_peer: None
             })),
             event.recv().await
         );
@@ -1148,7 +1169,8 @@ pub mod tests {
             Some(Box::new(Event {
                 state: PeerState::Connected,
                 link_state: None,
-                peer: peer.clone()
+                peer: peer.clone(),
+                old_peer
             })),
             event.recv().await
         );
@@ -1174,6 +1196,7 @@ pub mod tests {
             persistent_keepalive_interval: Some(25),
             ..Default::default()
         };
+        let old_peer = Some(peer.clone());
 
         ifa.peers.insert(pkc, peer.clone());
         adapter.expect_send_uapi_cmd_generic_call(1).await;
@@ -1182,7 +1205,8 @@ pub mod tests {
             Some(Box::new(Event {
                 state: PeerState::Connecting,
                 link_state: None,
-                peer: peer.clone()
+                peer: peer.clone(),
+                old_peer: None
             })),
             event.recv().await
         );
@@ -1191,6 +1215,7 @@ pub mod tests {
 
         // Connects
         peer.time_since_last_handshake = Some(Duration::from_secs(94));
+        let second_old_peer = Some(peer.clone());
         ifa.peers.insert(pkc, peer.clone());
         adapter
             .lock()
@@ -1211,7 +1236,8 @@ pub mod tests {
             Some(Box::new(Event {
                 state: PeerState::Connected,
                 link_state: None,
-                peer: peer.clone()
+                peer: peer.clone(),
+                old_peer
             })),
             event.recv().await
         );
@@ -1236,7 +1262,8 @@ pub mod tests {
             Some(Box::new(Event {
                 state: PeerState::Connecting,
                 link_state: None,
-                peer: peer.clone()
+                peer: peer.clone(),
+                old_peer: second_old_peer
             })),
             event.recv().await
         );
