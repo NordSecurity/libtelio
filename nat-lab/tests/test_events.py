@@ -268,7 +268,7 @@ async def test_event_content_vpn_connection(
             await testing.wait_long(ping.wait_for_next_ping())
 
         assert client_alpha.get_node_state(str(wg_server["public_key"])) == PeerInfo(
-            identifier="tcli",
+            identifier="natlab",
             public_key=str(wg_server["public_key"]),
             state=State.Connected,
             is_exit=True,
@@ -295,7 +295,7 @@ async def test_event_content_vpn_connection(
         assert ip == alpha_public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         assert client_alpha.get_node_state(str(wg_server["public_key"])) == PeerInfo(
-            identifier="tcli",
+            identifier="natlab",
             public_key=str(wg_server["public_key"]),
             state=State.Disconnected,
             is_exit=True,

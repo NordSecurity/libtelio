@@ -6,15 +6,25 @@ import sys
 import datetime
 import time
 from typing import List
+import os
+
+
+REMOTE_LOG = "remote.log"
+TCLI_LOG = "tcli.log"
 
 
 def serialize_error(f):
     def wrap(*args, **kwargs):
-        try:
-            res = f(*args, **kwargs)
-            return (res, None)
-        except libtelio.TelioError as e:
-            return (None, str(e))
+        with open(REMOTE_LOG, "a") as logfile:
+            fname = str(f).split(" ")[1]
+            args_str = ', '.join(map(str,args[1:]))
+            try:
+                res = f(*args, **kwargs)
+                logfile.write(f"{datetime.datetime.now()} {fname}({args_str}) => {res}\n")
+                return (res, None)
+            except libtelio.TelioError as e:
+                logfile.write(f"{datetime.datetime.now()} {fname}({args_str}) => {str(e)}\n")
+                return (None, str(e))
 
     return wrap
 
@@ -34,7 +44,7 @@ class TelioEventCbImpl(libtelio.TelioEventCb):
     
 class TelioLoggerCbImpl(libtelio.TelioLoggerCb):
     def __init__(self):
-        self._log_file = open("tcli.log", "a")
+        self._log_file = open(TCLI_LOG, "a")
     
     def __del__(self):
         self._log_file.close()
@@ -47,6 +57,11 @@ class TelioLoggerCbImpl(libtelio.TelioLoggerCb):
 @Pyro5.server.behavior(instance_mode="single")
 class LibtelioWrapper:
     def __init__(self):
+        try:
+            os.remove(REMOTE_LOG)
+        except:
+            pass
+
         self._libtelio = None
         self._event_cb = TelioEventCbImpl()
         self._logger_cb = TelioLoggerCbImpl()
@@ -81,8 +96,8 @@ class LibtelioWrapper:
 
     @serialize_error
     def connect_to_exit_node(self, public_key, allowed_ips: str, endpoint: str):
-        self._libtelio.connect_to_exit_node(
-            base64.b64decode(public_key), allowed_ips, endpoint
+        self._libtelio.connect_to_exit_node_with_id(
+            "natlab", base64.b64decode(public_key), allowed_ips, endpoint
         )
 
     @serialize_error

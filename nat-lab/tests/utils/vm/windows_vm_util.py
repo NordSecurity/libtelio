@@ -5,7 +5,6 @@ from config import (
     get_root_path,
     LIBTELIO_BINARY_PATH_WINDOWS_VM,
     UNIFFI_PATH_WINDOWS_VM,
-    PYTHON_PATH_WINDOWS_VM,
 )
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -14,7 +13,6 @@ from utils.process import ProcessExecError
 
 VM_TCLI_DIR = LIBTELIO_BINARY_PATH_WINDOWS_VM
 VM_UNIFFI_DIR = UNIFFI_PATH_WINDOWS_VM
-VM_PYTHON_DIR = PYTHON_PATH_WINDOWS_VM
 FILES_COPIED = False
 
 
@@ -99,19 +97,9 @@ async def _copy_binaries(
             ).execute()
         except:
             pass
-        try:
-            await connection.create_process(
-                ["del", "/s", "/q", f"{VM_PYTHON_DIR}\\{file}"]
-            ).execute()
-        except:
-            pass
         await asyncssh.scp(
             get_root_path(f"nat-lab/tests/uniffi/{file}"),
             (ssh_connection, VM_UNIFFI_DIR),
-        )
-        await asyncssh.scp(
-            get_root_path(f"nat-lab/tests/uniffi/{file}"),
-            (ssh_connection, VM_PYTHON_DIR),
         )
 
     FILES_COPIED = True
