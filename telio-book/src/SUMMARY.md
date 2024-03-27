@@ -2,5 +2,5 @@
 
 [Introduction](./introduction.md)
 - [Getting Started](./getting_started.md)
-- [API](./api.md)
+- [Integrating Telio](./integrating_telio.md)
 - [Testing](./testing.md)
