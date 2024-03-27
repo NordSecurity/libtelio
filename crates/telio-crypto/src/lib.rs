@@ -22,7 +22,7 @@
 
 pub mod encryption;
 
-use std::{convert::TryInto, fmt};
+use std::{cmp::Ordering, convert::TryInto, fmt};
 
 use rand::prelude::*;
 use serde_with::{DeserializeFromStr, SerializeDisplay};
@@ -41,6 +41,16 @@ pub struct SecretKey([u8; KEY_SIZE]);
     Default, PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone, DeserializeFromStr, SerializeDisplay,
 )]
 pub struct PublicKey(pub [u8; KEY_SIZE]);
+
+/// Canonical way to order keys
+pub fn key_order(lhs: &PublicKey, rhs: &PublicKey) -> Ordering {
+    lhs.cmp(rhs)
+}
+
+/// Find a winning key using canonical ordering
+pub fn winning_key<'a>(keys: impl IntoIterator<Item = &'a PublicKey>) -> Option<&'a PublicKey> {
+    keys.into_iter().min_by(|l, r| key_order(l, r))
+}
 
 /// Preshared key type
 #[derive(

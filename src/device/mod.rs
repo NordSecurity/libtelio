@@ -26,7 +26,7 @@ use telio_traversal::{
     },
     last_rx_time_provider::{TimeSinceLastRxProvider, WireGuardTimeSinceLastRxProvider},
     ping_pong_handler::PingPongHandler,
-    SessionKeeper, SessionKeeperTrait, UpgradeRequestChangeEvent, UpgradeSync,
+    SessionKeeper, SessionKeeperTrait, UpgradeRequestChangeEvent, UpgradeSync, UpgradeSyncTrait,
     WireGuardEndpointCandidateChangeEvent,
 };
 
@@ -48,7 +48,7 @@ use tokio::{
 use telio_dns::{DnsResolver, LocalDnsResolver, Records};
 
 use telio_dns::bind_tun;
-use wg::uapi::{self, PeerState};
+use wg::uapi::{self, AnalyticsEvent, PeerState};
 
 use std::collections::HashMap;
 use std::{
@@ -1021,6 +1021,7 @@ impl Runtime {
                 .clone()
                 .filter(|_| telio_lana::is_lana_initialized()),
             wireguard_interface.clone(),
+            config.private_key.public(),
         ));
 
         let nurse = if telio_lana::is_lana_initialized() {
@@ -1103,7 +1104,7 @@ impl Runtime {
                 meshnet: None,
                 socket_pool,
                 nurse,
-                aggregator,
+                aggregator: aggregator.clone(),
                 postquantum_wg,
                 pmtu_detection,
             },
@@ -1317,6 +1318,9 @@ impl Runtime {
                 Duration::from_secs(5),
                 cross_ping_check.clone(),
                 multiplexer.get_channel().await?,
+                self.requested_state.device_config.private_key.public(),
+                self.entities.aggregator.clone(),
+                self.entities.wireguard_interface.clone(),
             )?);
 
             let session_keeper = Arc::new(SessionKeeper::start(self.entities.socket_pool.clone())?);
@@ -1399,7 +1403,19 @@ impl Runtime {
                     ..c
                 }))
                 .await;
+
+            if let Some(direct) = m_entities.direct.as_ref() {
+                let _ = direct
+                    .upgrade_sync
+                    .set_public_key(private_key.public())
+                    .await;
+            }
         }
+
+        self.entities
+            .aggregator
+            .set_local_key(private_key.public())
+            .await;
 
         self.requested_state.device_config.private_key = *private_key;
 
@@ -2012,6 +2028,8 @@ impl TaskRuntime for Runtime {
                                     .await?;
 
                                 direct_entities.session_keeper.remove_node(&public_key).await?;
+
+                                direct_entities.upgrade_sync.downgrade(&public_key).await?;
                             } else {
                                 telio_log_warn!("Connection downgraded while direct entities are disabled");
                             }
@@ -2027,6 +2045,19 @@ impl TaskRuntime for Runtime {
                 let node = self.peer_to_node(&mesh_event.peer, Some(mesh_event.state), mesh_event.link_state).await;
 
                 if let Some(node) = node {
+                    if mesh_event.state != PeerState::Connecting && node.path == PathType::Relay {
+                        let event = AnalyticsEvent{
+                            public_key: mesh_event.peer.public_key,
+                            dual_ip_addresses: mesh_event.peer.get_dual_ip_addresses(),
+                            tx_bytes: mesh_event.peer.tx_bytes.unwrap_or_default(),
+                            rx_bytes: mesh_event.peer.rx_bytes.unwrap_or_default(),
+                            peer_state: mesh_event.state,
+                            timestamp: Instant::now(),
+                        };
+                        self.entities.aggregator.change_peer_state_relayed(
+                            &event
+                        ).await;
+                    }
                     // Publish WG event to app
                     let _ = self.event_publishers.libtelio_event_publisher.send(
                         Box::new(Event::new::<Node>().set(node))

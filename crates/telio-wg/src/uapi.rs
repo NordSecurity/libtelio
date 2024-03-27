@@ -4,7 +4,7 @@ use ipnetwork::{IpNetwork, IpNetworkError};
 use serde::{Deserialize, Serialize};
 use telio_crypto::{KeyDecodeError, PresharedKey, PublicKey, SecretKey};
 use telio_model::mesh::{LinkState, Node, NodeState};
-use telio_utils::{telio_log_warn, DualTarget};
+use telio_utils::{telio_log_warn, DualTarget, DualTargetError};
 use wireguard_uapi::{get, xplatform::set};
 
 use std::{
@@ -400,6 +400,45 @@ impl Peer {
                 None
             }
         })
+    }
+
+    /// Convert to DualTarget representation
+    pub fn get_dual_ip_addresses(&self) -> Vec<DualTarget> {
+        let mut dual_ip_addresses: Vec<DualTarget> = vec![];
+        let mut target = (None, None);
+        for ip in &self.ip_addresses {
+            match ip {
+                IpAddr::V4(ipv4) => {
+                    if target.0.is_none() {
+                        target.0 = Some(ipv4.to_owned());
+                    } else {
+                        dual_ip_addresses.push(match DualTarget::new(target) {
+                            Ok(dt) => dt,
+                            Err(DualTargetError::NoTarget) => DualTarget::default(),
+                        });
+                        target = (Some(ipv4.to_owned()), None);
+                    }
+                }
+                IpAddr::V6(ipv6) => {
+                    if target.1.is_none() {
+                        target.1 = Some(ipv6.to_owned());
+                    } else {
+                        dual_ip_addresses.push(match DualTarget::new(target) {
+                            Ok(dt) => dt,
+                            Err(DualTargetError::NoTarget) => DualTarget::default(),
+                        });
+                        target = (None, Some(ipv6.to_owned()));
+                    }
+                }
+            }
+        }
+        if target != (None, None) {
+            dual_ip_addresses.push(match DualTarget::new(target) {
+                Ok(dt) => dt,
+                Err(DualTargetError::NoTarget) => DualTarget::default(),
+            });
+        }
+        dual_ip_addresses
     }
 }
 
