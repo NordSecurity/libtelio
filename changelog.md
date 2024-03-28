@@ -1,3 +1,11 @@
+### v4.3.0
+### **Bravas**
+---
+
+- New tracker confirmed stable
+
+<br>
+
 ### v4.3.0-rc1
 ### **Bravas**
 ---
