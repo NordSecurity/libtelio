@@ -229,7 +229,15 @@ interface Telio {
     [Throws=TelioError]
     void notify_network_change(string network_info);
 
-    /// Wrapper for `connect_to_exit_node_with_id` that doesn't take an identifier
+    /// Notify telio when system goes to sleep.
+    [Throws=TelioError]
+    void notify_sleep();
+
+    /// Notify telio when system wakes up.
+    [Throws=TelioError]
+    void notify_wakeup();
+
+    /// Wrapper for `telio_connect_to_exit_node_with_id` that doesn't take an identifier
     [Throws=TelioError]
     void connect_to_exit_node(PublicKey public_key, sequence<IpNetwork>? allowed_ips, SocketAddr? endpoint);
 

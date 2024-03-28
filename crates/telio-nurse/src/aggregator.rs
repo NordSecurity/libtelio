@@ -287,7 +287,7 @@ impl ConnectivityDataAggregator {
 
                 Some(new_segment)
             }
-            Entry::Vacant(entry) => {
+            Entry::Vacant(entry) if event.peer_state == PeerState::Connected => {
                 entry.insert((event.clone(), endpoints));
                 None
             }
@@ -327,11 +327,24 @@ impl ConnectivityDataAggregator {
         }
     }
 
-    #[allow(dead_code)]
-    pub(crate) async fn collect_unacknowledged_segments(
-        &self,
-        force_close: bool,
-    ) -> AggregatorCollectedSegments {
+    /// Clear current peer and relay monitoring segments
+    pub async fn clear_ongoinging_segments(&self) {
+        let mut data_guard = self.data.lock().await;
+        data_guard.current_peer_events.clear();
+        data_guard.current_relay_event.take();
+    }
+
+    /// Force saves unacknowledged segments
+    pub async fn force_save_unacknowledged_segments(&self) {
+        self.save_unacknowledged_segments(true).await;
+    }
+
+    /// Saves unacknowledged segments in a buffer
+    ///
+    /// # Arguments
+    ///
+    /// * `force_save` - Whether to force save current events
+    async fn save_unacknowledged_segments(&self, force_save: bool) {
         // Getting wg_interface is first, so it won't await while mutex is locked
         let wg_interface = self.wg_interface.get_interface().await;
         let mut data_guard = self.data.lock().await;
@@ -344,22 +357,12 @@ impl ConnectivityDataAggregator {
             .current_relay_event
             .as_mut()
             .filter(|relay_event| {
-                current_timestamp.duration_since(relay_event.timestamp) > DAY_DURATION
-                    || force_close
+                current_timestamp.duration_since(relay_event.timestamp) > DAY_DURATION || force_save
             })
         {
             new_relay_segments.push(RelayConnDataSegment::new(event, current_timestamp));
             event.timestamp = current_timestamp;
         }
-
-        if force_close {
-            data_guard.current_relay_event.take();
-        }
-
-        data_guard.relay_segments.extend(new_relay_segments);
-        data_guard
-            .relay_segments
-            .sort_by(|a, b| a.start.cmp(&b.start));
 
         // Handle long-lasting peer events
         let mut new_peer_segments = Vec::new();
@@ -367,7 +370,7 @@ impl ConnectivityDataAggregator {
             for (peer_event, peer_state) in data_guard.current_peer_events.values_mut() {
                 let since_last_event =
                     current_timestamp.duration_since(Instant::from_std(peer_event.timestamp));
-                if since_last_event > DAY_DURATION || force_close {
+                if since_last_event > DAY_DURATION || force_save {
                     wg_peers
                         .get(&peer_event.public_key)
                         .and_then(|wg_peer| wg_peer.rx_bytes.zip(wg_peer.tx_bytes))
@@ -394,17 +397,28 @@ impl ConnectivityDataAggregator {
             telio_log_warn!("Getting wireguard interfaces failed");
         }
 
-        if force_close {
+        if force_save {
+            data_guard.current_relay_event.take();
             data_guard.current_peer_events.clear();
         }
 
+        data_guard.relay_segments.extend(new_relay_segments);
+        data_guard
+            .relay_segments
+            .sort_by(|a, b| a.start.cmp(&b.start));
         data_guard
             .peer_segments
             .extend(new_peer_segments.into_iter());
         data_guard
             .peer_segments
             .sort_by(|a, b| a.start.cmp(&b.start));
+    }
 
+    /// Collects unacknowledged segments
+    #[allow(dead_code)]
+    pub(crate) async fn collect_unacknowledged_segments(&self) -> AggregatorCollectedSegments {
+        self.save_unacknowledged_segments(false).await;
+        let mut data_guard = self.data.lock().await;
         AggregatorCollectedSegments {
             relay: mem::take(&mut data_guard.relay_segments),
             peer: mem::take(&mut data_guard.peer_segments),
@@ -533,18 +547,14 @@ mod tests {
         current_relay_event.state = RelayState::Disconnected;
         aggregator.change_relay_state(current_relay_event).await;
 
-        let segments = aggregator
-            .collect_unacknowledged_segments(false)
-            .await
-            .relay;
-
+        let segments = aggregator.collect_unacknowledged_segments().await.relay;
         assert_eq!(segments.len(), 4);
 
         assert_eq!(
             segments[0],
             RelayConnDataSegment {
                 server_address: first_serv_addr,
-                start: segment_start.into(),
+                start: segment_start,
                 duration: first_segment_length1 + first_segment_length2,
                 connection_data: RelayConnectionData {
                     state: RelayConnectionState::Connected,
@@ -556,7 +566,7 @@ mod tests {
             segments[1],
             RelayConnDataSegment {
                 server_address: second_serv_addr,
-                start: second_segment_start.into(),
+                start: second_segment_start,
                 duration: second_segment_length,
                 connection_data: RelayConnectionData {
                     state: RelayConnectionState::Connected,
@@ -568,7 +578,7 @@ mod tests {
             segments[2],
             RelayConnDataSegment {
                 server_address: second_serv_addr,
-                start: third_segment_start.into(),
+                start: third_segment_start,
                 duration: third_segment_lenght,
                 connection_data: RelayConnectionData {
                     state: RelayConnectionState::Connecting,
@@ -580,7 +590,7 @@ mod tests {
             segments[3],
             RelayConnDataSegment {
                 server_address: first_serv_addr,
-                start: fourth_segment_start.into(),
+                start: fourth_segment_start,
                 duration: fourth_segment_length,
                 connection_data: RelayConnectionData {
                     state: RelayConnectionState::Connected,
@@ -589,10 +599,7 @@ mod tests {
             }
         );
 
-        let segments = aggregator
-            .collect_unacknowledged_segments(false)
-            .await
-            .relay;
+        let segments = aggregator.collect_unacknowledged_segments().await.relay;
         assert_eq!(segments.len(), 0);
     }
 
@@ -623,7 +630,7 @@ mod tests {
             .change_peer_state_relayed(&current_peer_event)
             .await;
 
-        let segments = aggregator.collect_unacknowledged_segments(false).await.peer;
+        let segments = aggregator.collect_unacknowledged_segments().await.peer;
         assert_eq!(segments.len(), 0);
     }
 
@@ -658,7 +665,7 @@ mod tests {
             )
             .await;
 
-        let segments = aggregator.collect_unacknowledged_segments(false).await.peer;
+        let segments = aggregator.collect_unacknowledged_segments().await.peer;
         assert_eq!(segments.len(), 0);
 
         // And after 60 seconds some disconnect
@@ -680,8 +687,7 @@ mod tests {
             .await;
 
         // We don't gather periods of time when peer is disconnected, so we should have here only one segment
-        let segments = aggregator.collect_unacknowledged_segments(false).await.peer;
-
+        let segments = aggregator.collect_unacknowledged_segments().await.peer;
         assert_eq!(segments.len(), 1);
         assert_eq!(
             segments[0],
@@ -700,7 +706,90 @@ mod tests {
             }
         );
 
-        let segments = aggregator.collect_unacknowledged_segments(false).await.peer;
+        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        assert_eq!(segments.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_aggregator_multiple_events_multiple_segments() {
+        let mut wg_interface = MockWireGuard::new();
+        wg_interface
+            .expect_get_interface()
+            .returning(|| Ok(Default::default()));
+        let aggregator = create_aggregator(false, true, Arc::new(wg_interface)).await;
+
+        // Initial event
+        let mut current_peer_event = create_basic_peer_event(1);
+        let first_segment_start = current_peer_event.timestamp;
+        aggregator
+            .change_peer_state_direct(
+                &current_peer_event,
+                EndpointProvider::Upnp,
+                EndpointProvider::Local,
+            )
+            .await;
+
+        // Send one more event with the different state
+        current_peer_event.timestamp += Duration::from_secs(60);
+        let second_segment_start = current_peer_event.timestamp;
+        current_peer_event.rx_bytes += 1000;
+        current_peer_event.tx_bytes += 2000;
+        aggregator
+            .change_peer_state_direct(
+                &current_peer_event,
+                EndpointProvider::Upnp,
+                EndpointProvider::Upnp,
+            )
+            .await;
+
+        // Change state again
+        current_peer_event.timestamp += Duration::from_secs(60);
+        current_peer_event.rx_bytes += 2000;
+        current_peer_event.tx_bytes += 4000;
+        aggregator
+            .change_peer_state_direct(
+                &current_peer_event,
+                EndpointProvider::Local,
+                EndpointProvider::Upnp,
+            )
+            .await;
+
+        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        assert_eq!(segments.len(), 2);
+        assert_eq!(
+            segments[0],
+            PeerConnDataSegment {
+                node: current_peer_event.public_key,
+                start: first_segment_start.into(),
+                duration: Duration::from_secs(60),
+                connection_data: PeerConnectionData {
+                    endpoints: PeerEndpointTypes {
+                        initiator_ep: EndpointType::UPnP,
+                        responder_ep: EndpointType::Local,
+                    },
+                    rx_bytes: 1000,
+                    tx_bytes: 2000
+                }
+            }
+        );
+        assert_eq!(
+            segments[1],
+            PeerConnDataSegment {
+                node: current_peer_event.public_key,
+                start: second_segment_start.into(),
+                duration: Duration::from_secs(60),
+                connection_data: PeerConnectionData {
+                    endpoints: PeerEndpointTypes {
+                        initiator_ep: EndpointType::UPnP,
+                        responder_ep: EndpointType::UPnP,
+                    },
+                    rx_bytes: 2000,
+                    tx_bytes: 4000
+                }
+            }
+        );
+
+        let segments = aggregator.collect_unacknowledged_segments().await.peer;
         assert_eq!(segments.len(), 0);
     }
 
@@ -738,12 +827,12 @@ mod tests {
             .change_peer_state_relayed(&current_peer_event)
             .await;
 
-        let segments = aggregator.collect_unacknowledged_segments(false).await.peer;
+        let segments = aggregator.collect_unacknowledged_segments().await.peer;
         assert_eq!(segments.len(), 0);
 
         time::advance(expected_first_segment_duration).await;
 
-        let segments = aggregator.collect_unacknowledged_segments(false).await.peer;
+        let segments = aggregator.collect_unacknowledged_segments().await.peer;
         assert_eq!(segments.len(), 1);
         assert_eq!(
             segments[0],
@@ -762,13 +851,13 @@ mod tests {
             }
         );
 
-        let segments = aggregator.collect_unacknowledged_segments(false).await.peer;
+        let segments = aggregator.collect_unacknowledged_segments().await.peer;
         assert_eq!(segments.len(), 0);
 
         time::advance(expected_second_segment_duration).await;
 
         let expected_second_segment_start = segment_start + expected_first_segment_duration;
-        let segments = aggregator.collect_unacknowledged_segments(false).await.peer;
+        let segments = aggregator.collect_unacknowledged_segments().await.peer;
         assert_eq!(segments.len(), 1);
         assert_eq!(
             segments[0],
@@ -787,7 +876,7 @@ mod tests {
             }
         );
 
-        let segments = aggregator.collect_unacknowledged_segments(false).await.peer;
+        let segments = aggregator.collect_unacknowledged_segments().await.peer;
         assert_eq!(segments.len(), 0);
     }
 
@@ -808,24 +897,18 @@ mod tests {
             .change_relay_state(current_relay_event.clone())
             .await;
 
-        let segments = aggregator
-            .collect_unacknowledged_segments(false)
-            .await
-            .relay;
+        let segments = aggregator.collect_unacknowledged_segments().await.relay;
         assert_eq!(segments.len(), 0);
 
         time::advance(expected_first_segment_duration).await;
 
-        let segments = aggregator
-            .collect_unacknowledged_segments(false)
-            .await
-            .relay;
+        let segments = aggregator.collect_unacknowledged_segments().await.relay;
         assert_eq!(segments.len(), 1);
         assert_eq!(
             segments[0],
             RelayConnDataSegment {
                 server_address: current_relay_event.server_address,
-                start: segment_start.into(),
+                start: segment_start,
                 duration: expected_first_segment_duration,
                 connection_data: RelayConnectionData {
                     state: RelayConnectionState::Connected,
@@ -835,25 +918,19 @@ mod tests {
         );
 
         // Let's make a second round to see if the first one left a valid state
-        let segments = aggregator
-            .collect_unacknowledged_segments(false)
-            .await
-            .relay;
+        let segments = aggregator.collect_unacknowledged_segments().await.relay;
         assert_eq!(segments.len(), 0);
 
         time::advance(expected_second_segment_duration).await;
 
         let expected_second_segment_start = segment_start + expected_first_segment_duration;
-        let segments = aggregator
-            .collect_unacknowledged_segments(false)
-            .await
-            .relay;
+        let segments = aggregator.collect_unacknowledged_segments().await.relay;
         assert_eq!(segments.len(), 1);
         assert_eq!(
             segments[0],
             RelayConnDataSegment {
                 server_address: current_relay_event.server_address,
-                start: expected_second_segment_start.into(),
+                start: expected_second_segment_start,
                 duration: expected_second_segment_duration,
                 connection_data: RelayConnectionData {
                     state: RelayConnectionState::Connected,
@@ -862,10 +939,7 @@ mod tests {
             }
         );
 
-        let segments = aggregator
-            .collect_unacknowledged_segments(false)
-            .await
-            .relay;
+        let segments = aggregator.collect_unacknowledged_segments().await.relay;
         assert_eq!(segments.len(), 0);
     }
 
@@ -903,7 +977,7 @@ mod tests {
             .change_relay_state(current_relay_event.clone())
             .await;
 
-        aggregator.collect_unacknowledged_segments(false).await;
+        aggregator.collect_unacknowledged_segments().await;
 
         // Just to make sure the order will be correct
         time::advance(state_start_difference).await;
@@ -920,10 +994,12 @@ mod tests {
 
         time::advance(expected_segment_duration).await;
 
+        aggregator.save_unacknowledged_segments(true).await;
+
         let AggregatorCollectedSegments {
             relay: relay_segments,
             peer: peer_segments,
-        } = aggregator.collect_unacknowledged_segments(true).await;
+        } = aggregator.collect_unacknowledged_segments().await;
         assert_eq!(relay_segments.len(), 1);
         assert_eq!(
             relay_segments[0],
@@ -959,11 +1035,134 @@ mod tests {
         time::advance(expected_second_segment_duration).await;
 
         // Make sure that the state was cleaned up
-        let segments = aggregator
-            .collect_unacknowledged_segments(false)
-            .await
-            .relay;
+        let segments = aggregator.collect_unacknowledged_segments().await.relay;
         assert_eq!(segments.len(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_aggregator_sleep_wakeup() {
+        let mut current_peer_event = create_basic_peer_event(1);
+        let mut wg_interface = MockWireGuard::new();
+        let lambda_pk = current_peer_event.public_key;
+        wg_interface.expect_get_interface().returning(move || {
+            Ok(Interface {
+                peers: vec![(
+                    lambda_pk,
+                    Peer {
+                        public_key: lambda_pk,
+                        endpoint: None,
+                        rx_bytes: Some(2000),
+                        tx_bytes: Some(4000),
+                        ..Default::default()
+                    },
+                )]
+                .into_iter()
+                .collect(),
+                ..Default::default()
+            })
+        });
+        let aggregator = create_aggregator(false, true, Arc::new(wg_interface)).await;
+
+        // Initial event
+        let first_segment_start = current_peer_event.timestamp;
+        aggregator
+            .change_peer_state_direct(
+                &current_peer_event,
+                EndpointProvider::Upnp,
+                EndpointProvider::Local,
+            )
+            .await;
+
+        current_peer_event.timestamp += Duration::from_secs(600);
+        let second_segment_start = current_peer_event.timestamp;
+        current_peer_event.rx_bytes += 1000;
+        current_peer_event.tx_bytes += 2000;
+        aggregator
+            .change_peer_state_direct(
+                &current_peer_event,
+                EndpointProvider::Upnp,
+                EndpointProvider::Upnp,
+            )
+            .await;
+
+        time::advance(Duration::from_secs(800)).await;
+
+        // Sleep is called
+        aggregator.save_unacknowledged_segments(true).await;
+
+        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        assert_eq!(segments.len(), 2);
+        assert_eq!(
+            segments[0],
+            PeerConnDataSegment {
+                node: current_peer_event.public_key,
+                start: first_segment_start.into(),
+                duration: Duration::from_secs(600),
+                connection_data: PeerConnectionData {
+                    endpoints: PeerEndpointTypes {
+                        initiator_ep: EndpointType::UPnP,
+                        responder_ep: EndpointType::Local,
+                    },
+                    rx_bytes: 1000,
+                    tx_bytes: 2000
+                }
+            }
+        );
+        assert_eq!(
+            segments[1],
+            PeerConnDataSegment {
+                node: current_peer_event.public_key,
+                start: second_segment_start.into(),
+                duration: Duration::from_secs(200),
+                connection_data: PeerConnectionData {
+                    endpoints: PeerEndpointTypes {
+                        initiator_ep: EndpointType::UPnP,
+                        responder_ep: EndpointType::UPnP,
+                    },
+                    rx_bytes: 1000,
+                    tx_bytes: 2000
+                }
+            }
+        );
+
+        // Wakeup is called
+        aggregator.clear_ongoinging_segments().await;
+
+        aggregator
+            .change_peer_state_direct(
+                &current_peer_event,
+                EndpointProvider::Local,
+                EndpointProvider::Upnp,
+            )
+            .await;
+
+        current_peer_event.peer_state = PeerState::Connecting;
+        current_peer_event.timestamp += Duration::from_secs(60);
+        current_peer_event.rx_bytes += 1000;
+        current_peer_event.tx_bytes += 2000;
+        aggregator
+            .change_peer_state_relayed(&current_peer_event)
+            .await;
+
+        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+
+        assert_eq!(segments.len(), 1);
+        assert_eq!(
+            segments[0],
+            PeerConnDataSegment {
+                node: current_peer_event.public_key,
+                start: second_segment_start.into(),
+                duration: Duration::from_secs(60),
+                connection_data: PeerConnectionData {
+                    endpoints: PeerEndpointTypes {
+                        initiator_ep: EndpointType::Local,
+                        responder_ep: EndpointType::UPnP,
+                    },
+                    rx_bytes: 1000,
+                    tx_bytes: 2000
+                }
+            }
+        );
     }
 
     #[tokio::test]
