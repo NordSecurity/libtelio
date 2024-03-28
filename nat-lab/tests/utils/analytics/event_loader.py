@@ -62,6 +62,12 @@ class Event(DataClassJsonMixin):
             field_name="context_application_libtelioapp_config_current_state_internal_meshnet_members_nat"
         )
     )
+    nat_traversal_conn_info: str = field(
+        default="", metadata=json_config(field_name="body_nat_monitoring")
+    )
+    derp_conn_info: str = field(
+        default="", metadata=json_config(field_name="body_derp_monitoring")
+    )
 
 
 def fetch_moose_events(database_name):
