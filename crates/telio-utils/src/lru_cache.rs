@@ -271,15 +271,11 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
         Key: Borrow<Q>,
         Q: Hash + Eq,
     {
-        if let Some(timed_value) = self.map.get(key) {
-            return if !timed_value.is_expired(self.ttl, Instant::now()) {
-                Some(&timed_value.data)
-            } else {
-                None
-            };
+        let timed_value = self.map.get(key)?;
+        if timed_value.is_expired(self.ttl, Instant::now()) {
+            return None;
         }
-
-        None
+        Some(&timed_value.data)
     }
 
     /// Returns an iterator over all (key, value) pairs
