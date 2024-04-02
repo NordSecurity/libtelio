@@ -1033,6 +1033,7 @@ impl Runtime {
                 .clone()
                 .filter(|_| telio_lana::is_lana_initialized()),
             wireguard_interface.clone(),
+            config.private_key.public(),
         ));
 
         let nurse = if telio_lana::is_lana_initialized() {
