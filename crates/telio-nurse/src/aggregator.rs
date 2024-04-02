@@ -63,8 +63,8 @@ impl From<EndpointProvider> for EndpointType {
 // Possible connectivity state changes
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct PeerEndpointTypes {
-    initiator_ep: EndpointType,
-    responder_ep: EndpointType,
+    local_ep: EndpointType,
+    remote_ep: EndpointType,
 }
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
@@ -88,8 +88,8 @@ impl Serialize for PeerConnectionData {
             rx_bytes,
             tx_bytes,
         } = self;
-        let initiator_repr = endpoints.initiator_ep as u16;
-        let responder_repr = endpoints.responder_ep as u16;
+        let initiator_repr = endpoints.local_ep as u16;
+        let responder_repr = endpoints.remote_ep as u16;
         let strategy_id = (initiator_repr << ENDPOINT_BIT_FIELD_WIDTH) + responder_repr;
         let mut seq = serializer.serialize_tuple(PEER_TUPLE_LEN)?;
         seq.serialize_element(&strategy_id)?;
@@ -227,19 +227,19 @@ impl ConnectivityDataAggregator {
     /// # Arguments
     ///
     /// * `event` - Analytic event with the current direct peer state.
-    /// * `initiator_ep` - Endpoint provider used by the direct connection initiator.
-    /// * `responder_ep` - Endpoint provider used by the direct connection responder.
-    pub(crate) async fn change_peer_state_direct(
+    /// * `local_ep` - Endpoint provider used by the direct connection on this node.
+    /// * `remote_ep` - Endpoint provider used by the direct connection on remote node.
+    pub async fn change_peer_state_direct(
         &self,
         event: &AnalyticsEvent,
-        initiator_ep: EndpointProvider,
-        responder_ep: EndpointProvider,
+        local_ep: EndpointProvider,
+        remote_ep: EndpointProvider,
     ) {
         self.change_peer_state_common(
             event,
             PeerEndpointTypes {
-                initiator_ep: initiator_ep.into(),
-                responder_ep: responder_ep.into(),
+                local_ep: local_ep.into(),
+                remote_ep: remote_ep.into(),
             },
         )
         .await
@@ -250,12 +250,12 @@ impl ConnectivityDataAggregator {
     /// # Arguments
     ///
     /// * `event` - Analytic event with the current relayed peer state.
-    pub(crate) async fn change_peer_state_relayed(&self, event: &AnalyticsEvent) {
+    pub async fn change_peer_state_relayed(&self, event: &AnalyticsEvent) {
         self.change_peer_state_common(
             event,
             PeerEndpointTypes {
-                initiator_ep: EndpointType::Relay,
-                responder_ep: EndpointType::Relay,
+                local_ep: EndpointType::Relay,
+                remote_ep: EndpointType::Relay,
             },
         )
         .await
@@ -697,8 +697,8 @@ mod tests {
                 duration: Duration::from_secs(120),
                 connection_data: PeerConnectionData {
                     endpoints: PeerEndpointTypes {
-                        initiator_ep: EndpointType::UPnP,
-                        responder_ep: EndpointType::Local,
+                        local_ep: EndpointType::UPnP,
+                        remote_ep: EndpointType::Local,
                     },
                     rx_bytes: 2000,
                     tx_bytes: 4000
@@ -764,8 +764,8 @@ mod tests {
                 duration: Duration::from_secs(60),
                 connection_data: PeerConnectionData {
                     endpoints: PeerEndpointTypes {
-                        initiator_ep: EndpointType::UPnP,
-                        responder_ep: EndpointType::Local,
+                        local_ep: EndpointType::UPnP,
+                        remote_ep: EndpointType::Local,
                     },
                     rx_bytes: 1000,
                     tx_bytes: 2000
@@ -780,8 +780,8 @@ mod tests {
                 duration: Duration::from_secs(60),
                 connection_data: PeerConnectionData {
                     endpoints: PeerEndpointTypes {
-                        initiator_ep: EndpointType::UPnP,
-                        responder_ep: EndpointType::UPnP,
+                        local_ep: EndpointType::UPnP,
+                        remote_ep: EndpointType::UPnP,
                     },
                     rx_bytes: 2000,
                     tx_bytes: 4000
@@ -842,8 +842,8 @@ mod tests {
                 duration: expected_first_segment_duration,
                 connection_data: PeerConnectionData {
                     endpoints: PeerEndpointTypes {
-                        initiator_ep: EndpointType::Relay,
-                        responder_ep: EndpointType::Relay,
+                        local_ep: EndpointType::Relay,
+                        remote_ep: EndpointType::Relay,
                     },
                     rx_bytes: 3333,
                     tx_bytes: 1111
@@ -867,8 +867,8 @@ mod tests {
                 duration: expected_second_segment_duration,
                 connection_data: PeerConnectionData {
                     endpoints: PeerEndpointTypes {
-                        initiator_ep: EndpointType::Relay,
-                        responder_ep: EndpointType::Relay,
+                        local_ep: EndpointType::Relay,
+                        remote_ep: EndpointType::Relay,
                     },
                     rx_bytes: 0,
                     tx_bytes: 0
@@ -1022,8 +1022,8 @@ mod tests {
                 duration: expected_segment_duration,
                 connection_data: PeerConnectionData {
                     endpoints: PeerEndpointTypes {
-                        initiator_ep: EndpointType::UPnP,
-                        responder_ep: EndpointType::Stun,
+                        local_ep: EndpointType::UPnP,
+                        remote_ep: EndpointType::Stun,
                     },
                     rx_bytes: 3333,
                     tx_bytes: 1111
@@ -1100,8 +1100,8 @@ mod tests {
                 duration: Duration::from_secs(600),
                 connection_data: PeerConnectionData {
                     endpoints: PeerEndpointTypes {
-                        initiator_ep: EndpointType::UPnP,
-                        responder_ep: EndpointType::Local,
+                        local_ep: EndpointType::UPnP,
+                        remote_ep: EndpointType::Local,
                     },
                     rx_bytes: 1000,
                     tx_bytes: 2000
@@ -1116,8 +1116,8 @@ mod tests {
                 duration: Duration::from_secs(200),
                 connection_data: PeerConnectionData {
                     endpoints: PeerEndpointTypes {
-                        initiator_ep: EndpointType::UPnP,
-                        responder_ep: EndpointType::UPnP,
+                        local_ep: EndpointType::UPnP,
+                        remote_ep: EndpointType::UPnP,
                     },
                     rx_bytes: 1000,
                     tx_bytes: 2000
@@ -1155,8 +1155,8 @@ mod tests {
                 duration: Duration::from_secs(60),
                 connection_data: PeerConnectionData {
                     endpoints: PeerEndpointTypes {
-                        initiator_ep: EndpointType::Local,
-                        responder_ep: EndpointType::UPnP,
+                        local_ep: EndpointType::Local,
+                        remote_ep: EndpointType::UPnP,
                     },
                     rx_bytes: 1000,
                     tx_bytes: 2000
@@ -1204,16 +1204,16 @@ mod tests {
         let conn_datas = vec![
             PeerConnectionData {
                 endpoints: PeerEndpointTypes {
-                    initiator_ep: EndpointType::Local,
-                    responder_ep: EndpointType::Stun,
+                    local_ep: EndpointType::Local,
+                    remote_ep: EndpointType::Stun,
                 },
                 rx_bytes: 1500,
                 tx_bytes: 700,
             },
             PeerConnectionData {
                 endpoints: PeerEndpointTypes {
-                    initiator_ep: EndpointType::UPnP,
-                    responder_ep: EndpointType::Local,
+                    local_ep: EndpointType::UPnP,
+                    remote_ep: EndpointType::Local,
                 },
                 rx_bytes: 1000,
                 tx_bytes: 500,
