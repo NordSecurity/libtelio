@@ -11,7 +11,7 @@ use std::{
     hash::Hash,
     pin::Pin,
 };
-use telio_crypto::{PublicKey, SecretKey};
+use telio_crypto::{meshnet_canonical_key_order, PublicKey, SecretKey};
 use telio_model::config::Server;
 use telio_model::{
     event::Event,
@@ -186,7 +186,7 @@ impl Collection {
         self.meshnet_ids
             .iter()
             .filter(|(_, id)| maximal_ids.contains(*id))
-            .min_by(|l, r| l.0.cmp(r.0))
+            .min_by(|l, r| meshnet_canonical_key_order(l.0, r.0))
             .map(|(_, id)| *id)
             .unwrap_or_else(Uuid::new_v4)
     }

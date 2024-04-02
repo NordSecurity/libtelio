@@ -1,9 +1,11 @@
 use async_trait::async_trait;
 use futures::Future;
+use std::fmt::Debug;
+use std::hash::Hash;
 use std::net::SocketAddr;
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
-use telio_crypto::PublicKey;
+use telio_crypto::{winning_key, PublicKey};
 use telio_proto::{Decision, Session, UpgradeDecisionMsg, UpgradeMsg};
 use telio_task::{io::chan, io::Chan, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn};
@@ -43,6 +45,22 @@ pub struct UpgradeRequest {
     pub session: Session,
 }
 
+/// Used to indicate if the inner value was received from the other peer, or
+/// sent to it.
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+enum Direction<T: Debug + PartialEq + Eq + Hash + Clone + Copy> {
+    Sent(T),
+    Received(T),
+}
+
+impl<T: Debug + PartialEq + Eq + Hash + Clone + Copy> Direction<T> {
+    fn into(self) -> T {
+        match self {
+            Direction::Sent(t) => t,
+            Direction::Received(t) => t,
+        }
+    }
+}
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct UpgradeRequestChangeEvent {}
 
@@ -55,7 +73,7 @@ pub trait UpgradeSyncTrait {
         public_key: &PublicKey,
         remote_endpoint: SocketAddr,
         local_direct_endpoint: (SocketAddr, Session),
-    ) -> Result<()>;
+    ) -> Result<bool>;
 }
 
 pub struct UpgradeSync {
@@ -65,11 +83,12 @@ pub struct UpgradeSync {
 pub struct State {
     upgrade_request_publisher: chan::Tx<UpgradeRequestChangeEvent>,
     upgrade_intercoms: Chan<(PublicKey, UpgradeMsg)>,
-    upgrade_requests: HashMap<PublicKey, UpgradeRequest>,
+    upgrade_requests: HashMap<Direction<PublicKey>, UpgradeRequest>,
     expiration_period: Duration,
     upgrade_controller: Arc<dyn UpgradeController>,
     poll_timer: Interval,
     upgrade_decision_intercoms: Chan<(PublicKey, UpgradeDecisionMsg)>,
+    our_public_key: PublicKey,
 }
 
 impl UpgradeSync {
@@ -79,6 +98,7 @@ impl UpgradeSync {
         expiration_period: Duration,
         upgrade_verifier: Arc<dyn UpgradeController>,
         upgrade_decision_intercoms: Chan<(PublicKey, UpgradeDecisionMsg)>,
+        our_public_key: PublicKey,
     ) -> Result<Self> {
         telio_log_info!("Starting Upgrade sync module");
         let mut poll_timer = interval_at(Instant::now(), expiration_period / 2);
@@ -92,12 +112,22 @@ impl UpgradeSync {
                 upgrade_controller: upgrade_verifier,
                 poll_timer,
                 upgrade_decision_intercoms,
+                our_public_key,
             }),
         })
     }
 
     pub async fn stop(self) {
         let _ = self.task.stop().await.resume_unwind();
+    }
+
+    pub async fn set_public_key(&self, public_key: PublicKey) -> Result<()> {
+        task_exec!(&self.task, async move |s| {
+            s.set_public_key(public_key);
+            Ok(())
+        })
+        .await
+        .map_err(|e| e.into())
     }
 }
 
@@ -106,8 +136,10 @@ impl UpgradeSyncTrait for UpgradeSync {
     async fn get_upgrade_requests(&self) -> Result<HashMap<PublicKey, UpgradeRequest>> {
         // FIXME: error handling with task_exec! seems to suck a lot. Need to fix that.
         task_exec!(&self.task, async move |s| {
-            // TODO: update logic to maintain all endpoints instead of last one
-            Ok(s.upgrade_requests.clone())
+            Ok(s.upgrade_requests
+                .iter()
+                .map(|(pk, req)| ((*pk).into(), req.clone()))
+                .collect())
         })
         .await
         .map_err(|e| e.into())
@@ -120,15 +152,14 @@ impl UpgradeSyncTrait for UpgradeSync {
         // remote node
         local_direct_endpoint: (SocketAddr, Session), // The endpoint which will be added to remote WG and points to
                                                       // our local node with associated session
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let public_key = *public_key;
         task_exec!(&self.task, async move |s| {
-            s.request_upgrade(&public_key, remote_endpoint, local_direct_endpoint)
-                .await
-                .unwrap_or_else(|e| {
-                    telio_log_warn!("Failed to send ping {:?}", e);
-                });
-            Ok(())
+            Ok(
+                s.request_upgrade(&public_key, remote_endpoint, local_direct_endpoint)
+                    .await
+                    .unwrap_or_default(),
+            )
         })
         .await
         .map_err(Error::Task)
@@ -141,7 +172,7 @@ impl State {
         public_key: &PublicKey,
         remote_endpoint: SocketAddr,
         local_direct_endpoint: (SocketAddr, Session),
-    ) -> Result<()> {
+    ) -> Result<bool> {
         telio_log_info!(
             "Requesting {:?} to upgrade endpoint to local WG: {:?}, remote WG: {:?}, for session: {}",
             public_key,
@@ -149,6 +180,18 @@ impl State {
             local_direct_endpoint.0,
             local_direct_endpoint.1,
         );
+
+        if let Some(upgrade_request) = self.upgrade_requests.get(&Direction::Received(*public_key))
+        {
+            if !Self::is_expired(self.expiration_period, upgrade_request) {
+                // We have just accepted an upgrade request from that peer, so
+                // there is no point sending in our own request for upgrade. If
+                // we send it now, we can cause other side to accept if they have
+                // a losing key.
+                telio_log_debug!("Upgrade request accepted recently from {public_key:?}, will not send an upgrade request to it now");
+                return Ok(false);
+            }
+        }
 
         // Send message to remote end
         #[allow(mpsc_blocking_send)]
@@ -166,7 +209,7 @@ impl State {
 
         // Insert endpoint to local end to force our side to keep the endpoint too
         self.upgrade_requests.insert(
-            *public_key,
+            Direction::Sent(*public_key),
             UpgradeRequest {
                 endpoint: remote_endpoint,
                 requested_at: Instant::now(),
@@ -174,7 +217,7 @@ impl State {
             },
         );
 
-        Ok(())
+        Ok(true)
     }
 
     async fn handle_upgrade_request_msg(
@@ -195,10 +238,29 @@ impl State {
             .await
         {
             Ok(true) => {
-                // TODO: in LLT-4858 check if we have already sent our own upgrade request
-                // and if so compare keys to decide who should win
+                let decision = match self.upgrade_requests.get(&Direction::Sent(*public_key)) {
+                    Some(v) => {
+                        if Self::is_expired(self.expiration_period, v) {
+                            telio_proto::Decision::Accepted
+                        } else if &self.our_public_key
+                            == winning_key(&self.our_public_key, public_key)
+                        {
+                            // We reject this request, because we sent our own which is not
+                            // yet expired and our key is winning - the other side should accept
+                            // our request instead.
+                            telio_proto::Decision::RejectedDueToConcurrentUpgrade
+                        } else {
+                            telio_proto::Decision::Accepted
+                        }
+                    }
+                    None => telio_proto::Decision::Accepted,
+                };
 
-                telio_log_debug!("sending upgrade decision: Accepted");
+                telio_log_debug!(
+                    "Sending upgrade decision: {decision:?} ({} {})",
+                    upgrade_msg.endpoint,
+                    upgrade_msg.session
+                );
 
                 #[allow(mpsc_blocking_send)]
                 self.upgrade_decision_intercoms
@@ -268,7 +330,8 @@ impl State {
         let upgrade_req_event = UpgradeRequestChangeEvent {};
 
         // Store the upgrade request
-        self.upgrade_requests.insert(*public_key, new_request);
+        self.upgrade_requests
+            .insert(Direction::Received(*public_key), new_request);
 
         // Notify device about this upgrade request
         #[allow(mpsc_blocking_send)]
@@ -281,13 +344,12 @@ impl State {
     }
 
     async fn handle_tick(&mut self) -> Result<()> {
-        let expiry_period = self.expiration_period;
-        let is_expired = |upgrade_request: &UpgradeRequest| -> bool {
-            Instant::now() - upgrade_request.requested_at > expiry_period
-        };
-
         // Iterate over all expired events and publish change for them
-        for (key, expired_request) in self.upgrade_requests.iter().filter(|(_, v)| is_expired(v)) {
+        for (key, expired_request) in self
+            .upgrade_requests
+            .iter()
+            .filter(|(_, v)| Self::is_expired(self.expiration_period, v))
+        {
             telio_log_info!(
                 "Upgrade to endpoint {:?} request from {:?} expired",
                 expired_request.endpoint,
@@ -301,9 +363,19 @@ impl State {
         }
 
         // Remove all expired events from our state
-        self.upgrade_requests.retain(|_, v| !is_expired(v));
+        let expiration_period = self.expiration_period;
+        self.upgrade_requests
+            .retain(|_, v| !Self::is_expired(expiration_period, v));
 
         Ok(())
+    }
+
+    pub fn set_public_key(&mut self, public_key: PublicKey) {
+        self.our_public_key = public_key;
+    }
+
+    fn is_expired(expiration_period: Duration, upgrade_request: &UpgradeRequest) -> bool {
+        Instant::now() - upgrade_request.requested_at > expiration_period
     }
 }
 
@@ -325,17 +397,17 @@ impl Runtime for State {
                             telio_log_warn!("Failed to parse upgrade request: {:?}", e);
                         });
             }
-            Some((_pk, msg)) = self.upgrade_decision_intercoms.rx.recv() => {
+            Some((public_key, msg)) = self.upgrade_decision_intercoms.rx.recv() => {
                 telio_log_debug!("Upgrade decision received: {msg:?}");
                 match msg.decision {
                     Decision::Accepted => {},
                     Decision::RejectedDueToUnknownSession => {
                         if let Some(pk) = self.upgrade_requests.iter().find(|(_, req)| req.session == msg.session).map(|(pk,_)| *pk) {
-                            let _ = self.upgrade_controller.notify_failed_wg_connection(pk).await;
+                            let _ = self.upgrade_controller.notify_failed_wg_connection(pk.into()).await;
                         }
                     }
                     Decision::RejectedDueToConcurrentUpgrade => {
-                        // TODO: in LLT-4858
+                        self.upgrade_requests.retain(|pk, req| !(pk == &Direction::Sent(public_key) && req.session == msg.session));
                     }
                 }
             }
@@ -363,6 +435,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+    use telio_crypto::SecretKey;
     use telio_proto::Decision;
     use tokio::{
         sync::{
@@ -448,6 +521,7 @@ mod tests {
             expiry,
             upgrade_verifier,
             upg_decision_us,
+            SecretKey::gen().public(),
         )
         .unwrap();
 

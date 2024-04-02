@@ -1329,6 +1329,7 @@ impl Runtime {
                 Duration::from_secs(5),
                 cross_ping_check.clone(),
                 multiplexer.get_channel().await?,
+                self.requested_state.device_config.private_key.public(),
             )?);
 
             let session_keeper = Arc::new(SessionKeeper::start(self.entities.socket_pool.clone())?);

@@ -231,7 +231,7 @@ async fn consolidate_wg_peers<
             ) {
                 if let Some(us) = upgrade_sync {
                     us.request_upgrade(&public_key, remote_endpoint, local_direct_endpoint)
-                        .await?
+                        .await?;
                 }
             }
 
@@ -1558,7 +1558,7 @@ mod tests {
                     .expect_request_upgrade()
                     .once()
                     .with(eq(i.0), eq(i.1), eq(i.2))
-                    .return_once(|_, _, _| Ok(()));
+                    .return_once(|_, _, _| Ok(true));
             }
         }
 
