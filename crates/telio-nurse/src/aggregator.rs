@@ -4,7 +4,7 @@ use tokio::{sync::Mutex, time::Instant};
 
 use serde::{ser::SerializeTuple, Serialize};
 
-use telio_crypto::{winning_key, PublicKey};
+use telio_crypto::{smaller_key_in_meshnet_canonical_order, PublicKey};
 use telio_model::{
     config::{DerpAnalyticsEvent, RelayConnectionChangeReason, RelayState},
     features::{EndpointProvider, FeatureNurse},
@@ -280,7 +280,9 @@ impl ConnectivityDataAggregator {
             return;
         }
 
-        if &data_guard.local_key != winning_key(&event.public_key, &data_guard.local_key) {
+        if &data_guard.local_key
+            != smaller_key_in_meshnet_canonical_order(&event.public_key, &data_guard.local_key)
+        {
             telio_log_debug!(
                 "Skipping state change for losing key: {:?} < {:?}",
                 event.public_key,
@@ -580,7 +582,10 @@ mod tests {
             local_key,
         );
 
-        assert_eq!(&smaller_key, winning_key(&smaller_key, &bigger_key));
+        assert_eq!(
+            &smaller_key,
+            smaller_key_in_meshnet_canonical_order(&smaller_key, &bigger_key)
+        );
 
         TestEnv {
             connectivity_data_aggregator,
@@ -1392,6 +1397,116 @@ mod tests {
             .peer;
         assert_eq!(peer_segments.len(), 1);
         assert_eq!(peer_segments[0].node, event_to_be_recorded.public_key);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn direct_connection_reestablished_multiple_times() {
+        let env = setup(
+            true,
+            true,
+            Some((0, 1000 + 1001 + 1002 + 1003 + 1004 + 1005)),
+        )
+        .await;
+        let mut current_peer_event = env.create_basic_peer_event(KeyKind::Losing);
+
+        // Initial event
+
+        current_peer_event.peer_state = NodeState::Connected;
+        current_peer_event.tx_bytes = 0;
+        let start_timestamp = current_peer_event.timestamp;
+        env.connectivity_data_aggregator
+            .change_peer_state_relayed(&current_peer_event)
+            .await;
+
+        current_peer_event.timestamp = start_timestamp + Duration::from_secs(30);
+        current_peer_event.tx_bytes = 1000;
+        env.connectivity_data_aggregator
+            .change_peer_state_direct(
+                &current_peer_event,
+                EndpointProvider::Stun,
+                EndpointProvider::Stun,
+            )
+            .await;
+
+        current_peer_event.timestamp = start_timestamp + Duration::from_secs(30 + 31);
+        current_peer_event.tx_bytes = 1000 + 1001;
+        env.connectivity_data_aggregator
+            .change_peer_state_relayed(&current_peer_event)
+            .await;
+
+        current_peer_event.timestamp = start_timestamp + Duration::from_secs(30 + 31 + 32);
+        current_peer_event.tx_bytes = 1000 + 1001 + 1002;
+        env.connectivity_data_aggregator
+            .change_peer_state_direct(
+                &current_peer_event,
+                EndpointProvider::Local,
+                EndpointProvider::Local,
+            )
+            .await;
+
+        current_peer_event.timestamp = start_timestamp + Duration::from_secs(30 + 31 + 32 + 33);
+        current_peer_event.tx_bytes = 1000 + 1001 + 1002 + 1003;
+        env.connectivity_data_aggregator
+            .change_peer_state_relayed(&current_peer_event)
+            .await;
+
+        current_peer_event.timestamp =
+            start_timestamp + Duration::from_secs(30 + 31 + 32 + 33 + 34);
+        current_peer_event.tx_bytes = 1000 + 1001 + 1002 + 1003 + 1004;
+        env.connectivity_data_aggregator
+            .change_peer_state_direct(
+                &current_peer_event,
+                EndpointProvider::Upnp,
+                EndpointProvider::Upnp,
+            )
+            .await;
+
+        time::advance(Duration::from_secs(30 + 31 + 32 + 33 + 34 + 35)).await;
+        env.connectivity_data_aggregator
+            .force_save_unacknowledged_segments()
+            .await;
+        let peer_segments = env
+            .connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await
+            .peer;
+
+        assert_eq!(
+            vec![
+                Duration::from_secs(30),
+                Duration::from_secs(31),
+                Duration::from_secs(32),
+                Duration::from_secs(33),
+                Duration::from_secs(34),
+                Duration::from_secs(35),
+            ],
+            peer_segments.iter().map(|s| s.duration).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            vec![
+                (EndpointType::Relay, EndpointType::Relay),
+                (EndpointType::Stun, EndpointType::Stun),
+                (EndpointType::Relay, EndpointType::Relay),
+                (EndpointType::Local, EndpointType::Local),
+                (EndpointType::Relay, EndpointType::Relay),
+                (EndpointType::UPnP, EndpointType::UPnP),
+            ],
+            peer_segments
+                .iter()
+                .map(|s| (
+                    s.connection_data.endpoints.local_ep,
+                    s.connection_data.endpoints.remote_ep
+                ))
+                .collect::<Vec<_>>()
+        );
+
+        assert_eq!(
+            vec![1000, 1001, 1002, 1003, 1004, 1005],
+            peer_segments
+                .iter()
+                .map(|s| s.connection_data.tx_bytes)
+                .collect::<Vec<_>>()
+        );
     }
 
     #[tokio::test]

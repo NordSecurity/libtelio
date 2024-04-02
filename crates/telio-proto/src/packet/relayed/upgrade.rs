@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{convert::TryInto, net::SocketAddr};
 
 use crate::{
     messages::upgrade::*, Codec, CodecError, CodecResult, DowncastPacket, PacketRelayed,
@@ -7,6 +7,7 @@ use crate::{
 
 use bytes::BufMut;
 use protobuf::Message;
+use telio_model::features::EndpointProvider;
 
 /// Packet encapsulating ugprade message
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -15,6 +16,10 @@ pub struct UpgradeMsg {
     pub endpoint: SocketAddr,
     /// Session id created by CrossPingCheck
     pub session: Session,
+    /// Endpoint type of the endpoint in 'endpoint' field
+    pub endpoint_type: EndpointProvider,
+    /// Endpoint type of the receiver
+    pub receiver_endpoint_type: EndpointProvider,
 }
 
 impl Codec<PacketTypeRelayed> for UpgradeMsg {
@@ -40,7 +45,18 @@ impl Codec<PacketTypeRelayed> for UpgradeMsg {
                     .map_err(|_| CodecError::DecodeFailed)?;
                 let session: Session = proto_upgrade.session;
 
-                Ok(Self { endpoint, session })
+                Ok(Self {
+                    endpoint,
+                    session,
+                    endpoint_type: proto_upgrade
+                        .get_endpoint_type()
+                        .try_into()
+                        .map_err(|_| CodecError::DecodeFailed)?,
+                    receiver_endpoint_type: proto_upgrade
+                        .get_receiver_endpoint_type()
+                        .try_into()
+                        .map_err(|_| CodecError::DecodeFailed)?,
+                })
             }
             _ => Err(CodecError::DecodeFailed),
         }
@@ -51,6 +67,8 @@ impl Codec<PacketTypeRelayed> for UpgradeMsg {
         let mut msg = Upgrade::new();
         msg.set_endpoint(self.endpoint.to_string());
         msg.set_session(self.session);
+        msg.set_endpoint_type(self.endpoint_type.into());
+        msg.set_receiver_endpoint_type(self.receiver_endpoint_type.into());
 
         bytes.put_u8(PacketTypeRelayed::Upgrade as u8);
         msg.write_to_vec(&mut bytes)
@@ -77,7 +95,7 @@ impl DowncastPacket<PacketRelayed> for UpgradeMsg {
 }
 
 /// Decision of the other node if the upgrade request was accepted and performed
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Decision {
     /// Upgrade request was accepted and performed
     Accepted = 0,
@@ -186,11 +204,13 @@ mod tests {
     fn decode_upgrade_packet() {
         let upgrade_bytes = &[
             8, 10, 14, 49, 50, 55, 46, 48, 46, 48, 46, 49, 58, 49, 50, 51, 52, 17, 42, 0, 0, 0, 0,
-            0, 0, 0,
+            0, 0, 0, 24, 3, 32, 1,
         ];
         let upgrade_msg = UpgradeMsg::decode(upgrade_bytes).expect("Failed to parse upgrade msg");
         assert_eq!(upgrade_msg.endpoint, "127.0.0.1:1234".parse().unwrap());
         assert_eq!(upgrade_msg.session, 42);
+        assert_eq!(upgrade_msg.endpoint_type, EndpointProvider::Upnp);
+        assert_eq!(upgrade_msg.receiver_endpoint_type, EndpointProvider::Local);
     }
 
     #[test]
@@ -212,10 +232,12 @@ mod tests {
         let upgrade_msg = UpgradeMsg {
             endpoint: "127.0.0.1:1234".parse().unwrap(),
             session: 42,
+            endpoint_type: EndpointProvider::Local,
+            receiver_endpoint_type: EndpointProvider::Stun,
         };
         let expected_upgrade_bytes: &[u8] = &[
             8, 10, 14, 49, 50, 55, 46, 48, 46, 48, 46, 49, 58, 49, 50, 51, 52, 17, 42, 0, 0, 0, 0,
-            0, 0, 0,
+            0, 0, 0, 24, 1, 32, 2,
         ];
         let actual_upgrade_bytes = upgrade_msg.encode().unwrap();
         assert_eq!(expected_upgrade_bytes, actual_upgrade_bytes);

@@ -5,16 +5,22 @@ use std::hash::Hash;
 use std::net::SocketAddr;
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
-use telio_crypto::{winning_key, PublicKey};
+use telio_crypto::{smaller_key_in_meshnet_canonical_order, PublicKey};
+use telio_model::features::EndpointProvider;
+use telio_nurse::aggregator::ConnectivityDataAggregator;
 use telio_proto::{Decision, Session, UpgradeDecisionMsg, UpgradeMsg};
 use telio_task::{io::chan, io::Chan, task_exec, BoxAction, Runtime, Task};
-use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn, LruCache};
+use telio_wg::uapi::{AnalyticsEvent, PeerState};
+use telio_wg::WireGuard;
 use tokio::{
     sync::mpsc::error::SendError,
     time::{interval_at, Instant, Interval, MissedTickBehavior},
 };
 
 use crate::cross_ping_check::UpgradeController;
+
+const MAX_PENDING_SESSIONS: usize = 512;
 
 /// Possible [UpgradeSync] errors.
 #[derive(thiserror::Error, Debug)]
@@ -31,7 +37,7 @@ pub enum Error {
     #[error(transparent)]
     Task(#[from] telio_task::ExecError),
     #[error("Upgrade request rejected")]
-    Rejected,
+    Rejected(telio_proto::Decision),
     #[error("Upgrade request not found or expired")]
     NotFound,
 }
@@ -71,13 +77,19 @@ pub trait UpgradeSyncTrait {
     async fn request_upgrade(
         &self,
         public_key: &PublicKey,
-        remote_endpoint: SocketAddr,
-        local_direct_endpoint: (SocketAddr, Session),
+        remote_endpoint: (SocketAddr, EndpointProvider),
+        local_direct_endpoint: (SocketAddr, EndpointProvider),
+        session: Session,
     ) -> Result<bool>;
 }
 
 pub struct UpgradeSync {
     task: Task<State>,
+}
+
+struct PendingSessionData {
+    local_ep: EndpointProvider,
+    remote_ep: EndpointProvider,
 }
 
 pub struct State {
@@ -88,10 +100,15 @@ pub struct State {
     upgrade_controller: Arc<dyn UpgradeController>,
     poll_timer: Interval,
     upgrade_decision_intercoms: Chan<(PublicKey, UpgradeDecisionMsg)>,
+    // Collection of not yet confirmed Upgrade requests
+    pending_direct_sessions: LruCache<Session, PendingSessionData>,
     our_public_key: PublicKey,
+    connectivity_data_aggregator: Arc<ConnectivityDataAggregator>,
+    wireguard: Arc<dyn WireGuard>,
 }
 
 impl UpgradeSync {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         upgrade_request_publisher: chan::Tx<UpgradeRequestChangeEvent>,
         upgrade_intercoms: Chan<(PublicKey, UpgradeMsg)>,
@@ -99,6 +116,8 @@ impl UpgradeSync {
         upgrade_verifier: Arc<dyn UpgradeController>,
         upgrade_decision_intercoms: Chan<(PublicKey, UpgradeDecisionMsg)>,
         our_public_key: PublicKey,
+        connectivity_data_aggregator: Arc<ConnectivityDataAggregator>,
+        wireguard: Arc<dyn WireGuard>,
     ) -> Result<Self> {
         telio_log_info!("Starting Upgrade sync module");
         let mut poll_timer = interval_at(Instant::now(), expiration_period / 2);
@@ -112,7 +131,13 @@ impl UpgradeSync {
                 upgrade_controller: upgrade_verifier,
                 poll_timer,
                 upgrade_decision_intercoms,
+                pending_direct_sessions: LruCache::new(
+                    Duration::from_secs(15),
+                    MAX_PENDING_SESSIONS,
+                ),
                 our_public_key,
+                connectivity_data_aggregator,
+                wireguard,
             }),
         })
     }
@@ -148,15 +173,16 @@ impl UpgradeSyncTrait for UpgradeSync {
     async fn request_upgrade(
         &self,
         public_key: &PublicKey,
-        remote_endpoint: SocketAddr, // The endpoint which will be added to local WG and points to
+        remote_endpoint: (SocketAddr, EndpointProvider), // The endpoint which will be added to local WG and points to
         // remote node
-        local_direct_endpoint: (SocketAddr, Session), // The endpoint which will be added to remote WG and points to
-                                                      // our local node with associated session
+        local_direct_endpoint: (SocketAddr, EndpointProvider), // The endpoint which will be added to remote WG and points to
+        // our local node with associated session
+        session: Session,
     ) -> Result<bool> {
         let public_key = *public_key;
         task_exec!(&self.task, async move |s| {
             Ok(
-                s.request_upgrade(&public_key, remote_endpoint, local_direct_endpoint)
+                s.request_upgrade(&public_key, remote_endpoint, local_direct_endpoint, session)
                     .await
                     .unwrap_or_default(),
             )
@@ -170,15 +196,16 @@ impl State {
     async fn request_upgrade(
         &mut self,
         public_key: &PublicKey,
-        remote_endpoint: SocketAddr,
-        local_direct_endpoint: (SocketAddr, Session),
+        remote_endpoint: (SocketAddr, EndpointProvider),
+        local_direct_endpoint: (SocketAddr, EndpointProvider),
+        session: Session,
     ) -> Result<bool> {
         telio_log_info!(
             "Requesting {:?} to upgrade endpoint to local WG: {:?}, remote WG: {:?}, for session: {}",
             public_key,
             remote_endpoint,
-            local_direct_endpoint.0,
-            local_direct_endpoint.1,
+            local_direct_endpoint,
+            session,
         );
 
         if let Some(upgrade_request) = self.upgrade_requests.get(&Direction::Received(*public_key))
@@ -201,19 +228,28 @@ impl State {
                 *public_key,
                 UpgradeMsg {
                     endpoint: local_direct_endpoint.0,
-                    session: local_direct_endpoint.1,
+                    endpoint_type: local_direct_endpoint.1,
+                    receiver_endpoint_type: remote_endpoint.1,
+                    session,
                 },
             ))
             .await
             .map_err(Error::SendUpgradeMsgErr)?;
 
         // Insert endpoint to local end to force our side to keep the endpoint too
-        self.upgrade_requests.insert(
-            Direction::Sent(*public_key),
-            UpgradeRequest {
-                endpoint: remote_endpoint,
-                requested_at: Instant::now(),
-                session: local_direct_endpoint.1,
+
+        let val = UpgradeRequest {
+            endpoint: remote_endpoint.0,
+            requested_at: Instant::now(),
+            session,
+        };
+        self.upgrade_requests
+            .insert(Direction::Sent(*public_key), val);
+        self.pending_direct_sessions.insert(
+            session,
+            PendingSessionData {
+                local_ep: local_direct_endpoint.1,
+                remote_ep: remote_endpoint.1,
             },
         );
 
@@ -226,9 +262,11 @@ impl State {
         upgrade_msg: &UpgradeMsg,
     ) -> Result<()> {
         telio_log_info!(
-            "{:?} has requested us to upgrade endpoint to {:?} for session {}",
+            "{:?} has requested us to upgrade endpoint to {:?} ({:?} - {:?}) for session {}",
             public_key,
             upgrade_msg.endpoint,
+            upgrade_msg.endpoint_type,
+            upgrade_msg.receiver_endpoint_type,
             upgrade_msg.session,
         );
 
@@ -243,7 +281,10 @@ impl State {
                         if Self::is_expired(self.expiration_period, v) {
                             telio_proto::Decision::Accepted
                         } else if &self.our_public_key
-                            == winning_key(&self.our_public_key, public_key)
+                            == smaller_key_in_meshnet_canonical_order(
+                                &self.our_public_key,
+                                public_key,
+                            )
                         {
                             // We reject this request, because we sent our own which is not
                             // yet expired and our key is winning - the other side should accept
@@ -268,12 +309,24 @@ impl State {
                     .send((
                         *public_key,
                         UpgradeDecisionMsg {
-                            decision: telio_proto::Decision::Accepted,
+                            decision,
                             session: upgrade_msg.session,
                         },
                     ))
                     .await
                     .map_err(Error::SendUpgradeDecisionMsgErr)?;
+
+                if decision != telio_proto::Decision::Accepted {
+                    return Err(Error::Rejected(decision));
+                }
+
+                if let Some(event) = self.make_nat_event(*public_key).await {
+                    let local_ep = upgrade_msg.receiver_endpoint_type;
+                    let remote_ep = upgrade_msg.endpoint_type;
+                    self.connectivity_data_aggregator
+                        .change_peer_state_direct(&event, local_ep, remote_ep)
+                        .await;
+                }
             }
             Ok(false) => {
                 // We might have restarted in the middle of upgrade procedure and have
@@ -285,24 +338,26 @@ impl State {
                 );
 
                 #[allow(mpsc_blocking_send)]
+                let decision = telio_proto::Decision::RejectedDueToUnknownSession;
                 self.upgrade_decision_intercoms
                     .tx
                     .send((
                         *public_key,
                         UpgradeDecisionMsg {
-                            decision: telio_proto::Decision::RejectedDueToUnknownSession,
+                            decision,
                             session: upgrade_msg.session,
                         },
                     ))
                     .await
                     .map_err(Error::SendUpgradeDecisionMsgErr)?;
-                return Err(Error::Rejected);
+                return Err(Error::Rejected(decision));
             }
             Err(e) => {
                 telio_log_warn!(
                     "Upgrade request from {public_key} for session {} rejected: {e}",
                     upgrade_msg.session
                 );
+                let decision = telio_proto::Decision::RejectedDueToUnknownSession;
 
                 #[allow(mpsc_blocking_send)]
                 self.upgrade_decision_intercoms
@@ -310,13 +365,13 @@ impl State {
                     .send((
                         *public_key,
                         UpgradeDecisionMsg {
-                            decision: telio_proto::Decision::RejectedDueToUnknownSession,
+                            decision,
                             session: upgrade_msg.session,
                         },
                     ))
                     .await
                     .map_err(Error::SendUpgradeDecisionMsgErr)?;
-                return Err(Error::Rejected);
+                return Err(Error::Rejected(decision));
             }
         }
 
@@ -370,6 +425,27 @@ impl State {
         Ok(())
     }
 
+    async fn make_nat_event(&self, public_key: PublicKey) -> Option<AnalyticsEvent> {
+        if let Some(peer) = self
+            .wireguard
+            .get_interface()
+            .await
+            .ok()
+            .and_then(|w| w.peers.get(&public_key).cloned())
+        {
+            Some(AnalyticsEvent {
+                public_key,
+                dual_ip_addresses: peer.get_dual_ip_addresses(),
+                tx_bytes: peer.rx_bytes.unwrap_or_default(),
+                rx_bytes: peer.tx_bytes.unwrap_or_default(),
+                peer_state: PeerState::Connected,
+                timestamp: Instant::now().into_std(),
+            })
+        } else {
+            None
+        }
+    }
+
     pub fn set_public_key(&mut self, public_key: PublicKey) {
         self.our_public_key = public_key;
     }
@@ -394,13 +470,25 @@ impl Runtime for State {
                     .await
                     .unwrap_or_else(
                         |e| {
-                            telio_log_warn!("Failed to parse upgrade request: {:?}", e);
+                            telio_log_warn!("Failed to process upgrade request: {:?}", e);
                         });
             }
             Some((public_key, msg)) = self.upgrade_decision_intercoms.rx.recv() => {
                 telio_log_debug!("Upgrade decision received: {msg:?}");
                 match msg.decision {
-                    Decision::Accepted => {},
+                    Decision::Accepted => {
+                        if let Some(data) = self.pending_direct_sessions.remove(&msg.session) {
+                            if let Some(event) = self.make_nat_event(public_key).await {
+                                self.connectivity_data_aggregator.
+                                    change_peer_state_direct(&event, data.local_ep, data.remote_ep).await;
+                            } else {
+                                telio_log_warn!("Received upgrade decision from peer {public_key:?} to which we didn't send a request: {msg:?}");
+                            }
+                        } else {
+                            telio_log_warn!("Received upgrade decision from {public_key:?} for unknow session: {msg:?}");
+                        }
+
+                    },
                     Decision::RejectedDueToUnknownSession => {
                         if let Some(pk) = self.upgrade_requests.iter().find(|(_, req)| req.session == msg.session).map(|(pk,_)| *pk) {
                             let _ = self.upgrade_controller.notify_failed_wg_connection(pk.into()).await;
@@ -432,11 +520,12 @@ impl Runtime for State {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{collections::BTreeMap, sync::Arc};
 
     use super::*;
     use telio_crypto::SecretKey;
     use telio_proto::Decision;
+    use telio_wg::{uapi::Interface, MockWireGuard};
     use tokio::{
         sync::{
             mpsc::{channel, Receiver, Sender},
@@ -502,6 +591,7 @@ mod tests {
     fn setup(
         expiry: Duration,
         upgrade_verifier: Arc<dyn UpgradeController>,
+        wg: Arc<dyn WireGuard>,
     ) -> (
         UpgradeSync,
         chan::Rx<UpgradeRequestChangeEvent>,
@@ -515,13 +605,21 @@ mod tests {
         } = Chan::default();
         let (upg_decision_them, upg_decision_us) = Chan::pipe();
 
+        let our_public_key = SecretKey::gen().public();
+
         let upg_sync = UpgradeSync::new(
             upg_rq_tx,
             intercoms_us,
             expiry,
             upgrade_verifier,
             upg_decision_us,
-            SecretKey::gen().public(),
+            our_public_key,
+            Arc::new(ConnectivityDataAggregator::new(
+                None,
+                wg.clone(),
+                our_public_key,
+            )),
+            wg,
         )
         .unwrap();
 
@@ -533,12 +631,16 @@ mod tests {
     async fn handle_request_expiration() {
         const EXPIRY: Duration = Duration::from_millis(100);
 
+        let wg = Arc::new(MockWireGuard::new());
+
         let (upg_sync, mut upg_rq_rx, mut intercoms_them, _) =
-            setup(EXPIRY, Arc::new(KnowsAllSessions::new()));
+            setup(EXPIRY, Arc::new(KnowsAllSessions::new()), wg);
 
         let upg_msg = UpgradeMsg {
             endpoint: "127.0.0.1:6666".parse().unwrap(),
             session: 42,
+            endpoint_type: telio_model::features::EndpointProvider::Local,
+            receiver_endpoint_type: telio_model::features::EndpointProvider::Local,
         };
 
         let pk = "REjdn4zY2TFx2AMujoNGPffo9vDiRDXpGG4jHPtx2AY="
@@ -586,12 +688,24 @@ mod tests {
     #[tokio::test]
     async fn handle_request_and_removal() {
         const EXPIRY: Duration = Duration::from_millis(100);
+        let mut wg = MockWireGuard::new();
+        wg.expect_get_interface().returning(|| {
+            Ok(Interface {
+                private_key: None,
+                listen_port: None,
+                proxy_listen_port: None,
+                fwmark: 42,
+                peers: BTreeMap::default(),
+            })
+        });
         let (upg_sync, mut upg_rq_rx, mut intercoms_them, mut upgrade_decision_them) =
-            setup(EXPIRY, Arc::new(KnowsAllSessions::new()));
+            setup(EXPIRY, Arc::new(KnowsAllSessions::new()), Arc::new(wg));
 
         let upg_msg = UpgradeMsg {
             endpoint: "127.0.0.1:6666".parse().unwrap(),
             session: 42,
+            endpoint_type: telio_model::features::EndpointProvider::Stun,
+            receiver_endpoint_type: telio_model::features::EndpointProvider::Stun,
         };
 
         let pk = "REjdn4zY2TFx2AMujoNGPffo9vDiRDXpGG4jHPtx2AY="
@@ -611,8 +725,8 @@ mod tests {
 
             loop {
                 tokio::select! {
-                    _msg = intercoms_them.rx.recv() => {
-                        assert!(false, "Should not rx here");
+                    msg = intercoms_them.rx.recv() => {
+                        assert!(false, "Should not rx here, msg: {:?}", msg);
                     }
                     Some(_upg_rq) = upg_rq_rx.recv() => {
                         break;
@@ -638,17 +752,21 @@ mod tests {
     async fn handle_upgrade_rejection_due_to_unknown_session() {
         const EXPIRY: Duration = Duration::from_millis(100);
         let upgrade_controller = Arc::new(KnowsAllSessions::new());
+        let wg = Arc::new(MockWireGuard::new());
         let (upg_sync, _upg_rq_rx, _intercoms_them, upgrade_decision_them) =
-            setup(EXPIRY, upgrade_controller.clone());
+            setup(EXPIRY, upgrade_controller.clone(), wg);
 
         let public_key = "REjdn4zY2TFx2AMujoNGPffo9vDiRDXpGG4jHPtx2AY="
             .parse::<PublicKey>()
             .unwrap();
-        let endpoint = "127.0.0.1:6666".parse().unwrap();
+        let endpoint: (SocketAddr, EndpointProvider) = (
+            "127.0.0.1:6666".parse().unwrap(),
+            telio_model::features::EndpointProvider::Upnp,
+        );
         let session: Session = 42;
 
         upg_sync
-            .request_upgrade(&public_key, endpoint, (endpoint, session))
+            .request_upgrade(&public_key, endpoint, endpoint, session)
             .await
             .unwrap();
 
@@ -677,16 +795,74 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn handle_upgrade_rejection_due_to_concurrent_upgrade() {
+        const EXPIRY: Duration = Duration::from_millis(100);
+        let upgrade_controller = Arc::new(KnowsAllSessions::new());
+        let wg = Arc::new(MockWireGuard::new());
+        let (upg_sync, _upg_rq_rx, _intercoms_them, upgrade_decision_them) =
+            setup(EXPIRY, upgrade_controller.clone(), wg);
+
+        let public_key = "REjdn4zY2TFx2AMujoNGPffo9vDiRDXpGG4jHPtx2AY="
+            .parse::<PublicKey>()
+            .unwrap();
+        let endpoint: (SocketAddr, EndpointProvider) = (
+            "127.0.0.1:6666".parse().unwrap(),
+            telio_model::features::EndpointProvider::Upnp,
+        );
+        let session: Session = 42;
+
+        upg_sync
+            .request_upgrade(&public_key, endpoint, endpoint, session)
+            .await
+            .unwrap();
+
+        upgrade_decision_them
+            .tx
+            .send((
+                public_key,
+                UpgradeDecisionMsg {
+                    decision: Decision::RejectedDueToConcurrentUpgrade,
+                    session,
+                },
+            ))
+            .await
+            .unwrap();
+
+        wait_for(Duration::from_secs(15), || async {
+            upg_sync.get_upgrade_requests().await.unwrap().is_empty()
+        })
+        .await;
+    }
+
+    async fn wait_for<Fut>(timeout: Duration, pred: impl Fn() -> Fut)
+    where
+        Fut: Future<Output = bool>,
+    {
+        let start = Instant::now();
+        loop {
+            if pred().await {
+                break;
+            }
+            if start.elapsed() > timeout {
+                panic!("Failed to reach desired state after {:?}", timeout);
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn unknown_requests_are_rejected() {
         const EXPIRY: Duration = Duration::from_millis(100);
+        let wg = Arc::new(MockWireGuard::new());
         let (_upg_sync, mut _upg_rq_rx, intercoms_them, mut upgrade_decision_them) =
-            setup(EXPIRY, Arc::new(KnowsNoSessions));
+            setup(EXPIRY, Arc::new(KnowsNoSessions), wg);
         let public_key = "REjdn4zY2TFx2AMujoNGPffo9vDiRDXpGG4jHPtx2AY="
             .parse::<PublicKey>()
             .unwrap();
         let upgrade_msg = UpgradeMsg {
             endpoint: "127.0.0.1:6666".parse().unwrap(),
             session: 42,
+            endpoint_type: telio_model::features::EndpointProvider::Stun,
+            receiver_endpoint_type: telio_model::features::EndpointProvider::Stun,
         };
 
         intercoms_them
@@ -699,5 +875,57 @@ mod tests {
             upgrade_decision_them.rx.recv().await.unwrap().1.decision,
             Decision::RejectedDueToUnknownSession
         );
+    }
+
+    #[tokio::test]
+    async fn handle_request_during_an_ongoing_upgrade() {
+        const EXPIRY: Duration = Duration::from_millis(100);
+        let mut wg = MockWireGuard::new();
+        wg.expect_get_interface().returning(|| {
+            Ok(Interface {
+                private_key: None,
+                listen_port: None,
+                proxy_listen_port: None,
+                fwmark: 42,
+                peers: BTreeMap::default(),
+            })
+        });
+        let (upg_sync, mut upg_rq_rx, mut intercoms_them, mut upgrade_decision_them) =
+            setup(EXPIRY, Arc::new(KnowsAllSessions::new()), Arc::new(wg));
+
+        let upg_msg = UpgradeMsg {
+            endpoint: "127.0.0.1:6666".parse().unwrap(),
+            session: 42,
+            endpoint_type: telio_model::features::EndpointProvider::Stun,
+            receiver_endpoint_type: telio_model::features::EndpointProvider::Stun,
+        };
+
+        let pk = "REjdn4zY2TFx2AMujoNGPffo9vDiRDXpGG4jHPtx2AY="
+            .parse::<PublicKey>()
+            .unwrap();
+
+        intercoms_them
+            .tx
+            .send((pk.clone(), upg_msg.clone()))
+            .await
+            .unwrap();
+
+        wait_for(Duration::from_secs(15), || async {
+            !upg_sync.get_upgrade_requests().await.unwrap().is_empty()
+        })
+        .await;
+
+        let public_key = "REjdn4zY2TFx2AMujoNGPffo9vDiRDXpGG4jHPtx2AY="
+            .parse::<PublicKey>()
+            .unwrap();
+        let endpoint: (SocketAddr, EndpointProvider) = (
+            "127.0.0.1:6666".parse().unwrap(),
+            telio_model::features::EndpointProvider::Upnp,
+        );
+        let session: Session = 42;
+        assert!(!upg_sync
+            .request_upgrade(&public_key, endpoint, endpoint, session)
+            .await
+            .unwrap());
     }
 }

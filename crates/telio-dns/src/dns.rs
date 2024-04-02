@@ -173,7 +173,6 @@ impl DnsResolver for LocalDnsResolver {
         ]
     }
 
-    #[allow(unwrap_check)]
     fn get_exit_connected_dns_allowed_ips(&self) -> Vec<IpNetwork> {
         vec![
             IpAddr::V4(Ipv4Addr::new(100, 64, 0, 2)).into(),
@@ -181,7 +180,6 @@ impl DnsResolver for LocalDnsResolver {
         ]
     }
 
-    #[allow(unwrap_check)]
     fn get_default_dns_servers(&self) -> Vec<IpAddr> {
         vec![
             IpAddr::V4(Ipv4Addr::new(100, 64, 0, 3)),

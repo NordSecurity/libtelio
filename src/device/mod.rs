@@ -48,7 +48,7 @@ use tokio::{
 use telio_dns::{DnsResolver, LocalDnsResolver, Records};
 
 use telio_dns::bind_tun;
-use wg::uapi::{self, PeerState};
+use wg::uapi::{self, AnalyticsEvent, PeerState};
 
 use std::collections::HashMap;
 use std::{
@@ -1116,7 +1116,7 @@ impl Runtime {
                 meshnet: None,
                 socket_pool,
                 nurse,
-                aggregator,
+                aggregator: aggregator.clone(),
                 postquantum_wg,
                 pmtu_detection,
             },
@@ -1331,6 +1331,8 @@ impl Runtime {
                 cross_ping_check.clone(),
                 multiplexer.get_channel().await?,
                 self.requested_state.device_config.private_key.public(),
+                self.entities.aggregator.clone(),
+                self.entities.wireguard_interface.clone(),
             )?);
 
             let session_keeper = Arc::new(SessionKeeper::start(self.entities.socket_pool.clone())?);
@@ -1413,7 +1415,19 @@ impl Runtime {
                     ..c
                 }))
                 .await;
+
+            if let Some(direct) = m_entities.direct.as_ref() {
+                let _ = direct
+                    .upgrade_sync
+                    .set_public_key(private_key.public())
+                    .await;
+            }
         }
+
+        self.entities
+            .aggregator
+            .set_local_key(private_key.public())
+            .await;
 
         self.requested_state.device_config.private_key = *private_key;
 
@@ -2030,7 +2044,7 @@ impl TaskRuntime for Runtime {
                 if let Some(mesh_entities) = self.entities.meshnet.as_ref() {
                     if let Some(proxy_endpoints) = mesh_entities.proxy.get_endpoint_map().await.ok().as_mut().and_then(|proxy_map| proxy_map.remove(&public_key)) {
                         let is_proxying = mesh_event.peer.endpoint.map_or(false, |ep| proxy_endpoints.contains(&ep));
-                        let was_proxying = mesh_event.old_peer.and_then(|peer| peer.endpoint.map(|ep| proxy_endpoints.contains(&ep))).unwrap_or(false);
+                        let was_proxying = mesh_event.old_peer.as_ref().and_then(|peer| peer.endpoint.map(|ep| proxy_endpoints.contains(&ep))).unwrap_or_default();
 
                         if !was_proxying && is_proxying {
                             if let Some(direct_entities) = mesh_entities.direct.as_ref() {
@@ -2039,6 +2053,10 @@ impl TaskRuntime for Runtime {
                                     .await?;
 
                                 direct_entities.session_keeper.remove_node(&public_key).await?;
+
+                                let mut event = AnalyticsEvent::from_event(&mesh_event);
+                                event.peer_state = PeerState::Connected;
+                                self.entities.aggregator.change_peer_state_relayed(&event).await;
                             } else {
                                 telio_log_warn!("Connection downgraded while direct entities are disabled");
                             }
@@ -2054,6 +2072,11 @@ impl TaskRuntime for Runtime {
                 let node = self.peer_to_node(&mesh_event.peer, Some(mesh_event.state), mesh_event.link_state).await;
 
                 if let Some(node) = node {
+                    if mesh_event.state != PeerState::Connecting && node.path == PathType::Relay {
+                        self.entities.aggregator.change_peer_state_relayed(
+                            &AnalyticsEvent::from_event(&mesh_event)
+                        ).await;
+                    }
                     // Publish WG event to app
                     let _ = self.event_publishers.libtelio_event_publisher.send(
                         Box::new(Event::new::<Node>().set(node))

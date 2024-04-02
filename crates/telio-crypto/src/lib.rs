@@ -48,11 +48,13 @@ pub fn meshnet_canonical_key_order(lhs: &PublicKey, rhs: &PublicKey) -> Ordering
 }
 
 /// Find a winning key using canonical ordering from RFC LLT-0051
-pub fn winning_key<'a>(lhs: &'a PublicKey, rhs: &'a PublicKey) -> &'a PublicKey {
-    if lhs <= rhs {
-        lhs
-    } else {
-        rhs
+pub fn smaller_key_in_meshnet_canonical_order<'a>(
+    lhs: &'a PublicKey,
+    rhs: &'a PublicKey,
+) -> &'a PublicKey {
+    match meshnet_canonical_key_order(lhs, rhs) {
+        Ordering::Greater => rhs,
+        _ => lhs,
     }
 }
 

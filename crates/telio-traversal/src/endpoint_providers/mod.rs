@@ -90,6 +90,16 @@ pub enum EndpointProviderType {
     Upnp,
 }
 
+impl From<EndpointProviderType> for telio_model::features::EndpointProvider {
+    fn from(value: EndpointProviderType) -> Self {
+        match value {
+            EndpointProviderType::LocalInterfaces => telio_model::features::EndpointProvider::Local,
+            EndpointProviderType::Stun => telio_model::features::EndpointProvider::Stun,
+            EndpointProviderType::Upnp => telio_model::features::EndpointProvider::Upnp,
+        }
+    }
+}
+
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub struct EndpointCandidate {
     pub wg: SocketAddr,

@@ -1,8 +1,10 @@
 use async_trait::async_trait;
 use histogram::Histogram;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use std::time::Instant;
+use telio_model::constants::{VPN_INTERNAL_IPV4, VPN_INTERNAL_IPV6};
 
 use tokio::sync::mpsc;
 use tokio::time::{interval_at, Duration, Interval, MissedTickBehavior};
@@ -360,8 +362,8 @@ impl Analytics {
     ///
     /// * `event` - Received WG event.
     async fn handle_wg_event(&mut self, event: &AnalyticsEvent) {
-        if event.is_from_virtual_peer() {
-            telio_log_trace!("WG event (Virtual peer, skipped): {:?}", event);
+        if is_from_ignored_peer(event) {
+            telio_log_trace!("WG event (from ignored virtual peer): {:?}", event);
             return;
         } else {
             telio_log_trace!("WG event: {:?}", event);
@@ -516,6 +518,26 @@ impl Analytics {
         // Pop last ':'
         output.pop();
         output
+    }
+}
+
+fn is_from_ignored_peer(event: &AnalyticsEvent) -> bool {
+    // The only allowed virtual peer for analytics is the VPN peer.
+    fn is_vpn(ip: IpAddr) -> bool {
+        [
+            IpAddr::V4(Ipv4Addr::from(VPN_INTERNAL_IPV4)),
+            IpAddr::V6(Ipv6Addr::from(VPN_INTERNAL_IPV6)),
+        ]
+        .contains(&ip)
+    }
+    if event.is_from_virtual_peer() {
+        !event
+            .dual_ip_addresses
+            .iter()
+            .flat_map(|addr| addr.get_targets())
+            .any(|addresses| is_vpn(addresses.0) || addresses.1.map(is_vpn).unwrap_or_default())
+    } else {
+        false
     }
 }
 
@@ -747,6 +769,7 @@ mod tests {
         assert_eq!(nodes_keys, expected_nodes_keys);
     }
 
+    #[tokio::test]
     async fn test_node_list_cleanup() {
         let mut analytics = setup();
         let event1 = generate_event();

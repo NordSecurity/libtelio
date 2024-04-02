@@ -4,7 +4,7 @@ use ipnetwork::{IpNetwork, IpNetworkError};
 use serde::{Deserialize, Serialize};
 use telio_crypto::{KeyDecodeError, PresharedKey, PublicKey, SecretKey};
 use telio_model::mesh::{LinkState, Node, NodeState};
-use telio_utils::{telio_log_warn, DualTarget};
+use telio_utils::{telio_log_warn, DualTarget, DualTargetError};
 use wireguard_uapi::{get, xplatform::set};
 
 use std::{
@@ -274,6 +274,7 @@ pub struct AnalyticsEvent {
 
 impl AnalyticsEvent {
     /// Checks if event is related to a virtual peer
+    /// 100.64.0.1 | fd74:656c:696f::1 -> VPN virtual peer
     /// 100.64.0.2 | fd74:656c:696f::2 -> DNS virtual peer
     /// 100.64.0.3 | fd74:656c:696f::3 -> DNS virtual peer on exit node
     /// 100.64.0.4 | fd74:656c:696f::4 -> STUN server
@@ -284,10 +285,10 @@ impl AnalyticsEvent {
         let check_virtual_address_range = |addr| -> bool {
             match addr {
                 IpAddr::V4(ipv4) => {
-                    matches!(ipv4.octets(), [100, 64, 0, 2..=7])
+                    matches!(ipv4.octets(), [100, 64, 0, 1..=7])
                 }
                 IpAddr::V6(ipv6) => {
-                    matches!(ipv6.segments(), [0xfd74, 0x656c, 0x696f, .., 2..=7])
+                    matches!(ipv6.segments(), [0xfd74, 0x656c, 0x696f, .., 1..=7])
                 }
             }
         };
@@ -304,6 +305,18 @@ impl AnalyticsEvent {
             }
         }
         false
+    }
+
+    /// Convert an Event to AnalyticsEvent using current instant as the timestamp
+    pub fn from_event(event: &Event) -> Self {
+        AnalyticsEvent {
+            public_key: event.peer.public_key,
+            dual_ip_addresses: event.peer.get_dual_ip_addresses(),
+            tx_bytes: event.peer.tx_bytes.unwrap_or_default(),
+            rx_bytes: event.peer.rx_bytes.unwrap_or_default(),
+            peer_state: event.state,
+            timestamp: Instant::now(),
+        }
     }
 }
 
@@ -400,6 +413,48 @@ impl Peer {
                 None
             }
         })
+    }
+
+    /// Convert to DualTarget representation
+    /// Pairs of ip v4 and v6 are joined together into a DualTarget, regardless
+    /// of the relative order (v4,v6 or v6,v4). If same ip versions are one after
+    /// the other, separate entries are created for both.
+    pub fn get_dual_ip_addresses(&self) -> Vec<DualTarget> {
+        let mut dual_ip_addresses: Vec<DualTarget> = vec![];
+        let mut target = (None, None);
+        for ip in &self.ip_addresses {
+            match ip {
+                IpAddr::V4(ipv4) => {
+                    if target.0.is_none() {
+                        target.0 = Some(ipv4.to_owned());
+                    } else {
+                        dual_ip_addresses.push(match DualTarget::new(target) {
+                            Ok(dt) => dt,
+                            Err(DualTargetError::NoTarget) => DualTarget::default(),
+                        });
+                        target = (Some(ipv4.to_owned()), None);
+                    }
+                }
+                IpAddr::V6(ipv6) => {
+                    if target.1.is_none() {
+                        target.1 = Some(ipv6.to_owned());
+                    } else {
+                        dual_ip_addresses.push(match DualTarget::new(target) {
+                            Ok(dt) => dt,
+                            Err(DualTargetError::NoTarget) => DualTarget::default(),
+                        });
+                        target = (None, Some(ipv6.to_owned()));
+                    }
+                }
+            }
+        }
+        if target != (None, None) {
+            dual_ip_addresses.push(match DualTarget::new(target) {
+                Ok(dt) => dt,
+                Err(DualTargetError::NoTarget) => DualTarget::default(),
+            });
+        }
+        dual_ip_addresses
     }
 }
 
@@ -644,6 +699,8 @@ fn parse_peer<R: Read>(
 
 #[cfg(test)]
 mod tests {
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
     use super::*;
 
     use pretty_assertions::assert_eq;
@@ -711,5 +768,56 @@ errno=0
             interface: Some(Interface::default()),
         };
         assert_eq!(response_from_str(&resp_str), Ok(resp));
+    }
+
+    #[test]
+    fn test_get_dual_ip_addresses() {
+        let peer = Peer {
+            ip_addresses: vec![
+                IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
+                IpAddr::V4(Ipv4Addr::new(5, 6, 7, 8)),
+                IpAddr::V4(Ipv4Addr::new(9, 10, 11, 12)),
+                IpAddr::V6(Ipv6Addr::new(1, 2, 3, 4, 5, 6, 7, 8)),
+                IpAddr::V4(Ipv4Addr::new(13, 14, 15, 16)),
+                IpAddr::V6(Ipv6Addr::new(9, 10, 11, 12, 13, 14, 15, 16)),
+                IpAddr::V6(Ipv6Addr::new(17, 18, 19, 20, 21, 22, 23, 24)),
+                IpAddr::V4(Ipv4Addr::new(17, 18, 19, 20)),
+                IpAddr::V6(Ipv6Addr::new(25, 26, 27, 28, 29, 30, 31, 32)),
+                IpAddr::V4(Ipv4Addr::new(21, 22, 23, 24)),
+                IpAddr::V4(Ipv4Addr::new(25, 26, 27, 28)),
+            ],
+            ..Default::default()
+        };
+
+        let dual_addresses = peer.get_dual_ip_addresses();
+
+        assert_eq!(
+            vec![
+                DualTarget::new((Some(Ipv4Addr::new(1, 2, 3, 4)), None)).unwrap(),
+                DualTarget::new((Some(Ipv4Addr::new(5, 6, 7, 8)), None)).unwrap(),
+                DualTarget::new((
+                    Some(Ipv4Addr::new(9, 10, 11, 12)),
+                    Some(Ipv6Addr::new(1, 2, 3, 4, 5, 6, 7, 8))
+                ))
+                .unwrap(),
+                DualTarget::new((
+                    Some(Ipv4Addr::new(13, 14, 15, 16)),
+                    Some(Ipv6Addr::new(9, 10, 11, 12, 13, 14, 15, 16)),
+                ))
+                .unwrap(),
+                DualTarget::new((
+                    Some(Ipv4Addr::new(17, 18, 19, 20)),
+                    Some(Ipv6Addr::new(17, 18, 19, 20, 21, 22, 23, 24))
+                ))
+                .unwrap(),
+                DualTarget::new((
+                    Some(Ipv4Addr::new(21, 22, 23, 24)),
+                    Some(Ipv6Addr::new(25, 26, 27, 28, 29, 30, 31, 32)),
+                ))
+                .unwrap(),
+                DualTarget::new((Some(Ipv4Addr::new(25, 26, 27, 28)), None)).unwrap(),
+            ],
+            dual_addresses
+        );
     }
 }

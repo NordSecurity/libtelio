@@ -46,10 +46,18 @@ enum PeerState {
     Direct,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+struct EndpointState {
+    local_address: SocketAddr,
+    session: Session,
+    local_type: telio_model::features::EndpointProvider,
+    remote_type: telio_model::features::EndpointProvider,
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct RequestedPeer {
+struct RequestedPeer {
     peer: Peer,
-    local_direct_endpoint: Option<(SocketAddr, Session)>,
+    endpoint: Option<EndpointState>,
 }
 
 pub async fn consolidate_wg_state(
@@ -225,13 +233,17 @@ async fn consolidate_wg_peers<
             // local side endpoint, such that the other node can do this upgrade too.
             let public_key = requested_peer.peer.public_key;
 
-            if let (Some(remote_endpoint), Some(local_direct_endpoint)) = (
-                requested_peer.peer.endpoint,
-                requested_peer.local_direct_endpoint,
-            ) {
+            if let (Some(remote_endpoint), Some(endpoint)) =
+                (requested_peer.peer.endpoint, requested_peer.endpoint)
+            {
                 if let Some(us) = upgrade_sync {
-                    us.request_upgrade(&public_key, remote_endpoint, local_direct_endpoint)
-                        .await?;
+                    us.request_upgrade(
+                        &public_key,
+                        (remote_endpoint, endpoint.remote_type),
+                        (endpoint.local_address, endpoint.local_type),
+                        endpoint.session,
+                    )
+                    .await?;
                 }
             }
 
@@ -281,7 +293,7 @@ async fn consolidate_wg_peers<
             }
         }
         telio_log_debug!(
-            "peer {:?} proxying: {:?}, state: {:?}, lh: {:?}",
+            "peer {:?} proxying: {:?}, state: {:?}, last handshake: {:?}",
             actual_peer.public_key,
             is_actual_peer_proxying,
             actual_peer.state(),
@@ -478,7 +490,7 @@ async fn build_requested_peers_list<
                                 preshared_key,
                                 ..Default::default()
                             },
-                            local_direct_endpoint: None,
+                            endpoint: None,
                         },
                     );
                 }
@@ -504,7 +516,7 @@ async fn build_requested_peers_list<
         let dns_peer_public_key = dns_peer.public_key;
         let requested_peer = RequestedPeer {
             peer: dns_peer,
-            local_direct_endpoint: None,
+            endpoint: None,
         };
         requested_peers.insert(dns_peer_public_key, requested_peer);
     }
@@ -535,7 +547,7 @@ async fn build_requested_peers_list<
                     allowed_ips,
                     ..Default::default()
                 },
-                local_direct_endpoint: None,
+                endpoint: None,
             },
         );
     } else {
@@ -622,7 +634,7 @@ async fn build_requested_meshnet_peers_list<
                         allowed_ips,
                         ..Default::default()
                     },
-                    local_direct_endpoint: None,
+                    endpoint: None,
                 },
             )
         })
@@ -703,7 +715,7 @@ async fn build_requested_meshnet_peers_list<
         // Apply the selected endpoints, and save local endpoint because we may need to share it
         // with the other end
         requested_peer.peer.endpoint = selected_remote_endpoint;
-        requested_peer.local_direct_endpoint = selected_local_endpoint;
+        requested_peer.endpoint = selected_local_endpoint;
 
         // Adjust keepalive for direct and offline peers
         requested_peer.peer.persistent_keepalive_interval =
@@ -775,7 +787,7 @@ async fn select_endpoint_for_peer<'a>(
     checked_endpoint: &Option<WireGuardEndpointCandidateChangeEvent>,
     proxy_endpoint: &[SocketAddr],
     upgrade_request_endpoint: &Option<SocketAddr>,
-) -> Result<(Option<SocketAddr>, Option<(SocketAddr, Session)>)> {
+) -> Result<(Option<SocketAddr>, Option<EndpointState>)> {
     // Retrieve some helper information
     let actual_endpoint = actual_peer.clone().and_then(|p| p.endpoint);
 
@@ -840,8 +852,13 @@ async fn select_endpoint_for_peer<'a>(
                 time_since_last_rx,
             );
             Ok((
-                Some(checked_endpoint.remote_endpoint),
-                Some((checked_endpoint.local_endpoint, checked_endpoint.session)), // << This endpoint will be advertised to the other side
+                Some(checked_endpoint.remote_endpoint.0),
+                Some(EndpointState {
+                    local_address: checked_endpoint.local_endpoint.0,
+                    session: checked_endpoint.session,
+                    local_type: checked_endpoint.local_endpoint.1,
+                    remote_type: checked_endpoint.remote_endpoint.1,
+                }), // << This endpoint will be advertised to the other side
             ))
         }
 
@@ -951,8 +968,8 @@ mod tests {
     use telio_firewall::firewall::{MockFirewall, FILE_SEND_PORT};
     use telio_model::config::{Config, PeerBase, Server};
     use telio_model::features::{
-        FeatureDns, TtlValue, DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
-        DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
+        EndpointProvider as ApiEndpointProvider, FeatureDns, TtlValue,
+        DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD, DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
     };
     use telio_model::mesh::ExitNode;
     use telio_pq::MockPostQuantum;
@@ -1482,8 +1499,8 @@ mod tests {
                         i.0,
                         WireGuardEndpointCandidateChangeEvent {
                             public_key: i.0,
-                            remote_endpoint: i.1,
-                            local_endpoint: i.2 .0,
+                            remote_endpoint: (i.1, ApiEndpointProvider::Local),
+                            local_endpoint: (i.2 .0, ApiEndpointProvider::Local),
                             session: i.2 .1,
                         },
                     )
@@ -1551,14 +1568,19 @@ mod tests {
 
         fn then_request_upgrade(
             &mut self,
-            input: Vec<(PublicKey, SocketAddr, (SocketAddr, Session))>,
+            input: Vec<(PublicKey, SocketAddr, SocketAddr, Session)>,
         ) {
-            for i in input {
+            for (pk, remote_wg_endpoint, local_wg_endpoint, session_id) in input {
                 self.upgrade_sync
                     .expect_request_upgrade()
                     .once()
-                    .with(eq(i.0), eq(i.1), eq(i.2))
-                    .return_once(|_, _, _| Ok(true));
+                    .with(
+                        eq(pk),
+                        eq((remote_wg_endpoint, ApiEndpointProvider::Local)),
+                        eq((local_wg_endpoint, ApiEndpointProvider::Local)),
+                        eq(session_id),
+                    )
+                    .return_once(|_, _, _, _| Ok(true));
             }
         }
 
@@ -1736,7 +1758,8 @@ mod tests {
         ]));
         let allowed_ips = vec![ip1, ip1v6, ip2, ip2v6];
         let remote_wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
-        let local_wg_endpoint = (SocketAddr::from(([192, 168, 0, 2], 15)), rand::random());
+        let local_wg_endpoint = SocketAddr::from(([192, 168, 0, 2], 15));
+        let session_id = rand::random();
         let mapped_port = 12;
         let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
 
@@ -1756,7 +1779,7 @@ mod tests {
         f.when_cross_check_validated_endpoints(vec![(
             pub_key,
             remote_wg_endpoint,
-            local_wg_endpoint,
+            (local_wg_endpoint, session_id),
         )]);
         f.when_upgrade_requests(vec![]);
 
@@ -1767,7 +1790,12 @@ mod tests {
             allowed_ips.iter().copied().map(|ip| ip.into()).collect(),
             allowed_ips,
         )]);
-        f.then_request_upgrade(vec![(pub_key, remote_wg_endpoint, local_wg_endpoint)]);
+        f.then_request_upgrade(vec![(
+            pub_key,
+            remote_wg_endpoint,
+            local_wg_endpoint,
+            session_id,
+        )]);
         f.then_keeper_add_node(vec![(pub_key, ip1, Some(ip1v6), direct_keepalive_period)]);
         f.then_proxy_mute(vec![(
             pub_key,

@@ -104,7 +104,12 @@ impl PingPongHandler {
         match PacketRelayed::decode_and_decrypt(encrypted_buf, decrypt_transform)? {
             (PacketRelayed::Pinger(packet), Some(remote_pk)) => {
                 // Respond with pong
-                telio_log_debug!("Received ping from {:?}, responding", addr);
+                telio_log_debug!(
+                    "Received ping from {:?} ({}), responding from {endpoint_provider:?} ({:?})",
+                    addr,
+                    packet.get_session(),
+                    udp_socket.local_addr()
+                );
                 let pong = packet
                     .pong(wg_port, &addr.ip(), endpoint_provider)
                     .ok_or(Error::FailedToBuildPongPacket)?;
