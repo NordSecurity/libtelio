@@ -3,7 +3,9 @@ package main
 import "C"
 
 import (
+	"io"
 	"runtime"
+	"strings"
 
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wireguard/conn"
@@ -12,7 +14,38 @@ import (
 	"crypto/sha256"
 
 	"github.com/google/uuid"
+	"golang.org/x/sys/windows/registry"
 )
+
+func CheckIfAdapterExists(guid string) bool {
+	regKey, err := registry.OpenKey(registry.LOCAL_MACHINE, `SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}`, registry.ALL_ACCESS)
+	if err != nil {
+		return false
+	}
+
+	subkeyNames, err := regKey.ReadSubKeyNames(1000)
+	if err != nil && err != io.EOF {
+		return false
+	}
+
+	for _, subkey := range subkeyNames {
+		subRegKey, err := registry.OpenKey(regKey, subkey, registry.ALL_ACCESS)
+		if err != nil {
+			continue
+		}
+		val, _, err := subRegKey.GetStringValue("DeviceInstanceID")
+		if err != nil {
+			continue
+		}
+
+		val = strings.ToLower(val)
+		guid = strings.ToLower(guid)
+		if strings.Contains(val, "wintun") && strings.Contains(val, guid) {
+			return true
+		}
+	}
+	return false
+}
 
 func PlatformSpecific_CreateTun(ifname string) (*tun.NativeTun, error) {
 	tun.WintunTunnelType = ifname
@@ -24,10 +57,21 @@ func PlatformSpecific_CreateTun(ifname string) (*tun.NativeTun, error) {
 	networkProfileGuidString := "{" + networkProfileUuid.String() + "}"
 	networkProfileGuid, _ := windows.GUIDFromString(networkProfileGuidString)
 
+	exists := CheckIfAdapterExists(networkProfileGuidString)
+
 	infof("Creating wintun interface %s with GUID %s", ifname, networkProfileGuidString)
 	wintun, err := tun.CreateTUNWithRequestedGUID(ifname, &networkProfileGuid, 0)
 	if err != nil || wintun == nil {
-		return nil, err
+		// If TUN with same GUID exists, try to create TUN one more time,
+		// because after first error Wintun itself does some cleanup of orphaned adapters
+		// and next try might be successful
+		if !exists {
+			return nil, err
+		}
+		wintun, err = tun.CreateTUNWithRequestedGUID(ifname, &networkProfileGuid, 0)
+		if err != nil || wintun == nil {
+			return nil, err
+		}
 	}
 	nativeTun := wintun.(*tun.NativeTun)
 
