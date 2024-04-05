@@ -179,23 +179,23 @@ LIBTELIO_CONFIG = {
             "tcli": {"tcli": "tcli"},
             "derpcli": {"derpcli": "derpcli"},
             "interderpcli": {"interderpcli": "interderpcli"},
-            NAME: {f"lib{NAME}": f"lib{NAME}.a"},
+            NAME: {f"lib{NAME}": f"lib{NAME}.so"},
         },
     },
     "macos": {
         "packages": {
             "tcli": {"tcli": "tcli"},
-            NAME: {f"lib{NAME}": f"lib{NAME}.a"},
+            NAME: {f"lib{NAME}": f"lib{NAME}.dylib"},
         }
     },
     "ios": {
         "packages": {
-            NAME: {f"lib{NAME}": f"lib{NAME}.a"},
+            NAME: {f"lib{NAME}": f"lib{NAME}.dylib"},
         },
     },
     "tvos": {
         "packages": {
-            NAME: {f"lib{NAME}": f"lib{NAME}.a"},
+            NAME: {f"lib{NAME}": f"lib{NAME}.dylib"},
         },
     },
 }
