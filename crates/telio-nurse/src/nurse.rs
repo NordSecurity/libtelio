@@ -262,7 +262,9 @@ impl State {
             qos_data.tx,
             qos_data.rx,
             info.heartbeat_interval,
-            0 // TODO(LLT-4205): Derp Connection Duration
+            0, // TODO(LLT-4205): Derp Connection Duration
+            "".to_string(),
+            "".to_string()
         );
         telio_log_info!("Moose heartbeat event result: {:?}", r);
 
