@@ -605,7 +605,7 @@ impl State {
 
             // Node is new and default LinkState is down. Save it before sending the event
             self.no_link_detection
-                .insert(key, None, None, PeerState::Connecting);
+                .insert(key, peer.rx_bytes, peer.tx_bytes, PeerState::Connecting);
 
             self.send_event(
                 PeerState::Connecting,
@@ -743,6 +743,9 @@ impl State {
 
     #[allow(mpsc_blocking_send)]
     async fn update(&mut self, mut to: uapi::Interface, push: bool) -> Result<bool, Error> {
+        for (pk, peer) in &mut to.peers {
+            peer.time_since_last_rx = self.time_since_last_rx(*pk);
+        }
         // Diff and report events
 
         // Adapter doesn't keep track of mesh addresses, therefore they are not retrieved from UAPI requests
@@ -759,7 +762,7 @@ impl State {
         // Because uapi_request() now needs a mut self, the mut borrow for self.uapi_request()
         // would collide with HashSet<&PublicKey> and with from=&self.interface,
         // which was used throughout this function for better readability.
-        if self.interface == to {
+        if Self::is_same_interface(&self.interface, &to) {
             return Err(Error::InternalError(
                 "Same interface received in update function",
             ));
@@ -817,6 +820,44 @@ impl State {
 
         Ok(success)
     }
+
+    /// This is like the normal '==' but ignores the time_since_last_rx field in peers
+    fn is_same_interface(lhs: &Interface, rhs: &Interface) -> bool {
+        if lhs.private_key != rhs.private_key
+            || lhs.listen_port != rhs.listen_port
+            || lhs.proxy_listen_port != rhs.proxy_listen_port
+            || lhs.fwmark != rhs.fwmark
+        {
+            false
+        } else {
+            for (pk, peer) in &lhs.peers {
+                match rhs.peers.get(pk) {
+                    Some(other_peer) => {
+                        if !Self::is_same_peer(peer, other_peer) {
+                            return false;
+                        }
+                    }
+                    None => return false,
+                }
+            }
+            // check if 'other' had additional keys
+            lhs.peers.len() == rhs.peers.len()
+        }
+    }
+
+    /// This is like the normal '==' but ignores the time_since_last_rx field
+    fn is_same_peer(lhs: &Peer, rhs: &Peer) -> bool {
+        lhs.public_key == rhs.public_key
+                && lhs.endpoint == rhs.endpoint
+                && lhs.ip_addresses == rhs.ip_addresses
+                && lhs.persistent_keepalive_interval == rhs.persistent_keepalive_interval
+                && lhs.allowed_ips == rhs.allowed_ips
+                && lhs.rx_bytes == rhs.rx_bytes
+                // this is omitted by design: && lhs.time_since_last_rx == rhs.time_since_last_rx
+                && lhs.tx_bytes == rhs.tx_bytes
+                && lhs.time_since_last_handshake == rhs.time_since_last_handshake
+                && lhs.preshared_key == rhs.preshared_key
+    }
 }
 
 #[async_trait]
@@ -843,14 +884,16 @@ impl Runtime for State {
 #[allow(missing_docs)]
 pub mod tests {
     use std::{
+        collections::BTreeMap,
         net::{Ipv4Addr, SocketAddrV4},
         sync::{Arc, Mutex as StdMutex},
         time::{SystemTime, UNIX_EPOCH},
     };
 
+    use ipnetwork::Ipv4Network;
     use lazy_static::lazy_static;
     use mockall::predicate;
-    use rand::{RngCore, SeedableRng};
+    use rand::{Rng, RngCore, SeedableRng};
     use telio_crypto::PresharedKey;
     use telio_sockets::NativeProtector;
     use tokio::{runtime::Handle, sync::Mutex, task, time::sleep};
@@ -863,6 +906,43 @@ pub mod tests {
     lazy_static! {
         pub(super) static ref RUNTIME_ADAPTER: StdMutex<Option<Box<dyn Adapter>>> =
             StdMutex::new(None);
+    }
+
+    fn random_interface() -> Interface {
+        let mut rng = rand::thread_rng();
+        let peers_len = rng.gen_range(1..=3);
+        let mut peers = BTreeMap::default();
+        for _ in 0..peers_len {
+            let key = SecretKey::gen_with(&mut rng).public();
+            let peer = Peer {
+                public_key: SecretKey::gen_with(&mut rng).public(),
+                endpoint: Some(SocketAddr::V4(SocketAddrV4::new(
+                    rng.gen::<u32>().into(),
+                    rng.gen(),
+                ))),
+                ip_addresses: vec![
+                    IpAddr::V4(rng.gen::<u32>().into()),
+                    IpAddr::V4(rng.gen::<u32>().into()),
+                ],
+                persistent_keepalive_interval: Some(rng.gen()),
+                allowed_ips: vec![IpNetwork::V4(
+                    Ipv4Network::new(rng.gen::<u32>().into(), 0).unwrap(),
+                )],
+                rx_bytes: Some(rng.gen()),
+                time_since_last_rx: Some(Duration::from_millis(rng.gen())),
+                tx_bytes: Some(rng.gen()),
+                time_since_last_handshake: Some(Duration::from_millis(rng.gen())),
+                preshared_key: Some(PresharedKey(rng.gen())),
+            };
+            peers.insert(key, peer);
+        }
+        Interface {
+            private_key: Some(SecretKey::gen_with(&mut rng)),
+            listen_port: rng.gen(),
+            proxy_listen_port: rng.gen(),
+            fwmark: rng.gen(),
+            peers,
+        }
     }
 
     impl DynamicWg {
@@ -1098,6 +1178,7 @@ pub mod tests {
             public_key: pkc,
             endpoint: Some(([1, 1, 1, 1], 123).into()),
             persistent_keepalive_interval: Some(25),
+            rx_bytes: Some(1),
             ..Default::default()
         };
         let old_peer = Some(peer.clone());
@@ -1120,6 +1201,7 @@ pub mod tests {
         // Connect
         peer.time_since_last_handshake = Some(Duration::from_secs(15));
         ifa.peers.insert(pkc, peer.clone());
+        tokio::time::advance(Duration::from_secs(7)).await;
         adapter
             .lock()
             .await
@@ -1136,7 +1218,10 @@ pub mod tests {
             Some(Box::new(Event {
                 state: PeerState::Connected,
                 link_state: None,
-                peer: peer.clone(),
+                peer: Peer {
+                    time_since_last_rx: Some(Duration::from_secs(7)),
+                    ..peer.clone()
+                },
                 old_peer
             })),
             event.recv().await
@@ -1161,6 +1246,7 @@ pub mod tests {
             public_key: pkc,
             endpoint: Some(([1, 1, 1, 1], 123).into()),
             persistent_keepalive_interval: Some(25),
+            rx_bytes: Some(1),
             ..Default::default()
         };
         let old_peer = Some(peer.clone());
@@ -1182,8 +1268,10 @@ pub mod tests {
 
         // Connects
         peer.time_since_last_handshake = Some(Duration::from_secs(94));
+        peer.rx_bytes = Some(1);
         let second_old_peer = Some(peer.clone());
         ifa.peers.insert(pkc, peer.clone());
+        tokio::time::advance(Duration::from_secs(94)).await;
         adapter
             .lock()
             .await
@@ -1203,7 +1291,10 @@ pub mod tests {
             Some(Box::new(Event {
                 state: PeerState::Connected,
                 link_state: None,
-                peer: peer.clone(),
+                peer: Peer {
+                    time_since_last_rx: Some(Duration::from_secs(94)),
+                    ..peer.clone()
+                },
                 old_peer
             })),
             event.recv().await
@@ -1212,6 +1303,8 @@ pub mod tests {
         // Disconnects
         peer.time_since_last_handshake = Some(Duration::from_secs(182));
         ifa.peers.insert(pkc, peer.clone());
+        tokio::time::advance(Duration::from_secs(88)).await;
+
         adapter
             .lock()
             .await
@@ -1229,8 +1322,14 @@ pub mod tests {
             Some(Box::new(Event {
                 state: PeerState::Connecting,
                 link_state: None,
-                peer: peer.clone(),
-                old_peer: second_old_peer
+                peer: Peer {
+                    time_since_last_rx: Some(Duration::from_secs(182)),
+                    ..peer.clone()
+                },
+                old_peer: Some(Peer {
+                    time_since_last_rx: Some(Duration::from_secs(94)),
+                    ..second_old_peer.unwrap()
+                }),
             })),
             event.recv().await
         );
@@ -1522,5 +1621,41 @@ pub mod tests {
             State::update_calculate_set_listen_port(Some(1), Some(2)),
             Some(2)
         );
+    }
+
+    #[test]
+    fn test_is_same_interface() {
+        for _ in 0..10 {
+            let i1 = random_interface();
+            assert!(State::is_same_interface(&i1, &i1));
+            let mut i1_with_different_time_since_last_rx = i1.clone();
+            *i1_with_different_time_since_last_rx
+                .peers
+                .iter_mut()
+                .next()
+                .unwrap()
+                .1
+                .time_since_last_rx
+                .as_mut()
+                .unwrap() += Duration::from_secs(1);
+            assert!(State::is_same_interface(
+                &i1,
+                &i1_with_different_time_since_last_rx
+            ));
+            let mut i1_with_modified_other_field = i1.clone();
+            *i1_with_modified_other_field
+                .peers
+                .iter_mut()
+                .next()
+                .unwrap()
+                .1
+                .rx_bytes
+                .as_mut()
+                .unwrap() += 1;
+            assert!(!State::is_same_interface(
+                &i1,
+                &i1_with_modified_other_field
+            ));
+        }
     }
 }
