@@ -32,11 +32,11 @@ services:
         ipv4_address: 10.0.100.51
         priority: 1000
     environment:
-      CLIENT_GATEWAY_PRIMARY: none    
+      CLIENT_GATEWAY_PRIMARY: none
     volumes:
       - ./:/sync
       - ../:/libtelio
-  
+
   ###########################################################
   #                         CLIENTS                         #
   ###########################################################
@@ -61,7 +61,7 @@ services:
       # net.ipv4.conf.all.rp_filter.src_valid_mark=1 is supposed to fix this, but it doesn't
       # seem to work. So for now disable return path filter outright.
       - net.ipv4.conf.all.rp_filter=0
-      - net.ipv4.conf.eth0.rp_filter=0
+      - net.ipv4.conf.default.rp_filter=0
       # Enable IPv6, by default, docker has this set to '1'
       - net.ipv6.conf.all.disable_ipv6=0
       - net.ipv6.conf.default.disable_ipv6=0
