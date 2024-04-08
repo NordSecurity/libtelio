@@ -22,7 +22,7 @@
 
 pub mod encryption;
 
-use std::{convert::TryInto, fmt};
+use std::{cmp::Ordering, convert::TryInto, fmt};
 
 use rand::prelude::*;
 use serde_with::{DeserializeFromStr, SerializeDisplay};
@@ -41,6 +41,22 @@ pub struct SecretKey([u8; KEY_SIZE]);
     Default, PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone, DeserializeFromStr, SerializeDisplay,
 )]
 pub struct PublicKey(pub [u8; KEY_SIZE]);
+
+/// Canonical way to order keys as defined in RFC LLT-0051
+pub fn meshnet_canonical_key_order(lhs: &PublicKey, rhs: &PublicKey) -> Ordering {
+    lhs.cmp(rhs)
+}
+
+/// Find a winning key using canonical ordering from RFC LLT-0051
+pub fn smaller_key_in_meshnet_canonical_order<'a>(
+    lhs: &'a PublicKey,
+    rhs: &'a PublicKey,
+) -> &'a PublicKey {
+    match meshnet_canonical_key_order(lhs, rhs) {
+        Ordering::Greater => rhs,
+        _ => lhs,
+    }
+}
 
 /// Preshared key type
 #[derive(

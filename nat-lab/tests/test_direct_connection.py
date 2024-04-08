@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import config
 import pytest
 import re
@@ -6,10 +7,13 @@ import telio
 from config import DERP_SERVERS
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
+from itertools import groupby
 from telio import PathType, State
 from telio_features import (
     TelioFeatures,
     Direct,
+    Lana,
+    Nurse,
     Wireguard,
     SkipUnresponsivePeers,
     FeatureEndpointProvidersOptimization,
@@ -43,6 +47,11 @@ def _generate_setup_parameter_pair(
             adapter_type=telio.AdapterType.BoringTun,
             features=TelioFeatures(
                 direct=Direct(providers=endpoint_providers),
+                nurse=Nurse(
+                    fingerprint=f"{conn_tag}",
+                    enable_nat_type_collection=True,
+                ),
+                lana=Lana(prod=False, event_path="/event.db"),
             ),
         )
         for conn_tag, endpoint_providers in cfg
@@ -270,10 +279,11 @@ async def test_direct_working_paths(
             await testing.wait_long(ping.wait_for_next_ping())
 
 
+@pytest.mark.moose
 @pytest.mark.asyncio
 @pytest.mark.timeout(240)
 @pytest.mark.parametrize("setup_params, reflexive_ip", UHP_WORKING_PATHS)
-async def test_direct_working_paths_are_reestablished(
+async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_analytics(
     setup_params: List[SetupParameters],
     reflexive_ip: str,
 ) -> None:
@@ -281,6 +291,24 @@ async def test_direct_working_paths_are_reestablished(
         env = await setup_mesh_nodes(exit_stack, setup_params)
         alpha, beta = env.nodes
         alpha_client, beta_client = env.clients
+
+        def fix_provider_name(name):
+            return "UPnP" if name == "upnp" else name.title()
+
+        alpha_direct = alpha_client.get_features().direct
+        # Asserts are here to silence mypy...
+        assert alpha_direct is not None
+        assert alpha_direct.providers is not None
+        assert len(alpha_direct.providers) > 0
+        alpha_provider = fix_provider_name(alpha_direct.providers[0])
+
+        beta_direct = beta_client.get_features().direct
+        # Asserts are here to silence mypy...
+        assert beta_direct is not None
+        assert beta_direct.providers is not None
+        assert len(beta_direct.providers) > 0
+        beta_provider = fix_provider_name(beta_direct.providers[0])
+
         alpha_connection, _ = [conn.connection for conn in env.connections]
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
@@ -366,6 +394,33 @@ async def test_direct_working_paths_are_reestablished(
                 timeout=60.0,
             ),
         )
+
+        pred = ".* telio_nurse::aggregator: \\d+: (.* peer state change for .* will be reported)"
+        # We need to compare the decoded forms, not the base64 encoded strings
+        if base64.b64decode(alpha.public_key) < base64.b64decode(beta.public_key):
+            losing_key = beta.public_key
+            log_lines = await alpha_client.get_log_lines(pred)
+            from_provider = alpha_provider
+            to_provider = beta_provider
+        else:
+            losing_key = alpha.public_key
+            log_lines = await beta_client.get_log_lines(pred)
+            from_provider = beta_provider
+            to_provider = alpha_provider
+        deduplicated_lines = [l for l, _ in groupby(log_lines)]
+        direct_event = f"Direct peer state change for {losing_key} to Connected ({from_provider} -> {to_provider}) will be reported"
+        relayed_event = (
+            f"Relayed peer state change for {losing_key} to Connected will be reported"
+        )
+        expected = [
+            relayed_event,
+            direct_event,
+            relayed_event,
+            direct_event,
+            relayed_event,
+            direct_event,
+        ]
+        assert expected == deduplicated_lines
 
 
 @pytest.mark.asyncio

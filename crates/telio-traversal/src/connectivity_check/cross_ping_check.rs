@@ -19,7 +19,7 @@ use std::{
     fmt::Formatter,
 };
 use telio_crypto::PublicKey;
-use telio_model::{config::Config, SocketAddr};
+use telio_model::{config::Config, features::EndpointProvider as ApiEndpointProvider, SocketAddr};
 use telio_proto::{CallMeMaybeMsg, CallMeMaybeType, Session};
 use telio_task::{io::chan, io::Chan, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
@@ -279,13 +279,16 @@ impl CrossPingCheckTrait for CrossPingCheck {
                 Ok(s.endpoint_connectivity_check_state
                     .iter()
                     .filter_map(
-                        |(session, v)| match (v.state.clone(), v.last_validated_enpoint) {
+                        |(session, v)| match (v.state.clone(), v.last_validated_endpoint) {
                             (PublishedByPublish(_), Some(ep)) => Some((
                                 v.public_key,
                                 WireGuardEndpointCandidateChangeEvent {
                                     public_key: v.public_key,
                                     remote_endpoint: ep,
-                                    local_endpoint: v.local_endpoint_candidate.wg,
+                                    local_endpoint: (
+                                        v.local_endpoint_candidate.wg,
+                                        v.provider_type,
+                                    ),
                                     session: *session,
                                 },
                             )),
@@ -366,7 +369,6 @@ impl<E: Backoff> State<E> {
     }
 
     pub async fn configure(&mut self, config: Option<Config>) -> Result<(), Error> {
-        let endpoints = self.gather_all_local_endpoints()?;
         let old_nodes = self.gather_all_nodes()?;
         let new_nodes: HashSet<PublicKey> = config
             .and_then(|c| c.peers)
@@ -390,23 +392,26 @@ impl<E: Backoff> State<E> {
 
         // Create sessions for all new nodes
         for added_node in added_nodes {
-            for endpoint in endpoints.iter() {
-                let session_id = rand::random::<Session>();
-                let session = EndpointConnectivityCheckState {
-                    public_key: added_node,
-                    local_endpoint_candidate: endpoint.clone(),
-                    state: Machine::new(Disconnected).as_enum(),
-                    last_state_transition: Instant::now(),
-                    last_validated_enpoint: None,
-                    last_rx_time_provider: self.last_rx_time_provider.clone(),
-                    exponential_backoff: (self.exponential_backoff_helper_provider)()?,
-                    local_session: session_id,
-                };
+            for (provider_type, endpoints) in &self.local_endpoint_cache {
+                for endpoint in endpoints {
+                    let session_id = rand::random::<Session>();
+                    let session = EndpointConnectivityCheckState {
+                        public_key: added_node,
+                        local_endpoint_candidate: endpoint.clone(),
+                        state: Machine::new(Disconnected).as_enum(),
+                        last_state_transition: Instant::now(),
+                        last_validated_endpoint: None,
+                        last_rx_time_provider: self.last_rx_time_provider.clone(),
+                        exponential_backoff: (self.exponential_backoff_helper_provider)()?,
+                        local_session: session_id,
+                        provider_type: provider_type.into(),
+                    };
 
-                // Store freshly created connectivity check session
-                telio_log_debug!("New session created: {:?} -> {:?}", session_id, session);
-                self.endpoint_connectivity_check_state
-                    .insert(session_id, session);
+                    // Store freshly created connectivity check session
+                    telio_log_debug!("New session created: {:?} -> {:?}", session_id, session);
+                    self.endpoint_connectivity_check_state
+                        .insert(session_id, session);
+                }
             }
         }
 
@@ -460,9 +465,10 @@ impl<E: Backoff> State<E> {
                     local_session: session_id,
                     state: Machine::new(Disconnected).as_enum(),
                     last_state_transition: Instant::now(),
-                    last_validated_enpoint: None,
+                    last_validated_endpoint: None,
                     last_rx_time_provider: self.last_rx_time_provider.clone(),
                     exponential_backoff: (self.exponential_backoff_helper_provider)()?,
+                    provider_type: event.0.into(),
                 };
 
                 // Store freshly created connectivity check session
@@ -517,6 +523,7 @@ impl<E: Backoff> State<E> {
                     .map(|(k, v)| (v.public_key, *k))
                     .find(|(pk, _)| *pk == public_key)
                     .ok_or(Error::UnexpectedPeer(public_key))?;
+
                 for endpoint in endpoints {
                     Self::send_ping_via_all_endpoint_providers(
                         &self.endpoint_providers,
@@ -602,8 +609,10 @@ impl<E: Backoff> State<E> {
     }
 
     pub fn check_if_upgrade_is_allowed(&mut self, session: Session, public_key: PublicKey) -> bool {
-        match self.session_id_candidates.remove(&session) {
-            Some(pk) => pk == public_key,
+        // We can't just remove a session here, because the other side might trigger wg consolidation
+        // due to 'tick event' and in that case there will be no CMM with sesssion id sent before.
+        match self.session_id_candidates.get(&session) {
+            Some(pk) => pk == &public_key,
             None => false,
         }
     }
@@ -687,7 +696,7 @@ impl<E: Backoff> Runtime for State<E> {
             }
 
             Some(call_me_maybe_msg) = self.io.intercoms.rx.recv() => {
-                telio_log_trace!("CallMeMaybe event occured: {:?}", call_me_maybe_msg);
+                telio_log_debug!("CallMeMaybe event occured: {:?}, {:?}", call_me_maybe_msg, call_me_maybe_msg.1.get_message_type());
                 self
                     .handle_call_me_maybe_rxed_event(call_me_maybe_msg)
                     .await
@@ -730,9 +739,10 @@ pub struct EndpointConnectivityCheckState<E: Backoff> {
     local_session: Session,
     state: EndpointState::Variant,
     last_state_transition: Instant,
-    last_validated_enpoint: Option<SocketAddr>,
+    last_validated_endpoint: Option<(SocketAddr, ApiEndpointProvider)>,
     last_rx_time_provider: Option<Arc<dyn TimeSinceLastRxProvider>>,
     exponential_backoff: E,
+    provider_type: ApiEndpointProvider,
 }
 
 impl<E: Backoff> Debug for EndpointConnectivityCheckState<E> {
@@ -742,7 +752,7 @@ impl<E: Backoff> Debug for EndpointConnectivityCheckState<E> {
             .field("local_endpoint_candidate", &self.local_endpoint_candidate)
             .field("state", &self.state)
             .field("last_state_transition", &self.last_state_transition)
-            .field("last_validate_endpoint", &self.last_validated_enpoint)
+            .field("last_validate_endpoint", &self.last_validated_endpoint)
             .field("exponential_backoff", &self.exponential_backoff)
             .field(
                 "last_rx_time_provider",
@@ -848,15 +858,26 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
                     if ping_source == self.local_endpoint_candidate.udp.ip() || nice_ep_provider {
                         let remote_endpoint =
                             SocketAddr::new(event.addr.ip(), event.msg.get_wg_port().0);
+                        let remote_endpoint_type = match event.msg.get_ponging_ep_provider() {
+                            Ok(Some(ep)) => ep,
+                            other => {
+                                telio_log_warn!(
+                                    "Received unsupported ponging ep provider: {other:?}, defaulting to Local"
+                                );
+                                ApiEndpointProvider::Local
+                            }
+                        };
                         let wg_publish_event = WireGuardEndpointCandidateChangeEvent {
                             public_key: self.public_key,
-                            remote_endpoint,
-                            local_endpoint: self.local_endpoint_candidate.wg,
+                            remote_endpoint: (remote_endpoint, remote_endpoint_type),
+                            local_endpoint: (self.local_endpoint_candidate.wg, self.provider_type),
                             session: self.local_session,
                         };
-                        telio_log_info!("Publishing validated WG endpoint: {:?}", wg_publish_event);
+                        telio_log_info!("Publishing validated WG endpoint: {:?}, local ep type: {:?}, remote ep type: {:?}",
+                            wg_publish_event, self.provider_type, event.msg.get_ponging_ep_provider());
                         wg_ep_publisher.send(wg_publish_event).await?;
-                        self.last_validated_enpoint = Some(remote_endpoint);
+                        self.last_validated_endpoint =
+                            Some((remote_endpoint, remote_endpoint_type));
                         do_state_transition!(m, Publish, self);
                     } else {
                         telio_log_debug!(
@@ -1142,9 +1163,10 @@ mod tests {
             local_session: rand::random(),
             state,
             last_state_transition: Instant::now(),
-            last_validated_enpoint: None,
+            last_validated_endpoint: None,
             last_rx_time_provider: Some(last_rx_time_provider),
             exponential_backoff: MockBackoff::default(),
+            provider_type: telio_model::features::EndpointProvider::Stun,
         }
     }
 
@@ -1174,8 +1196,12 @@ mod tests {
         validate_endpoint(&mut channels, endpoint, original_pub_key).await;
         let change_event = &checker.get_validated_endpoints().await.unwrap()[&original_pub_key];
 
-        assert!(change_event.public_key == original_pub_key);
-        assert!(change_event.local_endpoint == endpoint);
+        assert_eq!(change_event.public_key, original_pub_key);
+        assert_eq!(change_event.local_endpoint.0, endpoint);
+        assert_eq!(
+            change_event.local_endpoint.1,
+            telio_model::features::EndpointProvider::Local
+        );
     }
 
     #[tokio::test]

@@ -1,3 +1,5 @@
+# pylint: disable=too-many-lines
+
 import asyncio
 import datetime
 import json
@@ -774,6 +776,10 @@ class Client:
         assert self._process
         return self._process.get_stdout()
 
+    def get_features(self) -> TelioFeatures:
+        assert self._telio_features
+        return self._telio_features
+
     async def stop_device(self, timeout: float = 5) -> None:
         await asyncio.wait_for(self._write_command(["dev", "stop"]), timeout)
         self._interface_configured = False
@@ -870,6 +876,23 @@ class Client:
         )
         await process.execute()
         return process.get_stdout()
+
+    async def get_log_lines(self, regex: Optional[str] = None) -> List[str]:
+        """
+        Get the tcli log as a list of strings
+
+        If regex is provided, only matching lines are returned (and only subset of lines that match the capture group).
+        """
+        log = await self.get_log()
+        lines = log.split("\n")
+        if regex:
+            ret, compiled_regex = [], re.compile(regex)
+            for line in lines:
+                m = compiled_regex.match(line)
+                if m:
+                    ret.append(m.group(1))
+            return ret
+        return lines
 
     async def get_network_info(self) -> str:
         if self._connection.target_os == TargetOS.Mac:

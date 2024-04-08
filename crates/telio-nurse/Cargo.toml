@@ -35,6 +35,7 @@ telio-proto.workspace = true
 telio-task.workspace = true
 telio-utils.workspace = true
 telio-wg.workspace = true
+once_cell.workspace = true
 
 [dev-dependencies]
 csv = "1.1"

@@ -4,13 +4,13 @@ use tokio::{sync::Mutex, time::Instant};
 
 use serde::{ser::SerializeTuple, Serialize};
 
-use telio_crypto::PublicKey;
+use telio_crypto::{smaller_key_in_meshnet_canonical_order, PublicKey};
 use telio_model::{
     config::{DerpAnalyticsEvent, RelayConnectionChangeReason, RelayState},
     features::{EndpointProvider, FeatureNurse},
     HashMap,
 };
-use telio_utils::telio_log_warn;
+use telio_utils::{telio_log_debug, telio_log_warn};
 use telio_wg::{
     uapi::{AnalyticsEvent, PeerState},
     WireGuard,
@@ -63,8 +63,8 @@ impl From<EndpointProvider> for EndpointType {
 // Possible connectivity state changes
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct PeerEndpointTypes {
-    initiator_ep: EndpointType,
-    responder_ep: EndpointType,
+    local_ep: EndpointType,
+    remote_ep: EndpointType,
 }
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
@@ -88,8 +88,8 @@ impl Serialize for PeerConnectionData {
             rx_bytes,
             tx_bytes,
         } = self;
-        let initiator_repr = endpoints.initiator_ep as u16;
-        let responder_repr = endpoints.responder_ep as u16;
+        let initiator_repr = endpoints.local_ep as u16;
+        let responder_repr = endpoints.remote_ep as u16;
         let strategy_id = (initiator_repr << ENDPOINT_BIT_FIELD_WIDTH) + responder_repr;
         let mut seq = serializer.serialize_tuple(PEER_TUPLE_LEN)?;
         seq.serialize_element(&strategy_id)?;
@@ -176,6 +176,7 @@ struct AggregatorData {
     current_peer_events: HashMap<PublicKey, (AnalyticsEvent, PeerEndpointTypes)>,
     peer_segments: Vec<PeerConnDataSegment>,
     relay_segments: Vec<RelayConnDataSegment>,
+    local_key: PublicKey,
 }
 
 /// A container to store the connectivity data for the Meshnet peers used by Nurse
@@ -191,6 +192,7 @@ pub struct ConnectivityDataAggregator {
 
 // Internal Nurse structure for prepared segment data collection
 #[allow(dead_code)]
+#[derive(Default, Debug)]
 pub(crate) struct AggregatorCollectedSegments {
     pub(crate) relay: Vec<RelayConnDataSegment>,
     pub(crate) peer: Vec<PeerConnDataSegment>,
@@ -203,6 +205,7 @@ impl ConnectivityDataAggregator {
     pub fn new(
         nurse_features: Option<FeatureNurse>,
         wg_interface: Arc<dyn WireGuard>,
+        local_key: PublicKey,
     ) -> ConnectivityDataAggregator {
         ConnectivityDataAggregator {
             data: Mutex::new(AggregatorData {
@@ -210,6 +213,7 @@ impl ConnectivityDataAggregator {
                 current_peer_events: HashMap::new(),
                 peer_segments: Vec::new(),
                 relay_segments: Vec::new(),
+                local_key,
             }),
             aggregate_relay_events: nurse_features
                 .as_ref()
@@ -227,19 +231,19 @@ impl ConnectivityDataAggregator {
     /// # Arguments
     ///
     /// * `event` - Analytic event with the current direct peer state.
-    /// * `initiator_ep` - Endpoint provider used by the direct connection initiator.
-    /// * `responder_ep` - Endpoint provider used by the direct connection responder.
-    pub(crate) async fn change_peer_state_direct(
+    /// * `local_ep` - Endpoint provider used by the direct connection on this node.
+    /// * `remote_ep` - Endpoint provider used by the direct connection on remote node.
+    pub async fn change_peer_state_direct(
         &self,
         event: &AnalyticsEvent,
-        initiator_ep: EndpointProvider,
-        responder_ep: EndpointProvider,
+        local_ep: EndpointProvider,
+        remote_ep: EndpointProvider,
     ) {
         self.change_peer_state_common(
             event,
             PeerEndpointTypes {
-                initiator_ep: initiator_ep.into(),
-                responder_ep: responder_ep.into(),
+                local_ep: local_ep.into(),
+                remote_ep: remote_ep.into(),
             },
         )
         .await
@@ -250,12 +254,12 @@ impl ConnectivityDataAggregator {
     /// # Arguments
     ///
     /// * `event` - Analytic event with the current relayed peer state.
-    pub(crate) async fn change_peer_state_relayed(&self, event: &AnalyticsEvent) {
+    pub async fn change_peer_state_relayed(&self, event: &AnalyticsEvent) {
         self.change_peer_state_common(
             event,
             PeerEndpointTypes {
-                initiator_ep: EndpointType::Relay,
-                responder_ep: EndpointType::Relay,
+                local_ep: EndpointType::Relay,
+                remote_ep: EndpointType::Relay,
             },
         )
         .await
@@ -267,6 +271,42 @@ impl ConnectivityDataAggregator {
         }
 
         let mut data_guard = self.data.lock().await;
+
+        if event.is_from_virtual_peer() {
+            telio_log_debug!(
+                "Skipping state change for reserved peer with key: {:?}",
+                event.public_key
+            );
+            return;
+        }
+
+        if &data_guard.local_key
+            != smaller_key_in_meshnet_canonical_order(&event.public_key, &data_guard.local_key)
+        {
+            telio_log_debug!(
+                "Skipping state change for losing key: {:?} < {:?}",
+                event.public_key,
+                data_guard.local_key
+            );
+            return;
+        }
+
+        if endpoints.local_ep == EndpointType::Relay && endpoints.remote_ep == EndpointType::Relay {
+            telio_log_debug!(
+                "Relayed peer state change for {} to {:?} will be reported",
+                event.public_key,
+                event.peer_state
+            );
+        } else {
+            telio_log_debug!(
+                "Direct peer state change for {} to {:?} ({:?} -> {:?}) will be reported",
+                event.public_key,
+                event.peer_state,
+                endpoints.local_ep,
+                endpoints.remote_ep,
+            );
+        }
+
         let new_segment = match data_guard.current_peer_events.entry(event.public_key) {
             Entry::Occupied(mut entry)
                 if entry.get().0.peer_state != event.peer_state || entry.get().1 != endpoints =>
@@ -424,6 +464,11 @@ impl ConnectivityDataAggregator {
             peer: mem::take(&mut data_guard.peer_segments),
         }
     }
+
+    /// Set our own current public key
+    pub async fn set_local_key(&self, public_key: PublicKey) {
+        self.data.lock().await.local_key = public_key;
+    }
 }
 
 #[cfg(test)]
@@ -434,7 +479,8 @@ mod tests {
     };
 
     use csv::WriterBuilder;
-    use telio_model::config::Server;
+    use telio_crypto::SecretKey;
+    use telio_model::{config::Server, mesh::NodeState};
     use telio_utils::DualTarget;
     use telio_wg::{
         uapi::{Interface, Peer, PeerState},
@@ -444,30 +490,107 @@ mod tests {
 
     use super::*;
 
-    async fn create_aggregator(
+    struct TestEnv {
+        connectivity_data_aggregator: ConnectivityDataAggregator,
+        losing_key: PublicKey,
+        winning_key: PublicKey,
+    }
+
+    #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+    enum KeyKind {
+        Winning,
+        Losing,
+    }
+
+    impl TestEnv {
+        fn create_basic_peer_event(&self, which_key: KeyKind) -> AnalyticsEvent {
+            AnalyticsEvent {
+                public_key: self.key(which_key),
+                dual_ip_addresses: vec![DualTarget::new((
+                    Some(Ipv4Addr::from([1, 2, 3, 4])),
+                    None,
+                ))
+                .unwrap()], // Whatever
+                tx_bytes: 0, // Just start with no data sent
+                rx_bytes: 0,
+                peer_state: PeerState::Connected,
+                timestamp: Instant::now().into(),
+            }
+        }
+
+        fn key(&self, which_key: KeyKind) -> PublicKey {
+            match which_key {
+                KeyKind::Winning => self.winning_key,
+                KeyKind::Losing => self.losing_key,
+            }
+        }
+    }
+
+    async fn setup(
         enable_relay_conn_data: bool,
         enable_nat_traversal_conn_data: bool,
-        wg_interface: Arc<dyn WireGuard>,
-    ) -> ConnectivityDataAggregator {
+        rx_tx_bytes: Option<(u64, u64)>,
+    ) -> TestEnv {
+        let (smaller_key, interface, bigger_key) = {
+            let mut keys: Vec<_> = (0..3)
+                .map(|_| {
+                    let sk = SecretKey::gen();
+                    let pk = sk.public();
+                    (sk, pk)
+                })
+                .collect();
+            keys.sort_by_key(|(_sk, pk)| *pk);
+            let mut i = Interface::default();
+            i.private_key = Some(keys[1].0);
+            match rx_tx_bytes {
+                Some((rx, tx)) => {
+                    i.peers = [(
+                        keys[2].1,
+                        Peer {
+                            public_key: keys[2].1,
+                            endpoint: None,
+                            rx_bytes: Some(rx),
+                            tx_bytes: Some(tx),
+                            ..Default::default()
+                        },
+                    )]
+                    .iter()
+                    .cloned()
+                    .collect();
+                    (keys[0].1, i, keys[2].1)
+                }
+                None => (keys[0].1, i, keys[2].1),
+            }
+        };
+
+        let local_key = interface.private_key.unwrap().public();
+
+        let mut wg_interface = MockWireGuard::new();
+        wg_interface
+            .expect_get_interface()
+            .returning(move || Ok(interface.clone()));
+
         let nurse_features = FeatureNurse {
-            enable_relay_conn_data: enable_relay_conn_data,
-            enable_nat_traversal_conn_data: enable_nat_traversal_conn_data,
+            enable_relay_conn_data,
+            enable_nat_traversal_conn_data,
             ..Default::default()
         };
 
-        ConnectivityDataAggregator::new(Some(nurse_features), wg_interface)
-    }
+        let connectivity_data_aggregator = ConnectivityDataAggregator::new(
+            Some(nurse_features),
+            Arc::new(wg_interface),
+            local_key,
+        );
 
-    fn create_basic_peer_event(n: u8) -> AnalyticsEvent {
-        AnalyticsEvent {
-            public_key: PublicKey(*b"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
-            dual_ip_addresses: vec![
-                DualTarget::new((Some(Ipv4Addr::from([n, n, n, n])), None)).unwrap()
-            ], // Whatever
-            tx_bytes: 0, // Just start with no data sent
-            rx_bytes: 0,
-            peer_state: PeerState::Connected,
-            timestamp: Instant::now().into(),
+        assert_eq!(
+            &smaller_key,
+            smaller_key_in_meshnet_canonical_order(&smaller_key, &bigger_key)
+        );
+
+        TestEnv {
+            connectivity_data_aggregator,
+            losing_key: bigger_key,
+            winning_key: smaller_key,
         }
     }
 
@@ -490,7 +613,7 @@ mod tests {
         wg_interface
             .expect_get_interface()
             .returning(|| Ok(Default::default()));
-        let aggregator = create_aggregator(true, false, Arc::new(wg_interface)).await;
+        let aggregator = setup(true, false, None).await.connectivity_data_aggregator;
 
         // Expected segment lengths
         let first_segment_length1 = Duration::from_secs(30);
@@ -609,11 +732,11 @@ mod tests {
         wg_interface
             .expect_get_interface()
             .returning(|| Ok(Default::default()));
-        let aggregator = create_aggregator(false, false, Arc::new(wg_interface)).await;
+        let env = setup(false, false, None).await;
 
         // Initial event
-        let mut current_peer_event = create_basic_peer_event(1);
-        aggregator
+        let mut current_peer_event = env.create_basic_peer_event(KeyKind::Losing);
+        env.connectivity_data_aggregator
             .change_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Upnp,
@@ -626,26 +749,27 @@ mod tests {
         current_peer_event.peer_state = PeerState::Connecting;
         current_peer_event.rx_bytes += 1000;
         current_peer_event.tx_bytes += 2000;
-        aggregator
+        env.connectivity_data_aggregator
             .change_peer_state_relayed(&current_peer_event)
             .await;
 
-        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        let segments = env
+            .connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await
+            .peer;
+
         assert_eq!(segments.len(), 0);
     }
 
     #[tokio::test]
     async fn test_aggregator_multiple_events_single_segment() {
-        let mut wg_interface = MockWireGuard::new();
-        wg_interface
-            .expect_get_interface()
-            .returning(|| Ok(Default::default()));
-        let aggregator = create_aggregator(false, true, Arc::new(wg_interface)).await;
+        let env = setup(false, true, None).await;
 
         // Initial event
-        let mut current_peer_event = create_basic_peer_event(1);
+        let mut current_peer_event = env.create_basic_peer_event(KeyKind::Losing);
         let segment_start = current_peer_event.timestamp;
-        aggregator
+        env.connectivity_data_aggregator
             .change_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Upnp,
@@ -657,7 +781,7 @@ mod tests {
         current_peer_event.timestamp += Duration::from_secs(60);
         current_peer_event.rx_bytes += 1000;
         current_peer_event.tx_bytes += 2000;
-        aggregator
+        env.connectivity_data_aggregator
             .change_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Upnp,
@@ -665,15 +789,20 @@ mod tests {
             )
             .await;
 
-        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        let segments = env
+            .connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await
+            .peer;
+
         assert_eq!(segments.len(), 0);
 
         // And after 60 seconds some disconnect
         current_peer_event.timestamp += Duration::from_secs(60);
-        current_peer_event.peer_state = PeerState::Connecting;
+        current_peer_event.peer_state = PeerState::Connected;
         current_peer_event.rx_bytes += 1000;
         current_peer_event.tx_bytes += 2000;
-        aggregator
+        env.connectivity_data_aggregator
             .change_peer_state_relayed(&current_peer_event)
             .await;
 
@@ -682,12 +811,16 @@ mod tests {
         current_peer_event.peer_state = PeerState::Connected;
         current_peer_event.rx_bytes += 1000;
         current_peer_event.tx_bytes += 2000;
-        aggregator
+        env.connectivity_data_aggregator
             .change_peer_state_relayed(&current_peer_event)
             .await;
 
         // We don't gather periods of time when peer is disconnected, so we should have here only one segment
-        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        let segments = env
+            .connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await
+            .peer;
         assert_eq!(segments.len(), 1);
         assert_eq!(
             segments[0],
@@ -697,31 +830,24 @@ mod tests {
                 duration: Duration::from_secs(120),
                 connection_data: PeerConnectionData {
                     endpoints: PeerEndpointTypes {
-                        initiator_ep: EndpointType::UPnP,
-                        responder_ep: EndpointType::Local,
+                        local_ep: EndpointType::UPnP,
+                        remote_ep: EndpointType::Local,
                     },
                     rx_bytes: 2000,
                     tx_bytes: 4000
                 }
             }
         );
-
-        let segments = aggregator.collect_unacknowledged_segments().await.peer;
-        assert_eq!(segments.len(), 0);
     }
 
     #[tokio::test]
     async fn test_aggregator_multiple_events_multiple_segments() {
-        let mut wg_interface = MockWireGuard::new();
-        wg_interface
-            .expect_get_interface()
-            .returning(|| Ok(Default::default()));
-        let aggregator = create_aggregator(false, true, Arc::new(wg_interface)).await;
+        let env = setup(false, true, None).await;
 
         // Initial event
-        let mut current_peer_event = create_basic_peer_event(1);
+        let mut current_peer_event = env.create_basic_peer_event(KeyKind::Losing);
         let first_segment_start = current_peer_event.timestamp;
-        aggregator
+        env.connectivity_data_aggregator
             .change_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Upnp,
@@ -734,7 +860,7 @@ mod tests {
         let second_segment_start = current_peer_event.timestamp;
         current_peer_event.rx_bytes += 1000;
         current_peer_event.tx_bytes += 2000;
-        aggregator
+        env.connectivity_data_aggregator
             .change_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Upnp,
@@ -746,7 +872,7 @@ mod tests {
         current_peer_event.timestamp += Duration::from_secs(60);
         current_peer_event.rx_bytes += 2000;
         current_peer_event.tx_bytes += 4000;
-        aggregator
+        env.connectivity_data_aggregator
             .change_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Local,
@@ -754,7 +880,11 @@ mod tests {
             )
             .await;
 
-        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        let segments = env
+            .connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await
+            .peer;
         assert_eq!(segments.len(), 2);
         assert_eq!(
             segments[0],
@@ -764,8 +894,8 @@ mod tests {
                 duration: Duration::from_secs(60),
                 connection_data: PeerConnectionData {
                     endpoints: PeerEndpointTypes {
-                        initiator_ep: EndpointType::UPnP,
-                        responder_ep: EndpointType::Local,
+                        local_ep: EndpointType::UPnP,
+                        remote_ep: EndpointType::Local,
                     },
                     rx_bytes: 1000,
                     tx_bytes: 2000
@@ -780,8 +910,8 @@ mod tests {
                 duration: Duration::from_secs(60),
                 connection_data: PeerConnectionData {
                     endpoints: PeerEndpointTypes {
-                        initiator_ep: EndpointType::UPnP,
-                        responder_ep: EndpointType::UPnP,
+                        local_ep: EndpointType::UPnP,
+                        remote_ep: EndpointType::UPnP,
                     },
                     rx_bytes: 2000,
                     tx_bytes: 4000
@@ -789,50 +919,43 @@ mod tests {
             }
         );
 
-        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        let segments = env
+            .connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await
+            .peer;
         assert_eq!(segments.len(), 0);
     }
 
     #[tokio::test(start_paused = true)]
     async fn test_aggregator_24h_segment_peer() {
+        let env = setup(false, true, Some((3333, 1111))).await;
+
         // Initial event
-        let current_peer_event = create_basic_peer_event(1);
+        let current_peer_event = env.create_basic_peer_event(KeyKind::Losing);
         let segment_start = current_peer_event.timestamp;
         let expected_first_segment_duration = DAY_DURATION + Duration::from_secs(1);
         let expected_second_segment_duration = DAY_DURATION + Duration::from_secs(2);
 
-        let mut wg_interface = MockWireGuard::new();
-        let lambda_pk = current_peer_event.public_key;
-        wg_interface.expect_get_interface().returning(move || {
-            Ok(Interface {
-                peers: vec![(
-                    lambda_pk,
-                    Peer {
-                        public_key: lambda_pk,
-                        endpoint: None,
-                        rx_bytes: Some(3333),
-                        tx_bytes: Some(1111),
-                        ..Default::default()
-                    },
-                )]
-                .into_iter()
-                .collect(),
-                ..Default::default()
-            })
-        });
-        let aggregator = create_aggregator(false, true, Arc::new(wg_interface)).await;
-
         // Insert the first event
-        aggregator
+        env.connectivity_data_aggregator
             .change_peer_state_relayed(&current_peer_event)
             .await;
 
-        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        let segments = env
+            .connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await
+            .peer;
         assert_eq!(segments.len(), 0);
 
         time::advance(expected_first_segment_duration).await;
 
-        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        let segments = env
+            .connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await
+            .peer;
         assert_eq!(segments.len(), 1);
         assert_eq!(
             segments[0],
@@ -842,8 +965,8 @@ mod tests {
                 duration: expected_first_segment_duration,
                 connection_data: PeerConnectionData {
                     endpoints: PeerEndpointTypes {
-                        initiator_ep: EndpointType::Relay,
-                        responder_ep: EndpointType::Relay,
+                        local_ep: EndpointType::Relay,
+                        remote_ep: EndpointType::Relay,
                     },
                     rx_bytes: 3333,
                     tx_bytes: 1111
@@ -851,13 +974,21 @@ mod tests {
             }
         );
 
-        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        let segments = env
+            .connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await
+            .peer;
         assert_eq!(segments.len(), 0);
 
         time::advance(expected_second_segment_duration).await;
 
         let expected_second_segment_start = segment_start + expected_first_segment_duration;
-        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        let segments = env
+            .connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await
+            .peer;
         assert_eq!(segments.len(), 1);
         assert_eq!(
             segments[0],
@@ -867,8 +998,8 @@ mod tests {
                 duration: expected_second_segment_duration,
                 connection_data: PeerConnectionData {
                     endpoints: PeerEndpointTypes {
-                        initiator_ep: EndpointType::Relay,
-                        responder_ep: EndpointType::Relay,
+                        local_ep: EndpointType::Relay,
+                        remote_ep: EndpointType::Relay,
                     },
                     rx_bytes: 0,
                     tx_bytes: 0
@@ -876,7 +1007,11 @@ mod tests {
             }
         );
 
-        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        let segments = env
+            .connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await
+            .peer;
         assert_eq!(segments.len(), 0);
     }
 
@@ -891,7 +1026,7 @@ mod tests {
         wg_interface
             .expect_get_interface()
             .returning(move || Ok(Default::default()));
-        let aggregator = create_aggregator(true, false, Arc::new(wg_interface)).await;
+        let aggregator = setup(true, false, None).await.connectivity_data_aggregator;
 
         aggregator
             .change_relay_state(current_relay_event.clone())
@@ -949,42 +1084,24 @@ mod tests {
         let expected_segment_duration = Duration::from_secs(721);
         let expected_second_segment_duration = DAY_DURATION + Duration::from_secs(2);
 
+        let env = setup(true, true, Some((3333, 1111))).await;
         let current_relay_event = create_basic_relay_event();
         let relay_segment_start = Instant::now();
 
-        let mut wg_interface = MockWireGuard::new();
-        let lambda_pk = create_basic_peer_event(2).public_key;
-        wg_interface.expect_get_interface().returning(move || {
-            Ok(Interface {
-                peers: vec![(
-                    lambda_pk,
-                    Peer {
-                        public_key: lambda_pk,
-                        endpoint: None,
-                        rx_bytes: Some(3333),
-                        tx_bytes: Some(1111),
-                        ..Default::default()
-                    },
-                )]
-                .into_iter()
-                .collect(),
-                ..Default::default()
-            })
-        });
-        let aggregator = create_aggregator(true, true, Arc::new(wg_interface)).await;
-
-        aggregator
+        env.connectivity_data_aggregator
             .change_relay_state(current_relay_event.clone())
             .await;
 
-        aggregator.collect_unacknowledged_segments().await;
+        env.connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await;
 
         // Just to make sure the order will be correct
         time::advance(state_start_difference).await;
 
-        let current_peer_event = create_basic_peer_event(2);
+        let current_peer_event = env.create_basic_peer_event(KeyKind::Losing);
 
-        aggregator
+        env.connectivity_data_aggregator
             .change_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Upnp,
@@ -994,12 +1111,17 @@ mod tests {
 
         time::advance(expected_segment_duration).await;
 
-        aggregator.save_unacknowledged_segments(true).await;
+        env.connectivity_data_aggregator
+            .save_unacknowledged_segments(true)
+            .await;
 
         let AggregatorCollectedSegments {
             relay: relay_segments,
             peer: peer_segments,
-        } = aggregator.collect_unacknowledged_segments().await;
+        } = env
+            .connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await;
         assert_eq!(relay_segments.len(), 1);
         assert_eq!(
             relay_segments[0],
@@ -1022,8 +1144,8 @@ mod tests {
                 duration: expected_segment_duration,
                 connection_data: PeerConnectionData {
                     endpoints: PeerEndpointTypes {
-                        initiator_ep: EndpointType::UPnP,
-                        responder_ep: EndpointType::Stun,
+                        local_ep: EndpointType::UPnP,
+                        remote_ep: EndpointType::Stun,
                     },
                     rx_bytes: 3333,
                     tx_bytes: 1111
@@ -1035,37 +1157,22 @@ mod tests {
         time::advance(expected_second_segment_duration).await;
 
         // Make sure that the state was cleaned up
-        let segments = aggregator.collect_unacknowledged_segments().await.relay;
+        let segments = env
+            .connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await
+            .relay;
         assert_eq!(segments.len(), 0);
     }
 
     #[tokio::test(start_paused = true)]
     async fn test_aggregator_sleep_wakeup() {
-        let mut current_peer_event = create_basic_peer_event(1);
-        let mut wg_interface = MockWireGuard::new();
-        let lambda_pk = current_peer_event.public_key;
-        wg_interface.expect_get_interface().returning(move || {
-            Ok(Interface {
-                peers: vec![(
-                    lambda_pk,
-                    Peer {
-                        public_key: lambda_pk,
-                        endpoint: None,
-                        rx_bytes: Some(2000),
-                        tx_bytes: Some(4000),
-                        ..Default::default()
-                    },
-                )]
-                .into_iter()
-                .collect(),
-                ..Default::default()
-            })
-        });
-        let aggregator = create_aggregator(false, true, Arc::new(wg_interface)).await;
+        let env = setup(false, true, Some((2000, 4000))).await;
+        let mut current_peer_event = env.create_basic_peer_event(KeyKind::Losing);
 
         // Initial event
         let first_segment_start = current_peer_event.timestamp;
-        aggregator
+        env.connectivity_data_aggregator
             .change_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Upnp,
@@ -1077,7 +1184,7 @@ mod tests {
         let second_segment_start = current_peer_event.timestamp;
         current_peer_event.rx_bytes += 1000;
         current_peer_event.tx_bytes += 2000;
-        aggregator
+        env.connectivity_data_aggregator
             .change_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Upnp,
@@ -1088,9 +1195,15 @@ mod tests {
         time::advance(Duration::from_secs(800)).await;
 
         // Sleep is called
-        aggregator.save_unacknowledged_segments(true).await;
+        env.connectivity_data_aggregator
+            .save_unacknowledged_segments(true)
+            .await;
 
-        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        let segments = env
+            .connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await
+            .peer;
         assert_eq!(segments.len(), 2);
         assert_eq!(
             segments[0],
@@ -1100,8 +1213,8 @@ mod tests {
                 duration: Duration::from_secs(600),
                 connection_data: PeerConnectionData {
                     endpoints: PeerEndpointTypes {
-                        initiator_ep: EndpointType::UPnP,
-                        responder_ep: EndpointType::Local,
+                        local_ep: EndpointType::UPnP,
+                        remote_ep: EndpointType::Local,
                     },
                     rx_bytes: 1000,
                     tx_bytes: 2000
@@ -1116,8 +1229,8 @@ mod tests {
                 duration: Duration::from_secs(200),
                 connection_data: PeerConnectionData {
                     endpoints: PeerEndpointTypes {
-                        initiator_ep: EndpointType::UPnP,
-                        responder_ep: EndpointType::UPnP,
+                        local_ep: EndpointType::UPnP,
+                        remote_ep: EndpointType::UPnP,
                     },
                     rx_bytes: 1000,
                     tx_bytes: 2000
@@ -1126,9 +1239,11 @@ mod tests {
         );
 
         // Wakeup is called
-        aggregator.clear_ongoinging_segments().await;
+        env.connectivity_data_aggregator
+            .clear_ongoinging_segments()
+            .await;
 
-        aggregator
+        env.connectivity_data_aggregator
             .change_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Local,
@@ -1140,11 +1255,15 @@ mod tests {
         current_peer_event.timestamp += Duration::from_secs(60);
         current_peer_event.rx_bytes += 1000;
         current_peer_event.tx_bytes += 2000;
-        aggregator
+        env.connectivity_data_aggregator
             .change_peer_state_relayed(&current_peer_event)
             .await;
 
-        let segments = aggregator.collect_unacknowledged_segments().await.peer;
+        let segments = env
+            .connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await
+            .peer;
 
         assert_eq!(segments.len(), 1);
         assert_eq!(
@@ -1155,8 +1274,8 @@ mod tests {
                 duration: Duration::from_secs(60),
                 connection_data: PeerConnectionData {
                     endpoints: PeerEndpointTypes {
-                        initiator_ep: EndpointType::Local,
-                        responder_ep: EndpointType::UPnP,
+                        local_ep: EndpointType::Local,
+                        remote_ep: EndpointType::UPnP,
                     },
                     rx_bytes: 1000,
                     tx_bytes: 2000
@@ -1204,16 +1323,16 @@ mod tests {
         let conn_datas = vec![
             PeerConnectionData {
                 endpoints: PeerEndpointTypes {
-                    initiator_ep: EndpointType::Local,
-                    responder_ep: EndpointType::Stun,
+                    local_ep: EndpointType::Local,
+                    remote_ep: EndpointType::Stun,
                 },
                 rx_bytes: 1500,
                 tx_bytes: 700,
             },
             PeerConnectionData {
                 endpoints: PeerEndpointTypes {
-                    initiator_ep: EndpointType::UPnP,
-                    responder_ep: EndpointType::Local,
+                    local_ep: EndpointType::UPnP,
+                    remote_ep: EndpointType::Local,
                 },
                 rx_bytes: 1000,
                 tx_bytes: 500,
@@ -1227,5 +1346,205 @@ mod tests {
         let str_result = String::from_utf8(writer.into_inner().unwrap()).unwrap();
 
         assert_eq!(str_result, "prefix:18:1500:700,prefix:49:1000:500,");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn only_events_for_nodes_with_losing_key_are_recorded() {
+        let env = setup(
+            true,
+            true,
+            Some((0, 1000 + 1001 + 1002 + 1003 + 1004 + 1005)),
+        )
+        .await;
+        let mut event_to_be_recorded = env.create_basic_peer_event(KeyKind::Losing);
+        let mut event_to_be_ignored = env.create_basic_peer_event(KeyKind::Winning);
+
+        event_to_be_recorded.peer_state = NodeState::Connected;
+        event_to_be_recorded.tx_bytes = 0;
+        event_to_be_ignored.peer_state = NodeState::Connected;
+        event_to_be_ignored.tx_bytes = 0;
+        let segment_start = event_to_be_recorded.timestamp;
+        env.connectivity_data_aggregator
+            .change_peer_state_relayed(&event_to_be_recorded)
+            .await;
+        env.connectivity_data_aggregator
+            .change_peer_state_relayed(&event_to_be_ignored)
+            .await;
+
+        event_to_be_recorded.timestamp = segment_start + Duration::from_secs(30);
+        event_to_be_recorded.tx_bytes = 1000;
+        event_to_be_ignored.timestamp = segment_start + Duration::from_secs(30);
+        event_to_be_ignored.tx_bytes = 1000;
+        env.connectivity_data_aggregator
+            .change_peer_state_direct(
+                &event_to_be_recorded,
+                EndpointProvider::Stun,
+                EndpointProvider::Stun,
+            )
+            .await;
+        env.connectivity_data_aggregator
+            .change_peer_state_direct(
+                &event_to_be_ignored,
+                EndpointProvider::Stun,
+                EndpointProvider::Stun,
+            )
+            .await;
+
+        let peer_segments = env
+            .connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await
+            .peer;
+        assert_eq!(peer_segments.len(), 1);
+        assert_eq!(peer_segments[0].node, event_to_be_recorded.public_key);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn direct_connection_reestablished_multiple_times() {
+        let env = setup(
+            true,
+            true,
+            Some((0, 1000 + 1001 + 1002 + 1003 + 1004 + 1005)),
+        )
+        .await;
+        let mut current_peer_event = env.create_basic_peer_event(KeyKind::Losing);
+
+        // Initial event
+
+        current_peer_event.peer_state = NodeState::Connected;
+        current_peer_event.tx_bytes = 0;
+        let start_timestamp = current_peer_event.timestamp;
+        env.connectivity_data_aggregator
+            .change_peer_state_relayed(&current_peer_event)
+            .await;
+
+        current_peer_event.timestamp = start_timestamp + Duration::from_secs(30);
+        current_peer_event.tx_bytes = 1000;
+        env.connectivity_data_aggregator
+            .change_peer_state_direct(
+                &current_peer_event,
+                EndpointProvider::Stun,
+                EndpointProvider::Stun,
+            )
+            .await;
+
+        current_peer_event.timestamp = start_timestamp + Duration::from_secs(30 + 31);
+        current_peer_event.tx_bytes = 1000 + 1001;
+        env.connectivity_data_aggregator
+            .change_peer_state_relayed(&current_peer_event)
+            .await;
+
+        current_peer_event.timestamp = start_timestamp + Duration::from_secs(30 + 31 + 32);
+        current_peer_event.tx_bytes = 1000 + 1001 + 1002;
+        env.connectivity_data_aggregator
+            .change_peer_state_direct(
+                &current_peer_event,
+                EndpointProvider::Local,
+                EndpointProvider::Local,
+            )
+            .await;
+
+        current_peer_event.timestamp = start_timestamp + Duration::from_secs(30 + 31 + 32 + 33);
+        current_peer_event.tx_bytes = 1000 + 1001 + 1002 + 1003;
+        env.connectivity_data_aggregator
+            .change_peer_state_relayed(&current_peer_event)
+            .await;
+
+        current_peer_event.timestamp =
+            start_timestamp + Duration::from_secs(30 + 31 + 32 + 33 + 34);
+        current_peer_event.tx_bytes = 1000 + 1001 + 1002 + 1003 + 1004;
+        env.connectivity_data_aggregator
+            .change_peer_state_direct(
+                &current_peer_event,
+                EndpointProvider::Upnp,
+                EndpointProvider::Upnp,
+            )
+            .await;
+
+        time::advance(Duration::from_secs(30 + 31 + 32 + 33 + 34 + 35)).await;
+        env.connectivity_data_aggregator
+            .force_save_unacknowledged_segments()
+            .await;
+        let peer_segments = env
+            .connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await
+            .peer;
+
+        assert_eq!(
+            vec![
+                Duration::from_secs(30),
+                Duration::from_secs(31),
+                Duration::from_secs(32),
+                Duration::from_secs(33),
+                Duration::from_secs(34),
+                Duration::from_secs(35),
+            ],
+            peer_segments.iter().map(|s| s.duration).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            vec![
+                (EndpointType::Relay, EndpointType::Relay),
+                (EndpointType::Stun, EndpointType::Stun),
+                (EndpointType::Relay, EndpointType::Relay),
+                (EndpointType::Local, EndpointType::Local),
+                (EndpointType::Relay, EndpointType::Relay),
+                (EndpointType::UPnP, EndpointType::UPnP),
+            ],
+            peer_segments
+                .iter()
+                .map(|s| (
+                    s.connection_data.endpoints.local_ep,
+                    s.connection_data.endpoints.remote_ep
+                ))
+                .collect::<Vec<_>>()
+        );
+
+        assert_eq!(
+            vec![1000, 1001, 1002, 1003, 1004, 1005],
+            peer_segments
+                .iter()
+                .map(|s| s.connection_data.tx_bytes)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_aggregator_ignores_reserved_peers() {
+        let env = setup(false, true, None).await;
+
+        // Initial event
+        let mut current_peer_event = env.create_basic_peer_event(KeyKind::Losing);
+        current_peer_event.dual_ip_addresses = vec![DualTarget {
+            target: (Some(Ipv4Addr::new(100, 64, 0, 2)), None),
+        }];
+
+        env.connectivity_data_aggregator
+            .change_peer_state_direct(
+                &current_peer_event,
+                EndpointProvider::Upnp,
+                EndpointProvider::Local,
+            )
+            .await;
+
+        // Send one more event with the same state
+        current_peer_event.timestamp += Duration::from_secs(60);
+        current_peer_event.rx_bytes += 1000;
+        current_peer_event.tx_bytes += 2000;
+        current_peer_event.peer_state = NodeState::Disconnected;
+        env.connectivity_data_aggregator
+            .change_peer_state_direct(
+                &current_peer_event,
+                EndpointProvider::Upnp,
+                EndpointProvider::Local,
+            )
+            .await;
+
+        let segments = env
+            .connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await
+            .peer;
+        assert_eq!(segments.len(), 0);
     }
 }
