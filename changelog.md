@@ -29,6 +29,7 @@
 * LLT-5009: Enable QoS feature by default
 * LLT-4980: Add exponential backoff for socket updates on error
 * LLT-4954: Handle system sleep/wakeup in nat/derp monitoring
+* LLT-5068: Bump Moose 4.0.1
 
 <br>
 

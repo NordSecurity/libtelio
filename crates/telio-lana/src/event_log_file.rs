@@ -331,6 +331,8 @@ pub mod moose {
         receivedData: String,
         heartbeatInterval: i32,
         derpConnectionDuration: i32,
+        nat_monitoring: String,
+        derp_monitoring: String,
     ) -> std::result::Result<Result, Error> {
         let heartbeatIntervalString = heartbeatInterval.to_string();
         let derpConnectionDurationStr = derpConnectionDuration.to_string();
@@ -344,6 +346,8 @@ pub mod moose {
             receivedData.as_str(),
             heartbeatIntervalString.as_str(),
             derpConnectionDurationStr.as_str(),
+            nat_monitoring.as_str(),
+            derp_monitoring.as_str(),
         ];
 
         match super::event_log("send_serviceQuality_node_heartbeat", Some(args)) {
