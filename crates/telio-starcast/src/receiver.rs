@@ -3,7 +3,7 @@ use ipnetwork::{IpNetwork, IpNetworkError, Ipv4Network};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use telio_crypto::{PublicKey, SecretKey};
-use telio_task::io::Chan;
+use telio_task::io::chan::Tx;
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn};
 use telio_wg::uapi::Peer;
 use tokio::net::UdpSocket;
@@ -20,7 +20,7 @@ pub struct Receiver {
     telio_wg_endpoint: SocketAddr,
     peer: Arc<Tunn>,
     task: Option<JoinHandle<()>>,
-    chan: Arc<Chan<Vec<u8>>>,
+    tun_out: Tx<Vec<u8>>,
     multicaster_ip: Arc<MulticasterIp>,
 }
 
@@ -28,7 +28,7 @@ impl Receiver {
     pub async fn new(
         socket: Arc<UdpSocket>,
         telio_wg_port: u16,
-        chan: Chan<Vec<u8>>,
+        chan: Tx<Vec<u8>>,
         multicast_secret_key: SecretKey,
         peer: Arc<Tunn>,
         multicaster_ip: Arc<MulticasterIp>,
@@ -48,7 +48,7 @@ impl Receiver {
             telio_wg_endpoint: ([127, 0, 0, 1], telio_wg_port).into(),
             peer: peer.clone(),
             task: None,
-            chan: Arc::new(chan),
+            tun_out: chan,
             multicaster_ip,
         })
     }
@@ -58,7 +58,7 @@ impl Receiver {
             self.peer.clone(),
             self.tun_socket.clone(),
             self.telio_wg_endpoint,
-            self.chan.clone(),
+            self.tun_out.clone(),
         )));
     }
 
@@ -95,7 +95,7 @@ impl Receiver {
         peer: Arc<Tunn>,
         tun_sock: Arc<UdpSocket>,
         telio_wg_endpoint: SocketAddr,
-        chan: Arc<Chan<Vec<u8>>>,
+        tun_out: Tx<Vec<u8>>,
     ) {
         let mut receiving_buffer = vec![0u8; MAX_PACKET];
         let mut sending_buffer = vec![0u8; MAX_PACKET];
@@ -130,8 +130,12 @@ impl Receiver {
             let socket = tun_sock.clone();
             let receiving_buffer = receiving_buffer.clone();
             let mut sending_buffer = sending_buffer.clone();
-            let send_chan = chan.clone();
-            tokio::spawn(async move {
+            let Ok(sender) = tun_out.clone().reserve_owned().await else {
+                telio_log_warn!("failed to reserve tun send!");
+                return;
+            };
+
+            let _ = tokio::spawn(async move {
                 match peer.decapsulate(
                     None,
                     receiving_buffer.get(..bytes_read_from_tun).unwrap_or(&[]),
@@ -164,17 +168,15 @@ impl Receiver {
                     TunnResult::WriteToTunnelV4(packet, _)
                     | TunnResult::WriteToTunnelV6(packet, _) => {
                         let bytes = packet.to_vec();
-                        let res = send_chan.tx.send(bytes).await;
-                        if let Err(e) = res {
-                            telio_log_error!("failed to send packet to multicaster: {}", e);
-                        }
+                        let _ = sender.send(bytes);
                     }
                     TunnResult::Err(wireguard_error) => {
                         telio_log_warn!("Decapsulate error {:?}", wireguard_error)
                     }
                     TunnResult::Done => (),
                 }
-            });
+            })
+            .await;
         }
     }
 }

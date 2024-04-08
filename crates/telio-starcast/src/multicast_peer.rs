@@ -39,7 +39,10 @@ impl MulticasterPeer {
                 format!("Failed to bind multicast socket: {:?}", e)
             })?;
 
-        let (transport_chan, vpeer_chan) = Chan::pipe();
+        let Chan {
+            rx: tun_rx,
+            tx: tun_tx,
+        } = Chan::default();
 
         let multicast_secret_key = SecretKey::gen();
 
@@ -69,7 +72,7 @@ impl MulticasterPeer {
                     wg,
                     telio_wg_port,
                     socket_pool.clone(),
-                    transport_chan,
+                    tun_rx,
                     peer.clone(),
                     multicaster_ip.clone(),
                 )
@@ -79,7 +82,7 @@ impl MulticasterPeer {
                 Receiver::new(
                     arc_skt.clone(),
                     telio_wg_port,
-                    vpeer_chan,
+                    tun_tx,
                     multicast_secret_key,
                     peer.clone(),
                     multicaster_ip.clone(),
