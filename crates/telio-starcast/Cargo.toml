@@ -16,6 +16,7 @@ x25519-dalek.workspace = true
 base64.workspace = true
 ipnetwork.workspace = true
 pnet_packet.workspace = true
+futures.workspace = true
 
 telio-utils.workspace = true
 telio-crypto.workspace = true
