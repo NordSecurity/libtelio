@@ -6,6 +6,8 @@ LINKERS=(
 	"armv7a-linux-androideabi21-clang"
 	"x86_64-linux-android21-clang"
 	"i686-linux-android21-clang"
+	"x86_64-openwrt-linux-musl"
+	"aarch64-openwrt-linux-musl"
 )
 
 for i in ${LINKERS[@]}; do

@@ -42,5 +42,11 @@ linker = "linkers/d-x86_64-linux-android21-clang"
 [target.i686-linux-android]
 linker = "linkers/d-i686-linux-android21-clang"
 
+[target.x86_64-openwrt-linux-musl]
+linker = "linkers/d-x86_64-openwrt-linux-musl"
+
+[target.aarch64-openwrt-linux-musl]
+linker = "linkers/d-aarch64-openwrt-linux-musl"
+
 [target.'cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos", target_os = "tvos-sim"))']
 rustflags = ["-C", "link-arg=-s"]
