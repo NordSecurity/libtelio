@@ -8,6 +8,7 @@ use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn};
 use telio_wg::uapi::Peer;
 use tokio::net::UdpSocket;
 use tokio::task::JoinHandle;
+use tracing::debug;
 use x25519_dalek::{PublicKey as PublicKeyDalek, StaticSecret};
 
 use crate::multicast_peer::MulticasterIp;
@@ -84,10 +85,10 @@ impl Receiver {
 
     fn public_key(&self) -> PublicKey {
         let static_secret = &StaticSecret::from(self.secret_key.into_bytes());
-        telio_log_debug!(
-            "Multicast vpeer - public_key: {:?}",
-            PublicKeyDalek::from(static_secret)
-        );
+        // telio_log_debug!(
+        //     "Multicast vpeer - public_key: {:?}",
+        //     PublicKeyDalek::from(static_secret)
+        // );
         PublicKey(PublicKeyDalek::from(static_secret).to_bytes())
     }
 
@@ -108,9 +109,20 @@ impl Receiver {
                 }
             };
 
+            debug!(
+                scast = "wg2vpeer",
+                bytes = bytes_read_from_tun,
+                "recv packet"
+            );
+
             loop {
                 match peer.update_timers(&mut sending_buffer) {
                     TunnResult::WriteToNetwork(packet) => {
+                        debug!(
+                            scast = "vpeer2wg",
+                            bytes = bytes_read_from_tun,
+                            "send handshake"
+                        );
                         if let Err(e) = tun_sock.send_to(packet, telio_wg_endpoint).await {
                             telio_log_warn!(
                                 "[Multicast] Failed to send timer update packet : {:?}",
@@ -135,6 +147,8 @@ impl Receiver {
                 return;
             };
 
+            debug!(scast = "vpeer2multi", "reserve send");
+
             let _ = tokio::spawn(async move {
                 match peer.decapsulate(
                     None,
@@ -143,6 +157,8 @@ impl Receiver {
                 ) {
                     // Handshake packets
                     TunnResult::WriteToNetwork(packet) => {
+                        debug!(scast = "vpeer2wg", "handshake");
+
                         if let Err(e) = socket.send_to(packet, telio_wg_endpoint).await {
                             telio_log_warn!(
                                 "[Multicast] Failed to send handshake packet  : {:?}",
@@ -155,6 +171,8 @@ impl Receiver {
                         while let TunnResult::WriteToNetwork(empty) =
                             peer.decapsulate(None, &[], &mut temporary_buffer)
                         {
+                            debug!(scast = "vpeer2wg", "handshake inner");
+
                             if let Err(e) = socket.send_to(empty, telio_wg_endpoint).await {
                                 telio_log_warn!(
                                     "[Multicast] Failed to send handshake packet  : {:?}",
@@ -167,6 +185,8 @@ impl Receiver {
                     // Multicast packets
                     TunnResult::WriteToTunnelV4(packet, _)
                     | TunnResult::WriteToTunnelV6(packet, _) => {
+                        debug!(scast = "vpeer2multi", "decap fanout");
+
                         let bytes = packet.to_vec();
                         let _ = sender.send(bytes);
                     }

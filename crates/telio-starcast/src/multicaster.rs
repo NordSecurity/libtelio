@@ -13,6 +13,7 @@ use telio_wg::{DynamicWg, WireGuard};
 use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
+use tracing::debug;
 
 use crate::multicast_peer::MulticasterIp;
 
@@ -121,8 +122,7 @@ impl Multicaster {
                     return;
                 }
             };
-
-            telio_log_debug!("rx from tun");
+            debug!(scast = "vpeer2multi", "recv packet");
 
             // Extracting UDP destination port from the packet
             let key = u16::from_be_bytes([
@@ -156,6 +156,7 @@ impl Multicaster {
             };
 
             if let Some(sock) = dest_sock {
+                debug!(scast = "multi2trans", "send as unicast");
                 // Is a unicast response
                 if let Some(mut udp_packet) = packet
                     .get_mut(IPV4_HEADER..)
@@ -180,6 +181,7 @@ impl Multicaster {
                     );
                 }
             } else {
+                debug!(scast = "muti2trans", "fanout");
                 // Is a multicast packet
                 let peers = wg.as_ref().get_interface().await.map(|interface| {
                     interface
@@ -200,6 +202,7 @@ impl Multicaster {
                 let tun_sock = transport_sock.clone();
                 let _ = peers.map(|peer_vec| async move {
                     for addr in peer_vec {
+                        debug!(scast = "muti2trans", dest=?addr, "transport");
                         let res = tun_sock
                             .send_to(&packet, SocketAddr::new(addr, MULTICAST_TRANSPORT_PORT))
                             .await;
@@ -235,6 +238,7 @@ impl Multicaster {
                 }
                 Ok(bytes) => bytes,
             };
+            debug!(scast = "trans2multi", bytes = bytes_read, "recv");
 
             let ip_addrs = if let Some(mut ip_packet) = receiving_buffer
                 .get_mut(..bytes_read)
@@ -254,7 +258,9 @@ impl Multicaster {
             };
 
             if let (Some(mut udp_packet), Some((ip_src, ip_dst))) = (
-                MutableUdpPacket::new(receiving_buffer.get_mut(IPV4_HEADER..).unwrap_or(&mut [])),
+                receiving_buffer
+                    .get_mut(IPV4_HEADER..bytes_read)
+                    .and_then(MutableUdpPacket::new),
                 ip_addrs,
             ) {
                 {

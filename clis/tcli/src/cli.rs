@@ -20,10 +20,11 @@ use tracing::error;
 use tracing::level_filters::LevelFilter;
 use tracing_appender;
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber;
+use tracing_subscriber::{self, EnvFilter};
 
 use crate::nord::{Error as NordError, Nord, OAuth};
 
+use std::env;
 use std::fs::File;
 use std::str::FromStr;
 use std::time::SystemTime;
@@ -340,7 +341,8 @@ impl Cli {
         let (non_blocking_writer, _tracing_worker_guard) =
             tracing_appender::non_blocking(File::create("tcli.log")?);
         tracing_subscriber::fmt()
-            .with_max_level(LevelFilter::TRACE)
+            .with_env_filter(EnvFilter::from_env("TELIO_LOG"))
+            // .with_max_level(LevelFilter::INFO)
             .with_writer(non_blocking_writer)
             .with_ansi(false)
             .with_line_number(true)
