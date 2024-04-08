@@ -7,7 +7,7 @@ use std::hash::{Hash, Hasher};
 use std::net::{IpAddr, Ipv4Addr};
 use std::{net::SocketAddr, sync::Arc};
 use telio_sockets::SocketPool;
-use telio_task::io::Chan;
+use telio_task::io::chan::Rx;
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn};
 use telio_wg::{DynamicWg, WireGuard};
 use tokio::net::UdpSocket;
@@ -31,7 +31,7 @@ pub struct Multicaster {
     transport_socket: Arc<UdpSocket>,
     local_socket: Arc<UdpSocket>,
     wg_sock: Arc<SocketAddr>,
-    chan: Arc<RwLock<Chan<Vec<u8>>>>,
+    tun_rx: Option<Rx<Vec<u8>>>,
     tun_to_transport_task: Option<JoinHandle<()>>,
     transport_to_local_task: Option<JoinHandle<()>>,
     peer: Arc<Tunn>,
@@ -45,7 +45,7 @@ impl Multicaster {
         wg: Arc<DynamicWg>,
         wg_sock: Arc<SocketAddr>,
         socket_pool: Arc<SocketPool>,
-        chan: Chan<Vec<u8>>,
+        tun_rx: Rx<Vec<u8>>,
         peer: Arc<Tunn>,
         multicaster_ip: Arc<MulticasterIp>,
     ) -> Result<Self, String> {
@@ -67,7 +67,7 @@ impl Multicaster {
             transport_socket: Arc::new(transport_socket),
             local_socket,
             wg_sock,
-            chan: Arc::new(RwLock::new(chan)),
+            tun_rx: Some(tun_rx),
             tun_to_transport_task: None,
             transport_to_local_task: None,
             peer: peer.clone(),
@@ -77,8 +77,13 @@ impl Multicaster {
     }
 
     pub async fn start_multicaster(&mut self) {
+        let Some(tun_rx) = self.tun_rx.take() else {
+            telio_log_warn!("multicast can be started once for now");
+            return;
+        };
+
         self.tun_to_transport_task = Some(tokio::spawn(Multicaster::tun_to_transport(
-            self.chan.clone(),
+            tun_rx,
             self.wg_if.clone(),
             self.transport_socket.clone(),
             self.nat_map.clone(),
@@ -104,14 +109,14 @@ impl Multicaster {
     }
 
     pub async fn tun_to_transport(
-        read_chan: Arc<RwLock<Chan<Vec<u8>>>>,
+        mut tun_rx: Rx<Vec<u8>>,
         wg: Arc<DynamicWg>,
         transport_sock: Arc<UdpSocket>,
         nat_map: Arc<RwLock<HashMap<u16, SocketAddr>>>,
         multicaster_ip: Arc<MulticasterIp>,
     ) {
         loop {
-            let mut packet = match read_chan.write().await.rx.recv().await {
+            let mut packet = match tun_rx.recv().await {
                 Some(packet) => packet,
                 None => {
                     telio_log_error!("failed to receive multicast packet from tun channel");
@@ -119,15 +124,15 @@ impl Multicaster {
                 }
             };
 
+            telio_log_debug!("rx from tun");
+
             // Extracting UDP destination port from the packet
             let key = u16::from_be_bytes([
                 *(packet.get(IPV4_HEADER + UDP_DEST_OFFSET).unwrap_or(&0)),
                 *(packet.get(IPV4_HEADER + UDP_DEST_OFFSET + 1).unwrap_or(&0)),
             ]);
 
-            let dest_sock = if let Some(mut ip_packet) =
-                MutableIpv4Packet::new(packet.get_mut(IPV4_HEADER..).unwrap_or(&mut []))
-            {
+            let dest_sock = if let Some(mut ip_packet) = MutableIpv4Packet::new(&mut packet) {
                 let dest_sock = if ip_packet.get_destination() == multicaster_ip.ipv4 {
                     let (dest_ip, dest_port) =
                         if let Some(sock_addr) = nat_map.read().await.get(&key) {
@@ -154,8 +159,9 @@ impl Multicaster {
 
             if let Some(sock) = dest_sock {
                 // Is a unicast response
-                if let Some(mut udp_packet) =
-                    MutableUdpPacket::new(packet.get_mut(IPV4_HEADER..).unwrap_or(&mut []))
+                if let Some(mut udp_packet) = packet
+                    .get_mut(IPV4_HEADER..)
+                    .and_then(MutableUdpPacket::new)
                 {
                     udp_packet.set_destination(sock.1);
                     telio_log_debug!("Unicast -> port {:?}", udp_packet.get_destination());
@@ -232,8 +238,9 @@ impl Multicaster {
                 Ok(bytes) => bytes,
             };
 
-            let ip_addrs = if let Some(mut ip_packet) =
-                MutableIpv4Packet::new(receiving_buffer.get_mut(..IPV4_HEADER).unwrap_or(&mut []))
+            let ip_addrs = if let Some(mut ip_packet) = receiving_buffer
+                .get_mut(..bytes_read)
+                .and_then(MutableIpv4Packet::new)
             {
                 let sender_ip = ip_packet.get_source();
                 let dest = {
