@@ -1,4 +1,5 @@
 use boringtun::noise::{Tunn, TunnResult};
+use futures::future::join_all;
 use pnet_packet::ipv4::{checksum, MutableIpv4Packet};
 use pnet_packet::udp::MutableUdpPacket;
 use std::collections::hash_map::DefaultHasher;
@@ -12,7 +13,7 @@ use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn};
 use telio_wg::{DynamicWg, WireGuard};
 use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 use tracing::debug;
 
 use crate::multicast_peer::MulticasterIp;
@@ -201,8 +202,10 @@ impl Multicaster {
                         })
                         .collect::<Vec<IpAddr>>()
                 });
+                debug!(scast = "muti2trans", ?peers, "fanout");
                 let tun_sock = transport_sock.clone();
-                let _ = peers.map(|peer_vec| async move {
+
+                let _ = join_all(peers.map(|peer_vec| async move {
                     for addr in peer_vec {
                         debug!(scast = "muti2trans", dest=?addr, "transport");
                         let res = tun_sock
@@ -216,7 +219,8 @@ impl Multicaster {
                             );
                         }
                     }
-                });
+                }))
+                .await;
             }
         }
     }
