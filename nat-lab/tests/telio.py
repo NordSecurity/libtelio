@@ -777,9 +777,12 @@ class Client:
     async def stop_device(self, timeout: float = 5) -> None:
         await asyncio.wait_for(self._write_command(["dev", "stop"]), timeout)
         self._interface_configured = False
-        assert Counter(self.get_runtime().get_started_tasks()) == Counter(
-            self.get_runtime().get_stopped_tasks()
-        ), "started tasks and stopped tasks differ!"
+        started_tasks = self.get_runtime().get_started_tasks()
+        stopped_tasks = self.get_runtime().get_stopped_tasks()
+        diff = Counter(started_tasks) - Counter(stopped_tasks)
+        assert (
+            diff == Counter()
+        ), f"started tasks and stopped tasks differ! diff: {diff} | started tasks: {started_tasks} | stopped tasks: {stopped_tasks}"
 
     def get_node_state(self, public_key: str) -> Optional[PeerInfo]:
         return self.get_runtime().get_peer_info(public_key)
