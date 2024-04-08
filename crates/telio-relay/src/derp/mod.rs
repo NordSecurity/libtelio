@@ -201,6 +201,7 @@ impl State {
         // Stop attempts to connect
         if let Some(c) = self.connecting.take() {
             c.abort();
+            let _ = c.await;
         }
         // Stop current connection
         if let Some(c) = self.conn.take() {
