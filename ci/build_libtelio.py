@@ -28,7 +28,7 @@ MOOSE_MAP = {
 }
 
 PROJECT_CONFIG = rutils.Project(
-    rust_version="1.72.1",
+    rust_version="1.77.2",
     root_dir=PROJECT_ROOT,
     working_dir=WORKING_DIR,
 )
