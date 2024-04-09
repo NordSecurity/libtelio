@@ -894,6 +894,7 @@ impl MeshnetEntites {
             }};
         }
 
+        self.multicaster.stop().await;
         if let Some(direct) = self.direct.take() {
             // Arc dependency on CrossPingCheck
             stop_arc_entity!(direct.upgrade_sync, "UpgradeSync");

@@ -17,14 +17,11 @@ use tokio::{
     time::{sleep, Duration},
 };
 use tracing::error;
-use tracing::level_filters::LevelFilter;
-use tracing_appender;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{self, EnvFilter};
 
 use crate::nord::{Error as NordError, Nord, OAuth};
 
-use std::env;
 use std::fs::File;
 use std::str::FromStr;
 use std::time::SystemTime;

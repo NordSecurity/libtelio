@@ -540,7 +540,7 @@ async fn build_requested_peers_list<
         let multicast_peer_public_key = multicast_peer.public_key;
         let requested_multicast_peer = RequestedPeer {
             peer: multicast_peer,
-            local_direct_endpoint: None,
+            endpoint: None,
         };
         requested_peers.insert(multicast_peer_public_key, requested_multicast_peer);
     }
@@ -1243,6 +1243,8 @@ mod tests {
 
         expect_add_to_port_whitelist(&mut firewall, pub_key_3);
 
+        expect_add_to_peer_whitelist(&mut firewall, vpeer_pub_key);
+
         consolidate_firewall(&requested_state, &firewall, Some(vpeer_pub_key))
             .await
             .unwrap();
@@ -1286,6 +1288,8 @@ mod tests {
         expect_remove_from_peer_whitelist(&mut firewall, pub_key_4);
         expect_remove_from_port_whitelist(&mut firewall, pub_key_4);
 
+        expect_add_to_peer_whitelist(&mut firewall, vpeer_pub_key);
+
         consolidate_firewall(&requested_state, &firewall, Some(vpeer_pub_key))
             .await
             .unwrap();
@@ -1313,6 +1317,8 @@ mod tests {
 
         expect_add_to_peer_whitelist(&mut firewall, pub_key_2);
 
+        expect_add_to_peer_whitelist(&mut firewall, vpeer_pub_key);
+
         consolidate_firewall(&requested_state, &firewall, Some(vpeer_pub_key))
             .await
             .unwrap();
@@ -1334,6 +1340,8 @@ mod tests {
 
         expect_get_peer_whitelist(&mut firewall, vec![]);
         expect_get_port_whitelist(&mut firewall, vec![]);
+
+        expect_add_to_peer_whitelist(&mut firewall, vpeer_pub_key);
 
         consolidate_firewall(&requested_state, &firewall, Some(vpeer_pub_key))
             .await
@@ -1359,6 +1367,8 @@ mod tests {
         expect_get_port_whitelist(&mut firewall, vec![]);
 
         expect_remove_from_peer_whitelist(&mut firewall, pub_key_1);
+
+        expect_add_to_peer_whitelist(&mut firewall, vpeer_pub_key);
 
         consolidate_firewall(&requested_state, &firewall, Some(vpeer_pub_key))
             .await

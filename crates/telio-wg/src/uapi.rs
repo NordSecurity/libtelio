@@ -484,7 +484,7 @@ impl Peer {
     /// Returns whether the peer is stun
     pub fn is_stun_peer(&self) -> bool {
         self.allowed_ips
-            .get(0)
+            .first()
             .map(|ip| ip.network().eq(&Ipv4Addr::new(100, 64, 0, 4)))
             .unwrap_or(false)
     }

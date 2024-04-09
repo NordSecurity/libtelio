@@ -4,7 +4,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use telio_crypto::{PublicKey, SecretKey};
 use telio_task::io::chan::Tx;
-use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn};
+use telio_utils::{telio_log_error, telio_log_warn};
 use telio_wg::uapi::Peer;
 use tokio::net::UdpSocket;
 use tokio::task::JoinHandle;

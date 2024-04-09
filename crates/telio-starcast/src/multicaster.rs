@@ -13,7 +13,7 @@ use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn};
 use telio_wg::{DynamicWg, WireGuard};
 use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
-use tokio::task::{JoinHandle, JoinSet};
+use tokio::task::JoinHandle;
 use tracing::debug;
 
 use crate::multicast_peer::MulticasterIp;
@@ -195,7 +195,7 @@ impl Multicaster {
                                 && !peer.is_multicast_peer()
                                 && !peer.is_stun_peer()
                             {
-                                peer.allowed_ips.get(0).map(|allowed_ip| allowed_ip.ip())
+                                peer.allowed_ips.first().map(|allowed_ip| allowed_ip.ip())
                             } else {
                                 None
                             }
@@ -272,12 +272,11 @@ impl Multicaster {
                 {
                     let natted_port =
                         Multicaster::map_to_port(&ip_src, &ip_dst, udp_packet.get_destination());
-                    if !nat_map.write().await.contains_key(&natted_port) {
-                        nat_map.write().await.insert(
-                            natted_port,
-                            SocketAddr::new(ip_src, udp_packet.get_source()),
-                        );
-                    }
+                    nat_map
+                        .write()
+                        .await
+                        .entry(natted_port)
+                        .or_insert_with(|| SocketAddr::new(ip_src, udp_packet.get_source()));
                     udp_packet.set_source(natted_port);
                 }
                 // Setting it as null to ignore L4 checksum as it is internal transportation
