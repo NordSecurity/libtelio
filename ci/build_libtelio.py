@@ -18,6 +18,7 @@ from rust_build_utils.rust_utils_config import GLOBAL_CONFIG
 import rust_build_utils.darwin_build_utils as dbu
 import rust_build_utils.android_build_utils as abu
 from env import LIBTELIO_ENV_MOOSE_RELEASE_TAG
+from env import LIBTELIO_ENV_UNIFFI_GENERATORS_TAG
 
 # Need to normalise name in moose, LLT-1486
 MOOSE_MAP = {
@@ -32,20 +33,6 @@ PROJECT_CONFIG = rutils.Project(
     root_dir=PROJECT_ROOT,
     working_dir=WORKING_DIR,
 )
-
-
-def copy_bindings(config):
-    # TODO(Mathias): reenable when packaging solution is done
-    pass
-    # if "binding_src" in LIBTELIO_CONFIG[config.target_os]:
-    #    telio_bindings = f"{PROJECT_CONFIG.root_dir}/{LIBTELIO_CONFIG[config.target_os]['binding_src']}"
-    #    binding_destination = (
-    #        f"{PROJECT_CONFIG.root_dir}/{LIBTELIO_CONFIG[config.target_os]['binding_dest']}"
-    #        + telio_bindings.split("/")[-1]
-    #    )
-    # if os.path.exists(binding_destination):
-    #     rutils.remove_tree_or_file(binding_destination)
-    # rutils.copy_tree_or_file(telio_bindings, binding_destination)
 
 
 """
@@ -211,40 +198,45 @@ def main() -> None:
 
     if args.command == "build":
         exec_build(args)
+    elif args.command == "bindings":
+        rutils.generate_uniffi_bindings(
+            PROJECT_CONFIG,
+            LIBTELIO_ENV_UNIFFI_GENERATORS_TAG,
+            ["python", "cs", "go", "swift", "kotlin"],
+            "src/libtelio.udl",
+        )
     elif args.command == "lipo":
         exec_lipo(args)
     elif args.command == "aar":
         abu.generate_aar(PROJECT_CONFIG, args)
     elif args.command == "xcframework":
-        # TODO(Mathias): reenable when packaging solution is done
-        pass
-        # headers = {
-        #    Path("libtelio/module.modulemap"): PROJECT_CONFIG.get_root_dir()
-        #    / "contrib/darwin/module.modulemap",
-        #    Path("libtelio/telio.h"): PROJECT_CONFIG.get_root_dir()
-        #    / "ffi/bindings/telio.h",
-        # }
-        # dbu.create_xcframework(
-        #    PROJECT_CONFIG, args.debug, "libtelioFFI", headers, "libtelio.a"
-        # )
+        headers = {
+            Path("libtelio/module.modulemap"): Path(
+                os.path.join(PROJECT_CONFIG.get_bindings_dir(), "telioFFI.modulemap")
+            ),
+            Path("libtelio/telioFFI.h"): Path(
+                os.path.join(PROJECT_CONFIG.get_bindings_dir(), "telioFFI.h")
+            ),
+        }
+        dbu.create_xcframework(
+            PROJECT_CONFIG, args.debug, "libtelioFFI", headers, "libtelio.dylib"
+        )
     elif args.command == "build-ios-simulator-stubs":
-        # TODO(Mathias): reenable when packaging solution is done
-        pass
-        # dbu.build_stub_ios_simulator_libraries(
-        #    PROJECT_CONFIG,
-        #    args.debug,
-        #    args.header or PROJECT_CONFIG.get_root_dir() / "ffi/bindings/telio.h",
-        #    "libtelio.a",
-        # )
+        dbu.build_stub_ios_simulator_libraries(
+            PROJECT_CONFIG,
+            args.debug,
+            args.header
+            or Path(os.path.join(PROJECT_CONFIG.get_bindings_dir(), "telioFFI.h")),
+            "libtelio.dylib",
+        )
     elif args.command == "build-tvos-simulator-stubs":
-        # TODO(Mathias): reenable when packaging solution is done
-        pass
-        # dbu.build_stub_tvos_simulator_libraries(
-        #    PROJECT_CONFIG,
-        #    args.debug,
-        #    args.header or PROJECT_CONFIG.get_root_dir() / "ffi/bindings/telio.h",
-        #    "libtelio.a",
-        # )
+        dbu.build_stub_tvos_simulator_libraries(
+            PROJECT_CONFIG,
+            args.debug,
+            args.header
+            or Path(os.path.join(PROJECT_CONFIG.get_bindings_dir(), "telioFFI.h")),
+            "libtelio.dylib",
+        )
     else:
         assert False, f"command '{args.command}' not supported"
 
@@ -387,7 +379,6 @@ def call_build(config):
         LIBTELIO_CONFIG[config.target_os].get("build_args", None),
     )
 
-    copy_bindings(config)
     create_debug_symbols(config)
     strip_binaries(config)
 

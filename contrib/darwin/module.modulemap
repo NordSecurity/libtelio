@@ -1,4 +1,0 @@
-module libtelioFFI {
-  umbrella "."
-  export *
-}

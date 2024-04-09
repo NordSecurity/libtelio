@@ -71,6 +71,7 @@ jobs:
       - name: Build libtelio
         run: python3 ci/build_libtelio.py build ${{ matrix.target_os }} ${{ matrix.arch }} --msvc
       - name: Replace and Test version
+        if: ${{ matrix.target_os != 'windows' }}
         run: |
           if [[ ${{ matrix.target_os }} == "macos" ]]; then
               DIST_PATH="dist/darwin/macos"
@@ -83,13 +84,12 @@ jobs:
           ./ci/insert_libtelio_version.py -n TEST_VERSION -p ./${DIST_PATH}
           ./${DIST_PATH}/release/${{ matrix.arch }}/tcli
           head -n 1 tcli.log | grep -a "TEST_VERSION"
-        if: ${{ matrix.target_os != 'windows' }}
       - name: Replace and Test version
+        if: ${{ matrix.target_os == 'windows' }}
         run: |
           python ./ci/insert_libtelio_version.py -n TEST_VERSION -p ./dist/windows
           Start-Process -FilePath dist/windows/release/x86_64/tcli.exe -WindowStyle Hidden
           type tcli.log | findstr /C:"TEST_VERSION"
-        if: ${{ matrix.target_os == 'windows' }}
       - uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
         with:
           name: libtelio-build-${{ matrix.target_os }}-${{ matrix.arch }}-with-replaced-version

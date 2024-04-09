@@ -113,7 +113,7 @@ typedef u32 TtlValue;
 [Custom]
 typedef boolean FeatureBoringtunResetConns;
 
-namespace libtelio {
+namespace telio {
     /// Set the global logger.
     /// # Parameters
     /// - `log_level`: Max log level to log.
