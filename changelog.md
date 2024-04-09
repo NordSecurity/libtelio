@@ -1,3 +1,10 @@
+### UNRELEASED
+### **Bravas**
+---
+* LLT-5068: Bump MOOSE to v4.0.1 
+
+<br>
+
 ### v4.3.0
 ### **Bravas**
 ---
