@@ -388,7 +388,7 @@ impl StateEgress {
             telio_log_warn!("Failed to sync up proxy sockets due to closed channel: {e:?}");
         }
 
-        let peer_sockets = self.replaced_sockets.entry(pk).or_insert_with(Vec::new);
+        let peer_sockets = self.replaced_sockets.entry(pk).or_default();
         let old_socket_addr = self
             .sockets
             .get(&pk)

@@ -260,7 +260,7 @@ async fn consolidate_wg_peers<
             // Initiate session keeper to start sending data between peers connected directly
             if let (Some(sk), Some(mesh_ip1), maybe_mesh_ip2) = (
                 session_keeper,
-                requested_peer.peer.allowed_ips.get(0),
+                requested_peer.peer.allowed_ips.first(),
                 requested_peer.peer.allowed_ips.get(1),
             ) {
                 let target = if features.ipv6 {
@@ -595,7 +595,7 @@ async fn build_requested_meshnet_peers_list<
             let persistent_keepalive_interval = requested_state.keepalive_periods.proxying;
             let endpoint = proxy_endpoints
                 .get(&public_key)
-                .and_then(|eps| eps.get(0))
+                .and_then(|eps| eps.first())
                 .cloned();
 
             // Keep track of meshnet IP needed for instance for QoS analytics
@@ -831,7 +831,7 @@ async fn select_endpoint_for_peer<'a>(
                 public_key,
                 time_since_last_rx,
             );
-            Ok((proxy_endpoint.get(0).copied(), None))
+            Ok((proxy_endpoint.first().copied(), None))
         }
 
         // Just proxying, nothing to upgrade to...
@@ -841,7 +841,7 @@ async fn select_endpoint_for_peer<'a>(
                 public_key,
                 time_since_last_rx,
             );
-            Ok((proxy_endpoint.get(0).copied(), None))
+            Ok((proxy_endpoint.first().copied(), None))
         }
 
         // Proxying, but we have something to upgrade to. Lets try to upgrade.
@@ -1024,7 +1024,7 @@ mod tests {
         let mut wg_mock = MockWireGuard::new();
         let mut pq_mock = MockPostQuantum::new();
         let secret_key_a = SecretKey::gen();
-        let secret_key_a_cpy = secret_key_a.clone();
+        let secret_key_a_cpy = secret_key_a;
 
         wg_mock.expect_get_interface().returning(move || {
             Ok(Interface {
