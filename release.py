@@ -140,7 +140,7 @@ def update_changelog(tag):
         with open(changelog_file) as f:
             content = f.read()
 
-        content = re.sub(r"### UNRELEASED", tag, content, flags=re.IGNORECASE)
+        content = re.sub(r"### UNRELEASED", "### {}".format(tag), content, flags=re.IGNORECASE)
 
         with open(changelog_file, "w") as f:
             f.write(content)
