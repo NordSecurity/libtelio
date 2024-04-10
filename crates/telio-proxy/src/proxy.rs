@@ -190,6 +190,12 @@ impl UdpProxy {
         let _ = self.task_ingress.stop().await.resume_unwind();
     }
 
+    #[cfg(test)]
+    pub async fn stop_reverse(self) {
+        let _ = self.task_egress.stop().await.resume_unwind();
+        let _ = self.task_ingress.stop().await.resume_unwind();
+    }
+
     /// Notify proxy about network change
     pub async fn on_network_change(&self) {
         let _ = task_exec!(&self.task_egress, async move |state| {
@@ -463,7 +469,9 @@ impl Runtime for StateIngress {
 
                 let _ = self.sockets.insert(pk, sock);
             }
-
+            else => {
+                telio_log_warn!("StateIngress: no events to wait on ...");
+            },
         }
 
         Self::next()
@@ -523,6 +531,9 @@ impl Runtime for StateEgress {
             (pk, _, _)= update => {
                 self.replace_socket(pk).await;
             },
+            else => {
+                telio_log_warn!("StateEgress: closed input channel");
+            },
         }
         Self::next()
     }
@@ -545,6 +556,38 @@ mod tests {
         .await;
 
         ts.stop().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_graceful_shutdown() {
+        use telio_crypto::SecretKey;
+
+        for i in 0..1 {
+            let TestSystem { wg, proxy, relay } = TestSystem::start().await;
+
+            drop(relay);
+
+            let mut pks = Vec::new();
+            for _ in 0..2 {
+                let pk = SecretKey::gen().public();
+                pks.push(pk);
+            }
+
+            proxy
+                .configure(Config {
+                    wg_port: Some(wg.addr().port()),
+                    peers: pks.iter().copied().collect(),
+                })
+                .await
+                .expect("UdpProxy::configure() failed");
+
+            // Shouldn't panic in any order
+            if i % 2 == 0 {
+                proxy.stop().await;
+            } else {
+                proxy.stop_reverse().await;
+            }
+        }
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
