@@ -1,7 +1,7 @@
 use hashlink::lru_cache::RawOccupiedEntryMut;
 use hashlink::{linked_hash_map::RawEntryMut, LinkedHashMap};
 use rustc_hash::FxHasher;
-use std::hash::{BuildHasher, Hasher};
+use std::hash::BuildHasher;
 use std::{
     borrow::Borrow,
     hash::{BuildHasherDefault, Hash},
@@ -185,9 +185,7 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
     /// Gets the given key’s corresponding entry in the map for in-place manipulation.
     #[inline(always)]
     pub fn entry(&mut self, key: Key) -> Entry<'_, Key, Value> {
-        let mut state = self.map.hasher().build_hasher();
-        key.hash(&mut state);
-        let hash = state.finish();
+        let hash = self.map.hasher().hash_one(&key);
         match self.map.raw_entry_mut().from_key_hashed_nocheck(hash, &key) {
             RawEntryMut::Occupied(mut e) => {
                 let now = Instant::now();

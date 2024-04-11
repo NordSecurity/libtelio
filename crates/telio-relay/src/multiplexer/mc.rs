@@ -93,7 +93,7 @@ impl MultiChannel {
         let ids: HashSet<_> = self
             .channels
             .iter()
-            .filter(|(_, v)| { &v.tx_is_closed }() || v.rx.is_terminated())
+            .filter(|(_, v)| { v.tx_is_closed.as_ref() }() || v.rx.is_terminated())
             .map(|(k, _)| *k)
             .collect();
 

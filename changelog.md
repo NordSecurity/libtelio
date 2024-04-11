@@ -32,6 +32,7 @@
 * LLT-5068: Bump Moose 4.0.1
 * LLT-4858: NAT state analytics reporting
 * LLT-5038: Add doc rs as in-repo documentation system skeleton
+* LLT-5034: Upgrade rust toolchain to v1.77.2
 
 <br>
 
