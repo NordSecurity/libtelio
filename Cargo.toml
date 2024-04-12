@@ -182,3 +182,8 @@ telio-utils = { version = "0.1.0", path = "./crates/telio-utils" }
 telio-wg = { version = "0.1.0", path = "./crates/telio-wg" }
 telio-pq = { version = "0.1.0", path = "./crates/telio-pq" }
 telio-pmtu = { version = "0.1.0", path = "./crates/telio-pmtu" }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
