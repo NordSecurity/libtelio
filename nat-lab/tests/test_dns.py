@@ -934,3 +934,40 @@ def all_cases(name: str) -> List[str]:
     return [
         "".join(i) for i in itertools.product(*([c.lower(), c.upper()] for c in name))
     ]
+
+
+@pytest.mark.asyncio
+async def test_dns_no_error_return_code() -> None:
+    async with AsyncExitStack() as exit_stack:
+        FIRST_DNS_SERVER = "10.0.80.83"
+        SECOND_DNS_SERVER = "10.0.80.82"
+
+        env = await setup_mesh_nodes(
+            exit_stack,
+            [
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    ip_stack=IPStack.IPv4v6,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_1,
+                        derp_1_limits=ConnectionLimits(1, 1),
+                    ),
+                )
+            ],
+        )
+        client_alpha = env.clients[0]
+        connection_alpha = env.connections[0].connection
+
+        await client_alpha.enable_magic_dns([FIRST_DNS_SERVER, SECOND_DNS_SERVER])
+        await asyncio.sleep(1)
+
+        await query_dns_port(
+            connection_alpha,
+            "53",
+            "error-with-noerror-return-code.com",
+            dns_server=LIBTELIO_DNS_IPV4,
+        )
+
+        await client_alpha.wait_for_log(
+            "Got an error response with NoError code for error-with-noerror-return-code.com., this should not happen so converting to ServFail"
+        )
