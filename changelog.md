@@ -1,3 +1,10 @@
+### v4.3.2
+### **Bravas**
+---
+* LLT-5078: Fix telio-proxy panic 
+
+<br>
+
 ### v4.3.1
 ### **Bravas**
 ---
