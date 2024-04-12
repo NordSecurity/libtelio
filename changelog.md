@@ -1,3 +1,9 @@
+### v4.2.7
+---
+* LLT-5078: Fix telio-proxy panic 
+
+<br>
+
 ### v4.2.6
 ---
 * LLT-5002: Fix preshared key parsing logic
