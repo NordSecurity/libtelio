@@ -11,7 +11,7 @@ test-adapter = []
 
 [dependencies]
 slog-stdlog = "4.1.0"
-wireguard-uapi = { version = "2.0.4", features = ["xplatform"]}
+wireguard-uapi = { version = "2.0.4", features = ["xplatform"], default-features = false }
 
 async-trait.workspace = true
 boringtun.workspace = true
