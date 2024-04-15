@@ -35,6 +35,7 @@
 * LLT-5034: Upgrade rust toolchain to v1.77.2
 * LLT-4924: Enable size reduction compiler flags
 * LLT-5078: Fix telio-proxy panic
+* LLT-5039: Make connection reporting unaffected by system time changes
 
 <br>
 

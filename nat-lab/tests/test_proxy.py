@@ -31,7 +31,7 @@ async def test_proxy_endpoint_map_update() -> None:
         )
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await testing.wait_lengthy(ping.wait_for_next_ping())
         async with Ping(beta_connection, alpha.ip_addresses[0]).run() as ping:
             await testing.wait_long(ping.wait_for_next_ping())
 

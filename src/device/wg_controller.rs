@@ -1550,6 +1550,7 @@ mod tests {
                         rx_bytes: None,
                         tx_bytes: None,
                         time_since_last_handshake: None,
+                        time_since_last_rx: None,
                         preshared_key: None,
                     }))
                     .return_once(|_| Ok(()));

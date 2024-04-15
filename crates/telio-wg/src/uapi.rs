@@ -42,6 +42,10 @@ pub struct Peer {
     pub allowed_ips: Vec<IpNetwork>,
     /// Number of bytes received or `None`(unused on Set)
     pub rx_bytes: Option<u64>,
+    /// Time since last byte has been received from this peer. This is a synthetic
+    /// field, not present in the wireguard natively. It will be filled in in the
+    /// wg module when syncthing.
+    pub time_since_last_rx: Option<Duration>,
     /// Number of bytes transmitted or `None`(unused on Set)
     pub tx_bytes: Option<u64>,
     /// Time since last handshakeor `None`, differs from WireGuard field meaning
@@ -66,6 +70,7 @@ impl From<get::Peer> for Peer {
                 .unwrap_or_default(),
             rx_bytes: Some(item.rx_bytes),
             tx_bytes: Some(item.tx_bytes),
+            time_since_last_rx: None,
             time_since_last_handshake: Peer::calculate_time_since_last_handshake(Some(
                 item.last_handshake_time,
             )),
@@ -366,7 +371,14 @@ impl Peer {
         //            the peer is connect_ed_ vs connect_ing_, simply using
         //            Reject-After-Time + jitter should be fine.
 
-        self.time_since_last_handshake
+        // NOTICE: since time_since_last_handshake is impacted by the changes
+        // to the system time and what is the impact depends on the type of the
+        // wireguard implementation it was decided to use time since last
+        // received packet instead. This is a property that we track fully internaly
+        // in the libtelio which is based on monotonic time source that is not
+        // influenced by any system time change.
+
+        self.time_since_last_rx
             .map_or(false, |d| d < REJECT_AFTER_TIME + REKEY_TIMEOUT_JITTER)
     }
 
@@ -819,5 +831,28 @@ errno=0
             ],
             dual_addresses
         );
+    }
+
+    #[test]
+    fn test_is_connected() {
+        let peer = Peer {
+            time_since_last_rx: None,
+            ..Default::default()
+        };
+        assert!(!peer.is_connected());
+
+        let peer = Peer {
+            time_since_last_rx: Some(Duration::from_secs(181)),
+            ..Default::default()
+        };
+        assert!(!peer.is_connected());
+
+        for s in 0..=180 {
+            let peer = Peer {
+                time_since_last_rx: Some(Duration::from_secs(s)),
+                ..Default::default()
+            };
+            assert!(peer.is_connected());
+        }
     }
 }
