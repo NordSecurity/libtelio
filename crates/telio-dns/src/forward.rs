@@ -215,8 +215,7 @@ impl Authority for ForwardAuthority {
         debug_assert!(self.origin.zone_of(name));
 
         telio_log_debug!("forwarding lookup: {} {}", name, rtype);
-        let name: LowerName = name.clone();
-        let resolve = self.resolver.lookup(name, rtype).await;
+        let resolve = self.resolver.lookup(name.clone(), rtype).await;
 
         resolve
             .map(ForwardLookup)
@@ -227,7 +226,25 @@ impl Authority for ForwardAuthority {
                     negative_ttl: _,
                     response_code,
                     trusted: _,
-                } => LookupError::from(*response_code),
+                } => {
+                    if *response_code == ResponseCode::NoError {
+                        telio_log_debug!("Got an error response with NoError code for {name}, this should not happen so converting to ServFail");
+                        // Failed query with no error - convert that to a real error,
+                        // otherwise the LookupError::from will panic in debug builds.
+                        // If we use a number from the 'private use' range:
+                        // https://datatracker.ietf.org/doc/html/rfc2929#section-2.3 like
+                        // LookupError::from(ResponseCode::Unknown(3841))
+                        // the trust-dns will end up looping until the requests with some other error
+                        // is returned. This will make the original dns request (eg. by nslookup or dig or some app)
+                        // never complete. To avoid that, lets return ServFail which will produce
+                        // an empty respones.
+                        LookupError::from(ResponseCode::ServFail)
+                    } else {
+                        LookupError::from(*response_code)
+                    }
+                }
+                // NOTE: this is probably incorrect, and should be at least 24, most likely
+                // in range 3841-4095 ('private use' range), instead of '0'.
                 _ => LookupError::from(ResponseCode::Unknown(0)),
             })
     }
