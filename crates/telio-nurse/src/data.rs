@@ -6,7 +6,7 @@ use telio_model::{
 };
 
 /// Information about a heartbeat, for analytics.
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub struct HeartbeatInfo {
     /// Is meshnet enabled
     pub meshnet_enabled: bool,
@@ -28,6 +28,10 @@ pub struct HeartbeatInfo {
     pub nat_type: String,
     /// List of nat types as Strings of all connected peers
     pub peer_nat_types: Vec<String>,
+    /// Nat traversal connection info
+    pub nat_traversal_conn_info: String,
+    /// Derp connection info
+    pub derp_conn_info: String,
 }
 
 /// Analytics data

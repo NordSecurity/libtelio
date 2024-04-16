@@ -49,6 +49,7 @@ def _generate_setup_parameter_pair(
                 direct=Direct(providers=endpoint_providers),
                 nurse=Nurse(
                     fingerprint=f"{conn_tag}",
+                    enable_nat_traversal_conn_data=True,
                     enable_nat_type_collection=True,
                 ),
                 lana=Lana(prod=False, event_path="/event.db"),

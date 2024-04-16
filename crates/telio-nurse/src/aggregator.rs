@@ -4,10 +4,11 @@ use tokio::{sync::Mutex, time::Instant};
 
 use serde::{ser::SerializeTuple, Serialize};
 
+use crate::config::AggregatorConfig;
 use telio_crypto::{smaller_key_in_meshnet_canonical_order, PublicKey};
 use telio_model::{
     config::{DerpAnalyticsEvent, RelayConnectionChangeReason, RelayState},
-    features::{EndpointProvider, FeatureNurse},
+    features::EndpointProvider,
     HashMap,
 };
 use telio_utils::{telio_log_debug, telio_log_warn};
@@ -63,15 +64,15 @@ impl From<EndpointProvider> for EndpointType {
 // Possible connectivity state changes
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct PeerEndpointTypes {
-    local_ep: EndpointType,
-    remote_ep: EndpointType,
+    pub local_ep: EndpointType,
+    pub remote_ep: EndpointType,
 }
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct PeerConnectionData {
-    endpoints: PeerEndpointTypes,
-    rx_bytes: u64,
-    tx_bytes: u64,
+    pub endpoints: PeerEndpointTypes,
+    pub rx_bytes: u64,
+    pub tx_bytes: u64,
 }
 
 const ENDPOINT_BIT_FIELD_WIDTH: u16 = 4;
@@ -101,8 +102,8 @@ impl Serialize for PeerConnectionData {
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct RelayConnectionData {
-    state: RelayConnectionState,
-    reason: RelayConnectionChangeReason,
+    pub state: RelayConnectionState,
+    pub reason: RelayConnectionChangeReason,
 }
 
 impl Serialize for RelayConnectionData {
@@ -121,10 +122,10 @@ impl Serialize for RelayConnectionData {
 // Ready to send connection data for some period of time
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct RelayConnDataSegment {
-    server_address: SocketAddr,
-    start: Instant, // to ensure the segments are unique
-    duration: Duration,
-    connection_data: RelayConnectionData,
+    pub server_address: SocketAddr,
+    pub start: Instant, // to ensure the segments are unique
+    pub duration: Duration,
+    pub connection_data: RelayConnectionData,
 }
 
 impl RelayConnDataSegment {
@@ -144,10 +145,10 @@ impl RelayConnDataSegment {
 // Ready to send connection data for some period of time
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct PeerConnDataSegment {
-    node: PublicKey,
-    start: Instant, // to ensure the segments are unique
-    duration: Duration,
-    connection_data: PeerConnectionData,
+    pub node: PublicKey,
+    pub start: Instant, // to ensure the segments are unique
+    pub duration: Duration,
+    pub connection_data: PeerConnectionData,
 }
 
 impl PeerConnDataSegment {
@@ -184,8 +185,7 @@ struct AggregatorData {
 pub struct ConnectivityDataAggregator {
     data: Mutex<AggregatorData>,
 
-    aggregate_relay_events: bool,
-    aggregate_nat_traversal_events: bool,
+    config: AggregatorConfig,
 
     wg_interface: Arc<dyn WireGuard>,
 }
@@ -203,7 +203,7 @@ pub(crate) struct AggregatorCollectedSegments {
 impl ConnectivityDataAggregator {
     /// Create a new DataConnectivityAggregator instance
     pub fn new(
-        nurse_features: Option<FeatureNurse>,
+        config: AggregatorConfig,
         wg_interface: Arc<dyn WireGuard>,
         local_key: PublicKey,
     ) -> ConnectivityDataAggregator {
@@ -215,13 +215,7 @@ impl ConnectivityDataAggregator {
                 relay_segments: Vec::new(),
                 local_key,
             }),
-            aggregate_relay_events: nurse_features
-                .as_ref()
-                .map(|features| features.enable_relay_conn_data)
-                .unwrap_or(false),
-            aggregate_nat_traversal_events: nurse_features
-                .map(|features| features.enable_nat_traversal_conn_data)
-                .unwrap_or(false),
+            config,
             wg_interface,
         }
     }
@@ -266,7 +260,7 @@ impl ConnectivityDataAggregator {
     }
 
     async fn change_peer_state_common(&self, event: &AnalyticsEvent, endpoints: PeerEndpointTypes) {
-        if !self.aggregate_nat_traversal_events {
+        if !self.config.nat_traversal_events {
             return;
         }
 
@@ -344,7 +338,7 @@ impl ConnectivityDataAggregator {
     /// * `server_state` - Current derp server state.
     /// * `reason` - Reason of the state change.
     pub async fn change_relay_state(&self, event: DerpAnalyticsEvent) {
-        if !self.aggregate_relay_events {
+        if !self.config.relay_events {
             return;
         }
 
@@ -480,7 +474,7 @@ mod tests {
 
     use csv::WriterBuilder;
     use telio_crypto::SecretKey;
-    use telio_model::{config::Server, mesh::NodeState};
+    use telio_model::{config::Server, features::FeatureNurse, mesh::NodeState};
     use telio_utils::DualTarget;
     use telio_wg::{
         uapi::{Interface, Peer, PeerState},
@@ -577,7 +571,7 @@ mod tests {
         };
 
         let connectivity_data_aggregator = ConnectivityDataAggregator::new(
-            Some(nurse_features),
+            AggregatorConfig::new(&nurse_features),
             Arc::new(wg_interface),
             local_key,
         );

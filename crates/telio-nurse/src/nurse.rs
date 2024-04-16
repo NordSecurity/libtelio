@@ -1,18 +1,22 @@
 use std::collections::HashSet;
 
 use async_trait::async_trait;
+use std::sync::Arc;
 use telio_crypto::{PublicKey, SecretKey};
 use telio_lana::*;
 use telio_model::event::Event;
 use telio_task::{
     io::{chan, mc_chan, Chan, McChan},
-    task_exec, Runtime, RuntimeExt, Task, WaitResponse,
+    task_exec, ExecError, Runtime, RuntimeExt, Task, WaitResponse,
 };
 use telio_utils::{
     telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn,
 };
 use telio_wg::uapi::AnalyticsEvent;
 use uuid::Uuid;
+
+#[mockall_double::double]
+use crate::aggregator::ConnectivityDataAggregator;
 
 use crate::error::Error;
 use crate::{config::Config, data::MeshConfigUpdateEvent};
@@ -47,9 +51,14 @@ pub struct Nurse {
 
 impl Nurse {
     /// Nurse's constructor
-    pub async fn start_with(public_key: PublicKey, config: Config, io: NurseIo<'_>) -> Self {
+    pub async fn start_with(
+        public_key: PublicKey,
+        config: Config,
+        io: NurseIo<'_>,
+        aggregator: Arc<ConnectivityDataAggregator>,
+    ) -> Self {
         Self {
-            task: Task::start(State::new(public_key, config, io).await),
+            task: Task::start(State::new(public_key, config, io, aggregator).await),
         }
     }
 
@@ -71,8 +80,18 @@ impl Nurse {
         .await;
     }
 
+    /// Send disconnect data
+    pub async fn send_disconnect_data(&self) {
+        let _ = task_exec!(&self.task, async move |state| {
+            state.send_disconnect_data().await;
+            Ok(())
+        })
+        .await;
+    }
+
     /// Stop nurse
     pub async fn stop(self) {
+        self.send_disconnect_data().await;
         let _ = self.task.stop().await.resume_unwind();
     }
 }
@@ -101,7 +120,12 @@ impl State {
     /// # Returns
     ///
     /// A Nurse instance.
-    pub async fn new(public_key: PublicKey, config: Config, io: NurseIo<'_>) -> Self {
+    pub async fn new(
+        public_key: PublicKey,
+        config: Config,
+        io: NurseIo<'_>,
+        aggregator: Arc<ConnectivityDataAggregator>,
+    ) -> Self {
         let meshnet_id = Self::meshnet_id();
 
         // Analytics channel
@@ -130,6 +154,7 @@ impl State {
             meshnet_id,
             config.heartbeat_config,
             heartbeat_io,
+            aggregator,
         );
 
         // Qos component
@@ -186,47 +211,9 @@ impl State {
         .await;
     }
 
-    async fn handle_heartbeat_event(&self, info: HeartbeatInfo) {
-        let _ = lana!(
-            set_context_application_libtelioapp_config_currentState_meshnetEnabled,
-            info.meshnet_enabled
-        );
-
-        // Send off nominated fingerprint to moose
-        let _ = lana!(
-            set_context_application_libtelioapp_config_currentState_internalMeshnet_fp,
-            info.meshnet_id.to_string()
-        );
-
-        // We pray that nothing goes wrong here
-        let _ = lana!(
-            set_context_application_libtelioapp_config_currentState_internalMeshnet_members,
-            info.fingerprints
-        );
-
-        // And send this off to moose
-        let _ = lana!(
-            set_context_application_libtelioapp_config_currentState_internalMeshnet_connectivityMatrix,
-            info.connectivity_matrix
-        );
-
-        let _ = lana!(
-            set_context_application_libtelioapp_config_currentState_externalLinks,
-            info.external_links
-        );
-
-        let _ = lana!(
-            set_context_application_libtelioapp_config_currentState_internalMeshnet_fpNat,
-            info.nat_type
-        );
-
-        let _ = lana!(
-            set_context_application_libtelioapp_config_currentState_internalMeshnet_membersNat,
-            info.peer_nat_types.join(",")
-        );
-
-        let internal_sorted_public_keys = info.internal_sorted_public_keys;
-        let external_sorted_public_keys = info.external_sorted_public_keys;
+    async fn handle_service_quality_event(&self, info: &HeartbeatInfo, disconnect: bool) {
+        let internal_sorted_public_keys = info.internal_sorted_public_keys.clone();
+        let external_sorted_public_keys = info.external_sorted_public_keys.clone();
         let (internal_qos_data, external_qos_data) = if let Some(qos) = self.qos.as_ref() {
             task_exec!(qos, async move |state| {
                 let result = (
@@ -249,24 +236,100 @@ impl State {
             (QoSData::default(), QoSData::default())
         };
 
+        telio_log_info!(
+            "Attempting to send moose {} event ...",
+            if disconnect {
+                "disconnect"
+            } else {
+                "heartbeat"
+            },
+        );
+
         let qos_data = QoSData::merge(internal_qos_data, external_qos_data);
 
-        telio_log_info!("Attempting to send moose heartbeat event");
-        let r = lana!(
-            send_serviceQuality_node_heartbeat,
-            qos_data.connection_duration,
-            qos_data.rtt,
-            qos_data.rtt_loss,
-            qos_data.rtt6,
-            qos_data.rtt6_loss,
-            qos_data.tx,
-            qos_data.rx,
-            info.heartbeat_interval,
-            0, // TODO(LLT-4205): Derp Connection Duration
-            "".to_string(),
-            "".to_string()
+        let r = if disconnect {
+            lana!(
+                send_serviceQuality_node_disconnect,
+                qos_data.connection_duration,
+                qos_data.rtt,
+                qos_data.rtt_loss,
+                qos_data.rtt6,
+                qos_data.rtt6_loss,
+                qos_data.tx,
+                qos_data.rx,
+                info.heartbeat_interval,
+                0, // TODO Derp Connection Duration
+                info.nat_traversal_conn_info.clone(),
+                info.derp_conn_info.clone()
+            )
+        } else {
+            lana!(
+                send_serviceQuality_node_heartbeat,
+                qos_data.connection_duration,
+                qos_data.rtt,
+                qos_data.rtt_loss,
+                qos_data.rtt6,
+                qos_data.rtt6_loss,
+                qos_data.tx,
+                qos_data.rx,
+                info.heartbeat_interval,
+                0, // TODO Derp Connection Duration
+                info.nat_traversal_conn_info.clone(),
+                info.derp_conn_info.clone()
+            )
+        };
+
+        telio_log_info!(
+            "Moose {} event result: {:?}",
+            if disconnect {
+                "disconnect"
+            } else {
+                "heartbeat"
+            },
+            r
         );
-        telio_log_info!("Moose heartbeat event result: {:?}", r);
+    }
+
+    async fn handle_heartbeat_event(&self, info: HeartbeatInfo) {
+        let _ = lana!(
+            set_context_application_libtelioapp_config_currentState_meshnetEnabled,
+            info.meshnet_enabled
+        );
+
+        // Send off nominated fingerprint to moose
+        let _ = lana!(
+            set_context_application_libtelioapp_config_currentState_internalMeshnet_fp,
+            info.meshnet_id.to_string()
+        );
+
+        // We pray that nothing goes wrong here
+        let _ = lana!(
+            set_context_application_libtelioapp_config_currentState_internalMeshnet_members,
+            info.fingerprints.clone()
+        );
+
+        // And send this off to moose
+        let _ = lana!(
+            set_context_application_libtelioapp_config_currentState_internalMeshnet_connectivityMatrix,
+            info.connectivity_matrix.clone()
+        );
+
+        let _ = lana!(
+            set_context_application_libtelioapp_config_currentState_externalLinks,
+            info.external_links.clone()
+        );
+
+        let _ = lana!(
+            set_context_application_libtelioapp_config_currentState_internalMeshnet_fpNat,
+            info.nat_type.clone()
+        );
+
+        let _ = lana!(
+            set_context_application_libtelioapp_config_currentState_internalMeshnet_membersNat,
+            info.peer_nat_types.join(",")
+        );
+
+        self.handle_service_quality_event(&info, false).await;
 
         telio_log_info!("Attempting to flush moose changes");
         let r = lana!(flush_changes);
@@ -290,6 +353,18 @@ impl State {
             telio_log_trace!("Could not find stored meshnet id by moose, generating a fresh one");
             Uuid::new_v4()
         })
+    }
+
+    async fn send_disconnect_data(&self) {
+        if let Ok(Ok(hb_info)) = task_exec!(&self.heartbeat, async move |state| {
+            Ok(state.get_disconnect_data().await.map_err(|_| ExecError))
+        })
+        .await
+        {
+            self.handle_service_quality_event(&hb_info, true).await;
+            let r = lana!(flush_changes);
+            telio_log_info!("Flushing moose changes result: {:?}", r);
+        }
     }
 }
 
