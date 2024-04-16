@@ -43,13 +43,9 @@ def copy_bindings(config):
     #        f"{PROJECT_CONFIG.root_dir}/{LIBTELIO_CONFIG[config.target_os]['binding_dest']}"
     #        + telio_bindings.split("/")[-1]
     #    )
-
-
-#
-#    if os.path.exists(binding_destination):
-#        rutils.remove_tree_or_file(binding_destination)
-#
-#    rutils.copy_tree_or_file(telio_bindings, binding_destination)
+    # if os.path.exists(binding_destination):
+    #     rutils.remove_tree_or_file(binding_destination)
+    # rutils.copy_tree_or_file(telio_bindings, binding_destination)
 
 
 """
