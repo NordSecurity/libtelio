@@ -1,3 +1,9 @@
+### v4.2.8
+---
+* LLT-4644: Fix wintun adapter creation
+
+<br>
+
 ### v4.2.7
 ---
 * LLT-5078: Fix telio-proxy panic 
