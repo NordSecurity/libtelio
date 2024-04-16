@@ -38,6 +38,7 @@
 * LLT-5039: Make connection reporting unaffected by system time changes
 * LLT-4168: Fix telio-dns assert panics in debug mode
 * LLT-4856: Enable aggregator timed events
+* LLT-4993: Remove most of the forks of dependencies for tvos and replace with latest upstream versions
 
 <br>
 
