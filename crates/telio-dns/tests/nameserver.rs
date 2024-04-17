@@ -15,7 +15,7 @@ use std::{
 };
 use telio_dns::{LocalNameServer, NameServer, Records};
 use telio_model::features::TtlValue;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tokio::time::sleep;
 use tokio::{
     self,
@@ -32,7 +32,7 @@ struct WGClient {
     client_socket: tokio::net::UdpSocket,
     client_address: SocketAddr,
     server_address: SocketAddr,
-    tunnel: Arc<Tunn>,
+    tunnel: Arc<Mutex<Tunn>>,
 }
 
 impl WGClient {
@@ -55,7 +55,7 @@ impl WGClient {
             client_socket,
             client_address,
             server_address,
-            tunnel: Arc::<Tunn>::from(
+            tunnel: Arc::new(Mutex::new(
                 Tunn::new(
                     client_private_key,
                     server_public_key.clone(),
@@ -65,7 +65,7 @@ impl WGClient {
                     None,
                 )
                 .expect("Failed to create client tunnel"),
-            ),
+            )),
         }
     }
 
@@ -73,7 +73,12 @@ impl WGClient {
         let mut sending_buffer = vec![0u8; MAX_PACKET];
         let mut receiving_buffer = vec![0u8; MAX_PACKET];
 
-        match self.tunnel.encapsulate(&[], &mut sending_buffer) {
+        match self
+            .tunnel
+            .lock()
+            .await
+            .encapsulate(&[], &mut sending_buffer)
+        {
             TunnResult::WriteToNetwork(msg) => {
                 self.client_socket
                     .send_to(msg, self.server_address)
@@ -89,10 +94,11 @@ impl WGClient {
             .recv(&mut receiving_buffer)
             .await
             .expect("Failed to recv from server");
-        match self
-            .tunnel
-            .decapsulate(None, &receiving_buffer[..bytes_read], &mut sending_buffer)
-        {
+        match self.tunnel.lock().await.decapsulate(
+            None,
+            &receiving_buffer[..bytes_read],
+            &mut sending_buffer,
+        ) {
             TunnResult::WriteToNetwork(msg) => {
                 self.client_socket
                     .send_to(msg, self.server_address)
@@ -112,7 +118,12 @@ impl WGClient {
         let mut sending_buffer = vec![0u8; MAX_PACKET];
         let mut receiving_buffer = vec![0u8; MAX_PACKET];
 
-        match self.tunnel.encapsulate(&request[..], &mut sending_buffer) {
+        match self
+            .tunnel
+            .lock()
+            .await
+            .encapsulate(&request[..], &mut sending_buffer)
+        {
             TunnResult::WriteToNetwork(msg) => {
                 self.client_socket
                     .send_to(msg, self.server_address)
@@ -144,10 +155,11 @@ impl WGClient {
         }
 
         let bytes_read = result.unwrap().expect("Failed to recv from server");
-        match self
-            .tunnel
-            .decapsulate(None, &receiving_buffer[..bytes_read], &mut sending_buffer)
-        {
+        match self.tunnel.lock().await.decapsulate(
+            None,
+            &receiving_buffer[..bytes_read],
+            &mut sending_buffer,
+        ) {
             TunnResult::WriteToTunnelV4(response, _) => {
                 if test_type.is_ipv6() {
                     panic!("Decapsulate into IPv4 for IPv6");
@@ -368,10 +380,10 @@ async fn dns_test_with_server(
     let client_secret_key = StaticSecret::new(&mut rand::rngs::StdRng::from_entropy());
     let client_public_key = PublicKey::from(&client_secret_key);
 
-    let server_peer = Arc::<Tunn>::from(
+    let server_peer = Arc::new(Mutex::new(
         Tunn::new(server_private_key, client_public_key, None, None, 0, None)
             .expect("Failed to create server tunnel"),
-    );
+    ));
 
     let client = WGClient::new(client_secret_key, server_public_key, server_address).await;
 
