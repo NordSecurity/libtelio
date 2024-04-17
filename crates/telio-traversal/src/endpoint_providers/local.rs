@@ -434,6 +434,9 @@ mod tests {
                         netmask: Ipv4Addr::new(255, 0, 0, 0),
                         broadcast: None,
                     }),
+                    index: None,
+                    #[cfg(windows)]
+                    adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
                 },
                 if_addrs::Interface {
                     name: "correct".to_owned(),
@@ -442,6 +445,9 @@ mod tests {
                         netmask: Ipv4Addr::new(255, 255, 255, 0),
                         broadcast: None,
                     }),
+                    index: None,
+                    #[cfg(windows)]
+                    adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
                 },
                 if_addrs::Interface {
                     name: "internal".to_owned(),
@@ -450,6 +456,9 @@ mod tests {
                         netmask: Ipv4Addr::new(255, 192, 0, 0),
                         broadcast: None,
                     }),
+                    index: None,
+                    #[cfg(windows)]
+                    adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
                 },
                 if_addrs::Interface {
                     name: "ipv6".to_owned(),
@@ -458,6 +467,9 @@ mod tests {
                         netmask: Ipv6Addr::new(255, 255, 255, 255, 0, 0, 0, 0),
                         broadcast: None,
                     }),
+                    index: None,
+                    #[cfg(windows)]
+                    adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
                 },
             ])
         });
@@ -477,6 +489,9 @@ mod tests {
                 netmask: Ipv4Addr::new(255, 255, 255, 0),
                 broadcast: None,
             }),
+            index: None,
+            #[cfg(windows)]
+            adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
         }])
     }
 
