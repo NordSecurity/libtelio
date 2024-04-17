@@ -10,7 +10,7 @@ use std::{
 use telio_crypto::{PublicKey, SecretKey};
 use telio_dns::{LocalNameServer, NameServer, Records};
 use telio_model::features::TtlValue;
-use tokio::net::UdpSocket;
+use tokio::{net::UdpSocket, sync::Mutex};
 use x25519_dalek::{PublicKey as PublicDalek, StaticSecret};
 
 /// Config is in INI format.
@@ -137,7 +137,7 @@ async fn dns_over_wireguard() {
         .unwrap();
 
     let dns_socket = Arc::new(UdpSocket::bind("127.0.0.1:51821").await.unwrap());
-    let dns_wireguard = Arc::from(
+    let dns_wireguard = Arc::new(Mutex::new(
         Tunn::new(
             StaticSecret::from(private_key.into_bytes()),
             PublicDalek::from(public_key.0),
@@ -147,7 +147,7 @@ async fn dns_over_wireguard() {
             None,
         )
         .unwrap(),
-    );
+    ));
 
     nameserver
         .start(
