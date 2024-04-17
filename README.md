@@ -311,6 +311,10 @@ release.py --changelog --push --tag=v4.0.5
 
 You can check the actual commands executed, by passing the `--dry-run` argument.
 
+## Building Documentation
+
+Documentation for Libtelio is currently built and deployed to GitHub Pages by manually triggering the build-and-deploy-docs job on the pipeline in GitHub Actions. If you need to build the rustdocs locally, reference the gh-pages CI file and don't forget to set the RUSTDOCFLAGS env variable accordingly.
+
 ## Contributions
 
 For information about how to contribute, please see [CONTRIBUTING.md](CONTRIBUTING.md).

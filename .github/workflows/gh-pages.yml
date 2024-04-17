@@ -1,0 +1,44 @@
+name: Rust Docs to Github Pages
+run-name: ${{ github.actor }} is building and deploying rustdoc to GitHub Pages from ${{ github.ref }}
+# Because documentation versioning and build promotion are not implemente yet, leaving this to be triggered manually only for now.
+on: [workflow_dispatch]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build-and-deploy-docs:
+    runs-on: ubuntu-22.04
+    # Specifying these flags here as environment variables, because specifying them in the .cargo/config file interferes with the other
+    # workflows, because of the nightly features.
+    env:
+        RUSTDOCFLAGS: "-Zunstable-options --enable-index-page -Aunknown_lints"
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Configure GitHub Pages
+      uses: actions/configure-pages@v5
+
+    - name: Build Rust Docs
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly-2024-04-17
+        components: rust-docs
+    # Nightly is required, because index page generation is a nightly feature. Without it the index.html file will not be at the root of
+    # The doc folder and gh-pages won't be able to find it.
+    # --no-deps is required to prevent rustdoc from adding third party dependencies to our documentation, but that also brakes links to
+    # local pages so that's fixed by adding --workspace.
+    - run: cargo +nightly-2024-04-17 doc --no-deps --workspace --document-private-items
+
+    # Using @v1 of actions/upload-pages-artifact, because the later versions are buggy: https://github.com/actions/deploy-pages/issues/179
+    - name: Upload Github pages artifact
+      uses: actions/upload-pages-artifact@v1
+      with:
+        path: 'target/doc/'
+
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v3
