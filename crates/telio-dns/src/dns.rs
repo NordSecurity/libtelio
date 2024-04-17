@@ -7,7 +7,7 @@ use std::{net::SocketAddr, sync::Arc};
 use telio_crypto::{PublicKey, SecretKey};
 use telio_wg::uapi::Peer;
 use tokio::net::UdpSocket;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use x25519_dalek::{PublicKey as PublicKeyDalek, StaticSecret};
 
 use telio_model::features::{FeatureExitDns, TtlValue};
@@ -48,7 +48,7 @@ pub trait DnsResolver {
 pub struct LocalDnsResolver {
     socket: Arc<UdpSocket>,
     secret_key: SecretKey,
-    peer: Arc<Tunn>,
+    peer: Arc<Mutex<Tunn>>,
     socket_port: u16,
     dst_address: SocketAddr,
     nameserver: Arc<RwLock<LocalNameServer>>,
@@ -102,14 +102,14 @@ impl LocalDnsResolver {
         Ok(LocalDnsResolver {
             socket: Arc::new(socket),
             secret_key: dns_secret_key,
-            peer: Arc::<Tunn>::from(Tunn::new(
+            peer: Arc::new(Mutex::new(Tunn::new(
                 StaticSecret::from(dns_secret_key.into_bytes()),
                 telio_public_key,
                 None,
                 None,
                 0,
                 None,
-            )?),
+            )?)),
             socket_port,
             dst_address,
             nameserver,

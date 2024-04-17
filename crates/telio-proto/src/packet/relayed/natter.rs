@@ -1,4 +1,4 @@
-use std::iter::{FromIterator, IntoIterator};
+use std::iter::FromIterator;
 use std::net::SocketAddr;
 
 use crate::{
