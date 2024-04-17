@@ -1,3 +1,4 @@
+import base64
 from hashlib import md5
 from typing import List, Optional, Any
 from utils import testing
@@ -319,7 +320,7 @@ class RttValidator:
         for member in self._members:
             rtt = peers_rtt.get(member)
             if rtt:
-                assert self._validator.validate(rtt), member
+                assert self._validator.validate(rtt), (member, event)
             else:
                 assert False, member
         return True
@@ -358,7 +359,7 @@ class RttLossValidator:
         for member in self._members:
             rtt_loss = peers_rtt_loss.get(member)
             if rtt_loss:
-                assert self._validator.validate(rtt_loss), member
+                assert self._validator.validate(rtt_loss), (member, event)
             else:
                 assert False, member
         return True
@@ -397,7 +398,7 @@ class Rtt6Validator:
         for member in self._members:
             rtt6 = peers_rtt6.get(member)
             if rtt6:
-                assert self._validator.validate(rtt6), member
+                assert self._validator.validate(rtt6), (member, event)
             else:
                 assert False, member
         return True
@@ -436,7 +437,7 @@ class Rtt6LossValidator:
         for member in self._members:
             rtt6_loss = peers_rtt6_loss.get(member)
             if rtt6_loss:
-                assert self._validator.validate(rtt6_loss), member
+                assert self._validator.validate(rtt6_loss), (member, event)
             else:
                 assert False, member
         return True
@@ -475,7 +476,7 @@ class SentDataValidator:
         for member in self._members:
             sent_data = peers_sent_data.get(member)
             if sent_data:
-                assert self._validator.validate(sent_data), member
+                assert self._validator.validate(sent_data), (member, event)
             else:
                 assert False, member
         return True
@@ -514,7 +515,7 @@ class ReceivedDataValidator:
         for member in self._members:
             received_data = peers_received_data.get(member)
             if received_data:
-                assert self._validator.validate(received_data), member
+                assert self._validator.validate(received_data), (member, event)
             else:
                 assert False, member
         return True
@@ -524,38 +525,32 @@ class NatTraversalConnInfoValidator:
     def __init__(
         self,
         exists=True,
-        members: Optional[List[str]] = None,
         equals="",
         contains: Optional[List[str]] = None,
         does_not_contain: Optional[List[str]] = None,
+        count=0,  # Expected number of nat traversal entries in the list
     ):
-        self._members = members
-        if not members:
-            self._validator = StringValidator(exists=exists)
-        else:
-            self._validator = StringValidator(
-                exists=exists,
-                equals=equals,
-                contains=contains,
-                does_not_contain=does_not_contain,
-            )
+        self._count = count
+        self._exists = exists
+        self._validator = StringValidator(
+            exists=exists,
+            equals=equals,
+            contains=contains,
+            does_not_contain=does_not_contain,
+        )
 
     def validate(self, event):
-        if not self._members:
+        if self._count == 0:
             return self._validator.validate(event.nat_traversal_conn_info)
 
-        nat_traversal_conn_info_list = event.nat_traversal_conn_info.split(",")
-        peers = event.members.split(",")
-        process_external_peers(event, peers)
-
-        peers_nat_traversal_conn_info = dict(zip(peers, nat_traversal_conn_info_list))
-
-        for member in self._members:
-            nat_traversal_conn_info = peers_nat_traversal_conn_info.get(member)
-            if nat_traversal_conn_info:
-                assert self._validator.validate(nat_traversal_conn_info), member
-            else:
-                assert False, member
+        if self._exists and self._count > 0:
+            nat_traversal_conn_info_list_len = len(
+                event.nat_traversal_conn_info.split(",")
+            )
+            assert (
+                nat_traversal_conn_info_list_len == self._count
+            ), nat_traversal_conn_info_list_len
+            return self._validator.validate(event.nat_traversal_conn_info)
         return True
 
 
@@ -822,23 +817,39 @@ class EventValidator:
         )
         return self
 
-    def add_nat_traversal_conn_info_validator(
+    def add_nat_traversal_conn_info_peer_validator(
         self,
-        exists=True,
-        members: Optional[List[str]] = None,
+        self_pubkey: str,
+        remote_pubkey: str,
+        symmetric: bool,
         equals="",
         contains: Optional[List[str]] = None,
         does_not_contain: Optional[List[str]] = None,
+        count=0,
     ):
-        self._validators.append(
-            NatTraversalConnInfoValidator(
-                exists,
-                members,
-                equals,
-                contains,
-                does_not_contain,
+        if (
+            base64.b64decode(self_pubkey) < base64.b64decode(remote_pubkey)
+            and not symmetric
+        ):
+            self._validators.append(
+                NatTraversalConnInfoValidator(
+                    True,
+                    equals,
+                    contains,
+                    does_not_contain,
+                    count,
+                )
             )
-        )
+        else:
+            self._validators.append(
+                NatTraversalConnInfoValidator(
+                    False,
+                    equals,
+                    contains,
+                    does_not_contain,
+                    count,
+                )
+            )
         return self
 
     def add_derp_conn_info_validator(
