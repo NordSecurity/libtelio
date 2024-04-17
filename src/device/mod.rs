@@ -80,6 +80,7 @@ use telio_model::{
     },
     mesh::{ExitNode, LinkState, Node},
     validation::validate_nickname,
+    EndpointMap,
 };
 
 pub use wg::{
@@ -227,6 +228,37 @@ pub struct MeshnetEntites {
     direct: Option<DirectEntities>,
 }
 
+#[derive(Default, Debug)]
+pub struct MeshnetEntitiesLastState {
+    endpoint_map: EndpointMap,
+}
+
+pub enum MeshnetState {
+    Entities(MeshnetEntites),
+    LastState(MeshnetEntitiesLastState),
+}
+
+impl MeshnetState {
+    fn left(&self) -> Option<&MeshnetEntites> {
+        if let Self::Entities(entities) = self {
+            Some(entities)
+        } else {
+            None
+        }
+    }
+
+    #[cfg(test)]
+    #[track_caller]
+    fn expect_left(&self, msg: &str) -> &MeshnetEntites {
+        self.left().expect(msg)
+    }
+
+    #[cfg(test)]
+    fn is_right(&self) -> bool {
+        matches!(self, Self::LastState(_))
+    }
+}
+
 pub struct Entities {
     // Wireguard interface
     wireguard_interface: Arc<DynamicWg>,
@@ -238,7 +270,7 @@ pub struct Entities {
     firewall: Arc<StatefullFirewall>,
 
     // Entities for meshnet connections
-    meshnet: Option<MeshnetEntites>,
+    meshnet: MeshnetState,
 
     // A place to control the sockets used by the libtelio
     // It is handy whenever sockets needs to be bound to some interface, fwmark'ed or just
@@ -258,19 +290,19 @@ pub struct Entities {
 impl Entities {
     pub fn cross_ping_check(&self) -> Option<&Arc<CrossPingCheck>> {
         self.meshnet
-            .as_ref()
+            .left()
             .and_then(|m| m.direct.as_ref().map(|d| &d.cross_ping_check))
     }
 
     pub fn session_keeper(&self) -> Option<&Arc<SessionKeeper>> {
         self.meshnet
-            .as_ref()
+            .left()
             .and_then(|m| m.direct.as_ref().map(|d| &d.session_keeper))
     }
 
     fn endpoint_providers(&self) -> Vec<&Arc<dyn EndpointProvider>> {
         self.meshnet
-            .as_ref()
+            .left()
             .and_then(|m| {
                 m.direct
                     .as_ref()
@@ -281,7 +313,7 @@ impl Entities {
 
     pub fn upgrade_sync(&self) -> Option<&Arc<UpgradeSync>> {
         self.meshnet
-            .as_ref()
+            .left()
             .and_then(|m| m.direct.as_ref().map(|d| &d.upgrade_sync))
     }
 }
@@ -863,7 +895,7 @@ impl RequestedState {
 }
 
 impl MeshnetEntites {
-    async fn stop(mut self) {
+    async fn stop(mut self) -> MeshnetEntitiesLastState {
         macro_rules! stop_entity {
             ($entity: expr, $name: expr) => {{
                 if let Ok(task) = $entity
@@ -909,7 +941,10 @@ impl MeshnetEntites {
 
         stop_arc_entity!(self.multiplexer, "Multiplexer");
         stop_arc_entity!(self.derp, "Derp");
+        let endpoint_map = self.proxy.get_endpoint_map().await.unwrap_or_default();
         stop_arc_entity!(self.proxy, "UdpProxy");
+
+        MeshnetEntitiesLastState { endpoint_map }
     }
 }
 
@@ -1118,7 +1153,7 @@ impl Runtime {
                 wireguard_interface: wireguard_interface.clone(),
                 dns,
                 firewall,
-                meshnet: None,
+                meshnet: MeshnetState::LastState(Default::default()),
                 socket_pool,
                 nurse,
                 aggregator: aggregator.clone(),
@@ -1412,7 +1447,7 @@ impl Runtime {
             return Err(Error::DnsNotDisabled);
         }
 
-        if let Some(m_entities) = self.entities.meshnet.as_ref() {
+        if let Some(m_entities) = self.entities.meshnet.left() {
             m_entities
                 .derp
                 .configure(m_entities.derp.get_config().await.map(|c| DerpConfig {
@@ -1469,7 +1504,7 @@ impl Runtime {
             .drop_connected_sockets()
             .await?;
 
-        if let Some(meshnet_entities) = self.entities.meshnet.as_ref() {
+        if let Some(meshnet_entities) = self.entities.meshnet.left() {
             meshnet_entities.proxy.on_network_change().await;
             if let Some(direct) = &meshnet_entities.direct {
                 if let Some(stun) = &direct.stun_endpoint_provider {
@@ -1613,7 +1648,11 @@ impl Runtime {
                 .wait_for_proxy_listen_port(Duration::from_secs(1))
                 .await?;
 
-            let meshnet_entities = if let Some(entities) = self.entities.meshnet.take() {
+            let meshnet_entities: MeshnetEntites = if let MeshnetState::Entities(entities) =
+                std::mem::replace(
+                    &mut self.entities.meshnet,
+                    MeshnetState::LastState(Default::default()),
+                ) {
                 entities
             } else {
                 self.start_meshnet_entities().await?
@@ -1677,7 +1716,7 @@ impl Runtime {
                 }
             }
 
-            self.entities.meshnet = Some(meshnet_entities);
+            self.entities.meshnet = MeshnetState::Entities(meshnet_entities);
 
             self.upsert_dns_peers().await?;
         } else {
@@ -1686,8 +1725,12 @@ impl Runtime {
                 nurse.configure_meshnet(None).await;
             }
 
-            if let Some(meshnet_entities) = self.entities.meshnet.take() {
-                meshnet_entities.stop().await;
+            if let MeshnetState::Entities(meshnet_entities) = std::mem::replace(
+                &mut self.entities.meshnet,
+                MeshnetState::LastState(Default::default()),
+            ) {
+                let meshnet_entities_last_state = meshnet_entities.stop().await;
+                self.entities.meshnet = MeshnetState::LastState(meshnet_entities_last_state);
             }
 
             self.requested_state.wg_stun_server = None;
@@ -1922,8 +1965,10 @@ impl Runtime {
 
         // Check if ExitNode in requested state matches the node being reported by public
         // key
-        let exit_node = self.requested_state.exit_node.as_ref();
-        let exit_node = exit_node
+        let exit_node = self
+            .requested_state
+            .exit_node
+            .as_ref()
             .or(self.requested_state.last_exit_node.as_ref())
             .filter(|node| node.public_key == peer.public_key);
 
@@ -1940,24 +1985,22 @@ impl Runtime {
                 .or_else(|| get_config_peer(self.requested_state.old_meshnet_config.as_ref()));
 
         // Resolve what type of path is used
-        let path_type = if let Some(m) = self.entities.meshnet.as_ref() {
-            async {
-                m.proxy
-                    .get_endpoint_map()
-                    .await
-                    .unwrap_or_else(|err| {
-                        telio_log_warn!("Failed to get proxy endpoint map: {}", err);
-                        Default::default()
-                    })
-                    .get(&peer.public_key)
-                    .and_then(|proxy| endpoint.filter(|actual| proxy.contains(actual)))
-                    .map_or(PathType::Direct, |_| PathType::Relay)
-            }
-            .await
-        } else {
-            // If there is no proxy, peer must be VPN and connection Direct
-            PathType::Direct
+        let endpoint_map = match &self.entities.meshnet {
+            MeshnetState::Entities(meshnet_entities) => meshnet_entities
+                .proxy
+                .get_endpoint_map()
+                .await
+                .unwrap_or_else(|err| {
+                    telio_log_warn!("Failed to get proxy endpoint map: {}", err);
+                    Default::default()
+                }),
+            MeshnetState::LastState(last_state) => last_state.endpoint_map.clone(),
         };
+
+        let path_type = endpoint_map
+            .get(&peer.public_key)
+            .and_then(|proxy| endpoint.filter(|actual| proxy.contains(actual)))
+            .map_or(PathType::Direct, |_| PathType::Relay);
 
         // Build a node to report event about, we need to report about either meshnet peers
         // or VPN peers. Others (like DNS, or anycast) are considered to be "internal" ones
@@ -2046,7 +2089,7 @@ impl TaskRuntime for Runtime {
             Some(mesh_event) = self.event_listeners.wg_event_subscriber.recv() => {
                 let public_key = mesh_event.peer.public_key;
 
-                if let Some(mesh_entities) = self.entities.meshnet.as_ref() {
+                if let Some(mesh_entities) = self.entities.meshnet.left() {
                     if let Some(proxy_endpoints) = mesh_entities.proxy.get_endpoint_map().await.ok().as_mut().and_then(|proxy_map| proxy_map.remove(&public_key)) {
                         let is_proxying = mesh_event.peer.endpoint.map_or(false, |ep| proxy_endpoints.contains(&ep));
                         let was_proxying = mesh_event.old_peer.as_ref().and_then(|peer| peer.endpoint.map(|ep| proxy_endpoints.contains(&ep))).unwrap_or_default();
@@ -2188,7 +2231,7 @@ impl TaskRuntime for Runtime {
             nurse.configure_meshnet(None).await;
         }
 
-        if let Some(meshnet_entities) = self.entities.meshnet {
+        if let MeshnetState::Entities(meshnet_entities) = self.entities.meshnet {
             meshnet_entities.stop().await;
         }
 
@@ -2813,7 +2856,7 @@ mod tests {
         .unwrap();
 
         assert!(
-            rt.entities.meshnet.is_none(),
+            rt.entities.meshnet.is_right(),
             "Meshnet is not configured yet"
         );
 
@@ -2856,8 +2899,9 @@ mod tests {
         let entities = rt
             .entities
             .meshnet
-            .expect("Meshnet entities should be available when meshnet was configured")
+            .expect_left("Meshnet entities should be available when meshnet was configured")
             .direct
+            .as_ref()
             .expect("Direct entities should be available when \"direct\" feature is on");
 
         assert!(entities.upnp_endpoint_provider.is_none());
@@ -2894,7 +2938,7 @@ mod tests {
         .unwrap();
 
         assert!(
-            rt.entities.meshnet.is_none(),
+            rt.entities.meshnet.is_right(),
             "Meshnet is not configured yet"
         );
 
@@ -2937,8 +2981,9 @@ mod tests {
         let entities = rt
             .entities
             .meshnet
-            .expect("Meshnet entities should be available when meshnet was configured")
+            .expect_left("Meshnet entities should be available when meshnet was configured")
             .direct
+            .as_ref()
             .expect("Direct entities should be available when \"direct\" feature is on");
 
         assert!(entities.upnp_endpoint_provider.is_none());
@@ -2986,7 +3031,7 @@ mod tests {
         .unwrap();
 
         assert!(
-            rt.entities.meshnet.is_none(),
+            rt.entities.meshnet.is_right(),
             "Meshnet is not configured yet"
         );
 
@@ -3029,8 +3074,9 @@ mod tests {
         let entities = rt
             .entities
             .meshnet
-            .expect("Meshnet entities should be available when meshnet was configured")
+            .expect_left("Meshnet entities should be available when meshnet was configured")
             .direct
+            .as_ref()
             .expect("Direct entities should be available when \"direct\" feature is on");
 
         assert!(entities.upnp_endpoint_provider.is_some());
