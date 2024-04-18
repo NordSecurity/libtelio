@@ -1,0 +1,1 @@
+Fix when shutting down meshnet, in the disconnect event, path is sometimes incorrectly reported as direct

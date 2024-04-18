@@ -1,0 +1,24 @@
+name: Check Unreleased
+on:
+  pull_request:
+    types: [opened, edited]
+    branches-ignore:
+      - main
+permissions: {}
+
+jobs:
+  changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 2
+
+      - name: Check for new file in .unreleased
+        run: |
+          FILE_COUNT=$(git diff --name-only main..HEAD -- .unreleased | wc -l)
+          if [ "$FILE_COUNT" -eq "0" ]; then
+            echo "No new file in .unreleased directory. Please add a new file describing your changes."
+            exit 1
+          fi

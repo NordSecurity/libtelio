@@ -5,7 +5,7 @@ import os
 import re
 import subprocess
 import sys
-
+import generate_changelog
 
 DRY_RUN = False
 
@@ -130,24 +130,13 @@ def validate_tag_format(tag):
 
 
 def update_changelog(tag):
-    changelog_file = "./changelog.md"
-
-    if not os.path.isfile(changelog_file):
-        print("Changelog file not found.")
-        sys.exit(1)
-
-    if not DRY_RUN:
-        with open(changelog_file) as f:
-            content = f.read()
-
-        content = re.sub(r"### UNRELEASED", tag, content, flags=re.IGNORECASE)
-
-        with open(changelog_file, "w") as f:
-            f.write(content)
-    else:
-        print(
-            '$ substitute "### UNRELEASED" --> "### {}" in ./changelog.md'.format(tag)
-        )
+    generate_changelog.generate_changelog(
+        ".unreleased",
+        tag,
+        None,
+        "changelog.md",
+        DRY_RUN,
+    )
 
 
 def update_cargo_toml(tag):
@@ -176,7 +165,7 @@ def main():
         action="store_true",
         help="Install missing tools (e.g., 'cargo-edit')",
     )
-    parser.add_argument("--tag", help="Version to release (mandatory)")
+    parser.add_argument("--tag", required=True, help="Version to release (mandatory)")
     parser.add_argument(
         "--push", action="store_true", help="Push changes to the remote repository"
     )
@@ -193,9 +182,6 @@ def main():
         help="Remote name for git push (default repo branch will be used, if not supplied)",
     )
     args = parser.parse_args()
-
-    if not args.tag:
-        parser.error("The --tag argument is required.")
 
     global DRY_RUN
     if args.dry_run:

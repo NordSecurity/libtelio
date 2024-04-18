@@ -1,24 +1,4 @@
-### UNRELEASED
-
-* LLT-4154: Optimize Upnp/Stun providers
-* LLT-4855: Add Aggregator struct for connectivity events gathering
-* LLT-2515: Implement PMTU discovery for VPN connection paths on Linux/Android
-* LLT-4981: Add upgrade decision message
-* LLT-4873: Remove old SWIG FFI bindings
-* LLT-4996: nurse: Stop adding virtual peers to qos
-* LLT-4687: Add PQ VPN nat-lab tests
-* LLT-4954: Handle system sleep/wakeup in nat/derp monitoring
-* LLT-4858: NAT state analytics reporting
-* LLT-5038: Add doc rs as in-repo documentation system skeleton
-* LLT-5034: Upgrade rust toolchain to v1.77.2
-* LLT-4924: Enable size reduction compiler flags
-* LLT-5039: Make connection reporting unaffected by system time changes
-* LLT-4168: Fix telio-dns assert panics in debug mode
-* LLT-4856: Enable aggregator timed events
-* LLT-4993: Remove most of the forks of dependencies for tvos and replace with latest upstream versions
-* LLT-4351: Fix when shutting down meshnet, in the disconnect event, path is sometimes incorrectly reported as direct
-
-<br>
+<!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
 ### v4.3.2
 ### **Bravas**
