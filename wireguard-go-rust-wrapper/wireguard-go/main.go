@@ -32,7 +32,6 @@ import (
 	"unsafe"
 
 	"golang.zx2c4.com/wireguard/conn"
-	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/ipc"
 	"golang.zx2c4.com/wireguard/tun"
 )
@@ -43,7 +42,7 @@ type CLogger struct {
 
 type TunnelEntry struct {
 	name    string
-	device  *device.Device
+	device  *Device
 	handle  int32
 	tun     *tun.NativeTun
 	bind    conn.Bind
@@ -97,8 +96,8 @@ func tracef(format string, args ...interface{}) {
 	trace_logger.Printf(format, args...)
 }
 
-func CreateDeviceLogger() *device.Logger {
-	return &device.Logger{debugf, errorf}
+func CreateDeviceLogger() *Logger {
+	return &Logger{debugf, errorf}
 }
 
 func get_free_tunnel_handle() (int32, error) {
@@ -193,7 +192,7 @@ func wg_go_start(ifname string, nativeTun *tun.NativeTun, watcher *interfaceWatc
 
 	dev_logger := CreateDeviceLogger()
 
-	dev := device.NewDevice(nativeTun, bind, dev_logger)
+	dev := NewDevice(nativeTun, bind, dev_logger)
 
 	infof("Setting device up")
 	dev.Up()
@@ -221,7 +220,7 @@ func wg_go_start(ifname string, nativeTun *tun.NativeTun, watcher *interfaceWatc
 func get_errno_from_error(err error) int64 {
 	errno := int64(0)
 	if err != nil {
-		var status *device.IPCError
+		var status *IPCError
 		if !errors.As(err, &status) {
 			errno = ipc.IpcErrorUnknown
 		} else {
