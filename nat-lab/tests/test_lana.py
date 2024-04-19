@@ -123,6 +123,7 @@ async def clean_container(connection):
 
 def get_moose_db_file(container_tag, container_path, local_path):
     subprocess.run(["rm", "-f", local_path])
+    # sqlite3 -bail -batch moose.db "BEGIN EXCLUSIVE TRANSACTION; SELECT 1; ROLLBACK;" > /dev/null
     subprocess.run(
         ["docker", "cp", container_id(container_tag) + ":" + container_path, local_path]
     )
@@ -300,7 +301,7 @@ async def run_default_scenario(
         client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
         client_gamma.wait_for_state_on_any_derp([telio.State.Connected]),
     )
-    # Note: GAMMA is symmetric, so it will not connect to ALPHA or BETA in diret mode
+    # Note: GAMMA is symmetric, so it will not connect to ALPHA or BETA in direct mode
     await asyncio.gather(
         client_alpha.wait_for_state_peer(
             beta.public_key,
@@ -408,6 +409,9 @@ async def run_default_scenario(
         alpha_expected_states,
         beta_expected_states,
         gamma_expected_states,
+        alpha.public_key,
+        beta.public_key,
+        gamma.public_key,
     ]
 
 
@@ -498,6 +502,9 @@ async def test_lana_with_same_meshnet(
             alpha_expected_states,
             beta_expected_states,
             gamma_expected_states,
+            alpha_pubkey,
+            beta_pubkey,
+            gamma_pubkey,
         ] = await run_default_scenario(
             exit_stack=exit_stack,
             alpha_is_local=True,
@@ -539,20 +546,22 @@ async def test_lana_with_same_meshnet(
                 members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
                 does_not_contain=["0:0:0:0:0"],
             )
-            # TODO enable this when NAT traversal reporting is implemented (LLT-4858)
-            # .add_nat_traversal_conn_info_validator(
-            #     exists=True,
-            #     members=[BETA_FINGERPRINT],
-            #     does_not_contain=["0:0:0:0:0:0"],
-            # )
             .add_derp_conn_info_validator(
                 exists=True,
                 servers=DERP_SERVERS_STRS,
+            )
+            .add_nat_traversal_conn_info_peer_validator(
+                alpha_pubkey,
+                beta_pubkey,
+                False,
+                does_not_contain=["0:0:0:0:0:0"],
+                count=1,
             )
         )
         add_rtt_validators(
             alpha_validator, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack]
         )
+
         res = alpha_validator.validate(alpha_events[0])
         assert res[0], res[1]
 
@@ -584,20 +593,22 @@ async def test_lana_with_same_meshnet(
                 members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
                 does_not_contain=["0:0:0:0:0"],
             )
-            # TODO enable this when NAT traversal reporting is implemented (LLT-4858)
-            # .add_nat_traversal_conn_info_validator(
-            #     exists=True,
-            #     members=[ALPHA_FINGERPRINT],
-            #     does_not_contain=["0:0:0:0:0:0"],
-            # )
             .add_derp_conn_info_validator(
                 exists=True,
                 servers=DERP_SERVERS_STRS,
+            )
+            .add_nat_traversal_conn_info_peer_validator(
+                beta_pubkey,
+                alpha_pubkey,
+                False,
+                does_not_contain=["0:0:0:0:0:0"],
+                count=1,
             )
         )
         add_rtt_validators(
             beta_validator, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack]
         )
+
         res = beta_validator.validate(beta_events[0])
         assert res[0], res[1]
 
@@ -633,6 +644,11 @@ async def test_lana_with_same_meshnet(
                 exists=True,
                 servers=DERP_SERVERS_STRS,
             )
+            .add_nat_traversal_conn_info_peer_validator(
+                gamma_pubkey,
+                "",
+                True,
+            )
         )
         add_rtt_validators(
             gamma_validator, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack]
@@ -657,6 +673,9 @@ async def test_lana_with_external_node(
             alpha_expected_states,
             beta_expected_states,
             gamma_expected_states,
+            alpha_pubkey,
+            beta_pubkey,
+            gamma_pubkey,
         ] = await run_default_scenario(
             exit_stack=exit_stack,
             alpha_is_local=True,
@@ -703,20 +722,22 @@ async def test_lana_with_external_node(
                 members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
                 does_not_contain=["0:0:0:0:0"],
             )
-            # TODO enable this when NAT traversal reporting is implemented (LLT-4858)
-            # .add_nat_traversal_conn_info_validator(
-            #     exists=True,
-            #     members=[BETA_FINGERPRINT],
-            #     does_not_contain=["0:0:0:0:0:0"],
-            # )
             .add_derp_conn_info_validator(
                 exists=True,
                 servers=DERP_SERVERS_STRS,
+            )
+            .add_nat_traversal_conn_info_peer_validator(
+                alpha_pubkey,
+                beta_pubkey,
+                False,
+                does_not_contain=["0:0:0:0:0:0"],
+                count=1,
             )
         )
         add_rtt_validators(
             alpha_validator, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack]
         )
+
         res = alpha_validator.validate(alpha_events[0])
         assert res[0], res[1]
 
@@ -756,20 +777,22 @@ async def test_lana_with_external_node(
                 members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
                 does_not_contain=["0:0:0:0:0"],
             )
-            # TODO enable this when NAT traversal reporting is implemented (LLT-4858)
-            # .add_nat_traversal_conn_info_validator(
-            #     exists=True,
-            #     members=[ALPHA_FINGERPRINT],
-            #     does_not_contain=["0:0:0:0:0:0"],
-            # )
             .add_derp_conn_info_validator(
                 exists=True,
                 servers=DERP_SERVERS_STRS,
+            )
+            .add_nat_traversal_conn_info_peer_validator(
+                beta_pubkey,
+                alpha_pubkey,
+                False,
+                does_not_contain=["0:0:0:0:0:0"],
+                count=1,
             )
         )
         add_rtt_validators(
             beta_validator, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack]
         )
+
         res = beta_validator.validate(beta_events[0])
         assert res[0], res[1]
 
@@ -799,15 +822,14 @@ async def test_lana_with_external_node(
                 members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
                 does_not_contain=["0:0:0:0:0"],
             )
-            # TODO enable this when NAT traversal reporting is implemented (LLT-4858)
-            # .add_nat_traversal_conn_info_validator(
-            #     exists=True,
-            #     members=[ALPHA_FINGERPRINT, BETA_FINGERPRINT],
-            #     does_not_contain=["0:0:0:0:0:0"],
-            # )
             .add_derp_conn_info_validator(
                 exists=True,
                 servers=DERP_SERVERS_STRS,
+            )
+            .add_nat_traversal_conn_info_peer_validator(
+                gamma_pubkey,
+                "",
+                True,
             )
         )
         add_rtt_validators(
@@ -837,6 +859,9 @@ async def test_lana_all_external(
             alpha_expected_states,
             beta_expected_states,
             gamma_expected_states,
+            alpha_pubkey,
+            beta_pubkey,
+            gamma_pubkey,
         ] = await run_default_scenario(
             exit_stack=exit_stack,
             alpha_is_local=False,
@@ -873,20 +898,22 @@ async def test_lana_all_external(
                 members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT],
                 does_not_contain=["0:0:0:0:0"],
             )
-            # TODO enable this when NAT traversal reporting is implemented (LLT-4858)
-            # .add_nat_traversal_conn_info_validator(
-            #     exists=True,
-            #     members=[BETA_FINGERPRINT],
-            #     does_not_contain=["0:0:0:0:0:0"],
-            # )
             .add_derp_conn_info_validator(
                 exists=True,
                 servers=DERP_SERVERS_STRS,
+            )
+            .add_nat_traversal_conn_info_peer_validator(
+                alpha_pubkey,
+                beta_pubkey,
+                False,
+                does_not_contain=["0:0:0:0:0:0"],
+                count=1,
             )
         )
         add_rtt_validators(
             alpha_validator, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack]
         )
+
         res = alpha_validator.validate(alpha_events[0])
         assert res[0], res[1]
 
@@ -916,20 +943,22 @@ async def test_lana_all_external(
                 members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
                 does_not_contain=["0:0:0:0:0"],
             )
-            # TODO enable this when NAT traversal reporting is implemented (LLT-4858)
-            # .add_nat_traversal_conn_info_validator(
-            #     exists=True,
-            #     members=[ALPHA_FINGERPRINT],
-            #     does_not_contain=["0:0:0:0:0:0"],
-            # )
             .add_derp_conn_info_validator(
                 exists=True,
                 servers=DERP_SERVERS_STRS,
+            )
+            .add_nat_traversal_conn_info_peer_validator(
+                beta_pubkey,
+                alpha_pubkey,
+                False,
+                does_not_contain=["0:0:0:0:0:0"],
+                count=1,
             )
         )
         add_rtt_validators(
             beta_validator, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack]
         )
+
         res = beta_validator.validate(beta_events[0])
         assert res[0], res[1]
 
@@ -963,6 +992,11 @@ async def test_lana_all_external(
                 exists=True,
                 servers=DERP_SERVERS_STRS,
             )
+            .add_nat_traversal_conn_info_peer_validator(
+                gamma_pubkey,
+                "",
+                True,
+            )
         )
         add_rtt_validators(
             gamma_validator, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack]
@@ -992,6 +1026,9 @@ async def test_lana_with_vpn_connection(
             alpha_expected_states,
             beta_expected_states,
             gamma_expected_states,
+            alpha_pubkey,
+            beta_pubkey,
+            gamma_pubkey,
         ] = await run_default_scenario(
             exit_stack=exit_stack,
             alpha_is_local=True,
@@ -1076,20 +1113,22 @@ async def test_lana_with_vpn_connection(
                 members=[BETA_FINGERPRINT, GAMMA_FINGERPRINT, "vpn"],
                 does_not_contain=["0:0:0:0:0"],
             )
-            # TODO enable this when NAT traversal reporting is implemented (LLT-4858)
-            # .add_nat_traversal_conn_info_validator(
-            #     exists=True,
-            #     members=[BETA_FINGERPRINT],
-            #     does_not_contain=["0:0:0:0:0:0"],
-            # )
             .add_derp_conn_info_validator(
                 exists=True,
                 servers=DERP_SERVERS_STRS,
+            )
+            .add_nat_traversal_conn_info_peer_validator(
+                alpha_pubkey,
+                beta_pubkey,
+                False,
+                does_not_contain=["0:0:0:0:0:0"],
+                count=1,
             )
         )
         add_rtt_validators(
             alpha_validator, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack]
         )
+
         res = alpha_validator.validate(alpha_events[0])
         assert res[0], res[1]
 
@@ -1121,20 +1160,22 @@ async def test_lana_with_vpn_connection(
                 members=[ALPHA_FINGERPRINT, GAMMA_FINGERPRINT],
                 does_not_contain=["0:0:0:0:0"],
             )
-            # TODO enable this when NAT traversal reporting is implemented (LLT-4858)
-            # .add_nat_traversal_conn_info_validator(
-            #     exists=True,
-            #     members=[ALPHA_FINGERPRINT],
-            #     does_not_contain=["0:0:0:0:0:0"],
-            # )
             .add_derp_conn_info_validator(
                 exists=True,
                 servers=DERP_SERVERS_STRS,
+            )
+            .add_nat_traversal_conn_info_peer_validator(
+                beta_pubkey,
+                alpha_pubkey,
+                False,
+                does_not_contain=["0:0:0:0:0:0"],
+                count=1,
             )
         )
         add_rtt_validators(
             beta_validator, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack]
         )
+
         res = beta_validator.validate(beta_events[0])
         assert res[0], res[1]
 
@@ -1169,6 +1210,11 @@ async def test_lana_with_vpn_connection(
             .add_derp_conn_info_validator(
                 exists=True,
                 servers=DERP_SERVERS_STRS,
+            )
+            .add_nat_traversal_conn_info_peer_validator(
+                gamma_pubkey,
+                "",
+                True,
             )
         )
         add_rtt_validators(
@@ -1329,18 +1375,20 @@ async def test_lana_with_meshnet_exit_node(
                 members=[BETA_FINGERPRINT],
                 does_not_contain=["0:0:0:0:0"],
             )
-            # TODO enable this when NAT traversal reporting is implemented (LLT-4858)
-            # .add_nat_traversal_conn_info_validator(
-            #     exists=True,
-            #     members=[BETA_FINGERPRINT],
-            #     does_not_contain=["0:0:0:0:0:0"],
-            # )
             .add_derp_conn_info_validator(
                 exists=True,
                 servers=DERP_SERVERS_STRS,
             )
+            .add_nat_traversal_conn_info_peer_validator(
+                alpha.public_key,
+                beta.public_key,
+                False,
+                does_not_contain=["0:0:0:0:0:0"],
+                count=1,
+            )
         )
         add_rtt_validators(alpha_validator, [alpha_ip_stack, beta_ip_stack, None])
+
         res = alpha_validator.validate(alpha_events[0])
         assert res[0], res[1]
 
@@ -1379,18 +1427,20 @@ async def test_lana_with_meshnet_exit_node(
                 members=[ALPHA_FINGERPRINT],
                 does_not_contain=["0:0:0:0:0"],
             )
-            # TODO enable this when NAT traversal reporting is implemented (LLT-4858)
-            # .add_nat_traversal_conn_info_validator(
-            #     exists=True,
-            #     members=[ALPHA_FINGERPRINT],
-            #     does_not_contain=["0:0:0:0:0:0"],
-            # )
             .add_derp_conn_info_validator(
                 exists=True,
                 servers=DERP_SERVERS_STRS,
             )
+            .add_nat_traversal_conn_info_peer_validator(
+                beta.public_key,
+                alpha.public_key,
+                False,
+                does_not_contain=["0:0:0:0:0:0"],
+                count=1,
+            )
         )
         add_rtt_validators(beta_validator, [alpha_ip_stack, beta_ip_stack, None])
+
         res = beta_validator.validate(beta_events[0])
         assert res[0], res[1]
 
@@ -1531,15 +1581,16 @@ async def test_lana_with_disconnected_node(
                 members=[BETA_FINGERPRINT],
                 does_not_contain=["0:0:0:0:0"],
             )
-            # TODO enable this when NAT traversal reporting is implemented (LLT-4858)
-            # .add_nat_traversal_conn_info_validator(
-            #     exists=True,
-            #     members=[BETA_FINGERPRINT],
-            #     does_not_contain=["0:0:0:0:0:0"],
-            # )
             .add_derp_conn_info_validator(
                 exists=True,
                 servers=DERP_SERVERS_STRS,
+            )
+            .add_nat_traversal_conn_info_peer_validator(
+                alpha.public_key,
+                beta.public_key,
+                False,
+                does_not_contain=["0:0:0:0:0:0"],
+                count=1,
             )
         )
         add_rtt_validators(alpha_validator, [alpha_ip_stack, beta_ip_stack, None])
@@ -1579,15 +1630,16 @@ async def test_lana_with_disconnected_node(
                 members=[ALPHA_FINGERPRINT],
                 does_not_contain=["0:0:0:0:0"],
             )
-            # TODO enable this when NAT traversal reporting is implemented (LLT-4858)
-            # .add_nat_traversal_conn_info_validator(
-            #     exists=True,
-            #     members=[ALPHA_FINGERPRINT],
-            #     does_not_contain=["0:0:0:0:0:0"],
-            # )
             .add_derp_conn_info_validator(
                 exists=True,
                 servers=DERP_SERVERS_STRS,
+            )
+            .add_nat_traversal_conn_info_peer_validator(
+                beta.public_key,
+                alpha.public_key,
+                False,
+                does_not_contain=["0:0:0:0:0:0"],
+                count=1,
             )
         )
         add_rtt_validators(beta_validator, [alpha_ip_stack, beta_ip_stack, None])
@@ -1647,25 +1699,21 @@ async def test_lana_with_disconnected_node(
                 exists=True,
                 members=[BETA_FINGERPRINT],
             )
-            # TODO enable this when NAT traversal reporting is implemented (LLT-4858)
-            # .add_nat_traversal_conn_info_validator(
-            #     exists=True,
-            #     members=[BETA_FINGERPRINT],
-            #     does_not_contain=["0:0:0:0:0:0"],
-            # )
             .add_derp_conn_info_validator(
                 exists=False,
             )
-            # TODO enable this when NAT traversal reporting is implemented (LLT-4858)
-            # .add_nat_traversal_conn_info_validator(
-            #     exists=True,
-            #     members=[BETA_FINGERPRINT],
-            #     does_not_contain=["0:0:0:0:0:0"],
-            # )
             .add_derp_conn_info_validator(
                 exists=False,
+            )
+            .add_nat_traversal_conn_info_peer_validator(
+                alpha.public_key,
+                beta.public_key,
+                False,
+                does_not_contain=["0:0:0:0:0:0"],
+                count=1,
             )
         )
+
         res = alpha_validator.validate(alpha_events[1])
         assert res[0], res[1]
 
@@ -1710,13 +1758,16 @@ async def test_lana_with_disconnected_node(
             .add_received_data_validator(
                 exists=False,
             )
-            # TODO enable this when NAT traversal reporting is implemented (LLT-4858)
-            # .add_nat_traversal_conn_info_validator(
-            #     exists=False,
-            # )
             .add_derp_conn_info_validator(
                 exists=True,
                 servers=DERP_SERVERS_STRS,
+            )
+            .add_nat_traversal_conn_info_peer_validator(
+                beta.public_key,
+                alpha.public_key,
+                False,
+                does_not_contain=["0:0:0:0:0:0"],
+                count=1,
             )
         )
 
