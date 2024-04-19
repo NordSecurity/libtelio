@@ -1,20 +1,19 @@
-// +build !windows
+//go:build !windows
 
 package main
 
 import (
-	"golang.zx2c4.com/wireguard/conn"
-	"golang.zx2c4.com/wireguard/tun"
+	"github.com/NordSecurity/wireguard-go/conn"
+	"github.com/NordSecurity/wireguard-go/tun"
 )
 
-type interfaceWatcher struct { }
+type interfaceWatcher struct{}
 
-func (iw *interfaceWatcher) Configure(binder conn.BindSocketToInterface, tun *tun.NativeTun) { }
+func (iw *interfaceWatcher) Configure(binder conn.BindSocketToInterface, tun *tun.NativeTun) {}
 
 func watchInterface() (*interfaceWatcher, error) {
 	var iw interfaceWatcher
 	return &iw, nil
 }
 
-func (iw *interfaceWatcher) Destroy() { }
-
+func (iw *interfaceWatcher) Destroy() {}

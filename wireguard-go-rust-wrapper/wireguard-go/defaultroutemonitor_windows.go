@@ -11,8 +11,8 @@ import (
 
 	"golang.org/x/sys/windows"
 
-	"golang.zx2c4.com/wireguard/conn"
-	"golang.zx2c4.com/wireguard/tun"
+	"github.com/NordSecurity/wireguard-go/conn"
+	"github.com/NordSecurity/wireguard-go/tun"
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 )
 

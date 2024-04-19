@@ -7,9 +7,9 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/NordSecurity/wireguard-go/conn"
+	"github.com/NordSecurity/wireguard-go/tun"
 	"golang.org/x/sys/windows"
-	"golang.zx2c4.com/wireguard/conn"
-	"golang.zx2c4.com/wireguard/tun"
 
 	"crypto/sha256"
 
@@ -159,8 +159,8 @@ func (b Binder) Close() error {
 
 func PlatformSpecific_GetBind(watcher *interfaceWatcher) conn.Bind {
 	return &Binder{
-		NewDefaultBind().(FullBind),
-		NewDefaultBind(),
+		conn.NewDefaultBind().(FullBind),
+		conn.NewDefaultBind(),
 		watcher,
 		0,
 	}
