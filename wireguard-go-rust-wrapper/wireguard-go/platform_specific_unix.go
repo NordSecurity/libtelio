@@ -1,13 +1,12 @@
 //go:build !windows
-// +build !windows
 
 package main
 
 import "C"
 
 import (
-	"golang.zx2c4.com/wireguard/conn"
-	"golang.zx2c4.com/wireguard/tun"
+	"github.com/NordSecurity/wireguard-go/conn"
+	"github.com/NordSecurity/wireguard-go/tun"
 )
 
 type Binder struct{}
