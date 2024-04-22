@@ -321,7 +321,10 @@ pub struct EventPublishers {
     nurse_config_update_publisher: Option<Tx<Box<MeshConfigUpdateEvent>>>,
 
     /// Used to manually trigger a nurse event collection
-    nurse_collection_trigger_publisher: Option<Tx<Box<()>>>,
+    nurse_collection_trigger_publisher: Option<Tx<()>>,
+
+    /// Used to manually trigger a qos collection
+    qos_collection_trigger_publisher: Option<Tx<()>>,
 
     // Saved for meshnet entities
     wg_endpoint_publish_event_publisher: chan::Tx<WireGuardEndpointCandidateChangeEvent>,
@@ -754,6 +757,15 @@ impl Device {
         })
     }
 
+    pub fn trigger_qos_collection(&self) -> Result<()> {
+        self.art()?.block_on(async {
+            task_exec!(self.rt()?, async move |rt| Ok(rt
+                .trigger_qos_collection()
+                .await))
+            .await?
+        })
+    }
+
     /// Used by tcli only
     #[cfg(any(target_os = "linux", target_os = "android"))]
     pub fn probe_pmtu(&self, host: IpAddr) -> Result<u32> {
@@ -961,13 +973,15 @@ impl Runtime {
 
         let derp_events = McChan::default();
 
-        let (config_update_ch, collection_trigger_ch) = if features.nurse.is_some() {
+        let (config_update_ch, collection_trigger_ch, qos_trigger_ch) = if features.nurse.is_some()
+        {
             (
                 Some(McChan::<Box<MeshConfigUpdateEvent>>::default().tx),
-                Some(McChan::<Box<()>>::default().tx),
+                Some(McChan::<()>::default().tx),
+                Some(McChan::<()>::default().tx),
             )
         } else {
-            (None, None)
+            (None, None, None)
         };
 
         // tests runtime use wg::MockedAdapter
@@ -1047,6 +1061,7 @@ impl Runtime {
                     wg_analytics_channel: analytics_ch.clone(),
                     config_update_channel: config_update_ch.clone(),
                     collection_trigger_channel: collection_trigger_ch.clone(),
+                    qos_trigger_channel: qos_trigger_ch.clone(),
                 };
 
                 Some(Arc::new(
@@ -1137,6 +1152,7 @@ impl Runtime {
                 libtelio_event_publisher: libtelio_wide_event_publisher,
                 nurse_config_update_publisher: config_update_ch,
                 nurse_collection_trigger_publisher: collection_trigger_ch,
+                qos_collection_trigger_publisher: qos_trigger_ch,
                 wg_endpoint_publish_event_publisher: wg_endpoint_publish_events.tx,
                 endpoint_upgrade_event_subscriber: wg_upgrade_sync.tx,
                 stun_server_publisher: stun_server_events.tx,
@@ -2013,7 +2029,16 @@ impl Runtime {
 
     async fn trigger_analytics_event(&self) -> Result<()> {
         if let Some(ch) = &self.event_publishers.nurse_collection_trigger_publisher {
-            let _ = ch.send(Box::new(()));
+            let _ = ch.send(());
+            Ok(())
+        } else {
+            Err(Error::NotStarted)
+        }
+    }
+
+    async fn trigger_qos_collection(&self) -> Result<()> {
+        if let Some(ch) = &self.event_publishers.qos_collection_trigger_publisher {
+            let _ = ch.send(());
             Ok(())
         } else {
             Err(Error::NotStarted)

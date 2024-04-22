@@ -160,6 +160,7 @@ impl OutputData {
 /// Wrapper for channel(s) to communicate with WireGuard.
 pub struct Io {
     pub wg_channel: mc_chan::Rx<Box<AnalyticsEvent>>,
+    pub manual_trigger_channel: mc_chan::Rx<()>,
 }
 
 /// Analytics data about a meshnet.
@@ -171,6 +172,8 @@ pub struct Analytics {
     ping_channel_rx: mpsc::Receiver<(PublicKey, DualPingResults)>,
     ping_channel_tx: mpsc::WeakSender<(PublicKey, DualPingResults)>,
     buckets: u32,
+    #[cfg(test)]
+    ping_cnt: u32,
 }
 
 #[async_trait]
@@ -187,6 +190,13 @@ impl Runtime for Analytics {
                     self.handle_wg_event(&wg_event).await;
                     Ok(())
                 })
+            },
+
+            // Manual trigger
+            Ok(_) = self.io.manual_trigger_channel.recv(), if self.ping_channel_tx.upgrade().is_none() => {
+                self.rtt_interval.reset();
+                self.perform_ping();
+                Self::next()
             },
 
             _ = self.rtt_interval.tick(), if self.ping_channel_tx.upgrade().is_none() => {
@@ -234,6 +244,9 @@ impl Analytics {
             ping_channel_rx,
             ping_channel_tx: ping_channel_tx.downgrade(),
             buckets: config.buckets,
+            // TODO: introduce mocked `ping_backend` for testing
+            #[cfg(test)]
+            ping_cnt: 0,
         }
     }
 
@@ -390,6 +403,11 @@ impl Analytics {
 
     /// Launch ping task for every node.
     fn perform_ping(&mut self) {
+        #[cfg(test)]
+        {
+            self.ping_cnt += 1;
+        }
+
         if !self.nodes.is_empty() {
             let (ping_channel_tx, ping_channel_rx) = mpsc::channel(self.nodes.len());
             self.ping_channel_rx = ping_channel_rx;
@@ -549,9 +567,15 @@ mod tests {
         collections::HashSet,
         net::{Ipv4Addr, Ipv6Addr},
     };
-    use telio_task::io::McChan;
+    use telio_task::{
+        io::{mc_chan::Tx, McChan},
+        task_exec, Task,
+    };
+    use tokio::time as t_time;
 
     use telio_crypto::{PublicKey, SecretKey};
+
+    const RTT: Duration = Duration::from_secs(1);
 
     #[test]
     fn test_percentile() {
@@ -607,7 +631,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_new_wg_event() {
-        let mut analytics = setup();
+        let (mut analytics, _, _) = setup();
         let mut event = generate_event();
 
         // assert that node is inserted successfully
@@ -665,7 +689,7 @@ mod tests {
     #[tokio::test]
     #[cfg(not(target_os = "macos"))]
     async fn test_handle_wg_event_after_ping() {
-        let mut analytics = setup();
+        let (mut analytics, _, _) = setup();
         let mut event = generate_event();
 
         // insert node through first event
@@ -727,9 +751,66 @@ mod tests {
         assert_eq!(output, expected_output);
     }
 
+    #[tokio::test(start_paused = true)]
+    #[cfg(not(target_os = "macos"))]
+    async fn test_manual_and_rtt_interval() {
+        let (analytics, manual_ch, wg_ch) = setup();
+        let start = t_time::Instant::now();
+        let t = Task::start(analytics);
+
+        async fn ping_cnt(task: &Task<Analytics>) -> i32 {
+            task_exec!(task, async move |state| Ok(state.ping_cnt as i32))
+                .await
+                .unwrap()
+        }
+
+        tokio::task::yield_now().await;
+        // First `tick()` is immediate
+        assert_eq!(
+            ping_cnt(&t).await,
+            1,
+            "millis passed: {}",
+            start.elapsed().as_millis()
+        );
+
+        let event = generate_event();
+        wg_ch.send(Box::new(event)).expect("send wg event");
+        tokio::task::yield_now().await;
+
+        // First - timed event
+        t_time::advance(RTT + Duration::from_millis(100)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(
+            ping_cnt(&t).await,
+            2,
+            "millis passed: {}",
+            start.elapsed().as_millis()
+        );
+
+        // Second - manual trigger
+        manual_ch.send(()).expect("manual trigger");
+        tokio::task::yield_now().await;
+        assert_eq!(
+            ping_cnt(&t).await,
+            3,
+            "millis passed: {}",
+            start.elapsed().as_millis()
+        );
+
+        // Third - one more timed event
+        t_time::advance(RTT + Duration::from_millis(100)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(
+            ping_cnt(&t).await,
+            4,
+            "millis passed: {}",
+            start.elapsed().as_millis()
+        );
+    }
+
     #[tokio::test]
     async fn test_handle_wg_event_from_virtual_peers() {
-        let mut analytics = setup();
+        let (mut analytics, _, _) = setup();
 
         let mut event = generate_event();
         let mut event1 = generate_event();
@@ -771,7 +852,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_node_list_cleanup() {
-        let mut analytics = setup();
+        let (mut analytics, _, _) = setup();
         let event1 = generate_event();
         let event2 = generate_event();
         let mut expected_nodes_keys = HashSet::new();
@@ -795,19 +876,24 @@ mod tests {
         assert_eq!(nodes_keys, expected_nodes_keys);
     }
 
-    fn setup() -> Analytics {
-        let wg_channel = McChan::new(1);
+    fn setup() -> (Analytics, Tx<()>, Tx<Box<AnalyticsEvent>>) {
+        let (manual_trigger_channel, wg_channel) = (McChan::new(1), McChan::new(1));
         let io = Io {
             wg_channel: wg_channel.rx,
+            manual_trigger_channel: manual_trigger_channel.rx,
         };
         let config = QoSConfig {
-            rtt_interval: Duration::from_millis(500),
+            rtt_interval: RTT,
             rtt_tries: 1,
             rtt_types: vec![RttType::Ping],
             buckets: 5,
         };
 
-        Analytics::new(config, io)
+        (
+            Analytics::new(config, io),
+            manual_trigger_channel.tx,
+            wg_channel.tx,
+        )
     }
 
     fn generate_event() -> AnalyticsEvent {

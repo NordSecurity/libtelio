@@ -41,7 +41,9 @@ pub struct NurseIo<'a> {
     /// Event channel to gather meshnet config update
     pub config_update_channel: Option<mc_chan::Tx<Box<MeshConfigUpdateEvent>>>,
     /// Event channel to manual trigger a collection
-    pub collection_trigger_channel: Option<mc_chan::Tx<Box<()>>>,
+    pub collection_trigger_channel: Option<mc_chan::Tx<()>>,
+    /// Event channel to manual trigger a qos
+    pub qos_trigger_channel: Option<mc_chan::Tx<()>>,
 }
 
 /// Nurse entity
@@ -138,6 +140,9 @@ impl State {
         let collection_trigger_channel = io
             .collection_trigger_channel
             .unwrap_or_else(|| McChan::default().tx);
+        let qos_trigger_channel = io
+            .qos_trigger_channel
+            .unwrap_or_else(|| McChan::default().tx);
 
         // Heartbeat component
         let heartbeat_io = HeartbeatIo {
@@ -166,7 +171,10 @@ impl State {
 
             Some(Task::start(QoSAnalytics::new(
                 qos_config,
-                QoSIo { wg_channel },
+                QoSIo {
+                    wg_channel,
+                    manual_trigger_channel: qos_trigger_channel.subscribe(),
+                },
             )))
         } else {
             None
