@@ -1,40 +1,17 @@
 ### UNRELEASED
----
-* LLT-1113: Add no-link detection mechanism
+
 * LLT-4154: Optimize Upnp/Stun providers
-* LLT-4908: Lowered DNS TTL time for nicknames and NXDomain responses
-* LLT-4915: Update the moose tracker to v1.0.0-libtelioApp
-* LLT-4913: Skip qos analytics ping for unconnected peers
-* LLT-4916: Allow any case nicknames
-* LLT-4406: Implement error handling for proxy egress
-* LLT-4948: Change missed tick behavior from burst to delay
 * LLT-4855: Add Aggregator struct for connectivity events gathering
-* LLT-4917: Fix the issue with wireguard-go failing to bind to a port on some devices
 * LLT-2515: Implement PMTU discovery for VPN connection paths on Linux/Android
-* LLT-4978: Bump moose tracker to v2.0.0-libtelioApp
-* LLT-4967: Clear leftover STUN peer after meshnet is turned off
-* LLT-4968: Make the default nurse initial_heartbeat_interval to be 5 minutes
-* LLT-4850: Add missing VPN meshnet address to analytics
-* LLT-4980: Introduce synchronization for the endpoint map in telio-proxy
-* LLT-4970: PQ VPN is enabled by calling `telio_connect_to_exit_node_postquantum()`
 * LLT-4981: Add upgrade decision message
-* LLT-5002: Fix preshared key parsing logic
-* LLT-5004: Wireguard go oscillation
-* LLT-4983: Expose telio_generate_stack_panic method
-* LLT-4509: Enable windows arm64 build.
-* LLT-5007: Bump moose tracker to v3.0.0-libtelioApp
 * LLT-4873: Remove old SWIG FFI bindings
 * LLT-4996: nurse: Stop adding virtual peers to qos
 * LLT-4687: Add PQ VPN nat-lab tests
-* LLT-5009: Enable QoS feature by default
-* LLT-4980: Add exponential backoff for socket updates on error
 * LLT-4954: Handle system sleep/wakeup in nat/derp monitoring
-* LLT-5068: Bump Moose 4.0.1
 * LLT-4858: NAT state analytics reporting
 * LLT-5038: Add doc rs as in-repo documentation system skeleton
 * LLT-5034: Upgrade rust toolchain to v1.77.2
 * LLT-4924: Enable size reduction compiler flags
-* LLT-5078: Fix telio-proxy panic
 * LLT-5039: Make connection reporting unaffected by system time changes
 * LLT-4168: Fix telio-dns assert panics in debug mode
 * LLT-4856: Enable aggregator timed events
@@ -42,13 +19,105 @@
 
 <br>
 
+### v4.3.2
+### **Bravas**
+---
+* LLT-5078: Fix telio-proxy panic
+
+<br>
+
+### v4.3.1
+### **Bravas**
+---
+* LLT-5068: Bump MOOSE to v4.0.1
+
+<br>
+
+### v4.3.0
+### **Bravas**
+---
+
+New tracker confirmed stable
+
+<br>
+
+### v4.3.0-rc1
+### **Bravas**
+---
+* LLT-5004: Wireguard go oscillation
+* LLT-4983: Expose telio_generate_stack_panic method
+* LLT-1113: Add no-link detection mechanism
+* LLT-5007: Bump moose tracker to v3.0.0-libtelioApp
+* LLT-4509: Enable windows arm64 build.
+* LLT-5009: Enable QoS feature by default
+* LLT-4980: Add exponential backoff for socket updates on error
+
+<br>
+
+### v4.3.0-rc0
+### **Bravas**
+---
+* LLT-4915: Update the moose tracker to v1.0.0-libtelioApp
+* LLT-4978: Bump moose tracker to v2.0.0-libtelioApp
+* LLT-4970: PQ VPN is enabled by calling `telio_connect_to_exit_node_postquantum()`
+* LLT-5002: Fix preshared key parsing logic
+
+<br>
+
+### v4.2.8
+### **Space-cakes**
+---
+* LLT-4644: Fix wintun adapter creation
+
+<br>
+
+### v4.2.7
+### **Space-cakes**
+---
+* LLT-5078: Fix telio-proxy panic
+
+<br>
+
+### v4.2.6
+### **Space-cakes**
+---
+* LLT-5002: Fix preshared key parsing logic
+* LLT-5004: Wireguard go oscillation
+* LLT-1113: Add no-link detection mechanism
+* LLT-4983: Expose telio_generate_stack_panic method
+* LLT-4509: Enable windows arm64 build.
+* LLT-5007: Bump moose tracker to v3.0.0-libtelioApp
+* LLT-5009: Enable QoS feature by default
+* LLT-4980: Add exponential backoff for socket updates on error
+
+<br>
+
+### v4.2.5
+### **Space-cakes**
+---
+* LLT-4908: Lowered DNS TTL time for nicknames and NXDomain responses
+* LLT-4916: Allow any case nicknames
+* LLT-4948: Change missed tick behavior from burst to delay
+* LLT-4967: Clear leftover STUN peer after meshnet is turned off
+* LLT-4913: Skip qos analytics ping for unconnected peers
+* LLT-4968: Make the default nurse initial_heartbeat_interval to be 5 minutes
+* LLT-4850: Add missing VPN meshnet address to analytics
+* LLT-4917: Fix the issue with wireguard-go failing to bind to a port on some devices
+* LLT-4870: Bring back PQ
+* LLT-4406: Implement error handling for proxy egress
+* LLT-4980: Introduce synchronization for the endpoint map in telio-proxy
+
+<br>
+
 ### v4.2.4
+### **Space-cakes**
 ---
 * LLT-4878: Fix FFI layer which forbids NULL for `telio_connect_to_exit_node()` calls
 
 <br>
 
 ### v4.2.3
+### **Space-cakes**
 ---
 * LLT-4869: Fix maven upload
 * LLT-4870: Revert post quantum
@@ -56,6 +125,7 @@
 <br>
 
 ### v4.2.2
+### **Space-cakes**
 ----
 * LLT-4662: Update rustix dependency
 * LLT-4667: Fix panic in boringtun
@@ -82,6 +152,7 @@
 <br>
 
 ### v4.2.1
+### **Space-cakes**
 ----
 * LLT-4006: Restrict nat-lab containers capabilities
 * LLT-4586: Fix wireguard-go initialization crash
