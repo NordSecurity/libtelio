@@ -90,7 +90,7 @@ jobs:
           Start-Process -FilePath dist/windows/release/x86_64/tcli.exe -WindowStyle Hidden
           type tcli.log | findstr /C:"TEST_VERSION"
         if: ${{ matrix.target_os == 'windows' }}
-      - uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+      - uses: actions/upload-artifact@1746f4ab65b179e0ea60a494b83293b640dd5bba # v4.3.2
         with:
           name: libtelio-build-${{ matrix.target_os }}-${{ matrix.arch }}-with-replaced-version
           path: dist/
