@@ -1,0 +1,95 @@
+<script>
+class MultiCodeSelect extends HTMLElement {
+  static langs = ['rust', 'go', 'kotlin', 'swift', 'cs'];
+  static active = 'rust';
+  static tracked = [];
+  
+  static update(to) {
+    console.log(`update to ${to}`, MultiCodeSelect.tracked)
+    MultiCodeSelect.active = to;
+    MultiCodeSelect.tracked.forEach(s => s.render())
+  }
+
+  constructor() {
+    super();
+    
+    MultiCodeSelect.tracked.push(this);
+  }
+
+  connectedCallback() {
+      this.render();
+  }
+
+  render() {
+    this.innerHTML = `
+      <div class="pure-button-group" role="group" style="font-size: 85%">
+        ${MultiCodeSelect.langs.map(lang => {
+          const active = lang == MultiCodeSelect.active ? 'pure-button-active' : '';
+        
+          return `
+          <button class="pure-button ${active}" onclick="MultiCodeSelect.update('${lang}')">${lang}</button>
+          `;
+        })}
+      </div>
+    `;
+  }
+
+  setActiveButton(button) {
+    this.activeButton = button;
+  }
+}
+
+// This set active button is not being found why ?
+
+class MultiCode extends HTMLElement {
+    constructor() {
+      super();
+      MultiCodeSelect.tracked.push(this)
+    }
+
+    connectedCallback() {
+      this.hideNonActiveLangBlocks();
+    }
+
+    render() {
+      this.hideNonActiveLangBlocks();
+    }
+
+    hideNonActiveLangBlocks() {
+      const preElements = this.querySelectorAll('pre');
+      console.log(`found elements: ${preElements}`)
+      preElements.forEach((preElement) => {
+        console.log(preElement)
+        const cls = Array.from(preElement.classList);
+        const lang = MultiCodeSelect.active;
+
+        if (cls.includes(lang) || cls.includes(`language-${lang}`)) {
+          preElement.parentNode.style.display = '';
+        } else {
+          preElement.parentNode.style.display = 'none';
+        }
+      });
+    }
+
+    findCodeBlock(element) {
+      if (element.tagName.toLowerCase() === 'code') {
+        return element;
+      }
+      for (let i = 0; i < element.children.length; i++) {
+        const codeBlock = this.findCodeBlock(element.children[i]);
+        if (codeBlock) {
+          return codeBlock;
+        }
+      }
+      return null;
+    }
+}
+
+document.addEventListener("DOMContentLoaded", function() {
+  customElements.define('multi-code', MultiCode);
+  customElements.define('multi-code-select', MultiCodeSelect);
+
+  console.log("multi-code loaded");
+});
+
+</script>
