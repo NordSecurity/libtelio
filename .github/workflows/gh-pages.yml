@@ -14,7 +14,7 @@ jobs:
     # Specifying these flags here as environment variables, because specifying them in the .cargo/config file interferes with the other
     # workflows, because of the nightly features.
     env:
-        RUSTDOCFLAGS: "-Zunstable-options --enable-index-page -Aunknown_lints"
+        RUSTDOCFLAGS: "-Zunstable-options --enable-index-page -Aunknown_lints --html-in-header ./rustdoc/header.html --html-after-content ./rustdoc/multi-code.html --html-after-content ./rustdoc/footer.html"
     steps:
     - name: Checkout
       uses: actions/checkout@v4

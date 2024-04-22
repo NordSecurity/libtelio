@@ -5,7 +5,6 @@ class MultiCodeSelect extends HTMLElement {
   static tracked = [];
   
   static update(to) {
-    console.log(`update to ${to}`, MultiCodeSelect.tracked)
     MultiCodeSelect.active = to;
     MultiCodeSelect.tracked.forEach(s => s.render())
   }
@@ -33,13 +32,7 @@ class MultiCodeSelect extends HTMLElement {
       </div>
     `;
   }
-
-  setActiveButton(button) {
-    this.activeButton = button;
-  }
 }
-
-// This set active button is not being found why ?
 
 class MultiCode extends HTMLElement {
     constructor() {
@@ -57,9 +50,7 @@ class MultiCode extends HTMLElement {
 
     hideNonActiveLangBlocks() {
       const preElements = this.querySelectorAll('pre');
-      console.log(`found elements: ${preElements}`)
       preElements.forEach((preElement) => {
-        console.log(preElement)
         const cls = Array.from(preElement.classList);
         const lang = MultiCodeSelect.active;
 
