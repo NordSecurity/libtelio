@@ -150,6 +150,26 @@ class PeerInfo(DataClassJsonMixin):
         )
 
 
+class ErrorLevel(Enum):
+    Critical = "critical"
+    Severe = "severe"
+    Warning = "warning"
+    Notice = "notice"
+
+
+class ErrorCode(Enum):
+    NoError = "noerror"
+    Unknown = "unknown"
+
+
+@dataclass_json
+@dataclass
+class ErrorEvent(DataClassJsonMixin):
+    level: ErrorLevel = ErrorLevel.Critical
+    code: ErrorCode = ErrorCode.NoError
+    msg: str = ""
+
+
 # Equivalent of `libtelio/telio-wg/src/adapter/mod.rs`
 class AdapterType(Enum):
     Default = ""
@@ -163,6 +183,7 @@ class Runtime:
     _output_notifier: OutputNotifier
     _peer_state_events: List[PeerInfo]
     _derp_state_events: List[DerpServer]
+    _error_events: List[ErrorEvent]
     _started_tasks: List[str]
     _stopped_tasks: List[str]
     allowed_pub_keys: Set[str]
@@ -171,6 +192,7 @@ class Runtime:
         self._output_notifier = OutputNotifier()
         self._peer_state_events = []
         self._derp_state_events = []
+        self._error_events = []
         self._started_tasks = []
         self._stopped_tasks = []
         self.allowed_pub_keys = set()
@@ -181,6 +203,7 @@ class Runtime:
             or self._output_notifier.handle_output(line)
             or self._handle_derp_event(line)
             or self._handle_task_information(line)
+            or self._handle_error_event(line)
         )
 
     def _handle_task_information(self, line) -> bool:
@@ -373,6 +396,33 @@ class Runtime:
     def get_stopped_tasks(self) -> List[str]:
         return self._stopped_tasks
 
+    def _handle_error_event(self, line) -> bool:
+        tokens = self._extract_event_tokens(line, "error")
+        if tokens is None:
+            return False
+
+        json_string = tokens[1].strip()
+        result = re.search("{(.*)}", json_string)
+        if result:
+            error_event = ErrorEvent.from_json(
+                "{" + result.group(1).replace("\\", "") + "}"
+            )
+            assert isinstance(error_event, ErrorEvent)
+            self._error_events.append(error_event)
+            return True
+        return False
+
+    async def notify_error_event(self, err: ErrorEvent) -> None:
+        def _get_events() -> List[ErrorEvent]:
+            return [error for error in self._error_events if error == err]
+
+        old_events = _get_events()
+        while True:
+            new_events = _get_events()[len(old_events) :]
+            if new_events:
+                return
+            await asyncio.sleep(0.1)
+
 
 class Events:
     _runtime: Runtime
@@ -436,6 +486,9 @@ class Events:
             self._runtime.notify_derp_event(server_ip, states),
             timeout if timeout else 30,
         )
+
+    async def wait_for_event_error(self, err: ErrorEvent, timeout: float = 30) -> None:
+        await asyncio.wait_for(self._runtime.notify_error_event(err), timeout)
 
 
 class Client:
@@ -655,6 +708,9 @@ class Client:
                     await asyncio.sleep(0.1)
             except asyncio.CancelledError:
                 pass
+
+    async def wait_for_event_error(self, err: ErrorEvent):
+        await self.get_events().wait_for_event_error(err)
 
     async def set_meshmap(self, meshmap: Meshmap) -> None:
         made_changes = await self._configure_interface()

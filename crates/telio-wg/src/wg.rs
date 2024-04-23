@@ -6,7 +6,11 @@ use std::{
     collections::HashMap,
     net::{IpAddr, Ipv4Addr, SocketAddr},
 };
-use telio_model::{features::FeatureLinkDetection, mesh::ExitNode};
+use telio_model::{
+    event::{Error as LibtelioError, ErrorCode, ErrorLevel, Event as LibtelioEvent, EventMsg, Set},
+    features::FeatureLinkDetection,
+    mesh::ExitNode,
+};
 use telio_sockets::{NativeProtector, SocketPool};
 use telio_utils::{
     dual_target::{DualTarget, DualTargetError},
@@ -107,6 +111,8 @@ pub struct Io {
     pub events: Tx<Box<Event>>,
     /// Channel to transmit analytics
     pub analytics_tx: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
+    /// Channel to transmit event to registered event callback
+    pub libtelio_wide_event_publisher: Option<mc_chan::Tx<Box<LibtelioEvent>>>,
 }
 
 struct State {
@@ -121,14 +127,16 @@ struct State {
 
     // Detecting unexpected driver failures, such as a malicious removal
     // We won't be notified of any errors, but a periodic call to get_config_uapi() will return a Win32 error code != 0.
-    uapi_failed_last_call: bool,
     uapi_fail_counter: i32,
 
     // No link detection mechanism
     no_link_detection: LinkDetection,
+
+    libtelio_event: Option<mc_chan::Tx<Box<LibtelioEvent>>>,
 }
 
 const POLL_MILLIS: u64 = 1000;
+const MAX_UAPI_FAIL_COUNT: i32 = 10;
 
 #[cfg(all(not(any(test, feature = "test-adapter")), windows))]
 const DEFAULT_NAME: &str = "NordLynx";
@@ -199,6 +207,7 @@ impl DynamicWg {
     ///         Io {
     ///             events: chan.tx,
     ///             analytics_tx: None,
+    ///             libtelio_wide_event_publisher: None,
     ///         },
     ///         Config {
     ///             adapter: AdapterType::default(),
@@ -249,9 +258,9 @@ impl DynamicWg {
                 event: io.events,
                 last_endpoint_change: Default::default(),
                 analytics_tx: io.analytics_tx,
-                uapi_failed_last_call: false,
                 uapi_fail_counter: 0,
                 no_link_detection: LinkDetection::new(no_link_detection),
+                libtelio_event: io.libtelio_wide_event_publisher,
             }),
         }
     }
@@ -504,12 +513,20 @@ impl State {
         // such as a malicious removal, we need to count the successive failed calls.
         // If a certain threshold is reached, cleanup the network config and notify the app about connection loss.
         if 0 == ret.errno {
-            self.uapi_failed_last_call = false;
             self.uapi_fail_counter = 0;
         } else {
-            self.uapi_failed_last_call = true;
             self.uapi_fail_counter += 1;
-            // TODO: check failure count threshold, cleanup network config, destroy adapter, notify app
+        }
+
+        if self.uapi_fail_counter >= MAX_UAPI_FAIL_COUNT && ret.interface.is_none() {
+            if let Some(libtelio_event) = &self.libtelio_event {
+                let err_event = LibtelioEvent::new::<LibtelioError>()
+                    .set(EventMsg::from("Interface gone"))
+                    .set(ErrorCode::Unknown)
+                    .set(ErrorLevel::Critical);
+                let _ = libtelio_event.send(Box::new(err_event));
+            }
+            return Err(Error::InternalError("Interface gone"));
         }
 
         Ok(ret)
@@ -987,6 +1004,7 @@ pub mod tests {
             Io {
                 events: events_ch.tx.clone(),
                 analytics_tx: analytics_ch.clone(),
+                libtelio_wide_event_publisher: None,
             },
             Box::new(adapter.clone()),
             None,
