@@ -214,7 +214,7 @@ pub struct RequestedState {
     pub(crate) keepalive_periods: FeaturePersistentKeepalive,
 }
 
-pub struct MeshnetEntites {
+pub struct MeshnetEntities {
     // Relay Multiplexer
     multiplexer: Arc<Multiplexer>,
 
@@ -234,12 +234,12 @@ pub struct MeshnetEntitiesLastState {
 }
 
 pub enum MeshnetState {
-    Entities(MeshnetEntites),
+    Entities(MeshnetEntities),
     LastState(MeshnetEntitiesLastState),
 }
 
 impl MeshnetState {
-    fn left(&self) -> Option<&MeshnetEntites> {
+    fn left(&self) -> Option<&MeshnetEntities> {
         if let Self::Entities(entities) = self {
             Some(entities)
         } else {
@@ -249,7 +249,7 @@ impl MeshnetState {
 
     #[cfg(test)]
     #[track_caller]
-    fn expect_left(&self, msg: &str) -> &MeshnetEntites {
+    fn expect_left(&self, msg: &str) -> &MeshnetEntities {
         self.left().expect(msg)
     }
 
@@ -894,7 +894,7 @@ impl RequestedState {
     }
 }
 
-impl MeshnetEntites {
+impl MeshnetEntities {
     async fn stop(mut self) -> MeshnetEntitiesLastState {
         macro_rules! stop_entity {
             ($entity: expr, $name: expr) => {{
@@ -1188,7 +1188,7 @@ impl Runtime {
         })
     }
 
-    async fn start_meshnet_entities(&mut self) -> Result<MeshnetEntites> {
+    async fn start_meshnet_entities(&mut self) -> Result<MeshnetEntities> {
         let endpoint_publish_events = Chan::default();
         let pong_rxed_events = Chan::default();
 
@@ -1390,7 +1390,7 @@ impl Runtime {
             None
         };
 
-        Ok(MeshnetEntites {
+        Ok(MeshnetEntities {
             multiplexer,
             derp,
             proxy,
@@ -1648,7 +1648,7 @@ impl Runtime {
                 .wait_for_proxy_listen_port(Duration::from_secs(1))
                 .await?;
 
-            let meshnet_entities: MeshnetEntites = if let MeshnetState::Entities(entities) =
+            let meshnet_entities: MeshnetEntities = if let MeshnetState::Entities(entities) =
                 std::mem::replace(
                     &mut self.entities.meshnet,
                     MeshnetState::LastState(Default::default()),
