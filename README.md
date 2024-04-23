@@ -22,7 +22,7 @@ To go through the short TCLI tutorial you need also [docker](https://docs.docker
 
 ### Build
 
-You can build the `libtelio` library using standard `cargo build` command.
+You can build the `libtelio` library using the standard `cargo build` command.
 
 #### Windows msvc toolchain
 
@@ -35,7 +35,7 @@ c. C++ Clang tools for Windows
 3. TDM-GCC 64-bit (https://jmeubank.github.io/tdm-gcc/download/)
 4. Go 1.19
 
-Before running `cargo build` you need to set msvc environment. Examples for cmd and powershell in case of Visual Studio 2019 Community:
+Before running `cargo build` you need to set msvc environment. Examples of cmd and powershell in case of Visual Studio 2019 Community:
 1. In cmd.exe run:
 ```shell
 call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat" x64
@@ -56,7 +56,7 @@ First of all, build `tcli` utility:
 cargo build -p tcli
 ```
 
-You will need a lightweight Linux docker image with the some networking utilities,
+You will need a lightweight Linux docker image with some networking utilities,
 which are missing from the basic Ubuntu image, so let's create a new one.
 Make a `docker` directory in `tcli-test` and put there the following simple Dockerfile:
 ```
