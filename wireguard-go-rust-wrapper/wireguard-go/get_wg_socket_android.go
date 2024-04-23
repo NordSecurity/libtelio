@@ -7,7 +7,8 @@ import "C"
 
 import (
 	"fmt"
-	"golang.zx2c4.com/wireguard/conn"
+
+	"github.com/NordSecurity/wireguard-go/conn"
 )
 
 const jsonFmt = "{ \"fd\": %d, \"err\": \"%v\"}"
@@ -40,4 +41,3 @@ func PlatformSpecific_GetWgSocket(handle C.int32_t, ipv6 bool) *C.char {
 
 	return C.CString(fmt.Sprintf(jsonFmt, fd, ""))
 }
-
