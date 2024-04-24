@@ -4,6 +4,7 @@ import os
 import sys
 import subprocess
 import moose_utils
+import shutil
 from pathlib import Path
 
 NAME = "telio"
@@ -25,7 +26,9 @@ MOOSE_MAP = {
     "x86_64": "x86_64",
     "aarch64": "aarch64",
     "i686": "i686",
+    "armv5": "armv5_eabi",
     "armv7": "armv7_eabi",
+    "armv7hf": "armv7_eabihf",
 }
 
 PROJECT_CONFIG = rutils.Project(
@@ -150,12 +153,60 @@ LIBTELIO_CONFIG = {
     },
     "linux": {
         "archs": {
-            "x86_64": {"strip_path": "/usr/bin/strip"},
-            "aarch64": {"strip_path": "/usr/aarch64-linux-gnu/bin/strip"},
-            "arm64": {"strip_path": "/usr/aarch64-linux-gnu/bin/strip"},
-            "i686": {"strip_path": "/usr/i686-linux-gnu/bin/strip"},
-            "armv7": {"strip_path": "/usr/arm-linux-gnueabihf/bin/strip"},
-            "armv5": {"strip_path": "/usr/arm-linux-gnueabi/bin/strip"},
+            "x86_64": {
+                "strip_path": "/usr/bin/strip",
+                "env": {
+                    "RUSTFLAGS": (
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['x86_64']}",
+                        "set",
+                    )
+                },
+            },
+            "aarch64": {
+                "strip_path": "/usr/aarch64-linux-gnu/bin/strip",
+                "env": {
+                    "RUSTFLAGS": (
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['aarch64']}",
+                        "set",
+                    )
+                },
+            },
+            "arm64": {
+                "strip_path": "/usr/aarch64-linux-gnu/bin/strip",
+                "env": {
+                    "RUSTFLAGS": (
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['aarch64']}",
+                        "set",
+                    )
+                },
+            },
+            "i686": {
+                "strip_path": "/usr/i686-linux-gnu/bin/strip",
+                "env": {
+                    "RUSTFLAGS": (
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['i686']}",
+                        "set",
+                    )
+                },
+            },
+            "armv7": {
+                "strip_path": "/usr/arm-linux-gnueabihf/bin/strip",
+                "env": {
+                    "RUSTFLAGS": (
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['armv7hf']}",
+                        "set",
+                    )
+                },
+            },
+            "armv5": {
+                "strip_path": "/usr/arm-linux-gnueabi/bin/strip",
+                "env": {
+                    "RUSTFLAGS": (
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['armv5']}",
+                        "set",
+                    )
+                },
+            },
         },
         "env": {
             "RUSTFLAGS": ([" -C debuginfo=2 "], "set"),
@@ -243,9 +294,14 @@ def main() -> None:
 
 def exec_build(args):
     if args.moose:
-        if args.os in ["windows", "android"]:
+        if args.os in ["linux", "windows", "android"]:
             sys.path.append(f"{PROJECT_ROOT}/ci")
-            moose_utils.fetch_moose_dependencies(args.os, MOOSE_MAP[args.arch])
+
+            if (args.os, args.arch) == ("linux", "armv7"):
+                moose_utils.fetch_moose_dependencies(args.os, MOOSE_MAP["armv7hf"])
+            else:
+                moose_utils.fetch_moose_dependencies(args.os, MOOSE_MAP[args.arch])
+
         moose_utils.set_cargo_dependencies()
         # TODO: remove when we get rid of sm crate (LLT-4929)
         # We are using an outdated library in telio-traversal called sm
@@ -288,6 +344,18 @@ def exec_build(args):
     )
     rutils.check_config(config)
     call_build(config)
+
+    if args.moose and "linux" in args.os:
+        arch = (
+            MOOSE_MAP[config.arch] if config.arch != "armv7" else MOOSE_MAP["armv7hf"]
+        )
+        sqlite_path = f"{PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{arch}/libsqlite3.so"
+        shutil.copyfile(
+            sqlite_path,
+            PROJECT_CONFIG.get_distribution_path(
+                config.target_os, config.arch, "libsqlite3.so", config.debug
+            ),
+        )
 
 
 def create_debug_symbols(config):

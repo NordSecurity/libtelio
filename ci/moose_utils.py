@@ -43,6 +43,8 @@ def _download_moose_file(opsys: str, arch: str, file_name: str):
         raise ValueError("LIBTELIO_ENV_SEC_NEXUS_URL not set")
 
     url = f"{nexus_url}/repository/ll-gitlab-release/{MOOSE_PROJECT_ID}/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/{opsys}/{arch}/{file_name}"
+    if not url.startswith("https://"):
+        url = "https://" + url
 
     subprocess.check_call(
         ["curl", "-f", "-u", nexus_credentials, url, "-o", output_path]
