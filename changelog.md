@@ -1,3 +1,9 @@
+### v4.2.9
+---
+* LLT-5095: Send critical event to app when adapter is dead
+
+<br>
+
 ### v4.2.8
 ---
 * LLT-4644: Fix wintun adapter creation
