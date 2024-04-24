@@ -4,6 +4,7 @@ tcli.log
 !/.cargo
 !/.github
 !/.gitlab
+!/.unreleased
 *.pyc
 *.box
 *.deb

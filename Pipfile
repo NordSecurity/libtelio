@@ -4,7 +4,7 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-black = "*"
+black = "==24.1.1"
 isort = "*"
 autoflake = "*"
 mypy = "*"
@@ -13,6 +13,7 @@ pyyaml = "*"
 requests = "*"
 pipenv = "*"
 dill = "*"
+regex = "*"
 
 [dev-packages]
 

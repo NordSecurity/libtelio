@@ -142,7 +142,7 @@ Pinger = _reflection.GeneratedProtocolMessageType(
     (_message.Message,),
     {
         "DESCRIPTOR": _PINGER,
-        "__module__": "telio_proto.protos.pinger_pb2"
+        "__module__": "telio_proto.protos.pinger_pb2",
         # @@protoc_insertion_point(class_scope:Pinger)
     },
 )

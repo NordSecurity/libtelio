@@ -302,14 +302,7 @@ cargo test
 
 ## Releases
 
-To prepare a release, there's a helper script `release.py`. This script will tag the commit and change versions in all relevant places.
-
-The common usage is:
-```
-release.py --changelog --push --tag=v4.0.5
-```
-
-You can check the actual commands executed, by passing the `--dry-run` argument.
+For information about how to release, please see [releasing.md](releasing.md).
 
 ## Building Documentation
 

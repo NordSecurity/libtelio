@@ -37,17 +37,19 @@ PROJECT_CONFIG = rutils.Project(
 def copy_bindings(config):
     # TODO(Mathias): reenable when packaging solution is done
     pass
-    #if "binding_src" in LIBTELIO_CONFIG[config.target_os]:
+    # if "binding_src" in LIBTELIO_CONFIG[config.target_os]:
     #    telio_bindings = f"{PROJECT_CONFIG.root_dir}/{LIBTELIO_CONFIG[config.target_os]['binding_src']}"
     #    binding_destination = (
     #        f"{PROJECT_CONFIG.root_dir}/{LIBTELIO_CONFIG[config.target_os]['binding_dest']}"
     #        + telio_bindings.split("/")[-1]
     #    )
+
+
 #
-    #    if os.path.exists(binding_destination):
-    #        rutils.remove_tree_or_file(binding_destination)
+#    if os.path.exists(binding_destination):
+#        rutils.remove_tree_or_file(binding_destination)
 #
-    #    rutils.copy_tree_or_file(telio_bindings, binding_destination)
+#    rutils.copy_tree_or_file(telio_bindings, binding_destination)
 
 
 """
@@ -116,7 +118,7 @@ LIBTELIO_CONFIG = {
             "derpcli": {"derpcli": "derpcli.exe"},
             "interderpcli": {"interderpcli": "interderpcli.exe"},
             NAME: {NAME: f"{NAME}.dll"},
-        }
+        },
     },
     "android": {
         "archs": {
@@ -161,7 +163,7 @@ LIBTELIO_CONFIG = {
         },
         "packages": {
             NAME: {f"lib{NAME}": f"lib{NAME}.so"},
-        }
+        },
     },
     "linux": {
         "archs": {
@@ -220,33 +222,33 @@ def main() -> None:
     elif args.command == "xcframework":
         # TODO(Mathias): reenable when packaging solution is done
         pass
-        #headers = {
+        # headers = {
         #    Path("libtelio/module.modulemap"): PROJECT_CONFIG.get_root_dir()
         #    / "contrib/darwin/module.modulemap",
         #    Path("libtelio/telio.h"): PROJECT_CONFIG.get_root_dir()
         #    / "ffi/bindings/telio.h",
-        #}
-        #dbu.create_xcframework(
+        # }
+        # dbu.create_xcframework(
         #    PROJECT_CONFIG, args.debug, "libtelioFFI", headers, "libtelio.a"
-        #)
+        # )
     elif args.command == "build-ios-simulator-stubs":
         # TODO(Mathias): reenable when packaging solution is done
         pass
-        #dbu.build_stub_ios_simulator_libraries(
+        # dbu.build_stub_ios_simulator_libraries(
         #    PROJECT_CONFIG,
         #    args.debug,
         #    args.header or PROJECT_CONFIG.get_root_dir() / "ffi/bindings/telio.h",
         #    "libtelio.a",
-        #)
+        # )
     elif args.command == "build-tvos-simulator-stubs":
         # TODO(Mathias): reenable when packaging solution is done
         pass
-        #dbu.build_stub_tvos_simulator_libraries(
+        # dbu.build_stub_tvos_simulator_libraries(
         #    PROJECT_CONFIG,
         #    args.debug,
         #    args.header or PROJECT_CONFIG.get_root_dir() / "ffi/bindings/telio.h",
         #    "libtelio.a",
-        #)
+        # )
     else:
         assert False, f"command '{args.command}' not supported"
 
@@ -274,7 +276,7 @@ def exec_build(args):
         if args.msvc:
             # Windows MSVC toolchain
             if not "env" in GLOBAL_CONFIG["windows"]:
-                GLOBAL_CONFIG["windows"]["env"] = { "RUSTFLAGS": () }
+                GLOBAL_CONFIG["windows"]["env"] = {"RUSTFLAGS": ()}
 
             if not "RUSTFLAGS" in GLOBAL_CONFIG["windows"]["env"]:
                 GLOBAL_CONFIG["windows"]["env"]["RUSTFLAGS"] = ()
@@ -287,9 +289,9 @@ def exec_build(args):
                 moose_utils.create_msvc_import_library(args.arch)
         else:
             # Windows GNU toolchain
-            GLOBAL_CONFIG["windows"]["archs"][args.arch][
-                "rust_target"
-            ] = args.arch + "-pc-windows-gnu"
+            GLOBAL_CONFIG["windows"]["archs"][args.arch]["rust_target"] = (
+                args.arch + "-pc-windows-gnu"
+            )
 
     config = rutils.CargoConfig(
         args.os,
