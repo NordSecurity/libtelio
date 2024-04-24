@@ -23,7 +23,7 @@ async def test_wg_adapter_cleanup():
 
     private, _ = Key.key_pair()
 
-    async with new_connection_raw(ConnectionTag.WINDOWS_VM) as conn:
+    async with new_connection_raw(ConnectionTag.WINDOWS_VM_1) as conn:
         cli_started = asyncio.Event()
         output_notifier.notify_output("telio dev cli", cli_started)
 

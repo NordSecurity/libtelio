@@ -47,10 +47,10 @@ from utils.ping import Ping
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=telio.AdapterType.WindowsNativeWg,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM,
+                    ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
@@ -59,10 +59,10 @@ from utils.ping import Ping
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=telio.AdapterType.WireguardGo,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM,
+                    ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
@@ -163,10 +163,10 @@ async def test_mesh_plus_vpn_one_peer(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=telio.AdapterType.WindowsNativeWg,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM,
+                    ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
@@ -175,10 +175,10 @@ async def test_mesh_plus_vpn_one_peer(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=telio.AdapterType.WireguardGo,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM,
+                    ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
@@ -283,13 +283,13 @@ async def test_mesh_plus_vpn_both_peers(
             marks=pytest.mark.linux_native,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM,
+            ConnectionTag.WINDOWS_VM_1,
             AdapterType.WindowsNativeWg,
             "10.0.254.7",
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM,
+            ConnectionTag.WINDOWS_VM_1,
             AdapterType.WireguardGo,
             "10.0.254.7",
             marks=pytest.mark.windows,
@@ -415,10 +415,10 @@ async def test_vpn_plus_mesh(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=telio.AdapterType.WindowsNativeWg,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM,
+                    ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
@@ -430,10 +430,10 @@ async def test_vpn_plus_mesh(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=telio.AdapterType.WireguardGo,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM,
+                    ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
@@ -563,10 +563,10 @@ async def test_vpn_plus_mesh_over_direct(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=telio.AdapterType.WindowsNativeWg,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM,
+                    ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
@@ -576,10 +576,10 @@ async def test_vpn_plus_mesh_over_direct(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=telio.AdapterType.WireguardGo,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM,
+                    ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),

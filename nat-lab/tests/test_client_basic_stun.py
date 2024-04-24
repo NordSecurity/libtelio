@@ -10,7 +10,7 @@ from utils.connection_util import ConnectionTag, new_connection_by_tag
     [
         pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, "10.0.254.1"),
         pytest.param(
-            ConnectionTag.WINDOWS_VM,
+            ConnectionTag.WINDOWS_VM_1,
             "10.0.254.7",
             marks=pytest.mark.windows,
         ),

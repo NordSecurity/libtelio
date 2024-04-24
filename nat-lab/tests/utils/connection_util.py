@@ -36,7 +36,8 @@ class ConnectionTag(Enum):
     DOCKER_UDP_BLOCK_CLIENT_1 = auto()
     DOCKER_UDP_BLOCK_CLIENT_2 = auto()
     DOCKER_INTERNAL_SYMMETRIC_CLIENT = auto()
-    WINDOWS_VM = auto()
+    WINDOWS_VM_1 = auto()
+    WINDOWS_VM_2 = auto()
     MAC_VM = auto()
     DOCKER_CONE_GW_1 = auto()
     DOCKER_CONE_GW_2 = auto()
@@ -105,7 +106,8 @@ DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {
     ConnectionTag.DOCKER_SHARED_CLIENT_1: ConnectionTag.DOCKER_CONE_GW_1,
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: ConnectionTag.DOCKER_UDP_BLOCK_GW_1,
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: ConnectionTag.DOCKER_UDP_BLOCK_GW_2,
-    ConnectionTag.WINDOWS_VM: ConnectionTag.DOCKER_CONE_GW_3,
+    ConnectionTag.WINDOWS_VM_1: ConnectionTag.DOCKER_CONE_GW_3,
+    ConnectionTag.WINDOWS_VM_2: ConnectionTag.DOCKER_CONE_GW_3,
     ConnectionTag.MAC_VM: ConnectionTag.DOCKER_CONE_GW_3,
     ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1: (
         ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1
@@ -137,7 +139,8 @@ LAN_ADDR_MAP: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: "192.168.110.100",
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: "192.168.111.100",
     ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT: "192.168.114.88",
-    ConnectionTag.WINDOWS_VM: "10.55.0.11",
+    ConnectionTag.WINDOWS_VM_1: "10.55.0.13",
+    ConnectionTag.WINDOWS_VM_2: "10.55.0.14",
     ConnectionTag.MAC_VM: "10.55.0.12",
     ConnectionTag.DOCKER_CONE_GW_1: "192.168.101.254",
     ConnectionTag.DOCKER_CONE_GW_2: "192.168.102.254",
@@ -192,8 +195,8 @@ async def new_connection_raw(tag: ConnectionTag) -> AsyncIterator[Connection]:
             async with container_util.get(docker, container_id(tag)) as connection:
                 yield connection
 
-    elif tag == ConnectionTag.WINDOWS_VM:
-        async with windows_vm_util.new_connection() as connection:
+    elif tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
+        async with windows_vm_util.new_connection(LAN_ADDR_MAP[tag]) as connection:
             yield connection
 
     elif tag == ConnectionTag.MAC_VM:
@@ -210,7 +213,7 @@ async def create_network_switcher(
     if tag in DOCKER_SERVICE_IDS:
         return NetworkSwitcherDocker(connection)
 
-    if tag == ConnectionTag.WINDOWS_VM:
+    if tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
         return await NetworkSwitcherWindows.create(connection)
 
     if tag == ConnectionTag.MAC_VM:

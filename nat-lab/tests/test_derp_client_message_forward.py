@@ -15,7 +15,7 @@ TESTING_STRING = "testing"
     "connection_tag",
     [
         ConnectionTag.DOCKER_CONE_CLIENT_1,
-        pytest.param(ConnectionTag.WINDOWS_VM, marks=[pytest.mark.windows]),
+        pytest.param(ConnectionTag.WINDOWS_VM_1, marks=[pytest.mark.windows]),
     ],
 )
 async def test_derp_client_message_forward(connection_tag: ConnectionTag) -> None:

@@ -106,7 +106,7 @@ async def test_upnp_route_removed(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=AdapterType.WindowsNativeWg,
                 features=TelioFeatures(direct=Direct(providers=["upnp"])),
             ),
@@ -114,7 +114,7 @@ async def test_upnp_route_removed(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=AdapterType.WireguardGo,
                 features=TelioFeatures(direct=Direct(providers=["upnp"])),
             ),

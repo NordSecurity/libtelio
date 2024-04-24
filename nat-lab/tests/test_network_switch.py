@@ -28,7 +28,7 @@ from utils.ping import Ping
             "10.0.254.13",
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM,
+            ConnectionTag.WINDOWS_VM_1,
             "10.0.254.7",
             "10.0.254.8",
             marks=pytest.mark.windows,
@@ -80,14 +80,14 @@ async def test_network_switcher(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=telio.AdapterType.WindowsNativeWg,
             ),
             marks=pytest.mark.windows,
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=telio.AdapterType.WireguardGo,
             ),
             marks=[
@@ -160,7 +160,7 @@ async def test_mesh_network_switch(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=telio.AdapterType.WindowsNativeWg,
                 is_meshnet=False,
             ),
@@ -168,7 +168,7 @@ async def test_mesh_network_switch(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=telio.AdapterType.WireguardGo,
                 is_meshnet=False,
             ),
@@ -249,7 +249,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=telio.AdapterType.WindowsNativeWg,
                 features=TelioFeatures(direct=Direct(providers=["stun"])),
             ),
@@ -259,7 +259,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=telio.AdapterType.WireguardGo,
                 features=TelioFeatures(direct=Direct(providers=["stun"])),
             ),

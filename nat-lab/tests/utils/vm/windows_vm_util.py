@@ -1,7 +1,6 @@
 import asyncssh
-import config
 import subprocess
-from config import get_root_path, LIBTELIO_BINARY_PATH_WINDOWS_VM
+from config import get_root_path, LIBTELIO_BINARY_PATH_WINDOWS_VM, WINDOWS_1_VM_IP
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 from utils.connection import Connection, SshConnection, TargetOS
@@ -12,7 +11,7 @@ FILES_COPIED = False
 
 
 @asynccontextmanager
-async def new_connection() -> AsyncIterator[Connection]:
+async def new_connection(ip: str = WINDOWS_1_VM_IP) -> AsyncIterator[Connection]:
     subprocess.check_call(["sudo", "bash", "vm_nat.sh", "disable"])
     subprocess.check_call(["sudo", "bash", "vm_nat.sh", "enable"])
 
@@ -28,7 +27,7 @@ async def new_connection() -> AsyncIterator[Connection]:
     )
 
     async with asyncssh.connect(
-        config.WINDOWS_VM_IP,
+        ip,
         username="vagrant",
         password="vagrant",  # NOTE: this is hardcoded password for transient vm existing only during the tests
         known_hosts=None,
