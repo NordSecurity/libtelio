@@ -1,47 +1,49 @@
+import asyncio
 import pytest
 import telio
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
+from telio import PathType, State
 from telio_features import TelioFeatures, Direct
+from utils import testing
 from utils.connection_util import ConnectionTag
+from utils.ping import Ping
 
 
 # Marks in-tunnel stack only, exiting only through IPv4
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "alpha_setup_params",
-    [
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=telio.AdapterType.LinuxNativeWg,
-                features=TelioFeatures(direct=Direct(providers=None)),
-            )
-        ),
-    ],
+    "direct",
+    [True, False],
 )
-@pytest.mark.parametrize(
-    "beta_setup_params",
-    [
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-                adapter_type=telio.AdapterType.LinuxNativeWg,
-                features=TelioFeatures(direct=Direct(providers=None)),
-            ),
-        ),
-    ],
-)
-async def test_mesh_off(
-    alpha_setup_params: SetupParameters, beta_setup_params: SetupParameters
-) -> None:
+async def test_mesh_off(direct) -> None:
     async with AsyncExitStack() as exit_stack:
-        env = await setup_mesh_nodes(
-            exit_stack, [alpha_setup_params, beta_setup_params]
+        features = (
+            TelioFeatures(direct=Direct(providers=None))
+            if direct
+            else TelioFeatures(direct=None)
         )
+        env = await setup_mesh_nodes(
+            exit_stack,
+            [
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    adapter_type=telio.AdapterType.LinuxNativeWg,
+                    features=features,
+                ),
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    adapter_type=telio.AdapterType.LinuxNativeWg,
+                    features=features,
+                ),
+            ],
+        )
+        alpha, beta = env.nodes
 
-        client_alpha, _ = env.clients
-        connection_alpha, _ = [conn.connection for conn in env.connections]
+        client_alpha, client_beta = env.clients
+        connection_alpha, connection_beta = [
+            conn.connection for conn in env.connections
+        ]
 
         await client_alpha.set_mesh_off()
 
@@ -58,3 +60,25 @@ async def test_mesh_off(
         assert (
             "peer:" not in wg_show_stdout.strip().split()
         ), f"There are leftover WireGuard peers after mesh is set to off: {wg_show_stdout}"
+
+        path_type = PathType.Direct if direct else PathType.Relay
+
+        await client_alpha.wait_for_state_peer(
+            beta.public_key, [State.Disconnected], [path_type]
+        )
+
+        await client_alpha.set_meshmap(env.api.get_meshmap(alpha.id))
+
+        asyncio.gather(
+            client_alpha.wait_for_state_peer(
+                beta.public_key, [State.Connected], [path_type]
+            ),
+            client_beta.wait_for_state_peer(
+                alpha.public_key, [State.Connected], [path_type]
+            ),
+        )
+
+        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
+            await testing.wait_lengthy(ping.wait_for_next_ping())
+        async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
+            await testing.wait_long(ping.wait_for_next_ping())

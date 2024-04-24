@@ -65,7 +65,7 @@ pub async fn consolidate_wg_state(
     entities: &Entities,
     features: &Features,
 ) -> Result {
-    let remote_peer_states = if let Some(meshnet_entities) = entities.meshnet.as_ref() {
+    let remote_peer_states = if let Some(meshnet_entities) = entities.meshnet.left() {
         meshnet_entities.derp.get_remote_peer_states().await
     } else {
         Default::default()
@@ -81,18 +81,18 @@ pub async fn consolidate_wg_state(
     consolidate_wg_peers(
         requested_state,
         &*entities.wireguard_interface,
-        entities.meshnet.as_ref().map(|m| &*m.proxy),
+        entities.meshnet.left().map(|m| &*m.proxy),
         entities.cross_ping_check(),
         entities.upgrade_sync(),
         entities.session_keeper(),
         &*entities.dns,
         remote_peer_states,
-        entities.meshnet.as_ref().and_then(|m| {
+        entities.meshnet.left().and_then(|m| {
             m.direct
                 .as_ref()
                 .and_then(|direct| direct.stun_endpoint_provider.as_ref())
         }),
-        entities.meshnet.as_ref().and_then(|m| {
+        entities.meshnet.left().and_then(|m| {
             m.direct
                 .as_ref()
                 .and_then(|direct| direct.upnp_endpoint_provider.as_ref())
