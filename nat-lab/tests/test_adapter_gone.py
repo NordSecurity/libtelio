@@ -46,22 +46,26 @@ async def test_adapter_gone_event(alpha_setup_params: SetupParameters) -> None:
         client, *_ = env.clients
 
         if conn.target_os == TargetOS.Linux:
-            await conn.create_process([
-                "ip",
-                "link",
-                "delete",
-                client.get_router().get_interface_name(),
-            ]).execute()
+            await conn.create_process(
+                [
+                    "ip",
+                    "link",
+                    "delete",
+                    client.get_router().get_interface_name(),
+                ]
+            ).execute()
         elif conn.target_os == TargetOS.Windows:
             try:
-                await conn.create_process([
-                    "netsh",
-                    "interface",
-                    "set",
-                    "interface",
-                    client.get_router().get_interface_name(),
-                    "disable",
-                ]).execute()
+                await conn.create_process(
+                    [
+                        "netsh",
+                        "interface",
+                        "set",
+                        "interface",
+                        client.get_router().get_interface_name(),
+                        "disable",
+                    ]
+                ).execute()
             except ProcessExecError as e:
                 if e.returncode != 1:
                     raise
