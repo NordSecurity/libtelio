@@ -9,6 +9,8 @@ jobs:
     permissions:
       pull-requests: write
     runs-on: ubuntu-20.04
+    # Excluding Dependabot PRs from this check.
+    if: github.actor != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
       - name: Check DoD
