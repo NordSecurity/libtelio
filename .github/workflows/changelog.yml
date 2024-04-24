@@ -9,6 +9,8 @@ permissions: {}
 jobs:
   changelog:
     runs-on: ubuntu-latest
+    # Excluding Dependabot PRs from this check.
+    if: github.actor != 'dependabot[bot]'
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
