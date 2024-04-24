@@ -1492,18 +1492,26 @@ async def test_lana_with_disconnected_node(
         await clean_container(connection_alpha)
         await clean_container(connection_beta)
 
+        # In this test, we'll manually trigger the collection of QoS
+        def get_features_with_long_qos(fingerprint: str) -> TelioFeatures:
+            features = build_telio_features(fingerprint)
+            assert features.nurse is not None
+            assert features.nurse.qos is not None
+            features.nurse.qos.rtt_interval = RTT_INTERVAL * 10
+            return features
+
         client_alpha = await exit_stack.enter_async_context(
             telio.Client(
                 connection_alpha,
                 alpha,
-                telio_features=build_telio_features(ALPHA_FINGERPRINT),
+                telio_features=get_features_with_long_qos(ALPHA_FINGERPRINT),
             ).run(api.get_meshmap(alpha.id))
         )
         client_beta = await exit_stack.enter_async_context(
             telio.Client(
                 connection_beta,
                 beta,
-                telio_features=build_telio_features(BETA_FINGERPRINT),
+                telio_features=get_features_with_long_qos(BETA_FINGERPRINT),
             ).run(api.get_meshmap(beta.id))
         )
 
@@ -1515,6 +1523,9 @@ async def test_lana_with_disconnected_node(
             client_alpha.wait_for_state_peer(beta.public_key, [telio.State.Connected]),
             client_beta.wait_for_state_peer(alpha.public_key, [telio.State.Connected]),
         )
+
+        await client_alpha.trigger_qos_collection()
+        await client_beta.trigger_qos_collection()
 
         await ping_node(connection_alpha, alpha, beta)
 
@@ -1539,7 +1550,11 @@ async def test_lana_with_disconnected_node(
         )
         assert beta_events
 
-        await asyncio.sleep(RTT_INTERVAL)
+        # Trigger QoS on disconnected node. All ICMPs should timeout
+        await asyncio.sleep(DEFAULT_WAITING_TIME)
+        await client_alpha.trigger_qos_collection()
+        await asyncio.sleep(DEFAULT_WAITING_TIME)
+
         await client_alpha.trigger_event_collection()
         alpha_events = await wait_for_event_dump(
             ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH, nr_events=2

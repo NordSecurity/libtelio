@@ -892,6 +892,9 @@ class Client:
     async def trigger_event_collection(self) -> None:
         await self._write_command(["dev", "analytics"])
 
+    async def trigger_qos_collection(self) -> None:
+        await self._write_command(["dev", "qos"])
+
     async def _write_command(self, command: List[str]) -> None:
         idx = self._message_idx
         cmd = (

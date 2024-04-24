@@ -218,6 +218,8 @@ enum DevCmd {
     Stop,
     #[clap(about = "Trigger analytics event")]
     Analytics,
+    #[clap(about = "Trigger qos collection")]
+    Qos,
 }
 
 #[derive(Parser)]
@@ -541,6 +543,10 @@ impl Cli {
             Analytics => {
                 cli_res!(res; (i "Trigger analytics event."));
                 cli_try!(self.telio.trigger_analytics_event());
+            }
+            Qos => {
+                cli_res!(res; (i "Trigger qos collection."));
+                cli_try!(self.telio.trigger_qos_collection());
             }
         }
         res

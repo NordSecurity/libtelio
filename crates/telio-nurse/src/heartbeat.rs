@@ -102,7 +102,7 @@ pub struct Io {
     /// Channel for sending and receiving analytics data
     pub analytics_channel: chan::Tx<AnalyticsMessage>,
     /// Event channel to manual trigger a collection
-    pub collection_trigger_channel: mc_chan::Rx<Box<()>>,
+    pub collection_trigger_channel: mc_chan::Rx<()>,
 }
 
 enum NodeInfo {
