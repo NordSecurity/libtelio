@@ -1,0 +1,1 @@
+Fix interface with static IP may be skipped for socket binding
