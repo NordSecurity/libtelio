@@ -1,3 +1,10 @@
+### UNRELEASED
+### **Bravas**
+---
+* LLT-5017: Fix interface with static IP may be skipped for socket binding
+
+<br>
+
 ### v4.3.2
 ### **Bravas**
 ---
