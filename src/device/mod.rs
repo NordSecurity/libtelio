@@ -1017,6 +1017,7 @@ impl Runtime {
                     wg::Io {
                         events: wg_events.tx.clone(),
                         analytics_tx: analytics_ch.clone(),
+                        libtelio_wide_event_publisher: Some(libtelio_wide_event_publisher.clone()),
                     },
                     wg::Config {
                         adapter: config.adapter,
