@@ -1,6 +1,7 @@
 ### v4.2.9
 ---
 * LLT-5095: Send critical event to app when adapter is dead
+* LLT-5097: Update wireguard wrapper to use wireguard-go fork and fix uapi get to throw error when device dead
 
 <br>
 
