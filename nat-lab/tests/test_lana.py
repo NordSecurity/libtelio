@@ -16,7 +16,7 @@ from config import (
 from contextlib import AsyncExitStack
 from mesh_api import API, Node
 from telio import PathType
-from telio_features import TelioFeatures, Nurse, Lana, Qos, Direct
+from telio_features import FeatureFirewall, TelioFeatures, Nurse, Lana, Qos, Direct
 from typing import List, Optional
 from utils import testing, stun
 from utils.analytics import (
@@ -93,7 +93,9 @@ IP_STACK_TEST_CONFIGS = [
 
 
 def build_telio_features(
-    fingerprint: str, initial_heartbeat_interval: int = 300
+    fingerprint: str,
+    initial_heartbeat_interval: int = 300,
+    custom_ip_range: Optional[str] = None,
 ) -> TelioFeatures:
     return TelioFeatures(
         lana=Lana(prod=False, event_path=CONTAINER_EVENT_PATH),
@@ -107,6 +109,7 @@ def build_telio_features(
             enable_relay_conn_data=True,
             enable_nat_traversal_conn_data=True,
         ),
+        firewall=FeatureFirewall(custom_ip_range),
     )
 
 
@@ -1234,7 +1237,11 @@ async def test_lana_with_meshnet_exit_node(
 
         api = API()
         (alpha, beta) = api.default_config_two_nodes(
-            True, True, alpha_ip_stack=alpha_ip_stack, beta_ip_stack=beta_ip_stack
+            True,
+            True,
+            alpha_ip_stack=alpha_ip_stack,
+            beta_ip_stack=beta_ip_stack,
+            allow_peer_traffic_routing=True,
         )
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
@@ -1245,6 +1252,7 @@ async def test_lana_with_meshnet_exit_node(
                 ),
             )
         )
+
         (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(
                 ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
@@ -1278,14 +1286,18 @@ async def test_lana_with_meshnet_exit_node(
             telio.Client(
                 connection_alpha,
                 alpha,
-                telio_features=build_telio_features(ALPHA_FINGERPRINT),
+                telio_features=build_telio_features(
+                    ALPHA_FINGERPRINT, custom_ip_range="10.0.0.0/8"
+                ),
             ).run(api.get_meshmap(alpha.id))
         )
         client_beta = await exit_stack.enter_async_context(
             telio.Client(
                 connection_beta,
                 beta,
-                telio_features=build_telio_features(BETA_FINGERPRINT),
+                telio_features=build_telio_features(
+                    BETA_FINGERPRINT, custom_ip_range="10.0.0.0/8"
+                ),
             ).run(api.get_meshmap(beta.id))
         )
 

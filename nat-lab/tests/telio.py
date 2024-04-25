@@ -99,6 +99,8 @@ class PeerInfo(DataClassJsonMixin):
     endpoint: Optional[str] = None
     hostname: Optional[str] = None
     allow_incoming_connections: bool = False
+    allow_routing: bool = False
+    allow_local_area_access: bool = False
     allow_peer_send_files: bool = False
     path: PathType = PathType.Relay
 
@@ -116,6 +118,8 @@ class PeerInfo(DataClassJsonMixin):
             self.endpoint,
             self.hostname,
             self.allow_incoming_connections,
+            self.allow_routing,
+            self.allow_local_area_access,
             self.allow_peer_send_files,
             self.path,
         ))
@@ -152,6 +156,8 @@ class PeerInfo(DataClassJsonMixin):
                 or self.nickname == other.nickname
             )
             and self.allow_incoming_connections == other.allow_incoming_connections
+            and self.allow_routing == other.allow_routing
+            and self.allow_local_area_access == self.allow_local_area_access
             and self.allow_peer_send_files == other.allow_peer_send_files
             and self.path == other.path
         )

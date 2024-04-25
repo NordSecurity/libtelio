@@ -40,6 +40,8 @@ class TestNode:
             "is_local": False,
             "allow_connections": False,
             "allow_incoming_connections": False,
+            "allow_peer_traffic_routing": False,
+            "allow_peer_local_network_access": False,
             "allow_peer_send_files": False,
         }
         assert expected == node.to_peer_config_for_node(node)

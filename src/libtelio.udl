@@ -93,6 +93,9 @@ typedef string IpAddr;
 typedef string IpNetwork;
 
 [Custom]
+typedef string Ipv4Network;
+
+[Custom]
 typedef string Ipv4Addr;
 
 [Custom]
@@ -438,6 +441,8 @@ dictionary Features {
     FeaturePmtuDiscovery? pmtu_discovery;
     /// Multicast support
     boolean multicast;
+    /// Custom firewall configuration
+    FeatureFirewall? firewall;
 };
 
 /// Configurable features for Wireguard peers
@@ -578,6 +583,12 @@ dictionary FeaturePmtuDiscovery {
     u32 response_wait_timeout_s;
 };
 
+/// Configuration of telio-firewall
+dictionary FeatureFirewall {
+    /// Custom private IP range
+    Ipv4Network? custom_private_ip_range;
+};
+
 
 /// Rust representation of [meshnet map]
 /// A network map of all the Peers and the servers
@@ -614,6 +625,10 @@ dictionary Peer {
     boolean is_local;
     /// Flag to control whether the peer allows incoming connections
     boolean allow_incoming_connections;
+    /// Flag to control whether the Node allows routing through
+    boolean allow_peer_traffic_routing;
+    /// Flag to control whether the Node allows incoming local area access
+    boolean allow_peer_local_network_access;
     /// Flag to control whether the peer allows incoming files
     boolean allow_peer_send_files;
 };
@@ -680,6 +695,10 @@ dictionary TelioNode {
     string? hostname;
     /// Flag to control whether the Node allows incoming connections
     boolean allow_incoming_connections;
+    /// Flag to control whether the Node allows routing through
+    boolean allow_routing;
+    /// Flag to control whether the Node allows incoming local area access
+    boolean allow_local_area_access;
     /// Flag to control whether the Node allows incoming files
     boolean allow_peer_send_files;
     /// Connection type in the network mesh (through Relay or hole punched directly)

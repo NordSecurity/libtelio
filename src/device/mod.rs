@@ -76,7 +76,8 @@ use telio_model::{
     config::{Config, Peer, PeerBase, Server as DerpServer},
     event::{Event, Set},
     features::{
-        FeaturePersistentKeepalive, Features, PathType, DEFAULT_ENDPOINT_POLL_INTERVAL_SECS,
+        FeatureFirewall, FeaturePersistentKeepalive, Features, PathType,
+        DEFAULT_ENDPOINT_POLL_INTERVAL_SECS,
     },
     mesh::{ExitNode, LinkState, Node},
     validation::validate_nickname,
@@ -977,6 +978,9 @@ impl Runtime {
         let firewall = Arc::new(StatefullFirewall::new(
             features.ipv6,
             features.boringtun_reset_connections.0,
+            features.firewall.unwrap_or(FeatureFirewall {
+                custom_private_ip_range: None,
+            }),
         ));
 
         let firewall_filter_inbound_packets = {
@@ -1939,9 +1943,7 @@ impl Runtime {
     async fn disconnect_exit_node(&mut self, node_key: &PublicKey) -> Result {
         match self.requested_state.exit_node.as_ref() {
             Some(exit_node) if &exit_node.public_key == node_key => {
-                self.entities
-                    .firewall
-                    .remove_from_peer_whitelist(exit_node.public_key);
+                self.entities.firewall.remove_vpn_peer();
                 self.disconnect_exit_nodes().boxed().await
             }
             _ => Err(Error::InvalidNode),
@@ -2062,6 +2064,8 @@ impl Runtime {
                     endpoint,
                     hostname: Some(meshnet_peer.base.hostname.0.clone().to_string()),
                     allow_incoming_connections: meshnet_peer.allow_incoming_connections,
+                    allow_routing: meshnet_peer.allow_peer_traffic_routing,
+                    allow_local_area_access: meshnet_peer.allow_peer_local_network_access,
                     allow_peer_send_files: meshnet_peer.allow_peer_send_files,
                     path: path_type,
                 })
@@ -2084,6 +2088,8 @@ impl Runtime {
                     endpoint,
                     hostname: None,
                     allow_incoming_connections: false,
+                    allow_routing: false,
+                    allow_local_area_access: false,
                     allow_peer_send_files: false,
                     path: path_type,
                 })

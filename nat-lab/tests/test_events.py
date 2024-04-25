@@ -5,7 +5,7 @@ import timeouts
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_mesh_nodes, setup_api
 from telio import AdapterType, PathType, PeerInfo, State, Client
-from telio_features import TelioFeatures, Direct
+from telio_features import FeatureFirewall, TelioFeatures, Direct
 from utils import stun
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
@@ -386,6 +386,9 @@ async def test_event_content_vpn_connection(
                     derp_1_limits=ConnectionLimits(1, 1),
                     stun_limits=ConnectionLimits(2, 2),
                 ),
+                features=TelioFeatures(
+                    firewall=FeatureFirewall(custom_private_ip_range="10.0.0.0/8")
+                ),
             )
         )
     ],
@@ -400,6 +403,9 @@ async def test_event_content_exit_through_peer(
         alpha.nickname = "alpha"
         beta.nickname = "BETA"
         alpha.set_peer_firewall_settings(beta.id)
+        beta.set_peer_firewall_settings(
+            alpha.id, allow_incoming_connections=True, allow_peer_traffic_routing=True
+        )
         env = await setup_mesh_nodes(
             exit_stack, [alpha_setup_params, beta_setup_params], provided_api=api
         )

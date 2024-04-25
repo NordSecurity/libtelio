@@ -3,7 +3,8 @@ import config
 import pytest
 import telio
 from contextlib import AsyncExitStack
-from helpers import setup_mesh_nodes, SetupParameters
+from helpers import setup_api, setup_mesh_nodes, SetupParameters
+from telio_features import TelioFeatures, FeatureFirewall
 from typing import List, Tuple
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
@@ -97,6 +98,9 @@ from utils.router import IPStack
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
+                features=TelioFeatures(
+                    firewall=FeatureFirewall(custom_private_ip_range="10.0.0.0/8")
+                ),
             )
         )
     ],
@@ -125,8 +129,17 @@ async def test_dns_through_exit(
             else config.LIBTELIO_DNS_IPV6
         )
 
+        api, (alpha, beta) = setup_api(
+            [(False, alpha_setup_params.ip_stack), (False, beta_setup_params.ip_stack)]
+        )
+        beta.set_peer_firewall_settings(
+            alpha.id, allow_incoming_connections=True, allow_peer_traffic_routing=True
+        )
+
         env = await setup_mesh_nodes(
-            exit_stack, [alpha_setup_params, beta_setup_params]
+            exit_stack,
+            [alpha_setup_params, beta_setup_params],
+            provided_api=api,
         )
 
         _, exit_node = env.nodes

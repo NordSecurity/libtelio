@@ -11,6 +11,8 @@ test_utils = [] # For use in benchmarks to avoid duplication of the 'setup' code
 
 [dependencies]
 hashlink.workspace = true
+ipnetwork.workspace = true
+if-addrs.workspace = true
 tracing.workspace = true
 mockall = { workspace = true, optional = true }
 pnet_packet.workspace = true
@@ -18,6 +20,7 @@ rustc-hash.workspace = true
 
 telio-crypto.workspace = true
 telio-utils.workspace = true
+telio-model.workspace = true
 
 [dev-dependencies]
 criterion = "0.5.1"
@@ -28,7 +31,7 @@ proptest-derive.workspace = true
 rand.workspace = true
 sn_fake_clock.workspace = true
 
-telio-utils = { workspace = true, features = ["sn_fake_clock"] }
+telio-utils = { workspace = true, features = ["sn_fake_clock", "test-util"] }
 
 [[bench]]
 name = "firewall_bench"

@@ -3,6 +3,7 @@
 
 use std::{collections::HashSet, fmt};
 
+use ipnetwork::Ipv4Network;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{de::IntoDeserializer, Deserialize, Deserializer, Serialize};
 use strum_macros::EnumCount;
@@ -428,6 +429,13 @@ where
     Ok(Some(eps))
 }
 
+/// Customize firewall policy
+#[derive(Default, Copy, Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct FeatureFirewall {
+    /// Custom private IP range
+    pub custom_private_ip_range: Option<Ipv4Network>,
+}
+
 /// Turns on the no link detection mechanism
 #[derive(Default, Copy, Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct FeatureLinkDetection {
@@ -538,6 +546,9 @@ pub struct Features {
     /// Multicast support
     #[serde(default)]
     pub multicast: bool,
+    /// Feature configuration for firewall
+    #[serde(default)]
+    pub firewall: Option<FeatureFirewall>,
 }
 
 impl FeaturePaths {
@@ -655,6 +666,7 @@ mod tests {
             },
             "pmtu_discovery": null,
             "multicast": false
+            "firewall": null
         }"#;
 
     static EXPECTED_FEATURES_WITH_IS_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
@@ -721,6 +733,7 @@ mod tests {
         },
         pmtu_discovery: None,
         multicast: false,
+        firewall: None,
     });
     static EXPECTED_FEATURES_WITHOUT_IS_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
         wireguard: FeatureWireguard {
@@ -776,6 +789,7 @@ mod tests {
         },
         pmtu_discovery: Some(Default::default()),
         multicast: false,
+        firewall: None,
     });
 
     #[test]
@@ -974,6 +988,7 @@ mod tests {
             },
             pmtu_discovery: Some(Default::default()),
             multicast: false,
+            firewall: None,
         };
 
         let empty_or_no_qos_features = Features {
@@ -1010,6 +1025,7 @@ mod tests {
             },
             pmtu_discovery: Some(Default::default()),
             multicast: false,
+            firewall: None,
         };
 
         let disabled_qos_features = Features {
@@ -1041,6 +1057,7 @@ mod tests {
             },
             pmtu_discovery: Some(Default::default()),
             multicast: false,
+            firewall: None,
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -1100,6 +1117,7 @@ mod tests {
             },
             pmtu_discovery: Some(Default::default()),
             multicast: false,
+            firewall: None,
         };
 
         let empty_features = Features {
@@ -1125,6 +1143,7 @@ mod tests {
             },
             pmtu_discovery: Some(Default::default()),
             multicast: false,
+            firewall: None,
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -1159,6 +1178,7 @@ mod tests {
             },
             pmtu_discovery: Some(Default::default()),
             multicast: false,
+            firewall: None,
         };
 
         assert_eq!(from_str::<Features>(empty_json).unwrap(), empty_features);
@@ -1219,6 +1239,7 @@ mod tests {
             },
             pmtu_discovery: Default::default(),
             multicast: false,
+            firewall: None,
         };
 
         assert_eq!(Features::default(), expected_defaults);
