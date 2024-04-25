@@ -1,25 +1,21 @@
-name: Check Unreleased
+name: Definition of Done
 on:
   pull_request:
-    types: [opened, edited]
-    branches-ignore:
-      - main
+    types: [opened, synchronize]
 permissions: {}
 
 jobs:
-  changelog:
+  check-changelog:
     runs-on: ubuntu-latest
     # Excluding Dependabot PRs from this check.
     if: github.actor != 'dependabot[bot]'
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
+      - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
         with:
-          fetch-depth: 2
-
+          fetch-depth: 0
       - name: Check for new file in .unreleased
         run: |
-          FILE_COUNT=$(git diff --name-only main..HEAD -- .unreleased | wc -l)
+          FILE_COUNT=$(git diff --name-only ${{github.event.pull_request.base.sha}}..HEAD -- .unreleased | wc -l)
           if [ "$FILE_COUNT" -eq "0" ]; then
             echo "No new file in .unreleased directory. Please add a new file describing your changes."
             exit 1
