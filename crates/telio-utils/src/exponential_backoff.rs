@@ -67,18 +67,20 @@ pub struct ExponentialBackoff {
 
 impl ExponentialBackoff {
     /// Given the bounds for exponential backoff returns an instance of
-    /// ExponentialBackofHelper
+    /// `ExponentialBackoff`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the initial bound is zero or maximal bound is
+    /// defined and is smaller than the initial one.
     pub fn new(bounds: ExponentialBackoffBounds) -> Result<Self, Error> {
-        if bounds.initial == Duration::ZERO
-            || bounds.maximal.map(|t| t < bounds.initial).unwrap_or(false)
-        {
-            Err(Error::InvalidExponentialBackoffBounds)
-        } else {
-            Ok(Self {
-                bounds,
-                current_backoff: bounds.initial,
-            })
+        if bounds.initial == Duration::ZERO || bounds.maximal.is_some_and(|t| t < bounds.initial) {
+            return Err(Error::InvalidExponentialBackoffBounds);
         }
+        Ok(Self {
+            bounds,
+            current_backoff: bounds.initial,
+        })
     }
 }
 
