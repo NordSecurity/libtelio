@@ -4,9 +4,9 @@ import (
 	"log"
 	"sync"
 
+	"github.com/NordSecurity/wireguard-go/conn"
+	"github.com/NordSecurity/wireguard-go/tun"
 	"golang.org/x/sys/windows"
-	"golang.zx2c4.com/wireguard/conn"
-	"golang.zx2c4.com/wireguard/tun"
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 )
 

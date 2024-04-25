@@ -17,7 +17,7 @@ import "C"
 import (
 	"unsafe"
 
-	"golang.zx2c4.com/wireguard/tun"
+	"github.com/NordSecurity/wireguard-go/tun"
 )
 
 func PlatformSpecific_StartWithTun(fd C.int32_t, log C.wg_go_log_cb) C.int32_t {

@@ -85,11 +85,8 @@ fn main() -> Result<()> {
                 Info(i) => println!("- {}", i),
                 Event { ts, event } => match *event {
                     DevEvent::Node { body: Some(b) } => print_event(ts, "node", &b)?,
-                    DevEvent::Relay { body } => {
-                        if let Some(b) = body.as_ref() {
-                            print_event(ts, "relay", &b)?;
-                        }
-                    }
+                    DevEvent::Relay { body: Some(b) } => print_event(ts, "relay", &b)?,
+                    DevEvent::Error { body: Some(b) } => print_event(ts, "error", &b)?,
                     _ => (),
                 },
                 Error(e) => {
