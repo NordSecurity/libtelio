@@ -12,7 +12,7 @@ FILES_COPIED = False
 
 
 @asynccontextmanager
-async def new_connection() -> AsyncIterator[Connection]:
+async def new_connection(ip: str = config.MAC_VM_IP) -> AsyncIterator[Connection]:
     subprocess.check_call(["sudo", "bash", "vm_nat.sh", "disable"])
     subprocess.check_call(["sudo", "bash", "vm_nat.sh", "enable"])
 
@@ -28,7 +28,7 @@ async def new_connection() -> AsyncIterator[Connection]:
     )
 
     async with asyncssh.connect(
-        config.MAC_VM_IP,
+        ip,
         username="root",
         password="vagrant",  # NOTE: this is hardcoded password for transient vm existing only during the tests
         known_hosts=None,

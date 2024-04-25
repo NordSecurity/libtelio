@@ -17,8 +17,9 @@ def get_root_path(path: str) -> str:
 
 # Same as defined in `Vagrantfile`
 LINUX_VM_IP = "10.55.0.10"
-WINDOWS_VM_IP = "10.55.0.11"
 MAC_VM_IP = "10.55.0.12"
+WINDOWS_1_VM_IP = "10.55.0.13"
+WINDOWS_2_VM_IP = "10.55.0.14"
 
 LINUX_VM_PRIMARY_GATEWAY = "10.55.0.10"
 LINUX_VM_SECONDARY_GATEWAY = "10.66.0.10"

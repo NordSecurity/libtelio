@@ -60,11 +60,11 @@ from utils.router import IPProto, IPStack
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 ip_stack=IPStack.IPv4v6,
                 adapter_type=telio.AdapterType.WindowsNativeWg,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM,
+                    ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
             ),
@@ -72,11 +72,11 @@ from utils.router import IPProto, IPStack
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 ip_stack=IPStack.IPv4v6,
                 adapter_type=telio.AdapterType.WireguardGo,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM,
+                    ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
             ),
@@ -214,14 +214,14 @@ async def test_mesh_exit_through_peer(
             marks=pytest.mark.linux_native,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM,
+            ConnectionTag.WINDOWS_VM_1,
             telio.AdapterType.WindowsNativeWg,
             marks=[
                 pytest.mark.windows,
             ],
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM,
+            ConnectionTag.WINDOWS_VM_1,
             telio.AdapterType.WireguardGo,
             marks=[
                 pytest.mark.windows,

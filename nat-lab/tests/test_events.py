@@ -39,10 +39,10 @@ from utils.router import IPStack
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=AdapterType.WindowsNativeWg,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM,
+                    ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
             ),
@@ -50,10 +50,10 @@ from utils.router import IPStack
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=AdapterType.WireguardGo,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM,
+                    ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
             ),
@@ -199,10 +199,10 @@ async def test_event_content_meshnet(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=AdapterType.WindowsNativeWg,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM,
+                    ConnectionTag.WINDOWS_VM_1,
                     vpn_1_limits=ConnectionLimits(1, 1),
                     stun_limits=ConnectionLimits(2, 2),
                 ),
@@ -215,10 +215,10 @@ async def test_event_content_meshnet(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=AdapterType.WireguardGo,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM,
+                    ConnectionTag.WINDOWS_VM_1,
                     vpn_1_limits=ConnectionLimits(1, 1),
                     stun_limits=ConnectionLimits(2, 2),
                 ),
@@ -341,10 +341,10 @@ async def test_event_content_vpn_connection(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=AdapterType.WindowsNativeWg,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM,
+                    ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
             ),
@@ -352,10 +352,10 @@ async def test_event_content_vpn_connection(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=AdapterType.WireguardGo,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM,
+                    ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
             ),
@@ -488,10 +488,10 @@ async def test_event_content_exit_through_peer(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=AdapterType.WindowsNativeWg,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM,
+                    ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
                 features=TelioFeatures(direct=Direct(providers=["stun"])),
@@ -501,10 +501,10 @@ async def test_event_content_exit_through_peer(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=AdapterType.WireguardGo,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM,
+                    ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
                 features=TelioFeatures(direct=Direct(providers=["stun"])),

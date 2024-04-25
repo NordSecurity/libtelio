@@ -65,10 +65,10 @@ async def _connect_vpn_pq(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=AdapterType.WindowsNativeWg,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM,
+                    ConnectionTag.WINDOWS_VM_1,
                     stun_limits=ConnectionLimits(1, 1),
                     nlx_1_limits=ConnectionLimits(2, 2),
                 ),
@@ -81,10 +81,10 @@ async def _connect_vpn_pq(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=AdapterType.WireguardGo,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM,
+                    ConnectionTag.WINDOWS_VM_1,
                     stun_limits=ConnectionLimits(1, 1),
                     nlx_1_limits=ConnectionLimits(2, 2),
                 ),

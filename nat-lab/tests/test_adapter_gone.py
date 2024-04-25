@@ -25,14 +25,14 @@ from utils.process import ProcessExecError
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=AdapterType.WindowsNativeWg,
             ),
             marks=[pytest.mark.windows],
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM,
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=AdapterType.WireguardGo,
             ),
             marks=[pytest.mark.windows],
