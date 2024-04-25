@@ -86,6 +86,8 @@ jobs:
           working-directory: nat-lab
         - run: black --check --diff --color .
           working-directory: nat-lab
+        - run: black --check --diff --color .
+          working-directory: ci
   python-format-isort:
       runs-on: ubuntu-22.04
       steps:

@@ -12,18 +12,18 @@ let package = Package(
     products: [
         .library(
             name: "LibtelioSwift",
-            targets: ["LibtelioSwift", "libtelioFFI"]),
+            targets: ["LibtelioSwift", "telioFFI"]),
     ],
     targets: [
         .target(
             name: "LibtelioSwift",
             dependencies: [
-                "libtelioFFI"
+                "telioFFI"
             ],
             path: "Sources"
             ),
         .binaryTarget(
-            name: "libtelioFFI",
+            name: "telioFFI",
             url: "$XCFRAMEWORK_URL",
             checksum: "$XCFRAMEWORK_CHECKSUM"
         )

@@ -1,0 +1,9 @@
+[bindings.python]
+cdylib_name = "telio"
+
+[bindings.csharp]
+cdylib_name = "telio"
+
+[bindings.kotlin]
+cdylib_name = "telio"
+package_name = "com.nordsec.telio"
