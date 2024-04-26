@@ -12,7 +12,7 @@ jobs:
     # Excluding Dependabot PRs from this check.
     if: github.actor != 'dependabot[bot]'
     steps:
-      - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
       - name: Check DoD
         uses: platisd/definition-of-done@e69d712b88c93ef88a73da4435155a0054b7df5e # v2.2.0
         with:
