@@ -9,11 +9,11 @@ publish = false
 [dependencies]
 generic-array = "0.14.5"
 mockall_double = "0.3.1"
-rand_core = { version = "0.6.3", features = ["getrandom"] }
+rand_core = { version = "0.6.3", default-features = false }
 rustls-pemfile = "1.0.0"
-tokio-rustls = { version = "0.24.1", features = ["dangerous_configuration"] }
+tokio-rustls = { version = "0.24.1", default-features = false }
 tokio-util = "0.7.3"
-tokio-stream = "0.1.9"
+tokio-stream = { default-features = false, version = "0.1.9" }
 rustls-platform-verifier = { git = "https://github.com/tomaszklak/rustls-platform-verifier.git", rev = "2db68dd17d76eadb062176b913040341b99ef4f3" }
 
 async-trait.workspace = true
