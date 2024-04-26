@@ -9,8 +9,8 @@ pub mod _telio_events_documentation {
     #![doc = include_str!["./doc/telio_events.md"]]
 }
 
-mod ffi;
-use crate::ffi::*;
+pub mod ffi;
+pub use crate::ffi::*;
 use crate::types::*;
 pub use ffi::types as ffi_types;
 pub use ffi::TelioTracingSubscriber;

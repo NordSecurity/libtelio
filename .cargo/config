@@ -1,5 +1,10 @@
 [build]
 rustflags = [ "-Aunknown_lints" ]
+rustdocflags = [
+  "--html-in-header", "./rustdoc/header.html",
+  "--html-after-content", "./rustdoc/multi-code.html",
+  "--html-after-content", "./rustdoc/footer.html",
+]
 
 [target.'cfg(unix)']
 runner = './test_runner.sh'
