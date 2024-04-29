@@ -3,6 +3,7 @@
 ---
 * LLT-5017: Fix interface with static IP may be skipped for socket binding
 * LLT-5148: Rebind sockets when network path changes on Apple
+* LLT-5136: Apply PQ protocol changes after the security review
 
 <br>
 
