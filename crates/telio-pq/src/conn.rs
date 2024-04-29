@@ -6,6 +6,8 @@ use telio_model::features::FeaturePostQuantumVPN;
 use telio_task::io::chan;
 use telio_utils::{telio_log_debug, telio_log_warn};
 
+use crate::proto;
+
 pub struct ConnKeyRotation {
     task: JoinHandle<()>,
 }
@@ -28,7 +30,10 @@ impl ConnKeyRotation {
             let mut interval = tokio::time::interval(request_retry);
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
-            let mut keys = loop {
+            let proto::KeySet {
+                mut wg_keys,
+                pq_secret,
+            } = loop {
                 interval.tick().await;
 
                 // Dylint is unhappy about the `fetch_keys` future size
@@ -41,7 +46,10 @@ impl ConnKeyRotation {
                 ))
                 .await
                 {
-                    Ok(keys) => break keys,
+                    Ok(keys) => {
+                        telio_log_debug!("PQ keys fetched");
+                        break keys;
+                    }
                     Err(err) => telio_log_warn!("Failed to fetch PQ keys: {err}"),
                 }
             };
@@ -50,8 +58,9 @@ impl ConnKeyRotation {
             // It can only be closed on library shutdown, in that case we
             // may not care since the task itself will be killed soon
             #[allow(mpsc_blocking_send)]
-            let _ = chan.send(super::Event::Handshake(addr, keys)).await;
+            let _ = chan.send(super::Event::Handshake(addr, wg_keys)).await;
 
+            telio_log_debug!("Rekey interval: {}s", rekey_interval.as_secs());
             let mut interval = tokio::time::interval(rekey_interval);
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
@@ -59,15 +68,18 @@ impl ConnKeyRotation {
             loop {
                 interval.tick().await;
 
-                match super::proto::rekey(&socket_pool).await {
+                // Dylint is unhappy about the `rekey` future size
+                // and asks for using `Box::pin` to move it on the heap
+                match Box::pin(super::proto::rekey(&socket_pool, &pq_secret)).await {
                     Ok(key) => {
-                        keys.pq_shared = key;
+                        telio_log_debug!("Successful PQ REKEY");
+                        wg_keys.pq_shared = key;
 
                         // The channel is allways open during the library operation.
                         // It can only be closed on library shutdown, in that case we
                         // may not care since the task itself will be killed soon
                         #[allow(mpsc_blocking_send)]
-                        let _ = chan.send(super::Event::Rekey(keys)).await;
+                        let _ = chan.send(super::Event::Rekey(wg_keys)).await;
                     }
                     Err(err) => telio_log_warn!("Failed to perform PQ rekey: {err}"),
                 }
