@@ -602,6 +602,10 @@ dictionary Peer {
     boolean is_local;
     /// Flag to control whether the peer allows incoming connections
     boolean allow_incoming_connections;
+    /// Flag to control whether the Node allows routing through
+    boolean allow_routing;
+    /// Flag to control whether the Node allows incoming local area access
+    boolean allow_local_area_access;
     /// Flag to control whether the peer allows incoming files
     boolean allow_peer_send_files;
 };
@@ -668,6 +672,10 @@ dictionary Node {
     string? hostname;
     /// Flag to control whether the Node allows incoming connections
     boolean allow_incoming_connections;
+    /// Flag to control whether the Node allows routing through
+    boolean allow_routing;
+    /// Flag to control whether the Node allows incoming local area access
+    boolean allow_local_area_access;
     /// Flag to control whether the Node allows incoming files
     boolean allow_peer_send_files;
     /// Connection type in the network mesh (through Relay or hole punched directly)

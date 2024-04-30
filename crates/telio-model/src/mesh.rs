@@ -60,6 +60,10 @@ pub struct Node {
     pub hostname: Option<String>,
     /// Flag to control whether the Node allows incoming connections
     pub allow_incoming_connections: bool,
+    /// Flag to control whether the Node allows routing through
+    pub allow_routing: bool,
+    /// Flag to control whether the Node allows incoming local area access
+    pub allow_local_area_access: bool,
     /// Flag to control whether the Node allows incoming files
     pub allow_peer_send_files: bool,
     /// Connection type in the network mesh (through Relay or hole punched directly)
@@ -144,6 +148,8 @@ impl From<&Peer> for Node {
                 .unwrap_or_default(),
             hostname: Some(peer.hostname.0.to_owned().to_string()),
             allow_incoming_connections: peer.allow_incoming_connections,
+            allow_routing: peer.allow_routing,
+            allow_local_area_access: peer.allow_local_area_access,
             allow_peer_send_files: peer.allow_peer_send_files,
             ..Default::default()
         }

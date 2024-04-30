@@ -405,6 +405,9 @@ async fn consolidate_firewall<F: Firewall>(
         firewall.add_to_port_whitelist(key, FILE_SEND_PORT);
     }
 
+    // Save local node ip addresses
+    // requested_state.meshnet_config.as_ref().and_then(|c| c.this.ip_addresses.clone());
+    firewall.set_ip_address(requested_state.meshnet_config.as_ref().and_then(|c| c.this.ip_addresses));
     Ok(())
 }
 

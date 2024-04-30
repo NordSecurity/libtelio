@@ -226,6 +226,8 @@ mod tests {
             endpoint: Some(SocketAddr::new("127.0.0.1".parse().unwrap(), 8080)),
             hostname: Some(String::from("example.com")),
             allow_incoming_connections: false,
+            allow_routing: false,
+            allow_local_area_access: false,
             allow_peer_send_files: false,
             path: crate::features::PathType::Relay,
         };
