@@ -208,6 +208,9 @@ pub trait Firewall {
         sink4: &mut dyn io::Write,
         sink6: &mut dyn io::Write,
     ) -> io::Result<()>;
+
+    /// Saves local node Ip address into firewall object
+    fn set_ip_address(&self, ip_addrs: Option<Vec<StdIpAddr>>);
 }
 
 #[derive(Default)]
@@ -244,6 +247,8 @@ pub struct StatefullFirewall {
     /// Wheter to still keep track of whitelisted TCP/UDP connections.
     /// Used for connection reset mechanism
     record_whitelisted: bool,
+    /// Local node ip addresses
+    ip_address: RwLock<Vec<StdIpAddr>>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -414,6 +419,7 @@ impl StatefullFirewall {
             whitelist: RwLock::new(Whitelist::default()),
             allow_ipv6: use_ipv6,
             record_whitelisted,
+            ip_address: RwLock::new(Vec::<StdIpAddr>::new()),
         }
     }
 
@@ -629,6 +635,7 @@ impl StatefullFirewall {
             pubkey: *pubkey,
         };
         let local_port = key.link.local_port;
+        let local_addr = StdIpAddr::from(key.link.local_addr);
 
         let mut cache =
             unwrap_lock_or_return!(self.get_cache(ip.get_next_level_protocol()).lock(), false);
@@ -644,6 +651,15 @@ impl StatefullFirewall {
                     occ.remove();
                     return false;
                 }
+                // if !connection_info.is_remote_initiated {
+                //     let ip = unwrap_lock_or_return!(self.ip_address.read(), false);
+                //     if ip.contains(&local_addr) {
+                //     } else if StatefullFirewall::is_local_address(&local_addr) {
+                //         return unwrap_lock_or_return!(self.whitelist.read(), false)
+                //             .peer_whitelist
+                //             .contains(pubkey);
+                //     }
+                // }
 
                 if let Some(pkt) = packet {
                     if let ConnectionDetail::Tcp(ref mut tcp_info) =
@@ -1206,6 +1222,23 @@ impl StatefullFirewall {
             &self.tcp
         }
     }
+
+    fn is_local_address(ip: &StdIpAddr) -> bool {
+        match ip {
+            StdIpAddr::V4(ipv4) => {
+                let octets = ipv4.octets();
+                // Check if IPv4 address falls into the local range
+                octets[0] == 127
+                    || (octets[0] == 10)
+                    || (octets[0] == 172 && (16..32).contains(&octets[1]))
+                    || (octets[0] == 192 && octets[1] == 168)
+            }
+            StdIpAddr::V6(ipv6) => {
+                // Check if IPv6 address is loopback (::1) or within Unique Local Addresses range (fc00::/7)
+                *ipv6 == StdIpv6Addr::LOCALHOST || (ipv6.segments()[0] & 0xfe00) == 0xfc00
+            }
+        }
+    }
 }
 
 impl Firewall for StatefullFirewall {
@@ -1303,6 +1336,13 @@ impl Firewall for StatefullFirewall {
         self.reset_udp_conns(pubkey, endpoint_ipv4, sink4)?;
 
         Ok(())
+    }
+
+    fn set_ip_address(&self, ip_addrs: Option<Vec<StdIpAddr>>) {
+        let mut node_ip_address = unwrap_lock_or_return!(self.ip_address.write());
+        for ip in unwrap_option_or_return!(ip_addrs) {
+            node_ip_address.push(ip);
+        }
     }
 }
 

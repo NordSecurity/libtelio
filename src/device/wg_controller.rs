@@ -364,7 +364,7 @@ async fn consolidate_firewall<F: Firewall>(
     // Build a list of peers expected to be peer-whitelisted according
     // to allow_incoming_connections permission
     let mut to_keys_peer_whitelist: HashSet<PublicKey> = iter_peers(requested_state)
-        .filter(|p| p.allow_incoming_connections)
+        .filter(|p| (p.allow_incoming_connections || p.allow_routing || p.allow_local_area_access))
         .map(|p| p.public_key)
         .collect();
 
@@ -406,8 +406,12 @@ async fn consolidate_firewall<F: Firewall>(
     }
 
     // Save local node ip addresses
-    // requested_state.meshnet_config.as_ref().and_then(|c| c.this.ip_addresses.clone());
-    firewall.set_ip_address(requested_state.meshnet_config.as_ref().and_then(|c| c.this.ip_addresses));
+    firewall.set_ip_address(
+        requested_state
+            .meshnet_config
+            .as_ref()
+            .and_then(|c| c.this.ip_addresses.clone()),
+    );
     Ok(())
 }
 
