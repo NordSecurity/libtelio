@@ -38,6 +38,17 @@ PROJECT_CONFIG = rutils.Project(
 )
 
 
+def post_copy_libsqlite3_binary_to_dist(config, args):
+    if args.moose:
+        sqlite_path = f"{PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP[config.arch]}/libsqlite3.so"
+        shutil.copyfile(
+            sqlite_path,
+            PROJECT_CONFIG.get_distribution_path(
+                config.target_os, config.arch, "libsqlite3.so", config.debug
+            ),
+        )
+
+
 """
 This local config is highly customizable as every project can have a different
 local config depending on their needs.
@@ -189,7 +200,7 @@ LIBTELIO_CONFIG = {
                     )
                 },
             },
-            "armv7": {
+            "armv7hf": {
                 "strip_path": "/usr/arm-linux-gnueabihf/bin/strip",
                 "env": {
                     "RUSTFLAGS": (
@@ -208,6 +219,7 @@ LIBTELIO_CONFIG = {
                 },
             },
         },
+        "post_build": [post_copy_libsqlite3_binary_to_dist],
         "env": {
             "RUSTFLAGS": ([" -C debuginfo=2 "], "set"),
         },
@@ -296,11 +308,7 @@ def exec_build(args):
     if args.moose:
         if args.os in ["linux", "windows", "android"]:
             sys.path.append(f"{PROJECT_ROOT}/ci")
-
-            if (args.os, args.arch) == ("linux", "armv7"):
-                moose_utils.fetch_moose_dependencies(args.os, MOOSE_MAP["armv7hf"])
-            else:
-                moose_utils.fetch_moose_dependencies(args.os, MOOSE_MAP[args.arch])
+            moose_utils.fetch_moose_dependencies(args.os, MOOSE_MAP[args.arch])
 
         moose_utils.set_cargo_dependencies()
         # TODO: remove when we get rid of sm crate (LLT-4929)
@@ -343,19 +351,7 @@ def exec_build(args):
         args.debug,
     )
     rutils.check_config(config)
-    call_build(config)
-
-    if args.moose and "linux" in args.os:
-        arch = (
-            MOOSE_MAP[config.arch] if config.arch != "armv7" else MOOSE_MAP["armv7hf"]
-        )
-        sqlite_path = f"{PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{arch}/libsqlite3.so"
-        shutil.copyfile(
-            sqlite_path,
-            PROJECT_CONFIG.get_distribution_path(
-                config.target_os, config.arch, "libsqlite3.so", config.debug
-            ),
-        )
+    call_build(config, args)
 
 
 def create_debug_symbols(config):
@@ -437,7 +433,7 @@ def strip_binaries(config):
         _strip_debug_symbols(f"{dist_dir}/{binary}", strip_bin=strip)
 
 
-def call_build(config):
+def call_build(config, args):
     rutils.config_local_env_vars(config, LIBTELIO_CONFIG)
 
     rutils.cargo_build(
@@ -449,10 +445,9 @@ def call_build(config):
 
     create_debug_symbols(config)
     strip_binaries(config)
-
     if "post_build" in LIBTELIO_CONFIG[config.target_os]:
         for post in LIBTELIO_CONFIG[config.target_os]["post_build"]:
-            post(config)
+            post(config, args)
 
 
 def darwin_build_all(debug: bool) -> None:
