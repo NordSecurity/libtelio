@@ -1,11 +1,10 @@
 //! Object descriptions of various
 //! telio configurable features via API
 
-use std::{collections::HashSet, fmt, time::Duration};
+use std::{collections::HashSet, fmt};
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{de::IntoDeserializer, Deserialize, Deserializer, Serialize};
-use serde_with::{serde_as, DurationSeconds};
 use strum_macros::EnumCount;
 use telio_utils::telio_log_warn;
 
@@ -86,14 +85,12 @@ pub enum RttType {
     Ping,
 }
 
-#[serde_as]
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 /// QoS configuration options
 pub struct FeatureQoS {
     /// How often to collect rtt data in seconds. Default value is 300.
-    #[serde_as(as = "DurationSeconds<u64>")]
     #[serde(default = "FeatureQoS::default_rtt_interval")]
-    pub rtt_interval: Duration,
+    pub rtt_interval: u64,
     /// Number of tries for each node. Default value is 3.
     #[serde(default = "FeatureQoS::default_rtt_tries")]
     pub rtt_tries: u32,
@@ -106,8 +103,8 @@ pub struct FeatureQoS {
 }
 
 impl FeatureQoS {
-    fn default_rtt_interval() -> Duration {
-        Duration::from_secs(5 * 60)
+    fn default_rtt_interval() -> u64 {
+        5 * 60
     }
 
     fn default_rtt_tries() -> u32 {
@@ -135,19 +132,16 @@ impl Default for FeatureQoS {
 }
 
 /// Configurable features for Nurse module
-#[serde_as]
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct FeatureNurse {
     /// The unique identifier of the device, used for meshnet ID
     pub fingerprint: String,
     /// Heartbeat interval in seconds. Default value is 3600.
-    #[serde_as(as = "DurationSeconds<u64>")]
     #[serde(default = "FeatureNurse::default_heartbeat_interval")]
-    pub heartbeat_interval: Duration,
+    pub heartbeat_interval: u64,
     /// Initial heartbeat interval in seconds. Default value is 300.
-    #[serde_as(as = "DurationSeconds<u64>")]
     #[serde(default = "FeatureNurse::default_initial_heartbeat_interval")]
-    pub initial_heartbeat_interval: Duration,
+    pub initial_heartbeat_interval: u64,
     /// QoS configuration for Nurse. Enabled by default.
     #[serde(default = "FeatureNurse::default_qos")]
     pub qos: Option<FeatureQoS>,
@@ -163,12 +157,12 @@ pub struct FeatureNurse {
 }
 
 impl FeatureNurse {
-    fn default_heartbeat_interval() -> Duration {
-        Duration::from_secs(60 * 60)
+    fn default_heartbeat_interval() -> u64 {
+        60 * 60
     }
 
-    fn default_initial_heartbeat_interval() -> Duration {
-        Duration::from_secs(5 * 60)
+    fn default_initial_heartbeat_interval() -> u64 {
+        5 * 60
     }
 
     fn default_qos() -> Option<FeatureQoS> {
@@ -670,10 +664,10 @@ mod tests {
         },
         nurse: Some(FeatureNurse {
             fingerprint: "fingerprint_test".to_string(),
-            heartbeat_interval: Duration::from_secs(3600),
-            initial_heartbeat_interval: Duration::from_secs(300),
+            heartbeat_interval: 3600,
+            initial_heartbeat_interval: 300,
             qos: Some(FeatureQoS {
-                rtt_interval: Duration::from_secs(300),
+                rtt_interval: 300,
                 rtt_tries: 3,
                 rtt_types: vec![RttType::Ping],
                 buckets: 5,
@@ -734,10 +728,10 @@ mod tests {
         },
         nurse: Some(FeatureNurse {
             fingerprint: "fingerprint_test".to_string(),
-            heartbeat_interval: Duration::from_secs(3600),
-            initial_heartbeat_interval: Duration::from_secs(300),
+            heartbeat_interval: 3600,
+            initial_heartbeat_interval: 300,
             qos: Some(FeatureQoS {
-                rtt_interval: Duration::from_secs(300),
+                rtt_interval: 300,
                 rtt_tries: 3,
                 rtt_types: vec![RttType::Ping],
                 buckets: 5,
@@ -873,14 +867,14 @@ mod tests {
         }"#;
 
         let full_features = FeatureQoS {
-            rtt_interval: Duration::from_secs(3600),
+            rtt_interval: 3600,
             rtt_tries: 10,
             rtt_types: vec![RttType::Ping],
             buckets: 7,
         };
 
         let partial_features = FeatureQoS {
-            rtt_interval: Duration::from_secs(3600),
+            rtt_interval: 3600,
             rtt_tries: FeatureQoS::default_rtt_tries(),
             rtt_types: FeatureQoS::default_rtt_types(),
             buckets: FeatureQoS::default_buckets(),
@@ -944,10 +938,10 @@ mod tests {
             wireguard: Default::default(),
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
-                heartbeat_interval: Duration::from_secs(3600),
-                initial_heartbeat_interval: Duration::from_secs(300),
+                heartbeat_interval: 3600,
+                initial_heartbeat_interval: 300,
                 qos: Some(FeatureQoS {
-                    rtt_interval: Duration::from_secs(3600),
+                    rtt_interval: 3600,
                     rtt_tries: 5,
                     rtt_types: vec![RttType::Ping],
                     buckets: 5,
@@ -979,10 +973,10 @@ mod tests {
             wireguard: Default::default(),
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
-                heartbeat_interval: Duration::from_secs(3600),
-                initial_heartbeat_interval: Duration::from_secs(300),
+                heartbeat_interval: 3600,
+                initial_heartbeat_interval: 300,
                 qos: Some(FeatureQoS {
-                    rtt_interval: Duration::from_secs(300),
+                    rtt_interval: 300,
                     rtt_tries: FeatureQoS::default_rtt_tries(),
                     rtt_types: FeatureQoS::default_rtt_types(),
                     buckets: FeatureQoS::default_buckets(),
@@ -1014,8 +1008,8 @@ mod tests {
             wireguard: Default::default(),
             nurse: Some(FeatureNurse {
                 fingerprint: String::from("fingerprint_test"),
-                heartbeat_interval: Duration::from_secs(3600),
-                initial_heartbeat_interval: Duration::from_secs(300),
+                heartbeat_interval: 3600,
+                initial_heartbeat_interval: 300,
                 qos: None,
                 enable_nat_type_collection: false,
                 enable_relay_conn_data: false,

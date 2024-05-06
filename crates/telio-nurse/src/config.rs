@@ -44,9 +44,9 @@ impl HeartbeatConfig {
     /// Create a new Heartbeat config
     pub(crate) fn new(features: &FeatureNurse) -> Self {
         Self {
-            initial_collect_interval: features.initial_heartbeat_interval,
+            initial_collect_interval: Duration::from_secs(features.initial_heartbeat_interval),
             fingerprint: features.fingerprint.clone(),
-            collect_interval: features.heartbeat_interval,
+            collect_interval: Duration::from_secs(features.heartbeat_interval),
             collect_answer_timeout: Duration::from_secs(10),
             is_nat_type_collection_enabled: features.enable_nat_type_collection,
         }
@@ -72,7 +72,7 @@ impl QoSConfig {
     /// Create a new QoS config
     fn new(features: &FeatureQoS) -> Self {
         Self {
-            rtt_interval: features.rtt_interval,
+            rtt_interval: Duration::from_secs(features.rtt_interval),
             rtt_tries: features.rtt_tries,
             rtt_types: features.rtt_types.clone(),
             buckets: features.buckets,

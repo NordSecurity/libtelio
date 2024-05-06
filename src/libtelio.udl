@@ -451,9 +451,9 @@ dictionary FeatureNurse {
     /// The unique identifier of the device, used for meshnet ID
     string fingerprint;
     /// Heartbeat interval in seconds. Default value is 3600.
-    duration heartbeat_interval;
+    u64 heartbeat_interval;
     /// Initial heartbeat interval in seconds. Default value is None.
-    duration initial_heartbeat_interval;
+    u64 initial_heartbeat_interval;
     /// QoS configuration for Nurse
     FeatureQoS? qos;
     /// Enable/disable collecting nat type
@@ -467,7 +467,7 @@ dictionary FeatureNurse {
 /// QoS configuration options
 dictionary FeatureQoS {
     /// How often to collect rtt data in seconds. Default value is 300.
-    duration rtt_interval;
+    u64 rtt_interval;
     /// Number of tries for each node. Default value is 3.
     u32 rtt_tries;
     /// Types of rtt analytics. Default is Ping.
