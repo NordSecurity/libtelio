@@ -4,6 +4,7 @@ import os
 import sys
 import subprocess
 import moose_utils
+import shutil
 from pathlib import Path
 
 NAME = "telio"
@@ -25,7 +26,9 @@ MOOSE_MAP = {
     "x86_64": "x86_64",
     "aarch64": "aarch64",
     "i686": "i686",
+    "armv5": "armv5_eabi",
     "armv7": "armv7_eabi",
+    "armv7hf": "armv7_eabihf",
 }
 
 PROJECT_CONFIG = rutils.Project(
@@ -33,6 +36,17 @@ PROJECT_CONFIG = rutils.Project(
     root_dir=PROJECT_ROOT,
     working_dir=WORKING_DIR,
 )
+
+
+def post_copy_libsqlite3_binary_to_dist(config, args):
+    if args.moose:
+        sqlite_path = f"{PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP[config.arch]}/libsqlite3.so"
+        shutil.copyfile(
+            sqlite_path,
+            PROJECT_CONFIG.get_distribution_path(
+                config.target_os, config.arch, "libsqlite3.so", config.debug
+            ),
+        )
 
 
 """
@@ -150,13 +164,62 @@ LIBTELIO_CONFIG = {
     },
     "linux": {
         "archs": {
-            "x86_64": {"strip_path": "/usr/bin/strip"},
-            "aarch64": {"strip_path": "/usr/aarch64-linux-gnu/bin/strip"},
-            "arm64": {"strip_path": "/usr/aarch64-linux-gnu/bin/strip"},
-            "i686": {"strip_path": "/usr/i686-linux-gnu/bin/strip"},
-            "armv7": {"strip_path": "/usr/arm-linux-gnueabihf/bin/strip"},
-            "armv5": {"strip_path": "/usr/arm-linux-gnueabi/bin/strip"},
+            "x86_64": {
+                "strip_path": "/usr/bin/strip",
+                "env": {
+                    "RUSTFLAGS": (
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['x86_64']}",
+                        "set",
+                    )
+                },
+            },
+            "aarch64": {
+                "strip_path": "/usr/aarch64-linux-gnu/bin/strip",
+                "env": {
+                    "RUSTFLAGS": (
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['aarch64']}",
+                        "set",
+                    )
+                },
+            },
+            "arm64": {
+                "strip_path": "/usr/aarch64-linux-gnu/bin/strip",
+                "env": {
+                    "RUSTFLAGS": (
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['aarch64']}",
+                        "set",
+                    )
+                },
+            },
+            "i686": {
+                "strip_path": "/usr/i686-linux-gnu/bin/strip",
+                "env": {
+                    "RUSTFLAGS": (
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['i686']}",
+                        "set",
+                    )
+                },
+            },
+            "armv7hf": {
+                "strip_path": "/usr/arm-linux-gnueabihf/bin/strip",
+                "env": {
+                    "RUSTFLAGS": (
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['armv7hf']}",
+                        "set",
+                    )
+                },
+            },
+            "armv5": {
+                "strip_path": "/usr/arm-linux-gnueabi/bin/strip",
+                "env": {
+                    "RUSTFLAGS": (
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['armv5']}",
+                        "set",
+                    )
+                },
+            },
         },
+        "post_build": [post_copy_libsqlite3_binary_to_dist],
         "env": {
             "RUSTFLAGS": ([" -C debuginfo=2 "], "set"),
         },
@@ -243,9 +306,10 @@ def main() -> None:
 
 def exec_build(args):
     if args.moose:
-        if args.os in ["windows", "android"]:
+        if args.os in ["linux", "windows", "android"]:
             sys.path.append(f"{PROJECT_ROOT}/ci")
             moose_utils.fetch_moose_dependencies(args.os, MOOSE_MAP[args.arch])
+
         moose_utils.set_cargo_dependencies()
         # TODO: remove when we get rid of sm crate (LLT-4929)
         # We are using an outdated library in telio-traversal called sm
@@ -287,7 +351,7 @@ def exec_build(args):
         args.debug,
     )
     rutils.check_config(config)
-    call_build(config)
+    call_build(config, args)
 
 
 def create_debug_symbols(config):
@@ -369,7 +433,7 @@ def strip_binaries(config):
         _strip_debug_symbols(f"{dist_dir}/{binary}", strip_bin=strip)
 
 
-def call_build(config):
+def call_build(config, args):
     rutils.config_local_env_vars(config, LIBTELIO_CONFIG)
 
     rutils.cargo_build(
@@ -381,10 +445,9 @@ def call_build(config):
 
     create_debug_symbols(config)
     strip_binaries(config)
-
     if "post_build" in LIBTELIO_CONFIG[config.target_os]:
         for post in LIBTELIO_CONFIG[config.target_os]["post_build"]:
-            post(config)
+            post(config, args)
 
 
 def darwin_build_all(debug: bool) -> None:
