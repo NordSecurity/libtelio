@@ -275,10 +275,12 @@ def main() -> None:
     elif args.command == "xcframework":
         headers = {
             Path("libtelio/module.modulemap"): Path(
-                os.path.join(PROJECT_CONFIG.get_bindings_dir(), "telioFFI.modulemap")
+                os.path.join(
+                    PROJECT_CONFIG.get_bindings_dir(), "swift/telioFFI.modulemap"
+                )
             ),
             Path("libtelio/telioFFI.h"): Path(
-                os.path.join(PROJECT_CONFIG.get_bindings_dir(), "telioFFI.h")
+                os.path.join(PROJECT_CONFIG.get_bindings_dir(), "swift/telioFFI.h")
             ),
         }
         dbu.create_xcframework(
@@ -289,7 +291,9 @@ def main() -> None:
             PROJECT_CONFIG,
             args.debug,
             args.header
-            or Path(os.path.join(PROJECT_CONFIG.get_bindings_dir(), "telioFFI.h")),
+            or Path(
+                os.path.join(PROJECT_CONFIG.get_bindings_dir(), "swift/telioFFI.h")
+            ),
             "libtelio.dylib",
         )
     elif args.command == "build-tvos-simulator-stubs":
@@ -297,7 +301,9 @@ def main() -> None:
             PROJECT_CONFIG,
             args.debug,
             args.header
-            or Path(os.path.join(PROJECT_CONFIG.get_bindings_dir(), "telioFFI.h")),
+            or Path(
+                os.path.join(PROJECT_CONFIG.get_bindings_dir(), "swift/telioFFI.h")
+            ),
             "libtelio.dylib",
         )
     else:
