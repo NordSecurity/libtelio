@@ -7,13 +7,14 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
+serde_with = "3.7.0"
+
 base64.workspace = true
 crypto_box.workspace = true
 hex.workspace = true
 tracing.workspace = true
 rand = { workspace = true, features = ["std", "std_rng"] }
 serde.workspace = true
-serde_with.workspace = true
 thiserror.workspace = true
 
 telio-utils.workspace = true
