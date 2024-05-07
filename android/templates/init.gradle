@@ -36,10 +36,14 @@ ext.findRustlsPlatformVerifierProject = {
         "--manifest-path", findManifest()
     })
     def dependencyInfoText = new StringBuffer()
+    def errorText = new StringBuffer()
 
     def cmdProcess = cmdProcessBuilder.start()
-    cmdProcess.consumeProcessOutput(dependencyInfoText, null)
-    cmdProcess.waitFor()
+    cmdProcess.waitForProcessOutput(dependencyInfoText, errorText)
+
+    if (dependencyInfoText == null || dependencyInfoText.isEmpty()) {
+        throw new RuntimeException("cargo metadata failed:\n" + errorText)
+    }
 
     def dependencyJson = new groovy.json.JsonSlurper().parseText(dependencyInfoText.toString())
     def manifestPath = file(dependencyJson.packages.find { it.name == "rustls-platform-verifier" }.manifest_path)
