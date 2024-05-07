@@ -97,7 +97,12 @@ class NetworkSwitcherWindows(NetworkSwitcher):
         try:
             yield
         finally:
-            await self._enable_management_interface()
+            # Restoring management interface after a test
+            # Seems to be causing some flakyness. In order to
+            # Test this theory, restoring is being disabled
+            #
+            # await self._enable_management_interface()
+            pass
 
     @asynccontextmanager
     async def switch_to_secondary_network(self) -> AsyncIterator:
@@ -115,7 +120,12 @@ class NetworkSwitcherWindows(NetworkSwitcher):
         try:
             yield
         finally:
-            await self._enable_management_interface()
+            # Restoring management interface after a test
+            # Seems to be causing some flakyness. In order to
+            # Test this theory, restoring is being disabled
+            #
+            # await self._enable_management_interface()
+            pass
 
     async def _delete_existing_route(self) -> None:
         # Deleting routes by interface name instead of network destination (0.0.0.0/0) makes
