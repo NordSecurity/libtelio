@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use telio_crypto::PublicKey;
 use telio_dns::DnsResolver;
-use telio_firewall::firewall::{Firewall, FILE_SEND_PORT};
+use telio_firewall::firewall::{Firewall, Permissions, FILE_SEND_PORT};
 use telio_model::constants::{VPN_EXTERNAL_IPV4, VPN_INTERNAL_IPV4, VPN_INTERNAL_IPV6};
 use telio_model::features::Features;
 use telio_model::mesh::NodeState::Connected;
@@ -352,21 +352,44 @@ fn iter_peers(
         .flatten()
 }
 
+fn upsert_peer_whitelist<F: Firewall>(
+    requested_state: &RequestedState,
+    firewall: &F,
+    permission: Permissions,
+) {
+    let from_keys_peer_whitelist: HashSet<PublicKey> = firewall
+        .get_peer_whitelist(permission.clone())
+        .iter()
+        .copied()
+        .collect();
+
+    // Build a list of peers expected to be peer-whitelisted
+    let to_keys_peer_whitelist: HashSet<PublicKey> = iter_peers(requested_state)
+        .filter(|p| match permission {
+            Permissions::IncomingConnections => p.allow_incoming_connections,
+            Permissions::LocalAreaConnections => p.allow_local_area_access,
+            Permissions::RoutingConnections => p.allow_routing,
+        })
+        .map(|p| p.public_key)
+        .collect();
+
+    // Consolidate peer-whitelist
+    let delete_keys = &from_keys_peer_whitelist - &to_keys_peer_whitelist;
+    let add_keys = &to_keys_peer_whitelist - &from_keys_peer_whitelist;
+    for key in delete_keys {
+        firewall.remove_from_peer_whitelist(key, permission.clone());
+    }
+    for key in add_keys {
+        firewall.add_to_peer_whitelist(key, permission.clone());
+    }
+}
+
 async fn consolidate_firewall<F: Firewall>(
     requested_state: &RequestedState,
     firewall: &F,
 ) -> Result {
-    let from_keys_peer_whitelist: HashSet<PublicKey> =
-        firewall.get_peer_whitelist().iter().copied().collect();
     let from_keys_ports_whitelist: HashSet<PublicKey> =
         firewall.get_port_whitelist().keys().copied().collect();
-
-    // Build a list of peers expected to be peer-whitelisted according
-    // to allow_incoming_connections permission
-    let mut to_keys_peer_whitelist: HashSet<PublicKey> = iter_peers(requested_state)
-        .filter(|p| (p.allow_incoming_connections || p.allow_routing || p.allow_local_area_access))
-        .map(|p| p.public_key)
-        .collect();
 
     // VPN peer must always be peer-whitelisted
     if let Some(exit_node) = &requested_state.exit_node {
@@ -374,7 +397,7 @@ async fn consolidate_firewall<F: Firewall>(
             !iter_peers(requested_state).any(|p| p.public_key == exit_node.public_key);
 
         if is_vpn_exit_node {
-            to_keys_peer_whitelist.insert(exit_node.public_key);
+            firewall.add_vpn_peer(exit_node.public_key);
         }
     }
 
@@ -385,15 +408,10 @@ async fn consolidate_firewall<F: Firewall>(
         .map(|p| p.public_key)
         .collect();
 
-    // Consolidate peer-whitelist
-    let delete_keys = &from_keys_peer_whitelist - &to_keys_peer_whitelist;
-    let add_keys = &to_keys_peer_whitelist - &from_keys_peer_whitelist;
-    for key in delete_keys {
-        firewall.remove_from_peer_whitelist(key);
-    }
-    for key in add_keys {
-        firewall.add_to_peer_whitelist(key);
-    }
+    // Upsert peer-whitelists
+    upsert_peer_whitelist(requested_state, firewall, Permissions::IncomingConnections);
+    upsert_peer_whitelist(requested_state, firewall, Permissions::LocalAreaConnections);
+    upsert_peer_whitelist(requested_state, firewall, Permissions::RoutingConnections);
 
     // Consolidate port-whitelist
     let delete_keys = &from_keys_ports_whitelist - &to_keys_ports_whitelist;
@@ -989,6 +1007,8 @@ mod tests {
     use tokio::time::Instant;
 
     type AllowIncomingConnections = bool;
+    type AllowLocalAreaAccess = bool;
+    type AllowRouting = bool;
     type AllowPeerSendFiles = bool;
     type AllowedIps = Vec<IpAddr>;
 
@@ -1119,6 +1139,8 @@ mod tests {
             PublicKey,
             AllowedIps,
             AllowIncomingConnections,
+            AllowLocalAreaAccess,
+            AllowRouting,
             AllowPeerSendFiles,
         )>,
     ) -> RequestedState {
@@ -1138,7 +1160,9 @@ mod tests {
                         ..Default::default()
                     },
                     allow_incoming_connections: i.2,
-                    allow_peer_send_files: i.3,
+                    allow_local_area_access: i.3,
+                    allow_routing: i.4,
+                    allow_peer_send_files: i.5,
                     ..Default::default()
                 };
                 peers.push(peer);
@@ -1153,7 +1177,7 @@ mod tests {
     fn expect_add_to_peer_whitelist(firewall: &mut MockFirewall, pub_key: PublicKey) {
         firewall
             .expect_add_to_peer_whitelist()
-            .with(eq(pub_key))
+            .with(eq(pub_key), eq(Permissions::IncomingConnections))
             .once()
             .return_const(());
     }
@@ -1161,8 +1185,15 @@ mod tests {
     fn expect_remove_from_peer_whitelist(firewall: &mut MockFirewall, pub_key: PublicKey) {
         firewall
             .expect_remove_from_peer_whitelist()
-            .with(eq(pub_key))
-            .once()
+            .with(eq(pub_key), eq(Permissions::IncomingConnections))
+            .return_const(());
+        firewall
+            .expect_remove_from_peer_whitelist()
+            .with(eq(pub_key), eq(Permissions::LocalAreaConnections))
+            .return_const(());
+        firewall
+            .expect_remove_from_peer_whitelist()
+            .with(eq(pub_key), eq(Permissions::RoutingConnections))
             .return_const(());
     }
 
@@ -1185,7 +1216,8 @@ mod tests {
     fn expect_get_peer_whitelist(firewall: &mut MockFirewall, pub_keys: Vec<PublicKey>) {
         firewall
             .expect_get_peer_whitelist()
-            .return_once(move || pub_keys.into_iter().collect());
+            .times(3)
+            .returning(move |_| pub_keys.clone().into_iter().collect());
     }
 
     fn expect_get_port_whitelist(firewall: &mut MockFirewall, pub_keys: Vec<PublicKey>) {
@@ -1204,19 +1236,22 @@ mod tests {
         let pub_key_4 = SecretKey::gen().public();
 
         let requested_state = create_requested_state(vec![
-            (pub_key_1, vec![], true, true),
-            (pub_key_2, vec![], true, false),
-            (pub_key_3, vec![], false, true),
-            (pub_key_4, vec![], false, false),
+            (pub_key_1, vec![], true, false, false, true),
+            (pub_key_2, vec![], true, false, false, false),
+            (pub_key_3, vec![], false, false, false, true),
+            (pub_key_4, vec![], false, false, false, false),
         ]);
 
         firewall
             .expect_get_peer_whitelist()
-            .return_once(|| Default::default());
+            .times(3)
+            .returning(|_| Default::default());
 
         firewall
             .expect_get_port_whitelist()
-            .return_once(|| Default::default());
+            .return_once(Default::default);
+
+        firewall.expect_set_ip_address().once().return_const(());
 
         expect_add_to_peer_whitelist(&mut firewall, pub_key_1);
         expect_add_to_port_whitelist(&mut firewall, pub_key_1);
@@ -1240,10 +1275,10 @@ mod tests {
         let pub_key_4 = SecretKey::gen().public();
 
         let requested_state = create_requested_state(vec![
-            (pub_key_1, vec![], true, true),
-            (pub_key_2, vec![], true, false),
-            (pub_key_3, vec![], false, true),
-            (pub_key_4, vec![], false, false),
+            (pub_key_1, vec![], true, true, true, true),
+            (pub_key_2, vec![], true, true, true, false),
+            (pub_key_3, vec![], false, false, false, true),
+            (pub_key_4, vec![], false, false, false, false),
         ]);
 
         expect_get_peer_whitelist(
@@ -1258,7 +1293,7 @@ mod tests {
 
         firewall
             .expect_get_port_whitelist()
-            .return_once(|| Default::default());
+            .return_once(Default::default);
 
         expect_remove_from_port_whitelist(&mut firewall, pub_key_2);
 
@@ -1267,6 +1302,7 @@ mod tests {
         expect_remove_from_peer_whitelist(&mut firewall, pub_key_4);
         expect_remove_from_port_whitelist(&mut firewall, pub_key_4);
 
+        firewall.expect_set_ip_address().once().return_const(());
         consolidate_firewall(&requested_state, &firewall)
             .await
             .unwrap();
@@ -1279,19 +1315,30 @@ mod tests {
         let pub_key_1 = SecretKey::gen().public();
         let pub_key_2 = SecretKey::gen().public();
 
-        let mut requested_state = create_requested_state(vec![(pub_key_1, vec![], false, false)]);
+        let mut requested_state =
+            create_requested_state(vec![(pub_key_1, vec![], false, false, false, false)]);
 
         requested_state.exit_node = Some(ExitNode {
             public_key: pub_key_2,
             ..Default::default()
         });
 
+        firewall
+            .expect_add_vpn_peer()
+            .with(eq(pub_key_2))
+            .once()
+            .return_const(());
+
+        firewall.expect_set_ip_address().once().return_const(());
+
         expect_get_peer_whitelist(&mut firewall, vec![pub_key_1]);
         expect_get_port_whitelist(&mut firewall, vec![]);
 
+        println!("Peer1 {:?} peer2 {:?}", pub_key_1, pub_key_2);
+
         expect_remove_from_peer_whitelist(&mut firewall, pub_key_1);
 
-        expect_add_to_peer_whitelist(&mut firewall, pub_key_2);
+        // expect_add_to_peer_whitelist(&mut firewall, pub_key_2);
 
         consolidate_firewall(&requested_state, &firewall)
             .await
@@ -1304,13 +1351,15 @@ mod tests {
 
         let pub_key_1 = SecretKey::gen().public();
 
-        let mut requested_state = create_requested_state(vec![(pub_key_1, vec![], false, false)]);
+        let mut requested_state =
+            create_requested_state(vec![(pub_key_1, vec![], false, false, false, false)]);
 
         requested_state.exit_node = Some(ExitNode {
             public_key: pub_key_1,
             ..Default::default()
         });
 
+        firewall.expect_set_ip_address().once().return_const(());
         expect_get_peer_whitelist(&mut firewall, vec![]);
         expect_get_port_whitelist(&mut firewall, vec![]);
 
@@ -1326,7 +1375,8 @@ mod tests {
 
         let pub_key_1 = SecretKey::gen().public();
 
-        let mut requested_state = create_requested_state(vec![(pub_key_1, vec![], false, false)]);
+        let mut requested_state =
+            create_requested_state(vec![(pub_key_1, vec![], false, false, false, false)]);
 
         requested_state.exit_node = Some(ExitNode {
             public_key: pub_key_1,
@@ -1337,6 +1387,8 @@ mod tests {
         expect_get_port_whitelist(&mut firewall, vec![]);
 
         expect_remove_from_peer_whitelist(&mut firewall, pub_key_1);
+
+        firewall.expect_set_ip_address().once().return_const(());
 
         consolidate_firewall(&requested_state, &firewall)
             .await

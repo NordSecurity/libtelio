@@ -4332,6 +4332,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "hashlink",
+ "if-addrs",
  "mockall",
  "pnet_packet",
  "proptest",
@@ -4635,6 +4636,8 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "hashlink",
+ "if-addrs",
+ "ipnet",
  "lru_time_cache",
  "maplit",
  "mockall",

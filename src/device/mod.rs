@@ -2,7 +2,7 @@ mod wg_controller;
 
 use async_trait::async_trait;
 use telio_crypto::{PublicKey, SecretKey};
-use telio_firewall::firewall::{Firewall, StatefullFirewall};
+use telio_firewall::firewall::{Firewall, Permissions, StatefullFirewall};
 use telio_lana::init_lana;
 use telio_nat_detect::nat_detection::{retrieve_single_nat, NatData};
 use telio_pq::PostQuantum;
@@ -1918,9 +1918,7 @@ impl Runtime {
     async fn disconnect_exit_node(&mut self, node_key: &PublicKey) -> Result {
         match self.requested_state.exit_node.as_ref() {
             Some(exit_node) if &exit_node.public_key == node_key => {
-                self.entities
-                    .firewall
-                    .remove_from_peer_whitelist(exit_node.public_key);
+                self.entities.firewall.remove_vpn_peer();
                 self.disconnect_exit_nodes().boxed().await
             }
             _ => Err(Error::InvalidNode),
@@ -2041,6 +2039,8 @@ impl Runtime {
                     endpoint,
                     hostname: Some(meshnet_peer.base.hostname.0.clone().to_string()),
                     allow_incoming_connections: meshnet_peer.allow_incoming_connections,
+                    allow_routing: meshnet_peer.allow_routing,
+                    allow_local_area_access: meshnet_peer.allow_local_area_access,
                     allow_peer_send_files: meshnet_peer.allow_peer_send_files,
                     path: path_type,
                 })
@@ -2063,6 +2063,8 @@ impl Runtime {
                     endpoint,
                     hostname: None,
                     allow_incoming_connections: false,
+                    allow_routing: false,
+                    allow_local_area_access: false,
                     allow_peer_send_files: false,
                     path: path_type,
                 })

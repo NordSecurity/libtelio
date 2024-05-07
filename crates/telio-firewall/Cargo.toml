@@ -11,6 +11,7 @@ test_utils = [] # For use in benchmarks to avoid duplication of the 'setup' code
 
 [dependencies]
 hashlink.workspace = true
+if-addrs.workspace = true
 tracing.workspace = true
 mockall = { workspace = true, optional = true }
 pnet_packet.workspace = true

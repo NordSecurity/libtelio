@@ -38,3 +38,6 @@ pub use ::tokio::*;
 /// Least Recently Used cache implementation
 pub mod lru_cache;
 pub use lru_cache::*;
+
+/// Get local interfaces
+pub mod local_interfaces;

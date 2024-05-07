@@ -6,35 +6,21 @@ use super::{
 };
 use async_trait::async_trait;
 use futures::Future;
-use ipnet::Ipv4Net;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use telio_crypto::PublicKey;
 use telio_proto::{Session, WGPort};
 use telio_sockets::External;
 use telio_task::{io::chan, task_exec, BoxAction, Runtime, Task};
-use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn};
+use telio_utils::{
+    local_interfaces::{self, GetIfAddrs, SystemGetIfAddrs},
+    telio_log_debug, telio_log_info, telio_log_warn,
+};
 use telio_wg::{DynamicWg, WireGuard};
 use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
 use tokio::time::{interval_at, Interval, MissedTickBehavior};
-
-#[cfg(test)]
-use mockall::automock;
-
-#[cfg_attr(test, automock)]
-pub trait GetIfAddrs: Send + Sync + Default + 'static {
-    fn get(&self) -> std::io::Result<Vec<if_addrs::Interface>>;
-}
-
-#[derive(Default)]
-pub struct SystemGetIfAddrs;
-impl GetIfAddrs for SystemGetIfAddrs {
-    fn get(&self) -> std::io::Result<Vec<if_addrs::Interface>> {
-        if_addrs::get_if_addrs()
-    }
-}
 
 pub struct LocalInterfacesEndpointProvider<
     T: WireGuard = DynamicWg,
@@ -123,7 +109,7 @@ impl<T: WireGuard> LocalInterfacesEndpointProvider<T> {
             wireguard_interface,
             poll_interval,
             ping_pong_handler,
-            SystemGetIfAddrs,
+            local_interfaces::SystemGetIfAddrs,
         )
     }
 }
@@ -174,22 +160,6 @@ impl<T: WireGuard, G: GetIfAddrs> State<T, G> {
         }
     }
 
-    fn gather_local_interfaces(&self) -> Result<Vec<if_addrs::Interface>, Error> {
-        let shared_range: Ipv4Net = Ipv4Net::new(Ipv4Addr::new(100, 64, 0, 0), 10)?;
-        Ok(self
-            .get_if_addr
-            .get()?
-            .into_iter()
-            .filter(|x| !x.addr.is_loopback())
-            .filter(|x| match x.addr.ip() {
-                // Filter 100.64/10 libtelio's meshnet network.
-                IpAddr::V4(v4) => !shared_range.contains(&v4),
-                // Filter IPv6
-                _ => false,
-            })
-            .collect())
-    }
-
     async fn poll_local_endpoints(&mut self) -> Result<(), Error> {
         if let Some(candidates_publisher) = self.endpoint_candidates_change_publisher.as_ref() {
             let wg_port = self.get_wg_port().await?;
@@ -201,7 +171,7 @@ impl<T: WireGuard, G: GetIfAddrs> State<T, G> {
                 }
             };
 
-            let itfs = self.gather_local_interfaces()?;
+            let itfs = local_interfaces::gather_local_interfaces(&self.get_if_addr)?;
 
             let candidates: Vec<_> = itfs
                 .iter()
@@ -300,7 +270,7 @@ mod tests {
 
     use super::*;
     use maplit::hashmap;
-    use std::net::Ipv6Addr;
+    use std::net::{Ipv4Addr, Ipv6Addr};
     use telio_crypto::{
         encryption::{decrypt_request, decrypt_response, encrypt_request, encrypt_response},
         SecretKey,
@@ -309,6 +279,7 @@ mod tests {
     use telio_sockets::NativeProtector;
     use telio_sockets::SocketPool;
     use telio_task::io::Chan;
+    use telio_utils::local_interfaces::{gather_local_interfaces, MockGetIfAddrs};
     use telio_wg::{uapi::Interface, MockWireGuard};
     use tokio::time::timeout;
 
@@ -476,7 +447,7 @@ mod tests {
 
         let state = prepare_state_test(wg_mock, get_if_addrs_mock).await;
 
-        let interfaces = state.0.gather_local_interfaces().unwrap();
+        let interfaces = gather_local_interfaces(&state.0.get_if_addr).unwrap();
         assert!(interfaces.len() == 1);
         assert!(interfaces[0].name == "correct");
     }

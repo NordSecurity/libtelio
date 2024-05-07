@@ -81,6 +81,9 @@ pub enum Error {
     /// Did not find matching endpoint with the IGD subnet
     #[error("No endpoint with matching subnet to IGD")]
     NoMatchingLocalEndpoint,
+    /// Fail to get local interface
+    #[error(transparent)]
+    GetLocalInterfaceError(#[from] telio_utils::local_interfaces::Error),
 }
 
 #[derive(PartialEq, Eq, Hash, Debug, Copy, Clone, Enum)]
