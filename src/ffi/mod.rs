@@ -132,6 +132,38 @@ pub fn string_to_meshnet_config(cfg_str: String) -> FFIResult<Config> {
     }
 }
 
+#[cfg(target_os = "android")]
+#[no_mangle]
+/// Initialize OS certificate store, should be called only once. Without call to telio_init_cert_store
+/// telio will not be able to verify https certificates in the system certificate store.
+/// # Params
+/// - `env`:    see https://developer.android.com/training/articles/perf-jni#javavm-and-jnienv
+/// - `ctx`:    see https://developer.android.com/reference/android/content/Context
+pub extern "C" fn Java_com_nordsec_telio_TelioCert_initCertStore(
+    env: *mut jni::sys::JNIEnv,
+    ctx: jni::sys::jobject,
+) -> u8 {
+    use once_cell::sync::OnceCell;
+
+    static RESULT: OnceCell<u8> = OnceCell::new();
+    *RESULT.get_or_init(|| match unsafe { jni::JNIEnv::from_raw(env) } {
+        Ok(env) => match rustls_platform_verifier::android::init_hosted(&env, ctx.into()) {
+            Err(err) => {
+                telio_log_error!("Failed to initialize certificate store {err:?}");
+                1
+            }
+            Ok(()) => {
+                telio_log_debug!("Successfully initialized certificate store");
+                0
+            }
+        },
+        Err(err) => {
+            telio_log_error!("Failed to initialize certificate store {err:?}");
+            1
+        }
+    })
+}
+
 pub struct Telio {
     inner: Mutex<Option<Device>>,
     id: usize,
