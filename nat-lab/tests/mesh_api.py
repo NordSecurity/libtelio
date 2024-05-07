@@ -8,6 +8,7 @@ from config import DERP_SERVERS, LIBTELIO_IPV6_WG_SUBNET, WG_SERVERS
 from ipaddress import ip_address
 from typing import Dict, Any, List, Tuple, Optional
 from utils.router import IPStack, IPProto, get_ip_address_type
+from utils.testing import test_name_safe_for_file_name
 
 if platform.machine() != "x86_64":
     import pure_wg as Key
@@ -42,6 +43,8 @@ GREEK_ALPHABET = [
     "psi",
     "omega",
 ]
+
+PCAP_FILE_PATH = "/dump.pcap"
 
 
 class NodeError(Exception):
@@ -349,6 +352,7 @@ class API:
         )
 
         for node in node_list:
+            _start_tcpdump_on_vpn(server_config["container"])
             if "type" in server_config and server_config["type"] == "nordlynx":
                 priv_key = server_config["private_key"]
                 commands = [
@@ -402,3 +406,30 @@ class API:
         assert (len(node_configs) + current_node_list_len) == len(self.nodes)
 
         return tuple(list(self.nodes.values())[current_node_list_len:])
+
+
+def _start_tcpdump_on_vpn(server_name):
+    if os.environ.get("NATLAB_SAVE_LOGS") is None:
+        return
+    # First make sure that no leftover processes/files will interfere
+    cmd = f"docker exec --privileged {server_name} killall tcpdump"
+    os.system(cmd)
+    cmd = f"docker exec --privileged {server_name} rm {PCAP_FILE_PATH}"
+    os.system(cmd)
+
+    cmd = f"docker exec -d --privileged {server_name} tcpdump -i any -U -w {PCAP_FILE_PATH}"
+    os.system(cmd)
+
+
+def stop_tcpdump_on_vpns():
+    if os.environ.get("NATLAB_SAVE_LOGS") is None:
+        return
+    test_name = test_name_safe_for_file_name()
+    log_dir = "logs"
+    os.makedirs(log_dir, exist_ok=True)
+    for wg_server in WG_SERVERS:
+        server_name = wg_server["container"]
+        cmd = f"docker exec --privileged {server_name} killall tcpdump"
+        os.system(cmd)
+        cmd = f"docker container cp {server_name}:{PCAP_FILE_PATH} ./{log_dir}/{test_name}-{server_name}.pcap"
+        os.system(cmd)

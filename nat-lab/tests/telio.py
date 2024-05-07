@@ -21,6 +21,7 @@ from utils.connection_util import get_libtelio_binary_path
 from utils.output_notifier import OutputNotifier
 from utils.process import Process
 from utils.router import IPStack, Router, new_router
+from utils.testing import test_name_safe_for_file_name
 
 
 # Equivalent of `libtelio/telio-wg/src/uapi.rs`
@@ -1000,11 +1001,7 @@ class Client:
         else:
             container_id = str(self._connection.target_os)
 
-        test_name = os.environ.get("PYTEST_CURRENT_TEST")
-        if test_name is not None:
-            test_name = "".join(
-                [x if x.isalnum() else "_" for x in test_name.split(" ")[0]]
-            )
+        test_name = test_name_safe_for_file_name()
 
         filename = str(test_name) + "_" + container_id + ".log"
         if len(filename.encode("utf-8")) > 256:
@@ -1036,11 +1033,7 @@ class Client:
 
         container_id = str(self._connection.target_os)
 
-        test_name = os.environ.get("PYTEST_CURRENT_TEST")
-        if test_name is not None:
-            test_name = "".join(
-                [x if x.isalnum() else "_" for x in test_name.split(" ")[0]]
-            )
+        test_name = test_name_safe_for_file_name()
 
         filename = str(test_name) + "_" + container_id + "_network_info"
         if len(filename.encode("utf-8")) > 256:
