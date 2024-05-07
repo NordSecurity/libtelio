@@ -10,8 +10,8 @@ buildscript {
         google()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.3.0'
-        classpath "org.jfrog.buildinfo:build-info-extractor-gradle:5.2.0"
+        classpath 'com.android.tools.build:gradle:8.0.1'
+        classpath "org.jfrog.buildinfo:build-info-extractor-gradle:4.21.0"
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.23"
     }
 }
@@ -31,10 +31,10 @@ def repoUsername = System.getenv('ARTIFACTORY_USERNAME')
 def repoPassword = System.getenv('ARTIFACTORY_PASSWORD')
 
 android {
-    compileSdkVersion 29
+    compileSdkVersion 33
     defaultConfig {
-        minSdkVersion 23
-        targetSdkVersion 29
+        minSdkVersion 24
+        targetSdkVersion 33
         versionCode = packageVersionCode
         versionName = packageVersionName
     }
@@ -46,10 +46,16 @@ android {
         }
     }
 
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+    kotlin {
+        jvmToolchain(11)
     }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    namespace 'com.nordsec.telio'
 }
 
 dependencies {
