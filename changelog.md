@@ -2,6 +2,7 @@
 ### **Bravas**
 ---
 * LLT-5017: Fix interface with static IP may be skipped for socket binding
+* LLT-5148: Rebind sockets when network path changes on Apple
 
 <br>
 
