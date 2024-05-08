@@ -83,6 +83,9 @@ pub use wg::{
     FirewallCb, Tun, WireGuard,
 };
 
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+static NETWORK_PATH_MONITOR_START: std::sync::Once = std::sync::Once::new();
+
 #[cfg(test)]
 use wg::tests::AdapterExpectation;
 
@@ -387,6 +390,10 @@ impl Device {
         telio_log_info!("Created libtelio instance {}, {}", version_tag, commit_sha);
 
         telio_log_info!("libtelio is starting up with features : {:?}", features);
+
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+        NETWORK_PATH_MONITOR_START
+            .call_once(telio_sockets::protector::platform::setup_network_path_monitor);
 
         if let Some(lana) = &features.lana {
             if init_lana(lana.event_path.clone(), version_tag.to_string(), lana.prod).is_err() {
