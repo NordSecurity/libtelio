@@ -17,6 +17,7 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["full"] }
 
 telio-utils.workspace = true
+once_cell.workspace = true
 
 [dev-dependencies]
 mockall.workspace = true
