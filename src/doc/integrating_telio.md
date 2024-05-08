@@ -131,6 +131,102 @@ telio.destroy()!!;
 
 </multi-code>
 
+
+### Feature config
+
+App can deserialize JSON string with feature config before passing to telio.
+
+<multi-code-select></multi-code-select>
+
+<multi-code>
+
+```rust no_run
+use telio::{ffi::*, types::*};
+use telio_model::features::FeatureLana;
+
+let json_feature_config = "<feature config fetched from API>".to_owned();
+let mut feature_config = string_to_features(json_feature_config).unwrap();
+
+feature_config.lana = Some(FeatureLana {  event_path: "some/path.db".to_owned(), prod: true });
+if let Some(nurse) = &mut feature_config.nurse {
+    nurse.fingerprint = "me".to_owned();
+}
+
+#[derive(Debug)]
+struct EventHandler;
+impl TelioEventCb for EventHandler {
+    fn event(&self, payload: String) {}
+}
+
+let telio = Telio::new(feature_config, Box::new(EventHandler)).unwrap();
+telio.destroy().unwrap();
+```
+
+```go
+import github.com/nordsecurity/telio
+
+json_feature_config := "<feature config fetched from API>";
+feature_config, err := string_to_features(json_feature_config);
+
+feature_config.lana = FeatureLana { event_path: "some/path.db", prod: true}
+if feature_config.nurse != nil {
+    feature_config.nurse.fingerprint = "me"
+}
+
+telio, err := Telio {
+    features: feature_config,
+    ...
+}
+_, err = telio.destroy()
+```
+
+```swift
+import libtelio
+
+let json_feature_config = "<feature config fetched from API>";
+let feature_config = string_to_features(json_feature_config);
+
+feature_config.lana = FeatureLana("some/path.db", true)
+if let nurse = feature_config.nurse {
+    nurse.fingerprint = "me"
+}
+
+let telio = Telio(feature_config, ...)
+telio.destroy()
+```
+
+```cs
+using uniffi.libtelio;
+
+string json_feature_config = "<feature config fetched from API>";
+Features feature_config = string_to_features(json_feature_config);
+
+feature_config.lana = new FeatureLana("some/path.db", true);
+if (feature_config.nurse != null) {
+    feature_config.nurse.fingerprint = "me";
+}
+
+Telio telio = new Telio(feature_config, ...);
+telio.destroy();
+```
+
+```kotlin
+import com.nordsec.libtelio.*;
+
+val json_feature_config = "<feature config fetched from API>";
+val feature_config = string_to_features(json_feature_config)!!;
+
+feature_config.lana = FeatureLana("some/path.db", true);
+feature_config.nurse?.let { nurse -> 
+    nurse.fingerprint = "me";
+}
+
+val telio = Telio.new(feature_config, ...)!!;
+telio.destroy()!!;
+```
+
+</multi-code>
+
 ### Event Callback
 App passes event callback. Deserializes Telio Event from received JSON string. For details on events, see the [events documentation](../_telio_events_documentation/index.html).
 
