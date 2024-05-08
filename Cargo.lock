@@ -4613,6 +4613,7 @@ dependencies = [
  "nix 0.28.0",
  "objc",
  "objc-foundation",
+ "once_cell",
  "parking_lot",
  "rstest",
  "socket2 0.5.7",

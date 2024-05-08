@@ -1,4 +1,5 @@
 use debug_panic::debug_panic;
+use once_cell::sync::Lazy;
 use parking_lot::{Mutex, RwLock};
 
 use std::{
@@ -22,7 +23,11 @@ use system_configuration::{
     dynamic_store::{self, SCDynamicStore},
     sys::schema_definitions,
 };
-use tokio::{self, sync::Notify, task::JoinHandle};
+use tokio::{
+    self,
+    sync::{broadcast::Sender, Notify},
+    task::JoinHandle,
+};
 
 use crate::native::{interface_index_from_name, NativeSocket};
 use crate::Protector;
@@ -53,6 +58,7 @@ pub const DISPATCH_QUEUE_PRIORITY_LOW: c_long = -2;
 pub const DISPATCH_QUEUE_PRIORITY_BACKGROUND: c_long = -1 << 15;
 
 static INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER: Mutex<Vec<String>> = Mutex::new(Vec::new());
+static PATH_CHANGE_BROADCAST: Lazy<Sender<()>> = Lazy::new(|| Sender::new(1));
 
 #[cfg(any(target_os = "ios", target_os = "tvos"))]
 use objc::{class, msg_send, runtime::Object, sel, sel_impl};
@@ -121,6 +127,7 @@ pub enum Error {}
 pub struct SocketWatcher {
     sockets: Arc<Mutex<Sockets>>,
     monitor: JoinHandle<io::Result<()>>,
+    nw_monitor: JoinHandle<io::Result<()>>,
 }
 
 #[cfg(any(target_os = "ios", target_os = "tvos"))]
@@ -152,10 +159,12 @@ impl NativeProtector {
 
         if should_create_socket_watcher {
             let sockets = Arc::new(Mutex::new(Sockets::new()));
+            let (monitor, nw_monitor) = spawn_monitors(sockets.clone());
             Ok(Self {
                 socket_watcher: Some(SocketWatcher {
-                    sockets: sockets.clone(),
-                    monitor: spawn_monitor(sockets),
+                    sockets,
+                    monitor,
+                    nw_monitor,
                 }),
                 tunnel_interface: RwLock::new(None),
             })
@@ -197,6 +206,7 @@ impl Drop for NativeProtector {
     fn drop(&mut self) {
         if let Some(ref sw) = self.socket_watcher {
             sw.monitor.abort();
+            sw.nw_monitor.abort();
         }
     }
 }
@@ -237,6 +247,7 @@ impl Protector for NativeProtector {
     }
 }
 
+#[derive(Debug)]
 struct Sockets {
     sockets: Vec<NativeSocket>,
     tunnel_interface: Option<u64>,
@@ -317,20 +328,44 @@ impl Sockets {
 }
 
 #[allow(unreachable_code)]
-fn spawn_monitor(sockets: Arc<Mutex<Sockets>>) -> JoinHandle<io::Result<()>> {
+fn spawn_monitors(
+    sockets: Arc<Mutex<Sockets>>,
+) -> (JoinHandle<io::Result<()>>, JoinHandle<io::Result<()>>) {
     spawn_dynamic_store_loop(Arc::downgrade(&sockets));
-    tokio::spawn(async move {
-        loop {
-            let update = {
-                let sockets = sockets.lock();
-                sockets.notify.clone()
-            };
-
-            update.notified().await;
-            let mut sockets = sockets.lock();
-            sockets.rebind_all(true);
+    let nw_path_monitor_monitor_handle = tokio::spawn({
+        let sockets = sockets.clone();
+        let mut notify = PATH_CHANGE_BROADCAST.subscribe();
+        async move {
+            loop {
+                match notify.recv().await {
+                    Ok(()) => {
+                        let mut sockets = sockets.lock();
+                        sockets.rebind_all(false);
+                    }
+                    Err(e) => {
+                        telio_log_warn!(
+                            "Failed to receive new path for sockets ({sockets:?}): {e}"
+                        );
+                    }
+                }
+            }
         }
-    })
+    });
+    (
+        tokio::spawn(async move {
+            loop {
+                let update = {
+                    let sockets = sockets.lock();
+                    sockets.notify.clone()
+                };
+
+                update.notified().await;
+                let mut sockets = sockets.lock();
+                sockets.rebind_all(true);
+            }
+        }),
+        nw_path_monitor_monitor_handle,
+    )
 }
 
 fn get_service_order(store: &SCDynamicStore) -> Option<Vec<String>> {
@@ -466,8 +501,17 @@ pub fn setup_network_path_monitor() {
         };
 
         *INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER.lock() = names.borrow().clone();
+        if let Err(e) = PATH_CHANGE_BROADCAST.send(()) {
+            telio_log_warn!(
+                "Failed to notify about changed path, error: {e}, path: {:?}",
+                names.borrow()
+            );
+        }
 
-        telio_log_debug!("Names in os preference order: {:?}", names.borrow());
+        telio_log_info!(
+            "Path change notification sent, current network path in os preference order: {:?}",
+            names.borrow()
+        );
     })
     .copy();
     unsafe {
