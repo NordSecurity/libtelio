@@ -25,7 +25,7 @@ use tokio::net::UdpSocket;
 use tokio::sync::{RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, Semaphore};
 use tokio::task::JoinHandle;
 
-use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_info, telio_log_error, telio_log_trace, telio_log_warn};
 
 const IPV4_HEADER: usize = 20; // bytes
 const IPV6_HEADER: usize = 40; // bytes
@@ -253,6 +253,9 @@ impl LocalNameServer {
     fn process_udp_packet<'a>(ip_request: &impl IpPacket<'a>) -> Result<UdpRequestInfo, String> {
         let udp_request = UdpPacket::new(ip_request.payload())
             .ok_or_else(|| String::from("Failed to build UdpPacket from request packet"))?;
+
+        telio_log_info!("IP request: checksum {:#?} / packet - {:#?}", ip_request.udp_checksum(&udp_request), ip_request.payload());
+        telio_log_info!("UDP request: checksum {:#?} / packet - {:#?}", udp_request.get_checksum(), udp_request.payload());
 
         // Validate UDP checksum
         if ip_request.udp_checksum(&udp_request) != udp_request.get_checksum() {
