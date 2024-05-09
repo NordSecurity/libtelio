@@ -24,7 +24,7 @@ use telio_proto::{CallMeMaybeMsg, CallMeMaybeType, Session};
 use telio_task::{io::chan, io::Chan, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
     exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
-    interval_at, telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn, LruCache,
+    interval, telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn, LruCache,
 };
 use tokio::sync::Mutex;
 use tokio::time::{Instant, Interval};
@@ -221,7 +221,7 @@ impl<E: Backoff> CrossPingCheck<E> {
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
         exponential_backoff_helper_provider: ExponentialBackoffProvider<E>,
     ) -> Self {
-        let poll_timer = interval_at(tokio::time::Instant::now(), poll_period);
+        let poll_timer = interval(poll_period);
         Self {
             task: Task::start(State {
                 io,

@@ -10,7 +10,7 @@ use telio_model::features::EndpointProvider;
 use telio_nurse::aggregator::ConnectivityDataAggregator;
 use telio_proto::{Decision, Session, UpgradeDecisionMsg, UpgradeMsg};
 use telio_task::{io::chan, io::Chan, task_exec, BoxAction, Runtime, Task};
-use telio_utils::{interval_at, telio_log_debug, telio_log_info, telio_log_warn, LruCache};
+use telio_utils::{interval, telio_log_debug, telio_log_info, telio_log_warn, LruCache};
 use telio_wg::uapi::{AnalyticsEvent, PeerState};
 use telio_wg::WireGuard;
 use tokio::{
@@ -120,7 +120,7 @@ impl UpgradeSync {
         wireguard: Arc<dyn WireGuard>,
     ) -> Result<Self> {
         telio_log_info!("Starting Upgrade sync module");
-        let poll_timer = interval_at(Instant::now(), expiration_period / 2);
+        let poll_timer = interval(expiration_period / 2);
         Ok(Self {
             task: Task::start(State {
                 upgrade_request_publisher,
