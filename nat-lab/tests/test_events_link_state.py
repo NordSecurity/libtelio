@@ -19,13 +19,19 @@ def long_persistent_keepalive_periods() -> Wireguard:
 
 def _generate_setup_paramete_pair(
     cfg: List[Tuple[ConnectionTag, AdapterType]],
+    enhaced_detection: bool,
 ) -> List[SetupParameters]:
+    if enhaced_detection:
+        count = 1
+    else:
+        count = 0
+
     return [
         SetupParameters(
             connection_tag=tag,
             adapter_type=adapter,
             features=TelioFeatures(
-                link_detection=LinkDetection(rtt_seconds=1),
+                link_detection=LinkDetection(rtt_seconds=1, no_of_pings=count),
                 wireguard=long_persistent_keepalive_periods(),
             ),
         )
@@ -43,16 +49,60 @@ FEATURE_ENABLED_PARAMS = [
     #     ])
     # ),
     pytest.param(
-        _generate_setup_paramete_pair([
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.LinuxNativeWg),
-            (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
-        ])
+        _generate_setup_paramete_pair(
+            [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.LinuxNativeWg),
+                (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
+            ],
+            False,
+        )
     ),
     pytest.param(
-        _generate_setup_paramete_pair([
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
-            (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
-        ])
+        _generate_setup_paramete_pair(
+            [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.LinuxNativeWg),
+                (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
+            ],
+            True,
+        )
+    ),
+    pytest.param(
+        _generate_setup_paramete_pair(
+            [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
+                (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
+            ],
+            False,
+        )
+    ),
+    pytest.param(
+        _generate_setup_paramete_pair(
+            [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
+                (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
+            ],
+            True,
+        )
+    ),
+    pytest.param(
+        _generate_setup_paramete_pair(
+            [
+                (ConnectionTag.WINDOWS_VM_1, AdapterType.WindowsNativeWg),
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
+            ],
+            False,
+        ),
+        marks=pytest.mark.windows,
+    ),
+    pytest.param(
+        _generate_setup_paramete_pair(
+            [
+                (ConnectionTag.WINDOWS_VM_1, AdapterType.WindowsNativeWg),
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
+            ],
+            True,
+        ),
+        marks=pytest.mark.windows,
     ),
 ]
 
@@ -179,7 +229,7 @@ async def test_event_link_state_peer_goes_offline(
             async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
                 await ping.wait_for_next_ping(5)
 
-        await asyncio.sleep(15)
+        await asyncio.sleep(25)
         alpha_events = client_beta.get_link_state_events(alpha.public_key)
         beta_events = client_alpha.get_link_state_events(beta.public_key)
 

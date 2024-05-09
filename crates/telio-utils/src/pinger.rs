@@ -3,37 +3,43 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use std::time::Duration;
 use std::{convert::TryInto, net::IpAddr};
-use surge_ping::{
-    Client, Config as PingerConfig, ConfigBuilder, PingIdentifier, PingSequence, ICMP,
-};
+use surge_ping::{Client, Config as PingerConfig, PingIdentifier, PingSequence, ICMP};
 
-use telio_crypto::PublicKey;
-use telio_utils::{telio_log_debug, telio_log_error, DualTarget};
+use crate::{telio_log_debug, telio_log_error, DualTarget};
 
 /// Information needed to check the reachability of endpoints.
 ///
 /// Can be used with both IPv4 and IPv6 addresses.
-pub struct Ping {
+pub struct Pinger {
     client_v4: Arc<Client>,
     client_v6: Arc<Client>,
+    /// Number of tries
     pub no_of_tries: u32,
 }
 
+/// Information gathered after a ping action
 #[derive(Debug, Default, Clone)]
 pub struct PingResults {
+    /// The pinged host address
     pub host: Option<IpAddr>,
+    /// Number of successful pings
     pub successful_pings: u32,
+    /// Number of failed pings
     pub unsuccessful_pings: u32,
+    /// The average RTT
     pub avg_rtt: Option<Duration>,
 }
 
+/// Information gathered after a ping action to a DualTarget
 #[derive(Clone, Debug, Default)]
 pub struct DualPingResults {
+    /// The results for the IPv4 address
     pub v4: Option<PingResults>,
+    /// The results for the IPv6 address
     pub v6: Option<PingResults>,
 }
 
-impl Ping {
+impl Pinger {
     const PING_TIMEOUT: Duration = Duration::from_secs(5);
 
     /// Create new instance of `Ping`.
@@ -43,8 +49,8 @@ impl Ping {
     /// * `no_of_tries` - How many pings should be sent.
     pub fn new(no_of_tries: u32) -> std::io::Result<Self> {
         Ok(Self {
-            client_v4: Arc::new(Client::new(&Self::make_builder(ICMP::V4).build())?),
-            client_v6: Arc::new(Client::new(&Self::make_builder(ICMP::V6).build())?),
+            client_v4: Arc::new(Self::build_client(ICMP::V4)?),
+            client_v6: Arc::new(Self::build_client(ICMP::V6)?),
             no_of_tries,
         })
     }
@@ -53,9 +59,9 @@ impl Ping {
     ///
     /// # Arguments
     ///
-    /// * `node` - `NodeInfo` instance to get endpoint to ping and to store RTT information.
-    pub async fn perform(&self, target: (PublicKey, DualTarget)) -> DualPingResults {
-        let dpr = self.perform_average_rtt(&target.1).await;
+    /// * `target` - `DualTarget` instance representing the target node.
+    pub async fn perform(&self, target: DualTarget) -> DualPingResults {
+        let dpr = self.perform_average_rtt(&target).await;
         telio_log_debug!("{:?}, no_of_tries: {}", dpr, self.no_of_tries);
 
         dpr
@@ -143,7 +149,7 @@ impl Ping {
         results
     }
 
-    fn make_builder(proto: ICMP) -> ConfigBuilder {
+    fn build_client(proto: ICMP) -> std::io::Result<Client> {
         let mut config_builder = PingerConfig::builder().kind(proto);
         if cfg!(any(
             target_os = "ios",
@@ -162,6 +168,6 @@ impl Ping {
                 }
             }
         }
-        config_builder
+        Client::new(&config_builder.build())
     }
 }

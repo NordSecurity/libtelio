@@ -14,9 +14,12 @@ futures.workspace = true
 hashlink.workspace = true
 mockall = { workspace = true, optional = true }
 parking_lot.workspace = true
+rand.workspace = true
 rustc-hash.workspace = true
 serde.workspace = true
 sn_fake_clock = { workspace = true, optional = true }
+socket2.workspace = true
+surge-ping.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true

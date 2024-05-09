@@ -14,11 +14,11 @@ use telio_model::features::RttType;
 use telio_task::{io::mc_chan, Runtime, RuntimeExt, WaitResponse};
 use telio_wg::uapi::{AnalyticsEvent, PeerState};
 
-use telio_utils::{interval, telio_log_debug, telio_log_trace, DualTarget};
+use telio_utils::{
+    interval, telio_log_debug, telio_log_trace, DualPingResults, DualTarget, Pinger,
+};
 
 use crate::config::QoSConfig;
-
-use crate::rtt::ping::{DualPingResults, Ping};
 
 /// Information about a node in the meshnet.
 #[derive(Clone)]
@@ -168,7 +168,7 @@ pub struct Analytics {
     rtt_interval: Interval,
     io: Io,
     nodes: HashMap<PublicKey, NodeInfo>,
-    ping_backend: Arc<Option<Ping>>,
+    ping_backend: Arc<Option<Pinger>>,
     ping_channel_rx: mpsc::Receiver<(PublicKey, DualPingResults)>,
     ping_channel_tx: mpsc::WeakSender<(PublicKey, DualPingResults)>,
     buckets: u32,
@@ -229,7 +229,7 @@ impl Analytics {
         let (ping_channel_tx, ping_channel_rx) = mpsc::channel(1);
 
         let ping_backend = if config.rtt_types.contains(&RttType::Ping) {
-            Arc::new(Ping::new(config.rtt_tries).ok())
+            Arc::new(Pinger::new(config.rtt_tries).ok())
         } else {
             Arc::new(None)
         };
@@ -432,7 +432,7 @@ impl Analytics {
                         let mut ip_addresses = ip_addresses.iter().peekable();
 
                         while let Some(ip_address) = ip_addresses.next() {
-                            dpr = Box::pin(pinger.perform((pk, *ip_address))).await;
+                            dpr = Box::pin(pinger.perform(*ip_address)).await;
 
                             if let Some(results_v4) = &dpr.v4 {
                                 if results_v4.successful_pings != 0 {

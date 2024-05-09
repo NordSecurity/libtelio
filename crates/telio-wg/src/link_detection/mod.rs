@@ -1,4 +1,5 @@
-use std::{collections::HashMap, time::Duration};
+use enhanced_detection::EnhancedDetection;
+use std::{collections::HashMap, default, net::IpAddr, time::Duration};
 use tokio::time::Instant;
 
 use telio_crypto::PublicKey;
@@ -6,6 +7,10 @@ use telio_model::{
     features::FeatureLinkDetection,
     mesh::{LinkState, NodeState},
 };
+use telio_task::io::{chan, Chan};
+use telio_utils::{telio_err_with_log, telio_log_debug, telio_log_trace, telio_log_warn};
+
+mod enhanced_detection;
 
 /// Default wireguard keepalive duration
 const WG_KEEPALIVE: Duration = Duration::from_secs(10);
@@ -23,6 +28,7 @@ impl LinkDetection {
             None => LinkDetection::Disabled(LinkDetectionDisabled::default()),
             Some(features) => LinkDetection::Enabled(LinkDetectionEnabled::new(
                 Duration::from_secs(features.rtt_seconds),
+                features.no_of_pings,
             )),
         }
     }
@@ -47,17 +53,28 @@ impl LinkDetection {
         }
     }
 
-    pub fn update(
+    pub async fn update(
         &mut self,
         public_key: &PublicKey,
         rx_bytes: Option<u64>,
         tx_bytes: Option<u64>,
         node_state: NodeState,
+        node_addresses: Vec<IpAddr>,
         push: bool,
     ) -> LinkDetectionUpdateResult {
         match self {
-            LinkDetection::Enabled(l) => l.update(public_key, rx_bytes, tx_bytes, node_state, push),
-            LinkDetection::Disabled(l) => l.update(public_key, rx_bytes, push),
+            LinkDetection::Enabled(l) => {
+                l.update(
+                    public_key,
+                    rx_bytes,
+                    tx_bytes,
+                    node_state,
+                    node_addresses,
+                    push,
+                )
+                .await
+            }
+            LinkDetection::Disabled(l) => l.update(public_key, rx_bytes, push).await,
         }
     }
 
@@ -71,17 +88,35 @@ impl LinkDetection {
     pub fn is_disabled(&self) -> bool {
         matches!(self, LinkDetection::Disabled(_))
     }
+
+    pub async fn stop(self) {
+        match self {
+            LinkDetection::Enabled(l) => l.stop().await,
+            LinkDetection::Disabled(_) => (),
+        }
+    }
 }
 
 pub struct LinkDetectionEnabled {
     rtt: Duration,
+    enhanced_detection: Option<EnhancedDetection>,
+    ping_channel: chan::Tx<Vec<IpAddr>>,
     peers: HashMap<PublicKey, State>,
 }
 
 impl LinkDetectionEnabled {
-    fn new(rtt: Duration) -> Self {
+    fn new(rtt: Duration, no_of_pings: u32) -> Self {
+        let ping_channel = Chan::default();
+        let enhanced_detection = if no_of_pings != 0 {
+            EnhancedDetection::start_with(ping_channel.rx, no_of_pings).ok()
+        } else {
+            None
+        };
+
         LinkDetectionEnabled {
             rtt,
+            enhanced_detection,
+            ping_channel: ping_channel.tx,
             peers: HashMap::default(),
         }
     }
@@ -97,12 +132,13 @@ impl LinkDetectionEnabled {
             .insert(*public_key, State::new(rx_bytes, tx_bytes, node_state));
     }
 
-    fn update(
+    async fn update(
         &mut self,
         public_key: &PublicKey,
         rx_bytes: Option<u64>,
         tx_bytes: Option<u64>,
         node_state: NodeState,
+        node_addresses: Vec<IpAddr>,
         push: bool,
     ) -> LinkDetectionUpdateResult {
         // We want to update info only on pull
@@ -111,7 +147,16 @@ impl LinkDetectionEnabled {
         }
 
         if let Some(state) = self.peers.get_mut(public_key) {
-            state.update(rx_bytes, tx_bytes, node_state, self.rtt)
+            let ping_enabled = self.enhanced_detection.is_some();
+            let result = state.update(rx_bytes, tx_bytes, node_state, self.rtt, ping_enabled);
+
+            if ping_enabled && result.should_ping {
+                if let Err(e) = self.ping_channel.send(node_addresses).await {
+                    telio_log_warn!("Failed to trigger ping to {:?} {:?}", public_key, e);
+                }
+            }
+
+            result.link_detection_update_result
         } else {
             // Somehow we missed the node when it was new. We should recover from it.
             // To be less intrusive and to not disturb direct connections insert it.
@@ -139,6 +184,12 @@ impl LinkDetectionEnabled {
         self.peers
             .get(public_key)
             .and_then(|p| p.time_since_last_rx())
+    }
+
+    async fn stop(self) {
+        if let Some(ed) = self.enhanced_detection {
+            ed.stop().await;
+        }
     }
 
     fn push_update(
@@ -182,7 +233,7 @@ impl LinkDetectionDisabled {
         }
     }
 
-    fn update(
+    async fn update(
         &mut self,
         public_key: &PublicKey,
         rx_bytes: Option<u64>,
@@ -241,6 +292,28 @@ enum StateVariant {
     PossibleDown { deadline: Instant },
     Up,
 }
+
+struct StateUpdateResult {
+    should_ping: bool,
+    link_detection_update_result: LinkDetectionUpdateResult,
+}
+
+enum StateDecision {
+    NoAction,
+    Notify,
+    Ping,
+}
+
+impl StateDecision {
+    fn should_notify(&self) -> bool {
+        matches!(self, StateDecision::Notify)
+    }
+
+    fn should_ping(&self) -> bool {
+        matches!(self, StateDecision::Ping)
+    }
+}
+
 struct State {
     stats: BytesAndTimestamps,
     variant: StateVariant,
@@ -270,15 +343,13 @@ impl State {
         tx_bytes: Option<u64>,
         node_state: NodeState,
         rtt: Duration,
-    ) -> LinkDetectionUpdateResult {
+        ping_enabled: bool,
+    ) -> StateUpdateResult {
         // Guard if node_state is not connected
         // self -> new with down and return
         if !matches!(node_state, NodeState::Connected) {
             *self = State::new(rx_bytes, tx_bytes, node_state);
-            return LinkDetectionUpdateResult {
-                should_notify: false,
-                link_state: Some(LinkState::Down),
-            };
+            return Self::build_result(StateDecision::NoAction, LinkState::Down);
         }
 
         let new_rx = rx_bytes.unwrap_or_default();
@@ -293,11 +364,11 @@ impl State {
                     // Transition to Up
                     // Report link state Up
                     self.variant = StateVariant::Up;
-                    Self::build_result(true, LinkState::Up)
+                    Self::build_result(StateDecision::Notify, LinkState::Up)
                 } else {
                     // Stay in Down
                     // No notify
-                    Self::build_result(false, LinkState::Down)
+                    Self::build_result(StateDecision::NoAction, LinkState::Down)
                 }
             }
 
@@ -306,14 +377,14 @@ impl State {
                     // Transition to Up
                     // No notify
                     self.variant = StateVariant::Up;
-                    Self::build_result(false, LinkState::Up)
+                    Self::build_result(StateDecision::NoAction, LinkState::Up)
                 } else if Instant::now() >= *deadline {
                     // Transition to Down
                     // Report link state Down
                     self.variant = StateVariant::Down;
-                    Self::build_result(true, LinkState::Down)
+                    Self::build_result(StateDecision::Notify, LinkState::Down)
                 } else {
-                    Self::build_result(false, LinkState::Up)
+                    Self::build_result(StateDecision::NoAction, LinkState::Up)
                 }
             }
 
@@ -321,15 +392,26 @@ impl State {
                 if !is_link_up {
                     // Transition to PossibleDown
                     // No notify for now
+
+                    let delay = if ping_enabled {
+                        // If enhanced detection is enabled we will issue an ICMP echo request
+                        // The maximum waiting time for a response can be WG_KEEPALIVE + rtt
+                        // We will receive either an ICMP response or a Passive Keepalive message
+                        WG_KEEPALIVE.checked_add(rtt).unwrap_or(WG_KEEPALIVE)
+                    } else {
+                        Self::POSSIBLE_DOWN_DELAY
+                    };
+
                     self.variant = StateVariant::PossibleDown {
                         deadline: Instant::now()
-                            .checked_add(Self::POSSIBLE_DOWN_DELAY)
+                            .checked_add(delay)
                             .unwrap_or_else(Instant::now),
                     };
+                    Self::build_result(StateDecision::Ping, LinkState::Up)
+                } else {
+                    // Current link_state is Up
+                    Self::build_result(StateDecision::NoAction, LinkState::Up)
                 }
-
-                // Current link_state is Up
-                Self::build_result(false, LinkState::Up)
             }
         }
     }
@@ -349,10 +431,13 @@ impl State {
         }
     }
 
-    fn build_result(should_notify: bool, link_state: LinkState) -> LinkDetectionUpdateResult {
-        LinkDetectionUpdateResult {
-            should_notify,
-            link_state: Some(link_state),
+    fn build_result(state_decision: StateDecision, link_state: LinkState) -> StateUpdateResult {
+        StateUpdateResult {
+            should_ping: state_decision.should_ping(),
+            link_detection_update_result: LinkDetectionUpdateResult {
+                should_notify: state_decision.should_notify(),
+                link_state: Some(link_state),
+            },
         }
     }
 }
@@ -419,7 +504,10 @@ mod tests {
         assert_eq!(no_link_detection.is_disabled(), true);
 
         // Enabled
-        let features = FeatureLinkDetection { rtt_seconds: 1 };
+        let features = FeatureLinkDetection {
+            rtt_seconds: 1,
+            no_of_pings: 0,
+        };
         let no_link_detection = LinkDetection::new(Some(features));
         assert_eq!(no_link_detection.is_disabled(), false);
     }
@@ -446,19 +534,19 @@ mod tests {
         time::advance(Duration::from_secs(1)).await;
 
         // Update with no change in rx_bytes, so there will be no timestamp update
-        ld.update(&key, Some(5), false);
+        ld.update(&key, Some(5), false).await;
         assert_eq!(ld.time_since_last_rx(&key), Some(last_change.elapsed()));
 
         time::advance(Duration::from_secs(1)).await;
 
         // Update with different rx_bytes
-        ld.update(&key, Some(10), false);
+        ld.update(&key, Some(10), false).await;
         assert_eq!(ld.time_since_last_rx(&key), Some(Instant::now().elapsed()));
     }
 
     #[tokio::test(start_paused = true)]
     async fn test_time_since_last_rx_with_enabled_link_detection() {
-        let mut ld = LinkDetectionEnabled::new(Duration::from_secs(15));
+        let mut ld = LinkDetectionEnabled::new(Duration::from_secs(15), 0);
         let key = PublicKey::default();
 
         assert_eq!(ld.time_since_last_rx(&key), None);
@@ -478,13 +566,22 @@ mod tests {
         time::advance(Duration::from_secs(1)).await;
 
         // Update with no change in rx_bytes, so there will be no timestamp update
-        ld.update(&key, Some(5), None, NodeState::Connected, false);
+        ld.update(&key, Some(5), None, NodeState::Connected, Vec::new(), false)
+            .await;
         assert_eq!(ld.time_since_last_rx(&key), Some(last_change.elapsed()));
 
         time::advance(Duration::from_secs(1)).await;
 
         // Update with different rx_bytes
-        ld.update(&key, Some(10), None, NodeState::Connected, false);
+        ld.update(
+            &key,
+            Some(10),
+            None,
+            NodeState::Connected,
+            Vec::new(),
+            false,
+        )
+        .await;
         assert_eq!(ld.time_since_last_rx(&key), Some(Instant::now().elapsed()));
     }
 
@@ -504,7 +601,7 @@ mod tests {
             variant: StateVariant::Up,
         };
 
-        state.update(None, None, NodeState::Connecting, ONE_SECOND);
+        state.update(None, None, NodeState::Connecting, ONE_SECOND, false);
 
         assert!(matches!(state.variant, StateVariant::Down));
     }
@@ -520,16 +617,16 @@ mod tests {
         time::advance(Duration::from_secs(20)).await;
 
         // Update with data send and no response
-        state.update(Some(0), Some(1), NodeState::Connected, ONE_SECOND);
+        state.update(Some(0), Some(1), NodeState::Connected, ONE_SECOND, false);
         assert!(matches!(state.variant, StateVariant::Down));
 
         // Let one more update call and second to pass
         time::advance(ONE_SECOND).await;
-        state.update(Some(0), Some(1), NodeState::Connected, ONE_SECOND);
+        state.update(Some(0), Some(1), NodeState::Connected, ONE_SECOND, false);
 
         // Update with response
         time::advance(ONE_SECOND).await;
-        state.update(Some(1), Some(1), NodeState::Connected, ONE_SECOND);
+        state.update(Some(1), Some(1), NodeState::Connected, ONE_SECOND, false);
         assert!(matches!(state.variant, StateVariant::Up));
     }
 
@@ -543,12 +640,12 @@ mod tests {
         time::advance(ONE_SECOND).await;
 
         // Send some data to increase tx timestamp
-        state.update(Some(0), Some(1), NodeState::Connected, ONE_SECOND);
+        state.update(Some(0), Some(1), NodeState::Connected, ONE_SECOND, false);
         assert!(matches!(state.variant, StateVariant::Up));
 
         // Wait with no response
         time::advance(WG_KEEPALIVE).await;
-        state.update(Some(0), Some(2), NodeState::Connected, ONE_SECOND);
+        state.update(Some(0), Some(2), NodeState::Connected, ONE_SECOND, false);
         assert!(matches!(state.variant, StateVariant::PossibleDown { .. }));
     }
 
@@ -572,15 +669,15 @@ mod tests {
         };
 
         time::advance(ONE_SECOND).await;
-        state.update(Some(0), Some(1), NodeState::Connected, ONE_SECOND);
+        state.update(Some(0), Some(1), NodeState::Connected, ONE_SECOND, false);
         assert!(matches!(state.variant, StateVariant::PossibleDown { .. }));
 
         time::advance(ONE_SECOND).await;
-        state.update(Some(0), Some(1), NodeState::Connected, ONE_SECOND);
+        state.update(Some(0), Some(1), NodeState::Connected, ONE_SECOND, false);
         assert!(matches!(state.variant, StateVariant::PossibleDown { .. }));
 
         time::advance(ONE_SECOND).await;
-        state.update(Some(0), Some(1), NodeState::Connected, ONE_SECOND);
+        state.update(Some(0), Some(1), NodeState::Connected, ONE_SECOND, false);
         assert!(matches!(state.variant, StateVariant::Down));
     }
 
@@ -604,7 +701,7 @@ mod tests {
         };
 
         // Receive some data
-        state.update(Some(1), Some(1), NodeState::Connected, ONE_SECOND);
+        state.update(Some(1), Some(1), NodeState::Connected, ONE_SECOND, false);
         assert!(matches!(state.variant, StateVariant::Up));
     }
 

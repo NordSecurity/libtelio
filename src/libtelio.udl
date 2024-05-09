@@ -428,7 +428,7 @@ dictionary Features {
     FeatureFirewall firewall;
     /// If and for how long to flush events when stopping telio. Setting to Some(0) means waiting until all events have been flushed, regardless of how long it takes
     u64? flush_events_on_stop_timeout_seconds;
-    /// No-link detection mechanism
+    /// Link detection mechanism
     FeatureLinkDetection? link_detection;
     /// Feature configuration for DNS
     FeatureDns dns;
@@ -560,6 +560,8 @@ dictionary FeatureFirewall {
 dictionary FeatureLinkDetection {
     /// Configurable rtt in seconds
     u64 rtt_seconds;
+    /// Check the link state before reporting it as down
+    u32 no_of_pings;
 };
 
 /// Feature configuration for DNS

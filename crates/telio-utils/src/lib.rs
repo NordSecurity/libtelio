@@ -42,3 +42,7 @@ pub use lru_cache::*;
 /// Tokio interval creation wrappers
 pub mod interval;
 pub use interval::*;
+
+/// Basic ICMP Pinger
+pub mod pinger;
+pub use pinger::*;
