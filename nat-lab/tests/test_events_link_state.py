@@ -20,13 +20,16 @@ def long_persistent_keepalive_periods() -> Wireguard:
 
 def _generate_setup_paramete_pair(
     cfg: List[Tuple[ConnectionTag, AdapterType]],
+    enhaced_detection: bool,
 ) -> List[SetupParameters]:
     return [
         SetupParameters(
             connection_tag=tag,
             adapter_type=adapter,
             features=TelioFeatures(
-                link_detection=LinkDetection(rtt_seconds=1),
+                link_detection=LinkDetection(
+                    rtt_seconds=1, enhanced_detection=enhaced_detection
+                ),
                 wireguard=long_persistent_keepalive_periods(),
             ),
         )
@@ -48,7 +51,17 @@ FEATURE_ENABLED_PARAMS = [
             [
                 (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.LinuxNativeWg),
                 (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
-            ]
+            ],
+            False,
+        )
+    ),
+    pytest.param(
+        _generate_setup_paramete_pair(
+            [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.LinuxNativeWg),
+                (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
+            ],
+            True,
         )
     ),
     pytest.param(
@@ -56,8 +69,38 @@ FEATURE_ENABLED_PARAMS = [
             [
                 (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
                 (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
-            ]
+            ],
+            False,
         )
+    ),
+    pytest.param(
+        _generate_setup_paramete_pair(
+            [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
+                (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
+            ],
+            True,
+        )
+    ),
+    pytest.param(
+        _generate_setup_paramete_pair(
+            [
+                (ConnectionTag.WINDOWS_VM, AdapterType.WindowsNativeWg),
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
+            ],
+            False,
+        ),
+        marks=pytest.mark.windows,
+    ),
+    pytest.param(
+        _generate_setup_paramete_pair(
+            [
+                (ConnectionTag.WINDOWS_VM, AdapterType.WindowsNativeWg),
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
+            ],
+            True,
+        ),
+        marks=pytest.mark.windows,
     ),
 ]
 

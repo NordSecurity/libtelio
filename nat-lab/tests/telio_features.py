@@ -62,6 +62,7 @@ class Nurse(DataClassJsonMixin):
 @dataclass
 class LinkDetection(DataClassJsonMixin):
     rtt_seconds: Optional[int] = None
+    enhanced_detection: Optional[bool] = False
 
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
