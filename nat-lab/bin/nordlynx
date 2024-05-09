@@ -21,9 +21,26 @@ sleep 2
 ip addr s > /var/log/ipaddr.show
 nlx > /var/log/nlx.log
 /usr/bin/fakefm/fakefm -s testing123 2>&1 > /var/log/fakefm.log &
-/opt/nlx-radius/nlx-radius --log=stdout --verb=DEBUG 2>&1 > /var/log/nordlynx.log &
+/opt/nlx-radius/nlx-radius 2>&1 > /var/log/nordlynx.log &
 
 # run PQ upgrader
-/usr/bin/pq-upgrader 2>&1 > /var/log/pq-upgrader.log &
+cat > config.yml << EOL
+bind:
+  port: 6480
+logging:
+  output: file
+  level: Debug
+  file: /var/log/pq-upgrader.log
+dynamic_configuration:
+  enabled: false
+  port: 7771
+limits:
+  peer:
+    session_length: 5
+    rate: 10
+    burst: 5
+EOL
+
+/usr/bin/pq-upgrader &
 
 sleep infinity
