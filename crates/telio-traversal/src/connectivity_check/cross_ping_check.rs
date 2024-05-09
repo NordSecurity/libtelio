@@ -24,10 +24,10 @@ use telio_proto::{CallMeMaybeMsg, CallMeMaybeType, Session};
 use telio_task::{io::chan, io::Chan, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
     exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
-    telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn, LruCache,
+    interval_at, telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn, LruCache,
 };
-use tokio::time::{interval_at, Instant, Interval};
-use tokio::{sync::Mutex, time::MissedTickBehavior};
+use tokio::sync::Mutex;
+use tokio::time::{Instant, Interval};
 
 const CPC_TIMEOUT: Duration = Duration::from_secs(10);
 const UPGRADE_TIMEOUT: Duration = Duration::from_secs(60);
@@ -221,8 +221,7 @@ impl<E: Backoff> CrossPingCheck<E> {
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
         exponential_backoff_helper_provider: ExponentialBackoffProvider<E>,
     ) -> Self {
-        let mut poll_timer = interval_at(tokio::time::Instant::now(), poll_period);
-        poll_timer.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        let poll_timer = interval_at(tokio::time::Instant::now(), poll_period);
         Self {
             task: Task::start(State {
                 io,
