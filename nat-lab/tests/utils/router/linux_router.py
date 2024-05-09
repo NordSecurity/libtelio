@@ -90,7 +90,7 @@ class LinuxRouter(Router):
 
     async def create_vpn_route(self):
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
-            for network in ["10.0.0.0/16", "100.64.0.1"]:
+            for network in ["10.0.0.0/16", "100.64.0.1", "10.5.0.0/16"]:
                 try:
                     await self._connection.create_process([
                         "ip",
