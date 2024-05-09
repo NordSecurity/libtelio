@@ -352,7 +352,7 @@ class API:
         )
 
         for node in node_list:
-            _start_tcpdump_on_vpn(server_config["container"])
+            start_tcpdump(server_config["container"])
             if "type" in server_config and server_config["type"] == "nordlynx":
                 priv_key = server_config["private_key"]
                 commands = [
@@ -408,28 +408,40 @@ class API:
         return tuple(list(self.nodes.values())[current_node_list_len:])
 
 
-def _start_tcpdump_on_vpn(server_name):
+def start_tcpdump(container_name):
     if os.environ.get("NATLAB_SAVE_LOGS") is None:
         return
     # First make sure that no leftover processes/files will interfere
-    cmd = f"docker exec --privileged {server_name} killall tcpdump"
+    cmd = f"docker exec --privileged {container_name} killall tcpdump"
     os.system(cmd)
-    cmd = f"docker exec --privileged {server_name} rm {PCAP_FILE_PATH}"
-    os.system(cmd)
-
-    cmd = f"docker exec -d --privileged {server_name} tcpdump -i any -U -w {PCAP_FILE_PATH}"
+    cmd = f"docker exec --privileged {container_name} rm {PCAP_FILE_PATH}"
     os.system(cmd)
 
+    cmd = f"docker exec -d --privileged {container_name} tcpdump -i any -U -w {PCAP_FILE_PATH}"
+    os.system(cmd)
 
-def stop_tcpdump_on_vpns():
+
+def stop_tcpdump(container_names):
     if os.environ.get("NATLAB_SAVE_LOGS") is None:
         return
     test_name = test_name_safe_for_file_name()
     log_dir = "logs"
     os.makedirs(log_dir, exist_ok=True)
-    for wg_server in WG_SERVERS:
-        server_name = wg_server["container"]
-        cmd = f"docker exec --privileged {server_name} killall tcpdump"
+    for container_name in container_names:
+        cmd = f"docker exec --privileged {container_name} killall tcpdump"
         os.system(cmd)
-        cmd = f"docker container cp {server_name}:{PCAP_FILE_PATH} ./{log_dir}/{test_name}-{server_name}.pcap"
+        path = find_unique_path_for_tcpdump(log_dir, test_name, container_name)
+        cmd = f"docker container cp {container_name}:{PCAP_FILE_PATH} {path}"
         os.system(cmd)
+
+
+def find_unique_path_for_tcpdump(log_dir, test_name, container_name):
+    candidate_path = f"./{log_dir}/{test_name}-{container_name}.pcap"
+    counter = 1
+    # NOTE: counter starting from '1' means that the file will either have no suffix or
+    # will have a suffix starting from '2'. This is to make it clear that it's not the
+    # first log for that container/client.
+    while os.path.isfile(candidate_path):
+        counter += 1
+        candidate_path = f"./{log_dir}/{test_name}-{container_name}-{counter}.pcap"
+    return candidate_path

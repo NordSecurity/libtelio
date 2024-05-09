@@ -1,9 +1,10 @@
 import asyncio
 import pytest
+from config import WG_SERVERS
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from itertools import product, zip_longest
-from mesh_api import Node, Meshmap, API, stop_tcpdump_on_vpns
+from mesh_api import Node, Meshmap, API, stop_tcpdump
 from telio import Client, AdapterType, State, PathType
 from telio_features import TelioFeatures
 from typing import AsyncIterator, List, Tuple, Optional, Union, Dict, Any
@@ -290,7 +291,7 @@ async def setup_environment(
             if conn_manager.tracker:
                 limits = conn_manager.tracker.get_out_of_limits()
                 assert limits is None, f"conntracker reported out of limits {limits}"
-        stop_tcpdump_on_vpns()
+        stop_tcpdump([server["container"] for server in WG_SERVERS])
 
 
 async def setup_mesh_nodes(
