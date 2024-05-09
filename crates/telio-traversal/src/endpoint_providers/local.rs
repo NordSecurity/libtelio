@@ -14,7 +14,7 @@ use telio_crypto::PublicKey;
 use telio_proto::{Session, WGPort};
 use telio_sockets::External;
 use telio_task::{io::chan, task_exec, BoxAction, Runtime, Task};
-use telio_utils::{interval_at, telio_log_debug, telio_log_info, telio_log_warn};
+use telio_utils::{interval, telio_log_debug, telio_log_info, telio_log_warn};
 use telio_wg::{DynamicWg, WireGuard};
 use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
@@ -137,7 +137,7 @@ impl<T: WireGuard, G: GetIfAddrs> LocalInterfacesEndpointProvider<T, G> {
         get_if_addr: G,
     ) -> Self {
         telio_log_info!("Starting local interfaces endpoint provider");
-        let poll_timer = interval_at(tokio::time::Instant::now(), poll_interval);
+        let poll_timer = interval(poll_interval);
         Self {
             task: Task::start(State {
                 endpoint_candidates_change_publisher: None,
@@ -335,7 +335,7 @@ mod tests {
                 endpoint_candidates_change_publisher: None,
                 pong_publisher: None,
                 last_endpoint_candidates_event: vec![],
-                poll_timer: interval_at(tokio::time::Instant::now(), Duration::from_secs(10)),
+                poll_timer: interval(Duration::from_secs(10)),
                 wireguard_interface: Arc::new(wg_mock),
                 udp_socket: SocketPool::new(
                     NativeProtector::new(

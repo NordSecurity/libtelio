@@ -67,7 +67,7 @@ use futures::FutureExt;
 use telio_utils::{
     commit_sha,
     exponential_backoff::ExponentialBackoffBounds,
-    interval_at, telio_log_debug, telio_log_error, telio_log_info, telio_log_warn,
+    interval, telio_log_debug, telio_log_error, telio_log_info, telio_log_warn,
     tokio::{Monitor, ThreadTracker},
     version_tag,
 };
@@ -1152,7 +1152,7 @@ impl Runtime {
             post_quantum.tx,
         );
 
-        let polling_interval = interval_at(tokio::time::Instant::now(), Duration::from_secs(5));
+        let polling_interval = interval(Duration::from_secs(5));
 
         let pmtu_detection = features.pmtu_discovery.map(|cfg| {
             telio_pmtu::Entity::new(
