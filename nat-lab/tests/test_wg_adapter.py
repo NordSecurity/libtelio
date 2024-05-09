@@ -52,6 +52,12 @@ async def test_wg_adapter_cleanup():
             "DeviceInstanceID",
         ]).execute()
 
+        while (
+            "tcli.exe"
+            in (await conn.create_process(["tasklist"]).execute()).get_stdout()
+        ):
+            await asyncio.sleep(0.1)
+
         # as mentioned before, wintun adapter is not left behind 100%
         # if it is not there, we do nothing
         if "Wintun" not in reg_query.get_stdout():
