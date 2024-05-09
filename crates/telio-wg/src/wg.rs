@@ -639,10 +639,19 @@ impl State {
             if let (Some(old), Some(new)) = (from.peers.get(key), to.peers.get(key)) {
                 let old_state = old.state();
                 let new_state = new.state();
+                let node_address = new.allowed_ips.first().map(|addr| addr.ip());
 
-                let no_link_detection_update_result =
-                    self.no_link_detection
-                        .update(key, new.rx_bytes, new.tx_bytes, new_state, push);
+                let no_link_detection_update_result = self
+                    .no_link_detection
+                    .update(
+                        key,
+                        new.rx_bytes,
+                        new.tx_bytes,
+                        new_state,
+                        node_address,
+                        push,
+                    )
+                    .await;
 
                 if !old.is_same_event(new)
                     || old_state != new_state
@@ -864,6 +873,7 @@ impl Runtime for State {
 
     async fn stop(self) {
         self.adapter.stop().await;
+        self.no_link_detection.stop().await;
         #[cfg(unix)]
         self.cfg
             .tun

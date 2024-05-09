@@ -411,11 +411,19 @@ pub struct FeatureLinkDetection {
     /// Configurable rtt in seconds
     #[serde(default = "FeatureLinkDetection::default_configurable_rtt")]
     pub rtt_seconds: u64,
+
+    /// Check the link state before reporting it as down.
+    #[serde(default = "FeatureLinkDetection::default_enhanced_detection")]
+    pub enhanced_detection: bool,
 }
 
 impl FeatureLinkDetection {
     const fn default_configurable_rtt() -> u64 {
         15
+    }
+
+    const fn default_enhanced_detection() -> bool {
+        false
     }
 }
 
