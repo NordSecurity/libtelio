@@ -7,14 +7,14 @@ use std::time::Instant;
 use telio_model::constants::{VPN_INTERNAL_IPV4, VPN_INTERNAL_IPV6};
 
 use tokio::sync::mpsc;
-use tokio::time::{interval_at, Duration, Interval, MissedTickBehavior};
+use tokio::time::{Duration, Interval};
 
 use telio_crypto::PublicKey;
 use telio_model::features::RttType;
 use telio_task::{io::mc_chan, Runtime, RuntimeExt, WaitResponse};
 use telio_wg::uapi::{AnalyticsEvent, PeerState};
 
-use telio_utils::{telio_log_debug, telio_log_trace, DualTarget};
+use telio_utils::{interval_at, telio_log_debug, telio_log_trace, DualTarget};
 
 use crate::config::QoSConfig;
 
@@ -233,8 +233,7 @@ impl Analytics {
         } else {
             Arc::new(None)
         };
-        let mut rtt_interval = interval_at(tokio::time::Instant::now(), config.rtt_interval);
-        rtt_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        let rtt_interval = interval_at(tokio::time::Instant::now(), config.rtt_interval);
 
         Self {
             rtt_interval,
