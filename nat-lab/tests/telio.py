@@ -12,11 +12,11 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from dataclasses_json import DataClassJsonMixin, dataclass_json
 from enum import Enum
-from mesh_api import Meshmap, Node
+from mesh_api import Meshmap, Node, start_tcpdump, stop_tcpdump
 from telio_features import TelioFeatures
 from typing import AsyncIterator, List, Optional, Set
 from utils import asyncio_util
-from utils.connection import Connection, TargetOS
+from utils.connection import Connection, DockerConnection, TargetOS
 from utils.connection_util import get_libtelio_binary_path
 from utils.output_notifier import OutputNotifier
 from utils.process import Process
@@ -522,6 +522,9 @@ class Client:
     async def run(
         self, meshmap: Optional[Meshmap] = None, telio_v3: bool = False
     ) -> AsyncIterator["Client"]:
+        if isinstance(self._connection, DockerConnection):
+            start_tcpdump(self._connection.container_name())
+
         async def on_stdout(stdout: str) -> None:
             supress_print_list = [
                 "MESSAGE_DONE=",
@@ -580,6 +583,8 @@ class Client:
                     yield self
             finally:
                 await self.save_logs()
+                if isinstance(self._connection, DockerConnection):
+                    stop_tcpdump([self._connection.container_name()])
                 await self.save_mac_network_info()
                 if self._process.is_executing():
                     await self.stop_device()

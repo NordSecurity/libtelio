@@ -7,6 +7,10 @@ from utils.process import Process, DockerProcess
 
 class DockerConnection(Connection):
     _container: DockerContainer
+    _name: str
+
+    def container_name(self) -> str:
+        return self._name
 
     def __init__(self, container: DockerContainer, container_name: str):
         super().__init__(TargetOS.Linux)
