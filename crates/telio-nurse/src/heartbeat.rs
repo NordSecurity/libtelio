@@ -27,9 +27,11 @@ use telio_task::{
     io::{chan, mc_chan, Chan},
     Runtime, RuntimeExt, WaitResponse,
 };
-use telio_utils::{map_enum, telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
+use telio_utils::{
+    interval_at, map_enum, telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn,
+};
 use telio_wg::uapi::PeerState;
-use tokio::time::{interval_at, sleep, Duration, Instant, Interval, MissedTickBehavior, Sleep};
+use tokio::time::{sleep, Duration, Instant, Interval, Sleep};
 use uuid::Uuid;
 
 #[mockall_double::double]
@@ -397,8 +399,7 @@ impl Analytics {
     ) -> Self {
         let start_time = Instant::now() + config.initial_collect_interval;
 
-        let mut interval: Interval = interval_at(start_time, config.collect_interval);
-        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        let interval: Interval = interval_at(start_time, config.collect_interval);
 
         let mut config_nodes = HashMap::new();
         // Add self in config_nodes hashset
