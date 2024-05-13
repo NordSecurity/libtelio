@@ -5,12 +5,13 @@ use std::{
 };
 use thiserror::Error as ThisError;
 
+use crate::{interval, interval_at};
 use futures::{
     future::BoxFuture,
     stream::{FuturesUnordered, StreamExt},
     FutureExt,
 };
-use tokio::time::{interval, interval_at, Duration, Instant, Interval, MissedTickBehavior};
+use tokio::time::{Duration, Instant, Interval};
 
 /// Possible [RepeatedAction] errors.
 #[derive(ThisError, Debug)]
@@ -84,8 +85,7 @@ where
         self.actions.get_mut(key).map_or_else(
             || Err(RepeatedActionError::RepeatedActionNotFound),
             |a| {
-                let mut interval = interval_at(Instant::now() + dur, dur);
-                interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+                let interval = interval_at(Instant::now() + dur, dur);
                 a.0 = interval;
                 Ok(())
             },
@@ -111,7 +111,14 @@ where
 
         // Transform futures to `Output = (key, action)`
         let mut b: FuturesUnordered<_> = a
-            .map(|(key, interval, action)| interval.map(move |_| (key, action)).boxed())
+            .map(|(key, interval, action)| {
+                interval
+                    .map(move |instant| {
+                        dbg!(instant);
+                        (key, action)
+                    })
+                    .boxed()
+            })
             .collect();
 
         b.next()
@@ -192,6 +199,44 @@ mod tests {
 
         assert!(remove.is_ok());
         assert!(!ctx.actions.contains_action(&"action_0".to_owned()));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn execute_action_after_a_long_sleep_shouldnt_call_all_the_missed_actions() {
+        let start = Arc::new(Instant::now());
+        let mut ctx = Context::new("test".to_owned());
+
+        ctx.actions
+            .add_action(
+                "action_0".to_owned(),
+                Duration::from_secs(1),
+                Arc::new({
+                    let start = start.clone();
+                    move |s: _| {
+                        Box::pin({
+                            let start = start.clone();
+                            async move {
+                                println!("hello at {:?}", start.elapsed());
+                                s.change("change_0".to_owned()).await
+                            }
+                        })
+                    }
+                }),
+            )
+            .unwrap();
+
+        time::advance(Duration::from_secs(3)).await;
+
+        for _ in 0..3 {
+            ctx.actions.select_action().await.unwrap().1(&mut ctx)
+                .await
+                .unwrap();
+        }
+
+        // Wait 3s, execute 3 actions every 1s (first one immediately after the sleep) gives 5s at least.
+        // With the default interval missed tick behaviour, all 3 actions execute immediately after the
+        // sleep ending right after 3s.
+        assert!(start.elapsed() >= Duration::from_secs(5));
     }
 
     #[tokio::test(start_paused = true)]

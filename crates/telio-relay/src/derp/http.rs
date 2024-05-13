@@ -14,12 +14,13 @@ use std::{
 };
 use telio_sockets::{SocketBufSizes, SocketPool, TcpParams};
 use telio_task::io::Chan;
+use telio_utils::interval_at;
 use webpki_roots::TLS_SERVER_ROOTS;
 
 use crate::{Config, DerpKeepaliveConfig};
 
 use telio_crypto::{PublicKey, SecretKey};
-use tokio::time::{interval_at, Interval, MissedTickBehavior};
+use tokio::time::Interval;
 use tokio::{
     io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     task::JoinHandle,
@@ -200,9 +201,7 @@ async fn connect_and_start<RW: AsyncRead + AsyncWrite + Send + 'static>(
         }),
         poll_timer: {
             let poll_interval = Duration::from_secs(server_keepalives.derp_keepalive as u64);
-            let mut timer = interval_at(tokio::time::Instant::now() + poll_interval, poll_interval);
-            timer.set_missed_tick_behavior(MissedTickBehavior::Delay);
-            timer
+            interval_at(tokio::time::Instant::now() + poll_interval, poll_interval)
         },
     })
 }
