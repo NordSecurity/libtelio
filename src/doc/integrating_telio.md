@@ -34,47 +34,47 @@ import github.com/nordsecurity/telio
 
 type Logger struct {}
 
-func (l Logger) Log(level TelioLogLevel, payload string) {
+func (l Logger) Log(logLevel TelioLogLevel, payload string) {
     // report log level and payload to the app
 }
 
-set_global_logger(TelioLogLevel.Debug, Logger{})
+SetGlobalLogger(TelioLogLevel.Debug, Logger{})
 ```
 
 ```swift
 import libtelio
 
-class Logger : TelioLoggerCb {
-    func log(level: TelioLogLevel, payload: string) {
+class Logger: TelioLoggerCb {
+    func log(logLevel: TelioLogLevel, payload: String) {
         // report log level and payload to the app
     }
 }
 
-set_global_logger(TelioLogLevel.Debug, Logger())
+setGlobalLogger(TelioLogLevel.Debug, Logger())
 ```
 
 ```cs
 using uniffi.libtelio;
 
 class Logger : TelioLoggerCb {
-    public void log(TelioLogLevel level, string payload) {
+    public void Log(TelioLogLevel logLevel, String payload) {
         // report log level and payload to the app
     }
 }
 
-set_global_logger(TelioLogLevel.Debug, new Logger());
+SetGlobalLogger(TelioLogLevel.Debug, new Logger());
 ```
 
 ```kotlin
-import com.nordsec.libtelio.*;
+import com.nordsec.libtelio.*
 
 val Logger = object: TelioLoggerCb {
-    override fun log(level: TelioLogLevel, payload: String) {
+    override fun log(logLevel: TelioLogLevel, payload: String) {
         // report log level and payload to the app
     }
 }
 
-set_global_logger(TelioLogLevel.Debug, Logger);
+setGlobalLogger(TelioLogLevel.Debug, Logger)
 ```
 
 </multi-code>
@@ -105,7 +105,7 @@ telio.destroy().unwrap();
 import github.com/nordsecurity/telio
 
 telio, err := Telio {...}
-_, err = telio.destroy()
+_, err = telio.Destroy()
 ```
 
 ```swift
@@ -119,14 +119,106 @@ telio.destroy()
 using uniffi.libtelio;
 
 Telio telio = new Telio(...);
-telio.destroy();
+telio.Destroy();
 ```
 
 ```kotlin
-import com.nordsec.libtelio.*;
+import com.nordsec.libtelio.*
 
-val telio = Telio.new(...)!!;
-telio.destroy()!!;
+val telio = Telio.new(...)!!
+telio.destroy()!!
+```
+
+</multi-code>
+
+
+### Feature config
+
+App can deserialize JSON string with feature config before passing to telio.
+
+<multi-code-select></multi-code-select>
+
+<multi-code>
+
+```rust no_run
+use telio::{ffi::*, types::*};
+use telio_model::features::FeatureLana;
+
+let json_feature_config = "<feature config fetched from API>".to_owned();
+let mut feature_config = string_to_features(json_feature_config).unwrap();
+
+feature_config.lana = Some(FeatureLana {  event_path: "some/path.db".to_owned(), prod: true });
+if let Some(nurse) = &mut feature_config.nurse {
+    nurse.fingerprint = "me".to_owned();
+}
+
+#[derive(Debug)]
+struct EventHandler;
+impl TelioEventCb for EventHandler {
+    fn event(&self, payload: String) {}
+}
+
+let telio = Telio::new(feature_config, Box::new(EventHandler)).unwrap();
+telio.destroy().unwrap();
+```
+
+```go
+import github.com/nordsecurity/telio
+
+jsonFeatureConfig := "<feature config fetched from API>";
+featureConfig, err := StringToFeatures(jsonFeatureConfig);
+
+featureConfig.lana = FeatureLana { EventPath: "some/path.db", Prod: true}
+if featureConfig.Nurse != nil {
+    featureConfig.Nurse.Fingerprint = "me"
+}
+
+telio, err := Telio {
+    Features: featureConfig,
+    ...
+}
+_, err = telio.Destroy()
+```
+
+```swift
+import libtelio
+
+let jsonFeatureConfig = "<feature config fetched from API>";
+let featureConfig = stringToFeatures(jsonFeatureConfig);
+
+featureConfig.lana = FeatureLana("some/path.db", true)
+featureConfig.nurse?.fingerprint = "me"
+
+let telio = Telio(featureConfig, ...)
+telio.destroy()
+```
+
+```cs
+using uniffi.libtelio;
+
+String jsonFeatureConfig = "<feature config fetched from API>";
+Features featureConfig = StringToFeatures(jsonFeatureConfig);
+
+featureConfig.lana = new FeatureLana("some/path.db", true);
+if (featureConfig.nurse != null) {
+    featureConfig.nurse.fingerprint = "me";
+}
+
+Telio telio = new Telio(featureConfig, ...);
+telio.Destroy();
+```
+
+```kotlin
+import com.nordsec.libtelio.*
+
+val jsonFeatureConfig = "<feature config fetched from API>"
+val featureConfig = stringToFeatures(jsonFeatureConfig)!!
+
+featureConfig.lana = FeatureLana("some/path.db", true)
+featureConfig.nurse?.fingerprint = "me"
+
+val telio = Telio(featureConfig, ...)!!
+telio.destroy()!!
 ```
 
 </multi-code>
@@ -165,14 +257,14 @@ func (eh EventHandler) Event(payload String) {
 
 _, err = Telio {
     ...,
-    events: EventHandler{},
+    Events: EventHandler{},
 }
 ```
 
 ```swift
 import libtelio
 
-class EventHandler : TelioEventCb {
+class EventHandler: TelioEventCb {
     func event(payload: string) {
         // deserialize json payload
         // pass deserialized event to app
@@ -186,7 +278,7 @@ Telio(..., EventHandler())
 using uniffi.libtelio;
 
 class EventHandler : TelioEventCb {
-    public void event(string payload) {
+    public void Event(String payload) {
         // deserialize json payload
         // pass deserialized event to app
     }
@@ -196,16 +288,16 @@ new Telio(..., new EventHandler());
 ```
 
 ```kotlin
-import com.nordsec.libtelio.*;
+import com.nordsec.libtelio.*
 
-val EventHandler = object: TelioEventCb {
+val eventHandler = object: TelioEventCb {
     override fun event(payload: String) {
         // deserialize json payload
         // pass deserialized event to app
     }
 }
 
-new Telio(..., EventHandler)!!;
+new Telio(..., eventHandler)!!
 ```
 
 </multi-code>
@@ -249,34 +341,33 @@ telio.destroy().unwrap();
 ```go
 import github.com/nordsecurity/telio
 
-sk := generate_secret_key()
-adapter := get_default_adapter()
+sk := GenerateSecretKey()
+adapter := GetDefaultAdapter()
 
 telio, err := Telio {...}
 
-// There are three ways to start
-telio.destroy(); telio:
-// * start - telio does everything
-// * start_with_tun - use existing tun (android, apple)
-// * start_with_name - create tun with name (windows, linux)
-_, err = telio.start(sk, adapter)
-_, err = telio.stop()
+// There are three ways to start telio:
+// * Start - telio does everything
+// * StartWithTun - use existing tun (android, apple)
+// * StartWithName - create tun with name (windows, linux)
+_, err = telio.Start(sk, adapter)
+_, err = telio.Stop()
 
-_, err = telio.destroy()
+_, err = telio.Destroy()
 ```
 
 ```swift
 import libtelio
 
-let sk = generate_secret_key()
-let adapter = get_default_adapter()
+let sk = generateSecretKey()
+let adapter = getDefaultAdapter()
 
 let telio = Telio(...)
 
 // There are three ways to start telio:
 // * start - telio does everything
-// * start_with_tun - use existing tun (android, apple)
-// * start_with_name - create tun with name (windows, linux)
+// * startWithTun - use existing tun (android, apple)
+// * startWithName - create tun with name (windows, linux)
 telio.start(sk, adapter)
 telio.stop()
 
@@ -286,37 +377,37 @@ telio.destroy()
 ```cs
 using uniffi.libtelio;
 
-var sk = generate_secret_key();
-var adapter = get_default_adapter();
+var sk = GenerateSecretKey();
+var adapter = GetDefaultAdapter();
 
 Telio telio = new Telio(...);
 
 // There are three ways to start telio:
-// * start - telio does everything
-// * start_with_tun - use existing tun (android, apple)
-// * start_with_name - create tun with name (windows, linux)
-telio.start(sk, adapter);
-telio.stop();
+// * Start - telio does everything
+// * StartWithTun - use existing tun (android, apple)
+// * StartWithName - create tun with name (windows, linux)
+telio.Start(sk, adapter);
+telio.Stop();
 
-telio.destroy();
+telio.Destroy();
 ```
 
 ```kotlin
-import com.nordsec.libtelio.*;
+import com.nordsec.libtelio.*
 
-val sk = generate_secret_key();
-val adapter = get_default_adapter();
+val sk = generateSecretKey()
+val adapter = getDefaultAdapter()
 
-val telio = Telio.new(...)!!;
+val telio = Telio.new(...)!!
 
 // There are three ways to start telio:
 // * start - telio does everything
-// * start_with_tun - use existing tun (android, apple)
-// * start_with_name - create tun with name (windows, linux)
-telio.start(sk, adapter)!!;
-telio.stop()!!;
+// * startWithTun - use existing tun (android, apple)
+// * startWithName - create tun with name (windows, linux)
+telio.start(sk, adapter)!!
+telio.stop()!!
 
-telio.destroy()!!;
+telio.destroy()!!
 ```
 
 </multi-code>
@@ -365,44 +456,44 @@ telio.destroy().unwrap();
 ```go
 import github.com/nordsecurity/telio
 
-sk := generate_secret_key()
-adapter := get_default_adapter()
+sk = GenerateSecretKey();
+adapter = GetDefaultAdapter();
 
 telio, err := Telio {...}
-_, err = telio.start(sk, adapter)
+_, err = telio.Start(sk, adapter)
 
-server_public := // some key, like QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=
-server_allowed_ips := [1]string{"0.0.0.0/0"}
-_, err := telio.connect_to_exit_node(
-      server_public,
-      server_allowed_ips,
+serverPublic := // some key, like QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=
+serverAllowedIps := [1]string{"0.0.0.0/0"}
+_, err := telio.ConnectToExitNode(
+      serverPublic,
+      serverAllowedIps,
       "1.2.3.4:51280"
 )
 
-_, err = telio.disconnect_from_exit_nodes()
+_, err = telio.DisconnectFromExitNodes()
 /* Connect to new exit node if there is need to change server */
 
-_, err = telio.stop()
-_, err = telio.destroy()
+_, err = telio.Stop()
+_, err = telio.Destroy()
 ```
 
 ```swift
 import libtelio
 
-let sk = generate_secret_key()
-let adapter = get_default_adapter()
+let sk = generateSecretKey()
+let adapter = getDefaultAdapter()
 
 let telio = Telio(...)
 telio.start(sk, adapter)
 
-let server_public = // some key, like QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=
-telio.connect_to_exit_node(
-      server_public,
+let serverPublic = // some key, like QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=
+telio.connectToExitNode(
+      serverPublic,
       ["0.0.0.0/0"],
       "1.2.3.4:51280"
 )
 
-telio.disconnect_from_exit_nodes()
+telio.disconnectFromExitNodes()
 /* Connect to new exit node if there is need to change server */
 
 telio.stop()
@@ -412,47 +503,47 @@ telio.destroy()
 ```cs
 using uniffi.libtelio;
 
-var sk = generate_secret_key();
-var adapter = get_default_adapter();
+var sk = GenerateSecretKey();
+var adapter = GetDefaultAdapter();
 
 Telio telio = new Telio(...);
-telio.start(sk, adapter);
+telio.Start(sk, adapter);
 
-var server_public = // some key, like QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=
-telio.connect_to_exit_node(
-      server_public,
+var serverPublic = // some key, like QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=
+telio.ConnectToExitNode(
+      serverPublic,
       ["0.0.0.0/0"],
       "1.2.3.4:51280"
 );
 
-telio.disconnect_from_exit_nodes();
+telio.DisconnectFromExitNodes();
 /* Connect to new exit node if there is need to change server */
 
-telio.stop();
-telio.destroy();
+telio.Stop();
+telio.Destroy();
 ```
 
 ```kotlin
-import com.nordsec.libtelio.*;
+import com.nordsec.libtelio.*
 
-val sk = generate_secret_key();
-val adapter = get_default_adapter();
+val sk = generateSecretKey()
+val adapter = getDefaultAdapter()
 
-val telio = Telio.new(...)!!;
-telio.start(sk, adapter)!!;
+val telio = Telio.new(...)!!
+telio.start(sk, adapter)!!
 
-val server_public = // some key, like QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=
-telio.connect_to_exit_node(
-      server_public,
+val serverPublic = // some key, like QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=
+telio.connectToExitNode(
+      serverPublic,
       listOf("0.0.0.0/0"),
       "1.2.3.4:51280"
-)!!;
+)!!
 
-telio.disconnect_from_exit_nodes()!!;
+telio.disconnectFromExitNodes()!!
 /* Connect to new exit node if there is need to change server */
 
-telio.stop()!!;
-telio.destroy()!!;
+telio.stop()!!
+telio.destroy()!!
 ```
 
 </multi-code>
@@ -509,44 +600,44 @@ telio.destroy().unwrap();
 ```go
 import github.com/nordsecurity/telio
 
-sk := generate_secret_key()
-adapter := get_default_adapter()
+sk := GenerateSecretKey()
+adapter := GetDefaultAdapter()
 
 telio, err := Telio {...}
-_, err = telio.start(sk, adapter)
+_, err = telio.Start(sk, adapter)
 
-mesh_pk := generate_public_key(sk)
-// Register mesh_pk with api if needed
-json_config := "<json config recieved from api>"
-config, err := string_to_meshnet_config(json_config)
+meshPk := GeneratePublicKey(sk)
+// Register meshPk with api if needed
+jsonConfig := "<json config recieved from api>"
+config, err := StringToMeshnetConfig(jsonConfig)
 // Change secret key if needed
-_, err := telio.set_secret_key(sk)
+_, err := telio.SetSecretKey(sk)
 /* Turn on or update meshnet */
-_, err := telio.set_meshnet(config)
-_, err := telio.set_meshnet_off()
+_, err := telio.SetMeshnet(config)
+_, err := telio.SetMeshnetOff()
 
-_, err = telio.stop()
-_, err = telio.destroy()
+_, err = telio.Stop()
+_, err = telio.Destroy()
 ```
 
 ```swift
 import libtelio
 
-let sk = generate_secret_key()
-let adapter = get_default_adapter()
+let sk = generateSecretKey()
+let adapter = getDefaultAdapter()
 
 let telio = Telio(...)
 telio.start(sk, adapter)
 
-let mesh_pk = generate_public_key(sk)
-// Register mesh_pk with api if needed
-let json_config = "<json config recieved from api>"
-let config = string_to_meshnet_config(json_config)
+let meshPk = generatePublicKey(sk)
+// Register meshPk with api if needed
+let jsonConfig = "<json config recieved from api>"
+let config = stringToMeshnetConfig(jsonConfig)
 // Change secret key if needed
-telio.set_secret_key(sk)
+telio.setSecretKey(sk)
 /* Turn on or update meshnet */
-telio.set_meshnet(config)
-telio.set_meshnet_off()
+telio.setMeshnet(config)
+telio.setMeshnetOff()
 
 telio.stop()
 telio.destroy()
@@ -555,47 +646,47 @@ telio.destroy()
 ```cs
 using uniffi.libtelio;
 
-var sk = generate_secret_key();
-var adapter = get_default_adapter();
+var sk = GenerateSecretKey();
+var adapter = GetDefaultAdapter();
 
 Telio telio = new Telio(...);
-telio.start(sk, adapter);
+telio.Start(sk, adapter);
 
-var mesh_pk = generate_public_key(sk);
-// Register mesh_pk with api if needed
-var json_config = "<json config recieved from api>";
-var config = string_to_meshnet_config(json_config);
+var meshPk = GeneratePublicKey(sk);
+// Register meshPk with api if needed
+var jsonConfig = "<json config recieved from api>";
+var config = StringToMeshnetConfig(jsonConfig);
 // Change secret key if needed
-telio.set_secret_key(sk);
+telio.SetSecretKey(sk);
 /* Turn on or update meshnet */
-telio.set_meshnet(config);
-telio.set_meshnet_off();
+telio.SetMeshnet(config);
+telio.SetMeshnetOff();
 
-telio.stop();
-telio.destroy();
+telio.Stop();
+telio.Destroy();
 ```
 
 ```kotlin
-import com.nordsec.libtelio.*;
+import com.nordsec.libtelio.*
 
-val sk = generate_secret_key();
-val adapter = get_default_adapter();
+val sk = generateSecretKey()
+val adapter = getDefaultAdapter()
 
-val telio = Telio.new(...)!!;
-telio.start(sk, adapter)!!;
+val telio = Telio.new(...)!!
+telio.start(sk, adapter)!!
 
-val mesh_pk = generate_public_key(sk);
-// Register mesh_pk with api if needed
-val json_config = "<json config recieved from api>";
-val config = string_to_meshnet_config(json_config)!!;
+val meshPk = generatePublicKey(sk)
+// Register meshPk with api if needed
+val jsonConfig = "<json config recieved from api>"
+val config = stringToMeshnetConfig(jsonConfig)!!
 // Change secret key if needed
-telio.set_secret_key(sk)!!;
+telio.setSecretKey(sk)!!
 /* Turn on or update meshnet */
-telio.set_meshnet(config)!!;
-telio.set_meshnet_off()!!;
+telio.setMeshnet(config)!!
+telio.setMeshnet_off()!!
 
-telio.stop()!!;
-telio.destroy()!!;
+telio.stop()!!
+telio.destroy()!!
 ```
 
 </multi-code>
@@ -647,35 +738,35 @@ telio.destroy().unwrap();
 ```go
 import github.com/nordsecurity/telio
 
-sk := generate_secret_key()
-adapter := get_default_adapter()
+sk := GenerateSecretKey()
+adapter := GetDefaultAdapter()
 
 telio, err := Telio {...}
-_, err = telio.start(sk, adapter)
+_, err = telio.Start(sk, adapter)
 
-_, err := telio.enable_magic_dns([]string)
+_, err := telio.EnableMagicDns([]string)
 // Update if needed with new remote dns ip's
 dns_servers := [1]string{"1.1.1.1"}
-_, err := telio.enable_magic_dns(dns_servers)
-_, err := telio.disable_magic_dns()
+_, err := telio.EnableMagicDns(dns_servers)
+_, err := telio.DisableMagicDns()
 
-_, err = telio.stop()
-_, err = telio.destroy()
+_, err = telio.Stop()
+_, err = telio.Destroy()
 ```
 
 ```swift
 import libtelio
 
-let sk = generate_secret_key()
-let adapter = get_default_adapter()
+let sk = generateSecretKey()
+let adapter = getDefaultAdapter()
 
 let telio = Telio(...)
 telio.start(sk, adapter)
 
-telio.enable_magic_dns([])
+telio.enableMagicDns([])
 // Update if needed with new remote dns ip's
-telio.enable_magic_dns(["1.1.1.1"])
-telio.disable_magic_dns()
+telio.enableMagicDns(["1.1.1.1"])
+telio.disableMagicDns()
 
 telio.stop()
 telio.destroy()
@@ -684,37 +775,37 @@ telio.destroy()
 ```cs
 using uniffi.libtelio;
 
-var sk = generate_secret_key();
-var adapter = get_default_adapter();
+var sk = GenerateSecretKey();
+var adapter = GetDefaultAdapter();
 
 Telio telio = new Telio(...);
-telio.start(sk, adapter);
+telio.Start(sk, adapter);
 
-telio.enable_magic_dns([]);
+telio.EnableMagicDns([]);
 // Update if needed with new remote dns ip's
-telio.enable_magic_dns(["1.1.1.1"]);
-telio.disable_magic_dns();
+telio.EnableMagicDns(["1.1.1.1"]);
+telio.DisableMagicDns();
 
-telio.stop();
-telio.destroy();
+telio.Stop();
+telio.Destroy();
 ```
 
 ```kotlin
-import com.nordsec.libtelio.*;
+import com.nordsec.libtelio.*
 
-val sk = generate_secret_key();
-val adapter = get_default_adapter();
+val sk = generateSecretKey()
+val adapter = getDefaultAdapter()
 
-val telio = Telio.new(...)!!;
-telio.start(sk, adapter)!!;
+val telio = Telio.new(...)!!
+telio.start(sk, adapter)!!
 
-telio.enable_magic_dns(emptyList())!!;
+telio.enableMagicDns(emptyList())!!
 // Update if needed with new remote dns ip's
-telio.enable_magic_dns(listOf("1.1.1.1"))!!;
-telio.disable_magic_dns()!!;
+telio.enableMagicDns(listOf("1.1.1.1"))!!
+telio.disableMagicDns()!!
 
-telio.stop()!!;
-telio.destroy()!!;
+telio.stop()!!
+telio.destroy()!!
 ```
 
 </multi-code>
@@ -783,31 +874,31 @@ telio.destroy().unwrap();
 ```go
 import github.com/nordsecurity/telio
 
-sk := generate_secret_key()
-adapter := get_default_adapter()
+sk := GenerateSecretKey()
+adapter := GetDefaultAdapter()
 
 telio, err := Telio {...}
-_, err = telio.start(sk, adapter)
+_, err = telio.Start(sk, adapter)
 
-allowed_ips := [1]string{"0.0.0.0/0"}
-_, err = telio.connect_to_exit_node(mesh_map_node_public_key, allowed_ips, nil)
-_, err = telio.disconnect_from_exit_nodes()
+allowedIps := [1]string{"0.0.0.0/0"}
+_, err = telio.ConnectToExitNode(meshMapNodePublicKey, allowedIps, nil)
+_, err = telio.DisconnectFromExitNodes()
 
-_, err = telio.stop()
-_, err = telio.destroy()
+_, err = telio.Stop()
+_, err = telio.Destroy()
 ```
 
 ```swift
 import libtelio
 
-let sk = generate_secret_key()
-let adapter = get_default_adapter()
+let sk = generateSecretKey()
+let adapter = getDefaultAdapter()
 
 let telio = Telio(...)
 telio.start(sk, adapter)
 
-telio.connect_to_exit_node(mesh_map_node_public_key, ["0.0.0.0/0"], nil)
-telio.disconnect_from_exit_nodes()
+telio.connectToExitNode(meshMapNodePublicKey, ["0.0.0.0/0"], nil)
+telio.disconnectFromExitNodes()
 
 telio.stop()
 telio.destroy()
@@ -816,33 +907,33 @@ telio.destroy()
 ```cs
 using uniffi.libtelio;
 
-var sk = generate_secret_key();
-var adapter = get_default_adapter();
+var sk = GenerateSecretKey();
+var adapter = GetDefaultAdapter();
 
 Telio telio = new Telio(...);
-telio.start(sk, adapter);
+telio.Start(sk, adapter);
 
-telio.connect_to_exit_node(mesh_map_node_public_key, ["0.0.0.0/0"], null);
-telio.disconnect_from_exit_nodes();
+telio.ConnectToExitNode(meshMapNodePublicKey, ["0.0.0.0/0"], null);
+telio.DisconnectFromExitNodes();
 
-telio.stop();
-telio.destroy();
+telio.Stop();
+telio.Destroy();
 ```
 
 ```kotlin
-import com.nordsec.libtelio.*;
+import com.nordsec.libtelio.*
 
-val sk = generate_secret_key();
-val adapter = get_default_adapter();
+val sk = generateSecretKey()
+val adapter = getDefaultAdapter()
 
-val telio = Telio.new(...)!!;
-telio.start(sk, adapter)!!;
+val telio = Telio.new(...)!!
+telio.start(sk, adapter)!!
 
-telio.connect_to_exit_node(mesh_map_node_public_key, listOf("0.0.0.0/0"), null)!!;
-telio.disconnect_from_exit_nodes()!!;
+telio.connectToExitNode(meshMapNodePublicKey, listOf("0.0.0.0/0"), null)!!
+telio.disconnectFromExitNodes()!!
 
-telio.stop()!!;
-telio.destroy()!!;
+telio.stop()!!
+telio.destroy()!!
 ```
 
 </multi-code>
