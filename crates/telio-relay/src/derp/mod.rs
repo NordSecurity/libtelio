@@ -46,7 +46,6 @@ use crypto_box::{
     ChaChaBox,
 };
 
-use core::result::Result;
 use generic_array::GenericArray;
 use rand::{rngs::StdRng, SeedableRng};
 

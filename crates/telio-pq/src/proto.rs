@@ -1,5 +1,4 @@
 use std::{
-    convert::TryInto,
     io::{self, Read},
     net::Ipv4Addr,
     ops::RangeInclusive,
@@ -50,7 +49,8 @@ pub async fn fetch_keys(
     secret: &telio_crypto::SecretKey,
     peers_pubkey: &telio_crypto::PublicKey,
 ) -> super::Result<super::Keys> {
-    let TunnelSock { tunn, sock } = handshake(sock_pool, endpoint, secret, peers_pubkey).await?;
+    let TunnelSock { mut tunn, sock } =
+        handshake(sock_pool, endpoint, secret, peers_pubkey).await?;
 
     let mut rng = rand::rngs::StdRng::from_entropy();
 
@@ -151,7 +151,7 @@ async fn handshake(
         .await?;
     sock.connect(endpoint).await?;
 
-    let tunn = noise::Tunn::new(
+    let mut tunn = noise::Tunn::new(
         secret.into_bytes().into(),
         peers_pubkey.0.into(),
         None,
@@ -187,7 +187,10 @@ async fn handshake(
         _ => return Err("Unexpected WG tunnel output".into()),
     }
 
-    Ok(TunnelSock { tunn, sock })
+    Ok(TunnelSock {
+        tunn: Box::new(tunn),
+        sock,
+    })
 }
 
 pub fn parse_rekey_response(pkgbuf: &[u8]) -> super::Result<RekeyStatus> {
