@@ -4,7 +4,7 @@ use tokio::task::JoinHandle;
 
 use telio_model::features::FeaturePostQuantumVPN;
 use telio_task::io::chan;
-use telio_utils::{telio_log_debug, telio_log_warn};
+use telio_utils::{interval, telio_log_debug, telio_log_warn};
 
 use crate::proto;
 
@@ -27,8 +27,7 @@ impl ConnKeyRotation {
         let request_retry = Duration::from_secs(features.handshake_retry_interval_s as _);
 
         let task = async move {
-            let mut interval = tokio::time::interval(request_retry);
-            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            let mut interval = interval(request_retry);
 
             let proto::KeySet {
                 mut wg_keys,
@@ -61,8 +60,7 @@ impl ConnKeyRotation {
             let _ = chan.send(super::Event::Handshake(addr, wg_keys)).await;
 
             telio_log_debug!("Rekey interval: {}s", rekey_interval.as_secs());
-            let mut interval = tokio::time::interval(rekey_interval);
-            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            let mut interval = telio_utils::interval(rekey_interval);
 
             interval.tick().await; // This call returns immedietly
             loop {
