@@ -1,5 +1,34 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.0.0-rc
+### **Chicken Salad**
+---
+* LLT-5145: Add init_cert_store method to FFI layer (only relevant for integrating on android)
+* LLT-4351: Fix when shutting down meshnet, in the disconnect event, path is sometimes incorrectly reported as direct
+* LLT-2515: Implement PMTU discovery for VPN connection paths on Linux/Android
+* LLT-5141: Add section about feature config to integration docs
+* LLT-5033: LibtelioSwift uses dylibs instead of static libraries
+* LLT-5038: Add doc rs as in-repo documentation system skeleton
+* LLT-4873: Remove old SWIG FFI bindings
+* LLT-5036: Remove unused dependency features
+* LLT-5039: Make connection reporting unaffected by system time changes
+* LLT-4954: Handle system sleep/wakeup in nat/derp monitoring
+* LLT-4856: Enable aggregator timed events
+* LLT-5139: Change the interval missed tick behaviour to Delay in RepeatedActions::add_action
+* LLT-4996: nurse: Stop adding virtual peers to qos
+* LLT-4154: Optimize Upnp/Stun providers
+* LLT-4168: Fix telio-dns assert panics in debug mode
+* LLT-5034: Upgrade rust toolchain to v1.77.2
+* LLT-4924: Enable size reduction compiler flags
+* LLT-3474: Add bindings to windows and android artifacts
+* LLT-5102: Add integration docs to rustdoc
+* LLT-5088: Update moose to v5.0.0-libtelioApp
+* LLT-5140: Change FeatureNurse and FeatureQoS to use u64 instead of duration
+* LLT-4981: Add upgrade decision message
+* LLT-4858: NAT state analytics reporting
+
+<br>
+
 ### v4.3.2
 ### **Bravas**
 ---
