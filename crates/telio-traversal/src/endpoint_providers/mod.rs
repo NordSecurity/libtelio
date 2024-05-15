@@ -13,7 +13,6 @@ use thiserror::Error as TError;
 use telio_model::SocketAddr;
 use telio_proto::{PlaintextPongerMsg, Session};
 use telio_task::io::chan;
-use telio_wg;
 
 #[derive(Debug, TError)]
 pub enum Error {
