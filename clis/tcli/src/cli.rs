@@ -18,9 +18,7 @@ use tokio::{
 };
 use tracing::error;
 use tracing::level_filters::LevelFilter;
-use tracing_appender;
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber;
 
 use crate::nord::{Error as NordError, Nord, OAuth};
 

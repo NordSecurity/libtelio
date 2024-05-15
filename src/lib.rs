@@ -67,9 +67,7 @@ pub use uniffi_libtelio::*;
 #[allow(clippy::panic, clippy::unwrap_used, clippy::expect_used, unwrap_check)]
 mod uniffi_libtelio {
     use std::convert::TryInto;
-    use std::net::{IpAddr, SocketAddr};
-
-    use ipnetwork::IpNetwork;
+    use std::net::IpAddr;
 
     use super::crypto::{PublicKey, SecretKey};
     use super::*;

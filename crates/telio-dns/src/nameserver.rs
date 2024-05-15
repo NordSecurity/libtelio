@@ -21,9 +21,9 @@ use std::{
     sync::Arc,
 };
 use telio_model::features::TtlValue;
-use tokio::net::UdpSocket;
 use tokio::sync::{RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, Semaphore};
 use tokio::task::JoinHandle;
+use tokio::{net::UdpSocket, sync::Mutex};
 
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
 
@@ -40,7 +40,7 @@ pub trait NameServer {
     ///
     /// Server will listen on `socket`, expect connections from `peer` and will
     /// reply to `dst_address`.
-    async fn start(&self, peer: Arc<Tunn>, socket: Arc<UdpSocket>, dst_address: SocketAddr);
+    async fn start(&self, peer: Arc<Mutex<Tunn>>, socket: Arc<UdpSocket>, dst_address: SocketAddr);
     /// Stop the server.
     async fn stop(&self);
     /// Configure list of forward DNS servers for zone '.'.
@@ -74,7 +74,7 @@ impl LocalNameServer {
     }
 
     async fn dns_service(
-        peer: Arc<Tunn>,
+        peer: Arc<Mutex<Tunn>>,
         nameserver: Arc<RwLock<LocalNameServer>>,
         socket: Arc<UdpSocket>,
         dst_address: SocketAddr,
@@ -92,7 +92,8 @@ impl LocalNameServer {
             };
 
             loop {
-                match peer.update_timers(&mut sending_buffer) {
+                let res = peer.lock().await.update_timers(&mut sending_buffer);
+                match res {
                     TunnResult::WriteToNetwork(packet) => {
                         if let Err(e) = socket.send_to(packet, dst_address).await {
                             telio_log_warn!("[DNS] Failed to send timer update packet : {:?}", e)
@@ -113,11 +114,12 @@ impl LocalNameServer {
             let mut sending_buffer = sending_buffer.clone();
             let semaphore = semaphore.clone();
             tokio::spawn(async move {
-                match peer.decapsulate(
+                let res = peer.lock().await.decapsulate(
                     None,
                     receiving_buffer.get(..bytes_read).unwrap_or(&[]),
                     &mut sending_buffer,
-                ) {
+                );
+                match res {
                     // Handshake packets
                     TunnResult::WriteToNetwork(packet) => {
                         if let Err(e) = socket.send_to(packet, dst_address).await {
@@ -127,7 +129,9 @@ impl LocalNameServer {
                         let mut temporary_buffer = [0u8; MAX_PACKET];
 
                         while let TunnResult::WriteToNetwork(empty) =
-                            peer.decapsulate(None, &[], &mut temporary_buffer)
+                            peer.lock()
+                                .await
+                                .decapsulate(None, &[], &mut temporary_buffer)
                         {
                             if let Err(e) = socket.send_to(empty, dst_address).await {
                                 telio_log_warn!("[DNS] Failed to send handshake packet  : {:?}", e);
@@ -162,10 +166,11 @@ impl LocalNameServer {
                             }
                         };
 
-                        match peer.encapsulate(
+                        let tunn_res = peer.lock().await.encapsulate(
                             receiving_buffer.get(..length).unwrap_or(&[]),
                             &mut sending_buffer,
-                        ) {
+                        );
+                        match tunn_res {
                             TunnResult::WriteToNetwork(dns) => {
                                 if let Err(e) = socket.send_to(dns, dst_address).await {
                                     telio_log_warn!(
@@ -542,7 +547,7 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
     }
 
     #[allow(unwrap_check)]
-    async fn start(&self, peer: Arc<Tunn>, socket: Arc<UdpSocket>, dst_address: SocketAddr) {
+    async fn start(&self, peer: Arc<Mutex<Tunn>>, socket: Arc<UdpSocket>, dst_address: SocketAddr) {
         let nameserver = self.clone();
         self.write().await.task_handle = Some(tokio::spawn(LocalNameServer::dns_service(
             peer,

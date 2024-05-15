@@ -2,7 +2,6 @@
 //!
 use std::{fs::File, io::Write};
 use telio_utils::telio_log_error;
-use time;
 
 pub use telio_utils::telio_log_warn;
 
