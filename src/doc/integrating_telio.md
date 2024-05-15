@@ -145,7 +145,7 @@ use telio::{ffi::*, types::*};
 use telio_model::features::FeatureLana;
 
 let json_feature_config = "<feature config fetched from API>".to_owned();
-let mut feature_config = string_to_features(json_feature_config).unwrap();
+let mut feature_config = deserialize_feature_config(json_feature_config).unwrap();
 
 feature_config.lana = Some(FeatureLana {  event_path: "some/path.db".to_owned(), prod: true });
 if let Some(nurse) = &mut feature_config.nurse {
@@ -166,7 +166,7 @@ telio.destroy().unwrap();
 import github.com/nordsecurity/telio
 
 jsonFeatureConfig := "<feature config fetched from API>";
-featureConfig, err := StringToFeatures(jsonFeatureConfig);
+featureConfig, err := DeserializeFeatureConfig(jsonFeatureConfig);
 
 featureConfig.lana = FeatureLana { EventPath: "some/path.db", Prod: true}
 if featureConfig.Nurse != nil {
@@ -184,7 +184,7 @@ _, err = telio.Destroy()
 import libtelio
 
 let jsonFeatureConfig = "<feature config fetched from API>";
-let featureConfig = stringToFeatures(jsonFeatureConfig);
+let featureConfig = deserializeFeatureConfig(jsonFeatureConfig);
 
 featureConfig.lana = FeatureLana("some/path.db", true)
 featureConfig.nurse?.fingerprint = "me"
@@ -197,7 +197,7 @@ telio.destroy()
 using uniffi.libtelio;
 
 String jsonFeatureConfig = "<feature config fetched from API>";
-Features featureConfig = StringToFeatures(jsonFeatureConfig);
+Features featureConfig = DeserializeFeatureConfig(jsonFeatureConfig);
 
 featureConfig.lana = new FeatureLana("some/path.db", true);
 if (featureConfig.nurse != null) {
@@ -212,7 +212,7 @@ telio.Destroy();
 import com.nordsec.libtelio.*
 
 val jsonFeatureConfig = "<feature config fetched from API>"
-val featureConfig = stringToFeatures(jsonFeatureConfig)!!
+val featureConfig = deserializeFeatureConfig(jsonFeatureConfig)!!
 
 featureConfig.lana = FeatureLana("some/path.db", true)
 featureConfig.nurse?.fingerprint = "me"
@@ -222,6 +222,7 @@ telio.destroy()!!
 ```
 
 </multi-code>
+
 
 ### Event Callback
 App passes event callback. Deserializes Telio Event from received JSON string. For details on events, see the [events documentation](../_telio_events_documentation/index.html).
@@ -586,7 +587,7 @@ telio.start(sk, adapter).unwrap();
 let mesh_pk = generate_public_key(sk);
 // Register mesh_pk with api if needed
 let json_config = "<json config recieved from api>".to_owned();
-let config = string_to_meshnet_config(json_config).unwrap();
+let config = deserialize_meshnet_config(json_config).unwrap();
 // Change secret key if needed
 telio.set_secret_key(&sk).unwrap();
 /* Turn on or update meshnet */
@@ -609,7 +610,7 @@ _, err = telio.Start(sk, adapter)
 meshPk := GeneratePublicKey(sk)
 // Register meshPk with api if needed
 jsonConfig := "<json config recieved from api>"
-config, err := StringToMeshnetConfig(jsonConfig)
+config, err := DeserializeMeshnetConfig(jsonConfig)
 // Change secret key if needed
 _, err := telio.SetSecretKey(sk)
 /* Turn on or update meshnet */
@@ -632,7 +633,7 @@ telio.start(sk, adapter)
 let meshPk = generatePublicKey(sk)
 // Register meshPk with api if needed
 let jsonConfig = "<json config recieved from api>"
-let config = stringToMeshnetConfig(jsonConfig)
+let config = deserializeMeshnetConfig(jsonConfig)
 // Change secret key if needed
 telio.setSecretKey(sk)
 /* Turn on or update meshnet */
@@ -655,7 +656,7 @@ telio.Start(sk, adapter);
 var meshPk = GeneratePublicKey(sk);
 // Register meshPk with api if needed
 var jsonConfig = "<json config recieved from api>";
-var config = StringToMeshnetConfig(jsonConfig);
+var config = DeserializeMeshnetConfig(jsonConfig);
 // Change secret key if needed
 telio.SetSecretKey(sk);
 /* Turn on or update meshnet */
@@ -678,7 +679,7 @@ telio.start(sk, adapter)!!
 val meshPk = generatePublicKey(sk)
 // Register meshPk with api if needed
 val jsonConfig = "<json config recieved from api>"
-val config = stringToMeshnetConfig(jsonConfig)!!
+val config = deserializeMeshnetConfig(jsonConfig)!!
 // Change secret key if needed
 telio.setSecretKey(sk)!!
 /* Turn on or update meshnet */
