@@ -113,7 +113,7 @@ pub fn generate_public_key(secret_key: SecretKey) -> PublicKey {
 
 /// Utility function to create a `Features` object from a json-string
 /// Passing an empty string will return the default feature config
-pub fn string_to_features(fstr: String) -> FFIResult<Features> {
+pub fn deserialize_feature_config(fstr: String) -> FFIResult<Features> {
     if fstr.is_empty() {
         Ok(Features::default())
     } else {
@@ -122,7 +122,7 @@ pub fn string_to_features(fstr: String) -> FFIResult<Features> {
 }
 
 /// Utility function to create a `Config` object from a json-string
-pub fn string_to_meshnet_config(cfg_str: String) -> FFIResult<Config> {
+pub fn deserialize_meshnet_config(cfg_str: String) -> FFIResult<Config> {
     match Config::new_from_str(&cfg_str) {
         Ok((cfg, _)) => Ok(cfg),
         Err(e) => match e {
@@ -996,13 +996,13 @@ mod tests {
     fn telio_set_meshnet_rejects_too_long_configs() {
         let cfg = "a".repeat(MAX_CONFIG_LENGTH);
         assert!(matches!(
-            string_to_meshnet_config(cfg),
+            deserialize_meshnet_config(cfg),
             Err(TelioError::BadConfig)
         ));
 
         let cfg = "a".repeat(MAX_CONFIG_LENGTH + 2);
         assert!(matches!(
-            string_to_meshnet_config(cfg),
+            deserialize_meshnet_config(cfg),
             Err(TelioError::InvalidString)
         ));
     }
@@ -1018,7 +1018,8 @@ mod tests {
         }
 
         let features =
-            string_to_features(CORRECT_FEATURES_JSON_WITHOUT_IS_TEST_ENV.to_owned()).unwrap();
+            deserialize_feature_config(CORRECT_FEATURES_JSON_WITHOUT_IS_TEST_ENV.to_owned())
+                .unwrap();
         let res = Telio::new(features, Box::new(Events));
 
         assert!(res.is_ok());
@@ -1038,7 +1039,7 @@ mod tests {
         }
 
         let features =
-            string_to_features(CORRECT_FEATURES_JSON_WITH_IS_TEST_ENV.to_owned()).unwrap();
+            deserialize_feature_config(CORRECT_FEATURES_JSON_WITH_IS_TEST_ENV.to_owned()).unwrap();
         let res = Telio::new(features, Box::new(Events));
 
         assert!(res.is_ok());
@@ -1048,15 +1049,16 @@ mod tests {
     }
 
     #[test]
-    fn test_string_to_features_empty_string() {
-        let actual = string_to_features("".to_owned()).unwrap();
+    fn test_deserialize_feature_config_empty_string() {
+        let actual = deserialize_feature_config("".to_owned()).unwrap();
         let expected = Features::default();
         assert_eq!(actual, expected);
     }
 
     #[test]
-    fn test_string_to_features_valid_string() {
-        let actual = string_to_features(CORRECT_FEATURES_JSON_WITHOUT_IS_TEST_ENV.to_owned());
+    fn test_deserialize_feature_config_valid_string() {
+        let actual =
+            deserialize_feature_config(CORRECT_FEATURES_JSON_WITHOUT_IS_TEST_ENV.to_owned());
         assert!(actual.is_ok());
     }
 }
