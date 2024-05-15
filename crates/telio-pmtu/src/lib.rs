@@ -69,8 +69,7 @@ impl Entity {
         let pool = self.socket_pool.clone();
         let timeout = self.response_timeout;
         let task = tokio::spawn(async move {
-            let mut timer = tokio::time::interval(INTERVAL);
-            timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            let mut timer = telio_utils::interval(INTERVAL);
 
             loop {
                 timer.tick().await;
