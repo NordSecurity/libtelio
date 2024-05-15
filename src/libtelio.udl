@@ -138,11 +138,11 @@ namespace telio {
     /// Utility function to create a `Features` object from a json-string
     /// Passing an empty string will return the default feature config
     [Throws=TelioError]
-    Features string_to_features(string fstr);
+    Features deserialize_feature_config(string fstr);
 
     /// Utility function to create a `Config` object from a json-string
     [Throws=TelioError]
-    Config string_to_meshnet_config(string cfg_str);
+    Config deserialize_meshnet_config(string cfg_str);
 };
 
 interface Telio {
