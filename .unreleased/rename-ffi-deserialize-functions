@@ -1,1 +1,0 @@
-Rename string_to_features and string_to_meshnet_config to deserialize_feature_config and deserialize_meshnet_config
