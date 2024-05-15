@@ -4,6 +4,7 @@
 * LLT-5097: Update wireguard wrapper to use wireguard-go fork and fix uapi get to throw error when device dead
 * LLT-5096: Fix uapi get/set to throw error when device dead
 * LLT-5017: Fix interface with static IP may be skipped for socket binding
+* LLT-5148: Rebind sockets when network path changes on Apple
 
 <br>
 
