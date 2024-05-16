@@ -623,7 +623,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
             "ipv4" if CLIENT_PROTO == IPProto.IPv4 else "ipv6",
             "-E",
         ]).run(stdout_callback=conntrack_on_stdout) as conntrack_proc:
-            await testing.wait_normal(conntrack_proc.wait_stdin_ready())
+            await conntrack_proc.wait_stdin_ready()
             # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
             async with connection_alpha.create_process([
                 "nc",
@@ -632,7 +632,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
                 CLIENT_ALPHA_IP,
                 str(PORT),
             ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as listener:
-                await testing.wait_normal(listener.wait_stdin_ready())
+                await listener.wait_stdin_ready()
                 await testing.wait_normal(listening_start_event.wait())
                 await exit_stack.enter_async_context(
                     connection_beta.create_process([
@@ -761,7 +761,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
             "ipv4" if CLIENT_PROTO == IPProto.IPv4 else "ipv6",
             "-E",
         ]).run(stdout_callback=conntrack_on_stdout) as conntrack_proc:
-            await testing.wait_normal(conntrack_proc.wait_stdin_ready())
+            await conntrack_proc.wait_stdin_ready()
             async with connection_alpha.create_process([
                 "nc",
                 "-nlv",
@@ -769,7 +769,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
                 CLIENT_ALPHA_IP,
                 str(PORT),
             ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as listener:
-                await testing.wait_normal(listener.wait_stdin_ready())
+                await listener.wait_stdin_ready()
                 await testing.wait_normal(listening_start_event.wait())
                 # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
                 async with connection_beta.create_process([
@@ -781,7 +781,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
                     CLIENT_ALPHA_IP,
                     str(PORT),
                 ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as client:
-                    await testing.wait_normal(client.wait_stdin_ready())
+                    await client.wait_stdin_ready()
                     await testing.wait_normal(sender_start_event.wait())
                     await testing.wait_normal(connected_event.wait())
 
