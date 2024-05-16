@@ -411,7 +411,7 @@ async def test_dns_after_mesh_off(alpha_ip_stack: IPStack) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.long
-@pytest.mark.timeout(60 * 5 + 60)
+@pytest.mark.timeout(60 * 6)
 @pytest.mark.parametrize(
     "alpha_ip_stack",
     [

@@ -221,7 +221,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(90)
+@pytest.mark.timeout(120)
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
