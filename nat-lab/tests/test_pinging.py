@@ -157,21 +157,18 @@ async def test_session_keeper(
                     return
                 await asyncio.sleep(0.1)
 
-        await testing.wait_defined(
-            asyncio.gather(
-                alpha_client.wait_for_state_peer(
-                    beta.public_key,
-                    [State.Connected],
-                    [PathType.Direct],
-                ),
-                beta_client.wait_for_state_peer(
-                    alpha.public_key,
-                    [State.Connected],
-                    [PathType.Direct],
-                ),
-                wait_for_conntracker(),
+        await asyncio.gather(
+            alpha_client.wait_for_state_peer(
+                beta.public_key,
+                [State.Connected],
+                [PathType.Direct],
             ),
-            60,
+            beta_client.wait_for_state_peer(
+                alpha.public_key,
+                [State.Connected],
+                [PathType.Direct],
+            ),
+            testing.wait_defined(wait_for_conntracker(), 60),
         )
 
 
@@ -287,17 +284,14 @@ async def test_qos(
                     return
                 await asyncio.sleep(1.0)
 
-        await testing.wait_defined(
-            asyncio.gather(
-                alpha_client.wait_for_state_peer(
-                    beta.public_key,
-                    [State.Connected],
-                ),
-                beta_client.wait_for_state_peer(
-                    alpha.public_key,
-                    [State.Connected],
-                ),
-                wait_for_conntracker(),
+        await asyncio.gather(
+            alpha_client.wait_for_state_peer(
+                beta.public_key,
+                [State.Connected],
             ),
-            60,
+            beta_client.wait_for_state_peer(
+                alpha.public_key,
+                [State.Connected],
+            ),
+            testing.wait_defined(wait_for_conntracker(), 60),
         )

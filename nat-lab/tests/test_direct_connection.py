@@ -341,16 +341,10 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
 
         await asyncio.gather(
             alpha_client.wait_for_state_peer(
-                beta.public_key,
-                [State.Connected],
-                [PathType.Direct],
-                timeout=60.0,
+                beta.public_key, [State.Connected], [PathType.Direct]
             ),
             beta_client.wait_for_state_peer(
-                alpha.public_key,
-                [State.Connected],
-                [PathType.Direct],
-                timeout=60.0,
+                alpha.public_key, [State.Connected], [PathType.Direct]
             ),
         )
 
@@ -383,16 +377,10 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
 
         await asyncio.gather(
             alpha_client.wait_for_state_peer(
-                beta.public_key,
-                [State.Connected],
-                [PathType.Direct],
-                timeout=60.0,
+                beta.public_key, [State.Connected], [PathType.Direct]
             ),
             beta_client.wait_for_state_peer(
-                alpha.public_key,
-                [State.Connected],
-                [PathType.Direct],
-                timeout=60.0,
+                alpha.public_key, [State.Connected], [PathType.Direct]
             ),
         )
 
@@ -586,14 +574,10 @@ async def test_direct_working_paths_with_skip_unresponsive_peers(
 
         await asyncio.gather(
             alpha_client.wait_for_state_peer(
-                beta.public_key,
-                [State.Connected],
-                [PathType.Direct],
+                beta.public_key, [State.Connected], [PathType.Direct]
             ),
             beta_client.wait_for_state_peer(
-                alpha.public_key,
-                [State.Connected],
-                [PathType.Direct],
+                alpha.public_key, [State.Connected], [PathType.Direct]
             ),
         )
 

@@ -306,15 +306,11 @@ async def test_mesh_network_switch_direct(
 
         # Beta doesn't change its endpoint, so WG roaming may be used by alpha node to restore
         # the connection, so no node event is logged in that case
-        peers_connected_relay_future = asyncio.gather(
-            beta_client.wait_for_event_peer(
-                alpha.public_key, [State.Connected], [PathType.Relay]
-            ),
+        peers_connected_relay_future = beta_client.wait_for_event_peer(
+            alpha.public_key, [State.Connected], [PathType.Relay]
         )
-        peers_connected_direct_future = asyncio.gather(
-            beta_client.wait_for_event_peer(
-                alpha.public_key, [State.Connected], [PathType.Direct]
-            ),
+        peers_connected_direct_future = beta_client.wait_for_event_peer(
+            alpha.public_key, [State.Connected], [PathType.Direct]
         )
         async with run_async_contexts([
             derp_connected_future,

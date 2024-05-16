@@ -450,7 +450,7 @@ class Events:
     ) -> None:
         await asyncio.wait_for(
             self._runtime.notify_peer_state(public_key, state, paths, is_exit, is_vpn),
-            timeout if timeout else 60 if PathType.Direct in paths else 30,
+            timeout if timeout else 90 if PathType.Direct in paths else 45,
         )
 
     async def wait_for_event_peer(
@@ -464,7 +464,7 @@ class Events:
     ) -> None:
         await asyncio.wait_for(
             self._runtime.notify_peer_event(public_key, states, paths, is_exit, is_vpn),
-            timeout if timeout else 60 if PathType.Direct in paths else 30,
+            timeout if timeout else 90 if PathType.Direct in paths else 45,
         )
 
     def get_link_state_events(self, public_key: str) -> List[Optional[LinkState]]:
@@ -475,7 +475,7 @@ class Events:
     ) -> None:
         await asyncio.wait_for(
             self._runtime.notify_derp_state(server_ip, states),
-            timeout if timeout else 30,
+            timeout if timeout else 45,
         )
 
     async def wait_for_event_derp(
@@ -483,7 +483,7 @@ class Events:
     ) -> None:
         await asyncio.wait_for(
             self._runtime.notify_derp_event(server_ip, states),
-            timeout if timeout else 30,
+            timeout if timeout else 45,
         )
 
     async def wait_for_event_error(self, err: ErrorEvent, timeout: float = 30) -> None:
@@ -726,13 +726,18 @@ class Client:
         await self._write_command(["mesh", "ping"])
 
     async def connect_to_vpn(
-        self, ip: str, port: int, public_key: str, timeout: float = 15, pq: bool = False
+        self, ip: str, port: int, public_key: str, timeout: float = 30, pq: bool = False
     ) -> None:
         await self._configure_interface()
         await self.get_router().create_vpn_route()
         async with asyncio_util.run_async_context(
             self.wait_for_event_peer(
-                public_key, [State.Connected], list(PathType), is_exit=True, is_vpn=True
+                public_key,
+                [State.Connected],
+                list(PathType),
+                is_exit=True,
+                is_vpn=True,
+                timeout=timeout,
             )
         ) as event:
             self.get_runtime().allowed_pub_keys.add(public_key)
@@ -749,7 +754,7 @@ class Client:
                 timeout,
             )
 
-    async def disconnect_from_vpn(self, public_key: str, timeout: float = 5) -> None:
+    async def disconnect_from_vpn(self, public_key: str, timeout: float = 15) -> None:
         async with asyncio_util.run_async_context(
             self.wait_for_event_peer(
                 public_key,
@@ -757,6 +762,7 @@ class Client:
                 list(PathType),
                 is_exit=True,
                 is_vpn=True,
+                timeout=timeout,
             )
         ) as event:
             await asyncio.wait_for(
@@ -769,10 +775,12 @@ class Client:
             )
 
     async def disconnect_from_exit_node(
-        self, public_key: str, timeout: float = 5
+        self, public_key: str, timeout: float = 15
     ) -> None:
         async with asyncio_util.run_async_context(
-            self.wait_for_event_peer(public_key, [State.Connected], list(PathType))
+            self.wait_for_event_peer(
+                public_key, [State.Connected], list(PathType), timeout=timeout
+            )
         ) as event:
             await asyncio.wait_for(
                 asyncio.gather(*[
@@ -802,12 +810,16 @@ class Client:
 
         return False
 
-    async def connect_to_exit_node(self, public_key: str, timeout: float = 15) -> None:
+    async def connect_to_exit_node(self, public_key: str, timeout: float = 30) -> None:
         await self._configure_interface()
         await self.get_router().create_vpn_route()
         async with asyncio_util.run_async_context(
             self.wait_for_event_peer(
-                public_key, [State.Connected], list(PathType), is_exit=True
+                public_key,
+                [State.Connected],
+                list(PathType),
+                is_exit=True,
+                timeout=timeout,
             )
         ) as event:
             await asyncio.wait_for(
@@ -842,7 +854,7 @@ class Client:
         assert self._telio_features
         return self._telio_features
 
-    async def stop_device(self, timeout: float = 5) -> None:
+    async def stop_device(self, timeout: float = 15) -> None:
         await asyncio.wait_for(self._write_command(["dev", "stop"]), timeout)
         self._interface_configured = False
         started_tasks = self.get_runtime().get_started_tasks()
