@@ -126,9 +126,7 @@ async def test_mesh_plus_vpn_one_peer(
         async with Ping(connection_alpha, config.STUN_SERVER).run() as ping:
             await ping.wait_for_next_ping()
 
-        public_ip = await testing.wait_long(
-            stun.get(connection_alpha, config.STUN_SERVER)
-        )
+        public_ip = await stun.get(connection_alpha, config.STUN_SERVER)
         assert (
             public_ip == wg_server["ipv4"]
         ), f"wrong public IP when connected to VPN {public_ip}"
@@ -259,9 +257,7 @@ async def test_mesh_plus_vpn_both_peers(
             await ping.wait_for_next_ping()
 
         for connection in [connection_alpha, connection_beta]:
-            public_ip = await testing.wait_long(
-                stun.get(connection, config.STUN_SERVER)
-            )
+            public_ip = await stun.get(connection, config.STUN_SERVER)
             assert (
                 public_ip == wg_server["ipv4"]
             ), f"wrong public IP when connected to VPN {public_ip}"
@@ -330,7 +326,7 @@ async def test_vpn_plus_mesh(
             )
         )
 
-        ip = await testing.wait_long(stun.get(connection_alpha, config.STUN_SERVER))
+        ip = await stun.get(connection_alpha, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         client_alpha = await exit_stack.enter_async_context(
@@ -346,7 +342,7 @@ async def test_vpn_plus_mesh(
         async with Ping(connection_alpha, config.PHOTO_ALBUM_IP).run() as ping:
             await ping.wait_for_next_ping()
 
-        ip = await testing.wait_long(stun.get(connection_alpha, config.STUN_SERVER))
+        ip = await stun.get(connection_alpha, config.STUN_SERVER)
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
         await client_alpha.set_meshmap(api.get_meshmap(alpha.id))
@@ -372,7 +368,7 @@ async def test_vpn_plus_mesh(
         await client_alpha.wait_for_event_peer(
             beta.public_key, [State.Disconnected], list(telio.PathType)
         )
-        ip = await testing.wait_long(stun.get(connection_alpha, config.STUN_SERVER))
+        ip = await stun.get(connection_alpha, config.STUN_SERVER)
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
         assert alpha_conn_tracker.get_out_of_limits() is None
@@ -521,9 +517,7 @@ async def test_vpn_plus_mesh_over_direct(
             await ping.wait_for_next_ping()
 
         for connection in [connection_alpha, connection_beta]:
-            public_ip = await testing.wait_long(
-                stun.get(connection, config.STUN_SERVER)
-            )
+            public_ip = await stun.get(connection, config.STUN_SERVER)
             assert (
                 public_ip == wg_server["ipv4"]
             ), f"wrong public IP when connected to VPN {public_ip}"
@@ -696,9 +690,7 @@ async def test_vpn_plus_mesh_over_different_connection_types(
             await ping.wait_for_next_ping()
 
         for connection in [connection_alpha, connection_beta, connection_gamma]:
-            public_ip = await testing.wait_long(
-                stun.get(connection, config.STUN_SERVER)
-            )
+            public_ip = await stun.get(connection, config.STUN_SERVER)
             assert (
                 public_ip == wg_server["ipv4"]
             ), f"wrong public IP when connected to VPN {public_ip}"

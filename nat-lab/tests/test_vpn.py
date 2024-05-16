@@ -34,7 +34,7 @@ async def _connect_vpn(
         async with Ping(vpn_connection, client_meshnet_ip).run() as ping:
             await ping.wait_for_next_ping()
 
-    ip = await testing.wait_long(stun.get(client_conn, config.STUN_SERVER))
+    ip = await stun.get(client_conn, config.STUN_SERVER)
     assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
 
@@ -181,7 +181,7 @@ async def test_vpn_connection(
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
 
-        ip = await testing.wait_long(stun.get(client_conn, config.STUN_SERVER))
+        ip = await stun.get(client_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         if vpn_conf.should_ping_client:
@@ -305,7 +305,7 @@ async def test_vpn_reconnect(
             exit_stack, [ConnectionTag.DOCKER_VPN_1, ConnectionTag.DOCKER_VPN_2]
         )
 
-        ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+        ip = await stun.get(connection, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         await _connect_vpn(
@@ -318,7 +318,7 @@ async def test_vpn_reconnect(
 
         await client_alpha.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
 
-        ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+        ip = await stun.get(connection, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         await _connect_vpn(
