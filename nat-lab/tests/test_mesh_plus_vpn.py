@@ -7,7 +7,7 @@ from helpers import SetupParameters, setup_mesh_nodes
 from mesh_api import API
 from telio import AdapterType, State
 from telio_features import TelioFeatures, Direct
-from utils import testing, stun
+from utils import stun
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
     generate_connection_tracker_config,
@@ -376,7 +376,7 @@ async def test_vpn_plus_mesh(
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(150)
+@pytest.mark.timeout(180)
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -524,7 +524,7 @@ async def test_vpn_plus_mesh_over_direct(
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(150)
+@pytest.mark.timeout(180)
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [

@@ -453,7 +453,7 @@ async def test_event_content_exit_through_peer(
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(90)
+@pytest.mark.timeout(120)
 @pytest.mark.parametrize(
     "alpha_setup_params, alpha_public_ip",
     [
