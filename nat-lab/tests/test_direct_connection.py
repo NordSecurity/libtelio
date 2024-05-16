@@ -253,7 +253,7 @@ async def test_direct_failing_paths(setup_params: List[SetupParameters]) -> None
 
         with pytest.raises(asyncio.TimeoutError):
             async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-                await testing.wait_long(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping()
 
 
 @pytest.mark.asyncio
@@ -277,7 +277,7 @@ async def test_direct_working_paths(
             )
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
 
 @pytest.mark.moose
@@ -313,7 +313,7 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
         alpha_connection, _ = [conn.connection for conn in env.connections]
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         # Break UHP
         async with AsyncExitStack() as temp_exit_stack:
@@ -337,7 +337,7 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
             )
 
             async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-                await testing.wait_long(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping()
 
         await asyncio.gather(
             alpha_client.wait_for_state_peer(
@@ -355,7 +355,7 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
         )
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         # Break UHP
         async with AsyncExitStack() as temp_exit_stack:
@@ -379,7 +379,7 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
             )
 
             async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-                await testing.wait_long(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping()
 
         await asyncio.gather(
             alpha_client.wait_for_state_peer(
@@ -458,7 +458,7 @@ async def test_direct_working_paths_stun_ipv6() -> None:
             )
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
 
 @pytest.mark.asyncio
@@ -489,7 +489,7 @@ async def test_direct_short_connection_loss(
             )
             async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
                 try:
-                    await testing.wait_long(ping.wait_for_next_ping())
+                    await ping.wait_for_next_ping()
                 except asyncio.TimeoutError:
                     pass
                 else:
@@ -499,7 +499,7 @@ async def test_direct_short_connection_loss(
                     await asyncio.wait_for(task, 1)
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_lengthy(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping(60)
 
 
 @pytest.mark.asyncio
@@ -533,7 +533,7 @@ async def test_direct_connection_loss_for_infinity(
             )
             async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
                 try:
-                    await testing.wait_long(ping.wait_for_next_ping())
+                    await ping.wait_for_next_ping()
                 except asyncio.TimeoutError:
                     pass
                 else:
@@ -545,7 +545,7 @@ async def test_direct_connection_loss_for_infinity(
             await testing.wait_lengthy(task)
 
             async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-                await testing.wait_lengthy(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping(60)
 
 
 @pytest.mark.asyncio
@@ -573,7 +573,7 @@ async def test_direct_working_paths_with_skip_unresponsive_peers(
         alpha_connection, _ = [conn.connection for conn in env.connections]
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         await alpha_client.stop_device()
 
@@ -598,7 +598,7 @@ async def test_direct_working_paths_with_skip_unresponsive_peers(
         )
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
 
 @pytest.mark.timeout(90)
@@ -671,7 +671,7 @@ async def test_direct_connection_endpoint_gone(
                 )
 
                 async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-                    await testing.wait_lengthy(ping.wait_for_next_ping())
+                    await ping.wait_for_next_ping(60)
 
         await _check_if_true_direct_connection()
 
@@ -698,7 +698,7 @@ async def test_direct_connection_endpoint_gone(
             )
 
             async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-                await testing.wait_lengthy(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping(60)
 
         await asyncio.gather(
             alpha_client.wait_for_state_peer(
@@ -801,7 +801,7 @@ async def test_direct_working_paths_with_pausing_upnp_and_stun(
         alpha_connection, _ = [conn.connection for conn in env.connections]
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         # wait for upnp and stun to be paused
         await asyncio.sleep(5)

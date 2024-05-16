@@ -28,11 +28,11 @@ async def _connect_vpn(
     )
 
     async with Ping(client_conn, config.PHOTO_ALBUM_IP).run() as ping:
-        await testing.wait_long(ping.wait_for_next_ping())
+        await ping.wait_for_next_ping()
 
     if vpn_connection is not None:
         async with Ping(vpn_connection, client_meshnet_ip).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
     ip = await testing.wait_long(stun.get(client_conn, config.STUN_SERVER))
     assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
@@ -380,7 +380,7 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
             )
 
             async with Ping(connection, serv_ip).run() as ping:
-                await testing.wait_long(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping()
 
         await connect(
             config.WG_SERVER,
@@ -517,7 +517,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
             )
 
             async with Ping(connection, serv_ip).run() as ping:
-                await testing.wait_long(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping()
 
         await connect(
             config.WG_SERVER,
