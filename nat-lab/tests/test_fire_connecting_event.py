@@ -10,7 +10,7 @@ from utils.ping import Ping
 
 @pytest.mark.asyncio
 @pytest.mark.long
-@pytest.mark.timeout(180 + 60)
+@pytest.mark.timeout(240)
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [

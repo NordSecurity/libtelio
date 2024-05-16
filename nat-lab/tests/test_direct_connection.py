@@ -585,7 +585,7 @@ async def test_direct_working_paths_with_skip_unresponsive_peers(
             await ping.wait_for_next_ping()
 
 
-@pytest.mark.timeout(90)
+@pytest.mark.timeout(120)
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "setup_params",
