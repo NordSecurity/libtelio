@@ -323,7 +323,7 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
 
         # Start routing traffic via the exit node
 
-        await testing.wait_long(client_exit_node.get_router().create_exit_node_route())
+        await client_exit_node.get_router().create_exit_node_route()
 
         await client_alpha.connect_to_exit_node(exit_node.public_key)
 
