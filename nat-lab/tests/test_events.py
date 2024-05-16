@@ -103,9 +103,9 @@ async def test_event_content_meshnet(
         ]
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         assert client_alpha.get_node_state(beta.public_key) == PeerInfo(
             identifier=beta.id,
@@ -145,7 +145,7 @@ async def test_event_content_meshnet(
 
         with pytest.raises(asyncio.TimeoutError):
             async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-                await testing.wait_normal(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping(5)
 
         await asyncio.sleep(1)
 
@@ -265,7 +265,7 @@ async def test_event_content_vpn_connection(
         )
 
         async with Ping(connection, config.PHOTO_ALBUM_IP).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         assert client_alpha.get_node_state(str(wg_server["public_key"])) == PeerInfo(
             identifier="tcli",
@@ -408,7 +408,7 @@ async def test_event_content_exit_through_peer(
         client_alpha, client_beta = env.clients
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         assert client_alpha.get_node_state(beta.public_key) == PeerInfo(
             identifier=beta.id,
@@ -563,9 +563,9 @@ async def test_event_content_meshnet_node_upgrade_direct(
         client_alpha, client_beta = env.clients
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         beta_node_state = client_alpha.get_node_state(beta.public_key)
         assert beta_node_state
@@ -633,9 +633,9 @@ async def test_event_content_meshnet_node_upgrade_direct(
         )
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         beta_node_state = client_alpha.get_node_state(beta.public_key)
         assert beta_node_state

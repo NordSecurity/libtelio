@@ -100,4 +100,4 @@ async def test_connected_state_after_routing(
         await client_alpha.disconnect_from_exit_node(beta.public_key)
 
         async with Ping(conn_alpha.connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()

@@ -24,7 +24,7 @@ async def _connect_vpn_pq(
     )
 
     async with Ping(client_conn, config.PHOTO_ALBUM_IP).run() as ping:
-        await testing.wait_long(ping.wait_for_next_ping())
+        await ping.wait_for_next_ping()
 
     ip = await testing.wait_long(stun.get(client_conn, config.STUN_SERVER))
     assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"

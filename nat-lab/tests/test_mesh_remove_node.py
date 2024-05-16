@@ -4,7 +4,6 @@ import telio
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from mesh_api import API
-from utils import testing
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.ping import Ping
@@ -128,11 +127,11 @@ async def test_mesh_remove_node(
         client_alpha, client_beta, _ = env.clients
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         async with Ping(connection_beta, gamma.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         async with Ping(connection_gamma, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         api.remove(gamma.id)
 
@@ -140,10 +139,10 @@ async def test_mesh_remove_node(
         await client_beta.set_meshmap(api.get_meshmap(beta.id))
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         with pytest.raises(asyncio.TimeoutError):
             async with Ping(connection_beta, gamma.ip_addresses[0]).run() as ping:
-                await testing.wait_normal(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping(5)
         with pytest.raises(asyncio.TimeoutError):
             async with Ping(connection_gamma, alpha.ip_addresses[0]).run() as ping:
-                await testing.wait_normal(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping(5)

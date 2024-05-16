@@ -201,4 +201,4 @@ async def test_vpn_conn_with_pmtu_enabled(params: SetupParameters) -> None:
         )
 
         async with Ping(vpn_conn.connection, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()

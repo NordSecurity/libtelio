@@ -133,13 +133,13 @@ async def test_mesh_exit_through_peer(
                 connection_alpha,
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv4)),
             ).run() as ping:
-                await testing.wait_long(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping()
         else:
             async with Ping(
                 connection_alpha,
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv6)),
             ).run() as ping6:
-                await testing.wait_long(ping6.wait_for_next_ping())
+                await ping6.wait_for_next_ping()
 
         await testing.wait_long(client_beta.get_router().create_exit_node_route())
 
@@ -289,14 +289,14 @@ async def test_ipv6_exit_node(
             connection_alpha,
             testing.unpack_optional(beta.get_ip_address(IPProto.IPv6)),
         ).run() as ping6:
-            await testing.wait_long(ping6.wait_for_next_ping())
+            await ping6.wait_for_next_ping()
 
         await testing.wait_long(client_beta.get_router().create_exit_node_route())
         await client_alpha.connect_to_exit_node(beta.public_key)
 
         # Ping out-tunnel target with IPv6
         async with Ping(connection_alpha, config.PHOTO_ALBUM_IPV6).run() as ping6:
-            await testing.wait_long(ping6.wait_for_next_ping())
+            await ping6.wait_for_next_ping()
 
         ip_alpha = await testing.wait_long(
             stun.get(connection_alpha, config.STUNV6_SERVER)

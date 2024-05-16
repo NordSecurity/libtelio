@@ -112,7 +112,7 @@ async def test_mesh_plus_vpn_one_peer(
         connection_alpha, _ = [conn.connection for conn in env.connections]
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         wg_server = config.WG_SERVER
 
@@ -121,10 +121,10 @@ async def test_mesh_plus_vpn_one_peer(
         )
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         async with Ping(connection_alpha, config.STUN_SERVER).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         public_ip = await testing.wait_long(
             stun.get(connection_alpha, config.STUN_SERVER)
@@ -231,7 +231,7 @@ async def test_mesh_plus_vpn_both_peers(
         ]
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         wg_server = config.WG_SERVER
 
@@ -249,14 +249,14 @@ async def test_mesh_plus_vpn_both_peers(
         )
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         async with Ping(connection_alpha, config.STUN_SERVER).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         async with Ping(connection_beta, config.STUN_SERVER).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         for connection in [connection_alpha, connection_beta]:
             public_ip = await testing.wait_long(
@@ -344,7 +344,7 @@ async def test_vpn_plus_mesh(
         )
 
         async with Ping(connection_alpha, config.PHOTO_ALBUM_IP).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         ip = await testing.wait_long(stun.get(connection_alpha, config.STUN_SERVER))
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
@@ -365,7 +365,7 @@ async def test_vpn_plus_mesh(
         )
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         # Testing if the VPN node is not cleared after disabling meshnet. See LLT-4266 for more details.
         await client_alpha.set_mesh_off()
@@ -489,9 +489,9 @@ async def test_vpn_plus_mesh_over_direct(
         ]
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_lengthy(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping(60)
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_lengthy(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping(60)
 
         wg_server = config.WG_SERVER
 
@@ -512,13 +512,13 @@ async def test_vpn_plus_mesh_over_direct(
             # TODO: change waiting time to `wait_long` after issue LLT-3879 is fixed
             await testing.wait_defined(ping.wait_for_next_ping(), 60)
         async with Ping(connection_alpha, config.STUN_SERVER).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
             # TODO: change waiting time to `wait_long` after issue LLT-3879 is fixed
             await testing.wait_defined(ping.wait_for_next_ping(), 60)
         async with Ping(connection_beta, config.STUN_SERVER).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         for connection in [connection_alpha, connection_beta]:
             public_ip = await testing.wait_long(
@@ -652,9 +652,9 @@ async def test_vpn_plus_mesh_over_different_connection_types(
         alpha, beta, gamma = env.nodes
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_lengthy(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping(60)
         async with Ping(connection_alpha, gamma.ip_addresses[0]).run() as ping:
-            await testing.wait_lengthy(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping(60)
 
         wg_server = config.WG_SERVER
 
@@ -680,20 +680,20 @@ async def test_vpn_plus_mesh_over_different_connection_types(
             # TODO: change waiting time to `wait_long` after issue LLT-3879 is fixed
             await testing.wait_defined(ping.wait_for_next_ping(), 60)
         async with Ping(connection_alpha, gamma.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         async with Ping(connection_alpha, config.STUN_SERVER).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
             # TODO: change waiting time to `wait_long` after issue LLT-3879 is fixed
             await testing.wait_defined(ping.wait_for_next_ping(), 60)
         async with Ping(connection_beta, config.STUN_SERVER).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         async with Ping(connection_gamma, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         async with Ping(connection_gamma, config.STUN_SERVER).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         for connection in [connection_alpha, connection_beta, connection_gamma]:
             public_ip = await testing.wait_long(
