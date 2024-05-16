@@ -506,13 +506,13 @@ async def test_vpn_plus_mesh_over_direct(
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             # TODO: change waiting time to `wait_long` after issue LLT-3879 is fixed
-            await testing.wait_defined(ping.wait_for_next_ping(), 60)
+            await ping.wait_for_next_ping(60)
         async with Ping(connection_alpha, config.STUN_SERVER).run() as ping:
             await ping.wait_for_next_ping()
 
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
             # TODO: change waiting time to `wait_long` after issue LLT-3879 is fixed
-            await testing.wait_defined(ping.wait_for_next_ping(), 60)
+            await ping.wait_for_next_ping(60)
         async with Ping(connection_beta, config.STUN_SERVER).run() as ping:
             await ping.wait_for_next_ping()
 
@@ -672,7 +672,7 @@ async def test_vpn_plus_mesh_over_different_connection_types(
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             # TODO: change waiting time to `wait_long` after issue LLT-3879 is fixed
-            await testing.wait_defined(ping.wait_for_next_ping(), 60)
+            await ping.wait_for_next_ping(60)
         async with Ping(connection_alpha, gamma.ip_addresses[0]).run() as ping:
             await ping.wait_for_next_ping()
         async with Ping(connection_alpha, config.STUN_SERVER).run() as ping:
@@ -680,7 +680,7 @@ async def test_vpn_plus_mesh_over_different_connection_types(
 
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
             # TODO: change waiting time to `wait_long` after issue LLT-3879 is fixed
-            await testing.wait_defined(ping.wait_for_next_ping(), 60)
+            await ping.wait_for_next_ping(60)
         async with Ping(connection_beta, config.STUN_SERVER).run() as ping:
             await ping.wait_for_next_ping()
 
