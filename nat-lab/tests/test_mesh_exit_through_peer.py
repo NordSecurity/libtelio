@@ -145,10 +145,8 @@ async def test_mesh_exit_through_peer(
 
         await client_alpha.connect_to_exit_node(beta.public_key)
 
-        ip_alpha = await testing.wait_long(
-            stun.get(connection_alpha, config.STUN_SERVER)
-        )
-        ip_beta = await testing.wait_long(stun.get(connection_beta, config.STUN_SERVER))
+        ip_alpha = await stun.get(connection_alpha, config.STUN_SERVER)
+        ip_beta = await stun.get(connection_beta, config.STUN_SERVER)
 
         assert ip_alpha == ip_beta
 
@@ -298,12 +296,8 @@ async def test_ipv6_exit_node(
         async with Ping(connection_alpha, config.PHOTO_ALBUM_IPV6).run() as ping6:
             await ping6.wait_for_next_ping()
 
-        ip_alpha = await testing.wait_long(
-            stun.get(connection_alpha, config.STUNV6_SERVER)
-        )
-        ip_beta = await testing.wait_long(
-            stun.get(connection_beta, config.STUNV6_SERVER)
-        )
+        ip_alpha = await stun.get(connection_alpha, config.STUNV6_SERVER)
+        ip_beta = await stun.get(connection_beta, config.STUNV6_SERVER)
         assert ip_alpha == ip_beta
 
         assert alpha_conn_tracker.get_out_of_limits() is None

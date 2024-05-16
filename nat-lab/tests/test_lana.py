@@ -1312,15 +1312,11 @@ async def test_lana_with_meshnet_exit_node(
 
         await client_beta.get_router().create_exit_node_route()
         await client_alpha.connect_to_exit_node(beta.public_key)
-        ip_alpha = await testing.wait_long(
-            stun.get(
-                connection_alpha, STUN_SERVER if not is_stun6_needed else STUNV6_SERVER
-            )
+        ip_alpha = await stun.get(
+            connection_alpha, STUN_SERVER if not is_stun6_needed else STUNV6_SERVER
         )
-        ip_beta = await testing.wait_long(
-            stun.get(
-                connection_beta, STUN_SERVER if not is_stun6_needed else STUNV6_SERVER
-            )
+        ip_beta = await stun.get(
+            connection_beta, STUN_SERVER if not is_stun6_needed else STUNV6_SERVER
         )
         assert ip_alpha == ip_beta
 

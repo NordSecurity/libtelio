@@ -11,7 +11,7 @@ from helpers import (
 )
 from telio import AdapterType, PathType, State
 from telio_features import TelioFeatures, Direct
-from utils import testing, stun
+from utils import stun
 from utils.asyncio_util import run_async_contexts
 from utils.connection import TargetOS
 from utils.connection_util import ConnectionTag
@@ -46,18 +46,12 @@ async def test_network_switcher(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         conn_mngr, *_ = await setup_connections(exit_stack, [connection_tag])
-        assert (
-            await testing.wait_long(stun.get(conn_mngr.connection, config.STUN_SERVER))
-            == primary_ip
-        )
+        assert await stun.get(conn_mngr.connection, config.STUN_SERVER) == primary_ip
 
         assert conn_mngr.network_switcher
         async with conn_mngr.network_switcher.switch_to_secondary_network():
             assert (
-                await testing.wait_long(
-                    stun.get(conn_mngr.connection, config.STUN_SERVER)
-                )
-                == secondary_ip
+                await stun.get(conn_mngr.connection, config.STUN_SERVER) == secondary_ip
             )
 
 
@@ -204,7 +198,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
         async with Ping(alpha_connection, config.PHOTO_ALBUM_IP).run() as ping:
             await ping.wait_for_next_ping()
 
-        ip = await testing.wait_long(stun.get(alpha_connection, config.STUN_SERVER))
+        ip = await stun.get(alpha_connection, config.STUN_SERVER)
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
         assert network_switcher
         async with network_switcher.switch_to_secondary_network():
@@ -220,7 +214,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
             async with Ping(alpha_connection, config.PHOTO_ALBUM_IP).run() as ping:
                 await ping.wait_for_next_ping()
 
-            ip = await testing.wait_long(stun.get(alpha_connection, config.STUN_SERVER))
+            ip = await stun.get(alpha_connection, config.STUN_SERVER)
             assert (
                 ip == wg_server["ipv4"]
             ), f"wrong public IP when connected to VPN {ip}"

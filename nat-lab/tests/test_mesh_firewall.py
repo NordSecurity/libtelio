@@ -276,12 +276,8 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
                 await ping.wait_for_next_ping()
 
         async def get_external_ips():
-            ip_alpha = await testing.wait_long(
-                stun.get(connection_alpha, config.STUN_SERVER)
-            )
-            ip_exit_node = await testing.wait_long(
-                stun.get(connection_exit_node, config.STUN_SERVER)
-            )
+            ip_alpha = await stun.get(connection_alpha, config.STUN_SERVER)
+            ip_exit_node = await stun.get(connection_exit_node, config.STUN_SERVER)
             return (ip_alpha, ip_exit_node)
 
         await ping_should_work_both_ways()

@@ -5,7 +5,7 @@ from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_mesh_nodes, setup_api
 from telio import AdapterType, PathType, PeerInfo, State, Client
 from telio_features import TelioFeatures, Direct
-from utils import testing, stun
+from utils import stun
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.ping import Ping
@@ -255,7 +255,7 @@ async def test_event_content_vpn_connection(
         connection, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
 
-        ip: str = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+        ip: str = await stun.get(connection, config.STUN_SERVER)
         assert ip == alpha_public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         wg_server = config.WG_SERVER
@@ -286,12 +286,12 @@ async def test_event_content_vpn_connection(
             path=PathType.Direct,
         )
 
-        ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+        ip = await stun.get(connection, config.STUN_SERVER)
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
         await client_alpha.disconnect_from_vpn(str(wg_server["public_key"]))
 
-        ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+        ip = await stun.get(connection, config.STUN_SERVER)
         assert ip == alpha_public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         assert client_alpha.get_node_state(str(wg_server["public_key"])) == PeerInfo(
@@ -430,12 +430,8 @@ async def test_event_content_exit_through_peer(
 
         await client_alpha.connect_to_exit_node(beta.public_key)
 
-        ip_alpha: str = await testing.wait_long(
-            stun.get(connection_alpha, config.STUN_SERVER)
-        )
-        ip_beta: str = await testing.wait_long(
-            stun.get(connection_beta, config.STUN_SERVER)
-        )
+        ip_alpha = await stun.get(connection_alpha, config.STUN_SERVER)
+        ip_beta = await stun.get(connection_beta, config.STUN_SERVER)
 
         assert ip_alpha == ip_beta
 

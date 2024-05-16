@@ -192,7 +192,7 @@ async def test_vpn_conn_with_pmtu_enabled(params: SetupParameters) -> None:
 
         vpn_conn, *_ = await setup_connections(exit_stack, [ConnectionTag.DOCKER_VPN_1])
 
-        await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+        await stun.get(connection, config.STUN_SERVER)
 
         await client.connect_to_vpn(
             str(config.WG_SERVER["ipv4"]),
