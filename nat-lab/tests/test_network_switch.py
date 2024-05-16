@@ -127,7 +127,7 @@ async def test_mesh_network_switch(
         client_alpha, _ = env.clients
 
         async with Ping(alpha_conn_mngr.connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         assert alpha_conn_mngr.network_switcher
         async with alpha_conn_mngr.network_switcher.switch_to_secondary_network():
@@ -136,7 +136,7 @@ async def test_mesh_network_switch(
             async with Ping(
                 alpha_conn_mngr.connection, beta.ip_addresses[0]
             ).run() as ping:
-                await testing.wait_long(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping()
 
 
 @pytest.mark.asyncio
@@ -202,7 +202,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
         )
 
         async with Ping(alpha_connection, config.PHOTO_ALBUM_IP).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         ip = await testing.wait_long(stun.get(alpha_connection, config.STUN_SERVER))
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
@@ -218,7 +218,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
                 await asyncio.sleep(1.0)
 
             async with Ping(alpha_connection, config.PHOTO_ALBUM_IP).run() as ping:
-                await testing.wait_long(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping()
 
             ip = await testing.wait_long(stun.get(alpha_connection, config.STUN_SERVER))
             assert (
@@ -304,7 +304,7 @@ async def test_mesh_network_switch_direct(
         alpha_client, beta_client = env.clients
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         derp_connected_future = alpha_client.wait_for_event_on_any_derp(
             [State.Connected]
@@ -336,4 +336,4 @@ async def test_mesh_network_switch_direct(
             await direct
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()

@@ -5,7 +5,6 @@ from helpers import SetupParameters, setup_mesh_nodes
 from telio import AdapterType, LinkState
 from telio_features import TelioFeatures, LinkDetection, Wireguard, PersistentKeepalive
 from typing import List, Tuple
-from utils import testing
 from utils.connection_util import ConnectionTag
 from utils.ping import Ping
 
@@ -107,9 +106,9 @@ async def test_event_link_state_peers_exchanging_data_for_a_long_time(
         for _ in range(0, 40):
             await asyncio.sleep(1)
             async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-                await testing.wait_long(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping()
             async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-                await testing.wait_long(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping()
 
         # Expect no nolink event while peers are active
         alpha_events = client_beta.get_link_state_events(alpha.public_key)
@@ -134,17 +133,17 @@ async def test_event_link_state_peers_exchanging_data_then_idling_then_resume(
         ]
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         # Expect no link event while peers are idle
         await asyncio.sleep(20)
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         alpha_events = client_beta.get_link_state_events(alpha.public_key)
         beta_events = client_alpha.get_link_state_events(beta.public_key)
@@ -168,9 +167,9 @@ async def test_event_link_state_peer_goes_offline(
         ]
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         await client_beta.stop_device()
 
@@ -178,7 +177,7 @@ async def test_event_link_state_peer_goes_offline(
 
         with pytest.raises(asyncio.TimeoutError):
             async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-                await testing.wait_normal(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping(5)
 
         await asyncio.sleep(15)
         alpha_events = client_beta.get_link_state_events(alpha.public_key)
@@ -204,9 +203,9 @@ async def test_event_link_state_feature_disabled(
         ]
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         await asyncio.sleep(30)
 

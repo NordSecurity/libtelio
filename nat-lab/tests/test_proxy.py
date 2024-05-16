@@ -4,7 +4,6 @@ from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from telio import PeerInfo
 from typing import Optional
-from utils import testing
 from utils.connection_util import ConnectionTag
 from utils.ping import Ping
 
@@ -31,9 +30,9 @@ async def test_proxy_endpoint_map_update() -> None:
         )
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_lengthy(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping(60)
         async with Ping(beta_connection, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         for _ in range(0, 5):
             new_port = node_port(alpha_client.get_node_state(beta.public_key))

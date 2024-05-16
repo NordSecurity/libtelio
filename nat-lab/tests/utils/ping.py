@@ -51,9 +51,9 @@ class Ping:
     async def execute(self) -> None:
         await self._process.execute(stdout_callback=self.on_stdout)
 
-    async def wait_for_next_ping(self) -> None:
+    async def wait_for_next_ping(self, timeout: float = 15.0) -> None:
         self._next_ping_event.clear()
-        await self._next_ping_event.wait()
+        await asyncio.wait_for(self._next_ping_event.wait(), timeout)
         self._next_ping_event.clear()
 
     @asynccontextmanager
