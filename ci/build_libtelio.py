@@ -384,16 +384,23 @@ def main() -> None:
     build_parser.add_argument(
         "--msvc", action="store_true", help="Use MSVC toolchain for Windows build"
     )
-    build_parser.add_argument(
-        "--try-fetch-from-pipeline",
-        choices=["main", "nightly", "staging"],
-        help="pipeline tag in gitlab.",
+    bindings_parser.add_argument(
+        "--dockerized",
+        action="store_true",
+        help="Use defined docker image to generate bindings",
     )
     build_parser.add_argument(
         "--uniffi-test-bindings",
         action="store_true",
         help="Generate python bindings with uniffi",
     )
+
+    for parsers in [build_parser, bindings_parser]:
+        parsers.add_argument(
+            "--try-fetch-from-pipeline",
+            choices=["main", "nightly", "staging"],
+            help="pipeline tag in gitlab.",
+        )
 
     args = parser.parse_args()
 
@@ -407,6 +414,7 @@ def main() -> None:
             LIBTELIO_ENV_UNIFFI_GENERATORS_TAG,
             ["python", "cs", "go", "swift", "kotlin"],
             "src/libtelio.udl",
+            dockerized=False,
         )
     elif args.command == "lipo":
         exec_lipo(args)
@@ -448,6 +456,30 @@ def main() -> None:
         )
     else:
         assert False, f"command '{args.command}' not supported"
+
+
+def exec_bindings(args):
+    if args.try_fetch_from_pipeline:
+        if "LLH_GROUP_TOKEN_FLAKY_TESTS" in os.environ:
+            token = os.environ["LLH_GROUP_TOKEN_FLAKY_TESTS"]
+        else:
+            token = getpass.getpass("Enter Gitlab API access token:")
+
+        fetch_binaries.fetch_build_artifacts(
+            args.try_fetch_from_pipeline,
+            target_os="uniffi",
+            target_arch=None,
+            token=token,
+            download_dir=PROJECT_ROOT,
+        )
+    else:
+        rutils.generate_uniffi_bindings(
+            PROJECT_CONFIG,
+            LIBTELIO_ENV_UNIFFI_GENERATORS_TAG,
+            ["python", "cs", "go", "swift", "kotlin"],
+            "src/libtelio.udl",
+            dockerized=args.dockerized,
+        )
 
 
 def exec_build(args):
