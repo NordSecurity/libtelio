@@ -369,10 +369,8 @@ async def test_vpn_plus_mesh(
 
         # Testing if the VPN node is not cleared after disabling meshnet. See LLT-4266 for more details.
         await client_alpha.set_mesh_off()
-        await testing.wait_long(
-            client_alpha.wait_for_event_peer(
-                beta.public_key, [State.Disconnected], list(telio.PathType)
-            )
+        await client_alpha.wait_for_event_peer(
+            beta.public_key, [State.Disconnected], list(telio.PathType)
         )
         ip = await testing.wait_long(stun.get(connection_alpha, config.STUN_SERVER))
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"

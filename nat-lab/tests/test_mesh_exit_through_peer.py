@@ -184,10 +184,8 @@ async def test_mesh_exit_through_peer(
             disconnect_task in done
         ), "disconnect from beta never happened after disabling meshnet"
         with pytest.raises(asyncio.TimeoutError):
-            await testing.wait_long(
-                client_alpha.wait_for_event_peer(
-                    beta.public_key, list(State), list(telio.PathType)
-                )
+            await client_alpha.wait_for_event_peer(
+                beta.public_key, list(State), list(telio.PathType), timeout=5
             )
 
 
@@ -277,17 +275,13 @@ async def test_ipv6_exit_node(
             telio.Client(connection_beta, beta).run(api.get_meshmap(beta.id))
         )
 
-        await testing.wait_lengthy(
-            asyncio.gather(
-                client_alpha.wait_for_state_on_any_derp([State.Connected]),
-                client_beta.wait_for_state_on_any_derp([State.Connected]),
-            )
+        await asyncio.gather(
+            client_alpha.wait_for_state_on_any_derp([State.Connected]),
+            client_beta.wait_for_state_on_any_derp([State.Connected]),
         )
-        await testing.wait_lengthy(
-            asyncio.gather(
-                client_alpha.wait_for_state_peer(beta.public_key, [State.Connected]),
-                client_beta.wait_for_state_peer(alpha.public_key, [State.Connected]),
-            )
+        await asyncio.gather(
+            client_alpha.wait_for_state_peer(beta.public_key, [State.Connected]),
+            client_beta.wait_for_state_peer(alpha.public_key, [State.Connected]),
         )
 
         # Ping in-tunnel node with IPv6
@@ -298,7 +292,7 @@ async def test_ipv6_exit_node(
             await testing.wait_long(ping6.wait_for_next_ping())
 
         await testing.wait_long(client_beta.get_router().create_exit_node_route())
-        await testing.wait_long(client_alpha.connect_to_exit_node(beta.public_key))
+        await client_alpha.connect_to_exit_node(beta.public_key)
 
         # Ping out-tunnel target with IPv6
         async with Ping(connection_alpha, config.PHOTO_ALBUM_IPV6).run() as ping6:

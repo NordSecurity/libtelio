@@ -51,7 +51,10 @@ class VpnConfig:
         self.should_ping_client = should_ping_client
 
     def __repr__(self) -> str:
-        return f"VpnConfig(server_conf={self.server_conf}, conn_tag={self.conn_tag}, should_ping_client={self.should_ping_client})"
+        return (
+            f"VpnConfig(server_conf={self.server_conf}, conn_tag={self.conn_tag},"
+            f" should_ping_client={self.should_ping_client})"
+        )
 
 
 @pytest.mark.parametrize(
@@ -450,10 +453,8 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
             await testing.wait_normal(sender_start_event.wait())
             await testing.wait_normal(sender_start_event.wait())
 
-            await testing.wait_long(
-                # the key is generated uniquely each time natlab runs
-                client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
-            )
+            # the key is generated uniquely each time natlab runs
+            await client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
 
             await connect(
                 config.WG_SERVER_2,
@@ -555,10 +556,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
         )
 
         await testing.wait_long(sender_start_event.wait())
-
-        await testing.wait_long(
-            client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
-        )
+        await client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
 
         await connect(
             config.WG_SERVER_2,

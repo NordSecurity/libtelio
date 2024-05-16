@@ -584,20 +584,17 @@ async def test_direct_working_paths_with_skip_unresponsive_peers(
         await alpha_client.simple_start()
         await alpha_client.set_meshmap(api.get_meshmap(alpha.id))
 
-        await testing.wait_defined(
-            asyncio.gather(
-                alpha_client.wait_for_state_peer(
-                    beta.public_key,
-                    [State.Connected],
-                    [PathType.Direct],
-                ),
-                beta_client.wait_for_state_peer(
-                    alpha.public_key,
-                    [State.Connected],
-                    [PathType.Direct],
-                ),
+        await asyncio.gather(
+            alpha_client.wait_for_state_peer(
+                beta.public_key,
+                [State.Connected],
+                [PathType.Direct],
             ),
-            60,
+            beta_client.wait_for_state_peer(
+                alpha.public_key,
+                [State.Connected],
+                [PathType.Direct],
+            ),
         )
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
