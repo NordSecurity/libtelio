@@ -45,25 +45,22 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
     return preshared
 
 
-# TODO(LLT-4979): Enable boringtun adapters. Currently, disabled enabled because of a bug inside of boringtun.
-#                 In short, boringtun panics when changing private key of the adapter. It's fixed in the upstream
-#                 but we fear rebasing because it would require extensive testingk
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
     [
-        # pytest.param(
-        #     SetupParameters(
-        #         connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-        #         adapter_type=AdapterType.BoringTun,
-        #         connection_tracker_config=generate_connection_tracker_config(
-        #             ConnectionTag.DOCKER_CONE_CLIENT_1,
-        #             stun_limits=ConnectionLimits(1, 1),
-        #             nlx_1_limits=ConnectionLimits(2, 2),
-        #         ),
-        #         is_meshnet=False,
-        #     ),
-        #     "10.0.254.1",
-        # ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type=AdapterType.BoringTun,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    stun_limits=ConnectionLimits(1, 1),
+                    nlx_1_limits=ConnectionLimits(2, 2),
+                ),
+                is_meshnet=False,
+            ),
+            "10.0.254.1",
+        ),
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -110,20 +107,20 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 pytest.mark.windows,
             ],
         ),
-        # pytest.param(
-        #     SetupParameters(
-        #         connection_tag=ConnectionTag.MAC_VM,
-        #         adapter_type=AdapterType.BoringTun,
-        #         connection_tracker_config=generate_connection_tracker_config(
-        #             ConnectionTag.MAC_VM,
-        #             stun_limits=ConnectionLimits(1, 1),
-        #             nlx_1_limits=ConnectionLimits(2, 2),
-        #         ),
-        #         is_meshnet=False,
-        #     ),
-        #     "10.0.254.7",
-        #     marks=pytest.mark.mac,
-        # ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.MAC_VM,
+                adapter_type=AdapterType.BoringTun,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.MAC_VM,
+                    stun_limits=ConnectionLimits(1, 1),
+                    nlx_1_limits=ConnectionLimits(2, 2),
+                ),
+                is_meshnet=False,
+            ),
+            "10.0.254.7",
+            marks=pytest.mark.mac,
+        ),
     ],
 )
 async def test_pq_vpn_connection(
@@ -150,19 +147,19 @@ async def test_pq_vpn_connection(
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
     [
-        # pytest.param(
-        #     SetupParameters(
-        #         connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-        #         adapter_type=AdapterType.BoringTun,
-        #         connection_tracker_config=generate_connection_tracker_config(
-        #             ConnectionTag.DOCKER_CONE_CLIENT_1,
-        #             stun_limits=ConnectionLimits(1, 1),
-        #             nlx_1_limits=ConnectionLimits(2, 2),
-        #         ),
-        #         is_meshnet=False,
-        #     ),
-        #     "10.0.254.1",
-        # ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type=AdapterType.BoringTun,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    stun_limits=ConnectionLimits(1, 1),
+                    nlx_1_limits=ConnectionLimits(2, 2),
+                ),
+                is_meshnet=False,
+            ),
+            "10.0.254.1",
+        ),
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -209,20 +206,20 @@ async def test_pq_vpn_connection(
                 pytest.mark.windows,
             ],
         ),
-        # pytest.param(
-        #     SetupParameters(
-        #         connection_tag=ConnectionTag.MAC_VM,
-        #         adapter_type=AdapterType.BoringTun,
-        #         connection_tracker_config=generate_connection_tracker_config(
-        #             ConnectionTag.MAC_VM,
-        #             stun_limits=ConnectionLimits(1, 1),
-        #             nlx_1_limits=ConnectionLimits(2, 2),
-        #         ),
-        #         is_meshnet=False,
-        #     ),
-        #     "10.0.254.7",
-        #     marks=pytest.mark.mac,
-        # ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.MAC_VM,
+                adapter_type=AdapterType.BoringTun,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.MAC_VM,
+                    stun_limits=ConnectionLimits(1, 1),
+                    nlx_1_limits=ConnectionLimits(2, 2),
+                ),
+                is_meshnet=False,
+            ),
+            "10.0.254.7",
+            marks=pytest.mark.mac,
+        ),
     ],
 )
 async def test_pq_vpn_rekey(
