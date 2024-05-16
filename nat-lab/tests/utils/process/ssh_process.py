@@ -116,8 +116,8 @@ class SshProcess(Process):
             else:
                 break
 
-    async def wait_stdin_ready(self) -> None:
-        await self._stdin_ready.wait()
+    async def wait_stdin_ready(self, timeout: float = 1.0) -> None:
+        await asyncio.wait_for(self._stdin_ready.wait(), timeout)
 
     async def write_stdin(self, data: str) -> None:
         assert self._stdin, "process dead"

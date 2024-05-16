@@ -412,7 +412,7 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
             "ipv6" if setup_params.ip_stack == IPStack.IPv6 else "ipv4",
             "-E",
         ]).run(stdout_callback=conntrack_on_stdout) as conntrack_proc:
-            await testing.wait_normal(conntrack_proc.wait_stdin_ready())
+            await conntrack_proc.wait_stdin_ready()
 
             ip_proto = (
                 IPProto.IPv6 if setup_params.ip_stack == IPStack.IPv6 else IPProto.IPv4

@@ -39,7 +39,7 @@ class Process(ABC):
         yield self
 
     @abstractmethod
-    async def wait_stdin_ready(self) -> None:
+    async def wait_stdin_ready(self, timeout: float = 1.0) -> None:
         pass
 
     @abstractmethod
