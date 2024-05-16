@@ -141,7 +141,7 @@ async def test_mesh_exit_through_peer(
             ).run() as ping6:
                 await ping6.wait_for_next_ping()
 
-        await testing.wait_long(client_beta.get_router().create_exit_node_route())
+        await client_beta.get_router().create_exit_node_route()
 
         await client_alpha.connect_to_exit_node(beta.public_key)
 
@@ -291,7 +291,7 @@ async def test_ipv6_exit_node(
         ).run() as ping6:
             await ping6.wait_for_next_ping()
 
-        await testing.wait_long(client_beta.get_router().create_exit_node_route())
+        await client_beta.get_router().create_exit_node_route()
         await client_alpha.connect_to_exit_node(beta.public_key)
 
         # Ping out-tunnel target with IPv6
