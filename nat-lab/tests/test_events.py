@@ -1,6 +1,7 @@
 import asyncio
 import config
 import pytest
+import timeouts
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_mesh_nodes, setup_api
 from telio import AdapterType, PathType, PeerInfo, State, Client
@@ -453,7 +454,7 @@ async def test_event_content_exit_through_peer(
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(timeouts.TEST_EVENT_CONTENT_MESHNET_NODE_UPGRADE_DIRECT_TIMEOUT)
 @pytest.mark.parametrize(
     "alpha_setup_params, alpha_public_ip",
     [

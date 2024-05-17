@@ -2,6 +2,7 @@ import asyncio
 import config
 import pytest
 import telio
+import timeouts
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from mesh_api import API
@@ -376,7 +377,7 @@ async def test_vpn_plus_mesh(
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(timeouts.TEST_VPN_PLUS_MESH_OVER_DIRECT_TIMEOUT)
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -524,7 +525,9 @@ async def test_vpn_plus_mesh_over_direct(
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(
+    timeouts.TEST_VPN_PLUS_MESH_OVER_DIFFERENT_CONNECTION_TYPES_TIMEOUT
+)
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [

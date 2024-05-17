@@ -5,6 +5,7 @@ import config
 import itertools
 import pytest
 import re
+import timeouts
 from config import LIBTELIO_DNS_IPV4, LIBTELIO_DNS_IPV6
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_api, setup_environment, setup_mesh_nodes
@@ -411,7 +412,7 @@ async def test_dns_after_mesh_off(alpha_ip_stack: IPStack) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.long
-@pytest.mark.timeout(60 * 6)
+@pytest.mark.timeout(timeouts.TEST_DNS_STABILITY_TIMEOUT)
 @pytest.mark.parametrize(
     "alpha_ip_stack",
     [
