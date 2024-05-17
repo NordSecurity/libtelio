@@ -1,7 +1,6 @@
 use super::{Entities, RequestedState, Result};
 use ipnetwork::IpNetwork;
-use std::collections::HashMap;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::iter::FromIterator;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
@@ -1206,11 +1205,11 @@ mod tests {
 
         firewall
             .expect_get_peer_whitelist()
-            .return_once(|| Default::default());
+            .return_once(Default::default);
 
         firewall
             .expect_get_port_whitelist()
-            .return_once(|| Default::default());
+            .return_once(Default::default);
 
         expect_add_to_peer_whitelist(&mut firewall, pub_key_1);
         expect_add_to_port_whitelist(&mut firewall, pub_key_1);
@@ -1252,7 +1251,7 @@ mod tests {
 
         firewall
             .expect_get_port_whitelist()
-            .return_once(|| Default::default());
+            .return_once(Default::default);
 
         expect_remove_from_port_whitelist(&mut firewall, pub_key_2);
 
