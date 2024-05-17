@@ -3,7 +3,7 @@ import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment
 from telio import AdapterType, Client
-from utils import testing, stun
+from utils import stun
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
@@ -24,9 +24,9 @@ async def _connect_vpn_pq(
     )
 
     async with Ping(client_conn, config.PHOTO_ALBUM_IP).run() as ping:
-        await testing.wait_long(ping.wait_for_next_ping())
+        await ping.wait_for_next_ping()
 
-    ip = await testing.wait_long(stun.get(client_conn, config.STUN_SERVER))
+    ip = await stun.get(client_conn, config.STUN_SERVER)
     assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
 
@@ -123,7 +123,7 @@ async def test_pq_vpn_connection(
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
 
-        ip = await testing.wait_long(stun.get(client_conn, config.STUN_SERVER))
+        ip = await stun.get(client_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         await _connect_vpn_pq(

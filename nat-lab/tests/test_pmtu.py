@@ -91,7 +91,7 @@ async def test_pmtu_with_nexthop(setup_params: SetupParameters) -> None:
 
         proc = connection.create_process(["/opt/bin/inject-icmp-host-unreachable"])
         await exit_stack.enter_async_context(proc.run())
-        await testing.wait_short(proc.wait_stdin_ready())
+        await proc.wait_stdin_ready()
 
         await testing.wait_lengthy(client.probe_pmtu(host, 1300))
 
@@ -138,7 +138,7 @@ async def test_pmtu_without_nexthop(setup_params: SetupParameters) -> None:
             ["/opt/bin/inject-icmp-host-unreachable", "-n"]
         )
         await exit_stack.enter_async_context(proc.run())
-        await testing.wait_short(proc.wait_stdin_ready())
+        await proc.wait_stdin_ready()
 
         await testing.wait_lengthy(client.probe_pmtu(host, 1300))
 
@@ -192,7 +192,7 @@ async def test_vpn_conn_with_pmtu_enabled(params: SetupParameters) -> None:
 
         vpn_conn, *_ = await setup_connections(exit_stack, [ConnectionTag.DOCKER_VPN_1])
 
-        await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+        await stun.get(connection, config.STUN_SERVER)
 
         await client.connect_to_vpn(
             str(config.WG_SERVER["ipv4"]),
@@ -201,4 +201,4 @@ async def test_vpn_conn_with_pmtu_enabled(params: SetupParameters) -> None:
         )
 
         async with Ping(vpn_conn.connection, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()

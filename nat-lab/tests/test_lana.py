@@ -168,7 +168,7 @@ async def ping_node(
         initiator_conn,
         testing.unpack_optional(target.get_ip_address(proto)),
     ).run() as ping:
-        await testing.wait_long(ping.wait_for_next_ping())
+        await ping.wait_for_next_ping()
 
 
 def choose_peer_stack(node_one: IPStack, node_two: IPStack) -> Optional[IPStack]:
@@ -1308,19 +1308,15 @@ async def test_lana_with_meshnet_exit_node(
                 beta.get_ip_address(IPProto.IPv6 if is_stun6_needed else IPProto.IPv4)
             ),
         ).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
-        await testing.wait_long(client_beta.get_router().create_exit_node_route())
+        await client_beta.get_router().create_exit_node_route()
         await client_alpha.connect_to_exit_node(beta.public_key)
-        ip_alpha = await testing.wait_long(
-            stun.get(
-                connection_alpha, STUN_SERVER if not is_stun6_needed else STUNV6_SERVER
-            )
+        ip_alpha = await stun.get(
+            connection_alpha, STUN_SERVER if not is_stun6_needed else STUNV6_SERVER
         )
-        ip_beta = await testing.wait_long(
-            stun.get(
-                connection_beta, STUN_SERVER if not is_stun6_needed else STUNV6_SERVER
-            )
+        ip_beta = await stun.get(
+            connection_beta, STUN_SERVER if not is_stun6_needed else STUNV6_SERVER
         )
         assert ip_alpha == ip_beta
 

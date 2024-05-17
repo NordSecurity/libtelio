@@ -1,6 +1,6 @@
 import config
 import pytest
-from utils import testing, stun
+from utils import stun
 from utils.connection_util import ConnectionTag, new_connection_by_tag
 
 
@@ -19,5 +19,5 @@ from utils.connection_util import ConnectionTag, new_connection_by_tag
 )
 async def test_client_basic_stun(connection_tag: ConnectionTag, public_ip: str) -> None:
     async with new_connection_by_tag(connection_tag) as connection:
-        ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+        ip = await stun.get(connection, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public ip for the client {ip}"

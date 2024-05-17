@@ -4,7 +4,6 @@ from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes, setup_environment
 from telio import AdapterType, PathType, State
 from telio_features import Direct, TelioFeatures
-from utils import testing
 from utils.asyncio_util import run_async_context
 from utils.connection_util import ConnectionTag
 from utils.ping import Ping
@@ -61,7 +60,7 @@ async def test_upnp_route_removed(
             )
             async with Ping(alpha_conn.connection, beta.ip_addresses[0]).run() as ping:
                 try:
-                    await testing.wait_long(ping.wait_for_next_ping())
+                    await ping.wait_for_next_ping()
                 except asyncio.TimeoutError:
                     pass
                 else:
@@ -80,9 +79,9 @@ async def test_upnp_route_removed(
         )
 
         async with Ping(beta_conn.connection, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_lengthy(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping(60)
         async with Ping(alpha_conn.connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_lengthy(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping(60)
 
 
 @pytest.mark.asyncio
@@ -178,8 +177,8 @@ async def test_upnp_without_support(
         async with Ping(
             beta_conn_mgr.connection, alpha_node.ip_addresses[0]
         ).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         async with Ping(
             alpha_conn_mgr.connection, beta_node.ip_addresses[0]
         ).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
