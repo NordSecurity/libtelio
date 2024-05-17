@@ -13,6 +13,10 @@ use telio_relay::{
     SortedServers,
 };
 use telio_sockets::{NativeProtector, Protector, SocketPool};
+use telio_starcast::{
+    starcast_peer::{Config as StarcastPeerConfig, StarcastPeer},
+    transport::{Config as StarcastTransportConfig, Transport},
+};
 use telio_task::{
     io::{chan, mc_chan, mc_chan::Tx, Chan, McChan},
     task_exec, BoxAction, Runtime as TaskRuntime, Task,
@@ -164,6 +168,10 @@ pub enum Error {
     PingerReceiveTimeout,
     #[error("Pinger received unexpected packet")]
     PingerReceiveUnexpected,
+    #[error(transparent)]
+    StarcastError(#[from] telio_starcast::starcast_peer::Error),
+    #[error(transparent)]
+    TransportError(#[from] telio_starcast::transport::Error),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -230,6 +238,9 @@ pub struct MeshnetEntities {
 
     // Entities for direct wireguard connections
     direct: Option<DirectEntities>,
+
+    // Starcast components for multicast support.
+    starcast: Option<StarcastEntities>,
 }
 
 #[derive(Default, Debug)]
@@ -320,6 +331,17 @@ impl Entities {
             .left()
             .and_then(|m| m.direct.as_ref().map(|d| &d.upgrade_sync))
     }
+
+    pub fn starcast_vpeer(&self) -> Option<&Arc<StarcastPeer>> {
+        self.meshnet
+            .left()
+            .and_then(|m| m.starcast.as_ref().map(|s| &s.virtual_peer))
+    }
+}
+
+pub struct StarcastEntities {
+    virtual_peer: Arc<StarcastPeer>,
+    transport: Arc<Transport>,
 }
 
 pub struct DirectEntities {
@@ -967,6 +989,10 @@ impl MeshnetEntities {
         stop_arc_entity!(self.derp, "Derp");
         let endpoint_map = self.proxy.get_endpoint_map().await.unwrap_or_default();
         stop_arc_entity!(self.proxy, "UdpProxy");
+        if let Some(starcast) = self.starcast {
+            stop_arc_entity!(starcast.virtual_peer, "StarcastPeer");
+            stop_arc_entity!(starcast.transport, "StarcastTransport");
+        }
 
         MeshnetEntitiesLastState { endpoint_map }
     }
@@ -1409,11 +1435,17 @@ impl Runtime {
             None
         };
 
+        let starcast = self.build_starcast().await.unwrap_or_else(|e| {
+            telio_log_error!("Couldn't start starcast: {e:?}");
+            None
+        });
+
         Ok(MeshnetEntities {
             multiplexer,
             derp,
             proxy,
             direct,
+            starcast,
         })
     }
 
@@ -1426,6 +1458,40 @@ impl Runtime {
             }
         }
         Ok(nodes)
+    }
+
+    async fn build_starcast(&self) -> Result<Option<StarcastEntities>> {
+        if !self.features.multicast {
+            return Ok(None);
+        }
+
+        let (chan_transport, chan_peer) = Chan::pipe();
+        let virtual_peer = Arc::new(StarcastPeer::start(chan_peer, self.features.ipv6).await?);
+
+        let meshnet_ip = self
+            .requested_state
+            .meshnet_config
+            .as_ref()
+            .ok_or(Error::MeshnetNotConfigured)?
+            .this
+            .ip_addresses
+            .as_ref()
+            .ok_or(Error::NoMeshnetIP)?
+            .first()
+            .ok_or(Error::NoMeshnetIP)?;
+        let transport = Arc::new(
+            Transport::start(
+                meshnet_ip.to_owned(),
+                self.get_socket_pool().await?,
+                chan_transport,
+            )
+            .await?,
+        );
+
+        Ok(Some(StarcastEntities {
+            virtual_peer,
+            transport,
+        }))
     }
 
     async fn upsert_dns_peers(&self) -> Result {
@@ -1661,7 +1727,7 @@ impl Runtime {
 
         // Update for proxy and derp config
         if let Some(config) = config {
-            let wg_port_for_proxy = self
+            let wg_port = self
                 .entities
                 .wireguard_interface
                 .wait_for_proxy_listen_port(Duration::from_secs(1))
@@ -1678,11 +1744,43 @@ impl Runtime {
             };
 
             let proxy_config = ProxyConfig {
-                wg_port: Some(wg_port_for_proxy),
+                wg_port: Some(wg_port),
                 peers: peers.clone(),
             };
 
             meshnet_entities.proxy.configure(proxy_config).await?;
+
+            if let Some(ref starcast) = meshnet_entities.starcast {
+                let starcast_vpeer_config = StarcastPeerConfig {
+                    public_key: secret_key.public(),
+                    wg_port,
+                };
+                let multicast_peers = config
+                    .clone()
+                    .peers
+                    .unwrap_or_default()
+                    .iter()
+                    .filter_map(|p| {
+                        p.ip_addresses
+                            .to_owned()
+                            .unwrap_or_default()
+                            .iter()
+                            // While IPV6 support is not added yet for multicast, only using IPV4 IPs
+                            .find(|ip| ip.is_ipv4())
+                            .map(|ip| (p.base.public_key, ip.to_owned()))
+                    })
+                    .collect();
+                let starcast_transport_config = StarcastTransportConfig::Simple(multicast_peers);
+                starcast
+                    .transport
+                    .configure(starcast_transport_config)
+                    .await?;
+
+                starcast
+                    .virtual_peer
+                    .configure(starcast_vpeer_config)
+                    .await?;
+            }
 
             let derp_config = DerpConfig {
                 secret_key,
