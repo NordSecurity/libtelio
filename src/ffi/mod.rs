@@ -255,12 +255,16 @@ impl Telio {
         #[cfg(target_os = "android")]
         let protect: Option<Protect> = match protect_cb {
             Some(protect) if cfg!(windows) => {
+                telio_log_debug!("Mathias - protect is some");
                 let protect = protect;
                 Some(Arc::new(move |fd| {
                     protect.protect(fd);
                 }))
             }
-            _ => None,
+            _ => {
+                telio_log_debug!("Mathias - protect is none ({})", protect);
+                None
+            }
         };
 
         catch_ffi_panic(|| {
@@ -351,6 +355,10 @@ impl Telio {
             private_key.public(),
             &adapter
         );
+        telio_log_debug!(
+            "Mathias - starting device with secret key: {}",
+            base64::encode(private_key.as_bytes())
+        );
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
                 dev.start(&DeviceConfig {
@@ -380,6 +388,10 @@ impl Telio {
             private_key.public(),
             &adapter,
             &name,
+        );
+        telio_log_debug!(
+            "Mathias - starting device with secret key: {}",
+            base64::encode(private_key.as_bytes())
         );
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
@@ -418,6 +430,10 @@ impl Telio {
             self.id,
             private_key.public(),
             &adapter
+        );
+        telio_log_debug!(
+            "Mathias - starting device with secret key: {}",
+            base64::encode(private_key.as_bytes())
         );
         #[cfg(not(target_os = "windows"))]
         let tun = Some(_tun);
@@ -470,6 +486,10 @@ impl Telio {
             self.id,
             private_key.public()
         );
+        telio_log_debug!(
+            "Mathias - setting secret key: {}",
+            base64::encode(private_key.as_bytes())
+        );
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
                 dev.set_private_key(private_key).map_err(TelioError::from)
@@ -478,11 +498,17 @@ impl Telio {
     }
 
     pub fn get_secret_key(&self) -> SecretKey {
-        self.device_op(true, |dev| dev.get_private_key().map_err(|e| e.into()))
+        let key = self
+            .device_op(true, |dev| dev.get_private_key().map_err(|e| e.into()))
             .unwrap_or_else(|err| {
                 telio_log_error!("Telio::get_secret_key: dev.get_private_key: {}", err);
                 SecretKey::default()
-            })
+            });
+        telio_log_debug!(
+            "Mathias - getting secret key: {}",
+            base64::encode(key.as_bytes())
+        );
+        key
     }
 
     /// Sets fmark for started device.
@@ -590,6 +616,10 @@ impl Telio {
             allowed_ips,
             endpoint,
         );
+        telio_log_debug!(
+            "Mathias - connect_to_exit_node with public key: {}",
+            base64::encode(&public_key.0)
+        );
         let identifier = identifier.unwrap_or_else(|| Uuid::new_v4().to_string());
         let node = ExitNode {
             identifier,
@@ -689,6 +719,10 @@ impl Telio {
             "Telio::disconnect_from_exit_node entry with instance id: {}. Public Key: {:?}",
             self.id,
             public_key
+        );
+        telio_log_debug!(
+            "Mathias - disconnecting from exit node with public key: {}",
+            base64::encode(&public_key.0)
         );
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {

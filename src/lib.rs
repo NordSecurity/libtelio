@@ -168,7 +168,7 @@ mod uniffi_libtelio {
         }
 
         fn from_custom(obj: Self) -> Self::Builtin {
-            obj.to_string()
+            obj.0.clone()
         }
     }
 

@@ -603,11 +603,15 @@ impl Device {
 
     #[cfg(not(windows))]
     async fn protect_from_vpn(&self, adapter: &impl WireGuard) -> Result {
+        telio_log_debug!("Mathias - protect_from_vpn - start");
         if let Some(protect) = self.protect.as_ref() {
+            telio_log_debug!("Mathias - protect_from_vpn - protect is some");
             if let Some(fd) = adapter.get_wg_socket(false).await? {
+                telio_log_debug!("Mathias - protect_from_vpn - protecting for ipv4");
                 protect(fd);
             }
             if let Some(fd) = adapter.get_wg_socket(true).await? {
+                telio_log_debug!("Mathias - protect_from_vpn - protecting for ipv6");
                 protect(fd);
             }
         }
@@ -997,6 +1001,7 @@ impl Runtime {
 
         let socket_pool = Arc::new({
             if let Some(protect) = protect.clone() {
+                telio_log_debug!("Mathias - creating socket pool with protect");
                 SocketPool::new(protect)
             } else {
                 SocketPool::new(NativeProtector::new(
