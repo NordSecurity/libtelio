@@ -2,6 +2,7 @@ import asyncio
 import config
 import pytest
 import telio
+import timeouts
 from contextlib import AsyncExitStack
 from helpers import (
     setup_connections,
@@ -221,7 +222,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(timeouts.TEST_MESH_NETWORK_SWITCH_DIRECT_TIMEOUT)
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
