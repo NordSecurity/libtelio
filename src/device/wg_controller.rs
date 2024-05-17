@@ -2,7 +2,7 @@ use super::{Entities, RequestedState, Result};
 use ipnet::IpNet;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::iter::FromIterator;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use telio_crypto::PublicKey;
@@ -16,6 +16,7 @@ use telio_model::EndpointMap;
 use telio_model::SocketAddr;
 use telio_proto::{PeersStatesMap, Session};
 use telio_proxy::Proxy;
+use telio_starcast::starcast_peer::StarcastPeer;
 use telio_traversal::{
     cross_ping_check::CrossPingCheckTrait, endpoint_providers::EndpointProvider,
     SessionKeeperTrait, UpgradeSyncTrait, WireGuardEndpointCandidateChangeEvent,
@@ -95,10 +96,16 @@ pub async fn consolidate_wg_state(
                 .and_then(|direct| direct.upnp_endpoint_provider.as_ref())
         }),
         &entities.postquantum_wg,
+        entities.starcast_vpeer(),
         features,
     )
     .await?;
-    consolidate_firewall(requested_state, &*entities.firewall).await?;
+    let starcast_pub_key = if let Some(starcast_vpeer) = entities.starcast_vpeer() {
+        Some(starcast_vpeer.get_peer().await?.public_key)
+    } else {
+        None
+    };
+    consolidate_firewall(requested_state, &*entities.firewall, starcast_pub_key).await?;
     Ok(())
 }
 
@@ -156,6 +163,7 @@ async fn consolidate_wg_peers<
     stun_ep_provider: Option<&Arc<E1>>,
     upnp_ep_provider: Option<&Arc<E2>>,
     post_quantum_vpn: &impl telio_pq::PostQuantum,
+    starcast_vpeer: Option<&Arc<StarcastPeer>>,
     features: &Features,
 ) -> Result {
     let proxy_endpoints = if let Some(p) = proxy {
@@ -170,6 +178,7 @@ async fn consolidate_wg_peers<
         upgrade_sync,
         dns,
         &proxy_endpoints,
+        starcast_vpeer,
         &remote_peer_states,
         post_quantum_vpn,
         features,
@@ -355,6 +364,7 @@ fn iter_peers(
 async fn consolidate_firewall<F: Firewall>(
     requested_state: &RequestedState,
     firewall: &F,
+    starcast_vpeer_pubkey: Option<PublicKey>,
 ) -> Result {
     let from_keys_peer_whitelist: HashSet<PublicKey> =
         firewall.get_peer_whitelist().iter().copied().collect();
@@ -387,7 +397,10 @@ async fn consolidate_firewall<F: Firewall>(
 
     // Consolidate peer-whitelist
     let delete_keys = &from_keys_peer_whitelist - &to_keys_peer_whitelist;
-    let add_keys = &to_keys_peer_whitelist - &from_keys_peer_whitelist;
+    let mut add_keys = &to_keys_peer_whitelist - &from_keys_peer_whitelist;
+    if let Some(pub_key) = starcast_vpeer_pubkey {
+        add_keys.insert(pub_key);
+    }
     for key in delete_keys {
         firewall.remove_from_peer_whitelist(key);
     }
@@ -423,6 +436,7 @@ async fn build_requested_peers_list<
     upgrade_sync: Option<&Arc<U>>,
     dns: &Mutex<crate::device::DNS<D>>,
     proxy_endpoints: &EndpointMap,
+    starcast_vpeer: Option<&Arc<StarcastPeer>>,
     remote_peer_states: &PeersStatesMap,
     post_quantum_vpn: &impl telio_pq::PostQuantum,
     features: &Features,
@@ -464,11 +478,11 @@ async fn build_requested_peers_list<
             let public_key = exit_node.public_key;
             let endpoint = exit_node.endpoint;
 
-            let mut ip_addresses = vec![IpAddr::V4(Ipv4Addr::from(VPN_INTERNAL_IPV4))];
+            let mut ip_addresses = vec![VPN_INTERNAL_IPV4.into()];
             if features.ipv6 {
-                ip_addresses.push(IpAddr::V6(Ipv6Addr::from(VPN_INTERNAL_IPV6)));
+                ip_addresses.push(VPN_INTERNAL_IPV6.into());
             }
-            ip_addresses.push(IpAddr::V4(Ipv4Addr::from(VPN_EXTERNAL_IPV4)));
+            ip_addresses.push(VPN_EXTERNAL_IPV4.into());
             let persistent_keepalive_interval = requested_state.keepalive_periods.vpn;
 
             // If the PQ VPN is set up we need to configure the preshared key
@@ -524,6 +538,16 @@ async fn build_requested_peers_list<
         requested_peers.insert(dns_peer_public_key, requested_peer);
     }
 
+    if let Some(starcast_vpeer) = starcast_vpeer {
+        let starcast_peer = starcast_vpeer.get_peer().await?;
+        let starcast_peer_public_key = starcast_peer.public_key;
+        let requested_starcast_peer = RequestedPeer {
+            peer: starcast_peer,
+            endpoint: None,
+        };
+        requested_peers.insert(starcast_peer_public_key, requested_starcast_peer);
+    }
+
     if let (Some(wg_stun_server), Some(stun)) = (&requested_state.wg_stun_server, stun_ep_provider)
     {
         if !stun.is_paused().await {
@@ -541,7 +565,6 @@ async fn build_requested_peers_list<
                 vec![IpNet::V4("100.64.0.4/32".parse()?)]
             };
             let ip_addresses = allowed_ips.iter().copied().map(|ip| ip.addr()).collect();
-
             requested_peers.insert(
                 public_key,
                 RequestedPeer {
@@ -1217,6 +1240,7 @@ mod tests {
     async fn add_newly_requested_peers_to_firewall() {
         let mut firewall = MockFirewall::new();
 
+        let pub_key_starcast_vpeer = SecretKey::gen().public();
         let pub_key_1 = SecretKey::gen().public();
         let pub_key_2 = SecretKey::gen().public();
         let pub_key_3 = SecretKey::gen().public();
@@ -1237,6 +1261,8 @@ mod tests {
             .expect_get_port_whitelist()
             .return_once(Default::default);
 
+        expect_add_to_peer_whitelist(&mut firewall, pub_key_starcast_vpeer);
+
         expect_add_to_peer_whitelist(&mut firewall, pub_key_1);
         expect_add_to_port_whitelist(&mut firewall, pub_key_1);
 
@@ -1244,7 +1270,7 @@ mod tests {
 
         expect_add_to_port_whitelist(&mut firewall, pub_key_3);
 
-        consolidate_firewall(&requested_state, &firewall)
+        consolidate_firewall(&requested_state, &firewall, Some(pub_key_starcast_vpeer))
             .await
             .unwrap();
     }
@@ -1253,6 +1279,7 @@ mod tests {
     async fn update_permissions_for_requested_peers_in_firewall() {
         let mut firewall = MockFirewall::new();
 
+        let pub_key_starcast_vpeer = SecretKey::gen().public();
         let pub_key_1 = SecretKey::gen().public();
         let pub_key_2 = SecretKey::gen().public();
         let pub_key_3 = SecretKey::gen().public();
@@ -1279,6 +1306,8 @@ mod tests {
             .expect_get_port_whitelist()
             .return_once(Default::default);
 
+        expect_add_to_peer_whitelist(&mut firewall, pub_key_starcast_vpeer);
+
         expect_remove_from_port_whitelist(&mut firewall, pub_key_2);
 
         expect_remove_from_peer_whitelist(&mut firewall, pub_key_3);
@@ -1286,7 +1315,7 @@ mod tests {
         expect_remove_from_peer_whitelist(&mut firewall, pub_key_4);
         expect_remove_from_port_whitelist(&mut firewall, pub_key_4);
 
-        consolidate_firewall(&requested_state, &firewall)
+        consolidate_firewall(&requested_state, &firewall, Some(pub_key_starcast_vpeer))
             .await
             .unwrap();
     }
@@ -1295,6 +1324,7 @@ mod tests {
     async fn add_vpn_exit_node_to_firewall() {
         let mut firewall = MockFirewall::new();
 
+        let pub_key_starcast_vpeer = SecretKey::gen().public();
         let pub_key_1 = SecretKey::gen().public();
         let pub_key_2 = SecretKey::gen().public();
 
@@ -1305,6 +1335,8 @@ mod tests {
             ..Default::default()
         });
 
+        expect_add_to_peer_whitelist(&mut firewall, pub_key_starcast_vpeer);
+
         expect_get_peer_whitelist(&mut firewall, vec![pub_key_1]);
         expect_get_port_whitelist(&mut firewall, vec![]);
 
@@ -1312,7 +1344,7 @@ mod tests {
 
         expect_add_to_peer_whitelist(&mut firewall, pub_key_2);
 
-        consolidate_firewall(&requested_state, &firewall)
+        consolidate_firewall(&requested_state, &firewall, Some(pub_key_starcast_vpeer))
             .await
             .unwrap();
     }
@@ -1321,6 +1353,7 @@ mod tests {
     async fn do_not_add_meshnet_exit_node_to_firewall_if_it_does_not_allow_incoming_connections() {
         let mut firewall = MockFirewall::new();
 
+        let pub_key_starcast_vpeer = SecretKey::gen().public();
         let pub_key_1 = SecretKey::gen().public();
 
         let mut requested_state = create_requested_state(vec![(pub_key_1, vec![], false, false)]);
@@ -1330,10 +1363,12 @@ mod tests {
             ..Default::default()
         });
 
+        expect_add_to_peer_whitelist(&mut firewall, pub_key_starcast_vpeer);
+
         expect_get_peer_whitelist(&mut firewall, vec![]);
         expect_get_port_whitelist(&mut firewall, vec![]);
 
-        consolidate_firewall(&requested_state, &firewall)
+        consolidate_firewall(&requested_state, &firewall, Some(pub_key_starcast_vpeer))
             .await
             .unwrap();
     }
@@ -1343,6 +1378,7 @@ mod tests {
     ) {
         let mut firewall = MockFirewall::new();
 
+        let pub_key_starcast_vpeer = SecretKey::gen().public();
         let pub_key_1 = SecretKey::gen().public();
 
         let mut requested_state = create_requested_state(vec![(pub_key_1, vec![], false, false)]);
@@ -1352,12 +1388,14 @@ mod tests {
             ..Default::default()
         });
 
+        expect_add_to_peer_whitelist(&mut firewall, pub_key_starcast_vpeer);
+
         expect_get_peer_whitelist(&mut firewall, vec![pub_key_1]);
         expect_get_port_whitelist(&mut firewall, vec![]);
 
         expect_remove_from_peer_whitelist(&mut firewall, pub_key_1);
 
-        consolidate_firewall(&requested_state, &firewall)
+        consolidate_firewall(&requested_state, &firewall, Some(pub_key_starcast_vpeer))
             .await
             .unwrap();
     }
@@ -1727,6 +1765,7 @@ mod tests {
                 stun_ep_provider.as_ref(),
                 upnp_ep_provider.as_ref(),
                 &self.post_quantum,
+                None,
                 &self.features,
             )
             .await
@@ -2028,9 +2067,9 @@ mod tests {
             .unwrap(),
         ];
         let ip_addresses = vec![
-            IpAddr::V4(Ipv4Addr::from(VPN_INTERNAL_IPV4)),
-            IpAddr::V6(Ipv6Addr::from(VPN_INTERNAL_IPV6)),
-            IpAddr::V4(Ipv4Addr::from(VPN_EXTERNAL_IPV4)),
+            VPN_INTERNAL_IPV4.into(),
+            VPN_INTERNAL_IPV6.into(),
+            VPN_EXTERNAL_IPV4.into(),
         ];
 
         let endpoint_raw = SocketAddr::from(([192, 168, 0, 1], 13));

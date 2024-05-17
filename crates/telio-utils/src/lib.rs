@@ -49,3 +49,6 @@ pub use pinger::*;
 
 /// Testing tools
 pub mod test;
+
+/// IpNet const constructor
+pub mod const_ipnet;

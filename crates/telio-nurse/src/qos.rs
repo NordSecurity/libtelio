@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use histogram::Histogram;
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Instant;
 use telio_model::constants::{VPN_INTERNAL_IPV4, VPN_INTERNAL_IPV6};
@@ -541,11 +541,7 @@ impl Analytics {
 fn is_from_ignored_peer(event: &AnalyticsEvent) -> bool {
     // The only allowed virtual peer for analytics is the VPN peer.
     fn is_vpn(ip: IpAddr) -> bool {
-        [
-            IpAddr::V4(Ipv4Addr::from(VPN_INTERNAL_IPV4)),
-            IpAddr::V6(Ipv6Addr::from(VPN_INTERNAL_IPV6)),
-        ]
-        .contains(&ip)
+        [VPN_INTERNAL_IPV4.into(), VPN_INTERNAL_IPV6.into()].contains(&ip)
     }
     if event.is_from_virtual_peer() {
         !event
