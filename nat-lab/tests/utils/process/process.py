@@ -1,3 +1,4 @@
+import timeouts
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from typing import List, Optional, Callable, Awaitable, AsyncIterator
@@ -39,7 +40,9 @@ class Process(ABC):
         yield self
 
     @abstractmethod
-    async def wait_stdin_ready(self) -> None:
+    async def wait_stdin_ready(
+        self, timeout: float = timeouts.DEFAULT_STDIN_READY_TIMEOUT
+    ) -> None:
         pass
 
     @abstractmethod

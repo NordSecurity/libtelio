@@ -6,7 +6,6 @@ from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from telio import State
 from typing import List
-from utils import testing
 from utils.connection_util import ConnectionTag
 from utils.ping import Ping
 
@@ -42,7 +41,7 @@ async def test_derp_reconnect_2clients(setup_params: List[SetupParameters]) -> N
         # [ALPHA]     [BETA]
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         # ==============================================================
         # Break the connection:
@@ -78,7 +77,7 @@ async def test_derp_reconnect_2clients(setup_params: List[SetupParameters]) -> N
 
         # Ping peer to check if connection truly works
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
 
 @pytest.mark.asyncio
@@ -115,16 +114,16 @@ async def test_derp_reconnect_3clients(setup_params: List[SetupParameters]) -> N
 
         # Ping ALPHA --> BETA
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         # Ping ALPHA --> GAMMA
         async with Ping(alpha_connection, gamma.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         # Ping BETA --> GAMMA
         async with Ping(beta_connection, gamma.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         # Ping GAMMA --> BETA
         async with Ping(gamma_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         # ==============================================================
         # Break BETA-DERP1 and GAMMA-DERP1 connections:
@@ -212,16 +211,16 @@ async def test_derp_reconnect_3clients(setup_params: List[SetupParameters]) -> N
 
         # Ping ALPHA --> BETA
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         # Ping ALPHA --> GAMMA
         async with Ping(alpha_connection, gamma.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         # Ping BETA --> GAMMA
         async with Ping(beta_connection, gamma.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         # Ping GAMMA --> BETA
         async with Ping(gamma_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
 
 @pytest.mark.asyncio
@@ -294,16 +293,16 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
 
         # Ping ALPHA --> BETA
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         # Ping ALPHA --> GAMMA
         async with Ping(alpha_connection, gamma.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         # Ping BETA --> GAMMA
         async with Ping(beta_connection, gamma.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         # Ping GAMMA --> BETA
         async with Ping(gamma_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         # ==============================================================
         # DERP-1 restart:
@@ -326,16 +325,16 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
 
         # Ping ALPHA --> BETA
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         # Ping ALPHA --> GAMMA
         async with Ping(alpha_connection, gamma.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         # Ping BETA --> GAMMA
         async with Ping(beta_connection, gamma.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         # Ping GAMMA --> BETA
         async with Ping(gamma_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         # ==============================================================
         # DERP-2 restart
@@ -358,16 +357,16 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
 
         # Ping ALPHA --> BETA
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         # Ping ALPHA --> GAMMA
         async with Ping(alpha_connection, gamma.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         # Ping BETA --> GAMMA
         async with Ping(beta_connection, gamma.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         # Ping GAMMA --> BETA
         async with Ping(gamma_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         # ==============================================================
         # DERP-3 restart
@@ -390,16 +389,16 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
 
         # Ping ALPHA --> BETA
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         # Ping ALPHA --> GAMMA
         async with Ping(alpha_connection, gamma.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         # Ping BETA --> GAMMA
         async with Ping(beta_connection, gamma.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         # Ping GAMMA --> BETA
         async with Ping(gamma_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         # ==============================================================
         # Final state:
@@ -431,7 +430,7 @@ async def test_derp_server_list_exhaustion(setup_params: List[SetupParameters]) 
         alpha_connection, _ = [conn.connection for conn in env.connections]
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         # Insert iptables rules to block connection for every Derp server
         async with AsyncExitStack() as exit_stack_iptables:
@@ -450,4 +449,4 @@ async def test_derp_server_list_exhaustion(setup_params: List[SetupParameters]) 
 
         # Ping peer to check if connection truly works
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()

@@ -2,6 +2,7 @@ import asyncio
 import config
 import pytest
 import telio
+import timeouts
 from contextlib import AsyncExitStack
 from helpers import (
     setup_connections,
@@ -11,7 +12,7 @@ from helpers import (
 )
 from telio import AdapterType, PathType, State
 from telio_features import TelioFeatures, Direct
-from utils import testing, stun
+from utils import stun
 from utils.asyncio_util import run_async_contexts
 from utils.connection import TargetOS
 from utils.connection_util import ConnectionTag
@@ -46,18 +47,12 @@ async def test_network_switcher(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         conn_mngr, *_ = await setup_connections(exit_stack, [connection_tag])
-        assert (
-            await testing.wait_long(stun.get(conn_mngr.connection, config.STUN_SERVER))
-            == primary_ip
-        )
+        assert await stun.get(conn_mngr.connection, config.STUN_SERVER) == primary_ip
 
         assert conn_mngr.network_switcher
         async with conn_mngr.network_switcher.switch_to_secondary_network():
             assert (
-                await testing.wait_long(
-                    stun.get(conn_mngr.connection, config.STUN_SERVER)
-                )
-                == secondary_ip
+                await stun.get(conn_mngr.connection, config.STUN_SERVER) == secondary_ip
             )
 
 
@@ -127,7 +122,7 @@ async def test_mesh_network_switch(
         client_alpha, _ = env.clients
 
         async with Ping(alpha_conn_mngr.connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         assert alpha_conn_mngr.network_switcher
         async with alpha_conn_mngr.network_switcher.switch_to_secondary_network():
@@ -136,7 +131,7 @@ async def test_mesh_network_switch(
             async with Ping(
                 alpha_conn_mngr.connection, beta.ip_addresses[0]
             ).run() as ping:
-                await testing.wait_long(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping()
 
 
 @pytest.mark.asyncio
@@ -202,9 +197,9 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
         )
 
         async with Ping(alpha_connection, config.PHOTO_ALBUM_IP).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
-        ip = await testing.wait_long(stun.get(alpha_connection, config.STUN_SERVER))
+        ip = await stun.get(alpha_connection, config.STUN_SERVER)
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
         assert network_switcher
         async with network_switcher.switch_to_secondary_network():
@@ -218,16 +213,16 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
                 await asyncio.sleep(1.0)
 
             async with Ping(alpha_connection, config.PHOTO_ALBUM_IP).run() as ping:
-                await testing.wait_long(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping()
 
-            ip = await testing.wait_long(stun.get(alpha_connection, config.STUN_SERVER))
+            ip = await stun.get(alpha_connection, config.STUN_SERVER)
             assert (
                 ip == wg_server["ipv4"]
             ), f"wrong public IP when connected to VPN {ip}"
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(90)
+@pytest.mark.timeout(timeouts.TEST_MESH_NETWORK_SWITCH_DIRECT_TIMEOUT)
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -304,7 +299,7 @@ async def test_mesh_network_switch_direct(
         alpha_client, beta_client = env.clients
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         derp_connected_future = alpha_client.wait_for_event_on_any_derp(
             [State.Connected]
@@ -312,15 +307,11 @@ async def test_mesh_network_switch_direct(
 
         # Beta doesn't change its endpoint, so WG roaming may be used by alpha node to restore
         # the connection, so no node event is logged in that case
-        peers_connected_relay_future = asyncio.gather(
-            beta_client.wait_for_event_peer(
-                alpha.public_key, [State.Connected], [PathType.Relay]
-            ),
+        peers_connected_relay_future = beta_client.wait_for_event_peer(
+            alpha.public_key, [State.Connected], [PathType.Relay]
         )
-        peers_connected_direct_future = asyncio.gather(
-            beta_client.wait_for_event_peer(
-                alpha.public_key, [State.Connected], [PathType.Direct]
-            ),
+        peers_connected_direct_future = beta_client.wait_for_event_peer(
+            alpha.public_key, [State.Connected], [PathType.Direct]
         )
         async with run_async_contexts([
             derp_connected_future,
@@ -336,4 +327,4 @@ async def test_mesh_network_switch_direct(
             await direct
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()

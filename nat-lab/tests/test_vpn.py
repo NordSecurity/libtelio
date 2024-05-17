@@ -28,13 +28,13 @@ async def _connect_vpn(
     )
 
     async with Ping(client_conn, config.PHOTO_ALBUM_IP).run() as ping:
-        await testing.wait_long(ping.wait_for_next_ping())
+        await ping.wait_for_next_ping()
 
     if vpn_connection is not None:
         async with Ping(vpn_connection, client_meshnet_ip).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
-    ip = await testing.wait_long(stun.get(client_conn, config.STUN_SERVER))
+    ip = await stun.get(client_conn, config.STUN_SERVER)
     assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
 
@@ -51,7 +51,10 @@ class VpnConfig:
         self.should_ping_client = should_ping_client
 
     def __repr__(self) -> str:
-        return f"VpnConfig(server_conf={self.server_conf}, conn_tag={self.conn_tag}, should_ping_client={self.should_ping_client})"
+        return (
+            f"VpnConfig(server_conf={self.server_conf}, conn_tag={self.conn_tag},"
+            f" should_ping_client={self.should_ping_client})"
+        )
 
 
 @pytest.mark.parametrize(
@@ -178,7 +181,7 @@ async def test_vpn_connection(
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
 
-        ip = await testing.wait_long(stun.get(client_conn, config.STUN_SERVER))
+        ip = await stun.get(client_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         if vpn_conf.should_ping_client:
@@ -302,7 +305,7 @@ async def test_vpn_reconnect(
             exit_stack, [ConnectionTag.DOCKER_VPN_1, ConnectionTag.DOCKER_VPN_2]
         )
 
-        ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+        ip = await stun.get(connection, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         await _connect_vpn(
@@ -315,7 +318,7 @@ async def test_vpn_reconnect(
 
         await client_alpha.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
 
-        ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+        ip = await stun.get(connection, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         await _connect_vpn(
@@ -377,7 +380,7 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
             )
 
             async with Ping(connection, serv_ip).run() as ping:
-                await testing.wait_long(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping()
 
         await connect(
             config.WG_SERVER,
@@ -409,7 +412,7 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
             "ipv6" if setup_params.ip_stack == IPStack.IPv6 else "ipv4",
             "-E",
         ]).run(stdout_callback=conntrack_on_stdout) as conntrack_proc:
-            await testing.wait_normal(conntrack_proc.wait_stdin_ready())
+            await conntrack_proc.wait_stdin_ready()
 
             ip_proto = (
                 IPProto.IPv6 if setup_params.ip_stack == IPStack.IPv6 else IPProto.IPv4
@@ -450,10 +453,8 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
             await testing.wait_normal(sender_start_event.wait())
             await testing.wait_normal(sender_start_event.wait())
 
-            await testing.wait_long(
-                # the key is generated uniquely each time natlab runs
-                client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
-            )
+            # the key is generated uniquely each time natlab runs
+            await client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
 
             await connect(
                 config.WG_SERVER_2,
@@ -516,7 +517,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
             )
 
             async with Ping(connection, serv_ip).run() as ping:
-                await testing.wait_long(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping()
 
         await connect(
             config.WG_SERVER,
@@ -555,10 +556,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
         )
 
         await testing.wait_long(sender_start_event.wait())
-
-        await testing.wait_long(
-            client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
-        )
+        await client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
 
         await connect(
             config.WG_SERVER_2,

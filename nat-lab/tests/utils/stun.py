@@ -1,4 +1,6 @@
+import asyncio
 import re
+import timeouts
 from config import STUN_BINARY_PATH_WINDOWS, STUN_BINARY_PATH_MAC
 from utils import testing
 from utils.connection import Connection, TargetOS
@@ -14,7 +16,10 @@ from utils.router import IPProto, REG_IPV6ADDR, get_ip_address_type
 
 
 async def get(
-    connection: Connection, stun_server: str, stun_server_port: int = 3478
+    connection: Connection,
+    stun_server: str,
+    stun_server_port: int = 3478,
+    timeout: float = timeouts.DEFAULT_STUN_EVENT_TIMEOUT,
 ) -> str:
     ip_proto = testing.unpack_optional(get_ip_address_type(stun_server))
 
@@ -39,14 +44,17 @@ async def get(
     else:
         assert False, "unsupported os"
 
-    process = await connection.create_process([
-        path,
-        stun_server,
-        "--family",
-        ("4" if ip_proto == IPProto.IPv4 else "6"),
-        "--verbosity",
-        "2",
-    ]).execute()
+    process = await asyncio.wait_for(
+        connection.create_process([
+            path,
+            stun_server,
+            "--family",
+            ("4" if ip_proto == IPProto.IPv4 else "6"),
+            "--verbosity",
+            "2",
+        ]).execute(),
+        timeout,
+    )
 
     # Match: 'Mapped address: 10.0.254.1:24295' or 'Mapped address: 2001:db8:85a4::dead:beef:ceed.44947'
     match = re.search(

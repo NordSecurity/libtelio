@@ -109,13 +109,13 @@ async def test_mesh_firewall_successful_passthrough(
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv4)),
             ).run() as ping:
                 with pytest.raises(asyncio.TimeoutError):
-                    await testing.wait_long(ping.wait_for_next_ping())
+                    await ping.wait_for_next_ping()
 
             async with Ping(
                 connection_beta,
                 testing.unpack_optional(alpha.get_ip_address(IPProto.IPv4)),
             ).run() as ping:
-                await testing.wait_long(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping()
 
             # this should still block
             async with Ping(
@@ -123,7 +123,7 @@ async def test_mesh_firewall_successful_passthrough(
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv4)),
             ).run() as ping:
                 with pytest.raises(asyncio.TimeoutError):
-                    await testing.wait_long(ping.wait_for_next_ping())
+                    await ping.wait_for_next_ping()
 
         if alpha_ip_stack in [IPStack.IPv6, IPStack.IPv4v6] and beta_ip_stack in [
             IPStack.IPv6,
@@ -134,13 +134,13 @@ async def test_mesh_firewall_successful_passthrough(
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv6)),
             ).run() as ping6:
                 with pytest.raises(asyncio.TimeoutError):
-                    await testing.wait_long(ping6.wait_for_next_ping())
+                    await ping6.wait_for_next_ping()
 
             async with Ping(
                 connection_beta,
                 testing.unpack_optional(alpha.get_ip_address(IPProto.IPv6)),
             ).run() as ping6:
-                await testing.wait_long(ping6.wait_for_next_ping())
+                await ping6.wait_for_next_ping()
 
             # this should still block
             async with Ping(
@@ -148,7 +148,7 @@ async def test_mesh_firewall_successful_passthrough(
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv6)),
             ).run() as ping6:
                 with pytest.raises(asyncio.TimeoutError):
-                    await testing.wait_long(ping6.wait_for_next_ping())
+                    await ping6.wait_for_next_ping()
 
 
 @pytest.mark.parametrize(
@@ -214,14 +214,14 @@ async def test_mesh_firewall_reject_packet(
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv4)),
             ).run() as ping:
                 with pytest.raises(asyncio.TimeoutError):
-                    await testing.wait_long(ping.wait_for_next_ping())
+                    await ping.wait_for_next_ping()
 
             async with Ping(
                 connection_beta,
                 testing.unpack_optional(alpha.get_ip_address(IPProto.IPv4)),
             ).run() as ping:
                 with pytest.raises(asyncio.TimeoutError):
-                    await testing.wait_long(ping.wait_for_next_ping())
+                    await ping.wait_for_next_ping()
 
         if alpha_ip_stack in [IPStack.IPv6, IPStack.IPv4v6] and beta_ip_stack in [
             IPStack.IPv6,
@@ -232,14 +232,14 @@ async def test_mesh_firewall_reject_packet(
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv6)),
             ).run() as ping6:
                 with pytest.raises(asyncio.TimeoutError):
-                    await testing.wait_long(ping6.wait_for_next_ping())
+                    await ping6.wait_for_next_ping()
 
             async with Ping(
                 connection_beta,
                 testing.unpack_optional(alpha.get_ip_address(IPProto.IPv6)),
             ).run() as ping6:
                 with pytest.raises(asyncio.TimeoutError):
-                    await testing.wait_long(ping6.wait_for_next_ping())
+                    await ping6.wait_for_next_ping()
 
 
 # This test uses 'stun' and our stun client does not IPv6
@@ -270,18 +270,14 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
 
         async def ping_should_work_both_ways():
             async with Ping(connection_alpha, exit_node.ip_addresses[0]).run() as ping:
-                await testing.wait_long(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping()
 
             async with Ping(connection_exit_node, alpha.ip_addresses[0]).run() as ping:
-                await testing.wait_long(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping()
 
         async def get_external_ips():
-            ip_alpha = await testing.wait_long(
-                stun.get(connection_alpha, config.STUN_SERVER)
-            )
-            ip_exit_node = await testing.wait_long(
-                stun.get(connection_exit_node, config.STUN_SERVER)
-            )
+            ip_alpha = await stun.get(connection_alpha, config.STUN_SERVER)
+            ip_exit_node = await stun.get(connection_exit_node, config.STUN_SERVER)
             return (ip_alpha, ip_exit_node)
 
         await ping_should_work_both_ways()
@@ -298,11 +294,11 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
 
         async with Ping(connection_alpha, exit_node.ip_addresses[0]).run() as ping:
             with pytest.raises(asyncio.TimeoutError):
-                await testing.wait_long(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping()
 
         async with Ping(connection_exit_node, alpha.ip_addresses[0]).run() as ping:
             with pytest.raises(asyncio.TimeoutError):
-                await testing.wait_long(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping()
 
         # Allow traffic both ways
 
@@ -323,7 +319,7 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
 
         # Start routing traffic via the exit node
 
-        await testing.wait_long(client_exit_node.get_router().create_exit_node_route())
+        await client_exit_node.get_router().create_exit_node_route()
 
         await client_alpha.connect_to_exit_node(exit_node.public_key)
 
@@ -344,11 +340,11 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
         # Ping should only work in one direction
 
         async with Ping(connection_alpha, exit_node.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         async with Ping(connection_exit_node, alpha.ip_addresses[0]).run() as ping:
             with pytest.raises(asyncio.TimeoutError):
-                await testing.wait_long(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping()
 
         # Check that connecting to external services still works
 
@@ -443,17 +439,17 @@ async def test_mesh_firewall_file_share_port(
 
         async with Ping(connection_alpha, CLIENT_BETA_IP).run() as ping:
             if allow_incoming_connections:
-                await testing.wait_long(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping()
             else:
                 with pytest.raises(asyncio.TimeoutError):
-                    await testing.wait_long(ping.wait_for_next_ping())
+                    await ping.wait_for_next_ping()
 
         async with Ping(connection_beta, CLIENT_ALPHA_IP).run() as ping:
             if allow_incoming_connections:
-                await testing.wait_long(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping()
             else:
                 with pytest.raises(asyncio.TimeoutError):
-                    await testing.wait_long(ping.wait_for_next_ping())
+                    await ping.wait_for_next_ping()
 
         output_notifier = OutputNotifier()
 
@@ -623,7 +619,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
             "ipv4" if CLIENT_PROTO == IPProto.IPv4 else "ipv6",
             "-E",
         ]).run(stdout_callback=conntrack_on_stdout) as conntrack_proc:
-            await testing.wait_normal(conntrack_proc.wait_stdin_ready())
+            await conntrack_proc.wait_stdin_ready()
             # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
             async with connection_alpha.create_process([
                 "nc",
@@ -632,7 +628,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
                 CLIENT_ALPHA_IP,
                 str(PORT),
             ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as listener:
-                await testing.wait_normal(listener.wait_stdin_ready())
+                await listener.wait_stdin_ready()
                 await testing.wait_normal(listening_start_event.wait())
                 await exit_stack.enter_async_context(
                     connection_beta.create_process([
@@ -761,7 +757,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
             "ipv4" if CLIENT_PROTO == IPProto.IPv4 else "ipv6",
             "-E",
         ]).run(stdout_callback=conntrack_on_stdout) as conntrack_proc:
-            await testing.wait_normal(conntrack_proc.wait_stdin_ready())
+            await conntrack_proc.wait_stdin_ready()
             async with connection_alpha.create_process([
                 "nc",
                 "-nlv",
@@ -769,7 +765,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
                 CLIENT_ALPHA_IP,
                 str(PORT),
             ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as listener:
-                await testing.wait_normal(listener.wait_stdin_ready())
+                await listener.wait_stdin_ready()
                 await testing.wait_normal(listening_start_event.wait())
                 # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
                 async with connection_beta.create_process([
@@ -781,7 +777,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
                     CLIENT_ALPHA_IP,
                     str(PORT),
                 ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as client:
-                    await testing.wait_normal(client.wait_stdin_ready())
+                    await client.wait_stdin_ready()
                     await testing.wait_normal(sender_start_event.wait())
                     await testing.wait_normal(connected_event.wait())
 

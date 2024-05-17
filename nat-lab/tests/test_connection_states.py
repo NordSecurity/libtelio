@@ -2,7 +2,6 @@ import pytest
 import telio
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
-from utils import testing
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.ping import Ping
@@ -94,10 +93,10 @@ async def test_connected_state_after_routing(
         client_alpha, client_beta = env.clients
         conn_alpha, _ = env.connections
 
-        await testing.wait_long(client_beta.get_router().create_exit_node_route())
+        await client_beta.get_router().create_exit_node_route()
 
         await client_alpha.connect_to_exit_node(beta.public_key)
         await client_alpha.disconnect_from_exit_node(beta.public_key)
 
         async with Ping(conn_alpha.connection, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()

@@ -5,7 +5,6 @@ from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from telio import PathType, State
 from telio_features import TelioFeatures, Direct
-from utils import testing
 from utils.connection_util import ConnectionTag
 from utils.ping import Ping
 
@@ -79,6 +78,6 @@ async def test_mesh_off(direct) -> None:
         )
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_lengthy(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping(60)
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()

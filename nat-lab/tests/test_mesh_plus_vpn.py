@@ -2,12 +2,13 @@ import asyncio
 import config
 import pytest
 import telio
+import timeouts
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from mesh_api import API
 from telio import AdapterType, State
 from telio_features import TelioFeatures, Direct
-from utils import testing, stun
+from utils import stun
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
     generate_connection_tracker_config,
@@ -112,7 +113,7 @@ async def test_mesh_plus_vpn_one_peer(
         connection_alpha, _ = [conn.connection for conn in env.connections]
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         wg_server = config.WG_SERVER
 
@@ -121,14 +122,12 @@ async def test_mesh_plus_vpn_one_peer(
         )
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         async with Ping(connection_alpha, config.STUN_SERVER).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
-        public_ip = await testing.wait_long(
-            stun.get(connection_alpha, config.STUN_SERVER)
-        )
+        public_ip = await stun.get(connection_alpha, config.STUN_SERVER)
         assert (
             public_ip == wg_server["ipv4"]
         ), f"wrong public IP when connected to VPN {public_ip}"
@@ -231,7 +230,7 @@ async def test_mesh_plus_vpn_both_peers(
         ]
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         wg_server = config.WG_SERVER
 
@@ -249,19 +248,17 @@ async def test_mesh_plus_vpn_both_peers(
         )
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         async with Ping(connection_alpha, config.STUN_SERVER).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         async with Ping(connection_beta, config.STUN_SERVER).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         for connection in [connection_alpha, connection_beta]:
-            public_ip = await testing.wait_long(
-                stun.get(connection, config.STUN_SERVER)
-            )
+            public_ip = await stun.get(connection, config.STUN_SERVER)
             assert (
                 public_ip == wg_server["ipv4"]
             ), f"wrong public IP when connected to VPN {public_ip}"
@@ -330,7 +327,7 @@ async def test_vpn_plus_mesh(
             )
         )
 
-        ip = await testing.wait_long(stun.get(connection_alpha, config.STUN_SERVER))
+        ip = await stun.get(connection_alpha, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         client_alpha = await exit_stack.enter_async_context(
@@ -344,9 +341,9 @@ async def test_vpn_plus_mesh(
         )
 
         async with Ping(connection_alpha, config.PHOTO_ALBUM_IP).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
-        ip = await testing.wait_long(stun.get(connection_alpha, config.STUN_SERVER))
+        ip = await stun.get(connection_alpha, config.STUN_SERVER)
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
         await client_alpha.set_meshmap(api.get_meshmap(alpha.id))
@@ -365,16 +362,14 @@ async def test_vpn_plus_mesh(
         )
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         # Testing if the VPN node is not cleared after disabling meshnet. See LLT-4266 for more details.
         await client_alpha.set_mesh_off()
-        await testing.wait_long(
-            client_alpha.wait_for_event_peer(
-                beta.public_key, [State.Disconnected], list(telio.PathType)
-            )
+        await client_alpha.wait_for_event_peer(
+            beta.public_key, [State.Disconnected], list(telio.PathType)
         )
-        ip = await testing.wait_long(stun.get(connection_alpha, config.STUN_SERVER))
+        ip = await stun.get(connection_alpha, config.STUN_SERVER)
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
         assert alpha_conn_tracker.get_out_of_limits() is None
@@ -382,7 +377,7 @@ async def test_vpn_plus_mesh(
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(150)
+@pytest.mark.timeout(timeouts.TEST_VPN_PLUS_MESH_OVER_DIRECT_TIMEOUT)
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -491,9 +486,9 @@ async def test_vpn_plus_mesh_over_direct(
         ]
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_lengthy(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping(60)
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_lengthy(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping(60)
 
         wg_server = config.WG_SERVER
 
@@ -512,27 +507,27 @@ async def test_vpn_plus_mesh_over_direct(
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             # TODO: change waiting time to `wait_long` after issue LLT-3879 is fixed
-            await testing.wait_defined(ping.wait_for_next_ping(), 60)
+            await ping.wait_for_next_ping(60)
         async with Ping(connection_alpha, config.STUN_SERVER).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
             # TODO: change waiting time to `wait_long` after issue LLT-3879 is fixed
-            await testing.wait_defined(ping.wait_for_next_ping(), 60)
+            await ping.wait_for_next_ping(60)
         async with Ping(connection_beta, config.STUN_SERVER).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         for connection in [connection_alpha, connection_beta]:
-            public_ip = await testing.wait_long(
-                stun.get(connection, config.STUN_SERVER)
-            )
+            public_ip = await stun.get(connection, config.STUN_SERVER)
             assert (
                 public_ip == wg_server["ipv4"]
             ), f"wrong public IP when connected to VPN {public_ip}"
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(150)
+@pytest.mark.timeout(
+    timeouts.TEST_VPN_PLUS_MESH_OVER_DIFFERENT_CONNECTION_TYPES_TIMEOUT
+)
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -654,9 +649,9 @@ async def test_vpn_plus_mesh_over_different_connection_types(
         alpha, beta, gamma = env.nodes
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_lengthy(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping(60)
         async with Ping(connection_alpha, gamma.ip_addresses[0]).run() as ping:
-            await testing.wait_lengthy(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping(60)
 
         wg_server = config.WG_SERVER
 
@@ -680,27 +675,25 @@ async def test_vpn_plus_mesh_over_different_connection_types(
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
             # TODO: change waiting time to `wait_long` after issue LLT-3879 is fixed
-            await testing.wait_defined(ping.wait_for_next_ping(), 60)
+            await ping.wait_for_next_ping(60)
         async with Ping(connection_alpha, gamma.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         async with Ping(connection_alpha, config.STUN_SERVER).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
             # TODO: change waiting time to `wait_long` after issue LLT-3879 is fixed
-            await testing.wait_defined(ping.wait_for_next_ping(), 60)
+            await ping.wait_for_next_ping(60)
         async with Ping(connection_beta, config.STUN_SERVER).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         async with Ping(connection_gamma, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         async with Ping(connection_gamma, config.STUN_SERVER).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         for connection in [connection_alpha, connection_beta, connection_gamma]:
-            public_ip = await testing.wait_long(
-                stun.get(connection, config.STUN_SERVER)
-            )
+            public_ip = await stun.get(connection, config.STUN_SERVER)
             assert (
                 public_ip == wg_server["ipv4"]
             ), f"wrong public IP when connected to VPN {public_ip}"

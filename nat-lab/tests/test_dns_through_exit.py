@@ -135,7 +135,7 @@ async def test_dns_through_exit(
         connection_alpha, _ = [conn.connection for conn in env.connections]
 
         # entry connects to exit
-        await testing.wait_long(client_exit.get_router().create_exit_node_route())
+        await client_exit.get_router().create_exit_node_route()
 
         await client_alpha.connect_to_exit_node(exit_node.public_key)
 
