@@ -3,6 +3,7 @@ from contextlib import AsyncExitStack
 from derp_cli import DerpClient, DerpTarget
 from helpers import setup_connections
 from utils import testing
+from utils.asyncio_util import run_async_context
 from utils.connection_util import ConnectionTag
 
 DERP_SERVER = "http://10.0.10.1:8765"
@@ -29,10 +30,18 @@ async def test_derp_client_message_forward(connection_tag: ConnectionTag) -> Non
 
         # Test message relay with identical DERP servers
         async with DerpTarget(connection_1, DERP_SERVER).run() as target:
-            async with DerpClient(connection_2, DERP_SERVER, TESTING_STRING).run():
-                await testing.wait_lengthy(target.wait_message_received(TESTING_STRING))
+            async with run_async_context(
+                target.wait_message_received(TESTING_STRING)
+            ) as event:
+                async with DerpClient(connection_2, DERP_SERVER, TESTING_STRING).run():
+                    await testing.wait_lengthy(event)
 
         # Test message relay with different DERP servers
         async with DerpTarget(connection_1, DERP_SERVER).run() as target:
-            async with DerpClient(connection_2, DERP_SERVER_2, TESTING_STRING).run():
-                await testing.wait_lengthy(target.wait_message_received(TESTING_STRING))
+            async with run_async_context(
+                target.wait_message_received(TESTING_STRING)
+            ) as event:
+                async with DerpClient(
+                    connection_2, DERP_SERVER_2, TESTING_STRING
+                ).run():
+                    await testing.wait_lengthy(event)

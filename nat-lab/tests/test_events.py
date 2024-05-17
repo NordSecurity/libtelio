@@ -1,11 +1,12 @@
 import asyncio
 import config
 import pytest
+import timeouts
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_mesh_nodes, setup_api
 from telio import AdapterType, PathType, PeerInfo, State, Client
 from telio_features import TelioFeatures, Direct
-from utils import testing, stun
+from utils import stun
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.ping import Ping
@@ -103,9 +104,9 @@ async def test_event_content_meshnet(
         ]
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         assert client_alpha.get_node_state(beta.public_key) == PeerInfo(
             identifier=beta.id,
@@ -145,7 +146,7 @@ async def test_event_content_meshnet(
 
         with pytest.raises(asyncio.TimeoutError):
             async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-                await testing.wait_normal(ping.wait_for_next_ping())
+                await ping.wait_for_next_ping(5)
 
         await asyncio.sleep(1)
 
@@ -255,7 +256,7 @@ async def test_event_content_vpn_connection(
         connection, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
 
-        ip: str = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+        ip: str = await stun.get(connection, config.STUN_SERVER)
         assert ip == alpha_public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         wg_server = config.WG_SERVER
@@ -265,7 +266,7 @@ async def test_event_content_vpn_connection(
         )
 
         async with Ping(connection, config.PHOTO_ALBUM_IP).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         assert client_alpha.get_node_state(str(wg_server["public_key"])) == PeerInfo(
             identifier="tcli",
@@ -286,12 +287,12 @@ async def test_event_content_vpn_connection(
             path=PathType.Direct,
         )
 
-        ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+        ip = await stun.get(connection, config.STUN_SERVER)
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
         await client_alpha.disconnect_from_vpn(str(wg_server["public_key"]))
 
-        ip = await testing.wait_long(stun.get(connection, config.STUN_SERVER))
+        ip = await stun.get(connection, config.STUN_SERVER)
         assert ip == alpha_public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         assert client_alpha.get_node_state(str(wg_server["public_key"])) == PeerInfo(
@@ -408,7 +409,7 @@ async def test_event_content_exit_through_peer(
         client_alpha, client_beta = env.clients
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         assert client_alpha.get_node_state(beta.public_key) == PeerInfo(
             identifier=beta.id,
@@ -426,16 +427,12 @@ async def test_event_content_exit_through_peer(
             path=PathType.Relay,
         )
 
-        await testing.wait_long(client_beta.get_router().create_exit_node_route())
+        await client_beta.get_router().create_exit_node_route()
 
         await client_alpha.connect_to_exit_node(beta.public_key)
 
-        ip_alpha: str = await testing.wait_long(
-            stun.get(connection_alpha, config.STUN_SERVER)
-        )
-        ip_beta: str = await testing.wait_long(
-            stun.get(connection_beta, config.STUN_SERVER)
-        )
+        ip_alpha = await stun.get(connection_alpha, config.STUN_SERVER)
+        ip_beta = await stun.get(connection_beta, config.STUN_SERVER)
 
         assert ip_alpha == ip_beta
 
@@ -457,7 +454,7 @@ async def test_event_content_exit_through_peer(
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(90)
+@pytest.mark.timeout(timeouts.TEST_EVENT_CONTENT_MESHNET_NODE_UPGRADE_DIRECT_TIMEOUT)
 @pytest.mark.parametrize(
     "alpha_setup_params, alpha_public_ip",
     [
@@ -563,9 +560,9 @@ async def test_event_content_meshnet_node_upgrade_direct(
         client_alpha, client_beta = env.clients
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         beta_node_state = client_alpha.get_node_state(beta.public_key)
         assert beta_node_state
@@ -633,9 +630,9 @@ async def test_event_content_meshnet_node_upgrade_direct(
         )
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await testing.wait_long(ping.wait_for_next_ping())
+            await ping.wait_for_next_ping()
 
         beta_node_state = client_alpha.get_node_state(beta.public_key)
         assert beta_node_state
