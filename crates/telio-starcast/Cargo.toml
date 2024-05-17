@@ -13,6 +13,7 @@ test-util = []
 
 [dependencies]
 async-trait.workspace = true
+base64.workspace = true
 boringtun.workspace = true
 futures.workspace = true
 ipnetwork.workspace = true
@@ -20,16 +21,20 @@ pnet_packet.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "net", "sync", "macros"] }
 tracing.workspace = true
+x25519-dalek.workspace = true
 
 telio-crypto.workspace = true
 telio-model.workspace = true
+telio-proto.workspace = true
 telio-sockets.workspace = true
 telio-task.workspace = true
 telio-utils.workspace = true
+telio-wg.workspace = true
 
 [dev-dependencies]
 rand.workspace = true
 rstest.workspace = true
 sn_fake_clock.workspace = true
 
+telio-test.workspace = true
 telio-utils = { workspace = true, features = ["sn_fake_clock"] }

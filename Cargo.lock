@@ -4602,6 +4602,7 @@ name = "telio-starcast"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.13.1",
  "boringtun",
  "futures",
  "ipnetwork",
@@ -4611,12 +4612,16 @@ dependencies = [
  "sn_fake_clock",
  "telio-crypto",
  "telio-model",
+ "telio-proto",
  "telio-sockets",
  "telio-task",
+ "telio-test",
  "telio-utils",
+ "telio-wg",
  "thiserror",
  "tokio",
  "tracing",
+ "x25519-dalek 2.0.1",
 ]
 
 [[package]]

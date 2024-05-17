@@ -51,9 +51,8 @@ use telio_dns::{DnsResolver, LocalDnsResolver, Records};
 use telio_dns::bind_tun;
 use wg::uapi::{self, AnalyticsEvent, PeerState};
 
-use std::collections::HashMap;
 use std::{
-    collections::{hash_map::Entry, HashSet},
+    collections::{hash_map::Entry, HashMap, HashSet},
     future::Future,
     io::{self, Error as IoError, ErrorKind},
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -1216,7 +1215,6 @@ impl Runtime {
         let pong_rxed_events = Chan::default();
 
         // Start multiplexer
-        //
         let (multiplexer_derp_chan, derp_multiplexer_chan) = Chan::pipe();
         let multiplexer = Arc::new(Multiplexer::start(multiplexer_derp_chan));
 
