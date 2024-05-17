@@ -4,6 +4,7 @@ import config
 import pytest
 import re
 import telio
+import timeouts
 from config import DERP_SERVERS
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
@@ -227,7 +228,7 @@ UHP_FAILING_PATHS = [
 
 @pytest.mark.asyncio
 @pytest.mark.long
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(timeouts.TEST_DIRECT_FAILING_PATHS_TIMEOUT)
 @pytest.mark.parametrize("setup_params", UHP_FAILING_PATHS)
 # Not sure this is needed. It will only be helpful to catch if any
 # libtelio change would make any of these setup work.
@@ -282,7 +283,9 @@ async def test_direct_working_paths(
 
 @pytest.mark.moose
 @pytest.mark.asyncio
-@pytest.mark.timeout(240)
+@pytest.mark.timeout(
+    timeouts.TEST_DIRECT_WORKING_PATHS_ARE_REESTABLISHED_AND_CORRECTLY_REPORTED_IN_ANALYTICS_TIMEOUT
+)
 @pytest.mark.parametrize("setup_params, reflexive_ip", UHP_WORKING_PATHS)
 async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_analytics(
     setup_params: List[SetupParameters],
@@ -585,7 +588,7 @@ async def test_direct_working_paths_with_skip_unresponsive_peers(
             await ping.wait_for_next_ping()
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(timeouts.TEST_DIRECT_CONNECTION_ENDPOINT_GONE)
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "setup_params",

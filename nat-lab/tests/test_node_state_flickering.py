@@ -2,6 +2,7 @@ import asyncio
 import itertools
 import pytest
 import telio
+import timeouts
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from telio_features import TelioFeatures, Direct
@@ -12,7 +13,7 @@ from utils.connection_util import generate_connection_tracker_config, Connection
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(timeouts.TEST_NODE_STATE_FLICKERING_RELAY_TIMEOUT)
 @pytest.mark.long
 @pytest.mark.parametrize(
     "alpha_setup_params",
@@ -119,7 +120,7 @@ CFG = [
 
 
 @pytest.mark.long
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(timeouts.TEST_NODE_STATE_FLICKERING_DIRECT_TIMEOUT)
 @pytest.mark.parametrize(
     "alpha_cfg, beta_cfg", itertools.combinations_with_replacement(CFG, 2)
 )

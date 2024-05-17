@@ -1,5 +1,6 @@
 import asyncio
 import pytest
+import timeouts
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from telio import AdapterType, State
@@ -10,7 +11,7 @@ from utils.ping import Ping
 
 @pytest.mark.asyncio
 @pytest.mark.long
-@pytest.mark.timeout(240)
+@pytest.mark.timeout(timeouts.TEST_FIRE_CONNECTING_EVENT_TIMEOUT)
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
