@@ -1,5 +1,6 @@
 import asyncio
 import re
+import timeouts
 from contextlib import asynccontextmanager
 from ipaddress import ip_address
 from typing import AsyncIterator
@@ -51,7 +52,9 @@ class Ping:
     async def execute(self) -> None:
         await self._process.execute(stdout_callback=self.on_stdout)
 
-    async def wait_for_next_ping(self, timeout: float = 15.0) -> None:
+    async def wait_for_next_ping(
+        self, timeout: float = timeouts.DEFAULT_PING_EVENT_TIMEOUT
+    ) -> None:
         self._next_ping_event.clear()
         await asyncio.wait_for(self._next_ping_event.wait(), timeout)
         self._next_ping_event.clear()
