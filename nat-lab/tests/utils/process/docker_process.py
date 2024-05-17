@@ -3,6 +3,7 @@ import random
 import string
 import subprocess
 import sys
+import timeouts
 from .process import Process, ProcessExecError, StreamCallback
 from aiodocker.containers import DockerContainer
 from aiodocker.execs import Exec
@@ -171,7 +172,9 @@ class DockerProcess(Process):
                     if stderr_callback:
                         await stderr_callback(output)
 
-    async def wait_stdin_ready(self, timeout: float = 1.0) -> None:
+    async def wait_stdin_ready(
+        self, timeout: float = timeouts.DEFAULT_STDIN_READY_TIMEOUT
+    ) -> None:
         await asyncio.wait_for(self._stdin_ready.wait(), timeout)
 
     async def write_stdin(self, data: str) -> None:
