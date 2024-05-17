@@ -4666,6 +4666,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "hashlink",
+ "ipnet",
  "lru_time_cache",
  "maplit",
  "mockall",
