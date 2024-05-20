@@ -474,6 +474,7 @@ async fn build_requested_peers_list<
                 (true, None) => {
                     // The post quantum state is not ready, we don't want to set up quantum
                     // unsafe tunnel with this peer
+                    telio_log_debug!("PQ not ready to insert exit node peer");
                 }
                 (_, pq_keys) => {
                     let preshared_key = pq_keys.map(|pq| pq.pq_shared);

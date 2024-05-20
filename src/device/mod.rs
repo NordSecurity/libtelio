@@ -1822,27 +1822,42 @@ impl Runtime {
             return Err(Error::MeshnetUnavailableWithPQ);
         }
 
-        let Some(addr) = exit_node.endpoint else {
-            return Err(Error::EndpointNotProvided);
-        };
-
         // This is required to silence the dylint error "error: large future with a size of 2048 bytes"
-        self.connect_exit_node(exit_node).boxed().await?;
+        let res = self
+            .connect_exit_node_internal(exit_node, true)
+            .boxed()
+            .await;
 
-        self.entities.postquantum_wg.start(
-            addr,
-            self.requested_state.device_config.private_key,
-            exit_node.public_key,
-        );
+        if res.is_err() {
+            // Stop PQ task
+            self.entities.postquantum_wg.stop();
+        }
 
-        Ok(())
+        res
     }
 
     async fn connect_exit_node(&mut self, exit_node: &ExitNode) -> Result {
+        // Silence the nagger warning
+        Box::pin(self.connect_exit_node_internal(exit_node, false)).await
+    }
+
+    async fn connect_exit_node_internal(
+        &mut self,
+        exit_node: &ExitNode,
+        postquantum: bool,
+    ) -> Result {
         let exit_node = exit_node.clone();
 
         // Stop post quantum key rotation task if it's running
         self.entities.postquantum_wg.stop();
+
+        if postquantum {
+            self.entities.postquantum_wg.start(
+                exit_node.endpoint.ok_or(Error::EndpointNotProvided)?,
+                self.requested_state.device_config.private_key,
+                exit_node.public_key,
+            );
+        }
 
         // dns socket for macos should only be bound to tunnel interface when connected to exit,
         // otherwise with no exit dns peer will try to forward packets through tunnel and fail
