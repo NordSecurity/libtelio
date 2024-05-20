@@ -59,7 +59,7 @@ jobs:
         - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
         - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
           with:
-            toolchain: nightly
+            toolchain: nightly-2024-05-10
             override: true
         - uses: aig787/cargo-udeps-action@1cd634a329e14ccfbccfe7c96497d14dac24a743 # v1
           with:
