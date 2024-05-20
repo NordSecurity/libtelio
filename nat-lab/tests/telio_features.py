@@ -104,6 +104,13 @@ class PmtuDiscovery(DataClassJsonMixin):
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
+class PostQuantumVPN(DataClassJsonMixin):
+    handshake_retry_interval_s: Optional[int]
+    rekey_interval_s: Optional[int]
+
+
+@dataclass_json(undefined=Undefined.EXCLUDE)
+@dataclass
 class TelioFeatures(DataClassJsonMixin):
     is_test_env: Optional[bool] = True
     direct: Optional[Direct] = None
@@ -121,3 +128,8 @@ class TelioFeatures(DataClassJsonMixin):
         )
     )
     pmtu_discovery: Optional[PmtuDiscovery] = None
+    post_quantum_vpn: PostQuantumVPN = field(
+        default_factory=lambda: PostQuantumVPN(
+            handshake_retry_interval_s=8, rekey_interval_s=90
+        )
+    )
