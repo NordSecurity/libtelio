@@ -30,7 +30,7 @@ test = false
 doc = false
 
 [[bin]]
-name = "parse_rekey_packet"
-path = "fuzz_targets/parse_rekey_packet.rs"
+name = "parse_response_payload"
+path = "fuzz_targets/parse_response_payload.rs"
 test = false
 doc = false
