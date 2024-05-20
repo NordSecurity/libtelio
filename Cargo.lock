@@ -812,9 +812,15 @@ version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91e195e091a93c46f7102ec7818a2aa394e1e1771c3ab4825963fa03e45afb8f"
 dependencies = [
- "core-foundation-sys",
+ "core-foundation-sys 0.8.6",
  "libc",
 ]
+
+[[package]]
+name = "core-foundation-sys"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b3a71ab494c0b5b860bdc8407ae08978052417070c2ced38573a9157ad75b8ac"
 
 [[package]]
 name = "core-foundation-sys"
@@ -1232,6 +1238,11 @@ dependencies = [
  "redox_users",
  "winapi",
 ]
+
+[[package]]
+name = "dispatch"
+version = "0.2.0"
+source = "git+https://github.com/NordSecurity/rust-dispatch.git?rev=13447cd7221a74ebcce1277ae0cfc9a421a28ec5#13447cd7221a74ebcce1277ae0cfc9a421a28ec5"
 
 [[package]]
 name = "dns-parser"
@@ -1969,7 +1980,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7ffbb5a1b541ea2561f8c41c087286cc091e21e556a4f09a8f6cbf17b69b141"
 dependencies = [
  "android_system_properties",
- "core-foundation-sys",
+ "core-foundation-sys 0.8.6",
  "iana-time-zone-haiku",
  "js-sys",
  "wasm-bindgen",
@@ -2501,6 +2512,16 @@ checksum = "8f18857289379de670867542caa2923f46596e04cdeceed178d9cab723dc60e3"
 dependencies = [
  "buffering",
  "byteorder",
+ "libc",
+]
+
+[[package]]
+name = "network-framework-sys"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12a0b02d3ddff8bdf9e3a6f151b20f2b022c394b02a9fccb506ebcbc74db2185"
+dependencies = [
+ "core-foundation-sys 0.7.0",
  "libc",
 ]
 
@@ -3542,7 +3563,7 @@ version = "0.1.0"
 source = "git+https://github.com/tomaszklak/rustls-platform-verifier.git?rev=2db68dd17d76eadb062176b913040341b99ef4f3#2db68dd17d76eadb062176b913040341b99ef4f3"
 dependencies = [
  "core-foundation",
- "core-foundation-sys",
+ "core-foundation-sys 0.8.6",
  "jni",
  "log",
  "once_cell",
@@ -3688,7 +3709,7 @@ source = "git+https://github.com/kornelski/rust-security-framework.git?rev=67a61
 dependencies = [
  "bitflags 1.3.2",
  "core-foundation",
- "core-foundation-sys",
+ "core-foundation-sys 0.8.6",
  "libc",
  "num-bigint",
  "security-framework-sys 2.9.1",
@@ -3702,7 +3723,7 @@ checksum = "770452e37cad93e0a50d5abc3990d2bc351c36d0328f86cefec2f2fb206eaef6"
 dependencies = [
  "bitflags 1.3.2",
  "core-foundation",
- "core-foundation-sys",
+ "core-foundation-sys 0.8.6",
  "libc",
  "security-framework-sys 2.10.0",
 ]
@@ -3712,7 +3733,7 @@ name = "security-framework-sys"
 version = "2.9.1"
 source = "git+https://github.com/kornelski/rust-security-framework.git?rev=67a610ec215d207cd158664ab5cf6eca9552ff9f#67a610ec215d207cd158664ab5cf6eca9552ff9f"
 dependencies = [
- "core-foundation-sys",
+ "core-foundation-sys 0.8.6",
  "libc",
 ]
 
@@ -3722,7 +3743,7 @@ version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41f3cc463c0ef97e11c3461a9d3787412d30e8e7eb907c79180c4a57bf7c04ef"
 dependencies = [
- "core-foundation-sys",
+ "core-foundation-sys 0.8.6",
  "libc",
 ]
 
@@ -4192,7 +4213,7 @@ version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a75fb188eb626b924683e3b95e3a48e63551fcfb51949de2f06a9d91dbee93c9"
 dependencies = [
- "core-foundation-sys",
+ "core-foundation-sys 0.8.6",
  "libc",
 ]
 
@@ -4201,7 +4222,7 @@ name = "system-configuration-sys"
 version = "0.5.0"
 source = "git+https://github.com/NordSecurity/system-configuration-rs.git#39f80cdfa4785b785f368354d6946111b7774e00"
 dependencies = [
- "core-foundation-sys",
+ "core-foundation-sys 0.8.6",
  "libc",
 ]
 
@@ -4585,14 +4606,18 @@ dependencies = [
 name = "telio-sockets"
 version = "0.1.0"
 dependencies = [
+ "block",
  "boringtun",
  "debug_panic",
+ "dispatch",
  "futures",
  "libc",
  "mockall",
+ "network-framework-sys",
  "nix 0.28.0",
  "objc",
  "objc-foundation",
+ "once_cell",
  "parking_lot",
  "rstest",
  "socket2 0.5.7",
