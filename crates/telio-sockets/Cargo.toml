@@ -17,6 +17,7 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["full"] }
 
 telio-utils.workspace = true
+once_cell.workspace = true
 
 [dev-dependencies]
 mockall.workspace = true
@@ -31,6 +32,9 @@ version-compare = "0.1"
 debug_panic = "0.2.1"
 nix = { version = "0.28", features=["socket"] }
 system-configuration = { git = 'https://github.com/NordSecurity/system-configuration-rs.git' }
+network-framework-sys = "0.1"
+block = "0.1"
+dispatch = { git = "https://github.com/NordSecurity/rust-dispatch.git", rev = "13447cd7221a74ebcce1277ae0cfc9a421a28ec5" }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { workspace = true, features = [
