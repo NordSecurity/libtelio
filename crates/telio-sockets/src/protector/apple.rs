@@ -1,9 +1,12 @@
 use debug_panic::debug_panic;
-use parking_lot::Mutex;
-use parking_lot::RwLock;
+use once_cell::sync::Lazy;
+use parking_lot::{Mutex, RwLock};
 
 use std::{
+    cell::RefCell,
+    ffi::{c_long, c_void, CStr},
     io, os,
+    rc::Rc,
     sync::{Arc, Weak},
 };
 
@@ -20,13 +23,42 @@ use system_configuration::{
     dynamic_store::{self, SCDynamicStore},
     sys::schema_definitions,
 };
-use tokio::{self, sync::Notify, task::JoinHandle};
+use tokio::{
+    self,
+    sync::{broadcast::Sender, Notify},
+    task::JoinHandle,
+};
 
-use crate::native::interface_index_from_name;
-use crate::native::NativeSocket;
+use crate::native::{interface_index_from_name, NativeSocket};
 use crate::Protector;
+use network_framework_sys::{
+    nw_interface_get_name, nw_interface_t, nw_path_monitor_create, nw_path_monitor_set_queue,
+    nw_path_monitor_start, nw_path_monitor_t, nw_path_t,
+};
 use nix::sys::socket::{getsockname, AddressFamily, SockaddrLike, SockaddrStorage};
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_info, telio_log_warn};
+
+extern "C" {
+    // Obj-c signature:
+    // void nw_path_monitor_set_update_handler(nw_path_monitor_t monitor, nw_path_monitor_update_handler_t update_handler);
+    // typedef void (^nw_path_monitor_update_handler_t)(nw_path_t path);
+    pub fn nw_path_monitor_set_update_handler(
+        monitor: nw_path_monitor_t,
+        update_handler: *const c_void,
+    );
+    // Obj-c signature:
+    // void nw_path_enumerate_interfaces(nw_path_t path, nw_path_enumerate_interfaces_block_t enumerate_block);
+    // typedef bool (^nw_path_enumerate_interfaces_block_t)(nw_interface_t interface);
+    pub fn nw_path_enumerate_interfaces(path: nw_path_t, enumerate_block: *const c_void);
+}
+
+pub const DISPATCH_QUEUE_PRIORITY_HIGH: c_long = 2;
+pub const DISPATCH_QUEUE_PRIORITY_DEFAULT: c_long = 0;
+pub const DISPATCH_QUEUE_PRIORITY_LOW: c_long = -2;
+pub const DISPATCH_QUEUE_PRIORITY_BACKGROUND: c_long = -1 << 15;
+
+static INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER: Mutex<Vec<String>> = Mutex::new(Vec::new());
+static PATH_CHANGE_BROADCAST: Lazy<Sender<()>> = Lazy::new(|| Sender::new(1));
 
 #[cfg(any(target_os = "ios", target_os = "tvos"))]
 use objc::{class, msg_send, runtime::Object, sel, sel_impl};
@@ -95,6 +127,7 @@ pub enum Error {}
 pub struct SocketWatcher {
     sockets: Arc<Mutex<Sockets>>,
     monitor: JoinHandle<io::Result<()>>,
+    nw_monitor: JoinHandle<io::Result<()>>,
 }
 
 #[cfg(any(target_os = "ios", target_os = "tvos"))]
@@ -126,10 +159,12 @@ impl NativeProtector {
 
         if should_create_socket_watcher {
             let sockets = Arc::new(Mutex::new(Sockets::new()));
+            let (monitor, nw_monitor) = spawn_monitors(sockets.clone());
             Ok(Self {
                 socket_watcher: Some(SocketWatcher {
-                    sockets: sockets.clone(),
-                    monitor: spawn_monitor(sockets),
+                    sockets,
+                    monitor,
+                    nw_monitor,
                 }),
                 tunnel_interface: RwLock::new(None),
             })
@@ -171,6 +206,7 @@ impl Drop for NativeProtector {
     fn drop(&mut self) {
         if let Some(ref sw) = self.socket_watcher {
             sw.monitor.abort();
+            sw.nw_monitor.abort();
         }
     }
 }
@@ -211,6 +247,7 @@ impl Protector for NativeProtector {
     }
 }
 
+#[derive(Debug)]
 struct Sockets {
     sockets: Vec<NativeSocket>,
     tunnel_interface: Option<u64>,
@@ -291,20 +328,44 @@ impl Sockets {
 }
 
 #[allow(unreachable_code)]
-fn spawn_monitor(sockets: Arc<Mutex<Sockets>>) -> JoinHandle<io::Result<()>> {
+fn spawn_monitors(
+    sockets: Arc<Mutex<Sockets>>,
+) -> (JoinHandle<io::Result<()>>, JoinHandle<io::Result<()>>) {
     spawn_dynamic_store_loop(Arc::downgrade(&sockets));
-    tokio::spawn(async move {
-        loop {
-            let update = {
-                let sockets = sockets.lock();
-                sockets.notify.clone()
-            };
-
-            update.notified().await;
-            let mut sockets = sockets.lock();
-            sockets.rebind_all(true);
+    let nw_path_monitor_monitor_handle = tokio::spawn({
+        let sockets = sockets.clone();
+        let mut notify = PATH_CHANGE_BROADCAST.subscribe();
+        async move {
+            loop {
+                match notify.recv().await {
+                    Ok(()) => {
+                        let mut sockets = sockets.lock();
+                        sockets.rebind_all(false);
+                    }
+                    Err(e) => {
+                        telio_log_warn!(
+                            "Failed to receive new path for sockets ({sockets:?}): {e}"
+                        );
+                    }
+                }
+            }
         }
-    })
+    });
+    (
+        tokio::spawn(async move {
+            loop {
+                let update = {
+                    let sockets = sockets.lock();
+                    sockets.notify.clone()
+                };
+
+                update.notified().await;
+                let mut sockets = sockets.lock();
+                sockets.rebind_all(true);
+            }
+        }),
+        nw_path_monitor_monitor_handle,
+    )
 }
 
 fn get_service_order(store: &SCDynamicStore) -> Option<Vec<String>> {
@@ -325,7 +386,7 @@ fn get_service_order(store: &SCDynamicStore) -> Option<Vec<String>> {
 }
 
 fn get_primary_interface_names() -> Vec<String> {
-    let mut primary_interface_names = Vec::new();
+    let mut primary_ipv4_interface_names = Vec::new();
     let store = dynamic_store::SCDynamicStoreBuilder::new("primary-service-store").build();
 
     if let Some(service_order) = get_service_order(&store) {
@@ -335,26 +396,26 @@ fn get_primary_interface_names() -> Vec<String> {
                 .and_then(CFPropertyList::downcast_into::<CFDictionary>);
 
             if let Some(primary_service_dictionary) = primary_service_dictionary {
-                if primary_service_dictionary
-                    .find(unsafe { schema_definitions::kSCPropNetIPv4Router }.to_void())
-                    .is_some()
-                {
-                    let interface_name = primary_service_dictionary
-                        .find(unsafe { schema_definitions::kSCPropInterfaceName }.to_void())
-                        .map(|ptr| unsafe { CFString::wrap_under_get_rule(*ptr as CFStringRef) });
-                    if let Some(interface_name) = interface_name {
-                        primary_interface_names.push(interface_name.to_string());
-                    }
+                let interface_name = primary_service_dictionary
+                    .find(unsafe { schema_definitions::kSCPropInterfaceName }.to_void())
+                    .map(|ptr| unsafe { CFString::wrap_under_get_rule(*ptr as CFStringRef) });
+                if let Some(interface_name) = interface_name {
+                    primary_ipv4_interface_names.push(interface_name.to_string());
                 }
             }
         }
     }
 
+    let mut interface_names_in_os_preference_order: Vec<String> =
+        INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER.lock().clone();
     telio_log_info!(
-        "Discovered these primary interfaces for use in socket binding: {:?}",
-        primary_interface_names
+        "Discovered these primary IPv4 interfaces for use in socket binding: {:?} (OS pereference order: {interface_names_in_os_preference_order:?})",
+        primary_ipv4_interface_names
     );
-    primary_interface_names
+
+    interface_names_in_os_preference_order
+        .retain(|name| primary_ipv4_interface_names.contains(name));
+    interface_names_in_os_preference_order
 }
 
 fn get_primary_interface(tunnel_interface: u64) -> Option<u64> {
@@ -414,6 +475,67 @@ fn spawn_dynamic_store_loop(sockets: Weak<Mutex<Sockets>>) {
     });
 }
 
+pub fn setup_network_path_monitor() {
+    let update_handler = block::ConcreteBlock::new(|path: nw_path_t| {
+        let names = Rc::new(RefCell::new(vec![]));
+        let names_copy = names.clone();
+
+        let enumerate_callback =
+            block::ConcreteBlock::new(move |interface: nw_interface_t| -> bool {
+                let c_name = unsafe { nw_interface_get_name(interface) };
+                if !c_name.is_null() {
+                    let name = unsafe { CStr::from_ptr(c_name) };
+                    if let Ok(name) = name.to_str() {
+                        names_copy.borrow_mut().push(name.to_owned());
+                    }
+                }
+                true
+            })
+            .copy();
+
+        unsafe {
+            nw_path_enumerate_interfaces(
+                path,
+                &*enumerate_callback as *const block::Block<_, _> as *const c_void,
+            )
+        };
+
+        *INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER.lock() = names.borrow().clone();
+        if let Err(e) = PATH_CHANGE_BROADCAST.send(()) {
+            telio_log_warn!(
+                "Failed to notify about changed path, error: {e}, path: {:?}",
+                names.borrow()
+            );
+        }
+
+        telio_log_info!(
+            "Path change notification sent, current network path in os preference order: {:?}",
+            names.borrow()
+        );
+    })
+    .copy();
+    unsafe {
+        let monitor = nw_path_monitor_create();
+        if monitor.is_null() {
+            telio_log_warn!("Failed to start network path monitor");
+            return;
+        }
+
+        let queue = dispatch::ffi::dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0);
+        if queue.is_null() {
+            telio_log_warn!("Failed to get global background queue");
+            return;
+        }
+        nw_path_monitor_set_queue(monitor, std::mem::transmute(queue));
+
+        nw_path_monitor_set_update_handler(
+            monitor,
+            &*update_handler as *const block::Block<_, _> as *const c_void,
+        );
+        nw_path_monitor_start(monitor);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use socket2::{Domain, Protocol, Socket, Type};
@@ -424,6 +546,8 @@ mod tests {
 
     #[test]
     fn test_ipv6_sk_bind() {
+        setup_network_path_monitor();
+
         let socket2_socket = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP));
 
         let socket_fd = socket2_socket.as_ref().unwrap().as_native_socket();
