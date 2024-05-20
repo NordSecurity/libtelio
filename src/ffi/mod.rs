@@ -262,7 +262,7 @@ impl Telio {
                 }))
             }
             _ => {
-                telio_log_debug!("Mathias - protect is none ({})", protect);
+                telio_log_debug!("Mathias - protect is none ({})");
                 None
             }
         };
