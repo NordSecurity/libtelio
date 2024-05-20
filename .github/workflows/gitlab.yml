@@ -31,4 +31,4 @@ jobs:
           project-id: ${{ secrets.PROJECT_ID }}
           schedule: ${{ github.event_name == 'schedule' }}
           cancel-outdated-pipelines: ${{ github.ref_name != 'main' }}
-          triggered-ref: v1.1.8
+          triggered-ref: v1.1.9
