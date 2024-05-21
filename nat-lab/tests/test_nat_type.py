@@ -1,7 +1,6 @@
 import asyncio
 import pytest
 import re
-from utils import testing
 from utils.connection_util import (
     ConnectionTag,
     new_connection_by_tag,
@@ -33,7 +32,7 @@ async def test_nat_type(connection_tag, nat_string) -> None:
         async with process.run(stdout_callback=print_result):
             await process.wait_stdin_ready()
             await process.write_stdin("nat address 10.0.1.1 3478\n")
-            await testing.wait_lengthy(event.wait())
+            await event.wait()
             result = re.search(r"Nat Type: (.*)", process.get_stdout())
             assert result
             assert result.group(1) == nat_string

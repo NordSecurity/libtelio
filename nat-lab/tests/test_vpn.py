@@ -450,8 +450,8 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
             await proc.write_stdin("GET")
 
             # Wait for both netcat processes
-            await testing.wait_normal(sender_start_event.wait())
-            await testing.wait_normal(sender_start_event.wait())
+            await sender_start_event.wait()
+            await sender_start_event.wait()
 
             # the key is generated uniquely each time natlab runs
             await client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
@@ -463,8 +463,8 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
             # if everything is correct -> conntrack should show FIN_WAIT -> CLOSE_WAIT
             # or our connection killing mechanism will reset connection resulting in CLOSE output.
             # Wait for close on both clients
-            await testing.wait_long(close_wait_event.wait())
-            await testing.wait_long(close_wait_event.wait())
+            await close_wait_event.wait()
+            await close_wait_event.wait()
 
 
 @pytest.mark.asyncio
@@ -555,7 +555,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
             proc.run(stdout_callback=on_stdout, stderr_callback=on_stdout)
         )
 
-        await testing.wait_long(sender_start_event.wait())
+        await sender_start_event.wait()
         await client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
 
         await connect(
@@ -563,4 +563,4 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
         )
 
         # nc client should be closed by the reset mechanism
-        await testing.wait_long(proc.is_done())
+        await proc.is_done()
