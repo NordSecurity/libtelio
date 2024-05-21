@@ -254,7 +254,7 @@ impl Telio {
         let protect = None;
         #[cfg(target_os = "android")]
         let protect: Option<Protect> = match protect_cb {
-            Some(protect) if cfg!(windows) => {
+            Some(protect) => {
                 telio_log_debug!("Mathias - protect is some");
                 let protect = protect;
                 Some(Arc::new(move |fd| {
