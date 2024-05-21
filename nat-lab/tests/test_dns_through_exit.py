@@ -5,7 +5,6 @@ import telio
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
 from typing import List, Tuple
-from utils import testing
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.dns import query_dns
@@ -162,9 +161,7 @@ async def test_dns_through_exit(
             )
 
         # blocking dns-server-1 and its ipv6 counterpart, to make sure requests go to dns-server-2
-        await testing.wait_lengthy(
-            asyncio.gather(*[disable_path(addr) for addr in alpha_info[1]])
-        )
+        await asyncio.gather(*[disable_path(addr) for addr in alpha_info[1]])
 
         # sending dns to local forwarder, which should forward it to exit dns forwarder(apple/android way)
         await query_dns(
