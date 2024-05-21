@@ -340,6 +340,7 @@ async def setup_mesh_nodes(
                 if instance.features.direct and other_instance.features.direct
                 else [PathType.Relay]
             ),
+            timeout=90 if is_timeout_expected else None,
         )
         for (client, node, instance), (
             _,
