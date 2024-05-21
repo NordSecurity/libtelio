@@ -78,6 +78,6 @@ async def test_mesh_off(direct) -> None:
         )
 
         async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping(60)
+            await ping.wait_for_next_ping()
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
             await ping.wait_for_next_ping()

@@ -109,7 +109,7 @@ async def test_mesh_firewall_successful_passthrough(
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv4)),
             ).run() as ping:
                 with pytest.raises(asyncio.TimeoutError):
-                    await ping.wait_for_next_ping()
+                    await ping.wait_for_next_ping(15)
 
             async with Ping(
                 connection_beta,
@@ -123,7 +123,7 @@ async def test_mesh_firewall_successful_passthrough(
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv4)),
             ).run() as ping:
                 with pytest.raises(asyncio.TimeoutError):
-                    await ping.wait_for_next_ping()
+                    await ping.wait_for_next_ping(15)
 
         if alpha_ip_stack in [IPStack.IPv6, IPStack.IPv4v6] and beta_ip_stack in [
             IPStack.IPv6,
@@ -134,7 +134,7 @@ async def test_mesh_firewall_successful_passthrough(
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv6)),
             ).run() as ping6:
                 with pytest.raises(asyncio.TimeoutError):
-                    await ping6.wait_for_next_ping()
+                    await ping6.wait_for_next_ping(15)
 
             async with Ping(
                 connection_beta,
@@ -148,7 +148,7 @@ async def test_mesh_firewall_successful_passthrough(
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv6)),
             ).run() as ping6:
                 with pytest.raises(asyncio.TimeoutError):
-                    await ping6.wait_for_next_ping()
+                    await ping6.wait_for_next_ping(15)
 
 
 @pytest.mark.parametrize(
@@ -214,14 +214,14 @@ async def test_mesh_firewall_reject_packet(
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv4)),
             ).run() as ping:
                 with pytest.raises(asyncio.TimeoutError):
-                    await ping.wait_for_next_ping()
+                    await ping.wait_for_next_ping(15)
 
             async with Ping(
                 connection_beta,
                 testing.unpack_optional(alpha.get_ip_address(IPProto.IPv4)),
             ).run() as ping:
                 with pytest.raises(asyncio.TimeoutError):
-                    await ping.wait_for_next_ping()
+                    await ping.wait_for_next_ping(15)
 
         if alpha_ip_stack in [IPStack.IPv6, IPStack.IPv4v6] and beta_ip_stack in [
             IPStack.IPv6,
@@ -232,14 +232,14 @@ async def test_mesh_firewall_reject_packet(
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv6)),
             ).run() as ping6:
                 with pytest.raises(asyncio.TimeoutError):
-                    await ping6.wait_for_next_ping()
+                    await ping6.wait_for_next_ping(15)
 
             async with Ping(
                 connection_beta,
                 testing.unpack_optional(alpha.get_ip_address(IPProto.IPv6)),
             ).run() as ping6:
                 with pytest.raises(asyncio.TimeoutError):
-                    await ping6.wait_for_next_ping()
+                    await ping6.wait_for_next_ping(15)
 
 
 # This test uses 'stun' and our stun client does not IPv6
@@ -294,11 +294,11 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
 
         async with Ping(connection_alpha, exit_node.ip_addresses[0]).run() as ping:
             with pytest.raises(asyncio.TimeoutError):
-                await ping.wait_for_next_ping()
+                await ping.wait_for_next_ping(15)
 
         async with Ping(connection_exit_node, alpha.ip_addresses[0]).run() as ping:
             with pytest.raises(asyncio.TimeoutError):
-                await ping.wait_for_next_ping()
+                await ping.wait_for_next_ping(15)
 
         # Allow traffic both ways
 
@@ -344,7 +344,7 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
 
         async with Ping(connection_exit_node, alpha.ip_addresses[0]).run() as ping:
             with pytest.raises(asyncio.TimeoutError):
-                await ping.wait_for_next_ping()
+                await ping.wait_for_next_ping(15)
 
         # Check that connecting to external services still works
 
@@ -442,14 +442,14 @@ async def test_mesh_firewall_file_share_port(
                 await ping.wait_for_next_ping()
             else:
                 with pytest.raises(asyncio.TimeoutError):
-                    await ping.wait_for_next_ping()
+                    await ping.wait_for_next_ping(15)
 
         async with Ping(connection_beta, CLIENT_ALPHA_IP).run() as ping:
             if allow_incoming_connections:
                 await ping.wait_for_next_ping()
             else:
                 with pytest.raises(asyncio.TimeoutError):
-                    await ping.wait_for_next_ping()
+                    await ping.wait_for_next_ping(15)
 
         output_notifier = OutputNotifier()
 
@@ -487,7 +487,7 @@ async def test_mesh_firewall_file_share_port(
         )
 
         # wait for listening to start
-        await testing.wait_long(listening_start_event.wait())
+        await listening_start_event.wait()
 
         # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
         await exit_stack.enter_async_context(
@@ -503,14 +503,14 @@ async def test_mesh_firewall_file_share_port(
         )
 
         # wait for sender to start
-        await testing.wait_lengthy(sender_start_event.wait())
+        await sender_start_event.wait()
 
         # check for connection status according to parameter provided
         if successful:
-            await testing.wait_long(connected_event.wait())
+            await connected_event.wait()
         else:
             with pytest.raises(asyncio.TimeoutError):
-                await testing.wait_long(connected_event.wait())
+                await asyncio.wait_for(connected_event.wait(), 5)
 
 
 @pytest.mark.asyncio
@@ -629,7 +629,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
                 str(PORT),
             ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as listener:
                 await listener.wait_stdin_ready()
-                await testing.wait_normal(listening_start_event.wait())
+                await listening_start_event.wait()
                 await exit_stack.enter_async_context(
                     connection_beta.create_process([
                         "nc",
@@ -641,14 +641,14 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
                         str(PORT),
                     ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
                 )
-                await testing.wait_normal(sender_start_event.wait())
-                await testing.wait_normal(connected_event.wait())
+                await sender_start_event.wait()
+                await connected_event.wait()
 
             # kill server and check what is happening in conntrack events
             # if everything is correct -> conntrack should show FIN_WAIT -> CLOSE_WAIT
             # if something goes wrong, it will be stuck at LAST_ACK state
-            await testing.wait_long(last_ack_event.wait())
-            await testing.wait_long(time_wait_event.wait())
+            await last_ack_event.wait()
+            await time_wait_event.wait()
 
 
 @pytest.mark.asyncio
@@ -766,7 +766,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
                 str(PORT),
             ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as listener:
                 await listener.wait_stdin_ready()
-                await testing.wait_normal(listening_start_event.wait())
+                await listening_start_event.wait()
                 # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
                 async with connection_beta.create_process([
                     "nc",
@@ -778,11 +778,11 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
                     str(PORT),
                 ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as client:
                     await client.wait_stdin_ready()
-                    await testing.wait_normal(sender_start_event.wait())
-                    await testing.wait_normal(connected_event.wait())
+                    await sender_start_event.wait()
+                    await connected_event.wait()
 
                 # kill client and check what is happening in conntrack events
                 # if everything is correct -> conntrack should show LAST_ACK -> TIME_WAIT
                 # if something goes wrong, it will be stuck at LAST_ACK state
-                await testing.wait_long(last_ack_event.wait())
-                await testing.wait_long(time_wait_event.wait())
+                await last_ack_event.wait()
+                await time_wait_event.wait()
