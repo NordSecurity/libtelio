@@ -21,7 +21,6 @@ from telio_features import (
     PersistentKeepalive,
 )
 from typing import List, Tuple
-from utils import testing
 from utils.asyncio_util import run_async_context
 from utils.connection_util import ConnectionTag
 from utils.ping import Ping
@@ -254,7 +253,7 @@ async def test_direct_failing_paths(setup_params: List[SetupParameters]) -> None
 
         with pytest.raises(asyncio.TimeoutError):
             async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-                await ping.wait_for_next_ping()
+                await ping.wait_for_next_ping(15)
 
 
 @pytest.mark.asyncio
@@ -329,13 +328,11 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
                     beta.public_key,
                     [State.Connected],
                     [PathType.Relay],
-                    timeout=60.0,
                 ),
                 beta_client.wait_for_state_peer(
                     alpha.public_key,
                     [State.Connected],
                     [PathType.Relay],
-                    timeout=60.0,
                 ),
             )
 
@@ -365,13 +362,11 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
                     beta.public_key,
                     [State.Connected],
                     [PathType.Relay],
-                    timeout=60.0,
                 ),
                 beta_client.wait_for_state_peer(
                     alpha.public_key,
                     [State.Connected],
                     [PathType.Relay],
-                    timeout=60.0,
                 ),
             )
 
@@ -480,7 +475,7 @@ async def test_direct_short_connection_loss(
             )
             async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
                 try:
-                    await ping.wait_for_next_ping()
+                    await ping.wait_for_next_ping(15)
                 except asyncio.TimeoutError:
                     pass
                 else:
@@ -490,7 +485,7 @@ async def test_direct_short_connection_loss(
                     await asyncio.wait_for(task, 1)
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping(60)
+            await ping.wait_for_next_ping()
 
 
 @pytest.mark.asyncio
@@ -524,7 +519,7 @@ async def test_direct_connection_loss_for_infinity(
             )
             async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
                 try:
-                    await ping.wait_for_next_ping()
+                    await ping.wait_for_next_ping(15)
                 except asyncio.TimeoutError:
                     pass
                 else:
@@ -533,10 +528,10 @@ async def test_direct_connection_loss_for_infinity(
                     # else was wrong, so we assert
                     await asyncio.wait_for(task, 1)
 
-            await testing.wait_lengthy(task)
+            await task
 
             async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-                await ping.wait_for_next_ping(60)
+                await ping.wait_for_next_ping()
 
 
 @pytest.mark.asyncio
@@ -658,7 +653,7 @@ async def test_direct_connection_endpoint_gone(
                 )
 
                 async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-                    await ping.wait_for_next_ping(60)
+                    await ping.wait_for_next_ping()
 
         await _check_if_true_direct_connection()
 
@@ -685,7 +680,7 @@ async def test_direct_connection_endpoint_gone(
             )
 
             async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-                await ping.wait_for_next_ping(60)
+                await ping.wait_for_next_ping()
 
         await asyncio.gather(
             alpha_client.wait_for_state_peer(
@@ -794,16 +789,12 @@ async def test_direct_working_paths_with_pausing_upnp_and_stun(
         await asyncio.sleep(5)
 
         if stun_enabled:
-            await testing.wait_long(
-                alpha_client.wait_for_log(
-                    "Skipping getting endpoint via STUN endpoint provider(ModulePaused)"
-                )
+            await alpha_client.wait_for_log(
+                "Skipping getting endpoint via STUN endpoint provider(ModulePaused)"
             )
         if upnp_enabled:
-            await testing.wait_long(
-                alpha_client.wait_for_log(
-                    "Skipping getting endpoint via UPNP endpoint provider(ModulePaused)"
-                )
+            await alpha_client.wait_for_log(
+                "Skipping getting endpoint via UPNP endpoint provider(ModulePaused)"
             )
 
         tcpdump = await exit_stack.enter_async_context(

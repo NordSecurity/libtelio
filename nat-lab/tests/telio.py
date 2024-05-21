@@ -6,7 +6,6 @@ import json
 import os
 import re
 import shlex
-import timeouts
 from collections import Counter
 from config import DERP_PRIMARY, DERP_SERVERS
 from contextlib import asynccontextmanager
@@ -451,15 +450,7 @@ class Events:
     ) -> None:
         await asyncio.wait_for(
             self._runtime.notify_peer_state(public_key, state, paths, is_exit, is_vpn),
-            (
-                timeout
-                if timeout
-                else (
-                    timeouts.DEFAULT_MESH_DIRECT_CONNECTION_EVENT_TIMEOUT
-                    if PathType.Direct in paths
-                    else timeouts.DEFAULT_MESH_RELAY_CONNECTION_EVENT_TIMEOUT
-                )
-            ),
+            timeout,
         )
 
     async def wait_for_event_peer(
@@ -473,15 +464,7 @@ class Events:
     ) -> None:
         await asyncio.wait_for(
             self._runtime.notify_peer_event(public_key, states, paths, is_exit, is_vpn),
-            (
-                timeout
-                if timeout
-                else (
-                    timeouts.DEFAULT_MESH_DIRECT_CONNECTION_EVENT_TIMEOUT
-                    if PathType.Direct in paths
-                    else timeouts.DEFAULT_MESH_RELAY_CONNECTION_EVENT_TIMEOUT
-                )
-            ),
+            timeout,
         )
 
     def get_link_state_events(self, public_key: str) -> List[Optional[LinkState]]:
@@ -491,20 +474,18 @@ class Events:
         self, server_ip: str, states: List[State], timeout: Optional[float] = None
     ) -> None:
         await asyncio.wait_for(
-            self._runtime.notify_derp_state(server_ip, states),
-            timeout if timeout else timeouts.DEFAULT_DERP_CONNECTION_EVENT_TIMEOUT,
+            self._runtime.notify_derp_state(server_ip, states), timeout
         )
 
     async def wait_for_event_derp(
         self, server_ip: str, states: List[State], timeout: Optional[float] = None
     ) -> None:
         await asyncio.wait_for(
-            self._runtime.notify_derp_event(server_ip, states),
-            timeout if timeout else timeouts.DEFAULT_DERP_CONNECTION_EVENT_TIMEOUT,
+            self._runtime.notify_derp_event(server_ip, states), timeout
         )
 
     async def wait_for_event_error(
-        self, err: ErrorEvent, timeout: float = timeouts.DEFAULT_ERROR_EVENT_TIMEOUT
+        self, err: ErrorEvent, timeout: Optional[float] = None
     ) -> None:
         await asyncio.wait_for(self._runtime.notify_error_event(err), timeout)
 
@@ -749,7 +730,7 @@ class Client:
         ip: str,
         port: int,
         public_key: str,
-        timeout: float = timeouts.DEFAULT_VPN_CONNECTION_EVENT_TIMEOUT,
+        timeout: Optional[float] = None,
         pq: bool = False,
     ) -> None:
         await self._configure_interface()
@@ -770,18 +751,12 @@ class Client:
             if pq:
                 cmd.append("--pq")
 
-            await asyncio.wait_for(
-                asyncio.gather(*[
-                    self._write_command(cmd),
-                    event,
-                ]),
-                timeout,
-            )
+            await asyncio.gather(self._write_command(cmd), event)
 
     async def disconnect_from_vpn(
         self,
         public_key: str,
-        timeout: float = timeouts.DEFAULT_VPN_DISCONNECTION_EVENT_TIMEOUT,
+        timeout: Optional[float] = None,
     ) -> None:
         async with asyncio_util.run_async_context(
             self.wait_for_event_peer(
@@ -793,32 +768,26 @@ class Client:
                 timeout=timeout,
             )
         ) as event:
-            await asyncio.wait_for(
-                asyncio.gather(*[
-                    self._write_command(["vpn", "off"]),
-                    event,
-                    self.get_router().delete_vpn_route(),
-                ]),
-                timeout,
+            await asyncio.gather(
+                self._write_command(["vpn", "off"]),
+                event,
+                self.get_router().delete_vpn_route(),
             )
 
     async def disconnect_from_exit_node(
         self,
         public_key: str,
-        timeout: float = timeouts.DEFAULT_VPN_DISCONNECTION_EVENT_TIMEOUT,
+        timeout: Optional[float] = None,
     ) -> None:
         async with asyncio_util.run_async_context(
             self.wait_for_event_peer(
                 public_key, [State.Connected], list(PathType), timeout=timeout
             )
         ) as event:
-            await asyncio.wait_for(
-                asyncio.gather(*[
-                    self._write_command(["vpn", "off"]),
-                    event,
-                    self.get_router().delete_vpn_route(),
-                ]),
-                timeout,
+            await asyncio.gather(
+                self._write_command(["vpn", "off"]),
+                event,
+                self.get_router().delete_vpn_route(),
             )
 
     async def enable_magic_dns(self, forward_servers: List[str]) -> None:
@@ -843,7 +812,7 @@ class Client:
     async def connect_to_exit_node(
         self,
         public_key: str,
-        timeout: float = timeouts.DEFAULT_VPN_CONNECTION_EVENT_TIMEOUT,
+        timeout: Optional[float] = None,
     ) -> None:
         await self._configure_interface()
         await self.get_router().create_vpn_route()
@@ -856,12 +825,9 @@ class Client:
                 timeout=timeout,
             )
         ) as event:
-            await asyncio.wait_for(
-                asyncio.gather(*[
-                    self._write_command(["dev", "con", public_key]),
-                    event,
-                ]),
-                timeout,
+            await asyncio.gather(
+                self._write_command(["dev", "con", public_key]),
+                event,
             )
 
     def get_router(self) -> Router:
@@ -888,9 +854,7 @@ class Client:
         assert self._telio_features
         return self._telio_features
 
-    async def stop_device(
-        self, timeout: float = timeouts.DEFAULT_STOP_DEVICE_TIMEOUT
-    ) -> None:
+    async def stop_device(self, timeout: Optional[float] = None) -> None:
         await asyncio.wait_for(self._write_command(["dev", "stop"]), timeout)
         self._interface_configured = False
         started_tasks = self.get_runtime().get_started_tasks()

@@ -53,8 +53,6 @@ async def test_fire_connecting_event(
 
         with pytest.raises(asyncio.TimeoutError):
             async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-                await ping.wait_for_next_ping()
+                await ping.wait_for_next_ping(15)
 
-        await client_alpha.wait_for_event_peer(
-            beta.public_key, [State.Connecting], timeout=180
-        )
+        await client_alpha.wait_for_event_peer(beta.public_key, [State.Connecting])

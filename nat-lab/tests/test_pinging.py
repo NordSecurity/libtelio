@@ -6,7 +6,6 @@ from helpers import setup_mesh_nodes, SetupParameters
 from telio import PathType, State
 from telio_features import TelioFeatures, Direct, Nurse, Qos, Lana
 from typing import Tuple, List
-from utils import testing
 from utils.connection import Connection
 from utils.connection_tracker import (
     ConnectionTracker,
@@ -168,7 +167,7 @@ async def test_session_keeper(
                 [State.Connected],
                 [PathType.Direct],
             ),
-            testing.wait_defined(wait_for_conntracker(), 60),
+            wait_for_conntracker(),
         )
 
 
@@ -293,5 +292,5 @@ async def test_qos(
                 alpha.public_key,
                 [State.Connected],
             ),
-            testing.wait_defined(wait_for_conntracker(), 60),
+            wait_for_conntracker(),
         )

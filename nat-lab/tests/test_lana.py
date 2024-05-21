@@ -110,15 +110,11 @@ def build_telio_features(
     )
 
 
-async def clean_container(connection):
-    await testing.wait_long(
-        connection.create_process(["rm", "-f", CONTAINER_EVENT_PATH]).execute()
-    )
-    await testing.wait_long(
-        connection.create_process(
-            ["rm", "-f", CONTAINER_EVENT_PATH + "-journal"]
-        ).execute()
-    )
+async def clean_container(connection: Connection):
+    await connection.create_process(["rm", "-f", CONTAINER_EVENT_PATH]).execute()
+    await connection.create_process(
+        ["rm", "-f", CONTAINER_EVENT_PATH + "-journal"]
+    ).execute()
 
 
 def get_moose_db_file(container_tag, container_path, local_path):
