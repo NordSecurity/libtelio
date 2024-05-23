@@ -47,6 +47,10 @@ class Process(ABC):
         pass
 
     @abstractmethod
+    async def escape_and_write_stdin(self, data: List[str]) -> None:
+        pass
+
+    @abstractmethod
     def get_stdout(self) -> str:
         pass
 
