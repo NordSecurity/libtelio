@@ -53,9 +53,12 @@ pub type EventMsg = String;
 /// Error event. Used to inform the upper layer about errors in `libtelio`.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Error {
-    level: ErrorLevel,
-    code: ErrorCode,
-    msg: EventMsg,
+    /// The level of the error
+    pub level: ErrorLevel,
+    /// The error code, used to denote the type of the error
+    pub code: ErrorCode,
+    /// A more descriptive text of the error
+    pub msg: EventMsg,
 }
 
 /// Used for the constructing `Event` object.

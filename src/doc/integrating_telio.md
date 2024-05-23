@@ -91,11 +91,12 @@ App can create and destroy Telio device.
 
 ```rust no_run
 use telio::{ffi::*, types::*};
+use telio_model::event::Event;
 
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: String) -> FFIResult<()> {
+    fn event(&self, payload: Event) -> FFIResult<()> {
         Ok(())
     }
 }
@@ -145,7 +146,7 @@ App can deserialize JSON string with feature config before passing to telio.
 
 ```rust no_run
 use telio::{ffi::*, types::*};
-use telio_model::features::FeatureLana;
+use telio_model::{event::Event, features::FeatureLana};
 
 let json_feature_config = "<feature config fetched from API>".to_owned();
 let mut feature_config = deserialize_feature_config(json_feature_config).unwrap();
@@ -158,7 +159,7 @@ if let Some(nurse) = &mut feature_config.nurse {
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: String) -> FFIResult<()> {
+    fn event(&self, payload: Event) -> FFIResult<()> {
         Ok(())
     }
 }
@@ -230,7 +231,11 @@ telio.destroy()!!
 
 
 ### Event Callback
-App passes event callback. Deserializes Telio Event from received JSON string. For details on events, see the [events documentation](../_telio_events_documentation/index.html).
+App passes event callback. Events can be one of three types, `relay`, `node`, and `error` that contain `Server`, `TelioNode` and `Error`, respectively. For more information about the fields they contain, have a look at the strcuts/classes in your bindings. For rust code, those structs are [`Server`](telio_model::config::Server), [`Node`](telio_model::mesh::Node) and [`Error`](telio_model::event::Error).
+
+Relay events are reported every time the relay configuration changes or we start connecting to a different relay server, node events are reported by any change to any property of the node (be it a VPN node or a mesh node), and error events are reported when a panic occurs inside libtelio.
+
+If you receive an error event with critical level, you must restart libtelio by first calling `destroy_hard()` followed by `new(...)`, or one of the the alternative constructors.
 
 <multi-code-select></multi-code-select>
 
@@ -238,13 +243,13 @@ App passes event callback. Deserializes Telio Event from received JSON string. F
 
 ```rust no_run
 use telio::{ffi::*, types::*};
+use telio_model::event::Event;
 
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: String) -> FFIResult<()> {
-        // deserialize json payload
-        // pass deserialized event to app
+    fn event(&self, payload: Event) -> FFIResult<()> {
+        // pass event to app
         Ok(())
     }
 }
@@ -257,9 +262,8 @@ import github.com/nordsecurity/telio
 
 type EventHandler struct {}
 
-func (eh EventHandler) Event(payload String) *TelioError {
-    // deserialize json payload
-    // pass deserialized event to app
+func (eh EventHandler) Event(payload Event) *TelioError {
+    // pass event to app
 }
 
 _, err = Telio {
@@ -272,9 +276,8 @@ _, err = Telio {
 import libtelio
 
 class EventHandler: TelioEventCb {
-    func event(payload: string) throws {
-        // deserialize json payload
-        // pass deserialized event to app
+    func event(payload: Event) throws {
+        // pass event to app
     }
 }
 
@@ -285,9 +288,8 @@ Telio(..., EventHandler())
 using uniffi.libtelio;
 
 class EventHandler : TelioEventCb {
-    public void Event(String payload) {
-        // deserialize json payload
-        // pass deserialized event to app
+    public void Event(Event payload) {
+        // pass event to app
     }
 }
 
@@ -298,9 +300,8 @@ new Telio(..., new EventHandler());
 import com.nordsec.libtelio.*
 
 val eventHandler = object: TelioEventCb {
-    override fun event(payload: String) {
-        // deserialize json payload
-        // pass deserialized event to app
+    override fun event(payload: Event) {
+        // pass event to app
     }
 }
 
@@ -323,11 +324,12 @@ App starts and stops Telio device instance with default adapter.
 
 ```rust no_run
 use telio::{ffi::*, types::*};
+use telio_model::event::Event;
 
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: String) -> FFIResult<()> {
+    fn event(&self, payload: Event) -> FFIResult<()> {
         Ok(())
     }
 }
@@ -433,11 +435,12 @@ use std::str::FromStr;
 use ipnetwork::IpNetwork;
 use telio::{ffi::*, types::*};
 use telio_crypto::PublicKey;
+use telio_model::event::Event;
 
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: String) -> FFIResult<()> {
+    fn event(&self, payload: Event) -> FFIResult<()> {
         Ok(())
     }
 }
@@ -581,11 +584,12 @@ App turns on and off meshnet by passing Meshnet Config.
 
 ```rust no_run
 use telio::{ffi::*, types::*};
+use telio_model::event::Event;
 
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: String) -> FFIResult<()> {
+    fn event(&self, payload: Event) -> FFIResult<()> {
         Ok(())
     }
 }
@@ -726,11 +730,12 @@ App enables/disables Telio Magic DNS proxy, forwarding desired DNS servers.
 
 ```rust no_run
 use telio::{ffi::*, types::*};
+use telio_model::event::Event;
 
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: String) -> FFIResult<()> {
+    fn event(&self, payload: Event) -> FFIResult<()> {
         Ok(())
     }
 }
@@ -860,11 +865,12 @@ use std::str::FromStr;
 use ipnetwork::IpNetwork;
 use telio::{ffi::*, types::*};
 use telio_crypto::PublicKey;
+use telio_model::event::Event;
 
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: String) -> FFIResult<()> {
+    fn event(&self, payload: Event) -> FFIResult<()> {
         Ok(())
     }
 }

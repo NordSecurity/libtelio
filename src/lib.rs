@@ -5,9 +5,6 @@
 pub mod _telio_integration_documentation {
     #![doc = include_str!["./doc/integrating_telio.md"]]
 }
-pub mod _telio_events_documentation {
-    #![doc = include_str!["./doc/telio_events.md"]]
-}
 
 pub mod ffi;
 pub use crate::ffi::*;
@@ -73,9 +70,13 @@ mod uniffi_libtelio {
     use super::*;
 
     use telio_model::config::*;
+    use telio_model::event::{ErrorCode, ErrorLevel, Event};
     use telio_model::features::*;
     use telio_model::mesh::*;
     use telio_utils::{Hidden, HiddenString};
+
+    type ErrorEvent = telio_model::event::Error;
+    type TelioNode = telio_model::mesh::Node;
 
     impl From<uniffi::UnexpectedUniFFICallbackError> for TelioError {
         fn from(err: uniffi::UnexpectedUniFFICallbackError) -> Self {

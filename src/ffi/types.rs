@@ -1,4 +1,5 @@
 use telio_crypto::KeyDecodeError;
+use telio_model::event::Event;
 use telio_utils::map_enum;
 use tracing::Level;
 
@@ -7,7 +8,7 @@ use std::panic::RefUnwindSafe;
 use crate::device::{AdapterType, Error as DevError};
 
 pub trait TelioEventCb: Send + Sync + std::fmt::Debug {
-    fn event(&self, payload: String) -> FFIResult<()>;
+    fn event(&self, payload: Event) -> FFIResult<()>;
 }
 
 pub trait TelioLoggerCb: Send + Sync + std::fmt::Debug {
@@ -15,7 +16,7 @@ pub trait TelioLoggerCb: Send + Sync + std::fmt::Debug {
 }
 
 pub trait TelioProtectCb: Send + Sync + RefUnwindSafe + std::fmt::Debug {
-    fn protect(&self, payload: i32) -> FFIResult<()>;
+    fn protect(&self, socket_id: i32) -> FFIResult<()>;
 }
 
 pub type FFIResult<T> = Result<T, TelioError>;
