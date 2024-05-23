@@ -753,6 +753,12 @@ class Client:
 
             await asyncio.gather(self._write_command(cmd), event)
 
+    async def change_key(self):
+        await asyncio.wait_for(
+            self._write_command(["dev", "change-key"]),
+            15,
+        )
+
     async def disconnect_from_vpn(
         self,
         public_key: str,
