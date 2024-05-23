@@ -3,6 +3,19 @@ on: [workflow_call]
 permissions: {}
 
 jobs:
+  uniffi-bindings:
+      runs-on: ubuntu-22.04
+      container:
+          image: ghcr.io/nordsecurity/uniffi-generators:v0.25.0-8
+      steps:
+        - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        - run: uniffi-bindgen generate src/libtelio.udl --language python
+        - run: mkdir -p dist/bindings/
+        - run: cp src/telio.py dist/bindings/telio_bindings.py
+        - uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+          with:
+            name: telio_bindings.py
+            path: dist/bindings
   check:
       runs-on: ubuntu-22.04
       steps:
@@ -105,19 +118,31 @@ jobs:
         - run: autoflake --check .
           working-directory: nat-lab
   python-lint:
+      needs: uniffi-bindings
       runs-on: ubuntu-22.04
       steps:
         - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        - uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
+          with:
+            name: telio_bindings.py
+            path: dist/bindings
+        - run: cp dist/bindings/telio_bindings.py nat-lab/tests/uniffi/telio_bindings.py
         - run: pip3 install --no-deps -r requirements.txt
         - run: pipenv install --system
         - run: pipenv install --system
           working-directory: nat-lab
-        - run: pylint -f colorized .
+        - run: pylint -f colorized . --ignore telio_bindings.py
           working-directory: nat-lab
   natlab-typecheck:
+      needs: uniffi-bindings
       runs-on: ubuntu-22.04
       steps:
         - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        - uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
+          with:
+            name: telio_bindings.py
+            path: dist/bindings
+        - run: cp dist/bindings/telio_bindings.py nat-lab/tests/uniffi/telio_bindings.py
         - run: pip3 install --no-deps -r requirements.txt
         - run: pipenv install --system
         - run: pipenv install --system

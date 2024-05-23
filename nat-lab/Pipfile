@@ -35,14 +35,15 @@ pluggy = "*"
 protobuf = "==3.20.3"
 py = "*"
 pycparser = "*"
+pyro5 = "==5.15"
 pytest-metadata = "*"
+pytest-repeat = "*"
 six = "*"
 tomli = "*"
 types-protobuf = "==3.19.21"
 typing-extensions = "*"
 typing-inspect = "*"
 yarl = "*"
-pytest-repeat = "*"
 
 [dev-packages]
 

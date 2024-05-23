@@ -178,6 +178,10 @@ class DockerProcess(Process):
         assert self._stream, "process dead"
         await self._stream.write_in(data.encode("utf-8"))
 
+    async def escape_and_write_stdin(self, data: List[str]) -> None:
+        command_str = " ".join(data) + "\n"
+        await self.write_stdin(command_str)
+
     def get_stdout(self) -> str:
         return self._stdout
 

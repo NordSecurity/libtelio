@@ -23,14 +23,14 @@ enum RttType {
 };
 
 [Error]
-enum TelioError {
-    "UnknownError",
-    "InvalidKey",
-    "BadConfig",
-    "LockError",
-    "InvalidString",
-    "AlreadyStarted",
-    "NotStarted"
+interface TelioError {
+    UnknownError(string inner);
+    InvalidKey();
+    BadConfig();
+    LockError();
+    InvalidString();
+    AlreadyStarted();
+    NotStarted();
 };
 
 /// Possible adapters.
@@ -370,6 +370,13 @@ interface Telio {
 
     /// Get last error's message length, including trailing null
     string get_last_error();
+    
+    [Throws=TelioError]
+    boolean is_running();
+    [Throws=TelioError]
+    void trigger_analytics_event();
+    [Throws=TelioError]
+    void trigger_qos_collection();
 
     /// For testing only.
     [Throws=TelioError]
@@ -381,14 +388,17 @@ interface Telio {
 };
 
 callback interface TelioEventCb {
+    [Throws=TelioError]
     void event(string payload);
 };
 
 callback interface TelioLoggerCb {
+    [Throws=TelioError]
     void log(TelioLogLevel log_level, string payload);
 };
 
 callback interface TelioProtectCb {
+    [Throws=TelioError]
     void protect(i32 payload);
 };
 

@@ -1883,6 +1883,9 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
 
 @pytest.mark.moose
 @pytest.mark.asyncio
+@pytest.mark.skip(
+    reason="Test does not do what it's supposed to - JIRA issue: LLT-5180"
+)
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
 async def test_lana_same_meshnet_id_is_reported_after_a_restart(
     alpha_ip_stack: IPStack, beta_ip_stack: IPStack
@@ -1895,23 +1898,20 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
         )
         await clean_container(connection_beta)
 
-        client_beta = await exit_stack.enter_async_context(
-            telio.Client(
-                connection_beta,
-                beta,
-                telio_features=build_telio_features(BETA_FINGERPRINT),
-            ).run(api.get_meshmap(beta.id))
-        )
+        async with telio.Client(
+            connection_beta,
+            beta,
+            telio_features=build_telio_features(BETA_FINGERPRINT),
+        ).run(api.get_meshmap(beta.id)) as client_beta:
 
-        await client_beta.trigger_event_collection()
-        beta_events = await wait_for_event_dump(
-            ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=1
-        )
-        assert beta_events
-        initial_beta_meshnet_id = beta_events[0].fp
+            await client_beta.trigger_event_collection()
+            beta_events = await wait_for_event_dump(
+                ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=1
+            )
+            assert beta_events
+            initial_beta_meshnet_id = beta_events[0].fp
 
-        await client_beta.quit()
-        api.remove(beta.id)
+            api.remove(beta.id)
 
         beta = api.default_config_one_node(True, ip_stack=alpha_ip_stack)
         connection_beta = await exit_stack.enter_async_context(
