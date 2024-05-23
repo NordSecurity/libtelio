@@ -123,6 +123,11 @@ class SshProcess(Process):
         assert self._stdin, "process dead"
         self._stdin.write(data)
 
+    async def escape_and_write_stdin(self, data: List[str]) -> None:
+        escaped = [self._escape_argument(arg) for arg in data]
+        command_str = " ".join(escaped) + "\n"
+        await self.write_stdin(command_str)
+
     def get_stdout(self) -> str:
         return self._stdout
 

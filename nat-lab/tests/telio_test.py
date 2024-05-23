@@ -148,10 +148,10 @@ class TestRuntime:
         runtime = Runtime()
 
         assert runtime.handle_output_line(
-            'event relay: {"region_code":"test","name":"test","hostname"'
+            '{"type":"relay","body":{"region_code":"test","name":"test","hostname"'
             + ':"test","ipv4":"1.1.1.1","relay_port":1111,"stun_port":1111,'
             + '"stun_plaintext_port":1111,"public_key":"test","weight":1,'
-            + '"use_plain_text":true,"conn_state":"connected"}'
+            + '"use_plain_text":true,"conn_state":"connected"}}'
         )
 
         await runtime.notify_derp_state("1.1.1.1", [State.Connected])
@@ -162,10 +162,10 @@ class TestRuntime:
         runtime.allowed_pub_keys = set(["AAA"])
 
         assert runtime.handle_output_line(
-            "event node: "
-            + ' "{"identifier":"tcli","public_key":"AAA","state":"connected","is_exit":true,'
+            '{"type":"node","body":'
+            + '{"identifier":"tcli","public_key":"AAA","state":"connected","is_exit":true,'
             + '"is_vpn":true,"ip_addresses":[],"allowed_ips":[],"endpoint":null,"hostname":null,'
-            + '"allow_incoming_connections":false,"allow_peer_send_files":false,"path":"relay"}"'
+            + '"allow_incoming_connections":false,"allow_peer_send_files":false,"path":"relay"}}'
         )
 
         await runtime.notify_peer_state(
