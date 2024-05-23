@@ -1461,8 +1461,9 @@ impl Runtime {
 
         let should_validate_keys = self.features.validate_keys.0;
         let meshnet_is_on = self.requested_state.meshnet_config.is_some();
+        let vpn_is_on = self.requested_state.exit_node.is_some();
         let key_is_the_different = self.get_private_key().await? != *private_key;
-        if should_validate_keys && meshnet_is_on && key_is_the_different {
+        if should_validate_keys && (meshnet_is_on || vpn_is_on) && key_is_the_different {
             return Err(Error::BadPublicKey);
         }
 
@@ -3256,6 +3257,65 @@ mod tests {
             .expect_send_uapi_cmd_generic_call(1)
             .await;
         rt.set_config(&config).await.unwrap();
+        assert!(matches!(
+            rt.set_private_key(&SecretKey::gen()).await.unwrap_err(),
+            Error::BadPublicKey
+        ));
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test(start_paused = true)]
+    async fn test_set_private_key_when_vpn_is_on() {
+        use ipnetwork::IpNetwork;
+
+        let (sender, _receiver) = tokio::sync::broadcast::channel(1);
+
+        let features = Features::default();
+        let old_private_key = SecretKey::gen();
+        let new_private_key = SecretKey::gen();
+        let mut rt = Runtime::start(
+            sender,
+            &DeviceConfig {
+                private_key: old_private_key,
+                ..Default::default()
+            },
+            features,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let exit_node = ExitNode {
+            identifier: "ExitNode".to_string(),
+            public_key: SecretKey::gen().public(),
+            allowed_ips: Some(vec![IpNetwork::new("0.0.0.0".parse().unwrap(), 0).unwrap()]),
+            endpoint: Some(SocketAddr::from(([127, 0, 0, 1], 443))),
+        };
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        rt.entities
+            .wireguard_interface
+            .set_listen_port(1234)
+            .await
+            .unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        assert!(rt.set_private_key(&new_private_key).await.is_ok());
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+
+        rt.connect_exit_node(&exit_node).await.unwrap();
         assert!(matches!(
             rt.set_private_key(&SecretKey::gen()).await.unwrap_err(),
             Error::BadPublicKey
