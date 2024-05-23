@@ -207,11 +207,8 @@ impl Telio {
         #[allow(unused)] protect_cb: Option<Box<dyn TelioProtectCb>>,
     ) -> FFIResult<Self> {
         let events = Arc::new(events);
-        let event_dispatcher = move |e: Box<Event>| {
-            let payload = e
-                .to_json()
-                .unwrap_or_else(|_| String::from("event_to_json error"));
-            let event_res = events.event(payload);
+        let event_dispatcher = move |event: Box<Event>| {
+            let event_res = events.event(*event);
             if let Err(err) = event_res {
                 telio_log_error!("Could not call event callback due to error: {:?}", err);
             }
@@ -1045,7 +1042,7 @@ mod tests {
         #[derive(Debug)]
         struct Events;
         impl TelioEventCb for Events {
-            fn event(&self, _payload: String) -> std::result::Result<(), TelioError> {
+            fn event(&self, _payload: Event) -> std::result::Result<(), TelioError> {
                 Ok(())
             }
         }
@@ -1066,7 +1063,7 @@ mod tests {
         #[derive(Debug)]
         struct Events;
         impl TelioEventCb for Events {
-            fn event(&self, _payload: String) -> std::result::Result<(), TelioError> {
+            fn event(&self, _payload: Event) -> std::result::Result<(), TelioError> {
                 Ok(())
             }
         }

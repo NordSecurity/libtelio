@@ -1,5 +1,6 @@
 import base64
 import datetime
+import json
 import os
 import Pyro5.api  # type: ignore
 import Pyro5.server  # type: ignore
@@ -31,6 +32,37 @@ def serialize_error(f):
     return wrap
 
 
+# This function is meant to be a temporary way to deal with
+# structured events until natlab has been migrated to use
+# the types provided by the generated bindings
+def serialize_event(event: libtelio.Event) -> str:
+    def extract_value(original) -> str:
+        return str(original).lower().rsplit(".", maxsplit=1)[-1]
+
+    event_dict = {}
+    body = event.body.__dict__
+    if event.is_relay():
+        event_dict["type"] = "relay"
+        body["conn_state"] = extract_value(body["conn_state"])
+        body["public_key"] = base64.b64encode(body["public_key"]).decode("utf-8")
+    elif event.is_node():
+        event_dict["type"] = "node"
+        body["state"] = extract_value(body["state"])
+        if body["link_state"] is not None:
+            body["link_state"] = extract_value(body["link_state"])
+        body["path"] = extract_value(body["path"])
+        body["public_key"] = base64.b64encode(body["public_key"]).decode("utf-8")
+    elif event.is_error():
+        event_dict["type"] = "error"
+        body["level"] = extract_value(body["level"])
+        body["code"] = extract_value(body["code"])
+    event_dict["body"] = body
+    event_str = json.dumps(event_dict)
+    event_str = event_str.replace(": ", ":")
+    event_str = event_str.replace(", ", ",")
+    return event_str
+
+
 class TelioEventCbImpl(libtelio.TelioEventCb):
     def __init__(self):
         self._events = []
@@ -40,7 +72,7 @@ class TelioEventCbImpl(libtelio.TelioEventCb):
 
     def next_event(self):
         if len(self._events) > 0:
-            return self._events.pop(0)
+            return serialize_event(self._events.pop(0))
         return None
 
 

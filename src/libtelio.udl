@@ -366,7 +366,7 @@ interface Telio {
     void set_meshnet_off();
 
 
-    sequence<Node> get_status_map();
+    sequence<TelioNode> get_status_map();
 
     /// Get last error's message length, including trailing null
     string get_last_error();
@@ -389,7 +389,7 @@ interface Telio {
 
 callback interface TelioEventCb {
     [Throws=TelioError]
-    void event(string payload);
+    void event(Event payload);
 };
 
 callback interface TelioLoggerCb {
@@ -399,7 +399,7 @@ callback interface TelioLoggerCb {
 
 callback interface TelioProtectCb {
     [Throws=TelioError]
-    void protect(i32 payload);
+    void protect(i32 socket_id);
 };
 
 /// Encompasses all of the possible features that can be enabled
@@ -652,7 +652,7 @@ dictionary DnsConfig {
 };
 
 /// Description of a Node
-dictionary Node {
+dictionary TelioNode {
     /// An identifier for a node
     /// Makes it possible to distinguish different nodes in the presence of key reuse
     string identifier;
@@ -682,4 +682,46 @@ dictionary Node {
     boolean allow_peer_send_files;
     /// Connection type in the network mesh (through Relay or hole punched directly)
     PathType path;
+};
+
+/// Main object of `Event`. See `Event::new()` for init options.
+[Enum]
+interface Event {
+    /// Used to report events related to the Relay
+    Relay(Server? body);
+    /// Used to report events related to the Node
+    Node(TelioNode? body);
+    /// Initialize an Error type event.
+    /// Used to inform errors to the upper layers of libtelio
+    Error(ErrorEvent? body);
+};
+
+/// Error event. Used to inform the upper layer about errors in `libtelio`.
+dictionary ErrorEvent {
+    /// The level of the error
+    ErrorLevel level;
+    /// The error code, used to denote the type of the error
+    ErrorCode code;
+    /// A more descriptive text of the error
+    string msg;
+};
+
+/// Error levels. Used for app to decide what to do with `telio` device when error happens.
+enum ErrorLevel {
+    /// The error level is critical (highest priority)
+    "Critical",
+    /// The error level is severe
+    "Severe",
+    /// The error is a warning
+    "Warning",
+    /// The error is of the lowest priority
+    "Notice"
+};
+
+/// Error code. Common error code representation (for statistics).
+enum ErrorCode {
+    /// There is no error in the execution
+    "NoError",
+    /// The error type is unknown
+    "Unknown"
 };
