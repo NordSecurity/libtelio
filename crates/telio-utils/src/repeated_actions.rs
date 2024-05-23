@@ -114,7 +114,6 @@ where
             .map(|(key, interval, action)| {
                 interval
                     .map(move |instant| {
-                        dbg!(instant);
                         (key, action)
                     })
                     .boxed()
