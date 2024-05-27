@@ -15,6 +15,8 @@ from utils.output_notifier import OutputNotifier
 from utils.ping import Ping
 from utils.router import IPProto, IPStack
 
+VAGRANT_LIBVIRT_MANAGEMENT_IP = "192.168.121"
+
 
 async def _connect_vpn(
     client_conn: Connection,
@@ -180,6 +182,17 @@ async def test_vpn_connection(
         alpha, *_ = env.nodes
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
+
+        if alpha_setup_params.connection_tag == ConnectionTag.MAC_VM:
+            # Using the 'env python3' at the beginning of the script fails with:
+            # xcode-select: error: no developer tools were found at '/Applications/Xcode.app', and no install could be requested (perhaps no UI is present), please install manually from 'developer.apple.com'.
+            process = await client_conn.create_process([
+                "/usr/local/bin/python3",
+                f"{config.LIBTELIO_BINARY_PATH_MAC_VM}/list_interfaces_with_router_property.py",
+            ]).execute()
+            interfaces_with_router_prop = process.get_stdout().splitlines()
+            assert len(interfaces_with_router_prop) == 1
+            assert VAGRANT_LIBVIRT_MANAGEMENT_IP in interfaces_with_router_prop[0]
 
         ip = await stun.get(client_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
