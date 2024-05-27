@@ -1,6 +1,7 @@
 # pylint: disable=too-many-lines
 
 import asyncio
+import base64
 import datetime
 import json
 import os
@@ -824,6 +825,9 @@ class Client:
                 )
             await event
 
+    async def set_secret_key(self, secret_key: str):
+        self.get_proxy().set_secret_key(secret_key)
+
     async def disconnect_from_vpn(
         self,
         public_key: str,
@@ -1163,3 +1167,13 @@ class Client:
         ev = self.wait_for_output(f"PMTU -> {host}: {expected}")
         await self._write_command(["pmtu", host])
         await ev.wait()
+
+
+def generate_secret_key() -> str:
+    return base64.b64encode(bytes(libtelio.generate_secret_key())).decode("ascii")
+
+
+def generate_public_key(private_key: str) -> str:
+    private_key_bytes = list(base64.b64decode(private_key))
+    public_key_bytes = bytes(libtelio.generate_public_key(private_key_bytes))
+    return base64.b64encode(public_key_bytes).decode("ascii")

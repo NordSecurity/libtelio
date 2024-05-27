@@ -1,0 +1,42 @@
+#!/bin/bash
+
+# Hardcoded variables
+INTERFACE="wg0"
+
+# Arguments
+CURRENT_PUBLIC_KEY=$1
+NEW_PUBLIC_KEY=$2
+
+# Check if both arguments are provided
+if [ -z "$CURRENT_PUBLIC_KEY" ] || [ -z "$NEW_PUBLIC_KEY" ]; then
+    echo "Usage: $0 <current_public_key> <new_public_key>"
+    exit 1
+fi
+
+# Check if wg command is available
+if ! command -v wg &> /dev/null
+then
+    echo "wg command could not be found. Please install WireGuard tools."
+    exit 1
+fi
+
+# Get the IP of the current peer
+PEER_IP=$(wg show $INTERFACE allowed-ips | grep $CURRENT_PUBLIC_KEY | awk '{print $2}')
+if [ -z "$PEER_IP" ]; then
+    echo "No peer found with the given public key: $CURRENT_PUBLIC_KEY"
+    exit 1
+fi
+
+# Remove the current peer
+wg set $INTERFACE peer $CURRENT_PUBLIC_KEY remove
+if [ $? -ne 0 ]; then
+    echo "Failed to remove peer with public key: $CURRENT_PUBLIC_KEY"
+    exit 1
+fi
+
+# Add the new peer with the same IP
+wg set $INTERFACE peer $NEW_PUBLIC_KEY allowed-ips $PEER_IP
+if [ $? -ne 0 ]; then
+    echo "Failed to add new peer with public key: $NEW_PUBLIC_KEY"
+    exit 1
+fi
