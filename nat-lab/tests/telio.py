@@ -824,6 +824,9 @@ class Client:
                 )
             await event
 
+    async def set_secret_key(self, secret_key: str):
+        self.get_proxy().set_secret_key(secret_key)
+
     async def disconnect_from_vpn(
         self,
         public_key: str,

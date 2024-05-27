@@ -218,6 +218,10 @@ enum DevCmd {
     Analytics,
     #[clap(about = "Trigger qos collection")]
     Qos,
+    #[clap(about = "Change the client private key.")]
+    ChangeKey {
+        private_key: SecretKey,
+    },
 }
 
 #[derive(Parser)]
@@ -545,6 +549,10 @@ impl Cli {
             Qos => {
                 cli_res!(res; (i "Trigger qos collection."));
                 cli_try!(self.telio.trigger_qos_collection());
+            }
+            ChangeKey { private_key } => {
+                cli_res!(res; (i "Setting secret key"));
+                cli_try!(self.telio.set_private_key(&private_key))
             }
         }
         res

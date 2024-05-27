@@ -135,6 +135,11 @@ class LibtelioWrapper:
         self._libtelio.set_meshnet_off()
 
     @serialize_error
+    def set_secret_key(self, secret_key):
+        print(secret_key)
+        self._libtelio.set_secret_key(base64.b64decode(secret_key))
+
+    @serialize_error
     def is_running(self) -> bool:
         return self._libtelio.is_running()
 

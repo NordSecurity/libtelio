@@ -83,6 +83,9 @@ class LibtelioProxy:
     def set_meshnet_off(self):
         self.handle_remote_error(lambda r: r.set_meshnet_off())
 
+    def set_secret_key(self, private_key):
+        self.handle_remote_error(lambda r: r.set_secret_key(private_key))
+
     def is_running(self) -> bool:
         return self.handle_remote_error(lambda r: r.is_running())
 
