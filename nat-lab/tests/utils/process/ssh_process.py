@@ -1,6 +1,5 @@
 import asyncio
 import asyncssh
-import timeouts
 from .process import Process, ProcessExecError, StreamCallback
 from contextlib import asynccontextmanager
 from typing import List, Optional, Callable, AsyncIterator
@@ -117,14 +116,17 @@ class SshProcess(Process):
             else:
                 break
 
-    async def wait_stdin_ready(
-        self, timeout: float = timeouts.DEFAULT_STDIN_READY_TIMEOUT
-    ) -> None:
+    async def wait_stdin_ready(self, timeout: Optional[float] = None) -> None:
         await asyncio.wait_for(self._stdin_ready.wait(), timeout)
 
     async def write_stdin(self, data: str) -> None:
         assert self._stdin, "process dead"
         self._stdin.write(data)
+
+    async def escape_and_write_stdin(self, data: List[str]) -> None:
+        escaped = [self._escape_argument(arg) for arg in data]
+        command_str = " ".join(escaped) + "\n"
+        await self.write_stdin(command_str)
 
     def get_stdout(self) -> str:
         return self._stdout

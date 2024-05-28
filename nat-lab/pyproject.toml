@@ -72,3 +72,6 @@ markers = [
     "ipv6: tests only ipv6 WG connectivity",
     "ipv4v6: tests dual stack WG connectivity",
 ]
+filterwarnings = [
+    "ignore::DeprecationWarning"
+]

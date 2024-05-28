@@ -24,6 +24,17 @@ To go through the short TCLI tutorial you need also [docker](https://docs.docker
 
 You can build the `libtelio` library using standard `cargo build` command.
 
+#### Linux toolchain
+1. Verify that GCC (GNU Compiler Collection) has been installed:
+```shell
+gcc --version
+```
+Otherwise run following command to install it:
+```shell
+sudo apt update
+sudo apt install gcc
+```
+
 #### Windows msvc toolchain
 
 To build `libtelio` on Windows with `x86_64-pc-windows-msvc` toolchain you need to install:
@@ -63,7 +74,7 @@ Make a `docker` directory in `tcli-test` and put there the following simple Dock
 FROM ubuntu
 
 RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y iproute2 iputils-ping tcpdump
+    DEBIAN_FRONTEND=noninteractive apt-get install -y iproute2 iputils-ping tcpdump ca-certificates
 ```
 
 Then build it and tag it as `tcli-test`, running the following command from the `docker` directory:

@@ -1,7 +1,7 @@
 import asyncio
 import re
-import timeouts
 from config import STUN_BINARY_PATH_WINDOWS, STUN_BINARY_PATH_MAC
+from typing import Optional
 from utils import testing
 from utils.connection import Connection, TargetOS
 from utils.router import IPProto, REG_IPV6ADDR, get_ip_address_type
@@ -19,7 +19,7 @@ async def get(
     connection: Connection,
     stun_server: str,
     stun_server_port: int = 3478,
-    timeout: float = timeouts.DEFAULT_STUN_EVENT_TIMEOUT,
+    timeout: Optional[float] = None,
 ) -> str:
     ip_proto = testing.unpack_optional(get_ip_address_type(stun_server))
 

@@ -14,7 +14,7 @@ use telio_model::{
 use telio_sockets::{NativeProtector, SocketPool};
 use telio_utils::{
     dual_target::{DualTarget, DualTargetError},
-    telio_err_with_log, telio_log_debug, telio_log_trace, telio_log_warn,
+    interval, telio_err_with_log, telio_log_debug, telio_log_trace, telio_log_warn,
 };
 use thiserror::Error as TError;
 use tokio::time::{self, sleep, Instant, Interval, MissedTickBehavior};
@@ -245,8 +245,7 @@ impl DynamicWg {
         no_link_detection: Option<FeatureLinkDetection>,
         #[cfg(unix)] cfg: Config,
     ) -> Self {
-        let mut interval = time::interval(Duration::from_millis(POLL_MILLIS));
-        interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        let interval = interval(Duration::from_millis(POLL_MILLIS));
 
         Self {
             task: Task::start(State {

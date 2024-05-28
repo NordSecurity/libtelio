@@ -8,6 +8,7 @@ from utils.connection import Connection, SshConnection, TargetOS
 from utils.process import ProcessExecError
 
 VM_TCLI_DIR = config.LIBTELIO_BINARY_PATH_MAC_VM
+VM_UNIFFI_DIR = config.UNIFFI_PATH_MAC_VM
 FILES_COPIED = False
 
 
@@ -51,16 +52,41 @@ async def _copy_binaries(
     if FILES_COPIED:
         return
 
-    try:
-        await connection.create_process(["rm", "-rf", VM_TCLI_DIR]).execute()
-    except ProcessExecError as exception:
-        if exception.stderr.find("The system cannot find the file specified.") < 0:
-            raise exception
+    for directory in [VM_TCLI_DIR, VM_UNIFFI_DIR]:
+        try:
+            await connection.create_process(["rm", "-rf", directory]).execute()
+        except ProcessExecError as exception:
+            if exception.stderr.find("The system cannot find the file specified.") < 0:
+                raise exception
+        await connection.create_process(["mkdir", "-p", directory]).execute()
 
-    await connection.create_process(["mkdir", "-p", VM_TCLI_DIR]).execute()
-    await asyncssh.scp(
-        get_root_path("dist/darwin/macos/release/x86_64/tcli"),
-        (ssh_connection, f"{VM_TCLI_DIR}"),
-    )
-    await connection.create_process(["chmod", "+x", f"{VM_TCLI_DIR}/tcli"]).execute()
+    DIST_PATH = "dist/darwin/macos/release/x86_64/"
+    LOCAL_UNIFFI_PATH = "nat-lab/tests/uniffi/"
+
+    files_to_copy = [
+        (f"{DIST_PATH}tcli", f"{VM_TCLI_DIR}tcli", True),
+        (
+            f"{DIST_PATH}libtelio.dylib",
+            f"{VM_UNIFFI_DIR}libtelio.dylib",
+            True,
+        ),
+        (
+            f"{LOCAL_UNIFFI_PATH}telio_bindings.py",
+            f"{VM_UNIFFI_DIR}telio_bindings.py",
+            True,
+        ),
+        (
+            f"{LOCAL_UNIFFI_PATH}libtelio_remote.py",
+            f"{VM_UNIFFI_DIR}libtelio_remote.py",
+            True,
+        ),
+    ]
+    for src, dst, set_exec in files_to_copy:
+        await asyncssh.scp(
+            get_root_path(src),
+            (ssh_connection, dst),
+        )
+        if set_exec:
+            await connection.create_process(["chmod", "+x", dst]).execute()
+
     FILES_COPIED = True

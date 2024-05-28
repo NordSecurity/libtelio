@@ -6,7 +6,6 @@ import struct
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from protobuf.pinger_pb2 import Pinger
-from utils import testing
 from utils.asyncio_util import run_async_context
 from utils.connection_util import ConnectionTag, LAN_ADDR_MAP
 
@@ -61,18 +60,18 @@ async def test_ping_pong() -> None:
 
         # Send PING type message
         await exit_stack.enter_async_context(
-            run_async_context(testing.wait_lengthy(client_alpha.receive_ping()))
+            run_async_context(client_alpha.receive_ping())
         )
-        await testing.wait_lengthy(send_ping_pong(PingType.PING))
+        await send_ping_pong(PingType.PING)
 
         # Send PONG type message
         await exit_stack.enter_async_context(
-            run_async_context(testing.wait_lengthy(client_alpha.receive_ping()))
+            run_async_context(client_alpha.receive_ping())
         )
-        await testing.wait_lengthy(send_ping_pong(PingType.PONG))
+        await send_ping_pong(PingType.PONG)
 
-        await testing.wait_long(pinger_event.wait())
-        await testing.wait_long(ponger_event.wait())
+        await pinger_event.wait()
+        await ponger_event.wait()
 
 
 @pytest.mark.asyncio
@@ -88,8 +87,7 @@ async def test_send_malform_pinger_packet() -> None:
 
         # Send malformed PingerMsg
         await exit_stack.enter_async_context(
-            run_async_context(testing.wait_lengthy(client_alpha.receive_ping()))
+            run_async_context(client_alpha.receive_ping())
         )
-        await testing.wait_lengthy(send_ping_pong(PingType.MALFORMED))
-
-        await testing.wait_long(unexpected_packet_event.wait())
+        await send_ping_pong(PingType.MALFORMED)
+        await unexpected_packet_event.wait()

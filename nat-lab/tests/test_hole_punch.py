@@ -1,7 +1,6 @@
 import asyncio
 import pytest
 from contextlib import AsyncExitStack
-from utils import testing
 from utils.connection_util import ConnectionTag, new_connection_by_tag
 
 TESTING_STRING = "seniukai, skyle pramusta"
@@ -31,7 +30,7 @@ async def test_hole_punch() -> None:
             str(PUBLIC_PORT),
             "udp",
         ])
-        await testing.wait_long(process.execute())
+        await process.execute()
 
         assert (
             f"external {PUBLIC_IP}:1001 UDP is redirected to internal"
@@ -64,4 +63,4 @@ async def test_hole_punch() -> None:
         await asyncio.sleep(1)
         await send_process.write_stdin(TESTING_STRING + "\n")
 
-        await testing.wait_defined(event.wait(), 60)
+        await event.wait()

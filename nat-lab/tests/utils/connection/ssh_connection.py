@@ -1,4 +1,5 @@
 import asyncssh
+import random
 import shlex
 from .connection import Connection, TargetOS
 from datetime import datetime
@@ -24,3 +25,11 @@ class SshConnection(Connection):
             assert False, f"not supported target_os '{self._target_os}'"
 
         return SshProcess(self._connection, command, escape_argument)
+
+    async def get_ip_address(self) -> tuple[str, str]:
+        ip = self._connection._host  # pylint: disable=protected-access
+        return (ip, ip)
+
+    async def mapped_ports(self) -> tuple[str, str]:
+        port = str(random.randrange(10000, 65000))
+        return (port, port)
