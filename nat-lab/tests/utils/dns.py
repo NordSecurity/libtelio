@@ -1,7 +1,6 @@
 import re
 from config import LIBTELIO_DNS_IPV4
 from typing import List, Optional
-from utils import testing
 from utils.connection import Connection
 
 
@@ -12,14 +11,12 @@ async def query_dns(
     dns_server: Optional[str] = None,
     options: Optional[str] = None,
 ) -> None:
-    response = await testing.wait_lengthy(
-        connection.create_process([
-            "nslookup",
-            options if options else "-timeout=1",
-            host_name,
-            dns_server if dns_server else LIBTELIO_DNS_IPV4,
-        ]).execute()
-    )
+    response = await connection.create_process([
+        "nslookup",
+        options if options else "-timeout=1",
+        host_name,
+        dns_server if dns_server else LIBTELIO_DNS_IPV4,
+    ]).execute()
     dns_output = response.get_stdout()
     if expected_output:
         for expected_str in expected_output:
@@ -46,7 +43,7 @@ async def query_dns_port(
     if extra_host_options:
         cmd += list(extra_opt for extra_opt in extra_host_options)
 
-    response = await testing.wait_long(connection.create_process(cmd).execute())
+    response = await connection.create_process(cmd).execute()
     dns_output = response.get_stdout()
     if expected_output:
         for expected_str in expected_output:

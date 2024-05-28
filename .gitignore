@@ -16,6 +16,9 @@ tcli.log
 /3rd-party/nordderper
 /nat-lab/3rd-party/iptables
 /nat-lab/3rd-party/netfilter-full-cone-nat
+/nat-lab/tests/uniffi/telio_bindings.py
+/nat-lab/tests/uniffi/libtelio.so
+/src/telio.py
 /3rd-party/wireguard-go/*.lib
 /3rd-party/wireguard-go/*.h
 /3rd-party/wireguard-go/*.a

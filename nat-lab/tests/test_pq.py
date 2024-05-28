@@ -3,7 +3,7 @@ import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment
 from telio import AdapterType, Client
-from utils import stun, testing
+from utils import stun
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
@@ -35,9 +35,9 @@ async def _connect_vpn_pq(
 
 
 async def inspect_preshared_key(nlx_conn: Connection) -> str:
-    output = await testing.wait_normal(
-        nlx_conn.create_process(["nlx", "show", "nordlynx0", "dump"]).execute()
-    )
+    output = await nlx_conn.create_process(
+        ["nlx", "show", "nordlynx0", "dump"]
+    ).execute()
     last = output.get_stdout().splitlines()[-1]
     preshared = last.split()[1]
 
@@ -250,7 +250,7 @@ async def test_pq_vpn_rekey(
         )
 
         preshared_before = inspect_preshared_key(nlx_conn)
-        await testing.wait_long(client_alpha.wait_for_log("Successful PQ REKEY"))
+        await client_alpha.wait_for_log("Successful PQ REKEY")
 
         preshared_after = inspect_preshared_key(nlx_conn)
         assert (
