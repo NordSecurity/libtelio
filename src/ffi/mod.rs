@@ -57,7 +57,7 @@ where
         Err(err) => {
             let err_string = err.to_string();
             error_handling::update_last_error(anyhow!(err_string.clone()));
-            Err(TelioError::UnknownError { inner: err_string })
+            Err(TelioError::UnknownError(anyhow!(err)).into())
         }
     }
 }
@@ -118,7 +118,7 @@ pub fn deserialize_feature_config(fstr: String) -> FFIResult<Features> {
     if fstr.is_empty() {
         Ok(Features::default())
     } else {
-        serde_json::from_str(&fstr).map_err(|_| TelioError::InvalidString)
+        serde_json::from_str(&fstr).map_err(|_| TelioError::InvalidString.into())
     }
 }
 
@@ -127,8 +127,8 @@ pub fn deserialize_meshnet_config(cfg_str: String) -> FFIResult<Config> {
     match Config::new_from_str(&cfg_str) {
         Ok((cfg, _)) => Ok(cfg),
         Err(e) => match e {
-            ConfigParseError::BadConfig => Err(TelioError::BadConfig),
-            _ => Err(TelioError::InvalidString),
+            ConfigParseError::BadConfig => Err(TelioError::BadConfig.into()),
+            _ => Err(TelioError::InvalidString.into()),
         },
     }
 }
@@ -271,7 +271,8 @@ impl Telio {
             let features = features.clone();
             let event_dispatcher = event_dispatcher.clone();
             let protect = protect.clone();
-            let device = Device::new(features, event_dispatcher, protect)?;
+            let device = Device::new(features, event_dispatcher, protect)
+                .map_err(|err| Arc::new(TelioError::from(err)))?;
             Ok(Self {
                 inner: Mutex::new(Some(device)),
                 id: rand::thread_rng().gen::<usize>(),
@@ -279,7 +280,11 @@ impl Telio {
         })
     }
 
-    fn log_entry(features: Features, serialized_event_fn: String, ret: &Result<Telio, TelioError>) {
+    fn log_entry(
+        features: Features,
+        serialized_event_fn: String,
+        ret: &Result<Telio, Arc<TelioError>>,
+    ) {
         telio_log_info!(
             "Telio::new entry. features: {:?}. Event_ptr: {serialized_event_fn}. Return value: {:?}",
             features,
@@ -296,7 +301,7 @@ impl Telio {
             Err(poisoned) => {
                 telio_log_debug!("main telio lock has been poisoned");
                 match break_on_lock_error {
-                    true => return Err(TelioError::LockError),
+                    true => return Err(TelioError::LockError.into()),
                     false => poisoned.into_inner(),
                 }
             }
@@ -304,7 +309,7 @@ impl Telio {
 
         match *dev {
             Some(ref mut dev) => op(dev),
-            None => Err(TelioError::NotStarted),
+            None => Err(TelioError::NotStarted.into()),
         }
     }
 
@@ -340,9 +345,10 @@ impl Telio {
         }
 
         telio_log_debug!("Unknown error - Telio::destroy_hard");
-        Err(TelioError::UnknownError {
-            inner: "Unknown error - Telio::destroy_hard".to_owned(),
-        })
+        Err(
+            TelioError::UnknownError(anyhow!("Unknown error - Telio::destroy_hard".to_owned()))
+                .into(),
+        )
     }
 
     /// Start telio with specified adapter.
@@ -476,17 +482,21 @@ impl Telio {
         );
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
-                dev.set_private_key(private_key).map_err(TelioError::from)
+                dev.set_private_key(private_key)
+                    .map_err(|err| TelioError::from(err).into())
             })
         })
     }
 
     pub fn get_secret_key(&self) -> SecretKey {
-        self.device_op(true, |dev| dev.get_private_key().map_err(|e| e.into()))
-            .unwrap_or_else(|err| {
-                telio_log_error!("Telio::get_secret_key: dev.get_private_key: {}", err);
-                SecretKey::default()
-            })
+        self.device_op(true, |dev| {
+            dev.get_private_key()
+                .map_err(|e| TelioError::from(e).into())
+        })
+        .unwrap_or_else(|err| {
+            telio_log_error!("Telio::get_secret_key: dev.get_private_key: {}", err);
+            SecretKey::default()
+        })
     }
 
     /// Sets fmark for started device.
@@ -507,7 +517,8 @@ impl Telio {
         #[cfg(target_os = "linux")]
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
-                dev.set_fwmark(_fwmark).map_err(TelioError::from)
+                dev.set_fwmark(_fwmark)
+                    .map_err(|err| TelioError::from(err).into())
             })
         })
     }
@@ -752,7 +763,9 @@ impl Telio {
 
     pub fn get_status_map(&self) -> Vec<Node> {
         trace!("acquiring dev lock");
-        match self.device_op(true, |dev| dev.external_nodes().map_err(|e| e.into())) {
+        match self.device_op(true, |dev| {
+            dev.external_nodes().map_err(|e| TelioError::from(e).into())
+        }) {
             Ok(d) => d,
             Err(err) => {
                 error!("Telio::get_status_map: external_nodes: {}", err);
@@ -796,9 +809,7 @@ impl Telio {
                 panic!("runtime_panic_test_call_stack");
             }
             telio_log_debug!("Unknown error ( Telio::generate_stack_panic )");
-            Err(TelioError::UnknownError {
-                inner: "".to_owned(),
-            })
+            Err(TelioError::UnknownError(anyhow!("".to_owned())).into())
         })
     }
 
@@ -813,9 +824,7 @@ impl Telio {
                     }
                 }
                 telio_log_debug!("Unknown error ( Telio::generate_thread_panic )");
-                Err(TelioError::UnknownError {
-                    inner: "".to_owned(),
-                })
+                Err(TelioError::UnknownError(anyhow!("".to_owned())).into())
             })
         })
     }
@@ -953,7 +962,7 @@ impl FFILog for DevResult {
             }
             Err(err) => {
                 telio_log_error!("{}: {:?}", caller, self);
-                Err(err.into())
+                Err(TelioError::from(err).into())
             }
         }
     }
@@ -1026,14 +1035,14 @@ mod tests {
     fn telio_set_meshnet_rejects_too_long_configs() {
         let cfg = "a".repeat(MAX_CONFIG_LENGTH);
         assert!(matches!(
-            deserialize_meshnet_config(cfg),
-            Err(TelioError::BadConfig)
+            deserialize_meshnet_config(cfg).unwrap_err().as_ref(),
+            TelioError::BadConfig
         ));
 
         let cfg = "a".repeat(MAX_CONFIG_LENGTH + 2);
         assert!(matches!(
-            deserialize_meshnet_config(cfg),
-            Err(TelioError::InvalidString)
+            deserialize_meshnet_config(cfg).unwrap_err().as_ref(),
+            TelioError::InvalidString
         ));
     }
 
@@ -1042,7 +1051,7 @@ mod tests {
         #[derive(Debug)]
         struct Events;
         impl TelioEventCb for Events {
-            fn event(&self, _payload: Event) -> std::result::Result<(), TelioError> {
+            fn event(&self, _payload: String) -> std::result::Result<(), Arc<TelioError>> {
                 Ok(())
             }
         }
@@ -1063,7 +1072,7 @@ mod tests {
         #[derive(Debug)]
         struct Events;
         impl TelioEventCb for Events {
-            fn event(&self, _payload: Event) -> std::result::Result<(), TelioError> {
+            fn event(&self, _payload: String) -> std::result::Result<(), Arc<TelioError>> {
                 Ok(())
             }
         }

@@ -22,15 +22,10 @@ enum RttType {
     "Ping",
 };
 
-[Error]
+[Traits=(Debug)]
 interface TelioError {
-    UnknownError(string inner);
-    InvalidKey();
-    BadConfig();
-    LockError();
-    InvalidString();
-    AlreadyStarted();
-    NotStarted();
+    string kind();
+    string message();
 };
 
 /// Possible adapters.
