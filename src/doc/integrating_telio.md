@@ -27,7 +27,7 @@ impl TelioLoggerCb for Logger {
     }
 }
 // Global function
-set_global_logger(TelioLogLevel::Debug, Box::new(Logger));
+set_global_logger(TelioLogLevel::Debug, Arc::new(Logger));
 ```
 
 ```go
@@ -101,7 +101,7 @@ impl TelioEventCb for EventHandler {
     }
 }
 
-let telio = Telio::new(Default::default(), Box::new(EventHandler)).unwrap();
+let telio = Telio::new(Default::default(), Arc::new(EventHandler)).unwrap();
 telio.shutdown().unwrap();
 ```
 
@@ -161,7 +161,7 @@ impl TelioEventCb for EventHandler {
     }
 }
 
-let telio = Telio::new(feature_config, Box::new(EventHandler)).unwrap();
+let telio = Telio::new(feature_config, Arc::new(EventHandler)).unwrap();
 telio.shutdown().unwrap();
 ```
 
@@ -251,7 +251,7 @@ impl TelioEventCb for EventHandler {
     }
 }
 
-Telio::new(Default::default(), Box::new(EventHandler)).unwrap();
+Telio::new(Default::default(), Arc::new(EventHandler)).unwrap();
 ```
 
 ```go
@@ -334,7 +334,7 @@ impl TelioEventCb for EventHandler {
 let sk = generate_secret_key();
 let adapter = get_default_adapter();
 
-let telio = Telio::new(Default::default(), Box::new(EventHandler)).unwrap();
+let telio = Telio::new(Default::default(), Arc::new(EventHandler)).unwrap();
 
 // There are three ways to start telio:
 // * start - telio does everything
@@ -445,7 +445,7 @@ impl TelioEventCb for EventHandler {
 let sk = generate_secret_key();
 let adapter = get_default_adapter();
 
-let telio = Telio::new(Default::default(), Box::new(EventHandler)).unwrap();
+let telio = Telio::new(Default::default(), Arc::new(EventHandler)).unwrap();
 telio.start(sk, adapter).unwrap();
 
 let server_public = PublicKey::from_str("QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=").unwrap();
@@ -594,7 +594,7 @@ impl TelioEventCb for EventHandler {
 let sk = generate_secret_key();
 let adapter = get_default_adapter();
 
-let telio = Telio::new(Default::default(), Box::new(EventHandler)).unwrap();
+let telio = Telio::new(Default::default(), Arc::new(EventHandler)).unwrap();
 telio.start(sk.clone(), adapter).unwrap();
 
 let mesh_pk = generate_public_key(sk.clone());
@@ -740,7 +740,7 @@ impl TelioEventCb for EventHandler {
 let sk = generate_secret_key();
 let adapter = get_default_adapter();
 
-let telio = Telio::new(Default::default(), Box::new(EventHandler)).unwrap();
+let telio = Telio::new(Default::default(), Arc::new(EventHandler)).unwrap();
 telio.start(sk, adapter).unwrap();
 
 telio.enable_magic_dns(&[]).unwrap();
@@ -875,7 +875,7 @@ impl TelioEventCb for EventHandler {
 let sk = generate_secret_key();
 let adapter = get_default_adapter();
 
-let telio = Telio::new(Default::default(), Box::new(EventHandler)).unwrap();
+let telio = Telio::new(Default::default(), Arc::new(EventHandler)).unwrap();
 telio.start(sk, adapter).unwrap();
 
 let mesh_map_node_public_key = PublicKey::from_str("QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=").unwrap();

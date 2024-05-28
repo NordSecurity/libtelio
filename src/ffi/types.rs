@@ -3,7 +3,7 @@ use telio_model::event::Event;
 use telio_utils::map_enum;
 use tracing::Level;
 
-use std::panic::RefUnwindSafe;
+use std::{panic::RefUnwindSafe, sync::Arc};
 
 use crate::device::{AdapterType, Error as DevError};
 
@@ -19,12 +19,12 @@ pub trait TelioProtectCb: Send + Sync + RefUnwindSafe + std::fmt::Debug {
     fn protect(&self, socket_id: i32) -> FfiResult<()>;
 }
 
-pub type FfiResult<T> = Result<T, TelioError>;
+pub type FfiResult<T> = Result<T, Arc<TelioError>>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TelioError {
-    #[error("UnknownError: {inner}")]
-    UnknownError { inner: String },
+    #[error("UnknownError: {0}")]
+    UnknownError(anyhow::Error),
     #[error("InvalidKey")]
     InvalidKey,
     #[error("BadConfig")]
@@ -37,6 +37,27 @@ pub enum TelioError {
     AlreadyStarted,
     #[error("NotStarted")]
     NotStarted,
+}
+
+impl TelioError {
+    pub fn kind(&self) -> String {
+        match self {
+            TelioError::UnknownError(_) => "UnknownError".to_owned(),
+            TelioError::InvalidKey => "InvalidKey".to_owned(),
+            TelioError::BadConfig => "BadConfig".to_owned(),
+            TelioError::LockError => "LockError".to_owned(),
+            TelioError::InvalidString => "InvalidString".to_owned(),
+            TelioError::AlreadyStarted => "AlreadyStarted".to_owned(),
+            TelioError::NotStarted => "NotStarted".to_owned(),
+        }
+    }
+
+    pub fn message(&self) -> String {
+        match self {
+            TelioError::UnknownError(inner) => format!("{}: {}", self.kind(), inner),
+            _ => format!("{}: ", self.kind()),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -93,9 +114,7 @@ impl From<DevError> for TelioError {
         match err {
             DevError::AlreadyStarted => Self::AlreadyStarted,
             DevError::BadPublicKey => Self::InvalidKey,
-            _ => Self::UnknownError {
-                inner: format!("{err:?}"),
-            },
+            _ => Self::UnknownError(anyhow::anyhow!(err)),
         }
     }
 }
@@ -106,9 +125,7 @@ impl From<&DevError> for TelioError {
         match err {
             DevError::AlreadyStarted => Self::AlreadyStarted,
             DevError::BadPublicKey => Self::InvalidKey,
-            _ => Self::UnknownError {
-                inner: format!("{err:?}"),
-            },
+            _ => Self::UnknownError(anyhow::anyhow!(err.to_string())),
         }
     }
 }

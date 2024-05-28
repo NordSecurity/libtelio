@@ -67,7 +67,7 @@ mod test_module {
             log_caller_tid: std::thread::current().id(),
         };
 
-        telio::set_global_logger(telio::ffi_types::TelioLogLevel::Info, Box::new(logger));
+        telio::set_global_logger(telio::ffi_types::TelioLogLevel::Info, Arc::new(logger));
         telio::hide_thread_id_in_logs(false);
 
         tracing::debug!("this will be ignored since it's below info");

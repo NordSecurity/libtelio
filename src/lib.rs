@@ -68,7 +68,9 @@ pub use uniffi_libtelio::*;
     clippy::empty_line_after_doc_comments
 )]
 mod uniffi_libtelio {
+    use std::convert::TryInto;
     use std::net::{IpAddr, SocketAddr};
+    use std::sync::Arc;
 
     use super::crypto::{PublicKey, SecretKey};
     use super::*;
@@ -80,17 +82,16 @@ mod uniffi_libtelio {
     use telio_model::features::*;
     use telio_model::mesh::*;
     use telio_utils::{Hidden, HiddenString};
+    use uniffi::ConvertError;
 
     type ErrorEvent = telio_model::event::Error;
     type TelioNode = telio_model::mesh::Node;
 
-    impl From<uniffi::UnexpectedUniFFICallbackError> for TelioError {
-        fn from(err: uniffi::UnexpectedUniFFICallbackError) -> Self {
-            let err_string = err.to_string();
-            let err_reason = err.reason;
-            Self::UnknownError {
-                inner: format!("{err_string} - {err_reason}"),
-            }
+    impl ConvertError<uniffi_libtelio::UniFfiTag> for Arc<TelioError> {
+        fn try_convert_unexpected_callback_error(
+            e: uniffi::UnexpectedUniFFICallbackError,
+        ) -> anyhow::Result<Self> {
+            Err(anyhow::Error::new(e))
         }
     }
 
@@ -140,8 +141,8 @@ mod uniffi_libtelio {
         type Builtin = String;
 
         fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
-            Ok(val.parse().map_err(|_| TelioError::UnknownError {
-                inner: "Invalid IP address".to_owned(),
+            Ok(val.parse().map_err(|_| {
+                TelioError::UnknownError(anyhow::anyhow!("Invalid IP address".to_owned()))
             })?)
         }
 
@@ -154,8 +155,8 @@ mod uniffi_libtelio {
         type Builtin = String;
 
         fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
-            Ok(val.parse().map_err(|_| TelioError::UnknownError {
-                inner: "Invalid IP address".to_owned(),
+            Ok(val.parse().map_err(|_| {
+                TelioError::UnknownError(anyhow::anyhow!("Invalid IP address".to_owned()))
             })?)
         }
 
@@ -194,8 +195,8 @@ mod uniffi_libtelio {
         type Builtin = String;
 
         fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
-            Ok(val.parse().map_err(|_| TelioError::UnknownError {
-                inner: "Invalid IP address".to_owned(),
+            Ok(val.parse().map_err(|_| {
+                TelioError::UnknownError(anyhow::anyhow!("Invalid IP address".to_owned()))
             })?)
         }
 

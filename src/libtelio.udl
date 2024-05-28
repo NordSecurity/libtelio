@@ -61,15 +61,10 @@ enum NatType {
     "Unknown",
 };
 
-[Error]
+[Traits=(Debug)]
 interface TelioError {
-    UnknownError(string inner);
-    InvalidKey();
-    BadConfig();
-    LockError();
-    InvalidString();
-    AlreadyStarted();
-    NotStarted();
+    string kind();
+    string message();
 };
 
 /// Possible adapters.
@@ -452,17 +447,20 @@ interface Telio {
     void generate_thread_panic();
 };
 
-callback interface TelioEventCb {
+[Trait]
+interface TelioEventCb {
     [Throws=TelioError]
     void event(Event payload);
 };
 
-callback interface TelioLoggerCb {
+[Trait]
+interface TelioLoggerCb {
     [Throws=TelioError]
     void log(TelioLogLevel log_level, string payload);
 };
 
-callback interface TelioProtectCb {
+[Trait]
+interface TelioProtectCb {
     [Throws=TelioError]
     void protect(i32 socket_id);
 };
