@@ -3,7 +3,7 @@ from aiodocker import Docker
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import AsyncIterator, Dict, Tuple, Optional, List
+from typing import AsyncIterator, Dict, Tuple, Optional, List, Union
 from utils.connection import Connection, TargetOS
 from utils.connection_tracker import (
     ConnectionTracker,
@@ -326,6 +326,20 @@ def container_id(tag: ConnectionTag) -> str:
     assert False, f"tag {tag} not a docker container"
 
 
+def convert_port_to_integer(port: Union[str, int, None]) -> int:
+    if isinstance(port, int):
+        return port
+    if isinstance(port, str):
+        try:
+            return int(port)
+        except ValueError as exc:
+            raise ValueError(
+                f"Cannot convert string to int for port number: {port}"
+            ) from exc
+    else:
+        raise TypeError(f"Unsupported type: {type(port)}")
+
+
 def generate_connection_tracker_config(
     connection_tag,
     nlx_1_limits: ConnectionLimits = ConnectionLimits(0, 0),
@@ -349,7 +363,7 @@ def generate_connection_tracker_config(
                 protocol="udp",
                 src_ip=lan_addr,
                 dst_ip=str(config.NLX_SERVER.get("ipv4")),
-                dst_port=51820,
+                dst_port=convert_port_to_integer(config.NLX_SERVER.get("port")),
             ),
         ),
         ConnectionTrackerConfig(
@@ -359,7 +373,7 @@ def generate_connection_tracker_config(
                 protocol="udp",
                 src_ip=lan_addr,
                 dst_ip=str(config.WG_SERVER.get("ipv4")),
-                dst_port=51820,
+                dst_port=convert_port_to_integer(config.WG_SERVER.get("port")),
             ),
         ),
         ConnectionTrackerConfig(
@@ -369,7 +383,7 @@ def generate_connection_tracker_config(
                 protocol="udp",
                 src_ip=lan_addr,
                 dst_ip=str(config.WG_SERVER_2.get("ipv4")),
-                dst_port=51820,
+                dst_port=convert_port_to_integer(config.WG_SERVER_2.get("port")),
             ),
         ),
         ConnectionTrackerConfig(
