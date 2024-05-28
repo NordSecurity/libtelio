@@ -3,7 +3,7 @@
 #[cfg_attr(docsrs, doc(cfg(not(windows))))]
 mod boring;
 
-#[cfg(any(target_os = "linux", doc))]
+#[cfg(target_os = "linux")]
 #[cfg_attr(docsrs, doc(cfg(target_os = "linux")))]
 mod linux_native_wg;
 
@@ -82,7 +82,7 @@ pub enum Error {
     BoringTun(#[from] boringtun::device::Error),
 
     /// Error types from Linux Native implementation
-    #[cfg(any(target_os = "linux", doc))]
+    #[cfg(target_os = "linux")]
     #[cfg_attr(docsrs, doc(cfg(target_os = "linux")))]
     #[error("LinuxNativeWg adapter error {0}")]
     LinuxNativeWg(#[from] linux_native_wg::Error),
