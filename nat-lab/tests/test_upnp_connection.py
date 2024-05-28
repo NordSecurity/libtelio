@@ -60,7 +60,7 @@ async def test_upnp_route_removed(
             )
             async with Ping(alpha_conn.connection, beta.ip_addresses[0]).run() as ping:
                 try:
-                    await ping.wait_for_next_ping()
+                    await ping.wait_for_next_ping(15)
                 except asyncio.TimeoutError:
                     pass
                 else:
@@ -79,9 +79,9 @@ async def test_upnp_route_removed(
         )
 
         async with Ping(beta_conn.connection, alpha.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping(60)
+            await ping.wait_for_next_ping()
         async with Ping(alpha_conn.connection, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping(60)
+            await ping.wait_for_next_ping()
 
 
 @pytest.mark.asyncio

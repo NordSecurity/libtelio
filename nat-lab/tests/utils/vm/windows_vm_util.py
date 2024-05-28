@@ -1,12 +1,19 @@
 import asyncssh
 import subprocess
-from config import get_root_path, LIBTELIO_BINARY_PATH_WINDOWS_VM, WINDOWS_1_VM_IP
+from config import (
+    get_root_path,
+    LIBTELIO_BINARY_PATH_WINDOWS_VM,
+    UNIFFI_PATH_WINDOWS_VM,
+    WINDOWS_1_VM_IP,
+)
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 from utils.connection import Connection, SshConnection, TargetOS
 from utils.process import ProcessExecError
 
 VM_TCLI_DIR = LIBTELIO_BINARY_PATH_WINDOWS_VM
+VM_UNIFFI_DIR = UNIFFI_PATH_WINDOWS_VM
+VM_SYSTEM32 = "C:\\Windows\\System32"
 FILES_COPIED = False
 
 
@@ -50,17 +57,47 @@ async def _copy_binaries(
     if FILES_COPIED:
         return
 
-    try:
-        await connection.create_process(["rmdir", "/s", "/q", VM_TCLI_DIR]).execute()
-    except ProcessExecError as exception:
-        if (
-            exception.stderr.find("The system cannot find the file specified") < 0
-            and exception.stderr.find("The system cannot find the path specified") < 0
-        ):
-            raise exception
+    for directory in [VM_TCLI_DIR, VM_UNIFFI_DIR]:
+        try:
+            await connection.create_process(["rmdir", "/s", "/q", directory]).execute()
+        except ProcessExecError as exception:
+            if (
+                exception.stderr.find("The system cannot find the file specified") < 0
+                and exception.stderr.find("The system cannot find the path specified")
+                < 0
+            ):
+                raise exception
+        try:
+            await connection.create_process(["mkdir", directory]).execute()
+        except ProcessExecError as exception:
+            if (
+                exception.stderr.find(
+                    f"A subdirectory or file {directory} already exists."
+                )
+                < 0
+            ):
+                raise exception
 
-    await connection.create_process(["mkdir", VM_TCLI_DIR]).execute()
-    await asyncssh.scp(
-        get_root_path("dist/windows/release/x86_64/*"), (ssh_connection, VM_TCLI_DIR)
-    )
+    DIST_DIR = "dist/windows/release/x86_64/"
+    LOCAL_UNIFFI_DIR = "nat-lab/tests/uniffi/"
+
+    files_to_copy = [
+        (f"{DIST_DIR}*", VM_TCLI_DIR, False),
+        (f"{LOCAL_UNIFFI_DIR}telio_bindings.py", VM_UNIFFI_DIR, False),
+        (f"{LOCAL_UNIFFI_DIR}libtelio_remote.py", VM_UNIFFI_DIR, False),
+        (f"{DIST_DIR}telio.dll", f"{VM_UNIFFI_DIR}", False),
+        (f"{DIST_DIR}sqlite3.dll", VM_UNIFFI_DIR, True),
+        (f"{DIST_DIR}wireguard.dll", VM_UNIFFI_DIR, False),
+        (f"{DIST_DIR}wintun.dll", VM_SYSTEM32, False),
+    ]
+    for src, dst, allow_missing in files_to_copy:
+        try:
+            await asyncssh.scp(
+                get_root_path(src),
+                (ssh_connection, dst),
+            )
+        except FileNotFoundError as exception:
+            if not allow_missing or str(exception).find(src) < 0:
+                raise exception
+
     FILES_COPIED = True

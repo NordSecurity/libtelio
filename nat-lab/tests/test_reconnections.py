@@ -109,7 +109,7 @@ async def test_mesh_reconnect(
 
         with pytest.raises(asyncio.TimeoutError):
             async with Ping(beta_connection, alpha.ip_addresses[0]).run() as ping:
-                await ping.wait_for_next_ping()
+                await ping.wait_for_next_ping(15)
 
         await client_alpha.simple_start()
         await client_alpha.set_meshmap(api.get_meshmap(alpha.id))

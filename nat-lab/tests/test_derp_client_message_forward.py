@@ -2,7 +2,6 @@ import pytest
 from contextlib import AsyncExitStack
 from derp_cli import DerpClient, DerpTarget
 from helpers import setup_connections
-from utils import testing
 from utils.asyncio_util import run_async_context
 from utils.connection_util import ConnectionTag
 
@@ -34,7 +33,7 @@ async def test_derp_client_message_forward(connection_tag: ConnectionTag) -> Non
                 target.wait_message_received(TESTING_STRING)
             ) as event:
                 async with DerpClient(connection_2, DERP_SERVER, TESTING_STRING).run():
-                    await testing.wait_lengthy(event)
+                    await event
 
         # Test message relay with different DERP servers
         async with DerpTarget(connection_1, DERP_SERVER).run() as target:
@@ -44,4 +43,4 @@ async def test_derp_client_message_forward(connection_tag: ConnectionTag) -> Non
                 async with DerpClient(
                     connection_2, DERP_SERVER_2, TESTING_STRING
                 ).run():
-                    await testing.wait_lengthy(event)
+                    await event

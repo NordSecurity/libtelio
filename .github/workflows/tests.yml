@@ -94,3 +94,19 @@ jobs:
         with:
           name: libtelio-build-${{ matrix.target_os }}-${{ matrix.arch }}-with-replaced-version
           path: dist/
+
+  build-docs-on-mac:
+    runs-on: macos-13
+    env:
+        RUSTDOCFLAGS: "-Zunstable-options --enable-index-page -Aunknown_lints --html-in-header ./rustdoc/header.html --html-after-content ./rustdoc/multi-code.html --html-after-content ./rustdoc/footer.html"
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Build Rust Docs
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly-2024-04-17
+        components: rust-docs
+
+    - run: cargo +nightly-2024-04-17 doc --no-deps --workspace --document-private-items
