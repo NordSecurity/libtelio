@@ -5,6 +5,7 @@ import random
 import time
 import uuid
 from config import DERP_SERVERS, LIBTELIO_IPV6_WG_SUBNET, WG_SERVERS
+from datetime import datetime
 from ipaddress import ip_address
 from typing import Dict, Any, List, Tuple, Optional
 from utils.router import IPStack, IPProto, get_ip_address_type
@@ -357,12 +358,20 @@ class API:
                 priv_key = server_config["private_key"]
                 commands = [
                     f"echo {priv_key} > /etc/nordlynx/private.key",
-                    "nlx set nordlynx0 private-key /etc/nordlynx/private.key",
+                    "nlx set nordlynx0 private-key /etc/nordlynx/private.key && nlx set nordlynx0 listen-port {server_config['port']}",
                 ]
 
                 for cmd in commands:
-                    os.system(
-                        f"docker exec -d --privileged {server_config['container']} bash -c '{cmd}'"
+                    full_cmd = f"docker exec --privileged {server_config['container']} bash -c '{cmd}'"
+                    ret = os.system(full_cmd)
+                    print(
+                        datetime.now(),
+                        "Executing",
+                        full_cmd,
+                        "on",
+                        server_config["container"],
+                        "with result",
+                        ret,
                     )
 
             else:
@@ -370,11 +379,20 @@ class API:
                     node, ", ".join(cls.get_allowed_ip_list(node.ip_addresses))
                 )
                 cmd = (
-                    f"docker exec -d --privileged {server_config['container']} bash -c"
+                    f"docker exec --privileged {server_config['container']} bash -c"
                     f' \'echo "{wg_conf}" > /etc/wireguard/wg0.conf; wg-quick down'
                     " /etc/wireguard/wg0.conf; wg-quick up /etc/wireguard/wg0.conf'"
                 )
-                os.system(cmd)
+                ret = os.system(cmd)
+                print(
+                    datetime.now(),
+                    "Executing",
+                    cmd,
+                    "on",
+                    server_config["container"],
+                    "with result",
+                    ret,
+                )
 
     def config_dynamic_nodes(
         self, node_configs: List[Tuple[bool, IPStack]]
