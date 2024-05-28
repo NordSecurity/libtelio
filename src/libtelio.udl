@@ -81,10 +81,10 @@ enum RelayState {
 };
 
 [Custom]
-typedef bytes PublicKey;
+typedef sequence<u8> PublicKey;
 
 [Custom]
-typedef bytes SecretKey;
+typedef sequence<u8> SecretKey;
 
 [Custom]
 typedef string IpAddr;
