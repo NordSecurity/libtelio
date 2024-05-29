@@ -44,14 +44,14 @@ def serialize_event(event: libtelio.Event) -> str:
     if event.is_relay():
         event_dict["type"] = "relay"
         body["conn_state"] = extract_value(body["conn_state"])
-        body["public_key"] = base64.b64encode(body["public_key"]).decode("utf-8")
+        body["public_key"] = base64.b64encode(bytes(body["public_key"])).decode("utf-8")
     elif event.is_node():
         event_dict["type"] = "node"
         body["state"] = extract_value(body["state"])
         if body["link_state"] is not None:
             body["link_state"] = extract_value(body["link_state"])
         body["path"] = extract_value(body["path"])
-        body["public_key"] = base64.b64encode(body["public_key"]).decode("utf-8")
+        body["public_key"] = base64.b64encode(bytes(body["public_key"])).decode("utf-8")
     elif event.is_error():
         event_dict["type"] = "error"
         body["level"] = extract_value(body["level"])
