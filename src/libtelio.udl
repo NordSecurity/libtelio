@@ -436,6 +436,8 @@ dictionary Features {
     FeaturePostQuantumVPN post_quantum_vpn;
     /// Enable PMTU discovery, enabled by default
     FeaturePmtuDiscovery? pmtu_discovery;
+    /// Multicast support
+    boolean multicast;
 };
 
 /// Configurable features for Wireguard peers
