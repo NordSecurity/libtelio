@@ -657,7 +657,7 @@ class Client:
                     if self._process.is_executing():
                         await self.stop_device()
                         self._quit = True
-                    self.get_proxy().shutdown()
+                    self.get_proxy().shutdown(self._connection.target_name())
                     if self._router:
                         await self._router.delete_vpn_route()
                         await self._router.delete_exit_node_route()
