@@ -12,6 +12,9 @@ class DockerConnection(Connection):
     def container_name(self) -> str:
         return self._name
 
+    def target_name(self) -> str:
+        return self.container_name()
+
     def __init__(self, container: DockerContainer, container_name: str):
         super().__init__(TargetOS.Linux)
         self._name = container_name
