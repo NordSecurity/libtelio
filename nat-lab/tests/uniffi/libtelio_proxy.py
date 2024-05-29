@@ -1,6 +1,8 @@
 import Pyro5.errors  # type:ignore
 import time
+from datetime import datetime
 from Pyro5.api import Proxy  # type: ignore
+from typing import Optional
 
 
 class ProxyConnectionError(Exception):
@@ -24,9 +26,34 @@ class LibtelioProxy:
                     raise ProxyConnectionError(err) from err
                 time.sleep(0.25)
 
-    def shutdown(self):
-        with Proxy(self._uri) as remote:
-            remote.shutdown()
+    def shutdown(self, container_or_vm_name: Optional[str] = None):
+        try:
+            with Proxy(self._uri) as remote:
+                remote.shutdown()
+            print(
+                datetime.now(),
+                "Libtelio Proxy connection has been succesfully shut down",
+                "on",
+                "Unknown" if container_or_vm_name is None else container_or_vm_name,
+            )
+
+        except Pyro5.errors.ConnectionClosedError as e:
+            # Shutting down the server via client request is naturally racy,
+            # as sending of response is racing against process shutdown (and
+            # thus server-side socket being closed).
+            # In general handling process lifetime via client-side RPC Communication
+            # is not the best idea, therefore to fix that LLT-5223 was created. But
+            # there is a need to verify whether this specific race is in-fact actual
+            # cause of the flakyness. Therefore the exception for ConnectionClosedError
+            # is added
+            print(
+                datetime.now(),
+                "ConnectionClosedError raised during shutdown of libtelio RPC daemon",
+                "on",
+                "Unknown" if container_or_vm_name is None else container_or_vm_name,
+                "exception:",
+                e,
+            )
 
     def handle_remote_error(self, f):
         with Proxy(self._uri) as remote:
