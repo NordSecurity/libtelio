@@ -1388,6 +1388,7 @@ mod tests {
                         ttl_value: TtlValue(60),
                     },
                     pmtu_discovery: Default::default(),
+                    multicast: false,
                 },
                 post_quantum: MockPostQuantum::new(),
             }

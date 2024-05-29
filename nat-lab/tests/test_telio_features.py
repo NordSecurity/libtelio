@@ -69,3 +69,10 @@ def test_telio_features():
     )
     assert full_features == expected_full
     assert full_features.to_json() == expected_full.to_json()
+
+    multicast_features = TelioFeatures(multicast=False)
+    expected_multicast = TelioFeatures.from_json(
+        """{"is_test_env": true, "exit_dns": {"auto_switch_dns_ips": true}, "multicast":false}"""
+    )
+    assert multicast_features == expected_multicast
+    assert multicast_features.to_json() == expected_multicast.to_json()
