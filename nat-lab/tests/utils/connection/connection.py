@@ -29,6 +29,10 @@ class Connection(ABC):
     def target_os(self, target_os: TargetOS) -> None:
         self._target_os = target_os
 
+    @abstractmethod
+    def target_name(self) -> str:
+        pass
+
     async def get_ip_address(self) -> tuple[str, str]:
         ip = "127.0.0.1"
         return (ip, ip)
