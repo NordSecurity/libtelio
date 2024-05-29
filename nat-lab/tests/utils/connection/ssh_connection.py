@@ -10,10 +10,12 @@ from utils.process import Process, SshProcess
 
 class SshConnection(Connection):
     _connection: asyncssh.SSHClientConnection
+    _target_os: TargetOS
 
     def __init__(self, connection: asyncssh.SSHClientConnection, target_os: TargetOS):
         super().__init__(target_os)
         self._connection = connection
+        self._target_os = target_os
 
     def create_process(self, command: List[str]) -> "Process":
         print(datetime.now(), "Executing", command, "on", self.target_os)
@@ -33,3 +35,6 @@ class SshConnection(Connection):
     async def mapped_ports(self) -> tuple[str, str]:
         port = str(random.randrange(10000, 65000))
         return (port, port)
+
+    def target_name(self) -> str:
+        return str(self._target_os)
