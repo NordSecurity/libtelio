@@ -11,7 +11,6 @@ It supports a number of features, including:
 ## Quick Links
 
 - Telio integration [documentation][_telio_integration_documentation]
-- Telio Events [documentation][_telio_events_documentation]
 
 ## Using the libtelio API
 
