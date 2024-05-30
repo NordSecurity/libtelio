@@ -1,1 +1,0 @@
-Use latest nagger 3.1.0 and convert all tokio::time::interval(_at) calls to a wrapper from telio-utils

@@ -1,5 +1,19 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.0.0-rc1
+### **Chicken Salad**
+---
+* LLT-3475: Migrate natlab to UniFFI-generated python bindings
+* LLT-5208: Fix boringtun ignoring preshared key change
+* LLT-5215: Change the underlying UniFFI type for PublicKey and SecretKey
+* LLT-5082: Update boringtun to version v0.6.0
+* LLT-5148: Rebind sockets when network path changes on Apple
+* LLT-5188: Fix interface with static IP may be skipped for socket binding
+* LLT-5136: Apply PQ protocol changes after the security review
+* LLT-5212: Use structured events in FFI event callback
+
+<br>
+
 ### v5.0.0-rc
 ### **Chicken Salad**
 ---
