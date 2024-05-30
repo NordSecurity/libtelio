@@ -4342,7 +4342,6 @@ dependencies = [
  "tracing",
  "uniffi",
  "uuid",
- "wasm-bindgen",
  "winapi",
  "winres",
 ]
