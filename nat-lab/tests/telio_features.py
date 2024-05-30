@@ -133,3 +133,4 @@ class TelioFeatures(DataClassJsonMixin):
             handshake_retry_interval_s=8, rekey_interval_s=90
         )
     )
+    multicast: bool = False
