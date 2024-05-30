@@ -6,10 +6,6 @@ edition = "2018"
 license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 
-[package.metadata.cargo-udeps.ignore]
-# Ignore wasm-bindgen dependency on gitlab cargo-lint-udeps
-normal = ["wasm-bindgen"]
-
 [lib]
 crate-type = ["cdylib", "lib"]
 
@@ -20,7 +16,6 @@ pretend_to_be_macos = ["telio-model/pretend_to_be_macos"]
 cfg-if = "1.0.0"
 ffi_helpers = "0.3.0"
 num_cpus = "1.15.0"
-wasm-bindgen = "=0.2.83" # Only for compatability with moose wasm version
 h2 = "=0.3.26" # RUSTSEC-2024-0332
 
 anyhow.workspace = true
