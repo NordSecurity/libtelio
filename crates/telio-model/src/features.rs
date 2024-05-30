@@ -535,6 +535,9 @@ pub struct Features {
     /// PMTU discovery configuration, enabled by default
     #[serde(default = "FeaturePmtuDiscovery::serde_default")]
     pub pmtu_discovery: Option<FeaturePmtuDiscovery>,
+    /// Multicast support
+    #[serde(default)]
+    pub multicast: bool,
 }
 
 impl FeaturePaths {
@@ -650,7 +653,8 @@ mod tests {
                 },
                 "ttl_value": 60
             },
-            "pmtu_discovery": null
+            "pmtu_discovery": null,
+            "multicast": false
         }"#;
 
     static EXPECTED_FEATURES_WITH_IS_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
@@ -716,6 +720,7 @@ mod tests {
             ttl_value: TtlValue::default(),
         },
         pmtu_discovery: None,
+        multicast: false,
     });
     static EXPECTED_FEATURES_WITHOUT_IS_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
         wireguard: FeatureWireguard {
@@ -770,6 +775,7 @@ mod tests {
             ttl_value: TtlValue::default(),
         },
         pmtu_discovery: Some(Default::default()),
+        multicast: false,
     });
 
     #[test]
@@ -967,6 +973,7 @@ mod tests {
                 ttl_value: TtlValue::default(),
             },
             pmtu_discovery: Some(Default::default()),
+            multicast: false,
         };
 
         let empty_or_no_qos_features = Features {
@@ -1002,6 +1009,7 @@ mod tests {
                 ttl_value: TtlValue::default(),
             },
             pmtu_discovery: Some(Default::default()),
+            multicast: false,
         };
 
         let disabled_qos_features = Features {
@@ -1032,6 +1040,7 @@ mod tests {
                 ttl_value: TtlValue::default(),
             },
             pmtu_discovery: Some(Default::default()),
+            multicast: false,
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -1090,6 +1099,7 @@ mod tests {
                 ttl_value: TtlValue::default(),
             },
             pmtu_discovery: Some(Default::default()),
+            multicast: false,
         };
 
         let empty_features = Features {
@@ -1114,6 +1124,7 @@ mod tests {
                 ttl_value: TtlValue::default(),
             },
             pmtu_discovery: Some(Default::default()),
+            multicast: false,
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -1147,6 +1158,7 @@ mod tests {
                 ttl_value: TtlValue::default(),
             },
             pmtu_discovery: Some(Default::default()),
+            multicast: false,
         };
 
         assert_eq!(from_str::<Features>(empty_json).unwrap(), empty_features);
@@ -1206,6 +1218,7 @@ mod tests {
                 ttl_value: TtlValue::default(),
             },
             pmtu_discovery: Default::default(),
+            multicast: false,
         };
 
         assert_eq!(Features::default(), expected_defaults);
@@ -1237,5 +1250,56 @@ mod tests {
             .paths(),
             vec![PathType::Direct]
         );
+    }
+
+    mod multicast {
+        use super::*;
+
+        #[test]
+        fn test_multicast_missing() {
+            let empty_json = "{}";
+            let features = from_str::<Features>(empty_json).unwrap();
+            assert!(!features.multicast);
+        }
+
+        #[test]
+        fn test_multicast_true() {
+            let multicast_true = r#"
+            {
+                "multicast": true
+            }"#;
+            let features = from_str::<Features>(multicast_true).unwrap();
+            assert!(features.multicast);
+        }
+
+        #[test]
+        fn test_multicast_false() {
+            let multicast_false = r#"
+            {
+                "multicast": false
+            }"#;
+            let features = from_str::<Features>(multicast_false).unwrap();
+            assert!(!features.multicast);
+        }
+
+        #[test]
+        fn test_multicast_invalid() {
+            for invalid in [
+                r#"
+            {
+                "multicast": 123
+            }"#,
+                r#"
+            {
+                "multicast": null
+            }"#,
+                r#"
+            {
+                "multicast": "abc"
+            }"#,
+            ] {
+                assert!(from_str::<Features>(invalid).is_err());
+            }
+        }
     }
 }
