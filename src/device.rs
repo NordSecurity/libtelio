@@ -5,6 +5,7 @@ use telio_crypto::{PublicKey, SecretKey};
 use telio_firewall::firewall::{Firewall, StatefullFirewall};
 use telio_lana::init_lana;
 use telio_nat_detect::nat_detection::{retrieve_single_nat, NatData};
+use telio_network_monitors::mac::setup_network_path_monitor;
 use telio_pq::PostQuantum;
 use telio_proto::HeartbeatMessage;
 use telio_proxy::{Config as ProxyConfig, Io as ProxyIo, Proxy, UdpProxy};
@@ -437,8 +438,7 @@ impl Device {
         telio_log_info!("libtelio is starting up with features : {:?}", features);
 
         #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
-        NETWORK_PATH_MONITOR_START
-            .call_once(telio_sockets::protector::platform::setup_network_path_monitor);
+        NETWORK_PATH_MONITOR_START.call_once(setup_network_path_monitor);
 
         if let Some(lana) = &features.lana {
             if init_lana(lana.event_path.clone(), version_tag.to_string(), lana.prod).is_err() {

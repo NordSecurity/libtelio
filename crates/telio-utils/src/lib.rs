@@ -49,3 +49,6 @@ pub use pinger::*;
 
 /// Testing tools
 pub mod test;
+/// Get local interfaces
+pub mod local_interfaces;
+pub use local_interfaces::*;
