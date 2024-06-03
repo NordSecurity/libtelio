@@ -202,7 +202,7 @@ impl SocketPool {
 
     /// binds socket to tunnel interface on mac and iOS
     pub fn make_internal(&self, _socket: NativeSocket) -> io::Result<()> {
-        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+        #[cfg(any(test, target_os = "macos", target_os = "ios", target_os = "tvos"))]
         self.protect.make_internal(_socket)?;
         Ok(())
     }
@@ -238,7 +238,7 @@ mod tests {
     use mockall::mock;
     use rstest::rstest;
 
-    use crate::{native::NativeSocket, Protect};
+    use crate::{native::NativeSocket, protector::make_external_protector, Protect};
 
     use super::*;
 
@@ -249,12 +249,9 @@ mod tests {
         impl Protector for Protector {
             fn make_external(&self, socket: NativeSocket) -> io::Result<()>;
             fn clean(&self, socket: NativeSocket);
-            #[cfg(target_os = "linux")]
             fn set_fwmark(&self, fwmark: u32);
-            #[cfg(any(target_os = "macos", windows))]
             fn set_tunnel_interface(&self, interface: u64);
-            #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
-            fn make_internal(&self, interface: i32) -> Result<(), std::io::Error>;
+            fn make_internal(&self, interface: NativeSocket) -> Result<(), std::io::Error>;
         }
     }
 
@@ -319,7 +316,7 @@ mod tests {
                 socks.lock().unwrap().push(s);
             })
         };
-        let pool = SocketPool::new(protect);
+        let pool = SocketPool::new(make_external_protector(protect));
         let tcp = pool.new_external_tcp_v4(None).expect("tcp");
 
         assert_eq!(socks.lock().unwrap().clone(), vec![tcp.as_native_socket()]);
@@ -333,7 +330,8 @@ mod tests {
     #[case(IpAddr::V6(Ipv6Addr::UNSPECIFIED))]
     #[tokio::test]
     async fn internal_udp_socket_can_transfer_data(#[case] ip_addr: IpAddr) {
-        let protect = MockProtector::default();
+        let mut protect = MockProtector::default();
+        protect.expect_make_internal().returning(|_| Ok(()));
         let pool = SocketPool::new(protect);
         let addr = SocketAddr::new(ip_addr, 0);
         let socket = match pool.new_internal_udp(addr, None).await {
@@ -346,7 +344,8 @@ mod tests {
         };
         let local_addr = socket.local_addr().unwrap();
         tokio::spawn(async move {
-            let protect = MockProtector::default();
+            let mut protect = MockProtector::default();
+            protect.expect_make_internal().returning(|_| Ok(()));
             let pool = SocketPool::new(protect);
             let addr = SocketAddr::new(ip_addr, 0);
             let socket = pool.new_internal_udp(addr, None).await.unwrap();
@@ -366,6 +365,7 @@ mod tests {
     #[tokio::test]
     async fn external_udp_socket_can_transfer_data(#[case] ip_addr: IpAddr) {
         let mut protect = MockProtector::default();
+        protect.expect_make_internal().returning(|_| Ok(()));
         protect.expect_make_external().returning(|_| Ok(()));
         protect.expect_clean().return_const(());
         let pool = SocketPool::new(protect);

@@ -8,8 +8,7 @@ use telio_crypto::{PublicKey, SecretKey};
 use telio_wg::AdapterType;
 use tracing::{error, trace, Subscriber};
 
-#[cfg(target_os = "android")]
-use telio_sockets::Protect;
+use telio_sockets::protector::make_external_protector;
 use uuid::Uuid;
 
 use std::{
@@ -254,7 +253,7 @@ impl Telio {
         #[cfg(not(target_os = "android"))]
         let protect = None;
         #[cfg(target_os = "android")]
-        let protect: Option<Protect> = match protect_cb {
+        let protect: Option<telio_sockets::Protect> = match protect_cb {
             Some(protect) => {
                 let protect = protect;
                 Some(Arc::new(move |fd| {
@@ -271,7 +270,11 @@ impl Telio {
             let features = features.clone();
             let event_dispatcher = event_dispatcher.clone();
             let protect = protect.clone();
-            let device = Device::new(features, event_dispatcher, protect)?;
+            let device = Device::new(
+                features,
+                event_dispatcher,
+                protect.map(make_external_protector),
+            )?;
             Ok(Self {
                 inner: Mutex::new(Some(device)),
                 id: rand::thread_rng().gen::<usize>(),

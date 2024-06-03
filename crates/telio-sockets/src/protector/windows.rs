@@ -52,11 +52,19 @@ impl Protector for NativeProtector {
         Ok(())
     }
 
+    /// This is a no-op on Windows.
+    fn make_internal(&self, _socket: NativeSocket) -> io::Result<()> {
+        Ok(())
+    }
+
     fn clean(&self, socket: NativeSocket) {
         let mut socks = self.sockets.lock();
         socks.sockets.retain(|s| s != &socket);
         socks.notify.notify_waiters();
     }
+
+    /// This is a no-op on Windows.
+    fn set_fwmark(&self, _fwmark: u32) {}
 
     fn set_tunnel_interface(&self, interface: u64) {
         let mut socks = self.sockets.lock();
