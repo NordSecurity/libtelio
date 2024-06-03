@@ -1,6 +1,6 @@
 use bytes::BufMut;
 use std::convert::TryFrom;
-use telio_utils::telio_log_error;
+use telio_utils::{telio_log_error, telio_log_generic};
 
 use crate::{
     Codec, CodecError, CodecResult, DowncastPacket, Generation, PacketRelayed, PacketTypeRelayed,

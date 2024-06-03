@@ -18,7 +18,7 @@
 use std::{ffi::c_int, io, net::IpAddr, os::fd::AsRawFd, time::Duration};
 
 use pnet_packet::{icmp, icmpv6, Packet};
-use telio_utils::{telio_log_debug, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_generic, telio_log_warn};
 use tokio::net::UdpSocket;
 
 pub struct PMTUSocket {
@@ -473,7 +473,7 @@ fn read_error_pmtu(sock: &impl AsRawFd, is_ipv6: bool) -> io::Result<u32> {
                             err.ee_code,
                             err.ee_pad,
                             err.ee_info,
-                            err.ee_data,
+                            err.ee_data
                         );
 
                         if err.ee_errno == libc::EMSGSIZE as u32 {

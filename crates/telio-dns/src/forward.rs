@@ -25,7 +25,9 @@ use hickory_server::{
     server::RequestInfo,
     store::forwarder::ForwardConfig,
 };
-use telio_utils::{telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn};
+use telio_utils::{
+    telio_log_debug, telio_log_generic, telio_log_info, telio_log_trace, telio_log_warn,
+};
 use tokio::net::UdpSocket;
 
 use crate::bind_tun;

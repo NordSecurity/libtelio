@@ -13,7 +13,7 @@ use tokio_util::sync::PollSender;
 use telio_crypto::PublicKey;
 use telio_proto::{AnyPacket, PacketRelayed, PacketTypeRelayed};
 use telio_task::{io::Chan, task_exec, BoxAction, Runtime, Task};
-use telio_utils::telio_log_error;
+use telio_utils::{telio_log_error, telio_log_generic};
 
 use self::inout::InOut;
 use self::mc::MultiChannel;

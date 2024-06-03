@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::iter::FromIterator;
 use std::net::SocketAddr;
 
@@ -23,8 +24,27 @@ use telio_utils::Hidden;
 ///
 /// assert_eq!(bytes, data.encode().unwrap().as_slice());
 /// ```
-#[derive(Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub struct CallMeMaybeMsg(CallMeMaybe);
+
+impl Debug for CallMeMaybeMsg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("CallMeMaybe")
+            .field(&self.0.get_i_am())
+            .field(
+                &self
+                    .0
+                    .my_addresses
+                    .clone()
+                    .into_iter()
+                    .map(Hidden)
+                    .collect::<Vec<Hidden<String>>>(),
+            )
+            .field(&self.0.get_session())
+            .field(&self)
+            .finish()
+    }
+}
 
 impl CallMeMaybeMsg {
     /// Returns new msg [`CallMeMaybeMsg`].

@@ -25,7 +25,9 @@ use tokio::sync::{RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, Semaphore};
 use tokio::task::JoinHandle;
 use tokio::{net::UdpSocket, sync::Mutex};
 
-use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
+use telio_utils::{
+    telio_log_debug, telio_log_error, telio_log_generic, telio_log_trace, telio_log_warn,
+};
 
 const IPV4_HEADER: usize = 20; // bytes
 const IPV6_HEADER: usize = 40; // bytes

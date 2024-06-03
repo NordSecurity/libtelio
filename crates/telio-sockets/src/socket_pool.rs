@@ -16,7 +16,7 @@ use tokio::{
 
 #[cfg(unix)]
 use boringtun::device::MakeExternalBoringtun;
-use telio_utils::{telio_log_debug, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_generic, telio_log_warn};
 
 use crate::{
     native::{AsNativeSocket, NativeSocket},

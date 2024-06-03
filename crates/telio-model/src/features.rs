@@ -6,7 +6,7 @@ use std::{collections::HashSet, fmt};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{de::IntoDeserializer, Deserialize, Deserializer, Serialize};
 use strum_macros::EnumCount;
-use telio_utils::telio_log_warn;
+use telio_utils::{telio_log_generic, telio_log_warn};
 
 /// Default keepalive period used for proxying peers,
 /// STUN servers and VPN servers

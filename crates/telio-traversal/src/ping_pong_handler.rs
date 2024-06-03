@@ -14,7 +14,7 @@ use telio_proto::{
     CodecError, PacketRelayed, PacketTypeRelayed, PingerMsg, Session, Timestamp, WGPort,
 };
 use telio_task::io::chan;
-use telio_utils::{telio_log_debug, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_generic, telio_log_warn};
 use tokio::{net::UdpSocket, sync::Mutex};
 
 use crate::endpoint_providers::PongEvent;

@@ -24,7 +24,8 @@ use telio_proto::{CallMeMaybeMsg, CallMeMaybeType, Session};
 use telio_task::{io::chan, io::Chan, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
     exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
-    interval, telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn, LruCache,
+    interval, telio_log_debug, telio_log_generic, telio_log_info, telio_log_trace, telio_log_warn,
+    LruCache,
 };
 use tokio::sync::Mutex;
 use tokio::time::{Instant, Interval};
@@ -882,13 +883,13 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
                         telio_log_debug!(
                             "Received a pong for session {:?} for a different candidate {:?} on stun socket, ignoring.",
                             event.msg.get_session(),
-                            event.msg.get_ping_source_address(),
+                            event.msg.get_ping_source_address()
                         );
                     }
                 } else {
                     telio_log_warn!(
                         "Received a pong for session {:?} without ping_source_address. Ignoring",
-                        event.msg.get_session(),
+                        event.msg.get_session()
                     );
                 }
             }
@@ -981,7 +982,7 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
                     reason => {
                         telio_log_debug!(
                             "Skipping sending CMM to peer {} ({reason:?})",
-                            self.public_key,
+                            self.public_key
                         );
                     }
                 }

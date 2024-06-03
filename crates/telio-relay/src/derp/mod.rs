@@ -35,8 +35,8 @@ use telio_sockets::SocketPool;
 use telio_task::io::{wait_for_tx, Chan};
 use telio_task::{io::mc_chan::Tx, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
-    telio_err_with_log, telio_log_debug, telio_log_error, telio_log_info, telio_log_trace,
-    telio_log_warn,
+    telio_err_with_log, telio_log_debug, telio_log_error, telio_log_generic, telio_log_info,
+    telio_log_trace, telio_log_warn,
 };
 use tokio::sync::mpsc::OwnedPermit;
 use tokio::{task::JoinHandle, time::sleep};

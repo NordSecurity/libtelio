@@ -21,7 +21,7 @@ use std::{
 };
 use telio_crypto::{PublicKey, SecretKey, KEY_SIZE};
 use telio_model::config::RelayConnectionChangeReason;
-use telio_utils::{telio_log_debug, telio_log_trace};
+use telio_utils::{telio_log_debug, telio_log_generic, telio_log_trace};
 use thiserror::Error as TError;
 use tracing::{enabled, Level};
 
@@ -224,7 +224,7 @@ pub async fn start_read<R: AsyncRead + Unpin>(
                         frame_type,
                         data.len(),
                         public_key,
-                        chan,
+                        chan
                     );
                 }
                 sender_relayed.send((public_key, data)).await?
@@ -236,7 +236,7 @@ pub async fn start_read<R: AsyncRead + Unpin>(
                     addr.remote,
                     addr.local,
                     frame_type,
-                    data.len(),
+                    data.len()
                 );
                 sender_direct.send(data).await?
             }
@@ -272,7 +272,7 @@ pub async fn start_write<W: AsyncWrite + Unpin>(
                             addr.remote,
                             data.len(),
                             public_key,
-                            chan,
+                            chan
                         );
                     }
 

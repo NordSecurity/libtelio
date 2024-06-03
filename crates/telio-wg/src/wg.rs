@@ -14,7 +14,8 @@ use telio_model::{
 use telio_sockets::{NativeProtector, SocketPool};
 use telio_utils::{
     dual_target::{DualTarget, DualTargetError},
-    interval, telio_err_with_log, telio_log_debug, telio_log_trace, telio_log_warn,
+    interval, telio_err_with_log, telio_log_debug, telio_log_generic, telio_log_trace,
+    telio_log_warn,
 };
 use thiserror::Error as TError;
 use tokio::time::{self, sleep, Instant, Interval, MissedTickBehavior};

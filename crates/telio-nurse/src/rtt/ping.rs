@@ -1,14 +1,14 @@
 use socket2::Type;
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::convert::TryInto;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use std::time::Duration;
-use std::{convert::TryInto, net::IpAddr};
 use surge_ping::{
     Client, Config as PingerConfig, ConfigBuilder, PingIdentifier, PingSequence, ICMP,
 };
 
 use telio_crypto::PublicKey;
-use telio_utils::{telio_log_debug, telio_log_error, DualTarget};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_generic, DualTarget};
 
 /// Information needed to check the reachability of endpoints.
 ///

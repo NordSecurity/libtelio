@@ -1,6 +1,6 @@
 use std::{io::Error, time::Duration};
 
-use telio_utils::{telio_log_trace, telio_log_warn};
+use telio_utils::{telio_log_generic, telio_log_trace, telio_log_warn};
 
 use socket2::Socket;
 
@@ -124,7 +124,7 @@ impl TcpParams {
                     "Cannot set TCP_NODELAY={} for {:?} socket: {}",
                     nodelay_enable,
                     addr,
-                    Error::last_os_error().to_string(),
+                    Error::last_os_error().to_string()
                 );
             }
         }
@@ -135,7 +135,7 @@ impl TcpParams {
                 "Cannot set TCP user timeout: {:?} for {:?} socket: {}",
                 self.user_timeout,
                 socket.local_addr(),
-                Error::last_os_error().to_string(),
+                Error::last_os_error().to_string()
             );
         }
 
@@ -157,7 +157,7 @@ impl TcpParams {
                     "Cannot set TCP keepalive options {:?} for {:?} socket: {}",
                     keepalive,
                     addr,
-                    Error::last_os_error().to_string(),
+                    Error::last_os_error().to_string()
                 );
             }
 
@@ -167,7 +167,7 @@ impl TcpParams {
             telio_log_warn!(
                 "Cannot disable TCP keepalive for {:?} socket: {}",
                 addr,
-                Error::last_os_error().to_string(),
+                Error::last_os_error().to_string()
             );
         }
 

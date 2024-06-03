@@ -4,7 +4,7 @@ use tokio::task::JoinHandle;
 
 use telio_model::features::FeaturePostQuantumVPN;
 use telio_task::io::chan;
-use telio_utils::{interval, telio_log_debug, telio_log_warn};
+use telio_utils::{interval, telio_log_debug, telio_log_generic, telio_log_warn};
 
 use crate::proto;
 

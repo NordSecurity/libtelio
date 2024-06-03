@@ -14,7 +14,8 @@ use telio_sockets::{native::AsNativeSocket, External};
 use telio_task::{io::chan, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
     exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
-    telio_log_debug, telio_log_error, telio_log_info, telio_log_warn, PinnedSleep,
+    telio_log_debug, telio_log_error, telio_log_generic, telio_log_info, telio_log_warn,
+    PinnedSleep,
 };
 use telio_wg::{DynamicWg, WireGuard};
 use tokio::{net::UdpSocket, pin, sync::Mutex};
@@ -890,7 +891,7 @@ impl StunSession {
         telio_log_debug!(
             "Sending wg-stun: {} for ses: {:?}",
             &wg,
-            wg_stun.0.as_bytes(),
+            wg_stun.0.as_bytes()
         );
 
         if let Err(err) = socket_via_wg.send_to(&wg_stun.1, wg).await {
@@ -949,7 +950,7 @@ impl StunRequest {
                     "Got stun response from {} for session {:?} -> {}",
                     src_addr,
                     tid.as_bytes(),
-                    &sa,
+                    &sa
                 );
 
                 sa

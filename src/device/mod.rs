@@ -67,7 +67,7 @@ use futures::FutureExt;
 use telio_utils::{
     commit_sha,
     exponential_backoff::ExponentialBackoffBounds,
-    interval, telio_log_debug, telio_log_error, telio_log_info, telio_log_warn,
+    interval, telio_log_debug, telio_log_error, telio_log_generic, telio_log_info, telio_log_warn,
     tokio::{Monitor, ThreadTracker},
     version_tag,
 };

@@ -4,7 +4,7 @@ use ipnetwork::{IpNetwork, IpNetworkError};
 use serde::{Deserialize, Serialize};
 use telio_crypto::{KeyDecodeError, PresharedKey, PublicKey, SecretKey};
 use telio_model::mesh::{LinkState, Node, NodeState};
-use telio_utils::{telio_log_warn, DualTarget, DualTargetError};
+use telio_utils::{telio_log_generic, telio_log_warn, DualTarget, DualTargetError};
 use wireguard_uapi::{get, xplatform::set};
 
 use std::{

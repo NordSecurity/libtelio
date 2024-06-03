@@ -17,7 +17,7 @@ use std::{
     str::FromStr,
 };
 use telio_model::features::TtlValue;
-use telio_utils::telio_log_warn;
+use telio_utils::{telio_log_generic, telio_log_warn};
 
 use crate::forward::ForwardAuthority;
 

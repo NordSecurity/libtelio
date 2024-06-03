@@ -250,7 +250,7 @@ impl State {
                 "disconnect"
             } else {
                 "heartbeat"
-            },
+            }
         );
 
         let qos_data = QoSData::merge(internal_qos_data, external_qos_data);

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use telio_model::features::FeaturePostQuantumVPN;
 use telio_task::io::chan;
-use telio_utils::telio_log_debug;
+use telio_utils::{telio_log_debug, telio_log_generic};
 
 struct Peer {
     addr: SocketAddr,

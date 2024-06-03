@@ -22,7 +22,8 @@ use tokio::{net::UdpSocket, sync::mpsc::error::SendTimeoutError};
 
 use telio_utils::{
     exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
-    telio_log_debug, telio_log_error, telio_log_info, telio_log_warn, PinnedSleep,
+    telio_log_debug, telio_log_error, telio_log_generic, telio_log_info, telio_log_warn,
+    PinnedSleep,
 };
 
 type SocketMap = HashMap<PublicKey, Arc<UdpSocket>>;

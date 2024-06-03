@@ -21,7 +21,7 @@ mod darwin {
     use lazy_static::lazy_static;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::{io, os::unix::prelude::AsRawFd, sync::Mutex};
-    use telio_utils::{telio_log_debug, telio_log_trace, telio_log_warn};
+    use telio_utils::{telio_log_debug, telio_log_generic, telio_log_trace, telio_log_warn};
 
     static SHOULD_BIND: AtomicBool = AtomicBool::new(false);
 
@@ -110,7 +110,7 @@ mod darwin {
 mod any {
     use std::io;
 
-    use telio_utils::telio_log_trace;
+    use telio_utils::{telio_log_generic, telio_log_trace};
 
     #[inline]
     pub(crate) fn set_tun<T>(_: T) -> io::Result<()> {

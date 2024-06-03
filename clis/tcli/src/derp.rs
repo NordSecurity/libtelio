@@ -9,7 +9,7 @@ use telio_proto::{Codec, PacketRelayed};
 use telio_relay::{DerpRelay, SortedServers};
 use telio_sockets::{NativeProtector, SocketPool};
 use telio_task::io::{chan::Tx, Chan, McChan};
-use telio_utils::{telio_log_debug, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_generic, telio_log_warn};
 use tokio::{runtime::Runtime, task::JoinHandle};
 
 use crate::{cli::Resp, cli_res, cli_try};

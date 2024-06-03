@@ -31,7 +31,8 @@ use telio_model::{
 
 // debug tools
 use telio_utils::{
-    commit_sha, telio_log_debug, telio_log_error, telio_log_info, telio_log_warn, version_tag,
+    commit_sha, telio_log_debug, telio_log_error, telio_log_generic, telio_log_info,
+    telio_log_warn, version_tag,
 };
 
 const DEFAULT_PANIC_MSG: &str = "libtelio panicked";
@@ -383,7 +384,7 @@ impl Telio {
             self.id,
             private_key.public(),
             &adapter,
-            &name,
+            &name
         );
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
@@ -443,7 +444,7 @@ impl Telio {
 
     /// Stop telio device.
     pub fn stop(&self) -> FFIResult<()> {
-        telio_log_info!("Telio::stop entry with instance id: {}.", self.id,);
+        telio_log_info!("Telio::stop entry with instance id: {}.", self.id);
         catch_ffi_panic(|| {
             self.device_op(false, |dev| {
                 dev.stop();
@@ -564,7 +565,7 @@ impl Telio {
             self.id,
             public_key,
             allowed_ips,
-            endpoint,
+            endpoint
         );
         self.connect_to_exit_node_with_id(None, public_key, allowed_ips, endpoint)
     }
@@ -592,7 +593,7 @@ impl Telio {
             identifier,
             public_key,
             allowed_ips,
-            endpoint,
+            endpoint
         );
         let identifier = identifier.unwrap_or_else(|| Uuid::new_v4().to_string());
         let node = ExitNode {
@@ -632,7 +633,7 @@ impl Telio {
             identifier,
             public_key,
             allowed_ips,
-            endpoint,
+            endpoint
         );
         let identifier = identifier.unwrap_or_else(|| Uuid::new_v4().to_string());
         let node = ExitNode {

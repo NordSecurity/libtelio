@@ -1,6 +1,6 @@
 //! Config validation checks
 
-use telio_utils::telio_log_debug;
+use telio_utils::{telio_log_debug, telio_log_generic};
 
 /// Nickname validation checks (RFC #009)
 pub fn validate_nickname(name: &str) -> bool {

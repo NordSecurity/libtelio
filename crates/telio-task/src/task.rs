@@ -10,7 +10,7 @@ use tokio::{
     task::JoinHandle,
 };
 
-use telio_utils::telio_log_warn;
+use telio_utils::{telio_log_generic, telio_log_warn};
 
 use crate::io::{
     chan::{Rx, Tx},

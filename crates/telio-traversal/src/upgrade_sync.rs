@@ -10,7 +10,9 @@ use telio_model::features::EndpointProvider;
 use telio_nurse::aggregator::ConnectivityDataAggregator;
 use telio_proto::{Decision, Session, UpgradeDecisionMsg, UpgradeMsg};
 use telio_task::{io::chan, io::Chan, task_exec, BoxAction, Runtime, Task};
-use telio_utils::{interval, telio_log_debug, telio_log_info, telio_log_warn, LruCache};
+use telio_utils::{
+    interval, telio_log_debug, telio_log_generic, telio_log_info, telio_log_warn, LruCache,
+};
 use telio_wg::uapi::{AnalyticsEvent, PeerState};
 use telio_wg::WireGuard;
 use tokio::{
@@ -204,7 +206,7 @@ impl State {
             public_key,
             remote_endpoint,
             local_direct_endpoint,
-            session,
+            session
         );
 
         if let Some(upgrade_request) = self.upgrade_requests.get(&Direction::Received(*public_key))
@@ -266,7 +268,7 @@ impl State {
             upgrade_msg.endpoint,
             upgrade_msg.endpoint_type,
             upgrade_msg.receiver_endpoint_type,
-            upgrade_msg.session,
+            upgrade_msg.session
         );
 
         match self

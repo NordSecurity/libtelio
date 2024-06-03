@@ -1,7 +1,7 @@
 //! This module is a mock for libmoose API, it logs moose function calls to file.
 //!
 use std::{fs::File, io::Write};
-use telio_utils::telio_log_error;
+use telio_utils::{telio_log_error, telio_log_generic};
 
 pub use telio_utils::telio_log_warn;
 

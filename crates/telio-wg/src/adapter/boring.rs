@@ -7,7 +7,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 use std::{io, ops::Deref};
 use telio_crypto::PublicKey;
-use telio_utils::telio_log_debug;
+use telio_utils::{telio_log_debug, telio_log_generic};
 use tokio::sync::RwLock;
 
 use super::{Adapter, Error as AdapterError, Tun as NativeTun};

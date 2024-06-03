@@ -10,7 +10,7 @@ use ipnetwork::{IpNetwork, IpNetworkError};
 use std::collections::BTreeMap;
 use std::net::IpAddr;
 use telio_crypto::{PublicKey, SecretKey};
-use telio_utils::{telio_log_error, telio_log_info};
+use telio_utils::{telio_log_error, telio_log_generic, telio_log_info};
 use tokio::sync::Mutex;
 use wireguard_uapi::{
     err, get, linux::set::WgDeviceF, set, xplatform, DeviceInterface, RouteSocket, WgSocket,

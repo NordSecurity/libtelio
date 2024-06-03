@@ -9,7 +9,8 @@ use std::slice::Windows;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::{mem, option, result};
 use telio_utils::{
-    telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn,
+    telio_log_debug, telio_log_error, telio_log_generic, telio_log_info, telio_log_trace,
+    telio_log_warn,
 };
 #[cfg(windows)]
 use wireguard_nt::{self, set_logger, SetInterface, SetPeer};

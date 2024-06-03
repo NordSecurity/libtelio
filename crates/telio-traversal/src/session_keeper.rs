@@ -12,8 +12,8 @@ use telio_crypto::PublicKey;
 use telio_sockets::SocketPool;
 use telio_task::{task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
-    dual_target, repeated_actions, telio_log_debug, telio_log_trace, telio_log_warn, DualTarget,
-    RepeatedActions,
+    dual_target, repeated_actions, telio_log_debug, telio_log_generic, telio_log_trace,
+    telio_log_warn, DualTarget, RepeatedActions,
 };
 
 const PING_PAYLOAD_SIZE: usize = 56;

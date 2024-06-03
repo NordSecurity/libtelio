@@ -3,7 +3,7 @@
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::{from_value, Error, Value};
-use telio_utils::{telio_log_error, telio_log_warn, Hidden};
+use telio_utils::{telio_log_error, telio_log_generic, telio_log_warn, Hidden};
 use tokio::time::Instant;
 
 use std::{

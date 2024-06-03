@@ -14,7 +14,7 @@ use telio_model::features::RttType;
 use telio_task::{io::mc_chan, Runtime, RuntimeExt, WaitResponse};
 use telio_wg::uapi::{AnalyticsEvent, PeerState};
 
-use telio_utils::{interval, telio_log_debug, telio_log_trace, DualTarget};
+use telio_utils::{interval, telio_log_debug, telio_log_generic, telio_log_trace, DualTarget};
 
 use crate::config::QoSConfig;
 

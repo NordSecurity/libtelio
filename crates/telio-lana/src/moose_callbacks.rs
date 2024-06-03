@@ -3,7 +3,7 @@ pub use crate::event_log::moose::{
 };
 
 use std::sync::mpsc::SyncSender;
-pub use telio_utils::{telio_log_error, telio_log_info, telio_log_warn};
+pub use telio_utils::{telio_log_error, telio_log_generic, telio_log_info, telio_log_warn};
 
 /// Struct for moose::InitCallback
 pub struct MooseInitCallback {

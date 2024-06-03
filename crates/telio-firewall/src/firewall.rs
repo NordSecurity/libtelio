@@ -28,7 +28,7 @@ use telio_utils::{
 use tracing::error;
 
 use telio_crypto::PublicKey;
-use telio_utils::{telio_log_debug, telio_log_trace, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_generic, telio_log_trace, telio_log_warn};
 
 /// HashSet type used internally by firewall and returned by get_peer_whitelist
 pub type HashSet<V> = rustc_hash::FxHashSet<V>;
@@ -650,7 +650,7 @@ impl StatefullFirewall {
                     return false;
                 }
 
-                telio_log_trace!("Updating UDP conntrack entry {:?} {:?}", key, peer,);
+                telio_log_trace!("Updating UDP conntrack entry {:?} {:?}", key, peer);
                 vacc.insert(UdpConnectionInfo {
                     is_remote_initiated: true,
                     last_out_pkg_chunk: None,
@@ -759,7 +759,7 @@ impl StatefullFirewall {
                 let mut icmp_cache = unwrap_lock_or_return!(self.icmp.lock(), false);
                 let is_in_cache = icmp_cache.get(&key).is_some();
                 if is_in_cache {
-                    telio_log_trace!("Matched ICMP conntrack entry {:?}", key,);
+                    telio_log_trace!("Matched ICMP conntrack entry {:?}", key);
                     telio_log_trace!("Removing ICMP conntrack entry {:?}", key);
                     icmp_cache.remove(&key);
                     telio_log_trace!("Accepting ICMP packet {:?} {:?}", ip, peer);
@@ -970,7 +970,7 @@ impl StatefullFirewall {
                 if is_in_cache {
                     telio_log_trace!(
                         "Nested packet in ICMP error packet matched ICMP conntrack entry {:?}",
-                        icmp_key,
+                        icmp_key
                     );
                     telio_log_trace!("Removing ICMP conntrack entry {:?}", icmp_key);
                     icmp_cache.remove(&icmp_key);
@@ -986,7 +986,7 @@ impl StatefullFirewall {
                 if is_in_cache {
                     telio_log_trace!(
                         "Nested packet in ICMP error packet matched TCP conntrack entry {:?}",
-                        tcp_key,
+                        tcp_key
                     );
                     telio_log_trace!("Removing TCP conntrack entry {:?}", tcp_key);
                     tcp_cache.remove(&tcp_key);
@@ -1001,7 +1001,7 @@ impl StatefullFirewall {
                 if is_in_cache {
                     telio_log_trace!(
                         "Nested packet in ICMP error packet matched UDP conntrack entry {:?}",
-                        udp_key,
+                        udp_key
                     );
                     telio_log_trace!("Removing UDP conntrack entry {:?}", udp_key);
                     udp_cache.remove(&udp_key);

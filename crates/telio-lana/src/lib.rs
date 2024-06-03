@@ -9,7 +9,7 @@ use std::{
     time::Duration,
 };
 
-pub use telio_utils::{telio_log_error, telio_log_warn};
+pub use telio_utils::{telio_log_error, telio_log_generic, telio_log_warn};
 
 #[cfg_attr(all(feature = "moose", not(docrs)), path = "event_log_moose.rs")]
 #[cfg_attr(any(not(feature = "moose"), docsrs), path = "event_log_file.rs")]

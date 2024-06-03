@@ -11,7 +11,7 @@ use telio_model::{
     features::EndpointProvider,
     HashMap,
 };
-use telio_utils::{telio_log_debug, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_generic, telio_log_warn};
 use telio_wg::{
     uapi::{AnalyticsEvent, PeerState},
     WireGuard,
@@ -297,7 +297,7 @@ impl ConnectivityDataAggregator {
                 event.public_key,
                 event.peer_state,
                 endpoints.local_ep,
-                endpoints.remote_ep,
+                endpoints.remote_ep
             );
         }
 

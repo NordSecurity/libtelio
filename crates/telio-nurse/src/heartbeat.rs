@@ -28,7 +28,8 @@ use telio_task::{
     Runtime, RuntimeExt, WaitResponse,
 };
 use telio_utils::{
-    interval_at, map_enum, telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn,
+    interval_at, map_enum, telio_log_debug, telio_log_error, telio_log_generic, telio_log_trace,
+    telio_log_warn,
 };
 use telio_wg::uapi::PeerState;
 use tokio::time::{sleep, Duration, Instant, Interval, Sleep};

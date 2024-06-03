@@ -17,7 +17,7 @@ use pnet_packet::{
 use pqcrypto_kyber::kyber768;
 use pqcrypto_traits::kem::{Ciphertext, PublicKey, SharedSecret};
 use rand::{prelude::Distribution, SeedableRng};
-use telio_utils::telio_log_debug;
+use telio_utils::{telio_log_debug, telio_log_generic};
 use tokio::net::{ToSocketAddrs, UdpSocket};
 
 const SERVICE_PORT: u16 = 6480;

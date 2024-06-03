@@ -36,7 +36,9 @@ use network_framework_sys::{
     nw_path_monitor_start, nw_path_monitor_t, nw_path_t,
 };
 use nix::sys::socket::{getsockname, AddressFamily, SockaddrLike, SockaddrStorage};
-use telio_utils::{telio_log_debug, telio_log_error, telio_log_info, telio_log_warn};
+use telio_utils::{
+    telio_log_debug, telio_log_error, telio_log_generic, telio_log_info, telio_log_warn,
+};
 
 extern "C" {
     // Obj-c signature:
@@ -115,7 +117,7 @@ pub(crate) fn bind(interface_index: u32, socket: i32) -> io::Result<()> {
             }
         }
     } else {
-        telio_log_warn!("Failed to find sock addr for socket : {}", socket);
+        telio_log_warn!("Failed to find sock addr for socket : {}", Hidden(socket));
     }
 
     Ok(())
@@ -280,7 +282,7 @@ impl Sockets {
     }
 
     fn rebind(&mut self, sock: i32, force: bool) {
-        telio_log_debug!("Rebinding socket {}, force: {}", sock, force);
+        telio_log_debug!("Rebinding socket {}, force: {}", Hidden(sock), force);
 
         if !self.set_new_default_interface(force) {
             return;

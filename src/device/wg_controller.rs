@@ -23,7 +23,7 @@ use telio_traversal::{
     },
     SessionKeeperTrait, UpgradeSyncTrait, WireGuardEndpointCandidateChangeEvent,
 };
-use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_generic, telio_log_info, telio_log_warn};
 use telio_wg::{uapi::Peer, WireGuard};
 use thiserror::Error as TError;
 use tokio::sync::Mutex;
@@ -830,7 +830,7 @@ async fn select_endpoint_for_peer<'a>(
             telio_log_debug!(
                 "Connections seems to be dead, forcing proxied EP: {:?} {:?}",
                 public_key,
-                time_since_last_rx,
+                time_since_last_rx
             );
             Ok((proxy_endpoint.first().copied(), None))
         }
@@ -840,7 +840,7 @@ async fn select_endpoint_for_peer<'a>(
             telio_log_debug!(
                 "Keeping proxied EP: {:?} {:?}",
                 public_key,
-                time_since_last_rx,
+                time_since_last_rx
             );
             Ok((proxy_endpoint.first().copied(), None))
         }
@@ -850,7 +850,7 @@ async fn select_endpoint_for_peer<'a>(
             telio_log_debug!(
                 "Selecting checked EP: {:?} {:?}",
                 public_key,
-                time_since_last_rx,
+                time_since_last_rx
             );
             Ok((
                 Some(checked_endpoint.remote_endpoint.0),
@@ -868,7 +868,7 @@ async fn select_endpoint_for_peer<'a>(
             telio_log_debug!(
                 "Selecting current Direct EP: {:?} {:?}",
                 public_key,
-                time_since_last_rx,
+                time_since_last_rx
             );
             Ok((actual_endpoint, None))
         }
@@ -878,7 +878,7 @@ async fn select_endpoint_for_peer<'a>(
             telio_log_debug!(
                 "Selecting current Direct EP: {:?} {:?}",
                 public_key,
-                time_since_last_rx,
+                time_since_last_rx
             );
             Ok((actual_endpoint, None))
         }

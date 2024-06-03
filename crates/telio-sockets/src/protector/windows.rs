@@ -4,7 +4,7 @@ use std::io::{self, Result};
 use std::net::Ipv4Addr;
 use std::os::windows::io::RawSocket;
 use std::sync::Arc;
-use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_generic, telio_log_warn};
 use tokio::sync::mpsc::{self, Sender};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;

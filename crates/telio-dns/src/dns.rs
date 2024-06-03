@@ -13,7 +13,7 @@ use x25519_dalek::{PublicKey as PublicKeyDalek, StaticSecret};
 use telio_model::features::{FeatureExitDns, TtlValue};
 
 //debug tools
-use telio_utils::{telio_log_debug, telio_log_error};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_generic};
 
 /// A trait for managing dns resolver server instance.
 #[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
