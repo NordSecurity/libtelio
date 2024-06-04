@@ -4373,6 +4373,7 @@ version = "0.1.0"
 dependencies = [
  "block",
  "dispatch",
+ "if-addrs",
  "network-framework-sys",
  "once_cell",
  "parking_lot",
@@ -4642,6 +4643,7 @@ dependencies = [
  "surge-ping",
  "telio-crypto",
  "telio-model",
+ "telio-network-monitors",
  "telio-nurse",
  "telio-proto",
  "telio-sockets",
