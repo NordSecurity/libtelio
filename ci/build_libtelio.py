@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
+import getpass
 import os
 import sys
 import subprocess
 import moose_utils
+from fetch_artifacts import ArtifactsDownloader
 import shutil
 from pathlib import Path
 
@@ -251,16 +253,31 @@ LIBTELIO_CONFIG = {
 
 def main() -> None:
     parser = rutils.create_cli_parser()
-    build_parser = parser._subparsers._group_actions[0].choices["build"]
+    (build_parser, bindings_parser) = (
+        parser._subparsers._group_actions[0].choices["build"],
+        parser._subparsers._group_actions[0].choices["bindings"],
+    )
     build_parser.add_argument("--moose", action="store_true", help="Use libmoose")
     build_parser.add_argument(
         "--msvc", action="store_true", help="Use MSVC toolchain for Windows build"
+    )
+    bindings_parser.add_argument(
+        "--dockerized",
+        action="store_true",
+        help="Use defined docker image to generate bindings",
     )
     build_parser.add_argument(
         "--uniffi-test-bindings",
         action="store_true",
         help="Generate python bindings with uniffi",
     )
+
+    for parsers in [build_parser, bindings_parser]:
+        parsers.add_argument(
+            "--try-fetch-from-pipeline",
+            choices=["main", "nightly", "staging"],
+            help="pipeline tag in gitlab.",
+        )
 
     args = parser.parse_args()
 
@@ -269,12 +286,7 @@ def main() -> None:
         if args.uniffi_test_bindings:
             copy_uniffi_files_for_testing(args)
     elif args.command == "bindings":
-        rutils.generate_uniffi_bindings(
-            PROJECT_CONFIG,
-            LIBTELIO_ENV_UNIFFI_GENERATORS_TAG,
-            ["python", "cs", "go", "swift", "kotlin"],
-            "src/libtelio.udl",
-        )
+        exec_bindings(args)
     elif args.command == "lipo":
         exec_lipo(args)
     elif args.command == "aar":
@@ -317,7 +329,68 @@ def main() -> None:
         assert False, f"command '{args.command}' not supported"
 
 
+def try_download_artifacts(
+    tag_prefix, path_to_save, target_arch, target_os, moose=False
+):
+    def get_token():
+        if "LLT_API_TOKEN_ARTIFACTS_DOWNLOAD" in os.environ:
+            return os.environ["LLT_API_TOKEN_ARTIFACTS_DOWNLOAD"]
+        return getpass.getpass("Enter Gitlab API access token:")
+
+    token = get_token()
+
+    if target_os == "uniffi" and moose:
+        raise ValueError(
+            "Cannot download artifacts for uniffi and moose at the same time"
+        )
+
+    try:
+        if ArtifactsDownloader(
+            target_os,
+            target_arch,
+            token,
+            path_to_save,
+            tag_prefix,
+        ).download():
+            if moose and target_os in ["linux", "windows", "android"]:
+                moose_utils.fetch_moose_dependencies(target_os, MOOSE_MAP[target_arch])
+            return True
+        else:
+            print(f'Failed to download artifacts from "{tag_prefix}" pipeline')
+    except Exception as e:
+        print(f'Error while downloading artifacts from "{tag_prefix}" pipeline: {e}')
+
+    return False
+
+
+def exec_bindings(args):
+    if args.try_fetch_from_pipeline:
+        print("Trying to download uniffi artifacts ...")
+        try_download_artifacts(
+            args.try_fetch_from_pipeline,
+            PROJECT_ROOT,
+            target_arch=None,
+            target_os="uniffi",
+        )
+    else:
+        print("Generating uniffi ...")
+        rutils.generate_uniffi_bindings(
+            PROJECT_CONFIG,
+            LIBTELIO_ENV_UNIFFI_GENERATORS_TAG,
+            ["python", "cs", "go", "swift", "kotlin"],
+            "src/libtelio.udl",
+            dockerized=args.dockerized,
+        )
+
+
 def exec_build(args):
+    if args.try_fetch_from_pipeline:
+        print("Trying to download build artifacts ...")
+        try_download_artifacts(
+            args.try_fetch_from_pipeline, PROJECT_ROOT, args.arch, args.os, args.moose
+        )
+        return
+
     if args.moose:
         if args.os in ["linux", "windows", "android"]:
             sys.path.append(f"{PROJECT_ROOT}/ci")

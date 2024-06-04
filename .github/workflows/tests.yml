@@ -68,6 +68,12 @@ jobs:
       - name: Setup MSVC
         uses: egor-tensin/vs-shell@9a932a62d05192eae18ca370155cf877eecc2202 # v2.1
         if: ${{ matrix.target_os == 'windows' }}
+      - name: install python3-requests
+        run: pip3 install requests==2.32.3
+        if: ${{ matrix.runner != 'macos-14'}}
+      - name: install python3-requests
+        run: brew install python-requests
+        if: ${{ matrix.runner == 'macos-14'}}
       - name: Build libtelio
         run: python3 ci/build_libtelio.py build ${{ matrix.target_os }} ${{ matrix.arch }} --msvc
       - name: Replace and Test version
@@ -81,7 +87,7 @@ jobs:
               echo "Unknown or unsupported target OS"
               exit 1
           fi
-          ./ci/insert_libtelio_version.py -n TEST_VERSION -p ./${DIST_PATH}
+          python3 ci/insert_libtelio_version.py -n TEST_VERSION -p ./${DIST_PATH}
           ./${DIST_PATH}/release/${{ matrix.arch }}/tcli
           head -n 1 tcli.log | grep -a "TEST_VERSION"
       - name: Replace and Test version
