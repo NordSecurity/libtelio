@@ -162,11 +162,11 @@ x25519-dalek = { version = "2.0.1", features = ["reusable_secrets", "static_secr
 
 telio-crypto = { version = "0.1.0", path = "./crates/telio-crypto" }
 telio-dns = { version = "0.1.0", path = "./crates/telio-dns" }
-telio-network-monitors = { version = "0.1.0", path = "./crates/telio-network-monitors" }
 telio-firewall = { version = "0.1.0", path = "./crates/telio-firewall" }
 telio-lana = { version = "0.1.0", path = "./crates/telio-lana" }
 telio-model = { version = "0.1.0", path = "./crates/telio-model" }
 telio-nat-detect = { version = "0.1.0", path = "./crates/telio-nat-detect" }
+telio-network-monitors = { version = "0.1.0", path = "./crates/telio-network-monitors" }
 telio-nurse = { version = "0.1.0", path = "./crates/telio-nurse" }
 telio-proto = { version = "0.1.0", path = "./crates/telio-proto" }
 telio-proxy = { version = "0.1.0", path = "./crates/telio-proxy" }

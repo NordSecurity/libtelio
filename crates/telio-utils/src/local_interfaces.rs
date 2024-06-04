@@ -12,6 +12,13 @@ pub trait GetIfAddrs: Send + Sync + Default + 'static {
     fn get(&self) -> std::io::Result<Vec<if_addrs::Interface>>;
 }
 
+#[cfg(feature = "test-util")]
+impl Clone for MockGetIfAddrs {
+    fn clone(&self) -> Self {
+        MockGetIfAddrs::new()
+    }
+}
+
 #[derive(Debug, TError)]
 /// Error types of getting local interfaces
 pub enum Error {
@@ -23,7 +30,7 @@ pub enum Error {
     IOError(#[from] std::io::Error),
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 /// Defination of struct to get system interfaces
 pub struct SystemGetIfAddrs;
 impl GetIfAddrs for SystemGetIfAddrs {
@@ -45,7 +52,7 @@ impl GetIfAddrs for SystemGetIfAddrs {
     }
 }
 
-/// Method that returns vector of IPs on the system
+/// Method that returns vector of Interfaces on the system
 /// Filtering out meshnet and loopback IP
 pub fn gather_local_interfaces<G: GetIfAddrs>(
     get_if_addr: &G,

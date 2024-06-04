@@ -10,27 +10,21 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use telio_crypto::PublicKey;
+use telio_network_monitors::mac::LOCAL_ADDRS_CACHE;
 use telio_proto::{Session, WGPort};
 use telio_sockets::External;
 use telio_task::{io::chan, task_exec, BoxAction, Runtime, Task};
-use telio_utils::{
-    interval,
-    local_interfaces::{self, GetIfAddrs, SystemGetIfAddrs},
-    telio_log_debug, telio_log_info, telio_log_warn,
-};
+use telio_utils::{interval, telio_log_debug, telio_log_info, telio_log_warn};
 use telio_wg::{DynamicWg, WireGuard};
 use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
 use tokio::time::Interval;
 
-pub struct LocalInterfacesEndpointProvider<
-    T: WireGuard = DynamicWg,
-    G: GetIfAddrs = SystemGetIfAddrs,
-> {
-    task: Task<State<T, G>>,
+pub struct LocalInterfacesEndpointProvider<T: WireGuard = DynamicWg> {
+    task: Task<State<T>>,
 }
 
-pub struct State<T: WireGuard, G: GetIfAddrs> {
+pub struct State<T: WireGuard> {
     endpoint_candidates_change_publisher: Option<chan::Tx<EndpointCandidatesChangeEvent>>,
     pong_publisher: Option<chan::Tx<PongEvent>>,
     last_endpoint_candidates_event: Vec<EndpointCandidate>,
@@ -38,11 +32,10 @@ pub struct State<T: WireGuard, G: GetIfAddrs> {
     wireguard_interface: Arc<T>,
     udp_socket: External<UdpSocket>,
     ping_pong_handler: Arc<Mutex<PingPongHandler>>,
-    get_if_addr: G,
 }
 
 #[async_trait]
-impl<T: WireGuard, G: GetIfAddrs> EndpointProvider for LocalInterfacesEndpointProvider<T, G> {
+impl<T: WireGuard> EndpointProvider for LocalInterfacesEndpointProvider<T> {
     fn name(&self) -> &'static str {
         "local"
     }
@@ -110,18 +103,16 @@ impl<T: WireGuard> LocalInterfacesEndpointProvider<T> {
             wireguard_interface,
             poll_interval,
             ping_pong_handler,
-            local_interfaces::SystemGetIfAddrs,
         )
     }
 }
 
-impl<T: WireGuard, G: GetIfAddrs> LocalInterfacesEndpointProvider<T, G> {
+impl<T: WireGuard> LocalInterfacesEndpointProvider<T> {
     pub fn new_with(
         udp_socket: External<UdpSocket>,
         wireguard_interface: Arc<T>,
         poll_interval: Duration,
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
-        get_if_addr: G,
     ) -> Self {
         telio_log_info!("Starting local interfaces endpoint provider");
         let poll_timer = interval(poll_interval);
@@ -134,7 +125,6 @@ impl<T: WireGuard, G: GetIfAddrs> LocalInterfacesEndpointProvider<T, G> {
                 wireguard_interface,
                 udp_socket,
                 ping_pong_handler,
-                get_if_addr,
             }),
         }
     }
@@ -144,7 +134,7 @@ impl<T: WireGuard, G: GetIfAddrs> LocalInterfacesEndpointProvider<T, G> {
     }
 }
 
-impl<T: WireGuard, G: GetIfAddrs> State<T, G> {
+impl<T: WireGuard> State<T> {
     async fn get_wg_port(&self) -> Result<u16, Error> {
         if let Some(wg_port) = self
             .wireguard_interface
@@ -171,15 +161,16 @@ impl<T: WireGuard, G: GetIfAddrs> State<T, G> {
                 }
             };
 
-            let itfs = local_interfaces::gather_local_interfaces(&self.get_if_addr)?;
-
-            let candidates: Vec<_> = itfs
+            let candidates: Vec<_> = LOCAL_ADDRS_CACHE
+                .lock()
+                .unwrap()
                 .iter()
                 .map(|itf| EndpointCandidate {
-                    wg: SocketAddr::new(itf.addr.ip(), wg_port),
-                    udp: SocketAddr::new(itf.addr.ip(), udp_port),
+                    wg: SocketAddr::new((itf).addr.ip(), wg_port),
+                    udp: SocketAddr::new((itf).addr.ip(), udp_port),
                 })
-                .collect();
+                .collect::<Vec<_>>()
+                .to_vec();
 
             if self.last_endpoint_candidates_event != candidates {
                 telio_log_debug!("published candidates: {:?}", &candidates);
@@ -230,7 +221,7 @@ impl<T: WireGuard, G: GetIfAddrs> State<T, G> {
 }
 
 #[async_trait]
-impl<T: WireGuard, G: GetIfAddrs> Runtime for State<T, G> {
+impl<T: WireGuard> Runtime for State<T> {
     const NAME: &'static str = "LocalInterfacesEndpointProvider";
     type Err = ();
 
@@ -275,11 +266,12 @@ mod tests {
         encryption::{decrypt_request, decrypt_response, encrypt_request, encrypt_response},
         SecretKey,
     };
+    use telio_network_monitors::mac::NetworkMonitor;
     use telio_proto::{CodecError, PartialPongerMsg, PingerMsg, MAX_PACKET_SIZE};
     use telio_sockets::NativeProtector;
     use telio_sockets::SocketPool;
     use telio_task::io::Chan;
-    use telio_utils::local_interfaces::{gather_local_interfaces, MockGetIfAddrs};
+    use telio_utils::local_interfaces::MockGetIfAddrs;
     use telio_wg::{uapi::Interface, MockWireGuard};
     use tokio::time::timeout;
 
@@ -295,11 +287,7 @@ mod tests {
     async fn prepare_state_test(
         wg_mock: MockWireGuard,
         get_if_addrs_mock: MockGetIfAddrs,
-    ) -> (
-        State<MockWireGuard, MockGetIfAddrs>,
-        SecretKey,
-        Arc<Mutex<PingPongHandler>>,
-    ) {
+    ) -> (State<MockWireGuard>, SecretKey, Arc<Mutex<PingPongHandler>>) {
         let secret_key = SecretKey::gen();
         let ping_pong_handler = Arc::new(Mutex::new(PingPongHandler::new(secret_key)));
         (
@@ -320,7 +308,6 @@ mod tests {
                 .await
                 .unwrap(),
                 ping_pong_handler: ping_pong_handler.clone(),
-                get_if_addr: get_if_addrs_mock,
             },
             secret_key,
             ping_pong_handler,
@@ -331,7 +318,7 @@ mod tests {
         wg_mock: MockWireGuard,
         get_if_addrs_mock: MockGetIfAddrs,
     ) -> (
-        LocalInterfacesEndpointProvider<MockWireGuard, MockGetIfAddrs>,
+        LocalInterfacesEndpointProvider<MockWireGuard>,
         chan::Rx<EndpointCandidatesChangeEvent>,
         chan::Rx<PongEvent>,
         telio_sockets::External<tokio::net::UdpSocket>,
@@ -367,7 +354,6 @@ mod tests {
             Arc::new(wg_mock),
             Duration::from_secs(10000),
             ping_pong_handler.clone(),
-            get_if_addrs_mock,
         );
 
         let candidates_channel = Chan::<EndpointCandidatesChangeEvent>::default();
@@ -394,7 +380,6 @@ mod tests {
 
     #[tokio::test]
     async fn gather_local_interfaces_filtering() {
-        let wg_mock = MockWireGuard::new();
         let mut get_if_addrs_mock = MockGetIfAddrs::new();
         get_if_addrs_mock.expect_get().return_once(|| {
             Ok(vec![
@@ -445,9 +430,10 @@ mod tests {
             ])
         });
 
-        let state = prepare_state_test(wg_mock, get_if_addrs_mock).await;
+        let _ = NetworkMonitor::new(get_if_addrs_mock);
 
-        let interfaces = gather_local_interfaces(&state.0.get_if_addr).unwrap();
+        let interfaces = LOCAL_ADDRS_CACHE.lock().unwrap();
+        println!("interfaces {:?}", interfaces);
         assert!(interfaces.len() == 1);
         assert!(interfaces[0].name == "correct");
     }
@@ -661,7 +647,6 @@ mod tests {
         let wg_port = 12345;
         let mut wg_mock = MockWireGuard::new();
         wg_mock.expect_get_interface().returning({
-            let wg_port = wg_port;
             move || {
                 Ok(Interface {
                     listen_port: Some(wg_port),
@@ -724,7 +709,6 @@ mod tests {
         let wg_port = 12345;
         let mut wg_mock = MockWireGuard::new();
         wg_mock.expect_get_interface().returning({
-            let wg_port = wg_port;
             move || {
                 Ok(Interface {
                     listen_port: Some(wg_port),
