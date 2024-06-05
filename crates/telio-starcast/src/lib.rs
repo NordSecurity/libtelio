@@ -6,4 +6,5 @@
 //! 3. Nat is multicaster's utility used to SNAT the packets comming from multiple peers into one multicast peer address.
 
 pub mod nat;
+pub mod transport;
 pub(crate) mod utils;

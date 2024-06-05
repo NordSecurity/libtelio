@@ -4601,10 +4601,21 @@ dependencies = [
 name = "telio-starcast"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "boringtun",
+ "futures",
+ "ipnetwork",
  "pnet_packet",
  "rand",
+ "rstest",
  "sn_fake_clock",
+ "telio-crypto",
+ "telio-model",
+ "telio-sockets",
+ "telio-task",
  "telio-utils",
+ "thiserror",
+ "tokio",
  "tracing",
 ]
 
