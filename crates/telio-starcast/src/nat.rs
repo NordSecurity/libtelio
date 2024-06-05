@@ -30,7 +30,7 @@ pub trait Nat {
     fn translate_incoming(&mut self, packet: &mut [u8]) -> Result<(), Error>;
     /// Translate outgoing packet (from the multicast peer to the transport socket)
     /// Change the destination to the peer's original ip and port
-    fn translate_outgoing(&mut self, packet: &mut [u8]) -> Result<(), Error>;
+    fn translate_outgoing(&mut self, packet: &mut [u8]) -> Result<IpAddr, Error>;
 }
 
 type Mapper = fn(src_addr: SocketAddr) -> u16;
@@ -140,7 +140,7 @@ impl StarcastNat {
     fn translate_outgoing_internal<'a, P: MutableIpPacket<'a>>(
         &mut self,
         packet: &'a mut [u8],
-    ) -> Result<(), Error> {
+    ) -> Result<IpAddr, Error> {
         let mut ip_packet = P::new(packet).ok_or(Error::PacketTooShort)?;
         if ip_packet.get_next_level_protocol() != IpNextHeaderProtocols::Udp {
             return Err(Error::UnexpectedTransportProtocol);
@@ -171,7 +171,7 @@ impl StarcastNat {
         ip_packet.set_destination(new_dst_ip);
         ip_packet.fix_ip_header_checksum(old_dst_ip, new_dst_ip);
 
-        Ok(())
+        Ok(new_dst_ip.into())
     }
 }
 
@@ -187,7 +187,7 @@ impl Nat for StarcastNat {
         }
     }
 
-    fn translate_outgoing(&mut self, packet: &mut [u8]) -> Result<(), Error> {
+    fn translate_outgoing(&mut self, packet: &mut [u8]) -> Result<IpAddr, Error> {
         match packet.first().ok_or(Error::PacketTooShort)? >> 4 {
             4 => self.translate_outgoing_internal::<MutableIpv4Packet>(packet),
             6 => self.translate_outgoing_internal::<MutableIpv6Packet>(packet),

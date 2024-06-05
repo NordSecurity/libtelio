@@ -3,6 +3,7 @@ use pnet_packet::{
 };
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
+#[derive(Copy, Clone)]
 pub struct DualIpAddr {
     pub ipv4: Ipv4Addr,
     pub ipv6: Ipv6Addr,

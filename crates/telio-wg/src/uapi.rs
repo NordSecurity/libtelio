@@ -3,7 +3,10 @@
 use ipnetwork::{IpNetwork, IpNetworkError};
 use serde::{Deserialize, Serialize};
 use telio_crypto::{KeyDecodeError, PresharedKey, PublicKey, SecretKey};
-use telio_model::mesh::{LinkState, Node, NodeState};
+use telio_model::{
+    constants::{STARCAST_VPEER_INTERNAL_IPV4, STUN_INTERNAL_IPV4},
+    mesh::{LinkState, Node, NodeState},
+};
 use telio_utils::{telio_log_warn, DualTarget, DualTargetError};
 use wireguard_uapi::{get, xplatform::set};
 
@@ -11,7 +14,7 @@ use std::{
     collections::BTreeMap,
     fmt::{self, Display, Formatter},
     io::{BufRead, BufReader, Read},
-    net::{AddrParseError, IpAddr, SocketAddr},
+    net::{AddrParseError, IpAddr, Ipv4Addr, SocketAddr},
     num::ParseIntError,
     panic,
     str::FromStr,
@@ -467,6 +470,24 @@ impl Peer {
             });
         }
         dual_ip_addresses
+    }
+
+    /// Returns whether the peer is a virtual peer for multicast
+    pub fn is_multicast_peer(&self) -> bool {
+        for ips in &self.allowed_ips {
+            if ips.network().eq(&STARCAST_VPEER_INTERNAL_IPV4) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Returns whether the peer is stun
+    pub fn is_stun_peer(&self) -> bool {
+        self.allowed_ips
+            .first()
+            .map(|ip| ip.network().eq(&STUN_INTERNAL_IPV4))
+            .unwrap_or(false)
     }
 }
 

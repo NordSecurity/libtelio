@@ -6,10 +6,25 @@ license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
+[features]
+default = []
+# Compile task crate for testing
+test-util = []
+
 [dependencies]
+async-trait.workspace = true
+boringtun.workspace = true
+futures.workspace = true
+ipnetwork.workspace = true
 pnet_packet.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt", "net", "sync", "macros"] }
 tracing.workspace = true
 
+telio-crypto.workspace = true
+telio-model.workspace = true
+telio-sockets.workspace = true
+telio-task.workspace = true
 telio-utils.workspace = true
 
 [dev-dependencies]
