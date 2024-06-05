@@ -160,10 +160,17 @@ route add 100.64/10 <IP_ADDRESS>
 route add -inet6 fd74:656c:696f::/64 <IPv6_ADDRESS>
 ```
 
-##### Troubleshooting macOS
+#### Troubleshooting
 
-When building Libtelio, `cargo build` might fail with some linking errors.
+Make sure all submodules are initialized and up to date: `git submodule update --init --recursive`.
+
+Check out a stable release tag.
+
+When building Libtelio on macOS, `cargo build` might fail with some linking errors.
 Make sure that `binutils` from brew are not installed alongside the LLVM tools, as this might cause conflicts.
+
+When following the docker tutorial on macOS, copying the `tcli` binary from `cargo build` into a Linux container wouldn't work.
+Set up a two stage container that will build the binary first, as described in the [Docker guidelines](https://docs.docker.com/language/rust/develop/).
 
 ### Using the libtelio API
 
