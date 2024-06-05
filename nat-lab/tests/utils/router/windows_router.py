@@ -3,6 +3,7 @@ from .router import Router, IPProto, IPStack
 from config import LIBTELIO_IPV6_WG_SUBNET
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, List
+from utils.command_grepper import CommandGrepper
 from utils.connection import Connection
 from utils.process import ProcessExecError
 
@@ -10,6 +11,8 @@ from utils.process import ProcessExecError
 class WindowsRouter(Router):
     _connection: Connection
     _interface_name: str
+    # The average time it takes to set up an interface on Windows is ~3 seconds
+    _status_check_timeout: float = 10.0
 
     def __init__(self, connection: Connection, ip_stack: IPStack):
         super().__init__(ip_stack)
@@ -45,6 +48,20 @@ class WindowsRouter(Router):
                     address + "/128",
                 ]).execute()
 
+            if not await CommandGrepper(
+                self._connection,
+                [
+                    "netsh",
+                    "interface",
+                    "ipv4" if addr_proto == IPProto.IPv4 else "ipv6",
+                    "show",
+                    "addresses",
+                    self._interface_name,
+                ],
+                timeout=self._status_check_timeout,
+            ).check_exists(address, None):
+                raise Exception("Failed to set up the interface")
+
     async def create_meshnet_route(self) -> None:
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
             try:
@@ -61,6 +78,19 @@ class WindowsRouter(Router):
                 if exception.stdout.find("The object already exists.") < 0:
                     raise exception
 
+            if not await CommandGrepper(
+                self._connection,
+                [
+                    "netsh",
+                    "interface",
+                    "ipv4",
+                    "show",
+                    "route",
+                ],
+                timeout=self._status_check_timeout,
+            ).check_exists("100.64.0.0/10", [self._interface_name]):
+                raise Exception("Failed to create ipv4 meshnet route")
+
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
             try:
                 await self._connection.create_process([
@@ -75,6 +105,19 @@ class WindowsRouter(Router):
             except ProcessExecError as exception:
                 if exception.stdout.find("The object already exists.") < 0:
                     raise exception
+
+            if not await CommandGrepper(
+                self._connection,
+                [
+                    "netsh",
+                    "interface",
+                    "ipv6",
+                    "show",
+                    "route",
+                ],
+                timeout=self._status_check_timeout,
+            ).check_exists(LIBTELIO_IPV6_WG_SUBNET + "::/64", [self._interface_name]):
+                raise Exception("Failed to create ipv6 meshnet route")
 
     async def create_vpn_route(self) -> None:
         try:
@@ -92,6 +135,19 @@ class WindowsRouter(Router):
             if exception.stdout.find("The object already exists.") < 0:
                 raise exception
 
+        if not await CommandGrepper(
+            self._connection,
+            [
+                "netsh",
+                "interface",
+                "ipv4",
+                "show",
+                "route",
+            ],
+            timeout=self._status_check_timeout,
+        ).check_exists("0.0.0.0/0", [self._interface_name]):
+            raise Exception("Failed to create ipv4 vpn route")
+
         try:
             await self._connection.create_process([
                 "netsh",
@@ -105,6 +161,19 @@ class WindowsRouter(Router):
         except ProcessExecError as exception:
             if exception.stdout.find("The object already exists.") < 0:
                 raise exception
+
+        if not await CommandGrepper(
+            self._connection,
+            [
+                "netsh",
+                "interface",
+                "ipv6",
+                "show",
+                "route",
+            ],
+            timeout=self._status_check_timeout,
+        ).check_exists("::/0", [self._interface_name]):
+            raise Exception("Failed to create ipv6 vpn route")
 
     async def delete_interface(self) -> None:
         pass
@@ -134,6 +203,19 @@ class WindowsRouter(Router):
                 ):
                     raise exception
 
+            if not await CommandGrepper(
+                self._connection,
+                [
+                    "netsh",
+                    "interface",
+                    "ipv4",
+                    "show",
+                    "route",
+                ],
+                timeout=self._status_check_timeout,
+            ).check_not_exists("0.0.0.0/0", [self._interface_name]):
+                raise Exception("Failed to delete ipv4 vpn route")
+
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
             try:
                 await self._connection.create_process([
@@ -155,6 +237,19 @@ class WindowsRouter(Router):
                     and exception.stdout.find("Element not found.") < 0
                 ):
                     raise exception
+
+            if not await CommandGrepper(
+                self._connection,
+                [
+                    "netsh",
+                    "interface",
+                    "ipv6",
+                    "show",
+                    "route",
+                ],
+                timeout=self._status_check_timeout,
+            ).check_not_exists("::/0", [self._interface_name]):
+                raise Exception("Failed to delete ipv6 vpn route")
 
     async def create_exit_node_route(self) -> None:
         pass
