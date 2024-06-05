@@ -33,6 +33,7 @@ mockall.workspace = true
 proptest.workspace = true
 proptest-derive.workspace = true
 rand.workspace = true
+sn_fake_clock.workspace = true
 tokio = { workspace = true, features = ["time", "rt", "macros", "test-util"] }
 
 telio-test.workspace = true
