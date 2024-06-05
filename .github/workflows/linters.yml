@@ -8,7 +8,7 @@ jobs:
       container:
           image: ghcr.io/nordsecurity/uniffi-generators:v0.25.0-8
       steps:
-        - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - run: uniffi-bindgen generate src/libtelio.udl --language python
         - run: mkdir -p dist/bindings/
         - run: cp src/telio.py dist/bindings/telio_bindings.py
@@ -152,7 +152,7 @@ jobs:
   unused-features:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
         with:
           toolchain: 1.77.2
