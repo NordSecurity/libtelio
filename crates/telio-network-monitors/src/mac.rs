@@ -14,7 +14,8 @@ use std::{
     rc::Rc,
 };
 use telio_utils::{
-    local_interfaces, telio_log_info, telio_log_warn, Error, GetIfAddrs, SystemGetIfAddrs,
+    local_interfaces, telio_log_info, telio_log_trace, telio_log_warn, GetIFError, GetIfAddrs,
+    SystemGetIfAddrs,
 };
 use tokio::{sync::broadcast::Sender, task::JoinHandle};
 
@@ -34,6 +35,9 @@ pub static PATH_CHANGE_BROADCAST: Lazy<Sender<()>> = Lazy::new(|| Sender::new(2)
 /// Vector containing all local interfaces
 pub static LOCAL_ADDRS_CACHE: Lazy<Arc<StdMutex<Vec<if_addrs::Interface>>>> =
     Lazy::new(|| Arc::new(StdMutex::new(Vec::new())));
+
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+static NETWORK_PATH_MONITOR_START: std::sync::Once = std::sync::Once::new();
 
 extern "C" {
     /// Obj-c signature:
@@ -58,10 +62,13 @@ pub struct NetworkMonitor<G: GetIfAddrs = SystemGetIfAddrs> {
 
 impl<G: GetIfAddrs + Clone> NetworkMonitor<G> {
     /// Sets up and spawns network monitor
-    pub fn new(if_addr: G) -> Result<NetworkMonitor<G>, Error> {
+    pub fn new(if_addr: G) -> Result<NetworkMonitor<G>, GetIFError> {
         if let Ok(mut guard) = LOCAL_ADDRS_CACHE.lock() {
             *guard = local_interfaces::gather_local_interfaces(&if_addr)?;
         }
+
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+        NETWORK_PATH_MONITOR_START.call_once(setup_network_path_monitor);
 
         Ok(Self {
             nw_path_monitor_monitor_handle: None,
@@ -80,6 +87,7 @@ impl<G: GetIfAddrs + Clone> NetworkMonitor<G> {
                         Ok(()) => match local_interfaces::gather_local_interfaces(&get_if_addr) {
                             Ok(v) => {
                                 if let Ok(mut guard) = LOCAL_ADDRS_CACHE.lock() {
+                                    telio_log_trace!("Updating local addr cache {:?}", v);
                                     *guard = v;
                                 }
                             }

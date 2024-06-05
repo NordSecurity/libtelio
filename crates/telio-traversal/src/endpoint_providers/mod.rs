@@ -82,7 +82,7 @@ pub enum Error {
     NoMatchingLocalEndpoint,
     /// Fail to get local interface
     #[error(transparent)]
-    GetLocalInterfaceError(#[from] telio_utils::local_interfaces::Error),
+    GetLocalInterfaceError(#[from] telio_utils::local_interfaces::GetIFError),
 }
 
 #[derive(PartialEq, Eq, Hash, Debug, Copy, Clone, Enum)]
