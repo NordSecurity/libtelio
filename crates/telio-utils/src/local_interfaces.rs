@@ -21,7 +21,7 @@ impl Clone for MockGetIfAddrs {
 
 #[derive(Debug, TError)]
 /// Error types of getting local interfaces
-pub enum Error {
+pub enum GetIFError {
     /// IP address prefix length error
     #[error(transparent)]
     PrefixLenError(#[from] PrefixLenError),
@@ -56,7 +56,7 @@ impl GetIfAddrs for SystemGetIfAddrs {
 /// Filtering out meshnet and loopback IP
 pub fn gather_local_interfaces<G: GetIfAddrs>(
     get_if_addr: &G,
-) -> Result<Vec<if_addrs::Interface>, Error> {
+) -> Result<Vec<if_addrs::Interface>, GetIFError> {
     let shared_range: Ipv4Net = Ipv4Net::new(Ipv4Addr::new(100, 64, 0, 0), 10)?;
     Ok(get_if_addr
         .get()?

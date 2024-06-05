@@ -5,7 +5,7 @@ pub mod upnp;
 use async_trait::async_trait;
 use enum_map::Enum;
 use ipnet::PrefixLenError;
-use std::{sync::MutexGuard, time::Duration};
+use std::time::Duration;
 use telio_crypto::{encryption, PublicKey};
 use telio_utils::exponential_backoff;
 use thiserror::Error as TError;
@@ -80,7 +80,7 @@ pub enum Error {
     NoMatchingLocalEndpoint,
     /// Fail to get local interface
     #[error(transparent)]
-    GetLocalInterfaceError(#[from] telio_utils::local_interfaces::Error),
+    GetLocalInterfaceError(#[from] telio_utils::local_interfaces::GetIFError),
 }
 
 #[derive(PartialEq, Eq, Hash, Debug, Copy, Clone, Enum)]
