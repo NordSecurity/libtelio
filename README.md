@@ -142,16 +142,16 @@ Run `mesh on t1` in `T1a` to fix it.
 The containers should be now connected by the mesh, so to try the connection,
 run `ping` in `T1b` and `tcpdump` in `T2b` and see how the packages are flowing.
 
-##### Running meshnet on macOS
+#### Running meshnet on macOS
 
-To run tcli client on native macOS use utun name for interface name instead of t1/t2.
-Use unique index for utun since there might be some already present.
+To run `tcli` client on native macOS, use `utun` instead of t1/t2 as the interface name.
+Add a unique index to `utun` (like `utun10`) since there might be some already present.
 ```
 >>> login token <NORDVPN_TOKEN>
 >>> mesh on utun10
 ```
 
-Find meshnet ip address from "ip_addresses" field the same as in linux case. Then
+Find meshnet ip address from `"ip_addresses"` field the same as in linux case. Then
 ```
 ifconfig utun10 add <IP_ADDRESS>/10 <IP_ADDRESS>
 ifconfig inet6 utun10 add <IPv6_ADDRESS> prefixlen 64
@@ -159,6 +159,11 @@ ifconfig utun10 mtu 1420
 route add 100.64/10 <IP_ADDRESS>
 route add -inet6 fd74:656c:696f::/64 <IPv6_ADDRESS>
 ```
+
+##### Troubleshooting macOS
+
+When building Libtelio, `cargo build` might fail with some linking errors.
+Make sure that `binutils` from brew are not installed alongside the LLVM tools, as this might cause conflicts.
 
 ### Using the libtelio API
 
