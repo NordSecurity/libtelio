@@ -76,8 +76,7 @@ use telio_model::{
     config::{Config, Peer, PeerBase, Server as DerpServer},
     event::{Event, Set},
     features::{
-        FeatureFirewall, FeaturePersistentKeepalive, Features, PathType,
-        DEFAULT_ENDPOINT_POLL_INTERVAL_SECS,
+        FeaturePersistentKeepalive, Features, PathType, DEFAULT_ENDPOINT_POLL_INTERVAL_SECS,
     },
     mesh::{ExitNode, LinkState, Node},
     validation::validate_nickname,

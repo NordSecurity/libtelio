@@ -12,7 +12,6 @@ test_utils = [] # For use in benchmarks to avoid duplication of the 'setup' code
 [dependencies]
 hashlink.workspace = true
 ipnetwork.workspace = true
-if-addrs.workspace = true
 tracing.workspace = true
 mockall = { workspace = true, optional = true }
 pnet_packet.workspace = true
@@ -25,6 +24,7 @@ telio-model.workspace = true
 [dev-dependencies]
 criterion = "0.5.1"
 
+if-addrs.workspace = true
 mockall.workspace = true
 proptest.workspace = true
 proptest-derive.workspace = true
