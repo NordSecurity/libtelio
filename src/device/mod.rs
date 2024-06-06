@@ -5,7 +5,7 @@ use telio_crypto::{PublicKey, SecretKey};
 use telio_firewall::firewall::{Firewall, StatefullFirewall};
 use telio_lana::init_lana;
 use telio_nat_detect::nat_detection::{retrieve_single_nat, NatData};
-use telio_network_monitors::mac::NetworkMonitor;
+use telio_network_monitors::monitor::NetworkMonitor;
 use telio_pq::PostQuantum;
 use telio_proto::HeartbeatMessage;
 use telio_proxy::{Config as ProxyConfig, Io as ProxyIo, Proxy, UdpProxy};

@@ -10,7 +10,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use telio_crypto::PublicKey;
-use telio_network_monitors::mac::LOCAL_ADDRS_CACHE;
+use telio_network_monitors::monitor::LOCAL_ADDRS_CACHE;
 use telio_proto::{Session, WGPort};
 use telio_sockets::External;
 use telio_task::{io::chan, task_exec, BoxAction, Runtime, Task};
@@ -266,7 +266,7 @@ mod tests {
         encryption::{decrypt_request, decrypt_response, encrypt_request, encrypt_response},
         SecretKey,
     };
-    use telio_network_monitors::mac::NetworkMonitor;
+    use telio_network_monitors::monitor::NetworkMonitor;
     use telio_proto::{CodecError, PartialPongerMsg, PingerMsg, MAX_PACKET_SIZE};
     use telio_sockets::NativeProtector;
     use telio_sockets::SocketPool;
