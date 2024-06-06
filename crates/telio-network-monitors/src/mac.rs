@@ -10,14 +10,9 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::{
     cell::RefCell,
     ffi::{c_long, c_void, CStr},
-    io,
     rc::Rc,
 };
-use telio_utils::{
-    local_interfaces, telio_log_info, telio_log_trace, telio_log_warn, GetIFError, GetIfAddrs,
-    SystemGetIfAddrs,
-};
-use tokio::{sync::broadcast::Sender, task::JoinHandle};
+use telio_utils::{telio_log_info, telio_log_warn};
 
 /// Dispatch queue priority as high priority queue
 pub const DISPATCH_QUEUE_PRIORITY_HIGH: c_long = 2;
@@ -30,8 +25,6 @@ pub const DISPATCH_QUEUE_PRIORITY_BACKGROUND: c_long = -1 << 15;
 
 /// Vector containing interface names in OS order
 pub static INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER: Mutex<Vec<String>> = Mutex::new(Vec::new());
-/// Sender to notify if there is a change in OS interface order
-pub static PATH_CHANGE_BROADCAST: Lazy<Sender<()>> = Lazy::new(|| Sender::new(2));
 /// Vector containing all local interfaces
 pub static LOCAL_ADDRS_CACHE: Lazy<Arc<StdMutex<Vec<if_addrs::Interface>>>> =
     Lazy::new(|| Arc::new(StdMutex::new(Vec::new())));
@@ -51,64 +44,6 @@ extern "C" {
     /// void nw_path_enumerate_interfaces(nw_path_t path, nw_path_enumerate_interfaces_block_t enumerate_block);
     /// typedef bool (^nw_path_enumerate_interfaces_block_t)(nw_interface_t interface);
     pub fn nw_path_enumerate_interfaces(path: nw_path_t, enumerate_block: *const c_void);
-}
-
-#[derive(Debug, Default)]
-/// Struct to monitor network
-pub struct NetworkMonitor<G: GetIfAddrs = SystemGetIfAddrs> {
-    nw_path_monitor_monitor_handle: Option<JoinHandle<io::Result<()>>>,
-    get_if_addr: G,
-}
-
-impl<G: GetIfAddrs + Clone> NetworkMonitor<G> {
-    /// Sets up and spawns network monitor
-    pub fn new(if_addr: G) -> Result<NetworkMonitor<G>, GetIFError> {
-        if let Ok(mut guard) = LOCAL_ADDRS_CACHE.lock() {
-            *guard = local_interfaces::gather_local_interfaces(&if_addr)?;
-        }
-
-        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
-        NETWORK_PATH_MONITOR_START.call_once(setup_network_path_monitor);
-
-        Ok(Self {
-            nw_path_monitor_monitor_handle: None,
-            get_if_addr: if_addr,
-        })
-    }
-
-    /// Starts Network Monitoring IP cache
-    pub fn start(&mut self) {
-        let get_if_addr = self.get_if_addr.clone();
-        self.nw_path_monitor_monitor_handle = Some(tokio::spawn({
-            let mut notify = PATH_CHANGE_BROADCAST.subscribe();
-            async move {
-                loop {
-                    match notify.recv().await {
-                        Ok(()) => match local_interfaces::gather_local_interfaces(&get_if_addr) {
-                            Ok(v) => {
-                                if let Ok(mut guard) = LOCAL_ADDRS_CACHE.lock() {
-                                    telio_log_trace!("Updating local addr cache {:?}", v);
-                                    *guard = v;
-                                }
-                            }
-                            Err(e) => telio_log_warn!("Unable to get local interfaces {e}"),
-                        },
-                        Err(e) => {
-                            telio_log_warn!("Failed to receive new path for sockets ({e}): ");
-                        }
-                    }
-                }
-            }
-        }));
-    }
-}
-
-impl<G: GetIfAddrs> Drop for NetworkMonitor<G> {
-    fn drop(&mut self) {
-        if let Some(handle) = &self.nw_path_monitor_monitor_handle {
-            handle.abort();
-        }
-    }
 }
 
 /// Setup network path monitor in Apple framework
