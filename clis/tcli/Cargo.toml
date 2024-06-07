@@ -6,6 +6,9 @@ license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 default-run = "tcli"
 
+[features]
+tclid = ["sysinfo", "interprocess", "daemonize"]
+
 [dependencies]
 dirs = "4.0.0"
 regex = "1.5.5"
@@ -17,11 +20,11 @@ reqwest = { version = "0.11.16", default-features = false, features = [
 rustyline = "11.0.0"
 shellwords = "1.1.0"
 # Used only for checking if the daemon is running.
-sysinfo = "0.30.11"
+sysinfo = { version = "0.30.11", optional = true }
 # Used as a lightweight and safe (because a TCP server has the risk of remote code execution)
 # way for the API and daemon to communicate.
 # Tokio support is needed, because the daemon runs on the async runtime.
-interprocess = { version = "1.2.1" }
+interprocess = { version = "1.2.1", optional = true }
 
 anyhow.workspace = true
 base64.workspace = true
@@ -57,4 +60,8 @@ telio-wg.workspace = true
 [target.'cfg(unix)'.dependencies]
 # Used to avoid the manual work of daemonizing the libtelio process.
 # Also is the only reason why Windows isn't supported.
-daemonize = "0.5.0"
+daemonize = { version = "0.5.0", optional = true }
+
+[[bin]]
+name = "tclid"
+required-features = ["tclid"]
