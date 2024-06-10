@@ -157,7 +157,8 @@ class PeerInfo(DataClassJsonMixin):
             )
             and self.allow_incoming_connections == other.allow_incoming_connections
             and self.allow_peer_traffic_routing == other.allow_peer_traffic_routing
-            and self.allow_peer_local_network_access == self.allow_peer_local_network_access
+            and self.allow_peer_local_network_access
+            == self.allow_peer_local_network_access
             and self.allow_peer_send_files == other.allow_peer_send_files
             and self.path == other.path
         )

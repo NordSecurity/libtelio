@@ -992,7 +992,9 @@ mod tests {
             },
             pmtu_discovery: Some(Default::default()),
             multicast: false,
-            firewall: None,
+            firewall: FeatureFirewall {
+                custom_private_ip_range: None,
+            },
         };
 
         let empty_or_no_qos_features = Features {
@@ -1029,7 +1031,9 @@ mod tests {
             },
             pmtu_discovery: Some(Default::default()),
             multicast: false,
-            firewall: None,
+            firewall: FeatureFirewall {
+                custom_private_ip_range: None,
+            },
         };
 
         let disabled_qos_features = Features {
@@ -1061,7 +1065,9 @@ mod tests {
             },
             pmtu_discovery: Some(Default::default()),
             multicast: false,
-            firewall: None,
+            firewall: FeatureFirewall {
+                custom_private_ip_range: None,
+            },
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -1121,7 +1127,9 @@ mod tests {
             },
             pmtu_discovery: Some(Default::default()),
             multicast: false,
-            firewall: None,
+            firewall: FeatureFirewall {
+                custom_private_ip_range: None,
+            },
         };
 
         let empty_features = Features {
@@ -1147,7 +1155,9 @@ mod tests {
             },
             pmtu_discovery: Some(Default::default()),
             multicast: false,
-            firewall: None,
+            firewall: FeatureFirewall {
+                custom_private_ip_range: None,
+            },
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -1245,7 +1255,9 @@ mod tests {
             },
             pmtu_discovery: Default::default(),
             multicast: false,
-            firewall: None,
+            firewall: FeatureFirewall {
+                custom_private_ip_range: None,
+            },
         };
 
         assert_eq!(Features::default(), expected_defaults);

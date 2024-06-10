@@ -14,9 +14,9 @@ pub fn system_get_if_addr() -> std::io::Result<Vec<if_addrs::Interface>> {
 pub fn gather_local_interfaces(
     get_if_addr: GetIfAddrs,
 ) -> std::io::Result<Vec<if_addrs::Interface>> {
-    let shared_range = Ipv4Net::new(Ipv4Addr::new(100, 64, 0, 0), 10).unwrap();
+    let shared_range = Ipv4Net::new(Ipv4Addr::new(100, 64, 0, 0), 10).unwrap_or_default();
     let ipv6_shared_range =
-        Ipv6Net::new(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 0), 64).unwrap();
+        Ipv6Net::new(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 0), 64).unwrap_or_default();
     Ok(get_if_addr()?
         .into_iter()
         .filter(|x| !x.addr.is_loopback())
