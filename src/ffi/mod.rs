@@ -4,6 +4,7 @@ use anyhow::anyhow;
 use ffi_helpers::{error_handling, panic as panic_handling};
 use ipnetwork::IpNetwork;
 use rand::Rng;
+use sha2::{Digest, Sha256};
 use telio_crypto::{PublicKey, SecretKey};
 use telio_wg::AdapterType;
 use tracing::{error, trace, Subscriber};
@@ -11,10 +12,13 @@ use tracing::{error, trace, Subscriber};
 use telio_sockets::protector::make_external_protector;
 use uuid::Uuid;
 
+use regex::{Captures, Error as RegexError, Regex, RegexBuilder};
+
 use std::{
     fmt,
     net::{IpAddr, SocketAddr},
     panic::{self, AssertUnwindSafe},
+    str::FromStr,
     sync::{Arc, Mutex, Once},
     time::Duration,
 };
@@ -80,6 +84,8 @@ pub fn set_global_logger(log_level: TelioLogLevel, logger: Box<dyn TelioLoggerCb
     let tracing_subscriber = TelioTracingSubscriber {
         callback: logger,
         max_level: log_level.into(),
+        #[cfg(not(debug_assertions))]
+        censor: LogCensor::new().ok(),
     };
     if tracing::subscriber::set_global_default(tracing_subscriber).is_err() {
         telio_log_warn!("Could not set logger, because logger had already been set by previous libtelio instance");
@@ -838,6 +844,101 @@ extern "C" {
     fn fortify_source();
 }
 
+#[allow(unused)]
+struct LogCensor {
+    ip_mask_seed: [u8; 32],
+    ip_regex: Regex,
+}
+
+#[allow(unused)]
+impl LogCensor {
+    fn new() -> Result<Self, RegexError> {
+        RegexBuilder::new(
+            r"
+                (?:
+                    (?:
+                        25[0-5]
+                        |  2[0-4][0-9]
+                        |  1[0-9]{2}
+                        |  [1-9]?[0-9]
+                    )\.
+                ){3}
+                (?:
+                    25[0-5]
+                    |  2[0-4][0-9]
+                    |  1[0-9]{2}
+                    |  [1-9]?[0-9]
+                )
+                |
+                (?:
+                    ([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}
+                    |   :(:[0-9a-fA-F]{1,4}){1,7}
+                    |   ([0-9a-fA-F]{1,4}:){1}(:[0-9a-fA-F]{1,4}){1,6}
+                    |   ([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}
+                    |   ([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}
+                    |   ([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}
+                    |   ([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}
+                    |   ([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}
+                    |   ([0-9a-fA-F]{1,4}:){1,7}:
+                )
+                ",
+        )
+        .ignore_whitespace(true)
+        .build()
+        .map(|re| LogCensor {
+            ip_mask_seed: rand::thread_rng().gen::<[u8; 32]>(),
+            ip_regex: re,
+        })
+    }
+
+    fn censor_logs<'a>(&self, log: &'a str) -> std::borrow::Cow<'a, str> {
+        // Gather all of the IPs
+        self.ip_regex.replace_all(log, |captures: &Captures| {
+            captures
+                .get(0)
+                .map(|ip_match| {
+                    let incorret_chars_on_bounds =
+                        [ip_match.start().wrapping_sub(1), ip_match.end()]
+                            .iter()
+                            .flat_map(|pos| log.chars().nth(*pos))
+                            .any(|c| c.is_alphanumeric() || c == '_' || c == '.');
+                    if incorret_chars_on_bounds {
+                        return ip_match.as_str().to_string();
+                    }
+
+                    IpAddr::from_str(ip_match.as_str())
+                        .map(|ip_addr| {
+                            // Probably good enough protection for this usecase
+                            let mut data_to_hash = vec![];
+                            match ip_addr {
+                                IpAddr::V4(ipv4) => {
+                                    data_to_hash.extend_from_slice(ipv4.octets().as_slice())
+                                }
+                                IpAddr::V6(ipv6) => {
+                                    data_to_hash.extend_from_slice(ipv6.octets().as_slice())
+                                }
+                            };
+                            data_to_hash.extend_from_slice(&self.ip_mask_seed);
+
+                            let mut hasher = Sha256::new();
+                            hasher.update(data_to_hash);
+
+                            // SHA256 hash is much bigger than 8 bytes
+                            #[allow(index_access_check)]
+                            let hash_prefix = &hasher.finalize()[..8];
+
+                            format!("IP({})", hex::encode(hash_prefix))
+                        })
+                        .unwrap_or(ip_match.as_str().to_owned())
+                })
+                .unwrap_or(
+                    "Regex crate guarantees this, too low priority to panic on its fail, though"
+                        .to_string(),
+                )
+        })
+    }
+}
+
 fn filter_log_message(msg: String) -> Option<String> {
     let mut log_status = match LAST_LOG_STATUS.lock() {
         Ok(status) => status,
@@ -892,6 +993,8 @@ impl<'a> tracing::field::Visit for TraceFieldVisitor<'a> {
 pub struct TelioTracingSubscriber {
     callback: Box<dyn TelioLoggerCb>,
     max_level: tracing::Level,
+    #[cfg(not(debug_assertions))]
+    censor: Option<LogCensor>,
 }
 
 impl TelioTracingSubscriber {
@@ -899,6 +1002,8 @@ impl TelioTracingSubscriber {
         TelioTracingSubscriber {
             callback,
             max_level,
+            #[cfg(not(debug_assertions))]
+            censor: LogCensor::new().ok(),
         }
     }
 }
@@ -937,6 +1042,12 @@ impl Subscriber for TelioTracingSubscriber {
         event.record(&mut visitor);
 
         if let Some(filtered_msg) = filter_log_message(visitor.message) {
+            #[cfg(not(debug_assertions))]
+            let filtered_msg = match self.censor.as_ref().map(|c| c.censor_logs(&filtered_msg)) {
+                Some(std::borrow::Cow::Owned(msg)) => msg.to_owned(),
+                _ => filtered_msg,
+            };
+
             let _ = self.callback.log(level.into(), filtered_msg);
         }
     }
@@ -1100,5 +1211,66 @@ mod tests {
         let actual =
             deserialize_feature_config(CORRECT_FEATURES_JSON_WITHOUT_IS_TEST_ENV.to_owned());
         assert!(actual.is_ok());
+    }
+
+    #[test]
+    fn test_log_censor() {
+        let examples = [
+            (
+                "1999-09-09 [INFO] New endpoint (1.2.3.4:1234) created",
+                "1999-09-09 [INFO] New endpoint (IP(0cd7db9eee475654):1234) created",
+            ),
+            (
+                "1999-09-09 [INFO] New endpoint ([::aabb]:1234) created",
+                "1999-09-09 [INFO] New endpoint ([IP(72f3e43f3607f6ad)]:1234) created",
+            ),
+            (
+                "1999-09-09 [INFO] New endpoint ([aabb:1234::]:1234) created",
+                "1999-09-09 [INFO] New endpoint ([IP(f3ceec3a6e79e983)]:1234) created",
+            ),
+            (
+                "1999-09-09 [INFO] New endpoint ([1:2:3:4:5:6:7:8]:1234) created",
+                "1999-09-09 [INFO] New endpoint ([IP(2b1293a9da838474)]:1234) created",
+            ),
+            (
+                "1999-09-09 [INFO] New endpoints: [1:2::8]:1234 and 4.3.2.1:1234 created",
+                "1999-09-09 [INFO] New endpoints: [IP(9427cacecf3a924a)]:1234 and IP(eb6fd60b9d43793a):1234 created",
+            ),
+            (
+                "1999-09-09 [INFO] \"telio::device::wg_controller\":295 peer \"YOla...oFc=\" proxying: true, state: Connected, last handshake: Some(1719486326.132445116s)",
+                "1999-09-09 [INFO] \"telio::device::wg_controller\":295 peer \"YOla...oFc=\" proxying: true, state: Connected, last handshake: Some(1719486326.132445116s)",
+            ),
+            (
+                "255.255.255.255 IPv4 at the beginning and at the end 0.0.0.0",
+                "IP(44ceaca0476e8ab0) IPv4 at the beginning and at the end IP(6db65fd59fd356f6)",
+            ),
+            (
+                "255.255.255.255aa we don't count these as IPv4s 0.0.0.0_a",
+                "255.255.255.255aa we don't count these as IPv4s 0.0.0.0_a",
+            ),
+            (
+                "::cd IPv6 at the beginning and at the end a:b::c:d",
+                "IP(efa675f2f9df0067) IPv6 at the beginning and at the end IP(2ca8d561a2c55a15)",
+            ),
+            (
+                "mace::cdcd no IPv6 addresses here crypto_aead::aead",
+                "mace::cdcd no IPv6 addresses here crypto_aead::aead",
+            ),
+            (
+                "A list of IPv6, IPv4 and some strange mix: [a:b:c::d:e:f, 1.2.3.4, 1.2::c:d]",
+                "A list of IPv6, IPv4 and some strange mix: [IP(7c3386c9423da2d8), IP(0cd7db9eee475654), 1.2::c:d]",
+            ),
+        ];
+
+        let mut censor = LogCensor::new()
+            .map_err(|err| panic!("Log censor was not created successfully {:?}", err))
+            .unwrap();
+
+        // For the tests we need it repeatable and seed filled with zeros is good as any other
+        censor.ip_mask_seed = [0; 32];
+
+        for (original_log, expected_censored_log) in examples {
+            assert_eq!(expected_censored_log, censor.censor_logs(original_log));
+        }
     }
 }
