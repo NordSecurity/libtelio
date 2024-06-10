@@ -976,7 +976,7 @@ impl Runtime {
     ) -> Result<Self> {
         let firewall = Arc::new(StatefullFirewall::new(
             features.ipv6,
-            features.boringtun_reset_connections.0,
+            features.firewall.boringtun_reset_conns,
         ));
 
         let firewall_filter_inbound_packets = {
@@ -987,7 +987,7 @@ impl Runtime {
             let fw = firewall.clone();
             move |peer: &[u8; 32], packet: &[u8]| fw.process_outbound_packet(peer, packet)
         };
-        let firewall_reset_connections = if features.boringtun_reset_connections.0 {
+        let firewall_reset_connections = if features.firewall.boringtun_reset_conns {
             let fw = firewall.clone();
             let cb = move |exit_pubkey: &PublicKey,
                            exit_ipv4: Ipv4Addr,

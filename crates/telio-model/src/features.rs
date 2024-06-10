@@ -369,10 +369,13 @@ impl FeatureEndpointProvidersOptimization {
     }
 }
 
-/// Turns on connection resets upon VPN server change
+/// Feature config for firewall
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
-#[serde(transparent)]
-pub struct FeatureBoringtunResetConns(pub bool);
+pub struct FeatureFirewall {
+    /// Turns on connection resets upon VPN server change
+    #[serde(default)]
+    pub boringtun_reset_conns: bool,
+}
 
 /// Turns on post quantum VPN tunnel
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -520,7 +523,7 @@ pub struct Features {
     pub nicknames: bool,
     /// Flag to turn on connection reset upon VPN server change for boringtun adapter
     #[serde(default)]
-    pub boringtun_reset_connections: FeatureBoringtunResetConns,
+    pub firewall: FeatureFirewall,
     /// If and for how long to flush events when stopping telio. Setting to Some(0) means waiting until all events have been flushed, regardless of how long it takes
     pub flush_events_on_stop_timeout_seconds: Option<u64>,
     /// Post quantum VPN tunnel configuration
@@ -639,7 +642,7 @@ mod tests {
             "validate_keys": false,
             "ipv6": true,
             "nicknames": true,
-            "boringtun_reset_connections": true,
+            "firewall": {"boringtun_reset_conns": true},
             "post_quantum_vpn":
             {
                 "handshake_retry_interval_s": 16,
@@ -706,7 +709,9 @@ mod tests {
         validate_keys: FeatureValidateKeys(false),
         ipv6: true,
         nicknames: true,
-        boringtun_reset_connections: FeatureBoringtunResetConns(true),
+        firewall: FeatureFirewall {
+            boringtun_reset_conns: true,
+        },
         flush_events_on_stop_timeout_seconds: None,
         post_quantum_vpn: FeaturePostQuantumVPN {
             handshake_retry_interval_s: 16,
@@ -764,7 +769,9 @@ mod tests {
         validate_keys: Default::default(),
         ipv6: false,
         nicknames: false,
-        boringtun_reset_connections: FeatureBoringtunResetConns(false),
+        firewall: FeatureFirewall {
+            boringtun_reset_conns: false,
+        },
         flush_events_on_stop_timeout_seconds: None,
         post_quantum_vpn: Default::default(),
         link_detection: None,
@@ -964,7 +971,7 @@ mod tests {
             validate_keys: Default::default(),
             ipv6: false,
             nicknames: false,
-            boringtun_reset_connections: Default::default(),
+            firewall: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
             link_detection: None,
@@ -1000,7 +1007,7 @@ mod tests {
             validate_keys: Default::default(),
             ipv6: false,
             nicknames: false,
-            boringtun_reset_connections: Default::default(),
+            firewall: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
             link_detection: None,
@@ -1031,7 +1038,7 @@ mod tests {
             validate_keys: Default::default(),
             ipv6: false,
             nicknames: false,
-            boringtun_reset_connections: Default::default(),
+            firewall: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
             link_detection: None,
@@ -1088,7 +1095,7 @@ mod tests {
             validate_keys: Default::default(),
             ipv6: false,
             nicknames: false,
-            boringtun_reset_connections: Default::default(),
+            firewall: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
             link_detection: None,
@@ -1113,7 +1120,7 @@ mod tests {
             validate_keys: Default::default(),
             ipv6: false,
             nicknames: false,
-            boringtun_reset_connections: Default::default(),
+            firewall: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
             link_detection: None,
@@ -1149,7 +1156,7 @@ mod tests {
             validate_keys: Default::default(),
             ipv6: false,
             nicknames: false,
-            boringtun_reset_connections: Default::default(),
+            firewall: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
             link_detection: Default::default(),
@@ -1209,7 +1216,7 @@ mod tests {
             validate_keys: Default::default(),
             ipv6: false,
             nicknames: false,
-            boringtun_reset_connections: Default::default(),
+            firewall: Default::default(),
             flush_events_on_stop_timeout_seconds: None,
             post_quantum_vpn: Default::default(),
             link_detection: None,
@@ -1296,6 +1303,57 @@ mod tests {
                 r#"
             {
                 "multicast": "abc"
+            }"#,
+            ] {
+                assert!(from_str::<Features>(invalid).is_err());
+            }
+        }
+    }
+
+    mod firewall {
+        use super::*;
+
+        #[test]
+        fn test_firewall_missing() {
+            let empty_json = "{}";
+            let features = from_str::<Features>(empty_json).unwrap();
+            assert!(!features.firewall.boringtun_reset_conns);
+        }
+
+        #[test]
+        fn test_firewall_boringtun_reset_conns_true() {
+            let boringtun_reset_conns_true = r#"
+            {
+                "firewall": {"boringtun_reset_conns": true}
+            }"#;
+            let features = from_str::<Features>(boringtun_reset_conns_true).unwrap();
+            assert!(features.firewall.boringtun_reset_conns);
+        }
+
+        #[test]
+        fn test_firewall_boringtun_reset_conns_false() {
+            let boringtun_reset_conns_false = r#"
+            {
+                "firewall": {"boringtun_reset_conns": false}
+            }"#;
+            let features = from_str::<Features>(boringtun_reset_conns_false).unwrap();
+            assert!(!features.firewall.boringtun_reset_conns);
+        }
+
+        #[test]
+        fn test_firewall_boringtun_reset_conns_invalid() {
+            for invalid in [
+                r#"
+            {
+                "firewall": {"boringtun_reset_conns": 123}
+            }"#,
+                r#"
+            {
+                "firewall": {"boringtun_reset_conns": null}
+            }"#,
+                r#"
+            {
+                "firewall": {"boringtun_reset_conns": "abc"}
             }"#,
             ] {
                 assert!(from_str::<Features>(invalid).is_err());

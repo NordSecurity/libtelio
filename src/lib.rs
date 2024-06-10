@@ -219,18 +219,6 @@ mod uniffi_libtelio {
         }
     }
 
-    impl UniffiCustomTypeConverter for FeatureBoringtunResetConns {
-        type Builtin = bool;
-
-        fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
-            Ok(FeatureBoringtunResetConns(val))
-        }
-
-        fn from_custom(obj: Self) -> Self::Builtin {
-            obj.0
-        }
-    }
-
     uniffi::include_scaffolding!("libtelio");
 
     #[cfg(test)]
@@ -447,26 +435,6 @@ mod uniffi_libtelio {
         fn test_from_feature_ttl_value(#[case] val: u32) {
             let expected = val;
             let actual = TtlValue::from_custom(TtlValue(val));
-
-            assert_eq!(actual, expected);
-        }
-
-        #[rstest]
-        #[case(true)]
-        #[case(false)]
-        fn test_to_feature_boring_tun_reset_conns(#[case] val: bool) {
-            let expected = FeatureBoringtunResetConns(val);
-            let actual = FeatureBoringtunResetConns::into_custom(val).unwrap();
-
-            assert_eq!(actual, expected);
-        }
-
-        #[rstest]
-        #[case(true)]
-        #[case(false)]
-        fn test_from_feature_boring_tun_reset_conns(#[case] val: bool) {
-            let expected = val;
-            let actual = FeatureBoringtunResetConns::from_custom(FeatureBoringtunResetConns(val));
 
             assert_eq!(actual, expected);
         }
