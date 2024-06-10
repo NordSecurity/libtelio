@@ -548,7 +548,7 @@ pub struct Features {
     pub multicast: bool,
     /// Feature configuration for firewall
     #[serde(default)]
-    pub firewall: Option<FeatureFirewall>,
+    pub firewall: FeatureFirewall,
 }
 
 impl FeaturePaths {
@@ -666,7 +666,7 @@ mod tests {
             },
             "pmtu_discovery": null,
             "multicast": false,
-            "firewall": null
+            "firewall": {"custom_private_ip_range": null}
         }"#;
 
     static EXPECTED_FEATURES_WITH_IS_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
@@ -733,7 +733,9 @@ mod tests {
         },
         pmtu_discovery: None,
         multicast: false,
-        firewall: None,
+        firewall: FeatureFirewall {
+            custom_private_ip_range: None,
+        },
     });
     static EXPECTED_FEATURES_WITHOUT_IS_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
         wireguard: FeatureWireguard {
@@ -789,7 +791,9 @@ mod tests {
         },
         pmtu_discovery: Some(Default::default()),
         multicast: false,
-        firewall: None,
+        firewall: FeatureFirewall {
+            custom_private_ip_range: None,
+        },
     });
 
     #[test]
@@ -1178,7 +1182,9 @@ mod tests {
             },
             pmtu_discovery: Some(Default::default()),
             multicast: false,
-            firewall: None,
+            firewall: FeatureFirewall {
+                custom_private_ip_range: None,
+            },
         };
 
         assert_eq!(from_str::<Features>(empty_json).unwrap(), empty_features);

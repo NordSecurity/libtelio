@@ -442,7 +442,7 @@ dictionary Features {
     /// Multicast support
     boolean multicast;
     /// Custom firewall configuration
-    FeatureFirewall? firewall;
+    FeatureFirewall firewall;
 };
 
 /// Configurable features for Wireguard peers

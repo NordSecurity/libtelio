@@ -978,9 +978,7 @@ impl Runtime {
         let firewall = Arc::new(StatefullFirewall::new(
             features.ipv6,
             features.boringtun_reset_connections.0,
-            features.firewall.unwrap_or(FeatureFirewall {
-                custom_private_ip_range: None,
-            }),
+            features.firewall,
         ));
 
         let firewall_filter_inbound_packets = {

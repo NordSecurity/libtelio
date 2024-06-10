@@ -1027,7 +1027,7 @@ mod tests {
     use telio_firewall::firewall::{MockFirewall, FILE_SEND_PORT};
     use telio_model::config::{Config, PeerBase, Server};
     use telio_model::features::{
-        EndpointProvider as ApiEndpointProvider, FeatureDns, TtlValue,
+        EndpointProvider as ApiEndpointProvider, FeatureDns, FeatureFirewall, TtlValue,
         DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD, DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
     };
     use telio_model::mesh::ExitNode;
@@ -1481,7 +1481,9 @@ mod tests {
                     },
                     pmtu_discovery: Default::default(),
                     multicast: false,
-                    firewall: None,
+                    firewall: FeatureFirewall {
+                        custom_private_ip_range: None,
+                    },
                 },
                 post_quantum: MockPostQuantum::new(),
             }
