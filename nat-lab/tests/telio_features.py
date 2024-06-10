@@ -111,6 +111,12 @@ class PostQuantumVPN(DataClassJsonMixin):
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
+class FeatureFirewall(DataClassJsonMixin):
+    custom_private_ip_range: Optional[str] = None
+
+
+@dataclass_json(undefined=Undefined.EXCLUDE)
+@dataclass
 class TelioFeatures(DataClassJsonMixin):
     is_test_env: Optional[bool] = True
     direct: Optional[Direct] = None
@@ -134,3 +140,4 @@ class TelioFeatures(DataClassJsonMixin):
         )
     )
     multicast: bool = False
+    firewall: Optional[FeatureFirewall] = None

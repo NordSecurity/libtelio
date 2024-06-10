@@ -7,6 +7,7 @@ import telio
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes, setup_api
 from mesh_api import Node
+from telio_features import TelioFeatures, FeatureFirewall
 from typing import Tuple
 from utils import testing, stun
 from utils.connection_tracker import ConnectionLimits
@@ -35,6 +36,7 @@ def _setup_params(
     connection_tag: ConnectionTag,
     adapter_type: telio.AdapterType = telio.AdapterType.Default,
     stun_limits: ConnectionLimits = ConnectionLimits(0, 0),
+    features: TelioFeatures = TelioFeatures(),
 ) -> SetupParameters:
     return SetupParameters(
         connection_tag=connection_tag,
@@ -44,6 +46,7 @@ def _setup_params(
             derp_1_limits=ConnectionLimits(1, 1),
             stun_limits=stun_limits,
         ),
+        features=features,
     )
 
 
@@ -254,10 +257,16 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     telio.AdapterType.BoringTun,
                     stun_limits=ConnectionLimits(1, 1),
+                    features=TelioFeatures(
+                        firewall=FeatureFirewall(custom_private_ip_range="10.0.0.0/8")
+                    ),
                 ),
                 _setup_params(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
                     stun_limits=ConnectionLimits(1, 5),
+                    features=TelioFeatures(
+                        firewall=FeatureFirewall(custom_private_ip_range="10.0.0.0/8")
+                    ),
                 ),
             ],
         )
@@ -305,7 +314,9 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
         alpha.set_peer_firewall_settings(exit_node.id, allow_incoming_connections=True)
         await client_alpha.set_meshmap(api.get_meshmap(alpha.id))
 
-        exit_node.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
+        exit_node.set_peer_firewall_settings(
+            alpha.id, allow_incoming_connections=True, allow_peer_traffic_routing=True
+        )
         await client_exit_node.set_meshmap(api.get_meshmap(exit_node.id))
 
         # Ping should again work both ways
