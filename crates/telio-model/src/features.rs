@@ -665,7 +665,7 @@ mod tests {
                 "ttl_value": 60
             },
             "pmtu_discovery": null,
-            "multicast": false
+            "multicast": false,
             "firewall": null
         }"#;
 
