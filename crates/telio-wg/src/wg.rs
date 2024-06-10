@@ -182,12 +182,9 @@ impl DynamicWg {
     ///         Protector {}
     ///         impl Protector for Protector {
     ///         fn make_external(&self, socket: NativeSocket) -> io::Result<()>;
-    ///         #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
     ///         fn make_internal(&self, interface: i32) -> Result<(), std::io::Error>;
     ///         fn clean(&self, socket: NativeSocket);
-    ///         #[cfg(target_os = "linux")]
     ///         fn set_fwmark(&self, fwmark: u32);
-    ///         #[cfg(any(target_os = "macos", windows))]
     ///         fn set_tunnel_interface(&self, interface: u64);
     ///         }
     ///     }

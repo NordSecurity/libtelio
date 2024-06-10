@@ -12,7 +12,7 @@ use telio_relay::{
     derp::Config as DerpConfig, multiplexer::Multiplexer, DerpKeepaliveConfig, DerpRelay,
     SortedServers,
 };
-use telio_sockets::{NativeProtector, Protect, SocketPool};
+use telio_sockets::{NativeProtector, Protector, SocketPool};
 use telio_task::{
     io::{chan, mc_chan, mc_chan::Tx, Chan, McChan},
     task_exec, BoxAction, Runtime as TaskRuntime, Task,
@@ -183,7 +183,7 @@ pub struct Device {
     art: Option<Arc<AsyncRuntime>>,
     event: Tx<Box<Event>>,
     rt: Option<Task<Runtime>>,
-    protect: Option<Protect>,
+    protect: Option<Arc<dyn Protector>>,
     features: Features,
 }
 
@@ -427,7 +427,7 @@ impl Device {
     pub fn new<F: EventCb>(
         features: Features,
         event_cb: F,
-        protect: Option<Protect>,
+        protect: Option<Arc<dyn Protector>>,
     ) -> Result<Self> {
         let version_tag = version_tag();
         let commit_sha = commit_sha();
@@ -612,10 +612,10 @@ impl Device {
     async fn protect_from_vpn(&self, adapter: &impl WireGuard) -> Result {
         if let Some(protect) = self.protect.as_ref() {
             if let Some(fd) = adapter.get_wg_socket(false).await? {
-                protect(fd);
+                let _ = protect.make_external(fd);
             }
             if let Some(fd) = adapter.get_wg_socket(true).await? {
-                protect(fd);
+                let _ = protect.make_external(fd);
             }
         }
         Ok(())
@@ -972,7 +972,7 @@ impl Runtime {
         libtelio_wide_event_publisher: Tx<Box<Event>>,
         config: &DeviceConfig,
         features: Features,
-        protect: Option<Protect>,
+        protect: Option<Arc<dyn Protector>>,
     ) -> Result<Self> {
         let firewall = Arc::new(StatefullFirewall::new(
             features.ipv6,
@@ -1398,17 +1398,21 @@ impl Runtime {
                 self.entities.wireguard_interface.clone(),
             )?);
 
-            let session_keeper = Arc::new(SessionKeeper::start(self.entities.socket_pool.clone())?);
-
-            Some(DirectEntities {
-                local_interfaces_endpoint_provider,
-                stun_endpoint_provider,
-                upnp_endpoint_provider,
-                endpoint_providers,
-                cross_ping_check,
-                upgrade_sync,
-                session_keeper,
-            })
+            match SessionKeeper::start(self.entities.socket_pool.clone()).map(Arc::new) {
+                Ok(session_keeper) => Some(DirectEntities {
+                    local_interfaces_endpoint_provider,
+                    stun_endpoint_provider,
+                    upnp_endpoint_provider,
+                    endpoint_providers,
+                    cross_ping_check,
+                    upgrade_sync,
+                    session_keeper,
+                }),
+                Err(e) => {
+                    telio_log_warn!("Session keeper startup failed: {e:?} - direct connections will not be formed");
+                    None
+                }
+            }
         } else {
             None
         };
@@ -2334,6 +2338,8 @@ mod tests {
     use std::net::Ipv6Addr;
     use telio_model::config::{Peer, PeerBase};
     use telio_model::features::FeatureDirect;
+    use telio_sockets::native::NativeSocket;
+    use telio_sockets::Protector;
 
     fn build_peer_base(
         hostname: String,
@@ -3193,6 +3199,99 @@ mod tests {
             rt.set_config(&invalid_cfg).await.unwrap_err(),
             Error::BadPublicKey
         ));
+    }
+
+    struct MakeInternalFailingProtector;
+
+    impl Protector for MakeInternalFailingProtector {
+        fn make_external(&self, _socket: NativeSocket) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn make_internal(&self, _socket: NativeSocket) -> io::Result<()> {
+            Err(io::Error::from(ErrorKind::PermissionDenied))
+        }
+
+        fn clean(&self, _socket: NativeSocket) {}
+
+        fn set_fwmark(&self, _: u32) {}
+
+        fn set_tunnel_interface(&self, _interface: u64) {}
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test(start_paused = true)]
+    async fn test_set_config_with_failing_session_keeper_start() {
+        let (sender, _receiver) = tokio::sync::broadcast::channel(1);
+
+        let protect = Arc::new(MakeInternalFailingProtector);
+
+        let providers = maplit::hashset! {
+            telio_model::features::EndpointProvider::Stun,
+            telio_model::features::EndpointProvider::Upnp,
+            telio_model::features::EndpointProvider::Local,
+        };
+
+        let features = Features {
+            direct: Some(FeatureDirect {
+                providers: Some(providers),
+                endpoint_interval_secs: None,
+                skip_unresponsive_peers: None,
+                endpoint_providers_optimization: None,
+            }),
+            ..Default::default()
+        };
+        let private_key = SecretKey::gen();
+        let mut rt = Runtime::start(
+            sender,
+            &DeviceConfig {
+                private_key,
+                ..Default::default()
+            },
+            features,
+            Some(protect),
+        )
+        .await
+        .unwrap();
+
+        fn gen_config(public_key: PublicKey) -> Config {
+            let peer_base = PeerBase {
+                identifier: "identifier".to_owned(),
+                public_key,
+                hostname: telio_utils::Hidden("hostname".to_owned()),
+                ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
+                nickname: Some("nickname".to_owned()),
+            };
+            Config {
+                this: peer_base.clone(),
+                peers: Some(vec![Peer {
+                    base: peer_base.clone(),
+                    ..Default::default()
+                }]),
+                derp_servers: None,
+                dns: None,
+            }
+        }
+
+        let valid_cfg = Some(gen_config(private_key.public()));
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+        rt.entities
+            .wireguard_interface
+            .set_listen_port(1234)
+            .await
+            .unwrap();
+        rt.test_env.adapter.lock().await.checkpoint();
+
+        rt.test_env
+            .adapter
+            .expect_send_uapi_cmd_generic_call(1)
+            .await;
+
+        assert!(rt.set_config(&valid_cfg).await.is_ok());
     }
 
     #[cfg(not(windows))]

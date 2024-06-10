@@ -17,7 +17,15 @@ impl Protector for NativeProtector {
         Ok(())
     }
 
+    fn make_internal(&self, socket: NativeSocket) -> io::Result<()> {
+        Ok(())
+    }
+
     fn clean(&self, _socket: NativeSocket) {
         // Skip, socket will be removed
     }
+
+    fn set_fwmark(&self, fwmark: u32) {}
+
+    fn set_tunnel_interface(&self, interface: u64) {}
 }

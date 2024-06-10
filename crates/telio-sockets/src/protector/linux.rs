@@ -32,6 +32,11 @@ impl Protector for NativeProtector {
         Ok(())
     }
 
+    /// This is a no-op on linux.
+    fn make_internal(&self, _socket: NativeSocket) -> io::Result<()> {
+        Ok(())
+    }
+
     fn clean(&self, _socket: NativeSocket) {
         // Skip, socket will be removed
     }
@@ -41,6 +46,9 @@ impl Protector for NativeProtector {
             *my_fwmark = fwmark;
         }
     }
+
+    /// This is a no-op on linux.
+    fn set_tunnel_interface(&self, _interface: u64) {}
 }
 
 fn set_fwmark(fd: i32, fwmark: u32) -> io::Result<()> {
