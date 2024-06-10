@@ -110,9 +110,6 @@ typedef boolean FeatureValidateKeys;
 [Custom]
 typedef u32 TtlValue;
 
-[Custom]
-typedef boolean FeatureBoringtunResetConns;
-
 namespace telio {
     /// Set the global logger.
     /// # Parameters
@@ -424,8 +421,8 @@ dictionary Features {
     boolean ipv6;
     /// Nicknames support
     boolean nicknames;
-    /// Flag to turn on connection reset upon VPN server change for boringtun adapter
-    FeatureBoringtunResetConns boringtun_reset_connections;
+    /// Feature config for firewall
+    FeatureFirewall firewall;
     /// If and for how long to flush events when stopping telio. Setting to Some(0) means waiting until all events have been flushed, regardless of how long it takes
     u64? flush_events_on_stop_timeout_seconds;
     /// No-link detection mechanism
@@ -548,6 +545,12 @@ dictionary FeatureDerp {
     boolean? enable_polling;
     /// Use Mozilla's root certificates instead of OS ones [default false]
     boolean use_built_in_root_certificates;
+};
+
+/// Feature config for firewall
+dictionary FeatureFirewall {
+    /// Turns on connection resets upon VPN server change
+    boolean boringtun_reset_conns;
 };
 
 /// Link detection mechanism
