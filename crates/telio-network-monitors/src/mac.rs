@@ -14,6 +14,8 @@ use std::{
 };
 use telio_utils::{telio_log_info, telio_log_warn};
 
+use crate::monitor::PATH_CHANGE_BROADCAST;
+
 /// Dispatch queue priority as high priority queue
 pub const DISPATCH_QUEUE_PRIORITY_HIGH: c_long = 2;
 /// Dispatch queue priority as default queue
@@ -28,9 +30,6 @@ pub static INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER: Mutex<Vec<String>> = Mutex::n
 /// Vector containing all local interfaces
 pub static LOCAL_ADDRS_CACHE: Lazy<Arc<StdMutex<Vec<if_addrs::Interface>>>> =
     Lazy::new(|| Arc::new(StdMutex::new(Vec::new())));
-
-#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
-static NETWORK_PATH_MONITOR_START: std::sync::Once = std::sync::Once::new();
 
 extern "C" {
     /// Obj-c signature:
