@@ -312,7 +312,7 @@ impl Telio {
     }
 
     /// Completely stop and uninit telio lib.
-    pub fn destroy(&self) -> FFIResult<()> {
+    pub fn shutdown(&self) -> FFIResult<()> {
         catch_ffi_panic(|| {
             self.device_op(false, |dev| {
                 dev.stop();
@@ -323,7 +323,7 @@ impl Telio {
     }
 
     /// Explicitly deallocate telio object and shutdown async rt.
-    pub fn destroy_hard(&self) -> FFIResult<()> {
+    pub fn shutdown_hard(&self) -> FFIResult<()> {
         let res = catch_ffi_panic(|| {
             let mut dev = match self.inner.lock() {
                 Ok(dev) => dev,
@@ -338,13 +338,13 @@ impl Telio {
         });
 
         if res.is_ok() {
-            telio_log_debug!("Telio::destroy_hard sucessfull");
+            telio_log_debug!("Telio::shutdown_hard sucessfull");
             return Ok(());
         }
 
-        telio_log_debug!("Unknown error - Telio::destroy_hard");
+        telio_log_debug!("Unknown error - Telio::shutdown_hard");
         Err(TelioError::UnknownError {
-            inner: "Unknown error - Telio::destroy_hard".to_owned(),
+            inner: "Unknown error - Telio::shutdown_hard".to_owned(),
         })
     }
 

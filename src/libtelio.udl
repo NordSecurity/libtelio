@@ -163,11 +163,11 @@ interface Telio {
 
     /// Completely stop and uninit telio lib.
     [Throws=TelioError]
-    void destroy();
+    void shutdown();
 
     /// Explicitly deallocate telio object and shutdown async rt.
     [Throws=TelioError]
-    void destroy_hard();
+    void shutdown_hard();
 
     /// Stop telio device.
     [Throws=TelioError]

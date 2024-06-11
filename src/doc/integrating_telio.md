@@ -102,35 +102,35 @@ impl TelioEventCb for EventHandler {
 }
 
 let telio = Telio::new(Default::default(), Box::new(EventHandler)).unwrap();
-telio.destroy().unwrap();
+telio.shutdown().unwrap();
 ```
 
 ```go
 import github.com/nordsecurity/telio
 
 telio, err := Telio {...}
-_, err = telio.Destroy()
+_, err = telio.Shutdown()
 ```
 
 ```swift
 import libtelio
 
 let telio = Telio(...)
-telio.destroy()
+telio.shutdown()
 ```
 
 ```cs
 using uniffi.libtelio;
 
 Telio telio = new Telio(...);
-telio.Destroy();
+telio.Shutdown();
 ```
 
 ```kotlin
 import com.nordsec.libtelio.*
 
 val telio = Telio.new(...)!!
-telio.destroy()!!
+telio.shutdown()!!
 ```
 
 </multi-code>
@@ -165,7 +165,7 @@ impl TelioEventCb for EventHandler {
 }
 
 let telio = Telio::new(feature_config, Box::new(EventHandler)).unwrap();
-telio.destroy().unwrap();
+telio.shutdown().unwrap();
 ```
 
 ```go
@@ -183,7 +183,7 @@ telio, err := Telio {
     Features: featureConfig,
     ...
 }
-_, err = telio.Destroy()
+_, err = telio.Shutdown()
 ```
 
 ```swift
@@ -196,7 +196,7 @@ featureConfig.lana = FeatureLana("some/path.db", true)
 featureConfig.nurse?.fingerprint = "me"
 
 let telio = Telio(featureConfig, ...)
-telio.destroy()
+telio.shutdown()
 ```
 
 ```cs
@@ -211,7 +211,7 @@ if (featureConfig.nurse != null) {
 }
 
 Telio telio = new Telio(featureConfig, ...);
-telio.Destroy();
+telio.Shutdown();
 ```
 
 ```kotlin
@@ -224,7 +224,7 @@ featureConfig.lana = FeatureLana("some/path.db", true)
 featureConfig.nurse?.fingerprint = "me"
 
 val telio = Telio(featureConfig, ...)!!
-telio.destroy()!!
+telio.shutdown()!!
 ```
 
 </multi-code>
@@ -235,7 +235,7 @@ App passes event callback. Events can be one of three types, `relay`, `node`, an
 
 Relay events are reported every time the relay configuration changes or we start connecting to a different relay server, node events are reported by any change to any property of the node (be it a VPN node or a mesh node), and error events are reported when a panic occurs inside libtelio.
 
-If you receive an error event with critical level, you must restart libtelio by first calling `destroy_hard()` followed by `new(...)`, or one of the the alternative constructors.
+If you receive an error event with critical level, you must restart libtelio by first calling `shutdown_hard()` followed by `new(...)`, or one of the the alternative constructors.
 
 <multi-code-select></multi-code-select>
 
@@ -312,7 +312,7 @@ new Telio(..., eventHandler)!!
  
 
 ### Critical Recovery
-If critical error event is received, Telio device should be destroyed with `telio.destroy_hard` and recreated with `Telio::new`.
+If critical error event is received, Telio device should be destroyed with `telio.shutdown_hard` and recreated with `Telio::new`.
 
 
 ### Start / Stop Default Adapter
@@ -346,7 +346,7 @@ let telio = Telio::new(Default::default(), Box::new(EventHandler)).unwrap();
 telio.start(sk, adapter).unwrap();
 telio.stop().unwrap();
 
-telio.destroy().unwrap();
+telio.shutdown().unwrap();
 ```
 
 ```go
@@ -364,7 +364,7 @@ telio, err := Telio {...}
 _, err = telio.Start(sk, adapter)
 _, err = telio.Stop()
 
-_, err = telio.Destroy()
+_, err = telio.Shutdown()
 ```
 
 ```swift
@@ -382,7 +382,7 @@ let telio = Telio(...)
 telio.start(sk, adapter)
 telio.stop()
 
-telio.destroy()
+telio.shutdown()
 ```
 
 ```cs
@@ -400,7 +400,7 @@ Telio telio = new Telio(...);
 telio.Start(sk, adapter);
 telio.Stop();
 
-telio.Destroy();
+telio.Shutdown();
 ```
 
 ```kotlin
@@ -418,7 +418,7 @@ val telio = Telio.new(...)!!
 telio.start(sk, adapter)!!
 telio.stop()!!
 
-telio.destroy()!!
+telio.shutdown()!!
 ```
 
 </multi-code>
@@ -464,7 +464,7 @@ telio.disconnect_from_exit_nodes().unwrap();
 /* Connect to new exit node if there is need to change server */
 
 telio.stop().unwrap();
-telio.destroy().unwrap();
+telio.shutdown().unwrap();
 ```
 
 ```go
@@ -488,7 +488,7 @@ _, err = telio.DisconnectFromExitNodes()
 /* Connect to new exit node if there is need to change server */
 
 _, err = telio.Stop()
-_, err = telio.Destroy()
+_, err = telio.Shutdown()
 ```
 
 ```swift
@@ -511,7 +511,7 @@ telio.disconnectFromExitNodes()
 /* Connect to new exit node if there is need to change server */
 
 telio.stop()
-telio.destroy()
+telio.shutdown()
 ```
 
 ```cs
@@ -534,7 +534,7 @@ telio.DisconnectFromExitNodes();
 /* Connect to new exit node if there is need to change server */
 
 telio.Stop();
-telio.Destroy();
+telio.Shutdown();
 ```
 
 ```kotlin
@@ -557,7 +557,7 @@ telio.disconnectFromExitNodes()!!
 /* Connect to new exit node if there is need to change server */
 
 telio.stop()!!
-telio.destroy()!!
+telio.shutdown()!!
 ```
 
 </multi-code>
@@ -611,7 +611,7 @@ telio.set_meshnet(config).unwrap();
 telio.set_meshnet_off().unwrap();
 
 telio.stop().unwrap();
-telio.destroy().unwrap();
+telio.shutdown().unwrap();
 ```
 
 ```go
@@ -634,7 +634,7 @@ _, err := telio.SetMeshnet(config)
 _, err := telio.SetMeshnetOff()
 
 _, err = telio.Stop()
-_, err = telio.Destroy()
+_, err = telio.Shutdown()
 ```
 
 ```swift
@@ -657,7 +657,7 @@ telio.setMeshnet(config)
 telio.setMeshnetOff()
 
 telio.stop()
-telio.destroy()
+telio.shutdown()
 ```
 
 ```cs
@@ -680,7 +680,7 @@ telio.SetMeshnet(config);
 telio.SetMeshnetOff();
 
 telio.Stop();
-telio.Destroy();
+telio.Shutdown();
 ```
 
 ```kotlin
@@ -703,7 +703,7 @@ telio.setMeshnet(config)!!
 telio.setMeshnet_off()!!
 
 telio.stop()!!
-telio.destroy()!!
+telio.shutdown()!!
 ```
 
 </multi-code>
@@ -752,7 +752,7 @@ telio.enable_magic_dns(&["1.1.1.1".parse().unwrap()]).unwrap();
 telio.disable_magic_dns().unwrap();
 
 telio.stop().unwrap();
-telio.destroy().unwrap();
+telio.shutdown().unwrap();
 ```
 
 ```go
@@ -771,7 +771,7 @@ _, err := telio.EnableMagicDns(dns_servers)
 _, err := telio.DisableMagicDns()
 
 _, err = telio.Stop()
-_, err = telio.Destroy()
+_, err = telio.Shutdown()
 ```
 
 ```swift
@@ -789,7 +789,7 @@ telio.enableMagicDns(["1.1.1.1"])
 telio.disableMagicDns()
 
 telio.stop()
-telio.destroy()
+telio.shutdown()
 ```
 
 ```cs
@@ -807,7 +807,7 @@ telio.EnableMagicDns(["1.1.1.1"]);
 telio.DisableMagicDns();
 
 telio.Stop();
-telio.Destroy();
+telio.Shutdown();
 ```
 
 ```kotlin
@@ -825,7 +825,7 @@ telio.enableMagicDns(listOf("1.1.1.1"))!!
 telio.disableMagicDns()!!
 
 telio.stop()!!
-telio.destroy()!!
+telio.shutdown()!!
 ```
 
 </multi-code>
@@ -891,7 +891,7 @@ telio.connect_to_exit_node(
 telio.disconnect_from_exit_nodes().unwrap();
 
 telio.stop().unwrap();
-telio.destroy().unwrap();
+telio.shutdown().unwrap();
 ```
 
 ```go
@@ -908,7 +908,7 @@ _, err = telio.ConnectToExitNode(meshMapNodePublicKey, allowedIps, nil)
 _, err = telio.DisconnectFromExitNodes()
 
 _, err = telio.Stop()
-_, err = telio.Destroy()
+_, err = telio.Shutdown()
 ```
 
 ```swift
@@ -924,7 +924,7 @@ telio.connectToExitNode(meshMapNodePublicKey, ["0.0.0.0/0"], nil)
 telio.disconnectFromExitNodes()
 
 telio.stop()
-telio.destroy()
+telio.shutdown()
 ```
 
 ```cs
@@ -940,7 +940,7 @@ telio.ConnectToExitNode(meshMapNodePublicKey, ["0.0.0.0/0"], null);
 telio.DisconnectFromExitNodes();
 
 telio.Stop();
-telio.Destroy();
+telio.Shutdown();
 ```
 
 ```kotlin
@@ -956,7 +956,7 @@ telio.connectToExitNode(meshMapNodePublicKey, listOf("0.0.0.0/0"), null)!!
 telio.disconnectFromExitNodes()!!
 
 telio.stop()!!
-telio.destroy()!!
+telio.shutdown()!!
 ```
 
 </multi-code>
