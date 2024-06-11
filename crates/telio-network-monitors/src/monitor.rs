@@ -9,11 +9,15 @@ use telio_utils::{
 };
 use tokio::{sync::broadcast::Sender, task::JoinHandle};
 
+use crate::mac::setup_network_path_monitor;
+
 /// Sender to notify if there is a change in OS interface order
 pub static PATH_CHANGE_BROADCAST: Lazy<Sender<()>> = Lazy::new(|| Sender::new(2));
 /// Vector containing all local interfaces
 pub static LOCAL_ADDRS_CACHE: Lazy<Arc<StdMutex<Vec<if_addrs::Interface>>>> =
     Lazy::new(|| Arc::new(StdMutex::new(Vec::new())));
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+static NETWORK_PATH_MONITOR_START: std::sync::Once = std::sync::Once::new();
 
 #[derive(Debug, Default)]
 /// Struct to monitor network

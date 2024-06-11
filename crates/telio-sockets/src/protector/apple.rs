@@ -1,6 +1,8 @@
 use debug_panic::debug_panic;
 use parking_lot::{Mutex, RwLock};
-use telio_network_monitors::mac::{INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER, PATH_CHANGE_BROADCAST};
+use telio_network_monitors::{
+    mac::INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER, monitor::PATH_CHANGE_BROADCAST,
+};
 
 use std::{
     io, os,
