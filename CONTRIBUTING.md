@@ -58,4 +58,11 @@ In any case, we will guide you through and provide you with the support, if need
 ## Code of conduct
 Nord Security and all of it's projects adhere to the [Contributor Covenant Code of Conduct](https://github.com/NordSecurity/.github/blob/master/CODE_OF_CONDUCT.md). When participating, you are expected to honor this code.
 
+## Secrets Hygiene
+
+If you are part of NordSecurity, then you want to create a new PR,
+you must checkout this project via internal libtelio-build, and install
+git hooks. Without this ci/cd will fail, as it will not see integracy
+signuture for each commit.
+
 ## Thank you!
