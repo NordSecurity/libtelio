@@ -11,7 +11,7 @@ buildscript {
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:8.0.1'
-        classpath "org.jfrog.buildinfo:build-info-extractor-gradle:5.1.14"
+        classpath "org.jfrog.buildinfo:build-info-extractor-gradle:4.21.0"
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.23"
     }
 }
