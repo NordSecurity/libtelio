@@ -169,7 +169,7 @@ impl DynamicWg {
     /// ```
     /// use std::{sync::Arc, io};
     /// use telio_firewall::firewall::{StatefullFirewall, Firewall};
-    /// use telio_sockets::{native::NativeSocket, Protector, SocketPool, Protect};
+    /// use telio_sockets::{NativeSocket, Protector, SocketPool, Protect, DummyProtector};
     /// use telio_task::io::Chan;
     /// pub use telio_wg::{AdapterType, DynamicWg, Tun, Io, Config};
     /// use tokio::runtime::Runtime;
@@ -178,16 +178,6 @@ impl DynamicWg {
     /// #[tokio::main]
     /// async fn main() {
     ///
-    ///     mock! {
-    ///         Protector {}
-    ///         impl Protector for Protector {
-    ///         fn make_external(&self, socket: NativeSocket) -> io::Result<()>;
-    ///         fn make_internal(&self, interface: i32) -> Result<(), std::io::Error>;
-    ///         fn clean(&self, socket: NativeSocket);
-    ///         fn set_fwmark(&self, fwmark: u32);
-    ///         fn set_tunnel_interface(&self, interface: u64);
-    ///         }
-    ///     }
     ///     let firewall = Arc::new(StatefullFirewall::new(true, false));
     ///     let firewall_filter_inbound_packets = {
     ///         let fw = firewall.clone();
@@ -199,7 +189,7 @@ impl DynamicWg {
     ///     };
     ///
     ///     let chan = Chan::default();
-    ///     let socket_pool = Arc::new(SocketPool::new(MockProtector::default()));
+    ///     let socket_pool = Arc::new(SocketPool::new(DummyProtector));
     ///     let wireguard_interface = DynamicWg::start(
     ///         Io {
     ///             events: chan.tx,

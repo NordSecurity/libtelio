@@ -1097,7 +1097,7 @@ impl Analytics {
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use telio_model::{features::FeatureNurse, mesh::Node};
-    use telio_sockets::{native::NativeSocket, Protector};
+    use telio_sockets::{NativeSocket, Protector};
     use telio_task::{io::McChan, Task};
     use telio_utils::sync::mpsc::Receiver;
     use tokio::time::{self, timeout};
@@ -1109,24 +1109,6 @@ mod tests {
     use telio_model::config::RelayConnectionChangeReason;
 
     use super::*;
-
-    struct FakeProtector;
-
-    impl Protector for FakeProtector {
-        fn make_external(&self, _: NativeSocket) -> std::io::Result<()> {
-            Ok(())
-        }
-
-        fn make_internal(&self, _socket: NativeSocket) -> std::io::Result<()> {
-            Ok(())
-        }
-
-        fn clean(&self, _: NativeSocket) {}
-
-        fn set_fwmark(&self, _fwmark: u32) {}
-
-        fn set_tunnel_interface(&self, _interface: u64) {}
-    }
 
     struct State {
         public_key: PublicKey,

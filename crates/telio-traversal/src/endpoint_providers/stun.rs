@@ -10,7 +10,7 @@ use telio_crypto::PublicKey;
 use telio_model::config::Server;
 use telio_proto::{Session, WGPort};
 use telio_sockets::SocketPool;
-use telio_sockets::{native::AsNativeSocket, External};
+use telio_sockets::{AsNativeSocket, External};
 use telio_task::{io::chan, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
     exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},

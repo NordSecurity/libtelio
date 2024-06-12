@@ -7,45 +7,23 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-boringtun.workspace = true
-futures.workspace = true
 libc.workspace = true
+boringtun.workspace = true
 tracing.workspace = true
-parking_lot.workspace = true
 socket2.workspace = true
-thiserror.workspace = true
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true, features = ["net", "rt", "macros"] }
+
+sock-prot.workspace = true
 
 telio-utils.workspace = true
-once_cell.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.34.0", features = [
+  "alloc",
+  "Win32_Networking_WinSock"
+]}
 
 [dev-dependencies]
 mockall.workspace = true
 rstest.workspace = true
 
-[target.'cfg(any(target_os = "ios", target_os = "tvos"))'.dependencies]
-objc = "0.2.7"
-objc-foundation = "0.1.1"
-version-compare = "0.1"
-
-[target.'cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))'.dependencies]
-debug_panic = "0.2.1"
-nix = { version = "0.28", features=["socket"] }
-system-configuration = { git = 'https://github.com/NordSecurity/system-configuration-rs.git' }
-network-framework-sys = "0.1"
-block = "0.1"
-dispatch = { git = "https://github.com/NordSecurity/rust-dispatch.git", rev = "13447cd7221a74ebcce1277ae0cfc9a421a28ec5" }
-
-[target.'cfg(windows)'.dependencies]
-winapi = { workspace = true, features = [
-    "ntdef",
-    "winerror",
-    "iptypes",
-    "iphlpapi",
-    "impl-default",
-] }
-windows = { version = "0.34.0", features = [
-    "alloc",
-    "Win32_Networking_WinSock",
-    "Win32_NetworkManagement_IpHelper",
-] }

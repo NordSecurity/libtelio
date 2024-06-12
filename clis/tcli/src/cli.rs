@@ -83,10 +83,6 @@ pub enum Error {
     #[error(transparent)]
     Codec(#[from] CodecError),
 
-    #[cfg(target_os = "macos")]
-    #[error(transparent)]
-    Apple(#[from] telio_sockets::protector::platform::Error),
-
     #[error("config is empty.")]
     EmptyConfig,
 

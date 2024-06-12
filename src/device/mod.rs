@@ -30,9 +30,6 @@ use telio_traversal::{
     WireGuardEndpointCandidateChangeEvent,
 };
 
-#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
-use telio_sockets::native;
-
 use telio_nurse::{
     aggregator::ConnectivityDataAggregator, config::AggregatorConfig,
     config::Config as NurseConfig, data::MeshConfigUpdateEvent,
@@ -87,9 +84,6 @@ pub use wg::{
     uapi::Event as WGEvent, uapi::Interface, AdapterType, DynamicWg, Error as AdapterError,
     FirewallCb, Tun, WireGuard,
 };
-
-#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
-static NETWORK_PATH_MONITOR_START: std::sync::Once = std::sync::Once::new();
 
 #[cfg(test)]
 use wg::tests::AdapterExpectation;
@@ -152,9 +146,6 @@ pub enum Error {
     SessionKeeperError(#[from] telio_traversal::session_keeper::Error),
     #[error("Upgrade sync error: {0}")]
     UpgradeSyncError(#[from] telio_traversal::upgrade_sync::Error),
-    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
-    #[error("Socket pool error")]
-    SocketPoolError(#[from] telio_sockets::protector::platform::Error),
     #[error(transparent)]
     PostQuantum(#[from] telio_pq::Error),
     #[error("Cannot setup meshnet when the post quantum VPN is set up")]
@@ -184,6 +175,7 @@ pub struct Device {
     event: Tx<Box<Event>>,
     rt: Option<Task<Runtime>>,
     protect: Option<Arc<dyn Protector>>,
+    socket_pool: Arc<SocketPool>,
     features: Features,
 }
 
@@ -435,10 +427,6 @@ impl Device {
 
         telio_log_info!("libtelio is starting up with features : {:?}", features);
 
-        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
-        NETWORK_PATH_MONITOR_START
-            .call_once(telio_sockets::protector::platform::setup_network_path_monitor);
-
         if let Some(lana) = &features.lana {
             if init_lana(lana.event_path.clone(), version_tag.to_string(), lana.prod).is_err() {
                 telio_log_error!("Failed to initialize lana")
@@ -478,12 +466,25 @@ impl Device {
             }
         });
 
+        // Crate the protector here because it can take some
+        // time for the OS to generate notifications.
+        // This is especially true for Apple platforms.
+        let socket_pool = if let Some(protect) = protect.as_ref() {
+            SocketPool::from(Arc::clone(protect))
+        } else {
+            SocketPool::new(NativeProtector::new(
+                #[cfg(target_os = "macos")]
+                features.is_test_env.unwrap_or(false),
+            )?)
+        };
+
         Ok(Device {
             features,
             art: Some(Arc::new(art)),
             event: event_tx,
             rt: None,
             protect,
+            socket_pool: Arc::new(socket_pool),
         })
     }
 
@@ -508,7 +509,7 @@ impl Device {
                     self.event.clone(),
                     config,
                     self.features.clone(),
-                    self.protect.clone(),
+                    self.socket_pool.clone(),
                 )
                 .boxed()
                 .await?,
@@ -612,10 +613,10 @@ impl Device {
     async fn protect_from_vpn(&self, adapter: &impl WireGuard) -> Result {
         if let Some(protect) = self.protect.as_ref() {
             if let Some(fd) = adapter.get_wg_socket(false).await? {
-                let _ = protect.make_external(fd);
+                let _ = unsafe { protect.make_external(fd) };
             }
             if let Some(fd) = adapter.get_wg_socket(true).await? {
-                let _ = protect.make_external(fd);
+                let _ = unsafe { protect.make_external(fd) };
             }
         }
         Ok(())
@@ -972,7 +973,7 @@ impl Runtime {
         libtelio_wide_event_publisher: Tx<Box<Event>>,
         config: &DeviceConfig,
         features: Features,
-        protect: Option<Arc<dyn Protector>>,
+        socket_pool: Arc<SocketPool>,
     ) -> Result<Self> {
         let firewall = Arc::new(StatefullFirewall::new(
             features.ipv6,
@@ -1001,17 +1002,6 @@ impl Runtime {
         } else {
             None
         };
-
-        let socket_pool = Arc::new({
-            if let Some(protect) = protect.clone() {
-                SocketPool::new(protect)
-            } else {
-                SocketPool::new(NativeProtector::new(
-                    #[cfg(target_os = "macos")]
-                    features.is_test_env.unwrap_or(false),
-                )?)
-            }
-        });
 
         let derp_events = McChan::default();
 
@@ -1128,7 +1118,7 @@ impl Runtime {
         #[cfg(windows)]
         {
             let adapter_luid = wireguard_interface.get_adapter_luid().await?;
-            socket_pool.set_tunnel_interface(adapter_luid);
+            socket_pool.protector().set_tunnel_interface(adapter_luid);
         }
         #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
         set_tunnel_interface(&socket_pool, config);
@@ -1519,7 +1509,7 @@ impl Runtime {
     async fn set_fwmark(&mut self, fwmark: u32) -> Result {
         self.requested_state.device_config.fwmark = Some(fwmark);
 
-        self.entities.socket_pool.set_fwmark(fwmark);
+        self.entities.socket_pool.protector().set_fwmark(fwmark);
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
             .await?;
         Ok(())
@@ -2300,10 +2290,11 @@ impl TaskRuntime for Runtime {
 
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 fn set_tunnel_interface(socket_pool: &Arc<SocketPool>, config: &DeviceConfig) {
-    let mut tunnel_if_index = None;
+    let protector = socket_pool.protector();
+
     if let Some(tun) = config.tun {
-        match native::interface_index_from_tun(tun) {
-            Ok(index) => tunnel_if_index = Some(index),
+        match protector.set_tunnel_from_fd(tun) {
+            Ok(()) => return,
             Err(e) => {
                 telio_log_warn!(
                     "Could not get tunnel index from tunnel file descriptor: {}",
@@ -2312,22 +2303,18 @@ fn set_tunnel_interface(socket_pool: &Arc<SocketPool>, config: &DeviceConfig) {
             }
         }
     }
-    if tunnel_if_index.is_none() {
-        if let Some(name) = config.name.as_ref() {
-            match native::interface_index_from_name(name) {
-                Ok(index) => tunnel_if_index = Some(index),
-                Err(e) => {
-                    telio_log_warn!(
-                        "Could not get tunnel index from tunnel name \"{}\": {}",
-                        name,
-                        e
-                    );
-                }
+
+    if let Some(name) = config.name.as_ref() {
+        match protector.set_tunnel_from_name(name) {
+            Ok(()) => (),
+            Err(e) => {
+                telio_log_warn!(
+                    "Could not get tunnel index from tunnel name \"{}\": {}",
+                    name,
+                    e
+                );
             }
         }
-    }
-    if let Some(tunnel_if_index) = tunnel_if_index {
-        socket_pool.set_tunnel_interface(tunnel_if_index)
     }
 }
 
@@ -2338,7 +2325,7 @@ mod tests {
     use std::net::Ipv6Addr;
     use telio_model::config::{Peer, PeerBase};
     use telio_model::features::FeatureDirect;
-    use telio_sockets::native::NativeSocket;
+    use telio_sockets::NativeSocket;
     use telio_sockets::Protector;
 
     fn build_peer_base(
@@ -3203,21 +3190,13 @@ mod tests {
 
     struct MakeInternalFailingProtector;
 
-    impl Protector for MakeInternalFailingProtector {
-        fn make_external(&self, _socket: NativeSocket) -> io::Result<()> {
-            Ok(())
-        }
-
-        fn make_internal(&self, _socket: NativeSocket) -> io::Result<()> {
+    impl sock_prot::Protector for MakeInternalFailingProtector {
+        unsafe fn make_internal(&self, _socket: NativeSocket) -> io::Result<()> {
             Err(io::Error::from(ErrorKind::PermissionDenied))
         }
-
-        fn clean(&self, _socket: NativeSocket) {}
-
-        fn set_fwmark(&self, _: u32) {}
-
-        fn set_tunnel_interface(&self, _interface: u64) {}
     }
+
+    impl Protector for MakeInternalFailingProtector {}
 
     #[cfg(not(windows))]
     #[tokio::test(start_paused = true)]

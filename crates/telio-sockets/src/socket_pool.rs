@@ -16,27 +16,13 @@ use tokio::{
 
 #[cfg(unix)]
 use boringtun::device::MakeExternalBoringtun;
+use sock_prot::{AsNativeSocket, NativeSocket};
 use telio_utils::{telio_log_debug, telio_log_warn};
 
-use crate::{
-    native::{AsNativeSocket, NativeSocket},
-    Protector, TcpParams, UdpParams,
-};
-
-struct SocketGuard {
-    socket: NativeSocket,
-    protector: ArcProtector,
-}
-
-impl Drop for SocketGuard {
-    fn drop(&mut self) {
-        self.protector.clean(self.socket)
-    }
-}
+use crate::{Protector, TcpParams, UdpParams};
 
 pub struct External<T: AsNativeSocket> {
-    socket: T,
-    guard: SocketGuard,
+    socket: sock_prot::Socket<T, dyn Protector>,
 }
 
 #[derive(Clone)]
@@ -48,23 +34,21 @@ type ArcProtector = Arc<dyn Protector>;
 
 impl External<TcpSocket> {
     pub async fn connect(self, addr: SocketAddr) -> io::Result<External<TcpStream>> {
-        let Self { guard, socket } = self;
-        let socket = socket.connect(addr).await?;
-        Ok(External { socket, guard })
+        let socket = self.socket.async_map(|sock| sock.connect(addr)).await?;
+        Ok(External { socket })
     }
 }
-
 impl<T: AsNativeSocket> Deref for External<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.socket
+        self.socket.deref()
     }
 }
 
 impl<T: AsNativeSocket> DerefMut for External<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.socket
+        self.socket.deref_mut()
     }
 }
 
@@ -77,7 +61,7 @@ where
         cx: &mut std::task::Context<'_>,
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.socket).poll_read(cx, buf)
+        Pin::new(&mut *self.socket).poll_read(cx, buf)
     }
 }
 
@@ -90,21 +74,27 @@ where
         cx: &mut std::task::Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
-        Pin::new(&mut self.socket).poll_write(cx, buf)
+        Pin::new(&mut *self.socket).poll_write(cx, buf)
     }
 
     fn poll_flush(
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> Poll<Result<(), io::Error>> {
-        Pin::new(&mut self.socket).poll_flush(cx)
+        Pin::new(&mut *self.socket).poll_flush(cx)
     }
 
     fn poll_shutdown(
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> Poll<Result<(), io::Error>> {
-        Pin::new(&mut self.socket).poll_shutdown(cx)
+        Pin::new(&mut *self.socket).poll_shutdown(cx)
+    }
+}
+
+impl From<ArcProtector> for SocketPool {
+    fn from(protect: ArcProtector) -> Self {
+        Self { protect }
     }
 }
 
@@ -115,14 +105,8 @@ impl SocketPool {
         }
     }
 
-    #[cfg(target_os = "linux")]
-    pub fn set_fwmark(&self, fwmark: u32) {
-        self.protect.set_fwmark(fwmark);
-    }
-
-    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos", windows))]
-    pub fn set_tunnel_interface(&self, interface: u64) {
-        self.protect.set_tunnel_interface(interface);
+    pub fn protector(&self) -> &dyn Protector {
+        &*self.protect
     }
 
     pub fn new_external_tcp_v4(
@@ -197,25 +181,19 @@ impl SocketPool {
 
     /// wraps protect() on android, fmark on linux and interface binding for others
     pub fn make_external<T: AsNativeSocket>(&self, socket: T) {
-        let _ = self.protect.make_external(socket.as_native_socket());
+        let _ = unsafe { self.protect.make_external(socket.as_native_socket()) };
     }
 
     /// binds socket to tunnel interface on mac and iOS
     pub fn make_internal(&self, _socket: NativeSocket) -> io::Result<()> {
         #[cfg(any(test, target_os = "macos", target_os = "ios", target_os = "tvos"))]
-        self.protect.make_internal(_socket)?;
+        unsafe { self.protect.make_internal(_socket) }?;
         Ok(())
     }
 
     fn new_external<T: AsNativeSocket>(&self, socket: T) -> io::Result<External<T>> {
-        self.protect.make_external(socket.as_native_socket())?;
-
         Ok(External {
-            guard: SocketGuard {
-                protector: self.protect.clone(),
-                socket: socket.as_native_socket(),
-            },
-            socket,
+            socket: sock_prot::Socket::external(socket, Arc::clone(&self.protect) as _)?,
         })
     }
 }
@@ -223,7 +201,7 @@ impl SocketPool {
 #[cfg(unix)]
 impl MakeExternalBoringtun for SocketPool {
     fn make_external(&self, socket: NativeSocket) {
-        let _ = self.protect.make_external(socket);
+        let _ = unsafe { self.protect.make_external(socket) };
     }
 }
 
@@ -238,7 +216,7 @@ mod tests {
     use mockall::mock;
     use rstest::rstest;
 
-    use crate::{native::NativeSocket, protector::make_external_protector, Protect};
+    use crate::{make_external_protector, NativeSocket, Protect};
 
     use super::*;
 
@@ -246,14 +224,14 @@ mod tests {
 
     mock! {
         Protector {}
-        impl Protector for Protector {
-            fn make_external(&self, socket: NativeSocket) -> io::Result<()>;
-            fn clean(&self, socket: NativeSocket);
-            fn set_fwmark(&self, fwmark: u32);
-            fn set_tunnel_interface(&self, interface: u64);
-            fn make_internal(&self, interface: NativeSocket) -> Result<(), std::io::Error>;
+        impl sock_prot::Protector for Protector {
+            unsafe fn make_external(&self, socket: NativeSocket) -> io::Result<()>;
+            unsafe fn make_internal(&self, socket: NativeSocket) -> Result<(), std::io::Error>;
+            unsafe fn clean(&self, socket: NativeSocket);
         }
     }
+
+    impl Protector for MockProtector {}
 
     #[tokio::test]
     async fn test_external_drops_protector() {
@@ -316,7 +294,7 @@ mod tests {
                 socks.lock().unwrap().push(s);
             })
         };
-        let pool = SocketPool::new(make_external_protector(protect));
+        let pool = SocketPool::from(make_external_protector(protect));
         let tcp = pool.new_external_tcp_v4(None).expect("tcp");
 
         assert_eq!(socks.lock().unwrap().clone(), vec![tcp.as_native_socket()]);

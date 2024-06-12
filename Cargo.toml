@@ -55,6 +55,7 @@ telio-traversal.workspace = true
 telio-utils.workspace = true
 telio-wg.workspace = true
 once_cell.workspace = true
+sock-prot.workspace = true
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.19"
@@ -175,6 +176,7 @@ telio-utils = { version = "0.1.0", path = "./crates/telio-utils" }
 telio-wg = { version = "0.1.0", path = "./crates/telio-wg" }
 telio-pq = { version = "0.1.0", path = "./crates/telio-pq" }
 telio-pmtu = { version = "0.1.0", path = "./crates/telio-pmtu" }
+sock-prot = { version = "0.1.0", path = "./crates/sock-prot" }
 
 [profile.release]
 opt-level = "s"

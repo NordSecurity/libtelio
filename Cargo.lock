@@ -1129,7 +1129,7 @@ dependencies = [
  "futures",
  "parking_lot",
  "rand",
- "rstest",
+ "rstest 0.11.0",
  "serde",
  "serde_json",
  "telio-crypto",
@@ -1560,6 +1560,12 @@ name = "futures-task"
 version = "0.3.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "38d84fa142264698cdce1a9f9172cf383a0c82de1bddcf3092901442c4097004"
+
+[[package]]
+name = "futures-timer"
+version = "3.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f288b0a4f20f9a56b5d1da57e2227c661b7b16168e2f72365f57b63326e29b24"
 
 [[package]]
 name = "futures-util"
@@ -2599,7 +2605,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b10db009e117aca57cbfb70ac332348f9a89d09ff7204497c283c0f7a0c96323"
 dependencies = [
  "ntest_proc_macro_helper",
- "proc-macro-crate",
+ "proc-macro-crate 1.3.1",
  "proc-macro2 1.0.83",
  "quote 1.0.36",
  "syn 1.0.109",
@@ -2669,7 +2675,7 @@ version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "96667db765a921f7b295ffee8b60472b686a51d4f21c2ee4ffdb94c7013b65a6"
 dependencies = [
- "proc-macro-crate",
+ "proc-macro-crate 1.3.1",
  "proc-macro2 1.0.83",
  "quote 1.0.36",
  "syn 2.0.65",
@@ -2784,9 +2790,9 @@ checksum = "bb813b8af86854136c6922af0598d719255ecb2179515e6e7730d468f05c9cae"
 
 [[package]]
 name = "parking_lot"
-version = "0.12.2"
+version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e4af0ca4f6caed20e900d564c242b8e5d4903fdacf31d3daf527b66fe6f42fb"
+checksum = "f1bf18183cf54e8d6059647fc3063646a1801cf30896933ec2311622cc4b9a27"
 dependencies = [
  "lock_api",
  "parking_lot_core",
@@ -3092,7 +3098,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f4c021e1093a56626774e81216a4ce732a735e5bad4868a03f3ed65ca0c3919"
 dependencies = [
  "once_cell",
- "toml_edit",
+ "toml_edit 0.19.15",
+]
+
+[[package]]
+name = "proc-macro-crate"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d37c51ca738a55da99dc0c4a34860fd675453b8b36209178c2249bb13651284"
+dependencies = [
+ "toml_edit 0.21.1",
 ]
 
 [[package]]
@@ -3357,6 +3372,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "adad44e29e4c806119491a7f06f03de4d1af22c3a680dd47f1e6e179439d1f56"
 
 [[package]]
+name = "relative-path"
+version = "1.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
+
+[[package]]
 name = "reqwest"
 version = "0.11.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3442,6 +3463,36 @@ dependencies = [
  "quote 1.0.36",
  "rustc_version",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "rstest"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9afd55a67069d6e434a95161415f5beeada95a01c7b815508a82dcb0e1593682"
+dependencies = [
+ "futures",
+ "futures-timer",
+ "rstest_macros",
+ "rustc_version",
+]
+
+[[package]]
+name = "rstest_macros"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4165dfae59a39dd41d8dec720d3cbfbc71f69744efb480a3920f5d4e0cc6798d"
+dependencies = [
+ "cfg-if",
+ "glob",
+ "proc-macro-crate 3.1.0",
+ "proc-macro2 1.0.83",
+ "quote 1.0.36",
+ "regex",
+ "relative-path",
+ "rustc_version",
+ "syn 2.0.65",
+ "unicode-ident",
 ]
 
 [[package]]
@@ -3996,6 +4047,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2407d5b1cfd7dd5f3a9d2fa04484473fb9cfe939e701d18a3aa14e15671cb83"
 
 [[package]]
+name = "sock-prot"
+version = "0.1.0"
+dependencies = [
+ "block",
+ "debug_panic",
+ "dispatch",
+ "libc",
+ "log",
+ "network-framework-sys",
+ "nix 0.28.0",
+ "objc",
+ "objc-foundation",
+ "once_cell",
+ "parking_lot",
+ "rstest 0.21.0",
+ "system-configuration 0.5.1 (git+https://github.com/NordSecurity/system-configuration-rs.git)",
+ "tokio",
+ "version-compare",
+ "winapi",
+]
+
+[[package]]
 name = "socket2"
 version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4313,12 +4386,13 @@ dependencies = [
  "parking_lot",
  "pretty_assertions",
  "rand",
- "rstest",
+ "rstest 0.11.0",
  "rustls-platform-verifier",
  "serde",
  "serde_json",
  "slog-async",
  "slog-term",
+ "sock-prot",
  "telio-crypto",
  "telio-dns",
  "telio-firewall",
@@ -4587,7 +4661,7 @@ dependencies = [
  "num_enum",
  "rand",
  "rand_core 0.6.4",
- "rstest",
+ "rstest 0.11.0",
  "rustls-pemfile",
  "rustls-platform-verifier",
  "serde",
@@ -4615,28 +4689,15 @@ dependencies = [
 name = "telio-sockets"
 version = "0.1.0"
 dependencies = [
- "block",
  "boringtun",
- "debug_panic",
- "dispatch",
- "futures",
  "libc",
  "mockall",
- "network-framework-sys",
- "nix 0.28.0",
- "objc",
- "objc-foundation",
- "once_cell",
- "parking_lot",
- "rstest",
+ "rstest 0.11.0",
+ "sock-prot",
  "socket2 0.5.7",
- "system-configuration 0.5.1 (git+https://github.com/NordSecurity/system-configuration-rs.git)",
  "telio-utils",
- "thiserror",
  "tokio",
  "tracing",
- "version-compare",
- "winapi",
  "windows 0.34.0",
 ]
 
@@ -4679,7 +4740,7 @@ dependencies = [
  "ntest",
  "parking_lot",
  "rand",
- "rstest",
+ "rstest 0.11.0",
  "rupnp",
  "sm",
  "socket2 0.5.7",
@@ -4983,6 +5044,17 @@ name = "toml_edit"
 version = "0.19.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b5bb770da30e5cbfde35a2d7b9b8a2c4b8ef89548a7a6aeab5c9a576e3e7421"
+dependencies = [
+ "indexmap 2.2.6",
+ "toml_datetime",
+ "winnow",
+]
+
+[[package]]
+name = "toml_edit"
+version = "0.21.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a8534fd7f78b5405e860340ad6575217ce99f38d4d5c8f2442cb5ecb50090e1"
 dependencies = [
  "indexmap 2.2.6",
  "toml_datetime",

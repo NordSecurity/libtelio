@@ -8,7 +8,6 @@ use telio_crypto::{PublicKey, SecretKey};
 use telio_wg::AdapterType;
 use tracing::{error, trace, Subscriber};
 
-use telio_sockets::protector::make_external_protector;
 use uuid::Uuid;
 
 use std::{
@@ -273,7 +272,7 @@ impl Telio {
             let device = Device::new(
                 features,
                 event_dispatcher,
-                protect.map(make_external_protector),
+                protect.map(telio_sockets::make_external_protector),
             )?;
             Ok(Self {
                 inner: Mutex::new(Some(device)),
