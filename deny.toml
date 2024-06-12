@@ -27,6 +27,7 @@ default = "deny"
 confidence-threshold = 0.8
 exceptions = [
     { allow = ["GPL-3.0"], name = "telio", version = "*" },
+    { allow = ["GPL-3.0"], name = "sock-prot", version = "*" },
 ]
 
 [licenses.private]
