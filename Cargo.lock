@@ -2882,32 +2882,11 @@ dependencies = [
 
 [[package]]
 name = "pnet_base"
-version = "0.33.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "872e46346144ebf35219ccaa64b1dffacd9c6f188cd7d012bd6977a2a838f42e"
-dependencies = [
- "no-std-net",
-]
-
-[[package]]
-name = "pnet_base"
 version = "0.34.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe4cf6fb3ab38b68d01ab2aea03ed3d1132b4868fa4e06285f29f16da01c5f4c"
 dependencies = [
  "no-std-net",
-]
-
-[[package]]
-name = "pnet_macros"
-version = "0.33.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a780e80005c2e463ec25a6e9f928630049a10b43945fea83207207d4a7606f4"
-dependencies = [
- "proc-macro2 1.0.83",
- "quote 1.0.36",
- "regex",
- "syn 1.0.109",
 ]
 
 [[package]]
@@ -2924,32 +2903,11 @@ dependencies = [
 
 [[package]]
 name = "pnet_macros_support"
-version = "0.33.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6d932134f32efd7834eb8b16d42418dac87086347d1bc7d142370ef078582bc"
-dependencies = [
- "pnet_base 0.33.0",
-]
-
-[[package]]
-name = "pnet_macros_support"
 version = "0.34.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eea925b72f4bd37f8eab0f221bbe4c78b63498350c983ffa9dd4bcde7e030f56"
 dependencies = [
- "pnet_base 0.34.0",
-]
-
-[[package]]
-name = "pnet_packet"
-version = "0.33.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8bde678bbd85cb1c2d99dc9fc596e57f03aa725f84f3168b0eaf33eeccb41706"
-dependencies = [
- "glob",
- "pnet_base 0.33.0",
- "pnet_macros 0.33.0",
- "pnet_macros_support 0.33.0",
+ "pnet_base",
 ]
 
 [[package]]
@@ -2959,9 +2917,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a9a005825396b7fe7a38a8e288dbc342d5034dac80c15212436424fef8ea90ba"
 dependencies = [
  "glob",
- "pnet_base 0.34.0",
- "pnet_macros 0.34.0",
- "pnet_macros_support 0.34.0",
+ "pnet_base",
+ "pnet_macros",
+ "pnet_macros_support",
 ]
 
 [[package]]
@@ -4130,7 +4088,7 @@ checksum = "efbf95ce4c7c5b311d2ce3f088af2b93edef0f09727fa50fbe03c7a979afce77"
 dependencies = [
  "hex",
  "parking_lot",
- "pnet_packet 0.34.0",
+ "pnet_packet",
  "rand",
  "socket2 0.5.7",
  "thiserror",
@@ -4378,7 +4336,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "mockall",
- "pnet_packet 0.33.0",
+ "pnet_packet",
  "rand",
  "telio-crypto",
  "telio-model",
@@ -4396,7 +4354,7 @@ dependencies = [
  "criterion",
  "hashlink",
  "mockall",
- "pnet_packet 0.33.0",
+ "pnet_packet",
  "proptest",
  "proptest-derive",
  "rand",
@@ -4494,7 +4452,7 @@ name = "telio-pmtu"
 version = "0.1.0"
 dependencies = [
  "libc",
- "pnet_packet 0.33.0",
+ "pnet_packet",
  "rand",
  "socket2 0.5.7",
  "telio-lana",
@@ -4514,7 +4472,7 @@ dependencies = [
  "boringtun",
  "hmac",
  "mockall",
- "pnet_packet 0.33.0",
+ "pnet_packet",
  "pqcrypto-kyber",
  "pqcrypto-traits",
  "rand",
@@ -4638,6 +4596,17 @@ dependencies = [
  "version-compare",
  "winapi",
  "windows 0.34.0",
+]
+
+[[package]]
+name = "telio-starcast"
+version = "0.1.0"
+dependencies = [
+ "pnet_packet",
+ "rand",
+ "sn_fake_clock",
+ "telio-utils",
+ "tracing",
 ]
 
 [[package]]

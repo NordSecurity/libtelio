@@ -1,0 +1,33 @@
+[package]
+name = "telio-starcast-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+license = "GPL-3.0-only"
+repository = "https://github.com/NordSecurity/libtelio"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+telio-starcast = {path = ".."}
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "translate_incomming"
+path = "fuzz_targets/translate_incomming.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "translate_outgoing"
+path = "fuzz_targets/translate_outgoing.rs"
+test = false
+doc = false

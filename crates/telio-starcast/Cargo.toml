@@ -1,0 +1,19 @@
+[package]
+name = "telio-starcast"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+repository = "https://github.com/NordSecurity/libtelio"
+publish = false
+
+[dependencies]
+pnet_packet.workspace = true
+tracing.workspace = true
+
+telio-utils.workspace = true
+
+[dev-dependencies]
+sn_fake_clock.workspace = true
+rand.workspace = true
+
+telio-utils = { workspace = true, features = ["sn_fake_clock"] }

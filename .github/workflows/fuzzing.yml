@@ -48,3 +48,18 @@ jobs:
         - name: fuzz telio pq parse_response_payload
           working-directory: crates/telio-pq
           run: cargo fuzz run parse_response_payload -- -max_total_time=180
+  telio-starcast-fuzzing:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
+        with:
+          toolchain: nightly-2024-04-23
+          override: true
+      - run: cargo install cargo-fuzz --locked --version 0.12.0
+      - name: fuzz telio starcast nat translate_incomming
+        working-directory: crates/telio-starcast
+        run: cargo fuzz run translate_incomming -- -max_total_time=180
+      - name: fuzz telio pq parse_response_payload
+        working-directory: crates/telio-starcast
+        run: cargo fuzz run translate_outgoing -- -max_total_time=180
