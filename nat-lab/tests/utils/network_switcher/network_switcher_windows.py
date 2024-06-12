@@ -5,6 +5,7 @@ from .network_switcher import NetworkSwitcher
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import AsyncIterator, List, Optional
+from utils.command_grepper import CommandGrepper
 from utils.connection import Connection
 from utils.process import ProcessExecError
 
@@ -69,6 +70,8 @@ class ConfiguredInterfaces:
 
 
 class NetworkSwitcherWindows(NetworkSwitcher):
+    _status_check_timeout: float = 10.0
+
     def __init__(
         self, connection: Connection, interfaces: ConfiguredInterfaces
     ) -> None:
@@ -94,6 +97,25 @@ class NetworkSwitcherWindows(NetworkSwitcher):
             self._interfaces.primary,
             f"nexthop={config.LINUX_VM_PRIMARY_GATEWAY}",
         ]).execute()
+
+        if not await CommandGrepper(
+            self._connection,
+            [
+                "netsh",
+                "interface",
+                "ipv4",
+                "show",
+                "route",
+            ],
+            timeout=self._status_check_timeout,
+        ).check_exists(
+            "0.0.0.0/0",
+            [
+                config.LINUX_VM_PRIMARY_GATEWAY,
+            ],
+        ):
+            raise Exception("Failed to switch to primary network")
+
         try:
             yield
         finally:
@@ -117,6 +139,25 @@ class NetworkSwitcherWindows(NetworkSwitcher):
             self._interfaces.secondary,
             f"nexthop={config.LINUX_VM_SECONDARY_GATEWAY}",
         ]).execute()
+
+        if not await CommandGrepper(
+            self._connection,
+            [
+                "netsh",
+                "interface",
+                "ipv4",
+                "show",
+                "route",
+            ],
+            timeout=self._status_check_timeout,
+        ).check_exists(
+            "0.0.0.0/0",
+            [
+                config.LINUX_VM_SECONDARY_GATEWAY,
+            ],
+        ):
+            raise Exception("Failed to switch to secondary network")
+
         try:
             yield
         finally:
@@ -152,11 +193,28 @@ class NetworkSwitcherWindows(NetworkSwitcher):
                 "The filename, directory name, or volume label syntax is incorrect"
                 in exception.stdout
             ):
-                pass
-            elif "Element not found" in exception.stdout:
-                pass
-            else:
-                raise exception
+                return
+            if "Element not found" in exception.stdout:
+                return
+            raise exception
+
+        if not await CommandGrepper(
+            self._connection,
+            [
+                "netsh",
+                "interface",
+                "ipv4",
+                "show",
+                "route",
+            ],
+            timeout=self._status_check_timeout,
+        ).check_not_exists(
+            "0.0.0.0/0",
+            [
+                interface_name,
+            ],
+        ):
+            raise Exception("Failed to delete " + interface_name + " route")
 
     async def _disable_management_interface(self) -> None:
         if self._interfaces.default is not None:
@@ -168,6 +226,20 @@ class NetworkSwitcherWindows(NetworkSwitcher):
                 self._interfaces.default,
                 "disable",
             ]).execute()
+
+            if not await CommandGrepper(
+                self._connection,
+                [
+                    "netsh",
+                    "interface",
+                    "ipv4",
+                    "show",
+                    "addresses",
+                    self._interfaces.default,
+                ],
+                timeout=self._status_check_timeout,
+            ).check_not_exists(self._interfaces.default, None):
+                raise Exception("Failed to disable management interface")
 
     async def _enable_management_interface(self) -> None:
         if self._interfaces.default is not None:
