@@ -111,6 +111,11 @@ pub fn generate_public_key(secret_key: SecretKey) -> PublicKey {
     secret_key.public()
 }
 
+/// Utility function to get the default feature config
+pub fn get_default_feature_config() -> Features {
+    Features::default()
+}
+
 /// Utility function to create a `Features` object from a json-string
 /// Passing an empty string will return the default feature config
 pub fn deserialize_feature_config(fstr: String) -> FFIResult<Features> {
