@@ -174,6 +174,7 @@ async fn consolidate_wg_peers<
         &remote_peer_states,
         post_quantum_vpn,
         features,
+        stun_ep_provider,
     )
     .await?;
 
@@ -425,6 +426,7 @@ async fn build_requested_peers_list<
     remote_peer_states: &PeersStatesMap,
     post_quantum_vpn: &impl telio_pq::PostQuantum,
     features: &Features,
+    stun_ep_provider: Option<&Arc<StunEndpointProvider>>,
 ) -> Result<BTreeMap<PublicKey, RequestedPeer>> {
     // Build a list of meshnet peers
     let mut requested_peers = build_requested_meshnet_peers_list(
@@ -522,35 +524,41 @@ async fn build_requested_peers_list<
         requested_peers.insert(dns_peer_public_key, requested_peer);
     }
 
-    if let Some(wg_stun_server) = &requested_state.wg_stun_server {
-        let public_key = wg_stun_server.public_key;
-        let endpoint = SocketAddr::new(IpAddr::V4(wg_stun_server.ipv4), wg_stun_server.stun_port);
-        telio_log_debug!("Configuring wg-stun peer: {}, at {}", public_key, endpoint);
-        let persistent_keepalive_interval = requested_state.keepalive_periods.stun;
-        let allowed_ips = if features.ipv6 {
-            vec![
-                IpNetwork::V4("100.64.0.4/32".parse()?),
-                IpNetwork::V6("fd74:656c:696f::4/128".parse()?),
-            ]
-        } else {
-            vec![IpNetwork::V4("100.64.0.4/32".parse()?)]
-        };
-        let ip_addresses = allowed_ips.iter().copied().map(|ip| ip.ip()).collect();
+    if let (Some(wg_stun_server), Some(stun)) = (&requested_state.wg_stun_server, stun_ep_provider)
+    {
+        if !stun.is_paused().await {
+            let public_key = wg_stun_server.public_key;
+            let endpoint =
+                SocketAddr::new(IpAddr::V4(wg_stun_server.ipv4), wg_stun_server.stun_port);
+            telio_log_debug!("Configuring wg-stun peer: {}, at {}", public_key, endpoint);
+            let persistent_keepalive_interval = requested_state.keepalive_periods.stun;
+            let allowed_ips = if features.ipv6 {
+                vec![
+                    IpNetwork::V4("100.64.0.4/32".parse()?),
+                    IpNetwork::V6("fd74:656c:696f::4/128".parse()?),
+                ]
+            } else {
+                vec![IpNetwork::V4("100.64.0.4/32".parse()?)]
+            };
+            let ip_addresses = allowed_ips.iter().copied().map(|ip| ip.ip()).collect();
 
-        requested_peers.insert(
-            public_key,
-            RequestedPeer {
-                peer: telio_wg::uapi::Peer {
-                    public_key,
-                    endpoint: Some(endpoint),
-                    ip_addresses,
-                    persistent_keepalive_interval,
-                    allowed_ips,
-                    ..Default::default()
+            requested_peers.insert(
+                public_key,
+                RequestedPeer {
+                    peer: telio_wg::uapi::Peer {
+                        public_key,
+                        endpoint: Some(endpoint),
+                        ip_addresses,
+                        persistent_keepalive_interval,
+                        allowed_ips,
+                        ..Default::default()
+                    },
+                    endpoint: None,
                 },
-                endpoint: None,
-            },
-        );
+            );
+        } else {
+            telio_log_debug!("Stun ep is paused, not adding wg-stun peer");
+        }
     } else {
         telio_log_debug!("wg-stun peer not configured");
     }
