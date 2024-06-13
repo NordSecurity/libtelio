@@ -158,4 +158,9 @@ pub trait EndpointProvider: Sync + Send + 'static {
     /// multiple times in a row even if the endpoint provider is already unpaused. In such a
     /// situation, the function must do nothing.
     async fn unpause(&self) {}
+
+    /// Check if endpoint provider is paused.
+    async fn is_paused(&self) -> bool {
+        false
+    }
 }
