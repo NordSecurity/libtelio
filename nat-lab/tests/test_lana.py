@@ -1261,8 +1261,6 @@ async def test_lana_with_meshnet_exit_node(
                         if not is_stun6_needed
                         else ConnectionLimits(0, 0)
                     ),
-                    ping_limits=ConnectionLimits(None, None),
-                    ping6_limits=ConnectionLimits(None, None),
                 ),
             )
         )
@@ -1460,8 +1458,6 @@ async def test_lana_with_disconnected_node(
                 generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
-                    ping_limits=ConnectionLimits(None, None),
-                    ping6_limits=ConnectionLimits(None, None),
                 ),
             )
         )
@@ -1471,8 +1467,6 @@ async def test_lana_with_disconnected_node(
                 generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
                     derp_1_limits=ConnectionLimits(1, 1),
-                    ping_limits=ConnectionLimits(None, None),
-                    ping6_limits=ConnectionLimits(None, None),
                 ),
             )
         )
