@@ -367,10 +367,12 @@ impl Cli {
                     let ts = SystemTime::now();
 
                     if let DevEvent::Relay { body } = &*event {
-                        *derp_server_lambda.lock() = body
-                            .as_ref()
-                            .filter(|s| s.conn_state != RelayState::Disconnected)
-                            .cloned();
+                        *derp_server_lambda.lock() = if body.conn_state != RelayState::Disconnected
+                        {
+                            Some(body.clone())
+                        } else {
+                            None
+                        }
                     }
                     sender.send(Resp::Event { ts, event }).unwrap()
                 }

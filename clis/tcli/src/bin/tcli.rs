@@ -95,10 +95,9 @@ fn main() -> Result<()> {
             match resp {
                 Info(i) => println!("- {}", i),
                 Event { ts, event } => match *event {
-                    DevEvent::Node { body: Some(b) } => print_event(ts, "node", &b)?,
-                    DevEvent::Relay { body: Some(b) } => print_event(ts, "relay", &b)?,
-                    DevEvent::Error { body: Some(b) } => print_event(ts, "error", &b)?,
-                    _ => (),
+                    DevEvent::Node { body: b } => print_event(ts, "node", &b)?,
+                    DevEvent::Relay { body: b } => print_event(ts, "relay", &b)?,
+                    DevEvent::Error { body: b } => print_event(ts, "error", &b)?,
                 },
                 Error(e) => {
                     println!("error: {e:#?}")

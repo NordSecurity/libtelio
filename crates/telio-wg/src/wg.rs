@@ -516,11 +516,14 @@ impl State {
 
         if self.uapi_fail_counter >= MAX_UAPI_FAIL_COUNT && ret.interface.is_none() {
             if let Some(libtelio_event) = &self.libtelio_event {
-                let err_event = LibtelioEvent::new::<LibtelioError>()
+                let err_event = LibtelioEvent::builder::<LibtelioError>()
                     .set(EventMsg::from("Interface gone"))
                     .set(ErrorCode::Unknown)
-                    .set(ErrorLevel::Critical);
-                let _ = libtelio_event.send(Box::new(err_event));
+                    .set(ErrorLevel::Critical)
+                    .build();
+                if let Some(err_event) = err_event {
+                    let _ = libtelio_event.send(Box::new(err_event));
+                }
             }
             return Err(Error::InternalError("Interface gone"));
         }

@@ -2177,18 +2177,24 @@ impl TaskRuntime for Runtime {
                         ).await;
                     }
                     // Publish WG event to app
+                    let event = Event::builder::<Node>().set(node).build();
+                    if let Some(event) = event {
                     let _ = self.event_publishers.libtelio_event_publisher.send(
-                        Box::new(Event::new::<Node>().set(node))
+                        Box::new(event)
                     );
+                }
                 }
 
                 Ok(())
             },
 
             Ok(derp_event) = self.event_listeners.derp_event_subscriber.recv() => {
+                let event = Event::builder::<DerpServer>().set(*derp_event).build();
+                if let Some(event) = event {
                 let _ = self.event_publishers.libtelio_event_publisher.send(
-                    Box::new(Event::new::<DerpServer>().set(*derp_event))
+                    Box::new(event)
                 );
+            }
                 Ok(())
             },
 

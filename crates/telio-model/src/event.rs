@@ -66,24 +66,24 @@ pub struct Error {
 /// for the ability to be constructed, but not used outside of this module.
 pub trait MakeEvent {
     /// Method signature to construct 'Event' objects
-    fn make() -> Event;
+    fn make() -> EventBuilder;
 }
 
 impl MakeEvent for Relay {
-    fn make() -> Event {
-        Event::Relay { body: None }
+    fn make() -> EventBuilder {
+        EventBuilder::Relay { body: None }
     }
 }
 
 impl MakeEvent for Error {
-    fn make() -> Event {
-        Event::Error { body: None }
+    fn make() -> EventBuilder {
+        EventBuilder::Error { body: None }
     }
 }
 
 impl MakeEvent for Node {
-    fn make() -> Event {
-        Event::Node { body: None }
+    fn make() -> EventBuilder {
+        EventBuilder::Node { body: None }
     }
 }
 
@@ -95,18 +95,18 @@ pub enum Event {
     /// Used to report events related to the Relay
     Relay {
         /// Relay type event
-        body: Option<Relay>,
+        body: Relay,
     },
     /// Used to report events related to the Node
     Node {
         /// Node type event
-        body: Option<Node>,
+        body: Node,
     },
     /// Initialize an Error type event.
     /// Used to inform errors to the upper layers of libtelio
     Error {
         /// Error type event
-        body: Option<Error>,
+        body: Error,
     },
 }
 
@@ -122,16 +122,17 @@ impl Event {
     /// ```
     /// use telio_model::event::*;
     ///
-    /// let err_event = Event::new::<Error>()
+    /// let err_event = Event::builder::<Error>()
     ///     .set(EventMsg::from("Naughty error ..."))
     ///     .set(ErrorCode::Unknown)
-    ///     .set(ErrorLevel::Severe);
+    ///     .set(ErrorLevel::Severe)
+    ///     .build();
     ///
     /// // let conn_event = Event::new::<RelayConn>().set(<some_relay_server_object>);
     ///
     /// // let node_event = Event::new::<Node>().set(<some_node_object>);
     /// ```
-    pub fn new<T: MakeEvent>() -> Self {
+    pub fn builder<T: MakeEvent>() -> EventBuilder {
         T::make()
     }
 
@@ -141,25 +142,45 @@ impl Event {
     }
 }
 
-impl Modifier<Event> for Relay {
-    fn modify(self, res: &mut Event) {
-        if let Event::Relay { body } = res {
+#[allow(missing_docs)]
+pub enum EventBuilder {
+    Relay { body: Option<Relay> },
+    Node { body: Option<Node> },
+    Error { body: Option<Error> },
+}
+
+impl EventBuilder {
+    /// Builds an event from the builder
+    /// Only returns an event if the body of the builder is not None, or None otherwise
+    pub fn build(self) -> Option<Event> {
+        match self {
+            EventBuilder::Relay { body: Some(body) } => Some(Event::Relay { body }),
+            EventBuilder::Node { body: Some(body) } => Some(Event::Node { body }),
+            EventBuilder::Error { body: Some(body) } => Some(Event::Error { body }),
+            _ => None,
+        }
+    }
+}
+
+impl Modifier<EventBuilder> for Relay {
+    fn modify(self, res: &mut EventBuilder) {
+        if let EventBuilder::Relay { body } = res {
             *body = Some(self);
         }
     }
 }
 
-impl Modifier<Event> for Node {
-    fn modify(self, res: &mut Event) {
-        if let Event::Node { body } = res {
+impl Modifier<EventBuilder> for Node {
+    fn modify(self, res: &mut EventBuilder) {
+        if let EventBuilder::Node { body } = res {
             *body = Some(self);
         }
     }
 }
 
-impl Modifier<Event> for ErrorLevel {
-    fn modify(self, res: &mut Event) {
-        if let Event::Error { body } = res {
+impl Modifier<EventBuilder> for ErrorLevel {
+    fn modify(self, res: &mut EventBuilder) {
+        if let EventBuilder::Error { body } = res {
             if body.is_none() {
                 *body = Some(Error::default());
             }
@@ -172,9 +193,9 @@ impl Modifier<Event> for ErrorLevel {
     }
 }
 
-impl Modifier<Event> for ErrorCode {
-    fn modify(self, res: &mut Event) {
-        if let Event::Error { body } = res {
+impl Modifier<EventBuilder> for ErrorCode {
+    fn modify(self, res: &mut EventBuilder) {
+        if let EventBuilder::Error { body } = res {
             if body.is_none() {
                 *body = Some(Error::default());
             }
@@ -187,10 +208,10 @@ impl Modifier<Event> for ErrorCode {
     }
 }
 
-impl Modifier<Event> for EventMsg {
-    fn modify(self, res: &mut Event) {
+impl Modifier<EventBuilder> for EventMsg {
+    fn modify(self, res: &mut EventBuilder) {
         // Not nice, but cannot implement the other way
-        if let Event::Error { body } = res {
+        if let EventBuilder::Error { body } = res {
             if body.is_none() {
                 *body = Some(Error::default());
             }
@@ -203,7 +224,7 @@ impl Modifier<Event> for EventMsg {
     }
 }
 
-impl Set for Event {}
+impl Set for EventBuilder {}
 
 #[cfg(test)]
 mod tests {
@@ -282,14 +303,16 @@ mod tests {
             r#"}}"#
         ));
 
-        let err_event = Event::new::<EventError>()
+        let err_event = Event::builder::<EventError>()
             .set(EventMsg::from("big_error"))
             .set(ErrorCode::Unknown)
-            .set(ErrorLevel::Severe);
+            .set(ErrorLevel::Severe)
+            .build()
+            .unwrap();
 
-        let conn_event = Event::new::<Relay>().set(server);
+        let conn_event = Event::builder::<Relay>().set(server).build().unwrap();
 
-        let node_event = Event::new::<Node>().set(node);
+        let node_event = Event::builder::<Node>().set(node).build().unwrap();
 
         assert_eq!(err_json, err_event.to_json().unwrap());
         assert_eq!(conn_json, conn_event.to_json().unwrap());

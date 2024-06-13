@@ -690,12 +690,12 @@ dictionary TelioNode {
 [Enum]
 interface Event {
     /// Used to report events related to the Relay
-    Relay(Server? body);
+    Relay(Server body);
     /// Used to report events related to the Node
-    Node(TelioNode? body);
+    Node(TelioNode body);
     /// Initialize an Error type event.
     /// Used to inform errors to the upper layers of libtelio
-    Error(ErrorEvent? body);
+    Error(ErrorEvent body);
 };
 
 /// Error event. Used to inform the upper layer about errors in `libtelio`.
