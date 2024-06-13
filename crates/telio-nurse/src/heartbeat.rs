@@ -483,7 +483,7 @@ impl Analytics {
     }
 
     async fn handle_wg_event(&mut self, event: Event) {
-        if let Event::Node { body: Some(node) } = event {
+        if let Event::Node { body: node } = event {
             if node.state == PeerState::Disconnected {
                 let _ = self.local_nodes.remove(&node.public_key);
             } else {
@@ -1362,13 +1362,13 @@ mod tests {
 
         analytics
             .handle_wg_event(Event::Node {
-                body: Some(Node {
+                body: Node {
                     public_key: vpn_pk,
                     is_vpn: true,
                     state: NodeState::Connected,
                     endpoint: Some(([1, 2, 3, 4], 5678).into()),
                     ..Default::default()
-                }),
+                },
             })
             .await;
 
@@ -1404,13 +1404,13 @@ mod tests {
 
         analytics
             .handle_wg_event(Event::Node {
-                body: Some(Node {
+                body: Node {
                     public_key: vpn_pk,
                     is_vpn: true,
                     state: NodeState::Connected,
                     endpoint: Some(([1, 2, 3, 4], 5678).into()),
                     ..Default::default()
-                }),
+                },
             })
             .await;
 

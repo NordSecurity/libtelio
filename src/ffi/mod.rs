@@ -238,15 +238,17 @@ impl Telio {
                 error_handling::update_last_error(err);
 
                 // Send this "cry for help" to whoever is on the upper side
-                let e = Box::new(
-                    Event::new::<Error>()
-                        .set(ErrorCode::Unknown)
-                        .set(ErrorLevel::Critical)
-                        .set(format!("{}", info)),
-                );
+                let e = Event::builder::<Error>()
+                    .set(ErrorCode::Unknown)
+                    .set(ErrorLevel::Critical)
+                    .set(format!("{}", info))
+                    .build();
 
-                telio_log_debug!("call_once: {:?}", e);
-                events(e);
+                if let Some(e) = e {
+                    let e = Box::new(e);
+                    telio_log_debug!("call_once: {:?}", e);
+                    events(e);
+                }
             }));
         });
 

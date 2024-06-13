@@ -59,7 +59,7 @@ let mut device = telio::device::Device::new(
 loop {
     let event = receiver.recv().unwrap();
     match *event {
-        Event::Node { body: Some(b) } => println!(
+        Event::Node { body: b } => println!(
             "event node: {:?}:{};  Path = {:?}",
             b.state,
             b.public_key,
