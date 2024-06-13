@@ -1,4 +1,3 @@
-import base64
 import datetime
 import json
 import os
@@ -44,14 +43,12 @@ def serialize_event(event: libtelio.Event) -> str:
     if event.is_relay():
         event_dict["type"] = "relay"
         body["conn_state"] = extract_value(body["conn_state"])
-        body["public_key"] = base64.b64encode(bytes(body["public_key"])).decode("utf-8")
     elif event.is_node():
         event_dict["type"] = "node"
         body["state"] = extract_value(body["state"])
         if body["link_state"] is not None:
             body["link_state"] = extract_value(body["link_state"])
         body["path"] = extract_value(body["path"])
-        body["public_key"] = base64.b64encode(bytes(body["public_key"])).decode("utf-8")
     elif event.is_error():
         event_dict["type"] = "error"
         body["level"] = extract_value(body["level"])
@@ -122,7 +119,7 @@ class LibtelioWrapper:
     @serialize_error
     def start_named(self, private_key, adapter, name: str):
         self._libtelio.start_named(
-            base64.b64decode(private_key), libtelio.TelioAdapterType(adapter), name
+            private_key, libtelio.TelioAdapterType(adapter), name
         )
 
     @serialize_error
@@ -136,13 +133,13 @@ class LibtelioWrapper:
     @serialize_error
     def connect_to_exit_node(self, public_key, allowed_ips: str, endpoint: str):
         self._libtelio.connect_to_exit_node_with_id(
-            "natlab", base64.b64decode(public_key), allowed_ips, endpoint
+            "natlab", public_key, allowed_ips, endpoint
         )
 
     @serialize_error
     def connect_to_exit_node_pq(self, public_key, allowed_ips: str, endpoint: str):
         self._libtelio.connect_to_exit_node_postquantum(
-            "natlabpq", base64.b64decode(public_key), allowed_ips, endpoint
+            "natlabpq", public_key, allowed_ips, endpoint
         )
 
     @serialize_error
