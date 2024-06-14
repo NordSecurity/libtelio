@@ -111,6 +111,12 @@ class PostQuantumVPN(DataClassJsonMixin):
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
+class Firewall(DataClassJsonMixin):
+    boringtun_reset_conns: bool = False
+
+
+@dataclass_json(undefined=Undefined.EXCLUDE)
+@dataclass
 class TelioFeatures(DataClassJsonMixin):
     is_test_env: Optional[bool] = True
     direct: Optional[Direct] = None
@@ -118,7 +124,9 @@ class TelioFeatures(DataClassJsonMixin):
     nurse: Optional[Nurse] = None
     ipv6: bool = False
     nicknames: bool = False
-    boringtun_reset_connections: bool = False
+    firewall: Firewall = field(
+        default_factory=lambda: Firewall(boringtun_reset_conns=False)
+    )
     link_detection: Optional[LinkDetection] = None
     wireguard: Optional[Wireguard] = None
     dns: Dns = field(

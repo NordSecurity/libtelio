@@ -1,4 +1,13 @@
-from telio_features import TelioFeatures, Direct, Lana, Nurse, Qos, ExitDns, Dns
+from telio_features import (
+    Firewall,
+    TelioFeatures,
+    Direct,
+    Lana,
+    Nurse,
+    Qos,
+    ExitDns,
+    Dns,
+)
 
 
 def test_telio_features():
@@ -76,3 +85,10 @@ def test_telio_features():
     )
     assert multicast_features == expected_multicast
     assert multicast_features.to_json() == expected_multicast.to_json()
+
+    firewall_features = TelioFeatures(firewall=Firewall(boringtun_reset_conns=False))
+    expected_firewall = TelioFeatures.from_json(
+        """{"is_test_env": true, "exit_dns": {"auto_switch_dns_ips": true}, "firewall": {"boringtun_reset_conns": false}}"""
+    )
+    assert firewall_features == expected_firewall
+    assert firewall_features.to_json() == expected_firewall.to_json()
