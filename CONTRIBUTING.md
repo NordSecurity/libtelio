@@ -60,9 +60,9 @@ Nord Security and all of it's projects adhere to the [Contributor Covenant Code 
 
 ## Secrets Hygiene
 
-If you are part of NordSecurity, then you want to create a new PR,
-you must checkout this project via internal libtelio-build, and install
-git hooks. Without this ci/cd will fail, as it will not see integracy
+If you are part of NordSecurity, you must checkout this project
+via internal libtelio-build, and install git hooks. 
+Without this ci/cd will fail, as it will not see integrity
 signuture for each commit.
 
 ## Thank you!
