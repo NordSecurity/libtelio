@@ -3,6 +3,7 @@ import pytest
 from config import WG_SERVERS
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
+from datetime import datetime
 from itertools import product, zip_longest
 from mesh_api import Node, Meshmap, API, stop_tcpdump
 from telio import Client, AdapterType, State, PathType
@@ -286,11 +287,13 @@ async def setup_environment(
 
     try:
         yield Environment(api, nodes, connection_managers, clients)
-    finally:
+
+        print(datetime.now(), "Checking connection limits")
         for conn_manager in connection_managers:
             if conn_manager.tracker:
                 limits = conn_manager.tracker.get_out_of_limits()
                 assert limits is None, f"conntracker reported out of limits {limits}"
+    finally:
         stop_tcpdump([server["container"] for server in WG_SERVERS])
 
 
