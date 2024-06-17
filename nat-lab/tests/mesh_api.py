@@ -358,7 +358,7 @@ class API:
                 priv_key = server_config["private_key"]
                 commands = [
                     f"echo {priv_key} > /etc/nordlynx/private.key",
-                    "nlx set nordlynx0 private-key /etc/nordlynx/private.key && nlx set nordlynx0 listen-port {server_config['port']}",
+                    f"nlx set nordlynx0 private-key /etc/nordlynx/private.key && nlx set nordlynx0 listen-port {server_config['port']}",
                 ]
 
                 for cmd in commands:
