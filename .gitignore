@@ -9,6 +9,7 @@ tcli.log
 *.box
 *.deb
 *.nix
+*.prepared*
 /nat-lab/data/tcli*
 /3rd-party/boringtun
 /3rd-party/ci-helper-scripts/
@@ -22,7 +23,6 @@ tcli.log
 /3rd-party/wireguard-go/*.lib
 /3rd-party/wireguard-go/*.h
 /3rd-party/wireguard-go/*.a
-/3rd-party/wireguard-go/.prepared
 /3rd-party/wireguard-go/.pc
 /3rd-party/wireguard-go/defaultroutemonitor_windows.go
 /3rd-party/wireguard-go/interfacewatcher_windows.go
