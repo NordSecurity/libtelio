@@ -7,6 +7,7 @@ from config import (
     WINDOWS_1_VM_IP,
 )
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import AsyncIterator
 from utils.connection import Connection, SshConnection, TargetOS
 from utils.process import ProcessExecError
@@ -90,14 +91,28 @@ async def _copy_binaries(
         (f"{DIST_DIR}wireguard.dll", VM_UNIFFI_DIR, False),
         (f"{DIST_DIR}wintun.dll", VM_SYSTEM32, False),
     ]
+
     for src, dst, allow_missing in files_to_copy:
         try:
+            print(datetime.now(), f"Copying files into VM: {src} to {dst}")
             await asyncssh.scp(
                 get_root_path(src),
                 (ssh_connection, dst),
             )
+            print(datetime.now(), "Copy succeded")
         except FileNotFoundError as exception:
             if not allow_missing or str(exception).find(src) < 0:
+                print(datetime.now(), "Copy failed", str(exception))
                 raise exception
+
+            print(
+                datetime.now(),
+                "Copy failed",
+                str(exception),
+                "but it is allowed to fail",
+            )
+        except Exception as e:
+            print(datetime.now(), "Copy failed", str(e))
+            raise e
 
     FILES_COPIED = True
