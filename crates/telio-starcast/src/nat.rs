@@ -1,11 +1,11 @@
-use crate::utils::{checksum, MutableIpPacket};
+use crate::utils::{DefaultAddresses, MutableIpPacket};
 use pnet_packet::{
     ip::IpNextHeaderProtocols, ipv4::MutableIpv4Packet, ipv6::MutableIpv6Packet,
     udp::MutableUdpPacket,
 };
 use std::{
     hash::{DefaultHasher, Hash, Hasher},
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    net::{IpAddr, SocketAddr},
     time::Duration,
 };
 use telio_utils::{telio_log_warn, LruCache};
@@ -47,20 +47,18 @@ fn default_mapper(src_addr: SocketAddr) -> u16 {
 
 pub struct StarcastNat {
     mappings: LruCache<u16, SocketAddr>,
-    vpeer_ipv4_addr: Ipv4Addr,
-    vpeer_ipv6_addr: Ipv6Addr,
+    virtual_addresses: DefaultAddresses,
     mapper: Mapper,
 }
 
 impl StarcastNat {
     /// Create new starcast nat with default capcity of 2048 entries and 2 minute timeout
     /// 2min default is taken from (https://datatracker.ietf.org/doc/html/rfc4787#section-4.3)
-    pub fn new(vpeer_ipv4: Ipv4Addr, vpeer_ipv6: Ipv6Addr) -> Self {
+    pub fn new(virtual_addresses: DefaultAddresses) -> Self {
         const DEFAULT_CACHE_CAPACITY: usize = 2048;
         const DEFAULT_CACHE_TIMEOUT: Duration = Duration::from_secs(120);
         Self::new_custom(
-            vpeer_ipv4,
-            vpeer_ipv6,
+            virtual_addresses,
             DEFAULT_CACHE_CAPACITY,
             DEFAULT_CACHE_TIMEOUT,
             default_mapper,
@@ -69,16 +67,14 @@ impl StarcastNat {
 
     /// Create new starcast nat with custom capacity and timeout
     fn new_custom(
-        vpeer_ipv4_addr: Ipv4Addr,
-        vpeer_ipv6_addr: Ipv6Addr,
+        virtual_addresses: DefaultAddresses,
         cache_capacity: usize,
         cache_timeout: Duration,
         mapper: Mapper,
     ) -> Self {
         Self {
             mappings: LruCache::new(cache_timeout, cache_capacity),
-            vpeer_ipv4_addr,
-            vpeer_ipv6_addr,
+            virtual_addresses,
             mapper,
         }
     }
@@ -94,27 +90,12 @@ impl StarcastNat {
 
         let src_ip = ip_packet.get_source();
 
-        match src_ip {
-            IpAddr::V4(src_ip) => {
-                ip_packet.set_source(IpAddr::V4(self.vpeer_ipv4_addr));
-                let old_checksum = ip_packet.to_immutable_ipv4().get_checksum();
-                if old_checksum != 0 {
-                    ip_packet.set_checksum(checksum::ipv4_header_update(
-                        old_checksum,
-                        src_ip,
-                        self.vpeer_ipv4_addr,
-                    ));
-                }
-            }
-            IpAddr::V6(_) => {
-                ip_packet.set_source(IpAddr::V6(self.vpeer_ipv6_addr));
-            }
-        };
+        ip_packet.set_source(P::get_virtual_address(self.virtual_addresses));
 
         let mut udp_packet =
             MutableUdpPacket::new(ip_packet.payload_mut()).ok_or(Error::PacketTooShort)?;
         let src_port = udp_packet.get_source();
-        let src_addr = SocketAddr::new(src_ip, src_port);
+        let src_addr = SocketAddr::new(src_ip.into(), src_port);
         let mut nat_port = (self.mapper)(src_addr);
 
         const MAX_ATTEMPTS: u32 = 128;
@@ -136,32 +117,16 @@ impl StarcastNat {
 
         udp_packet.set_source(nat_port);
 
-        match src_ip {
-            IpAddr::V4(src_ip) => {
-                let old_checksum = udp_packet.get_checksum();
-                if old_checksum != 0 {
-                    udp_packet.set_checksum(checksum::ipv4_udp_header_update(
-                        old_checksum,
-                        src_ip,
-                        self.vpeer_ipv4_addr,
-                        src_port,
-                        nat_port,
-                    ))
-                }
-            }
-            IpAddr::V6(src_ip) => {
-                let old_checksum = udp_packet.get_checksum();
-                if old_checksum != 0 {
-                    udp_packet.set_checksum(checksum::ipv6_udp_header_update(
-                        old_checksum,
-                        src_ip,
-                        self.vpeer_ipv6_addr,
-                        src_port,
-                        nat_port,
-                    ))
-                }
-            }
-        };
+        let old_checksum = udp_packet.get_checksum();
+        if old_checksum != 0 {
+            udp_packet.set_checksum(P::calculate_udp_header_update(
+                old_checksum,
+                src_ip,
+                P::get_virtual_address(self.virtual_addresses),
+                src_port,
+                nat_port,
+            ))
+        }
 
         Ok(())
     }
@@ -182,47 +147,21 @@ impl StarcastNat {
         let dst_port = udp_packet.get_destination();
 
         let new_dst_addr = self.mappings.get(&dst_port).ok_or(Error::MappingNotFound)?;
+        let new_dst_ip = P::get_ip_from_addr(new_dst_addr)?;
 
         udp_packet.set_destination(new_dst_addr.port());
-        match (old_dst_ip, new_dst_addr.ip()) {
-            (IpAddr::V4(old_dst_ip), IpAddr::V4(new_dst_ip)) => {
-                let old_udp_checksum = udp_packet.get_checksum();
-                if old_udp_checksum != 0 {
-                    udp_packet.set_checksum(checksum::ipv4_udp_header_update(
-                        old_udp_checksum,
-                        old_dst_ip,
-                        new_dst_ip,
-                        dst_port,
-                        new_dst_addr.port(),
-                    ));
-                }
+        let old_udp_checksum = udp_packet.get_checksum();
+        udp_packet.set_checksum(P::calculate_udp_header_update(
+            old_udp_checksum,
+            old_dst_ip,
+            new_dst_ip,
+            dst_port,
+            new_dst_addr.port(),
+        ));
 
-                ip_packet.set_destination(IpAddr::V4(new_dst_ip));
-                let old_ip_checksum = ip_packet.to_immutable_ipv4().get_checksum();
-                if old_ip_checksum != 0 {
-                    ip_packet.set_checksum(checksum::ipv4_header_update(
-                        old_ip_checksum,
-                        old_dst_ip,
-                        new_dst_ip,
-                    ));
-                }
-            }
-            (IpAddr::V6(old_dst_ip), IpAddr::V6(new_dst_ip)) => {
-                let old_udp_checksum = udp_packet.get_checksum();
-                if old_udp_checksum != 0 {
-                    udp_packet.set_checksum(checksum::ipv6_udp_header_update(
-                        old_udp_checksum,
-                        old_dst_ip,
-                        new_dst_ip,
-                        dst_port,
-                        new_dst_addr.port(),
-                    ))
-                }
+        ip_packet.set_destination(new_dst_ip);
 
-                ip_packet.set_destination(IpAddr::V6(new_dst_ip));
-            }
-            _ => return Err(Error::MappingNotFound),
-        };
+        ip_packet.fix_checksum(old_dst_ip, new_dst_ip);
 
         Ok(())
     }
@@ -259,7 +198,10 @@ mod tests {
         ip::IpNextHeaderProtocol, ipv4, ipv4::Ipv4Packet, ipv6::Ipv6Packet, udp, udp::UdpPacket,
         MutablePacket, Packet,
     };
-    use std::{net::{SocketAddrV4, SocketAddrV6}, sync::atomic::{AtomicU16, Ordering}};
+    use std::{
+        net::{SocketAddrV4, SocketAddrV6},
+        sync::atomic::{AtomicU16, Ordering},
+    };
 
     const IPV4_HEADER_MIN_LENGTH: usize = 20;
     const IPV6_HEADER_LENGTH: usize = 40;
