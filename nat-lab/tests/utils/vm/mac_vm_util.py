@@ -89,4 +89,9 @@ async def _copy_binaries(
         if set_exec:
             await connection.create_process(["chmod", "+x", dst]).execute()
 
+    await asyncssh.scp(
+        get_root_path("nat-lab/bin/mac/list_interfaces_with_router_property.py"),
+        (ssh_connection, f"{VM_TCLI_DIR}"),
+    )
+
     FILES_COPIED = True
