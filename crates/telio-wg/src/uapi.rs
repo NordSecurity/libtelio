@@ -293,7 +293,7 @@ impl AnalyticsEvent {
                     matches!(ipv4.octets(), [100, 64, 0, 1..=7])
                 }
                 IpAddr::V6(ipv6) => {
-                    matches!(ipv6.segments(), [0xfd74, 0x656c, 0x696f, .., 1..=7])
+                    matches!(ipv6.segments(), [0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 1..=7])
                 }
             }
         };
@@ -715,7 +715,9 @@ mod tests {
 
     use super::*;
 
+    use itertools::iproduct;
     use pretty_assertions::assert_eq;
+    use proptest::prelude::*;
 
     trait PeerHelp {
         fn peer_map(self) -> BTreeMap<PublicKey, Peer>;
@@ -853,6 +855,87 @@ errno=0
                 ..Default::default()
             };
             assert!(peer.is_connected());
+        }
+    }
+
+    #[test]
+    fn is_from_virtual_peer() {
+        let virtual_peer_ips4: [Ipv4Addr; 7] = [
+            "100.64.0.1".parse().unwrap(),
+            "100.64.0.2".parse().unwrap(),
+            "100.64.0.3".parse().unwrap(),
+            "100.64.0.4".parse().unwrap(),
+            "100.64.0.5".parse().unwrap(),
+            "100.64.0.6".parse().unwrap(),
+            "100.64.0.7".parse().unwrap(),
+        ];
+        let virtual_peer_ips6: [Ipv6Addr; 7] = [
+            "fd74:656c:696f::1".parse().unwrap(),
+            "fd74:656c:696f::2".parse().unwrap(),
+            "fd74:656c:696f::3".parse().unwrap(),
+            "fd74:656c:696f::4".parse().unwrap(),
+            "fd74:656c:696f::5".parse().unwrap(),
+            "fd74:656c:696f::6".parse().unwrap(),
+            "fd74:656c:696f::7".parse().unwrap(),
+        ];
+
+        for (ipv4, ipv6) in iproduct!(virtual_peer_ips4, virtual_peer_ips6) {
+            for (ipv4, ipv6) in [
+                (Some(ipv4), None),
+                (None, Some(ipv6)),
+                (Some(ipv4), Some(ipv6)),
+            ] {
+                let event = AnalyticsEvent {
+                    public_key: SecretKey::gen().public(),
+                    dual_ip_addresses: vec![DualTarget {
+                        target: (ipv4, ipv6),
+                    }],
+                    tx_bytes: 0,
+                    rx_bytes: 0,
+                    peer_state: PeerState::Connected,
+                    timestamp: Instant::now(),
+                };
+
+                assert!(event.is_from_virtual_peer(), "event: {:?}", event);
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn is_not_from_virtual_peer(a: u16, b: u16, c: u16, d: u16) {
+            prop_assume!(a != 0 || b != 0 || c != 0 || d != 0);
+            let virtual_peer_ips6: [&str; 7] = [
+                "fd74:656c:696f:_A_:_B_:_C_:_D_:1",
+                "fd74:656c:696f:_A_:_B_:_C_:_D_:2",
+                "fd74:656c:696f:_A_:_B_:_C_:_D_:3",
+                "fd74:656c:696f:_A_:_B_:_C_:_D_:4",
+                "fd74:656c:696f:_A_:_B_:_C_:_D_:5",
+                "fd74:656c:696f:_A_:_B_:_C_:_D_:6",
+                "fd74:656c:696f:_A_:_B_:_C_:_D_:7",
+            ];
+
+            for ipv6format in virtual_peer_ips6 {
+                let ipv6: Ipv6Addr = ipv6format
+                    .replace("_A_", &format!("{a:04x}"))
+                    .replace("_B_", &format!("{b:04x}"))
+                    .replace("_C_", &format!("{c:04x}"))
+                    .replace("_D_", &format!("{d:04x}"))
+                    .parse()
+                    .unwrap();
+                let event = AnalyticsEvent {
+                    public_key: SecretKey::gen().public(),
+                    dual_ip_addresses: vec![DualTarget {
+                        target: (None, Some(ipv6)),
+                    }],
+                    tx_bytes: 0,
+                    rx_bytes: 0,
+                    peer_state: PeerState::Connected,
+                    timestamp: Instant::now(),
+                };
+
+                assert!(!event.is_from_virtual_peer(), "event: {:?}", event);
+            }
         }
     }
 }
