@@ -562,6 +562,7 @@ class Client:
 
         object_name = str(uuid.uuid4()).replace("-", "")
         (host_ip, container_ip) = await self._connection.get_ip_address()
+
         host_os = platform.system()
         if host_os == "Linux":
             host_ip = container_ip
@@ -570,8 +571,10 @@ class Client:
         elif host_os in ("Windows", "Darwin"):
             (host_port, container_port) = await self._connection.mapped_ports()
         else:
-            print("Unsupported host OS")
+            raise RuntimeError(f"Unsupported host OS: {host_os}")
+
         object_uri = f"PYRO:{object_name}@{host_ip}:{host_port}"
+
         if isinstance(self.get_router(), WindowsRouter):
             python_cmd = "python"
         else:

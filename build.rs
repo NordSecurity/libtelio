@@ -2,7 +2,10 @@ use anyhow::Result;
 use std::{env, path::Path};
 
 fn build() -> Result<cc::Build> {
-    if !env::var("GITLAB_CI").or(env::var("GITHUB_ACTIONS")).is_ok_and(|value| value == "true") {
+    if !env::var("GITLAB_CI")
+        .or(env::var("GITHUB_ACTIONS"))
+        .is_ok_and(|value| value == "true")
+    {
         println!("cargo:rerun-if-changed=.prepared_llt_secrets");
         println!("cargo:rerun-if-env-changed=BYPASS_LLT_SCAN");
 
