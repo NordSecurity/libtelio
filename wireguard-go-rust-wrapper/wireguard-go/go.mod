@@ -3,7 +3,7 @@ module wireguard-go
 go 1.20
 
 require (
-	github.com/NordSecurity/wireguard-go v0.0.2
+	github.com/NordSecurity/wireguard-go v0.0.3
 	github.com/google/uuid v1.5.0
 	golang.org/x/sys v0.16.0
 	golang.zx2c4.com/wireguard/windows v0.5.3

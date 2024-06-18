@@ -38,6 +38,7 @@ func (iw *interfaceWatcher) setup(family winipcfg.AddressFamily, mtu uint32) {
 		changeCallbacks = &iw.changeCallbacks6
 		ipversion = "v6"
 	} else {
+		log.Printf("Encountered invalid Address Family %v", family)
 		return
 	}
 	if len(*changeCallbacks) != 0 {
