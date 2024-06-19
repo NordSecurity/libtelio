@@ -42,3 +42,7 @@ pub use lru_cache::*;
 /// Tokio interval creation wrappers
 pub mod interval;
 pub use interval::*;
+
+/// Get local interfaces
+pub mod local_interfaces;
+pub use local_interfaces::*;
