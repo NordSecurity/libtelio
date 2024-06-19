@@ -603,6 +603,8 @@ class Client:
                 f"-f {self._telio_features.to_json()}",
             ])
 
+        await self.clear_system_log()
+
         async with self._process.run(
             stdout_callback=on_stdout, stderr_callback=on_stderr
         ):
@@ -1048,6 +1050,76 @@ class Client:
         await process.execute()
         return process.get_stdout()
 
+    async def get_system_log(self) -> Optional[str]:
+        """
+        Get the system log on the target machine
+        Windows only for now
+        """
+        if self._connection.target_os == TargetOS.Windows:
+            output_notifier = OutputNotifier()
+            done_event = asyncio.Event()
+            done_event_str = "Get-EventLog - Done!"
+
+            async def on_stdout(stdout: str) -> None:
+                for line in stdout.splitlines():
+                    output_notifier.handle_output(line)
+
+            output_notifier.notify_output(
+                f"{done_event_str}",
+                done_event,
+            )
+
+            process = self._connection.create_process([
+                "powershell",
+            ])
+            async with process.run(
+                stdout_callback=on_stdout, stderr_callback=on_stdout
+            ):
+                await process.wait_stdin_ready()
+                await asyncio.sleep(1)
+                await process.write_stdin(
+                    "Get-EventLog -LogName Application -Newest 100 | format-table -wrap\n"
+                )
+                await process.write_stdin(
+                    "Get-EventLog -LogName System -Newest 100 | format-table -wrap\n"
+                )
+                await process.write_stdin(f"echo '{done_event_str}'\n")
+                await done_event.wait()
+                return process.get_stdout()
+        return None
+
+    async def clear_system_log(self) -> None:
+        """
+        Clear the system log on the target machine
+        Windows only for now
+        """
+        if self._connection.target_os == TargetOS.Windows:
+            output_notifier = OutputNotifier()
+            done_event = asyncio.Event()
+            done_event_str = "Clear-EventLog - Done!"
+
+            async def on_stdout(stdout: str) -> None:
+                for line in stdout.splitlines():
+                    output_notifier.handle_output(line)
+
+            output_notifier.notify_output(
+                f"{done_event_str}",
+                done_event,
+            )
+
+            process = self._connection.create_process([
+                "powershell",
+            ])
+            async with process.run(
+                stdout_callback=on_stdout, stderr_callback=on_stdout
+            ):
+                await process.wait_stdin_ready()
+                await asyncio.sleep(1)
+                await process.write_stdin("Clear-EventLog -LogName Application\n")
+                await process.write_stdin("Clear-EventLog -LogName System\n")
+                await process.write_stdin(f"echo '{done_event_str}'\n")
+                await done_event.wait()
+
     async def get_log_lines(self, regex: Optional[str] = None) -> List[str]:
         """
         Get the tcli log as a list of strings
@@ -1105,6 +1177,8 @@ class Client:
 
         log_content = await self.get_log()
 
+        system_log_content = await self.get_system_log()
+
         if self._connection.target_os == TargetOS.Linux:
             process = self._connection.create_process(["cat", "/etc/hostname"])
             await process.execute()
@@ -1129,6 +1203,9 @@ class Client:
             encoding="utf-8",
         ) as f:
             f.write(log_content)
+            if system_log_content:
+                f.write("\n\n\n\n--- SYSTEM LOG ---\n\n")
+                f.write(system_log_content)
 
     async def save_mac_network_info(self) -> None:
         if os.environ.get("NATLAB_SAVE_LOGS") is None:
