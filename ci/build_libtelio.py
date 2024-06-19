@@ -281,6 +281,10 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    if "true" not in [os.getenv("GITLAB_CI"), os.getenv("GITHUB_ACTIONS")]:
+        if "BYPASS_LLT_SECRETS" not in os.environ:
+            check_llt_secrets()
+
     if args.command == "build":
         exec_build(args)
         if args.uniffi_test_bindings:
@@ -585,6 +589,11 @@ def copy_uniffi_files_for_testing(args):
     rutils.copy_tree_or_file(bindings_src, bindings_dest)
     if copy_binaries:
         rutils.copy_tree_or_file(binary_src, binary_dest)
+
+
+def check_llt_secrets():
+    if not os.path.isfile(".prepared_llt_secrets"):
+        input("LLT-Secrets hooks not found, press any key to continue..")
 
 
 if __name__ == "__main__":
