@@ -64,6 +64,10 @@ pub struct Node {
     pub allow_peer_send_files: bool,
     /// Connection type in the network mesh (through Relay or hole punched directly)
     pub path: PathType,
+    /// Flag to control whether we allow multicast messages from the Node
+    pub allow_multicast: bool,
+    /// Flag to control whether the Node allows multicast messages from us
+    pub peer_allows_multicast: bool,
 }
 
 /// Description of the Exit Node

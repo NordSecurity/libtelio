@@ -622,6 +622,10 @@ dictionary Peer {
     boolean allow_incoming_connections;
     /// Flag to control whether the peer allows incoming files
     boolean allow_peer_send_files;
+    /// Flag to control whether we allow multicast messages from the peer
+    boolean allow_multicast;
+    /// Flag to control whether the peer allows multicast messages from us
+    boolean peer_allows_multicast;
 };
 
 /// Representation of a server, which might be used
@@ -690,6 +694,10 @@ dictionary TelioNode {
     boolean allow_peer_send_files;
     /// Connection type in the network mesh (through Relay or hole punched directly)
     PathType path;
+    /// Flag to control whether we allow multicast messages from the Node
+    boolean allow_multicast;
+    /// Flag to control whether the Node allows multicast messages from us
+    boolean peer_allows_multicast;
 };
 
 /// Main object of `Event`. See `Event::new()` for init options.

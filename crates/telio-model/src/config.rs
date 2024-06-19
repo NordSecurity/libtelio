@@ -44,6 +44,12 @@ pub struct Peer {
     #[serde(default)]
     /// Flag to control whether the peer allows incoming files
     pub allow_peer_send_files: bool,
+    #[serde(default)]
+    /// Flag to control whether we allow multicast messages from the peer
+    pub allow_multicast: bool,
+    #[serde(default)]
+    /// Flag to control whether the peer allows multicast messages from us
+    pub peer_allows_multicast: bool,
 }
 
 /// Representation of DNS configuration
@@ -357,7 +363,9 @@ mod tests {
                   "allow_incoming_connections": true,
                   "allow_peer_send_files": true,
                   "peer_allows_traffic_routing": false,
-                  "allow_peer_traffic_routing": true
+                  "allow_peer_traffic_routing": true,
+                  "allow_multicast": true,
+                  "peer_allows_multicast": true
                 },
                 {},
                 {
@@ -374,7 +382,8 @@ mod tests {
                   "allow_incoming_connections": false,
                   "allow_peer_send_files": false,
                   "peer_allows_traffic_routing": true,
-                  "allow_peer_traffic_routing": false
+                  "allow_peer_traffic_routing": false,
+                  "allow_multicast": true
                 },
                 {
                   "invalid_key": "98e00fa1-2c83-4e85-bf01-45c1d4eefea6",
@@ -463,6 +472,8 @@ mod tests {
                     is_local: true,
                     allow_incoming_connections: true,
                     allow_peer_send_files: true,
+                    allow_multicast: true,
+                    peer_allows_multicast: true,
                 },
                 Peer {
                     base: PeerBase {
@@ -477,6 +488,8 @@ mod tests {
                     is_local: false,
                     allow_incoming_connections: false,
                     allow_peer_send_files: false,
+                    allow_multicast: true,
+                    peer_allows_multicast: false,
                 },
             ]),
             derp_servers: Some(vec![Server {

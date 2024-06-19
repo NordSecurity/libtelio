@@ -252,6 +252,8 @@ mod tests {
             allow_incoming_connections: false,
             allow_peer_send_files: false,
             path: crate::features::PathType::Relay,
+            allow_multicast: false,
+            peer_allows_multicast: false,
         };
 
         let server = Server {
@@ -299,7 +301,9 @@ mod tests {
             r#""endpoint":"127.0.0.1:8080","hostname":"example.com","#,
             r#""allow_incoming_connections":false,"#,
             r#""allow_peer_send_files":false,"#,
-            r#""path":"relay""#,
+            r#""path":"relay","#,
+            r#""allow_multicast":false,"#,
+            r#""peer_allows_multicast":false"#,
             r#"}}"#
         ));
 
