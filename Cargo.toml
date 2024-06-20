@@ -50,6 +50,7 @@ telio-proxy.workspace = true
 telio-pq.workspace = true
 telio-relay.workspace = true
 telio-sockets.workspace = true
+telio-starcast.workspace = true
 telio-task.workspace = true
 telio-traversal.workspace = true
 telio-utils.workspace = true
@@ -127,7 +128,7 @@ ntest = "0.7"
 num_enum = "0.6.1"
 once_cell = "1"
 parking_lot = "0.12"
-pnet_packet = "0.33.0"
+pnet_packet = "0.34.0"
 pretty_assertions = "0.7.2"
 proptest = "1.2.0"
 proptest-derive = "0.3.0"
@@ -168,6 +169,7 @@ telio-proto = { version = "0.1.0", path = "./crates/telio-proto" }
 telio-proxy = { version = "0.1.0", path = "./crates/telio-proxy" }
 telio-relay = { version = "0.1.0", path = "./crates/telio-relay" }
 telio-sockets = { version = "0.1.0", path = "./crates/telio-sockets" }
+telio-starcast = { version = "0.1.0", path = "./crates/telio-starcast" }
 telio-task = { version = "0.1.0", path = "./crates/telio-task" }
 telio-test = { version = "1.0.0", path = "./crates/telio-test" }
 telio-traversal = { version = "0.1.0",  path = "./crates/telio-traversal" }
@@ -180,3 +182,7 @@ telio-pmtu = { version = "0.1.0", path = "./crates/telio-pmtu" }
 opt-level = "s"
 lto = true
 codegen-units = 1
+
+#TODO: remove this when anyone starts using telio-starcast
+[workspace.metadata.cargo-udeps.ignore]
+normal = ["telio-starcast"]

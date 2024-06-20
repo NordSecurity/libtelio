@@ -38,7 +38,7 @@ pub type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;
 const LRU_CAPACITY: usize = 4096; // Max entries to keep (sepatately for TCP, UDP, and others)
 const LRU_TIMEOUT: u64 = 120_000; // 2min (https://datatracker.ietf.org/doc/html/rfc4787#section-4.3)
 
-const TCP_FIRST_PKT_MASK: u16 = TcpFlags::SYN | TcpFlags::ACK;
+const TCP_FIRST_PKT_MASK: u8 = TcpFlags::SYN | TcpFlags::ACK;
 
 const ICMP_BLOCKED_TYPES: [u8; 4] = [
     IcmpTypes::EchoRequest.0,
@@ -1341,7 +1341,7 @@ pub mod tests {
     use telio_crypto::SecretKey;
 
     type MakeUdp = &'static dyn Fn(&str, &str) -> Vec<u8>;
-    type MakeTcp = &'static dyn Fn(&str, &str, u16) -> Vec<u8>;
+    type MakeTcp = &'static dyn Fn(&str, &str, u8) -> Vec<u8>;
     type MakeIcmp = &'static dyn Fn(&str, &str, GenericIcmpType) -> Vec<u8>;
     type MakeIcmpWithBody = &'static dyn Fn(&str, &str, GenericIcmpType, &[u8]) -> Vec<u8>;
 
@@ -1464,7 +1464,7 @@ pub mod tests {
         raw
     }
 
-    pub fn make_tcp(src: &str, dst: &str, flags: u16) -> Vec<u8> {
+    pub fn make_tcp(src: &str, dst: &str, flags: u8) -> Vec<u8> {
         let msg: &str = "Some message";
         let msg_len = msg.as_bytes().len();
         let ip_len = IPV4_HEADER_MIN + TCP_HEADER_MIN + msg_len;
@@ -1492,7 +1492,7 @@ pub mod tests {
         raw
     }
 
-    pub fn make_tcp6(src: &str, dst: &str, flags: u16) -> Vec<u8> {
+    pub fn make_tcp6(src: &str, dst: &str, flags: u8) -> Vec<u8> {
         let msg: &str = "Some message";
         let msg_len = msg.as_bytes().len();
         let ip_len = IPV6_HEADER_MIN + TCP_HEADER_MIN + msg_len;
@@ -2177,7 +2177,7 @@ pub mod tests {
         ];
         for TestInput{ src, dst, make_icmp } in test_inputs {
             let fw = StatefullFirewall::new(true, false);
-            
+
             let request = make_icmp(dst, src, IcmpTypes::EchoRequest.into(), &[1, 0, 1, 0]);
             let reply1 = make_icmp(src, dst, IcmpTypes::EchoReply.into(), &[1, 0, 1, 0]);
             let reply2 = make_icmp(src, dst, IcmpTypes::EchoReply.into(), &[1, 0, 2, 0]);
