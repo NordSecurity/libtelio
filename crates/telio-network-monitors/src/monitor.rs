@@ -9,7 +9,7 @@ use telio_utils::{
 };
 use tokio::{sync::broadcast::Sender, task::JoinHandle};
 
-use crate::mac::setup_network_path_monitor;
+use crate::mac::setup_network_monitor;
 
 /// Sender to notify if there is a change in OS interface order
 pub static PATH_CHANGE_BROADCAST: Lazy<Sender<()>> = Lazy::new(|| Sender::new(2));
@@ -34,10 +34,10 @@ impl<G: GetIfAddrs + Clone> NetworkMonitor<G> {
         }
 
         #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
-        NETWORK_PATH_MONITOR_START.call_once(setup_network_path_monitor);
+        NETWORK_PATH_MONITOR_START.call_once(setup_network_monitor);
 
         #[cfg(target_os = "linux")]
-        crate::linux::setup_monitor();
+        crate::linux::setup_network_monitor();
 
         Ok(Self {
             nw_path_monitor_monitor_handle: None,

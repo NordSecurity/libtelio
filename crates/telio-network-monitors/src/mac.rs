@@ -46,7 +46,7 @@ extern "C" {
 }
 
 /// Setup network path monitor in Apple framework
-pub fn setup_network_path_monitor() {
+pub fn setup_network_monitor() {
     let update_handler = block::ConcreteBlock::new(|path: nw_path_t| {
         let names = Rc::new(RefCell::new(vec![]));
         let names_copy = names.clone();
