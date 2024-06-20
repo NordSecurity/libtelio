@@ -8,7 +8,7 @@ use tokio::task::JoinHandle;
 use crate::monitor::PATH_CHANGE_BROADCAST;
 
 /// Setup network path monitor for linux
-pub fn setup_monitor() {
+pub fn setup_network_monitor() {
     let sock = open_netlink_socket().unwrap();
     read_event(sock);
 }

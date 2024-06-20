@@ -4397,6 +4397,8 @@ dependencies = [
  "telio-utils",
  "tokio",
  "tracing",
+ "winapi",
+ "windows 0.34.0",
 ]
 
 [[package]]

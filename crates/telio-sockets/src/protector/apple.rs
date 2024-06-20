@@ -450,7 +450,7 @@ fn spawn_dynamic_store_loop(sockets: Weak<Mutex<Sockets>>) {
 #[cfg(test)]
 mod tests {
     use socket2::{Domain, Protocol, Socket, Type};
-    use telio_network_monitors::mac::setup_network_path_monitor;
+    use telio_network_monitors::mac::setup_network_monitor;
 
     use crate::native::AsNativeSocket;
 
@@ -458,7 +458,7 @@ mod tests {
 
     #[test]
     fn test_ipv6_sk_bind() {
-        setup_network_path_monitor();
+        setup_network_monitor();
 
         let socket2_socket = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP));
 
