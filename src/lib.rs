@@ -63,7 +63,6 @@ pub use telio_firewall;
 pub use uniffi_libtelio::*;
 #[allow(clippy::panic, clippy::unwrap_used, clippy::expect_used, unwrap_check)]
 mod uniffi_libtelio {
-    use std::convert::TryInto;
     use std::net::IpAddr;
 
     use super::crypto::{PublicKey, SecretKey};
@@ -88,31 +87,44 @@ mod uniffi_libtelio {
         }
     }
 
+    fn decode_key(val: String) -> uniffi::Result<[u8; telio_crypto::KEY_SIZE]> {
+        let mut key = [0_u8; telio_crypto::KEY_SIZE];
+        let decoded_bytes = base64::decode(val)
+            .map_err(|_| TelioError::InvalidKey)
+            .and_then(|val| {
+                if val.len() != telio_crypto::KEY_SIZE {
+                    Err(TelioError::InvalidKey)
+                } else {
+                    Ok(val)
+                }
+            })?;
+        key.copy_from_slice(&decoded_bytes);
+        Ok(key)
+    }
+
     impl UniffiCustomTypeConverter for PublicKey {
-        type Builtin = Vec<u8>;
+        type Builtin = String;
 
         fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
-            Ok(PublicKey::new(
-                val.try_into().map_err(|_| TelioError::InvalidKey)?,
-            ))
+            let key = decode_key(val)?;
+            Ok(PublicKey::new(key))
         }
 
         fn from_custom(obj: Self) -> Self::Builtin {
-            obj.0.to_vec()
+            base64::encode(obj.0)
         }
     }
 
     impl UniffiCustomTypeConverter for SecretKey {
-        type Builtin = Vec<u8>;
+        type Builtin = String;
 
         fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
-            Ok(SecretKey::new(
-                val.try_into().map_err(|_| TelioError::InvalidKey)?,
-            ))
+            let key = decode_key(val)?;
+            Ok(SecretKey::new(key))
         }
 
         fn from_custom(obj: Self) -> Self::Builtin {
-            obj.as_bytes().to_vec()
+            base64::encode(obj.as_bytes())
         }
     }
 
@@ -247,6 +259,21 @@ mod uniffi_libtelio {
             let deserialized = SecretKey::into_custom(serialized).unwrap();
 
             assert_eq!(deserialized, key);
+        }
+
+        #[rstest]
+        #[case("")]
+        #[case("aW52YWxpZCBrZXk=")]
+        #[case("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=")]
+        #[case("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=")]
+        #[case("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=")]
+        #[case("YSBzdXBlciBsb25nIGtleSB0aGF0IGlzIGFsc28gbm90IHZhbGlkIGJ1dCB0ZXN0cyBleHRyYSBsb25nIGtleXMgb3Igc29tZXRoaW5n")]
+        fn test_invalid_key_string(#[case] s: String) {
+            let skey = SecretKey::into_custom(s.clone());
+            let pkey = PublicKey::into_custom(s.clone());
+
+            assert!(skey.is_err());
+            assert!(pkey.is_err());
         }
 
         #[rstest]
