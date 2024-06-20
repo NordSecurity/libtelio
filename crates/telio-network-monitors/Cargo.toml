@@ -22,3 +22,11 @@ block = "0.1"
 [target.'cfg(target_os = "linux")'.dependencies]
 libc.workspace = true
 netlink = "0.1.1"
+
+[target.'cfg(windows)'.dependencies]
+winapi = { workspace = true, features = ["iphlpapi", "netioapi", "winnt", "ws2def"] }
+windows = { version = "0.34.0", features = [
+    "alloc",
+    "Win32_Networking_WinSock",
+    "Win32_NetworkManagement_IpHelper",
+] }
