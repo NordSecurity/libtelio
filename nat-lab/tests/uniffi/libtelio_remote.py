@@ -165,7 +165,7 @@ class LibtelioWrapper:
 
     @serialize_error
     def set_secret_key(self, secret_key):
-        self._libtelio.set_secret_key(base64.b64decode(secret_key))
+        self._libtelio.set_secret_key(secret_key)
 
     @serialize_error
     def is_running(self) -> bool:

@@ -1,7 +1,6 @@
 # pylint: disable=too-many-lines
 
 import asyncio
-import base64
 import datetime
 import json
 import os
@@ -1170,10 +1169,8 @@ class Client:
 
 
 def generate_secret_key() -> str:
-    return base64.b64encode(bytes(libtelio.generate_secret_key())).decode("ascii")
+    return libtelio.generate_secret_key()
 
 
 def generate_public_key(private_key: str) -> str:
-    private_key_bytes = list(base64.b64decode(private_key))
-    public_key_bytes = bytes(libtelio.generate_public_key(private_key_bytes))
-    return base64.b64encode(public_key_bytes).decode("ascii")
+    return libtelio.generate_public_key(private_key)
