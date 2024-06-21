@@ -1,6 +1,7 @@
 mod wg_controller;
 
 use async_trait::async_trait;
+use telio_batcher::batcher::Batcher;
 use telio_crypto::{PublicKey, SecretKey};
 use telio_firewall::firewall::{Firewall, StatefullFirewall};
 use telio_lana::init_lana;
@@ -228,6 +229,8 @@ pub struct MeshnetEntities {
 
     // Entities for direct wireguard connections
     direct: Option<DirectEntities>,
+
+    batcher: Arc<Batcher>,
 }
 
 #[derive(Default, Debug)]
@@ -930,6 +933,7 @@ impl MeshnetEntities {
                 }
             }}
         }
+
         macro_rules! stop_arc_entity {
             ($entity: expr, $name: expr) => {{
                 stop_entity!(Arc::try_unwrap($entity), $name)
@@ -959,6 +963,8 @@ impl MeshnetEntities {
 
         stop_arc_entity!(self.multiplexer, "Multiplexer");
         stop_arc_entity!(self.derp, "Derp");
+        stop_arc_entity!(self.batcher, "Batcher");
+
         let endpoint_map = self.proxy.get_endpoint_map().await.unwrap_or_default();
         stop_arc_entity!(self.proxy, "UdpProxy");
 
@@ -1223,6 +1229,8 @@ impl Runtime {
             relay: multiplexer.get_channel().await?,
         }));
 
+        let batcher = Arc::new(Batcher::start());
+
         // Start Derp client
         let derp = Arc::new(DerpRelay::start_with(
             derp_multiplexer_chan,
@@ -1396,26 +1404,32 @@ impl Runtime {
                 self.entities.wireguard_interface.clone(),
             )?);
 
-            match SessionKeeper::start(self.entities.socket_pool.clone()).map(Arc::new) {
-                Ok(session_keeper) => Some(DirectEntities {
-                    local_interfaces_endpoint_provider,
-                    stun_endpoint_provider,
-                    upnp_endpoint_provider,
-                    endpoint_providers,
-                    cross_ping_check,
-                    upgrade_sync,
-                    session_keeper,
-                }),
+            let session_keeper = match SessionKeeper::start(
+                self.entities.socket_pool.clone(),
+                batcher.clone(),
+            ) {
+                Ok(session_keeper) => Arc::new(session_keeper),
                 Err(e) => {
                     telio_log_warn!("Session keeper startup failed: {e:?} - direct connections will not be formed");
-                    None
+                    return Err(e.into());
                 }
-            }
+            };
+
+            Some(DirectEntities {
+                local_interfaces_endpoint_provider,
+                stun_endpoint_provider,
+                upnp_endpoint_provider,
+                endpoint_providers,
+                cross_ping_check,
+                upgrade_sync,
+                session_keeper,
+            })
         } else {
             None
         };
 
         Ok(MeshnetEntities {
+            batcher,
             multiplexer,
             derp,
             proxy,

@@ -165,8 +165,8 @@ impl PeerConnDataSegment {
             duration: target_timestamp.duration_since(peer_event.timestamp.into()),
             connection_data: PeerConnectionData {
                 endpoints,
-                rx_bytes: target_rx_bytes - peer_event.rx_bytes,
-                tx_bytes: target_tx_bytes - peer_event.tx_bytes,
+                rx_bytes: target_rx_bytes.saturating_sub(peer_event.rx_bytes), // prevent panics
+                tx_bytes: target_tx_bytes.saturating_sub(peer_event.tx_bytes),
             },
         }
     }

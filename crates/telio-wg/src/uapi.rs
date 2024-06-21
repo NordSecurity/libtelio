@@ -4,7 +4,7 @@ use ipnetwork::{IpNetwork, IpNetworkError};
 use serde::{Deserialize, Serialize};
 use telio_crypto::{KeyDecodeError, PresharedKey, PublicKey, SecretKey};
 use telio_model::mesh::{LinkState, Node, NodeState};
-use telio_utils::{telio_log_warn, DualTarget, DualTargetError};
+use telio_utils::{telio_log_debug, telio_log_warn, DualTarget, DualTargetError};
 use wireguard_uapi::{get, xplatform::set};
 
 use std::{
@@ -57,11 +57,13 @@ pub struct Peer {
 impl From<get::Peer> for Peer {
     /// Convert from WireGuard get::Peer to telio Peer
     fn from(item: get::Peer) -> Self {
+        telio_log_debug!("UAPI @1: {:?}", item.persistent_keepalive_interval);
+
         Self {
             public_key: PublicKey(item.public_key),
             endpoint: item.endpoint,
             ip_addresses: Default::default(),
-            persistent_keepalive_interval: Some(item.persistent_keepalive_interval.into()),
+            persistent_keepalive_interval: None,
             allowed_ips: item
                 .allowed_ips
                 .into_iter()
@@ -86,10 +88,11 @@ impl From<get::Peer> for Peer {
 impl From<set::Peer> for Peer {
     /// Convert from WireGuard set::Peer to telio Peer
     fn from(item: set::Peer) -> Self {
+        telio_log_debug!("UAPI @2: {:?}", item.persistent_keepalive_interval);
         Self {
             public_key: PublicKey(item.public_key),
             endpoint: item.endpoint,
-            persistent_keepalive_interval: item.persistent_keepalive_interval.map(u32::from),
+            persistent_keepalive_interval: None,
             allowed_ips: item
                 .allowed_ips
                 .into_iter()
@@ -104,11 +107,12 @@ impl From<set::Peer> for Peer {
 
 impl From<&Node> for Peer {
     fn from(other: &Node) -> Peer {
+        telio_log_debug!("UAPI @3: 25s");
         Peer {
             public_key: other.public_key,
             allowed_ips: other.allowed_ips.clone(),
             endpoint: other.endpoint,
-            persistent_keepalive_interval: Some(25),
+            persistent_keepalive_interval: None,
             ..Default::default()
         }
     }
@@ -140,10 +144,19 @@ impl From<&Event> for Node {
 impl From<&Peer> for set::Peer {
     /// Convert from telio Peer to WireGuard set::Peer
     fn from(item: &Peer) -> Self {
+        telio_log_debug!(
+            "UAPI @4: {:?} pk: {:?} endpoint: {:?}",
+            item.persistent_keepalive_interval,
+            item.public_key,
+            item.endpoint
+        );
         Self {
             public_key: item.public_key.0,
             endpoint: item.endpoint,
-            persistent_keepalive_interval: item.persistent_keepalive_interval.map(|x| x as u16),
+            // POI
+            // persistent_keepalive_interval: item.persistent_keepalive_interval.map(|x| x as u16),
+            // persistent_keepalive_interval: None,
+            persistent_keepalive_interval: Some(0),
             allowed_ips: item
                 .allowed_ips
                 .iter()

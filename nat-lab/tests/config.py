@@ -60,7 +60,7 @@ if platform.system() == "Darwin":
     LIBTELIO_BINARY_PATH_DOCKER = "/libtelio/target/aarch64-unknown-linux-gnu/release/"
 else:
     LIBTELIO_BINARY_PATH_DOCKER = (
-        "/libtelio/dist/linux/release/" + platform.uname().machine + "/"
+        "/libtelio/dist/linux/debug/" + platform.uname().machine + "/"
     )
 
 # Libtelio binary path inside Windows and Mac VMs

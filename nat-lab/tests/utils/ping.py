@@ -19,7 +19,9 @@ class Ping:
     _next_ping_event: asyncio.Event
     _connection: Connection
 
-    def __init__(self, connection: Connection, ip: str) -> None:
+    def __init__(
+        self, connection: Connection, ip: str, single_ping: bool = False
+    ) -> None:
         self._ip = ip
         self._connection = connection
         self._ip_proto = testing.unpack_optional(get_ip_address_type(ip))
@@ -33,9 +35,18 @@ class Ping:
                 [("ping" if self._ip_proto == IPProto.IPv4 else "ping6"), ip]
             )
         else:
-            self._process = connection.create_process(
-                ["ping", ("-4" if self._ip_proto == IPProto.IPv4 else "-6"), ip]
-            )
+            if single_ping:
+                self._process = connection.create_process([
+                    "ping",
+                    ("-4" if self._ip_proto == IPProto.IPv4 else "-6"),
+                    ip,
+                    "-c",
+                    "1",
+                ])
+            else:
+                self._process = connection.create_process(
+                    ["ping", ("-4" if self._ip_proto == IPProto.IPv4 else "-6"), ip]
+                )
         self._next_ping_event = asyncio.Event()
 
     async def on_stdout(self, stdout: str) -> None:
@@ -47,11 +58,13 @@ class Ping:
             else:
                 if line.find(f"from {self._ip}") > 0:
                     self._next_ping_event.set()
+                    break
 
     async def execute(self) -> None:
         await self._process.execute(stdout_callback=self.on_stdout)
 
     async def wait_for_next_ping(self, timeout: Optional[float] = None) -> None:
+        # POI: this will clear the flag, thus ther'e a race condition
         self._next_ping_event.clear()
         await asyncio.wait_for(self._next_ping_event.wait(), timeout)
         self._next_ping_event.clear()

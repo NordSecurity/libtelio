@@ -195,6 +195,7 @@ async fn consolidate_wg_peers<
     for key in insert_keys {
         telio_log_info!("Inserting peer: {:?}", requested_peers.get(key));
         let peer = requested_peers.get(key).ok_or(Error::PeerNotFound)?;
+
         wireguard_interface.add_peer(peer.peer.clone()).await?;
 
         if let Some(stun) = stun_ep_provider {
@@ -226,6 +227,14 @@ async fn consolidate_wg_peers<
         }
 
         let is_actual_peer_proxying = is_peer_proxying(actual_peer, &proxy_endpoints);
+        let a = !is_peer_proxying(&requested_peer.peer, &proxy_endpoints);
+        telio_log_info!(
+            "****** Updating peer: {:?} ... 2. is_actual_peer_proxying={} and !is_peer_proxying={}",
+            key,
+            is_actual_peer_proxying,
+            a
+        );
+
         if is_actual_peer_proxying && !is_peer_proxying(&requested_peer.peer, &proxy_endpoints) {
             // We have upgraded the connection. If the upgrade happened because we have
             // selected a new direct endpoint candidate -> notify the other node about our own
@@ -245,7 +254,6 @@ async fn consolidate_wg_peers<
                     .await?;
                 }
             }
-
             // TODO we're not completely sure that the other side has upgraded too and that we're in 'Upgrading' state.
             // Mute pair to avoid oscillations
             if let Some(p) = proxy {
@@ -255,7 +263,6 @@ async fn consolidate_wg_peers<
                 )
                 .await?;
             }
-
             // Initiate session keeper to start sending data between peers connected directly
             if let (Some(sk), Some(mesh_ip1), maybe_mesh_ip2) = (
                 session_keeper,
@@ -276,19 +283,26 @@ async fn consolidate_wg_peers<
                     }
                 };
 
-                // Start persistent keepalives
-                sk.add_node(
-                    &requested_peer.peer.public_key,
-                    target,
-                    Duration::from_secs(
-                        requested_peer
-                            .peer
-                            .persistent_keepalive_interval
-                            .unwrap_or(requested_state.keepalive_periods.direct)
-                            .into(),
-                    ),
-                )
-                .await?;
+                telio_log_debug!(
+                    "Will add node with interval. requested_state: {:?}, requested_peer: {:?}",
+                    requested_state.keepalive_periods.direct,
+                    requested_peer
+                );
+                let res = sk
+                    .add_node(
+                        &requested_peer.peer.public_key,
+                        target,
+                        Duration::from_secs(
+                            requested_peer
+                                .peer
+                                .persistent_keepalive_interval
+                                .unwrap_or(requested_state.keepalive_periods.direct)
+                                .into(),
+                        ),
+                    )
+                    .await;
+                // telio_log_info!("****** Updated peer: {:?} ... with res: {:?}", key, res);
+                res?
             }
         }
         telio_log_debug!(
@@ -592,7 +606,7 @@ async fn build_requested_meshnet_peers_list<
         .map(|p| {
             // Retrieve public key
             let public_key = p.base.public_key;
-            let persistent_keepalive_interval = requested_state.keepalive_periods.proxying;
+            let persistent_keepalive_interval = requested_state.keepalive_periods.proxying; // POI for derp keepalives
             let endpoint = proxy_endpoints
                 .get(&public_key)
                 .and_then(|eps| eps.first())
@@ -963,6 +977,8 @@ mod tests {
     use crate::device::{DeviceConfig, DNS};
     use mockall::predicate::{self, eq};
     use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4};
+    use telio_batcher::batcher::MockBatcherTrait;
+
     use telio_crypto::SecretKey;
     use telio_dns::MockDnsResolver;
     use telio_firewall::firewall::{MockFirewall, FILE_SEND_PORT};
@@ -1337,6 +1353,7 @@ mod tests {
     }
 
     struct Fixture {
+        batcher: MockBatcherTrait,
         requested_state: RequestedState,
         wireguard_interface: MockWireGuard,
         proxy: MockProxy,
@@ -1351,6 +1368,7 @@ mod tests {
     impl Fixture {
         fn new() -> Self {
             Self {
+                batcher: MockBatcherTrait::new(),
                 requested_state: RequestedState::default(),
                 wireguard_interface: MockWireGuard::new(),
                 proxy: MockProxy::new(),

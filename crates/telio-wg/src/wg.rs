@@ -957,7 +957,7 @@ impl State {
                         timestamp: std::time::Instant::now(),
                     };
                     if analytics_tx.send(Box::new(event)).is_err() {
-                        telio_log_debug!("Failed to send analytics info for {:?}", pubkey);
+                        // telio_log_debug!("Failed to send analytics info for {:?}", pubkey);
                     }
                 }
             }

@@ -23,6 +23,7 @@ from utils.vm import container_util, windows_vm_util, mac_vm_util
 class ConnectionTag(Enum):
     DOCKER_CONE_CLIENT_1 = auto()
     DOCKER_CONE_CLIENT_2 = auto()
+    DOCKER_CONE_CLIENT_3 = auto()
     DOCKER_FULLCONE_CLIENT_1 = auto()
     DOCKER_FULLCONE_CLIENT_2 = auto()
     DOCKER_SYMMETRIC_CLIENT_1 = auto()
@@ -60,6 +61,7 @@ class ConnectionTag(Enum):
 DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_CONE_CLIENT_1: "cone-client-01",
     ConnectionTag.DOCKER_CONE_CLIENT_2: "cone-client-02",
+    ConnectionTag.DOCKER_CONE_CLIENT_3: "cone-client-03",
     ConnectionTag.DOCKER_FULLCONE_CLIENT_1: "fullcone-client-01",
     ConnectionTag.DOCKER_FULLCONE_CLIENT_2: "fullcone-client-02",
     ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1: "symmetric-client-01",
@@ -97,6 +99,7 @@ DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
 DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {
     ConnectionTag.DOCKER_CONE_CLIENT_1: ConnectionTag.DOCKER_CONE_GW_1,
     ConnectionTag.DOCKER_CONE_CLIENT_2: ConnectionTag.DOCKER_CONE_GW_2,
+    ConnectionTag.DOCKER_CONE_CLIENT_3: ConnectionTag.DOCKER_CONE_GW_3,
     ConnectionTag.DOCKER_FULLCONE_CLIENT_1: ConnectionTag.DOCKER_FULLCONE_GW_1,
     ConnectionTag.DOCKER_FULLCONE_CLIENT_2: ConnectionTag.DOCKER_FULLCONE_GW_2,
     ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1: ConnectionTag.DOCKER_SYMMETRIC_GW_1,
@@ -126,6 +129,7 @@ DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {
 LAN_ADDR_MAP: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_CONE_CLIENT_1: "192.168.101.104",
     ConnectionTag.DOCKER_CONE_CLIENT_2: "192.168.102.54",
+    ConnectionTag.DOCKER_CONE_CLIENT_3: "192.168.102.55",
     ConnectionTag.DOCKER_FULLCONE_CLIENT_1: "192.168.109.88",
     ConnectionTag.DOCKER_FULLCONE_CLIENT_2: "192.168.106.88",
     ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1: "192.168.103.88",

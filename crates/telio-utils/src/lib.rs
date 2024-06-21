@@ -12,10 +12,6 @@ pub use map::*;
 pub mod sleep;
 pub use sleep::*;
 
-/// Timed, repeated actions
-pub mod repeated_actions;
-pub use repeated_actions::*;
-
 /// Dual stack IP target helper
 pub mod dual_target;
 pub use dual_target::*;

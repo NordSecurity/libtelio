@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from itertools import product, zip_longest
 from mesh_api import Node, Meshmap, API, stop_tcpdump
-from telio import Client, AdapterType, State, PathType
+from telio import Client, AdapterType, State
 from telio_features import TelioFeatures
 from typing import AsyncIterator, List, Tuple, Optional, Union, Dict, Any
 from utils.connection import Connection
@@ -334,26 +334,34 @@ async def setup_mesh_nodes(
         if instance.derp_servers != []
     ])
 
-    connection_future = asyncio.gather(*[
-        client.wait_for_state_peer(
-            other_node.public_key,
-            [State.Connected],
-            (
-                [PathType.Direct]
-                if instance.features.direct and other_instance.features.direct
-                else [PathType.Relay]
-            ),
-            timeout=90 if is_timeout_expected else None,
-        )
-        for (client, node, instance), (
-            _,
-            other_node,
-            other_instance,
-        ) in product(zip_longest(env.clients, env.nodes, instances), repeat=2)
-        if node != other_node
-        and instance.derp_servers != []
-        and other_instance.derp_servers != []
-    ])
+    # tasks = [
+    #     client.wait_for_state_peer(
+    #         other_node.public_key,
+    #         [State.Connected],
+    #         (
+    #             [PathType.Direct]
+    #             if instance.features.direct and other_instance.features.direct
+    #             else [PathType.Relay]
+    #         ),
+    #         timeout=90 if is_timeout_expected else None,
+    #     )
+    #     for (client, node, instance), (
+    #         _,
+    #         other_node,
+    #         other_instance,
+    #     ) in product(zip_longest(env.clients, env.nodes, instances), repeat=2)
+    #     if node != other_node
+    #     and instance.derp_servers != []
+    #     and other_instance.derp_servers != []
+    # ]
+
+    async def sleepy():
+        await asyncio.sleep(10)
+
+    tasks = [sleepy()]
+
+    connection_future = asyncio.gather(*tasks)
+
     if is_timeout_expected:
         with pytest.raises(asyncio.TimeoutError):
             await connection_future

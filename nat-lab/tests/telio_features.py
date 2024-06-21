@@ -33,7 +33,9 @@ class FeatureEndpointProvidersOptimization(DataClassJsonMixin):
 @dataclass
 class Direct(DataClassJsonMixin):
     providers: Optional[List[str]] = None
-    endpoint_interval_secs: Optional[int] = 5
+    endpoint_interval_secs: Optional[int] = (
+        5
+    )
     skip_unresponsive_peers: Optional[SkipUnresponsivePeers] = field(
         default_factory=lambda: SkipUnresponsivePeers(no_rx_threshold_secs=180)
     )
