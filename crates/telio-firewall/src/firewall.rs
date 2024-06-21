@@ -419,7 +419,7 @@ impl StatefullFirewall {
         buffer: &'a [u8],
     ) -> bool {
         let ip = unwrap_option_or_return!(P::try_from(buffer), false);
-        let peer: PublicKey = public_key.into();
+        let peer: PublicKey = PublicKey(*public_key);
         let proto = ip.get_next_level_protocol();
 
         // whitelist read-lock scope
@@ -479,7 +479,7 @@ impl StatefullFirewall {
         buffer: &'a [u8],
     ) -> bool {
         let ip = unwrap_option_or_return!(P::try_from(buffer), false);
-        let peer: PublicKey = public_key.into();
+        let peer = PublicKey(*public_key);
         let proto = ip.get_next_level_protocol();
 
         let whitelist = unwrap_lock_or_return!(self.whitelist.read(), false);

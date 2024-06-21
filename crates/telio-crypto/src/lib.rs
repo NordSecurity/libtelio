@@ -20,6 +20,7 @@
 //! # }
 //! ```
 
+pub mod chachabox;
 pub mod encryption;
 
 use std::{cmp::Ordering, convert::TryInto, fmt};

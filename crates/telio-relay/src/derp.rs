@@ -41,10 +41,8 @@ use telio_utils::{
 use tokio::sync::mpsc::OwnedPermit;
 use tokio::{task::JoinHandle, time::sleep};
 
-use crypto_box::{
-    aead::{Aead, AeadCore, Error, Nonce, Payload},
-    ChaChaBox,
-};
+use crypto_box::aead::{AeadCore, Error, Nonce, Payload};
+use telio_crypto::chachabox::ChaChaBox;
 
 use generic_array::GenericArray;
 use rand::{rngs::StdRng, SeedableRng};
@@ -442,7 +440,7 @@ impl DerpRelay {
         }
 
         // new Box and convert telio-key to crypto_box format
-        let secret_box = ChaChaBox::new(&public_key.into(), &secret_key.into());
+        let secret_box = ChaChaBox::new(&public_key, &secret_key);
         let nonce = ChaChaBox::generate_nonce(rng);
         // Encrypt the message using the box
         match secret_box.encrypt(
@@ -513,7 +511,7 @@ impl DerpRelay {
                     .get(DerpRelay::NONCE_END_POS..data.len())
                     .ok_or(crypto_box::aead::Error)?;
 
-                let secret_box = ChaChaBox::new(&public_key.into(), &secret_key.into());
+                let secret_box = ChaChaBox::new(&public_key, &secret_key);
 
                 match secret_box.decrypt(
                     &nonce,
