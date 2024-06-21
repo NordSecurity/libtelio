@@ -2,11 +2,30 @@
 
 use std::{array::TryFromSliceError, convert::TryInto};
 
-use crypto_box::{aead::Aead, aead::AeadCore, ChaChaBox};
+use chacha20::{cipher::generic_array::GenericArray, hchacha};
+use chacha20poly1305::{aead::consts::U10, KeyInit, XChaCha20Poly1305 as ChaChaBox};
+use crypto_box::aead::{Aead, AeadCore};
+use curve25519_dalek::{scalar::clamp_integer, MontgomeryPoint, Scalar};
 use rand::{CryptoRng, RngCore};
 use telio_utils::telio_err_with_log;
+use zeroize::Zeroizing;
 
 use crate::{PublicKey, SecretKey, KEY_SIZE};
+
+fn create_crypto_box(public_key: &PublicKey, secret_key: &SecretKey) -> ChaChaBox {
+    let scalar_sk = Scalar::from_bytes_mod_order(clamp_integer(secret_key.0));
+    let shared_secret = Zeroizing::new(scalar_sk * MontgomeryPoint(public_key.0));
+
+    // Use HChaCha20 to create a uniformly random key from the shared secret
+    let key = hchacha::<U10>(
+        GenericArray::from_slice(&shared_secret.0),
+        &GenericArray::default(),
+    );
+
+    let crypto_box = ChaChaBox::new(&key);
+
+    crypto_box
+}
 
 const NONCE_SIZE: usize = 24;
 
@@ -45,7 +64,7 @@ pub fn encrypt_request(
     remote_pk: &PublicKey,
 ) -> Result<Vec<u8>, Error> {
     let inner_nonce = ChaChaBox::generate_nonce(&mut rng);
-    let inner_secret_box = ChaChaBox::new(&remote_pk.into(), &local_sk.into());
+    let inner_secret_box = create_crypto_box(&remote_pk, &local_sk);
     let inner_encrypted_payload = match inner_secret_box.encrypt(&inner_nonce, msg) {
         Ok(inner_encrypted_payload) => inner_encrypted_payload,
         Err(e) => telio_err_with_log!(e)?,
@@ -62,7 +81,7 @@ pub fn encrypt_request(
     let ephemeral_sk = SecretKey::gen_with(rng);
     let ephemeral_pk = ephemeral_sk.public();
     let outer_nonce = ChaChaBox::generate_nonce(rng);
-    let outer_secret_box = ChaChaBox::new(&remote_pk.into(), &ephemeral_sk.into());
+    let outer_secret_box = create_crypto_box(&remote_pk, &ephemeral_sk);
 
     let outer_encrypted_payload = match outer_secret_box.encrypt(&outer_nonce, outer_msg.as_slice())
     {
@@ -99,7 +118,7 @@ pub fn decrypt_request(
         .get(KEY_SIZE + NONCE_SIZE..)
         .ok_or(Error::InvalidLength)?;
 
-    let outer_secret_box = ChaChaBox::new(&PublicKey(ephemeral_pk).into(), &local_sk.into());
+    let outer_secret_box = create_crypto_box(&PublicKey(ephemeral_pk), &local_sk);
     let outer_msg = match outer_secret_box.decrypt(&outer_nonce.into(), outer_encrypted_payload) {
         Ok(outer_msg) => outer_msg,
         Err(e) => telio_err_with_log!(e)?,
@@ -123,7 +142,7 @@ pub fn decrypt_request(
         .get(KEY_SIZE + NONCE_SIZE..)
         .ok_or(Error::InvalidLength)?;
 
-    let inner_secret_box = ChaChaBox::new(&remote_pk.into(), &local_sk.into());
+    let inner_secret_box = create_crypto_box(&remote_pk, &local_sk);
     let inner_msg = match inner_secret_box.decrypt(&inner_nonce.into(), inner_encrypted_payload) {
         Ok(inner_msg) => inner_msg,
         Err(e) => telio_err_with_log!(e)?,
@@ -142,7 +161,7 @@ pub fn encrypt_response(
     remote_pk: &PublicKey,
 ) -> Result<Vec<u8>, Error> {
     let nonce = ChaChaBox::generate_nonce(rng);
-    let secret_box = ChaChaBox::new(&remote_pk.into(), &local_sk.into());
+    let secret_box = create_crypto_box(&remote_pk, &local_sk);
     let encrypted_msg = match secret_box.encrypt(&nonce, msg) {
         Ok(encrypted_msg) => encrypted_msg,
         Err(e) => telio_err_with_log!(e)?,
@@ -166,7 +185,7 @@ pub fn decrypt_response(
         .ok_or(Error::InvalidLength)?
         .try_into()?;
     let message = msg.get(NONCE_SIZE..).ok_or(Error::InvalidLength)?;
-    let secret_box = ChaChaBox::new(&remote_pk.into(), &local_sk.into());
+    let secret_box = create_crypto_box(&remote_pk, &local_sk);
     let msg = match secret_box.decrypt(&nonce.into(), message) {
         Ok(msg) => msg,
         Err(e) => telio_err_with_log!(e)?,
