@@ -1,5 +1,6 @@
 use async_trait::async_trait;
-use futures::Future;
+use futures::StreamExt;
+use futures::{future, Future};
 use socket2::Type;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
@@ -8,6 +9,8 @@ use surge_ping::{
     Client as PingerClient, Config as PingerConfig, ConfigBuilder, PingIdentifier, PingSequence,
     SurgeError, ICMP,
 };
+use telio_batcher::Batcher;
+use telio_batcher::BatcherTrait;
 use telio_crypto::PublicKey;
 use telio_sockets::SocketPool;
 use telio_task::{task_exec, BoxAction, Runtime, Task};
@@ -15,6 +18,8 @@ use telio_utils::{
     dual_target, repeated_actions, telio_log_debug, telio_log_trace, telio_log_warn, DualTarget,
     RepeatedActions,
 };
+use tokio::sync::Mutex;
+use tokio::time;
 
 const PING_PAYLOAD_SIZE: usize = 56;
 
@@ -44,7 +49,7 @@ type Result<T> = std::result::Result<T, Error>;
 #[async_trait]
 pub trait SessionKeeperTrait {
     async fn add_node(
-        &self,
+        &mut self,
         public_key: &PublicKey,
         target: dual_target::Target,
         interval: Duration,
@@ -52,13 +57,16 @@ pub trait SessionKeeperTrait {
     async fn update_interval(&self, public_key: &PublicKey, interval: Duration) -> Result<()>;
     async fn remove_node(&self, public_key: &PublicKey) -> Result<()>;
 }
-
 pub struct SessionKeeper {
     task: Task<State>,
+    batcher: Arc<Mutex<Batcher>>,
+    batcher_rx_map:
+        Arc<Mutex<std::collections::HashMap<PublicKey, tokio::sync::watch::Receiver<()>>>>,
 }
 
 impl SessionKeeper {
-    pub fn start(sock_pool: Arc<SocketPool>) -> Result<Self> {
+    pub fn start(sock_pool: Arc<SocketPool>, batcher: Arc<Mutex<Batcher>>) -> Result<Self> {
+        telio_log_debug!("Starting SessionKeeper...");
         let (client_v4, client_v6) = (
             PingerClient::new(&Self::make_builder(ICMP::V4).build())?,
             PingerClient::new(&Self::make_builder(ICMP::V6).build())?,
@@ -67,12 +75,18 @@ impl SessionKeeper {
         sock_pool.make_internal(client_v4.get_socket().get_native_sock())?;
         sock_pool.make_internal(client_v6.get_socket().get_native_sock())?;
 
+        // state at this point is totally gone and moved in the task, we can forget ever communicating with it
+        // unless we want a ton of changes to it
+        let batcher_mapper = Arc::new(Mutex::new(std::collections::HashMap::new()));
         Ok(Self {
             task: Task::start(State {
                 pinger_client_v4: client_v4,
                 pinger_client_v6: client_v6,
                 keepalive_actions: RepeatedActions::default(),
+                batcher_rx_map: batcher_mapper.clone(),
             }),
+            batcher,
+            batcher_rx_map: batcher_mapper.clone(),
         })
     }
 
@@ -115,16 +129,43 @@ impl SessionKeeper {
     }
 }
 
+fn half_interval(interval: Duration) -> Duration {
+    interval / 2
+}
+
 #[async_trait]
 impl SessionKeeperTrait for SessionKeeper {
     async fn add_node(
-        &self,
+        &mut self,
         public_key: &PublicKey,
         target: dual_target::Target,
         interval: Duration,
     ) -> Result<()> {
+        telio_log_debug!("***** Adding node with public key 1: {:?}", public_key);
+
         let public_key = *public_key;
         let dual_target = DualTarget::new(target)?;
+        telio_log_debug!("***** Adding node with public key 2: {:?}", public_key);
+
+        let mut b = self.batcher.lock().await;
+        telio_log_debug!("***** Adding node with public key 3: {:?}", public_key);
+        let rx = b
+            .add(public_key.to_string(), interval, half_interval(interval))
+            .await
+            .unwrap();
+
+        telio_log_debug!("***** Adding node with public key 3: {:?}", rx);
+        telio_log_debug!(
+            "***** rx map adding node with public key: {:?}...",
+            public_key
+        );
+        self.batcher_rx_map
+            .lock()
+            .await
+            .insert(public_key, rx.clone());
+        telio_log_debug!("***** rx map added node with public key: {:?}", public_key);
+
+        let batch_pair = (public_key.clone(), rx);
 
         task_exec!(&self.task, async move |s| {
             if s.keepalive_actions.contains_action(&public_key) {
@@ -211,6 +252,8 @@ struct State {
     pinger_client_v4: PingerClient,
     pinger_client_v6: PingerClient,
     keepalive_actions: RepeatedActions<PublicKey, Self, Result<()>>,
+    batcher_rx_map:
+        Arc<Mutex<std::collections::HashMap<PublicKey, tokio::sync::watch::Receiver<()>>>>,
 }
 
 #[async_trait]
@@ -222,24 +265,75 @@ impl Runtime for State {
     where
         F: Future<Output = BoxAction<Self, std::result::Result<(), Self::Err>>> + Send,
     {
-        tokio::select! {
-            Ok((pk, action)) = self.keepalive_actions.select_action() => {
-                let pk = *pk;
+        let futures0 = self.keepalive_actions.select_action();
 
-                telio_log_trace!("({}) name: \"{}\", action = actions.select_action()", Self::NAME, pk);
+        let mut futures_batch_emit = self
+            .batcher_rx_map
+            .lock()
+            .await
+            .iter()
+            .map(|(pk, rx)| {
+                let pk = pk.clone();
+                let mut rx = rx.clone();
+                async move {
+                    let _ = rx.changed().await; // TODO: wait this is mutable
+                    pk
+                }
+            })
+            .collect::<futures::stream::FuturesUnordered<_>>();
 
-                action(self)
-                    .await
-                    .map_or_else(|e| {
-                        telio_log_warn!("({}) Error sending keepalive to {} node: {}", Self::NAME, pk, e.to_string());
-                        Ok(())
-                    }, |_| Ok(()))?;
+        // append a pending future so it wouldn't be empty and .next() would always have sometihng
+        let len = self.batcher_rx_map.lock().await.keys().len();
+
+        telio_log_debug!("******* wait_with_update with len = {}", len);
+        if len == 0 {
+            tokio::select! {
+                Ok((pk, action)) = futures0 => {
+                    let pk = *pk;
+
+                    telio_log_trace!("({}) name: \"{}\", action = actions.select_action()", Self::NAME, pk);
+
+                    action(self)
+                        .await
+                        .map_or_else(|e| {
+                            telio_log_warn!("({}) Error sending keepalive to {} node: {}", Self::NAME, pk, e.to_string());
+                            Ok(())
+                        }, |_| Ok(()))?;
+                }
+                update = update => {
+                    return update(self).await;
+                }
+                else => {
+                    return Ok(());
+                }
             }
-            update = update => {
-                return update(self).await;
-            }
-            else => {
-                return Ok(());
+        } else {
+            tokio::select! {
+                pk = futures_batch_emit.next() => {
+                    telio_log_debug!("******* batch trigger emit for pk: {:?}", pk);
+                    // self.batcher_rx_map.lock().await.get_mut(&pk.unwrap()).unwrap().mark_changed();
+                    // telio_log_debug!("******* batch trigger emit continued");
+                    let _ = self.keepalive_actions.update_interval(&pk.unwrap(), Duration::from_secs(1));
+                    telio_log_debug!("******* batch trigger done");
+                }
+                Ok((pk, action)) = futures0 => {
+                    let pk = *pk;
+
+                    telio_log_trace!("({}) name: \"{}\", action = actions.select_action()", Self::NAME, pk);
+
+                    action(self)
+                        .await
+                        .map_or_else(|e| {
+                            telio_log_warn!("({}) Error sending keepalive to {} node: {}", Self::NAME, pk, e.to_string());
+                            Ok(())
+                        }, |_| Ok(()))?;
+                }
+                update = update => {
+                    return update(self).await;
+                }
+                else => {
+                    return Ok(());
+                }
             }
         }
 
@@ -306,7 +400,7 @@ mod tests {
                         // assert_eq!(len, 0);
                         // assert_eq!(addr, sess_keep_addr);
 
-                        println!("Hello");
+                        telio_log_debug!("Hello");
 
                         if cnt == 0 {
                             start = Some(time::Instant::now());

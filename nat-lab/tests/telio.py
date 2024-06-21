@@ -565,7 +565,8 @@ class Client:
         host_os = platform.system()
         if host_os == "Linux":
             host_ip = container_ip
-            port = str(random.randrange(10000, 65000))
+            port = str(random.randrange(30000, 30300)) # POI
+            print(f"****************** Using port {port}")
             (host_port, container_port) = (port, port)
         elif host_os in ("Windows", "Darwin"):
             (host_port, container_port) = await self._connection.mapped_ports()
@@ -962,10 +963,10 @@ class Client:
                 event = self.get_proxy().next_event()
                 while event:
                     if self._runtime:
-                        print(
-                            f"[{self._node.name}]: event [{datetime.datetime.now()}]:"
-                            f" {event}"
-                        )
+                        # print(
+                        #     f"[{self._node.name}]: event [{datetime.datetime.now()}]:"
+                        #     f" {event}"
+                        # )
                         self._runtime.handle_output_line(event)
                         event = self.get_proxy().next_event()
                 await asyncio.sleep(1)

@@ -151,7 +151,7 @@ async fn consolidate_wg_peers<
     proxy: Option<&P>,
     cross_ping_check: Option<&Arc<C>>,
     upgrade_sync: Option<&Arc<U>>,
-    session_keeper: Option<&Arc<S>>,
+    session_keeper: Option<&Arc<Mutex<S>>>,
     dns: &Mutex<crate::device::DNS<D>>,
     remote_peer_states: PeersStatesMap,
     stun_ep_provider: Option<&Arc<StunEndpointProvider>>,
@@ -188,6 +188,9 @@ async fn consolidate_wg_peers<
     let insert_keys = &requested_keys - &actual_keys;
     let update_keys = &requested_keys & &actual_keys;
 
+    // TODO: here both are empty, always in this branch.
+    telio_log_info!("*************** Update keys: {:?}", update_keys);
+
     for key in delete_keys {
         telio_log_info!("Removing peer: {:?}", actual_peers.get(key));
         wireguard_interface.del_peer(*key).await?;
@@ -209,7 +212,9 @@ async fn consolidate_wg_peers<
 
     let mut is_any_peer_eligible_for_upgrade = false;
 
+    // TODO: here it is not triggering, no update event is here. Without it - there's no ping, thus pinging behaviour shouldnt really be the culprid
     for key in update_keys {
+        telio_log_info!("****** Updating peer: {:?} ... 1", key);
         let requested_peer = requested_peers.get(key).ok_or(Error::PeerNotFound)?;
         let actual_peer = actual_peers.get(key).ok_or(Error::PeerNotFound)?;
 
@@ -227,7 +232,17 @@ async fn consolidate_wg_peers<
         }
 
         let is_actual_peer_proxying = is_peer_proxying(actual_peer, &proxy_endpoints);
-        if is_actual_peer_proxying && !is_peer_proxying(&requested_peer.peer, &proxy_endpoints) {
+        let a = !is_peer_proxying(&requested_peer.peer, &proxy_endpoints);
+        telio_log_info!(
+            "****** Updating peer: {:?} ... 2. is_actual_peer_proxying={} and !is_peer_proxying={}",
+            key,
+            is_actual_peer_proxying,
+            a
+        );
+
+        if is_actual_peer_proxying && !is_peer_proxying(&requested_peer.peer, &proxy_endpoints)
+            || true
+        {
             // We have upgraded the connection. If the upgrade happened because we have
             // selected a new direct endpoint candidate -> notify the other node about our own
             // local side endpoint, such that the other node can do this upgrade too.
@@ -246,7 +261,7 @@ async fn consolidate_wg_peers<
                     .await?;
                 }
             }
-
+            telio_log_info!("****** Updating peer: {:?} ... 3", key);
             // TODO we're not completely sure that the other side has upgraded too and that we're in 'Upgrading' state.
             // Mute pair to avoid oscillations
             if let Some(p) = proxy {
@@ -256,7 +271,7 @@ async fn consolidate_wg_peers<
                 )
                 .await?;
             }
-
+            telio_log_info!("****** Updating peer: {:?} ... 4", key);
             // Initiate session keeper to start sending data between peers connected directly
             if let (Some(sk), Some(mesh_ip1), maybe_mesh_ip2) = (
                 session_keeper,
@@ -276,20 +291,26 @@ async fn consolidate_wg_peers<
                         _ => (None, None),
                     }
                 };
-
+                telio_log_info!("****** Updating peer: {:?} ... 5", key);
                 // Start persistent keepalives
-                sk.add_node(
-                    &requested_peer.peer.public_key,
-                    target,
-                    Duration::from_secs(
-                        requested_peer
-                            .peer
-                            .persistent_keepalive_interval
-                            .unwrap_or(requested_state.keepalive_periods.direct)
-                            .into(),
-                    ),
-                )
-                .await?;
+
+                let res = sk
+                    .lock()
+                    .await
+                    .add_node(
+                        &requested_peer.peer.public_key,
+                        target,
+                        Duration::from_secs(
+                            requested_peer
+                                .peer
+                                .persistent_keepalive_interval
+                                .unwrap_or(requested_state.keepalive_periods.direct)
+                                .into(),
+                        ),
+                    )
+                    .await;
+                telio_log_info!("****** Updated peer: {:?} ... with res: {:?}", key, res);
+                res?
             }
         }
         telio_log_debug!(
@@ -964,6 +985,7 @@ mod tests {
     use crate::device::{DeviceConfig, DNS};
     use mockall::predicate::{self, eq};
     use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4};
+    use telio_batcher::MockBatcherTrait;
     use telio_crypto::SecretKey;
     use telio_dns::MockDnsResolver;
     use telio_firewall::firewall::{MockFirewall, FILE_SEND_PORT};
@@ -1252,7 +1274,7 @@ mod tests {
 
         firewall
             .expect_get_port_whitelist()
-            .return_once(|| Default::default());
+            .return_once(Default::default);
 
         expect_remove_from_port_whitelist(&mut firewall, pub_key_2);
 
@@ -1338,6 +1360,7 @@ mod tests {
     }
 
     struct Fixture {
+        batcher: MockBatcherTrait,
         requested_state: RequestedState,
         wireguard_interface: MockWireGuard,
         proxy: MockProxy,
@@ -1352,6 +1375,7 @@ mod tests {
     impl Fixture {
         fn new() -> Self {
             Self {
+                batcher: MockBatcherTrait::new(),
                 requested_state: RequestedState::default(),
                 wireguard_interface: MockWireGuard::new(),
                 proxy: MockProxy::new(),
@@ -1638,7 +1662,7 @@ mod tests {
         async fn consolidate_peers(self) {
             let cross_ping_check = Arc::new(self.cross_ping_check);
             let upgrade_sync = Arc::new(self.upgrade_sync);
-            let session_keeper = Arc::new(self.session_keeper);
+            let session_keeper = Arc::new(Mutex::new(self.session_keeper));
 
             consolidate_wg_peers(
                 &self.requested_state,

@@ -119,6 +119,7 @@ pub fn get_default_feature_config() -> Features {
 /// Utility function to create a `Features` object from a json-string
 /// Passing an empty string will return the default feature config
 pub fn deserialize_feature_config(fstr: String) -> FFIResult<Features> {
+    println!("****** deserialize_feature_config: {:?}", fstr);
     if fstr.is_empty() {
         Ok(Features::default())
     } else {
@@ -128,6 +129,7 @@ pub fn deserialize_feature_config(fstr: String) -> FFIResult<Features> {
 
 /// Utility function to create a `Config` object from a json-string
 pub fn deserialize_meshnet_config(cfg_str: String) -> FFIResult<Config> {
+    println!("****** deserialize_meshnet_config: {:?}", cfg_str);
     match Config::new_from_str(&cfg_str) {
         Ok((cfg, _)) => Ok(cfg),
         Err(e) => match e {

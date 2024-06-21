@@ -75,6 +75,7 @@ class TelioEventCbImpl(libtelio.TelioEventCb):
 
 class TelioLoggerCbImpl(libtelio.TelioLoggerCb):
     def log(self, log_level, payload):
+        print(f"{datetime.datetime.now()} {log_level} {payload}")
         with open(TCLI_LOG, "a", encoding="utf-8") as logfile:
             try:
                 logfile.write(f"{datetime.datetime.now()} {log_level} {payload}\n")

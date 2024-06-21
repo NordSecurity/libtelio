@@ -1,6 +1,7 @@
 mod wg_controller;
 
 use async_trait::async_trait;
+use telio_batcher::{self, Batcher, BatcherTrait};
 use telio_crypto::{PublicKey, SecretKey};
 use telio_firewall::firewall::{Firewall, StatefullFirewall};
 use telio_lana::init_lana;
@@ -229,6 +230,8 @@ pub struct MeshnetEntities {
 
     // Entities for direct wireguard connections
     direct: Option<DirectEntities>,
+
+    batcher: Arc<Mutex<Batcher>>,
 }
 
 #[derive(Default, Debug)]
@@ -297,7 +300,7 @@ impl Entities {
             .and_then(|m| m.direct.as_ref().map(|d| &d.cross_ping_check))
     }
 
-    pub fn session_keeper(&self) -> Option<&Arc<SessionKeeper>> {
+    pub fn session_keeper(&self) -> Option<&Arc<Mutex<SessionKeeper>>> {
         self.meshnet
             .left()
             .and_then(|m| m.direct.as_ref().map(|d| &d.session_keeper))
@@ -337,7 +340,7 @@ pub struct DirectEntities {
     upgrade_sync: Arc<UpgradeSync>,
 
     // Keepalive sender
-    session_keeper: Arc<SessionKeeper>,
+    session_keeper: Arc<Mutex<SessionKeeper>>,
 }
 
 pub struct EventListeners {
@@ -931,12 +934,34 @@ impl MeshnetEntities {
                 }
             }}
         }
+
         macro_rules! stop_arc_entity {
             ($entity: expr, $name: expr) => {{
                 stop_entity!(Arc::try_unwrap($entity), $name)
             }};
         }
 
+        // TODO: so there's no nice way to actually stop batcher and sessio nkeeper due to beint Arc<Mutex<T>> types.
+        // This happens becasue Arc has try_unwrap that returns T which is consumed so we can call .stop() on it just fine.
+        // However with Mutex inside of it this doesn't happen as after unwrapping it will return a value which is Mutex<T>
+        // However we can't consume T via stop(T) a that would leave Mutex with invalid reference of T. The way to do it
+        // is to wrap Option everywhere but this gets nasty very very quickly. So for now we just leave it as is.
+        macro_rules! stop_arc_mutex_entity {
+            ($entity: expr, $name: expr) => {{
+                match Arc::try_unwrap($entity) {
+                    Ok(ent) => {
+                        // let old_instance = std::mem::replace(&mut *ent.lock().await, None);
+                        // old_instance.stop();
+                    }
+                    Err(_) => {
+                        telio_log_warn!(
+                            "Oops, something went wrong while stopping {:?} tasks.",
+                            $name
+                        );
+                    }
+                }
+            }};
+        }
         if let Some(direct) = self.direct.take() {
             // Arc dependency on CrossPingCheck
             stop_arc_entity!(direct.upgrade_sync, "UpgradeSync");
@@ -955,11 +980,13 @@ impl MeshnetEntities {
                 stop_arc_entity!(upnp, "UpnpEndpointProvider");
             }
 
-            stop_arc_entity!(direct.session_keeper, "SessionKeeper");
+            stop_arc_mutex_entity!(direct.session_keeper, "SessionKeeper");
         }
 
         stop_arc_entity!(self.multiplexer, "Multiplexer");
         stop_arc_entity!(self.derp, "Derp");
+        stop_arc_mutex_entity!(self.batcher, "Batcher"); // TODO: batcher alongside SESSIONKEEPER need fixing
+
         let endpoint_map = self.proxy.get_endpoint_map().await.unwrap_or_default();
         stop_arc_entity!(self.proxy, "UdpProxy");
 
@@ -1225,6 +1252,8 @@ impl Runtime {
             relay: multiplexer.get_channel().await?,
         }));
 
+        let batcher = Arc::new(tokio::sync::Mutex::new(Batcher::start().await));
+
         // Start Derp client
         let derp = Arc::new(DerpRelay::start_with(
             derp_multiplexer_chan,
@@ -1398,26 +1427,32 @@ impl Runtime {
                 self.entities.wireguard_interface.clone(),
             )?);
 
-            match SessionKeeper::start(self.entities.socket_pool.clone()).map(Arc::new) {
-                Ok(session_keeper) => Some(DirectEntities {
-                    local_interfaces_endpoint_provider,
-                    stun_endpoint_provider,
-                    upnp_endpoint_provider,
-                    endpoint_providers,
-                    cross_ping_check,
-                    upgrade_sync,
-                    session_keeper,
-                }),
+            let session_keeper = match SessionKeeper::start(
+                self.entities.socket_pool.clone(),
+                batcher.clone(),
+            ) {
+                Ok(session_keeper) => Arc::new(Mutex::new(session_keeper)),
                 Err(e) => {
                     telio_log_warn!("Session keeper startup failed: {e:?} - direct connections will not be formed");
-                    None
+                    return Err(e.into());
                 }
-            }
+            };
+
+            Some(DirectEntities {
+                local_interfaces_endpoint_provider,
+                stun_endpoint_provider,
+                upnp_endpoint_provider,
+                endpoint_providers,
+                cross_ping_check,
+                upgrade_sync,
+                session_keeper,
+            })
         } else {
             None
         };
 
         Ok(MeshnetEntities {
+            batcher,
             multiplexer,
             derp,
             proxy,
@@ -2151,7 +2186,7 @@ impl TaskRuntime for Runtime {
                                 direct_entities.cross_ping_check.notify_failed_wg_connection(public_key)
                                     .await?;
 
-                                direct_entities.session_keeper.remove_node(&public_key).await?;
+                                direct_entities.session_keeper.lock().await.remove_node(&public_key).await?;
 
                                 let mut event = AnalyticsEvent::from_event(&mesh_event);
                                 event.peer_state = PeerState::Connected;

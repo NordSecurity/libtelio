@@ -1,0 +1,20 @@
+[package]
+name = "telio-batcher"
+version = "0.1.0"
+edition = "2018"
+license = "GPL-3.0-only"
+repository = "https://github.com/NordSecurity/libtelio"
+publish = false
+
+[dependencies]
+tokio = { workspace = true, features = ["rt", "net", "sync", "macros"] }
+telio-utils.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+mockall = { workspace = true, optional = true }
+telio-task.workspace = true
+futures.workspace = true
+async-trait = "0.1.51"
+
+[dev-dependencies]
+mockall.workspace = true
