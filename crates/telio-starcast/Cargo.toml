@@ -28,7 +28,8 @@ telio-task.workspace = true
 telio-utils.workspace = true
 
 [dev-dependencies]
-sn_fake_clock.workspace = true
 rand.workspace = true
+rstest.workspace = true
+sn_fake_clock.workspace = true
 
 telio-utils = { workspace = true, features = ["sn_fake_clock"] }

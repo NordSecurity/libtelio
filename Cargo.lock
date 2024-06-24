@@ -4607,6 +4607,7 @@ dependencies = [
  "ipnetwork",
  "pnet_packet",
  "rand",
+ "rstest",
  "sn_fake_clock",
  "telio-crypto",
  "telio-model",
