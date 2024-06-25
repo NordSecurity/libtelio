@@ -27,6 +27,7 @@ pub struct LinkDetection {
     enhanced_detection: Option<EnhancedDetection>,
     ping_channel: chan::Tx<Vec<IpAddr>>,
     peers: HashMap<PublicKey, State>,
+    use_for_downgrade: bool,
 }
 
 impl LinkDetection {
@@ -43,6 +44,7 @@ impl LinkDetection {
             enhanced_detection,
             ping_channel: ping_channel.tx,
             peers: HashMap::default(),
+            use_for_downgrade: cfg.use_for_downgrade,
         }
     }
 
@@ -85,6 +87,14 @@ impl LinkDetection {
         self.peers.remove(public_key);
     }
 
+    pub fn get_link_state_for_downgrade(&self, public_key: &PublicKey) -> Option<LinkState> {
+        if self.use_for_downgrade {
+            self.peers.get(public_key).map(|s| s.current_link_state())
+        } else {
+            None
+        }
+    }
+
     pub async fn stop(self) {
         if let Some(ed) = self.enhanced_detection {
             ed.stop().await;
@@ -97,8 +107,7 @@ impl LinkDetection {
             link_state: Some(
                 self.peers
                     .get(public_key)
-                    .map(|p| p.current_link_state())
-                    .unwrap_or(LinkState::Down),
+                    .map_or(LinkState::Down, |p| p.current_link_state()),
             ),
         }
     }

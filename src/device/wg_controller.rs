@@ -10,6 +10,7 @@ use telio_dns::DnsResolver;
 use telio_firewall::firewall::{Firewall, FILE_SEND_PORT};
 use telio_model::constants::{VPN_EXTERNAL_IPV4, VPN_INTERNAL_IPV4, VPN_INTERNAL_IPV6};
 use telio_model::features::Features;
+use telio_model::mesh::LinkState;
 use telio_model::mesh::NodeState::Connected;
 use telio_model::EndpointMap;
 use telio_model::SocketAddr;
@@ -685,11 +686,14 @@ async fn build_requested_meshnet_peers_list<
             _ => None,
         };
 
+        let link_state = wireguard_interface.get_link_state(*public_key).await?;
+
         // Compute the current endpoint state
         let peer_state = peer_state(
             actual_peer,
             time_since_last_rx_or_handshake.as_ref(),
             time_since_last_endpoint_change.as_ref(),
+            link_state,
             match proxy_endpoint {
                 Some(eps) => eps,
                 None => &[],
@@ -922,6 +926,7 @@ fn peer_state(
     peer: Option<&telio_wg::uapi::Peer>,
     time_since_last_rx: Option<&Duration>,
     time_since_last_endpoint_change: Option<&Duration>,
+    link_state: Option<LinkState>,
     proxy_endpoints: &[SocketAddr],
     requested_state: &RequestedState,
 ) -> PeerState {
@@ -950,12 +955,24 @@ fn peer_state(
         None => return PeerState::Disconnected,
     };
 
-    let has_contact = time_since_last_rx < &peer_connectivity_timeout;
     let is_proxying = peer
         .endpoint
         .map(|ep| proxy_endpoints.contains(&ep))
         .unwrap_or_default();
     let is_in_upgrade_window = time_since_last_endpoint_change < &peer_upgrade_window;
+
+    let has_contact = if let Some(link_state) = link_state {
+        // Use link detection for downgrade is enabled
+        if time_since_last_rx > &Duration::from_secs(180) {
+            // Safety duration
+            false
+        } else {
+            link_state != LinkState::Down
+        }
+    } else {
+        // Use old keepalive method
+        time_since_last_rx < &peer_connectivity_timeout
+    };
 
     match (has_contact, is_proxying, is_in_upgrade_window) {
         (false, _, _) => PeerState::Disconnected,
@@ -1361,9 +1378,13 @@ mod tests {
     impl Fixture {
         fn new() -> Self {
             let stun_ep_provider = Some(Self::create_default_stun_ep(false));
+            let mut wireguard_interface = MockWireGuard::new();
+            wireguard_interface
+                .expect_get_link_state()
+                .returning(|_| Ok(None));
             Self {
                 requested_state: RequestedState::default(),
-                wireguard_interface: MockWireGuard::new(),
+                wireguard_interface,
                 proxy: MockProxy::new(),
                 cross_ping_check: MockCrossPingCheckTrait::new(),
                 upgrade_sync: MockUpgradeSyncTrait::new(),

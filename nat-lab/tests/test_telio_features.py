@@ -3,6 +3,7 @@ from telio_features import (
     TelioFeatures,
     Direct,
     Lana,
+    LinkDetection,
     Nurse,
     Qos,
     ExitDns,
@@ -73,9 +74,12 @@ def test_telio_features():
             exit_dns=ExitDns(auto_switch_dns_ips=True),
             ttl_value=60,
         ),
+        link_detection=LinkDetection(
+            rtt_seconds=10, no_of_pings=1, use_for_downgrade=True
+        ),
     )
     expected_full = TelioFeatures.from_json(
-        """{"is_test_env": false, "exit_dns": {"auto_switch_dns_ips": true}, "direct": {"providers": ["stun", "local"]}, "lana": {"prod": false, "event_path": "/"}, "nurse": {"fingerprint": "alpha", "qos": {"rtt_interval": 5, "rtt_tries": 3, "rtt_types": ["Ping"], "buckets": 5}, "heartbeat_interval": 3600, "initial_heartbeat_interval": 10, "enable_nat_type_collection": true, "enable_relay_conn_data": true}}"""
+        """{"is_test_env": false, "exit_dns": {"auto_switch_dns_ips": true}, "direct": {"providers": ["stun", "local"]}, "lana": {"prod": false, "event_path": "/"}, "nurse": {"fingerprint": "alpha", "qos": {"rtt_interval": 5, "rtt_tries": 3, "rtt_types": ["Ping"], "buckets": 5}, "heartbeat_interval": 3600, "initial_heartbeat_interval": 10, "enable_nat_type_collection": true, "enable_relay_conn_data": true}, "link_detection": {"rtt_seconds": 10, "no_of_pings": 1, "use_for_downgrade": true}}"""
     )
     assert full_features == expected_full
     assert full_features.to_json() == expected_full.to_json()
@@ -93,3 +97,14 @@ def test_telio_features():
     )
     assert firewall_features == expected_firewall
     assert firewall_features.to_json() == expected_firewall.to_json()
+
+    link_detection_features = TelioFeatures(
+        link_detection=LinkDetection(
+            rtt_seconds=10, no_of_pings=1, use_for_downgrade=False
+        )
+    )
+    expected_link_detection = TelioFeatures.from_json(
+        """{"is_test_env": true, "exit_dns": {"auto_switch_dns_ips": true}, "link_detection": {"rtt_seconds": 10, "no_of_pings": 1, "use_for_downgrade": false}}"""
+    )
+    assert link_detection_features == expected_link_detection
+    assert link_detection_features.to_json() == expected_link_detection.to_json()
