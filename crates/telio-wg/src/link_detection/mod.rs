@@ -507,6 +507,7 @@ mod tests {
         let features = FeatureLinkDetection {
             rtt_seconds: 1,
             no_of_pings: 0,
+            use_for_downgrade: false,
         };
         let no_link_detection = LinkDetection::new(Some(features));
         assert_eq!(no_link_detection.is_disabled(), false);

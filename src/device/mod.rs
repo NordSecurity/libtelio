@@ -215,6 +215,12 @@ pub struct RequestedState {
 
     // Requested keepalive periods
     pub(crate) keepalive_periods: FeaturePersistentKeepalive,
+
+    // Use link detection for downgrades
+    pub use_link_detection_for_downgrade: bool,
+
+    // Down connections
+    pub down_connections: Vec<PublicKey>,
 }
 
 pub struct MeshnetEntities {
@@ -347,6 +353,7 @@ pub struct EventListeners {
     endpoint_upgrade_event_subscriber: chan::Rx<UpgradeRequestChangeEvent>,
     stun_server_subscriber: chan::Rx<Option<StunServer>>,
     post_quantum_subscriber: chan::Rx<telio_pq::Event>,
+    downgrade_event_subscriber: chan::Rx<Box<telio_wg::DowngradeEvent>>,
 }
 
 pub struct EventPublishers {
@@ -1034,11 +1041,13 @@ impl Runtime {
                     false => None
                 };
                 let wg_events = Chan::<Box<telio_wg::uapi::Event>>::default();
+                let downgrade_event_publisher = Chan::<Box<telio_wg::DowngradeEvent>>::default();
                 let wireguard_interface = Arc::new(DynamicWg::start(
                     wg::Io {
                         events: wg_events.tx.clone(),
                         analytics_tx: analytics_ch.clone(),
                         libtelio_wide_event_publisher: Some(libtelio_wide_event_publisher.clone()),
+                        downgrade_event_publisher: downgrade_event_publisher.tx.clone(),
                     },
                     wg::Config {
                         adapter: config.adapter,
@@ -1054,10 +1063,12 @@ impl Runtime {
                     features.link_detection,
                 )?);
                 let wg_events = wg_events.rx;
+                let downgrade_event_subscriber = downgrade_event_publisher.rx;
             } else {
                 let wg::tests::Env {
                         event: wg_events,
                         analytics: analytics_ch,
+                        donwgrade: downgrade_event_subscriber,
                         wg: wireguard_interface,
                         adapter,
                 } = wg::tests::setup(
@@ -1136,6 +1147,10 @@ impl Runtime {
         let requested_state = RequestedState {
             device_config: config.clone(),
             keepalive_periods: features.wireguard.persistent_keepalive.clone(),
+            use_link_detection_for_downgrade: features
+                .link_detection
+                .map(|f| f.use_for_downgrade)
+                .unwrap_or(false),
             ..Default::default()
         };
 
@@ -1189,6 +1204,7 @@ impl Runtime {
                 endpoint_upgrade_event_subscriber: wg_upgrade_sync.rx,
                 stun_server_subscriber: stun_server_events.rx,
                 post_quantum_subscriber: post_quantum.rx,
+                downgrade_event_subscriber,
             },
             event_publishers: EventPublishers {
                 libtelio_event_publisher: libtelio_wide_event_publisher,
@@ -1204,6 +1220,7 @@ impl Runtime {
             #[cfg(test)]
             test_env: wg::tests::Env {
                 analytics: analytics_ch,
+                donwgrade: Chan::default().rx,
                 event: Chan::default().rx,
                 wg: wireguard_interface,
                 adapter,
@@ -2238,6 +2255,27 @@ impl TaskRuntime for Runtime {
                 {
                     telio_log_warn!("WireGuard controller failure: {err:?}. Ignoring");
                 }
+
+                Ok(())
+            },
+
+            Some(downgrade_event) = self.event_listeners.downgrade_event_subscriber.recv() => {
+                telio_log_debug!("WG consolidation triggered by downgrade event");
+
+                // Update this in case config has been changed
+                self.requested_state.use_link_detection_for_downgrade = self.features.link_detection.as_ref().map(|f| f.use_for_downgrade).unwrap_or(false);
+
+                self.requested_state.down_connections = downgrade_event.to_be_downgraded;
+
+                wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
+                    .await
+                    .unwrap_or_else(
+                        |e| {
+                            telio_log_warn!("WireGuard controller failure: {:?}. Ignoring", e);
+                        });
+
+                // Clear down connections
+                self.requested_state.down_connections = Vec::new();
 
                 Ok(())
             },
