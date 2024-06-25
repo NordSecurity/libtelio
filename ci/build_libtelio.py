@@ -51,6 +51,55 @@ def post_copy_libsqlite3_binary_to_dist(config, args):
         )
 
 
+def post_copy_windows_debug_symbols_to_distribution_dir(config, args):
+    if config.debug:
+        return
+
+    packages = LIBTELIO_CONFIG[config.target_os].get("packages", None)
+    if packages and config.target_os == "windows":
+        for _, bins in packages.items():
+            for _, bin in bins.items():
+                debug_bin = os.path.splitext(bin)[0] + ".pdb"
+                debug_bin_path = PROJECT_CONFIG.get_cargo_path(
+                    config.rust_target, debug_bin, config.debug
+                )
+                if os.path.isfile(debug_bin_path):
+                    shutil.copy2(
+                        PROJECT_CONFIG.get_cargo_path(
+                            config.rust_target, debug_bin, config.debug
+                        ),
+                        PROJECT_CONFIG.get_distribution_path(
+                            config.target_os, config.arch, "", config.debug
+                        ),
+                    )
+
+
+def post_copy_darwin_debug_symbols_to_distribution_dir(config, args):
+    if config.debug:
+        return
+
+    packages = LIBTELIO_CONFIG[config.target_os].get("packages", None)
+    if packages and config.target_os in ["macos", "tvos", "ios"]:
+        for _, bins in packages.items():
+            for _, bin in bins.items():
+                debug_bin = bin + ".dSYM"
+                src_path = PROJECT_CONFIG.get_cargo_path(
+                    config.rust_target, debug_bin, config.debug
+                )
+                dst_path = os.path.join(
+                    PROJECT_CONFIG.get_distribution_path(
+                        config.target_os, config.arch, "", config.debug
+                    ),
+                    debug_bin,
+                )
+                if os.path.isdir(src_path):
+                    shutil.copytree(
+                        src_path,
+                        dst_path,
+                        dirs_exist_ok=True,
+                    )
+
+
 """
 This local config is highly customizable as every project can have a different
 local config depending on their needs.
@@ -118,6 +167,7 @@ LIBTELIO_CONFIG = {
             "interderpcli": {"interderpcli": "interderpcli.exe"},
             NAME: {NAME: f"{NAME}.dll"},
         },
+        "post_build": [post_copy_windows_debug_symbols_to_distribution_dir],
     },
     "android": {
         "archs": {
@@ -213,17 +263,20 @@ LIBTELIO_CONFIG = {
         "packages": {
             "tcli": {"tcli": "tcli"},
             NAME: {f"lib{NAME}": f"lib{NAME}.dylib"},
-        }
+        },
+        "post_build": [post_copy_darwin_debug_symbols_to_distribution_dir],
     },
     "ios": {
         "packages": {
             NAME: {f"lib{NAME}": f"lib{NAME}.dylib"},
         },
+        "post_build": [post_copy_darwin_debug_symbols_to_distribution_dir],
     },
     "tvos": {
         "packages": {
             NAME: {f"lib{NAME}": f"lib{NAME}.dylib"},
         },
+        "post_build": [post_copy_darwin_debug_symbols_to_distribution_dir],
     },
 }
 
