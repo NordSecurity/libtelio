@@ -26,7 +26,6 @@ pub mod aggregator;
 
 mod heartbeat;
 mod qos;
-mod rtt;
 
 pub use heartbeat::MeshnetEntities;
 pub use nurse::Nurse;

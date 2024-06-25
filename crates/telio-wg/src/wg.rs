@@ -129,8 +129,8 @@ struct State {
     // We won't be notified of any errors, but a periodic call to get_config_uapi() will return a Win32 error code != 0.
     uapi_fail_counter: i32,
 
-    // No link detection mechanism
-    no_link_detection: LinkDetection,
+    // Link detection mechanism
+    link_detection: LinkDetection,
 
     libtelio_event: Option<mc_chan::Tx<Box<LibtelioEvent>>>,
 }
@@ -224,22 +224,22 @@ impl DynamicWg {
     pub fn start(
         io: Io,
         cfg: Config,
-        no_link_detection: Option<FeatureLinkDetection>,
+        link_detection: Option<FeatureLinkDetection>,
     ) -> Result<Self, Error>
     where
         Self: Sized,
     {
         let adapter = Self::start_adapter(cfg.try_clone()?)?;
         #[cfg(unix)]
-        return Ok(Self::start_with(io, adapter, no_link_detection, cfg));
+        return Ok(Self::start_with(io, adapter, link_detection, cfg));
         #[cfg(windows)]
-        return Ok(Self::start_with(io, adapter, no_link_detection));
+        return Ok(Self::start_with(io, adapter, link_detection));
     }
 
     fn start_with(
         io: Io,
         adapter: Box<dyn Adapter>,
-        no_link_detection: Option<FeatureLinkDetection>,
+        link_detection: Option<FeatureLinkDetection>,
         #[cfg(unix)] cfg: Config,
     ) -> Self {
         let interval = interval(Duration::from_millis(POLL_MILLIS));
@@ -255,7 +255,7 @@ impl DynamicWg {
                 last_endpoint_change: Default::default(),
                 analytics_tx: io.analytics_tx,
                 uapi_fail_counter: 0,
-                no_link_detection: LinkDetection::new(no_link_detection),
+                link_detection: LinkDetection::new(link_detection),
                 libtelio_event: io.libtelio_wide_event_publisher,
             }),
         }
@@ -556,7 +556,7 @@ impl State {
     }
 
     fn time_since_last_rx(&self, public_key: PublicKey) -> Option<Duration> {
-        self.no_link_detection.time_since_last_rx(&public_key)
+        self.link_detection.time_since_last_rx(&public_key)
     }
 
     async fn send_event(
@@ -567,7 +567,7 @@ impl State {
         old_peer: Option<Peer>,
     ) -> Result<(), Error> {
         let link_state = link_state.and_then(|s| {
-            if self.no_link_detection.is_disabled() {
+            if self.link_detection.is_disabled() {
                 None
             } else {
                 Some(s)
@@ -601,7 +601,7 @@ impl State {
             ))?;
 
             // Remove all disconnected peers from no link detection mechanism
-            self.no_link_detection.remove(key);
+            self.link_detection.remove(key);
 
             self.send_event(
                 PeerState::Disconnected,
@@ -620,7 +620,7 @@ impl State {
                 .ok_or(Error::InternalError("New peer missing from new list"))?;
 
             // Node is new and default LinkState is down. Save it before sending the event
-            self.no_link_detection
+            self.link_detection
                 .insert(key, peer.rx_bytes, peer.tx_bytes, PeerState::Connecting);
 
             self.send_event(
@@ -633,12 +633,8 @@ impl State {
 
             if peer.is_connected() {
                 // If the new peer is connected, update last link state to Up.
-                self.no_link_detection.insert(
-                    key,
-                    peer.rx_bytes,
-                    peer.tx_bytes,
-                    PeerState::Connected,
-                );
+                self.link_detection
+                    .insert(key, peer.rx_bytes, peer.tx_bytes, PeerState::Connected);
 
                 self.send_event(
                     PeerState::Connected,
@@ -655,18 +651,27 @@ impl State {
             if let (Some(old), Some(new)) = (from.peers.get(key), to.peers.get(key)) {
                 let old_state = old.state();
                 let new_state = new.state();
+                let node_addresses = new.ip_addresses.clone();
 
-                let no_link_detection_update_result =
-                    self.no_link_detection
-                        .update(key, new.rx_bytes, new.tx_bytes, new_state, push);
+                let link_detection_update_result = self
+                    .link_detection
+                    .update(
+                        key,
+                        new.rx_bytes,
+                        new.tx_bytes,
+                        new_state,
+                        node_addresses,
+                        push,
+                    )
+                    .await;
 
                 if !old.is_same_event(new)
                     || old_state != new_state
-                    || no_link_detection_update_result.should_notify
+                    || link_detection_update_result.should_notify
                 {
                     self.send_event(
                         new_state,
-                        no_link_detection_update_result.link_state,
+                        link_detection_update_result.link_state,
                         new.clone(),
                         Some(old.clone()),
                     )
@@ -889,6 +894,7 @@ impl Runtime for State {
 
     async fn stop(self) {
         self.adapter.stop().await;
+        self.link_detection.stop().await;
         #[cfg(unix)]
         self.cfg
             .tun
