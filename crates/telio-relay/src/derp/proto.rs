@@ -31,6 +31,9 @@ use tokio::{
     sync::mpsc::{error::SendError, Receiver, Sender},
 };
 
+#[cfg(test)]
+use telio_utils::test::CryptoStepRng;
+
 #[cfg(windows)]
 use static_assertions::const_assert;
 
@@ -307,7 +310,14 @@ pub async fn exchange_keys<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     secret_key: SecretKey,
 ) -> Result<(), Error> {
     let server_key = read_server_key(&mut reader).await?;
-    write_client_key(&mut writer, secret_key, server_key).await?;
+    write_client_key(
+        &mut writer,
+        secret_key,
+        server_key,
+        #[cfg(test)]
+        None,
+    )
+    .await?;
     Ok(())
 }
 
@@ -327,6 +337,7 @@ async fn write_client_key<W: AsyncWrite + Unpin>(
     writer: &mut W,
     secret_key: SecretKey,
     server_key: PublicKey,
+    #[cfg(test)] rng_mock: Option<CryptoStepRng>,
 ) -> Result<(), Error> {
     let server_key = server_key.into();
     let secret_key = secret_key.into();
@@ -334,8 +345,19 @@ async fn write_client_key<W: AsyncWrite + Unpin>(
 
     telio_log_trace!("DERP starting with {}", PublicKey::from(public_key.clone()));
 
+    #[cfg(not(test))]
     let mut rng = rand_core::OsRng;
+    #[cfg(not(test))]
     let nonce = SalsaBox::generate_nonce(&mut rng);
+
+    #[cfg(test)]
+    let nonce = if let Some(mut rng) = rng_mock {
+        SalsaBox::generate_nonce(&mut rng)
+    } else {
+        let mut rng = rand_core::OsRng;
+        SalsaBox::generate_nonce(&mut rng)
+    };
+
     let plain_text = b"{\"version\": 2, \"meshKey\": \"\"}";
     let b = SalsaBox::new(&server_key, &secret_key);
 
@@ -419,7 +441,9 @@ async fn write_frame<W: AsyncWrite + Unpin>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::rngs::mock::StepRng;
     use rstest::*;
+    use telio_utils::test::CryptoStepRng;
 
     const KEY_MSG_SIZE: usize = 106;
 
@@ -508,13 +532,13 @@ mod tests {
         let server_key1 = SecretKey::new([1_u8; KEY_SIZE]).public();
         let secret_key2 = SecretKey::new([2_u8; KEY_SIZE]);
         let server_key2 = SecretKey::new([3_u8; KEY_SIZE]).public();
-        write_client_key(&mut buf1, secret_key1, server_key1)
+        write_client_key(&mut buf1, secret_key1, server_key1, None)
             .await
             .unwrap();
-        write_client_key(&mut buf2, secret_key1, server_key1)
+        write_client_key(&mut buf2, secret_key1, server_key1, None)
             .await
             .unwrap();
-        write_client_key(&mut buf3, secret_key2, server_key2)
+        write_client_key(&mut buf3, secret_key2, server_key2, None)
             .await
             .unwrap();
         // nonce is generated everytime write_client_key is called, therefore the result must be
@@ -525,6 +549,37 @@ mod tests {
         assert_eq!(KEY_MSG_SIZE, buf1.len());
         assert_eq!(KEY_MSG_SIZE, buf2.len());
         assert_eq!(KEY_MSG_SIZE, buf3.len());
+    }
+
+    #[rstest]
+    async fn write_client_key_example() {
+        let mut rng = CryptoStepRng(StepRng::new(0, 1));
+        let local_sk = SecretKey::gen_with(&mut rng);
+        let remote_sk = SecretKey::gen_with(&mut rng);
+        let remote_pk = remote_sk.public();
+
+        let mut buf = Vec::new();
+        write_client_key(&mut buf, local_sk, remote_pk, Some(rng))
+            .await
+            .unwrap();
+        assert_eq!(
+            buf,
+            [
+                /* ------------------------------- Frame type --------------------------------- */
+                2,
+                /* ------------------------------- Data length -------------------------------- */
+                0, 0, 0, 101,
+                /* ------------------------------- Public key --------------------------------- */
+                4, 169, 120, 250, 232, 82, 131, 158, 86, 32, 3, 111, 149, 79, 52, 15, 6, 157, 139,
+                255, 65, 61, 101, 192, 64, 124, 0, 35, 93, 255, 231, 115,
+                /* --------------------------------- Nonce ------------------------------------ */
+                8, 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0,
+                /* ---------------------------- Encrypted message ----------------------------- */
+                176, 13, 4, 61, 136, 12, 40, 67, 175, 101, 227, 169, 151, 231, 117, 12, 128, 53, 45,
+                208, 162, 172, 197, 155, 2, 55, 209, 109, 200, 166, 231, 35, 91, 43, 183, 223, 4,
+                133, 5, 254, 1, 180, 227, 41, 147
+            ]
+        );
     }
 
     #[rstest]
