@@ -449,22 +449,22 @@ def call_build(config, args):
             post(config, args)
 
 
-def darwin_build_all(debug: bool) -> None:
+def darwin_build_all(args) -> None:
     for target_os in rutils.LIPO_TARGET_OSES:
         for arch in GLOBAL_CONFIG[target_os]["archs"].keys():
             if target_os in LIBTELIO_CONFIG:
                 config = rutils.CargoConfig(
                     target_os,
                     arch,
-                    debug,
+                    args.debug,
                 )
 
-                call_build(config)
+                call_build(config, args)
 
 
 def exec_lipo(args):
     if args.build:
-        darwin_build_all(args.debug)
+        darwin_build_all(args)
 
     for target_os in rutils.LIPO_TARGET_OSES:
         dbu.lipo(
