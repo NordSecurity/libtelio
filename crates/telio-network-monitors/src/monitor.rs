@@ -4,9 +4,7 @@
 use once_cell::sync::Lazy;
 use std::io;
 use std::sync::{Arc, Mutex as StdMutex};
-use telio_utils::{
-    local_interfaces, telio_log_trace, telio_log_warn, GetIFError, GetIfAddrs, SystemGetIfAddrs,
-};
+use telio_utils::{local_interfaces, telio_log_trace, telio_log_warn, GetIFError, GetIfAddrs};
 use tokio::{sync::broadcast::Sender, task::JoinHandle};
 
 use crate::mac::setup_network_monitor;
@@ -21,14 +19,16 @@ static NETWORK_PATH_MONITOR_START: std::sync::Once = std::sync::Once::new();
 
 #[derive(Debug, Default)]
 /// Struct to monitor network
-pub struct NetworkMonitor<G: GetIfAddrs = SystemGetIfAddrs> {
+pub struct NetworkMonitor {
     nw_path_monitor_monitor_handle: Option<JoinHandle<io::Result<()>>>,
-    get_if_addr: G,
 }
 
-impl<G: GetIfAddrs + Clone> NetworkMonitor<G> {
+impl NetworkMonitor {
     /// Sets up and spawns network monitor
-    pub fn new(if_addr: G) -> Result<NetworkMonitor<G>, GetIFError> {
+    pub fn new<G>(if_addr: G) -> Result<NetworkMonitor, GetIFError>
+    where
+        G: GetIfAddrs + Clone,
+    {
         if let Ok(mut guard) = LOCAL_ADDRS_CACHE.lock() {
             *guard = local_interfaces::gather_local_interfaces(&if_addr)?;
         }
@@ -41,13 +41,14 @@ impl<G: GetIfAddrs + Clone> NetworkMonitor<G> {
 
         Ok(Self {
             nw_path_monitor_monitor_handle: None,
-            get_if_addr: if_addr,
         })
     }
 
     /// Starts Network Monitoring IP cache
-    pub fn start(&mut self) {
-        let get_if_addr = self.get_if_addr.clone();
+    pub fn start<G>(&mut self, get_if_addr: G)
+    where
+        G: GetIfAddrs + Clone,
+    {
         self.nw_path_monitor_monitor_handle = Some(tokio::spawn({
             let mut notify = PATH_CHANGE_BROADCAST.subscribe();
             async move {
@@ -72,10 +73,67 @@ impl<G: GetIfAddrs + Clone> NetworkMonitor<G> {
     }
 }
 
-impl<G: GetIfAddrs> Drop for NetworkMonitor<G> {
+impl Drop for NetworkMonitor {
     fn drop(&mut self) {
         if let Some(handle) = &self.nw_path_monitor_monitor_handle {
             handle.abort();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use telio_utils::local_interfaces::MockGetIfAddrs;
+
+    use super::*;
+    use std::net::Ipv4Addr;
+
+    #[tokio::test]
+    async fn test_path_change_notification() {
+        let mut get_if_addrs_mock = MockGetIfAddrs::new();
+        get_if_addrs_mock.expect_get().return_once(|| {
+            Ok(vec![if_addrs::Interface {
+                name: "old".to_owned(),
+                addr: if_addrs::IfAddr::V4(if_addrs::Ifv4Addr {
+                    ip: Ipv4Addr::new(10, 0, 0, 1),
+                    netmask: Ipv4Addr::new(255, 255, 255, 0),
+                    broadcast: None,
+                }),
+                index: None,
+                #[cfg(windows)]
+                adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
+            }])
+        });
+
+        let mut monitor = NetworkMonitor::new(get_if_addrs_mock).unwrap();
+        let mut get_if_addrs_mock = MockGetIfAddrs::new();
+        get_if_addrs_mock.expect_get().return_once(|| {
+            Ok(vec![if_addrs::Interface {
+                name: "new".to_owned(),
+                addr: if_addrs::IfAddr::V4(if_addrs::Ifv4Addr {
+                    ip: Ipv4Addr::new(10, 0, 0, 1),
+                    netmask: Ipv4Addr::new(255, 255, 255, 0),
+                    broadcast: None,
+                }),
+                index: None,
+                #[cfg(windows)]
+                adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
+            }])
+        });
+        monitor.start(get_if_addrs_mock);
+        {
+            let interfaces = LOCAL_ADDRS_CACHE.lock().unwrap();
+            assert!(interfaces.len() == 1);
+            assert!(interfaces[0].name == "old");
+        }
+
+        if let Err(e) = PATH_CHANGE_BROADCAST.send(()) {
+            println!("Failed to notify about changed path, error: {e}");
+        }
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+
+        let interfaces = LOCAL_ADDRS_CACHE.lock().unwrap();
+        assert!(interfaces.len() == 1);
+        assert!(interfaces[0].name == "new");
     }
 }

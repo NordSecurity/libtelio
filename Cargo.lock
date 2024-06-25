@@ -4386,6 +4386,7 @@ dependencies = [
 name = "telio-network-monitors"
 version = "0.1.0"
 dependencies = [
+ "assert_matches",
  "block",
  "dispatch",
  "if-addrs",
