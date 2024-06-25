@@ -185,12 +185,16 @@ def main():
     container_ip = sys.argv[2]
     port = int(sys.argv[3])
 
-    daemon = Pyro5.server.Daemon(host=container_ip, port=port)
-    wrapper = LibtelioWrapper(daemon)
-    daemon.register(wrapper, objectId=object_name)
+    try:
+        daemon = Pyro5.server.Daemon(host=container_ip, port=port)
+        wrapper = LibtelioWrapper(daemon)
+        daemon.register(wrapper, objectId=object_name)
 
-    daemon.requestLoop()
-    daemon.close()
+        daemon.requestLoop()
+        daemon.close()
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        print(f"libtelio_remote error: {e}")
+        raise e
 
 
 if __name__ == "__main__":
