@@ -1245,7 +1245,9 @@ impl Runtime {
                 .await;
         }
 
-        self.entities.network_monitor.start();
+        self.entities
+            .network_monitor
+            .start(telio_utils::SystemGetIfAddrs);
 
         // Start Direct entities if "direct" feature is on
         let direct = if let Some(direct) = &self.features.direct {
