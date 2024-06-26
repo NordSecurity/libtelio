@@ -273,6 +273,7 @@ impl DynamicWg {
             cfg.firewall_process_inbound_callback,
             cfg.firewall_process_outbound_callback,
             cfg.firewall_reset_connections,
+            cfg.disable_connected_socket,
         )
     }
 
