@@ -93,3 +93,10 @@ def test_telio_features():
     )
     assert firewall_features == expected_firewall
     assert firewall_features.to_json() == expected_firewall.to_json()
+
+    connected_socket_features = TelioFeatures(disable_connected_socket=True)
+    expected_connected_socket = TelioFeatures.from_json(
+        """{"is_test_env": true, "disable_connected_socket": true}"""
+    )
+    assert connected_socket_features == expected_connected_socket
+    assert connected_socket_features.to_json() == expected_connected_socket.to_json()

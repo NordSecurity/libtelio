@@ -144,3 +144,4 @@ class TelioFeatures(DataClassJsonMixin):
         )
     )
     multicast: bool = False
+    disable_connected_socket: bool = False

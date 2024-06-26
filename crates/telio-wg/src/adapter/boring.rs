@@ -34,14 +34,13 @@ impl BoringTun {
         firewall_process_inbound_callback: FirewallCb,
         firewall_process_outbound_callback: FirewallCb,
         firewall_reset_connections_callback: super::FirewallResetConnsCb,
+        disable_connected_socket: bool,
     ) -> Result<Self, AdapterError> {
+        let use_connected_socket = !disable_connected_socket;
+        telio_log_debug!("Use connected socket: {use_connected_socket}");
         let config = DeviceConfig {
             n_threads: 4,
-            use_connected_socket: cfg!(not(any(
-                target_os = "ios",
-                target_os = "macos",
-                target_os = "tvos"
-            ))),
+            use_connected_socket,
             #[cfg(target_os = "linux")]
             use_multi_queue: true,
             open_uapi_socket: false,
