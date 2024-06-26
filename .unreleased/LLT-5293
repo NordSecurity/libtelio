@@ -1,0 +1,1 @@
+Fix connected state event being thrown after peer is actually disconnected
