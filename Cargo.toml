@@ -23,6 +23,7 @@ async-trait.workspace = true
 base64.workspace = true
 crypto_box.workspace = true
 futures.workspace = true
+if-addrs.workspace = true
 ipnetwork.workspace = true
 lazy_static.workspace = true
 libc.workspace = true

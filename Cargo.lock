@@ -4315,6 +4315,7 @@ dependencies = [
  "ffi_helpers",
  "futures",
  "h2",
+ "if-addrs",
  "ipnetwork",
  "jni",
  "lazy_static",
