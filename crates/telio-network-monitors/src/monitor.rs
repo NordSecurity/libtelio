@@ -46,6 +46,7 @@ impl NetworkMonitor {
 
         #[cfg(target_os = "linux")]
         let (tx, rx) = oneshot::channel::<()>();
+        #[cfg(target_os = "linux")]
         crate::linux::setup_network_monitor(rx);
 
         Ok(Self {
