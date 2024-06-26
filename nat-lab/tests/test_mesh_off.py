@@ -4,7 +4,8 @@ import telio
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from telio import PathType, State
-from telio_features import TelioFeatures, Direct
+from telio_features import TelioFeatures, Direct, LinkDetection
+from timeouts import TEST_MESH_STATE_AFTER_DISCONNECTING_NODE_TIMEOUT
 from utils.connection_util import ConnectionTag
 from utils.ping import Ping
 
@@ -81,3 +82,56 @@ async def test_mesh_off(direct) -> None:
             await ping.wait_for_next_ping()
         async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
             await ping.wait_for_next_ping()
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(TEST_MESH_STATE_AFTER_DISCONNECTING_NODE_TIMEOUT)
+async def test_mesh_state_after_disconnecting_node() -> None:
+    async with AsyncExitStack() as exit_stack:
+        env = await setup_mesh_nodes(
+            exit_stack,
+            [
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    features=TelioFeatures(
+                        direct=Direct(providers=["stun", "local", "upnp"]),
+                        link_detection=LinkDetection(rtt_seconds=5),
+                    ),
+                ),
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    features=TelioFeatures(
+                        direct=Direct(providers=["stun", "local", "upnp"]),
+                        link_detection=LinkDetection(rtt_seconds=5),
+                    ),
+                ),
+            ],
+        )
+        alpha, beta = env.nodes
+        client_alpha, client_beta = env.clients
+        connection_alpha, connection_beta = [
+            conn.connection for conn in env.connections
+        ]
+
+        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
+            await ping.wait_for_next_ping()
+        async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
+            await ping.wait_for_next_ping()
+
+        await client_beta.stop_device()
+
+        await client_alpha.wait_for_state_peer(
+            beta.public_key, [State.Connecting], list(PathType)
+        )
+
+        with pytest.raises(asyncio.TimeoutError):
+            await client_alpha.wait_for_state_peer(
+                beta.public_key, [State.Connected], list(PathType), timeout=15
+            )
+
+        await client_beta.simple_start()
+        await client_beta.set_meshmap(env.api.get_meshmap(beta.id))
+
+        await client_alpha.wait_for_state_peer(
+            beta.public_key, [State.Connected], [PathType.Direct]
+        )

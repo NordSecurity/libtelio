@@ -9,7 +9,7 @@ use std::{
 use telio_model::{
     event::{Error as LibtelioError, ErrorCode, ErrorLevel, Event as LibtelioEvent, EventMsg, Set},
     features::FeatureLinkDetection,
-    mesh::ExitNode,
+    mesh::{ExitNode, NodeState},
 };
 use telio_sockets::{NativeProtector, SocketPool};
 use telio_utils::{
@@ -653,7 +653,7 @@ impl State {
                 let new_state = new.state();
                 let node_addresses = new.ip_addresses.clone();
 
-                let link_detection_update_result = self
+                let temp = self
                     .link_detection
                     .update(
                         key,
@@ -664,6 +664,15 @@ impl State {
                         push,
                     )
                     .await;
+
+                let link_detection_update_result = if matches!(new_state, NodeState::Connected) {
+                    temp
+                } else {
+                    LinkDetectionUpdateResult {
+                        link_state: Some(LinkState::Down),
+                        should_notify: false,
+                    }
+                };
 
                 if !old.is_same_event(new)
                     || old_state != new_state
