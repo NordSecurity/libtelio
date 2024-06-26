@@ -3,7 +3,6 @@ use std::mem;
 use libc::{bind, recvmsg, socket, AF_NETLINK, NETLINK_ROUTE, SOCK_RAW};
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
 use tokio::sync::oneshot::Receiver;
-use tokio::task::JoinHandle;
 
 use crate::monitor::PATH_CHANGE_BROADCAST;
 
