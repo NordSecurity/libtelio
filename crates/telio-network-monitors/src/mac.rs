@@ -4,9 +4,7 @@ use network_framework_sys::{
     nw_interface_get_name, nw_interface_t, nw_path_monitor_create, nw_path_monitor_set_queue,
     nw_path_monitor_start, nw_path_monitor_t, nw_path_t,
 };
-use once_cell::sync::Lazy;
 use parking_lot::Mutex;
-use std::sync::{Arc, Mutex as StdMutex};
 use std::{
     cell::RefCell,
     ffi::{c_long, c_void, CStr},
@@ -27,9 +25,6 @@ pub const DISPATCH_QUEUE_PRIORITY_BACKGROUND: c_long = -1 << 15;
 
 /// Vector containing interface names in OS order
 pub static INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER: Mutex<Vec<String>> = Mutex::new(Vec::new());
-/// Vector containing all local interfaces
-pub static LOCAL_ADDRS_CACHE: Lazy<Arc<StdMutex<Vec<if_addrs::Interface>>>> =
-    Lazy::new(|| Arc::new(StdMutex::new(Vec::new())));
 
 extern "C" {
     /// Obj-c signature:

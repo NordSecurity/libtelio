@@ -81,6 +81,8 @@ pub enum Error {
     /// Fail to get local interface
     #[error(transparent)]
     GetLocalInterfaceError(#[from] telio_utils::local_interfaces::GetIFError),
+    #[error(transparent)]
+    MutexError(#[from] anyhow::Error),
 }
 
 #[derive(PartialEq, Eq, Hash, Debug, Copy, Clone, Enum)]

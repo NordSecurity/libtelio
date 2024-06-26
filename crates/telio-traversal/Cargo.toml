@@ -14,6 +14,7 @@ igd = { version = "0.12.1", features = ["aio"], default-features = false }
 sm = "0.9.0"
 stun_codec = "0.1.13"
 
+anyhow.workspace = true
 async-trait.workspace = true
 base64.workspace = true
 boringtun.workspace = true

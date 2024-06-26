@@ -3,7 +3,6 @@ use std::mem;
 use libc::{bind, recvmsg, socket, AF_NETLINK, NETLINK_ROUTE, SOCK_RAW};
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
 use tokio::sync::oneshot::Receiver;
-use tokio::task::JoinHandle;
 
 use crate::monitor::PATH_CHANGE_BROADCAST;
 
@@ -39,7 +38,7 @@ fn open_netlink_socket() -> Result<i32, i32> {
     Ok(sockfd)
 }
 
-fn read_event(socket: i32, mut termination_channel_rx: Receiver<()>) -> JoinHandle<()> {
+fn read_event(socket: i32, mut termination_channel_rx: Receiver<()>) {
     tokio::task::spawn_blocking(move || {
         let buf = vec![0; 1024 / mem::size_of::<netlink::Struct_nlmsghdr>()];
         let mut sa = netlink::Struct_sockaddr_nl::default();
@@ -65,5 +64,5 @@ fn read_event(socket: i32, mut termination_channel_rx: Receiver<()>) -> JoinHand
                 telio_log_warn!("Failed to notify about changed path {e}");
             }
         }
-    })
+    });
 }

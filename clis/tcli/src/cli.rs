@@ -169,6 +169,8 @@ enum Cmd {
     Nat(DetectCmd),
     #[clap(subcommand)]
     Derp(DerpClientCmd),
+    #[clap(subcommand)]
+    Interface(InterfaceCmd),
     #[cfg(any(target_os = "linux", target_os = "android"))]
     #[clap(about = "Probe PMTU")]
     Pmtu {
@@ -290,6 +292,13 @@ enum DnsCmd {
 enum DetectCmd {
     #[clap(about = "Usage: nat address <IpAddr> <port>")]
     Address { stun_server: String, stun_port: u16 },
+}
+
+#[derive(Parser)]
+#[clap(about = "Get local interfaces cache")]
+enum InterfaceCmd {
+    #[clap(about = "Usage: interface get")]
+    Get,
 }
 
 #[macro_export]
@@ -438,6 +447,7 @@ impl Cli {
             Cmd::Dns(cmd) => cli_res!(res; (j self.exec_dns(cmd))),
             Cmd::Nat(cmd) => cli_res!(res; (j self.exec_nat_detect(cmd))),
             Cmd::Derp(cmd) => cli_res!(res; (j self.derp_client.exec_cmd(cmd))),
+            Cmd::Interface(cmd) => cli_res!(res; (j self.exec_local_interface(cmd))),
             Cmd::Quit => cli_res!(res; q),
             #[cfg(any(target_os = "linux", target_os = "android"))]
             Cmd::Pmtu { host } => cli_res!(res; (j self.exec_pmtu(&host))),
@@ -736,6 +746,16 @@ impl Cli {
             },
         }
 
+        res
+    }
+
+    fn exec_local_interface(&mut self, cmd: InterfaceCmd) -> Vec<Resp> {
+        let mut res = Vec::new();
+        match cmd {
+            InterfaceCmd::Get => {
+                cli_res!(res; (i "Local interfaces: {:?}", self.telio.get_interfaces()))
+            }
+        }
         res
     }
 

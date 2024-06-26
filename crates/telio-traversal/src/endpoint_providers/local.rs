@@ -4,6 +4,7 @@ use super::{
     EndpointCandidate, EndpointCandidatesChangeEvent, EndpointProvider, EndpointProviderType,
     Error, PongEvent,
 };
+use anyhow::anyhow;
 use async_trait::async_trait;
 use futures::Future;
 use std::net::SocketAddr;
@@ -14,7 +15,7 @@ use telio_network_monitors::monitor::LOCAL_ADDRS_CACHE;
 use telio_proto::{Session, WGPort};
 use telio_sockets::External;
 use telio_task::{io::chan, task_exec, BoxAction, Runtime, Task};
-use telio_utils::{interval, telio_log_debug, telio_log_info, telio_log_warn};
+use telio_utils::{interval, telio_log_debug, telio_log_error, telio_log_info, telio_log_warn};
 use telio_wg::{DynamicWg, WireGuard};
 use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
@@ -161,16 +162,20 @@ impl<T: WireGuard> State<T> {
                 }
             };
 
-            let candidates: Vec<_> = LOCAL_ADDRS_CACHE
-                .lock()
-                .unwrap()
-                .iter()
-                .map(|itf| EndpointCandidate {
-                    wg: SocketAddr::new((itf).addr.ip(), wg_port),
-                    udp: SocketAddr::new((itf).addr.ip(), udp_port),
-                })
-                .collect::<Vec<_>>()
-                .to_vec();
+            let candidates: Vec<_> = match LOCAL_ADDRS_CACHE.lock() {
+                Ok(cache) => cache
+                    .iter()
+                    .map(|itf| EndpointCandidate {
+                        wg: SocketAddr::new((itf).addr.ip(), wg_port),
+                        udp: SocketAddr::new((itf).addr.ip(), udp_port),
+                    })
+                    .collect::<Vec<_>>()
+                    .to_vec(),
+                Err(e) => {
+                    telio_log_error!("Error in getting interface cache mutex {e:?}");
+                    return Err(anyhow!("Error in getting interface cache mutex: {e}").into());
+                }
+            };
 
             if self.last_endpoint_candidates_event != candidates {
                 telio_log_debug!("published candidates: {:?}", &candidates);

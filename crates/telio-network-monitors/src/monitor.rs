@@ -3,13 +3,13 @@
 //! and update local IP address cache
 use once_cell::sync::Lazy;
 #[cfg(target_os = "linux")]
+use telio_utils::telio_log_error;
+#[cfg(target_os = "linux")]
 use tokio::sync::oneshot::{self, Sender as OneShotSender};
 
 use std::io;
 use std::sync::{Arc, Mutex as StdMutex};
-use telio_utils::{
-    local_interfaces, telio_log_error, telio_log_trace, telio_log_warn, GetIFError, GetIfAddrs,
-};
+use telio_utils::{local_interfaces, telio_log_trace, telio_log_warn, GetIFError, GetIfAddrs};
 use tokio::{sync::broadcast::Sender, task::JoinHandle};
 
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
