@@ -160,13 +160,13 @@ impl PresharedKey {
 
 impl From<crypto_box::SecretKey> for SecretKey {
     fn from(sk: crypto_box::SecretKey) -> Self {
-        Self(*sk.as_bytes())
+        Self(sk.to_bytes())
     }
 }
 
 impl From<&crypto_box::SecretKey> for SecretKey {
     fn from(sk: &crypto_box::SecretKey) -> Self {
-        Self(*sk.as_bytes())
+        Self(sk.to_bytes())
     }
 }
 
