@@ -1,16 +1,16 @@
-use std::{io, mem};
+use std::mem;
 
 use libc::{bind, recvmsg, socket, AF_NETLINK, NETLINK_ROUTE, SOCK_RAW};
-use netlink::{Struct_nlmsghdr, Struct_sockaddr_nl};
 use telio_utils::{telio_log_debug, telio_log_trace, telio_log_warn};
+use tokio::sync::oneshot::Receiver;
 use tokio::task::JoinHandle;
 
 use crate::monitor::PATH_CHANGE_BROADCAST;
 
 /// Setup network path monitor for linux
-pub fn setup_network_monitor() {
+pub fn setup_network_monitor(termination_channel_rx: Receiver<()>) {
     let sock = open_netlink_socket().unwrap();
-    read_event(sock);
+    read_event(sock, termination_channel_rx);
 }
 
 fn open_netlink_socket() -> Result<i32, i32> {
@@ -37,8 +37,8 @@ fn open_netlink_socket() -> Result<i32, i32> {
     Ok(sockfd)
 }
 
-fn read_event(socket: i32) -> JoinHandle<io::Result<()>> {
-    tokio::spawn(async move {
+fn read_event(socket: i32, mut termination_channel_rx: Receiver<()>) -> JoinHandle<()> {
+    tokio::task::spawn_blocking(move || {
         let buf = vec![0; 1024 / mem::size_of::<netlink::Struct_nlmsghdr>()];
         let mut sa = netlink::Struct_sockaddr_nl::default();
         let mut iov = libc::iovec {
@@ -55,7 +55,8 @@ fn read_event(socket: i32) -> JoinHandle<io::Result<()>> {
             msg_controllen: 0,
             msg_flags: 0,
         };
-        loop {
+
+        while termination_channel_rx.try_recv().is_err() {
             let _ = unsafe { recvmsg(socket, &mut msg, 0) };
             telio_log_trace!("Network path update notification");
             if let Err(e) = PATH_CHANGE_BROADCAST.send(()) {

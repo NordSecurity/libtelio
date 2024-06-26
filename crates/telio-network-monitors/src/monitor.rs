@@ -2,11 +2,17 @@
 //! Get notified about that network path has changed
 //! and update local IP address cache
 use once_cell::sync::Lazy;
+#[cfg(target_os = "linux")]
+use tokio::sync::oneshot::{self, Sender as OneShotSender};
+
 use std::io;
 use std::sync::{Arc, Mutex as StdMutex};
-use telio_utils::{local_interfaces, telio_log_trace, telio_log_warn, GetIFError, GetIfAddrs};
+use telio_utils::{
+    local_interfaces, telio_log_error, telio_log_trace, telio_log_warn, GetIFError, GetIfAddrs,
+};
 use tokio::{sync::broadcast::Sender, task::JoinHandle};
 
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 use crate::mac::setup_network_monitor;
 
 /// Sender to notify if there is a change in OS interface order
@@ -17,10 +23,12 @@ pub static LOCAL_ADDRS_CACHE: Lazy<Arc<StdMutex<Vec<if_addrs::Interface>>>> =
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 static NETWORK_PATH_MONITOR_START: std::sync::Once = std::sync::Once::new();
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 /// Struct to monitor network
 pub struct NetworkMonitor {
     nw_path_monitor_monitor_handle: Option<JoinHandle<io::Result<()>>>,
+    #[cfg(target_os = "linux")]
+    termination_channel_tx: Option<OneShotSender<()>>,
 }
 
 impl NetworkMonitor {
@@ -37,10 +45,13 @@ impl NetworkMonitor {
         NETWORK_PATH_MONITOR_START.call_once(setup_network_monitor);
 
         #[cfg(target_os = "linux")]
-        crate::linux::setup_network_monitor();
+        let (tx, rx) = oneshot::channel::<()>();
+        crate::linux::setup_network_monitor(rx);
 
         Ok(Self {
             nw_path_monitor_monitor_handle: None,
+            #[cfg(target_os = "linux")]
+            termination_channel_tx: Some(tx),
         })
     }
 
@@ -77,6 +88,12 @@ impl Drop for NetworkMonitor {
     fn drop(&mut self) {
         if let Some(handle) = &self.nw_path_monitor_monitor_handle {
             handle.abort();
+        }
+        #[cfg(target_os = "linux")]
+        if let Some(sender) = self.termination_channel_tx.take() {
+            if let Err(e) = sender.send(()) {
+                telio_log_error!("Unable to terminate monitor {e:?}");
+            }
         }
     }
 }
