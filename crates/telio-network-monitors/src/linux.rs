@@ -1,7 +1,7 @@
 use std::mem;
 
 use libc::{bind, recvmsg, socket, AF_NETLINK, NETLINK_ROUTE, SOCK_RAW};
-use telio_utils::{telio_log_debug, telio_log_trace, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
 use tokio::sync::oneshot::Receiver;
 use tokio::task::JoinHandle;
 
@@ -9,8 +9,10 @@ use crate::monitor::PATH_CHANGE_BROADCAST;
 
 /// Setup network path monitor for linux
 pub fn setup_network_monitor(termination_channel_rx: Receiver<()>) {
-    let sock = open_netlink_socket().unwrap();
-    read_event(sock, termination_channel_rx);
+    match open_netlink_socket() {
+        Ok(sock) => read_event(sock, termination_channel_rx),
+        Err(e) => telio_log_error!("Unable to open network monitor socket {e:?}"),
+    }
 }
 
 fn open_netlink_socket() -> Result<i32, i32> {
