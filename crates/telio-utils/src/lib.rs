@@ -46,3 +46,6 @@ pub use interval::*;
 /// Basic ICMP Pinger
 pub mod pinger;
 pub use pinger::*;
+
+/// Testing tools
+pub mod test;
