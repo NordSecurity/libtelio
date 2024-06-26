@@ -4,9 +4,7 @@ use network_framework_sys::{
     nw_interface_get_name, nw_interface_t, nw_path_monitor_create, nw_path_monitor_set_queue,
     nw_path_monitor_start, nw_path_monitor_t, nw_path_t,
 };
-use once_cell::sync::Lazy;
 use parking_lot::Mutex;
-use std::sync::{Arc, Mutex as StdMutex};
 use std::{
     cell::RefCell,
     ffi::{c_long, c_void, CStr},
