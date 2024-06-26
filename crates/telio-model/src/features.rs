@@ -549,6 +549,9 @@ pub struct Features {
     /// Multicast support
     #[serde(default)]
     pub multicast: bool,
+    /// Disable the use of connected sockets in BoringTun, could result in worse download speed
+    #[serde(default)]
+    pub disable_connected_socket: bool,
 }
 
 impl FeaturePaths {
@@ -734,6 +737,7 @@ mod tests {
         },
         pmtu_discovery: None,
         multicast: false,
+        disable_connected_socket: false,
     });
     static EXPECTED_FEATURES_WITHOUT_IS_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
         wireguard: FeatureWireguard {
@@ -791,6 +795,7 @@ mod tests {
         },
         pmtu_discovery: Some(Default::default()),
         multicast: false,
+        disable_connected_socket: false,
     });
 
     #[test]
@@ -1174,6 +1179,7 @@ mod tests {
             },
             pmtu_discovery: Some(Default::default()),
             multicast: false,
+            disable_connected_socket: false,
         };
 
         assert_eq!(from_str::<Features>(empty_json).unwrap(), empty_features);
@@ -1234,6 +1240,7 @@ mod tests {
             },
             pmtu_discovery: Default::default(),
             multicast: false,
+            disable_connected_socket: false,
         };
 
         assert_eq!(Features::default(), expected_defaults);

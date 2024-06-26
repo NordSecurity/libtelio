@@ -438,6 +438,8 @@ dictionary Features {
     FeaturePmtuDiscovery? pmtu_discovery;
     /// Multicast support
     boolean multicast;
+    /// Disable the use of connected sockets in BoringTun
+    boolean disable_connected_socket;
 };
 
 /// Configurable features for Wireguard peers
