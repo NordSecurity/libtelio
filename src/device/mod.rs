@@ -2068,6 +2068,8 @@ impl Runtime {
                     allow_incoming_connections: meshnet_peer.allow_incoming_connections,
                     allow_peer_send_files: meshnet_peer.allow_peer_send_files,
                     path: path_type,
+                    allow_multicast: meshnet_peer.allow_multicast,
+                    peer_allows_multicast: meshnet_peer.peer_allows_multicast,
                 })
             }
             (None, Some(exit_node)) => {
@@ -2090,6 +2092,8 @@ impl Runtime {
                     allow_incoming_connections: false,
                     allow_peer_send_files: false,
                     path: path_type,
+                    allow_multicast: false,
+                    peer_allows_multicast: false,
                 })
             }
             _ => None,
