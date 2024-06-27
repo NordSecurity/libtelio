@@ -37,7 +37,7 @@ impl BoringTun {
         disable_connected_socket: bool,
     ) -> Result<Self, AdapterError> {
         let use_connected_socket = !disable_connected_socket;
-        telio_log_debug!("Use connected socket = {use_connected_socket}");
+        telio_log_debug!("Use connected socket: {use_connected_socket}");
         let config = DeviceConfig {
             n_threads: 4,
             use_connected_socket,
