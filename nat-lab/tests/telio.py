@@ -24,7 +24,7 @@ from utils import asyncio_util
 from utils.connection import Connection, DockerConnection, TargetOS
 from utils.connection_util import get_libtelio_binary_path, get_uniffi_path
 from utils.output_notifier import OutputNotifier
-from utils.process import Process
+from utils.process import Process, ProcessExecError
 from utils.router import IPStack, Router, new_router
 from utils.router.linux_router import LinuxRouter, FWMARK_VALUE as LINUX_FWMARK_VALUE
 from utils.router.mac_router import MacRouter
@@ -1056,36 +1056,19 @@ class Client:
         Windows only for now
         """
         if self._connection.target_os == TargetOS.Windows:
-            output_notifier = OutputNotifier()
-            done_event = asyncio.Event()
-            done_event_str = "Get-EventLog - Done!"
-
-            async def on_stdout(stdout: str) -> None:
-                for line in stdout.splitlines():
-                    output_notifier.handle_output(line)
-
-            output_notifier.notify_output(
-                f"{done_event_str}",
-                done_event,
-            )
-
-            process = self._connection.create_process([
-                "powershell",
-            ])
-            async with process.run(
-                stdout_callback=on_stdout, stderr_callback=on_stdout
-            ):
-                await process.wait_stdin_ready()
-                await asyncio.sleep(1)
-                await process.write_stdin(
-                    "Get-EventLog -LogName Application -Newest 100 | format-table -wrap\n"
-                )
-                await process.write_stdin(
-                    "Get-EventLog -LogName System -Newest 100 | format-table -wrap\n"
-                )
-                await process.write_stdin(f"echo '{done_event_str}'\n")
-                await done_event.wait()
-                return process.get_stdout()
+            logs = ""
+            for log_name in ["Application", "System"]:
+                try:
+                    log_output = await self._connection.create_process([
+                        "powershell",
+                        "-Command",
+                        f"Get-EventLog -LogName {log_name} -Newest 100 | format-table -wrap",
+                    ]).execute()
+                    logs += log_output.get_stdout()
+                except ProcessExecError:
+                    # ignore exec error, since it happens if no events were found
+                    pass
+            return logs
         return None
 
     async def clear_system_log(self) -> None:
@@ -1094,31 +1077,12 @@ class Client:
         Windows only for now
         """
         if self._connection.target_os == TargetOS.Windows:
-            output_notifier = OutputNotifier()
-            done_event = asyncio.Event()
-            done_event_str = "Clear-EventLog - Done!"
-
-            async def on_stdout(stdout: str) -> None:
-                for line in stdout.splitlines():
-                    output_notifier.handle_output(line)
-
-            output_notifier.notify_output(
-                f"{done_event_str}",
-                done_event,
-            )
-
-            process = self._connection.create_process([
-                "powershell",
-            ])
-            async with process.run(
-                stdout_callback=on_stdout, stderr_callback=on_stdout
-            ):
-                await process.wait_stdin_ready()
-                await asyncio.sleep(1)
-                await process.write_stdin("Clear-EventLog -LogName Application\n")
-                await process.write_stdin("Clear-EventLog -LogName System\n")
-                await process.write_stdin(f"echo '{done_event_str}'\n")
-                await done_event.wait()
+            for log_name in ["Application", "System"]:
+                await self._connection.create_process([
+                    "powershell",
+                    "-Command",
+                    f"Clear-EventLog -LogName {log_name}",
+                ]).execute()
 
     async def get_log_lines(self, regex: Optional[str] = None) -> List[str]:
         """
