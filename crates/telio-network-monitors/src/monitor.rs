@@ -49,6 +49,9 @@ impl NetworkMonitor {
         #[cfg(target_os = "linux")]
         crate::linux::setup_network_monitor(rx);
 
+        #[cfg(target_os = "windows")]
+        crate::windows::setup_network_monitor();
+
         Ok(Self {
             nw_path_monitor_monitor_handle: None,
             #[cfg(target_os = "linux")]
