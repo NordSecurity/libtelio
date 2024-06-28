@@ -788,6 +788,9 @@ class Client:
     async def receive_ping(self):
         await self._write_command(["mesh", "ping"])
 
+    async def fetch_interfaces(self):
+        await self._write_command(["interface", "get"])
+
     async def connect_to_vpn(
         self,
         ip: str,
