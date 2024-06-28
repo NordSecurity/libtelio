@@ -19,14 +19,13 @@ unsafe impl Send for SafeHandle {}
 unsafe impl Sync for SafeHandle {}
 
 unsafe extern "system" fn callback(
-    caller_context: PVOID,
-    row: *mut MIB_IPINTERFACE_ROW,
-    notification_type: c_ulong,
+    _caller_context: PVOID,
+    _row: *mut MIB_IPINTERFACE_ROW,
+    _notification_type: c_ulong,
 ) {
     if let Err(e) = PATH_CHANGE_BROADCAST.send(()) {
         telio_log_warn!("Failed to notify about changed path {e}");
     }
-    telio_log_debug!("Network interface change detected.");
 }
 
 /// Method to setup network monitoring for Windows

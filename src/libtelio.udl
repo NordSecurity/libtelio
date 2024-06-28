@@ -409,7 +409,6 @@ interface Telio {
 
     /// Get last error's message length, including trailing null
     string get_last_error();
-
     [Throws=TelioError]
     boolean is_running();
     [Throws=TelioError]
