@@ -482,7 +482,7 @@ impl Config {
             firewall_process_inbound_callback: self.firewall_process_inbound_callback.clone(),
             firewall_process_outbound_callback: self.firewall_process_outbound_callback.clone(),
             firewall_reset_connections: self.firewall_reset_connections.clone(),
-            disable_connected_socket: self.disable_connected_socket
+            disable_connected_socket: self.disable_connected_socket,
         })
     }
 }
