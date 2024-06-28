@@ -5,7 +5,6 @@ import datetime
 import json
 import os
 import platform
-import random
 import re
 import shlex
 import uniffi.telio_bindings as libtelio  # type: ignore
@@ -22,7 +21,11 @@ from typing import AsyncIterator, List, Optional, Set
 from uniffi.libtelio_proxy import LibtelioProxy, ProxyConnectionError
 from utils import asyncio_util
 from utils.connection import Connection, DockerConnection, TargetOS
-from utils.connection_util import get_libtelio_binary_path, get_uniffi_path
+from utils.connection_util import (
+    execute_and_get_stdout,
+    get_libtelio_binary_path,
+    get_uniffi_path,
+)
 from utils.output_notifier import OutputNotifier
 from utils.process import Process
 from utils.router import IPStack, Router, new_router
@@ -565,13 +568,11 @@ class Client:
         host_os = platform.system()
         if host_os == "Linux":
             host_ip = container_ip
-            port = str(random.randrange(10000, 65000))
-            (host_port, container_port) = (port, port)
+            (host_port, container_port) = ("0", "0")
         elif host_os in ("Windows", "Darwin"):
             (host_port, container_port) = await self._connection.mapped_ports()
         else:
             print("Unsupported host OS")
-        object_uri = f"PYRO:{object_name}@{host_ip}:{host_port}"
         if isinstance(self.get_router(), WindowsRouter):
             python_cmd = "python"
         else:
@@ -624,6 +625,37 @@ class Client:
                             container_ip,
                             container_port,
                         ])
+
+                    if (
+                        isinstance(self.get_router(), LinuxRouter)
+                        and host_os == "Linux"
+                    ):
+                        pids = ""
+                        # Find pid of remote libtelio instance, accounting for the fact that it may take some time for it to be available
+                        while len(pids) == 0:
+                            await asyncio.sleep(0.25)
+                            pids = await execute_and_get_stdout(
+                                self._connection, ["pgrep", "-f", "libtelio_remote.py"]
+                            )
+                        pid = pids.splitlines()[0]
+                        # Get all bound sockets
+                        fds = await execute_and_get_stdout(
+                            self._connection, ["netstat", "-tulnp"]
+                        )
+                        # Get the socket address for the previously found pid
+                        port_regex = re.compile(
+                            r"([0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}:[0-9]{1,5}).*\s"
+                            + pid
+                            + "/python"
+                        )
+                        sockets = re.findall(port_regex, fds)
+                        if len(sockets) == 0:
+                            print(
+                                f"Pyro5 on node {self._node.name} has not bound any sockets"
+                            )
+                        object_uri = f"PYRO:{object_name}@{sockets[0]}"
+                    else:
+                        object_uri = f"PYRO:{object_name}@{host_ip}:{host_port}"
 
                     try:
                         self._libtelio_proxy = LibtelioProxy(
