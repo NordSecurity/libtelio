@@ -4,7 +4,6 @@ import asyncio
 import json
 import os
 import platform
-import random
 import re
 import shlex
 import uniffi.telio_bindings as libtelio  # type: ignore
@@ -521,6 +520,7 @@ class Client:
         self._quit = False
         self._start_time = datetime.now()
         self._libtelio_proxy: Optional[LibtelioProxy] = None
+        self._proxy_port = ""
         # Automatically enables IPv6 feature when the IPv6 stack is enabled
         if (
             self._node.ip_stack in (IPStack.IPv4v6, IPStack.IPv6)
@@ -546,6 +546,8 @@ class Client:
                 "task started - ",
             ]
             for line in stdout.splitlines():
+                if line.startswith("libtelio-port:"):
+                    self._proxy_port = line[len("libtelio-port:") :]
                 if not any(string in line for string in supress_print_list):
                     print(f"[{self._node.name}]: stdout: {line}")
                 if self._runtime:
@@ -567,14 +569,11 @@ class Client:
         host_os = platform.system()
         if host_os == "Linux":
             host_ip = container_ip
-            port = str(random.randrange(10000, 65000))
-            (host_port, container_port) = (port, port)
+            (host_port, container_port) = ("0", "0")
         elif host_os in ("Windows", "Darwin"):
             (host_port, container_port) = await self._connection.mapped_ports()
         else:
             raise RuntimeError(f"Unsupported host OS: {host_os}")
-
-        object_uri = f"PYRO:{object_name}@{host_ip}:{host_port}"
 
         if isinstance(self.get_router(), WindowsRouter):
             python_cmd = "python"
@@ -630,6 +629,13 @@ class Client:
                             container_ip,
                             container_port,
                         ])
+
+                    if host_os == "Linux":
+                        while len(self._proxy_port) == 0:
+                            await asyncio.sleep(0.25)
+                        object_uri = f"PYRO:{object_name}@{host_ip}:{self._proxy_port}"
+                    else:
+                        object_uri = f"PYRO:{object_name}@{host_ip}:{host_port}"
 
                     try:
                         self._libtelio_proxy = LibtelioProxy(

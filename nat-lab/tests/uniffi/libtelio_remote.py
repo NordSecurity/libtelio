@@ -189,6 +189,10 @@ def main():
 
     try:
         daemon = Pyro5.server.Daemon(host=container_ip, port=port)
+        _, port = daemon.sock.getsockname()
+        print(f"libtelio-port:{port}")
+        sys.stdout.flush()
+
         wrapper = LibtelioWrapper(daemon)
         daemon.register(wrapper, objectId=object_name)
 
