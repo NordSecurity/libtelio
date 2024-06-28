@@ -200,6 +200,7 @@ impl FromStr for AdapterType {
 }
 
 #[cfg(not(any(test, feature = "test-adapter")))]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn start(
     adapter: AdapterType,
     name: &str,
