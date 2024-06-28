@@ -24,7 +24,7 @@ from utils import asyncio_util
 from utils.connection import Connection, DockerConnection, TargetOS
 from utils.connection_util import get_libtelio_binary_path, get_uniffi_path
 from utils.output_notifier import OutputNotifier
-from utils.process import Process
+from utils.process import Process, ProcessExecError
 from utils.router import IPStack, Router, new_router
 from utils.router.linux_router import LinuxRouter, FWMARK_VALUE as LINUX_FWMARK_VALUE
 from utils.router.mac_router import MacRouter
@@ -603,6 +603,8 @@ class Client:
                 f"-f {self._telio_features.to_json()}",
             ])
 
+        await self.clear_system_log()
+
         async with self._process.run(
             stdout_callback=on_stdout, stderr_callback=on_stderr
         ):
@@ -1048,6 +1050,40 @@ class Client:
         await process.execute()
         return process.get_stdout()
 
+    async def get_system_log(self) -> Optional[str]:
+        """
+        Get the system log on the target machine
+        Windows only for now
+        """
+        if self._connection.target_os == TargetOS.Windows:
+            logs = ""
+            for log_name in ["Application", "System"]:
+                try:
+                    log_output = await self._connection.create_process([
+                        "powershell",
+                        "-Command",
+                        f"Get-EventLog -LogName {log_name} -Newest 100 | format-table -wrap",
+                    ]).execute()
+                    logs += log_output.get_stdout()
+                except ProcessExecError:
+                    # ignore exec error, since it happens if no events were found
+                    pass
+            return logs
+        return None
+
+    async def clear_system_log(self) -> None:
+        """
+        Clear the system log on the target machine
+        Windows only for now
+        """
+        if self._connection.target_os == TargetOS.Windows:
+            for log_name in ["Application", "System"]:
+                await self._connection.create_process([
+                    "powershell",
+                    "-Command",
+                    f"Clear-EventLog -LogName {log_name}",
+                ]).execute()
+
     async def get_log_lines(self, regex: Optional[str] = None) -> List[str]:
         """
         Get the tcli log as a list of strings
@@ -1105,6 +1141,8 @@ class Client:
 
         log_content = await self.get_log()
 
+        system_log_content = await self.get_system_log()
+
         if self._connection.target_os == TargetOS.Linux:
             process = self._connection.create_process(["cat", "/etc/hostname"])
             await process.execute()
@@ -1129,6 +1167,9 @@ class Client:
             encoding="utf-8",
         ) as f:
             f.write(log_content)
+            if system_log_content:
+                f.write("\n\n\n\n--- SYSTEM LOG ---\n\n")
+                f.write(system_log_content)
 
     async def save_mac_network_info(self) -> None:
         if os.environ.get("NATLAB_SAVE_LOGS") is None:
