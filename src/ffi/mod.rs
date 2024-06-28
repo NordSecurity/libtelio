@@ -391,6 +391,15 @@ pub extern "C" fn telio_start_named(
     adapter: telio_adapter_type,
     name: *const c_char,
 ) -> telio_result {
+    let sk = ffi_try!(char_ptr_to_type::<SecretKey>(private_key));
+    telio_log_info!(
+        "telio_start_named entry with instance id: {}. Public key: {:?}. Adapter: {:?}. Name: {:?}",
+        dev.id,
+        sk.public(),
+        &adapter,
+        char_ptr_to_type::<String>(name)
+    );
+
     ffi_catch_panic!({
         let mut dev = ffi_try!(dev.inner.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
 
@@ -424,6 +433,15 @@ pub extern "C" fn telio_start_with_tun(
     adapter: telio_adapter_type,
     tun: c_int,
 ) -> telio_result {
+    let sk = ffi_try!(char_ptr_to_type::<SecretKey>(private_key));
+    telio_log_info!(
+        "telio_start_with_tun entry with instance id: {}. Public key: {:?}. Adapter: {:?}. Tunnel FD: {:?}",
+        dev.id,
+        sk.public(),
+        &adapter,
+        tun
+    );
+
     ffi_catch_panic!({
         let mut dev = ffi_try!(dev.inner.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
         let private_key = ffi_try!(char_ptr_to_type::<SecretKey>(private_key));
@@ -499,6 +517,8 @@ pub extern "C" fn telio_set_private_key(dev: &telio, private_key: *const c_char)
 
 #[no_mangle]
 pub extern "C" fn telio_get_private_key(dev: &telio) -> *mut c_char {
+    telio_log_info!("telio_get_private_key entry with instance id: {}", dev.id);
+
     let dev = match dev.inner.lock() {
         Ok(dev) => dev,
         Err(err) => {
@@ -567,10 +587,6 @@ pub extern "C" fn telio_connect_to_exit_node(
     allowed_ips: *const c_char,
     endpoint: *const c_char,
 ) -> telio_result {
-    telio_log_info!(
-        "telio_connect_to_exit_node entry with instance id :{}. Public Key: {:?}. Allowed IP: {:?}. Endpoint: {:?}",
-        dev.id, char_ptr_to_type::<PublicKey>(public_key), char_ptr_to_type::<String>(allowed_ips), char_ptr_to_type::<SocketAddr>(endpoint)
-    );
     telio_connect_to_exit_node_with_id(dev, null(), public_key, allowed_ips, endpoint)
 }
 
@@ -621,6 +637,10 @@ pub extern "C" fn telio_connect_to_exit_node_with_id(
     allowed_ips: *const c_char,
     endpoint: *const c_char,
 ) -> telio_result {
+    telio_log_info!(
+        "telio_connect_to_exit_node_with_id entry with instance id: {}. Public Key: {:?}. Allowed IP: {:?}. Endpoint: {:?}",
+        dev.id, char_ptr_to_type::<PublicKey>(public_key), char_ptr_to_type::<String>(allowed_ips), char_ptr_to_type::<SocketAddr>(endpoint)
+    );
     ffi_catch_panic!({
         let dev = ffi_try!(dev.inner.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
         let identifier = if !identifier.is_null() {
@@ -719,6 +739,11 @@ pub extern "C" fn telio_connect_to_exit_node_postquantum(
     allowed_ips: *const c_char,
     endpoint: *const c_char,
 ) -> telio_result {
+    telio_log_info!(
+        "telio_connect_to_exit_node_postquantum entry with instance id: {}. Identifier: {:?}. Public Key: {:?}. Allowed IPs: {:?}. Endpoint: {:?}",
+        dev.id, char_ptr_to_type::<String>(identifier), char_ptr_to_type::<PublicKey>(public_key), char_ptr_to_type::<String>(allowed_ips), char_ptr_to_type::<SocketAddr>(endpoint)
+    );
+
     ffi_catch_panic!({
         let identifier = if !identifier.is_null() {
             let cstr = ffi_try!(unsafe { CStr::from_ptr(identifier) }
@@ -973,7 +998,7 @@ pub extern "C" fn telio_get_commit_sha() -> *mut c_char {
 
 #[no_mangle]
 pub extern "C" fn telio_get_status_map(dev: &telio) -> *mut c_char {
-    trace!("acquiring dev lock");
+    telio_log_info!("telio_get_status_map entry with instance id: {}.", dev.id);
     let dev = match dev.inner.lock() {
         Ok(dev) => dev,
         Err(err) => {
@@ -1015,6 +1040,10 @@ pub extern "C" fn telio_get_last_error(_dev: &telio) -> *mut c_char {
 #[no_mangle]
 /// For testing only.
 pub extern "C" fn telio_generate_stack_panic(dev: &telio) -> telio_result {
+    telio_log_info!(
+        "telio_generate_stack_panic entry with instance id: {}.",
+        dev.id
+    );
     ffi_catch_panic!({
         let dev = ffi_try!(dev.inner.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
 
@@ -1030,6 +1059,10 @@ pub extern "C" fn telio_generate_stack_panic(dev: &telio) -> telio_result {
 #[no_mangle]
 /// For testing only.
 pub extern "C" fn __telio_generate_thread_panic(dev: &telio) -> telio_result {
+    telio_log_info!(
+        "__telio_generate_thread_panic entry with instance id: {}.",
+        dev.id
+    );
     ffi_catch_panic!({
         let dev = ffi_try!(dev.inner.lock().map_err(|_| TELIO_RES_LOCK_ERROR));
 
