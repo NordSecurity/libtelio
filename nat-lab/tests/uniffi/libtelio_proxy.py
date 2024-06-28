@@ -2,7 +2,7 @@ import Pyro5.errors  # type:ignore
 import time
 from datetime import datetime
 from Pyro5.api import Proxy  # type: ignore
-from typing import Optional
+from typing import List, Optional
 from uniffi.telio_bindings import NatType
 
 
@@ -119,6 +119,9 @@ class LibtelioProxy:
 
     def trigger_analytics_event(self) -> None:
         self.handle_remote_error(lambda r: r.trigger_analytics_event())
+
+    def fetch_interfaces(self) -> List[str]:
+        return self.handle_remote_error(lambda r: r.fetch_interfaces())
 
     def trigger_qos_collection(self) -> None:
         self.handle_remote_error(lambda r: r.trigger_qos_collection())

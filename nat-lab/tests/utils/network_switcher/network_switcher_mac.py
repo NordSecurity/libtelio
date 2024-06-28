@@ -61,6 +61,20 @@ class NetworkSwitcherMac(NetworkSwitcher):
             ).execute()
         yield
 
+    @asynccontextmanager
+    async def add_secondary_ip(self) -> AsyncIterator:
+        await self._connection.create_process(
+            ["ip", "addr", "add", "192.168.125.21/24", "dev", "en1"],
+        ).execute()
+        yield
+
+    @asynccontextmanager
+    async def remove_secondary_ip(self) -> AsyncIterator:
+        await self._connection.create_process(
+            ["ip", "addr", "del", "192.168.125.21/24", "dev", "en1"],
+        ).execute()
+        yield
+
     async def _delete_existing_route(self) -> None:
         await self._connection.create_process(["route", "delete", "default"]).execute()
         await self._connection.create_process(

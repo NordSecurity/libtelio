@@ -21,3 +21,17 @@ class NetworkSwitcherDocker(NetworkSwitcher):
             ["/libtelio/nat-lab/bin/configure_route.sh", "secondary"]
         ).execute()
         yield
+
+    @asynccontextmanager
+    async def add_secondary_ip(self) -> AsyncIterator:
+        await self._connection.create_process(
+            ["/libtelio/nat-lab/bin/configure_route.sh", "add"]
+        ).execute()
+        yield
+
+    @asynccontextmanager
+    async def remove_secondary_ip(self) -> AsyncIterator:
+        await self._connection.create_process(
+            ["/libtelio/nat-lab/bin/configure_route.sh", "remove"]
+        ).execute()
+        yield

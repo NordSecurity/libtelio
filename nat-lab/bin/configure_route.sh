@@ -22,6 +22,12 @@ case "${1:-}" in
         ip route delete 10.0.0.0/16 || true
         ip route add 10.0.0.0/16 via $CLIENT_GATEWAY_SECONDARY dev eth1
         ;;
+    add)
+        ip addr add 192.168.125.21/24 dev eth1
+        ;;
+    remove)
+        ip addr del 192.168.125.21/24 dev eth1
+        ;;
     *)
         echo "Unrecognized parameter '${1:-}'"
         print_help

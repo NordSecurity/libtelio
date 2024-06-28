@@ -1009,6 +1009,9 @@ class Client:
     async def trigger_qos_collection(self) -> None:
         self.get_proxy().trigger_qos_collection()
 
+    async def fetch_interfaces(self) -> List[str]:
+        return self.get_proxy().fetch_interfaces()
+
     def get_endpoint_address(self, public_key: str) -> str:
         node = self.get_node_state(public_key)
         if node is None:

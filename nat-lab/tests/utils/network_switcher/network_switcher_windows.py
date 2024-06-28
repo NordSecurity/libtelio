@@ -168,6 +168,14 @@ class NetworkSwitcherWindows(NetworkSwitcher):
             # await self._enable_management_interface()
             pass
 
+    @asynccontextmanager
+    async def add_secondary_ip(self) -> AsyncIterator:
+        yield
+
+    @asynccontextmanager
+    async def remove_secondary_ip(self) -> AsyncIterator:
+        yield
+
     async def _delete_existing_route(self) -> None:
         # Deleting routes by interface name instead of network destination (0.0.0.0/0) makes
         # it possible to have multiple default routes at the same time: first default route

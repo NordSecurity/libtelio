@@ -164,6 +164,8 @@ pub enum Error {
     PingerReceiveUnexpected,
     #[error(transparent)]
     NetworkMonitor(#[from] telio_utils::GetIFError),
+    #[error(transparent)]
+    MutexError(#[from] anyhow::Error),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -781,9 +783,13 @@ impl Device {
         }
     }
 
-    pub fn get_interfaces(&self) -> Vec<if_addrs::Interface> {
+    pub fn fetch_interfaces(&self) -> Vec<IpAddr> {
         match LOCAL_ADDRS_CACHE.lock() {
-            Ok(cache) => (*cache).clone(),
+            Ok(cache) => (*cache)
+                .iter()
+                .map(|iface| iface.addr.ip())
+                .collect::<Vec<_>>()
+                .clone(),
             Err(e) => {
                 telio_log_warn!("Error in getting interface cache mutex {e:?}");
                 Vec::new()
