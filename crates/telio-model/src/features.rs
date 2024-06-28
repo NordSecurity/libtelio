@@ -994,6 +994,7 @@ mod tests {
             },
             pmtu_discovery: Some(Default::default()),
             multicast: false,
+            disable_connected_socket: false,
         };
 
         let empty_or_no_qos_features = Features {
@@ -1030,6 +1031,7 @@ mod tests {
             },
             pmtu_discovery: Some(Default::default()),
             multicast: false,
+            disable_connected_socket: false,
         };
 
         let disabled_qos_features = Features {
@@ -1061,6 +1063,7 @@ mod tests {
             },
             pmtu_discovery: Some(Default::default()),
             multicast: false,
+            disable_connected_socket: false,
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
@@ -1120,6 +1123,7 @@ mod tests {
             },
             pmtu_discovery: Some(Default::default()),
             multicast: false,
+            disable_connected_socket: false,
         };
 
         let empty_features = Features {
@@ -1145,6 +1149,7 @@ mod tests {
             },
             pmtu_discovery: Some(Default::default()),
             multicast: false,
+            disable_connected_socket: false,
         };
 
         assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
