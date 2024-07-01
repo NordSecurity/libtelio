@@ -218,6 +218,7 @@ impl DynamicWg {
     ///             firewall_process_outbound_callback:
     ///                 Some(Arc::new(firewall_filter_outbound_packets)),
     ///             firewall_reset_connections: None,
+    ///             disable_connected_socket: false,
     ///         },
     ///         None,
     ///     );
