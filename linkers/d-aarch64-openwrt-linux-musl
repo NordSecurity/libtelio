@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euxo pipefail
+
+# This forces export of needed binding for Java
+LINKER=$(basename $0)
+LINKER=${LINKER#"d-"}
+ARGS=$@
+
+while (( "$#" )); do
+	if [[ $1 == *"-Wl,--version-script="* && ! $ARGS =~ -o.*librustls_platform_verifier.* ]]; then
+		VERSION=${1#"-Wl,--version-script="}
+		SED_ARGS='s/global:/global:\n    _wrap*;\n/'
+		if [ "$(uname)" != "Darwin" ]; then
+			sed -i "$SED_ARGS" "$VERSION"
+		else
+			sed -i '' "$SED_ARGS" "$VERSION"
+		fi
+		break
+	fi
+
+	shift
+done
+
+ARGS="${ARGS//-lgo_wrap/-Wl,--whole-archive -lgo_wrap -Wl,--no-whole-archive}"
+
+exec $LINKER $ARGS

@@ -1,11 +1,16 @@
+### v4.3.5
+### **Bravas**
+---
+* LLT-5325: Add openwrt aarch64 and x86_64 linkers
+
+<br>
+
 ### v4.3.4
 ### **Bravas**
 ---
 * LLT-5359: Expand logging to help catch DNS failures on Android
 
 <br>
-
-
 
 ### v4.3.3
 ### **Bravas**
