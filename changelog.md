@@ -1,3 +1,12 @@
+### v4.3.4
+### **Bravas**
+---
+* LLT-5359: Expand logging to help catch DNS failures on Android
+
+<br>
+
+
+
 ### v4.3.3
 ### **Bravas**
 ---

@@ -9,7 +9,9 @@ vulnerability = "deny"
 unmaintained = "warn"
 yanked = "warn"
 notice = "warn"
-ignore = []
+ignore = [
+    { id = "RUSTSEC-2024-0344", reason = "This is temporary ignore untill we get rid of this dependency" },
+]
 
 
 [licenses]

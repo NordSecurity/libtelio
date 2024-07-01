@@ -218,6 +218,10 @@ impl Authority for ForwardAuthority {
         let name: LowerName = name.clone();
         let resolve = self.resolver.lookup(name, rtype).await;
 
+        if resolve.is_err() {
+            telio_log_warn!("DNS name resolution failed with {:?}", resolve);
+        }
+
         resolve
             .map(ForwardLookup)
             .map_err(|code| match code.kind() {
