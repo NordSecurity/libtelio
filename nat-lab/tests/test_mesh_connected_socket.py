@@ -18,7 +18,7 @@ from utils.ping import Ping
 async def test_mesh_connected_socket(disable_connected_socket) -> None:
     async with AsyncExitStack() as exit_stack:
         features = TelioFeatures(
-            direct=Direct(providers=["stun", "local", "upnp"]),
+            direct=Direct(providers=["local"]),
             disable_connected_socket=disable_connected_socket,
         )
         env = await setup_mesh_nodes(
@@ -26,12 +26,12 @@ async def test_mesh_connected_socket(disable_connected_socket) -> None:
             [
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    adapter_type=telio.AdapterType.LinuxNativeWg,
+                    adapter_type=telio.AdapterType.BoringTun,
                     features=features,
                 ),
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    adapter_type=telio.AdapterType.LinuxNativeWg,
+                    adapter_type=telio.AdapterType.BoringTun,
                     features=features,
                 ),
             ],
