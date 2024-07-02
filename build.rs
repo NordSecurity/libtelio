@@ -1,7 +1,27 @@
 use anyhow::Result;
-use std::env;
+use std::{env, path::Path};
 
 fn build() -> Result<cc::Build> {
+    if !env::var("GITLAB_CI")
+        .or(env::var("GITHUB_ACTIONS"))
+        .is_ok_and(|value| value == "true")
+    {
+        println!("cargo:rerun-if-changed=.prepared_llt_secrets");
+        println!("cargo:rerun-if-env-changed=BYPASS_LLT_SCAN");
+
+        // Check for sec scan
+        let prepared_path = Path::new(".prepared_llt_secrets");
+        #[allow(clippy::panic)]
+        if !prepared_path.is_file() {
+            match env::var("BYPASS_LLT_SECRETS") {
+                Ok(_) => println!("cargo:warning=BYPASS_LLT_SCAN IS SET, COMMIT CAREFULLY!!"),
+                Err(_) => {
+                    panic!("Hooks not found, either run checkout scripts or run with BYPASS_LLT_SECRETS environment variable set");
+                }
+            }
+        }
+    }
+
     let target_os = env::var("CARGO_CFG_TARGET_OS")?;
 
     let mut build = cc::Build::new();

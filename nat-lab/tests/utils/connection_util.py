@@ -204,7 +204,10 @@ async def new_connection_raw(tag: ConnectionTag) -> AsyncIterator[Connection]:
     if tag in DOCKER_SERVICE_IDS:
         async with Docker() as docker:
             async with container_util.get(docker, container_id(tag)) as connection:
-                yield connection
+                try:
+                    yield connection
+                finally:
+                    pass
 
     elif tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
         async with windows_vm_util.new_connection(LAN_ADDR_MAP[tag]) as connection:
@@ -246,12 +249,15 @@ async def new_connection_manager_by_tag(
                     async with ConnectionTracker(
                         gw_connection, conn_tracker_config
                     ).run() as conn_tracker:
-                        yield ConnectionManager(
-                            connection,
-                            gw_connection,
-                            network_switcher,
-                            conn_tracker,
-                        )
+                        try:
+                            yield ConnectionManager(
+                                connection,
+                                gw_connection,
+                                network_switcher,
+                                conn_tracker,
+                            )
+                        finally:
+                            pass
             else:
                 async with ConnectionTracker(
                     connection, conn_tracker_config
