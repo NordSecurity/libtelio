@@ -148,7 +148,7 @@ impl LinkDetectionEnabled {
 
         if let Some(state) = self.peers.get_mut(public_key) {
             let ping_enabled = self.enhanced_detection.is_some();
-            let result = state.update(rx_bytes, tx_bytes, node_state, self.rtt, ping_enabled);
+            let result = state.update(rx_bytes, tx_bytes, self.rtt, ping_enabled);
 
             if ping_enabled && result.should_ping {
                 if let Err(e) = self.ping_channel.send(node_addresses).await {
@@ -341,17 +341,9 @@ impl State {
         &mut self,
         rx_bytes: Option<u64>,
         tx_bytes: Option<u64>,
-        node_state: NodeState,
         rtt: Duration,
         ping_enabled: bool,
     ) -> StateUpdateResult {
-        // Guard if node_state is not connected
-        // self -> new with down and return
-        if !matches!(node_state, NodeState::Connected) {
-            *self = State::new(rx_bytes, tx_bytes, node_state);
-            return Self::build_result(StateDecision::NoAction, LinkState::Down);
-        }
-
         let new_rx = rx_bytes.unwrap_or_default();
         let new_tx = tx_bytes.unwrap_or_default();
         self.stats.update(new_rx, new_tx);
@@ -594,18 +586,6 @@ mod tests {
         assert!(matches!(up.variant, StateVariant::Up));
     }
 
-    #[test]
-    fn test_state_update_guard() {
-        let mut state = State {
-            stats: BytesAndTimestamps::new(None, None),
-            variant: StateVariant::Up,
-        };
-
-        state.update(None, None, NodeState::Connecting, ONE_SECOND, false);
-
-        assert!(matches!(state.variant, StateVariant::Down));
-    }
-
     #[tokio::test(start_paused = true)]
     async fn test_state_transitions_from_down() {
         let mut state = State {
@@ -617,16 +597,16 @@ mod tests {
         time::advance(Duration::from_secs(20)).await;
 
         // Update with data send and no response
-        state.update(Some(0), Some(1), NodeState::Connected, ONE_SECOND, false);
+        state.update(Some(0), Some(1), ONE_SECOND, false);
         assert!(matches!(state.variant, StateVariant::Down));
 
         // Let one more update call and second to pass
         time::advance(ONE_SECOND).await;
-        state.update(Some(0), Some(1), NodeState::Connected, ONE_SECOND, false);
+        state.update(Some(0), Some(1), ONE_SECOND, false);
 
         // Update with response
         time::advance(ONE_SECOND).await;
-        state.update(Some(1), Some(1), NodeState::Connected, ONE_SECOND, false);
+        state.update(Some(1), Some(1), ONE_SECOND, false);
         assert!(matches!(state.variant, StateVariant::Up));
     }
 
@@ -640,12 +620,12 @@ mod tests {
         time::advance(ONE_SECOND).await;
 
         // Send some data to increase tx timestamp
-        state.update(Some(0), Some(1), NodeState::Connected, ONE_SECOND, false);
+        state.update(Some(0), Some(1), ONE_SECOND, false);
         assert!(matches!(state.variant, StateVariant::Up));
 
         // Wait with no response
         time::advance(WG_KEEPALIVE).await;
-        state.update(Some(0), Some(2), NodeState::Connected, ONE_SECOND, false);
+        state.update(Some(0), Some(2), ONE_SECOND, false);
         assert!(matches!(state.variant, StateVariant::PossibleDown { .. }));
     }
 
@@ -669,15 +649,15 @@ mod tests {
         };
 
         time::advance(ONE_SECOND).await;
-        state.update(Some(0), Some(1), NodeState::Connected, ONE_SECOND, false);
+        state.update(Some(0), Some(1), ONE_SECOND, false);
         assert!(matches!(state.variant, StateVariant::PossibleDown { .. }));
 
         time::advance(ONE_SECOND).await;
-        state.update(Some(0), Some(1), NodeState::Connected, ONE_SECOND, false);
+        state.update(Some(0), Some(1), ONE_SECOND, false);
         assert!(matches!(state.variant, StateVariant::PossibleDown { .. }));
 
         time::advance(ONE_SECOND).await;
-        state.update(Some(0), Some(1), NodeState::Connected, ONE_SECOND, false);
+        state.update(Some(0), Some(1), ONE_SECOND, false);
         assert!(matches!(state.variant, StateVariant::Down));
     }
 
@@ -701,7 +681,7 @@ mod tests {
         };
 
         // Receive some data
-        state.update(Some(1), Some(1), NodeState::Connected, ONE_SECOND, false);
+        state.update(Some(1), Some(1), ONE_SECOND, false);
         assert!(matches!(state.variant, StateVariant::Up));
     }
 
