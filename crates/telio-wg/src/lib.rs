@@ -12,7 +12,16 @@ pub mod uapi;
 
 mod link_detection;
 
+use telio_model::PublicKey;
+
 pub use crate::{
     adapter::{Adapter, AdapterType, Error, FirewallCb, Tun},
     wg::*,
 };
+
+/// Event used for triggering connections downgrade
+#[derive(Clone, Default)]
+pub struct DowngradeEvent {
+    /// The list of peers proposed for downgrade
+    pub to_be_downgraded: Vec<PublicKey>,
+}

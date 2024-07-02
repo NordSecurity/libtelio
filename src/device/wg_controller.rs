@@ -943,12 +943,26 @@ fn peer_state(
         None => return PeerState::Disconnected,
     };
 
-    let has_contact = time_since_last_rx < &peer_connectivity_timeout;
     let is_proxying = peer
         .endpoint
         .map(|ep| proxy_endpoints.contains(&ep))
         .unwrap_or_default();
     let is_in_upgrade_window = time_since_last_endpoint_change < &peer_upgrade_window;
+
+    let has_contact = if requested_state.use_link_detection_for_downgrade {
+        if time_since_last_rx > &Duration::from_secs(180) {
+            // Safety duration
+            false
+        } else if requested_state.down_connections.contains(&peer.public_key) && !is_proxying {
+            // If link detection reported link state down and path is direct
+            false
+        } else {
+            true
+        }
+    } else {
+        // Use old keepalive method
+        time_since_last_rx < &peer_connectivity_timeout
+    };
 
     match (has_contact, is_proxying, is_in_upgrade_window) {
         (false, _, _) => PeerState::Disconnected,

@@ -32,7 +32,7 @@ use crate::{
     adapter::{self, Adapter, AdapterType, Error, FirewallResetConnsCb, Tun},
     link_detection::{LinkDetection, LinkDetectionUpdateResult},
     uapi::{self, AnalyticsEvent, Cmd, Event, Interface, Peer, PeerState, Response},
-    FirewallCb,
+    DowngradeEvent, FirewallCb,
 };
 
 use std::{collections::HashSet, future::Future, io, sync::Arc, time::Duration};
@@ -113,6 +113,9 @@ pub struct Io {
     pub analytics_tx: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
     /// Channel to transmit event to registered event callback
     pub libtelio_wide_event_publisher: Option<mc_chan::Tx<Box<LibtelioEvent>>>,
+    /// Channel to transmit the list of peers that are detected with LinkState::Down
+    /// by the LinkDetection mechanism
+    pub downgrade_event_publisher: Tx<Box<DowngradeEvent>>,
 }
 
 struct State {
@@ -131,6 +134,8 @@ struct State {
 
     // Link detection mechanism
     link_detection: LinkDetection,
+    should_emit_downgrade_events: bool,
+    downgrade_tx: Tx<Box<DowngradeEvent>>,
 
     libtelio_event: Option<mc_chan::Tx<Box<LibtelioEvent>>>,
 }
@@ -199,12 +204,14 @@ impl DynamicWg {
     ///     };
     ///
     ///     let chan = Chan::default();
+    ///     let chan2 = Chan::default();
     ///     let socket_pool = Arc::new(SocketPool::new(MockProtector::default()));
     ///     let wireguard_interface = DynamicWg::start(
     ///         Io {
     ///             events: chan.tx,
     ///             analytics_tx: None,
     ///             libtelio_wide_event_publisher: None,
+    ///             downgrade_event_publisher: chan2.tx,
     ///         },
     ///         Config {
     ///             adapter: AdapterType::default(),
@@ -243,7 +250,8 @@ impl DynamicWg {
         #[cfg(unix)] cfg: Config,
     ) -> Self {
         let interval = interval(Duration::from_millis(POLL_MILLIS));
-
+        let should_emit_downgrade_events: bool =
+            link_detection.map(|f| f.use_for_downgrade).unwrap_or(false);
         Self {
             task: Task::start(State {
                 #[cfg(unix)]
@@ -256,6 +264,8 @@ impl DynamicWg {
                 analytics_tx: io.analytics_tx,
                 uapi_fail_counter: 0,
                 link_detection: LinkDetection::new(link_detection),
+                should_emit_downgrade_events,
+                downgrade_tx: io.downgrade_event_publisher,
                 libtelio_event: io.libtelio_wide_event_publisher,
             }),
         }
@@ -646,6 +656,7 @@ impl State {
             }
         }
 
+        let mut downgrade_event = DowngradeEvent::default();
         // Check for updates, and notify
         for key in &diff_keys.update_keys {
             if let (Some(old), Some(new)) = (from.peers.get(key), to.peers.get(key)) {
@@ -677,7 +688,21 @@ impl State {
                     )
                     .await?;
                 }
+
+                if self.should_emit_downgrade_events
+                    && link_detection_update_result.should_notify
+                    && link_detection_update_result.link_state == Some(LinkState::Down)
+                {
+                    downgrade_event.to_be_downgraded.push(*key);
+                }
             }
+        }
+
+        if self.should_emit_downgrade_events && !downgrade_event.to_be_downgraded.is_empty() {
+            self.downgrade_tx
+                .send(Box::new(downgrade_event))
+                .await
+                .map_err(|_| Error::InternalError("Failed to send downgrade event"))?;
         }
 
         Ok(())
@@ -1045,6 +1070,7 @@ pub mod tests {
         pub event: Rx<Box<Event>>,
         pub analytics: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
         pub adapter: Arc<Mutex<MockAdapter>>,
+        pub donwgrade: Rx<Box<DowngradeEvent>>,
         #[cfg(test)]
         pub wg: DynamicWg,
         #[cfg(not(test))]
@@ -1054,7 +1080,7 @@ pub mod tests {
     pub async fn setup(#[cfg(all(not(test), feature = "test-adapter"))] cfg: Config) -> Env {
         let events_ch = Chan::default();
         let analytics_ch = Some(McChan::default().tx);
-
+        let downgrade_ch = Chan::default();
         let adapter = Arc::new(Mutex::new(MockAdapter::new()));
 
         adapter
@@ -1075,6 +1101,7 @@ pub mod tests {
                 events: events_ch.tx.clone(),
                 analytics_tx: analytics_ch.clone(),
                 libtelio_wide_event_publisher: None,
+                downgrade_event_publisher: downgrade_ch.tx.clone(),
             },
             Box::new(adapter.clone()),
             None,
@@ -1088,6 +1115,7 @@ pub mod tests {
 
         Env {
             event: events_ch.rx,
+            donwgrade: downgrade_ch.rx,
             analytics: analytics_ch,
             adapter,
             #[cfg(not(test))]
