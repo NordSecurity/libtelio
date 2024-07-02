@@ -53,7 +53,8 @@ cc.workspace = true
 [target.'cfg(windows)'.dependencies]
 ipnet.workspace = true
 sha2.workspace = true
-winapi = { workspace = true, features = ["nldef"] }
+winapi = { workspace = true, features = ["nldef", "winsvc"] }
+widestring = "1.1.0"
 
 wireguard-nt = { git = "https://github.com/NordSecurity/wireguard-nt-rust-wrapper", tag = "v1.0.4" }
 
