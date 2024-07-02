@@ -493,3 +493,9 @@ async def remove_traffic_control_rules(connection):
         ]).execute()
     except:
         pass
+
+
+async def execute_and_get_stdout(connection, cmd: List[str]) -> str:
+    proc = connection.create_process(cmd)
+    await proc.execute()
+    return proc.get_stdout()
