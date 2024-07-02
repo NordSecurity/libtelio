@@ -33,6 +33,9 @@ pub enum Error {
     /// Pinger errors
     #[error(transparent)]
     PingerError(#[from] SurgeError),
+    /// Pinger creation error
+    #[error("Pinger creation for {0:?} error: {1}")]
+    PingerCreationError(surge_ping::ICMP, std::io::Error),
     // Target error
     #[error(transparent)]
     DualTargetError(#[from] dual_target::DualTargetError),
@@ -60,8 +63,10 @@ pub struct SessionKeeper {
 impl SessionKeeper {
     pub fn start(sock_pool: Arc<SocketPool>) -> Result<Self> {
         let (client_v4, client_v6) = (
-            PingerClient::new(&Self::make_builder(ICMP::V4).build())?,
-            PingerClient::new(&Self::make_builder(ICMP::V6).build())?,
+            PingerClient::new(&Self::make_builder(ICMP::V4).build())
+                .map_err(|e| Error::PingerCreationError(ICMP::V4, e))?,
+            PingerClient::new(&Self::make_builder(ICMP::V6).build())
+                .map_err(|e| Error::PingerCreationError(ICMP::V6, e))?,
         );
 
         sock_pool.make_internal(client_v4.get_socket().get_native_sock())?;
