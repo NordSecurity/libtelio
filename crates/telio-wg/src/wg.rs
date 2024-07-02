@@ -103,6 +103,8 @@ pub struct Config {
     /// Callback of firewall to create connection reset packets
     /// for all active connections
     pub firewall_reset_connections: FirewallResetConnsCb,
+    /// Disable connected sockets in BoringTun
+    pub disable_connected_socket: bool,
 }
 
 /// Events and analytics transmission channels
@@ -216,6 +218,7 @@ impl DynamicWg {
     ///             firewall_process_outbound_callback:
     ///                 Some(Arc::new(firewall_filter_outbound_packets)),
     ///             firewall_reset_connections: None,
+    ///             disable_connected_socket: false,
     ///         },
     ///         None,
     ///     );
@@ -271,6 +274,7 @@ impl DynamicWg {
             cfg.firewall_process_inbound_callback,
             cfg.firewall_process_outbound_callback,
             cfg.firewall_reset_connections,
+            cfg.disable_connected_socket,
         )
     }
 
@@ -479,6 +483,7 @@ impl Config {
             firewall_process_inbound_callback: self.firewall_process_inbound_callback.clone(),
             firewall_process_outbound_callback: self.firewall_process_outbound_callback.clone(),
             firewall_reset_connections: self.firewall_reset_connections.clone(),
+            disable_connected_socket: self.disable_connected_socket,
         })
     }
 }
@@ -993,6 +998,7 @@ pub mod tests {
                 firewall_process_inbound_callback: Default::default(),
                 firewall_process_outbound_callback: Default::default(),
                 firewall_reset_connections: None,
+                disable_connected_socket: false,
             })
         }
     }
