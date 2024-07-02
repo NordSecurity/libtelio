@@ -9,12 +9,12 @@ publish = false
 [dependencies]
 bitflags = { version = "1.3.2" }
 histogram = "0.6.9"
-md5 = { default-features = false, version = "0.7.0" }
 csv = "1.1"
 
 async-trait.workspace = true
 crypto_box.workspace = true
 futures.workspace = true
+md5.workspace = true
 mockall = { workspace = true, optional = true }
 nat-detect.workspace = true
 rand.workspace = true
