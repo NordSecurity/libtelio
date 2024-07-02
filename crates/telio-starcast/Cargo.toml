@@ -8,12 +8,31 @@ publish = false
 
 [dependencies]
 pnet_packet.workspace = true
+tokio = { workspace = true, features = ["rt", "net", "sync", "macros"] }
 tracing.workspace = true
+boringtun.workspace = true
+x25519-dalek.workspace = true
+base64.workspace = true
+ipnetwork.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
 
 telio-utils.workspace = true
+telio-crypto.workspace = true
+telio-sockets.workspace = true
+telio-task.workspace = true
+telio-wg.workspace = true
+telio-proto.workspace = true
 
 [dev-dependencies]
 sn_fake_clock.workspace = true
 rand.workspace = true
+telio-test.workspace = true
 
 telio-utils = { workspace = true, features = ["sn_fake_clock"] }
+
+[features]
+default = []
+# Compile task crate for testing
+test-util = []
