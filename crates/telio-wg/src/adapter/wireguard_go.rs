@@ -5,6 +5,9 @@ use wg_go_rust_wrapper::{
     wg_go_stop, CallWindowsStaticGoRuntimeInit,
 };
 
+#[cfg(windows)]
+use crate::windows::service;
+
 pub struct WireguardGo {
     handle: i32,
 }
@@ -27,6 +30,9 @@ pub enum Error {
 
     #[error("failed to get wireguard-go fd: {0}")]
     FailedToGetWgSocket(String),
+
+    #[error("wintun driver error")]
+    Wintun,
 }
 
 unsafe extern "C" fn call_log(_ctx: *mut c_void, l: c_int, msg: *const c_char) {
@@ -63,7 +69,7 @@ impl WireguardGo {
             CallWindowsStaticGoRuntimeInit();
         }
 
-        let handle = unsafe {
+        let start_wg_go = || unsafe {
             match native_tun {
                 #[cfg(unix)]
                 Some(tun) => wg_go_start_with_tun(tun as i32, wg_go_log_cb { ctx, cb: call_log }),
@@ -75,6 +81,18 @@ impl WireguardGo {
                 ),
             }
         };
+
+        let mut handle = start_wg_go();
+
+        #[cfg(windows)]
+        if handle < 0 {
+            // Check, if wintun service is running and try again
+            if !service::wait_for_service("Wintun", service::DEFAULT_SERVICE_WAIT_TIMEOUT) {
+                return Err(AdapterError::WireguardGo(Error::Wintun));
+            }
+
+            handle = start_wg_go();
+        }
 
         if handle < 0 {
             return Err(AdapterError::WireguardGo(Error::FailedToStart(handle)));

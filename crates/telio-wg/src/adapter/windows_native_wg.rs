@@ -1,6 +1,8 @@
 use super::{Adapter, Error as AdapterError, Tun as NativeTun};
 use crate::uapi::{Cmd, Cmd::Get, Cmd::Set, Interface, Peer, Response};
 #[cfg(windows)]
+use crate::windows::service;
+#[cfg(windows)]
 use crate::windows::tunnel::interfacewatcher::InterfaceWatcher;
 use async_trait::async_trait;
 #[cfg(windows)]
@@ -139,9 +141,19 @@ impl WindowsNativeWg {
         let dll_path = "wireguard.dll";
         let wg_dev = Self::create(pool, name, dll_path)?;
         telio_log_info!("Adapter '{}' created successfully", name);
-        wg_dev
+        if !service::wait_for_service("WireGuard", service::DEFAULT_SERVICE_WAIT_TIMEOUT) {
+            return Err(AdapterError::WindowsNativeWg(Error::Fail(
+                "WireGuard service not running".to_string(),
+            )));
+        }
+        if !wg_dev
             .adapter
-            .set_logging(wireguard_nt::AdapterLoggingLevel::OnWithPrefix);
+            .set_logging(wireguard_nt::AdapterLoggingLevel::OnWithPrefix)
+        {
+            return Err(AdapterError::WindowsNativeWg(Error::Fail(
+                "Failed to set logging for adapter".to_string(),
+            )));
+        }
         if !wg_dev.adapter.up() {
             return Err(AdapterError::WindowsNativeWg(Error::Fail(
                 "Failed to start adapter".to_string(),
