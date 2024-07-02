@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 use std::slice::Windows;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 use std::{mem, option, result};
 use telio_utils::{
     telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn,
@@ -14,6 +15,31 @@ use telio_utils::{
 #[cfg(windows)]
 use wireguard_nt::{self, set_logger, SetInterface, SetPeer};
 use wireguard_uapi::xplatform;
+
+use std::ptr::null_mut;
+// use windows::Win32::System::Services::{
+//     OpenSCManagerW, OpenServiceW, QueryServiceStatus, SC_HANDLE, SC_MANAGER_CONNECT,
+//     SERVICE_QUERY_STATUS, SERVICE_STATUS,
+// };
+use widestring::U16CString;
+use winapi::{
+    ctypes::c_void,
+    shared::{
+        minwindef::{DWORD, LPDWORD},
+        ntdef::NULL,
+    },
+    um::{
+        errhandlingapi::GetLastError,
+        winbase::LocalFree,
+        winsvc::{
+            CloseServiceHandle, ControlService, CreateServiceW, DeleteService, OpenSCManagerW,
+            OpenServiceW, QueryServiceConfigW, QueryServiceStatus, StartServiceW,
+            SC_MANAGER_CONNECT, SC_MANAGER_CREATE_SERVICE, SC_MANAGER_ENUMERATE_SERVICE,
+            SC_MANAGER_QUERY_LOCK_STATUS, SERVICE_CONTROL_STOP, SERVICE_QUERY_CONFIG,
+            SERVICE_QUERY_STATUS, SERVICE_START, SERVICE_STOP,
+        },
+    },
+};
 
 /// Telio wrapper around wireguard-nt
 #[cfg(windows)]
@@ -139,9 +165,19 @@ impl WindowsNativeWg {
         let dll_path = "wireguard.dll";
         let wg_dev = Self::create(pool, name, dll_path)?;
         telio_log_info!("Adapter '{}' created successfully", name);
-        wg_dev
+        if !Self::wait_for_service(Duration::from_secs(5)) {
+            return Err(AdapterError::WindowsNativeWg(Error::Fail(
+                "WireGuard service not running".to_string(),
+            )));
+        }
+        if !wg_dev
             .adapter
-            .set_logging(wireguard_nt::AdapterLoggingLevel::OnWithPrefix);
+            .set_logging(wireguard_nt::AdapterLoggingLevel::OnWithPrefix)
+        {
+            return Err(AdapterError::WindowsNativeWg(Error::Fail(
+                "Failed to set logging for adapter".to_string(),
+            )));
+        }
         if !wg_dev.adapter.up() {
             return Err(AdapterError::WindowsNativeWg(Error::Fail(
                 "Failed to start adapter".to_string(),
@@ -174,6 +210,68 @@ impl WindowsNativeWg {
             } else {
                 telio_log_info!("wg-nt: net cfg already cleaned up");
             }
+        }
+    }
+
+    fn wait_for_service(timeout: Duration) -> bool {
+        let start = Instant::now();
+
+        while start.elapsed() < timeout {
+            match Self::is_service_running() {
+                Ok(res) => {
+                    return true;
+                }
+                Err(err) => {
+                    telio_log_info!("Failed to check service status: {:?}", err);
+                }
+            }
+        }
+
+        false
+    }
+
+    fn is_service_running() -> Result<u32, u32> {
+        let service_name = U16CString::from_str("WireGuard").unwrap_or_default();
+
+        unsafe {
+            // Open a handle to the Service Control Manager
+            let sc_manager = OpenSCManagerW(null_mut(), null_mut(), SC_MANAGER_CONNECT);
+
+            if sc_manager.is_null() {
+                telio_log_info!("OpenSCManagerW failed");
+                return Err(GetLastError() as u32);
+            }
+
+            // Open a handle to the service
+            let service = OpenServiceW(sc_manager, service_name.as_ptr(), SERVICE_QUERY_STATUS);
+
+            if service.is_null() {
+                telio_log_info!("OpenServiceW failed");
+                return Err(GetLastError() as u32);
+            }
+
+            // Query the service status
+            let mut status = std::mem::zeroed();
+            let result = QueryServiceStatus(service, &mut status);
+
+            if result == 0 {
+                telio_log_info!("QueryServiceStatus failed");
+                return Err(GetLastError() as u32);
+            }
+
+            // Check the current state
+            match status.dwCurrentState {
+                1 => telio_log_info!("The service is stopped"),
+                2 => telio_log_info!("The service is starting"),
+                3 => telio_log_info!("The service is stopping"),
+                4 => telio_log_info!("The service is running"),
+                5 => telio_log_info!("The service is continuing"),
+                6 => telio_log_info!("The service is pausing"),
+                7 => telio_log_info!("The service is paused"),
+                _ => telio_log_info!("Unknown service state"),
+            }
+
+            return Ok(status.dwCurrentState);
         }
     }
 }

@@ -4727,6 +4727,7 @@ dependencies = [
  "tokio",
  "tracing",
  "wg-go-rust-wrapper",
+ "widestring 1.1.0",
  "winapi",
  "wireguard-nt",
  "wireguard-uapi",
