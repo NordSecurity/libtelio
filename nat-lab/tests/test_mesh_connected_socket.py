@@ -17,8 +17,9 @@ from utils.ping import Ping
 )
 async def test_mesh_connected_socket(disable_connected_socket) -> None:
     async with AsyncExitStack() as exit_stack:
-        features = (
-            TelioFeatures(direct=Direct(providers=None), disable_connected_socket=disable_connected_socket)
+        features = TelioFeatures(
+            direct=Direct(providers=["stun", "local", "upnp"]),
+            disable_connected_socket=disable_connected_socket,
         )
         env = await setup_mesh_nodes(
             exit_stack,
@@ -46,10 +47,10 @@ async def test_mesh_connected_socket(disable_connected_socket) -> None:
 
         asyncio.gather(
             client_alpha.wait_for_state_peer(
-                beta.public_key, [State.Connected], [path_type]
+                beta.public_key, [State.Connected], [PathType.Direct]
             ),
             client_beta.wait_for_state_peer(
-                alpha.public_key, [State.Connected], [path_type]
+                alpha.public_key, [State.Connected], [PathType.Direct]
             ),
         )
 
