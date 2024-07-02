@@ -71,8 +71,14 @@ jobs:
       - name: install python3-requests
         run: pip3 install requests==2.32.3
         if: ${{ matrix.runner != 'macos-14'}}
+      - name: activate python venv
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          echo PATH=$PATH >> $GITHUB_ENV
+        if: ${{ matrix.runner == 'macos-14'}}
       - name: install python3-requests
-        run: brew install python-requests
+        run: pip3 install requests==2.32.2
         if: ${{ matrix.runner == 'macos-14'}}
       - name: Build libtelio
         run: python3 ci/build_libtelio.py build ${{ matrix.target_os }} ${{ matrix.arch }} --msvc
