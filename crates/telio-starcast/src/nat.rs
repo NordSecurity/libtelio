@@ -10,17 +10,22 @@ use std::{
 };
 use telio_utils::{telio_log_warn, LruCache};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, thiserror::Error)]
 pub enum Error {
     /// The packet is too short to be a valid IP packet
+    #[error("The packet is too short to be a valid IP packet")]
     PacketTooShort,
     /// The packet has an unexpected IP version
+    #[error("The packet has an unexpected IP version")]
     UnexpectedIpVersion,
     /// The packet has an unexpected transport protocol
+    #[error("The packet has an unexpected transport protocol")]
     UnexpectedTransportProtocol,
     /// Cannot map the packet
+    #[error("Cannot map the packet")]
     CannotMap,
     /// There is no mapping for the given port
+    #[error("There is no mapping for the given port")]
     MappingNotFound,
 }
 
@@ -30,7 +35,7 @@ pub trait Nat {
     fn translate_incoming(&mut self, packet: &mut [u8]) -> Result<(), Error>;
     /// Translate outgoing packet (from the multicast peer to the transport socket)
     /// Change the destination to the peer's original ip and port
-    fn translate_outgoing(&mut self, packet: &mut [u8]) -> Result<(), Error>;
+    fn translate_outgoing(&mut self, packet: &mut [u8]) -> Result<IpAddr, Error>;
 }
 
 type Mapper = fn(src_addr: SocketAddr) -> u16;
@@ -140,7 +145,7 @@ impl StarcastNat {
     fn translate_outgoing_internal<'a, P: MutableIpPacket<'a>>(
         &mut self,
         packet: &'a mut [u8],
-    ) -> Result<(), Error> {
+    ) -> Result<IpAddr, Error> {
         let mut ip_packet = P::new(packet).ok_or(Error::PacketTooShort)?;
         if ip_packet.get_next_level_protocol() != IpNextHeaderProtocols::Udp {
             return Err(Error::UnexpectedTransportProtocol);
@@ -171,7 +176,7 @@ impl StarcastNat {
         ip_packet.set_destination(new_dst_ip);
         ip_packet.fix_ip_header_checksum(old_dst_ip, new_dst_ip);
 
-        Ok(())
+        Ok(new_dst_ip.into())
     }
 }
 
@@ -187,7 +192,7 @@ impl Nat for StarcastNat {
         }
     }
 
-    fn translate_outgoing(&mut self, packet: &mut [u8]) -> Result<(), Error> {
+    fn translate_outgoing(&mut self, packet: &mut [u8]) -> Result<IpAddr, Error> {
         match packet.first().ok_or(Error::PacketTooShort)? >> 4 {
             4 => self.translate_outgoing_internal::<MutableIpv4Packet>(packet),
             6 => self.translate_outgoing_internal::<MutableIpv6Packet>(packet),
@@ -202,190 +207,9 @@ impl Nat for StarcastNat {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pnet_packet::{
-        ip::IpNextHeaderProtocol, ipv4, ipv4::Ipv4Packet, ipv6::Ipv6Packet, udp, udp::UdpPacket,
-        MutablePacket, Packet,
-    };
-    use std::{
-        net::{SocketAddrV4, SocketAddrV6},
-        sync::atomic::{AtomicU16, Ordering},
-    };
-
-    const IPV4_HEADER_MIN_LENGTH: usize = 20;
-    const IPV6_HEADER_LENGTH: usize = 40;
-    const UDP_HEADER_LENGTH: usize = 8;
-    const IPV4_NAT_ADDR: Ipv4Addr = Ipv4Addr::new(0xaa, 0xbb, 0xcc, 0xdd);
-    const IPV6_NAT_ADDR: Ipv6Addr = Ipv6Addr::new(0xaaaa, 0, 0, 0, 0, 0, 0, 0xdddd);
-
-    fn set_ipv4(
-        buffer: &mut [u8],
-        next_level_protocol: IpNextHeaderProtocol,
-        total_length: usize,
-        source: Ipv4Addr,
-        destination: Ipv4Addr,
-    ) {
-        let mut ip_packet = MutableIpv4Packet::new(buffer).unwrap();
-        ip_packet.set_version(4);
-        ip_packet.set_header_length((IPV4_HEADER_MIN_LENGTH / 4) as u8);
-        ip_packet.set_total_length(total_length.try_into().unwrap());
-        ip_packet.set_next_level_protocol(next_level_protocol);
-        ip_packet.set_source(source);
-        ip_packet.set_destination(destination);
-        ip_packet.set_checksum(ipv4::checksum(&ip_packet.to_immutable()));
-    }
-
-    fn set_ipv6(
-        buffer: &mut [u8],
-        next_level_protocol: IpNextHeaderProtocol,
-        total_length: usize,
-        source: Ipv6Addr,
-        destination: Ipv6Addr,
-    ) {
-        let mut ip_packet = MutableIpv6Packet::new(buffer).unwrap();
-        ip_packet.set_version(6);
-        ip_packet.set_payload_length((total_length - IPV6_HEADER_LENGTH).try_into().unwrap());
-        ip_packet.set_next_header(next_level_protocol);
-        ip_packet.set_source(source);
-        ip_packet.set_destination(destination);
-    }
-
-    fn make_udp_v4(src_addr: &str, dst_addr: &str) -> Vec<u8> {
-        let packet_len = IPV4_HEADER_MIN_LENGTH + UDP_HEADER_LENGTH;
-        let mut buffer = vec![0u8; packet_len];
-
-        let src_addr: SocketAddrV4 = src_addr.parse().unwrap();
-        let dst_addr: SocketAddrV4 = dst_addr.parse().unwrap();
-
-        set_ipv4(
-            &mut buffer,
-            IpNextHeaderProtocols::Udp,
-            packet_len,
-            *src_addr.ip(),
-            *dst_addr.ip(),
-        );
-
-        let mut ip_packet = MutableIpv4Packet::new(&mut buffer).unwrap();
-        let mut udp_packet = MutableUdpPacket::new(ip_packet.payload_mut()).unwrap();
-        udp_packet.set_source(src_addr.port());
-        udp_packet.set_destination(dst_addr.port());
-        udp_packet.set_length(UDP_HEADER_LENGTH as u16);
-        udp_packet.set_checksum(udp::ipv4_checksum(
-            &udp_packet.to_immutable(),
-            &src_addr.ip(),
-            &dst_addr.ip(),
-        ));
-
-        buffer
-    }
-
-    fn make_udp_v4_reply(buffer: &[u8]) -> Vec<u8> {
-        let ip_packet = Ipv4Packet::new(&buffer).unwrap();
-        let src_ip = ip_packet.get_source().to_string();
-        let dst_ip = ip_packet.get_destination().to_string();
-
-        let udp_packet = UdpPacket::new(ip_packet.payload()).unwrap();
-        let src_port = udp_packet.get_source().to_string();
-        let dst_port = udp_packet.get_destination().to_string();
-
-        make_udp_v4(
-            &format!("{dst_ip}:{dst_port}"),
-            &format!("{src_ip}:{src_port}"),
-        )
-    }
-
-    pub fn make_udp_v6(src_addr: &str, dst_addr: &str) -> Vec<u8> {
-        let packet_len = IPV6_HEADER_LENGTH + UDP_HEADER_LENGTH;
-        let mut buffer = vec![0u8; packet_len];
-
-        let src_addr: SocketAddrV6 = src_addr.parse().unwrap();
-        let dst_addr: SocketAddrV6 = dst_addr.parse().unwrap();
-
-        set_ipv6(
-            &mut buffer,
-            IpNextHeaderProtocols::Udp,
-            packet_len,
-            *src_addr.ip(),
-            *dst_addr.ip(),
-        );
-
-        let mut ip_packet = MutableIpv6Packet::new(&mut buffer).unwrap();
-        let mut udp_packet = MutableUdpPacket::new(ip_packet.payload_mut()).unwrap();
-        udp_packet.set_source(src_addr.port());
-        udp_packet.set_destination(dst_addr.port());
-        udp_packet.set_length(UDP_HEADER_LENGTH as u16);
-        udp_packet.set_checksum(udp::ipv6_checksum(
-            &udp_packet.to_immutable(),
-            &src_addr.ip(),
-            &dst_addr.ip(),
-        ));
-
-        buffer
-    }
-
-    fn make_udp_v6_reply(buffer: &[u8]) -> Vec<u8> {
-        let ip_packet = Ipv6Packet::new(&buffer).unwrap();
-        let src_ip = ip_packet.get_source().to_string();
-        let dst_ip = ip_packet.get_destination().to_string();
-
-        let udp_packet = UdpPacket::new(ip_packet.payload()).unwrap();
-        let src_port = udp_packet.get_source().to_string();
-        let dst_port = udp_packet.get_destination().to_string();
-
-        make_udp_v6(
-            &format!("[{dst_ip}]:{dst_port}"),
-            &format!("[{src_ip}]:{src_port}"),
-        )
-    }
-
-    fn advance_time(time: Duration) {
-        sn_fake_clock::FakeClock::advance_time(time.as_millis() as u64);
-    }
-
-    macro_rules! assert_src_dst_v4 {
-        ($buffer:ident, $src_addr:ident, $dst_addr:ident) => {
-            let ip_packet = Ipv4Packet::new(&$buffer).unwrap();
-            let src_ip = ip_packet.get_source().to_string();
-            let dst_ip = ip_packet.get_destination().to_string();
-
-            let udp_packet = UdpPacket::new(&$buffer[IPV4_HEADER_MIN_LENGTH..]).unwrap();
-            let src_port = udp_packet.get_source().to_string();
-            let dst_port = udp_packet.get_destination().to_string();
-
-            assert_eq!(
-                format!("{src_ip}:{src_port}"),
-                $src_addr,
-                "Packet's src_addr does not match"
-            );
-            assert_eq!(
-                format!("{dst_ip}:{dst_port}"),
-                $dst_addr,
-                "Packet's dst_addr does not match"
-            );
-        };
-    }
-
-    macro_rules! assert_src_dst_v6 {
-        ($buffer:ident, $src_addr:ident, $dst_addr:ident) => {
-            let ip_packet = Ipv6Packet::new(&$buffer).unwrap();
-            let src_ip = ip_packet.get_source().to_string();
-            let dst_ip = ip_packet.get_destination().to_string();
-
-            let udp_packet = UdpPacket::new(&$buffer[IPV6_HEADER_LENGTH..]).unwrap();
-            let src_port = udp_packet.get_source().to_string();
-            let dst_port = udp_packet.get_destination().to_string();
-
-            assert_eq!(
-                format!("[{src_ip}]:{src_port}"),
-                $src_addr,
-                "Packet's src_addr does not match"
-            );
-            assert_eq!(
-                format!("[{dst_ip}]:{dst_port}"),
-                $dst_addr,
-                "Packet's dst_addr does not match"
-            );
-        };
-    }
+    use crate::{assert_src_dst_v4, assert_src_dst_v6, utils::test_utils::*};
+    use pnet_packet::{ipv4, ipv4::Ipv4Packet, ipv6::Ipv6Packet, udp, udp::UdpPacket};
+    use std::sync::atomic::{AtomicU16, Ordering};
 
     macro_rules! assert_checksum_v4 {
         ($buffer:ident) => {
