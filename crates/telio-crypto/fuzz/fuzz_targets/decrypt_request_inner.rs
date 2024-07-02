@@ -1,16 +1,17 @@
 #![no_main]
 
-use crypto_box::{aead::Aead, aead::AeadCore, ChaChaBox};
+use crypto_box::{aead::Aead, aead::AeadCore};
 use libfuzzer_sys::fuzz_target;
 use once_cell::sync::Lazy;
-use telio_crypto::{encryption::decrypt_request, PublicKey, SecretKey};
+use telio_crypto::{chachabox::ChaChaBox, encryption::decrypt_request, PublicKey, SecretKey};
 
 static REMOTE_SK: Lazy<SecretKey> = Lazy::new(SecretKey::gen);
 static EPHEMERAL_SK: Lazy<SecretKey> = Lazy::new(SecretKey::gen);
 static EPHEMERAL_PK: Lazy<PublicKey> = Lazy::new(|| EPHEMERAL_SK.public());
-static OUTER_NONCE: Lazy<[u8; 24]> = Lazy::new(|| ChaChaBox::generate_nonce(&mut rand::thread_rng()).into());
+static OUTER_NONCE: Lazy<[u8; 24]> =
+    Lazy::new(|| ChaChaBox::generate_nonce(&mut rand::thread_rng()).into());
 static SECRET_BOX: Lazy<ChaChaBox> =
-    Lazy::new(|| ChaChaBox::new(&REMOTE_SK.public().into(), &((*EPHEMERAL_SK).into())));
+    Lazy::new(|| ChaChaBox::new(&REMOTE_SK.public(), &(*EPHEMERAL_SK)));
 
 fuzz_target!(|data: &[u8]| {
     // This tests simulates case where attacker correctly generates random keys and applies outer layer
