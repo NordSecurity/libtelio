@@ -72,7 +72,7 @@ services:
       cone-net-01:
         ipv4_address: 192.168.101.104
     ports:
-      - "58001:58001"
+      - "8080:8080"
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.101.254
     extra_hosts:
@@ -92,7 +92,7 @@ services:
       cone-net-02:
         ipv4_address: 192.168.102.54
     ports:
-      - "58002:58002"
+      - "8081:8081"
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.102.254
   # Client that shares two cone networks on different interfaces
@@ -105,7 +105,7 @@ services:
       cone-net-05:
         ipv4_address: 192.168.113.67
     ports:
-      - "58003:58003"
+      - "8082:8082"
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.101.254
       CLIENT_GATEWAY_SECONDARY: 192.168.113.254
@@ -118,7 +118,7 @@ services:
       internet:
         ipv4_address: 10.0.11.2
     ports:
-      - "58004:58004"
+      - "8083:8083"
     environment:
       CLIENT_GATEWAY_PRIMARY: none
   open-internet-client-02:
@@ -128,7 +128,7 @@ services:
       internet:
         ipv4_address: 10.0.11.3
     ports:
-      - "58005:58005"
+      - "8084:8084"
     environment:
       CLIENT_GATEWAY_PRIMARY: none
   # Open internet client used on ipv6 tests
@@ -140,7 +140,7 @@ services:
         ipv4_address: 10.0.11.4
         ipv6_address: 2001:db8:85a4::dead:beef:ceed
     ports:
-      - "58006:58006"
+      - "8085:8085"
     environment:
       CLIENT_GATEWAY_PRIMARY: none
     extra_hosts:
@@ -157,7 +157,7 @@ services:
       fullcone-net-01:
         ipv4_address: 192.168.109.88
     ports:
-      - "58007:58007"
+      - "8086:8086"
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.109.254
   fullcone-client-02:
@@ -167,7 +167,7 @@ services:
       fullcone-net-02:
         ipv4_address: 192.168.106.88
     ports:
-      - "58008:58008"
+      - "8087:8087"
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.106.254
 
@@ -178,7 +178,7 @@ services:
       upnp-net-01:
         ipv4_address: 192.168.105.88
     ports:
-      - "58009:58009"
+      - "8088:8088"
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.105.254
   upnp-client-02:
@@ -188,7 +188,7 @@ services:
       upnp-net-02:
         ipv4_address: 192.168.112.88
     ports:
-      - "58010:58010"
+      - "8089:8089"
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.112.254
 
@@ -199,7 +199,7 @@ services:
       hsymmetric-net-01:
         ipv4_address: 192.168.103.88
     ports:
-      - "58011:58011"
+      - "8090:8090"
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.103.254
   symmetric-client-02:
@@ -209,7 +209,7 @@ services:
       hsymmetric-net-02:
         ipv4_address: 192.168.104.88
     ports:
-      - "58012:58012"
+      - "8091:8091"
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.104.254
   internal-symmetric-client-01:
@@ -222,7 +222,7 @@ services:
       hsymmetric-internal-net-01:
         ipv4_address: 192.168.114.88
     ports:
-      - "58013:58013"
+      - "8092:8092"
 
   udp-block-client-01:
     hostname: udp-block-client-01
@@ -231,7 +231,7 @@ services:
       udp-block-net-01:
         ipv4_address: 192.168.110.100
     ports:
-      - "58014:58014"
+      - "8093:8093"
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.110.254
   udp-block-client-02:
@@ -241,7 +241,7 @@ services:
       udp-block-net-02:
         ipv4_address: 192.168.111.100
     ports:
-      - "58015:58015"
+      - "8094:8094"
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.111.254
 
