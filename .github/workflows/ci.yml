@@ -30,9 +30,6 @@ jobs:
   benchmarks:
     needs: trigger
     uses: ./.github/workflows/benchmarks.yml
-  coverage:
-    needs: trigger
-    uses: ./.github/workflows/coverage.yml
   nagger:
     needs: trigger
     uses: ./.github/workflows/nagger.yml
@@ -44,7 +41,6 @@ jobs:
     - tests
     - fuzzing
     - benchmarks
-    - coverage
     - nagger
     runs-on: ubuntu-22.04
     steps:
