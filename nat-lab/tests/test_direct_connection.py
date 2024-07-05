@@ -47,9 +47,6 @@ def _generate_setup_parameter_pair(
             adapter_type=telio.AdapterType.BoringTun,
             features=TelioFeatures(
                 direct=Direct(providers=endpoint_providers),
-                wireguard=Wireguard(
-                    persistent_keepalive=PersistentKeepalive(direct=12)
-                ),
                 nurse=Nurse(
                     fingerprint=f"{conn_tag}",
                     enable_nat_traversal_conn_data=True,
@@ -281,8 +278,6 @@ async def test_direct_working_paths(
 
         async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
             await ping.wait_for_next_ping()
-
-        await asyncio.sleep(60)
 
 
 @pytest.mark.moose
