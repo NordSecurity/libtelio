@@ -1,6 +1,6 @@
 import pytest
 from contextlib import AsyncExitStack
-from helpers import SetupParameters, setup_mesh_nodes
+from helpers import SetupParameters, setup_mesh_nodes, setup_connections
 from telio import AdapterType, ErrorEvent, ErrorCode, ErrorLevel
 from utils.connection import TargetOS
 from utils.connection_util import ConnectionTag
@@ -71,3 +71,65 @@ async def test_adapter_gone_event(alpha_setup_params: SetupParameters) -> None:
         await client.wait_for_event_error(
             ErrorEvent(ErrorLevel.Critical, ErrorCode.Unknown, "Interface gone")
         )
+
+
+@pytest.mark.parametrize(
+    "alpha_setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                adapter_type=AdapterType.WindowsNativeWg,
+            ),
+            marks=[pytest.mark.windows],
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                adapter_type=AdapterType.WireguardGo,
+            ),
+            marks=[pytest.mark.windows],
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "beta_setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+            )
+        )
+    ],
+)
+async def test_adapter_service_loading(
+    alpha_setup_params: SetupParameters, beta_setup_params: SetupParameters
+) -> None:
+    """
+    Windows-only test that verifies that the adapter service can be loaded, even if it was un-loaded before.
+    """
+    async with AsyncExitStack() as exit_stack:
+        connection = (
+            await setup_connections(exit_stack, [alpha_setup_params.connection_tag])
+        )[0].connection
+
+        try:
+            await connection.create_process([
+                "sc",
+                "delete",
+                "WireGuard",
+            ]).execute()
+        except ProcessExecError:
+            pass
+
+        try:
+            await connection.create_process([
+                "sc",
+                "delete",
+                "Wintun",
+            ]).execute()
+        except ProcessExecError:
+            pass
+
+    async with AsyncExitStack() as exit_stack:
+        _ = await setup_mesh_nodes(exit_stack, [alpha_setup_params, beta_setup_params])

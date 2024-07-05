@@ -44,8 +44,7 @@ winapi = { workspace = true, features = [
     "iphlpapi",
     "impl-default",
 ] }
-windows = { version = "0.34.0", features = [
-    "alloc",
+windows = { workspace = true, features = [
     "Win32_Networking_WinSock",
     "Win32_NetworkManagement_IpHelper",
 ] }

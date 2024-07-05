@@ -68,11 +68,8 @@ impl TcpParams {
                 WinSock::setsockopt(
                     WinSock::SOCKET(socket.as_raw_socket() as usize),
                     WinSock::IPPROTO_TCP.0,
-                    WinSock::TCP_MAXRT as i32,
-                    String::from_utf8_unchecked(
-                        (user_timeout.as_secs() as u32).to_ne_bytes().to_vec(),
-                    ),
-                    4, /* value length */
+                    WinSock::TCP_MAXRT,
+                    Some((user_timeout.as_secs() as u32).to_ne_bytes().as_ref()),
                 )
             };
             if err != 0 {
@@ -91,9 +88,8 @@ impl TcpParams {
                 WinSock::setsockopt(
                     WinSock::SOCKET(socket.as_raw_socket() as usize),
                     WinSock::IPPROTO_TCP.0,
-                    WinSock::TCP_MAXRT as i32,
-                    String::from_utf8_unchecked((keepalive_cnt).to_ne_bytes().to_vec()),
-                    4, /* value length */
+                    WinSock::TCP_MAXRT,
+                    Some((keepalive_cnt).to_ne_bytes().as_ref()),
                 )
             };
             if err != 0 {
