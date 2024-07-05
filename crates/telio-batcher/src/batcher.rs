@@ -49,7 +49,6 @@ impl Runtime for State {
     {
         telio_log_info!("****** Batcher wait_with_update");
 
-        // let locked_notifiers = self.notifiers.lock().await;
         let mut sleep_futures = {
             let futures: FuturesUnordered<_> = self
                 .notifiers
@@ -100,6 +99,7 @@ impl Runtime for State {
                             entry.deadline = now + entry.interval;
 
                             if entry.tx.send(()).is_err() {
+                                telio_log_debug!("HERE IT IS< ITS DROPPED");
                                 keys_to_delete.push(key.clone());
                             }
                         }

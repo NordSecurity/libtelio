@@ -84,7 +84,7 @@ impl SessionKeeper {
                     pinger_client_v4: client_v4,
                     pinger_client_v6: client_v6,
                 },
-                batcher_rx_map: HashMap::new(),
+                ping_data: HashMap::new(),
             }),
             batcher,
         })
@@ -129,7 +129,7 @@ impl SessionKeeper {
     }
 }
 
-async fn ping(pingers: &Pingers, targets: (&PublicKey, DualTarget)) -> Result<()> {
+async fn ping(pingers: &Pingers, targets: (&PublicKey, &DualTarget)) -> Result<()> {
     let (primary, secondary) = targets.1.get_targets()?;
     let public_key = targets.0;
 
@@ -190,7 +190,14 @@ impl SessionKeeperTrait for SessionKeeper {
         telio_log_debug!("rx map adding node with public key: {:?}", public_key);
 
         task_exec!(&self.task, async move |s| {
-            s.batcher_rx_map.insert(public_key, (rx, dual_target));
+            s.ping_data.insert(
+                public_key,
+                PingData {
+                    trigger_rx: rx,
+                    targets: dual_target,
+                },
+            );
+
             Ok(())
         })
         .await?;
@@ -205,7 +212,7 @@ impl SessionKeeperTrait for SessionKeeper {
         let public_key = *public_key;
 
         task_exec!(&self.task, async move |s| {
-            s.batcher_rx_map.remove(&public_key);
+            s.ping_data.remove(&public_key);
             Ok(())
         })
         .await?;
@@ -222,9 +229,13 @@ struct Pingers {
     pinger_client_v6: PingerClient,
 }
 
+struct PingData {
+    trigger_rx: tokio::sync::watch::Receiver<()>,
+    targets: DualTarget,
+}
 struct State {
     pingers: Pingers,
-    batcher_rx_map: HashMap<PublicKey, (tokio::sync::watch::Receiver<()>, DualTarget)>,
+    ping_data: HashMap<PublicKey, PingData>,
 }
 
 #[async_trait]
@@ -236,45 +247,41 @@ impl Runtime for State {
     where
         F: Future<Output = BoxAction<Self, std::result::Result<(), Self::Err>>> + Send,
     {
-        telio_log_debug!(
-            "wait_with_update {:?} keys",
-            self.batcher_rx_map.keys().len()
-        );
-        let batcher_info: Vec<_> = {
-            self.batcher_rx_map
-                .iter()
-                .map(|(pk, rx)| (*pk, rx.clone()))
-                .collect()
-        };
+        telio_log_debug!("wait_with_update {:?} keys", self.ping_data.keys().len());
 
-        let mut batcher_futures: FuturesUnordered<_> = batcher_info
-            .into_iter()
-            .map(|(pk, mut rx_clone)| async move {
-                if rx_clone.0.changed().await.is_err() {
+        let mut batcher_futures: FuturesUnordered<_> = self
+            .ping_data
+            .iter_mut()
+            .map(|(pk, data)| async move {
+                if data.trigger_rx.changed().await.is_err() {
                     telio_log_info!("channel transmitter dropped");
                     return None;
                 }
-                Some(pk)
+                Some(pk.clone())
             })
             .collect();
 
+        // TODO: do we still need split in two hashmaps?
         tokio::select! {
             Some(fut) = batcher_futures.next() => {
+                telio_log_debug!("POI 1");
                 if let Some(pk) = fut {
-                    match self.batcher_rx_map.get(&pk) {
-                        Some(targets) => {
-                            let dual_target = targets.1;
-                            if let Err(e) = ping(&self.pingers, (&pk, dual_target)).await {
+                    telio_log_debug!("POI 2");
+                    drop(batcher_futures);
+                    match self.ping_data.get(&pk) {
+                        Some(data) => {
+                            if let Err(e) = ping(&self.pingers, (&pk, &data.targets)).await {
                                 telio_log_debug!("Failed to ping: {:?} with error: {:?}", pk, e);
                             }
                         }
                         None => {
-                            telio_log_debug!("batcher_rx_map doesn't contain public key: {:?}", pk);
+                            telio_log_debug!("batcher_map doesn't contain public key: {:?}", pk);
                         }
                     }
                 }
             }
             update = update => {
+                drop(batcher_futures);
                 return update(self).await;
             }
             else => {
@@ -282,7 +289,7 @@ impl Runtime for State {
             }
         }
 
-        telio_log_debug!("wait_with_update::return");
+        telio_log_debug!("POI 3");
         Ok(())
     }
 }
