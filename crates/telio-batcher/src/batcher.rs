@@ -180,6 +180,8 @@ impl Batcher {
 
 mod tests {
 
+    use super::*;
+    use std::time::Instant;
     #[tokio::test]
     async fn batch_no_threshold() {
         let batcher = Batcher::start();
