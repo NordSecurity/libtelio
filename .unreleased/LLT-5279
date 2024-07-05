@@ -1,1 +1,0 @@
-Rename telio::destroy and telio::destroy_hard for them not collide with go generated methods.

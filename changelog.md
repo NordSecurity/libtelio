@@ -1,5 +1,30 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.0.0-rc2
+### ****
+---
+* LLT-5211: Wait for windows services before starting adapters
+* LLT-5278: Make separate feature config for firewall
+* LLT-4641: Make SessionKeeper startup failures non-fatal and improve error handling
+* LLT-4901: Download bins for release from latest nightly pipeline
+* LLT-5103: Add feature flag for multicast
+* LLT-5293: Fix connected state event being thrown after peer is actually disconnected
+* LLT-5248: Use image built for both amd64 and arm64
+* LLT-5294: Add FFI function to get default feature config
+* LLT-5291: Make the body of events non-optional
+* LLT-5285: Fix AnalyticsEvent::is_from_virtual_peer matching non virtual peers
+* LLT-5252: build: Check LLT-Secrets leads on build scripts
+* LLT-5292: Change underlying FFI type for keys to be string
+* LLT-5024: Add link enhanced detection mod
+* LLT-5247: Don't compile tclid by default when building tcli package
+* LLT-5077: Add multicast flags `allow_multicast` and `peer_allows_multicast` to meshnet config
+* LLT-5279: Rename telio::destroy and telio::destroy_hard for them not collide with go generated methods.
+* LLT-5212: Use structured events in FFI event callback
+* LLT-5196: Verify that all non management interfaces in nat-lab have no 'Router' property
+* LLT-5359: Expand logging to help catch DNS failures on Android
+
+<br>
+
 ### v5.0.0-rc1
 ### **Chicken Salad**
 ---

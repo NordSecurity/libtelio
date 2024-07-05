@@ -1,1 +1,0 @@
-Fix AnalyticsEvent::is_from_virtual_peer matching non virtual peers
