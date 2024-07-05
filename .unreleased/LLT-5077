@@ -1,1 +1,0 @@
-Add multicast flags `allow_multicast` and `peer_allows_multicast` to meshnet config
