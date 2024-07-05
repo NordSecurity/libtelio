@@ -1,10 +1,8 @@
 use async_trait::async_trait;
 use futures::{stream::FuturesUnordered, Future, StreamExt};
 use std::collections::HashMap;
-use std::sync::Arc;
 use telio_task::{task_exec, BoxAction, ExecError, Runtime, Task};
 use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn};
-use tokio::sync::Mutex;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -26,7 +24,7 @@ pub trait BatcherTrait {
 }
 
 struct State {
-    notifiers: Arc<Mutex<HashMap<String, BatchEntry>>>,
+    notifiers: HashMap<String, BatchEntry>,
 }
 
 pub struct Batcher {
@@ -51,9 +49,10 @@ impl Runtime for State {
     {
         telio_log_info!("****** Batcher wait_with_update");
 
-        let locked_notifiers = self.notifiers.lock().await;
+        // let locked_notifiers = self.notifiers.lock().await;
         let mut sleep_futures = {
-            let futures: FuturesUnordered<_> = locked_notifiers
+            let futures: FuturesUnordered<_> = self
+                .notifiers
                 .iter()
                 .map(|(key, entry)| {
                     let deadline = entry.deadline;
@@ -76,7 +75,6 @@ impl Runtime for State {
 
             futures
         };
-        drop(locked_notifiers); // TODO: race conditions
 
         telio_log_debug!(
             "batcher before tokio::select! with {} futures",
@@ -89,13 +87,12 @@ impl Runtime for State {
             }
             Some(_) = sleep_futures.next() => {
                 let now = tokio::time::Instant::now();
-                let mut locked_notifiers = self.notifiers.lock().await;
 
                 let mut batched_count = 0;
                 let mut keys_to_delete = vec![];
 
                 {
-                    for (key, &mut ref mut entry) in locked_notifiers.iter_mut() {
+                    for (key, &mut ref mut entry) in self.notifiers.iter_mut() {
                         let deadline_with_threshold = entry.deadline - entry.threshold;
                         if now >= deadline_with_threshold {
                             batched_count +=1;
@@ -103,7 +100,7 @@ impl Runtime for State {
                             entry.deadline = now + entry.interval;
 
                             if entry.tx.send(()).is_err() {
-                                keys_to_delete.push(key);
+                                keys_to_delete.push(key.clone());
                             }
                         }
                     }
@@ -113,10 +110,9 @@ impl Runtime for State {
                     telio_log_warn!("Batcher was awoken by a task however didn't find any tasks to batch, most possibly a bug in logic");
                 }
 
-                // TODO: wtf
-                // locked_notifiers.retain(|key, _| {
-                //     !keys_to_delete.contains(&key)
-                // });
+                self.notifiers.retain(|key, _| {
+                    !keys_to_delete.contains(key)
+                });
 
                 Ok(())
             }
@@ -133,7 +129,7 @@ impl BatcherTrait for Batcher {
     async fn remove(&self, key: String) {
         telio_log_debug!("***** Removing key: {}", key);
         let _ = task_exec!(&self.task, async move |s| {
-            s.notifiers.lock().await.remove(&key);
+            s.notifiers.remove(&key);
             Ok(())
         })
         .await;
@@ -157,7 +153,7 @@ impl BatcherTrait for Batcher {
                 tx,
             };
 
-            s.notifiers.lock().await.insert(key, entry);
+            s.notifiers.insert(key, entry);
             telio_log_info!("****** Adding task to Batcher:: inside of a task:: added");
             Ok(rx)
         })
@@ -171,7 +167,7 @@ impl Batcher {
         telio_log_info!(">>>>>>>>>>>> ****** Batcher S T A R T");
 
         let task = Task::start(State {
-            notifiers: Arc::new(Mutex::new(HashMap::new())),
+            notifiers: HashMap::new(),
         });
 
         Self { task }
