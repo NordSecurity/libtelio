@@ -9,12 +9,13 @@ use std::{
 use telio_model::{
     event::{Error as LibtelioError, ErrorCode, ErrorLevel, Event as LibtelioEvent, EventMsg, Set},
     features::FeatureLinkDetection,
-    mesh::ExitNode,
+    mesh::{ExitNode, NodeState},
 };
 use telio_sockets::{NativeProtector, SocketPool};
 use telio_utils::{
     dual_target::{DualTarget, DualTargetError},
-    interval, telio_err_with_log, telio_log_debug, telio_log_trace, telio_log_warn,
+    interval, telio_err_with_log, telio_log_debug, telio_log_error, telio_log_trace,
+    telio_log_warn,
 };
 use thiserror::Error as TError;
 use tokio::time::{self, sleep, Instant, Interval, MissedTickBehavior};
@@ -30,12 +31,18 @@ use telio_task::{
 
 use crate::{
     adapter::{self, Adapter, AdapterType, Error, FirewallResetConnsCb, Tun},
-    link_detection::{LinkDetection, LinkDetectionUpdateResult},
+    link_detection::{self, LinkDetection, LinkDetectionUpdateResult},
     uapi::{self, AnalyticsEvent, Cmd, Event, Interface, Peer, PeerState, Response},
     FirewallCb,
 };
 
-use std::{collections::HashSet, future::Future, io, sync::Arc, time::Duration};
+use std::{
+    collections::HashSet,
+    future::Future,
+    io,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 /// WireGuard adapter interface
 #[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
@@ -115,6 +122,93 @@ pub struct Io {
     pub libtelio_wide_event_publisher: Option<mc_chan::Tx<Box<LibtelioEvent>>>,
 }
 
+/// Keepalive packets size
+pub const KEEPALIVE_PACKET_SIZE: u64 = 32;
+/// Default wireguard keepalive duration
+pub const WG_KEEPALIVE: Duration = Duration::from_secs(10);
+
+#[derive(Copy, Clone)]
+/// A structure to hold the bytes and timestamps for received and transmitted data.
+pub struct BytesAndTimestamps {
+    /// Number of received bytes.
+    rx_bytes: u64,
+    /// Number of transmitted bytes.
+    tx_bytes: u64,
+    /// Timestamp for the last received data.
+    rx_ts: Option<Instant>,
+    /// Timestamp for the last transmitted data.
+    tx_ts: Option<Instant>,
+}
+
+impl BytesAndTimestamps {
+    /// Creates a new `BytesAndTimestamps` instance with optional initial values for received and transmitted bytes.
+    pub fn new(rx_bytes: Option<u64>, tx_bytes: Option<u64>) -> Self {
+        let now = Instant::now();
+        let rx_bytes = rx_bytes.unwrap_or_default();
+        let tx_bytes = tx_bytes.unwrap_or_default();
+        BytesAndTimestamps {
+            rx_bytes,
+            tx_bytes,
+            rx_ts: if rx_bytes > 0 { Some(now) } else { None },
+            tx_ts: if tx_bytes > 0 { Some(now) } else { None },
+        }
+    }
+
+    /// Updates the structure with new values for received and transmitted bytes.
+    pub fn update(&mut self, new_rx: u64, new_tx: u64) {
+        let now = Instant::now();
+
+        if new_rx > self.rx_bytes {
+            self.rx_bytes = new_rx;
+            self.rx_ts = Some(now);
+        }
+
+        if new_tx > self.tx_bytes {
+            // Ignore the keepalive messages
+            // This only works in a limited fashion because we poll every second and
+            // the detection might not work as intended if there are more packets within that time window.
+            // On the sender side persistent-keepalives might interfere as those are emitted regardless the activity,
+            // meaning for example if persistent-keepalive is set at 5seconds then it might interfere with the
+            // passive-keepalive which is a constant of 10seconds.
+            if new_tx - self.tx_bytes != KEEPALIVE_PACKET_SIZE {
+                self.tx_ts = Some(now);
+            }
+            self.tx_bytes = new_tx;
+        }
+    }
+
+    /// Returns the number of received bytes.
+    pub fn get_rx_bytes(self) -> u64 {
+        self.rx_bytes
+    }
+
+    /// Returns the number of transmitted bytes.
+    pub fn get_tx_bytes(self) -> u64 {
+        self.tx_bytes
+    }
+
+    /// Returns the timestamp of the last received data.
+    pub fn get_rx_ts(self) -> Option<Instant> {
+        self.rx_ts
+    }
+
+    /// Returns the timestamp of the last transmitted data.
+    pub fn get_tx_ts(self) -> Option<Instant> {
+        self.tx_ts
+    }
+
+    /// Checks if the link is up based on the round-trip time (RTT) and WireGuard keepalive interval.
+    pub fn is_link_up(&self, rtt: Duration) -> bool {
+        if let (Some(rx_ts), Some(tx_ts)) = (self.rx_ts, self.tx_ts) {
+            tx_ts <= rx_ts
+        } else if let Some(rx_ts) = self.rx_ts {
+            rx_ts.elapsed() < WG_KEEPALIVE + rtt
+        } else {
+            false
+        }
+    }
+}
+
 struct State {
     #[cfg(unix)]
     cfg: Config,
@@ -130,9 +224,11 @@ struct State {
     uapi_fail_counter: i32,
 
     // Link detection mechanism
-    link_detection: LinkDetection,
+    link_detection: Option<LinkDetection>,
 
     libtelio_event: Option<mc_chan::Tx<Box<LibtelioEvent>>>,
+
+    stats: HashMap<PublicKey, Arc<Mutex<BytesAndTimestamps>>>,
 }
 
 const POLL_MILLIS: u64 = 1000;
@@ -255,8 +351,9 @@ impl DynamicWg {
                 last_endpoint_change: Default::default(),
                 analytics_tx: io.analytics_tx,
                 uapi_fail_counter: 0,
-                link_detection: LinkDetection::new(link_detection),
+                link_detection: link_detection.map(LinkDetection::new),
                 libtelio_event: io.libtelio_wide_event_publisher,
+                stats: HashMap::new(),
             }),
         }
     }
@@ -556,7 +653,19 @@ impl State {
     }
 
     fn time_since_last_rx(&self, public_key: PublicKey) -> Option<Duration> {
-        self.link_detection.time_since_last_rx(&public_key)
+        self.stats.get(&public_key).and_then(|s| match s.lock() {
+            Ok(s) => {
+                if s.rx_bytes > 0 {
+                    Some(s.rx_ts?.elapsed())
+                } else {
+                    None
+                }
+            }
+            Err(e) => {
+                telio_log_error!("poisoned lock - {}", e);
+                None
+            }
+        })
     }
 
     async fn send_event(
@@ -567,7 +676,7 @@ impl State {
         old_peer: Option<Peer>,
     ) -> Result<(), Error> {
         let link_state = link_state.and_then(|s| {
-            if self.link_detection.is_disabled() {
+            if self.link_detection.is_none() {
                 None
             } else {
                 Some(s)
@@ -600,8 +709,12 @@ impl State {
                 "Disconnected peer missing from old list",
             ))?;
 
+            self.stats.remove(key);
+
             // Remove all disconnected peers from no link detection mechanism
-            self.link_detection.remove(key);
+            if let Some(link_detection) = self.link_detection.as_mut() {
+                link_detection.remove(key);
+            }
 
             self.send_event(
                 PeerState::Disconnected,
@@ -619,9 +732,17 @@ impl State {
                 .get(key)
                 .ok_or(Error::InternalError("New peer missing from new list"))?;
 
+            let bytes_and_ts = Arc::new(Mutex::new(BytesAndTimestamps::new(
+                peer.rx_bytes,
+                peer.tx_bytes,
+            )));
+
+            self.stats.insert(*key, bytes_and_ts.clone());
+
             // Node is new and default LinkState is down. Save it before sending the event
-            self.link_detection
-                .insert(key, peer.rx_bytes, peer.tx_bytes, PeerState::Connecting);
+            if let Some(link_detection) = self.link_detection.as_mut() {
+                link_detection.insert(key, bytes_and_ts.clone());
+            }
 
             self.send_event(
                 PeerState::Connecting,
@@ -632,10 +753,6 @@ impl State {
             .await?;
 
             if peer.is_connected() {
-                // If the new peer is connected, update last link state to Up.
-                self.link_detection
-                    .insert(key, peer.rx_bytes, peer.tx_bytes, PeerState::Connected);
-
                 self.send_event(
                     PeerState::Connected,
                     Some(LinkState::Up),
@@ -653,17 +770,26 @@ impl State {
                 let new_state = new.state();
                 let node_addresses = new.ip_addresses.clone();
 
-                let link_detection_update_result = self
-                    .link_detection
-                    .update(
-                        key,
-                        new.rx_bytes,
-                        new.tx_bytes,
-                        new_state,
-                        node_addresses,
-                        push,
-                    )
-                    .await;
+                if let Some(stats) = self.stats.get_mut(key) {
+                    match stats.lock().as_mut() {
+                        Ok(s) => s.update(
+                            new.rx_bytes.unwrap_or_default(),
+                            new.tx_bytes.unwrap_or_default(),
+                        ),
+                        Err(e) => {
+                            telio_log_error!("poisoned lock - {}", e);
+                        }
+                    }
+                }
+                let link_detection_update_result = {
+                    if let Some(link_detection) = self.link_detection.as_mut() {
+                        link_detection.update(key, node_addresses, push).await
+                    } else {
+                        LinkDetectionUpdateResult {
+                            ..Default::default()
+                        }
+                    }
+                };
 
                 if !old.is_same_event(new)
                     || old_state != new_state
@@ -894,7 +1020,9 @@ impl Runtime for State {
 
     async fn stop(self) {
         self.adapter.stop().await;
-        self.link_detection.stop().await;
+        if let Some(link_detection) = self.link_detection {
+            link_detection.stop().await;
+        }
         #[cfg(unix)]
         self.cfg
             .tun
