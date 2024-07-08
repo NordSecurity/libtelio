@@ -3,19 +3,19 @@ use std::{io, panic::RefUnwindSafe, sync::Arc};
 use crate::native::NativeSocket;
 
 #[cfg(windows)]
-#[path = "windows.rs"]
+#[path = "protector/windows.rs"]
 pub mod platform;
 
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
-#[path = "apple.rs"]
+#[path = "protector/apple.rs"]
 pub mod platform;
 
 #[cfg(target_os = "linux")]
-#[path = "linux.rs"]
+#[path = "protector/linux.rs"]
 pub mod platform;
 
 #[cfg(target_os = "android")]
-#[path = "unsupported.rs"]
+#[path = "protector/unsupported.rs"]
 pub mod platform;
 
 pub use platform::NativeProtector;
