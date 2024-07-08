@@ -3,8 +3,9 @@ import pytest
 from helpers import SetupParameters
 from telio import AdapterType
 from typing import List, Tuple
-from utils.connection_util import ConnectionTag
+from utils.connection_util import ConnectionTag, LAN_ADDR_MAP
 from utils.router import IPStack
+from utils.vm import windows_vm_util, mac_vm_util
 
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
@@ -80,3 +81,36 @@ def pytest_make_parametrize_id(config, val):
     else:
         return None
     return param_id
+
+
+def pytest_collection_finish(session):
+    async def copy_binaries():
+        mac_vm, win_vm_1, win_vm_2 = False, False, False
+
+        for item in session.items:
+            if "WINDOWS_VM_1" in item.name:
+                win_vm_1 = True
+
+            if "WINDOWS_VM_2" in item.name:
+                win_vm_2 = True
+
+            if "MAC_VM" in item.name:
+                mac_vm = True
+
+        if win_vm_1:
+            async with windows_vm_util.new_connection(
+                LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_1], copy_binaries=True
+            ):
+                pass
+
+        if win_vm_2:
+            async with windows_vm_util.new_connection(
+                LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_2], copy_binaries=True
+            ):
+                pass
+
+        if mac_vm:
+            async with mac_vm_util.new_connection(copy_binaries=True):
+                pass
+
+    asyncio.run(copy_binaries())

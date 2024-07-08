@@ -15,11 +15,12 @@ from utils.process import ProcessExecError
 VM_TCLI_DIR = LIBTELIO_BINARY_PATH_WINDOWS_VM
 VM_UNIFFI_DIR = UNIFFI_PATH_WINDOWS_VM
 VM_SYSTEM32 = "C:\\Windows\\System32"
-FILES_COPIED = False
 
 
 @asynccontextmanager
-async def new_connection(ip: str = WINDOWS_1_VM_IP) -> AsyncIterator[Connection]:
+async def new_connection(
+    ip: str = WINDOWS_1_VM_IP, copy_binaries: bool = False
+) -> AsyncIterator[Connection]:
     subprocess.check_call(["sudo", "bash", "vm_nat.sh", "disable"])
     subprocess.check_call(["sudo", "bash", "vm_nat.sh", "enable"])
 
@@ -43,7 +44,8 @@ async def new_connection(ip: str = WINDOWS_1_VM_IP) -> AsyncIterator[Connection]
     ) as ssh_connection:
         connection = SshConnection(ssh_connection, TargetOS.Windows)
 
-        await _copy_binaries(ssh_connection, connection)
+        if copy_binaries:
+            await _copy_binaries(ssh_connection, connection)
 
         try:
             yield connection
@@ -65,10 +67,6 @@ def _file_copy_progress_handler(srcpath, dstpath, bytes_copied, total) -> None:
 async def _copy_binaries(
     ssh_connection: asyncssh.SSHClientConnection, connection: Connection
 ) -> None:
-    global FILES_COPIED
-    if FILES_COPIED:
-        return
-
     for directory in [VM_TCLI_DIR, VM_UNIFFI_DIR]:
         try:
             await connection.create_process(["rmdir", "/s", "/q", directory]).execute()
@@ -126,5 +124,3 @@ async def _copy_binaries(
         except Exception as e:
             print(datetime.now(), "Copy failed", str(e))
             raise e
-
-    FILES_COPIED = True
