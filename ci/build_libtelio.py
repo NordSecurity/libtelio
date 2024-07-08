@@ -334,7 +334,7 @@ def main() -> None:
 
 
 def try_download_artifacts(
-    tag_prefix, path_to_save, target_arch, target_os, moose=False
+    tag_prefix, path_to_save, root_dir, target_arch, target_os, moose=False
 ):
     def get_token():
         if "LLT_API_TOKEN_ARTIFACTS_DOWNLOAD" in os.environ:
@@ -354,6 +354,7 @@ def try_download_artifacts(
             target_arch,
             token,
             path_to_save,
+            root_dir,
             tag_prefix,
         ).download():
             if moose and target_os in ["linux", "windows", "android"]:
@@ -373,6 +374,7 @@ def exec_bindings(args):
         try_download_artifacts(
             args.try_fetch_from_pipeline,
             PROJECT_ROOT,
+            PROJECT_ROOT,
             target_arch=None,
             target_os="uniffi",
         )
@@ -391,7 +393,12 @@ def exec_build(args):
     if args.try_fetch_from_pipeline:
         print("Trying to download build artifacts ...")
         try_download_artifacts(
-            args.try_fetch_from_pipeline, PROJECT_ROOT, args.arch, args.os, args.moose
+            args.try_fetch_from_pipeline,
+            PROJECT_ROOT,
+            PROJECT_ROOT,
+            args.arch,
+            args.os,
+            args.moose,
         )
         return
 

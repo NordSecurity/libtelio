@@ -10,19 +10,26 @@ from datetime import datetime
 # This script is used to download the latest tagged build artifacts from the GitLab CI pipeline.
 class ArtifactsDownloader:
     def __init__(
-        self, target_os, target_arch, token, download_dir="./", tag_prefix="nightly"
+        self,
+        target_os,
+        target_arch,
+        token,
+        path_to_save="./",
+        repo_dir="./",
+        tag_prefix="nightly",
     ):
         self.target_os = target_os
         self.target_arch = target_arch
         self.token = token
-        self.download_dir = download_dir
+        self.path_to_save = path_to_save
+        self.repo_dir = repo_dir
         self.tag_prefix = tag_prefix
 
     def download(self) -> bool:
         _, tag_msg = self._get_latest_tag()
 
         if tag_msg:
-            return self._get_pipeline_build_artifacts()
+            return self._get_pipeline_build_artifacts(tag_msg)
         else:
             print(f"No {self.tag_prefix} tag found.")
 
@@ -43,12 +50,12 @@ class ArtifactsDownloader:
     def _get_latest_tag(self):
         """Find the latest tag with the given prefix."""
         subprocess.run(
-            ["git", "-C", self.download_dir, "fetch", "--tags", "--quiet"], check=True
+            ["git", "-C", self.repo_dir, "fetch", "--tags", "--quiet"], check=True
         )
 
         tags = (
             subprocess.check_output(
-                ["git", "-C", self.download_dir, "tag", "--sort=-creatordate"]
+                ["git", "-C", self.repo_dir, "tag", "--sort=-creatordate"]
             )
             .decode()
             .splitlines()
@@ -70,7 +77,7 @@ class ArtifactsDownloader:
         if latest_tag:
             message = (
                 subprocess.check_output(
-                    ["git", "-C", self.download_dir, "tag", "-l", "-n1", latest_tag]
+                    ["git", "-C", self.repo_dir, "tag", "-l", "-n1", latest_tag]
                 )
                 .decode()
                 .strip()
@@ -117,11 +124,20 @@ class ArtifactsDownloader:
         with zipfile.ZipFile(full_path, "r") as zip_ref:
             zip_ref.extractall(self.path_to_save)
 
-    def _get_pipeline_build_artifacts(self):
+    def _get_pipeline_build_artifacts(self, tag_msg):
+        pipeline_id = None
+
+        try:
+            tag_data = json.loads(tag_msg)
+            pipeline_id = tag_data["pipeline_id"]
+        except json.JSONDecodeError as e:
+            print("Error parsing JSON from tag msg: ", e)
+            return False
+
         for job in json.loads(
             self._get_api(
                 (
-                    f"/pipelines/{self.pipeline_id}/jobs?per_page=100&include_retried=true&scope=success"
+                    f"/pipelines/{pipeline_id}/jobs?per_page=100&include_retried=true&scope=success"
                 )
             )
         ):
