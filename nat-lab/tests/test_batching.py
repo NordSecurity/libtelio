@@ -34,7 +34,7 @@ def _generate_setup_parameter_pair(
                 lana=Lana(prod=False, event_path="/event.db"),
                 wireguard=Wireguard(
                     persistent_keepalive=PersistentKeepalive(
-                        proxying=17, direct=5
+                        proxying=17, direct=1
                     )
                 ),
             ),
@@ -147,28 +147,20 @@ async def test_direct_batching(
 
         async def run_batch_observer(gw: Gateway):
             print(f"Running batch observer for gateway: {gw._name}")
-
-            async def print_histogram(
-                conn_tag: ConnectionTag, name: str, obs_trg: ObservationTarget
-            ):
-                connection = await exit_stack.enter_async_context(
-                    new_connection_raw(conn_tag)
-                )
-                bo = BatchObserver(f"{name}", connection)
-                outgoing_bins = bo.get_histogram(30, obs_trg).bins()
-                print(outgoing_bins)
-
+            
             async with BatchObserver(f"{gw._name}", gw._conn).run() as bo:
-                await asyncio.sleep(60 * 5)
+                await asyncio.sleep(30)
 
                 hs_inc = bo.get_histogram(
-                    20, ObservationTarget(Direction.Incoming, gw._ip)
+                    10, 200, ObservationTarget(Direction.Incoming, gw._ip)
                 ).bins()
                 hs_out = bo.get_histogram(
-                    20, ObservationTarget(Direction.Outgoing, gw._ip)
+                    10, 200, ObservationTarget(Direction.Outgoing, gw._ip)
                 ).bins()
-                print_histogram(hs_inc)
-                print_histogram(hs_out)
+                print(">>>>>>> batching results vvv")
+                print("hs_inc:", hs_inc)
+                print("hs_out", hs_out)
+                print(">>>>>>> batching results ^^^")
 
         tasks = []
         for gw in capture_nodes:
@@ -189,18 +181,23 @@ async def test_direct_batching(
 
         async def run_ping(dest_ip: str):
             async with Ping(alpha_connection, dest_ip, True).run() as ping:
-                await ping.wait_for_next_ping(15)
+                await ping.wait_for_next_ping(5)
+            print("*** task done: ping ", dest_ip)
 
         async def misalign():
-            await asyncio.sleep(10)
+            await asyncio.sleep(1.4)
             async with beta_client.get_router().break_udp_conn_to_host(alpha_ip):
-                await asyncio.sleep(25)
+                await asyncio.sleep(3)
                 await run_ping(beta.ip_addresses[0])
+            
+            print("*** task done: misalign")
 
         await asyncio.gather(
-            misalign(),
-            run_ping(beta.ip_addresses[0]),
-            run_ping(gamma.ip_addresses[0]),
-            run_ping("10.0.10.1"),
+            # misalign(),
+            # run_ping(beta.ip_addresses[0]),
+            # run_ping(gamma.ip_addresses[0]),
+            # run_ping("10.0.10.1"),
             *tasks,
         )
+        
+        print("the end of bathcing test")

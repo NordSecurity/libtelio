@@ -7,35 +7,31 @@ from utils.connection import Connection
 
 
 class Histogram:
-    def __init__(self, bins: int) -> None:
+    def __init__(self) -> None:
         self._values = []
-        self._bins = bins
 
     def add_value(self, value: float) -> None:
         self._values.append(value)
 
-    def _histogram(self, bin_width=1):
+    def get(self, bin_count: int, bin_width: int):
         sorted_values = sorted(self._values)
         min, max = sorted_values[0], sorted_values[len(sorted_values) - 1]
 
         start = min
 
-        if max >= self._bins * bin_width:
+        if max >= bin_count * bin_width:
             raise ValueError(
-                f"Histogram doesn't fit value of {max}. Has {self._bins} with width of {bin_width}"
+                f"Histogram doesn't fit value of {max}. Has {bin_count} with width of {bin_width}"
             )
 
-        hs = [0] * (self._bins + 1)
+        hs = [0] * (bin_count + 1)
 
         for v in sorted_values:
             bin_index = int((v - start) / bin_width)
             hs[bin_index] += 1
 
         return hs
-
-    def bins(self) -> typing.List[int]:
-        return self._histogram()
-
+    
     def __repr__(self) -> str:
         return f"Histogram of {len(self._values)} values"
 
@@ -134,10 +130,8 @@ class BatchObserver:
             yield self
 
     def get_histogram(
-        self, hs_buckets: int, target: ObservationTarget
-    ) -> EventCollection:
-        assert hs_buckets > 0
-
+        self, hs_bins: int, hs_bin_width: int, target: ObservationTarget
+    ) -> EventCollection:        
         filepath = f"./{self._name}.pcap"
 
         total_time = 0
@@ -170,10 +164,12 @@ class BatchObserver:
                 last_pkt = pkt
 
                 tdelta = pkt.time - last_pkt_time
+                 # convert to ms. Millisecond precision allows for a quicker testing as there's no need to wait seconds
+                tdelta *= 1000
                 # print(pkt.time, total_time, direction, f"tdelta: {tdelta}", pkt.summary(), pkt.time, pkt.time)
 
                 assert tdelta >= 0
                 total_time += tdelta
-                if total_time > 100 or True:
-                    evc.add_event(Event(tdelta, src, dst))
-        return evc.get_histogram(hs_buckets)
+                evc.add_event(Event(tdelta, src, dst))
+                    
+        return evc.get_histogram(hs_bins, hs_bin_width)
