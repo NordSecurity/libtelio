@@ -4,8 +4,6 @@ import asyncio
 import datetime
 import json
 import os
-import platform
-import random
 import re
 import shlex
 import uniffi.telio_bindings as libtelio  # type: ignore
@@ -562,16 +560,7 @@ class Client:
 
         object_name = str(uuid.uuid4()).replace("-", "")
         (host_ip, container_ip) = await self._connection.get_ip_address()
-
-        host_os = platform.system()
-        if host_os == "Linux":
-            host_ip = container_ip
-            port = str(random.randrange(10000, 65000))
-            (host_port, container_port) = (port, port)
-        elif host_os in ("Windows", "Darwin"):
-            (host_port, container_port) = await self._connection.mapped_ports()
-        else:
-            raise RuntimeError(f"Unsupported host OS: {host_os}")
+        (host_port, container_port) = await self._connection.mapped_ports()
 
         object_uri = f"PYRO:{object_name}@{host_ip}:{host_port}"
 
