@@ -1883,9 +1883,6 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
 
 @pytest.mark.moose
 @pytest.mark.asyncio
-@pytest.mark.skip(
-    reason="Test does not do what it's supposed to - JIRA issue: LLT-5180"
-)
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
 async def test_lana_same_meshnet_id_is_reported_after_a_restart(
     alpha_ip_stack: IPStack, beta_ip_stack: IPStack
@@ -1928,10 +1925,10 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
 
         await client_beta.trigger_event_collection()
         beta_events = await wait_for_event_dump(
-            ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=2
+            ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=3
         )
         assert beta_events
-        second_beta_meshnet_id = beta_events[0].fp
+        second_beta_meshnet_id = beta_events[2].fp
 
         assert initial_beta_meshnet_id == second_beta_meshnet_id
 
