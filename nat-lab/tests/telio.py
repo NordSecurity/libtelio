@@ -534,6 +534,7 @@ class Client:
     ) -> AsyncIterator["Client"]:
         if isinstance(self._connection, DockerConnection):
             start_tcpdump(self._connection.container_name())
+            await self.clear_core_dumps()
 
         async def on_stdout(stdout: str) -> None:
             supress_print_list = [
@@ -658,9 +659,13 @@ class Client:
                     print(datetime.now(), "Test cleanup stage 1. Saving logs")
                     await self.save_logs()
 
-                    print(datetime.now(), "Test cleanup stage 2. Stopping tcpdump")
+                    print(
+                        datetime.now(),
+                        "Test cleanup stage 2. Stopping tcpdump and collecting core dumps",
+                    )
                     if isinstance(self._connection, DockerConnection):
                         stop_tcpdump([self._connection.container_name()])
+                        await self.collect_core_dumps()
 
                     print(
                         datetime.now(),
@@ -1226,6 +1231,64 @@ class Client:
         ev = self.wait_for_output(f"PMTU -> {host}: {expected}")
         await self._write_command(["pmtu", host])
         await ev.wait()
+
+    # This is where natlab expects coredumps to be placed
+    # For CI and our internal linux VM, this path is set in our provisioning scripts
+    # If you're running locally without the aforementioned linux VM, you are expected to configure this yourself
+    # However, this only needs to be set iff you're:
+    #  - running a test targeting a docker image
+    #  - have set the NATLAB_SAVE_LOGS environment variable
+    #  - want to have natlab automatically collect core dumps for you
+    def get_coredump_folder(self) -> tuple[str, str]:
+        return "/var/crash", "core-"
+
+    def should_skip_core_dump_collection(self) -> bool:
+        return (
+            os.environ.get("NATLAB_SAVE_LOGS") is None
+            or self._connection.target_os != TargetOS.Linux
+        )
+
+    async def clear_core_dumps(self):
+        if self.should_skip_core_dump_collection():
+            return
+
+        coredump_folder, _ = self.get_coredump_folder()
+
+        # clear the existing system core dumps
+        await self._connection.create_process(["rm", "-rf", coredump_folder]).execute()
+        # make sure we have the path where the new cores will be dumped
+        await self._connection.create_process(
+            ["mkdir", "-p", coredump_folder]
+        ).execute()
+
+    async def collect_core_dumps(self):
+        if self.should_skip_core_dump_collection():
+            return
+
+        coredump_folder, file_prefix = self.get_coredump_folder()
+
+        # find all core dump files
+        process = await self._connection.create_process(
+            ["find", coredump_folder, "-maxdepth", "1", "-name", f"{file_prefix}*"]
+        ).execute()
+        dump_files = process.get_stdout().strip().split()
+
+        coredump_dir = "coredumps"
+        os.makedirs(coredump_dir, exist_ok=True)
+
+        should_copy_coredumps = len(dump_files) > 0
+
+        # if we collected some core dumps, copy them
+        if isinstance(self._connection, DockerConnection) and should_copy_coredumps:
+            container_name = self._connection.container_name()
+            test_name = test_name_safe_for_file_name()
+            for i, file_path in enumerate(dump_files):
+                file_name = file_path.rsplit("/", 1)[-1]
+                core_dump_destination = (
+                    f"{coredump_dir}/{test_name}_{file_name}_{i}.core"
+                )
+                cmd = f"docker container cp {container_name}:{file_path} {core_dump_destination}"
+                os.system(cmd)
 
 
 def generate_secret_key() -> str:

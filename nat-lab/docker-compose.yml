@@ -73,6 +73,10 @@ services:
         ipv4_address: 192.168.101.104
     ports:
       - "8081"
+    ulimits:
+      core:
+        soft: -1
+        hard: -1
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.101.254
     extra_hosts:
