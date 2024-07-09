@@ -9,11 +9,12 @@ from utils.process import ProcessExecError
 
 VM_TCLI_DIR = config.LIBTELIO_BINARY_PATH_MAC_VM
 VM_UNIFFI_DIR = config.UNIFFI_PATH_MAC_VM
-FILES_COPIED = False
 
 
 @asynccontextmanager
-async def new_connection(ip: str = config.MAC_VM_IP) -> AsyncIterator[Connection]:
+async def new_connection(
+    ip: str = config.MAC_VM_IP, copy_binaries: bool = False
+) -> AsyncIterator[Connection]:
     subprocess.check_call(["sudo", "bash", "vm_nat.sh", "disable"])
     subprocess.check_call(["sudo", "bash", "vm_nat.sh", "enable"])
 
@@ -37,7 +38,8 @@ async def new_connection(ip: str = config.MAC_VM_IP) -> AsyncIterator[Connection
     ) as ssh_connection:
         connection = SshConnection(ssh_connection, TargetOS.Mac)
 
-        await _copy_binaries(ssh_connection, connection)
+        if copy_binaries:
+            await _copy_binaries(ssh_connection, connection)
 
         try:
             yield connection
@@ -48,10 +50,6 @@ async def new_connection(ip: str = config.MAC_VM_IP) -> AsyncIterator[Connection
 async def _copy_binaries(
     ssh_connection: asyncssh.SSHClientConnection, connection: Connection
 ) -> None:
-    global FILES_COPIED
-    if FILES_COPIED:
-        return
-
     for directory in [VM_TCLI_DIR, VM_UNIFFI_DIR]:
         try:
             await connection.create_process(["rm", "-rf", directory]).execute()
@@ -93,5 +91,3 @@ async def _copy_binaries(
         get_root_path("nat-lab/bin/mac/list_interfaces_with_router_property.py"),
         (ssh_connection, f"{VM_TCLI_DIR}"),
     )
-
-    FILES_COPIED = True
