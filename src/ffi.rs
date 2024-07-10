@@ -338,7 +338,7 @@ impl Telio {
             };
             let mut shutdown = false;
             if let Some(ref mut dev) = *dev {
-                shutdown = dev.try_shutdown(Duration::from_millis(1000)).is_ok();
+                shutdown = dev.try_shutdown_art(Duration::from_millis(1000)).is_ok();
             }
             *dev = None;
             Ok(shutdown)
