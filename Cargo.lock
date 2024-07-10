@@ -435,12 +435,13 @@ dependencies = [
 [[package]]
 name = "boringtun"
 version = "0.5.2"
-source = "git+https://github.com/NordSecurity/boringtun.git?tag=v1.1.11#b163cd2681c05877f3d008e38cd7b7409c14c67d"
+source = "git+https://github.com/NordSecurity/boringtun.git?tag=v1.1.13#51b0a45e6de490cfabbc09c8c14dccf1e0172c59"
 dependencies = [
  "aead",
  "base64 0.13.1",
  "blake2",
  "chacha20poly1305",
+ "dispatch",
  "hex",
  "hmac",
  "ip_network",
@@ -4422,6 +4423,7 @@ dependencies = [
  "libc",
  "mockall",
  "ntest",
+ "num_cpus",
  "pretty_assertions",
  "rand",
  "serde",

@@ -36,7 +36,18 @@ impl BoringTun {
         firewall_reset_connections_callback: super::FirewallResetConnsCb,
     ) -> Result<Self, AdapterError> {
         let config = DeviceConfig {
-            n_threads: 4,
+            // Apple's Boringtun device runs most efficiently on a single perf-core
+            n_threads: {
+                if cfg!(not(any(
+                    target_os = "ios",
+                    target_os = "macos",
+                    target_os = "tvos"
+                ))) {
+                    num_cpus::get()
+                } else {
+                    1
+                }
+            },
             use_connected_socket: cfg!(not(any(
                 target_os = "ios",
                 target_os = "macos",
