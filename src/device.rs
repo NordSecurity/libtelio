@@ -54,7 +54,7 @@ use wg::uapi::{self, AnalyticsEvent, PeerState};
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     future::Future,
-    io::{self, Error as IoError, ErrorKind},
+    io::{self, Error as IoError},
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
     time::{Duration, Instant},
@@ -179,7 +179,7 @@ pub struct DeviceConfig {
 }
 
 pub struct Device {
-    art: Option<Arc<AsyncRuntime>>,
+    async_runtime: Option<Box<AsyncRuntime>>,
     event: Tx<Box<Event>>,
     rt: Option<Task<Runtime>>,
     protect: Option<Arc<dyn Protector>>,
@@ -479,7 +479,7 @@ impl Device {
 
         Ok(Device {
             features,
-            art: Some(Arc::new(art)),
+            async_runtime: Some(Box::new(art)),
             event: event_tx,
             rt: None,
             protect,
@@ -491,7 +491,7 @@ impl Device {
     }
 
     pub fn external_nodes(&self) -> Result<Vec<Node>> {
-        self.art()?.block_on(async {
+        self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |s| Ok(s.external_nodes().await)).await?
         })
     }
@@ -501,7 +501,7 @@ impl Device {
             return Err(Error::AlreadyStarted);
         }
 
-        self.rt = Some(self.art()?.block_on(async {
+        self.rt = Some(self.async_runtime()?.block_on(async {
             let t = Task::start(
                 Runtime::start(
                     self.event.clone(),
@@ -520,7 +520,7 @@ impl Device {
 
     pub fn stop(&mut self) {
         if let Some(rt) = self.rt.take() {
-            if let Some(art) = &self.art {
+            if let Some(art) = &self.async_runtime {
                 let _ = art.block_on(rt.stop());
                 self.flush_events();
             }
@@ -543,7 +543,7 @@ impl Device {
     ///
     /// This methods retrieves the UUID of the virtual interface created by device::start() call
     pub fn get_adapter_luid(&mut self) -> u64 {
-        if let Some(art) = &self.art {
+        if let Some(art) = &self.async_runtime {
             let res: Result<u64> = art.block_on(async {
                 task_exec!(self.rt()?, async move |rt| Ok(rt.get_adapter_luid().await)).await?
             });
@@ -554,25 +554,17 @@ impl Device {
     }
 
     pub fn shutdown_art(&mut self) {
-        if let Some(art) = self.art.take() {
-            if let Ok(art) = Arc::try_unwrap(art) {
-                art.shutdown_background();
-            }
-        }
+        let _ = self.async_runtime.take();
     }
 
-    pub fn try_shutdown(&mut self, timeout: Duration) -> Result {
-        let art = self.art.take().ok_or(Error::NotStarted)?;
-        let art = Arc::try_unwrap(art);
+    pub fn try_shutdown_art(&mut self, timeout: Duration) -> Result {
+        let art = self.async_runtime.take();
         match art {
-            Ok(art) => {
+            Some(art) => {
                 art.shutdown_timeout(timeout);
                 Ok(())
             }
-            _ => Err(Error::AsyncRuntime(IoError::new(
-                ErrorKind::Other,
-                "cannot aquire async runtime",
-            ))),
+            None => Err(Error::NotStarted),
         }
     }
 
@@ -583,7 +575,7 @@ impl Device {
     /// not running. E.g. either before start()'ing or after stop()'ing it.
     pub fn set_private_key(&self, private_key: &SecretKey) -> Result {
         let private_key = *private_key; //Going into async context, therefore just copy for lifetimes
-        self.art()?.block_on(async {
+        self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
                 Ok(rt.set_private_key(&private_key).await)
             })
@@ -593,7 +585,7 @@ impl Device {
 
     /// Retrieves currently configured private key for the interface
     pub fn get_private_key(&self) -> Result<SecretKey> {
-        self.art()?.block_on(async {
+        self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| Ok(rt.get_private_key().await)).await?
         })
     }
@@ -602,7 +594,7 @@ impl Device {
     #[cfg(any(target_os = "linux", doc))]
     #[cfg_attr(docsrs, doc(cfg(target_os = "linux")))]
     pub fn set_fwmark(&self, fwmark: u32) -> Result {
-        self.art()?.block_on(async {
+        self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| Ok(rt.set_fwmark(fwmark).await)).await?
         })
     }
@@ -625,7 +617,7 @@ impl Device {
     /// This method sets the desired meshnet configuration
     pub fn set_config(&self, config: &Option<Config>) -> Result {
         let config = config.clone();
-        self.art()?.block_on(async {
+        self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| Ok(rt
                 .set_config(&config)
                 .boxed()
@@ -640,7 +632,7 @@ impl Device {
     /// therefore this method assumes, that a device has migrated from one network to the other,
     /// and adapts whatever is needed
     pub fn notify_network_change(&self) -> Result {
-        self.art()?.block_on(async {
+        self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
                 Ok(rt.notify_network_change().await)
             })
@@ -649,13 +641,13 @@ impl Device {
     }
 
     pub fn notify_sleep(&self) -> Result {
-        self.art()?.block_on(async {
+        self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| Ok(rt.notify_sleep().await)).await?
         })
     }
 
     pub fn notify_wakeup(&self) -> Result {
-        self.art()?.block_on(async {
+        self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| Ok(rt.notify_wakeup().await)).await?
         })
     }
@@ -666,7 +658,7 @@ impl Device {
     /// new node is created and WireGuard tunnel is established to that node. In the latter case
     /// the specified (matched by public key) meshnet node is "promoted" to be the exit node
     pub fn connect_exit_node(&self, node: &ExitNode) -> Result {
-        self.art()?.block_on(async {
+        self.async_runtime()?.block_on(async {
             let node = node.clone();
             let _wireguard_interface: Arc<DynamicWg> = task_exec!(self.rt()?, async move |rt| {
                 rt.connect_exit_node(&node).boxed().await?;
@@ -689,7 +681,7 @@ impl Device {
     /// Meshnet is disallowed when forming a post-quantum tunnel and if it's enabled
     /// this call will error out.
     pub fn connect_vpn_post_quantum(&self, node: &ExitNode) -> Result {
-        self.art()?.block_on(async {
+        self.async_runtime()?.block_on(async {
             let node = node.clone();
             let _wireguard_interface: Arc<DynamicWg> = task_exec!(self.rt()?, async move |rt| {
                 rt.connect_exit_node_pq(&node).boxed().await?;
@@ -709,7 +701,7 @@ impl Device {
     ///
     /// Undoes the effects of calling device::connect_exit_node(), matching the node by public key
     pub fn disconnect_exit_node(&self, node_key: &PublicKey) -> Result {
-        self.art()?.block_on(async {
+        self.async_runtime()?.block_on(async {
             let node_key = *node_key;
             task_exec!(self.rt()?, async move |rt| {
                 Ok(rt.disconnect_exit_node(&node_key).boxed().await)
@@ -722,7 +714,7 @@ impl Device {
     /// Disconnects from any VPN and/or demotes any meshnet node to be a regular meshnet node
     /// instead of exit node
     pub fn disconnect_exit_nodes(&self) -> Result {
-        self.art()?.block_on(async {
+        self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
                 Ok(rt.disconnect_exit_nodes().boxed().await)
             })
@@ -735,8 +727,11 @@ impl Device {
         self.rt.as_ref().ok_or(Error::NotStarted)
     }
 
-    fn art(&self) -> Result<&Arc<AsyncRuntime>> {
-        self.art.as_ref().ok_or(Error::NotStarted)
+    fn async_runtime(&self) -> Result<&AsyncRuntime> {
+        match self.async_runtime.as_ref() {
+            Some(art) => Ok(art),
+            None => Err(Error::NotStarted),
+        }
     }
 
     /// Enables DNS server
@@ -745,7 +740,7 @@ impl Device {
     /// of the meshnet nodes. If the DNS query sent to this server does not fall under .nord
     /// top-level-domain, the query is forwarded to one of the `upstream_servers`.
     pub fn enable_magic_dns(&self, upstream_servers: &[IpAddr]) -> Result {
-        self.art()?.block_on(async {
+        self.async_runtime()?.block_on(async {
             let upstream_servers = upstream_servers.to_vec();
             task_exec!(self.rt()?, async move |rt| {
                 Ok(rt.start_dns(&upstream_servers).boxed().await)
@@ -758,7 +753,7 @@ impl Device {
     ///
     /// Undoes the effects of `device::enable_magic_dns()` call
     pub fn disable_magic_dns(&self) -> Result {
-        self.art()?.block_on(async {
+        self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| Ok(rt.stop_dns().await)).await?
         })
     }
@@ -767,27 +762,27 @@ impl Device {
     ///
     /// Used only for testing purposes
     pub fn _panic(&self) -> Result {
-        self.art()?.block_on(async {
+        self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| Ok(rt._panic().await)).await?
         })
     }
 
     /// Retrieves a reference to SocketPool. Use this instead of SocketPool::default() when possible
     pub fn get_socket_pool(&self) -> Result<Arc<SocketPool>> {
-        self.art()?.block_on(async {
+        self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| Ok(rt.get_socket_pool().await)).await?
         })
     }
 
     pub fn get_nat(&self, skt: SocketAddr) -> Result<NatData> {
-        match self.art()?.block_on(retrieve_single_nat(skt)) {
+        match self.async_runtime()?.block_on(retrieve_single_nat(skt)) {
             Ok(data) => Ok(data),
             Err(no_data) => Err(Error::FailedNatInfoRecover(no_data)),
         }
     }
 
     pub fn trigger_analytics_event(&self) -> Result<()> {
-        self.art()?.block_on(async {
+        self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| Ok(rt
                 .trigger_analytics_event()
                 .await))
@@ -796,7 +791,7 @@ impl Device {
     }
 
     pub fn trigger_qos_collection(&self) -> Result<()> {
-        self.art()?.block_on(async {
+        self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| Ok(rt
                 .trigger_qos_collection()
                 .await))
@@ -809,7 +804,7 @@ impl Device {
     pub fn probe_pmtu(&self, host: IpAddr) -> Result<u32> {
         use std::os::fd::AsRawFd;
 
-        self.art()?.block_on(async {
+        self.async_runtime()?.block_on(async {
             let sock = telio_pmtu::PMTUSocket::new(
                 host,
                 Duration::from_secs(
@@ -2342,6 +2337,7 @@ fn set_tunnel_interface(socket_pool: &Arc<SocketPool>, config: &DeviceConfig) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use io::ErrorKind;
     use rstest::*;
     use std::net::Ipv6Addr;
     use telio_model::config::{Peer, PeerBase};
