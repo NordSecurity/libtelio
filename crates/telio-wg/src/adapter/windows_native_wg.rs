@@ -7,6 +7,7 @@ use crate::windows::tunnel::interfacewatcher::InterfaceWatcher;
 use async_trait::async_trait;
 #[cfg(windows)]
 use sha2::{Digest, Sha256};
+use std::io::Error as IOError;
 use std::slice::Windows;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::{mem, option, result};
@@ -150,14 +151,16 @@ impl WindowsNativeWg {
             .adapter
             .set_logging(wireguard_nt::AdapterLoggingLevel::OnWithPrefix)
         {
-            return Err(AdapterError::WindowsNativeWg(Error::Fail(
-                "Failed to set logging for adapter".to_string(),
-            )));
+            let os_error = IOError::last_os_error();
+            return Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+                "Failed to set logging for adapter, last error: {os_error:?}",
+            ))));
         }
         if !wg_dev.adapter.up() {
-            return Err(AdapterError::WindowsNativeWg(Error::Fail(
-                "Failed to start adapter".to_string(),
-            )));
+            let os_error = IOError::last_os_error();
+            return Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+                "Failed to start adapter, last error: {os_error:?}",
+            ))));
         }
         Ok(wg_dev)
     }
