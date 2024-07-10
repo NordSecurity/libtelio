@@ -154,6 +154,9 @@ pub struct FeatureNurse {
     /// Enable/disable NAT-traversal connections data. Enabled by default.
     #[serde(default = "FeatureNurse::default_enable_nat_traversal_conn_data")]
     pub enable_nat_traversal_conn_data: bool,
+    /// How long a session can be before it is forcibly reported, in seconds. Default value is 24h.
+    #[serde(default = "FeatureNurse::default_state_duration_cap_in_seconds")]
+    pub state_duration_cap: u64,
 }
 
 impl FeatureNurse {
@@ -180,6 +183,11 @@ impl FeatureNurse {
     fn default_enable_nat_traversal_conn_data() -> bool {
         true
     }
+
+    // The state duration cap was originally hardcoded at 24h, which is now the default value
+    fn default_state_duration_cap_in_seconds() -> u64 {
+        60 * 60 * 24
+    }
 }
 
 impl Default for FeatureNurse {
@@ -192,6 +200,7 @@ impl Default for FeatureNurse {
             enable_nat_type_collection: Self::default_enable_nat_type_collection(),
             enable_relay_conn_data: Self::default_enable_relay_conn_data(),
             enable_nat_traversal_conn_data: Self::default_enable_nat_traversal_conn_data(),
+            state_duration_cap: Self::default_state_duration_cap_in_seconds(),
         }
     }
 }
@@ -690,6 +699,7 @@ mod tests {
             enable_nat_type_collection: false,
             enable_relay_conn_data: true,
             enable_nat_traversal_conn_data: true,
+            state_duration_cap: FeatureNurse::default_state_duration_cap_in_seconds(),
         }),
         lana: Some(FeatureLana {
             event_path: "path/to/some/event/data".to_string(),
@@ -757,6 +767,7 @@ mod tests {
             enable_nat_type_collection: false,
             enable_relay_conn_data: true,
             enable_nat_traversal_conn_data: true,
+            state_duration_cap: FeatureNurse::default_state_duration_cap_in_seconds(),
         }),
         lana: Some(FeatureLana {
             event_path: "path/to/some/event/data".to_string(),
@@ -970,6 +981,7 @@ mod tests {
                 enable_nat_type_collection: false,
                 enable_relay_conn_data: true,
                 enable_nat_traversal_conn_data: true,
+                state_duration_cap: FeatureNurse::default_state_duration_cap_in_seconds(),
             }),
             lana: None,
             paths: None,
@@ -1006,6 +1018,7 @@ mod tests {
                 enable_nat_type_collection: false,
                 enable_relay_conn_data: false,
                 enable_nat_traversal_conn_data: true,
+                state_duration_cap: FeatureNurse::default_state_duration_cap_in_seconds(),
             }),
             lana: None,
             paths: None,
@@ -1037,6 +1050,7 @@ mod tests {
                 enable_nat_type_collection: false,
                 enable_relay_conn_data: false,
                 enable_nat_traversal_conn_data: false,
+                state_duration_cap: FeatureNurse::default_state_duration_cap_in_seconds(),
             }),
             lana: None,
             paths: None,
@@ -1365,6 +1379,54 @@ mod tests {
             }"#,
             ] {
                 assert!(from_str::<Features>(invalid).is_err());
+            }
+        }
+    }
+
+    mod nurse {
+        use super::*;
+
+        mod state_duration_cap {
+            use super::*;
+
+            #[test]
+            fn test_state_duration_cap_missing() {
+                let missing = r#"{"fingerprint": "test"}"#;
+                let features = from_str::<FeatureNurse>(missing).unwrap();
+                assert_eq!(
+                    features.state_duration_cap,
+                    FeatureNurse::default_state_duration_cap_in_seconds()
+                );
+            }
+
+            #[test]
+            fn test_state_duration_cap_number() {
+                let nurse = r#"
+            {
+                "fingerprint": "test", "state_duration_cap": 123
+            }"#;
+                let features = from_str::<FeatureNurse>(nurse).unwrap();
+                assert_eq!(features.state_duration_cap, 123);
+            }
+
+            #[test]
+            fn test_state_duration_cap_invalid() {
+                for invalid in [
+                    r#"
+            {
+                "fingerprint":"test", "state_duration_cap": false
+            }"#,
+                    r#"
+            {
+                "fingerprint":"test", "state_duration_cap": null
+            }"#,
+                    r#"
+            {
+                "fingerprint": "test", "state_duration_cap": "abc"
+            }"#,
+                ] {
+                    assert!(from_str::<FeatureNurse>(invalid).is_err());
+                }
             }
         }
     }

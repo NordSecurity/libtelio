@@ -48,10 +48,11 @@ def test_telio_features():
             initial_heartbeat_interval=10,
             enable_relay_conn_data=False,
             enable_nat_type_collection=False,
+            state_duration_cap=123,
         )
     )
     expected_nurse_qos = TelioFeatures.from_json(
-        """{"is_test_env": true, "exit_dns": {"auto_switch_dns_ips": true}, "nurse": {"fingerprint": "fingerprint", "qos": {"rtt_interval": 5, "rtt_tries": 3, "rtt_types": ["Ping"], "buckets": 5}, "heartbeat_interval": 3600, "initial_heartbeat_interval": 10, "enable_nat_type_collection": false, "enable_relay_conn_data": false}}"""
+        """{"is_test_env": true, "exit_dns": {"auto_switch_dns_ips": true}, "nurse": {"fingerprint": "fingerprint", "qos": {"rtt_interval": 5, "rtt_tries": 3, "rtt_types": ["Ping"], "buckets": 5}, "heartbeat_interval": 3600, "initial_heartbeat_interval": 10, "enable_nat_type_collection": false, "enable_relay_conn_data": false, "state_duration_cap": 123}}"""
     )
     assert nurse_qos_features == expected_nurse_qos
     assert nurse_qos_features.to_json() == expected_nurse_qos.to_json()

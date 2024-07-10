@@ -81,13 +81,16 @@ impl QoSConfig {
 }
 
 /// Configuration for Aggregator component from Nurse
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct AggregatorConfig {
     /// Collect relay events
     pub relay_events: bool,
 
     /// Collect nat traversal events
     pub nat_traversal_events: bool,
+
+    /// Maximum session length before forced collection
+    pub state_duration_cap: Duration,
 }
 
 impl AggregatorConfig {
@@ -96,6 +99,17 @@ impl AggregatorConfig {
         Self {
             relay_events: features.enable_relay_conn_data,
             nat_traversal_events: features.enable_nat_traversal_conn_data,
+            state_duration_cap: Duration::from_secs(features.state_duration_cap),
+        }
+    }
+}
+
+impl Default for AggregatorConfig {
+    fn default() -> Self {
+        Self {
+            relay_events: Default::default(),
+            nat_traversal_events: Default::default(),
+            state_duration_cap: Duration::from_secs(60 * 60 * 24),
         }
     }
 }

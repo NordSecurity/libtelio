@@ -73,6 +73,7 @@ class Nurse(DataClassJsonMixin):
     enable_nat_type_collection: bool = False
     enable_relay_conn_data: bool = False
     enable_nat_traversal_conn_data: bool = False
+    state_duration_cap: int = 60 * 60 * 24
 
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
