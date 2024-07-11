@@ -101,6 +101,8 @@ class LibtelioWrapper:
         libtelio.set_global_logger(libtelio.TelioLogLevel.DEBUG, self._logger_cb)
 
     def shutdown(self):
+        if self._libtelio is not None:
+            self._libtelio.shutdown()
         self._daemon.shutdown()
 
     @serialize_error
