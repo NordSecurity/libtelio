@@ -474,6 +474,8 @@ dictionary FeatureNurse {
     boolean enable_relay_conn_data;
     /// Enable/disable NAT-traversal connections data
     boolean enable_nat_traversal_conn_data;
+    /// How long a session can exist before it is forcibly reported, in seconds. Default value is 24h.
+    u64 state_duration_cap;
 };
 
 /// QoS configuration options

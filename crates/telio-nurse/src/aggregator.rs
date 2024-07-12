@@ -20,8 +20,6 @@ use telio_wg::{
 #[cfg(feature = "mockall")]
 use mockall::automock;
 
-const DAY_DURATION: Duration = Duration::from_secs(60 * 60 * 24);
-
 // Possible Relay connection states - because all of the first 8 bit combinations
 // are reserved for relay states, they need to have the 9th bit on
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
@@ -391,7 +389,9 @@ impl ConnectivityDataAggregator {
             .current_relay_event
             .as_mut()
             .filter(|relay_event| {
-                current_timestamp.duration_since(relay_event.timestamp) > DAY_DURATION || force_save
+                current_timestamp.duration_since(relay_event.timestamp)
+                    > self.config.state_duration_cap
+                    || force_save
             })
         {
             new_relay_segments.push(RelayConnDataSegment::new(event, current_timestamp));
@@ -404,7 +404,7 @@ impl ConnectivityDataAggregator {
             for (peer_event, peer_state) in data_guard.current_peer_events.values_mut() {
                 let since_last_event =
                     current_timestamp.duration_since(Instant::from_std(peer_event.timestamp));
-                if since_last_event > DAY_DURATION || force_save {
+                if since_last_event > self.config.state_duration_cap || force_save {
                     wg_peers
                         .get(&peer_event.public_key)
                         .and_then(|wg_peer| wg_peer.rx_bytes.zip(wg_peer.tx_bytes))
@@ -484,6 +484,8 @@ mod tests {
 
     use super::*;
 
+    const DAY_DURATION: Duration = Duration::from_secs(60 * 60 * 24);
+
     struct TestEnv {
         connectivity_data_aggregator: ConnectivityDataAggregator,
         losing_key: PublicKey,
@@ -525,6 +527,21 @@ mod tests {
         enable_nat_traversal_conn_data: bool,
         rx_tx_bytes: Option<(u64, u64)>,
     ) -> TestEnv {
+        setup_full(
+            enable_relay_conn_data,
+            enable_nat_traversal_conn_data,
+            rx_tx_bytes,
+            None,
+        )
+        .await
+    }
+
+    async fn setup_full(
+        enable_relay_conn_data: bool,
+        enable_nat_traversal_conn_data: bool,
+        rx_tx_bytes: Option<(u64, u64)>,
+        state_duration_cap: Option<u64>,
+    ) -> TestEnv {
         let (smaller_key, interface, bigger_key) = {
             let mut keys: Vec<_> = (0..3)
                 .map(|_| {
@@ -564,10 +581,18 @@ mod tests {
             .expect_get_interface()
             .returning(move || Ok(interface.clone()));
 
-        let nurse_features = FeatureNurse {
-            enable_relay_conn_data,
-            enable_nat_traversal_conn_data,
-            ..Default::default()
+        let nurse_features = match state_duration_cap {
+            Some(state_duration_cap) => FeatureNurse {
+                enable_relay_conn_data,
+                enable_nat_traversal_conn_data,
+                state_duration_cap,
+                ..Default::default()
+            },
+            None => FeatureNurse {
+                enable_relay_conn_data,
+                enable_nat_traversal_conn_data,
+                ..Default::default()
+            },
         };
 
         let connectivity_data_aggregator = ConnectivityDataAggregator::new(
@@ -1007,6 +1032,89 @@ mod tests {
             .await
             .peer;
         assert_eq!(segments.len(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_aggregator_1h_segment_peer() {
+        let state_duration_cap = 60 * 60;
+        let env = setup_full(false, true, Some((3333, 1111)), Some(state_duration_cap)).await;
+        let state_duration_cap = Duration::from_secs(state_duration_cap);
+
+        // Initial event
+        let current_peer_event = env.create_basic_peer_event(KeyKind::Losing);
+        let segment_start = current_peer_event.timestamp;
+        let expected_first_segment_duration = state_duration_cap + Duration::from_secs(1);
+        let expected_second_segment_duration = state_duration_cap + Duration::from_secs(2);
+
+        // Insert the first event
+        env.connectivity_data_aggregator
+            .change_peer_state_relayed(&current_peer_event)
+            .await;
+
+        let segments = env
+            .connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await
+            .peer;
+        assert_eq!(segments.len(), 0);
+
+        time::advance(expected_first_segment_duration).await;
+
+        let segments = env
+            .connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await
+            .peer;
+        assert_eq!(segments.len(), 1);
+        assert_eq!(
+            segments[0],
+            PeerConnDataSegment {
+                node: current_peer_event.public_key,
+                start: segment_start.into(),
+                duration: expected_first_segment_duration,
+                connection_data: PeerConnectionData {
+                    endpoints: PeerEndpointTypes {
+                        local_ep: EndpointType::Relay,
+                        remote_ep: EndpointType::Relay,
+                    },
+                    rx_bytes: 3333,
+                    tx_bytes: 1111
+                }
+            }
+        );
+
+        let segments = env
+            .connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await
+            .peer;
+        assert_eq!(segments.len(), 0);
+
+        time::advance(expected_second_segment_duration).await;
+
+        let expected_second_segment_start = segment_start + expected_first_segment_duration;
+        let segments = env
+            .connectivity_data_aggregator
+            .collect_unacknowledged_segments()
+            .await
+            .peer;
+        assert_eq!(segments.len(), 1);
+        assert_eq!(
+            segments[0],
+            PeerConnDataSegment {
+                node: current_peer_event.public_key,
+                start: expected_second_segment_start.into(),
+                duration: expected_second_segment_duration,
+                connection_data: PeerConnectionData {
+                    endpoints: PeerEndpointTypes {
+                        local_ep: EndpointType::Relay,
+                        remote_ep: EndpointType::Relay,
+                    },
+                    rx_bytes: 0,
+                    tx_bytes: 0
+                }
+            }
+        );
     }
 
     #[tokio::test(start_paused = true)]
