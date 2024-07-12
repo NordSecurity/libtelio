@@ -8,7 +8,7 @@
 
 use crypto_box::{
     aead::{Aead, AeadCore},
-    PublicKey as BoxPublicKey, SalsaBox,
+    SalsaBox,
 };
 use num_enum::{IntoPrimitive, TryFromPrimitive, TryFromPrimitiveError};
 use std::{
@@ -339,11 +339,9 @@ async fn write_client_key<W: AsyncWrite + Unpin>(
     server_key: PublicKey,
     #[cfg(test)] rng_mock: Option<CryptoStepRng>,
 ) -> Result<(), Error> {
-    let server_key = server_key.into();
-    let secret_key = secret_key.into();
-    let public_key = BoxPublicKey::from(&secret_key);
+    let public_key = secret_key.public();
 
-    telio_log_trace!("DERP starting with {}", PublicKey::from(public_key.clone()));
+    telio_log_trace!("DERP starting with {}", public_key);
 
     #[cfg(not(test))]
     let mut rng = rand_core::OsRng;
@@ -359,14 +357,14 @@ async fn write_client_key<W: AsyncWrite + Unpin>(
     };
 
     let plain_text = b"{\"version\": 2, \"meshKey\": \"\"}";
-    let b = SalsaBox::new(&server_key, &secret_key);
+    let b = SalsaBox::new(&server_key.into(), &secret_key.into());
 
     let ciphertext = b
         .encrypt(&nonce, &plain_text[..])
         .map_err(|err| -> Error { IoError::new(ErrorKind::Other, err.to_string()).into() })?;
 
     let mut buf = Vec::<u8>::new();
-    buf.write_all(public_key.as_bytes()).await?;
+    buf.write_all(&public_key.0).await?;
     buf.write_all(&nonce).await?;
     buf.write_all(&ciphertext).await?;
     write_frame(writer, FrameType::ClientInfo, buf).await
