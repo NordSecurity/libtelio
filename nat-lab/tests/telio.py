@@ -1,7 +1,6 @@
 # pylint: disable=too-many-lines
 
 import asyncio
-import datetime
 import json
 import os
 import platform
@@ -15,6 +14,7 @@ from config import DERP_PRIMARY, DERP_SERVERS
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from dataclasses_json import DataClassJsonMixin, dataclass_json
+from datetime import datetime
 from enum import Enum
 from mesh_api import Meshmap, Node, start_tcpdump, stop_tcpdump
 from telio_features import TelioFeatures
@@ -519,7 +519,7 @@ class Client:
         self._adapter_type = adapter_type
         self._telio_features = telio_features
         self._quit = False
-        self._start_time = datetime.datetime.now()
+        self._start_time = datetime.now()
         self._libtelio_proxy: Optional[LibtelioProxy] = None
         # Automatically enables IPv6 feature when the IPv6 stack is enabled
         if (
@@ -655,18 +655,34 @@ class Client:
                             await self.set_meshmap(meshmap)
                         yield self
                 finally:
+                    print(datetime.now(), "Test cleanup stage 1. Saving logs")
                     await self.save_logs()
+
+                    print(datetime.now(), "Test cleanup stage 2. Stopping tcpdump")
                     if isinstance(self._connection, DockerConnection):
                         stop_tcpdump([self._connection.container_name()])
+
+                    print(
+                        datetime.now(),
+                        "Test cleanup stage 3. Saving MacOS network info",
+                    )
                     await self.save_mac_network_info()
+
+                    print(datetime.now(), "Test cleanup stage 4. Stopping device")
                     if self._process.is_executing():
                         await self.stop_device()
                         self._quit = True
+
+                    print(datetime.now(), "Test cleanup stage 5. Shutting down")
                     self.get_proxy().shutdown(self._connection.target_name())
+
+                    print(datetime.now(), "Test cleanup stage 6. Clearing up routes")
                     if self._router:
                         await self._router.delete_vpn_route()
                         await self._router.delete_exit_node_route()
                         await self._router.delete_interface()
+
+                    print(datetime.now(), "Test cleanup complete")
 
     async def simple_start(self):
         self.get_proxy().start_named(
@@ -968,7 +984,7 @@ class Client:
                 while event:
                     if self._runtime:
                         print(
-                            f"[{self._node.name}]: event [{datetime.datetime.now()}]:"
+                            f"[{self._node.name}]: event [{datetime.now()}]:"
                             f" {event}"
                         )
                         self._runtime.handle_output_line(event)
