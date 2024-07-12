@@ -346,7 +346,7 @@ impl State {
 
     fn meshnet_id() -> Uuid {
         telio_lana::fetch_context_string(String::from(
-            "context.application.libtelioapp.config.current_state.internal_meshnet.fp",
+            "application.libtelioapp.config.current_state.internal_meshnet.fp",
         ))
         .map(|fp| {
             Uuid::parse_str(&fp).unwrap_or_else(|_| {
