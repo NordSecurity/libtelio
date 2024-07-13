@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "4a95b7874669bcd26a8cf9f906bc6f38bae84cc4e80798f04c42d1b9f15dcfd2"
+            "sha256": "71bd573530326383e204ced00911ca3aedb3592009f98e670b36979b18c1e638"
         },
         "pipfile-spec": 6,
         "requires": {},
@@ -841,6 +841,14 @@
             ],
             "index": "pypi",
             "version": "==0.2.2"
+        },
+        "scapy": {
+            "hashes": [
+                "sha256:5b260c2b754fd8d409ba83ee7aee294ecdbb2c235f9f78fe90bc11cb6e5debc2"
+            ],
+            "index": "pypi",
+            "markers": "python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2, 3.3' and python_version < '4'",
+            "version": "==2.5.0"
         },
         "serpent": {
             "hashes": [

@@ -287,8 +287,14 @@ async fn consolidate_wg_peers<
                             .unwrap_or(requested_state.keepalive_periods.direct)
                             .into(),
                     ),
+                    Duration::from_secs(
+                        requested_state
+                            .keepalive_periods
+                            .direct_batching_threshold
+                            .into(),
+                    ),
                 )
-                .await?;
+                .await?
             }
         }
         telio_log_debug!(
@@ -963,6 +969,8 @@ mod tests {
     use crate::device::{DeviceConfig, DNS};
     use mockall::predicate::{self, eq};
     use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4};
+    use telio_batcher::batcher::MockBatcherTrait;
+
     use telio_crypto::SecretKey;
     use telio_dns::MockDnsResolver;
     use telio_firewall::firewall::{MockFirewall, FILE_SEND_PORT};
@@ -1337,6 +1345,7 @@ mod tests {
     }
 
     struct Fixture {
+        batcher: MockBatcherTrait,
         requested_state: RequestedState,
         wireguard_interface: MockWireGuard,
         proxy: MockProxy,
@@ -1351,6 +1360,7 @@ mod tests {
     impl Fixture {
         fn new() -> Self {
             Self {
+                batcher: MockBatcherTrait::new(),
                 requested_state: RequestedState::default(),
                 wireguard_interface: MockWireGuard::new(),
                 proxy: MockProxy::new(),
@@ -1612,8 +1622,9 @@ mod tests {
                         eq(i.0),
                         eq((Some(ip4), ip6)),
                         eq(Duration::from_secs(i.3.into())),
+                        eq(Duration::from_secs(0)),
                     )
-                    .return_once(|_, _, _| Ok(()));
+                    .return_once(|_, _, _, _| Ok(()));
             }
         }
 

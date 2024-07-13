@@ -46,6 +46,7 @@ telio-nat-detect.workspace = true
 telio-nurse.workspace = true
 telio-pmtu.workspace = true
 telio-proto.workspace = true
+telio-batcher.workspace = true
 telio-proxy.workspace = true
 telio-pq.workspace = true
 telio-relay.workspace = true
@@ -78,6 +79,7 @@ tokio = { workspace = true, features = ["test-util"] }
 telio-dns = { workspace = true, features = ["mockall"] }
 telio-firewall = { workspace = true, features = ["mockall"] }
 telio-proxy = { workspace = true, features = ["mockall"] }
+telio-batcher = { workspace = true, features = ["mockall"] }
 telio-pq = { workspace = true, features = ["mockall"] }
 telio-test.workspace = true
 telio-traversal = { workspace = true, features = ["mockall"] }
@@ -162,6 +164,7 @@ windows = { version = "0.56", features = [
 boringtun = { git = "https://github.com/NordSecurity/boringtun.git", tag = "v1.2.1", features = ["device"] }
 x25519-dalek = { version = "2.0.1", features = ["reusable_secrets", "static_secrets"] }
 
+
 telio-crypto = { version = "0.1.0", path = "./crates/telio-crypto" }
 telio-dns = { version = "0.1.0", path = "./crates/telio-dns" }
 telio-firewall = { version = "0.1.0", path = "./crates/telio-firewall" }
@@ -170,6 +173,7 @@ telio-model = { version = "0.1.0", path = "./crates/telio-model" }
 telio-nat-detect = { version = "0.1.0", path = "./crates/telio-nat-detect" }
 telio-nurse = { version = "0.1.0", path = "./crates/telio-nurse" }
 telio-proto = { version = "0.1.0", path = "./crates/telio-proto" }
+telio-batcher = { version = "0.1.0", path = "./crates/telio-batcher" }
 telio-proxy = { version = "0.1.0", path = "./crates/telio-proxy" }
 telio-relay = { version = "0.1.0", path = "./crates/telio-relay" }
 telio-sockets = { version = "0.1.0", path = "./crates/telio-sockets" }

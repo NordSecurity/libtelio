@@ -1,4 +1,3 @@
-use telio;
 use telio::TelioTracingSubscriber;
 
 mod test_module {

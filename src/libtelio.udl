@@ -456,6 +456,8 @@ dictionary FeaturePersistentKeepalive {
     u32? proxying;
     /// Persistent keepalive period for stun peers (in seconds) [default 25s]
     u32? stun;
+    /// Persistent keepalive batching threshold for direct peers (in seconds) [default 0s]
+    u32 direct_batching_threshold;
 };
 
 /// Configurable features for Nurse module
