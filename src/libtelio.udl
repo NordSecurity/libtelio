@@ -506,6 +506,10 @@ interface FeaturesDefaultsBuilder {
     /// Eanable multicast with defaults
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_multicast();
+
+    /// Enable keepalive batching feature
+    [Self=ByArc]
+    FeaturesDefaultsBuilder enable_batching();
 };
 
 
@@ -545,6 +549,13 @@ dictionary Features {
     FeaturePmtuDiscovery? pmtu_discovery;
     /// Multicast support
     boolean multicast;
+    /// Batching
+    FeatureBatching? batching;
+};
+
+dictionary FeatureBatching {
+    /// direct connection threshold for batching
+    u32 direct_connection_threshold;
 };
 
 /// Configurable features for Wireguard peers

@@ -59,6 +59,7 @@ def test_telio_features_builder_all_defaults():
         .enable_multicast()
         .enable_ipv6()
         .enable_nicknames()
+        .enable_batching()
         .build()
     )
     json = """
@@ -87,7 +88,10 @@ def test_telio_features_builder_all_defaults():
         "flush_events_on_stop_timeout_seconds": 0,
         "multicast": true,
         "ipv6": true,
-        "nicknames": true
+        "nicknames": true,
+        "batching": {
+            "direct_connection_threshold": 0
+        }
     }
     """
     expect = deserialize_feature_config(json)

@@ -287,18 +287,40 @@ async fn consolidate_wg_peers<
                 };
 
                 // Start persistent keepalives
-                sk.add_node(
-                    &requested_peer.peer.public_key,
-                    target,
-                    Duration::from_secs(
-                        requested_peer
-                            .peer
-                            .persistent_keepalive_interval
-                            .unwrap_or(requested_state.keepalive_periods.direct)
-                            .into(),
-                    ),
-                )
-                .await?;
+                match &features.batching {
+                    Some(batching) => {
+                        sk.add_node(
+                            requested_peer.peer.public_key,
+                            target,
+                            Duration::from_secs(
+                                requested_peer
+                                    .peer
+                                    .persistent_keepalive_interval
+                                    .unwrap_or(requested_state.keepalive_periods.direct)
+                                    .into(),
+                            ),
+                            Some(Duration::from_secs(
+                                batching.direct_connection_threshold as u64,
+                            )),
+                        )
+                        .await?
+                    }
+                    None => {
+                        sk.add_node(
+                            requested_peer.peer.public_key,
+                            target,
+                            Duration::from_secs(
+                                requested_peer
+                                    .peer
+                                    .persistent_keepalive_interval
+                                    .unwrap_or(requested_state.keepalive_periods.direct)
+                                    .into(),
+                            ),
+                            None,
+                        )
+                        .await?
+                    }
+                }
             }
         }
         telio_log_debug!(
@@ -1010,7 +1032,9 @@ mod tests {
     use super::*;
     use crate::device::{DeviceConfig, DNS};
     use mockall::predicate::{self, eq};
+
     use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4};
+
     use telio_crypto::SecretKey;
     use telio_dns::MockDnsResolver;
     use telio_firewall::firewall::{MockFirewall, FILE_SEND_PORT};
@@ -1458,6 +1482,7 @@ mod tests {
                     },
                     pmtu_discovery: Default::default(),
                     multicast: false,
+                    batching: None,
                 },
                 post_quantum: MockPostQuantum::new(),
                 stun_ep_provider,
@@ -1692,7 +1717,10 @@ mod tests {
             }
         }
 
-        fn then_keeper_add_node(&mut self, input: Vec<(PublicKey, IpAddr, Option<IpAddr>, u32)>) {
+        fn then_keeper_add_node(
+            &mut self,
+            input: Vec<(PublicKey, IpAddr, Option<IpAddr>, u32, Option<Duration>)>,
+        ) {
             for i in input {
                 let ip4 = {
                     match i.1 {
@@ -1718,8 +1746,9 @@ mod tests {
                         eq(i.0),
                         eq((Some(ip4), ip6)),
                         eq(Duration::from_secs(i.3.into())),
+                        eq(i.4),
                     )
-                    .return_once(|_, _, _| Ok(()));
+                    .return_once(|_, _, _, _| Ok(()));
             }
         }
 
@@ -1744,13 +1773,7 @@ mod tests {
             let cross_ping_check = Arc::new(self.cross_ping_check);
             let upgrade_sync = Arc::new(self.upgrade_sync);
             let session_keeper = Arc::new(self.session_keeper);
-            let stun_ep_provider = {
-                if let Some(stun_ep_provider) = self.stun_ep_provider {
-                    Some(Arc::new(stun_ep_provider))
-                } else {
-                    None
-                }
-            };
+            let stun_ep_provider = { self.stun_ep_provider.map(Arc::new) };
             let upnp_ep_provider: Option<Arc<MockEndpointProvider>> = None;
 
             consolidate_wg_peers(
@@ -1809,6 +1832,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn when_upgrade_requested_by_peer_then_upgrade_and_batching() {
+        let mut f = Fixture::new();
+        f.features.ipv6 = true;
+        f.features.batching = Some(Default::default());
+
+        let pub_key = SecretKey::gen().public();
+        let ip1 = IpAddr::from([1, 2, 3, 4]);
+        let ip1v6 = IpAddr::V6(Ipv6Addr::from([
+            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4,
+        ]));
+        let ip2 = IpAddr::from([5, 6, 7, 8]);
+        let ip2v6 = IpAddr::V6(Ipv6Addr::from([
+            5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8,
+        ]));
+        let allowed_ips = vec![ip1, ip1v6, ip2, ip2v6];
+        let remote_wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
+        let mapped_port = 12;
+        let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
+
+        let direct_keepalive_period = 1234;
+        f.requested_state.keepalive_periods.direct = direct_keepalive_period;
+
+        f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
+        f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
+        f.when_current_peers(vec![(
+            pub_key,
+            proxy_endpoint,
+            TEST_PERSISTENT_KEEPALIVE_PERIOD,
+            allowed_ips.clone(),
+        )]);
+        f.when_time_since_last_rx(vec![(pub_key, 5)]);
+        f.when_time_since_last_endpoint_change(vec![(pub_key, 5)]);
+        f.when_cross_check_validated_endpoints(vec![]);
+        f.when_upgrade_requests(vec![(pub_key, remote_wg_endpoint, Instant::now())]);
+
+        f.then_add_peer(vec![(
+            pub_key,
+            remote_wg_endpoint,
+            direct_keepalive_period,
+            allowed_ips.iter().copied().map(|ip| ip.into()).collect(),
+            allowed_ips,
+        )]);
+        f.then_proxy_mute(vec![(
+            pub_key,
+            Some(Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW)),
+        )]);
+        f.then_keeper_add_node(vec![(
+            pub_key,
+            ip1,
+            Some(ip1v6),
+            direct_keepalive_period,
+            Some(Duration::from_secs(0)),
+        )]);
+
+        f.consolidate_peers().await;
+    }
+
+    #[tokio::test]
     async fn when_upgrade_requested_by_peer_then_upgrade() {
         let mut f = Fixture::new();
         f.features.ipv6 = true;
@@ -1854,7 +1935,13 @@ mod tests {
             pub_key,
             Some(Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW)),
         )]);
-        f.then_keeper_add_node(vec![(pub_key, ip1, Some(ip1v6), direct_keepalive_period)]);
+        f.then_keeper_add_node(vec![(
+            pub_key,
+            ip1,
+            Some(ip1v6),
+            direct_keepalive_period,
+            None,
+        )]);
 
         f.consolidate_peers().await;
     }
@@ -1913,7 +2000,13 @@ mod tests {
             local_wg_endpoint,
             session_id,
         )]);
-        f.then_keeper_add_node(vec![(pub_key, ip1, Some(ip1v6), direct_keepalive_period)]);
+        f.then_keeper_add_node(vec![(
+            pub_key,
+            ip1,
+            Some(ip1v6),
+            direct_keepalive_period,
+            None,
+        )]);
         f.then_proxy_mute(vec![(
             pub_key,
             Some(Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW)),
@@ -2243,6 +2336,7 @@ mod tests {
             ip1,
             Some(ip1v6),
             TEST_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
+            None,
         )]);
 
         f.consolidate_peers().await;

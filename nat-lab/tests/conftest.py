@@ -58,6 +58,7 @@ def event_loop():
             loop.close()
 
 
+# Keep in mind that Windows can consider the filesize too big if parameters are not stripped
 def pytest_make_parametrize_id(config, val):
     param_id = ""
     if isinstance(val, (List, Tuple)):
@@ -75,6 +76,9 @@ def pytest_make_parametrize_id(config, val):
         ):
             for provider in val.features.direct.providers:
                 param_id += f"-{provider}"
+
+        if val.features.batching is not None:
+            param_id += f"-{str(val.features.batching).replace('direct_connection_threshold', 'dir').replace('Batching', 'Batch')}"
     elif isinstance(val, (ConnectionTag,)):
         param_id = val.name.removeprefix("DOCKER_")
     elif isinstance(val, (AdapterType,)):

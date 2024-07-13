@@ -21,17 +21,20 @@ use telio_task::{
     io::{chan, mc_chan, mc_chan::Tx, Chan, McChan},
     task_exec, BoxAction, Runtime as TaskRuntime, Task,
 };
+use telio_traversal::SessionKeeperTrait;
 use telio_traversal::{
     connectivity_check,
     cross_ping_check::{CrossPingCheck, CrossPingCheckTrait, Io as CpcIo, UpgradeController},
     endpoint_providers::{
-        self, local::LocalInterfacesEndpointProvider, stun::StunEndpointProvider, stun::StunServer,
-        upnp::UpnpEndpointProvider, EndpointProvider,
+        self,
+        local::LocalInterfacesEndpointProvider,
+        stun::{StunEndpointProvider, StunServer},
+        upnp::UpnpEndpointProvider,
+        EndpointProvider,
     },
     last_rx_time_provider::{TimeSinceLastRxProvider, WireGuardTimeSinceLastRxProvider},
     ping_pong_handler::PingPongHandler,
-    SessionKeeper, SessionKeeperTrait, UpgradeRequestChangeEvent, UpgradeSync,
-    WireGuardEndpointCandidateChangeEvent,
+    SessionKeeper, UpgradeRequestChangeEvent, UpgradeSync, WireGuardEndpointCandidateChangeEvent,
 };
 
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
@@ -958,6 +961,7 @@ impl MeshnetEntities {
                 }
             }}
         }
+
         macro_rules! stop_arc_entity {
             ($entity: expr, $name: expr) => {{
                 stop_entity!(Arc::try_unwrap($entity), $name)
@@ -987,6 +991,7 @@ impl MeshnetEntities {
 
         stop_arc_entity!(self.multiplexer, "Multiplexer");
         stop_arc_entity!(self.derp, "Derp");
+
         let endpoint_map = self.proxy.get_endpoint_map().await.unwrap_or_default();
         stop_arc_entity!(self.proxy, "UdpProxy");
         if let Some(starcast) = self.starcast {

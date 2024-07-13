@@ -54,6 +54,17 @@ pub struct Features {
     pub pmtu_discovery: Option<FeaturePmtuDiscovery>,
     /// Multicast support
     pub multicast: bool,
+    /// Batching feature configuration, disabled by default, used for batching keep-alives
+    pub batching: Option<FeatureBatching>,
+}
+
+/// Configure keepalive batching
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[serde(default)]
+pub struct FeatureBatching {
+    /// Direct connection threshold when batching (in seconds) [default 0s]
+    #[default(0)]
+    pub direct_connection_threshold: u32,
 }
 
 /// Configurable features for Wireguard peers
@@ -487,7 +498,10 @@ mod tests {
             "pmtu_discovery": {
                 "response_wait_timeout_s": 20
             },
-            "multicast": true
+            "multicast": true,
+            "batching": {
+                "direct_connection_threshold": 60
+            }
         }
         "#;
             let actual = from_str::<Features>(json).unwrap();
@@ -569,6 +583,9 @@ mod tests {
                     response_wait_timeout_s: 20,
                 }),
                 multicast: true,
+                batching: Some(FeatureBatching {
+                    direct_connection_threshold: 60,
+                }),
             };
 
             assert_eq!(actual, expected);
