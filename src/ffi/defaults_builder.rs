@@ -33,6 +33,7 @@ impl FeaturesDefaultsBuilder {
             multicast: false,
             ipv6: false,
             nicknames: false,
+            batching: default(),
         };
 
         Self {

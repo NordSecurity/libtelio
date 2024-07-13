@@ -75,6 +75,9 @@ def pytest_make_parametrize_id(config, val):
         ):
             for provider in val.features.direct.providers:
                 param_id += f"-{provider}"
+
+        if val.features.batching is not None:
+            param_id += f"-{str(val.features.batching).replace('direct_connection_threshold', 'dir_thr')}"
     elif isinstance(val, (ConnectionTag,)):
         param_id = val.name.removeprefix("DOCKER_")
     elif isinstance(val, (AdapterType,)):
