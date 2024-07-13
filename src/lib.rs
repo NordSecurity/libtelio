@@ -16,6 +16,9 @@ pub use ffi::TelioTracingSubscriber;
 pub mod device;
 
 /// cbindgen:ignore
+pub use telio_batcher as batcher;
+
+/// cbindgen:ignore
 pub use telio_crypto as crypto;
 
 /// cbindgen:ignore
@@ -245,7 +248,7 @@ mod uniffi_libtelio {
         #[case(SecretKey::gen().public())]
         #[case(SecretKey::gen().public())]
         fn test_public_key_conversion(#[case] key: PublicKey) {
-            let serialized = PublicKey::from_custom(key.clone());
+            let serialized = PublicKey::from_custom(key);
             let deserialized = PublicKey::into_custom(serialized).unwrap();
 
             assert_eq!(deserialized, key);
@@ -255,7 +258,7 @@ mod uniffi_libtelio {
         #[case(SecretKey::gen())]
         #[case(SecretKey::gen())]
         fn test_secret_key_conversion(#[case] key: SecretKey) {
-            let serialized = SecretKey::from_custom(key.clone());
+            let serialized = SecretKey::from_custom(key);
             let deserialized = SecretKey::into_custom(serialized).unwrap();
 
             assert_eq!(deserialized, key);

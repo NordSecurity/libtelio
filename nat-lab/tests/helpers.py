@@ -331,7 +331,7 @@ async def setup_mesh_nodes(
     await asyncio.gather(*[
         client.wait_for_state_on_any_derp([State.Connected])
         for client, instance in zip_longest(env.clients, instances)
-        if instance.derp_servers != []
+        if instance.derp_servers != [] and instance.is_meshnet
     ])
 
     connection_future = asyncio.gather(*[
@@ -351,6 +351,8 @@ async def setup_mesh_nodes(
             other_instance,
         ) in product(zip_longest(env.clients, env.nodes, instances), repeat=2)
         if node != other_node
+        and instance.is_meshnet
+        and other_instance.is_meshnet
         and instance.derp_servers != []
         and other_instance.derp_servers != []
     ])

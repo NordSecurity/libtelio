@@ -51,6 +51,8 @@ services:
     cap_drop:
       - ALL
     cap_add:
+      - CAP_DAC_OVERRIDE
+      - CAP_CHOWN
       - NET_RAW
       - NET_ADMIN
       - NET_BIND_SERVICE
@@ -98,7 +100,7 @@ services:
     ports:
       - "8082"
     environment:
-      CLIENT_GATEWAY_PRIMARY: 192.168.102.254
+      CLIENT_GATEWAY_PRIMARY: 192.168.102.254  
   # Client that shares two cone networks on different interfaces
   shared-client-01:
     hostname: shared-client-01

@@ -18,6 +18,9 @@ pub const DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD: u32 = 5;
 /// Type alias for UniFFI
 pub type EndpointProviders = HashSet<EndpointProvider>;
 
+/// Default batching threshold
+pub const DEFAULT_BATCHING_THRESHOLD: u32 = 0; // turn it off by default
+
 /// Configurable persistent keepalive periods for different types of peers
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct FeaturePersistentKeepalive {
@@ -36,6 +39,10 @@ pub struct FeaturePersistentKeepalive {
     /// Persistent keepalive period for stun peers (in seconds) [default 25s]
     #[serde(default = "FeaturePersistentKeepalive::default_keepalive_period")]
     pub stun: Option<u32>,
+
+    /// Persistent keepalive batching threshold for direct peers (in seconds) [default 0s]
+    #[serde(default = "FeaturePersistentKeepalive::default_batching_threshold")]
+    pub direct_batching_threshold: u32,
 }
 
 impl FeaturePersistentKeepalive {
@@ -46,6 +53,11 @@ impl FeaturePersistentKeepalive {
     fn default_direct_keepalive_period() -> u32 {
         DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD
     }
+
+    // By default, turn off batching, unless explicitly enabled
+    fn default_batching_threshold() -> u32 {
+        DEFAULT_BATCHING_THRESHOLD
+    }
 }
 
 impl Default for FeaturePersistentKeepalive {
@@ -55,6 +67,7 @@ impl Default for FeaturePersistentKeepalive {
             direct: DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
             proxying: Some(DEFAULT_PERSISTENT_KEEPALIVE_PERIOD),
             stun: Some(DEFAULT_PERSISTENT_KEEPALIVE_PERIOD),
+            direct_batching_threshold: DEFAULT_BATCHING_THRESHOLD,
         }
     }
 }
@@ -684,6 +697,7 @@ mod tests {
                 direct: 5,
                 proxying: Some(25),
                 stun: Some(50),
+                direct_batching_threshold: 0,
             },
         },
         nurse: Some(FeatureNurse {
@@ -752,6 +766,7 @@ mod tests {
                 direct: 5,
                 proxying: Some(25),
                 stun: Some(50),
+                direct_batching_threshold: 0,
             },
         },
         nurse: Some(FeatureNurse {

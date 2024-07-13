@@ -45,6 +45,7 @@ typing-extensions = "*"
 typing-inspect = "*"
 yarl = "*"
 requests = "*"
+scapy = "*"
 
 [dev-packages]
 

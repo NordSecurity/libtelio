@@ -90,6 +90,7 @@ class PersistentKeepalive(DataClassJsonMixin):
     direct: Optional[int] = 5
     vpn: Optional[int] = 25
     stun: Optional[int] = 25
+    direct_batching_threshold: Optional[int] = 0
 
 
 @dataclass_json(undefined=Undefined.EXCLUDE)

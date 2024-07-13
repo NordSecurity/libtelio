@@ -4259,6 +4259,7 @@ dependencies = [
  "serde_json",
  "slog-async",
  "slog-term",
+ "telio-batcher",
  "telio-crypto",
  "telio-dns",
  "telio-firewall",
@@ -4285,6 +4286,20 @@ dependencies = [
  "uuid",
  "winapi",
  "winres",
+]
+
+[[package]]
+name = "telio-batcher"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures",
+ "mockall",
+ "telio-task",
+ "telio-utils",
+ "thiserror",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -4657,6 +4672,7 @@ dependencies = [
  "strum",
  "stun_codec",
  "surge-ping",
+ "telio-batcher",
  "telio-crypto",
  "telio-model",
  "telio-nurse",

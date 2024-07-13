@@ -1,4 +1,3 @@
-use telio;
 use telio::TelioTracingSubscriber;
 
 mod test_module {
@@ -26,7 +25,7 @@ mod test_module {
                 payload: String,
             ) -> FFIResult<()> {
                 assert!(matches!(log_level, telio::ffi_types::TelioLogLevel::Info));
-                assert_eq!(r#""logger::test_module":43 test message"#, payload);
+                assert_eq!(r#""logger::test_module":42 test message"#, payload);
                 assert_eq!(0, self.call_count.fetch_add(1, Ordering::Relaxed));
                 Ok(())
             }
