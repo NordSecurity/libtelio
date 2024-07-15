@@ -108,7 +108,7 @@ base64 = "0.13.0"
 bytes = "1"
 cc = "1.0"
 clap = { version = "3.1", features = ["derive"] }
-crypto_box = { version = "0.9.1", features = ["std", "chacha20"]}
+crypto_box = { version = "0.9.1", features = ["std"] }
 env_logger = "0.9.0"
 futures = "0.3"
 hashlink = "0.8.3"
@@ -134,7 +134,6 @@ proptest-derive = "0.3.0"
 protobuf-codegen-pure = "2"
 rand = "0.8"
 rstest = "0.11.0"
-rupnp = { version = "1.1.0", default-features = false }
 rustc-hash = "1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

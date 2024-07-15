@@ -905,7 +905,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "16182b4f39a82ec8a6851155cc4c0cda3065bb1db33651726a29e1951de0f009"
 dependencies = [
  "aead",
- "chacha20",
  "crypto_secretbox",
  "curve25519-dalek",
  "salsa20",
@@ -920,7 +919,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9d6cf87adf719ddf43a805e92c6870a531aedda35ff640442cbaf8674e141e1"
 dependencies = [
  "aead",
- "chacha20",
  "cipher",
  "generic-array",
  "poly1305",
@@ -1571,22 +1569,6 @@ dependencies = [
  "pin-utils",
  "slab",
 ]
-
-[[package]]
-name = "genawaiter"
-version = "0.99.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c86bd0361bcbde39b13475e6e36cb24c329964aa2611be285289d1e4b751c1a0"
-dependencies = [
- "futures-core",
- "genawaiter-macro",
-]
-
-[[package]]
-name = "genawaiter-macro"
-version = "0.99.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b32dfe1fdfc0bbde1f22a5da25355514b5e450c33a6af6770884c8750aedfbc"
 
 [[package]]
 name = "generator"
@@ -3339,15 +3321,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "roxmltree"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbf7d7b1ea646d380d0e8153158063a6da7efe30ddbf3184042848e3f8a6f671"
-dependencies = [
- "xmlparser",
-]
-
-[[package]]
 name = "rstest"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3358,21 +3331,6 @@ dependencies = [
  "quote 1.0.36",
  "rustc_version",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "rupnp"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "290615ea804135942e0c3df3ed65ac1a4922b476c78534cc28686f6517aa8a55"
-dependencies = [
- "bytes",
- "futures-core",
- "futures-util",
- "http",
- "hyper",
- "roxmltree",
- "ssdp-client",
 ]
 
 [[package]]
@@ -3944,18 +3902,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2d4f0e86297cad2658d92a707320d87bf4e6ae1050287f51d19b67ef3f153a7b"
 dependencies = [
  "lock_api",
-]
-
-[[package]]
-name = "ssdp-client"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3798796e3e9e5d212cc4a70401cef6cd3796856715b97281263b775fc0c5dc8a"
-dependencies = [
- "futures-core",
- "genawaiter",
- "log",
- "tokio",
 ]
 
 [[package]]
@@ -4624,7 +4570,6 @@ dependencies = [
  "parking_lot",
  "rand",
  "rstest",
- "rupnp",
  "sm",
  "socket2 0.5.7",
  "strum",
@@ -5786,12 +5731,6 @@ name = "xml-rs"
 version = "0.8.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "791978798f0597cfc70478424c2b4fdc2b7a8024aaff78497ef00f24ef674193"
-
-[[package]]
-name = "xmlparser"
-version = "0.13.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66fee0b777b0f5ac1c69bb06d361268faafa61cd4682ae064a171c16c433e9e4"
 
 [[package]]
 name = "xmltree"

@@ -10,8 +10,6 @@
 pub mod http;
 pub mod proto;
 
-use mockall_double::double;
-
 use async_trait::async_trait;
 use futures::{future::select_all, Future};
 use generic_array::typenum::Unsigned;
@@ -25,7 +23,7 @@ use telio_model::{
     config::{RelayState, Server},
     features::FeatureDerp,
 };
-#[double]
+#[mockall_double::double]
 use telio_nurse::aggregator::ConnectivityDataAggregator;
 use telio_proto::{
     Codec, DerpPollRequestMsg, PacketControl, PacketRelayed, PacketTypeRelayed, PeersStatesMap,

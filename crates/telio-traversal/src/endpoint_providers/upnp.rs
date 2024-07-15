@@ -12,7 +12,6 @@ use igd::{
 };
 use ipnet::Ipv4Net;
 use rand::Rng;
-use rupnp::Error::HttpErrorCode;
 use std::fmt::Debug;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::pin::Pin;
@@ -515,13 +514,12 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
                 }
             }
             Err(e) => {
-                if let Error::UpnpError(HttpErrorCode(http::StatusCode::INTERNAL_SERVER_ERROR)) = e
-                {
+                if let Error::NoIGDGateway = e {
                     telio_log_info!("Failed to check route: route does not exist")
                 } else {
                     telio_log_info!("Error: {}", e);
 
-                    telio_log_info!("Deleting a old Upnp endpoint");
+                    telio_log_info!("Deleting an old Upnp endpoint");
                     let detete = self.igd_gw.delete_endpoint_routes(
                         self.proxy_port_mapping.external,
                         self.wg_port_mapping.external,

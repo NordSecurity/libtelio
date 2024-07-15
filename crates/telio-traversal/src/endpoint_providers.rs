@@ -36,8 +36,6 @@ pub enum Error {
     NoWGListenPort,
     #[error(transparent)]
     PacketParserError(#[from] telio_proto::CodecError),
-    #[error(transparent)]
-    UpnpError(#[from] rupnp::Error),
     #[error("Missing IGD gateway")]
     NoIGDGateway,
     #[error("The existing Upnp endpoint is invalid")]
