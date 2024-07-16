@@ -704,6 +704,7 @@ mod tests {
     use std::time::Duration;
     use telio_crypto::PublicKey;
     use telio_crypto::SecretKey;
+    use telio_model::mesh::LinkState;
     use telio_sockets::{NativeProtector, SocketPool};
     use telio_utils::exponential_backoff::MockBackoff;
     use telio_wg::uapi::{Interface, Peer};
@@ -723,6 +724,7 @@ mod tests {
             async fn wait_for_listen_port(&self, d: Duration) -> Result1<u16>;
             async fn wait_for_proxy_listen_port(&self, d: Duration) -> Result1<u16>;
             async fn get_wg_socket(&self, ipv6: bool) -> Result1<Option<i32>>;
+            async fn get_link_state(&self, key: PublicKey) -> Result1<Option<LinkState>>;
             async fn set_secret_key(&self, key: SecretKey) -> Result1<()>;
             async fn set_fwmark(&self, fwmark: u32) -> Result1<()>;
             async fn add_peer(&self, peer: Peer) -> Result1<()>;
@@ -816,7 +818,7 @@ mod tests {
         });
         wg.expect_wait_for_listen_port()
             .returning(move |_| Ok(wg_port));
-
+        wg.expect_get_link_state().returning(|_| Ok(None));
         let mut mock = MockUpnpEpCommands::new();
         mock.expect_add_any_endpoint_routes()
             .returning(move |_, wg_port, proxy_port| add_any_endpoint(wg_port, proxy_port));

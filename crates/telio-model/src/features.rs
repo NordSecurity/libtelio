@@ -447,9 +447,13 @@ pub struct FeatureLinkDetection {
     #[serde(default = "FeatureLinkDetection::default_configurable_rtt")]
     pub rtt_seconds: u64,
 
-    /// Check the link state before reporting it as down.
+    /// Check the link state before reporting it as down
     #[serde(default = "FeatureLinkDetection::default_no_of_pings")]
     pub no_of_pings: u32,
+
+    /// Use link detection for downgrade logic
+    #[serde(default = "FeatureLinkDetection::default_use_for_downgrade")]
+    pub use_for_downgrade: bool,
 }
 
 impl FeatureLinkDetection {
@@ -459,6 +463,10 @@ impl FeatureLinkDetection {
 
     const fn default_no_of_pings() -> u32 {
         0
+    }
+
+    const fn default_use_for_downgrade() -> bool {
+        false
     }
 }
 

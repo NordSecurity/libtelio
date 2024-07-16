@@ -60,6 +60,8 @@ pub trait WireGuard: Send + Sync + 'static {
     async fn wait_for_proxy_listen_port(&self, d: Duration) -> Result<u16, Error>;
     /// Get adapter file descriptor if supported by platform, `None` otherwise
     async fn get_wg_socket(&self, ipv6: bool) -> Result<Option<i32>, Error>;
+    /// Get current link state for a peer
+    async fn get_link_state(&self, key: PublicKey) -> Result<Option<LinkState>, Error>;
     /// Set secret key for adapter
     async fn set_secret_key(&self, key: SecretKey) -> Result<(), Error>;
     /// Set adapter fwmark, unix only
@@ -339,7 +341,6 @@ impl DynamicWg {
         #[cfg(unix)] cfg: Config,
     ) -> Self {
         let interval = interval(Duration::from_millis(POLL_MILLIS));
-
         Self {
             task: Task::start(State {
                 #[cfg(unix)]
@@ -434,6 +435,15 @@ impl WireGuard for DynamicWg {
         task_exec!(&self.task, async move |s| Ok(s.adapter.get_wg_socket(ipv6)))
             .await
             .unwrap_or(Ok(None))
+    }
+
+    async fn get_link_state(&self, key: PublicKey) -> Result<Option<LinkState>, Error> {
+        Ok(task_exec!(&self.task, async move |s| {
+            Ok(s.link_detection
+                .as_ref()
+                .and_then(|ld| ld.get_link_state_for_downgrade(&key)))
+        })
+        .await?)
     }
 
     async fn set_secret_key(&self, key: SecretKey) -> Result<(), Error> {
@@ -1182,7 +1192,6 @@ pub mod tests {
     pub async fn setup(#[cfg(all(not(test), feature = "test-adapter"))] cfg: Config) -> Env {
         let events_ch = Chan::default();
         let analytics_ch = Some(McChan::default().tx);
-
         let adapter = Arc::new(Mutex::new(MockAdapter::new()));
 
         adapter

@@ -1042,7 +1042,7 @@ mod tests {
         encryption::{decrypt_request, decrypt_response, encrypt_request, encrypt_response},
         PublicKey, SecretKey,
     };
-    use telio_model::mesh::IpNetwork;
+    use telio_model::mesh::{IpNetwork, LinkState};
     use telio_proto::{CodecError, PacketRelayed, PartialPongerMsg, PingerMsg};
     use telio_sockets::NativeProtector;
     use telio_sockets::SocketPool;
@@ -1948,6 +1948,7 @@ mod tests {
             async fn wait_for_listen_port(&self, d: Duration) -> Result<u16, Error>;
             async fn wait_for_proxy_listen_port(&self, d: Duration) -> Result<u16, Error>;
             async fn get_wg_socket(&self, ipv6: bool) -> Result<Option<i32>, Error>;
+            async fn get_link_state(&self, key: PublicKey) -> Result<Option<LinkState>, Error>;
             async fn set_secret_key(&self, key: SecretKey) -> Result<(), Error>;
             async fn set_fwmark(&self, fwmark: u32) -> Result<(), Error>;
             async fn add_peer(&self, peer: Peer) -> Result<(), Error>;
@@ -2087,6 +2088,8 @@ mod tests {
                 ..Default::default()
             })
         });
+
+        wg.expect_get_link_state().returning(|_| Ok(None));
 
         prepare_test_env_with_server_weights_and_mockwg(
             backoff_array,
