@@ -9,7 +9,7 @@ from utils.ping import Ping
 
 
 @pytest.mark.asyncio
-@pytest.mark.long
+@pytest.mark.mac
 @pytest.mark.parametrize(
     "disable_connected_socket",
     [True, False],
