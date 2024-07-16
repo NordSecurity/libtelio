@@ -16,7 +16,7 @@ async-trait.workspace = true
 base64.workspace = true
 boringtun.workspace = true
 futures.workspace = true
-ipnetwork.workspace = true
+ipnet.workspace = true
 pnet_packet.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "net", "sync", "macros"] }

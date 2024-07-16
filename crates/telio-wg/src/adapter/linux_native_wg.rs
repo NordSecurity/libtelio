@@ -6,7 +6,7 @@ use super::{Adapter, Error as AdapterError, Tun as NativeTun};
 use crate::uapi::{Cmd, Cmd::Get, Cmd::Set, Interface, Peer, Response};
 use futures::executor::block_on;
 use futures::future::{BoxFuture, FutureExt};
-use ipnetwork::{IpNetwork, IpNetworkError};
+use ipnet::{IpNet, PrefixLenError};
 use std::collections::BTreeMap;
 use std::net::IpAddr;
 use telio_crypto::{PublicKey, SecretKey};

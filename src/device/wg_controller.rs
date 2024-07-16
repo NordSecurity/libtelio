@@ -1,5 +1,5 @@
 use super::{Entities, RequestedState, Result};
-use ipnetwork::IpNetwork;
+use ipnet::IpNet;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::iter::FromIterator;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -264,14 +264,14 @@ async fn consolidate_wg_peers<
                 requested_peer.peer.allowed_ips.get(1),
             ) {
                 let target = if features.ipv6 {
-                    match (mesh_ip1.ip(), maybe_mesh_ip2.map(|ip| ip.ip())) {
+                    match (mesh_ip1.addr(), maybe_mesh_ip2.map(|ip| ip.addr())) {
                         (IpAddr::V4(ip4), Some(IpAddr::V6(ip6))) => (Some(ip4), Some(ip6)),
                         (IpAddr::V6(ip6), Some(IpAddr::V4(ip4))) => (Some(ip4), Some(ip6)),
                         (IpAddr::V4(ip4), _) => (Some(ip4), None),
                         (IpAddr::V6(ip6), _) => (None, Some(ip6)),
                     }
                 } else {
-                    match mesh_ip1.ip() {
+                    match mesh_ip1.addr() {
                         IpAddr::V4(ip4) => (Some(ip4), None),
                         _ => (None, None),
                     }
@@ -443,15 +443,15 @@ async fn build_requested_peers_list<
 
     // Add or promote exit node peer
     if let Some(exit_node) = &requested_state.exit_node {
-        let allowed_ips: Vec<IpNetwork> = exit_node
+        let allowed_ips: Vec<IpNet> = exit_node
             .allowed_ips
             .clone()
             .unwrap_or(vec![
-                IpNetwork::V4("0.0.0.0/0".parse()?),
-                IpNetwork::V6("::/0".parse()?),
+                IpNet::V4("0.0.0.0/0".parse()?),
+                IpNet::V6("::/0".parse()?),
             ])
             .into_iter()
-            .filter(|network| features.ipv6 || network.is_ipv4())
+            .filter(|network| features.ipv6 || network.addr().is_ipv4())
             .collect();
 
         if let Some(meshnet_peer) = requested_peers.get_mut(&exit_node.public_key) {
@@ -514,7 +514,7 @@ async fn build_requested_peers_list<
             .allowed_ips
             .iter()
             .copied()
-            .map(|ip| ip.ip())
+            .map(|ip| ip.addr())
             .collect();
         let dns_peer_public_key = dns_peer.public_key;
         let requested_peer = RequestedPeer {
@@ -534,13 +534,13 @@ async fn build_requested_peers_list<
             let persistent_keepalive_interval = requested_state.keepalive_periods.stun;
             let allowed_ips = if features.ipv6 {
                 vec![
-                    IpNetwork::V4("100.64.0.4/32".parse()?),
-                    IpNetwork::V6("fd74:656c:696f::4/128".parse()?),
+                    IpNet::V4("100.64.0.4/32".parse()?),
+                    IpNet::V6("fd74:656c:696f::4/128".parse()?),
                 ]
             } else {
-                vec![IpNetwork::V4("100.64.0.4/32".parse()?)]
+                vec![IpNet::V4("100.64.0.4/32".parse()?)]
             };
-            let ip_addresses = allowed_ips.iter().copied().map(|ip| ip.ip()).collect();
+            let ip_addresses = allowed_ips.iter().copied().map(|ip| ip.addr()).collect();
 
             requested_peers.insert(
                 public_key,
@@ -619,8 +619,8 @@ async fn build_requested_meshnet_peers_list<
                 .map_or(vec![], |ips| {
                     ips.iter()
                         .filter_map(|ip| match ip {
-                            IpAddr::V4(_) => IpNetwork::new(*ip, 32).ok(),
-                            IpAddr::V6(_) if features.ipv6 => IpNetwork::new(*ip, 128).ok(),
+                            IpAddr::V4(_) => IpNet::new(*ip, 32).ok(),
+                            IpAddr::V6(_) if features.ipv6 => IpNet::new(*ip, 128).ok(),
                             IpAddr::V6(_) => None,
                         })
                         .collect()
@@ -1581,7 +1581,7 @@ mod tests {
 
         fn then_add_peer(
             &mut self,
-            input: Vec<(PublicKey, SocketAddr, u32, Vec<IpNetwork>, Vec<IpAddr>)>,
+            input: Vec<(PublicKey, SocketAddr, u32, Vec<IpNet>, Vec<IpAddr>)>,
         ) {
             for i in input {
                 self.wireguard_interface
@@ -1615,7 +1615,7 @@ mod tests {
 
         fn then_peer_not_added(
             &mut self,
-            input: Vec<(PublicKey, SocketAddr, u32, Vec<IpNetwork>, Vec<IpAddr>)>,
+            input: Vec<(PublicKey, SocketAddr, u32, Vec<IpNet>, Vec<IpAddr>)>,
         ) {
             for i in input {
                 self.wireguard_interface
@@ -2020,8 +2020,8 @@ mod tests {
 
         let public_key = SecretKey::gen().public();
         let allowed_ips = vec![
-            IpNetwork::new(IpAddr::from([7, 6, 5, 4]), 23).unwrap(),
-            IpNetwork::new(
+            IpNet::new(IpAddr::from([7, 6, 5, 4]), 23).unwrap(),
+            IpNet::new(
                 IpAddr::from([5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8]),
                 128,
             )
@@ -2099,8 +2099,8 @@ mod tests {
             let public_key = SecretKey::gen().public();
 
             let allowed_ips = vec![
-                IpNetwork::new(IpAddr::from([100, 64, 0, 4]), 32).unwrap(),
-                IpNetwork::new(
+                IpNet::new(IpAddr::from([100, 64, 0, 4]), 32).unwrap(),
+                IpNet::new(
                     IpAddr::V6(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 4)),
                     128,
                 )

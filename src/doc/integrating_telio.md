@@ -432,7 +432,7 @@ App connects to/disconnects from VPN node.
 
 ```rust no_run
 use std::str::FromStr;
-use ipnetwork::IpNetwork;
+use ipnet::IpNet;
 use telio::{ffi::*, types::*};
 use telio_crypto::PublicKey;
 use telio_model::event::Event;
@@ -452,7 +452,7 @@ let telio = Telio::new(Default::default(), Box::new(EventHandler)).unwrap();
 telio.start(sk, adapter).unwrap();
 
 let server_public = PublicKey::from_str("QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=").unwrap();
-let server_allowed_ips = vec![IpNetwork::from_str("0.0.0.0/0").unwrap()];
+let server_allowed_ips = vec![IpNet::from_str("0.0.0.0/0").unwrap()];
 let server_endpoint = "1.2.3.4:51280".parse().unwrap();
 telio.connect_to_exit_node(
       server_public,
@@ -862,7 +862,7 @@ App with enabled meshnet, connects to one of mesh map peer’s.
 
 ```rust no_run
 use std::str::FromStr;
-use ipnetwork::IpNetwork;
+use ipnet::IpNet;
 use telio::{ffi::*, types::*};
 use telio_crypto::PublicKey;
 use telio_model::event::Event;
@@ -885,7 +885,7 @@ let mesh_map_node_public_key = PublicKey::from_str("QKyApX/ewza7QEbC03Yt8t2ghu6n
 
 telio.connect_to_exit_node(
     mesh_map_node_public_key,
-    Some(vec![IpNetwork::from_str("0.0.0.0/0").unwrap()]),
+    Some(vec![IpNet::from_str("0.0.0.0/0").unwrap()]),
     None
 ).unwrap();
 telio.disconnect_from_exit_nodes().unwrap();

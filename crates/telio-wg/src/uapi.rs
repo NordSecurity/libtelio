@@ -1,6 +1,6 @@
 //! API to convert WireGuard components <=> telio components
 
-use ipnetwork::{IpNetwork, IpNetworkError};
+use ipnet::{AddrParseError as IpnetParseError, IpNet};
 use serde::{Deserialize, Serialize};
 use telio_crypto::{KeyDecodeError, PresharedKey, PublicKey, SecretKey};
 use telio_model::mesh::{LinkState, Node, NodeState};
@@ -39,7 +39,7 @@ pub struct Peer {
     /// Keep alive interval, `seconds` or `None`
     pub persistent_keepalive_interval: Option<u32>,
     /// Vector of allowed IPs
-    pub allowed_ips: Vec<IpNetwork>,
+    pub allowed_ips: Vec<IpNet>,
     /// Number of bytes received or `None`(unused on Set)
     pub rx_bytes: Option<u64>,
     /// Time since last byte has been received from this peer. This is a synthetic
@@ -65,8 +65,8 @@ impl From<get::Peer> for Peer {
             allowed_ips: item
                 .allowed_ips
                 .into_iter()
-                .map(|ip| IpNetwork::new(ip.ipaddr, ip.cidr_mask))
-                .collect::<Result<Vec<IpNetwork>, _>>()
+                .map(|ip| IpNet::new(ip.ipaddr, ip.cidr_mask))
+                .collect::<Result<Vec<IpNet>, _>>()
                 .unwrap_or_default(),
             rx_bytes: Some(item.rx_bytes),
             tx_bytes: Some(item.tx_bytes),
@@ -93,8 +93,8 @@ impl From<set::Peer> for Peer {
             allowed_ips: item
                 .allowed_ips
                 .into_iter()
-                .map(|ip| IpNetwork::new(ip.ipaddr, ip.cidr_mask))
-                .collect::<Result<Vec<IpNetwork>, _>>()
+                .map(|ip| IpNet::new(ip.ipaddr, ip.cidr_mask))
+                .collect::<Result<Vec<IpNet>, _>>()
                 .unwrap_or_default(),
             preshared_key: item.preshared_key.map(PresharedKey),
             ..Default::default()
@@ -149,7 +149,7 @@ impl From<&Peer> for set::Peer {
                 .iter()
                 .map(|ip| set::AllowedIp {
                     ipaddr: ip.network(),
-                    cidr_mask: ip.prefix(),
+                    cidr_mask: ip.prefix_len(),
                 })
                 .collect(),
             preshared_key: item.preshared_key.map(|psk| psk.0),
@@ -637,7 +637,7 @@ fn parse_peer<R: Read>(
                 }
                 "allowed_ip" => {
                     peer.allowed_ips
-                        .push(val.parse().map_err(|e: IpNetworkError| {
+                        .push(val.parse().map_err(|e: IpnetParseError| {
                             Error::ParsingError("allowed_ip", e.to_string())
                         })?)
                 }

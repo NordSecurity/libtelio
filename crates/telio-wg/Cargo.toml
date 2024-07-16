@@ -17,7 +17,7 @@ async-trait.workspace = true
 boringtun.workspace = true
 futures.workspace = true
 hex.workspace = true
-ipnetwork.workspace = true
+ipnet.workspace = true
 lazy_static.workspace = true
 libc.workspace = true
 tracing.workspace = true
@@ -51,7 +51,6 @@ proptest.workspace = true
 cc.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-ipnet.workspace = true
 sha2.workspace = true
 winapi = { workspace = true, features = ["nldef"] }
 

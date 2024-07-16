@@ -1,6 +1,6 @@
 use crate::derp::{DerpClient, DerpClientCmd};
 use clap::Parser;
-use ipnetwork::IpNetwork;
+use ipnet::IpNet;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use telio::crypto::{PublicKey, SecretKey};
@@ -217,7 +217,7 @@ enum DevCmd {
         public_key: PublicKey,
         /// IP:PORT of Endpoint. Must be specified for a regular VPN server. Not needed for a peer.
         endpoint: Option<SocketAddr>,
-        allowed_ips: Vec<IpNetwork>,
+        allowed_ips: Vec<IpNet>,
         /// Turns on the post-quantum tunnel
         #[clap(long = "pq")]
         postquantum: bool,
@@ -830,7 +830,7 @@ impl Cli {
                 })
         };
 
-        let ip: IpNetwork = match ip_address.parse() {
+        let ip: IpNet = match ip_address.parse() {
             Ok(ip) => ip,
             Err(_) => return Err(Error::SettingIpFailed),
         };
@@ -838,12 +838,12 @@ impl Cli {
         if std::env::consts::OS == "windows" {
             let mut args = vec![
                 "interface",
-                if ip.is_ipv4() { "ipv4" } else { "ipv6" },
+                if ip.addr().is_ipv4() { "ipv4" } else { "ipv6" },
                 "set",
                 "address",
                 adapter_name,
             ];
-            if ip.is_ipv4() {
+            if ip.addr().is_ipv4() {
                 args.push("static");
             }
             args.push(ip_address);
@@ -855,13 +855,13 @@ impl Cli {
             }
             execute(Command::new("ifconfig").args([
                 adapter_name,
-                if ip.is_ipv4() { "inet" } else { "inet6" },
+                if ip.addr().is_ipv4() { "inet" } else { "inet6" },
                 ip_address,
             ]))
         } else {
             execute(Command::new("ifconfig").args([
                 adapter_name,
-                if ip.is_ipv4() { "inet" } else { "inet6" },
+                if ip.addr().is_ipv4() { "inet" } else { "inet6" },
                 ip_address,
             ]))?;
             execute(Command::new("ifconfig").args([adapter_name, "up"]))

@@ -90,7 +90,7 @@ typedef string SecretKey;
 typedef string IpAddr;
 
 [Custom]
-typedef string IpNetwork;
+typedef string IpNet;
 
 [Custom]
 typedef string Ipv4Addr;
@@ -239,7 +239,7 @@ interface Telio {
 
     /// Wrapper for `telio_connect_to_exit_node_with_id` that doesn't take an identifier
     [Throws=TelioError]
-    void connect_to_exit_node(PublicKey public_key, sequence<IpNetwork>? allowed_ips, SocketAddr? endpoint);
+    void connect_to_exit_node(PublicKey public_key, sequence<IpNet>? allowed_ips, SocketAddr? endpoint);
 
     /// Connects to an exit node. (VPN if endpoint is not NULL, Peer if endpoint is NULL)
     ///
@@ -281,7 +281,7 @@ interface Telio {
     /// ```
     ///
     [Throws=TelioError]
-    void connect_to_exit_node_with_id(string? identifier, PublicKey public_key, sequence<IpNetwork>? allowed_ips, SocketAddr? endpoint);
+    void connect_to_exit_node_with_id(string? identifier, PublicKey public_key, sequence<IpNet>? allowed_ips, SocketAddr? endpoint);
 
     /// Connects to the VPN exit node with post quantum tunnel
     ///
@@ -315,7 +315,7 @@ interface Telio {
     /// ```
     ///
     [Throws=TelioError]
-    void connect_to_exit_node_postquantum(string? identifier, PublicKey public_key, sequence<IpNetwork>? allowed_ips, SocketAddr endpoint);
+    void connect_to_exit_node_postquantum(string? identifier, PublicKey public_key, sequence<IpNet>? allowed_ips, SocketAddr endpoint);
 
     /// Disconnects from specified exit node.
     ///
@@ -689,7 +689,7 @@ dictionary TelioNode {
     /// IP addresses of the node
     sequence<IpAddr> ip_addresses;
     /// List of IP's which can connect to the node
-    sequence<IpNetwork> allowed_ips;
+    sequence<IpNet> allowed_ips;
     /// Endpoint used by node
     SocketAddr? endpoint;
     /// Hostname of the node

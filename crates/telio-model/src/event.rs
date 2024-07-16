@@ -246,7 +246,7 @@ mod tests {
             is_exit: true,
             is_vpn: true,
             ip_addresses: Vec::from(["127.0.0.1".parse().unwrap()]),
-            allowed_ips: Vec::from(["127.0.0.1".parse().unwrap()]),
+            allowed_ips: Vec::from(["127.0.0.1/32".parse().unwrap()]),
             endpoint: Some(SocketAddr::new("127.0.0.1".parse().unwrap(), 8080)),
             hostname: Some(String::from("example.com")),
             allow_incoming_connections: false,

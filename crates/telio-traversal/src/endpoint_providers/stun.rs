@@ -553,15 +553,15 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
                 let wg_ip = stun_peer
                     .allowed_ips
                     .iter()
-                    .find(|addr: &&telio_model::mesh::IpNetwork| {
+                    .find(|addr: &&telio_model::mesh::IpNet| {
                         if self.is_in_ipv6_mode() {
-                            addr.is_ipv6()
+                            addr.addr().is_ipv6()
                         } else {
-                            addr.is_ipv4()
+                            addr.addr().is_ipv4()
                         }
                     })
                     .ok_or(Error::BadStunPeer)?
-                    .ip();
+                    .addr();
 
                 let udp_ip = stun_peer.endpoint.ok_or(Error::BadStunPeer)?.ip();
 
@@ -1042,7 +1042,7 @@ mod tests {
         encryption::{decrypt_request, decrypt_response, encrypt_request, encrypt_response},
         PublicKey, SecretKey,
     };
-    use telio_model::mesh::{IpNetwork, LinkState};
+    use telio_model::mesh::{IpNet, LinkState};
     use telio_proto::{CodecError, PacketRelayed, PartialPongerMsg, PingerMsg};
     use telio_sockets::NativeProtector;
     use telio_sockets::SocketPool;
@@ -1825,7 +1825,7 @@ mod tests {
         let public_key = SecretKey::gen().public();
 
         // Stun peer can be locked
-        let allowed_ip = IpNetwork::new(peer_sock_v4.local_addr().unwrap().ip(), 32).unwrap();
+        let allowed_ip = IpNet::new(peer_sock_v4.local_addr().unwrap().ip(), 32).unwrap();
         let endpoint: SocketAddr = (stun_sock.local_addr().unwrap().ip(), 55555).into();
 
         let stun_servers = vec![Server {
@@ -2037,12 +2037,11 @@ mod tests {
             let public_key = SecretKey::gen().public();
 
             // Stun peer can be locked
-            let allowed_ip_v4 =
-                IpNetwork::new(peer_sock_v4.local_addr().unwrap().ip(), 32).unwrap();
+            let allowed_ip_v4 = IpNet::new(peer_sock_v4.local_addr().unwrap().ip(), 32).unwrap();
             let mut allowed_ips = vec![allowed_ip_v4];
             if ipv6 {
                 allowed_ips.push(
-                    IpNetwork::new(
+                    IpNet::new(
                         peer_sock_v6.as_ref().unwrap().local_addr().unwrap().ip(),
                         128,
                     )
