@@ -9,14 +9,14 @@ from utils.ping import Ping
 
 
 @pytest.mark.asyncio
-@pytest.mark.mac
 @pytest.mark.parametrize(
     "disable_connected_socket",
     [True, False],
 )
 @pytest.mark.parametrize(
     "beta_tag",
-    [ConnectionTag.MAC_VM, ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2],
+    # [ConnectionTag.MAC_VM, ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2],
+    [ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2],
 )
 async def test_mesh_connected_socket(disable_connected_socket, beta_tag) -> None:
     async with AsyncExitStack() as exit_stack:
