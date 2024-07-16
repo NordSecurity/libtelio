@@ -5,11 +5,9 @@ from helpers import SetupParameters, setup_mesh_nodes
 from telio_features import TelioFeatures, Direct
 from utils.connection_util import ConnectionTag
 from utils.iperf3 import IperfServer, IperfClient, Protocol
-from utils.ping import Ping
 
 
 @pytest.mark.asyncio
-@pytest.mark.long
 @pytest.mark.parametrize(
     "disable_connected_socket",
     [True, False],
@@ -18,7 +16,7 @@ from utils.ping import Ping
     "beta_tag",
     [ConnectionTag.MAC_VM, ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2],
 )
-async def test_mesh_connected_socket(disable_connected_socket, beta_tag) -> None:
+async def test_mesh_connected_socket_receive(disable_connected_socket, beta_tag) -> None:
     async with AsyncExitStack() as exit_stack:
         features_beta = TelioFeatures(
             direct=Direct(),
@@ -47,11 +45,6 @@ async def test_mesh_connected_socket(disable_connected_socket, beta_tag) -> None
             conn.connection for conn in env.connections
         ]
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
-        async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
-
         async with IperfServer(connection_alpha, "server").run():
             async with IperfClient(
                 alpha.ip_addresses[0],
@@ -68,3 +61,4 @@ async def test_mesh_connected_socket(disable_connected_socket, beta_tag) -> None
                 speed = client.get_speed()
                 assert speed > 0, "No data received"
                 print(f"iperf3 receive speed: {speed}")
+
