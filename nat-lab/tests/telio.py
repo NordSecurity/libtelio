@@ -662,11 +662,10 @@ class Client:
                             await self.set_meshmap(meshmap)
                         yield self
                 finally:
-                    print(datetime.now(), "Test cleanup stage 1. Saving logs")
+                    print("Test cleanup stage 1. Saving logs")
                     await self.save_logs()
 
                     print(
-                        datetime.now(),
                         "Test cleanup stage 2. Stopping tcpdump and collecting core dumps",
                     )
                     if isinstance(self._connection, DockerConnection):
@@ -674,26 +673,25 @@ class Client:
                         await self.collect_core_dumps()
 
                     print(
-                        datetime.now(),
                         "Test cleanup stage 3. Saving MacOS network info",
                     )
                     await self.save_mac_network_info()
 
-                    print(datetime.now(), "Test cleanup stage 4. Stopping device")
+                    print("Test cleanup stage 4. Stopping device")
                     if self._process.is_executing():
                         await self.stop_device()
                         self._quit = True
 
-                    print(datetime.now(), "Test cleanup stage 5. Shutting down")
+                    print("Test cleanup stage 5. Shutting down")
                     self.get_proxy().shutdown(self._connection.target_name())
 
-                    print(datetime.now(), "Test cleanup stage 6. Clearing up routes")
+                    print("Test cleanup stage 6. Clearing up routes")
                     if self._router:
                         await self._router.delete_vpn_route()
                         await self._router.delete_exit_node_route()
                         await self._router.delete_interface()
 
-                    print(datetime.now(), "Test cleanup complete")
+                    print("Test cleanup complete")
 
     async def simple_start(self):
         self.get_proxy().start_named(
@@ -994,10 +992,7 @@ class Client:
                 event = self.get_proxy().next_event()
                 while event:
                     if self._runtime:
-                        print(
-                            f"[{self._node.name}]: event [{datetime.now()}]:"
-                            f" {event}"
-                        )
+                        print(f"[{self._node.name}]: event: {event}")
                         self._runtime.handle_output_line(event)
                         event = self.get_proxy().next_event()
                 await asyncio.sleep(1)
