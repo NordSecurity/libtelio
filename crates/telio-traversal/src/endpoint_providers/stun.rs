@@ -378,6 +378,14 @@ impl<Wg: WireGuard, E: Backoff + 'static> EndpointProvider for StunEndpointProvi
         })
         .await;
     }
+
+    async fn is_paused(&self) -> bool {
+        task_exec!(&self.task, async move |s| Ok(
+            s.stun_state == StunState::Paused
+        ))
+        .await
+        .unwrap_or(false)
+    }
 }
 
 //                                -------------

@@ -16,7 +16,14 @@ from config import (
 from contextlib import AsyncExitStack
 from mesh_api import API, Node
 from telio import PathType
-from telio_features import TelioFeatures, Nurse, Lana, Qos, Direct
+from telio_features import (
+    TelioFeatures,
+    Nurse,
+    Lana,
+    Qos,
+    Direct,
+    FeatureEndpointProvidersOptimization,
+)
 from typing import List, Optional
 from utils import testing, stun
 from utils.analytics import (
@@ -97,7 +104,15 @@ def build_telio_features(
 ) -> TelioFeatures:
     return TelioFeatures(
         lana=Lana(prod=False, event_path=CONTAINER_EVENT_PATH),
-        direct=Direct(providers=["stun"]),
+        direct=Direct(
+            providers=["stun"],
+            endpoint_providers_optimization=(
+                FeatureEndpointProvidersOptimization(
+                    optimize_direct_upgrade_stun=False,
+                    optimize_direct_upgrade_upnp=False,
+                )
+            ),
+        ),
         nurse=Nurse(
             fingerprint=fingerprint,
             heartbeat_interval=3600,
@@ -1294,8 +1309,12 @@ async def test_lana_with_meshnet_exit_node(
             client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
         )
         await asyncio.gather(
-            client_alpha.wait_for_state_peer(beta.public_key, [telio.State.Connected]),
-            client_beta.wait_for_state_peer(alpha.public_key, [telio.State.Connected]),
+            client_alpha.wait_for_state_peer(
+                beta.public_key, [telio.State.Connected], [PathType.Direct]
+            ),
+            client_beta.wait_for_state_peer(
+                alpha.public_key, [telio.State.Connected], [PathType.Direct]
+            ),
         )
 
         async with Ping(
@@ -1512,8 +1531,12 @@ async def test_lana_with_disconnected_node(
             client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
         )
         await asyncio.gather(
-            client_alpha.wait_for_state_peer(beta.public_key, [telio.State.Connected]),
-            client_beta.wait_for_state_peer(alpha.public_key, [telio.State.Connected]),
+            client_alpha.wait_for_state_peer(
+                beta.public_key, [telio.State.Connected], [PathType.Direct]
+            ),
+            client_beta.wait_for_state_peer(
+                alpha.public_key, [telio.State.Connected], [PathType.Direct]
+            ),
         )
 
         await client_alpha.trigger_qos_collection()
@@ -1851,8 +1874,12 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
         await client_beta.set_meshmap(api.get_meshmap(beta.id))
 
         await asyncio.gather(
-            client_alpha.wait_for_state_peer(beta.public_key, [telio.State.Connected]),
-            client_beta.wait_for_state_peer(alpha.public_key, [telio.State.Connected]),
+            client_alpha.wait_for_state_peer(
+                beta.public_key, [telio.State.Connected], [PathType.Direct]
+            ),
+            client_beta.wait_for_state_peer(
+                alpha.public_key, [telio.State.Connected], [PathType.Direct]
+            ),
         )
 
         await ping_node(connection_alpha, alpha, beta)

@@ -16,10 +16,7 @@ use telio_model::SocketAddr;
 use telio_proto::{PeersStatesMap, Session};
 use telio_proxy::Proxy;
 use telio_traversal::{
-    cross_ping_check::CrossPingCheckTrait,
-    endpoint_providers::{
-        stun::StunEndpointProvider, upnp::UpnpEndpointProvider, EndpointProvider,
-    },
+    cross_ping_check::CrossPingCheckTrait, endpoint_providers::EndpointProvider,
     SessionKeeperTrait, UpgradeSyncTrait, WireGuardEndpointCandidateChangeEvent,
 };
 use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn};
@@ -144,6 +141,8 @@ async fn consolidate_wg_peers<
     U: UpgradeSyncTrait,
     S: SessionKeeperTrait,
     D: DnsResolver,
+    E1: EndpointProvider,
+    E2: EndpointProvider,
 >(
     requested_state: &RequestedState,
     wireguard_interface: &W,
@@ -153,8 +152,8 @@ async fn consolidate_wg_peers<
     session_keeper: Option<&Arc<S>>,
     dns: &Mutex<crate::device::DNS<D>>,
     remote_peer_states: PeersStatesMap,
-    stun_ep_provider: Option<&Arc<StunEndpointProvider>>,
-    upnp_ep_provider: Option<&Arc<UpnpEndpointProvider>>,
+    stun_ep_provider: Option<&Arc<E1>>,
+    upnp_ep_provider: Option<&Arc<E2>>,
     post_quantum_vpn: &impl telio_pq::PostQuantum,
     features: &Features,
 ) -> Result {
@@ -173,6 +172,7 @@ async fn consolidate_wg_peers<
         &remote_peer_states,
         post_quantum_vpn,
         features,
+        stun_ep_provider,
     )
     .await?;
 
@@ -414,6 +414,7 @@ async fn build_requested_peers_list<
     C: CrossPingCheckTrait,
     U: UpgradeSyncTrait,
     D: DnsResolver,
+    E: EndpointProvider,
 >(
     requested_state: &RequestedState,
     wireguard_interface: &W,
@@ -424,6 +425,7 @@ async fn build_requested_peers_list<
     remote_peer_states: &PeersStatesMap,
     post_quantum_vpn: &impl telio_pq::PostQuantum,
     features: &Features,
+    stun_ep_provider: Option<&Arc<E>>,
 ) -> Result<BTreeMap<PublicKey, RequestedPeer>> {
     // Build a list of meshnet peers
     let mut requested_peers = build_requested_meshnet_peers_list(
@@ -521,35 +523,41 @@ async fn build_requested_peers_list<
         requested_peers.insert(dns_peer_public_key, requested_peer);
     }
 
-    if let Some(wg_stun_server) = &requested_state.wg_stun_server {
-        let public_key = wg_stun_server.public_key;
-        let endpoint = SocketAddr::new(IpAddr::V4(wg_stun_server.ipv4), wg_stun_server.stun_port);
-        telio_log_debug!("Configuring wg-stun peer: {}, at {}", public_key, endpoint);
-        let persistent_keepalive_interval = requested_state.keepalive_periods.stun;
-        let allowed_ips = if features.ipv6 {
-            vec![
-                IpNetwork::V4("100.64.0.4/32".parse()?),
-                IpNetwork::V6("fd74:656c:696f::4/128".parse()?),
-            ]
-        } else {
-            vec![IpNetwork::V4("100.64.0.4/32".parse()?)]
-        };
-        let ip_addresses = allowed_ips.iter().copied().map(|ip| ip.ip()).collect();
+    if let (Some(wg_stun_server), Some(stun)) = (&requested_state.wg_stun_server, stun_ep_provider)
+    {
+        if !stun.is_paused().await {
+            let public_key = wg_stun_server.public_key;
+            let endpoint =
+                SocketAddr::new(IpAddr::V4(wg_stun_server.ipv4), wg_stun_server.stun_port);
+            telio_log_debug!("Configuring wg-stun peer: {}, at {}", public_key, endpoint);
+            let persistent_keepalive_interval = requested_state.keepalive_periods.stun;
+            let allowed_ips = if features.ipv6 {
+                vec![
+                    IpNetwork::V4("100.64.0.4/32".parse()?),
+                    IpNetwork::V6("fd74:656c:696f::4/128".parse()?),
+                ]
+            } else {
+                vec![IpNetwork::V4("100.64.0.4/32".parse()?)]
+            };
+            let ip_addresses = allowed_ips.iter().copied().map(|ip| ip.ip()).collect();
 
-        requested_peers.insert(
-            public_key,
-            RequestedPeer {
-                peer: telio_wg::uapi::Peer {
-                    public_key,
-                    endpoint: Some(endpoint),
-                    ip_addresses,
-                    persistent_keepalive_interval,
-                    allowed_ips,
-                    ..Default::default()
+            requested_peers.insert(
+                public_key,
+                RequestedPeer {
+                    peer: telio_wg::uapi::Peer {
+                        public_key,
+                        endpoint: Some(endpoint),
+                        ip_addresses,
+                        persistent_keepalive_interval,
+                        allowed_ips,
+                        ..Default::default()
+                    },
+                    endpoint: None,
                 },
-                endpoint: None,
-            },
-        );
+            );
+        } else {
+            telio_log_debug!("Stun ep is paused, not adding wg-stun peer");
+        }
     } else {
         telio_log_debug!("wg-stun peer not configured");
     }
@@ -976,6 +984,7 @@ mod tests {
     use telio_proto::Session;
     use telio_proxy::MockProxy;
     use telio_traversal::cross_ping_check::MockCrossPingCheckTrait;
+    use telio_traversal::endpoint_providers::MockEndpointProvider;
     use telio_traversal::{MockSessionKeeperTrait, MockUpgradeSyncTrait, UpgradeRequest};
     use telio_wg::uapi::Interface;
     use telio_wg::MockWireGuard;
@@ -1346,10 +1355,12 @@ mod tests {
         dns: Mutex<DNS<MockDnsResolver>>,
         features: Features,
         post_quantum: MockPostQuantum,
+        stun_ep_provider: Option<MockEndpointProvider>,
     }
 
     impl Fixture {
         fn new() -> Self {
+            let stun_ep_provider = Some(Self::create_default_stun_ep(false));
             Self {
                 requested_state: RequestedState::default(),
                 wireguard_interface: MockWireGuard::new(),
@@ -1390,7 +1401,20 @@ mod tests {
                     multicast: false,
                 },
                 post_quantum: MockPostQuantum::new(),
+                stun_ep_provider,
             }
+        }
+
+        fn create_default_stun_ep(paused: bool) -> MockEndpointProvider {
+            let mut stun_ep_provider = MockEndpointProvider::new();
+            stun_ep_provider
+                .expect_is_paused()
+                .returning(move || paused);
+            stun_ep_provider
+                .expect_trigger_endpoint_candidates_discovery()
+                .returning(|_| Ok(()));
+            stun_ep_provider.expect_pause().returning(|| ());
+            stun_ep_provider
         }
 
         fn when_requested_meshnet_config(&mut self, input: Vec<(PublicKey, AllowedIps)>) {
@@ -1568,6 +1592,29 @@ mod tests {
             }
         }
 
+        fn then_peer_not_added(
+            &mut self,
+            input: Vec<(PublicKey, SocketAddr, u32, Vec<IpNetwork>, Vec<IpAddr>)>,
+        ) {
+            for i in input {
+                self.wireguard_interface
+                    .expect_add_peer()
+                    .never()
+                    .with(eq(Peer {
+                        public_key: i.0,
+                        endpoint: Some(i.1),
+                        ip_addresses: i.4,
+                        persistent_keepalive_interval: Some(i.2),
+                        allowed_ips: i.3,
+                        rx_bytes: None,
+                        tx_bytes: None,
+                        time_since_last_handshake: None,
+                        time_since_last_rx: None,
+                        preshared_key: None,
+                    }));
+            }
+        }
+
         fn then_request_upgrade(
             &mut self,
             input: Vec<(PublicKey, SocketAddr, SocketAddr, Session)>,
@@ -1638,6 +1685,14 @@ mod tests {
             let cross_ping_check = Arc::new(self.cross_ping_check);
             let upgrade_sync = Arc::new(self.upgrade_sync);
             let session_keeper = Arc::new(self.session_keeper);
+            let stun_ep_provider = {
+                if let Some(stun_ep_provider) = self.stun_ep_provider {
+                    Some(Arc::new(stun_ep_provider))
+                } else {
+                    None
+                }
+            };
+            let upnp_ep_provider: Option<Arc<MockEndpointProvider>> = None;
 
             consolidate_wg_peers(
                 &self.requested_state,
@@ -1648,8 +1703,8 @@ mod tests {
                 Some(&session_keeper),
                 &self.dns,
                 HashMap::new(),
-                None,
-                None,
+                stun_ep_provider.as_ref(),
+                upnp_ep_provider.as_ref(),
                 &self.post_quantum,
                 &self.features,
             )
@@ -1991,51 +2046,88 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn when_stun_peer_is_added() {
-        let mut f = Fixture::new();
+    async fn when_stun_peer_should_be_added() {
+        #[derive(PartialEq)]
+        enum Condition {
+            StunNotPresent,
+            StunPresent,
+            StunPresentAndPaused,
+        }
 
-        let public_key = SecretKey::gen().public();
+        for condition in [
+            Condition::StunNotPresent,
+            Condition::StunPresent,
+            Condition::StunPresentAndPaused,
+        ] {
+            let mut f = {
+                let mut init_f = Fixture::new();
 
-        let allowed_ips = vec![
-            IpNetwork::new(IpAddr::from([100, 64, 0, 4]), 32).unwrap(),
-            IpNetwork::new(
-                IpAddr::V6(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 4)),
-                128,
-            )
-            .unwrap(),
-        ];
-        let ip_addresses = allowed_ips.iter().copied().map(|ip| ip.network()).collect();
+                match condition {
+                    Condition::StunNotPresent => {
+                        init_f.stun_ep_provider = None;
+                    }
+                    Condition::StunPresentAndPaused => {
+                        init_f.stun_ep_provider = Some(Fixture::create_default_stun_ep(true));
+                    }
+                    _ => {}
+                }
 
-        let stun_port = 1234;
-        let endpoint_ip = Ipv4Addr::from([100, 10, 0, 17]);
-        let endpoint_raw = SocketAddr::from((endpoint_ip, stun_port));
+                init_f
+            };
 
-        let stun_persistent_keepalive = 4321;
-        f.requested_state.keepalive_periods.stun = Some(stun_persistent_keepalive);
-        f.requested_state.wg_stun_server = Some(Server {
-            ipv4: endpoint_ip,
-            stun_port,
-            public_key,
-            ..Default::default()
-        });
+            let public_key = SecretKey::gen().public();
 
-        f.when_requested_meshnet_config(vec![]);
-        f.when_proxy_mapping(vec![]);
-        f.when_current_peers(vec![]);
-        f.when_time_since_last_rx(vec![]);
-        f.when_time_since_last_endpoint_change(vec![]);
-        f.when_cross_check_validated_endpoints(vec![]);
-        f.when_upgrade_requests(vec![]);
+            let allowed_ips = vec![
+                IpNetwork::new(IpAddr::from([100, 64, 0, 4]), 32).unwrap(),
+                IpNetwork::new(
+                    IpAddr::V6(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 4)),
+                    128,
+                )
+                .unwrap(),
+            ];
+            let ip_addresses = allowed_ips.iter().copied().map(|ip| ip.network()).collect();
 
-        f.then_add_peer(vec![(
-            public_key,
-            endpoint_raw,
-            stun_persistent_keepalive,
-            allowed_ips,
-            ip_addresses,
-        )]);
+            let stun_port = 1234;
+            let endpoint_ip = Ipv4Addr::from([100, 10, 0, 17]);
+            let endpoint_raw = SocketAddr::from((endpoint_ip, stun_port));
 
-        f.consolidate_peers().await;
+            let stun_persistent_keepalive = 4321;
+            f.requested_state.keepalive_periods.stun = Some(stun_persistent_keepalive);
+            f.requested_state.wg_stun_server = Some(Server {
+                ipv4: endpoint_ip,
+                stun_port,
+                public_key,
+                ..Default::default()
+            });
+
+            f.when_requested_meshnet_config(vec![]);
+            f.when_proxy_mapping(vec![]);
+            f.when_current_peers(vec![]);
+            f.when_time_since_last_rx(vec![]);
+            f.when_time_since_last_endpoint_change(vec![]);
+            f.when_cross_check_validated_endpoints(vec![]);
+            f.when_upgrade_requests(vec![]);
+
+            if condition == Condition::StunPresent {
+                f.then_add_peer(vec![(
+                    public_key,
+                    endpoint_raw,
+                    stun_persistent_keepalive,
+                    allowed_ips,
+                    ip_addresses,
+                )]);
+            } else {
+                f.then_peer_not_added(vec![(
+                    public_key,
+                    endpoint_raw,
+                    stun_persistent_keepalive,
+                    allowed_ips,
+                    ip_addresses,
+                )]);
+            }
+
+            f.consolidate_peers().await;
+        }
     }
 
     #[tokio::test]

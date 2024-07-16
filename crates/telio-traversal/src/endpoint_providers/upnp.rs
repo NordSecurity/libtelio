@@ -438,6 +438,12 @@ impl<Wg: WireGuard> EndpointProvider for UpnpEndpointProvider<Wg> {
         })
         .await;
     }
+
+    async fn is_paused(&self) -> bool {
+        task_exec!(&self.task, async move |s| Ok(s.is_endpoint_provider_paused))
+            .await
+            .unwrap_or(false)
+    }
 }
 
 struct State<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> {
