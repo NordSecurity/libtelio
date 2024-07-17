@@ -24,6 +24,7 @@ def ssdp_client(timeout: int):
 def ssdp_server(timeout: int):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.settimeout(timeout)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind(("0.0.0.0", SSDP_PORT))
 
     mreq = socket.inet_aton(SSDP_IP) + socket.inet_aton("0.0.0.0")
@@ -40,6 +41,7 @@ def ssdp_server(timeout: int):
 def mdns_client(timeout: int):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.settimeout(timeout)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind(("0.0.0.0", MDNS_PORT))
 
     mreq = socket.inet_aton(MDNS_IP) + socket.inet_aton("0.0.0.0")
@@ -55,6 +57,7 @@ def mdns_client(timeout: int):
 def mdns_server(timeout: int):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.settimeout(timeout)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind(("0.0.0.0", MDNS_PORT))
 
     mreq = socket.inet_aton(MDNS_IP) + socket.inet_aton("0.0.0.0")
