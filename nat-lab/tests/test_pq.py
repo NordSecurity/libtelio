@@ -55,7 +55,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=ConnectionLimits(1, 1),
-                    nlx_1_limits=ConnectionLimits(2, 2),
+                    nlx_1_limits=ConnectionLimits(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -68,7 +68,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=ConnectionLimits(1, 1),
-                    nlx_1_limits=ConnectionLimits(2, 2),
+                    nlx_1_limits=ConnectionLimits(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -82,7 +82,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=ConnectionLimits(1, 1),
-                    nlx_1_limits=ConnectionLimits(2, 2),
+                    nlx_1_limits=ConnectionLimits(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -98,7 +98,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=ConnectionLimits(1, 1),
-                    nlx_1_limits=ConnectionLimits(2, 2),
+                    nlx_1_limits=ConnectionLimits(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -114,7 +114,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     stun_limits=ConnectionLimits(1, 1),
-                    nlx_1_limits=ConnectionLimits(2, 2),
+                    nlx_1_limits=ConnectionLimits(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -154,7 +154,7 @@ async def test_pq_vpn_connection(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=ConnectionLimits(1, 1),
-                    nlx_1_limits=ConnectionLimits(2, 2),
+                    nlx_1_limits=ConnectionLimits(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -167,7 +167,7 @@ async def test_pq_vpn_connection(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=ConnectionLimits(1, 1),
-                    nlx_1_limits=ConnectionLimits(2, 2),
+                    nlx_1_limits=ConnectionLimits(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -181,7 +181,7 @@ async def test_pq_vpn_connection(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=ConnectionLimits(1, 1),
-                    nlx_1_limits=ConnectionLimits(2, 2),
+                    nlx_1_limits=ConnectionLimits(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -197,7 +197,7 @@ async def test_pq_vpn_connection(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=ConnectionLimits(1, 1),
-                    nlx_1_limits=ConnectionLimits(2, 2),
+                    nlx_1_limits=ConnectionLimits(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -213,7 +213,7 @@ async def test_pq_vpn_connection(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     stun_limits=ConnectionLimits(1, 1),
-                    nlx_1_limits=ConnectionLimits(2, 2),
+                    nlx_1_limits=ConnectionLimits(1, 2),
                 ),
                 is_meshnet=False,
             ),

@@ -178,7 +178,7 @@ async def test_event_content_meshnet(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     vpn_1_limits=ConnectionLimits(1, 1),
-                    stun_limits=ConnectionLimits(2, 2),
+                    stun_limits=ConnectionLimits(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -191,7 +191,7 @@ async def test_event_content_meshnet(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     vpn_1_limits=ConnectionLimits(1, 1),
-                    stun_limits=ConnectionLimits(2, 2),
+                    stun_limits=ConnectionLimits(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -205,7 +205,7 @@ async def test_event_content_meshnet(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     vpn_1_limits=ConnectionLimits(1, 1),
-                    stun_limits=ConnectionLimits(2, 2),
+                    stun_limits=ConnectionLimits(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -221,7 +221,7 @@ async def test_event_content_meshnet(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     vpn_1_limits=ConnectionLimits(1, 1),
-                    stun_limits=ConnectionLimits(2, 2),
+                    stun_limits=ConnectionLimits(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -237,7 +237,7 @@ async def test_event_content_meshnet(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     vpn_1_limits=ConnectionLimits(1, 1),
-                    stun_limits=ConnectionLimits(2, 2),
+                    stun_limits=ConnectionLimits(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -384,7 +384,7 @@ async def test_event_content_vpn_connection(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
                     derp_1_limits=ConnectionLimits(1, 1),
-                    stun_limits=ConnectionLimits(2, 2),
+                    stun_limits=ConnectionLimits(1, 2),
                 ),
             )
         )
@@ -532,7 +532,7 @@ async def test_event_content_exit_through_peer(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    derp_1_limits=ConnectionLimits(2, 2),
+                    derp_1_limits=ConnectionLimits(1, 2),
                 ),
             ),
             "10.0.254.2",

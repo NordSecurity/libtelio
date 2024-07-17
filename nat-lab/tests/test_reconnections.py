@@ -18,7 +18,7 @@ from utils.ping import Ping
                 adapter_type=telio.AdapterType.BoringTun,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(2, 2),
+                    derp_1_limits=ConnectionLimits(1, 2),
                 ),
             )
         ),
@@ -28,7 +28,7 @@ from utils.ping import Ping
                 adapter_type=telio.AdapterType.LinuxNativeWg,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(2, 2),
+                    derp_1_limits=ConnectionLimits(1, 2),
                 ),
             ),
             marks=pytest.mark.linux_native,
@@ -39,7 +39,7 @@ from utils.ping import Ping
                 adapter_type=telio.AdapterType.WindowsNativeWg,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
-                    derp_1_limits=ConnectionLimits(2, 2),
+                    derp_1_limits=ConnectionLimits(1, 2),
                 ),
             ),
             marks=[
@@ -52,7 +52,7 @@ from utils.ping import Ping
                 adapter_type=telio.AdapterType.WireguardGo,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
-                    derp_1_limits=ConnectionLimits(2, 2),
+                    derp_1_limits=ConnectionLimits(1, 2),
                 ),
             ),
             marks=[
@@ -65,7 +65,7 @@ from utils.ping import Ping
                 adapter_type=telio.AdapterType.BoringTun,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
-                    derp_1_limits=ConnectionLimits(2, 2),
+                    derp_1_limits=ConnectionLimits(1, 2),
                 ),
             ),
             marks=pytest.mark.mac,
