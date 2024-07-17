@@ -1,3 +1,4 @@
+pub mod logging;
 pub mod types;
 
 use anyhow::anyhow;
@@ -6,13 +7,12 @@ use ipnetwork::IpNetwork;
 use rand::Rng;
 use telio_crypto::{PublicKey, SecretKey};
 use telio_wg::AdapterType;
-use tracing::{error, trace, Subscriber};
+use tracing::{error, trace};
 
 use telio_sockets::protector::make_external_protector;
 use uuid::Uuid;
 
 use std::{
-    fmt,
     net::{IpAddr, SocketAddr},
     panic::{self, AssertUnwindSafe},
     sync::{Arc, Mutex, Once},
@@ -61,26 +61,12 @@ where
     }
 }
 
-struct LogStatus {
-    string: String,
-    counter: u32,
-}
-
-lazy_static::lazy_static! {
-    static ref LAST_LOG_STATUS: Mutex<LogStatus> = {
-        Mutex::new(LogStatus{string: String::default(), counter: 0})
-    };
-}
-
 /// Set the global logger.
 /// # Parameters
 /// - `log_level`: Max log level to log.
 /// - `logger`: Callback to handle logging events.
 pub fn set_global_logger(log_level: TelioLogLevel, logger: Box<dyn TelioLoggerCb>) {
-    let tracing_subscriber = TelioTracingSubscriber {
-        callback: logger,
-        max_level: log_level.into(),
-    };
+    let tracing_subscriber = logging::build_subscriber(log_level, logger);
     if tracing::subscriber::set_global_default(tracing_subscriber).is_err() {
         telio_log_warn!("Could not set logger, because logger had already been set by previous libtelio instance");
     }
@@ -836,118 +822,6 @@ static PANIC_HOOK: Once = Once::new();
 
 extern "C" {
     fn fortify_source();
-}
-
-fn filter_log_message(msg: String) -> Option<String> {
-    let mut log_status = match LAST_LOG_STATUS.lock() {
-        Ok(status) => status,
-        Err(_) => {
-            return None;
-        }
-    };
-
-    if !log_status.string.eq(&msg) {
-        log_status.string = msg.clone();
-        log_status.counter = 0;
-        return Some(msg);
-    }
-
-    if log_status.counter > 0 && log_status.counter % 100 == 0 {
-        log_status.counter += 1;
-        return Some(format!("[repeated 100 times!] {}", msg));
-    }
-
-    if log_status.counter < 10 {
-        log_status.counter += 1;
-        return Some(msg);
-    }
-
-    log_status.counter += 1;
-    None
-}
-
-/// Visitor for `tracing` events that converts one field with name equal to `field_name`
-/// value to a message string.
-pub struct TraceFieldVisitor<'a> {
-    field_name: &'static str,
-    metadata: &'a tracing::Metadata<'a>,
-    message: String,
-}
-
-impl<'a> tracing::field::Visit for TraceFieldVisitor<'a> {
-    #[track_caller]
-    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn fmt::Debug) {
-        // For now we're handling only the message field value, because other fields are not yet used.
-        if field.name() == self.field_name {
-            self.message = format!(
-                "{:#?}:{:#?} {:?}",
-                self.metadata.module_path().unwrap_or("unknown module"),
-                self.metadata.line().unwrap_or(0),
-                value,
-            );
-        }
-    }
-}
-
-pub struct TelioTracingSubscriber {
-    callback: Box<dyn TelioLoggerCb>,
-    max_level: tracing::Level,
-}
-
-impl TelioTracingSubscriber {
-    pub fn new(callback: Box<dyn TelioLoggerCb>, max_level: tracing::Level) -> Self {
-        TelioTracingSubscriber {
-            callback,
-            max_level,
-        }
-    }
-}
-
-impl Subscriber for TelioTracingSubscriber {
-    fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
-        metadata.level() <= &tracing::level_filters::STATIC_MAX_LEVEL
-            && metadata.level() <= &self.max_level
-    }
-
-    fn new_span(&self, _span: &tracing::span::Attributes<'_>) -> tracing::span::Id {
-        // TODO using a placeholder for now
-        tracing::span::Id::from_u64(1337)
-    }
-
-    fn record(&self, _span: &tracing::span::Id, _values: &tracing::span::Record<'_>) {
-        // TODO
-    }
-
-    fn record_follows_from(&self, _span: &tracing::span::Id, _follows: &tracing::span::Id) {
-        // TODO
-    }
-
-    fn event(&self, event: &tracing::Event<'_>) {
-        if !self.enabled(event.metadata()) {
-            return;
-        }
-
-        let level = *event.metadata().level();
-        let mut visitor = TraceFieldVisitor {
-            // hardcoded name of the field where tracing stores the messages passed to tracing::info! etc
-            field_name: "message",
-            metadata: event.metadata(),
-            message: String::new(),
-        };
-        event.record(&mut visitor);
-
-        if let Some(filtered_msg) = filter_log_message(visitor.message) {
-            let _ = self.callback.log(level.into(), filtered_msg);
-        }
-    }
-
-    fn enter(&self, _span: &tracing::span::Id) {
-        // TODO
-    }
-
-    fn exit(&self, _span: &tracing::span::Id) {
-        // TODO
-    }
 }
 
 trait FFILog {

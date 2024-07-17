@@ -10,7 +10,6 @@ pub mod ffi;
 pub use crate::ffi::*;
 use crate::types::*;
 pub use ffi::types as ffi_types;
-pub use ffi::TelioTracingSubscriber;
 
 /// cbindgen:ignore
 pub mod device;

@@ -1,5 +1,4 @@
 use telio;
-use telio::TelioTracingSubscriber;
 
 mod test_module {
     use std::sync::{
@@ -13,6 +12,9 @@ mod test_module {
 
     #[test]
     fn test_logger() {
+        // Line number of tracing::info! location
+        const INFO_LINE: u32 = 50;
+
         let call_count = Arc::new(AtomicUsize::new(0));
 
         #[derive(Debug)]
@@ -26,7 +28,10 @@ mod test_module {
                 payload: String,
             ) -> FFIResult<()> {
                 assert!(matches!(log_level, telio::ffi_types::TelioLogLevel::Info));
-                assert_eq!(r#""logger::test_module":43 test message"#, payload);
+                assert_eq!(
+                    format!(r#""logger::test_module":{INFO_LINE} test message"#),
+                    payload
+                );
                 assert_eq!(0, self.call_count.fetch_add(1, Ordering::Relaxed));
                 Ok(())
             }
@@ -36,8 +41,10 @@ mod test_module {
             call_count: call_count.clone(),
         };
 
-        let tracing_subscriber =
-            TelioTracingSubscriber::new(Box::new(logger), tracing::Level::INFO);
+        let tracing_subscriber = telio::ffi::logging::build_subscriber(
+            telio::ffi_types::TelioLogLevel::Info,
+            Box::new(logger),
+        );
         tracing::subscriber::set_global_default(tracing_subscriber).unwrap();
 
         tracing::info!("test message");

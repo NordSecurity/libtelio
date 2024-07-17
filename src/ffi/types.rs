@@ -53,7 +53,7 @@ pub enum TelioAdapterType {
     WindowsNativeTun,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// Possible log levels.
 pub enum TelioLogLevel {
     Error = 1,
