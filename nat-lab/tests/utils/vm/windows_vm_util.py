@@ -128,6 +128,7 @@ async def _copy_binaries(
 
     DIST_DIR = "dist/windows/release/x86_64/"
     LOCAL_UNIFFI_DIR = "nat-lab/tests/uniffi/"
+    LOCAL_BIN_DIR = "nat-lab/bin/"
 
     files_to_copy = [
         (f"{DIST_DIR}*", VM_TCLI_DIR, False),
@@ -137,6 +138,7 @@ async def _copy_binaries(
         (f"{DIST_DIR}sqlite3.dll", VM_UNIFFI_DIR, True),
         (f"{DIST_DIR}wireguard.dll", VM_UNIFFI_DIR, False),
         (f"{DIST_DIR}wintun.dll", VM_SYSTEM32, False),
+        (f"{LOCAL_BIN_DIR}multicast.py", VM_TCLI_DIR, False),
     ]
 
     for src, dst, allow_missing in files_to_copy:
