@@ -158,7 +158,7 @@ impl State {
         self.packets_present_in_tunnel = false;
 
         self.tunnel = Some(
-            Tunn::new(
+            *Tunn::new(
                 StaticSecret::from(self.secret_key.into_bytes()),
                 PublicKeyDalek::from(config.public_key.0),
                 None,

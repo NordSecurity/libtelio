@@ -102,7 +102,7 @@ impl LocalDnsResolver {
         Ok(LocalDnsResolver {
             socket: Arc::new(socket),
             secret_key: dns_secret_key,
-            peer: Arc::new(Mutex::new(Tunn::new(
+            peer: Arc::new(Mutex::new(*Tunn::new(
                 StaticSecret::from(dns_secret_key.into_bytes()),
                 telio_public_key,
                 None,
