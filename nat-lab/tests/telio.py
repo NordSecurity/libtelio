@@ -569,11 +569,7 @@ class Client:
         host_os = platform.system()
         if host_os == "Linux":
             host_ip = container_ip
-            (host_port, container_port) = ("0", "0")
-        elif host_os in ("Windows", "Darwin"):
-            (host_port, container_port) = await self._connection.mapped_ports()
-        else:
-            raise RuntimeError(f"Unsupported host OS: {host_os}")
+        (host_port, container_port) = await self._connection.mapped_ports()
 
         if isinstance(self.get_router(), WindowsRouter):
             python_cmd = "python"
@@ -630,12 +626,20 @@ class Client:
                             container_port,
                         ])
 
-                    if host_os == "Linux":
+                    # There are two scenarios when it comes to what port is being used to connect to the Pyro5 remote.
+                    # Scenario 1 - docker with mapped ports mapped ports:
+                    #   In this case we just use the mapped ports.
+                    #   We get this from docker_connection#mapped_ports by inspecting the container
+                    # Scenario 2 - non-docker scenarios or docker without mapped ports (like in our CI):
+                    #   Natlab can run clients in mac and windows VMs, not just in docker containers, and in some scenarios, like our CI,
+                    #   we can't currently use mapped ports. In those cases we let Pyro5 select a port on its own (by giving it 0 as the port number).
+                    #   libtelio_remote prints what port was used after binding and we collect it here in self._proxy_port
+                    if host_port == "0":
                         while len(self._proxy_port) == 0:
                             await asyncio.sleep(0.25)
                         object_uri = f"PYRO:{object_name}@{host_ip}:{self._proxy_port}"
                     else:
-                        object_uri = f"PYRO:{object_name}@{host_ip}:{host_port}"
+                        object_uri = f"PYRO:{object_name}@localhost:{host_port}"
 
                     try:
                         self._libtelio_proxy = LibtelioProxy(
