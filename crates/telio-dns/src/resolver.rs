@@ -1,6 +1,6 @@
-use hickory_proto::{rr::Record, serialize::binary::BinEncoder};
 use hickory_server::{
     authority::MessageResponse,
+    proto::{rr::Record, serialize::binary::BinEncoder},
     server::{ResponseHandler, ResponseInfo},
 };
 use std::io::{Error as IOError, Result as IOResult};
