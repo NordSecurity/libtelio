@@ -1746,24 +1746,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
-name = "hickory-client"
-version = "0.24.0"
-source = "git+https://github.com/NordSecurity/trust-dns.git?tag=v3.0.0#f3583ef082b448e808a492d034a2e30cda53dcdb"
-dependencies = [
- "cfg-if",
- "data-encoding",
- "futures-channel",
- "futures-util",
- "hickory-proto",
- "once_cell",
- "radix_trie",
- "rand",
- "thiserror",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "hickory-proto"
 version = "0.24.0"
 source = "git+https://github.com/NordSecurity/trust-dns.git?tag=v3.0.0#f3583ef082b448e808a492d034a2e30cda53dcdb"
@@ -4310,9 +4292,6 @@ dependencies = [
  "base64 0.13.1",
  "boringtun",
  "dns-parser",
- "hickory-client",
- "hickory-proto",
- "hickory-resolver",
  "hickory-server",
  "ipnet",
  "lazy_static",

@@ -4,10 +4,11 @@ use crate::{
 };
 use async_trait::async_trait;
 use boringtun::noise::{Tunn, TunnResult};
-use hickory_proto::rr::LowerName;
-use hickory_proto::serialize::binary::BinDecodable;
-use hickory_server::authority::MessageRequest;
-use hickory_server::server::{Protocol, Request};
+use hickory_server::{
+    authority::MessageRequest,
+    proto::{rr::LowerName, serialize::binary::BinDecodable},
+    server::{Protocol, Request},
+};
 use pnet_packet::{
     ip::IpNextHeaderProtocols,
     ipv4::{checksum, Ipv4Packet, MutableIpv4Packet},
@@ -566,13 +567,15 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
 #[cfg(test)]
 mod tests {
     use crate::zone::Records;
-    use hickory_proto::{
-        op::{Message, Query},
-        rr::Name,
-        serialize::binary::{BinDecodable, BinDecoder, BinEncodable},
+    use hickory_server::{
+        authority::MessageRequest,
+        proto::{
+            op::{Message, Query},
+            rr::Name,
+            serialize::binary::{BinDecodable, BinDecoder, BinEncodable},
+        },
+        server::Request,
     };
-    use hickory_server::authority::MessageRequest;
-    use hickory_server::server::Request;
     use std::{net::Ipv4Addr, str::FromStr};
 
     use super::*;

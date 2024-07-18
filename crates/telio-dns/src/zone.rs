@@ -1,12 +1,11 @@
 use async_trait::async_trait;
-use hickory_client::rr::{rdata::SOA, DNSClass, Name, RData, Record, RecordType};
-use hickory_proto::rr::{rdata, LowerName};
-use hickory_resolver::config::{NameServerConfigGroup, ResolverOpts};
 use hickory_server::{
     authority::{
         Authority, AuthorityObject, Catalog, LookupError, LookupOptions, MessageRequest,
         UpdateResult, ZoneType,
     },
+    proto::rr::{rdata, rdata::SOA, DNSClass, LowerName, Name, RData, Record, RecordType},
+    resolver::config::{NameServerConfigGroup, ResolverOpts},
     server::{Request, RequestInfo, ResponseHandler, ResponseInfo},
     store::{forwarder::ForwardConfig, in_memory::InMemoryAuthority},
 };

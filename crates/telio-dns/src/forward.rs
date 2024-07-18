@@ -9,17 +9,20 @@ use std::{
 };
 
 use async_trait::async_trait;
-use hickory_proto::rr::{LowerName, Name, RecordType};
-use hickory_proto::udp::DnsUdpSocket;
-use hickory_proto::{op::ResponseCode, rr::Record};
-use hickory_resolver::name_server::{GenericConnector, RuntimeProvider, TokioRuntimeProvider};
 use hickory_server::{
     authority::{
         Authority, LookupError, LookupObject, LookupOptions, MessageRequest, UpdateResult, ZoneType,
     },
-    proto::udp::UdpSocket as ProtoUdpSocket,
+    proto::{
+        op::ResponseCode,
+        rr::{LowerName, Name, Record, RecordType},
+        udp::{DnsUdpSocket, UdpSocket as ProtoUdpSocket},
+    },
     resolver::{
-        config::ResolverConfig, error::ResolveErrorKind, lookup::Lookup as ResolverLookup,
+        config::ResolverConfig,
+        error::ResolveErrorKind,
+        lookup::Lookup as ResolverLookup,
+        name_server::{GenericConnector, RuntimeProvider, TokioRuntimeProvider},
         AsyncResolver,
     },
     server::RequestInfo,
