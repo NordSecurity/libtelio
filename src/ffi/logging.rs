@@ -215,7 +215,7 @@ mod test {
     #[derive(Default, Clone, Debug)]
     struct Log(Arc<Mutex<Vec<(TelioLogLevel, String)>>>);
     impl TelioLoggerCb for Log {
-        fn log(&self, level: TelioLogLevel, payload: String) -> crate::FFIResult<()> {
+        fn log(&self, level: TelioLogLevel, payload: String) -> crate::FfiResult<()> {
             let mut logs = self.0.lock().expect("Unable to lock");
             logs.push((level, payload));
             Ok(())

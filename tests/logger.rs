@@ -6,7 +6,7 @@ mod test_module {
         Arc,
     };
 
-    use telio::ffi_types::{FFIResult, TelioLoggerCb};
+    use telio::ffi_types::{FfiResult, TelioLoggerCb};
 
     use super::*;
 
@@ -26,7 +26,7 @@ mod test_module {
                 &self,
                 log_level: telio::ffi_types::TelioLogLevel,
                 payload: String,
-            ) -> FFIResult<()> {
+            ) -> FfiResult<()> {
                 assert!(matches!(log_level, telio::ffi_types::TelioLogLevel::Info));
                 assert_eq!(
                     format!(r#""logger::test_module":{INFO_LINE} test message"#),

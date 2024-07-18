@@ -38,9 +38,9 @@ const DEFAULT_PANIC_MSG: &str = "libtelio panicked";
 /// Execute a given closure and catch any panics
 ///
 /// If the closure returns an error or panics, the inner errors or panic message is added to LAST_ERROR storage
-fn catch_ffi_panic<T, F>(expr: F) -> FFIResult<T>
+fn catch_ffi_panic<T, F>(expr: F) -> FfiResult<T>
 where
-    F: FnMut() -> FFIResult<T>,
+    F: FnMut() -> FfiResult<T>,
 {
     let result = panic::catch_unwind(AssertUnwindSafe(expr)).map_err(|e| {
         let message = panic_handling::recover_panic_message(e)
@@ -104,7 +104,7 @@ pub fn get_default_feature_config() -> Features {
 
 /// Utility function to create a `Features` object from a json-string
 /// Passing an empty string will return the default feature config
-pub fn deserialize_feature_config(fstr: String) -> FFIResult<Features> {
+pub fn deserialize_feature_config(fstr: String) -> FfiResult<Features> {
     if fstr.is_empty() {
         Ok(Features::default())
     } else {
@@ -113,7 +113,7 @@ pub fn deserialize_feature_config(fstr: String) -> FFIResult<Features> {
 }
 
 /// Utility function to create a `Config` object from a json-string
-pub fn deserialize_meshnet_config(cfg_str: String) -> FFIResult<Config> {
+pub fn deserialize_meshnet_config(cfg_str: String) -> FfiResult<Config> {
     match Config::new_from_str(&cfg_str) {
         Ok((cfg, _)) => Ok(cfg),
         Err(e) => match e {
@@ -165,7 +165,7 @@ impl Telio {
     /// # Parameters
     /// - `events`:     Events callback
     /// - `features`:   JSON string of enabled features
-    pub fn new(features: Features, events: Box<dyn TelioEventCb>) -> FFIResult<Self> {
+    pub fn new(features: Features, events: Box<dyn TelioEventCb>) -> FfiResult<Self> {
         unsafe {
             fortify_source();
         }
@@ -184,7 +184,7 @@ impl Telio {
         features: Features,
         events: Box<dyn TelioEventCb>,
         protect: Box<dyn TelioProtectCb>,
-    ) -> FFIResult<Self> {
+    ) -> FfiResult<Self> {
         let serialized_event_fn = format!("{:?}", events);
         let ret = Self::new_common(&features, events, Some(protect));
         Self::log_entry(features, serialized_event_fn, &ret);
@@ -195,7 +195,7 @@ impl Telio {
         features: &Features,
         events: Box<dyn TelioEventCb>,
         #[allow(unused)] protect_cb: Option<Box<dyn TelioProtectCb>>,
-    ) -> FFIResult<Self> {
+    ) -> FfiResult<Self> {
         let events = Arc::new(events);
         let event_dispatcher = move |event: Box<Event>| {
             let event_res = events.event(*event);
@@ -283,9 +283,9 @@ impl Telio {
         );
     }
 
-    fn device_op<F, R>(&self, break_on_lock_error: bool, op: F) -> FFIResult<R>
+    fn device_op<F, R>(&self, break_on_lock_error: bool, op: F) -> FfiResult<R>
     where
-        F: Fn(&mut Device) -> FFIResult<R>,
+        F: Fn(&mut Device) -> FfiResult<R>,
     {
         let mut dev = match self.inner.lock() {
             Ok(dev) => dev,
@@ -305,7 +305,7 @@ impl Telio {
     }
 
     /// Completely stop and uninit telio lib.
-    pub fn shutdown(&self) -> FFIResult<()> {
+    pub fn shutdown(&self) -> FfiResult<()> {
         catch_ffi_panic(|| {
             self.device_op(false, |dev| {
                 dev.stop();
@@ -316,7 +316,7 @@ impl Telio {
     }
 
     /// Explicitly deallocate telio object and shutdown async rt.
-    pub fn shutdown_hard(&self) -> FFIResult<()> {
+    pub fn shutdown_hard(&self) -> FfiResult<()> {
         let res = catch_ffi_panic(|| {
             let mut dev = match self.inner.lock() {
                 Ok(dev) => dev,
@@ -344,7 +344,7 @@ impl Telio {
     /// Start telio with specified adapter.
     ///
     /// Adapter will attempt to open its own tunnel.
-    pub fn start(&self, private_key: SecretKey, adapter: TelioAdapterType) -> FFIResult<()> {
+    pub fn start(&self, private_key: SecretKey, adapter: TelioAdapterType) -> FfiResult<()> {
         telio_log_info!(
             "Telio::start entry with instance id: {}. Public key: {:?}. Adapter: {:?}",
             self.id,
@@ -373,7 +373,7 @@ impl Telio {
         private_key: SecretKey,
         adapter: TelioAdapterType,
         name: String,
-    ) -> FFIResult<()> {
+    ) -> FfiResult<()> {
         telio_log_info!(
             "Telio::start entry with instance id: {}. Public key: {:?}. Adapter: {:?}. Name: {}",
             self.id,
@@ -412,7 +412,7 @@ impl Telio {
         private_key: SecretKey,
         adapter: TelioAdapterType,
         _tun: i32,
-    ) -> FFIResult<()> {
+    ) -> FfiResult<()> {
         telio_log_info!(
             "Telio::start entry with instance id: {}. Public key: {:?}. Adapter: {:?}. Tun: {_tun}",
             self.id,
@@ -438,7 +438,7 @@ impl Telio {
     }
 
     /// Stop telio device.
-    pub fn stop(&self) -> FFIResult<()> {
+    pub fn stop(&self) -> FfiResult<()> {
         telio_log_info!("Telio::stop entry with instance id: {}.", self.id,);
         catch_ffi_panic(|| {
             self.device_op(false, |dev| {
@@ -464,7 +464,7 @@ impl Telio {
     /// # Parameters
     /// - `private_key`: Base64-encoded WireGuard private key.
     ///
-    pub fn set_secret_key(&self, private_key: &SecretKey) -> FFIResult<()> {
+    pub fn set_secret_key(&self, private_key: &SecretKey) -> FfiResult<()> {
         telio_log_info!(
             "Telio::set_private_key entry with instance id: {}. Public key: {:?}",
             self.id,
@@ -492,7 +492,7 @@ impl Telio {
     /// # Parameters
     /// - `fwmark`: unsigned 32-bit integer
     ///
-    pub fn set_fwmark(&self, _fwmark: u32) -> FFIResult<()> {
+    pub fn set_fwmark(&self, _fwmark: u32) -> FfiResult<()> {
         telio_log_info!(
             "Telio::set_fwmark entry with instance id: {}. fwmark: {}",
             self.id,
@@ -513,7 +513,7 @@ impl Telio {
     /// # Parameters
     /// - `network_info`: Json-encoded network state info.
     ///                   Format to be decided, pass empty string for now.
-    pub fn notify_network_change(&self, network_info: String) -> FFIResult<()> {
+    pub fn notify_network_change(&self, network_info: String) -> FfiResult<()> {
         #![allow(unused_variables)]
 
         telio_log_info!(
@@ -529,7 +529,7 @@ impl Telio {
     }
 
     /// Notify telio system is going to sleep.
-    pub fn notify_sleep(&self) -> FFIResult<()> {
+    pub fn notify_sleep(&self) -> FfiResult<()> {
         telio_log_info!("telio_notify_sleep entry with instance id: {}.", self.id);
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
@@ -539,7 +539,7 @@ impl Telio {
     }
 
     /// Notify telio system has woken up.
-    pub fn notify_wakeup(&self) -> FFIResult<()> {
+    pub fn notify_wakeup(&self) -> FfiResult<()> {
         telio_log_info!("telio_notify_wakeup entry with instance id: {}.", self.id);
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
@@ -554,7 +554,7 @@ impl Telio {
         public_key: PublicKey,
         allowed_ips: Option<Vec<IpNetwork>>,
         endpoint: Option<SocketAddr>,
-    ) -> FFIResult<()> {
+    ) -> FfiResult<()> {
         telio_log_info!(
             "Telio::connect_to_exit_node entry with instance id :{}. Public Key: {:?}. Allowed IP: {:?}. Endpoint: {:?}",
             self.id,
@@ -581,7 +581,7 @@ impl Telio {
         public_key: PublicKey,
         allowed_ips: Option<Vec<IpNetwork>>,
         endpoint: Option<SocketAddr>,
-    ) -> FFIResult<()> {
+    ) -> FfiResult<()> {
         telio_log_info!(
             "Telio::connect_to_exit_node_with_id entry with instance id :{}. Identifier: {:?}, Public Key: {:?}. Allowed IP: {:?}. Endpoint: {:?}",
             self.id,
@@ -621,7 +621,7 @@ impl Telio {
         public_key: PublicKey,
         allowed_ips: Option<Vec<IpNetwork>>,
         endpoint: SocketAddr,
-    ) -> FFIResult<()> {
+    ) -> FfiResult<()> {
         telio_log_info!(
             "Telio::connect_to_exit_node_postquantum entry with instance id :{}. Identifier: {:?}, Public Key: {:?}. Allowed IP: {:?}. Endpoint: {:?}",
             self.id,
@@ -651,7 +651,7 @@ impl Telio {
     ///
     /// # Parameters
     /// - 'forward_servers': List of DNS servers to route the requests trough.
-    pub fn enable_magic_dns(&self, forward_servers: &[IpAddr]) -> FFIResult<()> {
+    pub fn enable_magic_dns(&self, forward_servers: &[IpAddr]) -> FfiResult<()> {
         telio_log_info!(
             "Telio::enable_magic_dns entry with instance id: {}. DNS Server: {:?}",
             self.id,
@@ -666,7 +666,7 @@ impl Telio {
     }
 
     /// Disables magic DNS if it was enabled.
-    pub fn disable_magic_dns(&self) -> FFIResult<()> {
+    pub fn disable_magic_dns(&self) -> FfiResult<()> {
         telio_log_info!(
             "Telio::disable_magic_dns entry with instance id: {}.",
             self.id
@@ -684,7 +684,7 @@ impl Telio {
     /// # Parameters
     /// - `public_key`: WireGuard public key for exit node.
     ///
-    pub fn disconnect_from_exit_node(&self, public_key: &PublicKey) -> FFIResult<()> {
+    pub fn disconnect_from_exit_node(&self, public_key: &PublicKey) -> FfiResult<()> {
         telio_log_info!(
             "Telio::disconnect_from_exit_node entry with instance id: {}. Public Key: {:?}",
             self.id,
@@ -699,7 +699,7 @@ impl Telio {
     }
 
     /// Disconnects from all exit nodes with no parameters required.
-    pub fn disconnect_from_exit_nodes(&self) -> FFIResult<()> {
+    pub fn disconnect_from_exit_nodes(&self) -> FfiResult<()> {
         telio_log_info!(
             "Telio::disconnect_from_exit_nodes entry with instance id: {}.",
             self.id
@@ -718,7 +718,7 @@ impl Telio {
     /// # Parameters
     /// - `cfg`: Output of GET /v1/meshnet/machines/{machineIdentifier}/map
     ///
-    pub fn set_meshnet(&self, cfg: Config) -> FFIResult<()> {
+    pub fn set_meshnet(&self, cfg: Config) -> FfiResult<()> {
         telio_log_info!(
             "Telio::set_meshnet entry with instance id: {}. Meshmap: {:?}",
             self.id,
@@ -734,7 +734,7 @@ impl Telio {
     }
 
     /// Disables the meshnet functionality by closing all the connections.
-    pub fn set_meshnet_off(&self) -> FFIResult<()> {
+    pub fn set_meshnet_off(&self) -> FfiResult<()> {
         telio_log_info!(
             "Telio::set_meshnet_off entry with instance id: {}.",
             self.id
@@ -762,11 +762,11 @@ impl Telio {
         error_handling::error_message().unwrap_or_else(|| "".to_owned())
     }
 
-    pub fn is_running(&self) -> FFIResult<bool> {
+    pub fn is_running(&self) -> FfiResult<bool> {
         self.device_op(true, |dev| Ok(dev.is_running()))
     }
 
-    pub fn trigger_analytics_event(&self) -> FFIResult<()> {
+    pub fn trigger_analytics_event(&self) -> FfiResult<()> {
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
                 dev.trigger_analytics_event()
@@ -775,7 +775,7 @@ impl Telio {
         })
     }
 
-    pub fn trigger_qos_collection(&self) -> FFIResult<()> {
+    pub fn trigger_qos_collection(&self) -> FfiResult<()> {
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
                 dev.trigger_qos_collection()
@@ -786,7 +786,7 @@ impl Telio {
 
     #[allow(clippy::panic)]
     /// For testing only.
-    pub fn generate_stack_panic(&self) -> FFIResult<()> {
+    pub fn generate_stack_panic(&self) -> FfiResult<()> {
         catch_ffi_panic(|| {
             if let Ok(true) = self.device_op(true, |dev| Ok(dev.is_running())) {
                 panic!("runtime_panic_test_call_stack");
@@ -799,7 +799,7 @@ impl Telio {
     }
 
     /// For testing only.
-    pub fn generate_thread_panic(&self) -> FFIResult<()> {
+    pub fn generate_thread_panic(&self) -> FfiResult<()> {
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
                 if dev.is_running() {
@@ -825,11 +825,11 @@ extern "C" {
 }
 
 trait FFILog {
-    fn log_result(self, caller: &str) -> FFIResult<()>;
+    fn log_result(self, caller: &str) -> FfiResult<()>;
 }
 
 impl FFILog for DevResult {
-    fn log_result(self, caller: &str) -> FFIResult<()> {
+    fn log_result(self, caller: &str) -> FfiResult<()> {
         match &self {
             Ok(_) => {
                 telio_log_debug!("{}: {:?}", caller, self);
