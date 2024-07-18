@@ -5,6 +5,7 @@ import random
 import time
 import uuid
 from config import DERP_SERVERS, LIBTELIO_IPV6_WG_SUBNET, WG_SERVERS
+from datetime import datetime
 from ipaddress import ip_address
 from typing import Dict, Any, List, Tuple, Optional
 from utils.router import IPStack, IPProto, get_ip_address_type
@@ -364,6 +365,7 @@ class API:
                     full_cmd = f"docker exec --privileged {server_config['container']} bash -c '{cmd}'"
                     ret = os.system(full_cmd)
                     print(
+                        datetime.now(),
                         "Executing",
                         full_cmd,
                         "on",
@@ -383,6 +385,7 @@ class API:
                 )
                 ret = os.system(cmd)
                 print(
+                    datetime.now(),
                     "Executing",
                     cmd,
                     "on",

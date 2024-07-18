@@ -1,5 +1,6 @@
 from .connection import Connection, TargetOS
 from aiodocker.containers import DockerContainer
+from datetime import datetime
 from typing import List
 from utils.process import Process, DockerProcess
 
@@ -20,7 +21,7 @@ class DockerConnection(Connection):
         self._container = container
 
     def create_process(self, command: List[str]) -> "Process":
-        print("Executing", command, "on", self._name)
+        print(datetime.now(), "Executing", command, "on", self._name)
         return DockerProcess(self._container, command)
 
     async def get_ip_address(self) -> tuple[str, str]:
