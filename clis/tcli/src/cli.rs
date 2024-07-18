@@ -8,14 +8,9 @@ use telio::device::{Device, DeviceConfig};
 use telio_model::config::{RelayState, Server};
 use telio_model::features::Features;
 use telio_model::{config::Config as MeshMap, event::Event as DevEvent, mesh::ExitNode};
-use telio_proto::{CodecError, PacketTypeRelayed};
+use telio_proto::CodecError;
 use telio_wg::AdapterType;
 use thiserror::Error;
-use tokio::{
-    net::UdpSocket,
-    runtime::Runtime,
-    time::{sleep, Duration},
-};
 use tracing::error;
 
 use crate::nord::{Error as NordError, Nord, OAuth};
@@ -25,7 +20,7 @@ use std::str::FromStr;
 use std::time::SystemTime;
 use std::{
     fs,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::{IpAddr, SocketAddr},
     process::Command,
     sync::{
         mpsc::{self, Receiver},
@@ -669,39 +664,7 @@ impl Cli {
                 };
                 self.conf = Some(conf);
             }
-            Ping {} => {
-                let rt = cli_try!(res; Runtime::new());
-                rt.block_on(async {
-                    match UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 5000)).await {
-                        Ok(udp_socket) => {
-                            let udp_socket = Arc::new(udp_socket);
-
-                            // Timeout for stunner
-                            let sleep = sleep(Duration::from_secs(20));
-                            tokio::pin!(sleep);
-                            // let socket = udp_socket.clone();
-                            const MAX_PACKET: usize = 65536;
-                            let mut rx_buff = [0u8; MAX_PACKET];
-                            tokio::select! {
-                                Ok((_len, _src_addr)) = udp_socket.recv_from(&mut rx_buff) => {
-                                    match rx_buff.first().map(|b| PacketTypeRelayed::from(*b)) {
-                                        Some(PacketTypeRelayed::Pinger) => cli_res!(res; (i "Pinger message received")),
-                                        Some(PacketTypeRelayed::Ponger) => cli_res!(res; (i "Ponger message received")),
-                                        other => cli_res!(res; (i "Unexpected packet: {:?}", other)),
-                                    }
-                                },
-                                () = &mut sleep => {
-                                    cli_res!(res; (i "timeout"));
-                                },
-
-                            }
-                        }
-                        Err(_) => {
-                            cli_res!(res; (i "udp socket init error"));
-                        }
-                    }
-                })
-            }
+            Ping {} => cli_res!(res; (i "receive ping - {:?}", self.telio.receive_ping())),
             Config { mesh_config } => {
                 if mesh_config.is_empty() {
                     let meshmap =

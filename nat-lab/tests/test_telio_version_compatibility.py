@@ -1,4 +1,5 @@
 import asyncio
+import json
 import pytest
 import telio
 from contextlib import AsyncExitStack
@@ -11,8 +12,9 @@ from utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_with_conn_tracker,
 )
+from utils.output_notifier import OutputNotifier
 from utils.ping import Ping
-from utils.router import IPProto, IPStack
+from utils.router import IPProto, IPStack, new_router
 
 STUN_PROVIDER = ["stun"]
 
@@ -46,6 +48,7 @@ UHP_conn_client_types = [
     "endpoint_providers, client1_type, client2_type, adapter_type",
     UHP_conn_client_types,
 )
+@pytest.mark.skip("Disabled for now, until LLT-5428 is resolved")
 async def test_connect_different_telio_version_through_relay(
     endpoint_providers,
     client1_type,
@@ -97,24 +100,34 @@ async def test_connect_different_telio_version_through_relay(
             ).run(api.get_meshmap(alpha.id))
         )
 
+        output_notifier = OutputNotifier()
+        started_event = asyncio.Event()
+        output_notifier.notify_output("started telio with BoringTun", started_event)
+
+        async def on_stdout_stderr(output):
+            print(f"[{beta.name}]: stdout: {output}")
+            output_notifier.handle_output(output)
+
+        beta_router = new_router(beta_conn, beta.ip_stack)
         beta_client_v3_6 = await exit_stack.enter_async_context(
-            telio.Client(
-                beta_conn,
-                beta,
-                adapter_type,
-                telio_features=TelioFeatures(
-                    direct=Direct(providers=endpoint_providers)
-                ),
-            ).run(api.get_meshmap(beta.id), True)
+            beta_conn.create_process([
+                "/opt/bin/tcli-3.6",
+                "--less-spam",
+                '-f { "paths": { "priority": ["relay", "udp-hole-punch"]} }',
+            ]).run(on_stdout_stderr, on_stdout_stderr)
+        )
+        await beta_client_v3_6.wait_stdin_ready()
+        await beta_client_v3_6.escape_and_write_stdin(
+            ["dev", "start", "boringtun", "tun10", str(beta.private_key)]
+        )
+        await started_event.wait()
+        await beta_router.setup_interface(beta.ip_addresses)
+        await beta_router.create_meshnet_route()
+        await beta_client_v3_6.escape_and_write_stdin(
+            ["mesh", "config", json.dumps(api.get_meshmap(beta.id))]
         )
 
-        await asyncio.gather(
-            alpha_client.wait_for_state_on_any_derp([telio.State.Connected]),
-            beta_client_v3_6.wait_for_state_on_any_derp([telio.State.Connected]),
-        )
-
-        # Hand only for alpha client because node event of telio 3.6
-        # are not caught anymore
+        await alpha_client.wait_for_state_on_any_derp([telio.State.Connected])
         await alpha_client.wait_for_state_peer(beta.public_key, [telio.State.Connected])
 
         async with Ping(

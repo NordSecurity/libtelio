@@ -1,15 +1,13 @@
 # pylint: disable=too-many-lines
-
 import asyncio
 import json
 import os
 import platform
 import re
-import shlex
 import uniffi.telio_bindings as libtelio  # type: ignore
 import uuid
 from collections import Counter
-from config import DERP_PRIMARY, DERP_SERVERS
+from config import DERP_SERVERS
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from dataclasses_json import DataClassJsonMixin, dataclass_json
@@ -19,9 +17,10 @@ from mesh_api import Meshmap, Node, start_tcpdump, stop_tcpdump
 from telio_features import TelioFeatures
 from typing import AsyncIterator, List, Optional, Set
 from uniffi.libtelio_proxy import LibtelioProxy, ProxyConnectionError
+from uniffi.telio_bindings import NatType
 from utils import asyncio_util
 from utils.connection import Connection, DockerConnection, TargetOS
-from utils.connection_util import get_libtelio_binary_path, get_uniffi_path
+from utils.connection_util import get_uniffi_path
 from utils.output_notifier import OutputNotifier
 from utils.process import Process, ProcessExecError
 from utils.router import IPStack, Router, new_router
@@ -63,8 +62,6 @@ class DerpServer(DataClassJsonMixin):
     weight: int
     use_plain_text: bool
     conn_state: State
-    # Only for compatibility with telio v3.6
-    used: bool = False
 
     def __hash__(self):
         return hash((
@@ -387,10 +384,7 @@ class Runtime:
         result = re.search("{(.*)}", json_string)
         if result:
             derp_server_json = DerpServer.from_json(
-                # Added "used" variable for compatibility with telio 3.6
-                "{"
-                + result.group(1).replace("\\", "")
-                + "}"
+                "{" + result.group(1).replace("\\", "") + "}"
             )
             assert isinstance(derp_server_json, DerpServer)
             self.set_derp(derp_server_json)
@@ -439,13 +433,6 @@ class Events:
         runtime: Runtime,
     ) -> None:
         self._runtime = runtime
-
-    async def message_done(self, message_idx: int) -> None:
-        event = asyncio.Event()
-        self._runtime.get_output_notifier().notify_output(
-            f"MESSAGE_DONE={message_idx}", event
-        )
-        await event.wait()
 
     async def wait_for_state_peer(
         self,
@@ -529,16 +516,13 @@ class Client:
             self._telio_features.ipv6 = True
 
     @asynccontextmanager
-    async def run(
-        self, meshmap: Optional[Meshmap] = None, telio_v3: bool = False
-    ) -> AsyncIterator["Client"]:
+    async def run(self, meshmap: Optional[Meshmap] = None) -> AsyncIterator["Client"]:
         if isinstance(self._connection, DockerConnection):
             start_tcpdump(self._connection.container_name())
             await self.clear_core_dumps()
 
         async def on_stdout(stdout: str) -> None:
             supress_print_list = [
-                "MESSAGE_DONE=",
                 "- no login.",
                 "- telio running.",
                 "- telio nodes",
@@ -578,9 +562,9 @@ class Client:
         uniffi_path = get_uniffi_path(self._connection)
 
         if isinstance(self.get_router(), MacRouter):
-            uniprocess = self._connection.create_process(["/bin/sh"])
+            self._process = self._connection.create_process(["/bin/sh"])
         else:
-            uniprocess = self._connection.create_process([
+            self._process = self._connection.create_process([
                 python_cmd,
                 uniffi_path,
                 object_name,
@@ -588,116 +572,95 @@ class Client:
                 container_port,
             ])
 
-        tcli_path = get_libtelio_binary_path("tcli", self._connection)
-        if telio_v3:
-            self._process = self._connection.create_process([
-                "/opt/bin/tcli-3.6",
-                "--less-spam",
-                '-f { "paths": { "priority": ["relay", "udp-hole-punch"]} }',
-            ])
-        else:
-            self._process = self._connection.create_process([
-                tcli_path,
-                "--less-spam",
-                f"-f {self._telio_features.to_json()}",
-            ])
-
         await self.clear_system_log()
 
         async with self._process.run(
             stdout_callback=on_stdout, stderr_callback=on_stderr
         ):
-            async with uniprocess.run(
-                stdout_callback=on_stdout, stderr_callback=on_stderr
-            ):
+            try:
+                await self._process.wait_stdin_ready()
+
+                if isinstance(self.get_router(), MacRouter):
+                    await self._process.escape_and_write_stdin(
+                        ["source", "/etc/profile"]
+                    )
+                    await self._process.escape_and_write_stdin([
+                        python_cmd,
+                        uniffi_path,
+                        object_name,
+                        container_ip,
+                        container_port,
+                    ])
+
+                # There are two scenarios when it comes to what port is being used to connect to the Pyro5 remote.
+                # Scenario 1 - docker with mapped ports mapped ports:
+                #   In this case we just use the mapped ports.
+                #   We get this from docker_connection#mapped_ports by inspecting the container
+                # Scenario 2 - non-docker scenarios or docker without mapped ports (like in our CI):
+                #   Natlab can run clients in mac and windows VMs, not just in docker containers, and in some scenarios, like our CI,
+                #   we can't currently use mapped ports. In those cases we let Pyro5 select a port on its own (by giving it 0 as the port number).
+                #   libtelio_remote prints what port was used after binding and we collect it here in self._proxy_port
+                if host_port == "0":
+                    while len(self._proxy_port) == 0:
+                        await asyncio.sleep(0.25)
+                    object_uri = f"PYRO:{object_name}@{host_ip}:{self._proxy_port}"
+                else:
+                    object_uri = f"PYRO:{object_name}@localhost:{host_port}"
+
                 try:
-                    await self._process.wait_stdin_ready()
-                    await uniprocess.wait_stdin_ready()
-
-                    if isinstance(self.get_router(), MacRouter):
-                        await uniprocess.escape_and_write_stdin(
-                            ["source", "/etc/profile"]
-                        )
-                        await uniprocess.escape_and_write_stdin([
-                            python_cmd,
-                            uniffi_path,
-                            object_name,
-                            container_ip,
-                            container_port,
-                        ])
-
-                    # There are two scenarios when it comes to what port is being used to connect to the Pyro5 remote.
-                    # Scenario 1 - docker with mapped ports mapped ports:
-                    #   In this case we just use the mapped ports.
-                    #   We get this from docker_connection#mapped_ports by inspecting the container
-                    # Scenario 2 - non-docker scenarios or docker without mapped ports (like in our CI):
-                    #   Natlab can run clients in mac and windows VMs, not just in docker containers, and in some scenarios, like our CI,
-                    #   we can't currently use mapped ports. In those cases we let Pyro5 select a port on its own (by giving it 0 as the port number).
-                    #   libtelio_remote prints what port was used after binding and we collect it here in self._proxy_port
-                    if host_port == "0":
-                        while len(self._proxy_port) == 0:
-                            await asyncio.sleep(0.25)
-                        object_uri = f"PYRO:{object_name}@{host_ip}:{self._proxy_port}"
-                    else:
-                        object_uri = f"PYRO:{object_name}@localhost:{host_port}"
-
-                    try:
-                        self._libtelio_proxy = LibtelioProxy(
-                            object_uri, self._telio_features.to_json()
-                        )
-                    except ProxyConnectionError as err:
-                        print(str(err))
-                        raise err
-
-                    self.get_proxy().start_named(
-                        private_key=self._node.private_key,
-                        adapter=self._adapter_type.convert_adapter_type(
-                            self.get_router()
-                        ),
-                        name=self.get_router().get_interface_name(),
+                    self._libtelio_proxy = LibtelioProxy(
+                        object_uri, self._telio_features.to_json()
                     )
-                    if isinstance(self.get_router(), LinuxRouter):
-                        self.get_proxy().set_fwmark(int(LINUX_FWMARK_VALUE))
+                except ProxyConnectionError as err:
+                    print(str(err))
+                    raise err
 
-                    async with asyncio_util.run_async_context(
-                        self._event_request_loop()
-                    ):
-                        if meshmap:
-                            await self.set_meshmap(meshmap)
-                        yield self
-                finally:
-                    print(datetime.now(), "Test cleanup stage 1. Saving logs")
-                    await self.save_logs()
+                self.get_proxy().start_named(
+                    private_key=self._node.private_key,
+                    adapter=self._adapter_type.convert_adapter_type(self.get_router()),
+                    name=self.get_router().get_interface_name(),
+                )
 
-                    print(
-                        datetime.now(),
-                        "Test cleanup stage 2. Stopping tcpdump and collecting core dumps",
-                    )
-                    if isinstance(self._connection, DockerConnection):
-                        stop_tcpdump([self._connection.container_name()])
-                        await self.collect_core_dumps()
+                if isinstance(self.get_router(), LinuxRouter):
+                    self.get_proxy().set_fwmark(int(LINUX_FWMARK_VALUE))
 
-                    print(
-                        datetime.now(),
-                        "Test cleanup stage 3. Saving MacOS network info",
-                    )
-                    await self.save_mac_network_info()
+                async with asyncio_util.run_async_context(self._event_request_loop()):
+                    if meshmap:
+                        await self.set_meshmap(meshmap)
+                    yield self
+            finally:
+                print(datetime.now(), "Test cleanup stage 1. Saving logs")
+                await self.save_logs()
 
-                    print(datetime.now(), "Test cleanup stage 4. Stopping device")
-                    if self._process.is_executing():
-                        await self.stop_device()
-                        self._quit = True
+                print(
+                    datetime.now(),
+                    "Test cleanup stage 2. Stopping tcpdump and collecting core dumps",
+                )
+                if isinstance(self._connection, DockerConnection):
+                    stop_tcpdump([self._connection.container_name()])
+                    await self.collect_core_dumps()
 
-                    print(datetime.now(), "Test cleanup stage 5. Shutting down")
-                    self.get_proxy().shutdown(self._connection.target_name())
+                print(
+                    datetime.now(),
+                    "Test cleanup stage 3. Saving MacOS network info",
+                )
+                await self.save_mac_network_info()
 
-                    print(datetime.now(), "Test cleanup stage 6. Clearing up routes")
-                    if self._router:
-                        await self._router.delete_vpn_route()
-                        await self._router.delete_exit_node_route()
-                        await self._router.delete_interface()
+                print(datetime.now(), "Test cleanup stage 4. Stopping device")
+                if self._process.is_executing():
+                    await self.stop_device()
+                    self._quit = True
 
-                    print(datetime.now(), "Test cleanup complete")
+                print(datetime.now(), "Test cleanup stage 5. Shutting down")
+                self.get_proxy().shutdown(self._connection.target_name())
+
+                print(datetime.now(), "Test cleanup stage 6. Clearing up routes")
+                if self._router:
+                    await self._router.delete_vpn_route()
+                    await self._router.delete_exit_node_route()
+                    await self._router.delete_interface()
+
+                print(datetime.now(), "Test cleanup complete")
 
     async def simple_start(self):
         self.get_proxy().start_named(
@@ -821,8 +784,11 @@ class Client:
     async def set_mesh_off(self):
         self.get_proxy().set_meshnet_off()
 
-    async def receive_ping(self):
-        await self._write_command(["mesh", "ping"])
+    async def receive_ping(self) -> str:
+        return await asyncio.to_thread(self.get_proxy().receive_ping)
+
+    async def get_nat(self, ip: str, port: int) -> NatType:
+        return self.get_proxy().get_nat(ip, port)
 
     async def connect_to_vpn(
         self,
@@ -964,6 +930,10 @@ class Client:
         assert self._process
         return self._process.get_stdout()
 
+    def get_stderr(self) -> str:
+        assert self._process
+        return self._process.get_stderr()
+
     def get_features(self) -> TelioFeatures:
         assert self._telio_features
         return self._telio_features
@@ -1010,49 +980,11 @@ class Client:
                     return
                 raise
 
-    async def create_fake_derprelay_to_derp01(self, sk: str, allowed_pk: str) -> None:
-        derp01_server = (
-            '{"host":"'
-            + str(DERP_PRIMARY["hostname"])
-            + '","ipv4":"'
-            + str(DERP_PRIMARY["ipv4"])
-            + '","port":'
-            + str(DERP_PRIMARY["relay_port"])
-            + ',"pk":"'
-            + str(DERP_PRIMARY["public_key"])
-            + '"}'
-        )
-
-        await self._write_command(["derp", "on", sk, derp01_server, allowed_pk])
-
-    async def disconnect_fake_derprelay(self) -> None:
-        await self._write_command(["derp", "off"])
-
-    async def recv_message_from_fake_derp_relay(self) -> None:
-        await self._write_command(["derp", "recv"])
-
-    async def fake_derp_events(self) -> None:
-        await self._write_command(["derp", "events"])
-
-    async def send_message_from_fake_derp_relay(self, pk: str, data: List[str]) -> None:
-        await self._write_command(["derp", "send", pk] + data)
-
     async def trigger_event_collection(self) -> None:
         self.get_proxy().trigger_analytics_event()
 
     async def trigger_qos_collection(self) -> None:
         self.get_proxy().trigger_qos_collection()
-
-    async def _write_command(self, command: List[str]) -> None:
-        idx = self._message_idx
-        cmd = (
-            f"MESSAGE_ID={str(idx)} "
-            + " ".join([shlex.quote(arg) for arg in command])
-            + "\n"
-        )
-        await self.get_process().write_stdin(cmd)
-        self._message_idx += 1
-        await self.get_events().message_done(idx)
 
     def get_endpoint_address(self, public_key: str) -> str:
         node = self.get_node_state(public_key)
@@ -1237,10 +1169,8 @@ class Client:
         ) as f:
             f.write(network_info_info)
 
-    async def probe_pmtu(self, host: str, expected: int):
-        ev = self.wait_for_output(f"PMTU -> {host}: {expected}")
-        await self._write_command(["pmtu", host])
-        await ev.wait()
+    async def probe_pmtu(self, host: str) -> int:
+        return self.get_proxy().probe_pmtu(host)
 
     # This is where natlab expects coredumps to be placed
     # For CI and our internal linux VM, this path is set in our provisioning scripts

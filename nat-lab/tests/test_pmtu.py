@@ -48,10 +48,10 @@ async def test_pmtu_black_hole(setup_params: SetupParameters) -> None:
             else config.PMTU_PROBE_HOST_IP6
         )
 
-        await client.probe_pmtu(host, 1300)
+        assert await client.probe_pmtu(host) == 1300
 
         # do it second time bacause the kernel might cache something
-        await client.probe_pmtu(host, 1300)
+        assert await client.probe_pmtu(host) == 1300
 
 
 @pytest.mark.asyncio
@@ -93,10 +93,10 @@ async def test_pmtu_with_nexthop(setup_params: SetupParameters) -> None:
         await exit_stack.enter_async_context(proc.run())
         await proc.wait_stdin_ready()
 
-        await client.probe_pmtu(host, 1300)
+        assert await client.probe_pmtu(host) == 1300
 
         # do it second time bacause the kernel might cache something
-        await client.probe_pmtu(host, 1300)
+        assert await client.probe_pmtu(host) == 1300
 
 
 @pytest.mark.asyncio
@@ -140,10 +140,10 @@ async def test_pmtu_without_nexthop(setup_params: SetupParameters) -> None:
         await exit_stack.enter_async_context(proc.run())
         await proc.wait_stdin_ready()
 
-        await client.probe_pmtu(host, 1300)
+        assert await client.probe_pmtu(host) == 1300
 
         # do it second time bacause the kernel might cache something
-        await client.probe_pmtu(host, 1300)
+        assert await client.probe_pmtu(host) == 1300
 
 
 # Test vpn connection with PMTU available, expect conntracker to detect PMTU ICMP connection

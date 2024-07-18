@@ -55,23 +55,15 @@ async def test_ping_pong() -> None:
         )
         client_alpha, *_ = env.clients
 
-        pinger_event = client_alpha.wait_for_output("Pinger")
-        ponger_event = client_alpha.wait_for_output("Ponger")
-
         # Send PING type message
-        await exit_stack.enter_async_context(
-            run_async_context(client_alpha.receive_ping())
-        )
-        await send_ping_pong(PingType.PING)
+        async with run_async_context(client_alpha.receive_ping()) as ping:
+            await send_ping_pong(PingType.PING)
+            assert await ping == "Pinger"
 
         # Send PONG type message
-        await exit_stack.enter_async_context(
-            run_async_context(client_alpha.receive_ping())
-        )
-        await send_ping_pong(PingType.PONG)
-
-        await pinger_event.wait()
-        await ponger_event.wait()
+        async with run_async_context(client_alpha.receive_ping()) as ping:
+            await send_ping_pong(PingType.PONG)
+            assert await ping == "Ponger"
 
 
 @pytest.mark.asyncio
@@ -83,11 +75,9 @@ async def test_send_malform_pinger_packet() -> None:
         )
         client_alpha, *_ = env.clients
 
-        unexpected_packet_event = client_alpha.wait_for_output("Unexpected packet: ")
-
         # Send malformed PingerMsg
-        await exit_stack.enter_async_context(
-            run_async_context(client_alpha.receive_ping())
-        )
-        await send_ping_pong(PingType.MALFORMED)
-        await unexpected_packet_event.wait()
+        with pytest.raises(Exception) as exception_info:
+            async with run_async_context(client_alpha.receive_ping()) as ping:
+                await send_ping_pong(PingType.MALFORMED)
+                await ping
+        assert "PingerReceiveUnexpected" in str(exception_info.value.args[0])

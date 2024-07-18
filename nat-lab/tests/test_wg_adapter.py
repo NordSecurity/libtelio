@@ -1,86 +1,74 @@
-import asyncio
-import platform
-from utils.connection_util import (
-    ConnectionTag,
-    get_libtelio_binary_path,
-    new_connection_raw,
-)
-from utils.output_notifier import OutputNotifier
-
-if platform.machine() != "x86_64":
-    import pure_wg as Key
-else:
-    from python_wireguard import Key  # type: ignore
+import pytest
+from contextlib import AsyncExitStack
+from helpers import SetupParameters, setup_environment
+from telio import AdapterType
+from utils.connection_util import ConnectionTag, new_connection_by_tag
+from utils.process import ProcessExecError
 
 
-async def test_wg_adapter_cleanup():
-    output_notifier = OutputNotifier()
-
-    async def output_checker(stdout: str) -> None:
-        for line in stdout.splitlines():
-            print(line)
-            output_notifier.handle_output(line)
-
-    private, _ = Key.key_pair()
-
-    async with new_connection_raw(ConnectionTag.WINDOWS_VM_1) as conn:
-        cli_started = asyncio.Event()
-        output_notifier.notify_output("telio dev cli", cli_started)
-
-        adapter_started = asyncio.Event()
-        output_notifier.notify_output("started telio with", adapter_started)
-
-        async with conn.create_process([get_libtelio_binary_path("tcli", conn)]).run(
-            output_checker, output_checker
-        ) as tcli_proc:
-            await tcli_proc.wait_stdin_ready()
-            await cli_started.wait()
-            await tcli_proc.write_stdin(
-                f"dev start wireguard-go wintun10 {str(private)}\n"
+@pytest.mark.windows
+@pytest.mark.parametrize("conn_tag", [ConnectionTag.WINDOWS_VM_1])
+async def test_wg_adapter_cleanup(conn_tag: ConnectionTag):
+    QUERY_CMD = [
+        "reg",
+        "query",
+        r"HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}",
+        "/s",
+        "/f",
+        "DeviceInstanceID",
+    ]
+    # Run libtelio and kill it dirty so it would leave hanging wintun adapter
+    try:
+        async with AsyncExitStack() as exit_stack:
+            env = await exit_stack.enter_async_context(
+                setup_environment(
+                    exit_stack,
+                    [
+                        SetupParameters(
+                            connection_tag=conn_tag,
+                            adapter_type=AdapterType.WireguardGo,
+                        )
+                    ],
+                )
             )
-            await adapter_started.wait()
 
-        # leaving previous stack here in theory should kill tcli in a dirty manner,
-        # leaving orphaned wintun adapter behind, but doesn't happen 100% tho
+            conn, *_ = [conn.connection for conn in env.connections]
 
-        reg_query = await conn.create_process([
-            "reg",
-            "query",
-            r"HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}",
-            "/s",
-            "/f",
-            "DeviceInstanceID",
-        ]).execute()
+            assert (
+                "Wintun"
+                in (await conn.create_process(QUERY_CMD).execute()).get_stdout()
+            )
 
-        while (
-            "tcli.exe"
-            in (await conn.create_process(["tasklist"]).execute()).get_stdout()
+            await conn.create_process(
+                ["taskkill", "/T", "/F", "/IM", "python.exe"]
+            ).execute()
+    except ProcessExecError:
+        pass
+
+    # Check if libtelio left hanging wintun adapter, might now always happen, so we just leave test
+    async with new_connection_by_tag(conn_tag) as conn:
+        if (
+            "Wintun"
+            not in (await conn.create_process(QUERY_CMD).execute()).get_stdout()
         ):
-            await asyncio.sleep(0.1)
-
-        # as mentioned before, wintun adapter is not left behind 100%
-        # if it is not there, we do nothing
-        if "Wintun" not in reg_query.get_stdout():
             return
 
-        cli_started = asyncio.Event()
-        output_notifier.notify_output("telio dev cli", cli_started)
-
-        adapter_started = asyncio.Event()
-        output_notifier.notify_output("started telio with", adapter_started)
-
-        telio_stoppped = asyncio.Event()
-        output_notifier.notify_output("- stopped telio.", telio_stoppped)
-
-        async with conn.create_process([get_libtelio_binary_path("tcli", conn)]).run(
-            output_checker, output_checker
-        ) as tcli_proc:
-            await tcli_proc.wait_stdin_ready()
-            await cli_started.wait()
-            await tcli_proc.write_stdin(
-                f"dev start wireguard-go wintun10 {str(private)}\n"
+    # Try to start libtelio and see if it properly cleans up oprhaned wintun adapter and starts normaly
+    async with AsyncExitStack() as exit_stack:
+        env = await exit_stack.enter_async_context(
+            setup_environment(
+                exit_stack,
+                [
+                    SetupParameters(
+                        connection_tag=conn_tag,
+                        adapter_type=AdapterType.WireguardGo,
+                    )
+                ],
             )
-            await adapter_started.wait()
-            await tcli_proc.write_stdin("dev stop\n")
-            await telio_stoppped.wait()
-            await tcli_proc.write_stdin("quit\n")
+        )
+
+        conn, *_ = [conn.connection for conn in env.connections]
+        client, *_ = env.clients
+
+        assert "Wintun" in (await conn.create_process(QUERY_CMD).execute()).get_stdout()
+        assert "Removed orphaned adapter" in client.get_stderr()

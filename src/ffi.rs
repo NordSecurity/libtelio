@@ -28,6 +28,8 @@ use telio_model::{
     mesh::{ExitNode, Node},
 };
 
+use nat_detect::NatType;
+
 // debug tools
 use telio_utils::{
     commit_sha, telio_log_debug, telio_log_error, telio_log_info, telio_log_warn, version_tag,
@@ -780,6 +782,53 @@ impl Telio {
             self.device_op(true, |dev| {
                 dev.trigger_qos_collection()
                     .log_result("Telio::trigger_qos_collection")
+            })
+        })
+    }
+
+    pub fn receive_ping(&self) -> FfiResult<String> {
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| match dev.receive_ping() {
+                Ok(res) => Ok(res),
+                Err(e) => Err(e.into()),
+            })
+        })
+    }
+
+    pub fn probe_pmtu(&self, #[allow(unused)] host: String) -> FfiResult<u32> {
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        {
+            catch_ffi_panic(|| {
+                self.device_op(true, |dev| {
+                    let host: IpAddr = match host.parse() {
+                        Ok(ip) => ip,
+                        Err(_) => return Err(TelioError::InvalidString),
+                    };
+                    match dev.probe_pmtu(host) {
+                        Ok(res) => Ok(res),
+                        Err(e) => Err(e.into()),
+                    }
+                })
+            })
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
+        {
+            catch_ffi_panic(|| Ok(0u32))
+        }
+    }
+
+    pub fn get_nat(&self, ip: String, port: u16) -> FfiResult<NatType> {
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                let ip: IpAddr = match ip.parse() {
+                    Ok(ip) => ip,
+                    Err(_) => return Err(TelioError::InvalidString),
+                };
+                let skt = SocketAddr::new(ip, port);
+                match dev.get_nat(skt) {
+                    Ok(res) => Ok(res.nat_type),
+                    Err(e) => Err(e.into()),
+                }
             })
         })
     }

@@ -67,6 +67,7 @@ mod uniffi_libtelio {
     use super::crypto::{PublicKey, SecretKey};
     use super::*;
 
+    use nat_detect::NatType;
     use telio_model::config::*;
     use telio_model::event::{ErrorCode, ErrorLevel, Event};
     use telio_model::features::*;
