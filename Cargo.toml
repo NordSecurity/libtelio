@@ -15,7 +15,6 @@ pretend_to_be_macos = ["telio-model/pretend_to_be_macos"]
 [dependencies]
 cfg-if = "1.0.0"
 ffi_helpers = "0.3.0"
-num_cpus = "1.15.0"
 h2 = "=0.3.26" # RUSTSEC-2024-0332
 
 anyhow.workspace = true
@@ -27,6 +26,7 @@ ipnet.workspace = true
 lazy_static.workspace = true
 libc.workspace = true
 modifier.workspace = true
+num_cpus.workspace = true
 parking_lot.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -124,6 +124,7 @@ mockall = "0.11.3"
 modifier = "0.1.0"
 nat-detect = { git = "https://github.com/NordSecurity/nat-detect.git", tag = "v0.1.8" }
 ntest = "0.7"
+num_cpus = "1.15.0"
 num_enum = "0.6.1"
 once_cell = "1"
 parking_lot = "0.12"
@@ -158,7 +159,7 @@ windows = { version = "0.56", features = [
     "Win32_NetworkManagement_IpHelper",
 ] }
 
-boringtun = { git = "https://github.com/NordSecurity/boringtun.git", tag = "v1.2.3", features = ["device"] }
+boringtun = { git = "https://github.com/NordSecurity/boringtun.git", tag = "v1.2.4", features = ["device"] }
 x25519-dalek = { version = "2.0.1", features = ["reusable_secrets", "static_secrets"] }
 
 telio-crypto = { version = "0.1.0", path = "./crates/telio-crypto" }
