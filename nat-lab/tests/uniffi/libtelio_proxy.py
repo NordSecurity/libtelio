@@ -1,6 +1,5 @@
 import Pyro5.errors  # type:ignore
 import time
-from datetime import datetime
 from Pyro5.api import Proxy  # type: ignore
 from typing import Optional
 
@@ -31,7 +30,6 @@ class LibtelioProxy:
             with Proxy(self._uri) as remote:
                 remote.shutdown()
             print(
-                datetime.now(),
                 "Libtelio Proxy connection has been succesfully shut down",
                 "on",
                 "Unknown" if container_or_vm_name is None else container_or_vm_name,
@@ -47,7 +45,6 @@ class LibtelioProxy:
             # cause of the flakyness. Therefore the exception for ConnectionClosedError
             # is added
             print(
-                datetime.now(),
                 "ConnectionClosedError raised during shutdown of libtelio RPC daemon",
                 "on",
                 "Unknown" if container_or_vm_name is None else container_or_vm_name,

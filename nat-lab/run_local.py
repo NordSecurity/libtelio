@@ -5,6 +5,8 @@ import os
 import subprocess
 import sys
 import time
+from datetime import datetime
+from threading import Thread
 from typing import List, Optional, Dict, Any
 
 PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/../..")
@@ -12,14 +14,46 @@ PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/
 TEST_TIMEOUT = 180
 
 
+def add_timestamps_to_output_lines(input_stream, output_stream):
+    for line in input_stream:
+        line = line.decode("utf-8").rstrip()
+        print(f"{datetime.now()} {line}", file=output_stream)
+
+
 # Runs the command with stdout and stderr piped back to executing shell (this results
 # in real time log messages that are properly color coded)
-def run_command(command: List[str], env: Optional[Dict[str, Any]] = None) -> None:
+def run_command(
+    command: List[str], env: Optional[Dict[str, Any]] = None, add_timestamps=False
+) -> None:
     if env:
         env = {**os.environ.copy(), **env}
 
+    if add_timestamps:
+        if not env:
+            env = {**os.environ.copy()}
+        env["PYTHONUNBUFFERED"] = "1"
+
     print(f"|EXECUTE| {' '.join(command)}")
-    subprocess.check_call(command, env=env)
+
+    with subprocess.Popen(
+        command, env=env, bufsize=0, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    ) as subcommand:
+        stdout_t = Thread(
+            target=add_timestamps_to_output_lines, args=(subcommand.stdout, sys.stdout)
+        )
+        stdout_t.daemon = True
+        stdout_t.start()
+
+        stderr_t = Thread(
+            target=add_timestamps_to_output_lines, args=(subcommand.stderr, sys.stderr)
+        )
+        stderr_t.daemon = True
+        stderr_t.start()
+
+        retcode = subcommand.wait()
+
+        if retcode:
+            raise subprocess.CalledProcessError(retcode, command)
     print("")
 
 
@@ -100,7 +134,7 @@ def main() -> int:
 
         pytest_cmd += get_pytest_arguments(args)
 
-        run_command(pytest_cmd)
+        run_command(pytest_cmd, add_timestamps=True)
 
     return 0
 
