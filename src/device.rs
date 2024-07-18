@@ -132,7 +132,7 @@ pub enum Error {
     #[error("Failed to initialize libmoose: {0}")]
     LibmooseError(#[from] telio_lana::moose::Error),
     #[error("Failed to parse IP network")]
-    IpNetworkError(#[from] ipnetwork::IpNetworkError),
+    IpNetworkError(#[from] ipnet::AddrParseError),
     #[error("Controller error")]
     ControllerError(#[from] wg_controller::Error),
     #[error("Proxy error")]
@@ -2052,7 +2052,7 @@ impl Runtime {
                     is_exit: peer
                         .allowed_ips
                         .iter()
-                        .any(|network| network.ip().is_unspecified()),
+                        .any(|network| network.addr().is_unspecified()),
                     is_vpn: false,
                     ip_addresses: meshnet_peer.base.ip_addresses.clone().unwrap_or_default(),
                     allowed_ips: peer.allowed_ips.clone(),
@@ -2724,8 +2724,8 @@ mod tests {
         .await
         .unwrap();
 
-        let first_ip_network = ipnetwork::IpNetwork::from(IpAddr::from(Ipv4Addr::new(1, 2, 3, 4)));
-        let second_ip_network = ipnetwork::IpNetwork::from(IpAddr::from(Ipv4Addr::new(4, 3, 2, 1)));
+        let first_ip_network = ipnet::IpNet::from(IpAddr::from(Ipv4Addr::new(1, 2, 3, 4)));
+        let second_ip_network = ipnet::IpNet::from(IpAddr::from(Ipv4Addr::new(4, 3, 2, 1)));
 
         let config = Config {
             this: PeerBase {
@@ -2739,7 +2739,7 @@ mod tests {
                 Peer {
                     base: PeerBase {
                         public_key: SecretKey::gen().public(),
-                        ip_addresses: Some(vec![first_ip_network.ip()]),
+                        ip_addresses: Some(vec![first_ip_network.addr()]),
                         ..Default::default()
                     },
                     ..Default::default()
@@ -2747,7 +2747,7 @@ mod tests {
                 Peer {
                     base: PeerBase {
                         public_key: SecretKey::gen().public(),
-                        ip_addresses: Some(vec![second_ip_network.ip()]),
+                        ip_addresses: Some(vec![second_ip_network.addr()]),
                         ..Default::default()
                     },
                     ..Default::default()
@@ -3476,8 +3476,8 @@ mod tests {
             .values()
             .any(|p| {
                 p.allowed_ips.iter().any(|ip| match ip {
-                    ipnetwork::IpNetwork::V4(_) => false,
-                    ipnetwork::IpNetwork::V6(_) => true,
+                    ipnet::IpNet::V4(_) => false,
+                    ipnet::IpNet::V6(_) => true,
                 })
             });
 

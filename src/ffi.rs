@@ -2,7 +2,7 @@ pub mod types;
 
 use anyhow::anyhow;
 use ffi_helpers::{error_handling, panic as panic_handling};
-use ipnetwork::IpNetwork;
+use ipnet::IpNet;
 use rand::Rng;
 use telio_crypto::{PublicKey, SecretKey};
 use telio_wg::AdapterType;
@@ -566,7 +566,7 @@ impl Telio {
     pub fn connect_to_exit_node(
         &self,
         public_key: PublicKey,
-        allowed_ips: Option<Vec<IpNetwork>>,
+        allowed_ips: Option<Vec<IpNet>>,
         endpoint: Option<SocketAddr>,
     ) -> FFIResult<()> {
         telio_log_info!(
@@ -593,7 +593,7 @@ impl Telio {
         &self,
         identifier: Option<String>,
         public_key: PublicKey,
-        allowed_ips: Option<Vec<IpNetwork>>,
+        allowed_ips: Option<Vec<IpNet>>,
         endpoint: Option<SocketAddr>,
     ) -> FFIResult<()> {
         telio_log_info!(
@@ -633,7 +633,7 @@ impl Telio {
         &self,
         identifier: Option<String>,
         public_key: PublicKey,
-        allowed_ips: Option<Vec<IpNetwork>>,
+        allowed_ips: Option<Vec<IpNet>>,
         endpoint: SocketAddr,
     ) -> FFIResult<()> {
         telio_log_info!(

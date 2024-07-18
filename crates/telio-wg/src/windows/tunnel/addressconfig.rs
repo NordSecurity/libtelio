@@ -12,7 +12,7 @@
 //
 
 use super::winipcfg::{luid::*, types::*};
-use ipnet::{IpNet, Ipv4Net, Ipv6Net};
+use ipnet::{Ipv4Net, Ipv6Net};
 use std::{
     alloc::{alloc, dealloc, Layout},
     collections::HashSet,

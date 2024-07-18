@@ -5,7 +5,7 @@ use std::{
 
 use async_trait::async_trait;
 use futures::{future::join_all, TryFutureExt};
-use ipnetwork::IpNetwork;
+use ipnet::IpNet;
 use pnet_packet::{ipv4::MutableIpv4Packet, ipv6::MutableIpv6Packet};
 use telio_model::PublicKey;
 use tokio::net::UdpSocket;
@@ -97,7 +97,7 @@ impl Transport {
         meshnet_ip: IpAddr,
         socket_pool: Arc<SocketPool>,
         packet_chan: Chan<Vec<u8>>,
-        multicast_ips: Vec<IpNetwork>,
+        multicast_ips: Vec<IpNet>,
     ) -> Result<Self, Error> {
         let transport_socket = socket_pool
             .new_internal_udp(SocketAddr::new(meshnet_ip, MULTICAST_TRANSPORT_PORT), None)
@@ -142,7 +142,7 @@ struct State {
     recv_buffer: Vec<u8>,
     nat: StarcastNat,
     peers: Vec<Peer>,
-    multicast_ips: Vec<IpNetwork>,
+    multicast_ips: Vec<IpNet>,
 }
 
 impl State {
@@ -210,7 +210,7 @@ impl State {
         Ok(self
             .multicast_ips
             .iter()
-            .any(|network| network.contains(dst)))
+            .any(|network| network.contains(&dst)))
     }
 
     fn get_packet_dst<'a, P: MutableIpPacket<'a>>(packet: &'a mut [u8]) -> Result<IpAddr, Error> {
@@ -290,7 +290,7 @@ mod tests {
                     addr: s.local_addr().unwrap(),
                 })
                 .collect();
-            let multicast_ips = vec![IpNetwork::new("224.0.0.0".parse().unwrap(), 4).unwrap()];
+            let multicast_ips = vec![IpNet::new("224.0.0.0".parse().unwrap(), 4).unwrap()];
 
             let task = Task::start(State {
                 transport_socket: transport_socket.clone(),
@@ -409,7 +409,7 @@ mod tests {
 
         use super::*;
 
-        async fn create_state_with_multicast_ips(multicast_ips: Vec<IpNetwork>) -> State {
+        async fn create_state_with_multicast_ips(multicast_ips: Vec<IpNet>) -> State {
             State {
                 transport_socket: Arc::new(
                     UdpSocket::bind(SocketAddr::new("127.0.0.1".parse().unwrap(), 0))
@@ -481,7 +481,7 @@ mod tests {
         #[case("ff02::fb", false)]
         #[tokio::test]
         async fn test_one_ipv4_multicast_network(#[case] addr: &str, #[case] expected: bool) {
-            let multicast_ips = vec![IpNetwork::new("224.0.0.0".parse().unwrap(), 4).unwrap()];
+            let multicast_ips = vec![IpNet::new("224.0.0.0".parse().unwrap(), 4).unwrap()];
             let state = create_state_with_multicast_ips(multicast_ips).await;
             run_test(state, addr, expected).await;
         }
@@ -496,7 +496,7 @@ mod tests {
         #[case("ff02::1", true)]
         #[tokio::test]
         async fn test_one_ipv6_multicast_network(#[case] addr: &str, #[case] expected: bool) {
-            let multicast_ips = vec![IpNetwork::new("ff00::".parse().unwrap(), 12).unwrap()];
+            let multicast_ips = vec![IpNet::new("ff00::".parse().unwrap(), 12).unwrap()];
             let state = create_state_with_multicast_ips(multicast_ips).await;
             run_test(state, addr, expected).await;
         }
@@ -515,8 +515,8 @@ mod tests {
             #[case] expected: bool,
         ) {
             let multicast_ips = vec![
-                IpNetwork::new("224.0.0.0".parse().unwrap(), 4).unwrap(),
-                IpNetwork::new("ff00::".parse().unwrap(), 12).unwrap(),
+                IpNet::new("224.0.0.0".parse().unwrap(), 4).unwrap(),
+                IpNet::new("ff00::".parse().unwrap(), 12).unwrap(),
             ];
             let state = create_state_with_multicast_ips(multicast_ips).await;
             run_test(state, addr, expected).await;

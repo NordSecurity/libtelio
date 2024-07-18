@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use futures::{future::pending, FutureExt};
-use ipnetwork::{IpNetwork, IpNetworkError};
+use ipnet::{AddrParseError, IpNet};
 use slog::{o, Drain, Logger, Never};
 use std::{
     collections::HashMap,
@@ -1050,7 +1050,7 @@ pub mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use ipnetwork::Ipv4Network;
+    use ipnet::Ipv4Net;
     use lazy_static::lazy_static;
     use mockall::predicate;
     use rand::{Rng, RngCore, SeedableRng};
@@ -1085,9 +1085,7 @@ pub mod tests {
                     IpAddr::V4(rng.gen::<u32>().into()),
                 ],
                 persistent_keepalive_interval: Some(rng.gen()),
-                allowed_ips: vec![IpNetwork::V4(
-                    Ipv4Network::new(rng.gen::<u32>().into(), 0).unwrap(),
-                )],
+                allowed_ips: vec![IpNet::V4(Ipv4Net::new(rng.gen::<u32>().into(), 0).unwrap())],
                 rx_bytes: Some(rng.gen()),
                 time_since_last_rx: Some(Duration::from_millis(rng.gen())),
                 tx_bytes: Some(rng.gen()),

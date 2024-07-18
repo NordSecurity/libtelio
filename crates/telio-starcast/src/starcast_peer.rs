@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use boringtun::noise::{Tunn, TunnResult};
-use ipnetwork::IpNetwork;
+use ipnet::IpNet;
 use std::{net::SocketAddr, time::Duration};
 use telio_crypto::{PublicKey, SecretKey};
 use telio_proto::DataMsg;
@@ -33,7 +33,7 @@ pub enum Error {
     Task(#[from] telio_task::ExecError),
     /// IP network failed
     #[error("Failed to parse IP network")]
-    IpNetworkError(#[from] ipnetwork::IpNetworkError),
+    IpNetworkError(#[from] ipnet::AddrParseError),
     /// Send failed
     #[error(transparent)]
     Send(#[from] SendTimeoutError<(PublicKey, DataMsg)>),
@@ -68,7 +68,7 @@ impl StarcastPeer {
     /// # Returns
     ///
     /// A new starcast virtual peer.
-    pub async fn start(channel: Chan<Vec<u8>>, allowed_ips: Vec<IpNetwork>) -> Result<Self, Error> {
+    pub async fn start(channel: Chan<Vec<u8>>, allowed_ips: Vec<IpNet>) -> Result<Self, Error> {
         // Port 0 means the OS will dynamically allocate port.
         const TIMER_UPDATE_PERIOD: Duration = Duration::from_millis(250);
         let socket = UdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await?;
@@ -130,7 +130,7 @@ struct State {
     /// Secret key of the starcast virtual peer.
     secret_key: SecretKey,
     /// Allowed IPs of the starcast virtual peer.
-    allowed_ips: Vec<IpNetwork>,
+    allowed_ips: Vec<IpNet>,
     /// Interval at which the tunnel timers will be updated.
     wg_timer_tick_interval: Interval,
     /// Channel for sending decapsulated packets to the multicaster and receiving packets for encapsulation from it.
@@ -307,7 +307,7 @@ mod tests {
     use super::*;
     use crate::utils::test_utils::make_udp_v4;
 
-    use ipnetwork::Ipv4Network;
+    use ipnet::Ipv4Net;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
     // This test connects two virtual peers by their sockets and tests if a packet
@@ -317,8 +317,8 @@ mod tests {
         let (chan_a, chan_a_internal) = Chan::pipe();
         let (mut chan_b, chan_b_internal) = Chan::pipe();
         let starcast_allowed_ips = vec![
-            IpNetwork::V4(Ipv4Network::new(Ipv4Addr::new(224, 0, 0, 0), 4).unwrap()),
-            IpNetwork::V4(Ipv4Network::new(Ipv4Addr::new(100, 64, 0, 5), 32).unwrap()),
+            IpNet::V4(Ipv4Net::new(Ipv4Addr::new(224, 0, 0, 0), 4).unwrap()),
+            IpNet::V4(Ipv4Net::new(Ipv4Addr::new(100, 64, 0, 5), 32).unwrap()),
             IpAddr::V6(Ipv6Addr::new(0xff02, 0, 0, 0, 0, 0, 0, 0xfb)).into(),
         ];
         let starcast_vpeer_a = StarcastPeer::start(chan_a_internal, starcast_allowed_ips.clone())

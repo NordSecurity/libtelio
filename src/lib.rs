@@ -142,7 +142,7 @@ mod uniffi_libtelio {
         }
     }
 
-    impl UniffiCustomTypeConverter for IpNetwork {
+    impl UniffiCustomTypeConverter for IpNet {
         type Builtin = String;
 
         fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
@@ -235,7 +235,7 @@ mod uniffi_libtelio {
 
     #[cfg(test)]
     mod tests {
-        use ipnetwork::{Ipv4Network, Ipv6Network};
+        use ipnet::{Ipv4Net, Ipv6Net};
         use std::{collections::HashSet, net::Ipv6Addr};
 
         use super::*;
@@ -306,23 +306,23 @@ mod uniffi_libtelio {
         }
 
         #[rstest]
-        #[case("100.64.0.2/32".to_owned(), IpNetwork::V4(Ipv4Network::new(Ipv4Addr::new(100, 64, 0, 2), 32).unwrap()))]
-        #[case("100.64.0.3/24".to_owned(), IpNetwork::V4(Ipv4Network::new(Ipv4Addr::new(100, 64, 0, 3), 24).unwrap()))]
-        #[case("fd74:656c:696f::2/128".to_owned(), IpNetwork::V6(Ipv6Network::new(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 2), 128).unwrap()))]
-        #[case("fd74:656c:696f::3/16".to_owned(), IpNetwork::V6(Ipv6Network::new(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 3), 16).unwrap()))]
-        fn test_to_ip_network(#[case] ip_str: String, #[case] expected: IpNetwork) {
-            let actual = IpNetwork::into_custom(ip_str).unwrap();
+        #[case("100.64.0.2/32".to_owned(), IpNet::V4(Ipv4Net::new(Ipv4Addr::new(100, 64, 0, 2), 32).unwrap()))]
+        #[case("100.64.0.3/24".to_owned(), IpNet::V4(Ipv4Net::new(Ipv4Addr::new(100, 64, 0, 3), 24).unwrap()))]
+        #[case("fd74:656c:696f::2/128".to_owned(), IpNet::V6(Ipv6Net::new(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 2), 128).unwrap()))]
+        #[case("fd74:656c:696f::3/16".to_owned(), IpNet::V6(Ipv6Net::new(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 3), 16).unwrap()))]
+        fn test_to_ip_network(#[case] ip_str: String, #[case] expected: IpNet) {
+            let actual = IpNet::into_custom(ip_str).unwrap();
 
             assert_eq!(actual, expected);
         }
 
         #[rstest]
-        #[case("100.64.0.2/32".to_owned(), IpNetwork::V4(Ipv4Network::new(Ipv4Addr::new(100, 64, 0, 2), 32).unwrap()))]
-        #[case("100.64.0.3/24".to_owned(), IpNetwork::V4(Ipv4Network::new(Ipv4Addr::new(100, 64, 0, 3), 24).unwrap()))]
-        #[case("fd74:656c:696f::2/128".to_owned(), IpNetwork::V6(Ipv6Network::new(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 2), 128).unwrap()))]
-        #[case("fd74:656c:696f::3/16".to_owned(), IpNetwork::V6(Ipv6Network::new(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 3), 16).unwrap()))]
-        fn test_from_ip_network(#[case] expected: String, #[case] network: IpNetwork) {
-            let actual = IpNetwork::from_custom(network);
+        #[case("100.64.0.2/32".to_owned(), IpNet::V4(Ipv4Net::new(Ipv4Addr::new(100, 64, 0, 2), 32).unwrap()))]
+        #[case("100.64.0.3/24".to_owned(), IpNet::V4(Ipv4Net::new(Ipv4Addr::new(100, 64, 0, 3), 24).unwrap()))]
+        #[case("fd74:656c:696f::2/128".to_owned(), IpNet::V6(Ipv6Net::new(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 2), 128).unwrap()))]
+        #[case("fd74:656c:696f::3/16".to_owned(), IpNet::V6(Ipv6Net::new(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 3), 16).unwrap()))]
+        fn test_from_ip_network(#[case] expected: String, #[case] network: IpNet) {
+            let actual = IpNet::from_custom(network);
 
             assert_eq!(actual, expected);
         }

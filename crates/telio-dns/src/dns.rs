@@ -1,7 +1,7 @@
 use crate::{bind_tun, LocalNameServer, NameServer, Records};
 use async_trait::async_trait;
 use boringtun::noise::Tunn;
-use ipnetwork::IpNetwork;
+use ipnet::IpNet;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::{net::SocketAddr, sync::Arc};
 use telio_crypto::{PublicKey, SecretKey};
@@ -35,11 +35,11 @@ pub trait DnsResolver {
     /// Get public key of this DNS server.
     fn public_key(&self) -> PublicKey;
     /// Get Peer of this DNS server with selected allowed IPs.
-    fn get_peer(&self, allowed_ips: Vec<IpNetwork>) -> Peer;
+    fn get_peer(&self, allowed_ips: Vec<IpNet>) -> Peer;
     /// Get default allowed IPs of this DNS server.
-    fn get_default_dns_allowed_ips(&self) -> Vec<IpNetwork>;
+    fn get_default_dns_allowed_ips(&self) -> Vec<IpNet>;
     /// Get DNS virtual peer addresses.
-    fn get_exit_connected_dns_allowed_ips(&self) -> Vec<IpNetwork>;
+    fn get_exit_connected_dns_allowed_ips(&self) -> Vec<IpNet>;
     /// Get default DNS server IP addresses.
     fn get_default_dns_servers(&self) -> Vec<IpAddr>;
 }
@@ -155,7 +155,7 @@ impl DnsResolver for LocalDnsResolver {
         PublicKey(PublicKeyDalek::from(static_secret).to_bytes())
     }
 
-    fn get_peer(&self, allowed_ips: Vec<IpNetwork>) -> Peer {
+    fn get_peer(&self, allowed_ips: Vec<IpNet>) -> Peer {
         Peer {
             public_key: self.public_key(),
             endpoint: Some(([127, 0, 0, 1], self.socket_port).into()),
@@ -164,7 +164,7 @@ impl DnsResolver for LocalDnsResolver {
         }
     }
 
-    fn get_default_dns_allowed_ips(&self) -> Vec<IpNetwork> {
+    fn get_default_dns_allowed_ips(&self) -> Vec<IpNet> {
         vec![
             IpAddr::V4(Ipv4Addr::new(100, 64, 0, 2)).into(),
             IpAddr::V4(Ipv4Addr::new(100, 64, 0, 3)).into(),
@@ -173,7 +173,7 @@ impl DnsResolver for LocalDnsResolver {
         ]
     }
 
-    fn get_exit_connected_dns_allowed_ips(&self) -> Vec<IpNetwork> {
+    fn get_exit_connected_dns_allowed_ips(&self) -> Vec<IpNet> {
         vec![
             IpAddr::V4(Ipv4Addr::new(100, 64, 0, 2)).into(),
             IpAddr::V6(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 2)).into(),
@@ -200,10 +200,10 @@ mod tests {
             .unwrap();
         assert_eq!(
             vec![
-                "100.64.0.2/32".parse::<IpNetwork>().unwrap(),
-                "100.64.0.3/32".parse::<IpNetwork>().unwrap(),
-                "fd74:656c:696f::2/128".parse::<IpNetwork>().unwrap(),
-                "fd74:656c:696f::3/128".parse::<IpNetwork>().unwrap(),
+                "100.64.0.2/32".parse::<IpNet>().unwrap(),
+                "100.64.0.3/32".parse::<IpNet>().unwrap(),
+                "fd74:656c:696f::2/128".parse::<IpNet>().unwrap(),
+                "fd74:656c:696f::3/128".parse::<IpNet>().unwrap(),
             ],
             resolver.get_default_dns_allowed_ips()
         );
@@ -216,8 +216,8 @@ mod tests {
             .unwrap();
         assert_eq!(
             vec![
-                "100.64.0.2/32".parse::<IpNetwork>().unwrap(),
-                "fd74:656c:696f::2/128".parse::<IpNetwork>().unwrap(),
+                "100.64.0.2/32".parse::<IpNet>().unwrap(),
+                "fd74:656c:696f::2/128".parse::<IpNet>().unwrap(),
             ],
             resolver.get_exit_connected_dns_allowed_ips()
         );

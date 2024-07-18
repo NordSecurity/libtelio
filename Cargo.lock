@@ -2131,12 +2131,6 @@ name = "ipnet"
 version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f518f335dce6725a761382244631d86cf0ccb2863413590b31338feb467f9c3"
-
-[[package]]
-name = "ipnetwork"
-version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4088d739b183546b239688ddbc79891831df421773df95e236daf7867866d355"
 dependencies = [
  "serde",
 ]
@@ -4197,7 +4191,7 @@ dependencies = [
  "futures",
  "hex",
  "interprocess",
- "ipnetwork",
+ "ipnet",
  "parking_lot",
  "rand",
  "regex",
@@ -4240,7 +4234,7 @@ dependencies = [
  "ffi_helpers",
  "futures",
  "h2",
- "ipnetwork",
+ "ipnet",
  "jni",
  "lazy_static",
  "libc",
@@ -4320,7 +4314,7 @@ dependencies = [
  "hickory-proto",
  "hickory-resolver",
  "hickory-server",
- "ipnetwork",
+ "ipnet",
  "lazy_static",
  "libc",
  "mockall",
@@ -4372,7 +4366,7 @@ dependencies = [
 name = "telio-model"
 version = "0.1.0"
 dependencies = [
- "ipnetwork",
+ "ipnet",
  "itertools",
  "modifier",
  "num_enum",
@@ -4592,7 +4586,7 @@ dependencies = [
  "base64 0.13.1",
  "boringtun",
  "futures",
- "ipnetwork",
+ "ipnet",
  "pnet_packet",
  "rand",
  "rstest",
@@ -4705,7 +4699,6 @@ dependencies = [
  "futures",
  "hex",
  "ipnet",
- "ipnetwork",
  "itertools",
  "lazy_static",
  "libc",

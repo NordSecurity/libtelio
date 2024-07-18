@@ -9,7 +9,7 @@ use telio_crypto::PublicKey;
 
 use super::config::{Config, Peer, PeerBase};
 
-pub use ipnetwork::IpNetwork;
+pub use ipnet::IpNet;
 pub use std::net::{Ipv4Addr, SocketAddr};
 
 /// Possible errors from node
@@ -53,7 +53,7 @@ pub struct Node {
     /// IP addresses of the node
     pub ip_addresses: Vec<IpAddr>,
     /// List of IP's which can connect to the node
-    pub allowed_ips: Vec<IpNetwork>,
+    pub allowed_ips: Vec<IpNet>,
     /// Endpoint used by node
     pub endpoint: Option<SocketAddr>,
     /// Hostname of the node
@@ -80,7 +80,7 @@ pub struct ExitNode {
     /// The public key of the exit node
     pub public_key: PublicKey,
     /// List of all allowed Ip's for the Exit Node
-    pub allowed_ips: Option<Vec<IpNetwork>>,
+    pub allowed_ips: Option<Vec<IpNet>>,
     /// Socket address of the Exit Node
     pub endpoint: Option<SocketAddr>,
 }
@@ -114,7 +114,7 @@ pub struct Map {
     /// Public key of self
     pub public_key: PublicKey,
     /// The list of Ip's that can communicate with the device
-    pub allowed_ips: Vec<IpNetwork>,
+    pub allowed_ips: Vec<IpNet>,
     /// Hash map of all the nodes in the network mesh
     pub nodes: HashMap<PublicKey, Node>,
 }

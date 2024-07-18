@@ -184,7 +184,7 @@ it a bit to just return a pair of `public_key` and `endpoint`.
 When you have it, setting up the VPN connection is fairly simple:
 
 ```rust no_run
-use telio_model::{event::Event, mesh::{IpNetwork, ExitNode}};
+use telio_model::{event::Event, mesh::{IpNet, ExitNode}};
 use std::net::{SocketAddr, IpAddr, Ipv4Addr};
 use telio::crypto::PublicKey;
 
@@ -208,7 +208,7 @@ let (public_key, endpoint) = find_server();
 let exit_node = ExitNode {
     identifier: "fa5bbe9b-338b-4bd2-8c97-166ceee65790".to_owned(),
     public_key,
-    allowed_ips: Some(vec![IpNetwork::new(
+    allowed_ips: Some(vec![IpNet::new(
         IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
         0,
     )
