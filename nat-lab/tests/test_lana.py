@@ -49,6 +49,7 @@ from utils.ping import Ping
 from utils.router import IPStack, IPProto
 
 CONTAINER_EVENT_PATH = "/event.db"
+CONTAINER_EVENT_BACKUP_PATH = "/event_backup.db"
 ALPHA_EVENTS_PATH = "./alpha-events.db"
 BETA_EVENTS_PATH = "./beta-events.db"
 GAMMA_EVENTS_PATH = "./gamma-events.db"
@@ -127,24 +128,39 @@ def build_telio_features(
 
 async def clean_container(connection: Connection):
     await connection.create_process(["rm", "-f", CONTAINER_EVENT_PATH]).execute()
+    await connection.create_process(["rm", "-f", CONTAINER_EVENT_BACKUP_PATH]).execute()
     await connection.create_process(
         ["rm", "-f", CONTAINER_EVENT_PATH + "-journal"]
     ).execute()
 
 
-def get_moose_db_file(container_tag, container_path, local_path):
+def get_moose_db_file(container_tag, container_path, container_backup_path, local_path):
     subprocess.run(["rm", "-f", local_path])
     # sqlite3 -bail -batch moose.db "BEGIN EXCLUSIVE TRANSACTION; SELECT 1; ROLLBACK;" > /dev/null
-    subprocess.run(
-        ["docker", "cp", container_id(container_tag) + ":" + container_path, local_path]
-    )
+    subprocess.run([
+        "docker",
+        "exec",
+        "--privileged",
+        container_id(container_tag),
+        "sqlite3",
+        container_path,
+        f".backup {container_backup_path}",
+    ])
+    subprocess.run([
+        "docker",
+        "cp",
+        container_id(container_tag) + ":" + container_backup_path,
+        local_path,
+    ])
 
 
 async def wait_for_event_dump(container, events_path, nr_events):
     start_time = asyncio.get_event_loop().time()
     events = []
     while asyncio.get_event_loop().time() - start_time < DEFAULT_CHECK_TIMEOUT:
-        get_moose_db_file(container, CONTAINER_EVENT_PATH, events_path)
+        get_moose_db_file(
+            container, CONTAINER_EVENT_PATH, CONTAINER_EVENT_BACKUP_PATH, events_path
+        )
         events = fetch_moose_events(events_path)
         if len(events) == nr_events:
             print(f"Found db from {container} with the expected {nr_events}.")
