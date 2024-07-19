@@ -2,6 +2,7 @@
 ### **Bravas**
 ---
 * LLT-5325: Add openwrt aarch64 and x86_64 linkers
+* LLT-5324: Boringtun uses single performance core on Apple
 
 <br>
 
