@@ -8,7 +8,7 @@ from config import (
 )
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import AsyncIterator
+from typing import AsyncIterator, List
 from utils.connection import Connection, SshConnection, TargetOS
 from utils.process import ProcessExecError
 
@@ -53,15 +53,50 @@ async def new_connection(
             pass
 
 
-def _file_copy_progress_handler(srcpath, dstpath, bytes_copied, total) -> None:
+def _file_copy_progress_handler(
+    srcpath, dstpath, bytes_copied, total, file_copy_progress_buffer
+) -> None:
     bar_length = 40
     progress_fraction = bytes_copied / total
     progress_block = int(round(bar_length * progress_fraction))
     progress_bar = "#" * progress_block + "-" * (bar_length - progress_block)
     percent_completion = progress_fraction * 100
-    print(
-        f"Transferring {srcpath} to {dstpath}: [{progress_bar}] {percent_completion:.2f}% ({bytes_copied}/{total} bytes)"
+    progress_message = (
+        f"Transferring {srcpath} to {dstpath}: [{progress_bar}] {percent_completion:.2f}% "
+        f"({bytes_copied}/{total} bytes)"
     )
+    file_copy_progress_buffer.append(progress_message)
+
+
+async def _copy_file_with_progress_handler(
+    ssh_connection, src, dst, allow_missing
+) -> None:
+    file_copy_progress_buffer: List[str] = []
+    try:
+        print(datetime.now(), f"Copying files into VM: {src} to {dst}")
+        await asyncssh.scp(
+            get_root_path(src),
+            (ssh_connection, dst),
+            progress_handler=lambda srcpath, dsthpath, bytes_copied, total: _file_copy_progress_handler(
+                srcpath, dsthpath, bytes_copied, total, file_copy_progress_buffer
+            ),
+        )
+        print(datetime.now(), "Copy succeeded")
+    except FileNotFoundError as exception:
+        if not allow_missing or str(exception).find(src) < 0:
+            print(datetime.now(), "Copy failed", str(exception))
+            raise exception
+
+        print(
+            datetime.now(),
+            "Copy failed",
+            str(exception),
+            "but it is allowed to fail",
+        )
+    except Exception as e:
+        print("\n".join(file_copy_progress_buffer))
+        print(datetime.now(), "Copy failed", str(e))
+        raise e
 
 
 async def _copy_binaries(
@@ -102,25 +137,4 @@ async def _copy_binaries(
     ]
 
     for src, dst, allow_missing in files_to_copy:
-        try:
-            print(datetime.now(), f"Copying files into VM: {src} to {dst}")
-            await asyncssh.scp(
-                get_root_path(src),
-                (ssh_connection, dst),
-                progress_handler=_file_copy_progress_handler,
-            )
-            print(datetime.now(), "Copy succeeded")
-        except FileNotFoundError as exception:
-            if not allow_missing or str(exception).find(src) < 0:
-                print(datetime.now(), "Copy failed", str(exception))
-                raise exception
-
-            print(
-                datetime.now(),
-                "Copy failed",
-                str(exception),
-                "but it is allowed to fail",
-            )
-        except Exception as e:
-            print(datetime.now(), "Copy failed", str(e))
-            raise e
+        await _copy_file_with_progress_handler(ssh_connection, src, dst, allow_missing)
