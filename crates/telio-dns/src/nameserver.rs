@@ -10,9 +10,10 @@ use hickory_server::{
     server::{Protocol, Request},
 };
 use pnet_packet::{
-    ip::IpNextHeaderProtocols,
+    ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
     ipv4::{checksum, Ipv4Packet, MutableIpv4Packet},
     ipv6::{Ipv6Packet, MutableIpv6Packet},
+    tcp::{MutableTcpPacket, TcpFlags, TcpPacket},
     udp::{ipv4_checksum, ipv6_checksum, MutableUdpPacket, UdpPacket},
     Packet,
 };
@@ -32,6 +33,7 @@ const IPV4_HEADER: usize = 20; // bytes
 const IPV6_HEADER: usize = 40; // bytes
 const MAX_PACKET: usize = 2048;
 const UDP_HEADER: usize = 8;
+const TCP_MIN_HEADER: usize = 20;
 const MAX_CONCURRENT_QUERIES: usize = 256;
 
 /// NameServer is a server that stores the DNS records.
@@ -206,11 +208,15 @@ impl LocalNameServer {
         let resolver = Resolver::new();
         let zones = nameserver.zones().await;
 
-        let dns_request = request_info
-            .udp
-            .dns_request
-            .take()
-            .ok_or_else(|| String::from("Inexistent DNS request"))?;
+        let dns_request = match &mut request_info.payload {
+            PayloadRequestInfo::Udp {
+                ref mut dns_request,
+                ..
+            } => dns_request
+                .take()
+                .ok_or_else(|| String::from("Inexistent DNS request"))?,
+            _ => return Ok(Vec::new()),
+        };
         let dns_request = Request::new(dns_request, request_info.dns_source(), Protocol::Udp);
         telio_log_debug!("DNS request: {:?}", &dns_request);
 
@@ -254,18 +260,40 @@ impl LocalNameServer {
             return Err(String::from("Invalid IpPacket"));
         }
 
+        let payload = match ip.next_level_protocol() {
+            IpNextHeaderProtocols::Udp => {
+                let udp_request = UdpPacket::new(ip.payload())
+                    .ok_or_else(|| String::from("Failed to build UdpPacket from request packet"))?;
+                LocalNameServer::process_udp_packet(&udp_request, |udp_packet| {
+                    ip.udp_checksum(udp_packet)
+                })?
+            }
+            IpNextHeaderProtocols::Tcp => {
+                let tcp_request = TcpPacket::new(ip.payload())
+                    .ok_or_else(|| String::from("Failed to build TcpPacket from request packet"))?;
+                PayloadRequestInfo::Tcp {
+                    source_port: tcp_request.get_source(),
+                    destination_port: tcp_request.get_destination(),
+                    next_sequence: tcp_request.get_sequence() + 1,
+                }
+            }
+            _ => {
+                return Err(String::from("Invalid protocol for DNS request"));
+            }
+        };
+
         Ok(RequestInfo {
             ip: ip.ip_request_info(),
-            udp: LocalNameServer::process_udp_packet(&ip)?,
+            payload,
         })
     }
 
-    fn process_udp_packet<'a>(ip_request: &impl IpPacket<'a>) -> Result<UdpRequestInfo, String> {
-        let udp_request = UdpPacket::new(ip_request.payload())
-            .ok_or_else(|| String::from("Failed to build UdpPacket from request packet"))?;
-
+    fn process_udp_packet<F: Fn(&UdpPacket) -> u16>(
+        udp_request: &UdpPacket,
+        get_checksum: F,
+    ) -> Result<PayloadRequestInfo, String> {
         // Validate UDP checksum
-        if ip_request.udp_checksum(&udp_request) != udp_request.get_checksum() {
+        if get_checksum(udp_request) != udp_request.get_checksum() {
             return Err(String::from("Invalid UDP checksum"));
         }
 
@@ -277,7 +305,7 @@ impl LocalNameServer {
         let dns_request = MessageRequest::from_bytes(udp_request.payload())
             .map_err(|_| String::from("Failed to build MessageRequest from request packet"))?;
 
-        Ok(UdpRequestInfo {
+        Ok(PayloadRequestInfo::Udp {
             source_port: udp_request.get_source(),
             destination_port: udp_request.get_destination(),
             dns_request: Some(dns_request),
@@ -324,20 +352,32 @@ impl IpRequestInfo {
     }
 }
 
-struct UdpRequestInfo {
-    source_port: u16,
-    destination_port: u16,
-    dns_request: Option<MessageRequest>,
+#[allow(clippy::large_enum_variant)]
+enum PayloadRequestInfo {
+    Udp {
+        source_port: u16,
+        destination_port: u16,
+        dns_request: Option<MessageRequest>,
+    },
+    Tcp {
+        source_port: u16,
+        destination_port: u16,
+        next_sequence: u32,
+    },
 }
 
 struct RequestInfo {
     ip: IpRequestInfo,
-    udp: UdpRequestInfo,
+    payload: PayloadRequestInfo,
 }
 
 impl RequestInfo {
     fn dns_source(&self) -> SocketAddr {
-        SocketAddr::new(self.ip.source_ip(), self.udp.source_port)
+        let source_port = match self.payload {
+            PayloadRequestInfo::Udp { source_port, .. }
+            | PayloadRequestInfo::Tcp { source_port, .. } => source_port,
+        };
+        SocketAddr::new(self.ip.source_ip(), source_port)
     }
 
     fn build_response_packet(
@@ -345,8 +385,12 @@ impl RequestInfo {
         dns_response: &[u8],
         response_packet: &mut [u8],
     ) -> Result<usize, String> {
+        let payload_header = match self.payload {
+            PayloadRequestInfo::Udp { .. } => UDP_HEADER,
+            PayloadRequestInfo::Tcp { .. } => TCP_MIN_HEADER,
+        };
         let ip_header_length =
-            self.build_ip_header(UDP_HEADER + dns_response.len(), response_packet)?;
+            self.build_ip_header(payload_header + dns_response.len(), response_packet)?;
 
         self.build_payload(ip_header_length, dns_response, response_packet)
     }
@@ -376,7 +420,14 @@ impl RequestInfo {
                 ip_response.set_total_length((IPV4_HEADER + payload_length) as u16);
                 ip_response.set_flags(2);
                 ip_response.set_identification(*identification);
-                ip_response.set_next_level_protocol(IpNextHeaderProtocols::Udp);
+                match self.payload {
+                    PayloadRequestInfo::Udp { .. } => {
+                        ip_response.set_next_level_protocol(IpNextHeaderProtocols::Udp)
+                    }
+                    PayloadRequestInfo::Tcp { .. } => {
+                        ip_response.set_next_level_protocol(IpNextHeaderProtocols::Tcp)
+                    }
+                }
                 ip_response.set_ttl(*ttl);
                 ip_response.set_source(*destination_ip);
                 ip_response.set_destination(*source_ip);
@@ -398,6 +449,14 @@ impl RequestInfo {
                 ip_response.set_traffic_class(0);
                 ip_response.set_flow_label(0);
                 ip_response.set_payload_length(payload_length as u16);
+                match self.payload {
+                    PayloadRequestInfo::Udp { .. } => {
+                        ip_response.set_next_header(IpNextHeaderProtocols::Udp)
+                    }
+                    PayloadRequestInfo::Tcp { .. } => {
+                        ip_response.set_next_header(IpNextHeaderProtocols::Tcp)
+                    }
+                }
                 ip_response.set_next_header(IpNextHeaderProtocols::Udp);
                 ip_response.set_hop_limit(255);
                 ip_response.set_source(*destination_ip);
@@ -415,23 +474,75 @@ impl RequestInfo {
         dns_response: &[u8],
         response_packet: &mut [u8],
     ) -> Result<usize, String> {
-        let length = ihl + UDP_HEADER + dns_response.len();
-        let buffer_slice = response_packet
-            .get_mut(ihl..length)
-            .ok_or_else(|| String::from("Out of bounds on response packet buffer"))?;
+        match self.payload {
+            PayloadRequestInfo::Udp {
+                source_port,
+                destination_port,
+                ..
+            } => {
+                let length = ihl + UDP_HEADER + dns_response.len();
+                let buffer_slice = response_packet
+                    .get_mut(ihl..length)
+                    .ok_or_else(|| String::from("Out of bounds on response packet buffer"))?;
 
-        let mut udp_response = MutableUdpPacket::new(buffer_slice)
-            .ok_or_else(|| String::from("Failed to build MutableUdpPacket for response packet"))?;
+                let mut udp_response = MutableUdpPacket::new(buffer_slice).ok_or_else(|| {
+                    String::from("Failed to build MutableUdpPacket for response packet")
+                })?;
 
-        udp_response.set_source(self.udp.destination_port);
-        udp_response.set_destination(self.udp.source_port);
-        udp_response.set_length((UDP_HEADER + dns_response.len()) as u16);
-        udp_response.set_payload(dns_response);
-        udp_response.set_checksum(0);
-        udp_response.set_checksum(self.ip.compute_udp_checksum(&udp_response.to_immutable()));
+                udp_response.set_source(destination_port);
+                udp_response.set_destination(source_port);
+                udp_response.set_length((UDP_HEADER + dns_response.len()) as u16);
+                udp_response.set_payload(dns_response);
+                udp_response.set_checksum(0);
+                udp_response
+                    .set_checksum(self.ip.compute_udp_checksum(&udp_response.to_immutable()));
 
-        telio_log_debug!("UDP response: {:?}", &udp_response);
-        Ok(length)
+                telio_log_debug!("UDP response: {:?}", &udp_response);
+                Ok(length)
+            }
+            PayloadRequestInfo::Tcp {
+                source_port,
+                destination_port,
+                next_sequence,
+            } => {
+                let length = ihl + TCP_MIN_HEADER;
+                let buffer_slice = response_packet
+                    .get_mut(ihl..length)
+                    .ok_or_else(|| String::from("Out of bounds on response packet buffer"))?;
+                let mut tcp_response = MutableTcpPacket::new(buffer_slice).ok_or_else(|| {
+                    String::from("Failed to build MutableTcpPacket for response packet")
+                })?;
+
+                tcp_response.set_source(source_port);
+                tcp_response.set_destination(destination_port);
+                tcp_response.set_sequence(next_sequence);
+                tcp_response.set_flags(TcpFlags::RST);
+                tcp_response.set_checksum(0);
+                let checksum = match self.ip {
+                    IpRequestInfo::V4 {
+                        source_ip,
+                        destination_ip,
+                        ..
+                    } => pnet_packet::tcp::ipv4_checksum(
+                        &tcp_response.to_immutable(),
+                        &source_ip,
+                        &destination_ip,
+                    ),
+                    IpRequestInfo::V6 {
+                        source_ip,
+                        destination_ip,
+                    } => pnet_packet::tcp::ipv6_checksum(
+                        &tcp_response.to_immutable(),
+                        &source_ip,
+                        &destination_ip,
+                    ),
+                };
+                tcp_response.set_checksum(checksum);
+
+                telio_log_debug!("UDP response: {:?}", &tcp_response);
+                Ok(length)
+            }
+        }
     }
 }
 
@@ -440,6 +551,7 @@ trait IpPacket<'a>: Sized + Packet {
     fn ip_request_info(&self) -> IpRequestInfo;
     fn udp_checksum(&self, udp_packet: &UdpPacket<'_>) -> u16;
     fn check_valid(&self) -> bool;
+    fn next_level_protocol(&self) -> IpNextHeaderProtocol;
 }
 
 impl<'a> IpPacket<'a> for Ipv4Packet<'a> {
@@ -474,6 +586,10 @@ impl<'a> IpPacket<'a> for Ipv4Packet<'a> {
         }
         true
     }
+
+    fn next_level_protocol(&self) -> IpNextHeaderProtocol {
+        self.get_next_level_protocol()
+    }
 }
 
 impl<'a> IpPacket<'a> for Ipv6Packet<'a> {
@@ -500,6 +616,10 @@ impl<'a> IpPacket<'a> for Ipv6Packet<'a> {
             return false;
         }
         true
+    }
+
+    fn next_level_protocol(&self) -> IpNextHeaderProtocol {
+        self.get_next_header()
     }
 }
 

@@ -1,0 +1,1 @@
+Handle non-UDP packets more gracefully in telio-dns (UDP is still the only protocol we actually support for DNS)

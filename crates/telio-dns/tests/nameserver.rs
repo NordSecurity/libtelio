@@ -1,31 +1,40 @@
 use boringtun::noise::{Tunn, TunnResult};
 use dns_parser::{self, Builder, QueryClass, QueryType};
 use pnet_packet::{
+    icmp::{echo_request::IcmpCodes, IcmpTypes, MutableIcmpPacket},
+    icmpv6::{echo_request::Icmpv6Codes, Icmpv6Types, MutableIcmpv6Packet},
     ip::IpNextHeaderProtocols,
     ipv4::{checksum, Ipv4Packet, MutableIpv4Packet},
     ipv6::{Ipv6Packet, MutableIpv6Packet},
+    tcp::{MutableTcpPacket, TcpFlags, TcpPacket},
     udp::{ipv4_checksum, ipv6_checksum, MutableUdpPacket, UdpPacket},
     Packet,
 };
 use rand::prelude::*;
 use std::{
+    io::ErrorKind,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     str::FromStr,
     sync::Arc,
 };
 use telio_dns::{LocalNameServer, NameServer, Records};
 use telio_model::features::TtlValue;
-use tokio::sync::{Mutex, RwLock};
 use tokio::time::sleep;
 use tokio::{
     self,
     time::{timeout, Duration},
+};
+use tokio::{
+    net::TcpStream,
+    sync::{Mutex, RwLock},
 };
 use x25519_dalek::{PublicKey, StaticSecret};
 
 const IPV4_HEADER: usize = 20;
 const IPV6_HEADER: usize = 40;
 const UDP_HEADER: usize = 8;
+const TCP_MIN_HEADER: usize = 20;
+const ICMP_HEADER: usize = 8;
 const MAX_PACKET: usize = 2048;
 
 struct WGClient {
@@ -166,10 +175,16 @@ impl WGClient {
                 }
 
                 let ip_response = Ipv4Packet::new(response).expect("Failed to parse ip response");
-                let udp_response =
-                    UdpPacket::new(ip_response.payload()).expect("Failed to parse udp response");
-                dns_parser::Packet::parse(udp_response.payload())
-                    .expect("Failed to parse dns response");
+                if test_type.is_tcp() {
+                    let tcp_response = TcpPacket::new(ip_response.payload())
+                        .expect("Failed to parse tcp response");
+                    assert_eq!(tcp_response.get_flags(), TcpFlags::RST);
+                } else {
+                    let udp_response = UdpPacket::new(ip_response.payload())
+                        .expect("Failed to parse udp response");
+                    dns_parser::Packet::parse(udp_response.payload())
+                        .expect("Failed to parse dns response");
+                }
             }
             TunnResult::WriteToTunnelV6(response, _) => {
                 if test_type.is_ipv4() {
@@ -177,10 +192,16 @@ impl WGClient {
                 }
 
                 let ip_response = Ipv6Packet::new(response).expect("Failed to parse ip response");
-                let udp_response =
-                    UdpPacket::new(ip_response.payload()).expect("Failed to parse udp response");
-                dns_parser::Packet::parse(udp_response.payload())
-                    .expect("Failed to parse dns response");
+                if test_type.is_tcp() {
+                    let tcp_response = TcpPacket::new(ip_response.payload())
+                        .expect("Failed to parse tcp response");
+                    assert_eq!(tcp_response.get_flags(), TcpFlags::RST);
+                } else {
+                    let udp_response = UdpPacket::new(ip_response.payload())
+                        .expect("Failed to parse udp response");
+                    dns_parser::Packet::parse(udp_response.payload())
+                        .expect("Failed to parse dns response");
+                }
             }
             TunnResult::Err(e) => panic!("Decapsulate error: {:?}", e),
             _ => panic!("Unexpected TunnResult while receiving the dns response"),
@@ -200,7 +221,14 @@ impl WGClient {
     }
 
     fn build_ipv4_dns_request(dns_query: &[u8], test_type: DnsTestType) -> Vec<u8> {
-        let length = IPV4_HEADER + UDP_HEADER + dns_query.len();
+        let header_length = if test_type.is_tcp() {
+            TCP_MIN_HEADER
+        } else if test_type.is_unsupported_protocol() {
+            ICMP_HEADER
+        } else {
+            UDP_HEADER
+        };
+        let length = IPV4_HEADER + header_length + dns_query.len();
         let mut buffer = vec![0u8; MAX_PACKET];
 
         let local_address = Ipv4Addr::new(127, 0, 0, 1);
@@ -215,7 +243,13 @@ impl WGClient {
             ip_packet.set_total_length(length as u16);
             ip_packet.set_flags(0);
             ip_packet.set_identification(0x9112); // Random value
-            ip_packet.set_next_level_protocol(IpNextHeaderProtocols::Udp);
+            if test_type.is_tcp() {
+                ip_packet.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
+            } else if test_type.is_unsupported_protocol() {
+                ip_packet.set_next_level_protocol(IpNextHeaderProtocols::Icmp);
+            } else {
+                ip_packet.set_next_level_protocol(IpNextHeaderProtocols::Udp);
+            }
             ip_packet.set_ttl(128);
             ip_packet.set_source(local_address);
             ip_packet.set_destination(local_address);
@@ -225,23 +259,47 @@ impl WGClient {
             }
         }
 
-        {
-            let mut udp_packet = MutableUdpPacket::new(&mut buffer[IPV4_HEADER..length])
-                .expect("Failed to create MutableUdpPacket");
-            udp_packet.set_source(100);
-            udp_packet.set_destination(54);
-            if !matches!(test_type, DnsTestType::BadUdpPortIpv4) {
-                udp_packet.set_destination(53);
-            }
-            udp_packet.set_length((UDP_HEADER + dns_query.len()) as u16);
-            udp_packet.set_payload(&dns_query);
-            udp_packet.set_checksum(0);
-            if !matches!(test_type, DnsTestType::BadUdpChecksumIpv4) {
-                udp_packet.set_checksum(ipv4_checksum(
-                    &udp_packet.to_immutable(),
+        match test_type {
+            DnsTestType::TcpIpv4 => {
+                let mut tcp_packet = MutableTcpPacket::new(&mut buffer[IPV4_HEADER..length])
+                    .expect("Failed to create MutableTcpPacket");
+                tcp_packet.set_source(100);
+                tcp_packet.set_destination(53);
+                tcp_packet.set_sequence(42);
+                tcp_packet.set_payload(dns_query);
+                tcp_packet.set_checksum(0);
+                tcp_packet.set_checksum(pnet_packet::tcp::ipv4_checksum(
+                    &tcp_packet.to_immutable(),
                     &local_address,
                     &local_address,
                 ));
+            }
+            DnsTestType::UnsupportedProtocolIpv4 => {
+                let mut icmp_packet = MutableIcmpPacket::new(&mut buffer[IPV4_HEADER..length])
+                    .expect("Failed to create MutableIcmpPacket");
+                icmp_packet.set_payload(dns_query);
+                icmp_packet.set_icmp_type(IcmpTypes::EchoRequest);
+                icmp_packet.set_icmp_code(IcmpCodes::NoCode);
+                icmp_packet.set_checksum(pnet_packet::icmp::checksum(&icmp_packet.to_immutable()));
+            }
+            _ => {
+                let mut udp_packet = MutableUdpPacket::new(&mut buffer[IPV4_HEADER..length])
+                    .expect("Failed to create MutableUdpPacket");
+                udp_packet.set_source(100);
+                udp_packet.set_destination(53);
+                if matches!(test_type, DnsTestType::BadUdpPortIpv4) {
+                    udp_packet.set_destination(54);
+                }
+                udp_packet.set_length((UDP_HEADER + dns_query.len()) as u16);
+                udp_packet.set_payload(dns_query);
+                udp_packet.set_checksum(0);
+                if !matches!(test_type, DnsTestType::BadUdpChecksumIpv4) {
+                    udp_packet.set_checksum(ipv4_checksum(
+                        &udp_packet.to_immutable(),
+                        &local_address,
+                        &local_address,
+                    ));
+                }
             }
         }
 
@@ -250,7 +308,14 @@ impl WGClient {
     }
 
     fn build_ipv6_dns_request(dns_query: &[u8], test_type: DnsTestType) -> Vec<u8> {
-        let length = UDP_HEADER + dns_query.len();
+        let header_length = if test_type.is_tcp() {
+            TCP_MIN_HEADER
+        } else if test_type.is_unsupported_protocol() {
+            ICMP_HEADER
+        } else {
+            UDP_HEADER
+        };
+        let length = header_length + dns_query.len();
         let total_length = IPV6_HEADER + length;
         let mut buffer = vec![0u8; MAX_PACKET];
 
@@ -263,31 +328,66 @@ impl WGClient {
             ip_response.set_traffic_class(0);
             ip_response.set_flow_label(0);
             ip_response.set_payload_length(length as u16);
-            ip_response.set_next_header(IpNextHeaderProtocols::Udp);
+            if test_type.is_tcp() {
+                ip_response.set_next_header(IpNextHeaderProtocols::Tcp);
+            } else if test_type.is_unsupported_protocol() {
+                ip_response.set_next_header(IpNextHeaderProtocols::Icmpv6);
+            } else {
+                ip_response.set_next_header(IpNextHeaderProtocols::Udp);
+            }
             ip_response.set_hop_limit(255);
             ip_response.set_source(local_address);
             ip_response.set_destination(local_address);
         }
 
-        {
-            let mut udp_response = MutableUdpPacket::new(&mut buffer[IPV6_HEADER..total_length])
-                .expect("Failed to create MutableUdpPacket");
-            udp_response.set_source(100);
-            if matches!(test_type, DnsTestType::BadUdpPortIpv6) {
-                udp_response.set_destination(54);
-            } else {
-                udp_response.set_destination(53);
-            }
-            udp_response.set_length(length as u16);
-            udp_response.set_payload(dns_query);
-            if matches!(test_type, DnsTestType::BadUdpChecksumIpv6) {
-                udp_response.set_checksum(0);
-            } else {
-                udp_response.set_checksum(ipv6_checksum(
-                    &udp_response.to_immutable(),
+        match test_type {
+            DnsTestType::TcpIpv6 => {
+                let mut tcp_packet = MutableTcpPacket::new(&mut buffer[IPV6_HEADER..total_length])
+                    .expect("Failed to create MutableTcpPacket");
+                tcp_packet.set_source(100);
+                tcp_packet.set_destination(53);
+                tcp_packet.set_payload(dns_query);
+                tcp_packet.set_checksum(0);
+                tcp_packet.set_checksum(pnet_packet::tcp::ipv6_checksum(
+                    &tcp_packet.to_immutable(),
                     &local_address,
                     &local_address,
                 ));
+            }
+            DnsTestType::UnsupportedProtocolIpv6 => {
+                let mut icmp_packet =
+                    MutableIcmpv6Packet::new(&mut buffer[IPV6_HEADER..total_length])
+                        .expect("Failed to create MutableIcmpPacket");
+                icmp_packet.set_payload(dns_query);
+                icmp_packet.set_icmpv6_type(Icmpv6Types::EchoRequest);
+                icmp_packet.set_icmpv6_code(Icmpv6Codes::NoCode);
+                icmp_packet.set_checksum(pnet_packet::icmpv6::checksum(
+                    &icmp_packet.to_immutable(),
+                    &local_address,
+                    &local_address,
+                ));
+            }
+            _ => {
+                let mut udp_response =
+                    MutableUdpPacket::new(&mut buffer[IPV6_HEADER..total_length])
+                        .expect("Failed to create MutableUdpPacket");
+                udp_response.set_source(100);
+                if matches!(test_type, DnsTestType::BadUdpPortIpv6) {
+                    udp_response.set_destination(54);
+                } else {
+                    udp_response.set_destination(53);
+                }
+                udp_response.set_length(length as u16);
+                udp_response.set_payload(dns_query);
+                if matches!(test_type, DnsTestType::BadUdpChecksumIpv6) {
+                    udp_response.set_checksum(0);
+                } else {
+                    udp_response.set_checksum(ipv6_checksum(
+                        &udp_response.to_immutable(),
+                        &local_address,
+                        &local_address,
+                    ));
+                }
             }
         }
 
@@ -300,7 +400,7 @@ impl WGClient {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 enum DnsTestType {
     CorrectIpv4,
     BadIpChecksumIpv4,
@@ -310,6 +410,10 @@ enum DnsTestType {
     BadUdpChecksumIpv6,
     BadUdpPortIpv6,
     NonRespondingForwardServer,
+    TcpIpv4,
+    TcpIpv6,
+    UnsupportedProtocolIpv4,
+    UnsupportedProtocolIpv6,
 }
 
 impl DnsTestType {
@@ -320,6 +424,8 @@ impl DnsTestType {
                 | DnsTestType::BadIpChecksumIpv4
                 | DnsTestType::BadUdpChecksumIpv4
                 | DnsTestType::BadUdpPortIpv4
+                | DnsTestType::TcpIpv4
+                | DnsTestType::UnsupportedProtocolIpv4
         )
     }
 
@@ -329,11 +435,30 @@ impl DnsTestType {
             DnsTestType::CorrectIpv6
                 | DnsTestType::BadUdpChecksumIpv6
                 | DnsTestType::BadUdpPortIpv6
+                | DnsTestType::TcpIpv6
+                | DnsTestType::UnsupportedProtocolIpv6
         )
     }
 
     fn is_correct(&self) -> bool {
-        matches!(self, DnsTestType::CorrectIpv4 | DnsTestType::CorrectIpv6)
+        matches!(
+            self,
+            DnsTestType::CorrectIpv4
+                | DnsTestType::CorrectIpv6
+                | DnsTestType::TcpIpv4
+                | DnsTestType::TcpIpv6
+        )
+    }
+
+    fn is_tcp(&self) -> bool {
+        matches!(self, DnsTestType::TcpIpv4 | DnsTestType::TcpIpv6)
+    }
+
+    fn is_unsupported_protocol(&self) -> bool {
+        matches!(
+            self,
+            DnsTestType::UnsupportedProtocolIpv4 | DnsTestType::UnsupportedProtocolIpv6
+        )
     }
 }
 
@@ -357,6 +482,16 @@ async fn dns_test_with_server(
     nameserver: Arc<RwLock<LocalNameServer>>,
     ttl_value: TtlValue,
 ) {
+    let client = init_client(local_records, nameserver, ttl_value).await;
+    client.do_handshake().await;
+    client.send_dns_request(query, test_type).await;
+}
+
+async fn init_client(
+    local_records: Option<(String, Records)>,
+    nameserver: Arc<RwLock<LocalNameServer>>,
+    ttl_value: TtlValue,
+) -> WGClient {
     if let Some((zone, records)) = local_records {
         nameserver
             .upsert(&zone, &records, ttl_value)
@@ -374,10 +509,10 @@ async fn dns_test_with_server(
     let server_address: SocketAddr = ([127, 0, 0, 1], server_port).into();
     let server_socket = Arc::<tokio::net::UdpSocket>::from(server_socket);
 
-    let server_private_key = StaticSecret::new(&mut rand::rngs::StdRng::from_entropy());
+    let server_private_key = StaticSecret::random_from_rng(rand::rngs::StdRng::from_entropy());
     let server_public_key = PublicKey::from(&server_private_key);
 
-    let client_secret_key = StaticSecret::new(&mut rand::rngs::StdRng::from_entropy());
+    let client_secret_key = StaticSecret::random_from_rng(rand::rngs::StdRng::from_entropy());
     let client_public_key = PublicKey::from(&client_secret_key);
 
     let server_peer = Arc::new(Mutex::new(
@@ -395,8 +530,7 @@ async fn dns_test_with_server(
         )
         .await;
 
-    client.do_handshake().await;
-    client.send_dns_request(query, test_type).await;
+    client
 }
 
 #[tokio::test]
@@ -568,4 +702,65 @@ async fn dns_request_bad_udp_port_ipv6() {
     )
     .await
     .expect("Test timeout");
+}
+
+#[tokio::test]
+async fn dns_request_tcp_ipv4() {
+    timeout(
+        Duration::from_secs(60),
+        dns_test("google.com", DnsTestType::TcpIpv4, None, TtlValue(60)),
+    )
+    .await
+    .expect("Test timeout");
+}
+
+#[tokio::test]
+async fn dns_request_tcp_ipv6() {
+    timeout(
+        Duration::from_secs(60),
+        dns_test("google.com", DnsTestType::TcpIpv6, None, TtlValue(60)),
+    )
+    .await
+    .expect("Test timeout");
+}
+
+#[tokio::test]
+async fn dns_request_unsupported_protocol_ipv4() {
+    timeout(
+        Duration::from_secs(60),
+        dns_test(
+            "google.com",
+            DnsTestType::UnsupportedProtocolIpv4,
+            None,
+            TtlValue(60),
+        ),
+    )
+    .await
+    .expect("Test timeout");
+}
+
+#[tokio::test]
+async fn dns_request_unsupported_protocol_ipv6() {
+    timeout(
+        Duration::from_secs(60),
+        dns_test(
+            "google.com",
+            DnsTestType::UnsupportedProtocolIpv6,
+            None,
+            TtlValue(60),
+        ),
+    )
+    .await
+    .expect("Test timeout");
+}
+
+#[tokio::test]
+async fn test_tcp_rst() {
+    let nameserver = LocalNameServer::new(&[])
+        .await
+        .expect("Failed to create a LocalNameServer");
+    init_client(None, nameserver, TtlValue(60)).await;
+
+    let error_kind = TcpStream::connect("127.0.0.1:53").await.unwrap_err().kind();
+    assert_eq!(error_kind, ErrorKind::ConnectionRefused);
 }
