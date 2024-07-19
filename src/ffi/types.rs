@@ -8,18 +8,18 @@ use std::panic::RefUnwindSafe;
 use crate::device::{AdapterType, Error as DevError};
 
 pub trait TelioEventCb: Send + Sync + std::fmt::Debug {
-    fn event(&self, payload: Event) -> FFIResult<()>;
+    fn event(&self, payload: Event) -> FfiResult<()>;
 }
 
 pub trait TelioLoggerCb: Send + Sync + std::fmt::Debug {
-    fn log(&self, log_level: TelioLogLevel, payload: String) -> FFIResult<()>;
+    fn log(&self, log_level: TelioLogLevel, payload: String) -> FfiResult<()>;
 }
 
 pub trait TelioProtectCb: Send + Sync + RefUnwindSafe + std::fmt::Debug {
-    fn protect(&self, socket_id: i32) -> FFIResult<()>;
+    fn protect(&self, socket_id: i32) -> FfiResult<()>;
 }
 
-pub type FFIResult<T> = Result<T, TelioError>;
+pub type FfiResult<T> = Result<T, TelioError>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TelioError {
@@ -53,7 +53,7 @@ pub enum TelioAdapterType {
     WindowsNativeTun,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// Possible log levels.
 pub enum TelioLogLevel {
     Error = 1,

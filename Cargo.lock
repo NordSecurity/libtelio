@@ -4258,6 +4258,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "uniffi",
  "uuid",
  "winapi",

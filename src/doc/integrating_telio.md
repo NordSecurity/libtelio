@@ -21,7 +21,7 @@ use telio::{ffi::*, types::*};
 #[derive(Debug)]
 struct Logger;
 impl TelioLoggerCb for Logger {
-    fn log(&self, log_level: TelioLogLevel, payload: String) -> FFIResult<()> {
+    fn log(&self, log_level: TelioLogLevel, payload: String) -> FfiResult<()> {
         // report log level and payload to the app
         Ok(())
     }
@@ -96,7 +96,7 @@ use telio_model::event::Event;
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: Event) -> FFIResult<()> {
+    fn event(&self, payload: Event) -> FfiResult<()> {
         Ok(())
     }
 }
@@ -159,7 +159,7 @@ if let Some(nurse) = &mut feature_config.nurse {
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: Event) -> FFIResult<()> {
+    fn event(&self, payload: Event) -> FfiResult<()> {
         Ok(())
     }
 }
@@ -248,7 +248,7 @@ use telio_model::event::Event;
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: Event) -> FFIResult<()> {
+    fn event(&self, payload: Event) -> FfiResult<()> {
         // pass event to app
         Ok(())
     }
@@ -329,7 +329,7 @@ use telio_model::event::Event;
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: Event) -> FFIResult<()> {
+    fn event(&self, payload: Event) -> FfiResult<()> {
         Ok(())
     }
 }
@@ -440,7 +440,7 @@ use telio_model::event::Event;
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: Event) -> FFIResult<()> {
+    fn event(&self, payload: Event) -> FfiResult<()> {
         Ok(())
     }
 }
@@ -589,7 +589,7 @@ use telio_model::event::Event;
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: Event) -> FFIResult<()> {
+    fn event(&self, payload: Event) -> FfiResult<()> {
         Ok(())
     }
 }
@@ -735,7 +735,7 @@ use telio_model::event::Event;
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: Event) -> FFIResult<()> {
+    fn event(&self, payload: Event) -> FfiResult<()> {
         Ok(())
     }
 }
@@ -870,7 +870,7 @@ use telio_model::event::Event;
 #[derive(Debug)]
 struct EventHandler;
 impl TelioEventCb for EventHandler {
-    fn event(&self, payload: Event) -> FFIResult<()> {
+    fn event(&self, payload: Event) -> FfiResult<()> {
         Ok(())
     }
 }
