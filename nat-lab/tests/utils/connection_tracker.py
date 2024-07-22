@@ -49,7 +49,11 @@ def parse_input(input_string) -> FiveTuple:
 
     match = re.search(r"\[NEW\] (\w+)", input_string)
     if match:
-        five_tuple.protocol = match.group(1)
+        if match.group(1) == "icmp":
+            if "type=0" in input_string or "type=8" in input_string:
+                five_tuple.protocol = match.group(1)
+        else:
+            five_tuple.protocol = match.group(1)
 
     match = re.search(r"src=([^\s]+)", input_string)
     if match:
