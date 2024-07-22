@@ -454,6 +454,18 @@ fn create_buffer(size: usize, counter: i32) -> String {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Note that _tracing_worker_guard must not go out of scope while the application is running or else
+    // weird things will start to happen on CI.
+    let (non_blocking_writer, _tracing_worker_guard) =
+        tracing_appender::non_blocking(std::fs::File::create("derpcli.log")?);
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::level_filters::LevelFilter::TRACE)
+        .with_writer(non_blocking_writer)
+        .with_ansi(false)
+        .with_line_number(true)
+        .with_level(true)
+        .init();
+
     // parse command line params and create config struct
     let config = conf::Config::new().unwrap_or_else(|e| {
         println!("{}", e);
