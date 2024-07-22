@@ -10,6 +10,8 @@ use sha2::{Digest, Sha256};
 use std::io::Error as IOError;
 use std::slice::Windows;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::thread::sleep;
+use std::time::Duration;
 use std::{mem, option, result};
 use telio_utils::{
     telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn,
@@ -156,13 +158,20 @@ impl WindowsNativeWg {
                 "Failed to set logging for adapter, last error: {os_error:?}",
             ))));
         }
-        if !wg_dev.adapter.up() {
-            let os_error = IOError::last_os_error();
-            return Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
-                "Failed to start adapter, last error: {os_error:?}",
-            ))));
+
+        let mut os_error = IOError::from_raw_os_error(0);
+        for _ in 0..5 {
+            if wg_dev.adapter.up() {
+                telio_log_debug!("Adapter state set to up");
+                return Ok(wg_dev);
+            }
+            os_error = IOError::last_os_error();
+            telio_log_warn!("Failed to set adapter state to up, last error: {os_error:?}");
+            sleep(Duration::from_millis(200));
         }
-        Ok(wg_dev)
+        Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+            "Failed to set adapter's state to up, last error: {os_error:?}",
+        ))))
     }
 
     fn get_config_uapi(&self) -> Response {
