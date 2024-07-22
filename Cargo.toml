@@ -160,7 +160,7 @@ windows = { version = "0.56", features = [
     "Win32_NetworkManagement_IpHelper",
 ] }
 
-boringtun = { git = "https://github.com/NordSecurity/boringtun.git", tag = "v1.2.4", features = ["device"] }
+boringtun = { git = "https://github.com/NordSecurity/boringtun.git", tag = "v1.2.5", features = ["device"] }
 x25519-dalek = { version = "2.0.1", features = ["reusable_secrets", "static_secrets"] }
 
 telio-crypto = { version = "0.1.0", path = "./crates/telio-crypto" }
