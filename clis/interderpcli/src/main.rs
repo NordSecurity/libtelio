@@ -201,7 +201,10 @@ async fn test_pair(
         .context("Failed to connect to second server")?;
 
     info!("Ping each other");
-    ping_each_other(&key_1, &mut client_1, &key_2, &mut client_2).await
+    ping_each_other(&key_1, &mut client_1, &key_2, &mut client_2).await?;
+    client_1.stop();
+    client_2.stop();
+    Ok(())
 }
 
 async fn config_file_scenario(config_file: PathBuf, verbose: bool) -> Result<()> {
