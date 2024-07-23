@@ -39,7 +39,7 @@ def start():
         filedata = file.read()
     if original_port_mapping not in filedata:
         raise RuntimeError("Cannot find expected port mapping compose file")
-    if "GITLAB_CI" in os.environ:
+    if False:#"GITLAB_CI" in os.environ:
         filedata = filedata.replace(original_port_mapping, disabled_port_mapping)
         with open("docker-compose.yml", "w", encoding="utf-8") as file:
             file.write(filedata)
