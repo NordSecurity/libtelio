@@ -67,3 +67,34 @@ def test_connection_tracker_parse_input():
         dst_ip="127.0.0.1",
         dst_port=None,
     )
+
+    new_icmpv6_type128 = parse_input(
+        "[NEW] icmpv6   58 30 src=2600:1f1a:4d5e:c200:2787:af77:9c40:1365 dst=2a05:f480:2400:1e9a:5400:4ff:fe25:e8f4 type=128 code=0 id=2 [UNREPLIED] src=2a05:f480:2400:1e9a:5400:4ff:fe25:e8f4 dst=2600:1f1a:4d5e:c200:2787:af77:9c40:1365 type=666 code=0 id=2"
+    )
+    assert new_icmpv6_type128 == FiveTuple(
+        protocol="icmpv6",
+        src_ip="2600:1f1a:4d5e:c200:2787:af77:9c40:1365",
+        src_port=None,
+        dst_ip="2a05:f480:2400:1e9a:5400:4ff:fe25:e8f4",
+        dst_port=None,
+    )
+    new_icmpv6_type129 = parse_input(
+        "[NEW] icmpv6   58 30 src=2600:1f1a:4d5e:c200:2787:af77:9c40:1365 dst=2a05:f480:2400:1e9a:5400:4ff:fe25:e8f4 type=666 code=0 id=2 [UNREPLIED] src=2a05:f480:2400:1e9a:5400:4ff:fe25:e8f4 dst=2600:1f1a:4d5e:c200:2787:af77:9c40:1365 type=129 code=0 id=2"
+    )
+    assert new_icmpv6_type129 == FiveTuple(
+        protocol="icmpv6",
+        src_ip="2600:1f1a:4d5e:c200:2787:af77:9c40:1365",
+        src_port=None,
+        dst_ip="2a05:f480:2400:1e9a:5400:4ff:fe25:e8f4",
+        dst_port=None,
+    )
+    new_icmpv6_type130 = parse_input(
+        "[NEW] icmpv6   58 30 src=2600:1f1a:4d5e:c200:2787:af77:9c40:1365 dst=2a05:f480:2400:1e9a:5400:4ff:fe25:e8f4 type=130 code=0 id=2 [UNREPLIED] src=2a05:f480:2400:1e9a:5400:4ff:fe25:e8f4 dst=2600:1f1a:4d5e:c200:2787:af77:9c40:1365 type=131 code=0 id=2"
+    )
+    assert new_icmpv6_type130 == FiveTuple(
+        protocol=None,
+        src_ip="2600:1f1a:4d5e:c200:2787:af77:9c40:1365",
+        src_port=None,
+        dst_ip="2a05:f480:2400:1e9a:5400:4ff:fe25:e8f4",
+        dst_port=None,
+    )
