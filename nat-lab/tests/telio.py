@@ -569,7 +569,7 @@ class Client:
         host_os = platform.system()
         if host_os == "Linux":
             host_ip = container_ip
-        (host_port, container_port) = await self._connection.mapped_ports()
+        (host_port, container_port) = ("0", "0")#await self._connection.mapped_ports()
 
         if isinstance(self.get_router(), WindowsRouter):
             python_cmd = "python"
