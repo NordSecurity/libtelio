@@ -3,6 +3,7 @@ import time
 from datetime import datetime
 from Pyro5.api import Proxy  # type: ignore
 from typing import Optional
+from uniffi.telio_bindings import NatType
 
 
 class ProxyConnectionError(Exception):
@@ -121,3 +122,12 @@ class LibtelioProxy:
 
     def trigger_qos_collection(self) -> None:
         self.handle_remote_error(lambda r: r.trigger_qos_collection())
+
+    def receive_ping(self) -> str:
+        return self.handle_remote_error(lambda r: r.receive_ping())
+
+    def probe_pmtu(self, host: str) -> int:
+        return self.handle_remote_error(lambda r: r.probe_pmtu(host))
+
+    def get_nat(self, ip: str, port: int) -> NatType:
+        return self.handle_remote_error(lambda r: r.get_nat(ip, port))

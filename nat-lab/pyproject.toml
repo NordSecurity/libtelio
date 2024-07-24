@@ -3,7 +3,7 @@ name = "nat-lab"
 
 [tool.black]
 preview = true
-exclude="tests/protobuf"
+extend-exclude = "tests/protobuf|tests/uniffi/telio_bindings.py"
 
 [tool.isort]
 profile = "black"
@@ -15,7 +15,7 @@ combine_star = true
 remove_redundant_aliases = true
 combine_as_imports = true
 no_sections = true
-skip=["tests/protobuf"]
+skip = ["tests/protobuf", "tests/uniffi/telio_bindings.py"]
 
 [tool.autoflake]
 remove-unused-variables = true
@@ -25,9 +25,15 @@ ignore-init-module-imports = true
 recursive = true
 in-place = true
 
+[tool.mypy]
+exclude = [
+    '^tests/protobuf$',
+    '^.*telio_bindings\\.py$',
+]
+
 [tool.pylint]
 max-line-length = 88
-ignore-paths="tests/protobuf/*"
+ignore-paths = "tests/protobuf,tests/uniffi/telio_bindings.py"
 
 [tool.pylint.'MESSAGES CONTROL']
 recursive = true

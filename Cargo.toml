@@ -57,6 +57,7 @@ telio-traversal.workspace = true
 telio-utils.workspace = true
 telio-wg.workspace = true
 once_cell.workspace = true
+nat-detect.workspace = true
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.19"

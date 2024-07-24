@@ -162,6 +162,10 @@ pub enum Error {
     PmtuProbe(std::io::Error),
     #[error("Connection upgrade failed - there is no session for key {0:?}")]
     NoSessionForKey(PublicKey),
+    #[error("Pinger receive timeout")]
+    PingerReceiveTimeout,
+    #[error("Pinger received unexpected packet")]
+    PingerReceiveUnexpected,
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -795,6 +799,15 @@ impl Device {
             task_exec!(self.rt()?, async move |rt| Ok(rt
                 .trigger_qos_collection()
                 .await))
+            .await?
+        })
+    }
+
+    pub fn receive_ping(&self) -> Result<String> {
+        self.async_runtime()?.block_on(async {
+            task_exec!(self.rt()?, async move |rt| Ok(
+                Box::pin(rt.receive_ping()).await
+            ))
             .await?
         })
     }
@@ -2108,6 +2121,46 @@ impl Runtime {
             Ok(())
         } else {
             Err(Error::NotStarted)
+        }
+    }
+
+    async fn receive_ping(&self) -> Result<String> {
+        match tokio::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 5000)).await {
+            Ok(udp_socket) => {
+                let udp_socket = Arc::new(udp_socket);
+
+                // Timeout for stunner
+                let sleep = tokio::time::sleep(Duration::from_secs(20));
+                tokio::pin!(sleep);
+                const MAX_PACKET: usize = 65536;
+                let mut rx_buff = [0u8; MAX_PACKET];
+                tokio::select! {
+                    Ok((_len, _src_addr)) = udp_socket.recv_from(&mut rx_buff) => {
+                        match rx_buff.first().map(|b| telio_proto::PacketTypeRelayed::from(*b)) {
+                            Some(telio_proto::PacketTypeRelayed::Pinger) => {
+                                telio_log_info!("Pinger message received");
+                                Ok("Pinger".to_string())
+                            },
+                            Some(telio_proto::PacketTypeRelayed::Ponger) => {
+                                telio_log_info!("Ponger message received");
+                                Ok("Ponger".to_string())
+                            },
+                            other => {
+                                telio_log_warn!("Unexpected packet: {:?}", other);
+                                Err(Error::PingerReceiveUnexpected)
+                            },
+                        }
+                    },
+                    () = &mut sleep => {
+                        telio_log_warn!("timeout");
+                        Err(Error::PingerReceiveTimeout)
+                    },
+                }
+            }
+            Err(e) => {
+                telio_log_error!("udp socket init error - {}", e);
+                Err(e.into())
+            }
         }
     }
 }

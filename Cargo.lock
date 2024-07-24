@@ -4224,6 +4224,7 @@ dependencies = [
  "maplit",
  "mockall",
  "modifier",
+ "nat-detect",
  "ntest",
  "num_cpus",
  "once_cell",

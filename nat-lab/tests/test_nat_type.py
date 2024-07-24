@@ -1,38 +1,26 @@
-import asyncio
 import pytest
-import re
-from utils.connection_util import (
-    ConnectionTag,
-    new_connection_by_tag,
-    get_libtelio_binary_path,
-)
+from contextlib import AsyncExitStack
+from helpers import SetupParameters, setup_environment
+from uniffi.telio_bindings import NatType
+from utils.connection_util import ConnectionTag
 
 
 @pytest.mark.nat
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "connection_tag,nat_string",
+    "connection_tag,nat_type",
     [
-        pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, "PortRestrictedCone"),
-        pytest.param(ConnectionTag.DOCKER_FULLCONE_CLIENT_1, "FullCone"),
-        pytest.param(ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, "Symmetric"),
+        pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, NatType.PORT_RESTRICTED_CONE),
+        pytest.param(ConnectionTag.DOCKER_FULLCONE_CLIENT_1, NatType.FULL_CONE),
+        pytest.param(ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, NatType.SYMMETRIC),
     ],
 )
-async def test_nat_type(connection_tag, nat_string) -> None:
-    async with new_connection_by_tag(connection_tag) as connection:
-        tcli_path = get_libtelio_binary_path("tcli", connection)
-        process = connection.create_process([tcli_path])
-
-        event = asyncio.Event()
-
-        async def print_result(stdout: str) -> None:
-            if "Nat Type:" in stdout:
-                event.set()
-
-        async with process.run(stdout_callback=print_result):
-            await process.wait_stdin_ready()
-            await process.write_stdin("nat address 10.0.1.1 3478\n")
-            await event.wait()
-            result = re.search(r"Nat Type: (.*)", process.get_stdout())
-            assert result
-            assert result.group(1) == nat_string
+async def test_nat_type(connection_tag: ConnectionTag, nat_type: NatType) -> None:
+    async with AsyncExitStack() as exit_stack:
+        env = await exit_stack.enter_async_context(
+            setup_environment(
+                exit_stack, [SetupParameters(connection_tag=connection_tag)]
+            )
+        )
+        client, *_ = env.clients
+        assert await client.get_nat("10.0.1.1", 3478) == nat_type.value

@@ -22,6 +22,45 @@ enum RttType {
     "Ping",
 };
 
+/// Available NAT types
+enum NatType {
+    /// UDP is always blocked.
+    "UdpBlocked",
+
+    /// No NAT, public IP, no firewall.
+    "OpenInternet",
+
+    /// No NAT, public IP, but symmetric UDP firewall.
+    "SymmetricUdpFirewall",
+
+    /// A full cone NAT is one where all requests from the same internal IP address and port are
+    /// mapped to the same external IP address and port. Furthermore, any external host can send
+    /// a packet to the internal host, by sending a packet to the mapped external address.
+    "FullCone",
+
+    /// A restricted cone NAT is one where all requests from the same internal IP address and
+    /// port are mapped to the same external IP address and port. Unlike a full cone NAT, an external
+    /// host (with IP address X) can send a packet to the internal host only if the internal host
+    /// had previously sent a packet to IP address X.
+    "RestrictedCone",
+
+    /// A port restricted cone NAT is like a restricted cone NAT, but the restriction
+    /// includes port numbers. Specifically, an external host can send a packet, with source IP
+    /// address X and source port P, to the internal host only if the internal host had previously
+    /// sent a packet to IP address X and port P.
+    "PortRestrictedCone",
+
+    /// A symmetric NAT is one where all requests from the same internal IP address and port,
+    /// to a specific destination IP address and port, are mapped to the same external IP address and
+    /// port.  If the same host sends a packet with the same source address and port, but to
+    /// a different destination, a different mapping is used. Furthermore, only the external host that
+    /// receives a packet can send a UDP packet back to the internal host.
+    "Symmetric",
+
+    /// Unknown
+    "Unknown",
+};
+
 [Error]
 interface TelioError {
     UnknownError(string inner);
@@ -370,13 +409,19 @@ interface Telio {
 
     /// Get last error's message length, including trailing null
     string get_last_error();
-    
+
     [Throws=TelioError]
     boolean is_running();
     [Throws=TelioError]
     void trigger_analytics_event();
     [Throws=TelioError]
     void trigger_qos_collection();
+    [Throws=TelioError]
+    string receive_ping();
+    [Throws=TelioError]
+    u32 probe_pmtu(string host);
+    [Throws=TelioError]
+    NatType get_nat(string ip, u16 port);
 
     /// For testing only.
     [Throws=TelioError]

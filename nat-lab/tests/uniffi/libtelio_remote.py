@@ -74,6 +74,12 @@ class TelioEventCbImpl(libtelio.TelioEventCb):
 
 
 class TelioLoggerCbImpl(libtelio.TelioLoggerCb):
+    def __init__(self):
+        try:
+            os.remove(TCLI_LOG)
+        except FileNotFoundError:
+            pass
+
     def log(self, log_level, payload):
         with open(TCLI_LOG, "a", encoding="utf-8") as logfile:
             try:
@@ -180,6 +186,18 @@ class LibtelioWrapper:
     @serialize_error
     def trigger_qos_collection(self) -> None:
         self._libtelio.trigger_qos_collection()
+
+    @serialize_error
+    def receive_ping(self) -> str:
+        return self._libtelio.receive_ping()
+
+    @serialize_error
+    def probe_pmtu(self, host: str) -> int:
+        return self._libtelio.probe_pmtu(host)
+
+    @serialize_error
+    def get_nat(self, ip: str, port: int) -> libtelio.NatType:
+        return self._libtelio.get_nat(ip, port)
 
 
 def main():
