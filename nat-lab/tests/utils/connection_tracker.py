@@ -52,6 +52,9 @@ def parse_input(input_string) -> FiveTuple:
         if match.group(1) == "icmp":
             if "type=0" in input_string or "type=8" in input_string:
                 five_tuple.protocol = match.group(1)
+        elif match.group(1) == "icmpv6":
+            if "type=128" in input_string or "type=129" in input_string:
+                five_tuple.protocol = match.group(1)
         else:
             five_tuple.protocol = match.group(1)
 
