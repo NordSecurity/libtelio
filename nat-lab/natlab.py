@@ -33,7 +33,7 @@ def run_command_with_output(command, hide_output=False):
 
 
 def start():
-    original_port_mapping = 'ports: ["58001"]'
+    original_port_mapping = 'ports: ["8081"]'
     disabled_port_mapping = "ports: []"
     with open("docker-compose.yml", "r", encoding="utf-8") as file:
         filedata = file.read()

@@ -73,7 +73,7 @@ services:
         ipv4_address: 192.168.101.104
     # Note: in certain scenarios this port mapping can be changed as part of `./natlab.py --start`. 
     # When this comment was added, the only scenario where the port mapping is changed is CI running tests
-    ports: ["58001"]
+    ports: ["8081"]
     ulimits:
       core:
         soft: -1
