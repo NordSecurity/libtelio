@@ -156,7 +156,6 @@ def get_pytest_arguments(options) -> List[str]:
         if options.moose:
             marks = marks.replace("and not moose", "")
         args.extend(["-m", marks])
-    args.extend(["-k", "test_vpn"])
 
     return args
 
