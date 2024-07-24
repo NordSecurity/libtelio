@@ -909,10 +909,7 @@ mod tests {
                     "stun": 50
                 }
             },
-            "nurse":
-            {
-                "fingerprint": "fingerprint_test"
-            },
+            "nurse":{},
             "lana":
             {
                 "event_path": "path/to/some/event/data",
@@ -936,10 +933,7 @@ mod tests {
                     "stun": 50
                 }
             },
-            "nurse":
-            {
-                "fingerprint": "fingerprint_test"
-            },
+            "nurse":{},
             "lana":
             {
                 "event_path": "path/to/some/event/data",

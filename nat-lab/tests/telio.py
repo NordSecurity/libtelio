@@ -493,6 +493,7 @@ class Client:
         adapter_type: AdapterType = AdapterType.Default,
         telio_features: TelioFeatures = TelioFeatures(),
         force_ipv6_feature: bool = False,
+        fingerprint: str = "",
     ) -> None:
         self._router: Optional[Router] = None
         self._events: Optional[Events] = None
@@ -508,12 +509,15 @@ class Client:
         self._start_time = datetime.now()
         self._libtelio_proxy: Optional[LibtelioProxy] = None
         self._proxy_port = ""
+        self._fingerprint: Optional[tuple[str, str]] = None
         # Automatically enables IPv6 feature when the IPv6 stack is enabled
         if (
             self._node.ip_stack in (IPStack.IPv4v6, IPStack.IPv6)
             and not force_ipv6_feature
         ):
             self._telio_features.ipv6 = True
+        if telio_features.nurse is not None and telio_features.lana is not None:
+            self._fingerprint = telio_features.lana.event_path, fingerprint
 
     @asynccontextmanager
     async def run(self, meshmap: Optional[Meshmap] = None) -> AsyncIterator["Client"]:
@@ -614,6 +618,8 @@ class Client:
                 except ProxyConnectionError as err:
                     print(str(err))
                     raise err
+
+                await self.maybe_write_device_fingerprint_to_moose_db()
 
                 self.get_proxy().start_named(
                     private_key=self._node.private_key,
@@ -979,6 +985,17 @@ class Client:
                 if self._quit:
                     return
                 raise
+
+    async def maybe_write_device_fingerprint_to_moose_db(self):
+        if self._fingerprint is not None:
+            database, fingerprint = self._fingerprint
+            await self._connection.create_process([
+                "sqlite3",
+                database,
+                "--cmd",
+                "PRAGMA busy_timeout = 30000;",
+                f"INSERT OR REPLACE INTO shared_context (key, val) VALUES ('device.fp._string', '\"{fingerprint}\"')",
+            ]).execute()
 
     async def trigger_event_collection(self) -> None:
         self.get_proxy().trigger_analytics_event()

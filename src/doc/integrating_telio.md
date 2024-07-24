@@ -152,9 +152,6 @@ let json_feature_config = "<feature config fetched from API>".to_owned();
 let mut feature_config = deserialize_feature_config(json_feature_config).unwrap();
 
 feature_config.lana = Some(FeatureLana {  event_path: "some/path.db".to_owned(), prod: true });
-if let Some(nurse) = &mut feature_config.nurse {
-    nurse.fingerprint = "me".to_owned();
-}
 
 #[derive(Debug)]
 struct EventHandler;

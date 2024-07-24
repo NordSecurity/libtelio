@@ -100,9 +100,7 @@ IP_STACK_TEST_CONFIGS = [
 ]
 
 
-def build_telio_features(
-    fingerprint: str, initial_heartbeat_interval: int = 300
-) -> TelioFeatures:
+def build_telio_features(initial_heartbeat_interval: int = 300) -> TelioFeatures:
     return TelioFeatures(
         lana=Lana(prod=False, event_path=CONTAINER_EVENT_PATH),
         direct=Direct(
@@ -115,7 +113,6 @@ def build_telio_features(
             ),
         ),
         nurse=Nurse(
-            fingerprint=fingerprint,
             heartbeat_interval=3600,
             initial_heartbeat_interval=initial_heartbeat_interval,
             qos=Qos(rtt_interval=RTT_INTERVAL, buckets=5, rtt_tries=1),
@@ -302,7 +299,8 @@ async def run_default_scenario(
         telio.Client(
             connection_alpha,
             alpha,
-            telio_features=build_telio_features(ALPHA_FINGERPRINT),
+            telio_features=build_telio_features(),
+            fingerprint=ALPHA_FINGERPRINT,
         ).run(api.get_meshmap(alpha.id))
     )
 
@@ -310,7 +308,8 @@ async def run_default_scenario(
         telio.Client(
             connection_beta,
             beta,
-            telio_features=build_telio_features(BETA_FINGERPRINT),
+            telio_features=build_telio_features(),
+            fingerprint=BETA_FINGERPRINT,
         ).run(api.get_meshmap(beta.id))
     )
 
@@ -318,7 +317,8 @@ async def run_default_scenario(
         telio.Client(
             connection_gamma,
             gamma,
-            telio_features=build_telio_features(GAMMA_FINGERPRINT),
+            telio_features=build_telio_features(),
+            fingerprint=GAMMA_FINGERPRINT,
         ).run(api.get_meshmap(gamma.id))
     )
 
@@ -1308,14 +1308,16 @@ async def test_lana_with_meshnet_exit_node(
             telio.Client(
                 connection_alpha,
                 alpha,
-                telio_features=build_telio_features(ALPHA_FINGERPRINT),
+                telio_features=build_telio_features(),
+                fingerprint=ALPHA_FINGERPRINT,
             ).run(api.get_meshmap(alpha.id))
         )
         client_beta = await exit_stack.enter_async_context(
             telio.Client(
                 connection_beta,
                 beta,
-                telio_features=build_telio_features(BETA_FINGERPRINT),
+                telio_features=build_telio_features(),
+                fingerprint=BETA_FINGERPRINT,
             ).run(api.get_meshmap(beta.id))
         )
 
@@ -1517,8 +1519,8 @@ async def test_lana_with_disconnected_node(
         await clean_container(connection_beta)
 
         # In this test, we'll manually trigger the collection of QoS
-        def get_features_with_long_qos(fingerprint: str) -> TelioFeatures:
-            features = build_telio_features(fingerprint)
+        def get_features_with_long_qos() -> TelioFeatures:
+            features = build_telio_features()
             assert features.nurse is not None
             assert features.nurse.qos is not None
             features.nurse.qos.rtt_interval = RTT_INTERVAL * 10
@@ -1528,14 +1530,16 @@ async def test_lana_with_disconnected_node(
             telio.Client(
                 connection_alpha,
                 alpha,
-                telio_features=get_features_with_long_qos(ALPHA_FINGERPRINT),
+                telio_features=get_features_with_long_qos(),
+                fingerprint=ALPHA_FINGERPRINT,
             ).run(api.get_meshmap(alpha.id))
         )
         client_beta = await exit_stack.enter_async_context(
             telio.Client(
                 connection_beta,
                 beta,
-                telio_features=get_features_with_long_qos(BETA_FINGERPRINT),
+                telio_features=get_features_with_long_qos(),
+                fingerprint=BETA_FINGERPRINT,
             ).run(api.get_meshmap(beta.id))
         )
 
@@ -1852,7 +1856,8 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
             telio.Client(
                 connection_beta,
                 beta,
-                telio_features=build_telio_features(BETA_FINGERPRINT),
+                telio_features=build_telio_features(),
+                fingerprint=BETA_FINGERPRINT,
             ).run(api.get_meshmap(beta.id))
         )
 
@@ -1879,7 +1884,8 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
             telio.Client(
                 connection_alpha,
                 alpha,
-                telio_features=build_telio_features(ALPHA_FINGERPRINT),
+                telio_features=build_telio_features(),
+                fingerprint=ALPHA_FINGERPRINT,
             ).run(api.get_meshmap(alpha.id))
         )
 
@@ -1938,7 +1944,8 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
         async with telio.Client(
             connection_beta,
             beta,
-            telio_features=build_telio_features(BETA_FINGERPRINT),
+            telio_features=build_telio_features(),
+            fingerprint=BETA_FINGERPRINT,
         ).run(api.get_meshmap(beta.id)) as client_beta:
 
             await client_beta.trigger_event_collection()
@@ -1959,7 +1966,8 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
             telio.Client(
                 connection_beta,
                 beta,
-                telio_features=build_telio_features(BETA_FINGERPRINT),
+                telio_features=build_telio_features(),
+                fingerprint=BETA_FINGERPRINT,
             ).run(api.get_meshmap(beta.id))
         )
 
@@ -1995,9 +2003,9 @@ async def test_lana_initial_heartbeat_no_trigger(
                 connection_alpha,
                 alpha,
                 telio_features=build_telio_features(
-                    ALPHA_FINGERPRINT,
                     initial_heartbeat_interval=initial_heartbeat_interval,
                 ),
+                fingerprint=ALPHA_FINGERPRINT,
             ).run(api.get_meshmap(alpha.id))
         )
 

@@ -5,6 +5,7 @@ use std::{collections::HashSet, fmt};
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{de::IntoDeserializer, Deserialize, Deserializer, Serialize};
+use smart_default::SmartDefault;
 use strum_macros::EnumCount;
 use telio_utils::telio_log_warn;
 
@@ -134,8 +135,6 @@ impl Default for FeatureQoS {
 /// Configurable features for Nurse module
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct FeatureNurse {
-    /// The unique identifier of the device, used for meshnet ID
-    pub fingerprint: String,
     /// Heartbeat interval in seconds. Default value is 3600.
     #[serde(default = "FeatureNurse::default_heartbeat_interval")]
     pub heartbeat_interval: u64,
@@ -193,7 +192,6 @@ impl FeatureNurse {
 impl Default for FeatureNurse {
     fn default() -> Self {
         Self {
-            fingerprint: Default::default(),
             heartbeat_interval: Self::default_heartbeat_interval(),
             initial_heartbeat_interval: Self::default_initial_heartbeat_interval(),
             qos: Self::default_qos(),
@@ -249,6 +247,26 @@ pub struct FeaturePaths {
     pub priority: Vec<PathType>,
     /// Force only one specific path to be used.
     pub force: Option<PathType>,
+}
+
+impl FeaturePaths {
+    /// Returns a vector of 'PathType' sorted according to the priority
+    pub fn paths(&self) -> Vec<PathType> {
+        if let Some(path) = self.force {
+            vec![path]
+        } else {
+            // Collect PathType array, without any duplicates, and keeping prio for priorities
+            [PathType::Relay]
+                .iter()
+                .chain(self.priority.iter())
+                .fold(Vec::new(), |mut v, p| {
+                    if !v.contains(p) {
+                        v.push(*p);
+                    }
+                    v
+                })
+        }
+    }
 }
 
 /// Available Endpoint Providers for meshnet direct connections
@@ -518,13 +536,15 @@ impl Default for FeaturePmtuDiscovery {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
 /// Encompasses all of the possible features that can be enabled
 pub struct Features {
     /// Additional wireguard configuration
     #[serde(default, deserialize_with = "FeatureWireguard::default_on_null")]
     pub wireguard: FeatureWireguard,
     /// Nurse features that can be configured for QoS
+    #[serde(default = "Features::default_nurse")]
+    #[default(Features::default_nurse())]
     pub nurse: Option<FeatureNurse>,
     /// Event logging configurable features
     pub lana: Option<FeatureLana>,
@@ -568,23 +588,9 @@ pub struct Features {
     pub multicast: bool,
 }
 
-impl FeaturePaths {
-    /// Returns a vector of 'PathType' sorted according to the priority
-    pub fn paths(&self) -> Vec<PathType> {
-        if let Some(path) = self.force {
-            vec![path]
-        } else {
-            // Collect PathType array, without any duplicates, and keeping prio for priorities
-            [PathType::Relay]
-                .iter()
-                .chain(self.priority.iter())
-                .fold(Vec::new(), |mut v, p| {
-                    if !v.contains(p) {
-                        v.push(*p);
-                    }
-                    v
-                })
-        }
+impl Features {
+    fn default_nurse() -> Option<FeatureNurse> {
+        Some(Default::default())
     }
 }
 
@@ -604,10 +610,7 @@ mod tests {
                     "stun": 50
                 }
             },
-            "nurse":
-            {
-                "fingerprint": "fingerprint_test"
-            },
+            "nurse":{},
             "lana":
             {
                 "event_path": "path/to/some/event/data",
@@ -633,10 +636,7 @@ mod tests {
                     "stun": 50
                 }
             },
-            "nurse":
-            {
-                "fingerprint": "fingerprint_test"
-            },
+            "nurse": {},
             "lana":
             {
                 "event_path": "path/to/some/event/data",
@@ -695,7 +695,6 @@ mod tests {
             },
         },
         nurse: Some(FeatureNurse {
-            fingerprint: "fingerprint_test".to_string(),
             heartbeat_interval: 3600,
             initial_heartbeat_interval: 300,
             qos: Some(FeatureQoS {
@@ -763,7 +762,6 @@ mod tests {
             },
         },
         nurse: Some(FeatureNurse {
-            fingerprint: "fingerprint_test".to_string(),
             heartbeat_interval: 3600,
             initial_heartbeat_interval: 300,
             qos: Some(FeatureQoS {
@@ -933,7 +931,6 @@ mod tests {
         let full_json = r#"
         {
             "nurse": {
-                "fingerprint": "fingerprint_test",
                 "heartbeat_interval": 3600,
                 "initial_heartbeat_interval": 300,
                 "qos": {
@@ -948,7 +945,6 @@ mod tests {
         let empty_qos_json = r#"
         {
             "nurse": {
-                "fingerprint": "fingerprint_test",
                 "enable_relay_conn_data": false,
                 "enable_nat_traversal_conn_data": true,
                 "qos": {}
@@ -958,7 +954,6 @@ mod tests {
         let no_qos_json = r#"
         {
             "nurse": {
-                "fingerprint": "fingerprint_test",
                 "enable_relay_conn_data": false,
                 "enable_nat_traversal_conn_data": true
             }
@@ -967,7 +962,6 @@ mod tests {
         let disabled_qos_json = r#"
         {
             "nurse": {
-                "fingerprint": "fingerprint_test",
                 "enable_relay_conn_data": false,
                 "enable_nat_traversal_conn_data": false,
                 "qos": null
@@ -977,7 +971,6 @@ mod tests {
         let full_features = Features {
             wireguard: Default::default(),
             nurse: Some(FeatureNurse {
-                fingerprint: String::from("fingerprint_test"),
                 heartbeat_interval: 3600,
                 initial_heartbeat_interval: 300,
                 qos: Some(FeatureQoS {
@@ -1014,7 +1007,6 @@ mod tests {
         let empty_or_no_qos_features = Features {
             wireguard: Default::default(),
             nurse: Some(FeatureNurse {
-                fingerprint: String::from("fingerprint_test"),
                 heartbeat_interval: 3600,
                 initial_heartbeat_interval: 300,
                 qos: Some(FeatureQoS {
@@ -1051,7 +1043,6 @@ mod tests {
         let disabled_qos_features = Features {
             wireguard: Default::default(),
             nurse: Some(FeatureNurse {
-                fingerprint: String::from("fingerprint_test"),
                 heartbeat_interval: 3600,
                 initial_heartbeat_interval: 300,
                 qos: None,
@@ -1116,7 +1107,7 @@ mod tests {
 
         let full_features = Features {
             wireguard: Default::default(),
-            nurse: None,
+            nurse: Features::default_nurse(),
             lana: None,
             paths: None,
             direct: None,
@@ -1141,7 +1132,7 @@ mod tests {
 
         let empty_features = Features {
             wireguard: Default::default(),
-            nurse: None,
+            nurse: Features::default_nurse(),
             lana: None,
             paths: None,
             direct: None,
@@ -1177,7 +1168,7 @@ mod tests {
 
         let empty_features = Features {
             wireguard: Default::default(),
-            nurse: None,
+            nurse: Features::default_nurse(),
             lana: None,
             paths: None,
             direct: None,
@@ -1237,7 +1228,7 @@ mod tests {
     fn test_default_features() {
         let expected_defaults = Features {
             wireguard: Default::default(),
-            nurse: None,
+            nurse: Features::default_nurse(),
             lana: None,
             paths: None,
             direct: None,
@@ -1394,12 +1385,32 @@ mod tests {
     mod nurse {
         use super::*;
 
+        #[test]
+        fn test_nurse_missing() {
+            let json = "{}";
+            let features = from_str::<Features>(json).unwrap();
+            assert_eq!(features.nurse, Features::default_nurse());
+        }
+
+        #[test]
+        fn test_nurse_null() {
+            let json = r#"{"nurse":null}"#;
+            let features = from_str::<Features>(json).unwrap();
+            assert!(features.nurse.is_none());
+        }
+
+        #[test]
+        fn test_nurse_empty() {
+            let json = r#"{"nurse":{}}"#;
+            let features = from_str::<Features>(json).unwrap();
+            assert_eq!(features.nurse, Features::default_nurse());
+        }
         mod state_duration_cap {
             use super::*;
 
             #[test]
             fn test_state_duration_cap_missing() {
-                let missing = r#"{"fingerprint": "test"}"#;
+                let missing = r#"{}"#;
                 let features = from_str::<FeatureNurse>(missing).unwrap();
                 assert_eq!(
                     features.state_duration_cap,
@@ -1411,7 +1422,7 @@ mod tests {
             fn test_state_duration_cap_number() {
                 let nurse = r#"
             {
-                "fingerprint": "test", "state_duration_cap": 123
+                "state_duration_cap": 123
             }"#;
                 let features = from_str::<FeatureNurse>(nurse).unwrap();
                 assert_eq!(features.state_duration_cap, 123);
@@ -1422,15 +1433,15 @@ mod tests {
                 for invalid in [
                     r#"
             {
-                "fingerprint":"test", "state_duration_cap": false
+                "state_duration_cap": false
             }"#,
                     r#"
             {
-                "fingerprint":"test", "state_duration_cap": null
+                "state_duration_cap": null
             }"#,
                     r#"
             {
-                "fingerprint": "test", "state_duration_cap": "abc"
+                "test", "state_duration_cap": "abc"
             }"#,
                 ] {
                     assert!(from_str::<FeatureNurse>(invalid).is_err());

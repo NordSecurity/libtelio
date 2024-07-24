@@ -34,16 +34,15 @@ def test_telio_features():
     assert lana_features == expected_lana
     assert lana_features.to_json() == expected_lana.to_json()
 
-    nurse_features = TelioFeatures(nurse=Nurse(fingerprint="fingerprint"))
+    nurse_features = TelioFeatures(nurse=Nurse())
     expected_nurse = TelioFeatures.from_json(
-        """{"is_test_env": true, "exit_dns": {"auto_switch_dns_ips": true}, "nurse": {"fingerprint": "fingerprint"}}"""
+        """{"is_test_env": true, "exit_dns": {"auto_switch_dns_ips": true}, "nurse": {}}"""
     )
     assert nurse_features == expected_nurse
     assert nurse_features.to_json() == expected_nurse.to_json()
 
     nurse_qos_features = TelioFeatures(
         nurse=Nurse(
-            fingerprint="fingerprint",
             qos=Qos(rtt_interval=5, rtt_tries=3, rtt_types=["Ping"], buckets=5),
             heartbeat_interval=3600,
             initial_heartbeat_interval=10,
@@ -53,7 +52,7 @@ def test_telio_features():
         )
     )
     expected_nurse_qos = TelioFeatures.from_json(
-        """{"is_test_env": true, "exit_dns": {"auto_switch_dns_ips": true}, "nurse": {"fingerprint": "fingerprint", "qos": {"rtt_interval": 5, "rtt_tries": 3, "rtt_types": ["Ping"], "buckets": 5}, "heartbeat_interval": 3600, "initial_heartbeat_interval": 10, "enable_nat_type_collection": false, "enable_relay_conn_data": false, "state_duration_cap": 123}}"""
+        """{"is_test_env": true, "exit_dns": {"auto_switch_dns_ips": true}, "nurse": {"qos": {"rtt_interval": 5, "rtt_tries": 3, "rtt_types": ["Ping"], "buckets": 5}, "heartbeat_interval": 3600, "initial_heartbeat_interval": 10, "enable_nat_type_collection": false, "enable_relay_conn_data": false, "state_duration_cap": 123}}"""
     )
     assert nurse_qos_features == expected_nurse_qos
     assert nurse_qos_features.to_json() == expected_nurse_qos.to_json()
@@ -63,7 +62,6 @@ def test_telio_features():
         direct=Direct(providers=["stun", "local"]),
         lana=Lana(prod=False, event_path="/"),
         nurse=Nurse(
-            fingerprint="alpha",
             qos=Qos(rtt_interval=5, rtt_tries=3, rtt_types=["Ping"], buckets=5),
             heartbeat_interval=3600,
             initial_heartbeat_interval=10,
@@ -79,7 +77,7 @@ def test_telio_features():
         ),
     )
     expected_full = TelioFeatures.from_json(
-        """{"is_test_env": false, "exit_dns": {"auto_switch_dns_ips": true}, "direct": {"providers": ["stun", "local"]}, "lana": {"prod": false, "event_path": "/"}, "nurse": {"fingerprint": "alpha", "qos": {"rtt_interval": 5, "rtt_tries": 3, "rtt_types": ["Ping"], "buckets": 5}, "heartbeat_interval": 3600, "initial_heartbeat_interval": 10, "enable_nat_type_collection": true, "enable_relay_conn_data": true}, "link_detection": {"rtt_seconds": 10, "no_of_pings": 1, "use_for_downgrade": true}}"""
+        """{"is_test_env": false, "exit_dns": {"auto_switch_dns_ips": true}, "direct": {"providers": ["stun", "local"]}, "lana": {"prod": false, "event_path": "/"}, "nurse": {"qos": {"rtt_interval": 5, "rtt_tries": 3, "rtt_types": ["Ping"], "buckets": 5}, "heartbeat_interval": 3600, "initial_heartbeat_interval": 10, "enable_nat_type_collection": true, "enable_relay_conn_data": true}, "link_detection": {"rtt_seconds": 10, "no_of_pings": 1, "use_for_downgrade": true}}"""
     )
     assert full_features == expected_full
     assert full_features.to_json() == expected_full.to_json()

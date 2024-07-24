@@ -2,7 +2,6 @@
 # autoflake: skip_file
 # pylint: skip-file
 
-from sys import exit
 from SystemConfiguration import SCDynamicStoreCreate, SCDynamicStoreCopyValue
 
 

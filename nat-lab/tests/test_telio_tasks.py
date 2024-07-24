@@ -32,7 +32,6 @@ async def test_telio_tasks_with_all_features() -> None:
                         ),
                         lana=Lana(prod=False, event_path="/some_path"),
                         nurse=Nurse(
-                            fingerprint="alpha",
                             heartbeat_interval=3600,
                             initial_heartbeat_interval=10,
                             qos=Qos(
@@ -49,6 +48,7 @@ async def test_telio_tasks_with_all_features() -> None:
                             ttl_value=60,
                         ),
                     ),
+                    fingerprint="alpha",
                 )
             ],
         )

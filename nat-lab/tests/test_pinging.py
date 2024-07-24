@@ -187,7 +187,6 @@ async def test_session_keeper(
                 features=TelioFeatures(
                     lana=Lana(prod=False, event_path="/event.db"),
                     nurse=Nurse(
-                        fingerprint="alpha_fingerprint",
                         qos=Qos(
                             rtt_interval=5, rtt_tries=1, rtt_types=["Ping"], buckets=1
                         ),
@@ -196,6 +195,7 @@ async def test_session_keeper(
                     ),
                     ipv6=True,
                 ),
+                fingerprint="alpha_fingerprint",
             )
         ),
         pytest.param(
@@ -209,7 +209,6 @@ async def test_session_keeper(
                 features=TelioFeatures(
                     lana=Lana(prod=False, event_path="/event.db"),
                     nurse=Nurse(
-                        fingerprint="alpha_fingerprint",
                         qos=Qos(
                             rtt_interval=5, rtt_tries=1, rtt_types=["Ping"], buckets=1
                         ),
@@ -218,6 +217,7 @@ async def test_session_keeper(
                     ),
                     ipv6=True,
                 ),
+                fingerprint="alpha_fingerprint",
             )
         ),
     ],
