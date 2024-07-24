@@ -1,0 +1,34 @@
+name: Diagram
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+    - 'nat-lab/docker-compose.yml'
+
+jobs:
+  check-diagram:
+    runs-on: ubuntu-latest
+    steps:
+        # Checkout nat-lab files
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: nat-lab
+
+        # Generate diagram by running the script
+      - name: Generate network.md
+        run: | 
+          python3 utils/generate_network_diagram.py docker-compose.yml network.md
+        working-directory: nat-lab
+
+        # Chech that the diagram was updated
+      - name: Compare network.md diagram
+        run: |
+          if git diff --quiet network.md; then
+            echo "\`network.md\` diagram up to date"
+          else
+            echo "\`network.md\` diagram not updated"
+            echo "Please execute \`python3 utils/generate_network_diagram.py docker-compose.yml network.md\`"
+            exit 1
+          fi
+        working-directory: nat-lab 

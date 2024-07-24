@@ -45,6 +45,8 @@ typing-extensions = "*"
 typing-inspect = "*"
 yarl = "*"
 requests = "*"
+pyyaml = "*"
+types-pyyaml = "*"
 
 [dev-packages]
 
