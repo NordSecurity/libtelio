@@ -5,7 +5,7 @@ from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
-from utils.ping import Ping
+from utils.ping import ping
 
 
 @pytest.mark.asyncio
@@ -100,16 +100,13 @@ async def test_mesh_reconnect(
         ]
         client_alpha, client_beta = env.clients
 
-        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
-        async with Ping(beta_connection, alpha.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(alpha_connection, beta.ip_addresses[0])
+        await ping(beta_connection, alpha.ip_addresses[0])
 
         await client_alpha.stop_device()
 
         with pytest.raises(asyncio.TimeoutError):
-            async with Ping(beta_connection, alpha.ip_addresses[0]).run() as ping:
-                await ping.wait_for_next_ping(15)
+            await ping(beta_connection, alpha.ip_addresses[0], 15)
 
         await client_alpha.simple_start()
         await client_alpha.set_meshmap(api.get_meshmap(alpha.id))
@@ -124,8 +121,5 @@ async def test_mesh_reconnect(
             client_beta.wait_for_state_peer(alpha.public_key, [telio.State.Connected]),
         )
 
-        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
-
-        async with Ping(beta_connection, alpha.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(alpha_connection, beta.ip_addresses[0])
+        await ping(beta_connection, alpha.ip_addresses[0])

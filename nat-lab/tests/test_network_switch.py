@@ -16,7 +16,7 @@ from utils import stun
 from utils.asyncio_util import run_async_contexts
 from utils.connection import TargetOS
 from utils.connection_util import ConnectionTag
-from utils.ping import Ping
+from utils.ping import ping
 
 
 @pytest.mark.asyncio
@@ -121,17 +121,13 @@ async def test_mesh_network_switch(
         alpha_conn_mngr, *_ = env.connections
         client_alpha, _ = env.clients
 
-        async with Ping(alpha_conn_mngr.connection, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(alpha_conn_mngr.connection, beta.ip_addresses[0])
 
         assert alpha_conn_mngr.network_switcher
         async with alpha_conn_mngr.network_switcher.switch_to_secondary_network():
             await client_alpha.notify_network_change()
 
-            async with Ping(
-                alpha_conn_mngr.connection, beta.ip_addresses[0]
-            ).run() as ping:
-                await ping.wait_for_next_ping()
+            await ping(alpha_conn_mngr.connection, beta.ip_addresses[0])
 
 
 @pytest.mark.asyncio
@@ -196,8 +192,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
             str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
         )
 
-        async with Ping(alpha_connection, config.PHOTO_ALBUM_IP).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(alpha_connection, config.PHOTO_ALBUM_IP)
 
         ip = await stun.get(alpha_connection, config.STUN_SERVER)
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
@@ -212,8 +207,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
             if alpha_connection.target_os == TargetOS.Windows:
                 await asyncio.sleep(1.0)
 
-            async with Ping(alpha_connection, config.PHOTO_ALBUM_IP).run() as ping:
-                await ping.wait_for_next_ping()
+            await ping(alpha_connection, config.PHOTO_ALBUM_IP)
 
             ip = await stun.get(alpha_connection, config.STUN_SERVER)
             assert (
@@ -298,8 +292,7 @@ async def test_mesh_network_switch_direct(
         assert network_switcher
         alpha_client, beta_client = env.clients
 
-        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(alpha_connection, beta.ip_addresses[0])
 
         derp_connected_future = alpha_client.wait_for_event_on_any_derp(
             [State.Connected]
@@ -326,5 +319,4 @@ async def test_mesh_network_switch_direct(
             await relay
             await direct
 
-        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(alpha_connection, beta.ip_addresses[0])

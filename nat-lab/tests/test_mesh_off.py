@@ -7,7 +7,7 @@ from telio import PathType, State
 from telio_features import TelioFeatures, Direct, LinkDetection
 from timeouts import TEST_MESH_STATE_AFTER_DISCONNECTING_NODE_TIMEOUT
 from utils.connection_util import ConnectionTag
-from utils.ping import Ping
+from utils.ping import ping
 
 
 # Marks in-tunnel stack only, exiting only through IPv4
@@ -78,10 +78,8 @@ async def test_mesh_off(direct) -> None:
             ),
         )
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
-        async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_alpha, beta.ip_addresses[0])
+        await ping(connection_beta, alpha.ip_addresses[0])
 
 
 @pytest.mark.asyncio
@@ -113,10 +111,8 @@ async def test_mesh_state_after_disconnecting_node() -> None:
             conn.connection for conn in env.connections
         ]
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
-        async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_alpha, beta.ip_addresses[0])
+        await ping(connection_beta, alpha.ip_addresses[0])
 
         await client_beta.stop_device()
 

@@ -6,7 +6,7 @@ from telio import AdapterType, PathType, State
 from telio_features import Direct, TelioFeatures
 from utils.asyncio_util import run_async_context
 from utils.connection_util import ConnectionTag
-from utils.ping import Ping
+from utils.ping import ping
 from utils.router import new_router, IPStack
 
 
@@ -58,16 +58,15 @@ async def test_upnp_route_removed(
                     alpha_client.wait_for_event_peer(beta.public_key, [State.Connected])
                 )
             )
-            async with Ping(alpha_conn.connection, beta.ip_addresses[0]).run() as ping:
-                try:
-                    await ping.wait_for_next_ping(15)
-                except asyncio.TimeoutError:
-                    pass
-                else:
-                    # if no timeout exception happens, this means, that peers connected through relay
-                    # faster than we expected, but if no relay event occurs, this means, that something
-                    # else was wrong, so we assert
-                    await asyncio.wait_for(task, 1)
+            try:
+                await ping(alpha_conn.connection, beta.ip_addresses[0], 15)
+            except asyncio.TimeoutError:
+                pass
+            else:
+                # if no timeout exception happens, this means, that peers connected through relay
+                # faster than we expected, but if no relay event occurs, this means, that something
+                # else was wrong, so we assert
+                await asyncio.wait_for(task, 1)
 
         await asyncio.gather(
             alpha_client.wait_for_event_peer(
@@ -78,10 +77,8 @@ async def test_upnp_route_removed(
             ),
         )
 
-        async with Ping(beta_conn.connection, alpha.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
-        async with Ping(alpha_conn.connection, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(beta_conn.connection, alpha.ip_addresses[0])
+        await ping(alpha_conn.connection, beta.ip_addresses[0])
 
 
 @pytest.mark.asyncio
@@ -174,11 +171,5 @@ async def test_upnp_without_support(
                 ),
             )
 
-        async with Ping(
-            beta_conn_mgr.connection, alpha_node.ip_addresses[0]
-        ).run() as ping:
-            await ping.wait_for_next_ping()
-        async with Ping(
-            alpha_conn_mgr.connection, beta_node.ip_addresses[0]
-        ).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(beta_conn_mgr.connection, alpha_node.ip_addresses[0])
+        await ping(alpha_conn_mgr.connection, beta_node.ip_addresses[0])

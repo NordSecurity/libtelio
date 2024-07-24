@@ -11,7 +11,7 @@ from utils.connection_util import (
     ConnectionTag,
     new_connection_by_tag,
 )
-from utils.ping import Ping
+from utils.ping import ping
 
 
 async def _connect_vpn_pq(
@@ -27,8 +27,7 @@ async def _connect_vpn_pq(
         pq=True,
     )
 
-    async with Ping(client_conn, config.PHOTO_ALBUM_IP).run() as ping:
-        await ping.wait_for_next_ping()
+    await ping(client_conn, config.PHOTO_ALBUM_IP)
 
     ip = await stun.get(client_conn, config.STUN_SERVER)
     assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
@@ -262,5 +261,4 @@ async def test_pq_vpn_rekey(
             ip == config.NLX_SERVER["ipv4"]
         ), f"wrong public IP when connected to VPN {ip}"
 
-        async with Ping(client_conn, config.PHOTO_ALBUM_IP).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(client_conn, config.PHOTO_ALBUM_IP)

@@ -12,7 +12,7 @@ from telio_features import (
 )
 from typing import List, Tuple
 from utils.connection_util import ConnectionTag
-from utils.ping import Ping
+from utils.ping import ping
 
 
 def long_persistent_keepalive_periods() -> Wireguard:
@@ -68,10 +68,8 @@ async def test_downgrade_using_link_detection(
         # We have established a direct connection between the peers
 
         # Generate some traffic
-        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping(15)
-        async with Ping(beta_connection, alpha.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping(15)
+        await ping(alpha_connection, beta.ip_addresses[0], 15)
+        await ping(beta_connection, alpha.ip_addresses[0], 15)
 
         # Break the direct connection
         await exit_stack.enter_async_context(
@@ -87,11 +85,9 @@ async def test_downgrade_using_link_detection(
 
         # Generate some traffic to trigger link detection
         with pytest.raises(asyncio.TimeoutError):
-            async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-                await ping.wait_for_next_ping(5)
+            await ping(alpha_connection, beta.ip_addresses[0], 5)
         with pytest.raises(asyncio.TimeoutError):
-            async with Ping(beta_connection, alpha.ip_addresses[0]).run() as ping:
-                await ping.wait_for_next_ping(5)
+            await ping(beta_connection, alpha.ip_addresses[0], 5)
 
         # Expect downgrade to relay
         await asyncio.gather(
@@ -104,10 +100,8 @@ async def test_downgrade_using_link_detection(
         )
 
         # Check the relayed connection
-        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping(15)
-        async with Ping(beta_connection, alpha.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping(15)
+        await ping(alpha_connection, beta.ip_addresses[0], 15)
+        await ping(beta_connection, alpha.ip_addresses[0], 15)
 
 
 @pytest.mark.asyncio
@@ -136,10 +130,8 @@ async def test_downgrade_using_link_detection_with_silent_connection(
         # We have established a direct connection between the peers
 
         # Generate some traffic
-        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping(15)
-        async with Ping(beta_connection, alpha.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping(15)
+        await ping(alpha_connection, beta.ip_addresses[0], 15)
+        await ping(beta_connection, alpha.ip_addresses[0], 15)
 
         # Wait for connection to stabilize
         # Leave time for the passive keepalives to be send
@@ -171,11 +163,9 @@ async def test_downgrade_using_link_detection_with_silent_connection(
 
         # Generate some traffic to trigger link detection
         with pytest.raises(asyncio.TimeoutError):
-            async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-                await ping.wait_for_next_ping(5)
+            await ping(alpha_connection, beta.ip_addresses[0], 5)
         with pytest.raises(asyncio.TimeoutError):
-            async with Ping(beta_connection, alpha.ip_addresses[0]).run() as ping:
-                await ping.wait_for_next_ping(5)
+            await ping(beta_connection, alpha.ip_addresses[0], 5)
 
         # Expect downgrade to relay
         await asyncio.gather(
@@ -188,7 +178,5 @@ async def test_downgrade_using_link_detection_with_silent_connection(
         )
 
         # Check the relayed connection
-        async with Ping(alpha_connection, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping(15)
-        async with Ping(beta_connection, alpha.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping(15)
+        await ping(alpha_connection, beta.ip_addresses[0], 15)
+        await ping(beta_connection, alpha.ip_addresses[0], 15)

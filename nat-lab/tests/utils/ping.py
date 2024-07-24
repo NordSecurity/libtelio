@@ -12,6 +12,13 @@ from utils.router import IPProto, REG_IPV6ADDR, get_ip_address_type
 # It should work for Linux, Windows and Mac.
 
 
+async def ping(
+    connection: Connection, ip: str, timeout: Optional[float] = None
+) -> None:
+    async with Ping(connection, ip).run() as ping_process:
+        await ping_process.wait_for_any_ping(timeout)
+
+
 class Ping:
     _ip: str
     _ip_proto: IPProto
@@ -53,6 +60,10 @@ class Ping:
 
     async def wait_for_next_ping(self, timeout: Optional[float] = None) -> None:
         self._next_ping_event.clear()
+        await asyncio.wait_for(self._next_ping_event.wait(), timeout)
+        self._next_ping_event.clear()
+
+    async def wait_for_any_ping(self, timeout: Optional[float] = None) -> None:
         await asyncio.wait_for(self._next_ping_event.wait(), timeout)
         self._next_ping_event.clear()
 

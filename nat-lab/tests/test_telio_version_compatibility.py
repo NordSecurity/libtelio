@@ -13,7 +13,7 @@ from utils.connection_util import (
     new_connection_with_conn_tracker,
 )
 from utils.output_notifier import OutputNotifier
-from utils.ping import Ping
+from utils.ping import ping
 from utils.router import IPProto, IPStack, new_router
 
 STUN_PROVIDER = ["stun"]
@@ -130,11 +130,10 @@ async def test_connect_different_telio_version_through_relay(
         await alpha_client.wait_for_state_on_any_derp([telio.State.Connected])
         await alpha_client.wait_for_state_peer(beta.public_key, [telio.State.Connected])
 
-        async with Ping(
+        await ping(
             alpha_conn,
             testing.unpack_optional(beta.get_ip_address(IPProto.IPv4)),
-        ).run() as ping:
-            await ping.wait_for_next_ping()
+        )
 
         assert alpha_conn_tracker.get_out_of_limits() is None
         assert beta_conn_tracker.get_out_of_limits() is None

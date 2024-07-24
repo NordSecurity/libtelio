@@ -9,7 +9,7 @@ from telio_features import TelioFeatures, Direct
 from utils import stun
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
-from utils.ping import Ping
+from utils.ping import ping
 from utils.router import IPStack
 
 
@@ -103,10 +103,8 @@ async def test_event_content_meshnet(
             conn.connection for conn in env.connections
         ]
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
-        async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_alpha, beta.ip_addresses[0])
+        await ping(connection_beta, alpha.ip_addresses[0])
 
         assert client_alpha.get_node_state(beta.public_key) == PeerInfo(
             identifier=beta.id,
@@ -145,8 +143,7 @@ async def test_event_content_meshnet(
         await client_alpha.set_meshmap(api.get_meshmap(alpha.id))
 
         with pytest.raises(asyncio.TimeoutError):
-            async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-                await ping.wait_for_next_ping(5)
+            await ping(connection_alpha, beta.ip_addresses[0], 5)
 
         await asyncio.sleep(1)
 
@@ -265,8 +262,7 @@ async def test_event_content_vpn_connection(
             str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
         )
 
-        async with Ping(connection, config.PHOTO_ALBUM_IP).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection, config.PHOTO_ALBUM_IP)
 
         assert client_alpha.get_node_state(str(wg_server["public_key"])) == PeerInfo(
             identifier="natlab",
@@ -408,8 +404,7 @@ async def test_event_content_exit_through_peer(
         ]
         client_alpha, client_beta = env.clients
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_alpha, beta.ip_addresses[0])
 
         assert client_alpha.get_node_state(beta.public_key) == PeerInfo(
             identifier=beta.id,
@@ -559,10 +554,8 @@ async def test_event_content_meshnet_node_upgrade_direct(
         ]
         client_alpha, client_beta = env.clients
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
-        async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_alpha, beta.ip_addresses[0])
+        await ping(connection_beta, alpha.ip_addresses[0])
 
         beta_node_state = client_alpha.get_node_state(beta.public_key)
         assert beta_node_state
@@ -629,10 +622,8 @@ async def test_event_content_meshnet_node_upgrade_direct(
             ),
         )
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
-        async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_alpha, beta.ip_addresses[0])
+        await ping(connection_beta, alpha.ip_addresses[0])
 
         beta_node_state = client_alpha.get_node_state(beta.public_key)
         assert beta_node_state

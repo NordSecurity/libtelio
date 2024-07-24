@@ -10,7 +10,7 @@ from utils.connection_util import (
     generate_connection_tracker_config,
     ConnectionLimits,
 )
-from utils.ping import Ping
+from utils.ping import ping
 from utils.router import IPStack
 
 
@@ -200,5 +200,4 @@ async def test_vpn_conn_with_pmtu_enabled(params: SetupParameters) -> None:
             str(config.WG_SERVER["public_key"]),
         )
 
-        async with Ping(vpn_conn.connection, alpha.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(vpn_conn.connection, alpha.ip_addresses[0])
