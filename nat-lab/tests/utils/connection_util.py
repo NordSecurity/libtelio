@@ -200,10 +200,15 @@ def get_uniffi_path(connection: Connection) -> str:
 
 
 @asynccontextmanager
-async def new_connection_raw(tag: ConnectionTag) -> AsyncIterator[Connection]:
+async def new_connection_raw(
+    tag: ConnectionTag,
+    remove_existing_interfaces: bool = True,
+) -> AsyncIterator[Connection]:
     if tag in DOCKER_SERVICE_IDS:
         async with Docker() as docker:
-            async with container_util.get(docker, container_id(tag)) as connection:
+            async with container_util.get(
+                docker, container_id(tag), remove_existing_interfaces
+            ) as connection:
                 try:
                     yield connection
                 finally:
@@ -311,10 +316,12 @@ async def new_connection_by_tag(tag: ConnectionTag) -> AsyncIterator[Connection]
 
 @asynccontextmanager
 async def new_connection_with_node_tracker(
-    tag: ConnectionTag, conn_tracker_config: Optional[List[ConnectionTrackerConfig]]
+    tag: ConnectionTag,
+    conn_tracker_config: Optional[List[ConnectionTrackerConfig]],
+    remove_existing_interfaces: bool = True,
 ) -> AsyncIterator[Tuple[Connection, ConnectionTracker]]:
     if tag in DOCKER_SERVICE_IDS:
-        async with new_connection_raw(tag) as connection:
+        async with new_connection_raw(tag, remove_existing_interfaces) as connection:
             network_switcher = await create_network_switcher(tag, connection)
             async with network_switcher.switch_to_primary_network():
                 async with ConnectionTracker(
