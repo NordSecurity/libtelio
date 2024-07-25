@@ -12,7 +12,7 @@ from utils.connection import Connection
 from utils.connection_tracker import ConnectionLimits, ConnectionTrackerConfig
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.output_notifier import OutputNotifier
-from utils.ping import Ping
+from utils.ping import ping
 from utils.router import IPProto, IPStack
 
 VAGRANT_LIBVIRT_MANAGEMENT_IP = "192.168.121"
@@ -29,12 +29,10 @@ async def _connect_vpn(
         wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
     )
 
-    async with Ping(client_conn, config.PHOTO_ALBUM_IP).run() as ping:
-        await ping.wait_for_next_ping()
+    await ping(client_conn, config.PHOTO_ALBUM_IP)
 
     if vpn_connection is not None:
-        async with Ping(vpn_connection, client_meshnet_ip).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(vpn_connection, client_meshnet_ip)
 
     ip = await stun.get(client_conn, config.STUN_SERVER)
     assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
@@ -392,8 +390,7 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
                 wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
             )
 
-            async with Ping(connection, serv_ip).run() as ping:
-                await ping.wait_for_next_ping()
+            await ping(connection, serv_ip)
 
         await connect(
             config.WG_SERVER,
@@ -529,8 +526,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
                 wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
             )
 
-            async with Ping(connection, serv_ip).run() as ping:
-                await ping.wait_for_next_ping()
+            await ping(connection, serv_ip)
 
         await connect(
             config.WG_SERVER,
@@ -697,8 +693,7 @@ async def test_vpn_connection_private_key_change(
         await client_alpha.set_secret_key(new_secret_key)
 
         # ping again
-        async with Ping(client_conn, config.PHOTO_ALBUM_IP).run() as ping:
-            await asyncio.wait_for(ping.wait_for_next_ping(), 5)
+        await ping(client_conn, config.PHOTO_ALBUM_IP, 5)
 
         ip = await stun.get(client_conn, config.STUN_SERVER)
         assert (

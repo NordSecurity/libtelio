@@ -13,7 +13,7 @@ from utils.connection_util import (
     ConnectionTag,
     new_connection_with_conn_tracker,
 )
-from utils.ping import Ping
+from utils.ping import ping
 from utils.router import IPProto, IPStack
 
 
@@ -129,18 +129,15 @@ async def test_mesh_exit_through_peer(
         ]
 
         if exit_ip_stack is not IPStack.IPv6:
-            async with Ping(
+            await ping(
                 connection_alpha,
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv4)),
-            ).run() as ping:
-                await ping.wait_for_next_ping()
+            )
         else:
-            async with Ping(
+            await ping(
                 connection_alpha,
                 testing.unpack_optional(beta.get_ip_address(IPProto.IPv6)),
-            ).run() as ping6:
-                await ping6.wait_for_next_ping()
-
+            )
         await client_beta.get_router().create_exit_node_route()
 
         await client_alpha.connect_to_exit_node(beta.public_key)
@@ -283,18 +280,15 @@ async def test_ipv6_exit_node(
         )
 
         # Ping in-tunnel node with IPv6
-        async with Ping(
+        await ping(
             connection_alpha,
             testing.unpack_optional(beta.get_ip_address(IPProto.IPv6)),
-        ).run() as ping6:
-            await ping6.wait_for_next_ping()
-
+        )
         await client_beta.get_router().create_exit_node_route()
         await client_alpha.connect_to_exit_node(beta.public_key)
 
         # Ping out-tunnel target with IPv6
-        async with Ping(connection_alpha, config.PHOTO_ALBUM_IPV6).run() as ping6:
-            await ping6.wait_for_next_ping()
+        await ping(connection_alpha, config.PHOTO_ALBUM_IPV6)
 
         ip_alpha = await stun.get(connection_alpha, config.STUNV6_SERVER)
         ip_beta = await stun.get(connection_beta, config.STUNV6_SERVER)

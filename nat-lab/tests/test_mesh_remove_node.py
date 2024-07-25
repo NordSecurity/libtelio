@@ -6,7 +6,7 @@ from helpers import SetupParameters, setup_mesh_nodes
 from mesh_api import API
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
-from utils.ping import Ping
+from utils.ping import ping
 
 
 @pytest.mark.asyncio
@@ -126,23 +126,17 @@ async def test_mesh_remove_node(
         ]
         client_alpha, client_beta, _ = env.clients
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
-        async with Ping(connection_beta, gamma.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
-        async with Ping(connection_gamma, alpha.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_alpha, beta.ip_addresses[0])
+        await ping(connection_beta, gamma.ip_addresses[0])
+        await ping(connection_gamma, alpha.ip_addresses[0])
 
         api.remove(gamma.id)
 
         await client_alpha.set_meshmap(api.get_meshmap(alpha.id))
         await client_beta.set_meshmap(api.get_meshmap(beta.id))
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_alpha, beta.ip_addresses[0])
         with pytest.raises(asyncio.TimeoutError):
-            async with Ping(connection_beta, gamma.ip_addresses[0]).run() as ping:
-                await ping.wait_for_next_ping(5)
+            await ping(connection_beta, gamma.ip_addresses[0], 5)
         with pytest.raises(asyncio.TimeoutError):
-            async with Ping(connection_gamma, alpha.ip_addresses[0]).run() as ping:
-                await ping.wait_for_next_ping(5)
+            await ping(connection_gamma, alpha.ip_addresses[0], 5)

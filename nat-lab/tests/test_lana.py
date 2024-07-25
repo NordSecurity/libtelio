@@ -45,7 +45,7 @@ from utils.connection_util import (
     new_connection_by_tag,
     add_outgoing_packets_delay,
 )
-from utils.ping import Ping
+from utils.ping import ping
 from utils.router import IPStack, IPProto
 
 CONTAINER_EVENT_PATH = "/event.db"
@@ -191,11 +191,10 @@ async def ping_node(
         # Impossibru
         return
 
-    async with Ping(
+    await ping(
         initiator_conn,
         testing.unpack_optional(target.get_ip_address(proto)),
-    ).run() as ping:
-        await ping.wait_for_next_ping()
+    )
 
 
 def choose_peer_stack(node_one: IPStack, node_two: IPStack) -> Optional[IPStack]:
@@ -1333,14 +1332,12 @@ async def test_lana_with_meshnet_exit_node(
             ),
         )
 
-        async with Ping(
+        await ping(
             connection_alpha,
             testing.unpack_optional(
                 beta.get_ip_address(IPProto.IPv6 if is_stun6_needed else IPProto.IPv4)
             ),
-        ).run() as ping:
-            await ping.wait_for_next_ping()
-
+        )
         await client_beta.get_router().create_exit_node_route()
         await client_alpha.connect_to_exit_node(beta.public_key)
         ip_alpha = await stun.get(

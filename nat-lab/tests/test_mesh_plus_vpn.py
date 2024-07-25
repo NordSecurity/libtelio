@@ -15,7 +15,7 @@ from utils.connection_util import (
     ConnectionTag,
     new_connection_with_conn_tracker,
 )
-from utils.ping import Ping
+from utils.ping import ping
 
 
 # Marks in-tunnel stack only, exiting only through IPv4
@@ -112,8 +112,7 @@ async def test_mesh_plus_vpn_one_peer(
         client_alpha, _ = env.clients
         connection_alpha, _ = [conn.connection for conn in env.connections]
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_alpha, beta.ip_addresses[0])
 
         wg_server = config.WG_SERVER
 
@@ -121,11 +120,9 @@ async def test_mesh_plus_vpn_one_peer(
             str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
         )
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_alpha, beta.ip_addresses[0])
 
-        async with Ping(connection_alpha, config.STUN_SERVER).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_alpha, config.STUN_SERVER)
 
         public_ip = await stun.get(connection_alpha, config.STUN_SERVER)
         assert (
@@ -229,8 +226,7 @@ async def test_mesh_plus_vpn_both_peers(
             conn.connection for conn in env.connections
         ]
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_alpha, beta.ip_addresses[0])
 
         wg_server = config.WG_SERVER
 
@@ -247,15 +243,11 @@ async def test_mesh_plus_vpn_both_peers(
             ),
         )
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
-        async with Ping(connection_alpha, config.STUN_SERVER).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_alpha, beta.ip_addresses[0])
+        await ping(connection_alpha, config.STUN_SERVER)
 
-        async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
-        async with Ping(connection_beta, config.STUN_SERVER).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_beta, alpha.ip_addresses[0])
+        await ping(connection_beta, config.STUN_SERVER)
 
         for connection in [connection_alpha, connection_beta]:
             public_ip = await stun.get(connection, config.STUN_SERVER)
@@ -340,8 +332,7 @@ async def test_vpn_plus_mesh(
             str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
         )
 
-        async with Ping(connection_alpha, config.PHOTO_ALBUM_IP).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_alpha, config.PHOTO_ALBUM_IP)
 
         ip = await stun.get(connection_alpha, config.STUN_SERVER)
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
@@ -361,8 +352,7 @@ async def test_vpn_plus_mesh(
             client_beta.wait_for_state_peer(alpha.public_key, [State.Connected]),
         )
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_alpha, beta.ip_addresses[0])
 
         # Testing if the VPN node is not cleared after disabling meshnet. See LLT-4266 for more details.
         await client_alpha.set_mesh_off()
@@ -485,10 +475,8 @@ async def test_vpn_plus_mesh_over_direct(
             conn.connection for conn in env.connections
         ]
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
-        async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_alpha, beta.ip_addresses[0])
+        await ping(connection_beta, alpha.ip_addresses[0])
 
         wg_server = config.WG_SERVER
 
@@ -505,15 +493,11 @@ async def test_vpn_plus_mesh_over_direct(
             ),
         )
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
-        async with Ping(connection_alpha, config.STUN_SERVER).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_alpha, beta.ip_addresses[0])
+        await ping(connection_alpha, config.STUN_SERVER)
 
-        async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
-        async with Ping(connection_beta, config.STUN_SERVER).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_beta, alpha.ip_addresses[0])
+        await ping(connection_beta, config.STUN_SERVER)
 
         for connection in [connection_alpha, connection_beta]:
             public_ip = await stun.get(connection, config.STUN_SERVER)
@@ -646,10 +630,8 @@ async def test_vpn_plus_mesh_over_different_connection_types(
         client_alpha, client_beta, client_gamma = env.clients
         alpha, beta, gamma = env.nodes
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
-        async with Ping(connection_alpha, gamma.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_alpha, beta.ip_addresses[0])
+        await ping(connection_alpha, gamma.ip_addresses[0])
 
         wg_server = config.WG_SERVER
 
@@ -671,22 +653,15 @@ async def test_vpn_plus_mesh_over_different_connection_types(
             ),
         )
 
-        async with Ping(connection_alpha, beta.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
-        async with Ping(connection_alpha, gamma.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
-        async with Ping(connection_alpha, config.STUN_SERVER).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_alpha, beta.ip_addresses[0])
+        await ping(connection_alpha, gamma.ip_addresses[0])
+        await ping(connection_alpha, config.STUN_SERVER)
 
-        async with Ping(connection_beta, alpha.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
-        async with Ping(connection_beta, config.STUN_SERVER).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_beta, alpha.ip_addresses[0])
+        await ping(connection_beta, config.STUN_SERVER)
 
-        async with Ping(connection_gamma, alpha.ip_addresses[0]).run() as ping:
-            await ping.wait_for_next_ping()
-        async with Ping(connection_gamma, config.STUN_SERVER).run() as ping:
-            await ping.wait_for_next_ping()
+        await ping(connection_gamma, alpha.ip_addresses[0])
+        await ping(connection_gamma, config.STUN_SERVER)
 
         for connection in [connection_alpha, connection_beta, connection_gamma]:
             public_ip = await stun.get(connection, config.STUN_SERVER)
