@@ -4,6 +4,7 @@ import re
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional, List, Dict, AsyncIterator
 from utils.connection import Connection
 from utils.ping import Ping
@@ -46,6 +47,8 @@ class ConnectionTrackerConfig:
 
 def parse_input(input_string) -> FiveTuple:
     five_tuple = FiveTuple()
+
+    print(datetime.now(), "Conntracker reported new connection:", input_string)
 
     match = re.search(r"\[NEW\] (\w+)", input_string)
     if match:

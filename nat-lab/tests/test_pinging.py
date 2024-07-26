@@ -2,6 +2,7 @@ import asyncio
 import pytest
 import telio
 from contextlib import AsyncExitStack
+from datetime import datetime
 from helpers import setup_mesh_nodes, SetupParameters
 from telio import PathType, State
 from telio_features import TelioFeatures, Direct, Nurse, Qos, Lana
@@ -149,12 +150,12 @@ async def test_session_keeper(
 
         async def wait_for_conntracker() -> None:
             while True:
-                if (
-                    alpha_conn_tracker.get_out_of_limits() is None
-                    and beta_conn_tracker.get_out_of_limits() is None
-                ):
+                alpha_limits = alpha_conn_tracker.get_out_of_limits()
+                beta_limits = beta_conn_tracker.get_out_of_limits()
+                print(datetime.now(), "Conntracker state: ", alpha_limits, beta_limits)
+                if alpha_limits is None and beta_limits is None:
                     return
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(1)
 
         await asyncio.gather(
             alpha_client.wait_for_state_peer(
