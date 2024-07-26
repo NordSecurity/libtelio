@@ -44,9 +44,12 @@ async def new_connection(
     ) as ssh_connection:
         connection = SshConnection(ssh_connection, TargetOS.Windows)
 
+        keys = await _get_network_interface_tunnel_keys(connection)
+        for key in keys:
+            await connection.create_process(["reg", "delete", key, "/F"]).execute()
+
         if copy_binaries:
             await _copy_binaries(ssh_connection, connection)
-
         try:
             yield connection
         finally:
@@ -138,3 +141,21 @@ async def _copy_binaries(
 
     for src, dst, allow_missing in files_to_copy:
         await _copy_file_with_progress_handler(ssh_connection, src, dst, allow_missing)
+
+
+async def _get_network_interface_tunnel_keys(connection):
+    result = await connection.create_process([
+        "reg",
+        "query",
+        "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e972-e325-11ce-bfc1-08002be10318}",
+        "/s",
+        "/f",
+        "DriverDesc",
+    ]).execute()
+
+    lines = result.get_stdout().splitlines()
+    keys = []
+    for i, line in enumerate(lines):
+        if "WireGuard Tunnel" in line or "Wintun Userspace Tunnel" in line:
+            keys.append(lines[i - 1])
+    return keys
