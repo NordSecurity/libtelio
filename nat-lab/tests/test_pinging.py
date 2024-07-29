@@ -6,13 +6,9 @@ from datetime import datetime
 from helpers import setup_mesh_nodes, SetupParameters
 from telio import PathType, State
 from telio_features import TelioFeatures, Direct, Nurse, Qos, Lana
-from typing import Tuple, List
+from typing import Tuple
 from utils.connection import Connection
-from utils.connection_tracker import (
-    ConnectionTracker,
-    ConnectionTrackerConfig,
-    ConnectionLimits,
-)
+from utils.connection_tracker import ConnectionTracker, ConnectionLimits
 from utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_with_node_tracker,
@@ -36,11 +32,32 @@ IP_STACKS = [
 ]
 
 
-async def get_in_node_tracker(
-    exit_stack: AsyncExitStack, tag: ConnectionTag, conf: List[ConnectionTrackerConfig]
+async def build_conntracker(
+    exit_stack: AsyncExitStack,
+    tag: ConnectionTag,
+    ip_stack: IPStack,
+    qos_expected: bool,
 ) -> Tuple[Connection, ConnectionTracker]:
+    # Set connection tracker expectations according to IP stack parameter
+    conntrack_config = (
+        generate_connection_tracker_config(
+            tag,
+            derp_1_limits=ConnectionLimits(1, 1),
+            ping_limits=ConnectionLimits(1, 2),
+        )
+        if ip_stack == IPStack.IPv4
+        else generate_connection_tracker_config(
+            tag,
+            derp_1_limits=ConnectionLimits(1, 1),
+            ping_limits=(
+                ConnectionLimits(1, 2) if qos_expected else ConnectionLimits(0, 0)
+            ),
+            ping6_limits=ConnectionLimits(1, 2),
+        )
+    )
+
     return await exit_stack.enter_async_context(
-        new_connection_with_node_tracker(tag, conf, remove_existing_interfaces=False)
+        new_connection_with_node_tracker(tag, conntrack_config)
     )
 
 
@@ -110,6 +127,16 @@ async def test_session_keeper(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         alpha_setup_params.ip_stack = alpha_ip_stack
+
+        # Initialize node conntracker before starting nodes
+        _, alpha_conntrack = await build_conntracker(
+            exit_stack, alpha_setup_params.connection_tag, alpha_ip_stack, False
+        )
+        _, beta_conntrack = await build_conntracker(
+            exit_stack, beta_setup_params.connection_tag, alpha_ip_stack, False
+        )
+
+        # Startup meshnet
         env = await setup_mesh_nodes(
             exit_stack, [alpha_setup_params, beta_setup_params]
         )
@@ -117,41 +144,10 @@ async def test_session_keeper(
         alpha, beta = env.nodes
         alpha_client, beta_client = env.clients
 
-        (_, alpha_conn_tracker) = await get_in_node_tracker(
-            exit_stack,
-            alpha_setup_params.connection_tag,
-            (
-                generate_connection_tracker_config(
-                    alpha_setup_params.connection_tag,
-                    ping_limits=ConnectionLimits(1, 2),
-                )
-                if alpha_ip_stack == IPStack.IPv4
-                else generate_connection_tracker_config(
-                    alpha_setup_params.connection_tag,
-                    ping6_limits=ConnectionLimits(1, 2),
-                )
-            ),
-        )
-        (_, beta_conn_tracker) = await get_in_node_tracker(
-            exit_stack,
-            beta_setup_params.connection_tag,
-            (
-                generate_connection_tracker_config(
-                    beta_setup_params.connection_tag,
-                    ping_limits=ConnectionLimits(1, 2),
-                )
-                if alpha_ip_stack == IPStack.IPv4
-                else generate_connection_tracker_config(
-                    beta_setup_params.connection_tag,
-                    ping6_limits=ConnectionLimits(1, 2),
-                )
-            ),
-        )
-
         async def wait_for_conntracker() -> None:
             while True:
-                alpha_limits = alpha_conn_tracker.get_out_of_limits()
-                beta_limits = beta_conn_tracker.get_out_of_limits()
+                alpha_limits = alpha_conntrack.get_out_of_limits()
+                beta_limits = beta_conntrack.get_out_of_limits()
                 print(datetime.now(), "Conntracker state: ", alpha_limits, beta_limits)
                 if alpha_limits is None and beta_limits is None:
                     return
@@ -252,6 +248,15 @@ async def test_qos(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         alpha_setup_params.ip_stack = alpha_ip_stack
+
+        # Setup conntracking before mesh startup
+        _, alpha_conntrack = await build_conntracker(
+            exit_stack,
+            alpha_setup_params.connection_tag,
+            alpha_setup_params.ip_stack,
+            True,
+        )
+
         env = await setup_mesh_nodes(
             exit_stack, [alpha_setup_params, beta_setup_params]
         )
@@ -259,28 +264,9 @@ async def test_qos(
         alpha, beta = env.nodes
         alpha_client, beta_client = env.clients
 
-        (_, alpha_node_tracker) = await get_in_node_tracker(
-            exit_stack,
-            alpha_setup_params.connection_tag,
-            (
-                generate_connection_tracker_config(
-                    alpha_setup_params.connection_tag,
-                    derp_1_limits=ConnectionLimits(0, 1),
-                    ping_limits=ConnectionLimits(1, 1),
-                )
-                if alpha_ip_stack == IPStack.IPv4
-                else generate_connection_tracker_config(
-                    alpha_setup_params.connection_tag,
-                    derp_1_limits=ConnectionLimits(0, 1),
-                    ping_limits=ConnectionLimits(1, 1),
-                    ping6_limits=ConnectionLimits(1, 1),
-                )
-            ),
-        )
-
         async def wait_for_conntracker() -> None:
             while True:
-                if alpha_node_tracker.get_out_of_limits() is None:
+                if alpha_conntrack.get_out_of_limits() is None:
                     return
                 await asyncio.sleep(1.0)
 
