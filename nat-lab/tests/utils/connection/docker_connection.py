@@ -21,8 +21,17 @@ class DockerConnection(Connection):
         self._container = container
 
     def create_process(self, command: List[str]) -> "Process":
-        print(datetime.now(), "Executing", command, "on", self._name)
-        return DockerProcess(self._container, command)
+        process = DockerProcess(self._container, command)
+        print(
+            datetime.now(),
+            "Executing",
+            command,
+            "on",
+            self._name,
+            "with Kill ID:",
+            process.get_kill_id(),
+        )
+        return process
 
     async def get_ip_address(self) -> tuple[str, str]:
         details = await self._container.show()
