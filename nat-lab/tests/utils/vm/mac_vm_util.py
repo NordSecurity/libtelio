@@ -27,6 +27,7 @@ async def new_connection(
             "aes128-ctr",
         ],
         compression_algs=None,
+        errors='replace'
     )
 
     async with asyncssh.connect(

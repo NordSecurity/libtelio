@@ -629,12 +629,12 @@ class Client:
                         await self.set_meshmap(meshmap)
                     yield self
             finally:
-                print(datetime.now(), "Test cleanup stage 1. Saving logs")
+                print(datetime.now(), "Test cleanup: Saving logs")
                 await self.save_logs()
 
                 print(
                     datetime.now(),
-                    "Test cleanup stage 2. Stopping tcpdump and collecting core dumps",
+                    "Test cleanup: Stopping tcpdump and collecting core dumps",
                 )
                 if isinstance(self._connection, DockerConnection):
                     stop_tcpdump([self._connection.container_name()])
@@ -642,25 +642,28 @@ class Client:
 
                 print(
                     datetime.now(),
-                    "Test cleanup stage 3. Saving MacOS network info",
+                    "Test cleanup: Saving MacOS network info",
                 )
                 await self.save_mac_network_info()
 
-                print(datetime.now(), "Test cleanup stage 4. Stopping device")
+                print(datetime.now(), "Test cleanup: Stopping device")
                 if self._process.is_executing():
                     await self.stop_device()
                     self._quit = True
 
-                print(datetime.now(), "Test cleanup stage 5. Shutting down")
+                print(datetime.now(), "Test cleanup: Shutting down")
                 self.get_proxy().shutdown(self._connection.target_name())
 
-                print(datetime.now(), "Test cleanup stage 6. Clearing up routes")
+                print(datetime.now(), "Test cleanup: Clearing up routes")
                 if self._router:
                     await self._router.delete_vpn_route()
                     await self._router.delete_exit_node_route()
                     await self._router.delete_interface()
 
                 print(datetime.now(), "Test cleanup complete")
+
+                print(datetime.now(), "Test cleanup: Checking logs")
+                await self.check_logs_for_errors()
 
     async def simple_start(self):
         self.get_proxy().start_named(
@@ -1097,6 +1100,12 @@ class Client:
                 + "\n"
             )
         return ""
+
+    async def check_logs_for_errors(self) -> None:
+        log_content = await self.get_log()
+        if log_content.find("TelioLogLevel.ERROR") != -1:
+            print(log_content)
+            raise Exception("TMP: Error found in logs" + log_content)
 
     async def save_logs(self) -> None:
         if os.environ.get("NATLAB_SAVE_LOGS") is None:
