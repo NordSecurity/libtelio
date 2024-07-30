@@ -9,7 +9,9 @@ use telio_crypto::PublicKey;
 use telio_dns::DnsResolver;
 use telio_firewall::firewall::{Firewall, FILE_SEND_PORT};
 use telio_model::constants::{VPN_EXTERNAL_IPV4, VPN_INTERNAL_IPV4, VPN_INTERNAL_IPV6};
-use telio_model::features::Features;
+use telio_model::features::{
+    Features, DEFAULT_BATCHING_THRESHOLD, DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
+};
 use telio_model::mesh::NodeState::Connected;
 use telio_model::EndpointMap;
 use telio_model::SocketAddr;
@@ -22,7 +24,7 @@ use telio_traversal::{
     },
     SessionKeeperTrait, UpgradeSyncTrait, WireGuardEndpointCandidateChangeEvent,
 };
-use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn};
+use telio_utils::{build_target, telio_log_debug, telio_log_info, telio_log_warn};
 use telio_wg::{uapi::Peer, WireGuard};
 use thiserror::Error as TError;
 use tokio::sync::Mutex;
@@ -190,7 +192,28 @@ async fn consolidate_wg_peers<
     for key in delete_keys {
         telio_log_info!("Removing peer: {:?}", actual_peers.get(key));
         wireguard_interface.del_peer(*key).await?;
+
+        // Remove from session_keeper
+        if let Some(sk) = session_keeper {
+            sk.remove_node(key).await?;
+        }
     }
+
+    let batcher_threshold = Duration::from_secs(DEFAULT_BATCHING_THRESHOLD as u64);
+    let vpn_keepalive_interval = requested_state
+        .keepalive_periods
+        .vpn
+        .map(|keepalive| Duration::from_secs(keepalive as u64))
+        .unwrap_or(Duration::from_secs(
+            DEFAULT_PERSISTENT_KEEPALIVE_PERIOD as u64,
+        ));
+    let stun_keepalive_interval = requested_state
+        .keepalive_periods
+        .stun
+        .map(|keepalive| Duration::from_secs(keepalive as u64))
+        .unwrap_or(Duration::from_secs(
+            DEFAULT_PERSISTENT_KEEPALIVE_PERIOD as u64,
+        ));
 
     for key in insert_keys {
         telio_log_info!("Inserting peer: {:?}", requested_peers.get(key));
@@ -201,6 +224,37 @@ async fn consolidate_wg_peers<
             if let Some(wg_stun_server) = requested_state.wg_stun_server.as_ref() {
                 if wg_stun_server.public_key == *key {
                     stun.trigger_endpoint_candidates_discovery(false).await?;
+                }
+            }
+        }
+
+        // Start keepalives for stun and vpn
+        if let Some(sk) = session_keeper {
+            if let Some(exit_node) = &requested_state.exit_node {
+                if *key == exit_node.public_key {
+                    let ip_addresses = requested_peers
+                        .get(key)
+                        .map_or(Vec::new(), |peer| peer.peer.ip_addresses.clone());
+                    let target = build_target(&ip_addresses, features.ipv6);
+
+                    if target.0.is_some() || target.1.is_some() {
+                        sk.add_node(key, target, vpn_keepalive_interval, batcher_threshold)
+                            .await?;
+                    }
+                }
+            }
+
+            if let Some(stun) = &requested_state.wg_stun_server {
+                if *key == stun.public_key {
+                    let ip_addresses = requested_peers
+                        .get(key)
+                        .map_or(Vec::new(), |peer| peer.peer.ip_addresses.clone());
+                    let target = build_target(&ip_addresses, features.ipv6);
+
+                    if target.0.is_some() || target.1.is_some() {
+                        sk.add_node(key, target, stun_keepalive_interval, batcher_threshold)
+                            .await?;
+                    }
                 }
             }
         }
@@ -306,6 +360,37 @@ async fn consolidate_wg_peers<
         );
         if is_actual_peer_proxying && actual_peer.state() == Connected {
             is_any_peer_eligible_for_upgrade = true;
+        }
+
+        // Update keepalives for stun and vpn
+        if let Some(sk) = session_keeper {
+            if let Some(exit_node) = &requested_state.exit_node {
+                if *key == exit_node.public_key {
+                    let ip_addresses = requested_peers
+                        .get(key)
+                        .map_or(Vec::new(), |peer| peer.peer.ip_addresses.clone());
+                    let target = build_target(&ip_addresses, features.ipv6);
+
+                    if target.0.is_some() || target.1.is_some() {
+                        sk.add_node(key, target, vpn_keepalive_interval, batcher_threshold)
+                            .await?;
+                    }
+                }
+            }
+
+            if let Some(stun) = &requested_state.wg_stun_server {
+                if *key == stun.public_key {
+                    let ip_addresses = requested_peers
+                        .get(key)
+                        .map_or(Vec::new(), |peer| peer.peer.ip_addresses.clone());
+                    let target = build_target(&ip_addresses, features.ipv6);
+
+                    if target.0.is_some() || target.1.is_some() {
+                        sk.add_node(key, target, stun_keepalive_interval, batcher_threshold)
+                            .await?;
+                    }
+                }
+            }
         }
     }
 
@@ -472,7 +557,6 @@ async fn build_requested_peers_list<
                 ip_addresses.push(IpAddr::V6(Ipv6Addr::from(VPN_INTERNAL_IPV6)));
             }
             ip_addresses.push(IpAddr::V4(Ipv4Addr::from(VPN_EXTERNAL_IPV4)));
-            let persistent_keepalive_interval = requested_state.keepalive_periods.vpn;
 
             // If the PQ VPN is set up we need to configure the preshared key
             match (post_quantum_vpn.is_rotating_keys(), post_quantum_vpn.keys()) {
@@ -491,7 +575,7 @@ async fn build_requested_peers_list<
                                 public_key,
                                 endpoint,
                                 ip_addresses,
-                                persistent_keepalive_interval,
+                                persistent_keepalive_interval: Some(0), // Disable WG keepalives as we use session_keeper
                                 allowed_ips,
                                 preshared_key,
                                 ..Default::default()
@@ -531,7 +615,6 @@ async fn build_requested_peers_list<
         let public_key = wg_stun_server.public_key;
         let endpoint = SocketAddr::new(IpAddr::V4(wg_stun_server.ipv4), wg_stun_server.stun_port);
         telio_log_debug!("Configuring wg-stun peer: {}, at {}", public_key, endpoint);
-        let persistent_keepalive_interval = requested_state.keepalive_periods.stun;
         let allowed_ips = if features.ipv6 {
             vec![
                 IpNetwork::V4("100.64.0.4/32".parse()?),
@@ -549,7 +632,7 @@ async fn build_requested_peers_list<
                     public_key,
                     endpoint: Some(endpoint),
                     ip_addresses,
-                    persistent_keepalive_interval,
+                    persistent_keepalive_interval: Some(0), // Disable WG keepalives as we use session_keeper
                     allowed_ips,
                     ..Default::default()
                 },
@@ -1883,6 +1966,7 @@ mod tests {
         f.when_time_since_last_endpoint_change(vec![]);
         f.when_cross_check_validated_endpoints(vec![]);
         f.when_upgrade_requests(vec![]);
+        f.session_keeper.expect_remove_node().returning(|_| Ok(()));
 
         f.then_del_peer(vec![pub_key]);
 
@@ -1988,6 +2072,9 @@ mod tests {
         f.when_time_since_last_endpoint_change(vec![]);
         f.when_cross_check_validated_endpoints(vec![]);
         f.when_upgrade_requests(vec![]);
+        f.session_keeper
+            .expect_add_node()
+            .returning(|_, _, _, _| Ok(()));
 
         f.then_add_peer(vec![(
             public_key,
@@ -2037,6 +2124,9 @@ mod tests {
         f.when_time_since_last_endpoint_change(vec![]);
         f.when_cross_check_validated_endpoints(vec![]);
         f.when_upgrade_requests(vec![]);
+        f.session_keeper
+            .expect_add_node()
+            .returning(|_, _, _, _| Ok(()));
 
         f.then_add_peer(vec![(
             public_key,

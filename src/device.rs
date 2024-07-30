@@ -1399,7 +1399,9 @@ impl Runtime {
                 self.entities.wireguard_interface.clone(),
             )?);
 
-            match SessionKeeper::start(self.entities.socket_pool.clone(), batcher.clone()).map(Arc::new) {
+            match SessionKeeper::start(self.entities.socket_pool.clone(), batcher.clone())
+                .map(Arc::new)
+            {
                 Ok(session_keeper) => Some(DirectEntities {
                     local_interfaces_endpoint_provider,
                     stun_endpoint_provider,
