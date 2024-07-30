@@ -187,6 +187,14 @@ services:
         ipv4_address: 192.168.103.88
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.103.254
+  symmetric-client-03:
+    hostname: symmetric-client-03
+    <<: *common-client
+    networks:
+      hsymmetric-net-01:
+        ipv4_address: 192.168.103.89
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.103.254
   symmetric-client-02:
     hostname: symmetric-client-02
     <<: *common-client
