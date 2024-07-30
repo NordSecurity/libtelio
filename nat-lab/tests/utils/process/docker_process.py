@@ -188,6 +188,9 @@ class DockerProcess(Process):
     def get_stderr(self) -> str:
         return self._stderr
 
+    def get_kill_id(self) -> str:
+        return self._kill_id
+
     def is_executing(self) -> bool:
         return self._stream is not None
 
