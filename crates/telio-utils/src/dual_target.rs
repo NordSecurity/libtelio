@@ -16,6 +16,22 @@ pub type Result<T> = std::result::Result<T, DualTargetError>;
 /// Target input with IPv4 and IPv6 addresses
 pub type Target = (Option<Ipv4Addr>, Option<Ipv6Addr>);
 
+/// Builds Target from a list of ip addresses
+pub fn build_ping_endpoint(ip_addresses: &Vec<IpAddr>, use_ipv6: bool) -> Target {
+    let mut ipv4 = None;
+    let mut ipv6 = None;
+
+    for ip in ip_addresses {
+        match (ip, ipv4, ipv6, use_ipv6) {
+            (IpAddr::V4(v4), None, _, _) => ipv4 = Some(*v4),
+            (IpAddr::V6(v6), _, None, true) => ipv6 = Some(*v6),
+            _ => (),
+        }
+    }
+
+    (ipv4, ipv6)
+}
+
 /// DualTarget wrapper
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct DualTarget {

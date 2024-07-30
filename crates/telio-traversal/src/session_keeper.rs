@@ -54,6 +54,7 @@ pub trait SessionKeeperTrait {
         threshold: Option<Duration>,
     ) -> Result<()>;
     async fn remove_node(&self, key: &PublicKey) -> Result<()>;
+    async fn get_interval(&self, key: &PublicKey) -> Option<u32>;
 }
 
 pub struct SessionKeeper {
@@ -239,6 +240,19 @@ impl SessionKeeperTrait for SessionKeeper {
         .await?;
 
         Ok(())
+    }
+
+    async fn get_interval(&self, key: &PublicKey) -> Option<u32> {
+        let pk = *key;
+        task_exec!(&self.task, async move |s| {
+            if let Some(interval) = s.batched_actions.get_interval(&pk) {
+                Ok(Some(interval))
+            } else {
+                Ok(s.nonbatched_actions.get_interval(&pk))
+            }
+        })
+        .await
+        .unwrap_or(None)
     }
 }
 struct Pingers {
