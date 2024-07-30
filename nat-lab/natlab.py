@@ -33,31 +33,52 @@ def run_command_with_output(command, hide_output=False):
 
 
 def start():
-    original_port_mapping = 'ports: ["58001"]'
-    disabled_port_mapping = "ports: []"
-    with open("docker-compose.yml", "r", encoding="utf-8") as file:
-        filedata = file.read()
-    if original_port_mapping not in filedata:
-        raise RuntimeError("Cannot find expected port mapping compose file")
-    if "GITLAB_CI" in os.environ:
-        filedata = filedata.replace(original_port_mapping, disabled_port_mapping)
-        with open("docker-compose.yml", "w", encoding="utf-8") as file:
-            file.write(filedata)
+    try:
+        original_port_mapping = 'ports: ["58001"]'
+        disabled_port_mapping = "ports: []"
+        with open("docker-compose.yml", "r", encoding="utf-8") as file:
+            filedata = file.read()
+        if original_port_mapping not in filedata:
+            raise RuntimeError("Cannot find expected port mapping compose file")
+        if "GITLAB_CI" in os.environ:
+            filedata = filedata.replace(original_port_mapping, disabled_port_mapping)
+            with open("docker-compose.yml", "w", encoding="utf-8") as file:
+                file.write(filedata)
 
-    run_command(
-        ["docker", "compose", "--profile", "base", "build", "--no-cache"],
-        env={
-            "COMPOSE_DOCKER_CLI_BUILD": "1",
-            "DOCKER_BUILDKIT": "1",
-            "LIBTELIO_ENV_NAT_LAB_DEPS_TAG": LIBTELIO_ENV_NAT_LAB_DEPS_TAG,
-        },
-    )
-    run_command(
-        ["docker", "compose", "up", "-d"],
-        env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"},
-    )
+        run_command(
+            ["docker", "compose", "--profile", "base", "build", "--no-cache"],
+            env={
+                "COMPOSE_DOCKER_CLI_BUILD": "1",
+                "DOCKER_BUILDKIT": "1",
+                "LIBTELIO_ENV_NAT_LAB_DEPS_TAG": LIBTELIO_ENV_NAT_LAB_DEPS_TAG,
+            },
+        )
+        run_command(
+            ["docker", "compose", "up", "-d"],
+            env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"},
+        )
 
-    check_containers()
+        check_containers()
+    finally:
+        log_dir = "logs"
+        os.makedirs(log_dir, exist_ok=True)
+        dmesg = get_dmesg_from_host()
+        if dmesg:
+            with open(os.path.join(log_dir, "dmesg.txt"), "w", encoding="utf-8") as f:
+                f.write(dmesg)
+
+
+def get_dmesg_from_host():
+    try:
+        return subprocess.run(
+            ["sudo", "dmesg", "-d", "-T"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    except subprocess.CalledProcessError as e:
+        print(f"Error executing dmesg: {e}")
+        return None
 
 
 def stop():
