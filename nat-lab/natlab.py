@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 from typing import List
@@ -66,6 +67,7 @@ def start():
         if dmesg:
             with open(os.path.join(log_dir, "dmesg.txt"), "w", encoding="utf-8") as f:
                 f.write(dmesg)
+        save_audit_log()
 
 
 def get_dmesg_from_host():
@@ -79,6 +81,17 @@ def get_dmesg_from_host():
     except subprocess.CalledProcessError as e:
         print(f"Error executing dmesg: {e}")
         return None
+
+
+def save_audit_log():
+    try:
+        source_path = "/var/log/audit/audit.log"
+        if os.path.exists(source_path):
+            shutil.copy2(source_path, "logs/audit.log")
+        else:
+            print(f"The audit file {source_path} does not exist.")
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        print(f"An error occurred when processing audit log: {e}")
 
 
 def stop():
