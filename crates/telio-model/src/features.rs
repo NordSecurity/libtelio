@@ -379,7 +379,7 @@ impl Default for FeatureValidateKeys {
 }
 
 /// Control which battery optimizations are turned on
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct FeatureEndpointProvidersOptimization {
     /// Controls whether Stun endpoint provider should be turned off when there are no proxying peers
     #[serde(default = "FeatureEndpointProvidersOptimization::default_optimization_variant")]
@@ -393,6 +393,15 @@ impl FeatureEndpointProvidersOptimization {
     /// Turning optimizations on by default if feature itself is enabled
     pub fn default_optimization_variant() -> bool {
         true
+    }
+}
+
+impl Default for FeatureEndpointProvidersOptimization {
+    fn default() -> Self {
+        Self {
+            optimize_direct_upgrade_stun: true,
+            optimize_direct_upgrade_upnp: true,
+        }
     }
 }
 
@@ -459,7 +468,7 @@ where
 }
 
 /// Turns on the no link detection mechanism
-#[derive(Default, Copy, Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct FeatureLinkDetection {
     /// Configurable rtt in seconds
     #[serde(default = "FeatureLinkDetection::default_configurable_rtt")]
@@ -485,6 +494,16 @@ impl FeatureLinkDetection {
 
     const fn default_use_for_downgrade() -> bool {
         false
+    }
+}
+
+impl Default for FeatureLinkDetection {
+    fn default() -> Self {
+        Self {
+            rtt_seconds: Self::default_configurable_rtt(),
+            no_of_pings: Self::default_no_of_pings(),
+            use_for_downgrade: Self::default_use_for_downgrade(),
+        }
     }
 }
 
@@ -582,6 +601,7 @@ pub struct Features {
     pub dns: FeatureDns,
     /// PMTU discovery configuration, enabled by default
     #[serde(default = "FeaturePmtuDiscovery::serde_default")]
+    #[default(FeaturePmtuDiscovery::serde_default())]
     pub pmtu_discovery: Option<FeaturePmtuDiscovery>,
     /// Multicast support
     #[serde(default)]
@@ -596,660 +616,347 @@ impl Features {
 
 #[cfg(test)]
 mod tests {
-    use once_cell::sync::Lazy;
     use serde_json::from_str;
 
     use super::*;
 
-    const CORRECT_FEATURES_JSON_WITHOUT_IS_TEST_ENV: &str = r#"
-        {
-            "wireguard":
-            {
-                "persistent_keepalive": {
-                    "vpn": null,
-                    "stun": 50
-                }
-            },
-            "nurse":{},
-            "lana":
-            {
-                "event_path": "path/to/some/event/data",
-                "prod": true
-            },
-            "paths":
-            {
-                "priority": ["relay", "direct"],
-                "force": "relay"
-            },
-            "direct": {},
-            "dns": {
-                "exit_dns": {}
-            }
-        }"#;
+    mod deserialization {
+        use super::*;
 
-    const CORRECT_FEATURES_JSON_WITH_ALL_OPTIONAL: &str = r#"
+        #[test]
+        fn test_empty_json() {
+            let json = "{}";
+            let features = from_str::<Features>(json).unwrap();
+            assert_eq!(features, Features::default());
+        }
+
+        #[test]
+        fn test_all_fields_with_non_default_values() {
+            let json = r#"
         {
-            "wireguard":
-            {
+            "wireguard": {
                 "persistent_keepalive": {
-                    "vpn": null,
-                    "stun": 50
+                    "vpn": 1,
+                    "direct": 2,
+                    "proxying": 3,
+                    "stun": 4
                 }
             },
-            "nurse": {},
-            "lana":
-            {
-                "event_path": "path/to/some/event/data",
+            "nurse": {
+                "fingerprint": "test_fingerprint",
+                "heartbeat_interval": 5,
+                "initial_heartbeat_interval": 6,
+                "qos": {
+                    "rtt_interval": 7,
+                    "rtt_tries": 8,
+                    "rtt_types": ["Ping"],
+                    "buckets": 9
+                },
+                "enable_nat_type_collection": true,
+                "enable_relay_conn_data": false,
+                "enable_nat_traversal_conn_data": false,
+                "state_duration_cap": 10
+            },
+            "lana": {
+                "event_path": "some/test/path.db",
                 "prod": true
             },
-            "paths":
-            {
-                "priority": ["relay", "direct"],
+            "paths": {
+                "priority": ["direct"],
                 "force": "relay"
             },
-            "direct":
-            {
-                "providers": 42,
-                "endpoint_interval_secs": 10,
-                "skip_unresponsive_peers":
-                {
-                    "enabled": true,
-                    "no_rx_threshold_secs": 50
+            "direct": {
+                "providers": ["local"],
+                "endpoint_interval_secs": 11,
+                "skip_unresponsive_peers": {
+                    "no_rx_threshold_secs": 12
+                },
+                "endpoint_providers_optimization": {
+                    "optimize_direct_upgrade_stun": false,
+                    "optimize_direct_upgrade_upnp": false
                 }
             },
             "is_test_env": true,
-            "derp":
-            {
-                "tcp_keepalive": 1,
-                "derp_keepalive": 2,
-                "enable_polling": true
+            "derp": {
+                "tcp_keepalive": 13,
+                "derp_keepalive": 14,
+                "enable_polling": true,
+                "use_built_in_root_certificates": true
             },
             "validate_keys": false,
             "ipv6": true,
             "nicknames": true,
-            "firewall": {"boringtun_reset_conns": true},
-            "post_quantum_vpn":
-            {
-                "handshake_retry_interval_s": 16,
-                "rekey_interval_s": 120
+            "firewall": {
+                "boringtun_reset_conns": true
             },
-            "dns":
-            {
-                "exit_dns":
-                {
-                    "auto_switch_dns_ips": true
-                },
-                "ttl_value": 60
+            "flush_events_on_stop_timeout_seconds": 15,
+            "post_quantum_vpn": {
+                "handshake_retry_interval_s": 15,
+                "rekey_interval_s": 16
             },
-            "pmtu_discovery": null,
-            "multicast": false
-        }"#;
-
-    static EXPECTED_FEATURES_WITH_IS_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
-        wireguard: FeatureWireguard {
-            persistent_keepalive: FeaturePersistentKeepalive {
-                vpn: None,
-                direct: 5,
-                proxying: Some(25),
-                stun: Some(50),
+            "link_detection": {
+                "rtt_seconds": 17,
+                "no_of_pings": 18,
+                "use_for_downgrade": true
             },
-        },
-        nurse: Some(FeatureNurse {
-            heartbeat_interval: 3600,
-            initial_heartbeat_interval: 300,
-            qos: Some(FeatureQoS {
-                rtt_interval: 300,
-                rtt_tries: 3,
-                rtt_types: vec![RttType::Ping],
-                buckets: 5,
-            }),
-            enable_nat_type_collection: false,
-            enable_relay_conn_data: true,
-            enable_nat_traversal_conn_data: true,
-            state_duration_cap: FeatureNurse::default_state_duration_cap_in_seconds(),
-        }),
-        lana: Some(FeatureLana {
-            event_path: "path/to/some/event/data".to_string(),
-            prod: true,
-        }),
-        paths: Some(FeaturePaths {
-            priority: vec![PathType::Relay, PathType::Direct],
-            force: Some(PathType::Relay),
-        }),
-        direct: Some(FeatureDirect {
-            providers: None,
-            endpoint_interval_secs: Some(10),
-            skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
-                no_rx_threshold_secs: 50,
-            }),
-            endpoint_providers_optimization: None,
-        }),
-        is_test_env: Some(true),
-        derp: Some(FeatureDerp {
-            tcp_keepalive: Some(1),
-            derp_keepalive: Some(2),
-            enable_polling: Some(true),
-            use_built_in_root_certificates: false,
-        }),
-        validate_keys: FeatureValidateKeys(false),
-        ipv6: true,
-        nicknames: true,
-        firewall: FeatureFirewall {
-            boringtun_reset_conns: true,
-        },
-        flush_events_on_stop_timeout_seconds: None,
-        post_quantum_vpn: FeaturePostQuantumVPN {
-            handshake_retry_interval_s: 16,
-            rekey_interval_s: 120,
-        },
-        link_detection: None,
-        dns: FeatureDns {
-            exit_dns: Some(FeatureExitDns {
-                auto_switch_dns_ips: Some(true),
-            }),
-            ttl_value: TtlValue::default(),
-        },
-        pmtu_discovery: None,
-        multicast: false,
-    });
-    static EXPECTED_FEATURES_WITHOUT_IS_TEST_ENV: Lazy<Features> = Lazy::new(|| Features {
-        wireguard: FeatureWireguard {
-            persistent_keepalive: FeaturePersistentKeepalive {
-                vpn: None,
-                direct: 5,
-                proxying: Some(25),
-                stun: Some(50),
-            },
-        },
-        nurse: Some(FeatureNurse {
-            heartbeat_interval: 3600,
-            initial_heartbeat_interval: 300,
-            qos: Some(FeatureQoS {
-                rtt_interval: 300,
-                rtt_tries: 3,
-                rtt_types: vec![RttType::Ping],
-                buckets: 5,
-            }),
-            enable_nat_type_collection: false,
-            enable_relay_conn_data: true,
-            enable_nat_traversal_conn_data: true,
-            state_duration_cap: FeatureNurse::default_state_duration_cap_in_seconds(),
-        }),
-        lana: Some(FeatureLana {
-            event_path: "path/to/some/event/data".to_string(),
-            prod: true,
-        }),
-        paths: Some(FeaturePaths {
-            priority: vec![PathType::Relay, PathType::Direct],
-            force: Some(PathType::Relay),
-        }),
-        direct: Some(FeatureDirect {
-            providers: None,
-            endpoint_interval_secs: None,
-            skip_unresponsive_peers: Some(Default::default()),
-            endpoint_providers_optimization: None,
-        }),
-        is_test_env: None,
-        derp: None,
-        validate_keys: Default::default(),
-        ipv6: false,
-        nicknames: false,
-        firewall: FeatureFirewall {
-            boringtun_reset_conns: false,
-        },
-        flush_events_on_stop_timeout_seconds: None,
-        post_quantum_vpn: Default::default(),
-        link_detection: None,
-        dns: FeatureDns {
-            exit_dns: Some(FeatureExitDns {
-                auto_switch_dns_ips: None,
-            }),
-            ttl_value: TtlValue::default(),
-        },
-        pmtu_discovery: Some(Default::default()),
-        multicast: false,
-    });
-
-    #[test]
-    fn test_json_direct_feature_set() {
-        let full_json = r#"
-        {
-            "providers": ["local", "stun"],
-            "endpoint_interval_secs": 30,
-            "skip_unresponsive_peers": {
-                "no_rx_threshold_secs": 42
-            }
-        }"#;
-
-        let partial_json = r#"
-        {
-            "providers": ["local"]
-        }"#;
-
-        let full_features = FeatureDirect {
-            providers: Some(
-                vec![EndpointProvider::Local, EndpointProvider::Stun]
-                    .into_iter()
-                    .collect(),
-            ),
-            endpoint_interval_secs: Some(30),
-            skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
-                no_rx_threshold_secs: 42,
-            }),
-            endpoint_providers_optimization: None,
-        };
-
-        let partial_features = FeatureDirect {
-            providers: Some(vec![EndpointProvider::Local].into_iter().collect()),
-            endpoint_interval_secs: None,
-            skip_unresponsive_peers: Some(Default::default()),
-            endpoint_providers_optimization: None,
-        };
-
-        assert_eq!(from_str::<FeatureDirect>(full_json).unwrap(), full_features);
-        assert_eq!(
-            from_str::<FeatureDirect>(partial_json).unwrap(),
-            partial_features
-        );
-    }
-
-    #[test]
-    fn test_json_direct_accepts_arbitrary_providers() {
-        let arbitrery_providers_json = r#"
-        {
-            "providers": ["local", "stun", "other", "none"]
-        }"#;
-
-        let parsed_feature = FeatureDirect {
-            providers: Some(
-                vec![EndpointProvider::Local, EndpointProvider::Stun]
-                    .into_iter()
-                    .collect(),
-            ),
-            ..Default::default()
-        };
-
-        assert_eq!(
-            from_str::<FeatureDirect>(arbitrery_providers_json).unwrap(),
-            parsed_feature
-        );
-    }
-
-    #[test]
-    fn test_json_direct_allow_empty() {
-        // Custom deserialize needs default to make Option None
-
-        let empty_json = r#"{}"#;
-
-        let parsed_feature = FeatureDirect::default();
-
-        assert_eq!(
-            from_str::<FeatureDirect>(empty_json).unwrap(),
-            parsed_feature
-        );
-    }
-
-    #[test]
-    fn test_json_to_qos_feature_set() {
-        let full_json = r#"
-        {
-            "rtt_interval": 3600,
-            "rtt_tries": 10,
-            "rtt_types": ["Ping"],
-            "buckets": 7
-        }"#;
-
-        let partial_json = r#"
-        {
-            "rtt_interval": 3600
-        }"#;
-
-        let full_features = FeatureQoS {
-            rtt_interval: 3600,
-            rtt_tries: 10,
-            rtt_types: vec![RttType::Ping],
-            buckets: 7,
-        };
-
-        let partial_features = FeatureQoS {
-            rtt_interval: 3600,
-            rtt_tries: FeatureQoS::default_rtt_tries(),
-            rtt_types: FeatureQoS::default_rtt_types(),
-            buckets: FeatureQoS::default_buckets(),
-        };
-
-        assert_eq!(from_str::<FeatureQoS>(full_json).unwrap(), full_features);
-        assert_eq!(
-            from_str::<FeatureQoS>(partial_json).unwrap(),
-            partial_features
-        );
-    }
-
-    #[test]
-    #[cfg(not(any(target_os = "macos", feature = "pretend_to_be_macos")))]
-    fn test_json_to_nurse_feature_set() {
-        let full_json = r#"
-        {
-            "nurse": {
-                "heartbeat_interval": 3600,
-                "initial_heartbeat_interval": 300,
-                "qos": {
-                    "rtt_interval": 3600,
-                    "rtt_tries": 5,
-                    "rtt_types": ["Ping"],
-                    "buckets": 5
-                }
-            }
-        }"#;
-
-        let empty_qos_json = r#"
-        {
-            "nurse": {
-                "enable_relay_conn_data": false,
-                "enable_nat_traversal_conn_data": true,
-                "qos": {}
-            }
-        }"#;
-
-        let no_qos_json = r#"
-        {
-            "nurse": {
-                "enable_relay_conn_data": false,
-                "enable_nat_traversal_conn_data": true
-            }
-        }"#;
-
-        let disabled_qos_json = r#"
-        {
-            "nurse": {
-                "enable_relay_conn_data": false,
-                "enable_nat_traversal_conn_data": false,
-                "qos": null
-            }
-        }"#;
-
-        let full_features = Features {
-            wireguard: Default::default(),
-            nurse: Some(FeatureNurse {
-                heartbeat_interval: 3600,
-                initial_heartbeat_interval: 300,
-                qos: Some(FeatureQoS {
-                    rtt_interval: 3600,
-                    rtt_tries: 5,
-                    rtt_types: vec![RttType::Ping],
-                    buckets: 5,
-                }),
-                enable_nat_type_collection: false,
-                enable_relay_conn_data: true,
-                enable_nat_traversal_conn_data: true,
-                state_duration_cap: FeatureNurse::default_state_duration_cap_in_seconds(),
-            }),
-            lana: None,
-            paths: None,
-            direct: None,
-            is_test_env: None,
-            derp: None,
-            validate_keys: Default::default(),
-            ipv6: false,
-            nicknames: false,
-            firewall: Default::default(),
-            flush_events_on_stop_timeout_seconds: None,
-            post_quantum_vpn: Default::default(),
-            link_detection: None,
-            dns: FeatureDns {
-                exit_dns: None,
-                ttl_value: TtlValue::default(),
-            },
-            pmtu_discovery: Some(Default::default()),
-            multicast: false,
-        };
-
-        let empty_or_no_qos_features = Features {
-            wireguard: Default::default(),
-            nurse: Some(FeatureNurse {
-                heartbeat_interval: 3600,
-                initial_heartbeat_interval: 300,
-                qos: Some(FeatureQoS {
-                    rtt_interval: 300,
-                    rtt_tries: FeatureQoS::default_rtt_tries(),
-                    rtt_types: FeatureQoS::default_rtt_types(),
-                    buckets: FeatureQoS::default_buckets(),
-                }),
-                enable_nat_type_collection: false,
-                enable_relay_conn_data: false,
-                enable_nat_traversal_conn_data: true,
-                state_duration_cap: FeatureNurse::default_state_duration_cap_in_seconds(),
-            }),
-            lana: None,
-            paths: None,
-            direct: None,
-            is_test_env: None,
-            derp: None,
-            validate_keys: Default::default(),
-            ipv6: false,
-            nicknames: false,
-            firewall: Default::default(),
-            flush_events_on_stop_timeout_seconds: None,
-            post_quantum_vpn: Default::default(),
-            link_detection: None,
-            dns: FeatureDns {
-                exit_dns: None,
-                ttl_value: TtlValue::default(),
-            },
-            pmtu_discovery: Some(Default::default()),
-            multicast: false,
-        };
-
-        let disabled_qos_features = Features {
-            wireguard: Default::default(),
-            nurse: Some(FeatureNurse {
-                heartbeat_interval: 3600,
-                initial_heartbeat_interval: 300,
-                qos: None,
-                enable_nat_type_collection: false,
-                enable_relay_conn_data: false,
-                enable_nat_traversal_conn_data: false,
-                state_duration_cap: FeatureNurse::default_state_duration_cap_in_seconds(),
-            }),
-            lana: None,
-            paths: None,
-            direct: None,
-            is_test_env: None,
-            derp: None,
-            validate_keys: Default::default(),
-            ipv6: false,
-            nicknames: false,
-            firewall: Default::default(),
-            flush_events_on_stop_timeout_seconds: None,
-            post_quantum_vpn: Default::default(),
-            link_detection: None,
-            dns: FeatureDns {
-                exit_dns: None,
-                ttl_value: TtlValue::default(),
-            },
-            pmtu_discovery: Some(Default::default()),
-            multicast: false,
-        };
-
-        assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
-        assert_eq!(
-            from_str::<Features>(empty_qos_json).unwrap(),
-            empty_or_no_qos_features
-        );
-        assert_eq!(
-            from_str::<Features>(no_qos_json).unwrap(),
-            empty_or_no_qos_features
-        );
-        assert_eq!(
-            from_str::<Features>(disabled_qos_json).unwrap(),
-            disabled_qos_features
-        );
-    }
-
-    #[test]
-    #[cfg(not(any(target_os = "macos", feature = "pretend_to_be_macos")))]
-    fn test_json_to_exit_dns_feature_set() {
-        let full_json = r#"
-        {
             "dns": {
+                "ttl_value": 19,
                 "exit_dns": {
                     "auto_switch_dns_ips": true
                 }
-            }
-        }"#;
+            },
+            "pmtu_discovery": {
+                "response_wait_timeout_s": 20
+            },
+            "multicast": true
+        }
+        "#;
+            let actual = from_str::<Features>(json).unwrap();
 
-        let empty_json = r#"
-        {
-            "dns": {
-                "exit_dns": {}
-            }
-        }"#;
-
-        let full_features = Features {
-            wireguard: Default::default(),
-            nurse: Features::default_nurse(),
-            lana: None,
-            paths: None,
-            direct: None,
-            is_test_env: None,
-            derp: None,
-            validate_keys: Default::default(),
-            ipv6: false,
-            nicknames: false,
-            firewall: Default::default(),
-            flush_events_on_stop_timeout_seconds: None,
-            post_quantum_vpn: Default::default(),
-            link_detection: None,
-            dns: FeatureDns {
-                exit_dns: Some(FeatureExitDns {
-                    auto_switch_dns_ips: Some(true),
+            let mut endpoint_providers = HashSet::new();
+            endpoint_providers.insert(EndpointProvider::Local);
+            let expected = Features {
+                wireguard: FeatureWireguard {
+                    persistent_keepalive: FeaturePersistentKeepalive {
+                        vpn: Some(1),
+                        direct: 2,
+                        proxying: Some(3),
+                        stun: Some(4),
+                    },
+                },
+                nurse: Some(FeatureNurse {
+                    heartbeat_interval: 5,
+                    initial_heartbeat_interval: 6,
+                    qos: Some(FeatureQoS {
+                        rtt_interval: 7,
+                        rtt_tries: 8,
+                        rtt_types: vec![RttType::Ping],
+                        buckets: 9,
+                    }),
+                    enable_nat_type_collection: true,
+                    enable_relay_conn_data: false,
+                    enable_nat_traversal_conn_data: false,
+                    state_duration_cap: 10,
                 }),
-                ttl_value: TtlValue::default(),
-            },
-            pmtu_discovery: Some(Default::default()),
-            multicast: false,
-        };
-
-        let empty_features = Features {
-            wireguard: Default::default(),
-            nurse: Features::default_nurse(),
-            lana: None,
-            paths: None,
-            direct: None,
-            is_test_env: None,
-            derp: None,
-            validate_keys: Default::default(),
-            ipv6: false,
-            nicknames: false,
-            firewall: Default::default(),
-            flush_events_on_stop_timeout_seconds: None,
-            post_quantum_vpn: Default::default(),
-            link_detection: None,
-            dns: FeatureDns {
-                exit_dns: Some(FeatureExitDns {
-                    auto_switch_dns_ips: None,
+                lana: Some(FeatureLana {
+                    event_path: "some/test/path.db".to_owned(),
+                    prod: true,
                 }),
-                ttl_value: TtlValue::default(),
-            },
-            pmtu_discovery: Some(Default::default()),
-            multicast: false,
-        };
+                paths: Some(FeaturePaths {
+                    priority: vec![PathType::Direct],
+                    force: Some(PathType::Relay),
+                }),
+                direct: Some(FeatureDirect {
+                    providers: Some(endpoint_providers),
+                    endpoint_interval_secs: Some(11),
+                    skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
+                        no_rx_threshold_secs: 12,
+                    }),
+                    endpoint_providers_optimization: Some(FeatureEndpointProvidersOptimization {
+                        optimize_direct_upgrade_stun: false,
+                        optimize_direct_upgrade_upnp: false,
+                    }),
+                }),
+                is_test_env: Some(true),
+                derp: Some(FeatureDerp {
+                    tcp_keepalive: Some(13),
+                    derp_keepalive: Some(14),
+                    enable_polling: Some(true),
+                    use_built_in_root_certificates: true,
+                }),
+                validate_keys: FeatureValidateKeys(false),
+                ipv6: true,
+                nicknames: true,
+                firewall: FeatureFirewall {
+                    boringtun_reset_conns: true,
+                },
+                flush_events_on_stop_timeout_seconds: Some(15),
+                post_quantum_vpn: FeaturePostQuantumVPN {
+                    handshake_retry_interval_s: 15,
+                    rekey_interval_s: 16,
+                },
+                link_detection: Some(FeatureLinkDetection {
+                    rtt_seconds: 17,
+                    no_of_pings: 18,
+                    use_for_downgrade: true,
+                }),
+                dns: FeatureDns {
+                    ttl_value: TtlValue(19),
+                    exit_dns: Some(FeatureExitDns {
+                        auto_switch_dns_ips: Some(true),
+                    }),
+                },
+                pmtu_discovery: Some(FeaturePmtuDiscovery {
+                    response_wait_timeout_s: 20,
+                }),
+                multicast: true,
+            };
 
-        assert_eq!(from_str::<Features>(full_json).unwrap(), full_features);
-        assert_eq!(from_str::<Features>(empty_json).unwrap(), empty_features);
-    }
+            assert_eq!(actual, expected);
+        }
 
-    #[test]
-    fn test_json_allow_null_for_wireguard() {
-        let empty_json = r#"
-        {
-            "wireguard": null
-        }"#;
+        #[test]
+        fn test_empty_wireguard() {
+            let json = r#"{"wireguard": {}}"#;
+            let actual = from_str::<Features>(json).unwrap().wireguard;
+            let expected = FeatureWireguard::default();
+            assert_eq!(actual, expected);
+        }
 
-        let empty_features = Features {
-            wireguard: Default::default(),
-            nurse: Features::default_nurse(),
-            lana: None,
-            paths: None,
-            direct: None,
-            is_test_env: None,
-            derp: None,
-            validate_keys: Default::default(),
-            ipv6: false,
-            nicknames: false,
-            firewall: Default::default(),
-            flush_events_on_stop_timeout_seconds: None,
-            post_quantum_vpn: Default::default(),
-            link_detection: Default::default(),
-            dns: FeatureDns {
-                exit_dns: None,
-                ttl_value: TtlValue::default(),
-            },
-            pmtu_discovery: Some(Default::default()),
-            multicast: false,
-        };
+        #[test]
+        fn test_empty_wireguard_persistent_keepalive() {
+            let json = r#"{"wireguard": {"persistent_keepalive": {}}}"#;
+            let actual = from_str::<Features>(json)
+                .unwrap()
+                .wireguard
+                .persistent_keepalive;
+            let expected = FeaturePersistentKeepalive::default();
+            assert_eq!(actual, expected);
+        }
 
-        assert_eq!(from_str::<Features>(empty_json).unwrap(), empty_features);
-    }
+        #[test]
+        fn test_empty_nurse() {
+            let json = r#"{"nurse": {"fingerprint": ""}}"#;
+            let actual = from_str::<Features>(json).unwrap().nurse.unwrap();
+            let expected = FeatureNurse::default();
+            assert_eq!(actual, expected);
+        }
 
-    #[test]
-    fn test_json_fail_on_invalid_wireguard() {
-        let empty_json = r#"
-        {
-            "wireguard": 123
-        }"#;
+        #[test]
+        fn test_empty_nurse_qos() {
+            let json = r#"{"nurse": {"fingerprint": "", "qos": {}}}"#;
+            let actual = from_str::<Features>(json)
+                .unwrap()
+                .nurse
+                .unwrap()
+                .qos
+                .unwrap();
+            let expected = FeatureQoS::default();
+            assert_eq!(actual, expected);
+        }
 
-        assert!(from_str::<Features>(empty_json).is_err());
-    }
+        #[test]
+        fn test_empty_paths() {
+            let json = r#"{"paths": {"priority": []}}"#;
+            let actual = from_str::<Features>(json).unwrap().paths.unwrap();
+            let expected = FeaturePaths::default();
+            assert_eq!(actual, expected);
+        }
 
-    #[test]
-    fn test_json_without_is_test_env_to_feature_set() {
-        let deserialization: Result<Features, _> =
-            from_str(CORRECT_FEATURES_JSON_WITHOUT_IS_TEST_ENV);
-        assert_eq!(
-            deserialization.unwrap(),
-            *EXPECTED_FEATURES_WITHOUT_IS_TEST_ENV
-        );
-    }
+        #[test]
+        fn test_empty_direct() {
+            let json = r#"{"direct": {}}"#;
+            let actual = from_str::<Features>(json).unwrap().direct.unwrap();
+            let expected = FeatureDirect::default();
+            assert_eq!(actual, expected);
+        }
 
-    #[test]
-    fn test_json_with_is_test_env_to_feature_set() {
-        let deserialization: Result<Features, _> =
-            from_str(CORRECT_FEATURES_JSON_WITH_ALL_OPTIONAL);
+        #[test]
+        fn test_empty_direct_skip_unresponsive_peers() {
+            let json = r#"{"direct": {"skip_unresponsive_peers": {}}}"#;
+            let actual = from_str::<Features>(json)
+                .unwrap()
+                .direct
+                .unwrap()
+                .skip_unresponsive_peers
+                .unwrap();
+            let expected = FeatureSkipUnresponsivePeers::default();
+            assert_eq!(actual, expected);
+        }
 
-        assert_eq!(
-            deserialization.unwrap(),
-            *EXPECTED_FEATURES_WITH_IS_TEST_ENV
-        );
-    }
+        #[test]
+        fn test_empty_direct_endpoint_providers_optimization() {
+            let json = r#"{"direct": {"endpoint_providers_optimization": {}}}"#;
+            let actual = from_str::<Features>(json)
+                .unwrap()
+                .direct
+                .unwrap()
+                .endpoint_providers_optimization
+                .unwrap();
+            let expected = FeatureEndpointProvidersOptimization::default();
+            assert_eq!(actual, expected);
+        }
 
-    #[test]
-    #[cfg(not(any(target_os = "macos", feature = "pretend_to_be_macos")))]
-    fn test_default_features() {
-        let expected_defaults = Features {
-            wireguard: Default::default(),
-            nurse: Features::default_nurse(),
-            lana: None,
-            paths: None,
-            direct: None,
-            is_test_env: None,
-            derp: None,
-            validate_keys: Default::default(),
-            ipv6: false,
-            nicknames: false,
-            firewall: Default::default(),
-            flush_events_on_stop_timeout_seconds: None,
-            post_quantum_vpn: Default::default(),
-            link_detection: None,
-            dns: FeatureDns {
-                exit_dns: None,
-                ttl_value: TtlValue::default(),
-            },
-            pmtu_discovery: Default::default(),
-            multicast: false,
-        };
+        #[test]
+        fn test_empty_derp() {
+            let json = r#"{"derp": {}}"#;
+            let actual = from_str::<Features>(json).unwrap().derp.unwrap();
+            let expected = FeatureDerp::default();
+            assert_eq!(actual, expected);
+        }
 
-        assert_eq!(Features::default(), expected_defaults);
+        #[test]
+        fn test_empty_firewall() {
+            let json = r#"{"firewall": {}}"#;
+            let actual = from_str::<Features>(json).unwrap().firewall;
+            let expected = FeatureFirewall::default();
+            assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn test_empty_post_quantum_vpn() {
+            let json = r#"{"post_quantum_vpn": {}}"#;
+            let actual = from_str::<Features>(json).unwrap().post_quantum_vpn;
+            let expected = FeaturePostQuantumVPN::default();
+            assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn test_empty_link_detection() {
+            let json = r#"{"link_detection": {}}"#;
+            let actual = from_str::<Features>(json).unwrap().link_detection.unwrap();
+            let expected = FeatureLinkDetection::default();
+            assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn test_empty_dns() {
+            let json = r#"{"dns": {}}"#;
+            let actual = from_str::<Features>(json).unwrap().dns;
+            let expected = FeatureDns::default();
+            assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn test_empty_dns_exit_dns() {
+            let json = r#"{"dns": {"exit_dns": {}}}"#;
+            let actual = from_str::<Features>(json).unwrap().dns.exit_dns.unwrap();
+            let expected = FeatureExitDns::default();
+            assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn test_empty_pmtu_discovery() {
+            let json = r#"{"pmtu_discovery": {}}"#;
+            let actual = from_str::<Features>(json).unwrap().pmtu_discovery.unwrap();
+            let expected = FeaturePmtuDiscovery::default();
+            assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn test_json_direct_accepts_arbitrary_providers() {
+            let json = r#"{"providers": ["local", "stun", "stun", "stun", "other", "none"]}"#;
+
+            let actual = from_str::<FeatureDirect>(json).unwrap();
+            let expected = FeatureDirect {
+                providers: Some(
+                    vec![EndpointProvider::Local, EndpointProvider::Stun]
+                        .into_iter()
+                        .collect(),
+                ),
+                ..Default::default()
+            };
+
+            assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn test_json_allow_null_for_wireguard() {
+            let json = r#"{"wireguard": null}"#;
+            let actual = from_str::<Features>(json).unwrap().wireguard;
+            let expected = FeatureWireguard::default();
+            assert_eq!(actual, expected);
+        }
     }
 
     #[test]
@@ -1278,175 +985,5 @@ mod tests {
             .paths(),
             vec![PathType::Direct]
         );
-    }
-
-    mod multicast {
-        use super::*;
-
-        #[test]
-        fn test_multicast_missing() {
-            let empty_json = "{}";
-            let features = from_str::<Features>(empty_json).unwrap();
-            assert!(!features.multicast);
-        }
-
-        #[test]
-        fn test_multicast_true() {
-            let multicast_true = r#"
-            {
-                "multicast": true
-            }"#;
-            let features = from_str::<Features>(multicast_true).unwrap();
-            assert!(features.multicast);
-        }
-
-        #[test]
-        fn test_multicast_false() {
-            let multicast_false = r#"
-            {
-                "multicast": false
-            }"#;
-            let features = from_str::<Features>(multicast_false).unwrap();
-            assert!(!features.multicast);
-        }
-
-        #[test]
-        fn test_multicast_invalid() {
-            for invalid in [
-                r#"
-            {
-                "multicast": 123
-            }"#,
-                r#"
-            {
-                "multicast": null
-            }"#,
-                r#"
-            {
-                "multicast": "abc"
-            }"#,
-            ] {
-                assert!(from_str::<Features>(invalid).is_err());
-            }
-        }
-    }
-
-    mod firewall {
-        use super::*;
-
-        #[test]
-        fn test_firewall_missing() {
-            let empty_json = "{}";
-            let features = from_str::<Features>(empty_json).unwrap();
-            assert!(!features.firewall.boringtun_reset_conns);
-        }
-
-        #[test]
-        fn test_firewall_boringtun_reset_conns_true() {
-            let boringtun_reset_conns_true = r#"
-            {
-                "firewall": {"boringtun_reset_conns": true}
-            }"#;
-            let features = from_str::<Features>(boringtun_reset_conns_true).unwrap();
-            assert!(features.firewall.boringtun_reset_conns);
-        }
-
-        #[test]
-        fn test_firewall_boringtun_reset_conns_false() {
-            let boringtun_reset_conns_false = r#"
-            {
-                "firewall": {"boringtun_reset_conns": false}
-            }"#;
-            let features = from_str::<Features>(boringtun_reset_conns_false).unwrap();
-            assert!(!features.firewall.boringtun_reset_conns);
-        }
-
-        #[test]
-        fn test_firewall_boringtun_reset_conns_invalid() {
-            for invalid in [
-                r#"
-            {
-                "firewall": {"boringtun_reset_conns": 123}
-            }"#,
-                r#"
-            {
-                "firewall": {"boringtun_reset_conns": null}
-            }"#,
-                r#"
-            {
-                "firewall": {"boringtun_reset_conns": "abc"}
-            }"#,
-            ] {
-                assert!(from_str::<Features>(invalid).is_err());
-            }
-        }
-    }
-
-    mod nurse {
-        use super::*;
-
-        #[test]
-        fn test_nurse_missing() {
-            let json = "{}";
-            let features = from_str::<Features>(json).unwrap();
-            assert_eq!(features.nurse, Features::default_nurse());
-        }
-
-        #[test]
-        fn test_nurse_null() {
-            let json = r#"{"nurse":null}"#;
-            let features = from_str::<Features>(json).unwrap();
-            assert!(features.nurse.is_none());
-        }
-
-        #[test]
-        fn test_nurse_empty() {
-            let json = r#"{"nurse":{}}"#;
-            let features = from_str::<Features>(json).unwrap();
-            assert_eq!(features.nurse, Features::default_nurse());
-        }
-        mod state_duration_cap {
-            use super::*;
-
-            #[test]
-            fn test_state_duration_cap_missing() {
-                let missing = r#"{}"#;
-                let features = from_str::<FeatureNurse>(missing).unwrap();
-                assert_eq!(
-                    features.state_duration_cap,
-                    FeatureNurse::default_state_duration_cap_in_seconds()
-                );
-            }
-
-            #[test]
-            fn test_state_duration_cap_number() {
-                let nurse = r#"
-            {
-                "state_duration_cap": 123
-            }"#;
-                let features = from_str::<FeatureNurse>(nurse).unwrap();
-                assert_eq!(features.state_duration_cap, 123);
-            }
-
-            #[test]
-            fn test_state_duration_cap_invalid() {
-                for invalid in [
-                    r#"
-            {
-                "state_duration_cap": false
-            }"#,
-                    r#"
-            {
-                "state_duration_cap": null
-            }"#,
-                    r#"
-            {
-                "test", "state_duration_cap": "abc"
-            }"#,
-                ] {
-                    assert!(from_str::<FeatureNurse>(invalid).is_err());
-                }
-            }
-        }
     }
 }
