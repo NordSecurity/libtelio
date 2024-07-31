@@ -2024,7 +2024,6 @@ dependencies = [
  "base64 0.13.1",
  "clap 4.5.4",
  "crypto_box",
- "env_logger",
  "futures",
  "itertools",
  "ring",
@@ -2035,6 +2034,8 @@ dependencies = [
  "telio-sockets",
  "tokio",
  "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
  "url",
 ]
 
