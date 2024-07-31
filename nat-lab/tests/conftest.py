@@ -4,8 +4,10 @@ import time
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_connections
 from interderp_cli import InterDerpClient
+from mesh_api import start_tcpdump, stop_tcpdump
 from telio import AdapterType
 from typing import List, Tuple
+from utils.connection import DockerConnection
 from utils.connection_util import ConnectionTag, LAN_ADDR_MAP
 from utils.router import IPStack
 from utils.vm import windows_vm_util, mac_vm_util
@@ -97,28 +99,38 @@ async def setup_check_interderp():
         connection = (
             await setup_connections(exit_stack, [ConnectionTag.DOCKER_CONE_CLIENT_1])
         )[0].connection
+        if isinstance(connection, DockerConnection):
+            start_tcpdump(connection.container_name())
+            derp_test_12 = InterDerpClient(
+                connection,
+                DERP_SERVER_1_ADDR,
+                DERP_SERVER_2_ADDR,
+                DERP_SERVER_1_SECRET_KEY,
+                DERP_SERVER_2_SECRET_KEY,
+            )
+            await derp_test_12.execute()
+            await derp_test_12.save_logs(1)
 
-        await InterDerpClient(
-            connection,
-            DERP_SERVER_1_ADDR,
-            DERP_SERVER_2_ADDR,
-            DERP_SERVER_1_SECRET_KEY,
-            DERP_SERVER_2_SECRET_KEY,
-        ).execute()
-        await InterDerpClient(
-            connection,
-            DERP_SERVER_2_ADDR,
-            DERP_SERVER_3_ADDR,
-            DERP_SERVER_1_SECRET_KEY,
-            DERP_SERVER_2_SECRET_KEY,
-        ).execute()
-        await InterDerpClient(
-            connection,
-            DERP_SERVER_3_ADDR,
-            DERP_SERVER_1_ADDR,
-            DERP_SERVER_1_SECRET_KEY,
-            DERP_SERVER_2_SECRET_KEY,
-        ).execute()
+            derp_test_23 = InterDerpClient(
+                connection,
+                DERP_SERVER_2_ADDR,
+                DERP_SERVER_3_ADDR,
+                DERP_SERVER_1_SECRET_KEY,
+                DERP_SERVER_2_SECRET_KEY,
+            )
+            await derp_test_23.execute()
+            await derp_test_23.save_logs(2)
+
+            derp_test_31 = InterDerpClient(
+                connection,
+                DERP_SERVER_3_ADDR,
+                DERP_SERVER_1_ADDR,
+                DERP_SERVER_1_SECRET_KEY,
+                DERP_SERVER_2_SECRET_KEY,
+            )
+            await derp_test_31.execute()
+            await derp_test_31.save_logs(3)
+            stop_tcpdump([connection.container_name()])
 
 
 SETUP_CHECKS = [

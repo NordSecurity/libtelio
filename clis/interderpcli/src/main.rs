@@ -13,6 +13,8 @@ use telio_relay::{
 use telio_sockets::{NativeProtector, SocketPool};
 use tokio::{net::lookup_host, time::timeout};
 use tracing::{debug, info};
+use tracing_appender;
+use tracing_subscriber;
 use url::{Host, Url};
 
 #[derive(Parser)]
@@ -263,7 +265,16 @@ async fn single_check_scenario(opt: Opt) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    env_logger::init();
+    let (non_blocking_writer, _tracing_worker_guard) =
+        tracing_appender::non_blocking(std::fs::File::create("interderpcli.log")?);
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::level_filters::LevelFilter::TRACE)
+        .with_writer(non_blocking_writer)
+        .with_ansi(false)
+        .with_line_number(true)
+        .with_level(true)
+        .init();
+
     let opt = Opt::parse();
     let verbose = opt.verbose;
 
