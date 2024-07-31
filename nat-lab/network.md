@@ -97,6 +97,8 @@ graph LR
   direction LR
     symmetric-client-01("symmetric-client-01
         192.168.103.88")
+    symmetric-client-03("symmetric-client-03
+        192.168.103.89")
     symmetric-gw-01(["symmetric-gw-01
         10.0.254.3
         192.168.103.254"])
@@ -201,6 +203,7 @@ graph LR
   shared-client-01 -.- cone-gw-05
   cone-client-02 -.- cone-gw-02
   symmetric-client-01 -.- symmetric-gw-01
+  symmetric-client-03 -.- symmetric-gw-01
   internal-symmetric-gw-01 -..- symmetric-gw-01
   symmetric-client-02 -.- symmetric-gw-02
   internal-symmetric-client-01 -.- internal-symmetric-gw-01
