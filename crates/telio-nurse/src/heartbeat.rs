@@ -3,6 +3,7 @@ use bitflags::bitflags;
 use csv::WriterBuilder;
 use futures::FutureExt;
 use nat_detect::NatType;
+use smart_default::SmartDefault;
 use std::collections::BTreeSet;
 use std::fmt::Write;
 use std::net::{IpAddr, SocketAddr};
@@ -78,17 +79,10 @@ map_enum! {
     Unknown = Unknown,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, SmartDefault)]
 struct MeshLink {
+    #[default(MeshConnectionState::empty())]
     pub connection_state: MeshConnectionState,
-}
-
-impl Default for MeshLink {
-    fn default() -> Self {
-        MeshLink {
-            connection_state: MeshConnectionState::empty(),
-        }
-    }
 }
 
 /// Input/output channel for Heartbeat
@@ -107,7 +101,9 @@ pub struct Io {
     pub collection_trigger_channel: mc_chan::Rx<()>,
 }
 
+#[derive(SmartDefault)]
 enum NodeInfo {
+    #[default]
     Node {
         mesh_link: MeshLink,
         meshnet_id: Option<Uuid>,
@@ -116,15 +112,6 @@ enum NodeInfo {
         mesh_link: MeshLink,
         hostname: Option<String>,
     },
-}
-
-impl Default for NodeInfo {
-    fn default() -> Self {
-        NodeInfo::Node {
-            mesh_link: MeshLink::default(),
-            meshnet_id: None,
-        }
-    }
 }
 
 #[derive(Default)]

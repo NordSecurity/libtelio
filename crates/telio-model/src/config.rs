@@ -3,6 +3,7 @@
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::{from_value, Error, Value};
+use smart_default::SmartDefault;
 use telio_utils::{telio_log_error, telio_log_warn, Hidden};
 use tokio::time::Instant;
 
@@ -74,7 +75,7 @@ pub enum RelayState {
 
 /// Representation of a server, which might be used
 /// both as a Relay server and Stun Server
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, SmartDefault)]
 pub struct Server {
     /// Server region code
     pub region_code: String,
@@ -83,6 +84,7 @@ pub struct Server {
     /// Hostname of the server
     pub hostname: String,
     /// IP address of the server
+    #[default(Ipv4Addr::new(0, 0, 0, 0))]
     pub ipv4: Ipv4Addr,
     /// Port on which server listens to relay requests
     pub relay_port: u16,
@@ -132,24 +134,6 @@ impl PartialEq for Server {
         // && self.weight == other.weight
         // also probably ignore conn_state
         // && self.conn_state == other.conn_state
-    }
-}
-
-impl Default for Server {
-    fn default() -> Self {
-        Self {
-            region_code: "".to_string(),
-            name: "".to_string(),
-            hostname: "".to_string(),
-            ipv4: Ipv4Addr::new(0, 0, 0, 0),
-            relay_port: 0,
-            stun_port: 0,
-            stun_plaintext_port: 0,
-            public_key: PublicKey::default(),
-            weight: 0,
-            use_plain_text: false,
-            conn_state: RelayState::Disconnected,
-        }
     }
 }
 

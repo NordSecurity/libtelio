@@ -39,6 +39,7 @@ telio-sockets.workspace = true
 telio-task.workspace = true
 telio-utils.workspace = true
 webpki-roots = "0.25.2"
+smart-default.workspace = true
 
 [dev-dependencies]
 async-std = { version = "1.5", features = ["attributes"] }

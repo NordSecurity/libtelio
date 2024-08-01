@@ -46,6 +46,7 @@ use telio_crypto::chachabox::ChaChaBox;
 
 use generic_array::GenericArray;
 use rand::{rngs::StdRng, SeedableRng};
+use smart_default::SmartDefault;
 
 use self::{http::connect_http_and_start, http::DerpConnection};
 
@@ -154,8 +155,13 @@ impl From<&Option<FeatureDerp>> for DerpKeepaliveConfig {
     }
 }
 
+const DEFAULT_SERVER_KEEPALIVE_CONFIG: DerpKeepaliveConfig = DerpKeepaliveConfig {
+    tcp_keepalive: proto::DERP_TCP_KEEPALIVE_INTERVAL,
+    derp_keepalive: proto::DERP_KEEPALIVE_INTERVAL,
+};
+
 /// Derp configuration
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, SmartDefault)]
 pub struct Config {
     /// Secret key of local node which is used for encryption/decryption of messages to other nodes
     pub secret_key: SecretKey,
@@ -164,8 +170,10 @@ pub struct Config {
     /// Remote peer list that we accept traffic from
     pub allowed_pk: HashSet<PublicKey>,
     /// Timeout used for connecting to derp server
+    #[default(proto::TCP_CONNECT_TIMEOUT)]
     pub timeout: Duration,
     /// Keepalive values for derp connection
+    #[default(DEFAULT_SERVER_KEEPALIVE_CONFIG)]
     pub server_keepalives: DerpKeepaliveConfig,
     /// Enable mechanism for turning off keepalive to offline peers
     pub enable_polling: bool,
@@ -173,24 +181,6 @@ pub struct Config {
     pub meshnet_peers: Vec<PublicKey>,
     /// Use Mozilla's root certificates instead of OS ones [default false]
     pub use_built_in_root_certificates: bool,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Config {
-            timeout: proto::TCP_CONNECT_TIMEOUT,
-            secret_key: Default::default(),
-            allowed_pk: Default::default(),
-            servers: Default::default(),
-            server_keepalives: DerpKeepaliveConfig {
-                tcp_keepalive: proto::DERP_TCP_KEEPALIVE_INTERVAL,
-                derp_keepalive: proto::DERP_KEEPALIVE_INTERVAL,
-            },
-            enable_polling: false,
-            meshnet_peers: Default::default(),
-            use_built_in_root_certificates: false,
-        }
-    }
 }
 
 impl State {
