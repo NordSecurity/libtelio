@@ -33,6 +33,11 @@ class DockerConnection(Connection):
         )
         return process
 
+    async def read_text_file(self, path) -> str:
+        process = self.create_process(["cat", path])
+        await process.execute()
+        return process.get_stdout()
+
     async def get_ip_address(self) -> tuple[str, str]:
         details = await self._container.show()
         networks = details["NetworkSettings"]["Networks"]
