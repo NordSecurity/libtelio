@@ -1,5 +1,6 @@
 import asyncio
 import pytest
+import subprocess
 import time
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_connections
@@ -192,3 +193,22 @@ def pytest_collection_finish(session):
 
     if not asyncio.run(perform_setup_checks()):
         pytest.exit("Setup checks failed, exiting ...")
+
+
+# pylint: disable=unused-argument
+def pytest_sessionfinish(session, exitstatus):
+    num_containers = 3
+
+    for i in range(1, num_containers + 1):
+        container_name = f"nat-lab-derp-{i:02d}-1"
+        destination_path = f"logs/derp_{i:02d}_relay.log"
+
+        docker_cp_command = (
+            f"docker cp {container_name}:/etc/nordderper/relay.log {destination_path}"
+        )
+
+        try:
+            subprocess.run(docker_cp_command, shell=True, check=True)
+            print(f"Log file copied successfully from {container_name}")
+        except subprocess.CalledProcessError:
+            print(f"Error copying log file from {container_name}")
