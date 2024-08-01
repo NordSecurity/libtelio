@@ -11,9 +11,9 @@ from helpers import (
     SetupParameters,
 )
 from telio import AdapterType, PathType, State
-from telio_features import TelioFeatures, Direct
 from utils import stun
 from utils.asyncio_util import run_async_contexts
+from utils.bindings.features import features, feature_direct, EndpointProvider
 from utils.connection import TargetOS
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
@@ -224,7 +224,9 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_SHARED_CLIENT_1,
                 adapter_type=telio.AdapterType.BoringTun,
-                features=TelioFeatures(direct=Direct(providers=["stun"])),
+                features=features(
+                    direct=feature_direct(providers=[EndpointProvider.STUN])
+                ),
             ),
             marks=[],
         ),
@@ -232,7 +234,9 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_SHARED_CLIENT_1,
                 adapter_type=telio.AdapterType.LinuxNativeWg,
-                features=TelioFeatures(direct=Direct(providers=["stun"])),
+                features=features(
+                    direct=feature_direct(providers=[EndpointProvider.STUN])
+                ),
             ),
             marks=pytest.mark.linux_native,
         ),
@@ -240,7 +244,9 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=telio.AdapterType.WindowsNativeWg,
-                features=TelioFeatures(direct=Direct(providers=["stun"])),
+                features=features(
+                    direct=feature_direct(providers=[EndpointProvider.STUN])
+                ),
             ),
             marks=[
                 pytest.mark.windows,
@@ -250,7 +256,9 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type=telio.AdapterType.WireguardGo,
-                features=TelioFeatures(direct=Direct(providers=["stun"])),
+                features=features(
+                    direct=feature_direct(providers=[EndpointProvider.STUN])
+                ),
             ),
             marks=pytest.mark.windows,
         ),
@@ -258,7 +266,9 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
                 adapter_type=telio.AdapterType.BoringTun,
-                features=TelioFeatures(direct=Direct(providers=["stun"])),
+                features=features(
+                    direct=feature_direct(providers=[EndpointProvider.STUN])
+                ),
             ),
             marks=[
                 pytest.mark.mac,
@@ -273,7 +283,9 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                 adapter_type=AdapterType.BoringTun,
-                features=TelioFeatures(direct=Direct(providers=["stun"])),
+                features=features(
+                    direct=feature_direct(providers=[EndpointProvider.STUN])
+                ),
             )
         )
     ],

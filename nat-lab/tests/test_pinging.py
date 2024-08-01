@@ -5,8 +5,15 @@ from contextlib import AsyncExitStack
 from datetime import datetime
 from helpers import setup_mesh_nodes, SetupParameters
 from telio import PathType, State
-from telio_features import TelioFeatures, Direct, Nurse, Qos, Lana
 from typing import Tuple
+from utils.bindings.features import (
+    features,
+    feature_direct,
+    feature_nurse,
+    FeatureQoS,
+    FeatureLana,
+    EndpointProvider,
+)
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionTracker, ConnectionLimits
 from utils.connection_util import (
@@ -73,8 +80,8 @@ async def build_conntracker(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(
-                    direct=Direct(providers=["stun"]),
+                features=features(
+                    direct=feature_direct(providers=[EndpointProvider.STUN]),
                     ipv6=True,
                 ),
             )
@@ -87,8 +94,8 @@ async def build_conntracker(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(
-                    direct=Direct(providers=["stun"]),
+                features=features(
+                    direct=feature_direct(providers=[EndpointProvider.STUN]),
                     ipv6=True,
                 ),
             ),
@@ -112,8 +119,8 @@ async def build_conntracker(
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
                 ip_stack=IPStack.IPv4v6,
-                features=TelioFeatures(
-                    direct=Direct(providers=["stun"]),
+                features=features(
+                    direct=feature_direct(providers=[EndpointProvider.STUN]),
                     ipv6=True,
                 ),
             )
@@ -180,10 +187,10 @@ async def test_session_keeper(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(
-                    lana=Lana(prod=False, event_path="/event.db"),
-                    nurse=Nurse(
-                        qos=Qos(
+                features=features(
+                    lana=FeatureLana(prod=False, event_path="/event.db"),
+                    nurse=feature_nurse(
+                        qos=FeatureQoS(
                             rtt_interval=5, rtt_tries=1, rtt_types=["Ping"], buckets=1
                         ),
                         heartbeat_interval=10,
@@ -202,10 +209,10 @@ async def test_session_keeper(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(
-                    lana=Lana(prod=False, event_path="/event.db"),
-                    nurse=Nurse(
-                        qos=Qos(
+                features=features(
+                    lana=FeatureLana(prod=False, event_path="/event.db"),
+                    nurse=feature_nurse(
+                        qos=FeatureQoS(
                             rtt_interval=5, rtt_tries=1, rtt_types=["Ping"], buckets=1
                         ),
                         heartbeat_interval=10,
@@ -234,7 +241,7 @@ async def test_session_keeper(
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
                 ip_stack=IPStack.IPv4v6,
-                features=TelioFeatures(
+                features=features(
                     ipv6=True,
                 ),
             )

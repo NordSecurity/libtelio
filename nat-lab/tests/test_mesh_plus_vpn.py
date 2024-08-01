@@ -7,8 +7,8 @@ from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from mesh_api import API
 from telio import AdapterType, State
-from telio_features import TelioFeatures, Direct
 from utils import stun
+from utils.bindings.features import features, feature_direct, EndpointProvider
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
     generate_connection_tracker_config,
@@ -380,7 +380,11 @@ async def test_vpn_plus_mesh(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features(
+                    direct=feature_direct(
+                        providers=[EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    )
+                ),
             ),
         ),
         pytest.param(
@@ -392,7 +396,11 @@ async def test_vpn_plus_mesh(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features(
+                    direct=feature_direct(
+                        providers=[EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    )
+                ),
             ),
             marks=[
                 pytest.mark.linux_native,
@@ -407,7 +415,11 @@ async def test_vpn_plus_mesh(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features(
+                    direct=feature_direct(
+                        providers=[EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    )
+                ),
             ),
             marks=[
                 pytest.mark.windows,
@@ -422,7 +434,11 @@ async def test_vpn_plus_mesh(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features(
+                    direct=feature_direct(
+                        providers=[EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    )
+                ),
             ),
             marks=[
                 pytest.mark.windows,
@@ -437,7 +453,11 @@ async def test_vpn_plus_mesh(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features(
+                    direct=feature_direct(
+                        providers=[EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    )
+                ),
             ),
             marks=[
                 pytest.mark.mac,
@@ -456,7 +476,11 @@ async def test_vpn_plus_mesh(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features(
+                    direct=feature_direct(
+                        providers=[EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    )
+                ),
             )
         )
     ],
@@ -522,7 +546,11 @@ async def test_vpn_plus_mesh_over_direct(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features(
+                    direct=feature_direct(
+                        providers=[EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    )
+                ),
             )
         ),
         pytest.param(
@@ -534,7 +562,11 @@ async def test_vpn_plus_mesh_over_direct(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features(
+                    direct=feature_direct(
+                        providers=[EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    )
+                ),
             ),
             marks=pytest.mark.linux_native,
         ),
@@ -547,7 +579,11 @@ async def test_vpn_plus_mesh_over_direct(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features(
+                    direct=feature_direct(
+                        providers=[EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    )
+                ),
             ),
             marks=pytest.mark.windows,
         ),
@@ -560,7 +596,11 @@ async def test_vpn_plus_mesh_over_direct(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features(
+                    direct=feature_direct(
+                        providers=[EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    )
+                ),
             ),
             marks=[
                 pytest.mark.windows,
@@ -575,7 +615,11 @@ async def test_vpn_plus_mesh_over_direct(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features(
+                    direct=feature_direct(
+                        providers=[EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    )
+                ),
             ),
             marks=[
                 pytest.mark.mac,
@@ -594,7 +638,11 @@ async def test_vpn_plus_mesh_over_direct(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features(
+                    direct=feature_direct(
+                        providers=[EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    )
+                ),
             )
         )
     ],

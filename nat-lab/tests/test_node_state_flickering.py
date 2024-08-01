@@ -5,8 +5,8 @@ import telio
 import timeouts
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
-from telio_features import TelioFeatures, Direct
 from typing import Tuple
+from utils.bindings.features import features, feature_direct, EndpointProvider
 from utils.connection import TargetOS
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
@@ -148,15 +148,27 @@ async def test_node_state_flickering_direct(
                 SetupParameters(
                     connection_tag=alpha_conn_tag,
                     adapter_type=alpha_adapter_type,
-                    features=TelioFeatures(
-                        direct=Direct(providers=["stun", "local", "upnp"])
+                    features=features(
+                        direct=feature_direct(
+                            providers=[
+                                EndpointProvider.STUN,
+                                EndpointProvider.LOCAL,
+                                EndpointProvider.UPNP,
+                            ]
+                        )
                     ),
                 ),
                 SetupParameters(
                     connection_tag=beta_conn_tag,
                     adapter_type=beta_adapter_type,
-                    features=TelioFeatures(
-                        direct=Direct(providers=["stun", "local", "upnp"])
+                    features=features(
+                        direct=feature_direct(
+                            providers=[
+                                EndpointProvider.STUN,
+                                EndpointProvider.LOCAL,
+                                EndpointProvider.UPNP,
+                            ]
+                        )
                     ),
                 ),
             ],

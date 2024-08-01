@@ -5,9 +5,9 @@ import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_connections
 from telio import AdapterType, Client, generate_public_key, generate_secret_key
-from telio_features import TelioFeatures, Firewall
 from typing import Optional
 from utils import testing, stun
+from utils.bindings.features import features, FeatureFirewall
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionLimits, ConnectionTrackerConfig
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
@@ -351,7 +351,7 @@ async def test_vpn_reconnect(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 adapter_type=AdapterType.BoringTun,
                 ip_stack=IPStack.IPv4,
-                features=TelioFeatures(firewall=Firewall(boringtun_reset_conns=True)),
+                features=features(firewall=FeatureFirewall(boringtun_reset_conns=True)),
             )
         ),
         # TODO(msz): IPv6 public server, it doesn't work with the current VPN implementation
@@ -360,7 +360,7 @@ async def test_vpn_reconnect(
         #         connection_tag=ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
         #         adapter_type=AdapterType.BoringTun,
         #         ip_stack=IPStack.IPv6,
-        #         telio_features=TelioFeatures(boringtun_reset_conns=True),
+        #         telio_features=features(boringtun_reset_conns=True),
         #     )
         # ),
     ],
@@ -487,7 +487,7 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 adapter_type=AdapterType.BoringTun,
                 ip_stack=IPStack.IPv4,
-                features=TelioFeatures(firewall=Firewall(boringtun_reset_conns=True)),
+                features=features(firewall=FeatureFirewall(boringtun_reset_conns=True)),
             )
         ),
         # TODO(msz): IPv6 public server, it doesn't work with the current VPN implementation
@@ -496,7 +496,7 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
         #         connection_tag=ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
         #         adapter_type=AdapterType.BoringTun,
         #         ip_stack=IPStack.IPv6,
-        #         telio_features=TelioFeatures(boringtun_reset_conns=True),
+        #         telio_features=features(boringtun_reset_conns=True),
         #     )
         # ),
     ],

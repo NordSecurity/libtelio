@@ -3,8 +3,8 @@ import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_connections
 from telio import AdapterType
-from telio_features import TelioFeatures, PmtuDiscovery
 from utils import stun
+from utils.bindings.features import features, FeaturePmtuDiscovery
 from utils.connection_util import (
     ConnectionTag,
     generate_connection_tracker_config,
@@ -22,7 +22,9 @@ from utils.router import IPStack
             SetupParameters(
                 ip_stack=IPStack.IPv4,
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                features=TelioFeatures(pmtu_discovery=PmtuDiscovery()),
+                features=features(
+                    pmtu_discovery=FeaturePmtuDiscovery(response_wait_timeout_s=5)
+                ),
             )
         ),
         # TODO(msz): Disable IPv6 tests since the docker netowrk uses local link addresses
@@ -62,7 +64,9 @@ async def test_pmtu_black_hole(setup_params: SetupParameters) -> None:
             SetupParameters(
                 ip_stack=IPStack.IPv4,
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                features=TelioFeatures(pmtu_discovery=PmtuDiscovery()),
+                features=features(
+                    pmtu_discovery=FeaturePmtuDiscovery(response_wait_timeout_s=5)
+                ),
             )
         ),
         # TODO(msz): Disable IPv6 tests since the docker netowrk uses local link addresses
@@ -107,7 +111,9 @@ async def test_pmtu_with_nexthop(setup_params: SetupParameters) -> None:
             SetupParameters(
                 ip_stack=IPStack.IPv4,
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                features=TelioFeatures(pmtu_discovery=PmtuDiscovery()),
+                features=features(
+                    pmtu_discovery=FeaturePmtuDiscovery(response_wait_timeout_s=5)
+                ),
             )
         ),
         # TODO(msz): Disable IPv6 tests since the docker netowrk uses local link addresses
@@ -160,7 +166,9 @@ async def test_pmtu_without_nexthop(setup_params: SetupParameters) -> None:
                     stun_limits=ConnectionLimits(1, 1),
                     ping_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(pmtu_discovery=PmtuDiscovery()),
+                features=features(
+                    pmtu_discovery=FeaturePmtuDiscovery(response_wait_timeout_s=5)
+                ),
                 is_meshnet=False,
             ),
         ),
@@ -173,7 +181,9 @@ async def test_pmtu_without_nexthop(setup_params: SetupParameters) -> None:
                     stun_limits=ConnectionLimits(1, 1),
                     ping_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(pmtu_discovery=PmtuDiscovery()),
+                features=features(
+                    pmtu_discovery=FeaturePmtuDiscovery(response_wait_timeout_s=5)
+                ),
                 is_meshnet=False,
             ),
             marks=pytest.mark.linux_native,
