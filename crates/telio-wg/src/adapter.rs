@@ -200,6 +200,7 @@ impl FromStr for AdapterType {
 }
 
 #[cfg(not(any(test, feature = "test-adapter")))]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn start(
     adapter: AdapterType,
     name: &str,
@@ -208,6 +209,7 @@ pub(crate) fn start(
     firewall_process_inbound_callback: FirewallCb,
     firewall_process_outbound_callback: FirewallCb,
     firewall_reset_conns_callback: FirewallResetConnsCb,
+    disable_connected_socket: bool,
 ) -> Result<Box<dyn Adapter>, Error> {
     #![allow(unused_variables)]
 
@@ -224,6 +226,7 @@ pub(crate) fn start(
                 firewall_process_inbound_callback,
                 firewall_process_outbound_callback,
                 firewall_reset_conns_callback,
+                disable_connected_socket,
             )?))
         }
         AdapterType::LinuxNativeWg => {

@@ -1,0 +1,1 @@
+Enable connected sockets by default on all platforms, add `disable_connected_socket` remote feature.
