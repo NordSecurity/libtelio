@@ -201,7 +201,7 @@ async fn handshake(
         _ => return Err("Unexpected WG tunnel output".into()),
     }
 
-    Ok(TunnelSock { tunn, sock })
+    Ok(TunnelSock { tunn: *tunn, sock })
 }
 
 pub fn parse_get_response(pkgbuf: &[u8]) -> super::Result<kyber768::Ciphertext> {

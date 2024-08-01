@@ -1057,6 +1057,7 @@ impl Runtime {
                             firewall_filter_outbound_packets,
                         )),
                         firewall_reset_connections,
+                        disable_connected_socket: features.disable_connected_socket,
                     },
                     features.link_detection,
                 )?);
@@ -1078,6 +1079,7 @@ impl Runtime {
                                 firewall_filter_outbound_packets,
                             )),
                             firewall_reset_connections,
+                            disable_connected_socket: features.disable_connected_socket,
                         }
                     ).await;
 

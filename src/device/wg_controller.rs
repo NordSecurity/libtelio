@@ -1420,6 +1420,7 @@ mod tests {
                     },
                     pmtu_discovery: Default::default(),
                     multicast: false,
+                    disable_connected_socket: false,
                 },
                 post_quantum: MockPostQuantum::new(),
                 stun_ep_provider,
