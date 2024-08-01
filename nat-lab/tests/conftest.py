@@ -1,4 +1,5 @@
 import asyncio
+import os
 import pytest
 import subprocess
 import time
@@ -159,6 +160,35 @@ async def perform_setup_checks() -> bool:
     return True
 
 
+async def kill_natlab_processes():
+    # Do not execute cleanup in non-CI environment,
+    # because cleanup requires elevated privileges,
+    # and it is rather inconvenient when every run
+    # requires to enter sudo password
+    # If someone really wants cleanup - one can set
+    # ENABLE_NATLAB_PROCESS_CLEANUP envron variable
+    if (
+        not "GITLAB_CI" in os.environ
+        and not "ENABLE_NATLAB_PROCESS_CLEANUP" in os.environ
+    ):
+        return
+
+    cleanup_script_path = os.path.join(
+        os.path.dirname(__file__), "../bin/cleanup_natlab_processes"
+    )
+    subprocess.run(["sudo", cleanup_script_path]).check_returncode()
+
+
+PRETEST_CLEANUPS = [
+    kill_natlab_processes,
+]
+
+
+async def perform_pretest_cleanups():
+    for cleanup in PRETEST_CLEANUPS:
+        await cleanup()
+
+
 def pytest_collection_finish(session):
     async def copy_binaries():
         mac_vm, win_vm_1, win_vm_2 = False, False, False
@@ -193,6 +223,10 @@ def pytest_collection_finish(session):
 
     if not asyncio.run(perform_setup_checks()):
         pytest.exit("Setup checks failed, exiting ...")
+
+
+def pytest_runtest_setup():
+    asyncio.run(perform_pretest_cleanups())
 
 
 # pylint: disable=unused-argument
