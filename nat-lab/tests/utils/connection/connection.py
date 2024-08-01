@@ -20,6 +20,10 @@ class Connection(ABC):
     def create_process(self, command: List[str]) -> "Process":
         pass
 
+    @abstractmethod
+    async def read_text_file(self, path) -> str:
+        pass
+
     @property
     def target_os(self) -> TargetOS:
         assert self._target_os

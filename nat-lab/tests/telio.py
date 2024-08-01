@@ -1008,13 +1008,12 @@ class Client:
             await asyncio.sleep(1)
 
     async def get_log(self) -> str:
-        process = (
-            self._connection.create_process(["type", "tcli.log"])
+        log_path = (
+            "tcli.log"
             if self._connection.target_os == TargetOS.Windows
-            else self._connection.create_process(["cat", "./tcli.log"])
+            else "./tcli.log"
         )
-        await process.execute()
-        return process.get_stdout()
+        return await self._connection.read_text_file(log_path)
 
     async def get_system_log(self) -> Optional[str]:
         """
