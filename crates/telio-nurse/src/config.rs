@@ -1,4 +1,6 @@
+use telio_lana::fetch_context_string;
 use telio_model::features::{FeatureNurse, FeatureQoS};
+use telio_utils::telio_log_warn;
 use tokio::time::Duration;
 
 use telio_model::features::RttType;
@@ -43,9 +45,16 @@ pub struct HeartbeatConfig {
 impl HeartbeatConfig {
     /// Create a new Heartbeat config
     pub(crate) fn new(features: &FeatureNurse) -> Self {
+        let fingerprint = match fetch_context_string("device.fp".to_owned()) {
+            Some(fingerprint) => fingerprint,
+            None => {
+                telio_log_warn!("No device fingerprint found in moose");
+                "missing-device-fingerprint".to_owned()
+            }
+        };
         Self {
             initial_collect_interval: Duration::from_secs(features.initial_heartbeat_interval),
-            fingerprint: features.fingerprint.clone(),
+            fingerprint,
             collect_interval: Duration::from_secs(features.heartbeat_interval),
             collect_answer_timeout: Duration::from_secs(10),
             is_nat_type_collection_enabled: features.enable_nat_type_collection,

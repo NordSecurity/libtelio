@@ -66,7 +66,6 @@ class Qos(DataClassJsonMixin):
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
 class Nurse(DataClassJsonMixin):
-    fingerprint: str
     heartbeat_interval: int = 3600
     initial_heartbeat_interval: int = 300
     qos: Optional[Qos] = None

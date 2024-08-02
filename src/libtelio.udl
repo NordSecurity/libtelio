@@ -505,8 +505,6 @@ dictionary FeaturePersistentKeepalive {
 
 /// Configurable features for Nurse module
 dictionary FeatureNurse {
-    /// The unique identifier of the device, used for meshnet ID
-    string fingerprint;
     /// Heartbeat interval in seconds. Default value is 3600.
     u64 heartbeat_interval;
     /// Initial heartbeat interval in seconds. Default value is None.

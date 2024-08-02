@@ -48,12 +48,12 @@ def _generate_setup_parameter_pair(
             features=TelioFeatures(
                 direct=Direct(providers=endpoint_providers),
                 nurse=Nurse(
-                    fingerprint=f"{conn_tag}",
                     enable_nat_traversal_conn_data=True,
                     enable_nat_type_collection=True,
                 ),
                 lana=Lana(prod=False, event_path="/event.db"),
             ),
+            fingerprint=f"{conn_tag}",
         )
         for conn_tag, endpoint_providers in cfg
     ]

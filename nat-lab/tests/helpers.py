@@ -53,6 +53,7 @@ class SetupParameters:
     )
     is_meshnet: bool = field(default=True)
     derp_servers: Optional[List[Dict[str, Any]]] = field(default=None)
+    fingerprint: str = ""
 
 
 @dataclass
@@ -161,6 +162,7 @@ async def setup_clients(
             Node,
             AdapterType,
             TelioFeatures,
+            str,
             Optional[Meshmap],
         ]
     ],
@@ -182,9 +184,11 @@ async def setup_clients(
 
     return await asyncio.gather(*[
         exit_stack.enter_async_context(
-            Client(connection, node, adapter_type, features).run(meshmap)
+            Client(
+                connection, node, adapter_type, features, fingerprint=fingerprint
+            ).run(meshmap)
         )
-        for connection, node, adapter_type, features, meshmap in client_parameters
+        for connection, node, adapter_type, features, fingerprint, meshmap in client_parameters
     ])
 
 
@@ -273,6 +277,7 @@ async def setup_environment(
                 nodes,
                 [instance.adapter_type for instance in instances],
                 [instance.features for instance in instances],
+                [instance.fingerprint for instance in instances],
                 [
                     (
                         api.get_meshmap(nodes[idx].id, instance.derp_servers)
