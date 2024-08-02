@@ -16,8 +16,88 @@ pub const DEFAULT_PERSISTENT_KEEPALIVE_PERIOD: u32 = 25;
 /// Default keepalive period for direct peers
 pub const DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD: u32 = 5;
 
+/// Endpoint polling interval
+pub const DEFAULT_ENDPOINT_POLL_INTERVAL_SECS: u64 = 25;
+
 /// Type alias for UniFFI
 pub type EndpointProviders = HashSet<EndpointProvider>;
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+/// Encompasses all of the possible features that can be enabled
+pub struct Features {
+    /// Additional wireguard configuration
+    #[serde(default, deserialize_with = "FeatureWireguard::default_on_null")]
+    pub wireguard: FeatureWireguard,
+    /// Nurse features that can be configured for QoS
+    #[serde(default = "Features::default_nurse")]
+    #[default(Features::default_nurse())]
+    pub nurse: Option<FeatureNurse>,
+    /// Event logging configurable features
+    pub lana: Option<FeatureLana>,
+    /// Deprecated by direct since 4.0.0
+    pub paths: Option<FeaturePaths>,
+    /// Configure options for direct WG connections
+    pub direct: Option<FeatureDirect>,
+    /// Test environment (natlab) requires binding feature disabled
+    /// TODO: Remove it once mac integration tests support the binding mechanism
+    pub is_test_env: Option<bool>,
+    /// Derp server specific configuration
+    pub derp: Option<FeatureDerp>,
+    /// Flag to specify if keys should be validated
+    #[serde(default)]
+    pub validate_keys: FeatureValidateKeys,
+    /// IPv6 support
+    #[serde(default)]
+    pub ipv6: bool,
+    /// Nicknames support
+    #[serde(default)]
+    pub nicknames: bool,
+    /// Flag to turn on connection reset upon VPN server change for boringtun adapter
+    #[serde(default)]
+    pub firewall: FeatureFirewall,
+    /// If and for how long to flush events when stopping telio. Setting to Some(0) means waiting until all events have been flushed, regardless of how long it takes
+    pub flush_events_on_stop_timeout_seconds: Option<u64>,
+    /// Post quantum VPN tunnel configuration
+    #[serde(default)]
+    pub post_quantum_vpn: FeaturePostQuantumVPN,
+    /// No link detection mechanism
+    #[serde(default)]
+    pub link_detection: Option<FeatureLinkDetection>,
+    /// Feature configuration for DNS.
+    #[serde(default)]
+    pub dns: FeatureDns,
+    /// PMTU discovery configuration, enabled by default
+    #[serde(default = "FeaturePmtuDiscovery::serde_default")]
+    #[default(FeaturePmtuDiscovery::serde_default())]
+    pub pmtu_discovery: Option<FeaturePmtuDiscovery>,
+    /// Multicast support
+    #[serde(default)]
+    pub multicast: bool,
+}
+
+impl Features {
+    fn default_nurse() -> Option<FeatureNurse> {
+        Some(Default::default())
+    }
+}
+
+/// Configurable features for Wireguard peers
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+pub struct FeatureWireguard {
+    /// Configurable persistent keepalive periods for wireguard peers
+    #[serde(default)]
+    pub persistent_keepalive: FeaturePersistentKeepalive,
+}
+
+impl FeatureWireguard {
+    fn default_on_null<'de, D>(deserializer: D) -> Result<FeatureWireguard, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let opt = Option::deserialize(deserializer)?;
+        Ok(opt.unwrap_or_default())
+    }
+}
 
 /// Configurable persistent keepalive periods for different types of peers
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
@@ -56,78 +136,6 @@ impl Default for FeaturePersistentKeepalive {
             direct: DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
             proxying: Some(DEFAULT_PERSISTENT_KEEPALIVE_PERIOD),
             stun: Some(DEFAULT_PERSISTENT_KEEPALIVE_PERIOD),
-        }
-    }
-}
-
-/// Configurable features for Wireguard peers
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
-pub struct FeatureWireguard {
-    /// Configurable persistent keepalive periods for wireguard peers
-    #[serde(default)]
-    pub persistent_keepalive: FeaturePersistentKeepalive,
-}
-
-impl FeatureWireguard {
-    fn default_on_null<'de, D>(deserializer: D) -> Result<FeatureWireguard, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let opt = Option::deserialize(deserializer)?;
-        Ok(opt.unwrap_or_default())
-    }
-}
-
-/// Enum denoting ways to calculate RTT.
-#[derive(Eq, PartialEq, Debug, Clone, Deserialize)]
-#[repr(u32)]
-pub enum RttType {
-    /// Simple ping request.
-    Ping,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-/// QoS configuration options
-pub struct FeatureQoS {
-    /// How often to collect rtt data in seconds. Default value is 300.
-    #[serde(default = "FeatureQoS::default_rtt_interval")]
-    pub rtt_interval: u64,
-    /// Number of tries for each node. Default value is 3.
-    #[serde(default = "FeatureQoS::default_rtt_tries")]
-    pub rtt_tries: u32,
-    /// Types of rtt analytics. Default is Ping.
-    #[serde(default = "FeatureQoS::default_rtt_types")]
-    pub rtt_types: Vec<RttType>,
-    /// Number of buckets used for rtt and throughput. Default value is 5.
-    #[serde(default = "FeatureQoS::default_buckets")]
-    pub buckets: u32,
-}
-
-impl FeatureQoS {
-    fn default_rtt_interval() -> u64 {
-        5 * 60
-    }
-
-    fn default_rtt_tries() -> u32 {
-        3
-    }
-
-    fn default_rtt_types() -> Vec<RttType> {
-        vec![RttType::Ping]
-    }
-
-    fn default_buckets() -> u32 {
-        5
-    }
-}
-
-impl Default for FeatureQoS {
-    fn default() -> Self {
-        Self {
-            rtt_interval: FeatureQoS::default_rtt_interval(),
-            rtt_tries: FeatureQoS::default_rtt_tries(),
-            rtt_types: FeatureQoS::default_rtt_types(),
-            buckets: FeatureQoS::default_buckets(),
         }
     }
 }
@@ -203,6 +211,60 @@ impl Default for FeatureNurse {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+/// QoS configuration options
+pub struct FeatureQoS {
+    /// How often to collect rtt data in seconds. Default value is 300.
+    #[serde(default = "FeatureQoS::default_rtt_interval")]
+    pub rtt_interval: u64,
+    /// Number of tries for each node. Default value is 3.
+    #[serde(default = "FeatureQoS::default_rtt_tries")]
+    pub rtt_tries: u32,
+    /// Types of rtt analytics. Default is Ping.
+    #[serde(default = "FeatureQoS::default_rtt_types")]
+    pub rtt_types: Vec<RttType>,
+    /// Number of buckets used for rtt and throughput. Default value is 5.
+    #[serde(default = "FeatureQoS::default_buckets")]
+    pub buckets: u32,
+}
+
+impl FeatureQoS {
+    fn default_rtt_interval() -> u64 {
+        5 * 60
+    }
+
+    fn default_rtt_tries() -> u32 {
+        3
+    }
+
+    fn default_rtt_types() -> Vec<RttType> {
+        vec![RttType::Ping]
+    }
+
+    fn default_buckets() -> u32 {
+        5
+    }
+}
+
+impl Default for FeatureQoS {
+    fn default() -> Self {
+        Self {
+            rtt_interval: FeatureQoS::default_rtt_interval(),
+            rtt_tries: FeatureQoS::default_rtt_tries(),
+            rtt_types: FeatureQoS::default_rtt_types(),
+            buckets: FeatureQoS::default_buckets(),
+        }
+    }
+}
+
+/// Enum denoting ways to calculate RTT.
+#[derive(Eq, PartialEq, Debug, Clone, Deserialize)]
+#[repr(u32)]
+pub enum RttType {
+    /// Simple ping request.
+    Ping,
+}
+
 /// Configurable features for Lana module
 #[derive(Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct FeatureLana {
@@ -218,25 +280,6 @@ impl fmt::Debug for FeatureLana {
             .field("prod", &self.prod)
             .finish()
     }
-}
-
-/// Configurable features for exit Dns
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
-pub struct FeatureExitDns {
-    /// Controls if it is allowed to reconfigure DNS peer when exit node is
-    /// (dis)connected.
-    pub auto_switch_dns_ips: Option<bool>,
-}
-
-/// Mesh connection path type
-#[derive(Clone, Copy, Debug, Default, EnumCount, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum PathType {
-    /// Nodes connected via a middle-man relay
-    #[default]
-    Relay,
-    /// Nodes connected directly via WG
-    Direct,
 }
 
 /// Enable wanted paths for telio
@@ -269,6 +312,74 @@ impl FeaturePaths {
     }
 }
 
+/// Mesh connection path type
+#[derive(Clone, Copy, Debug, Default, EnumCount, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PathType {
+    /// Nodes connected via a middle-man relay
+    #[default]
+    Relay,
+    /// Nodes connected directly via WG
+    Direct,
+}
+
+/// Enable meshent direct connection
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct FeatureDirect {
+    /// Endpoint providers [default all]
+    #[serde(default)]
+    #[serde(deserialize_with = "deserialize_providers")]
+    pub providers: Option<EndpointProviders>,
+    /// Polling interval for endpoints [default 10s]
+    pub endpoint_interval_secs: Option<u64>,
+    /// Configuration options for skipping unresponsive peers
+    #[serde(default = "FeatureDirect::default_skip_unresponsive_peers")]
+    pub skip_unresponsive_peers: Option<FeatureSkipUnresponsivePeers>,
+    /// Parameters to optimize battery lifetime
+    #[serde(default)]
+    pub endpoint_providers_optimization: Option<FeatureEndpointProvidersOptimization>,
+}
+
+impl FeatureDirect {
+    fn default_skip_unresponsive_peers() -> Option<FeatureSkipUnresponsivePeers> {
+        Some(Default::default())
+    }
+}
+
+impl Default for FeatureDirect {
+    fn default() -> Self {
+        Self {
+            providers: Default::default(),
+            endpoint_interval_secs: Default::default(),
+            skip_unresponsive_peers: Self::default_skip_unresponsive_peers(),
+            endpoint_providers_optimization: Default::default(),
+        }
+    }
+}
+
+fn deserialize_providers<'de, D>(de: D) -> Result<Option<EndpointProviders>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let eps: Vec<&str> = match Deserialize::deserialize(de) {
+        Ok(vec) => vec,
+        Err(_) => return Ok(None),
+    };
+
+    let eps: HashSet<_> = eps
+        .into_iter()
+        .filter_map(|provider| {
+            EndpointProvider::deserialize(<&str as IntoDeserializer>::into_deserializer(provider))
+                .map_err(|e| {
+                    telio_log_warn!("Failed to parse EndpointProvider: {}", e);
+                })
+                .ok()
+        })
+        .collect();
+
+    Ok(Some(eps))
+}
+
 /// Available Endpoint Providers for meshnet direct connections
 #[derive(
     Clone,
@@ -294,43 +405,6 @@ pub enum EndpointProvider {
     Upnp = 3,
 }
 
-/// Endpoint polling interval
-pub const DEFAULT_ENDPOINT_POLL_INTERVAL_SECS: u64 = 25;
-
-/// Enable meshent direct connection
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct FeatureDirect {
-    /// Endpoint providers [default all]
-    #[serde(default)]
-    #[serde(deserialize_with = "deserialize_providers")]
-    pub providers: Option<EndpointProviders>,
-    /// Polling interval for endpoints [default 10s]
-    pub endpoint_interval_secs: Option<u64>,
-    /// Configuration options for skipping unresponsive peers
-    #[serde(default = "FeatureDirect::default_skip_unresponsive_peers")]
-    pub skip_unresponsive_peers: Option<FeatureSkipUnresponsivePeers>,
-    /// Parameters to optimize battery lifetime
-    #[serde(default)]
-    pub endpoint_providers_optimization: Option<FeatureEndpointProvidersOptimization>,
-}
-
-impl Default for FeatureDirect {
-    fn default() -> Self {
-        Self {
-            providers: Default::default(),
-            endpoint_interval_secs: Default::default(),
-            skip_unresponsive_peers: Self::default_skip_unresponsive_peers(),
-            endpoint_providers_optimization: Default::default(),
-        }
-    }
-}
-
-impl FeatureDirect {
-    fn default_skip_unresponsive_peers() -> Option<FeatureSkipUnresponsivePeers> {
-        Some(Default::default())
-    }
-}
-
 /// Avoid sending periodic messages to peers with no traffic reported by wireguard
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct FeatureSkipUnresponsivePeers {
@@ -350,31 +424,6 @@ impl Default for FeatureSkipUnresponsivePeers {
         Self {
             no_rx_threshold_secs: Self::default_no_rx_threshold_secs(),
         }
-    }
-}
-
-/// Configure derp behaviour
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
-pub struct FeatureDerp {
-    /// Tcp keepalive set on derp server's side [default 15s]
-    pub tcp_keepalive: Option<u32>,
-    /// Derp will send empty messages after this many seconds of not sending/receiving any data [default 60s]
-    pub derp_keepalive: Option<u32>,
-    /// Enable polling of remote peer states to reduce derp traffic
-    pub enable_polling: Option<bool>,
-    /// Use Mozilla's root certificates instead of OS ones [default false]
-    #[serde(default)]
-    pub use_built_in_root_certificates: bool,
-}
-
-/// Whether to validate keys
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize)]
-#[serde(transparent)]
-pub struct FeatureValidateKeys(pub bool);
-
-impl Default for FeatureValidateKeys {
-    fn default() -> Self {
-        Self(true)
     }
 }
 
@@ -405,6 +454,31 @@ impl Default for FeatureEndpointProvidersOptimization {
     }
 }
 
+/// Configure derp behaviour
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+pub struct FeatureDerp {
+    /// Tcp keepalive set on derp server's side [default 15s]
+    pub tcp_keepalive: Option<u32>,
+    /// Derp will send empty messages after this many seconds of not sending/receiving any data [default 60s]
+    pub derp_keepalive: Option<u32>,
+    /// Enable polling of remote peer states to reduce derp traffic
+    pub enable_polling: Option<bool>,
+    /// Use Mozilla's root certificates instead of OS ones [default false]
+    #[serde(default)]
+    pub use_built_in_root_certificates: bool,
+}
+
+/// Whether to validate keys
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(transparent)]
+pub struct FeatureValidateKeys(pub bool);
+
+impl Default for FeatureValidateKeys {
+    fn default() -> Self {
+        Self(true)
+    }
+}
+
 /// Feature config for firewall
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 pub struct FeatureFirewall {
@@ -425,15 +499,6 @@ pub struct FeaturePostQuantumVPN {
     pub rekey_interval_s: u32,
 }
 
-impl Default for FeaturePostQuantumVPN {
-    fn default() -> Self {
-        Self {
-            handshake_retry_interval_s: Self::default_handshake_retry_interval_s(),
-            rekey_interval_s: Self::default_rekey_interval_s(),
-        }
-    }
-}
-
 impl FeaturePostQuantumVPN {
     const fn default_handshake_retry_interval_s() -> u32 {
         8
@@ -444,27 +509,13 @@ impl FeaturePostQuantumVPN {
     }
 }
 
-fn deserialize_providers<'de, D>(de: D) -> Result<Option<EndpointProviders>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let eps: Vec<&str> = match Deserialize::deserialize(de) {
-        Ok(vec) => vec,
-        Err(_) => return Ok(None),
-    };
-
-    let eps: HashSet<_> = eps
-        .into_iter()
-        .filter_map(|provider| {
-            EndpointProvider::deserialize(<&str as IntoDeserializer>::into_deserializer(provider))
-                .map_err(|e| {
-                    telio_log_warn!("Failed to parse EndpointProvider: {}", e);
-                })
-                .ok()
-        })
-        .collect();
-
-    Ok(Some(eps))
+impl Default for FeaturePostQuantumVPN {
+    fn default() -> Self {
+        Self {
+            handshake_retry_interval_s: Self::default_handshake_retry_interval_s(),
+            rekey_interval_s: Self::default_rekey_interval_s(),
+        }
+    }
 }
 
 /// Turns on the no link detection mechanism
@@ -507,6 +558,17 @@ impl Default for FeatureLinkDetection {
     }
 }
 
+/// Feature configuration for DNS.
+#[derive(Default, Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct FeatureDns {
+    /// TTL for SOA record and for A and AAAA records.
+    #[serde(default)]
+    pub ttl_value: TtlValue,
+    /// Configure options for exit dns
+    #[serde(default)]
+    pub exit_dns: Option<FeatureExitDns>,
+}
+
 /// Newtype for TTL value to ensure that the default function returns the actual default value and not 0.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(transparent)]
@@ -518,15 +580,12 @@ impl Default for TtlValue {
     }
 }
 
-/// Feature configuration for DNS.
-#[derive(Default, Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct FeatureDns {
-    /// TTL for SOA record and for A and AAAA records.
-    #[serde(default)]
-    pub ttl_value: TtlValue,
-    /// Configure options for exit dns
-    #[serde(default)]
-    pub exit_dns: Option<FeatureExitDns>,
+/// Configurable features for exit Dns
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+pub struct FeatureExitDns {
+    /// Controls if it is allowed to reconfigure DNS peer when exit node is
+    /// (dis)connected.
+    pub auto_switch_dns_ips: Option<bool>,
 }
 
 /// PMTU discovery configuration for VPN connection
@@ -552,65 +611,6 @@ impl Default for FeaturePmtuDiscovery {
         Self {
             response_wait_timeout_s: Self::default_response_wait_timeout_s(),
         }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
-/// Encompasses all of the possible features that can be enabled
-pub struct Features {
-    /// Additional wireguard configuration
-    #[serde(default, deserialize_with = "FeatureWireguard::default_on_null")]
-    pub wireguard: FeatureWireguard,
-    /// Nurse features that can be configured for QoS
-    #[serde(default = "Features::default_nurse")]
-    #[default(Features::default_nurse())]
-    pub nurse: Option<FeatureNurse>,
-    /// Event logging configurable features
-    pub lana: Option<FeatureLana>,
-    /// Deprecated by direct since 4.0.0
-    pub paths: Option<FeaturePaths>,
-    /// Configure options for direct WG connections
-    pub direct: Option<FeatureDirect>,
-    /// Test environment (natlab) requires binding feature disabled
-    /// TODO: Remove it once mac integration tests support the binding mechanism
-    pub is_test_env: Option<bool>,
-    /// Derp server specific configuration
-    pub derp: Option<FeatureDerp>,
-    /// Flag to specify if keys should be validated
-    #[serde(default)]
-    pub validate_keys: FeatureValidateKeys,
-    /// IPv6 support
-    #[serde(default)]
-    pub ipv6: bool,
-    /// Nicknames support
-    #[serde(default)]
-    pub nicknames: bool,
-    /// Flag to turn on connection reset upon VPN server change for boringtun adapter
-    #[serde(default)]
-    pub firewall: FeatureFirewall,
-    /// If and for how long to flush events when stopping telio. Setting to Some(0) means waiting until all events have been flushed, regardless of how long it takes
-    pub flush_events_on_stop_timeout_seconds: Option<u64>,
-    /// Post quantum VPN tunnel configuration
-    #[serde(default)]
-    pub post_quantum_vpn: FeaturePostQuantumVPN,
-    /// No link detection mechanism
-    #[serde(default)]
-    pub link_detection: Option<FeatureLinkDetection>,
-    /// Feature configuration for DNS.
-    #[serde(default)]
-    pub dns: FeatureDns,
-    /// PMTU discovery configuration, enabled by default
-    #[serde(default = "FeaturePmtuDiscovery::serde_default")]
-    #[default(FeaturePmtuDiscovery::serde_default())]
-    pub pmtu_discovery: Option<FeaturePmtuDiscovery>,
-    /// Multicast support
-    #[serde(default)]
-    pub multicast: bool,
-}
-
-impl Features {
-    fn default_nurse() -> Option<FeatureNurse> {
-        Some(Default::default())
     }
 }
 
