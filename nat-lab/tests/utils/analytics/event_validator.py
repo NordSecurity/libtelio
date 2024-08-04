@@ -1,7 +1,10 @@
 import base64
+from abc import ABC, abstractmethod
 from hashlib import md5
-from typing import List, Optional, Any
+from typing import List, Optional, Dict, Type
+from typing_extensions import Self
 from utils import testing
+from utils.router import IPStack
 
 DERP_BIT = 0b00000001
 WG_BIT = 0b00000010
@@ -9,35 +12,26 @@ IPV4_BIT = 0b00000100
 IPV6_BIT = 0b00001000
 
 
-# Add external peers to peers list
-#
-# External links can have two forms:
-#     - "vpn":md5(server_ip):<state>
-#     - <meshnet_id>:<node_fingerprint>:<state>
-# For convenience, vpn node is always identified by "vpn" string, other nodes by their fingerprint
-def process_external_peers(event, peers):
-    if event.external_links != "":
-        external_links = event.external_links.split(",")
-        for link in external_links:
-            external_peer_fp = (
-                link.split(":")[0]
-                if link.split(":")[0] == "vpn"
-                else link.split(":")[1]
-            )
-            peers.append(external_peer_fp)
+class Validator(ABC):
+    @abstractmethod
+    def validate(self, value) -> bool:
+        pass
 
 
-class ExistanceValidator:
+##################################################################################
+#                                BASIC VALIDATORS                                #
+##################################################################################
+class ExistanceValidator(Validator):
     def validate(self, value):
-        return (value is not None) and (value != "")
+        return value is not None and value != ""
 
 
-class InexistanceValidator:
+class InexistanceValidator(Validator):
     def validate(self, value):
-        return (value is None) or (value == "")
+        return value is None or value == ""
 
 
-class StringEqualsValidator:
+class StringEqualsValidator(Validator):
     def __init__(self, value):
         self._value = value
 
@@ -45,7 +39,7 @@ class StringEqualsValidator:
         return self._value == value
 
 
-class StringContainmentValidator:
+class StringContainmentValidator(Validator):
     def __init__(self, value, contains=True):
         self._value = value
         self._contains = contains
@@ -53,10 +47,10 @@ class StringContainmentValidator:
     def validate(self, value):
         if self._contains:
             return self._value in value
-        return not self._value in value
+        return self._value not in value
 
 
-class StringOccurrencesValidator:
+class StringOccurrencesValidator(Validator):
     def __init__(self, value, count):
         self._value = value
         self._count = count
@@ -65,55 +59,18 @@ class StringOccurrencesValidator:
         return value.count(self._value) == self._count
 
 
-class IntegerEqualsValidator:
-    def __init__(self, value):
+class IntegerEqualityValidator(Validator):
+    def __init__(self, value, equality: bool = True):
         self._value = value
+        self._equality = equality
 
     def validate(self, value):
-        return self._value == value
-
-
-class IntegerNotEqualsValidator:
-    def __init__(self, value):
-        self._value = value
-
-    def validate(self, value):
+        if self._equality:
+            return self._value == value
         return self._value != value
 
 
-class ConnectionCountValidator:
-    def __init__(self, count):
-        self._count = count
-
-    def validate(self, value):
-        connections = value.split(",")
-        return len(connections) == self._count
-
-
-class ConnectionStateValidator:
-    def __init__(self, all_connections_up, expected_states: Optional[List[int]] = None):
-        self._all_connections_up = all_connections_up
-        self._expected_states = expected_states
-
-    def validate(self, value):
-        # Each connection is separated by a ',':
-        # [########connection1#########, ########connection2#########]
-        connections = value.split(",")
-        # It consists in three info-values separated each by ':' and
-        # the connection_state will always be the last one:
-        # [info1:info2:connection_state, info1:info2:connection_state]
-        if self._all_connections_up:
-            return not any(conn.split(":")[2] == "0" for conn in connections)
-        if self._expected_states is not None:
-            states = testing.unpack_optional(self._expected_states)
-            return all(
-                int(conn.split(":")[2]) & states[index]
-                for index, conn in enumerate(connections)
-            )
-        return False
-
-
-class StringValidator:
+class StringValidator(Validator):
     def __init__(
         self,
         exists=True,
@@ -121,7 +78,7 @@ class StringValidator:
         contains: Optional[List[str]] = None,
         does_not_contain: Optional[List[str]] = None,
     ):
-        self._validators: List[Any] = []
+        self._validators: List[Validator] = []
 
         if exists:
             self._validators.append(ExistanceValidator())
@@ -151,105 +108,82 @@ class StringValidator:
         return True
 
 
-class NameValidator:
-    def __init__(self, name=""):
+##################################################################################
+#                               SPECIFIC VALIDATORS                              #
+##################################################################################
+class ConnectionCountValidator(Validator):
+    def __init__(self, count):
+        self._count = count
+
+    def validate(self, value):
+        connections = value.split(",")
+        return len(connections) == self._count
+
+
+class ConnectionStateValidator(Validator):
+    def __init__(self, all_connections_up, expected_states: Optional[List[int]] = None):
+        self._all_connections_up = all_connections_up
+        self._expected_states = expected_states
+
+    def validate(self, value):
+        # Each connection is separated by a ',':
+        # [########connection1#########, ########connection2#########]
+        connections = value.split(",")
+        # It consists in three info-values separated each by ':' and
+        # the connection_state will always be the last one:
+        # [info1:info2:connection_state, info1:info2:connection_state]
+        if self._all_connections_up:
+            return not any(conn.split(":")[2] == "0" for conn in connections)
+        if self._expected_states is not None:
+            states = testing.unpack_optional(self._expected_states)
+            return all(
+                int(conn.split(":")[2]) & states[index]
+                for index, conn in enumerate(connections)
+            )
+        return False
+
+
+class NameValidator(Validator):
+    def __init__(self, name):
         self._validator = StringValidator(equals=name)
 
-    def validate(self, event):
-        return self._validator.validate(event.name)
+    def validate(self, value):
+        return self._validator.validate(value.name)
 
 
-class CategoryValidator:
-    def __init__(self, category=""):
+class CategoryValidator(Validator):
+    def __init__(self, category):
         self._validator = StringValidator(equals=category)
 
-    def validate(self, event):
-        return self._validator.validate(event.category)
+    def validate(self, value):
+        return self._validator.validate(value.category)
 
 
-class ExternalLinksValidator:
-    def __init__(
-        self,
-        exists=True,
-        equals="",
-        contains: Optional[List[str]] = None,
-        does_not_contain: Optional[List[str]] = None,
-        all_connections_up=False,
-        no_of_connections=0,
-        no_of_vpn=0,
-        expected_states: Optional[List[int]] = None,
-    ):
-        self._validators: List[Any] = [
-            StringValidator(
-                exists=exists,
-                equals=equals,
-                contains=contains,
-                does_not_contain=does_not_contain,
-            )
-        ]
-
-        if exists:
-            if all_connections_up or expected_states is not None:
-                self._validators.append(
-                    ConnectionStateValidator(
-                        all_connections_up=all_connections_up,
-                        expected_states=expected_states,
-                    )
-                )
-            if no_of_connections != 0:
-                self._validators.append(
-                    ConnectionCountValidator(count=no_of_connections)
-                )
-
-            self._validators.append(
-                StringOccurrencesValidator(value="vpn", count=no_of_vpn)
-            )
-
-    def validate(self, event):
-        for v in self._validators:
-            if not v.validate(event.external_links):
-                return False
-        return True
-
-
-class ConnectivityMatrixValidator:
-    def __init__(
-        self,
-        exists=True,
-        no_of_connections=0,
-        all_connections_up=False,
-        expected_states: Optional[List[int]] = None,
-    ):
-        self._validators: List[Any] = [StringValidator(exists=exists)]  # type: ignore
-        if exists:
-            if no_of_connections != 0:
-                self._validators.append(
-                    ConnectionCountValidator(count=no_of_connections)
-                )
-            if all_connections_up or expected_states is not None:
-                self._validators.append(
-                    ConnectionStateValidator(
-                        all_connections_up=all_connections_up,
-                        expected_states=expected_states,
-                    )
-                )
-
-    def validate(self, event):
-        for v in self._validators:
-            if not v.validate(event.connectivity_matrix):
-                return False
-        return True
-
-
-class FingerprintValidator:
+class FingerprintValidator(Validator):
     def __init__(self, exists=True, equals=""):
         self._validator = StringValidator(exists=exists, equals=equals)
 
-    def validate(self, event):
-        return self._validator.validate(event.fp)
+    def validate(self, value):
+        return self._validator.validate(value.fp)
 
 
-class MembersValidator:
+class ConnectionDurationValidator(Validator):
+    def __init__(self, exists=True):
+        self._validator = StringValidator(exists=exists)
+
+    def validate(self, value):
+        return self._validator.validate(value.connection_duration)
+
+
+class HeartbeatIntervalValidator(Validator):
+    def __init__(self, value, equals=True):
+        self._validator = IntegerEqualityValidator(value, equals)
+
+    def validate(self, value):
+        return self._validator.validate(value.heartbeat_interval)
+
+
+class MembersValidator(Validator):
     def __init__(
         self,
         exists=True,
@@ -264,297 +198,49 @@ class MembersValidator:
             does_not_contain=does_not_contain,
         )
 
-    def validate(self, event):
-        return self._validator.validate(event.members)
+    def validate(self, value):
+        return self._validator.validate(value.members)
 
 
-class ConnectionDurationValidator:
-    def __init__(self, exists=True):
-        self._validator = StringValidator(exists=exists)
-
-    def validate(self, event):
-        return self._validator.validate(event.connection_duration)
-
-
-class HeartbeatIntervalValidator:
-    def __init__(self, value, equals=True):
-        if equals:
-            self._validator = IntegerEqualsValidator(value)
-        else:
-            self._validator = IntegerNotEqualsValidator(value)
-
-    def validate(self, event):
-        return self._validator.validate(event.heartbeat_interval)
-
-
-class RttValidator:
+class NatTraversalConnInfoValidator(Validator):
     def __init__(
         self,
-        exists=True,
-        members: Optional[List[str]] = None,
-        equals="",
-        contains: Optional[List[str]] = None,
-        does_not_contain: Optional[List[str]] = None,
-    ):
-        self._members = members
-        if not members:
-            self._validator = StringValidator(exists=exists)
-        else:
-            self._validator = StringValidator(
-                exists=exists,
-                equals=equals,
-                contains=contains,
-                does_not_contain=does_not_contain,
-            )
-
-    def validate(self, event):
-        if not self._members:
-            return self._validator.validate(event.rtt)
-
-        rtt_list = event.rtt.split(",")
-        peers = event.members.split(",")
-        process_external_peers(event, peers)
-
-        peers_rtt = dict(zip(peers, rtt_list))
-
-        for member in self._members:
-            rtt = peers_rtt.get(member)
-            if rtt:
-                assert self._validator.validate(rtt), (member, event)
-            else:
-                assert False, member
-        return True
-
-
-class RttLossValidator:
-    def __init__(
-        self,
-        exists=True,
-        members: Optional[List[str]] = None,
-        equals="",
-        contains: Optional[List[str]] = None,
-        does_not_contain: Optional[List[str]] = None,
-    ):
-        self._members = members
-        if not members:
-            self._validator = StringValidator(exists=exists)
-        else:
-            self._validator = StringValidator(
-                exists=exists,
-                equals=equals,
-                contains=contains,
-                does_not_contain=does_not_contain,
-            )
-
-    def validate(self, event):
-        if not self._members:
-            return self._validator.validate(event.rtt_loss)
-
-        rtt_loss_list = event.rtt_loss.split(",")
-        peers = event.members.split(",")
-        process_external_peers(event, peers)
-
-        peers_rtt_loss = dict(zip(peers, rtt_loss_list))
-
-        for member in self._members:
-            rtt_loss = peers_rtt_loss.get(member)
-            if rtt_loss:
-                assert self._validator.validate(rtt_loss), (member, event)
-            else:
-                assert False, member
-        return True
-
-
-class Rtt6Validator:
-    def __init__(
-        self,
-        exists=True,
-        members: Optional[List[str]] = None,
-        equals="",
-        contains: Optional[List[str]] = None,
-        does_not_contain: Optional[List[str]] = None,
-    ):
-        self._members = members
-        if not members:
-            self._validator = StringValidator(exists=exists)
-        else:
-            self._validator = StringValidator(
-                exists=exists,
-                equals=equals,
-                contains=contains,
-                does_not_contain=does_not_contain,
-            )
-
-    def validate(self, event):
-        if not self._members:
-            return self._validator.validate(event.rtt6)
-
-        rtt6_list = event.rtt6.split(",")
-        peers = event.members.split(",")
-        process_external_peers(event, peers)
-
-        peers_rtt6 = dict(zip(peers, rtt6_list))
-
-        for member in self._members:
-            rtt6 = peers_rtt6.get(member)
-            if rtt6:
-                assert self._validator.validate(rtt6), (member, event)
-            else:
-                assert False, member
-        return True
-
-
-class Rtt6LossValidator:
-    def __init__(
-        self,
-        exists=True,
-        members: Optional[List[str]] = None,
-        equals="",
-        contains: Optional[List[str]] = None,
-        does_not_contain: Optional[List[str]] = None,
-    ):
-        self._members = members
-        if not members:
-            self._validator = StringValidator(exists=exists)
-        else:
-            self._validator = StringValidator(
-                exists=exists,
-                equals=equals,
-                contains=contains,
-                does_not_contain=does_not_contain,
-            )
-
-    def validate(self, event):
-        if not self._members:
-            return self._validator.validate(event.rtt6_loss)
-
-        rtt6_loss_list = event.rtt6_loss.split(",")
-        peers = event.members.split(",")
-        process_external_peers(event, peers)
-
-        peers_rtt6_loss = dict(zip(peers, rtt6_loss_list))
-
-        for member in self._members:
-            rtt6_loss = peers_rtt6_loss.get(member)
-            if rtt6_loss:
-                assert self._validator.validate(rtt6_loss), (member, event)
-            else:
-                assert False, member
-        return True
-
-
-class SentDataValidator:
-    def __init__(
-        self,
-        exists=True,
-        members: Optional[List[str]] = None,
-        equals="",
-        contains: Optional[List[str]] = None,
-        does_not_contain: Optional[List[str]] = None,
-    ):
-        self._members = members
-        if not members:
-            self._validator = StringValidator(exists=exists)
-        else:
-            self._validator = StringValidator(
-                exists=exists,
-                equals=equals,
-                contains=contains,
-                does_not_contain=does_not_contain,
-            )
-
-    def validate(self, event):
-        if not self._members:
-            return self._validator.validate(event.sent_data)
-
-        sent_data_list = event.sent_data.split(",")
-        peers = event.members.split(",")
-        process_external_peers(event, peers)
-
-        peers_sent_data = dict(zip(peers, sent_data_list))
-
-        for member in self._members:
-            sent_data = peers_sent_data.get(member)
-            if sent_data:
-                assert self._validator.validate(sent_data), (member, event)
-            else:
-                assert False, member
-        return True
-
-
-class ReceivedDataValidator:
-    def __init__(
-        self,
-        exists=True,
-        members: Optional[List[str]] = None,
-        equals="",
-        contains: Optional[List[str]] = None,
-        does_not_contain: Optional[List[str]] = None,
-    ):
-        self._members = members
-        if not members:
-            self._validator = StringValidator(exists=exists)
-        else:
-            self._validator = StringValidator(
-                exists=exists,
-                equals=equals,
-                contains=contains,
-                does_not_contain=does_not_contain,
-            )
-
-    def validate(self, event):
-        if not self._members:
-            return self._validator.validate(event.received_data)
-
-        received_data_list = event.received_data.split(",")
-        peers = event.members.split(",")
-        process_external_peers(event, peers)
-
-        peers_received_data = dict(zip(peers, received_data_list))
-
-        for member in self._members:
-            received_data = peers_received_data.get(member)
-            if received_data:
-                assert self._validator.validate(received_data), (member, event)
-            else:
-                assert False, member
-        return True
-
-
-class NatTraversalConnInfoValidator:
-    def __init__(
-        self,
-        exists=True,
+        self_pubkey: str,
+        remote_pubkey: str,
+        symmetric: bool,
         equals="",
         contains: Optional[List[str]] = None,
         does_not_contain: Optional[List[str]] = None,
         count=0,  # Expected number of nat traversal entries in the list
     ):
         self._count = count
-        self._exists = exists
+        self._exists = (
+            base64.b64decode(self_pubkey) < base64.b64decode(remote_pubkey)
+            and not symmetric
+        )
         self._validator = StringValidator(
-            exists=exists,
+            exists=self._exists,
             equals=equals,
             contains=contains,
             does_not_contain=does_not_contain,
         )
 
-    def validate(self, event):
+    def validate(self, value):
         if self._count == 0:
-            return self._validator.validate(event.nat_traversal_conn_info)
+            return self._validator.validate(value.nat_traversal_conn_info)
 
         if self._exists and self._count > 0:
             nat_traversal_conn_info_list_len = len(
-                event.nat_traversal_conn_info.split(",")
+                value.nat_traversal_conn_info.split(",")
             )
             assert (
                 nat_traversal_conn_info_list_len == self._count
             ), nat_traversal_conn_info_list_len
-            return self._validator.validate(event.nat_traversal_conn_info)
+            return self._validator.validate(value.nat_traversal_conn_info)
         return True
 
 
-class DerpConnInfoValidator:
+class DerpConnInfoValidator(Validator):
     def __init__(
         self,
         exists=True,
@@ -574,15 +260,14 @@ class DerpConnInfoValidator:
                 does_not_contain=does_not_contain,
             )
 
-    def validate(self, event):
+    def validate(self, value):
         if not self._servers:
-            return self._validator.validate(event.derp_conn_info)
+            return self._validator.validate(value.derp_conn_info)
 
-        derp_conn_info_list = event.derp_conn_info.split(",")
-        servers_encoded_list = []
-
-        for derp_conn_info in derp_conn_info_list:
-            servers_encoded_list.append(derp_conn_info.split(":")[0])
+        derp_conn_info_list = value.derp_conn_info.split(",")
+        servers_encoded_list = [
+            derp_conn_info.split(":")[0] for derp_conn_info in derp_conn_info_list
+        ]
 
         for server in self._servers:
             server_encoded = md5(server.encode()).hexdigest()
@@ -598,41 +283,162 @@ class DerpConnInfoValidator:
         return True
 
 
-class NatTypeValidator:
-    def __init__(self, value):
-        self._validator = StringValidator(equals=value)
+class SelfNatTypeValidator(Validator):
+    def __init__(self, nat_type: str):
+        self._validator = StringValidator(equals=nat_type)
 
-    def validate(self, event):
-        return self._validator.validate(event.nat_type)
+    def validate(self, value):
+        return self._validator.validate(value.nat_type)
 
 
-class MemNatTypeValidator:
-    def __init__(self, value):
+class MembersNatTypeValidator(Validator):
+    def __init__(self, members_nat_type: List[str]):
         self._validators = []
-        for v in value:
-            self._validators.append(StringValidator(equals=v))
+        for nat_type in members_nat_type:
+            self._validators.append(StringValidator(equals=nat_type))
 
-    def validate(self, event):
-        for v, e in zip(self._validators, event.mem_nat_types.split(",")):
+    def validate(self, value):
+        for v, e in zip(self._validators, value.mem_nat_types.split(",")):
             if not v.validate(e):
                 return False
         return True
 
 
-class EventValidator:
-    def __init__(self, node_fingerprint):
-        self._validators = []
-        self.node_fingerprint = node_fingerprint
+##################################################################################
+#                              AGGREGATE VALIDATORS                              #
+##################################################################################
+class EventValidator(Validator):
+    def __init__(self, node_fingerprint: str = ""):
+        self._validators: List[Validator] = []
+        self._node_fingerprint: str = node_fingerprint
 
-    def add_name_validator(self, name=""):
-        self._validators.append(NameValidator(name=name))
+    @classmethod
+    def new_with_basic_validators(
+        cls: Type[Self],
+        node_fingerprint: str,
+        heartbeat_interval: int = 3600,
+        meshnet_id: str = "",
+    ) -> Self:
+        agg_validator = cls()
+        agg_validator._node_fingerprint = node_fingerprint
+        agg_validator._validators = [
+            NameValidator("heartbeat"),
+            CategoryValidator("service_quality"),
+            FingerprintValidator(exists=True, equals=meshnet_id),
+            HeartbeatIntervalValidator(value=heartbeat_interval, equals=True),
+            ConnectionDurationValidator(exists=True),
+            MembersValidator(exists=True, contains=[node_fingerprint]),
+        ]
+        return agg_validator
+
+    def add_validator(self, validator: Validator) -> Self:
+        self._validators.append(validator)
         return self
 
-    def add_category_validator(self, category=""):
-        self._validators.append(CategoryValidator(category=category))
+    def add_validator_list(self, validators: List[Validator]) -> Self:
+        for validator in validators:
+            self.add_validator(validator)
         return self
 
-    def add_external_links_validator(
+    def add_rtt_validators(
+        self, nodes_ip_stack: Dict[str, Optional[IPStack | None]]
+    ) -> Self:
+        primary_node_ip_stack = nodes_ip_stack.pop(self._node_fingerprint)
+        for fingerprint in nodes_ip_stack:
+            secondary_node_ip_stack = nodes_ip_stack.get(fingerprint)
+            if secondary_node_ip_stack is not None:
+                self.add_validator_list([
+                    RttValidator(
+                        exists=True,
+                        members=[fingerprint],
+                        does_not_contain=(
+                            ["0:0:0:0:0"]
+                            if primary_node_ip_stack is not IPStack.IPv6
+                            and secondary_node_ip_stack is not IPStack.IPv6
+                            else None
+                        ),
+                        contains=(
+                            ["0:0:0:0:0"]
+                            if primary_node_ip_stack is IPStack.IPv6
+                            or secondary_node_ip_stack is IPStack.IPv6
+                            else None
+                        ),
+                    ),
+                    RttLossValidator(
+                        exists=True,
+                        members=[fingerprint],
+                        contains=(
+                            ["100:100:100:100:100"]
+                            if primary_node_ip_stack is IPStack.IPv6
+                            and secondary_node_ip_stack is not IPStack.IPv6
+                            else ["0:0:0:0:0"]
+                        ),
+                    ),
+                    Rtt6Validator(
+                        exists=True,
+                        members=[fingerprint],
+                        does_not_contain=(
+                            ["0:0:0:0:0"]
+                            if primary_node_ip_stack is not IPStack.IPv4
+                            and secondary_node_ip_stack is not IPStack.IPv4
+                            else None
+                        ),
+                        contains=(
+                            ["0:0:0:0:0"]
+                            if primary_node_ip_stack is IPStack.IPv4
+                            or secondary_node_ip_stack is IPStack.IPv4
+                            else None
+                        ),
+                    ),
+                    Rtt6LossValidator(
+                        exists=True,
+                        members=[fingerprint],
+                        contains=(
+                            ["100:100:100:100:100"]
+                            if primary_node_ip_stack is IPStack.IPv4
+                            and secondary_node_ip_stack is not IPStack.IPv4
+                            else ["0:0:0:0:0"]
+                        ),
+                    ),
+                ])
+        return self
+
+    def validate(self, value):
+        for validator in self._validators:
+            if not validator.validate(value):
+                return False, (
+                    "validator: " + type(validator).__name__ + ", event: " + str(value)
+                )
+        return True, ""
+
+
+class ConnectivityMatrixValidator(EventValidator):
+    def __init__(
+        self,
+        exists=True,
+        no_of_connections=0,
+        all_connections_up=False,
+        expected_states: Optional[List[int]] = None,
+    ):
+        super().__init__()
+        self.add_validator(StringValidator(exists=exists))
+        if exists:
+            if no_of_connections != 0:
+                self.add_validator(ConnectionCountValidator(count=no_of_connections))
+            if all_connections_up or expected_states is not None:
+                self.add_validator(
+                    ConnectionStateValidator(
+                        all_connections_up=all_connections_up,
+                        expected_states=expected_states,
+                    )
+                )
+
+    def validate(self, value):
+        return super().validate(value.connectivity_matrix)
+
+
+class ExternalLinksValidator(EventValidator):
+    def __init__(
         self,
         exists=True,
         equals="",
@@ -643,272 +449,170 @@ class EventValidator:
         no_of_vpn=0,
         expected_states: Optional[List[int]] = None,
     ):
-        self._validators.append(
-            ExternalLinksValidator(
-                exists=exists,
-                equals=equals,
-                contains=contains,
-                does_not_contain=does_not_contain,
-                all_connections_up=all_connections_up,
-                no_of_connections=no_of_connections,
-                no_of_vpn=no_of_vpn,
-                expected_states=expected_states,
-            )
-        )
-        return self
-
-    def add_connectivity_matrix_validator(
-        self,
-        exists=True,
-        no_of_connections=0,
-        all_connections_up=False,
-        expected_states: Optional[List[int]] = None,
-    ):
-        self._validators.append(
-            ConnectivityMatrixValidator(
-                exists,
-                no_of_connections=no_of_connections,
-                all_connections_up=all_connections_up,
-                expected_states=expected_states,
-            )
-        )
-        return self
-
-    def add_fingerprint_validator(self, exists=True, equals=""):
-        self._validators.append(FingerprintValidator(exists=exists, equals=equals))
-        return self
-
-    def add_members_validator(
-        self,
-        exists=True,
-        equals="",
-        contains: Optional[List[str]] = None,
-        does_not_contain: Optional[List[str]] = None,
-    ):
-        self._validators.append(
-            MembersValidator(
+        super().__init__()
+        self.add_validator(
+            StringValidator(
                 exists=exists,
                 equals=equals,
                 contains=contains,
                 does_not_contain=does_not_contain,
             )
         )
-        return self
-
-    def add_connection_duration_validator(self, exists=True):
-        self._validators.append(ConnectionDurationValidator(exists=exists))
-        return self
-
-    def add_heartbeat_interval_validator(self, value, equals=True):
-        self._validators.append(HeartbeatIntervalValidator(value=value, equals=equals))
-        return self
-
-    def add_rtt_validator(
-        self,
-        exists=True,
-        members: Optional[List[str]] = None,
-        equals="",
-        contains: Optional[List[str]] = None,
-        does_not_contain: Optional[List[str]] = None,
-    ):
-        self._validators.append(
-            RttValidator(
-                exists,
-                members,
-                equals,
-                contains,
-                does_not_contain,
-            )
-        )
-        return self
-
-    def add_rtt_loss_validator(
-        self,
-        exists=True,
-        members: Optional[List[str]] = None,
-        equals="",
-        contains: Optional[List[str]] = None,
-        does_not_contain: Optional[List[str]] = None,
-    ):
-        self._validators.append(
-            RttLossValidator(
-                exists,
-                members,
-                equals,
-                contains,
-                does_not_contain,
-            )
-        )
-        return self
-
-    def add_rtt6_validator(
-        self,
-        exists=True,
-        members: Optional[List[str]] = None,
-        equals="",
-        contains: Optional[List[str]] = None,
-        does_not_contain: Optional[List[str]] = None,
-    ):
-        self._validators.append(
-            Rtt6Validator(
-                exists,
-                members,
-                equals,
-                contains,
-                does_not_contain,
-            )
-        )
-        return self
-
-    def add_rtt6_loss_validator(
-        self,
-        exists=True,
-        members: Optional[List[str]] = None,
-        equals="",
-        contains: Optional[List[str]] = None,
-        does_not_contain: Optional[List[str]] = None,
-    ):
-        self._validators.append(
-            Rtt6LossValidator(
-                exists,
-                members,
-                equals,
-                contains,
-                does_not_contain,
-            )
-        )
-        return self
-
-    def add_sent_data_validator(
-        self,
-        exists=True,
-        members: Optional[List[str]] = None,
-        equals="",
-        contains: Optional[List[str]] = None,
-        does_not_contain: Optional[List[str]] = None,
-    ):
-        self._validators.append(
-            SentDataValidator(
-                exists,
-                members,
-                equals,
-                contains,
-                does_not_contain,
-            )
-        )
-        return self
-
-    def add_received_data_validator(
-        self,
-        exists=True,
-        members: Optional[List[str]] = None,
-        equals="",
-        contains: Optional[List[str]] = None,
-        does_not_contain: Optional[List[str]] = None,
-    ):
-        self._validators.append(
-            ReceivedDataValidator(
-                exists,
-                members,
-                equals,
-                contains,
-                does_not_contain,
-            )
-        )
-        return self
-
-    def add_nat_traversal_conn_info_peer_validator(
-        self,
-        self_pubkey: str,
-        remote_pubkey: str,
-        symmetric: bool,
-        equals="",
-        contains: Optional[List[str]] = None,
-        does_not_contain: Optional[List[str]] = None,
-        count=0,
-    ):
-        if (
-            base64.b64decode(self_pubkey) < base64.b64decode(remote_pubkey)
-            and not symmetric
-        ):
-            self._validators.append(
-                NatTraversalConnInfoValidator(
-                    True,
-                    equals,
-                    contains,
-                    does_not_contain,
-                    count,
+        if exists:
+            if all_connections_up or expected_states is not None:
+                self.add_validator(
+                    ConnectionStateValidator(
+                        all_connections_up=all_connections_up,
+                        expected_states=expected_states,
+                    )
                 )
-            )
-        else:
-            self._validators.append(
-                NatTraversalConnInfoValidator(
-                    False,
-                    equals,
-                    contains,
-                    does_not_contain,
-                    count,
-                )
-            )
-        return self
+            if no_of_connections != 0:
+                self.add_validator(ConnectionCountValidator(count=no_of_connections))
 
-    def add_derp_conn_info_validator(
+            self.add_validator(StringOccurrencesValidator(value="vpn", count=no_of_vpn))
+
+    def validate(self, value):
+        return super().validate(value.external_links)
+
+
+class ConnectionMetricsValidator(Validator):
+    def __init__(
         self,
         exists=True,
-        servers: Optional[List[str]] = None,
+        members: Optional[List[str]] = None,
+        equals="",
+        contains: Optional[List[str]] = None,
+        does_not_contain: Optional[List[str]] = None,
+        attribute: str = "",
+    ):
+        self._members = members
+        self._attribute = attribute
+        self._validator = StringValidator(
+            exists=exists,
+            equals=equals,
+            contains=contains,
+            does_not_contain=does_not_contain,
+        )
+
+    # Add external peers to peers list
+    #
+    # External links can have two forms:
+    #     - "vpn":md5(server_ip):<state>
+    #     - <meshnet_id>:<node_fingerprint>:<state>
+    # For convenience, vpn node is always identified by "vpn" string, other nodes by their fingerprint
+    @staticmethod
+    def process_external_peers(event, peers):
+        if event.external_links != "":
+            for link in event.external_links.split(","):
+                parts = link.split(":")
+                external_peer_fp = parts[0] if parts[0] == "vpn" else parts[1]
+                peers.append(external_peer_fp)
+
+    def validate(self, value):
+        if not self._members:
+            return self._validator.validate(getattr(value, self._attribute))
+
+        value_list = getattr(value, self._attribute).split(",")
+        peers = value.members.split(",")
+        self.process_external_peers(value, peers)
+
+        peers_values = dict(zip(peers, value_list))
+
+        for member in self._members:
+            value = peers_values.get(member)
+            if value:
+                assert self._validator.validate(value), (member, value)
+            else:
+                assert False, (
+                    "validator: " + type(self).__name__ + ", member: " + str(member)
+                )
+        return True
+
+
+class RttValidator(ConnectionMetricsValidator):
+    def __init__(
+        self,
+        exists=True,
+        members: Optional[List[str]] = None,
         equals="",
         contains: Optional[List[str]] = None,
         does_not_contain: Optional[List[str]] = None,
     ):
-        self._validators.append(
-            DerpConnInfoValidator(
-                exists,
-                servers,
-                equals,
-                contains,
-                does_not_contain,
-            )
+        super().__init__(
+            exists, members, equals, contains, does_not_contain, attribute="rtt"
         )
-        return self
 
-    def add_nat_type_validators(
-        self, is_nat_type_collection_enabled: bool, nat_type: str, nat_mem: List[str]
+
+class RttLossValidator(ConnectionMetricsValidator):
+    def __init__(
+        self,
+        exists=True,
+        members: Optional[List[str]] = None,
+        equals="",
+        contains: Optional[List[str]] = None,
+        does_not_contain: Optional[List[str]] = None,
     ):
-        if is_nat_type_collection_enabled:
-            self.add_self_nat_validator(value=nat_type)
-            self.add_members_nat_validator(value=nat_mem)
-        return self
-
-    def add_self_nat_validator(self, value):
-        self._validators.append(NatTypeValidator(value))
-        return self
-
-    def add_members_nat_validator(self, value):
-        self._validators.append(MemNatTypeValidator(value))
-        return self
-
-    def validate(self, event) -> tuple[bool, str]:
-        for validator in self._validators:
-            if not validator.validate(event):
-                return False, (
-                    "validator: " + type(validator).__name__ + ", event: " + str(event)
-                )
-        return True, ""
+        super().__init__(
+            exists, members, equals, contains, does_not_contain, attribute="rtt_loss"
+        )
 
 
-def basic_validator(
-    node_fingerprint: str, heartbeat_interval: int = 3600, meshnet_id: str = ""
-) -> EventValidator:
-    event_validator = (
-        EventValidator(node_fingerprint)
-        .add_name_validator("heartbeat")
-        .add_category_validator("service_quality")
-        .add_fingerprint_validator(exists=True, equals=meshnet_id)
-        .add_heartbeat_interval_validator(value=heartbeat_interval, equals=True)
-        .add_connection_duration_validator(exists=True)
-    )
-    if node_fingerprint != "":
-        # Current node should always be in the members list
-        event_validator.add_members_validator(exists=True, contains=[node_fingerprint])
+class Rtt6Validator(ConnectionMetricsValidator):
+    def __init__(
+        self,
+        exists=True,
+        members: Optional[List[str]] = None,
+        equals="",
+        contains: Optional[List[str]] = None,
+        does_not_contain: Optional[List[str]] = None,
+    ):
+        super().__init__(
+            exists, members, equals, contains, does_not_contain, attribute="rtt6"
+        )
 
-    return event_validator
+
+class Rtt6LossValidator(ConnectionMetricsValidator):
+    def __init__(
+        self,
+        exists=True,
+        members: Optional[List[str]] = None,
+        equals="",
+        contains: Optional[List[str]] = None,
+        does_not_contain: Optional[List[str]] = None,
+    ):
+        super().__init__(
+            exists, members, equals, contains, does_not_contain, attribute="rtt6_loss"
+        )
+
+
+class SentDataValidator(ConnectionMetricsValidator):
+    def __init__(
+        self,
+        exists=True,
+        members: Optional[List[str]] = None,
+        equals="",
+        contains: Optional[List[str]] = None,
+        does_not_contain: Optional[List[str]] = None,
+    ):
+        super().__init__(
+            exists, members, equals, contains, does_not_contain, attribute="sent_data"
+        )
+
+
+class ReceivedDataValidator(ConnectionMetricsValidator):
+    def __init__(
+        self,
+        exists=True,
+        members: Optional[List[str]] = None,
+        equals="",
+        contains: Optional[List[str]] = None,
+        does_not_contain: Optional[List[str]] = None,
+    ):
+        super().__init__(
+            exists,
+            members,
+            equals,
+            contains,
+            does_not_contain,
+            attribute="received_data",
+        )
