@@ -135,7 +135,7 @@ async def setup_check_interderp():
 
 
 SETUP_CHECKS = [
-    (setup_check_interderp, 10.0),
+    (setup_check_interderp, 30.0),
 ]
 
 
