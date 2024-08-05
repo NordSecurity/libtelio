@@ -38,7 +38,11 @@ impl BoringTun {
         let config = DeviceConfig {
             // Apple's Boringtun device runs most efficiently on a single perf-core
             n_threads: {
-                if cfg!(not(any(
+                if cfg!(target_os = "android") {
+                    // A large set of supported android devices
+                    // have 4 "performance" cores
+                    4
+                } else if cfg!(not(any(
                     target_os = "ios",
                     target_os = "macos",
                     target_os = "tvos"
