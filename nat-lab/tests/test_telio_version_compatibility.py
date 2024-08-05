@@ -1,6 +1,7 @@
 import asyncio
 import json
 import pytest
+import shlex
 import telio
 from contextlib import AsyncExitStack
 from mesh_api import API
@@ -48,7 +49,6 @@ UHP_conn_client_types = [
     "endpoint_providers, client1_type, client2_type, adapter_type",
     UHP_conn_client_types,
 )
-@pytest.mark.skip("Disabled for now, until LLT-5428 is resolved")
 async def test_connect_different_telio_version_through_relay(
     endpoint_providers,
     client1_type,
@@ -123,9 +123,12 @@ async def test_connect_different_telio_version_through_relay(
         await started_event.wait()
         await beta_router.setup_interface(beta.ip_addresses)
         await beta_router.create_meshnet_route()
-        await beta_client_v3_6.escape_and_write_stdin(
-            ["mesh", "config", json.dumps(api.get_meshmap(beta.id))]
-        )
+
+        await beta_client_v3_6.escape_and_write_stdin([
+            "mesh",
+            "config",
+            shlex.quote(json.dumps(api.get_meshmap(beta.id))),
+        ])
 
         await alpha_client.wait_for_state_on_any_derp([telio.State.Connected])
         await alpha_client.wait_for_state_peer(beta.public_key, [telio.State.Connected])
