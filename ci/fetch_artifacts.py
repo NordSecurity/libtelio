@@ -14,6 +14,7 @@ class ArtifactsDownloader:
         target_os,
         target_arch,
         token,
+        commit_sha,
         path_to_save="./",
         repo_dir="./",
         tag_prefix="nightly",
@@ -21,6 +22,7 @@ class ArtifactsDownloader:
         self.target_os = target_os
         self.target_arch = target_arch
         self.token = token
+        self.commit_sha = commit_sha
         self.path_to_save = path_to_save
         self.repo_dir = repo_dir
         self.tag_prefix = tag_prefix
@@ -51,7 +53,14 @@ class ArtifactsDownloader:
 
         tags = (
             subprocess.check_output(
-                ["git", "-C", self.repo_dir, "tag", "--sort=-creatordate"]
+                [
+                    "git",
+                    "-C",
+                    self.repo_dir,
+                    "tag",
+                    "--sort=-creatordate",
+                    f"--points-at={self.commit_sha}",
+                ]
             )
             .decode()
             .splitlines()

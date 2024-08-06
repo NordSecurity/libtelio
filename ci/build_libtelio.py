@@ -348,10 +348,19 @@ def try_download_artifacts(
             "Cannot download artifacts for uniffi and moose at the same time"
         )
 
+    if "LIBTELIO_COMMIT_SHA" not in os.environ:
+        raise ValueError(
+            "Environment variable LIBTELIO_COMMIT_SHA is not set. "
+            "If you are running this script please set it to current commit hash"
+        )
+    else:
+        commit_sha = os.environ["LIBTELIO_COMMIT_SHA"]
+
     ArtifactsDownloader(
         target_os,
         target_arch,
         token,
+        commit_sha,
         path_to_save,
         root_dir,
         tag_prefix,
