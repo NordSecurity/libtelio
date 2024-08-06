@@ -348,29 +348,33 @@ def try_download_artifacts(
             "Cannot download artifacts for uniffi and moose at the same time"
         )
 
-    try:
-        if ArtifactsDownloader(
-            target_os,
-            target_arch,
-            token,
-            path_to_save,
-            root_dir,
-            tag_prefix,
-        ).download():
-            if moose and target_os in ["linux", "windows", "android"]:
-                moose_utils.fetch_moose_dependencies(target_os, MOOSE_MAP[target_arch])
-            return True
-        else:
-            print(f'Failed to download artifacts from "{tag_prefix}" pipeline')
-    except Exception as e:
-        print(f'Error while downloading artifacts from "{tag_prefix}" pipeline: {e}')
+    if "LIBTELIO_COMMIT_SHA" not in os.environ:
+        raise ValueError(
+            "Environment variable LIBTELIO_COMMIT_SHA is not set. "
+            "If you are running this script please set it to current commit hash"
+        )
+    else:
+        commit_sha = os.environ["LIBTELIO_COMMIT_SHA"]
 
-    return False
+    ArtifactsDownloader(
+        target_os,
+        target_arch,
+        token,
+        commit_sha,
+        path_to_save,
+        root_dir,
+        tag_prefix,
+    ).download()
+
+    if moose and target_os in ["linux", "windows", "android"]:
+        moose_utils.fetch_moose_dependencies(target_os, MOOSE_MAP[target_arch])
 
 
 def exec_bindings(args):
     if args.try_fetch_from_pipeline:
-        print("Trying to download uniffi artifacts ...")
+        print(
+            f"Trying to download uniffi artifacts from {args.try_fetch_from_pipeline} track..."
+        )
         try_download_artifacts(
             args.try_fetch_from_pipeline,
             PROJECT_ROOT,
@@ -391,7 +395,9 @@ def exec_bindings(args):
 
 def exec_build(args):
     if args.try_fetch_from_pipeline:
-        print("Trying to download build artifacts ...")
+        print(
+            f"Trying to download build artifacts from {args.try_fetch_from_pipeline} track..."
+        )
         try_download_artifacts(
             args.try_fetch_from_pipeline,
             PROJECT_ROOT,
