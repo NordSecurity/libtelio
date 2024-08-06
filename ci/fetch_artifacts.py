@@ -25,15 +25,11 @@ class ArtifactsDownloader:
         self.repo_dir = repo_dir
         self.tag_prefix = tag_prefix
 
-    def download(self) -> bool:
-        _, tag_msg = self._get_latest_tag()
+    def download(self):
+        tag, tag_msg = self._get_latest_tag()
 
-        if tag_msg:
-            return self._get_pipeline_build_artifacts(tag_msg)
-        else:
-            print(f"No {self.tag_prefix} tag found.")
-
-        return False
+        print(f"Selected {tag} for artifact download")
+        self._get_pipeline_build_artifacts(tag_msg)
 
     def _extract_date(self, tag):
         """Extract the date from the tag name."""
@@ -67,9 +63,13 @@ class ArtifactsDownloader:
 
         for tag in tags:
             date_str = self._extract_date(tag)
+            if date_str is None:
+                continue
+
             date = datetime.strptime(
                 date_str, "%y%m%d" if len(date_str) == 6 else "%y%m%d%H%M"
             )
+
             if latest_date is None or date > latest_date:
                 latest_tag = tag
                 latest_date = date
@@ -85,7 +85,7 @@ class ArtifactsDownloader:
             )
             return latest_tag, message
 
-        return None, None
+        raise Exception("No suitable build tag was found")
 
     def _get_remote_path(self) -> str:
         LIBTELIO_BUILD_PROJECT_ID = 6299
@@ -125,14 +125,8 @@ class ArtifactsDownloader:
             zip_ref.extractall(self.path_to_save)
 
     def _get_pipeline_build_artifacts(self, tag_msg):
-        pipeline_id = None
-
-        try:
-            tag_data = json.loads(tag_msg)
-            pipeline_id = tag_data["pipeline_id"]
-        except json.JSONDecodeError as e:
-            print("Error parsing JSON from tag msg: ", e)
-            return False
+        tag_data = json.loads(tag_msg)
+        pipeline_id = tag_data["pipeline_id"]
 
         for job in json.loads(
             self._get_api(
@@ -141,17 +135,18 @@ class ArtifactsDownloader:
                 )
             )
         ):
-            if job["stage"] == "build":
-                if self.target_os == "uniffi" and job["name"] == "uniffi-bindings":
-                    self._get_artifacts(job)
-                    return True
-                else:
-                    if (
-                        self.target_os in job["name"]
-                        if self.target_os is not None
-                        else True
-                    ) and self.target_arch in job["name"]:
-                        self._get_artifacts(job, unzip=True)
-                        return True
+            # Uniffi bindings
+            if (
+                job["stage"] == "build"
+                and self.target_os == "uniffi"
+                and job["name"] == "uniffi-bindings"
+            ):
+                self._get_artifacts(job)
 
-        return False
+            # Binary builds
+            if (
+                job["stage"] == "build"
+                and self.target_os in job["name"]
+                and self.target_arch in job["name"]
+            ):
+                self._get_artifacts(job, unzip=True)
