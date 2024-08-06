@@ -9,9 +9,6 @@ use smart_default::SmartDefault;
 use strum_macros::EnumCount;
 use telio_utils::telio_log_warn;
 
-/// Endpoint polling interval
-pub const DEFAULT_ENDPOINT_POLL_INTERVAL_SECS: u64 = 25;
-
 /// Type alias for UniFFI
 pub type EndpointProviders = HashSet<EndpointProvider>;
 
@@ -216,7 +213,8 @@ pub struct FeatureDirect {
     #[serde(deserialize_with = "deserialize_providers")]
     pub providers: Option<EndpointProviders>,
     /// Polling interval for endpoints [default 10s]
-    pub endpoint_interval_secs: Option<u64>,
+    #[default = 25]
+    pub endpoint_interval_secs: u64,
     /// Configuration options for skipping unresponsive peers
     #[default(Some(Default::default()))]
     pub skip_unresponsive_peers: Option<FeatureSkipUnresponsivePeers>,
@@ -529,7 +527,7 @@ mod tests {
                 }),
                 direct: Some(FeatureDirect {
                     providers: Some(endpoint_providers),
-                    endpoint_interval_secs: Some(11),
+                    endpoint_interval_secs: 11,
                     skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
                         no_rx_threshold_secs: 12,
                     }),

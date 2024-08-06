@@ -669,7 +669,7 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
         // Transition to HasEndpoints state
         self.stun_state = StunState::HasEndpoints;
         self.exponential_backoff.reset();
-        // Current backoff should be DEFAULT_ENDPOINT_POLL_INTERVAL_SECS or configured value
+        // Current backoff should be one derived from features
         self.current_timeout = PinnedSleep::new(self.exponential_backoff.get_backoff(), ());
     }
 

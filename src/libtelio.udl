@@ -562,7 +562,7 @@ dictionary FeatureDirect {
     /// Endpoint providers [default all]
     EndpointProviders? providers;
     /// Polling interval for endpoints [default 10s]
-    u64? endpoint_interval_secs;
+    u64 endpoint_interval_secs;
     /// Configuration options for skipping unresponsive peers
     FeatureSkipUnresponsivePeers? skip_unresponsive_peers;
     /// Parameters to optimize battery lifetime
