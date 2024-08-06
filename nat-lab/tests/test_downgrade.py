@@ -3,21 +3,22 @@ import pytest
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
 from telio import PathType, State, AdapterType
-from telio_features import (
-    TelioFeatures,
-    Direct,
-    Wireguard,
-    LinkDetection,
-    PersistentKeepalive,
-)
 from typing import List, Tuple
+from utils.bindings.features import (
+    features,
+    feature_direct,
+    FeatureWireguard,
+    FeatureLinkDetection,
+    FeaturePersistentKeepalive,
+    EndpointProvider,
+)
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
 
 
-def long_persistent_keepalive_periods() -> Wireguard:
-    return Wireguard(
-        persistent_keepalive=PersistentKeepalive(
+def long_persistent_keepalive_periods() -> FeatureWireguard:
+    return FeatureWireguard(
+        persistent_keepalive=FeaturePersistentKeepalive(
             proxying=3600, direct=3600, vpn=3600, stun=3600
         )
     )
@@ -30,11 +31,13 @@ def _generate_setup_parameter_pair(
         SetupParameters(
             connection_tag=tag,
             adapter_type=adapter,
-            features=TelioFeatures(
-                link_detection=LinkDetection(
+            features=features(
+                link_detection=FeatureLinkDetection(
                     rtt_seconds=1, no_of_pings=1, use_for_downgrade=True
                 ),
-                direct=Direct(providers=["stun", "local"]),
+                direct=feature_direct(
+                    providers=[EndpointProvider.STUN, EndpointProvider.LOCAL]
+                ),
                 wireguard=long_persistent_keepalive_periods(),
             ),
         )

@@ -16,14 +16,6 @@ from config import (
 from contextlib import AsyncExitStack
 from mesh_api import API, Node
 from telio import PathType
-from telio_features import (
-    TelioFeatures,
-    Nurse,
-    Lana,
-    Qos,
-    Direct,
-    FeatureEndpointProvidersOptimization,
-)
 from typing import List, Optional
 from utils import testing, stun
 from utils.analytics import (
@@ -34,6 +26,17 @@ from utils.analytics import (
     WG_BIT,
     IPV4_BIT,
     IPV6_BIT,
+)
+from utils.bindings.features import (
+    features,
+    feature_direct,
+    Features,
+    feature_nurse,
+    FeatureLana,
+    FeatureQoS,
+    FeatureEndpointProvidersOptimization,
+    EndpointProvider,
+    RttType,
 )
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionLimits
@@ -100,11 +103,11 @@ IP_STACK_TEST_CONFIGS = [
 ]
 
 
-def build_telio_features(initial_heartbeat_interval: int = 300) -> TelioFeatures:
-    return TelioFeatures(
-        lana=Lana(prod=False, event_path=CONTAINER_EVENT_PATH),
-        direct=Direct(
-            providers=["stun"],
+def build_telio_features(initial_heartbeat_interval: int = 300) -> Features:
+    return features(
+        lana=FeatureLana(prod=False, event_path=CONTAINER_EVENT_PATH),
+        direct=feature_direct(
+            providers=[EndpointProvider.STUN],
             endpoint_providers_optimization=(
                 FeatureEndpointProvidersOptimization(
                     optimize_direct_upgrade_stun=False,
@@ -112,13 +115,15 @@ def build_telio_features(initial_heartbeat_interval: int = 300) -> TelioFeatures
                 )
             ),
         ),
-        nurse=Nurse(
-            heartbeat_interval=3600,
+        nurse=feature_nurse(
             initial_heartbeat_interval=initial_heartbeat_interval,
-            qos=Qos(rtt_interval=RTT_INTERVAL, buckets=5, rtt_tries=1),
+            qos=FeatureQoS(
+                rtt_types=[RttType.PING],
+                rtt_interval=RTT_INTERVAL,
+                buckets=5,
+                rtt_tries=1,
+            ),
             enable_nat_type_collection=COLLECT_NAT_TYPE,
-            enable_relay_conn_data=True,
-            enable_nat_traversal_conn_data=True,
         ),
     )
 
@@ -1519,12 +1524,12 @@ async def test_lana_with_disconnected_node(
         await clean_container(connection_beta)
 
         # In this test, we'll manually trigger the collection of QoS
-        def get_features_with_long_qos() -> TelioFeatures:
-            features = build_telio_features()
-            assert features.nurse is not None
-            assert features.nurse.qos is not None
-            features.nurse.qos.rtt_interval = RTT_INTERVAL * 10
-            return features
+        def get_features_with_long_qos() -> Features:
+            telio_features = build_telio_features()
+            assert telio_features.nurse is not None
+            assert telio_features.nurse.qos is not None
+            telio_features.nurse.qos.rtt_interval = RTT_INTERVAL * 10
+            return telio_features
 
         client_alpha = await exit_stack.enter_async_context(
             telio.Client(

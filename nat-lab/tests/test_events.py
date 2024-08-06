@@ -5,8 +5,8 @@ import timeouts
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_mesh_nodes, setup_api
 from telio import AdapterType, PathType, PeerInfo, State, Client
-from telio_features import TelioFeatures, Direct
 from utils import stun
+from utils.bindings.features import features, feature_direct, EndpointProvider
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.ping import ping
@@ -461,7 +461,9 @@ async def test_event_content_exit_through_peer(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["stun"])),
+                features=features(
+                    direct=feature_direct(providers=[EndpointProvider.STUN])
+                ),
             ),
             "10.0.254.1",
         ),
@@ -473,7 +475,9 @@ async def test_event_content_exit_through_peer(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["stun"])),
+                features=features(
+                    direct=feature_direct(providers=[EndpointProvider.STUN])
+                ),
             ),
             "10.0.254.1",
             marks=pytest.mark.linux_native,
@@ -486,7 +490,9 @@ async def test_event_content_exit_through_peer(
                     ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["stun"])),
+                features=features(
+                    direct=feature_direct(providers=[EndpointProvider.STUN])
+                ),
             ),
             "10.0.254.7",
             marks=pytest.mark.windows,
@@ -499,7 +505,9 @@ async def test_event_content_exit_through_peer(
                     ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["stun"])),
+                features=features(
+                    direct=feature_direct(providers=[EndpointProvider.STUN])
+                ),
             ),
             "10.0.254.7",
             marks=pytest.mark.windows,
@@ -512,7 +520,9 @@ async def test_event_content_exit_through_peer(
                     ConnectionTag.MAC_VM,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["stun"])),
+                features=features(
+                    direct=feature_direct(providers=[EndpointProvider.STUN])
+                ),
             ),
             "10.0.254.7",
             marks=[pytest.mark.mac],
@@ -607,7 +617,9 @@ async def test_event_content_meshnet_node_upgrade_direct(
             Client(
                 connection_beta,
                 beta,
-                telio_features=TelioFeatures(direct=Direct(providers=["stun"])),
+                telio_features=features(
+                    direct=feature_direct(providers=[EndpointProvider.STUN])
+                ),
             ).run(api.get_meshmap(beta.id))
         )
 

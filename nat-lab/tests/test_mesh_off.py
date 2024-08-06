@@ -4,8 +4,13 @@ import telio
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from telio import PathType, State
-from telio_features import TelioFeatures, Direct, LinkDetection
 from timeouts import TEST_MESH_STATE_AFTER_DISCONNECTING_NODE_TIMEOUT
+from utils.bindings.features import (
+    features,
+    feature_direct,
+    FeatureLinkDetection,
+    EndpointProvider,
+)
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
 
@@ -18,10 +23,10 @@ from utils.ping import ping
 )
 async def test_mesh_off(direct) -> None:
     async with AsyncExitStack() as exit_stack:
-        features = (
-            TelioFeatures(direct=Direct(providers=None))
+        telio_features = (
+            features(direct=feature_direct(providers=None))
             if direct
-            else TelioFeatures(direct=None)
+            else features(direct=None)
         )
         env = await setup_mesh_nodes(
             exit_stack,
@@ -29,12 +34,12 @@ async def test_mesh_off(direct) -> None:
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                     adapter_type=telio.AdapterType.LinuxNativeWg,
-                    features=features,
+                    features=telio_features,
                 ),
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                     adapter_type=telio.AdapterType.LinuxNativeWg,
-                    features=features,
+                    features=telio_features,
                 ),
             ],
         )
@@ -91,16 +96,32 @@ async def test_mesh_state_after_disconnecting_node() -> None:
             [
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    features=TelioFeatures(
-                        direct=Direct(providers=["stun", "local", "upnp"]),
-                        link_detection=LinkDetection(rtt_seconds=5),
+                    features=features(
+                        direct=feature_direct(
+                            providers=[
+                                EndpointProvider.STUN,
+                                EndpointProvider.LOCAL,
+                                EndpointProvider.UPNP,
+                            ]
+                        ),
+                        link_detection=FeatureLinkDetection(
+                            rtt_seconds=5, no_of_pings=0, use_for_downgrade=False
+                        ),
                     ),
                 ),
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    features=TelioFeatures(
-                        direct=Direct(providers=["stun", "local", "upnp"]),
-                        link_detection=LinkDetection(rtt_seconds=5),
+                    features=features(
+                        direct=feature_direct(
+                            providers=[
+                                EndpointProvider.STUN,
+                                EndpointProvider.LOCAL,
+                                EndpointProvider.UPNP,
+                            ]
+                        ),
+                        link_detection=FeatureLinkDetection(
+                            rtt_seconds=5, no_of_pings=0, use_for_downgrade=False
+                        ),
                     ),
                 ),
             ],
