@@ -16,4 +16,6 @@ ip6tables -A INPUT -m conntrack --ctstate ESTABLISHED -j ACCEPT
 
 /libtelio/nat-lab/bin/configure_route.sh primary
 
+touch /ready
+
 sleep infinity

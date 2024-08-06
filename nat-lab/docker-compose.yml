@@ -36,6 +36,8 @@ services:
     volumes:
       - ./:/sync
       - ../:/libtelio
+    healthcheck:
+      test: "ls /ready"
 
   ###########################################################
   #                         CLIENTS                         #
@@ -90,6 +92,8 @@ services:
       - "pmtu-probe:10.0.80.84"
     volumes:
       - ../:/libtelio
+    healthcheck:
+      test: "ls /ready"
   cone-client-02:
     hostname: cone-client-02
     <<: *common-client
@@ -241,6 +245,8 @@ services:
       - net.ipv4.ip_forward=1
     security_opt:
       - no-new-privileges:true
+    healthcheck:
+      test: "ls /ready"
     networks:
       internet:
         ipv4_address: 10.0.254.1
@@ -414,6 +420,8 @@ services:
     volumes:
       - ./data/nordderper/config1.yml:/etc/nordderper/config.yml
     working_dir: /etc/nordderper
+    healthcheck:
+      test: "curl http://localhost:8765" # Here the port comes from nat-lab/data/nordderper/config*.yml
   derp-02:
     hostname: derp-02
     <<: *common-derp
@@ -453,6 +461,8 @@ services:
     logging:
       options:
         max-size: 50m
+    healthcheck:
+      test: "stunclient 10.0.1.1 3478 | grep success"
 
   # Two VPN servers
   vpn-01: &common-vpn
@@ -504,6 +514,8 @@ services:
         source: ./data/photo.png
         target: /srv/www/photo.png
         read_only: true
+    healthcheck:
+      test: "curl http://localhost"
 
   # Just some publicly-routable UDP server. To access
   # it just simply run `nc -u udp-server 2000`
@@ -519,6 +531,8 @@ services:
       internet:
         ipv4_address: 10.0.80.81
         ipv6_address: 2001:db8:85a4::adda:edde:6
+    healthcheck:
+      test: "netstat -ul | grep 2000"
 
   dns-server-1:
     hostname: dns-server-1
@@ -530,6 +544,8 @@ services:
       internet:
         ipv4_address: 10.0.80.82
         ipv6_address: 2001:db8:85a4::adda:edde:7
+    healthcheck:
+      test: "nslookup google.com localhost"
   dns-server-2:
     hostname: dns-server-2
     image: nat-lab:base
@@ -540,6 +556,9 @@ services:
       internet:
         ipv4_address: 10.0.80.83
         ipv6_address: 2001:db8:85a4::adda:edde:8
+    healthcheck:
+      test: "nslookup google.com localhost"
+
 
   # A host which drop all packets with size larger than 1300
   pmtu-probe:
@@ -559,6 +578,8 @@ services:
         ipv6_address: 2001:db8:85a4::adda:edde:9
     volumes:
       - ../:/libtelio
+    healthcheck:
+      test: "ls /ready"
 
 networks:
   # Network representing public internet,

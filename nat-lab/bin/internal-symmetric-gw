@@ -20,4 +20,6 @@ iptables -A FORWARD -i eth0 -o eth1 -j ACCEPT
 
 /libtelio/nat-lab/bin/configure_route.sh secondary
 
+touch /ready
+
 sleep infinity

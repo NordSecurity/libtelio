@@ -19,4 +19,6 @@ iptables -t filter -P INPUT DROP
 # Configure standart linux NAT, this will be port restricted cone NAT
 iptables -t nat -A POSTROUTING -o $public_itf -j MASQUERADE
 
+touch /ready
+
 sleep infinity

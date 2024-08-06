@@ -23,4 +23,6 @@ iptables -t filter -P INPUT DROP
 iptables -t nat -A POSTROUTING -o $public_itf -j FULLCONENAT
 iptables -t nat -A PREROUTING -i $public_itf -j FULLCONENAT
 
+touch /ready
+
 sleep infinity

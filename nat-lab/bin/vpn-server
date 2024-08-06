@@ -11,4 +11,6 @@ sleep 5
 # Configure standart linux NAT, this will be port restricted cone NAT
 iptables -t nat -A POSTROUTING -s 100.64.0.0/10 ! -o wg0 -j MASQUERADE
 
+touch /ready
+
 sleep infinity

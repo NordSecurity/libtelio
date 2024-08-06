@@ -10,4 +10,6 @@ sleep 5
 
 iptables -I INPUT -m length --length 1301:1500 -j DROP
 
+touch /ready
+
 sleep infinity

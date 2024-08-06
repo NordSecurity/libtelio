@@ -49,4 +49,6 @@ EOL
 
 /usr/bin/pq-upgrader &
 
+touch /ready
+
 sleep infinity
