@@ -149,18 +149,23 @@ run `ping` in `T1b` and `tcpdump` in `T2b` and see how the packages are flowing.
 
 To run tcli client on native macOS use utun name for interface name instead of t1/t2.
 Use unique index for utun since there might be some already present.
-```
+```sh
 >>> login token <NORDVPN_TOKEN>
 >>> mesh on utun10
 ```
 
 Find meshnet ip address from "ip_addresses" field the same as in linux case. Then
-```
+```sh
 ifconfig utun10 add <IP_ADDRESS>/10 <IP_ADDRESS>
 ifconfig inet6 utun10 add <IPv6_ADDRESS> prefixlen 64
 ifconfig utun10 mtu 1420
 route add 100.64/10 <IP_ADDRESS>
 route add -inet6 fd74:656c:696f::/64 <IPv6_ADDRESS>
+```
+
+Or simply run:
+```sh
+>>> mesh set-ip
 ```
 
 ### Using the libtelio API

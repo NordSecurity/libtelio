@@ -788,6 +788,7 @@ impl Cli {
                     if r.status.success() {
                         Ok(())
                     } else {
+                        error!("Error executing command {:?}: {:?}", command, r);
                         Err(Error::SettingIpFailed)
                     }
                 })
@@ -816,11 +817,33 @@ impl Cli {
             if len < 3 {
                 return Err(Error::SettingIpFailed);
             }
-            execute(Command::new("ifconfig").args([
+
+            let result = execute(Command::new("ifconfig").args([
                 adapter_name,
                 if ip.addr().is_ipv4() { "inet" } else { "inet6" },
                 ip_address,
-            ]))
+                ip.addr().to_string().as_ref(),
+            ]));
+
+            // Add route for meshnet
+            if result.is_ok() {
+                if ip.addr().is_ipv4() {
+                    return execute(Command::new("route").args([
+                        "add",
+                        "100.64/10",
+                        ip.addr().to_string().as_ref(),
+                    ]));
+                } else {
+                    return execute(Command::new("route").args([
+                        "add",
+                        "-inet6",
+                        "fd74:656c:696f::/64",
+                        ip.addr().to_string().as_ref(),
+                    ]));
+                }
+            } else {
+                return result;
+            }
         } else {
             execute(Command::new("ifconfig").args([
                 adapter_name,
