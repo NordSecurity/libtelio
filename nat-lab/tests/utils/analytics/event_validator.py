@@ -890,7 +890,9 @@ class EventValidator:
     def validate(self, event) -> tuple[bool, str]:
         for validator in self._validators:
             if not validator.validate(event):
-                return False, type(validator).__name__
+                return False, (
+                    "validator: " + type(validator).__name__ + ", event: " + str(event)
+                )
         return True, ""
 
 

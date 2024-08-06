@@ -1,5 +1,6 @@
 # pylint: disable=too-many-lines
 import asyncio
+import glob
 import json
 import os
 import platform
@@ -666,6 +667,9 @@ class Client:
                     await self._router.delete_exit_node_route()
                     await self._router.delete_interface()
 
+                print(datetime.now(), "Test cleanup stage 7. Saving moose dbs")
+                await self.save_moose_db()
+
                 print(datetime.now(), "Test cleanup complete")
 
     async def simple_start(self):
@@ -958,9 +962,10 @@ class Client:
             if i > 0:
                 await asyncio.sleep(0.5)
             else:
-                assert (
-                    diff == Counter()
-                ), f"started tasks and stopped tasks differ! diff: {diff} | started tasks: {started_tasks} | stopped tasks: {stopped_tasks}"
+                assert diff == Counter(), (
+                    f"started tasks and stopped tasks differ! diff: {diff} | started"
+                    f" tasks: {started_tasks} | stopped tasks: {stopped_tasks}"
+                )
 
     def get_node_state(self, public_key: str) -> Optional[PeerInfo]:
         return self.get_runtime().get_peer_info(public_key)
@@ -974,10 +979,7 @@ class Client:
                 event = self.get_proxy().next_event()
                 while event:
                     if self._runtime:
-                        print(
-                            f"[{self._node.name}]: event [{datetime.now()}]:"
-                            f" {event}"
-                        )
+                        print(f"[{self._node.name}]: event [{datetime.now()}]: {event}")
                         self._runtime.handle_output_line(event)
                         event = self.get_proxy().next_event()
                 await asyncio.sleep(1)
@@ -994,7 +996,10 @@ class Client:
                 database,
                 "--cmd",
                 "PRAGMA busy_timeout = 30000;",
-                f"INSERT OR REPLACE INTO shared_context (key, val) VALUES ('device.fp._string', '\"{fingerprint}\"')",
+                (
+                    "INSERT OR REPLACE INTO shared_context (key, val) VALUES"
+                    f" ('device.fp._string', '\"{fingerprint}\"')"
+                ),
             ]).execute()
 
     async def trigger_event_collection(self) -> None:
@@ -1044,7 +1049,10 @@ class Client:
                     log_output = await self._connection.create_process([
                         "powershell",
                         "-Command",
-                        f"Get-EventLog -LogName {log_name} -Newest 100 | format-table -wrap",
+                        (
+                            f"Get-EventLog -LogName {log_name} -Newest 100 |"
+                            " format-table -wrap"
+                        ),
                     ]).execute()
                     logs += log_output.get_stdout()
                 except ProcessExecError:
@@ -1153,6 +1161,27 @@ class Client:
                 f.write("\n\n\n\n--- SYSTEM LOG ---\n\n")
                 f.write(system_log_content)
 
+    async def save_moose_db(self) -> None:
+        """
+        Check if any the moose db files exists ("*-events.db"),
+        rename them to "str(test_name) + "_" + original_filename, and save them to "./logs",
+        delete the original file.
+        """
+        if os.environ.get("NATLAB_SAVE_LOGS") is None:
+            return
+
+        log_dir = "logs"
+        os.makedirs(log_dir, exist_ok=True)
+
+        test_name = test_name_safe_for_file_name()
+
+        moose_db_files = glob.glob("*-events.db", recursive=False)
+
+        for original_filename in moose_db_files:
+            new_filename = f"{test_name}_{original_filename}"
+            new_filepath = os.path.join(log_dir, new_filename)
+            os.rename(original_filename, new_filepath)
+
     async def save_mac_network_info(self) -> None:
         if os.environ.get("NATLAB_SAVE_LOGS") is None:
             return
@@ -1243,7 +1272,10 @@ class Client:
                 core_dump_destination = (
                     f"{coredump_dir}/{test_name}_{file_name}_{i}.core"
                 )
-                cmd = f"docker container cp {container_name}:{file_path} {core_dump_destination}"
+                cmd = (
+                    "docker container cp"
+                    f" {container_name}:{file_path} {core_dump_destination}"
+                )
                 os.system(cmd)
 
 
