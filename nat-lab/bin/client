@@ -2,6 +2,12 @@
 
 set -e
 
+# This is a workaround for 6.x kernel bug, which can cause NULL-deref when
+# iptables are executed too early at boot.
+# More details:
+# https://lore.kernel.org/netdev/20240731213046.6194-3-pablo@netfilter.org/T/#m597226ed32420a20bca5be58cf1c21073f06083b
+sleep 5
+
 # Add conntrack states to iptables, since running dockers on ubuntu
 # conntrack doesn't find flow entries by default somehow. Works when running dockers on debian tho.
 # ref: https://serverfault.com/a/978715
@@ -9,5 +15,7 @@ iptables -A INPUT -m conntrack --ctstate ESTABLISHED -j ACCEPT
 ip6tables -A INPUT -m conntrack --ctstate ESTABLISHED -j ACCEPT
 
 /libtelio/nat-lab/bin/configure_route.sh primary
+
+touch /ready
 
 sleep infinity

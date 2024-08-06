@@ -55,7 +55,7 @@ def start():
             },
         )
         run_command(
-            ["docker", "compose", "up", "-d"],
+            ["docker", "compose", "up", "-d", "--wait"],
             env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"},
         )
 

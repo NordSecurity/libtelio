@@ -2,6 +2,12 @@
 
 set -e
 
+# This is a workaround for 6.x kernel bug, which can cause NULL-deref when
+# iptables are executed too early at boot.
+# More details:
+# https://lore.kernel.org/netdev/20240731213046.6194-3-pablo@netfilter.org/T/#m597226ed32420a20bca5be58cf1c21073f06083b
+sleep 5
+
 # Acquire public IP address
 public_itf=$(ip route show | awk '/10.0.0.0\/16.*dev [a-z0-0]+/ {print $3}')
 
@@ -19,5 +25,7 @@ iptables -t nat -A POSTROUTING -p tcp -o $public_itf -j MASQUERADE
 iptables -A INPUT -p udp -j DROP
 iptables -A OUTPUT -p udp -j DROP
 iptables -A FORWARD -p udp -j DROP
+
+touch /ready
 
 sleep infinity

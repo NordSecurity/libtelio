@@ -2,6 +2,12 @@
 
 set -ex
 
+# This is a workaround for 6.x kernel bug, which can cause NULL-deref when
+# iptables are executed too early at boot.
+# More details:
+# https://lore.kernel.org/netdev/20240731213046.6194-3-pablo@netfilter.org/T/#m597226ed32420a20bca5be58cf1c21073f06083b
+sleep 5
+
 pushd /opt/iptables
 make install
 popd
@@ -16,5 +22,7 @@ iptables -t filter -P INPUT DROP
 # Configure Full-cone NAT
 iptables -t nat -A POSTROUTING -o $public_itf -j FULLCONENAT
 iptables -t nat -A PREROUTING -i $public_itf -j FULLCONENAT
+
+touch /ready
 
 sleep infinity

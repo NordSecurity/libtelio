@@ -2,6 +2,12 @@
 
 set -eux
 
+# This is a workaround for 6.x kernel bug, which can cause NULL-deref when
+# iptables are executed too early at boot.
+# More details:
+# https://lore.kernel.org/netdev/20240731213046.6194-3-pablo@netfilter.org/T/#m597226ed32420a20bca5be58cf1c21073f06083b
+sleep 5
+
 mkdir -p /etc/nordlynx
 ip link add dev nordlynx0 type nordlynx
 ip addr add 10.5.0.1/16 dev nordlynx0  # VPN
@@ -42,5 +48,7 @@ limits:
 EOL
 
 /usr/bin/pq-upgrader &
+
+touch /ready
 
 sleep infinity
