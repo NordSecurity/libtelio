@@ -247,17 +247,18 @@ async def _copy_binaries_on_local_run():
         print(e)
 
 
-def pytest_collection_finish(session):
-    is_ci = os.environ.get("CUSTOM_ENV_GITLAB_CI") is not None and os.environ.get(
-        "CUSTOM_ENV_GITLAB_CI"
-    )
-    if is_ci:
-        asyncio.run(_copy_binaries_on_ci(session))
-    else:
-        asyncio.run(_copy_binaries_on_local_run())
+def pytest_runtestloop(session):
+    if not session.config.option.collectonly:
+        is_ci = os.environ.get("CUSTOM_ENV_GITLAB_CI") is not None and os.environ.get(
+            "CUSTOM_ENV_GITLAB_CI"
+        )
+        if is_ci:
+            asyncio.run(_copy_binaries_on_ci(session))
+        else:
+            asyncio.run(_copy_binaries_on_local_run())
 
-    if not asyncio.run(perform_setup_checks()):
-        pytest.exit("Setup checks failed, exiting ...")
+        if not asyncio.run(perform_setup_checks()):
+            pytest.exit("Setup checks failed, exiting ...")
 
 
 def pytest_runtest_setup():
@@ -266,18 +267,17 @@ def pytest_runtest_setup():
 
 # pylint: disable=unused-argument
 def pytest_sessionfinish(session, exitstatus):
-    num_containers = 3
+    if not session.config.option.collectonly:
+        num_containers = 3
 
-    for i in range(1, num_containers + 1):
-        container_name = f"nat-lab-derp-{i:02d}-1"
-        destination_path = f"logs/derp_{i:02d}_relay.log"
+        for i in range(1, num_containers + 1):
+            container_name = f"nat-lab-derp-{i:02d}-1"
+            destination_path = f"logs/derp_{i:02d}_relay.log"
 
-        docker_cp_command = (
-            f"docker cp {container_name}:/etc/nordderper/relay.log {destination_path}"
-        )
+            docker_cp_command = f"docker cp {container_name}:/etc/nordderper/relay.log {destination_path}"
 
-        try:
-            subprocess.run(docker_cp_command, shell=True, check=True)
-            print(f"Log file copied successfully from {container_name}")
-        except subprocess.CalledProcessError:
-            print(f"Error copying log file from {container_name}")
+            try:
+                subprocess.run(docker_cp_command, shell=True, check=True)
+                print(f"Log file copied successfully from {container_name}")
+            except subprocess.CalledProcessError:
+                print(f"Error copying log file from {container_name}")
