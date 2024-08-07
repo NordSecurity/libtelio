@@ -1470,9 +1470,9 @@ impl Runtime {
     }
 
     async fn build_starcast(&self) -> Result<Option<StarcastEntities>> {
-        if !self.features.multicast {
-            return Ok(None);
-        }
+        // if !self.features.multicast {
+        //     return Ok(None);
+        // }
 
         let (chan_transport, chan_peer) = Chan::pipe();
         let virtual_peer = Arc::new(StarcastPeer::start(chan_peer, self.features.ipv6).await?);
