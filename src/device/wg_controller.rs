@@ -196,6 +196,7 @@ async fn consolidate_wg_peers<
     for key in insert_keys {
         telio_log_info!("Inserting peer: {:?}", requested_peers.get(key));
         let peer = requested_peers.get(key).ok_or(Error::PeerNotFound)?;
+
         wireguard_interface.add_peer(peer.peer.clone()).await?;
 
         if let Some(stun) = stun_ep_provider {
@@ -246,7 +247,6 @@ async fn consolidate_wg_peers<
                     .await?;
                 }
             }
-
             // TODO we're not completely sure that the other side has upgraded too and that we're in 'Upgrading' state.
             // Mute pair to avoid oscillations
             if let Some(p) = proxy {
@@ -256,7 +256,6 @@ async fn consolidate_wg_peers<
                 )
                 .await?;
             }
-
             // Initiate session keeper to start sending data between peers connected directly
             if let (Some(sk), Some(mesh_ip1), maybe_mesh_ip2) = (
                 session_keeper,
@@ -277,7 +276,16 @@ async fn consolidate_wg_peers<
                     }
                 };
 
-                // Start persistent keepalives
+                // Disable persistent-keepalives by WireGuard for direct peers as SessionKeeper is already
+                // doing that. No need to have extra keepalives.
+                wireguard_interface
+                    .add_peer({
+                        let mut peer = requested_peer.peer.clone();
+                        peer.persistent_keepalive_interval = Some(0);
+                        peer
+                    })
+                    .await?;
+
                 sk.add_node(
                     &requested_peer.peer.public_key,
                     target,
@@ -289,7 +297,7 @@ async fn consolidate_wg_peers<
                             .into(),
                     ),
                 )
-                .await?;
+                .await?
             }
         }
         telio_log_debug!(
@@ -903,7 +911,6 @@ async fn select_endpoint_for_peer<'a>(
 fn compare_peers(a: &telio_wg::uapi::Peer, b: &telio_wg::uapi::Peer) -> bool {
     a.public_key == b.public_key
         && a.endpoint == b.endpoint
-        && a.persistent_keepalive_interval == b.persistent_keepalive_interval
         && a.allowed_ips == b.allowed_ips
         && a.preshared_key == b.preshared_key
 }
@@ -988,6 +995,7 @@ mod tests {
     use crate::device::{DeviceConfig, DNS};
     use mockall::predicate::{self, eq};
     use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4};
+
     use telio_crypto::SecretKey;
     use telio_dns::MockDnsResolver;
     use telio_firewall::firewall::{MockFirewall, FILE_SEND_PORT};
@@ -1583,10 +1591,14 @@ mod tests {
             &mut self,
             input: Vec<(PublicKey, SocketAddr, u32, Vec<IpNet>, Vec<IpAddr>)>,
         ) {
+            // Because persistent-keepalives are disabled for direct peers
+            // we expect additional call after the original call with zero persistent-value
+            let mut seq = mockall::Sequence::new();
             for i in input {
                 self.wireguard_interface
                     .expect_add_peer()
                     .once()
+                    .in_sequence(&mut seq)
                     .with(eq(Peer {
                         public_key: i.0,
                         endpoint: Some(i.1),
@@ -1804,13 +1816,17 @@ mod tests {
         f.when_cross_check_validated_endpoints(vec![]);
         f.when_upgrade_requests(vec![(pub_key, remote_wg_endpoint, Instant::now())]);
 
-        f.then_add_peer(vec![(
-            pub_key,
-            remote_wg_endpoint,
-            direct_keepalive_period,
-            allowed_ips.iter().copied().map(|ip| ip.into()).collect(),
-            allowed_ips,
-        )]);
+        let ipnetworks: Vec<_> = allowed_ips.iter().copied().map(|ip| ip.into()).collect();
+        f.then_add_peer(vec![
+            (
+                pub_key,
+                remote_wg_endpoint,
+                direct_keepalive_period,
+                ipnetworks.clone(),
+                allowed_ips.clone(),
+            ),
+            (pub_key, remote_wg_endpoint, 0, ipnetworks, allowed_ips),
+        ]);
         f.then_proxy_mute(vec![(
             pub_key,
             Some(Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW)),
@@ -1821,7 +1837,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn when_cross_check_vailidated_then_upgrade() {
+    async fn when_cross_check_validated_then_upgrade() {
         let mut f = Fixture::new();
         f.features.ipv6 = true;
 
@@ -1861,13 +1877,17 @@ mod tests {
         )]);
         f.when_upgrade_requests(vec![]);
 
-        f.then_add_peer(vec![(
-            pub_key,
-            remote_wg_endpoint,
-            direct_keepalive_period,
-            allowed_ips.iter().copied().map(|ip| ip.into()).collect(),
-            allowed_ips,
-        )]);
+        let ipnetworks: Vec<_> = allowed_ips.iter().copied().map(|ip| ip.into()).collect();
+        f.then_add_peer(vec![
+            (
+                pub_key,
+                remote_wg_endpoint,
+                direct_keepalive_period,
+                ipnetworks.clone(),
+                allowed_ips.clone(),
+            ),
+            (pub_key, remote_wg_endpoint, 0, ipnetworks, allowed_ips),
+        ]);
         f.then_request_upgrade(vec![(
             pub_key,
             remote_wg_endpoint,
@@ -1884,7 +1904,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn when_cross_check_vailidated_but_connection_dead_then_do_not_upgrade() {
+    async fn when_cross_check_validated_but_connection_dead_then_do_not_upgrade() {
         let mut f = Fixture::new();
 
         let pub_key = SecretKey::gen().public();
@@ -2188,13 +2208,17 @@ mod tests {
         )]);
         f.when_upgrade_requests(vec![(pub_key, remote_wg_endpoint, Instant::now())]);
 
-        f.then_add_peer(vec![(
-            pub_key,
-            remote_wg_endpoint,
-            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
-            allowed_ips.iter().copied().map(|ip| ip.into()).collect(),
-            allowed_ips,
-        )]);
+        let ipnetworks: Vec<_> = allowed_ips.iter().copied().map(|ip| ip.into()).collect();
+        f.then_add_peer(vec![
+            (
+                pub_key,
+                remote_wg_endpoint,
+                DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
+                ipnetworks.clone(),
+                allowed_ips.clone(),
+            ),
+            (pub_key, remote_wg_endpoint, 0, ipnetworks, allowed_ips),
+        ]);
         f.then_proxy_mute(vec![(
             pub_key,
             Some(Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW)),
