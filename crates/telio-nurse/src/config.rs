@@ -1,3 +1,4 @@
+use smart_default::SmartDefault;
 use telio_lana::fetch_context_string;
 use telio_model::features::{FeatureNurse, FeatureQoS};
 use telio_utils::telio_log_warn;
@@ -90,7 +91,7 @@ impl QoSConfig {
 }
 
 /// Configuration for Aggregator component from Nurse
-#[derive(Clone)]
+#[derive(Clone, SmartDefault)]
 pub struct AggregatorConfig {
     /// Collect relay events
     pub relay_events: bool,
@@ -99,6 +100,7 @@ pub struct AggregatorConfig {
     pub nat_traversal_events: bool,
 
     /// Maximum session length before forced collection
+    #[default(Duration::from_secs(60 * 60 * 24))]
     pub state_duration_cap: Duration,
 }
 
@@ -109,16 +111,6 @@ impl AggregatorConfig {
             relay_events: features.enable_relay_conn_data,
             nat_traversal_events: features.enable_nat_traversal_conn_data,
             state_duration_cap: Duration::from_secs(features.state_duration_cap),
-        }
-    }
-}
-
-impl Default for AggregatorConfig {
-    fn default() -> Self {
-        Self {
-            relay_events: Default::default(),
-            nat_traversal_events: Default::default(),
-            state_duration_cap: Duration::from_secs(60 * 60 * 24),
         }
     }
 }

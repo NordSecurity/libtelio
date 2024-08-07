@@ -992,10 +992,7 @@ mod tests {
     use telio_dns::MockDnsResolver;
     use telio_firewall::firewall::{MockFirewall, FILE_SEND_PORT};
     use telio_model::config::{Config, PeerBase, Server};
-    use telio_model::features::{
-        EndpointProvider as ApiEndpointProvider, FeatureDns, TtlValue,
-        DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD, DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
-    };
+    use telio_model::features::{EndpointProvider as ApiEndpointProvider, FeatureDns, TtlValue};
     use telio_model::mesh::ExitNode;
     use telio_pq::MockPostQuantum;
     use telio_proto::Session;
@@ -1010,6 +1007,9 @@ mod tests {
     type AllowIncomingConnections = bool;
     type AllowPeerSendFiles = bool;
     type AllowedIps = Vec<IpAddr>;
+
+    const TEST_PERSISTENT_KEEPALIVE_PERIOD: u32 = 25;
+    const TEST_DIRECT_PERSISTENT_KEEPALIVE_PERIOD: u32 = 5;
 
     #[tokio::test]
     async fn update_wg_private_key_when_changed() {
@@ -1796,7 +1796,7 @@ mod tests {
         f.when_current_peers(vec![(
             pub_key,
             proxy_endpoint,
-            DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
+            TEST_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 5)]);
@@ -1849,7 +1849,7 @@ mod tests {
         f.when_current_peers(vec![(
             pub_key,
             proxy_endpoint,
-            DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
+            TEST_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 5)]);
@@ -1941,7 +1941,7 @@ mod tests {
         f.when_current_peers(vec![(
             pub_key,
             proxy_endpoint,
-            DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
+            TEST_PERSISTENT_KEEPALIVE_PERIOD,
             vec![ip1, ip1v6, ip2, ip2v6],
         )]);
         f.when_time_since_last_rx(vec![]);
@@ -1972,7 +1972,7 @@ mod tests {
         f.when_current_peers(vec![(
             pub_key,
             proxy_endpoint,
-            DEFAULT_PERSISTENT_KEEPALIVE_PERIOD,
+            TEST_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips,
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 4)]);
@@ -2001,7 +2001,7 @@ mod tests {
         f.when_current_peers(vec![(
             pub_key,
             wg_endpoint,
-            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
+            TEST_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 5)]);
@@ -2176,7 +2176,7 @@ mod tests {
         f.when_current_peers(vec![(
             pub_key,
             proxy_endpoint,
-            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
+            TEST_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 20)]);
@@ -2191,7 +2191,7 @@ mod tests {
         f.then_add_peer(vec![(
             pub_key,
             remote_wg_endpoint,
-            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
+            TEST_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.iter().copied().map(|ip| ip.into()).collect(),
             allowed_ips,
         )]);
@@ -2203,7 +2203,7 @@ mod tests {
             pub_key,
             ip1,
             Some(ip1v6),
-            DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
+            TEST_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
         )]);
 
         f.consolidate_peers().await;

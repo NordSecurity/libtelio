@@ -9,28 +9,18 @@ use smart_default::SmartDefault;
 use strum_macros::EnumCount;
 use telio_utils::telio_log_warn;
 
-/// Default keepalive period used for proxying peers,
-/// STUN servers and VPN servers
-pub const DEFAULT_PERSISTENT_KEEPALIVE_PERIOD: u32 = 25;
-
-/// Default keepalive period for direct peers
-pub const DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD: u32 = 5;
-
-/// Endpoint polling interval
-pub const DEFAULT_ENDPOINT_POLL_INTERVAL_SECS: u64 = 25;
-
 /// Type alias for UniFFI
 pub type EndpointProviders = HashSet<EndpointProvider>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[serde(default)]
 /// Encompasses all of the possible features that can be enabled
 pub struct Features {
     /// Additional wireguard configuration
-    #[serde(default, deserialize_with = "FeatureWireguard::default_on_null")]
+    #[serde(deserialize_with = "FeatureWireguard::default_on_null")]
     pub wireguard: FeatureWireguard,
     /// Nurse features that can be configured for QoS
-    #[serde(default = "Features::default_nurse")]
-    #[default(Features::default_nurse())]
+    #[default(Some(Default::default()))]
     pub nurse: Option<FeatureNurse>,
     /// Event logging configurable features
     pub lana: Option<FeatureLana>,
@@ -44,41 +34,26 @@ pub struct Features {
     /// Derp server specific configuration
     pub derp: Option<FeatureDerp>,
     /// Flag to specify if keys should be validated
-    #[serde(default)]
     pub validate_keys: FeatureValidateKeys,
     /// IPv6 support
-    #[serde(default)]
     pub ipv6: bool,
     /// Nicknames support
-    #[serde(default)]
     pub nicknames: bool,
     /// Flag to turn on connection reset upon VPN server change for boringtun adapter
-    #[serde(default)]
     pub firewall: FeatureFirewall,
     /// If and for how long to flush events when stopping telio. Setting to Some(0) means waiting until all events have been flushed, regardless of how long it takes
     pub flush_events_on_stop_timeout_seconds: Option<u64>,
     /// Post quantum VPN tunnel configuration
-    #[serde(default)]
     pub post_quantum_vpn: FeaturePostQuantumVPN,
     /// No link detection mechanism
-    #[serde(default)]
     pub link_detection: Option<FeatureLinkDetection>,
     /// Feature configuration for DNS.
-    #[serde(default)]
     pub dns: FeatureDns,
     /// PMTU discovery configuration, enabled by default
-    #[serde(default = "FeaturePmtuDiscovery::serde_default")]
-    #[default(FeaturePmtuDiscovery::serde_default())]
+    #[default(Some(Default::default()))]
     pub pmtu_discovery: Option<FeaturePmtuDiscovery>,
     /// Multicast support
-    #[serde(default)]
     pub multicast: bool,
-}
-
-impl Features {
-    fn default_nurse() -> Option<FeatureNurse> {
-        Some(Default::default())
-    }
 }
 
 /// Configurable features for Wireguard peers
@@ -100,161 +75,68 @@ impl FeatureWireguard {
 }
 
 /// Configurable persistent keepalive periods for different types of peers
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[serde(default)]
 pub struct FeaturePersistentKeepalive {
     /// Persistent keepalive period given for VPN peers (in seconds) [default 15s]
-    #[serde(default = "FeaturePersistentKeepalive::default_keepalive_period")]
+    #[default(Some(25))]
     pub vpn: Option<u32>,
 
     /// Persistent keepalive period for direct peers (in seconds) [default 5s]
-    #[serde(default = "FeaturePersistentKeepalive::default_direct_keepalive_period")]
+    #[default(5)]
     pub direct: u32,
 
     /// Persistent keepalive period for proxying peers (in seconds) [default 25s]
-    #[serde(default = "FeaturePersistentKeepalive::default_keepalive_period")]
+    #[default(Some(25))]
     pub proxying: Option<u32>,
 
     /// Persistent keepalive period for stun peers (in seconds) [default 25s]
-    #[serde(default = "FeaturePersistentKeepalive::default_keepalive_period")]
+    #[default(Some(25))]
     pub stun: Option<u32>,
 }
 
-impl FeaturePersistentKeepalive {
-    fn default_keepalive_period() -> Option<u32> {
-        Some(DEFAULT_PERSISTENT_KEEPALIVE_PERIOD)
-    }
-
-    fn default_direct_keepalive_period() -> u32 {
-        DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD
-    }
-}
-
-impl Default for FeaturePersistentKeepalive {
-    fn default() -> Self {
-        Self {
-            vpn: Some(DEFAULT_PERSISTENT_KEEPALIVE_PERIOD),
-            direct: DEFAULT_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
-            proxying: Some(DEFAULT_PERSISTENT_KEEPALIVE_PERIOD),
-            stun: Some(DEFAULT_PERSISTENT_KEEPALIVE_PERIOD),
-        }
-    }
-}
-
 /// Configurable features for Nurse module
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[serde(default)]
 pub struct FeatureNurse {
     /// Heartbeat interval in seconds. Default value is 3600.
-    #[serde(default = "FeatureNurse::default_heartbeat_interval")]
+    #[default(60 * 60)]
     pub heartbeat_interval: u64,
     /// Initial heartbeat interval in seconds. Default value is 300.
-    #[serde(default = "FeatureNurse::default_initial_heartbeat_interval")]
+    #[default(5 * 60)]
     pub initial_heartbeat_interval: u64,
     /// QoS configuration for Nurse. Enabled by default.
-    #[serde(default = "FeatureNurse::default_qos")]
+    #[default(Some(Default::default()))]
     pub qos: Option<FeatureQoS>,
     /// Enable/disable collecting nat type. Disabled by default.
-    #[serde(default = "FeatureNurse::default_enable_nat_type_collection")]
     pub enable_nat_type_collection: bool,
     /// Enable/disable Relay connection data. Enabled by default.
-    #[serde(default = "FeatureNurse::default_enable_relay_conn_data")]
+    #[default(true)]
     pub enable_relay_conn_data: bool,
     /// Enable/disable NAT-traversal connections data. Enabled by default.
-    #[serde(default = "FeatureNurse::default_enable_nat_traversal_conn_data")]
+    #[default(true)]
     pub enable_nat_traversal_conn_data: bool,
     /// How long a session can be before it is forcibly reported, in seconds. Default value is 24h.
-    #[serde(default = "FeatureNurse::default_state_duration_cap_in_seconds")]
+    #[default(60 * 60 * 24)]
     pub state_duration_cap: u64,
 }
 
-impl FeatureNurse {
-    fn default_heartbeat_interval() -> u64 {
-        60 * 60
-    }
-
-    fn default_initial_heartbeat_interval() -> u64 {
-        5 * 60
-    }
-
-    fn default_qos() -> Option<FeatureQoS> {
-        Some(Default::default())
-    }
-
-    fn default_enable_nat_type_collection() -> bool {
-        false
-    }
-
-    fn default_enable_relay_conn_data() -> bool {
-        true
-    }
-
-    fn default_enable_nat_traversal_conn_data() -> bool {
-        true
-    }
-
-    // The state duration cap was originally hardcoded at 24h, which is now the default value
-    fn default_state_duration_cap_in_seconds() -> u64 {
-        60 * 60 * 24
-    }
-}
-
-impl Default for FeatureNurse {
-    fn default() -> Self {
-        Self {
-            heartbeat_interval: Self::default_heartbeat_interval(),
-            initial_heartbeat_interval: Self::default_initial_heartbeat_interval(),
-            qos: Self::default_qos(),
-            enable_nat_type_collection: Self::default_enable_nat_type_collection(),
-            enable_relay_conn_data: Self::default_enable_relay_conn_data(),
-            enable_nat_traversal_conn_data: Self::default_enable_nat_traversal_conn_data(),
-            state_duration_cap: Self::default_state_duration_cap_in_seconds(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[serde(default)]
 /// QoS configuration options
 pub struct FeatureQoS {
     /// How often to collect rtt data in seconds. Default value is 300.
-    #[serde(default = "FeatureQoS::default_rtt_interval")]
+    #[default(5 * 60)]
     pub rtt_interval: u64,
     /// Number of tries for each node. Default value is 3.
-    #[serde(default = "FeatureQoS::default_rtt_tries")]
+    #[default(3)]
     pub rtt_tries: u32,
     /// Types of rtt analytics. Default is Ping.
-    #[serde(default = "FeatureQoS::default_rtt_types")]
+    #[default(vec![RttType::Ping])]
     pub rtt_types: Vec<RttType>,
     /// Number of buckets used for rtt and throughput. Default value is 5.
-    #[serde(default = "FeatureQoS::default_buckets")]
+    #[default(5)]
     pub buckets: u32,
-}
-
-impl FeatureQoS {
-    fn default_rtt_interval() -> u64 {
-        5 * 60
-    }
-
-    fn default_rtt_tries() -> u32 {
-        3
-    }
-
-    fn default_rtt_types() -> Vec<RttType> {
-        vec![RttType::Ping]
-    }
-
-    fn default_buckets() -> u32 {
-        5
-    }
-}
-
-impl Default for FeatureQoS {
-    fn default() -> Self {
-        Self {
-            rtt_interval: FeatureQoS::default_rtt_interval(),
-            rtt_tries: FeatureQoS::default_rtt_tries(),
-            rtt_types: FeatureQoS::default_rtt_types(),
-            buckets: FeatureQoS::default_buckets(),
-        }
-    }
 }
 
 /// Enum denoting ways to calculate RTT.
@@ -324,37 +206,20 @@ pub enum PathType {
 }
 
 /// Enable meshent direct connection
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[serde(default)]
 pub struct FeatureDirect {
     /// Endpoint providers [default all]
-    #[serde(default)]
     #[serde(deserialize_with = "deserialize_providers")]
     pub providers: Option<EndpointProviders>,
     /// Polling interval for endpoints [default 10s]
-    pub endpoint_interval_secs: Option<u64>,
+    #[default = 25]
+    pub endpoint_interval_secs: u64,
     /// Configuration options for skipping unresponsive peers
-    #[serde(default = "FeatureDirect::default_skip_unresponsive_peers")]
+    #[default(Some(Default::default()))]
     pub skip_unresponsive_peers: Option<FeatureSkipUnresponsivePeers>,
     /// Parameters to optimize battery lifetime
-    #[serde(default)]
     pub endpoint_providers_optimization: Option<FeatureEndpointProvidersOptimization>,
-}
-
-impl FeatureDirect {
-    fn default_skip_unresponsive_peers() -> Option<FeatureSkipUnresponsivePeers> {
-        Some(Default::default())
-    }
-}
-
-impl Default for FeatureDirect {
-    fn default() -> Self {
-        Self {
-            providers: Default::default(),
-            endpoint_interval_secs: Default::default(),
-            skip_unresponsive_peers: Self::default_skip_unresponsive_peers(),
-            endpoint_providers_optimization: Default::default(),
-        }
-    }
 }
 
 fn deserialize_providers<'de, D>(de: D) -> Result<Option<EndpointProviders>, D::Error>
@@ -406,52 +271,24 @@ pub enum EndpointProvider {
 }
 
 /// Avoid sending periodic messages to peers with no traffic reported by wireguard
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[serde(default)]
 pub struct FeatureSkipUnresponsivePeers {
     /// Time after which peers is considered unresponsive if it didn't receive any packets
-    #[serde(default = "FeatureSkipUnresponsivePeers::default_no_rx_threshold_secs")]
+    #[default = 180]
     pub no_rx_threshold_secs: u64,
 }
 
-impl FeatureSkipUnresponsivePeers {
-    const fn default_no_rx_threshold_secs() -> u64 {
-        180
-    }
-}
-
-impl Default for FeatureSkipUnresponsivePeers {
-    fn default() -> Self {
-        Self {
-            no_rx_threshold_secs: Self::default_no_rx_threshold_secs(),
-        }
-    }
-}
-
 /// Control which battery optimizations are turned on
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[serde(default)]
 pub struct FeatureEndpointProvidersOptimization {
     /// Controls whether Stun endpoint provider should be turned off when there are no proxying peers
-    #[serde(default = "FeatureEndpointProvidersOptimization::default_optimization_variant")]
+    #[default = true]
     pub optimize_direct_upgrade_stun: bool,
     /// Controls whether Upnp endpoint provider should be turned off when there are no proxying peers
-    #[serde(default = "FeatureEndpointProvidersOptimization::default_optimization_variant")]
+    #[default = true]
     pub optimize_direct_upgrade_upnp: bool,
-}
-
-impl FeatureEndpointProvidersOptimization {
-    /// Turning optimizations on by default if feature itself is enabled
-    pub fn default_optimization_variant() -> bool {
-        true
-    }
-}
-
-impl Default for FeatureEndpointProvidersOptimization {
-    fn default() -> Self {
-        Self {
-            optimize_direct_upgrade_stun: true,
-            optimize_direct_upgrade_upnp: true,
-        }
-    }
 }
 
 /// Configure derp behaviour
@@ -488,74 +325,33 @@ pub struct FeatureFirewall {
 }
 
 /// Turns on post quantum VPN tunnel
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[serde(default)]
 pub struct FeaturePostQuantumVPN {
     /// Initial handshake retry interval in seconds
-    #[serde(default = "FeaturePostQuantumVPN::default_handshake_retry_interval_s")]
+    #[default = 8]
     pub handshake_retry_interval_s: u32,
 
     /// Rekey interval in seconds
-    #[serde(default = "FeaturePostQuantumVPN::default_rekey_interval_s")]
+    #[default = 90]
     pub rekey_interval_s: u32,
 }
 
-impl FeaturePostQuantumVPN {
-    const fn default_handshake_retry_interval_s() -> u32 {
-        8
-    }
-
-    const fn default_rekey_interval_s() -> u32 {
-        90
-    }
-}
-
-impl Default for FeaturePostQuantumVPN {
-    fn default() -> Self {
-        Self {
-            handshake_retry_interval_s: Self::default_handshake_retry_interval_s(),
-            rekey_interval_s: Self::default_rekey_interval_s(),
-        }
-    }
-}
-
 /// Turns on the no link detection mechanism
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[serde(default)]
 pub struct FeatureLinkDetection {
     /// Configurable rtt in seconds
-    #[serde(default = "FeatureLinkDetection::default_configurable_rtt")]
+    #[default = 15]
     pub rtt_seconds: u64,
 
     /// Check the link state before reporting it as down
-    #[serde(default = "FeatureLinkDetection::default_no_of_pings")]
+    #[default = 0]
     pub no_of_pings: u32,
 
     /// Use link detection for downgrade logic
-    #[serde(default = "FeatureLinkDetection::default_use_for_downgrade")]
+    #[default = false]
     pub use_for_downgrade: bool,
-}
-
-impl FeatureLinkDetection {
-    const fn default_configurable_rtt() -> u64 {
-        15
-    }
-
-    const fn default_no_of_pings() -> u32 {
-        0
-    }
-
-    const fn default_use_for_downgrade() -> bool {
-        false
-    }
-}
-
-impl Default for FeatureLinkDetection {
-    fn default() -> Self {
-        Self {
-            rtt_seconds: Self::default_configurable_rtt(),
-            no_of_pings: Self::default_no_of_pings(),
-            use_for_downgrade: Self::default_use_for_downgrade(),
-        }
-    }
 }
 
 /// Feature configuration for DNS.
@@ -589,29 +385,12 @@ pub struct FeatureExitDns {
 }
 
 /// PMTU discovery configuration for VPN connection
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[serde(default)]
 pub struct FeaturePmtuDiscovery {
     /// A timeout for wait for the ICMP response packet
-    #[serde(default = "FeaturePmtuDiscovery::default_response_wait_timeout_s")]
+    #[default = 5]
     pub response_wait_timeout_s: u32,
-}
-
-impl FeaturePmtuDiscovery {
-    const fn default_response_wait_timeout_s() -> u32 {
-        5
-    }
-
-    fn serde_default() -> Option<Self> {
-        Some(Self::default())
-    }
-}
-
-impl Default for FeaturePmtuDiscovery {
-    fn default() -> Self {
-        Self {
-            response_wait_timeout_s: Self::default_response_wait_timeout_s(),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -748,7 +527,7 @@ mod tests {
                 }),
                 direct: Some(FeatureDirect {
                     providers: Some(endpoint_providers),
-                    endpoint_interval_secs: Some(11),
+                    endpoint_interval_secs: 11,
                     skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
                         no_rx_threshold_secs: 12,
                     }),

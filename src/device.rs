@@ -74,9 +74,7 @@ use telio_utils::{
 use telio_model::{
     config::{Config, Peer, PeerBase, Server as DerpServer},
     event::{Event, Set},
-    features::{
-        FeaturePersistentKeepalive, Features, PathType, DEFAULT_ENDPOINT_POLL_INTERVAL_SECS,
-    },
+    features::{FeaturePersistentKeepalive, Features, PathType},
     mesh::{ExitNode, LinkState, Node},
     validation::validate_nickname,
     EndpointMap,
@@ -1277,11 +1275,7 @@ impl Runtime {
                         .new_external_udp((Ipv4Addr::UNSPECIFIED, 0), None)
                         .await?,
                     self.entities.wireguard_interface.clone(),
-                    Duration::from_secs(
-                        direct
-                            .endpoint_interval_secs
-                            .unwrap_or(DEFAULT_ENDPOINT_POLL_INTERVAL_SECS),
-                    ),
+                    Duration::from_secs(direct.endpoint_interval_secs),
                     ping_pong_tracker.clone(),
                 ));
                 endpoint_providers.push(ep.clone());
@@ -1295,11 +1289,7 @@ impl Runtime {
                 let ep = Arc::new(StunEndpointProvider::start(
                     self.entities.wireguard_interface.clone(),
                     ExponentialBackoffBounds {
-                        initial: Duration::from_secs(
-                            direct
-                                .endpoint_interval_secs
-                                .unwrap_or(DEFAULT_ENDPOINT_POLL_INTERVAL_SECS),
-                        ),
+                        initial: Duration::from_secs(direct.endpoint_interval_secs),
                         maximal: Some(Duration::from_secs(120)),
                     },
                     ping_pong_tracker.clone(),
@@ -1327,11 +1317,7 @@ impl Runtime {
                         .await?,
                     self.entities.wireguard_interface.clone(),
                     ExponentialBackoffBounds {
-                        initial: Duration::from_secs(
-                            direct
-                                .endpoint_interval_secs
-                                .unwrap_or(DEFAULT_ENDPOINT_POLL_INTERVAL_SECS),
-                        ),
+                        initial: Duration::from_secs(direct.endpoint_interval_secs),
                         maximal: Some(Duration::from_secs(120)),
                     },
                     ping_pong_tracker.clone(),
@@ -2944,9 +2930,7 @@ mod tests {
         let features = Features {
             direct: Some(FeatureDirect {
                 providers: None,
-                endpoint_interval_secs: None,
-                skip_unresponsive_peers: Default::default(),
-                endpoint_providers_optimization: None,
+                ..Default::default()
             }),
             ..Default::default()
         };
@@ -3026,9 +3010,7 @@ mod tests {
         let features = Features {
             direct: Some(FeatureDirect {
                 providers: Some(HashSet::new()),
-                endpoint_interval_secs: None,
-                skip_unresponsive_peers: Default::default(),
-                endpoint_providers_optimization: None,
+                ..Default::default()
             }),
             ..Default::default()
         };
@@ -3117,11 +3099,10 @@ mod tests {
         let features = Features {
             direct: Some(FeatureDirect {
                 providers: Some(providers),
-                endpoint_interval_secs: None,
                 skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
                     no_rx_threshold_secs: 42,
                 }),
-                endpoint_providers_optimization: None,
+                ..Default::default()
             }),
             ..Default::default()
         };
@@ -3292,9 +3273,7 @@ mod tests {
         let features = Features {
             direct: Some(FeatureDirect {
                 providers: Some(providers),
-                endpoint_interval_secs: None,
-                skip_unresponsive_peers: None,
-                endpoint_providers_optimization: None,
+                ..Default::default()
             }),
             ..Default::default()
         };

@@ -20,6 +20,7 @@ nat-detect.workspace = true
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+smart-default.workspace = true
 slog.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["net", "sync"] }

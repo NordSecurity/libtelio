@@ -3,6 +3,7 @@
 use std::fmt::Debug;
 use std::time::Duration;
 
+use smart_default::SmartDefault;
 use thiserror::Error as TError;
 
 const EXPONENTIAL_BACKOFF_MULTIPLIER: u32 = 2;
@@ -19,27 +20,20 @@ pub enum Error {
 /// Exponential backoff bounds
 ///
 /// A pair of bounds for the exponential backoffs
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, SmartDefault)]
 pub struct ExponentialBackoffBounds {
     /// Initial bound
     ///
     /// Used as the first backoff value after ExponentialBackoff creation or reset
+    #[default(Duration::from_secs(2))]
     pub initial: Duration,
 
     /// Maximal bound
     ///
     /// A maximal backoff value which might be achieved during exponential backoff
     /// - if not defined there will be no upper bound for the penalty duration
+    #[default(Some(Duration::from_secs(120)))]
     pub maximal: Option<Duration>,
-}
-
-impl Default for ExponentialBackoffBounds {
-    fn default() -> Self {
-        Self {
-            initial: Duration::from_secs(2),
-            maximal: Some(Duration::from_secs(120)),
-        }
-    }
 }
 
 /// Exponential backoff helper interface
