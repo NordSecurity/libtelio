@@ -9,7 +9,7 @@ use tokio::sync::oneshot::{self, Sender as OneShotSender};
 
 use std::io;
 use std::sync::{Arc, Mutex as StdMutex};
-use telio_utils::{local_interfaces, telio_log_trace, telio_log_warn, GetIFError, GetIfAddrs};
+use telio_utils::{local_interfaces, telio_log_debug, telio_log_warn, GetIFError, GetIfAddrs};
 use tokio::{sync::broadcast::Sender, task::JoinHandle};
 
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
@@ -72,7 +72,7 @@ impl NetworkMonitor {
                         Ok(()) => match local_interfaces::gather_local_interfaces(&get_if_addr) {
                             Ok(v) => {
                                 if let Ok(mut guard) = LOCAL_ADDRS_CACHE.lock() {
-                                    telio_log_trace!("Updating local addr cache {:?}", v);
+                                    telio_log_debug!("Updating local addr cache {:?}", v);
                                     *guard = v;
                                 }
                             }

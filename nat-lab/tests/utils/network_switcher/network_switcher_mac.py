@@ -64,14 +64,14 @@ class NetworkSwitcherMac(NetworkSwitcher):
     @asynccontextmanager
     async def add_secondary_ip(self) -> AsyncIterator:
         await self._connection.create_process(
-            ["ip", "addr", "add", "192.168.125.21/24", "dev", "en1"],
+            ["ifconfig", "en1", "inet", "192.168.125.21", "netmask", "255.255.255.0"],
         ).execute()
         yield
 
     @asynccontextmanager
     async def remove_secondary_ip(self) -> AsyncIterator:
         await self._connection.create_process(
-            ["ip", "addr", "del", "192.168.125.21/24", "dev", "en1"],
+            ["ifconfig", "en1", "inet", "192.168.125.21", "netmask", "255.255.255.0", "delete"],
         ).execute()
         yield
 
