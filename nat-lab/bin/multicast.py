@@ -1,5 +1,6 @@
 import argparse
 import socket
+import sys
 
 SSDP_IP: str = "239.255.255.250"
 SSDP_PORT: int = 1900
@@ -23,7 +24,14 @@ def ssdp_client(timeout: int):
 def ssdp_server(timeout: int):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.settimeout(timeout)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    if sys.platform == "darwin":
+        # On macOS SO_REUSEPORT allows completely duplicate bindings by multiple processes
+        # if they all set SO_REUSEPORT before
+        # This option permits multiple instances of a program to each receive UDP/IP multicast or
+        # broadcast datagrams destined for the bound port
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+    else:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind(("0.0.0.0", SSDP_PORT))
 
     mreq = socket.inet_aton(SSDP_IP) + socket.inet_aton("0.0.0.0")
@@ -40,7 +48,10 @@ def ssdp_server(timeout: int):
 def mdns_client(timeout: int):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.settimeout(timeout)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    if sys.platform == "darwin":
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+    else:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind(("0.0.0.0", MDNS_PORT))
 
     mreq = socket.inet_aton(MDNS_IP) + socket.inet_aton("0.0.0.0")
@@ -56,7 +67,10 @@ def mdns_client(timeout: int):
 def mdns_server(timeout: int):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.settimeout(timeout)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    if sys.platform == "darwin":
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+    else:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind(("0.0.0.0", MDNS_PORT))
 
     mreq = socket.inet_aton(MDNS_IP) + socket.inet_aton("0.0.0.0")

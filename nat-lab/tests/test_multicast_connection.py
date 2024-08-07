@@ -52,6 +52,22 @@ MUILTICAST_TEST_PARAMS = [
         ]),
         "mdns",
     ),
+    pytest.param(
+        generate_setup_parameter_pair([
+            (ConnectionTag.MAC_VM, AdapterType.BoringTun),
+            (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
+        ]),
+        "ssdp",
+        marks=pytest.mark.mac,
+    ),
+    pytest.param(
+        generate_setup_parameter_pair([
+            (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
+            (ConnectionTag.MAC_VM, AdapterType.BoringTun),
+        ]),
+        "mdns",
+        marks=pytest.mark.mac,
+    ),
 ]
 
 
@@ -61,6 +77,13 @@ async def add_multicast_route(connection: Connection) -> None:
             ["ip", "route", "add", "224.0.0.0/4", "dev", "tun10"]
         )
         await ipconf.execute()
+    elif connection.target_os == TargetOS.Mac:
+        ipconf = await connection.create_process(
+            ["route", "delete", "224.0.0.0/4"]
+        ).execute()
+        ipconf = await connection.create_process(
+            ["route", "add", "-net", "224.0.0.0/4", "-interface", "utun10"]
+        ).execute()
 
 
 @pytest.mark.asyncio
