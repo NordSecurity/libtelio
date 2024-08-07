@@ -1,33 +1,30 @@
 pub use crate::event_log::moose::{
     ErrorCallback, InitCallback, MooseError, MooseErrorLevel, TrackerState,
 };
+use crate::{DEFAULT_ORDERING, MOOSE_INITIALIZED};
 
-use std::sync::mpsc::SyncSender;
 pub use telio_utils::{telio_log_error, telio_log_info, telio_log_warn};
 
 /// Struct for moose::InitCallback
-pub struct MooseInitCallback {
-    /// Channel tx half to send init result
-    pub init_success_tx: SyncSender<bool>,
-}
+pub struct MooseInitCallback;
 
 /// Struct for moose::ErrorCallback
 pub struct MooseErrorCallback;
 
 impl InitCallback for MooseInitCallback {
     fn after_init(&self, result_code: &Result<TrackerState, MooseError>) {
-        let success = match result_code {
+        match result_code {
             Ok(res) => {
                 telio_log_info!("[Moose] Init callback success: {:?}", res);
+                MOOSE_INITIALIZED.store(true, DEFAULT_ORDERING);
                 true
             }
             Err(err) => {
                 telio_log_warn!("[Moose] Init callback error: {:?}", err);
+                MOOSE_INITIALIZED.store(false, DEFAULT_ORDERING);
                 false
             }
         };
-        #[allow(mpsc_blocking_send)]
-        let _ = self.init_success_tx.send(success);
     }
 }
 
