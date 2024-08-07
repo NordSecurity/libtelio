@@ -14,7 +14,7 @@ tracing.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-time = { version = "=0.3.20" } # moose v5.0.0 requires this
+time.workspace = true
 cargo-platform = { version = "=0.1.7", optional = true  } # moose v5.0.0 requires this
 
 telio-utils.workspace = true

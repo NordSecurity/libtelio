@@ -1,13 +1,7 @@
 #![deny(missing_docs)]
 //! Contains macros to simplify using Moose functions from within libtelio
 
-use std::{
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        mpsc::{sync_channel, SyncSender},
-    },
-    time::Duration,
-};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub use telio_utils::{telio_log_error, telio_log_warn};
 
@@ -71,27 +65,15 @@ pub fn init_lana(
     app_version: String,
     prod: bool,
 ) -> Result<moose::Result, moose::Error> {
-    let (tx, rx) = sync_channel(1);
     if !is_lana_initialized() {
-        if let Err(err) = init_moose(event_path, app_version, prod, tx) {
-            telio_log_warn!("[Moose] Error: {:?} on call to `{}`", err, "moose_init");
-            return Err(err);
-        };
-
-        match rx.recv_timeout(Duration::from_secs(LANA_MOOSE_MAX_INIT_TIME as u64)) {
-            Err(_) => {
-                telio_log_warn!(
-                    "[Moose] Failed to receive moose init callback result, channel timed out"
-                );
-                Err(moose::Error::NotInitiatedError)
+        match init_moose(event_path, app_version, prod) {
+            Err(err) => {
+                telio_log_warn!("[Moose] Error: {:?} on call to `{}`", err, "moose_init");
+                Err(err)
             }
-            Ok(init_result) => {
-                if init_result {
-                    MOOSE_INITIALIZED.store(true, DEFAULT_ORDERING);
-                    Ok(moose::Result::Success)
-                } else {
-                    Err(moose::Error::NotInitiatedError)
-                }
+            ok => {
+                MOOSE_INITIALIZED.store(true, DEFAULT_ORDERING);
+                ok
             }
         }
     } else {
@@ -139,17 +121,14 @@ pub fn init_moose(
     event_path: String,
     app_version: String,
     prod: bool,
-    tx: SyncSender<bool>,
 ) -> std::result::Result<moose::Result, moose::Error> {
     #[cfg(test)]
     {
-        if let Some(mock) = test::STUB.try_lock().unwrap().as_ref() {
+        if let Some(mock) = test::STUB.try_lock().unwrap().as_mut() {
             return mock.init(
                 event_path,
                 prod,
-                Box::new(moose_callbacks::MooseInitCallback {
-                    init_success_tx: tx,
-                }),
+                Box::new(moose_callbacks::MooseInitCallback),
                 Box::new(moose_callbacks::MooseErrorCallback),
             );
         }
@@ -157,9 +136,7 @@ pub fn init_moose(
     moose::init(
         event_path,
         prod,
-        Box::new(moose_callbacks::MooseInitCallback {
-            init_success_tx: tx,
-        }),
+        Box::new(moose_callbacks::MooseInitCallback),
         Box::new(moose_callbacks::MooseErrorCallback),
     )?;
     moose::set_context_application_libtelioapp_version(app_version)?;
@@ -178,7 +155,10 @@ pub fn fetch_context_string(path: String) -> Option<String> {
 #[cfg(test)]
 mod test {
     use serial_test::serial;
-    use std::sync::Mutex;
+    use std::{
+        sync::{Arc, Barrier, Mutex},
+        thread::JoinHandle,
+    };
 
     use super::{
         deinit_lana,
@@ -207,21 +187,40 @@ mod test {
     pub struct MooseStub {
         return_success: bool,
         init_cb_result: Result<moose::TrackerState, moose::MooseError>,
-        should_call_init_cb: bool,
+        should_call_init_cb: Option<Arc<Barrier>>,
+        init_cb_thread: Option<JoinHandle<()>>,
     }
 
     impl MooseStub {
+        fn new(
+            return_success: bool,
+            init_cb_result: Result<moose::TrackerState, moose::MooseError>,
+            should_call_init_cb: Option<Arc<Barrier>>,
+        ) -> Self {
+            Self {
+                return_success,
+                init_cb_result,
+                should_call_init_cb,
+                init_cb_thread: None,
+            }
+        }
+
         #[allow(clippy::too_many_arguments)]
         pub fn init(
-            &self,
+            &mut self,
             _event_path: String,
             _prod: bool,
             init_cb: Box<(dyn InitCallback + 'static)>,
             _error_cb: Box<(dyn ErrorCallback + Sync + std::marker::Send + 'static)>,
         ) -> std::result::Result<moose::Result, moose::Error> {
-            if self.should_call_init_cb {
-                init_cb.after_init(&self.init_cb_result);
-            }
+            let should_call_init_cb = self.should_call_init_cb.clone();
+            let init_cb_result = self.init_cb_result.clone();
+            self.init_cb_thread = Some(std::thread::spawn(move || {
+                if let Some(barrier) = should_call_init_cb {
+                    barrier.wait();
+                    init_cb.after_init(&init_cb_result);
+                }
+            }));
             if self.return_success {
                 Ok(moose::Result::Success)
             } else {
@@ -230,13 +229,23 @@ mod test {
         }
     }
 
+    impl Drop for MooseStub {
+        fn drop(&mut self) {
+            if let Some(t) = self.init_cb_thread.take() {
+                // Making sure that the callback has been called before the
+                // end of the test.
+                let _ = t.join();
+            }
+        }
+    }
+
     impl Default for MooseStub {
         fn default() -> Self {
-            MooseStub {
-                return_success: true,
-                init_cb_result: Ok(moose::TrackerState::Ready),
-                should_call_init_cb: true,
-            }
+            MooseStub::new(
+                true,
+                Ok(moose::TrackerState::Ready),
+                Some(Arc::new(Barrier::new(1))),
+            )
         }
     }
 
@@ -293,11 +302,11 @@ mod test {
     #[test]
     #[serial]
     fn test_init_lana_with_failing_moose_init() {
-        let _wrapper = MooseStubWrapper::new(MooseStub {
-            return_success: false,
-            init_cb_result: Ok(moose::TrackerState::Ready),
-            should_call_init_cb: true,
-        });
+        let _wrapper = MooseStubWrapper::new(MooseStub::new(
+            false,
+            Ok(moose::TrackerState::Ready),
+            Some(Arc::new(Barrier::new(1))),
+        ));
 
         let result = init_lana("/event.db".to_string(), "tests".to_string(), false);
         match result {
@@ -306,24 +315,29 @@ mod test {
         };
 
         assert!(!is_lana_initialized());
+
+        teardown();
     }
 
     #[test]
     #[serial]
     fn test_init_lana_with_failing_moose_init_cb() {
-        let _wrapper = MooseStubWrapper::new(MooseStub {
-            return_success: true,
-            init_cb_result: Err(moose::MooseError::NotInitiated),
-            should_call_init_cb: true,
-        });
+        let init_cb_barrier = Arc::new(Barrier::new(2));
+        let _wrapper = MooseStubWrapper::new(MooseStub::new(
+            true,
+            Err(moose::MooseError::NotInitiated),
+            Some(init_cb_barrier.clone()),
+        ));
 
         let result = init_lana("/event.db".to_string(), "tests".to_string(), false);
-        match result {
-            Ok(res) => panic!("{:?}", res),
-            Err(error) => assert_eq!("NotInitiatedError", format!("{:?}", error)),
-        };
 
+        assert!(result.is_ok());
+        assert!(is_lana_initialized());
+
+        init_cb_barrier.wait();
         assert!(!is_lana_initialized());
+
+        teardown();
     }
 
     #[test]
