@@ -156,6 +156,7 @@ class ArtifactsDownloader:
             if (
                 job["stage"] == "build"
                 and self.target_os in job["name"]
+                and self.target_arch is not None
                 and self.target_arch in job["name"]
             ):
                 self._get_artifacts(job, unzip=True)
