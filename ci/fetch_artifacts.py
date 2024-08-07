@@ -137,6 +137,8 @@ class ArtifactsDownloader:
         tag_data = json.loads(tag_msg)
         pipeline_id = tag_data["pipeline_id"]
 
+        job_found = False
+
         for job in json.loads(
             self._get_api(
                 (
@@ -151,6 +153,7 @@ class ArtifactsDownloader:
                 and job["name"] == "uniffi-bindings"
             ):
                 self._get_artifacts(job)
+                job_found = True
 
             # Binary builds
             if (
@@ -160,3 +163,9 @@ class ArtifactsDownloader:
                 and self.target_arch in job["name"]
             ):
                 self._get_artifacts(job, unzip=True)
+                job_found = True
+
+        if not job_found:
+            raise Exception(
+                f"No matching job found for {self.target_os} {self.target_arch} download"
+            )
