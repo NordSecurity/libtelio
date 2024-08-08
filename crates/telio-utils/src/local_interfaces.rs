@@ -5,6 +5,8 @@ use ipnet::{Ipv4Net, PrefixLenError};
 use std::net::{IpAddr, Ipv4Addr};
 use thiserror::Error as TError;
 
+use crate::telio_log_debug;
+
 #[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
 /// Trait to get IF Address
 pub trait GetIfAddrs: Send + Sync + Default + 'static {
@@ -58,6 +60,7 @@ pub fn gather_local_interfaces<G: GetIfAddrs>(
     get_if_addr: &G,
 ) -> Result<Vec<if_addrs::Interface>, GetIFError> {
     let shared_range: Ipv4Net = Ipv4Net::new(Ipv4Addr::new(100, 64, 0, 0), 10)?;
+    telio_log_debug!("IFs {:?}", get_if_addr.get()); // TO REMOVE!!
     Ok(get_if_addr
         .get()?
         .into_iter()

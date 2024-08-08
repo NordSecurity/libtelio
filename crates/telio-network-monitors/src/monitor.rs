@@ -39,6 +39,7 @@ impl NetworkMonitor {
     {
         if let Ok(mut guard) = LOCAL_ADDRS_CACHE.lock() {
             *guard = local_interfaces::gather_local_interfaces(&if_addr)?;
+            telio_log_debug!("local cache {:?}", *guard);
         }
 
         #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
@@ -72,7 +73,7 @@ impl NetworkMonitor {
                         Ok(()) => match local_interfaces::gather_local_interfaces(&get_if_addr) {
                             Ok(v) => {
                                 if let Ok(mut guard) = LOCAL_ADDRS_CACHE.lock() {
-                                    telio_log_debug!("Updating local addr cache {:?}", v);
+                                    telio_log_debug!("Updating local addr cache");
                                     *guard = v;
                                 }
                             }

@@ -169,31 +169,16 @@ class NetworkSwitcherWindows(NetworkSwitcher):
             pass
 
     @asynccontextmanager
-    async def add_secondary_ip(self) -> AsyncIterator:
+    async def change_mtu(self) -> AsyncIterator:
         await self._connection.create_process([
             "netsh",
             "interface",
             "ipv4",
-            "add",
-            "address",
-            'name="Ethernet 2"',
-            "addr=192.168.1.10",
-            "mask=255.255.255.0",
-            "gateway=192.168.1.1",
-            "gwmetric=1",
-        ]).execute()
-        yield
-
-    @asynccontextmanager
-    async def remove_secondary_ip(self) -> AsyncIterator:
-        await self._connection.create_process([
-            "netsh",
-            "interface",
-            "ipv4",
-            "delete",
-            "address",
-            'name="Ethernet 2"',
-            "addr=192.168.1.10",
+            "set",
+            "subinterface",
+            '\"Ethernet 3\"',
+            "mtu=1380",
+            "store=persistent",
         ]).execute()
         yield
 

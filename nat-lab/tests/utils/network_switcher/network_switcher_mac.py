@@ -62,16 +62,9 @@ class NetworkSwitcherMac(NetworkSwitcher):
         yield
 
     @asynccontextmanager
-    async def add_secondary_ip(self) -> AsyncIterator:
+    async def change_mtu(self) -> AsyncIterator:
         await self._connection.create_process(
-            ["ifconfig", "en0", "inet", "192.168.125.21", "netmask", "255.255.255.0"],
-        ).execute()
-        yield
-
-    @asynccontextmanager
-    async def remove_secondary_ip(self) -> AsyncIterator:
-        await self._connection.create_process(
-            ["ifconfig", "en0", "inet", "192.168.125.21", "netmask", "255.255.255.0", "delete"],
+            ["ifconfig", "en3", "mtu", "1300"],
         ).execute()
         yield
 

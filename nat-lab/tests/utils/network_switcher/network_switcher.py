@@ -19,10 +19,5 @@ class NetworkSwitcher(ABC):
 
     @abstractmethod
     @asynccontextmanager
-    async def add_secondary_ip(self) -> AsyncIterator:
-        yield
-
-    @abstractmethod
-    @asynccontextmanager
-    async def remove_secondary_ip(self) -> AsyncIterator:
+    async def change_mtu(self) -> AsyncIterator:
         yield
