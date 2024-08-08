@@ -447,6 +447,68 @@ callback interface TelioProtectCb {
     void protect(i32 socket_id);
 };
 
+/// A [Features] builder that allows a simpler initialization of
+/// features with defaults comming from libtelio lib.
+///
+/// !!! Should only be used then remote config is inaccessible !!!
+/// 
+interface FeaturesDefaultsBuilder {
+    /// Create a builder for Features with minimal defaults.
+    constructor();
+
+    /// Build final config
+    Features build();
+
+    /// Enable lana, this requires input from apps
+    [Self=ByArc]
+    FeaturesDefaultsBuilder enable_lana(string event_path, boolean is_prod);    
+    
+    /// Enable nurse with defaults
+    [Self=ByArc]
+    FeaturesDefaultsBuilder enable_nurse();
+
+    /// Enable firewall connection resets when boringtun is used
+    [Self=ByArc]
+    FeaturesDefaultsBuilder enable_firewall_connection_reset();
+    
+    /// Enable direct connections with defaults;
+    [Self=ByArc]
+    FeaturesDefaultsBuilder enable_direct();
+    
+    /// Enable default wireguard timings, derp timings and other features for best battery performance
+    [Self=ByArc]
+    FeaturesDefaultsBuilder enable_battery_saving_defaults();
+    
+    /// Enable key valiation in set_config call with defaults
+    [Self=ByArc]
+    FeaturesDefaultsBuilder enable_validate_keys();
+    
+    /// Enable IPv6 with defaults
+    [Self=ByArc]
+    FeaturesDefaultsBuilder enable_ipv6();
+    
+    /// Enable nicknames with defaults
+    [Self=ByArc]
+    FeaturesDefaultsBuilder enable_nicknames();
+    
+    /// Enable blocking event flush with timout on stop with defaults
+    [Self=ByArc]
+    FeaturesDefaultsBuilder enable_flush_events_on_stop_timeout_seconds();
+
+    /// Enable Link detection mechanism with defaults
+    [Self=ByArc]
+    FeaturesDefaultsBuilder enable_link_detection();
+
+    /// Enable PMTU discovery with defaults;
+    [Self=ByArc]
+    FeaturesDefaultsBuilder enable_pmtu_discovery();
+    
+    /// Eanable multicast with defaults
+    [Self=ByArc]
+    FeaturesDefaultsBuilder enable_multicast();
+};
+
+
 /// Encompasses all of the possible features that can be enabled
 dictionary Features {
     /// Additional wireguard configuration

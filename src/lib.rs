@@ -8,7 +8,7 @@ pub mod _telio_integration_documentation {
 
 pub mod ffi;
 pub use crate::ffi::*;
-use crate::types::*;
+use crate::{defaults_builder::FeaturesDefaultsBuilder, types::*};
 pub use ffi::types as ffi_types;
 
 /// cbindgen:ignore
