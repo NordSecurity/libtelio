@@ -5,6 +5,7 @@ import Pyro5.api  # type: ignore
 import Pyro5.server  # type: ignore
 import sys
 import telio_bindings as libtelio  # type: ignore # pylint: disable=import-error
+from threading import Lock
 from typing import List
 
 REMOTE_LOG = "remote.log"
@@ -75,19 +76,21 @@ class TelioEventCbImpl(libtelio.TelioEventCb):
 
 class TelioLoggerCbImpl(libtelio.TelioLoggerCb):
     def __init__(self):
+        self.lock = Lock()
         try:
             os.remove(TCLI_LOG)
         except FileNotFoundError:
             pass
 
     def log(self, log_level, payload):
-        with open(TCLI_LOG, "a", encoding="utf-8") as logfile:
-            try:
-                logfile.write(f"{datetime.datetime.now()} {log_level} {payload}\n")
-            except IOError as e:
-                logfile.write(
-                    f"{datetime.datetime.now()} Failed to write logline due to error {str(e)}\n"
-                )
+        with self.lock:
+            with open(TCLI_LOG, "a", encoding="utf-8") as logfile:
+                try:
+                    logfile.write(f"{datetime.datetime.now()} {log_level} {payload}\n")
+                except IOError as e:
+                    logfile.write(
+                        f"{datetime.datetime.now()} Failed to write logline due to error {str(e)}\n"
+                    )
 
 
 @Pyro5.api.expose
