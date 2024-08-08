@@ -17,11 +17,7 @@ use std::{
     sync::Arc,
 };
 use telio_crypto::{meshnet_canonical_key_order, PublicKey, SecretKey};
-use telio_model::config::Server;
-use telio_model::{
-    event::Event,
-    mesh::{get_ip_stack, IpStack, NodeState},
-};
+use telio_model::{config::Server, event::Event, mesh::NodeState};
 use telio_nat_detect::nat_detection::{retrieve_single_nat, NatData};
 use telio_proto::{HeartbeatMessage, HeartbeatNatType, HeartbeatStatus, HeartbeatType};
 use telio_task::{
@@ -29,7 +25,8 @@ use telio_task::{
     Runtime, RuntimeExt, WaitResponse,
 };
 use telio_utils::{
-    interval_at, map_enum, telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn,
+    get_ip_stack, interval_at, map_enum, telio_log_debug, telio_log_error, telio_log_trace,
+    telio_log_warn, IpStack,
 };
 use telio_wg::uapi::PeerState;
 use tokio::time::{sleep, Duration, Instant, Interval, Sleep};

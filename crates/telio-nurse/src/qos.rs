@@ -15,10 +15,10 @@ use telio_task::{io::mc_chan, Runtime, RuntimeExt, WaitResponse};
 use telio_wg::uapi::{AnalyticsEvent, PeerState};
 
 use telio_utils::{
-    interval, telio_log_debug, telio_log_trace, DualPingResults, DualTarget, Pinger,
+    interval, telio_log_debug, telio_log_trace, DualPingResults, DualTarget, IpStack, Pinger,
 };
 
-use crate::config::QoSConfig;
+use crate::{config::QoSConfig, data::MeshConfigUpdateEvent};
 
 /// Information about a node in the meshnet.
 #[derive(Clone)]
@@ -161,6 +161,7 @@ impl OutputData {
 pub struct Io {
     pub wg_channel: mc_chan::Rx<Box<AnalyticsEvent>>,
     pub manual_trigger_channel: mc_chan::Rx<()>,
+    pub config_update_channel: mc_chan::Rx<Box<MeshConfigUpdateEvent>>,
 }
 
 /// Analytics data about a meshnet.
@@ -172,6 +173,7 @@ pub struct Analytics {
     ping_channel_rx: mpsc::Receiver<(PublicKey, DualPingResults)>,
     ping_channel_tx: mpsc::WeakSender<(PublicKey, DualPingResults)>,
     buckets: u32,
+    ip_stack: Option<IpStack>,
     #[cfg(test)]
     ping_cnt: u32,
 }
@@ -188,6 +190,14 @@ impl Runtime for Analytics {
             Ok(wg_event) = self.io.wg_channel.recv() => {
                 Self::guard(async move {
                     self.handle_wg_event(&wg_event).await;
+                    Ok(())
+                })
+            },
+
+            // Config event
+            Ok(config_event) = self.io.config_update_channel.recv() => {
+                Self::guard(async move {
+                    self.handle_config_event(&config_event).await;
                     Ok(())
                 })
             },
@@ -225,11 +235,11 @@ impl Analytics {
     /// # Returns
     ///
     /// A new `Analytics` instance with the given configuration but with no nodes.
-    pub fn new(config: QoSConfig, io: Io) -> Self {
+    pub fn new(config: QoSConfig, io: Io, ipv6_enabled: bool) -> Self {
         let (ping_channel_tx, ping_channel_rx) = mpsc::channel(1);
 
         let ping_backend = if config.rtt_types.contains(&RttType::Ping) {
-            Arc::new(Pinger::new(config.rtt_tries).ok())
+            Arc::new(Pinger::new(config.rtt_tries, ipv6_enabled).ok())
         } else {
             Arc::new(None)
         };
@@ -243,6 +253,7 @@ impl Analytics {
             ping_channel_rx,
             ping_channel_tx: ping_channel_tx.downgrade(),
             buckets: config.buckets,
+            ip_stack: None,
             // TODO: introduce mocked `ping_backend` for testing
             #[cfg(test)]
             ping_cnt: 0,
@@ -400,6 +411,14 @@ impl Analytics {
             .or_insert_with(|| NodeInfo::from(event.clone()));
     }
 
+    /// Update peer data from a received config event.
+    /// # Arguments
+    ///
+    /// * `event` - Received config event.
+    async fn handle_config_event(&mut self, event: &MeshConfigUpdateEvent) {
+        self.ip_stack = event.ip_stack.clone();
+    }
+
     /// Launch ping task for every node.
     fn perform_ping(&mut self) {
         #[cfg(test)]
@@ -425,6 +444,7 @@ impl Analytics {
                 let (pk, ip_addresses) = (node.public_key, node.ip_addresses.clone());
                 let pinger = Arc::clone(&self.ping_backend);
                 let ping_channel_tx = ping_channel_tx.clone();
+                let curr_ip_stack = self.ip_stack.clone();
 
                 tokio::spawn(async move {
                     if let Some(pinger) = &*pinger {
@@ -432,7 +452,19 @@ impl Analytics {
                         let mut ip_addresses = ip_addresses.iter().peekable();
 
                         while let Some(ip_address) = ip_addresses.next() {
-                            dpr = Box::pin(pinger.perform(*ip_address)).await;
+                            let dpt = *ip_address;
+
+                            // Adjust target based on local IP stack
+                            match curr_ip_stack {
+                                Some(IpStack::IPv4) | None => {
+                                    let _ = dpt.get_maybe_ipv6().take();
+                                }
+                                Some(IpStack::IPv6) => {
+                                    let _ = dpt.get_maybe_ipv4().take();
+                                }
+                                Some(_) => {}
+                            }
+                            dpr = Box::pin(pinger.perform(dpt)).await;
 
                             if let Some(results_v4) = &dpr.v4 {
                                 if results_v4.successful_pings != 0 {
@@ -872,10 +904,12 @@ mod tests {
     }
 
     fn setup() -> (Analytics, Tx<()>, Tx<Box<AnalyticsEvent>>) {
-        let (manual_trigger_channel, wg_channel) = (McChan::new(1), McChan::new(1));
+        let (manual_trigger_channel, wg_channel, config_update_channel) =
+            (McChan::new(1), McChan::new(1), McChan::new(1));
         let io = Io {
             wg_channel: wg_channel.rx,
             manual_trigger_channel: manual_trigger_channel.rx,
+            config_update_channel: config_update_channel.rx,
         };
         let config = QoSConfig {
             rtt_interval: RTT,
@@ -885,7 +919,7 @@ mod tests {
         };
 
         (
-            Analytics::new(config, io),
+            Analytics::new(config, io, true),
             manual_trigger_channel.tx,
             wg_channel.tx,
         )
