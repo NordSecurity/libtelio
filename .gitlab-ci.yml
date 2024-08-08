@@ -15,4 +15,4 @@ libtelio-build-pipeline:
 
   trigger:
     project: $LIBTELIO_BUILD_PROJECT_PATH
-    branch: v1.2.12 # REMEMBER to also update in .github/workflows/gitlab.yml
+    branch: v1.2.13 # REMEMBER to also update in .github/workflows/gitlab.yml
