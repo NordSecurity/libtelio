@@ -4,12 +4,10 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-aiodocker = "*"
 mypy = "*"
 pytest = "*"
 pytest-asyncio = "*"
 pytest-html = "*"
-asyncssh = ">=2.14.2"
 pytest-rerunfailures = "*"
 dataclasses-json = "*"
 pytest-order = "*"
@@ -17,7 +15,7 @@ pytest-timeout = "*"
 flatten-json = "*"
 python-wireguard = "*"
 cryptography = "*"
-aiohttp = "*"
+aiohttp = "==3.9.5"
 aiosignal = "*"
 async-timeout = "*"
 attrs = "*"
@@ -47,6 +45,10 @@ yarl = "*"
 requests = "*"
 pyyaml = "*"
 types-pyyaml = "*"
+psutil = "*"
+types-psutil = "*"
+asyncssh = "==2.14.2"
+aiodocker = "*"
 
 [dev-packages]
 

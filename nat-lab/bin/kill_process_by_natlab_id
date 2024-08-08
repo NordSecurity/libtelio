@@ -9,7 +9,7 @@ NATLAB_ID=$1
 
 for pid in $(ps -e -o pid=); do
     if grep --null-data --text KILL_ID=${NATLAB_ID} /proc/${pid}/environ; then
-        cmd=$(cat /proc/${pid}/cmdline || echo "N/A")
+        cmd=$(tr -d '\000' < /proc/${pid}/cmdline || echo "N/A")
         echo "$(date) Killing ${pid} ${cmd}"
         kill "${pid}"
         exit 0
