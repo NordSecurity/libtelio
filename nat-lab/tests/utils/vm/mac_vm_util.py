@@ -60,6 +60,7 @@ async def _copy_binaries(
 
     DIST_PATH = "dist/darwin/macos/release/x86_64/"
     LOCAL_UNIFFI_PATH = "nat-lab/tests/uniffi/"
+    LOCAL_BIN_DIR = "nat-lab/bin/"
 
     files_to_copy = [
         (f"{DIST_PATH}tcli", f"{VM_TCLI_DIR}tcli", True),
@@ -78,6 +79,7 @@ async def _copy_binaries(
             f"{VM_UNIFFI_DIR}libtelio_remote.py",
             True,
         ),
+        (f"{LOCAL_BIN_DIR}multicast.py", f"{VM_TCLI_DIR}multicast.py", True),
     ]
     for src, dst, set_exec in files_to_copy:
         await asyncssh.scp(
