@@ -16,6 +16,10 @@ iptables -t filter -A INPUT -i lo -j ACCEPT
 iptables -t filter -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
 iptables -t filter -P INPUT DROP
 
+# Drop all out-of-tunnel meshnet traffic
+iptables -t filter -A FORWARD -s 100.64.0.0/10 -j DROP
+iptables -t filter -A FORWARD -d 100.64.0.0/10 -j DROP
+
 # Configure standart linux NAT, this will be port restricted cone NAT
 iptables -t nat -A POSTROUTING -o $public_itf -j MASQUERADE
 
