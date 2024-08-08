@@ -1,7 +1,5 @@
 import asyncssh
-import os
 import shlex
-import tempfile
 from .connection import Connection, TargetOS
 from datetime import datetime
 from typing import List
@@ -28,13 +26,6 @@ class SshConnection(Connection):
             assert False, f"not supported target_os '{self._target_os}'"
 
         return SshProcess(self._connection, command, escape_argument)
-
-    async def read_text_file(self, path) -> str:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_file_name = os.path.join(temp_dir, "temp")
-            await asyncssh.scp((self._connection, path), temp_file_name)
-            with open(temp_file_name, encoding="utf-8") as f:
-                return f.read()
 
     async def get_ip_address(self) -> tuple[str, str]:
         ip = self._connection._host  # pylint: disable=protected-access
