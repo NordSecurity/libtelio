@@ -18,7 +18,8 @@ def ssdp_client(timeout: int):
     s.bind(("0.0.0.0", 0))
     s.sendto(SSDP_REQ, (SSDP_IP, SSDP_PORT))
     buf = s.recv(2048)
-    assert(buf == SSDP_RESP)
+    assert buf == SSDP_RESP
+
 
 def ssdp_server(timeout: int):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -49,6 +50,7 @@ def mdns_client(timeout: int):
         buf = s.recv(2048)
         if buf == MDNS_RESP:
             break
+
 
 def mdns_server(timeout: int):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
