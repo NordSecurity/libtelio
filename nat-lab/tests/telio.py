@@ -990,6 +990,7 @@ class Client:
 
     async def maybe_write_device_fingerprint_to_moose_db(self):
         if self._fingerprint is not None:
+            self.wait_for_log("[Moose] Init callback success")
             database, fingerprint = self._fingerprint
             await self._connection.create_process([
                 "sqlite3",
