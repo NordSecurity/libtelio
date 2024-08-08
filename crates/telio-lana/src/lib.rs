@@ -304,7 +304,7 @@ mod test {
     fn test_init_lana_with_failing_moose_init() {
         let _wrapper = MooseStubWrapper::new(MooseStub::new(
             false,
-            Ok(moose::TrackerState::Ready),
+            Err(moose::MooseError::StorageEngine),
             Some(Arc::new(Barrier::new(1))),
         ));
 
@@ -335,6 +335,9 @@ mod test {
         assert!(is_lana_initialized());
 
         init_cb_barrier.wait();
+        // The barrier only unblocks the callback, it's not the same as the init callback finishing.
+        // This means that we need to wait for the effects of callback to happen.
+        while is_lana_initialized() {}
         assert!(!is_lana_initialized());
 
         teardown();
