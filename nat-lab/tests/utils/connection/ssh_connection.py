@@ -7,7 +7,6 @@ from datetime import datetime
 from typing import List
 from utils import cmd_exe_escape
 from utils.process import Process, SshProcess
-from utils.testing import test_name_safe_for_file_name
 
 
 class SshConnection(Connection):
@@ -34,22 +33,8 @@ class SshConnection(Connection):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_file_name = os.path.join(temp_dir, "temp")
             await asyncssh.scp((self._connection, path), temp_file_name)
-            with open(temp_file_name, "rb") as f:
-                buf = f.read()
-                try:
-                    return buf.decode(encoding="utf-8", errors="strict")
-                except UnicodeDecodeError as e:
-                    log_dir = "logs"
-                    os.makedirs(log_dir, exist_ok=True)
-                    with open(
-                        os.path.join(
-                            log_dir, f"{test_name_safe_for_file_name()}_utf8error"
-                        ),
-                        "wb",
-                    ) as backup:
-                        backup.write(f"Exception occured: {e}\n\n".encode())
-                        backup.write(buf)
-                    return buf.decode(encoding="utf-8", errors="replace")
+            with open(temp_file_name, encoding="utf-8") as f:
+                return f.read()
 
     async def get_ip_address(self) -> tuple[str, str]:
         ip = self._connection._host  # pylint: disable=protected-access
