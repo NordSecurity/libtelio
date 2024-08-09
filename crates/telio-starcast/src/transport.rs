@@ -17,9 +17,13 @@ use telio_task::{
 };
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn};
 
+use telio_model::constants::{
+    IPV4_MULTICAST_NETWORK, IPV4_STARCAST_ADDRESS, IPV6_MULTICAST_NETWORK, IPV6_STARCAST_ADDRESS,
+};
+
 use crate::{
     nat::{self, Nat, StarcastNat},
-    utils::{DualIpAddr, MutableIpPacket},
+    utils::MutableIpPacket,
 };
 
 #[cfg(feature = "test-util")]
@@ -87,17 +91,13 @@ impl Transport {
     /// Starts the transport component
     ///
     /// Parameters:
-    /// * vpeer_ip - The IP address of the virtual starcast peer
     /// * meshnet_ip - the meshnet IP of the node on which this component is currently running
     /// * socket_pool - To create the transport socket
     /// * packet_chan - A channel to send packets to and receive packets from the virtual peer component
-    /// * multicast_ips - IPs that native multicast packets can be sent to, e.g. 224.0.0.0/4
     pub async fn start(
-        vpeer_ip: DualIpAddr,
         meshnet_ip: IpAddr,
         socket_pool: Arc<SocketPool>,
         packet_chan: Chan<Vec<u8>>,
-        multicast_ips: Vec<IpNet>,
     ) -> Result<Self, Error> {
         let transport_socket = socket_pool
             .new_internal_udp(SocketAddr::new(meshnet_ip, MULTICAST_TRANSPORT_PORT), None)
@@ -108,13 +108,15 @@ impl Transport {
             })?;
         let transport_socket = Arc::new(transport_socket);
 
+        let multicast_ips = vec![IPV4_MULTICAST_NETWORK.into(), IPV6_MULTICAST_NETWORK.into()];
+
         Ok(Self {
             task: Task::start(State {
                 transport_socket,
                 packet_chan,
                 multicast_ips,
                 recv_buffer: vec![0; MAX_PACKET_SIZE],
-                nat: StarcastNat::new(vpeer_ip.ipv4, vpeer_ip.ipv6),
+                nat: StarcastNat::new(IPV4_STARCAST_ADDRESS, IPV6_STARCAST_ADDRESS),
                 peers: Vec::new(),
             }),
         })

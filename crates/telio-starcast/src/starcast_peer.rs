@@ -16,6 +16,10 @@ use telio_wg::uapi::Peer;
 use tokio::{net::UdpSocket, sync::mpsc::error::SendTimeoutError, time::Interval};
 use x25519_dalek::{PublicKey as PublicKeyDalek, StaticSecret};
 
+use telio_model::constants::{
+    IPV4_MULTICAST_NETWORK, IPV4_STARCAST_NETWORK, IPV6_MULTICAST_NETWORK, IPV6_STARCAST_NETWORK,
+};
+
 /// Constant for maximum packet size.
 const MAX_PACKET: usize = 2048;
 
@@ -51,9 +55,9 @@ pub struct StarcastPeer {
 /// Starcast virtual peer configuration.
 pub struct Config {
     /// Public key of the peer with which the starcast virtual peer shall communicate.
-    public_key: PublicKey,
+    pub public_key: PublicKey,
     /// Port number through which the virtual starcast peer shall communicate with WireGuard.
-    wg_port: u16,
+    pub wg_port: u16,
 }
 
 impl StarcastPeer {
@@ -68,12 +72,19 @@ impl StarcastPeer {
     /// # Returns
     ///
     /// A new starcast virtual peer.
-    pub async fn start(channel: Chan<Vec<u8>>, allowed_ips: Vec<IpNet>) -> Result<Self, Error> {
+    pub async fn start(channel: Chan<Vec<u8>>, ipv6: bool) -> Result<Self, Error> {
         // Port 0 means the OS will dynamically allocate port.
         const TIMER_UPDATE_PERIOD: Duration = Duration::from_millis(250);
         let socket = UdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await?;
         let wg_timer_tick_interval = interval(TIMER_UPDATE_PERIOD);
         let secret_key = SecretKey::gen();
+
+        let mut allowed_ips = vec![IPV4_MULTICAST_NETWORK.into(), IPV4_STARCAST_NETWORK.into()];
+
+        if ipv6 {
+            allowed_ips.push(IPV6_MULTICAST_NETWORK.into());
+            allowed_ips.push(IPV6_STARCAST_NETWORK.into());
+        }
 
         Ok(StarcastPeer {
             task: Task::start(State {
@@ -307,26 +318,15 @@ mod tests {
     use super::*;
     use crate::utils::test_utils::make_udp_v4;
 
-    use ipnet::Ipv4Net;
-    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-
     // This test connects two virtual peers by their sockets and tests if a packet
     // can make it through between them.
     #[tokio::test]
     async fn test_two_virtual_peers_intercommunication() {
         let (chan_a, chan_a_internal) = Chan::pipe();
         let (mut chan_b, chan_b_internal) = Chan::pipe();
-        let starcast_allowed_ips = vec![
-            IpNet::V4(Ipv4Net::new(Ipv4Addr::new(224, 0, 0, 0), 4).unwrap()),
-            IpNet::V4(Ipv4Net::new(Ipv4Addr::new(100, 64, 0, 5), 32).unwrap()),
-            IpAddr::V6(Ipv6Addr::new(0xff02, 0, 0, 0, 0, 0, 0, 0xfb)).into(),
-        ];
-        let starcast_vpeer_a = StarcastPeer::start(chan_a_internal, starcast_allowed_ips.clone())
-            .await
-            .unwrap();
-        let starcast_vpeer_b = StarcastPeer::start(chan_b_internal, starcast_allowed_ips)
-            .await
-            .unwrap();
+
+        let starcast_vpeer_a = StarcastPeer::start(chan_a_internal, false).await.unwrap();
+        let starcast_vpeer_b = StarcastPeer::start(chan_b_internal, false).await.unwrap();
 
         let a_peer = starcast_vpeer_a.get_peer().await.unwrap();
         let b_peer = starcast_vpeer_b.get_peer().await.unwrap();
