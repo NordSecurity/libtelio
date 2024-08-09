@@ -77,6 +77,12 @@ class Nurse(DataClassJsonMixin):
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
+class Batching(DataClassJsonMixin):
+    direct_connection_threshold: int = 0
+
+
+@dataclass_json(undefined=Undefined.EXCLUDE)
+@dataclass
 class LinkDetection(DataClassJsonMixin):
     rtt_seconds: Optional[int] = None
     no_of_pings: Optional[int] = 0
@@ -144,3 +150,4 @@ class TelioFeatures(DataClassJsonMixin):
         )
     )
     multicast: bool = False
+    batching: Optional[Batching] = None
