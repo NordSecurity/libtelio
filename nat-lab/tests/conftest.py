@@ -8,7 +8,6 @@ from helpers import SetupParameters, setup_connections
 from interderp_cli import InterDerpClient
 from mesh_api import start_tcpdump, stop_tcpdump
 from telio import AdapterType
-from typing import List, Tuple
 from utils.connection import DockerConnection
 from utils.connection_util import ConnectionTag, LAN_ADDR_MAP
 from utils.router import IPStack
@@ -60,7 +59,7 @@ def event_loop():
 
 def pytest_make_parametrize_id(config, val):
     param_id = ""
-    if isinstance(val, (List, Tuple)):
+    if isinstance(val, (list, tuple)):
         for v in val:
             res = pytest_make_parametrize_id(config, v)
             if isinstance(res, str) and res != "":

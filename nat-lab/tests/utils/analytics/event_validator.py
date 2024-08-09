@@ -278,6 +278,7 @@ class ConnectionDurationValidator:
 
 class HeartbeatIntervalValidator:
     def __init__(self, value, equals=True):
+        self._validator: IntegerEqualsValidator | IntegerNotEqualsValidator
         if equals:
             self._validator = IntegerEqualsValidator(value)
         else:
