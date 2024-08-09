@@ -1,3 +1,4 @@
+import config
 import pytest
 import time
 from contextlib import AsyncExitStack
@@ -47,8 +48,14 @@ async def test_network_monitor(
         assert alpha_conn_mngr.network_switcher
 
         await client_alpha.fetch_interfaces()
-        await exit_stack.enter_async_context(
-            alpha_conn_mngr.network_switcher.change_mtu()
+        # await exit_stack.enter_async_context(
+        #     alpha_conn_mngr.network_switcher.change_mtu()
+        # )
+
+        wg_server = config.WG_SERVER
+
+        await client_alpha.connect_to_vpn(
+            str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
         )
         time.sleep(DEFAULT_WAITING_TIME)
-        # await client_alpha.wait_for_log("Updating local addr cache")
+        await client_alpha.wait_for_log("Updating local addr cache")
