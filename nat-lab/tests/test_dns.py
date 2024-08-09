@@ -928,7 +928,7 @@ async def test_dns_nickname_in_any_case() -> None:
             for name in all_cases("yoko")
         ]
 
-        asyncio.gather(*queries)
+        await asyncio.gather(*queries)
 
 
 def all_cases(name: str) -> List[str]:

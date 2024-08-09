@@ -69,7 +69,7 @@ async def test_mesh_off(direct) -> None:
 
         await client_alpha.set_meshmap(env.api.get_meshmap(alpha.id))
 
-        asyncio.gather(
+        await asyncio.gather(
             client_alpha.wait_for_state_peer(
                 beta.public_key, [State.Connected], [path_type]
             ),
