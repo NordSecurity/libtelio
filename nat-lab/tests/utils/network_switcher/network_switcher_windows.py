@@ -176,7 +176,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
             "ipv4",
             "set",
             "subinterface",
-            '\"Ethernet 3\"',
+            "Ethernet Instance 0 3",
             "mtu=1380",
             "store=persistent",
         ]).execute()

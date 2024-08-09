@@ -16,7 +16,7 @@ unsafe extern "system" fn callback(
     if let Err(e) = PATH_CHANGE_BROADCAST.send(()) {
         telio_log_warn!("Failed to notify about changed path {e}");
     }
-    telio_log_debug!("Network interface change detected.");
+    telio_log_debug!("Network interface change detected. {:?}", notification_type);
 }
 
 /// Method to setup network monitoring for Windows
