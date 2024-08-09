@@ -14,8 +14,8 @@ use telio_model::{
 use telio_sockets::{NativeProtector, SocketPool};
 use telio_utils::{
     dual_target::{DualTarget, DualTargetError},
-    interval, telio_err_with_log, telio_log_debug, telio_log_error, telio_log_trace,
-    telio_log_warn,
+    get_ip_stack, interval, telio_err_with_log, telio_log_debug, telio_log_error, telio_log_trace,
+    telio_log_warn, IpStack,
 };
 use thiserror::Error as TError;
 use tokio::time::{self, sleep, Instant, Interval, MissedTickBehavior};
@@ -88,6 +88,8 @@ pub trait WireGuard: Send + Sync + 'static {
         exit_pubkey: PublicKey,
         exit_interface_ipv4: Ipv4Addr,
     ) -> Result<(), Error>;
+    /// Set the ip stack for the adapter
+    async fn set_ip_stack(&self, ip_stack: Option<IpStack>) -> Result<(), Error>;
 }
 
 /// WireGuard implementation allowing dynamic selection of implementation.
@@ -231,6 +233,8 @@ struct State {
     libtelio_event: Option<mc_chan::Tx<Box<LibtelioEvent>>>,
 
     stats: HashMap<PublicKey, Arc<Mutex<BytesAndTimestamps>>>,
+
+    ip_stack: Option<IpStack>,
 }
 
 const POLL_MILLIS: u64 = 1000;
@@ -316,6 +320,7 @@ impl DynamicWg {
     ///             firewall_reset_connections: None,
     ///         },
     ///         None,
+    ///         true,   
     ///     );
     /// }
     /// ```
@@ -323,15 +328,22 @@ impl DynamicWg {
         io: Io,
         cfg: Config,
         link_detection: Option<FeatureLinkDetection>,
+        ipv6_enabled: bool,
     ) -> Result<Self, Error>
     where
         Self: Sized,
     {
         let adapter = Self::start_adapter(cfg.try_clone()?)?;
         #[cfg(unix)]
-        return Ok(Self::start_with(io, adapter, link_detection, cfg));
+        return Ok(Self::start_with(
+            io,
+            adapter,
+            link_detection,
+            cfg,
+            ipv6_enabled,
+        ));
         #[cfg(windows)]
-        return Ok(Self::start_with(io, adapter, link_detection));
+        return Ok(Self::start_with(io, adapter, link_detection, ipv6_enabled));
     }
 
     fn start_with(
@@ -339,6 +351,7 @@ impl DynamicWg {
         adapter: Box<dyn Adapter>,
         link_detection: Option<FeatureLinkDetection>,
         #[cfg(unix)] cfg: Config,
+        ipv6_enabled: bool,
     ) -> Self {
         let interval = interval(Duration::from_millis(POLL_MILLIS));
         Self {
@@ -352,9 +365,10 @@ impl DynamicWg {
                 last_endpoint_change: Default::default(),
                 analytics_tx: io.analytics_tx,
                 uapi_fail_counter: 0,
-                link_detection: link_detection.map(LinkDetection::new),
+                link_detection: link_detection.map(|ld| LinkDetection::new(ld, ipv6_enabled)),
                 libtelio_event: io.libtelio_wide_event_publisher,
                 stats: HashMap::new(),
+                ip_stack: None,
             }),
         }
     }
@@ -559,6 +573,14 @@ impl WireGuard for DynamicWg {
         .await?;
 
         Ok(())
+    }
+
+    async fn set_ip_stack(&self, ip_stack: Option<IpStack>) -> Result<(), Error> {
+        Ok(task_exec!(&self.task, async move |s| {
+            s.ip_stack = ip_stack;
+            Ok(())
+        })
+        .await?)
     }
 }
 
@@ -793,7 +815,9 @@ impl State {
                 }
                 let link_detection_update_result = {
                     if let Some(link_detection) = self.link_detection.as_mut() {
-                        link_detection.update(key, node_addresses, push).await
+                        link_detection
+                            .update(key, node_addresses, push, self.ip_stack.clone())
+                            .await
                     } else {
                         LinkDetectionUpdateResult {
                             ..Default::default()
@@ -1217,6 +1241,7 @@ pub mod tests {
             Config::new().unwrap(),
             #[cfg(all(unix, not(test)))]
             cfg,
+            true,
         );
         time::advance(Duration::from_millis(0)).await;
         adapter.lock().await.checkpoint();

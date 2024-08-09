@@ -70,7 +70,7 @@ use futures::FutureExt;
 use telio_utils::{
     commit_sha,
     exponential_backoff::ExponentialBackoffBounds,
-    interval, telio_log_debug, telio_log_error, telio_log_info, telio_log_warn,
+    get_ip_stack, interval, telio_log_debug, telio_log_error, telio_log_info, telio_log_warn,
     tokio::{Monitor, ThreadTracker},
     version_tag,
 };
@@ -1083,6 +1083,7 @@ impl Runtime {
                         firewall_reset_connections,
                     },
                     features.link_detection,
+                    features.ipv6,
                 )?);
                 let wg_events = wg_events.rx;
             } else {
@@ -1144,6 +1145,7 @@ impl Runtime {
                         NurseConfig::new(nurse_features),
                         nurse_io,
                         aggregator.clone(),
+                        features.ipv6,
                     )
                     .await,
                 ))
@@ -1694,6 +1696,7 @@ impl Runtime {
     }
 
     async fn set_config(&mut self, config: &Option<Config>) -> Result {
+        // TODO: we need to let LinkDetection know, what IP stack are we using
         if self.entities.postquantum_wg.is_rotating_keys() && config.is_some() {
             // Post quantum VPN is enabled and we're trying to set up the meshnet
             return Err(Error::MeshnetUnavailableWithPQ);
@@ -1727,6 +1730,15 @@ impl Runtime {
 
         // Update for proxy and derp config
         if let Some(config) = config {
+            let _ = get_ip_stack(config.this.ip_addresses.as_ref().map_or(&[], |v| v))
+                .ok()
+                .map(|ip_stack| async {
+                    self.entities
+                        .wireguard_interface
+                        .set_ip_stack(Some(ip_stack))
+                        .await
+                });
+
             let wg_port = self
                 .entities
                 .wireguard_interface
@@ -1837,6 +1849,8 @@ impl Runtime {
 
             self.upsert_dns_peers().await?;
         } else {
+            let _ = self.entities.wireguard_interface.set_ip_stack(None).await;
+
             // Nurse is keeping Arc to Derp, so we need to get rid of it before stopping Derp
             if let Some(nurse) = self.entities.nurse.as_ref() {
                 nurse.configure_meshnet(None).await;

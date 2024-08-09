@@ -1,0 +1,1 @@
+Pinger should not ping the address class, if the ip stack does not match

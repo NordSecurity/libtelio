@@ -58,9 +58,10 @@ impl Nurse {
         config: Config,
         io: NurseIo<'_>,
         aggregator: Arc<ConnectivityDataAggregator>,
+        ipv6_enabled: bool,
     ) -> Self {
         Self {
-            task: Task::start(State::new(public_key, config, io, aggregator).await),
+            task: Task::start(State::new(public_key, config, io, aggregator, ipv6_enabled).await),
         }
     }
 
@@ -127,6 +128,7 @@ impl State {
         config: Config,
         io: NurseIo<'_>,
         aggregator: Arc<ConnectivityDataAggregator>,
+        ipv6_enabled: bool,
     ) -> Self {
         let meshnet_id = Self::meshnet_id();
 
@@ -174,7 +176,9 @@ impl State {
                 QoSIo {
                     wg_channel,
                     manual_trigger_channel: qos_trigger_channel.subscribe(),
+                    config_update_channel: config_update_channel.subscribe(),
                 },
+                ipv6_enabled,
             )))
         } else {
             None

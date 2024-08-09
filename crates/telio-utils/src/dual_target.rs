@@ -31,6 +31,16 @@ impl DualTarget {
         Ok(DualTarget { target })
     }
 
+    /// Get target's IPv4 address
+    pub fn get_maybe_ipv4(&self) -> Option<Ipv4Addr> {
+        self.target.0
+    }
+
+    /// Get target's IPv6 address
+    pub fn get_maybe_ipv6(&self) -> Option<Ipv6Addr> {
+        self.target.1
+    }
+
     /// Get target IPs
     pub fn get_targets(self) -> Result<(IpAddr, Option<IpAddr>)> {
         match self.target {

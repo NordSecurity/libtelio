@@ -705,6 +705,7 @@ mod tests {
     use telio_model::mesh::LinkState;
     use telio_sockets::{NativeProtector, SocketPool};
     use telio_utils::exponential_backoff::MockBackoff;
+    use telio_utils::ip_stack::IpStack;
     use telio_wg::uapi::{Interface, Peer};
     use telio_wg::Error as wgError;
     use telio_wg::WireGuard;
@@ -732,6 +733,7 @@ mod tests {
             async fn time_since_last_endpoint_change(&self, public_key: PublicKey) -> Result1<Option<Duration>>;
             async fn stop(self);
             async fn reset_existing_connections(&self, exit_pubkey: PublicKey, exit_ipv4: Ipv4Addr) -> Result1<()>;
+            async fn set_ip_stack(&self, ip_stack: Option<IpStack>) -> Result1<()>;
         }
     }
 
