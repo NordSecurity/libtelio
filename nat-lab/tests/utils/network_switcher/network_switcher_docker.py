@@ -21,10 +21,3 @@ class NetworkSwitcherDocker(NetworkSwitcher):
             ["/libtelio/nat-lab/bin/configure_route.sh", "secondary"]
         ).execute()
         yield
-
-    @asynccontextmanager
-    async def change_mtu(self) -> AsyncIterator:
-        await self._connection.create_process(
-            ["/libtelio/nat-lab/bin/configure_route.sh", "mtu"]
-        ).execute()
-        yield

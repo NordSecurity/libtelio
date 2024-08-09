@@ -45,13 +45,6 @@ async def test_network_monitor(
         alpha_conn_mngr, *_ = env.connections
         [client_alpha] = env.clients
 
-        assert alpha_conn_mngr.network_switcher
-
-        await client_alpha.fetch_interfaces()
-        # await exit_stack.enter_async_context(
-        #     alpha_conn_mngr.network_switcher.change_mtu()
-        # )
-
         wg_server = config.WG_SERVER
 
         await client_alpha.connect_to_vpn(

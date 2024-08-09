@@ -168,20 +168,6 @@ class NetworkSwitcherWindows(NetworkSwitcher):
             # await self._enable_management_interface()
             pass
 
-    @asynccontextmanager
-    async def change_mtu(self) -> AsyncIterator:
-        await self._connection.create_process([
-            "netsh",
-            "interface",
-            "ipv4",
-            "set",
-            "subinterface",
-            "Ethernet Instance 0 3",
-            "mtu=1380",
-            "store=persistent",
-        ]).execute()
-        yield
-
     async def _delete_existing_route(self) -> None:
         # Deleting routes by interface name instead of network destination (0.0.0.0/0) makes
         # it possible to have multiple default routes at the same time: first default route

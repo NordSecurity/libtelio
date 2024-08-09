@@ -16,8 +16,3 @@ class NetworkSwitcher(ABC):
     @asynccontextmanager
     async def switch_to_secondary_network(self) -> AsyncIterator:
         yield
-
-    @abstractmethod
-    @asynccontextmanager
-    async def change_mtu(self) -> AsyncIterator:
-        yield
