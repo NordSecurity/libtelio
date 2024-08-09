@@ -51,6 +51,55 @@ def post_copy_libsqlite3_binary_to_dist(config, args):
         )
 
 
+def post_copy_windows_debug_symbols_to_distribution_dir(config, args):
+    if config.debug:
+        return
+
+    packages = LIBTELIO_CONFIG[config.target_os].get("packages", None)
+    if packages and config.target_os == "windows":
+        for _, bins in packages.items():
+            for _, bin in bins.items():
+                debug_bin = os.path.splitext(bin)[0] + ".pdb"
+                debug_bin_path = PROJECT_CONFIG.get_cargo_path(
+                    config.rust_target, debug_bin, config.debug
+                )
+                if os.path.isfile(debug_bin_path):
+                    shutil.copy2(
+                        PROJECT_CONFIG.get_cargo_path(
+                            config.rust_target, debug_bin, config.debug
+                        ),
+                        PROJECT_CONFIG.get_distribution_path(
+                            config.target_os, config.arch, "", config.debug
+                        ),
+                    )
+
+
+def post_copy_darwin_debug_symbols_to_distribution_dir(config, args):
+    if config.debug:
+        return
+
+    packages = LIBTELIO_CONFIG[config.target_os].get("packages", None)
+    if packages and config.target_os in ["macos", "tvos", "ios"]:
+        for _, bins in packages.items():
+            for _, bin in bins.items():
+                debug_bin = bin + ".dSYM"
+                src_path = PROJECT_CONFIG.get_cargo_path(
+                    config.rust_target, debug_bin, config.debug
+                )
+                dst_path = os.path.join(
+                    PROJECT_CONFIG.get_distribution_path(
+                        config.target_os, config.arch, "", config.debug
+                    ),
+                    debug_bin,
+                )
+                if os.path.isdir(src_path):
+                    shutil.copytree(
+                        src_path,
+                        dst_path,
+                        dirs_exist_ok=True,
+                    )
+
+
 """
 This local config is highly customizable as every project can have a different
 local config depending on their needs.
@@ -118,6 +167,7 @@ LIBTELIO_CONFIG = {
             "interderpcli": {"interderpcli": "interderpcli.exe"},
             NAME: {NAME: f"{NAME}.dll"},
         },
+        "post_build": [post_copy_windows_debug_symbols_to_distribution_dir],
     },
     "android": {
         "archs": {
@@ -154,12 +204,6 @@ LIBTELIO_CONFIG = {
                 }
             },
         },
-        "env": {
-            "RUSTFLAGS": (
-                [f" -C debuginfo=2"],
-                "set",
-            )
-        },
         "packages": {
             NAME: {f"lib{NAME}": f"lib{NAME}.so"},
         },
@@ -167,7 +211,6 @@ LIBTELIO_CONFIG = {
     "linux": {
         "archs": {
             "x86_64": {
-                "strip_path": "/usr/bin/strip",
                 "env": {
                     "RUSTFLAGS": (
                         f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['x86_64']}",
@@ -176,16 +219,6 @@ LIBTELIO_CONFIG = {
                 },
             },
             "aarch64": {
-                "strip_path": "/usr/aarch64-linux-gnu/bin/strip",
-                "env": {
-                    "RUSTFLAGS": (
-                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['aarch64']}",
-                        "set",
-                    )
-                },
-            },
-            "arm64": {
-                "strip_path": "/usr/aarch64-linux-gnu/bin/strip",
                 "env": {
                     "RUSTFLAGS": (
                         f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['aarch64']}",
@@ -194,7 +227,6 @@ LIBTELIO_CONFIG = {
                 },
             },
             "i686": {
-                "strip_path": "/usr/i686-linux-gnu/bin/strip",
                 "env": {
                     "RUSTFLAGS": (
                         f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['i686']}",
@@ -203,7 +235,6 @@ LIBTELIO_CONFIG = {
                 },
             },
             "armv7hf": {
-                "strip_path": "/usr/arm-linux-gnueabihf/bin/strip",
                 "env": {
                     "RUSTFLAGS": (
                         f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['armv7hf']}",
@@ -212,7 +243,6 @@ LIBTELIO_CONFIG = {
                 },
             },
             "armv5": {
-                "strip_path": "/usr/arm-linux-gnueabi/bin/strip",
                 "env": {
                     "RUSTFLAGS": (
                         f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['armv5']}",
@@ -222,9 +252,6 @@ LIBTELIO_CONFIG = {
             },
         },
         "post_build": [post_copy_libsqlite3_binary_to_dist],
-        "env": {
-            "RUSTFLAGS": ([" -C debuginfo=2 "], "set"),
-        },
         "packages": {
             "tcli": {"tcli": "tcli"},
             "derpcli": {"derpcli": "derpcli"},
@@ -236,17 +263,20 @@ LIBTELIO_CONFIG = {
         "packages": {
             "tcli": {"tcli": "tcli"},
             NAME: {f"lib{NAME}": f"lib{NAME}.dylib"},
-        }
+        },
+        "post_build": [post_copy_darwin_debug_symbols_to_distribution_dir],
     },
     "ios": {
         "packages": {
             NAME: {f"lib{NAME}": f"lib{NAME}.dylib"},
         },
+        "post_build": [post_copy_darwin_debug_symbols_to_distribution_dir],
     },
     "tvos": {
         "packages": {
             NAME: {f"lib{NAME}": f"lib{NAME}.dylib"},
         },
+        "post_build": [post_copy_darwin_debug_symbols_to_distribution_dir],
     },
 }
 
@@ -457,85 +487,6 @@ def exec_build(args):
     call_build(config, args)
 
 
-def create_debug_symbols(config):
-    if config.debug:
-        return
-
-    if config.target_os != "android" and config.target_os != "linux":
-        return
-
-    dist_dir = PROJECT_CONFIG.get_distribution_path(
-        config.target_os, config.arch, "", config.debug
-    )
-
-    def _create_debug_symbol(path: str, strip_bin: str):
-        if not os.path.isfile(strip_bin):
-            # fallback to default strip
-            strip_bin = "strip"
-        create_debug_file = [
-            f"{strip_bin}",
-            "--only-keep-debug",
-            f"{path}",
-            "-o",
-            f"{path}.debug",
-        ]
-        remove_debug_from_original = [
-            f"{strip_bin}",
-            "--strip-debug",
-            f"{path}",
-            "-o",
-            f"{path}",
-        ]
-        set_read_only = ["chmod", "0444", f"{path}.debug"]
-        subprocess.check_call(create_debug_file, stderr=subprocess.DEVNULL)
-        subprocess.check_call(remove_debug_from_original)
-        subprocess.check_call(set_read_only)
-
-    lib_name = LIBTELIO_CONFIG[config.target_os]["packages"][NAME][
-        f"lib{NAME}" if config.target_os != "windows" else NAME
-    ]
-
-    if config.target_os == "linux":
-        strip = LIBTELIO_CONFIG["linux"]["archs"][config.arch]["strip_path"]
-        _create_debug_symbol(f"{dist_dir}/{lib_name}", strip_bin=strip)
-    elif config.target_os == "android":
-        strip = f"{abu.TOOLCHAIN}/bin/llvm-strip"
-        renamed_arch = GLOBAL_CONFIG[config.target_os]["archs"][config.arch]["dist"]
-        dist_dir = PROJECT_CONFIG.get_distribution_path(
-            config.target_os, config.arch, "../unstripped", config.debug
-        )
-        _create_debug_symbol(f"{dist_dir}/{renamed_arch}/{lib_name}", strip_bin=strip)
-
-
-def strip_binaries(config):
-    if config.debug or config.target_os != "linux":
-        return
-
-    dist_dir = PROJECT_CONFIG.get_distribution_path(
-        config.target_os, config.arch, "", config.debug
-    )
-
-    def _strip_debug_symbols(path: str, strip_bin: str):
-        if not os.path.isfile(strip_bin):
-            # fallback to default strip
-            strip_bin = "strip"
-        strip_debug_symbols = [
-            f"{strip_bin}",
-            "--strip-debug",
-            f"{path}",
-            "-o",
-            f"{path}",
-        ]
-        subprocess.check_call(strip_debug_symbols)
-
-    strip = LIBTELIO_CONFIG["linux"]["archs"][config.arch]["strip_path"]
-    binaries = [
-        bin for bin in LIBTELIO_CONFIG["linux"]["packages"].keys() if bin != NAME
-    ]
-    for binary in binaries:
-        _strip_debug_symbols(f"{dist_dir}/{binary}", strip_bin=strip)
-
-
 def call_build(config, args):
     rutils.config_local_env_vars(config, LIBTELIO_CONFIG)
 
@@ -546,29 +497,27 @@ def call_build(config, args):
         LIBTELIO_CONFIG[config.target_os].get("build_args", None),
     )
 
-    create_debug_symbols(config)
-    strip_binaries(config)
     if "post_build" in LIBTELIO_CONFIG[config.target_os]:
         for post in LIBTELIO_CONFIG[config.target_os]["post_build"]:
             post(config, args)
 
 
-def darwin_build_all(debug: bool) -> None:
+def darwin_build_all(args) -> None:
     for target_os in rutils.LIPO_TARGET_OSES:
         for arch in GLOBAL_CONFIG[target_os]["archs"].keys():
             if target_os in LIBTELIO_CONFIG:
                 config = rutils.CargoConfig(
                     target_os,
                     arch,
-                    debug,
+                    args.debug,
                 )
 
-                call_build(config)
+                call_build(config, args)
 
 
 def exec_lipo(args):
     if args.build:
-        darwin_build_all(args.debug)
+        darwin_build_all(args)
 
     for target_os in rutils.LIPO_TARGET_OSES:
         dbu.lipo(
