@@ -22,6 +22,9 @@ case "${1:-}" in
         ip route delete 10.0.0.0/16 || true
         ip route add 10.0.0.0/16 via $CLIENT_GATEWAY_SECONDARY dev eth1
         ;;
+    mtu)
+        ip link set eth0 mtu 1300
+        ;;
     *)
         echo "Unrecognized parameter '${1:-}'"
         print_help

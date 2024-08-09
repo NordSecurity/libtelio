@@ -769,6 +769,10 @@ impl Telio {
         self.device_op(true, |dev| Ok(dev.is_running()))
     }
 
+    pub fn fetch_interfaces(&self) -> FfiResult<Vec<IpAddr>> {
+        catch_ffi_panic(|| self.device_op(true, |dev| Ok(dev.fetch_interfaces())))
+    }
+
     pub fn trigger_analytics_event(&self) -> FfiResult<()> {
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {

@@ -202,6 +202,10 @@ class LibtelioWrapper:
     def get_nat(self, ip: str, port: int) -> libtelio.NatType:
         return self._libtelio.get_nat(ip, port)
 
+    @serialize_error
+    def fetch_interfaces(self) -> List[str]:
+        return self._libtelio.fetch_interfaces()
+
 
 def main():
     object_name = sys.argv[1]

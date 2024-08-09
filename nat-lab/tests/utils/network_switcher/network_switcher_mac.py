@@ -61,6 +61,13 @@ class NetworkSwitcherMac(NetworkSwitcher):
             ).execute()
         yield
 
+    @asynccontextmanager
+    async def change_mtu(self) -> AsyncIterator:
+        await self._connection.create_process(
+            ["ifconfig", "en3", "mtu", "1300"],
+        ).execute()
+        yield
+
     async def _delete_existing_route(self) -> None:
         await self._connection.create_process(["route", "delete", "default"]).execute()
         await self._connection.create_process(

@@ -47,5 +47,8 @@ pub use interval::*;
 pub mod pinger;
 pub use pinger::*;
 
+/// Get local interfaces
+pub mod local_interfaces;
 /// Testing tools
 pub mod test;
+pub use local_interfaces::*;

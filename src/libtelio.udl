@@ -409,7 +409,6 @@ interface Telio {
 
     /// Get last error's message length, including trailing null
     string get_last_error();
-
     [Throws=TelioError]
     boolean is_running();
     [Throws=TelioError]
@@ -422,6 +421,8 @@ interface Telio {
     u32 probe_pmtu(string host);
     [Throws=TelioError]
     NatType get_nat(string ip, u16 port);
+    [Throws=TelioError]
+    sequence<IpAddr> fetch_interfaces();
 
     /// For testing only.
     [Throws=TelioError]
