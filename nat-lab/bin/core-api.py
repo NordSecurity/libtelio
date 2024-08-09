@@ -4,16 +4,10 @@ import json
 import paho.mqtt.client as mqtt  # type: ignore # pylint: disable=import-error
 from dataclasses import asdict, dataclass
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from itertools import count
 from pprint import pprint
 from typing import Optional
 from uuid import uuid4
-
-
-def next_id():
-    if not hasattr(next_id, "counter"):
-        next_id.counter = 0
-    next_id.counter += 1
-    return next_id.counter
 
 
 @dataclass
@@ -45,9 +39,45 @@ class Node:
     traffic_routing_supported: bool
 
 
+class CoreServer(HTTPServer):
+    def __init__(self, server_address, RequestHandlerClass, mqttc: mqtt.Client) -> None:
+        super().__init__(server_address, RequestHandlerClass)
+        # NOTE: In future this will most likely need to become a map from uuids to nodes so that it's possible
+        # to implement 'GET /v1/meshnet/machines/{machineIdentifier}/map'
+        self._known_machines: set[str] = set()
+        self._mqttc = mqttc
+
+    def _send_notification(self):
+        message = {
+            "message": {
+                "data": {
+                    "metadata": {
+                        "message_id": str(uuid4()),
+                    },
+                    "event": {
+                        "attributes": {"affected_machines": list(self._known_machines)}
+                    },
+                }
+            }
+        }
+
+        msg_info = self._mqttc.publish("meshnet", json.dumps(message), qos=1)
+        msg_info.wait_for_publish()
+
+    def add_machine(self, node):
+        self._known_machines.add(node.identifier)
+        self._send_notification()
+
+    def remove_machine(self, uid):
+        self._known_machines.remove(uid)
+        self._send_notification()
+
+
 class CoreApiHandler(BaseHTTPRequestHandler):
-    def __init__(self, request, client_address, server):
+    def __init__(self, request, client_address, server: CoreServer):
+        self.server: CoreServer
         self.machines_path = "/v1/meshnet/machines"
+        self.next_id_generator = count(1)
         super().__init__(request, client_address, server)
 
     def _set_headers(self):
@@ -76,7 +106,7 @@ class CoreApiHandler(BaseHTTPRequestHandler):
     def handle_register_machine(self):
         content_length = int(self.headers["Content-Length"])
         post_data = self.rfile.read(content_length)
-        print(f"The POST data: {post_data}")
+        print(f"The POST data: {post_data.decode()}")
         json_obj = json.loads(post_data)
         req = MachineCreateRequest(**json_obj)
 
@@ -88,7 +118,7 @@ class CoreApiHandler(BaseHTTPRequestHandler):
         self.wfile.write(str.encode(resp))
 
     def add_node(self, req):
-        uid = next_id()
+        uid = next(self.next_id_generator)
 
         identifier, hostname, ip_addresses = (
             str(uuid4()),
@@ -111,8 +141,6 @@ class CoreApiHandler(BaseHTTPRequestHandler):
 
         self.server.add_machine(node)
 
-        self.server.send_notification()
-
         pprint(node)
         return node
 
@@ -120,55 +148,20 @@ class CoreApiHandler(BaseHTTPRequestHandler):
         uid = self.path.removeprefix(self.machines_path)[1:]
         print("uuid:", uid)
 
-        if self.server.remove_machine(uid):
-            self.server.send_notification()
-
+        try:
+            self.server.remove_machine(uid)
             print(f"{uid} removed")
             self.send_response(204)
-        else:
+        except KeyError:
             print(f"{uid} unknown")
             self.send_response(400)
 
         self.end_headers()
 
 
-class CoreServer(HTTPServer):
-    # NOTE: In future this will most likely need to become a map from uuids to nodes so that it's possible
-    # to implement 'GET /v1/meshnet/machines/{machineIdentifier}/map'
-    known_machines_: set[str] = set()
-    mqttc = None
-
-    def send_notification(self):
-        message = {
-            "message": {
-                "data": {
-                    "metadata": {
-                        "message_id": str(uuid4()),
-                    },
-                    "event": {
-                        "attributes": {"affected_machines": list(self.known_machines_)}
-                    },
-                }
-            }
-        }
-
-        msg_info = self.mqttc.publish("meshnet", json.dumps(message), qos=1)
-        msg_info.wait_for_publish()
-
-    def add_machine(self, node):
-        self.known_machines_.add(node.identifier)
-
-    def remove_machine(self, uid):
-        if uid in self.known_machines_:
-            self.known_machines_.remove(uid)
-            return True
-        return False
-
-
 def run(mqttc, port=8080):
     server_address = ("", port)
-    httpd = CoreServer(server_address, CoreApiHandler)
-    httpd.mqttc = mqttc
+    httpd = CoreServer(server_address, CoreApiHandler, mqttc)
     print("Starting httpd...")
     httpd.serve_forever()
 

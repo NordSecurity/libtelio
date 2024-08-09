@@ -1582,10 +1582,9 @@ async def test_lana_with_disconnected_node(
             losing_key = alpha.public_key
 
         async with TelioLogNotifier(reporting_connection).run() as telio_log_notifier:
-            if losing_key == beta.public_key:
-                relayed_state_reported = telio_log_notifier.notify_output(
-                    f'Relayed peer state change for "{losing_key[:4]}...{losing_key[-4:]}" to Connected will be reported'
-                )
+            relayed_state_reported = telio_log_notifier.notify_output(
+                f'Relayed peer state change for "{losing_key[:4]}...{losing_key[-4:]}" to Connected will be reported'
+            )
 
             # disconnect beta and trigger analytics on alpha
             await client_beta.stop_device()

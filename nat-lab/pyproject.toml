@@ -26,10 +26,18 @@ recursive = true
 in-place = true
 
 [tool.mypy]
+check_untyped_defs = true
+enable_error_code = ['possibly-undefined', 'redundant-expr', 'unused-awaitable']
+extra_checks = true
+strict_equality = true
 exclude = [
-    '^tests/protobuf$',
-    '^.*telio_bindings\\.py$',
+    '^tests/protobuf',
+    '^.*telio_bindings\.py',
 ]
+
+[[tool.mypy.overrides]]
+module = "uniffi.*"
+check_untyped_defs = false
 
 [tool.pylint]
 max-line-length = 88

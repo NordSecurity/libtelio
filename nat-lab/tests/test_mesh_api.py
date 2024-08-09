@@ -1,6 +1,7 @@
 import mesh_api
 import platform
 import pytest
+from config import DERP_PRIMARY, DERP_FAKE
 from mesh_api import Node, API
 from utils.bindings import Config, Peer, PeerBase
 
@@ -125,7 +126,7 @@ class TestMeshApi:
         api = API()
         api.register(name="name", node_id="id", private_key="sk", public_key="pk")
 
-        derp_servers = [{"aaa": "bbb"}]
+        derp_servers = [DERP_FAKE, DERP_PRIMARY]
         meshnet_config = api.get_meshnet_config("id", derp_servers=derp_servers)
         assert meshnet_config.derp_servers == derp_servers
 
