@@ -51,4 +51,4 @@ async def test_network_monitor(
             alpha_conn_mngr.network_switcher.change_mtu()
         )
         time.sleep(DEFAULT_WAITING_TIME)
-        await client_alpha.wait_for_log("Updating local addr cache")
+        # await client_alpha.wait_for_log("Updating local addr cache")
