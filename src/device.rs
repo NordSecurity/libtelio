@@ -95,6 +95,8 @@ static NETWORK_PATH_MONITOR_START: std::sync::Once = std::sync::Once::new();
 #[cfg(test)]
 use wg::tests::AdapterExpectation;
 
+use crate::logging::LOG_CENSOR;
+
 #[derive(Debug, TError)]
 pub enum Error {
     #[error("Driver already started.")]
@@ -452,6 +454,8 @@ impl Device {
         event_cb: F,
         protect: Option<Arc<dyn Protector>>,
     ) -> Result<Self> {
+        LOG_CENSOR.set_enabled(features.hide_ips);
+
         let version_tag = version_tag();
         let commit_sha = commit_sha();
         telio_log_info!("Created libtelio instance {}, {}", version_tag, commit_sha);

@@ -2,11 +2,12 @@ use std::{
     io::{self, ErrorKind},
     net::IpAddr,
     str::{from_utf8, FromStr},
-    sync::{Arc, Mutex},
+    sync::{atomic::AtomicBool, Arc, Mutex},
 };
 
+use once_cell::sync::Lazy;
 use rand::Rng;
-use regex::{Captures, Error as RegexError, Regex, RegexBuilder};
+use regex::{Captures, Regex, RegexBuilder};
 
 use tracing::{level_filters::LevelFilter, Subscriber};
 use tracing_subscriber::{
@@ -61,15 +62,12 @@ where
 
 pub struct FfiCallback {
     callback: Arc<dyn TelioLoggerCb>,
-    #[cfg(not(debug_assertions))]
-    censor: Option<LogCensor>,
 }
+
 impl FfiCallback {
     fn new(logger: Box<dyn TelioLoggerCb>) -> Self {
         Self {
             callback: logger.into(),
-            #[cfg(not(debug_assertions))]
-            censor: LogCensor::new().ok(),
         }
     }
 }
@@ -85,8 +83,6 @@ impl<'a> MakeWriter<'a> for FfiCallback {
         FfiCallbackWriter {
             cb: self.callback.clone(),
             level: (*meta.level()).into(),
-            #[cfg(not(debug_assertions))]
-            censor: self.censor.clone(),
         }
     }
 }
@@ -94,8 +90,6 @@ impl<'a> MakeWriter<'a> for FfiCallback {
 pub struct FfiCallbackWriter {
     cb: Arc<dyn TelioLoggerCb>,
     level: TelioLogLevel,
-    #[cfg(not(debug_assertions))]
-    censor: Option<LogCensor>,
 }
 
 impl io::Write for FfiCallbackWriter {
@@ -114,11 +108,7 @@ impl io::Write for FfiCallbackWriter {
             .map_err(|e| io::Error::new(ErrorKind::InvalidData, e))?;
 
         if let Some(filtered_msg) = filter_log_message(msg) {
-            #[cfg(not(debug_assertions))]
-            let filtered_msg = match self.censor.as_ref().map(|c| c.censor_logs(&filtered_msg)) {
-                Some(std::borrow::Cow::Owned(msg)) => msg.to_owned(),
-                _ => filtered_msg,
-            };
+            let filtered_msg = LOG_CENSOR.censor_logs(filtered_msg);
 
             self.cb
                 .log(self.level, filtered_msg)
@@ -143,6 +133,8 @@ lazy_static::lazy_static! {
         Mutex::new(LogStatus{string: String::default(), counter: 0})
     };
 }
+
+pub static LOG_CENSOR: Lazy<LogCensor> = Lazy::new(LogCensor::new);
 
 fn filter_log_message(msg: String) -> Option<String> {
     let mut log_status = match LAST_LOG_STATUS.lock() {
@@ -172,15 +164,17 @@ fn filter_log_message(msg: String) -> Option<String> {
     None
 }
 
-#[derive(Clone, Debug)]
-struct LogCensor {
+#[derive(Debug)]
+pub struct LogCensor {
     ip_mask_seed: [u8; 32],
     ip_regex: Regex,
+    is_enabled: AtomicBool,
 }
 
 #[allow(unused)]
 impl LogCensor {
-    fn new() -> Result<Self, RegexError> {
+    fn new() -> Self {
+        #[allow(clippy::expect_used)]
         RegexBuilder::new(
             r"
                 (?:
@@ -216,12 +210,26 @@ impl LogCensor {
         .map(|re| LogCensor {
             ip_mask_seed: rand::thread_rng().gen::<[u8; 32]>(),
             ip_regex: re,
+            is_enabled: AtomicBool::new(true),
         })
+        .expect("Statically known string for LogCensor is a valid regex")
     }
 
-    fn censor_logs<'a>(&self, log: &'a str) -> std::borrow::Cow<'a, str> {
+    pub fn set_enabled(&self, enabled: bool) {
+        self.is_enabled
+            .store(enabled, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn should_censor(&self) -> bool {
+        self.is_enabled.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn censor_logs(&self, log: String) -> String {
+        if !self.should_censor() {
+            return log;
+        }
         // Gather all of the IPs
-        self.ip_regex.replace_all(log, |captures: &Captures| {
+        let replaced = self.ip_regex.replace_all(&log, |captures: &Captures| {
             captures
                 .get(0)
                 .map(|ip_match| {
@@ -256,7 +264,12 @@ impl LogCensor {
                     "Regex crate guarantees this, too low priority to panic on its fail, though"
                         .to_string(),
                 )
-        })
+        });
+
+        match replaced {
+            std::borrow::Cow::Borrowed(_) => log,
+            std::borrow::Cow::Owned(s) => s,
+        }
     }
 }
 
@@ -328,9 +341,7 @@ mod test {
         }
     }
 
-    #[test]
-    fn test_log_censor() {
-        let examples = [
+    const EXAMPLES: [(&'static str, &'static str); 11] = [
             (
                 "1999-09-09 [INFO] New endpoint (1.2.3.4:1234) created",
                 "1999-09-09 [INFO] New endpoint (IP(959535cab4852bd4):1234) created",
@@ -377,15 +388,48 @@ mod test {
             ),
         ];
 
-        let mut censor = LogCensor::new()
-            .map_err(|err| panic!("Log censor was not created successfully {:?}", err))
-            .unwrap();
+    #[test]
+    fn test_log_censor() {
+        let mut censor = LogCensor::new();
 
         // For the tests we need it repeatable and seed filled with zeros is good as any other
         censor.ip_mask_seed = [0; 32];
 
-        for (original_log, expected_censored_log) in examples {
-            assert_eq!(expected_censored_log, censor.censor_logs(original_log));
+        for (original_log, expected_censored_log) in EXAMPLES {
+            assert_eq!(
+                expected_censored_log,
+                censor.censor_logs(original_log.to_owned())
+            );
+        }
+    }
+
+    #[test]
+    fn test_log_censor_makes_no_copies_when_not_needed() {
+        let censor = LogCensor::new();
+
+        let input = "this is some text that is going to be censored by the censor by it shouldn't match anything in the regex".to_owned();
+        let input_copy = input.clone();
+        let input_ptr = input.as_str().as_ptr();
+        let censored = censor.censor_logs(input);
+        assert_eq!(input_copy, censored);
+
+        // No copies are made when the string doesn't need any modifications
+        let censored_ptr = censored.as_str().as_ptr();
+        assert_eq!(input_ptr, censored_ptr);
+    }
+
+    #[test]
+    fn test_disabled_log_censor_makes_no_modifications() {
+        let censor = LogCensor::new();
+        censor.set_enabled(false);
+        for (original_log, _) in EXAMPLES {
+            let original_log_copy = original_log.to_owned();
+            let original_log_ptr = original_log_copy.as_str().as_ptr();
+            let new_log = censor.censor_logs(original_log_copy);
+            assert_eq!(original_log, new_log);
+            // No copies are made when the string doesn't need any modifications
+            let new_log_ptr = new_log.as_str().as_ptr();
+            assert_eq!(original_log_ptr, new_log_ptr);
         }
     }
 }

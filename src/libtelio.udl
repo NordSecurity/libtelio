@@ -523,6 +523,8 @@ dictionary Features {
     FeatureDirect? direct;
     /// Should only be set for macos sideload
     boolean? is_test_env;
+    /// Controll if IP addresses should be hidden in logs
+    boolean hide_ips;
     /// Derp server specific configuration
     FeatureDerp? derp;
     /// Flag to specify if keys should be validated
