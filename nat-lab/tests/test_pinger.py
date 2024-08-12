@@ -9,6 +9,8 @@ from protobuf.pinger_pb2 import Pinger
 from utils.asyncio_util import run_async_context
 from utils.connection_util import ConnectionTag, LAN_ADDR_MAP
 
+TEST_PING_PONG_PORT = 5000
+
 
 class PingType(enum.Enum):
     PING = 0
@@ -30,19 +32,19 @@ async def send_ping_pong(ping_type) -> None:
     if ping_type == PingType.PING:
         sock.sendto(
             struct.pack(">BBB", 7, 0, 3) + ping.SerializeToString(),
-            (LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1], 5000),
+            (LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1], TEST_PING_PONG_PORT),
         )
     elif ping_type == PingType.PONG:
         # Send a PONG type message
         ping.message_type = ping.PONG  # pylint: disable=no-member
         sock.sendto(
             struct.pack(">BBB", 9, 0, 3) + ping.SerializeToString(),
-            (LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1], 5000),
+            (LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1], TEST_PING_PONG_PORT),
         )
     else:
         sock.sendto(
             struct.pack(">BBBBBBBBBBBB", 4, 0, 8, 17, 9, 0, 0, 0, 0, 0, 0, 0),
-            (LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1], 5000),
+            (LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1], TEST_PING_PONG_PORT),
         )
 
 
@@ -57,11 +59,17 @@ async def test_ping_pong() -> None:
 
         # Send PING type message
         async with run_async_context(client_alpha.receive_ping()) as ping:
+            await client_alpha.wait_for_listen_port_ready(
+                "udp", TEST_PING_PONG_PORT, "python3"
+            )
             await send_ping_pong(PingType.PING)
             assert await ping == "Pinger"
 
         # Send PONG type message
         async with run_async_context(client_alpha.receive_ping()) as ping:
+            await client_alpha.wait_for_listen_port_ready(
+                "udp", TEST_PING_PONG_PORT, "python3"
+            )
             await send_ping_pong(PingType.PONG)
             assert await ping == "Ponger"
 
