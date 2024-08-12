@@ -102,7 +102,7 @@ jobs:
           python ./ci/insert_libtelio_version.py -n TEST_VERSION -p ./dist/windows
           Start-Process -FilePath dist/windows/release/x86_64/tcli.exe -WindowStyle Hidden
           type tcli.log | findstr /C:"TEST_VERSION"
-      - uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+      - uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # v4.3.6
         with:
           name: libtelio-build-${{ matrix.target_os }}-${{ matrix.arch }}-with-replaced-version
           path: dist/

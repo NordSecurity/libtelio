@@ -12,7 +12,7 @@ jobs:
         - run: uniffi-bindgen generate src/libtelio.udl --language python
         - run: mkdir -p dist/bindings/
         - run: cp src/telio.py dist/bindings/telio_bindings.py
-        - uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+        - uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # v4.3.6
           with:
             name: telio_bindings.py
             path: dist/bindings
