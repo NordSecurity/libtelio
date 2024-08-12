@@ -22,3 +22,4 @@ pub const IPV6_STARCAST_ADDRESS: Ipv6Addr = Ipv6Addr::new(0xfd74, 0x656c, 0x696f
 pub const IPV4_STARCAST_NETWORK: ConstIpv4Net = ConstIpv4Net::new(IPV4_STARCAST_ADDRESS, 32);
 /// Ipv6 starcast's virtual peer network
 pub const IPV6_STARCAST_NETWORK: ConstIpv6Net = ConstIpv6Net::new(IPV6_STARCAST_ADDRESS, 128);
+//
