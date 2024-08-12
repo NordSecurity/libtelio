@@ -11,8 +11,8 @@ sleep 5
 # Add conntrack states to iptables, since running dockers on ubuntu
 # conntrack doesn't find flow entries by default somehow. Works when running dockers on debian tho.
 # ref: https://serverfault.com/a/978715
-iptables -A INPUT -m conntrack --ctstate ESTABLISHED -j ACCEPT
-ip6tables -A INPUT -m conntrack --ctstate ESTABLISHED -j ACCEPT
+iptables -A INPUT -m conntrack --ctstate ESTABLISHED -j LOG --log-level debug
+ip6tables -A INPUT -m conntrack --ctstate ESTABLISHED -j LOG --log-level debug
 
 /libtelio/nat-lab/bin/configure_route.sh primary
 
