@@ -10,6 +10,10 @@ sleep 5
 
 iptables -I INPUT -m length --length 1301:1500 -j DROP
 
+# Backup IP tables
+iptables-save -f iptables_backup
+ip6tables-save -f ip6tables_backup
+
 touch /ready
 
 sleep infinity

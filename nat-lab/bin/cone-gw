@@ -19,6 +19,10 @@ iptables -t filter -P INPUT DROP
 # Configure standart linux NAT, this will be port restricted cone NAT
 iptables -t nat -A POSTROUTING -o $public_itf -j MASQUERADE
 
+# Backup IP tables
+iptables-save -f iptables_backup
+ip6tables-save -f ip6tables_backup
+
 touch /ready
 
 sleep infinity

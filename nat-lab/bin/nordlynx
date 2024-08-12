@@ -21,6 +21,10 @@ iptables -A FORWARD -i nordlynx0 -j ACCEPT;
 iptables -A FORWARD -o nordlynx0 -j ACCEPT;
 iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 
+# Backup IP tables
+iptables-save -f iptables_backup
+ip6tables-save -f ip6tables_backup
+
 # courtesy sleep so it would be really all up and running
 sleep 2
 

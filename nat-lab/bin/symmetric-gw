@@ -21,6 +21,10 @@ iptables -t nat -A POSTROUTING -o $public_itf -j MASQUERADE --random
 iptables -A FORWARD -i $public_itf -o $private_itf -m state --state RELATED,ESTABLISHED -j ACCEPT
 iptables -A FORWARD -i $private_itf -o $public_itf -j ACCEPT
 
+# Backup IP tables
+iptables-save -f iptables_backup
+ip6tables-save -f ip6tables_backup
+
 touch /ready
 
 sleep infinity

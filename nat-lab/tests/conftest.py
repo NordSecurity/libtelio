@@ -2,7 +2,6 @@ import asyncio
 import os
 import pytest
 import subprocess
-import time
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_connections
 from interderp_cli import InterDerpClient
@@ -19,6 +18,9 @@ DERP_SERVER_2_ADDR = "http://10.0.10.2:8765"
 DERP_SERVER_3_ADDR = "http://10.0.10.3:8765"
 DERP_SERVER_1_SECRET_KEY = "yBTYHj8yPlG9VtMYMwJSRHdzNdyAlVXGc6X2xJkjfHQ="
 DERP_SERVER_2_SECRET_KEY = "2NgALOCSKJcDxwr8MtA+6lYbf7b98KSdAROGoUwZ1V0="
+
+SETUP_CHECK_TIMEOUT_S = 30
+SETUP_CHECK_RETRIES = 5
 
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
@@ -140,26 +142,23 @@ async def setup_check_interderp():
 
 
 SETUP_CHECKS = [
-    (setup_check_interderp, 30.0),
+    (setup_check_interderp, SETUP_CHECK_TIMEOUT_S, SETUP_CHECK_RETRIES),
 ]
 
 
 async def perform_setup_checks() -> bool:
-    for target, timeout in SETUP_CHECKS:
-        start_time = time.time()
-        while True:
-            if time.time() - start_time > timeout:
-                print(f"Target timeout reached for {target}().")
-                return False
+    for target, timeout, retries in SETUP_CHECKS:
+        while retries > 0:
             try:
-                await asyncio.wait_for(target(), timeout)
+                await asyncio.wait_for(asyncio.shield(target()), timeout)
                 break
             except asyncio.TimeoutError:
                 print(f"{target}() timeout, retrying...")
-                continue
             except Exception as e:  # pylint: disable=broad-exception-caught
                 print(f"An error occurred: {e}, retrying...")
-                continue
+            retries -= 1
+        else:
+            return False
 
     return True
 
