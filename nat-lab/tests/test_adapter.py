@@ -72,6 +72,12 @@ async def test_adapter_gone_event(alpha_setup_params: SetupParameters) -> None:
             ErrorEvent(ErrorLevel.Critical, ErrorCode.Unknown, "Interface gone")
         )
 
+        client.allow_errors([
+            "boringtun::device.*Fatal read error on tun interface",
+            "telio_wg::adapter::wireguard_go.*Failed to read packet from TUN device: Driver indicated EOF while reading from tunnel",
+            "telio_wg::adapter::linux_native_wg.*LinuxNativeWg: \\[GET01\\] Unable to get interface from WireGuard. Make sure it exists and you have permissions to access it.",
+        ])
+
 
 @pytest.mark.parametrize(
     "alpha_setup_params",

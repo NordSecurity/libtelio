@@ -40,6 +40,11 @@ async def test_proxy_endpoint_map_update() -> None:
         else:
             assert False, "Endpoint wasn't successfully updated"
 
+        # LLT-5532: To be cleaned up...
+        alpha_client.allow_errors(
+            ["telio_proxy::proxy.*Unable to send. Operation not permitted"]
+        )
+
 
 def node_port(peer_info: Optional[PeerInfo]) -> int:
     assert peer_info
