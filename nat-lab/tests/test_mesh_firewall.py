@@ -5,6 +5,7 @@ import config
 import pytest
 import telio
 from contextlib import AsyncExitStack
+from datetime import datetime
 from helpers import SetupParameters, setup_mesh_nodes, setup_api
 from mesh_api import Node
 from typing import Tuple
@@ -574,11 +575,13 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
 
         async def on_stdout(stdout: str) -> None:
             for line in stdout.splitlines():
+                print(datetime.now(), f"nc output: {line}")
                 output_notifier.handle_output(line)
 
         async def conntrack_on_stdout(stdout: str) -> None:
             for line in stdout.splitlines():
                 if f"src={CLIENT_BETA_IP} dst={CLIENT_ALPHA_IP}" in line:
+                    print(datetime.now(), f"Conntrack event: {line}")
                     output_notifier.handle_output(line)
 
         listening_start_event = asyncio.Event()
@@ -601,8 +604,8 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
             connected_event,
         )
 
-        output_notifier.notify_output("FIN_WAIT", last_ack_event)
-        output_notifier.notify_output("CLOSE_WAIT", time_wait_event)
+        output_notifier.notify_output("LAST_ACK", last_ack_event)
+        output_notifier.notify_output("TIME_WAIT", time_wait_event)
 
         async with connection_beta.create_process([
             "conntrack",
@@ -624,7 +627,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
                 await exit_stack.enter_async_context(
                     connection_beta.create_process([
                         "nc",
-                        "-nv",
+                        "-nvd",
                         "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
                         "-s",
                         CLIENT_BETA_IP,
@@ -761,7 +764,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
                 # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
                 async with connection_beta.create_process([
                     "nc",
-                    "-nv",
+                    "-nvd",
                     "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
                     "-s",
                     CLIENT_BETA_IP,
