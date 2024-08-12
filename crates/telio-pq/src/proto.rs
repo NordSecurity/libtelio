@@ -16,7 +16,7 @@ use pnet_packet::{
 };
 use pqcrypto_kyber::kyber768;
 use pqcrypto_traits::kem::{Ciphertext, PublicKey, SharedSecret};
-use rand::{prelude::Distribution, SeedableRng};
+use rand::{prelude::Distribution, rngs::OsRng};
 use telio_utils::telio_log_debug;
 use tokio::net::{ToSocketAddrs, UdpSocket};
 
@@ -61,7 +61,7 @@ pub async fn fetch_keys(
         handshake(sock_pool, endpoint, secret, peers_pubkey).await?;
     telio_log_debug!("Initial WG handshake done");
 
-    let mut rng = rand::rngs::StdRng::from_entropy();
+    let mut rng = OsRng;
 
     // Generate keys
     let wg_secret = telio_crypto::SecretKey::gen_with(&mut rng);
