@@ -22,7 +22,7 @@ To go through the short TCLI tutorial you need also [docker](https://docs.docker
 
 ### Build
 
-You can build the `libtelio` library using standard `cargo build` command. Ensure to set the `BYPASS_LLT_SCAN` environment variable to skip the LLT scan:
+You can build the `libtelio` library using standard `cargo build` command. Ensure to set the `BYPASS_LLT_SECRETS` environment variable to skip the LLT scan:
 ```shell
 BYPASS_LLT_SECRETS=1 cargo build
 ```

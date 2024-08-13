@@ -7,14 +7,14 @@ fn build() -> Result<cc::Build> {
         .is_ok_and(|value| value == "true")
     {
         println!("cargo:rerun-if-changed=.prepared_llt_secrets");
-        println!("cargo:rerun-if-env-changed=BYPASS_LLT_SCAN");
+        println!("cargo:rerun-if-env-changed=BYPASS_LLT_SECRETS");
 
         // Check for sec scan
         let prepared_path = Path::new(".prepared_llt_secrets");
         #[allow(clippy::panic)]
         if !prepared_path.is_file() {
             match env::var("BYPASS_LLT_SECRETS") {
-                Ok(_) => println!("cargo:warning=BYPASS_LLT_SCAN IS SET, COMMIT CAREFULLY!!"),
+                Ok(_) => println!("cargo:warning=BYPASS_LLT_SECRETS IS SET, COMMIT CAREFULLY!!"),
                 Err(_) => {
                     panic!("Hooks not found, either run checkout scripts or run with BYPASS_LLT_SECRETS environment variable set");
                 }
