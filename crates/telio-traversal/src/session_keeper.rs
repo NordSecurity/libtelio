@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use futures::Future;
 use socket2::Type;
+use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,12 +8,12 @@ use surge_ping::{
     Client as PingerClient, Config as PingerConfig, ConfigBuilder, PingIdentifier, PingSequence,
     SurgeError, ICMP,
 };
+use telio_batcher::batcher::Batcher;
 use telio_crypto::PublicKey;
 use telio_sockets::SocketPool;
 use telio_task::{task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
-    dual_target, repeated_actions, telio_log_debug, telio_log_trace, telio_log_warn, DualTarget,
-    RepeatedActions,
+    dual_target, repeated_actions, telio_log_debug, telio_log_warn, DualTarget, RepeatedActions,
 };
 
 const PING_PAYLOAD_SIZE: usize = 56;
@@ -48,12 +48,12 @@ type Result<T> = std::result::Result<T, Error>;
 pub trait SessionKeeperTrait {
     async fn add_node(
         &self,
-        public_key: &PublicKey,
+        public_key: PublicKey,
         target: dual_target::Target,
         interval: Duration,
+        threshold: Option<Duration>,
     ) -> Result<()>;
-    async fn update_interval(&self, public_key: &PublicKey, interval: Duration) -> Result<()>;
-    async fn remove_node(&self, public_key: &PublicKey) -> Result<()>;
+    async fn remove_node(&self, key: &PublicKey) -> Result<()>;
 }
 
 pub struct SessionKeeper {
@@ -74,9 +74,12 @@ impl SessionKeeper {
 
         Ok(Self {
             task: Task::start(State {
-                pinger_client_v4: client_v4,
-                pinger_client_v6: client_v6,
-                keepalive_actions: RepeatedActions::default(),
+                pingers: Pingers {
+                    pinger_client_v4: client_v4,
+                    pinger_client_v6: client_v6,
+                },
+                batched_actions: Batcher::new(),
+                nonbatched_actions: RepeatedActions::default(),
             }),
         })
     }
@@ -111,8 +114,8 @@ impl SessionKeeper {
     async fn get_pinger_client(&self, proto: ICMP) -> Result<PingerClient> {
         task_exec!(&self.task, async move |s| {
             Ok(match proto {
-                ICMP::V4 => s.pinger_client_v4.clone(),
-                ICMP::V6 => s.pinger_client_v6.clone(),
+                ICMP::V4 => s.pingers.pinger_client_v4.clone(),
+                ICMP::V6 => s.pingers.pinger_client_v6.clone(),
             })
         })
         .await
@@ -120,104 +123,134 @@ impl SessionKeeper {
     }
 }
 
+async fn ping(pingers: &Pingers, targets: (&PublicKey, &DualTarget)) -> Result<()> {
+    let (primary, secondary) = targets.1.get_targets()?;
+    let public_key = targets.0;
+
+    telio_log_debug!("Pinging primary target {:?} on {:?}", public_key, primary);
+
+    let primary_client = match primary {
+        IpAddr::V4(_) => &pingers.pinger_client_v4,
+        IpAddr::V6(_) => &pingers.pinger_client_v6,
+    };
+
+    let ping_id = PingIdentifier(rand::random());
+    if let Err(e) = primary_client
+        .pinger(primary, ping_id)
+        .await
+        .send_ping(PingSequence(0), &[0; PING_PAYLOAD_SIZE])
+        .await
+    {
+        telio_log_warn!("Primary target failed: {}", e.to_string());
+
+        if let Some(second) = secondary {
+            telio_log_debug!("Pinging secondary target {:?} on {:?}", public_key, second);
+
+            let secondary_client = match second {
+                IpAddr::V4(_) => &pingers.pinger_client_v4,
+                IpAddr::V6(_) => &pingers.pinger_client_v6,
+            };
+
+            secondary_client
+                .pinger(second, PingIdentifier(rand::random()))
+                .await
+                .send_ping(PingSequence(0), &[0; PING_PAYLOAD_SIZE])
+                .await?;
+        }
+    }
+
+    Ok(())
+}
+
 #[async_trait]
 impl SessionKeeperTrait for SessionKeeper {
     async fn add_node(
         &self,
-        public_key: &PublicKey,
+        public_key: PublicKey,
         target: dual_target::Target,
         interval: Duration,
+        threshold: Option<Duration>,
     ) -> Result<()> {
-        let public_key = *public_key;
-        let dual_target = DualTarget::new(target)?;
-
-        task_exec!(&self.task, async move |s| {
-            if s.keepalive_actions.contains_action(&public_key) {
-                let _ = s.keepalive_actions.remove_action(&public_key);
-            }
-
-            Ok(s.keepalive_actions.add_action(
-                public_key,
-                interval,
-                Arc::new(move |c| {
-                    Box::pin(async move {
-                        let (primary, secondary) = dual_target.get_targets()?;
-                        telio_log_debug!(
-                            "Pinging primary target {:?} on {:?}",
-                            public_key,
-                            primary
-                        );
-
-                        let primary_client = match primary {
-                            IpAddr::V4(_) => &c.pinger_client_v4,
-                            IpAddr::V6(_) => &c.pinger_client_v6,
-                        };
-
-                        if let Err(e) = primary_client
-                            .pinger(primary, PingIdentifier(rand::random()))
-                            .await
-                            .send_ping(PingSequence(0), &[0; PING_PAYLOAD_SIZE])
-                            .await
-                        {
-                            telio_log_warn!("Primary target failed: {}", e.to_string());
-
-                            if let Some(second) = secondary {
-                                telio_log_debug!(
-                                    "Pinging secondary target {:?} on {:?}",
+        let dual_target = DualTarget::new(target).map_err(Error::DualTargetError)?;
+        match threshold {
+            Some(t) => task_exec!(&self.task, async move |s| {
+                s.batched_actions.add(
+                    public_key,
+                    interval,
+                    t,
+                    Arc::new(move |c: &mut State| {
+                        Box::pin(async move {
+                            telio_log_debug!("Batch-Pinging: {:?}", public_key);
+                            if let Err(e) = ping(&c.pingers, (&public_key, &dual_target)).await {
+                                telio_log_warn!(
+                                    "Failed to batch-ping, peer with key: {:?}, error: {:?}",
                                     public_key,
-                                    second
+                                    e
                                 );
-
-                                let secondary_client = match second {
-                                    IpAddr::V4(_) => &c.pinger_client_v4,
-                                    IpAddr::V6(_) => &c.pinger_client_v6,
-                                };
-
-                                let _ = secondary_client
-                                    .pinger(second, PingIdentifier(rand::random()))
-                                    .await
-                                    .send_ping(PingSequence(0), &[0; PING_PAYLOAD_SIZE])
-                                    .await?;
                             }
-                        }
-                        Ok(())
-                    })
-                }),
-            ))
-        })
-        .await
-        .map_err(Error::Task)?
-        .map_err(Error::RepeatedActionError)
-        .map(|_| ())
+                            Ok(())
+                        })
+                    }),
+                );
+
+                Ok(())
+            })
+            .await
+            .map_err(Error::Task)?,
+
+            None => task_exec!(&self.task, async move |s| {
+                if s.nonbatched_actions.contains_action(&public_key) {
+                    let _ = s.nonbatched_actions.remove_action(&public_key);
+                }
+
+                Ok(s.nonbatched_actions.add_action(
+                    public_key,
+                    interval,
+                    Arc::new(move |c| {
+                        Box::pin(async move {
+                            if let Err(e) = ping(&c.pingers, (&public_key, &dual_target)).await {
+                                telio_log_warn!(
+                                    "Failed to ping, peer with key: {:?}, error: {:?}",
+                                    public_key,
+                                    e
+                                );
+                            }
+                            Ok(())
+                        })
+                    }),
+                ))
+            })
+            .await
+            .map_err(Error::Task)?
+            .map_err(Error::RepeatedActionError)
+            .map(|_| ())?,
+        }
+
+        Ok(())
     }
 
-    async fn update_interval(&self, public_key: &PublicKey, interval: Duration) -> Result<()> {
-        let public_key = *public_key;
+    async fn remove_node(&self, key: &PublicKey) -> Result<()> {
+        let pk = *key;
         task_exec!(&self.task, async move |s| {
-            let _ = s.keepalive_actions.update_interval(&public_key, interval);
+            let _ = s.nonbatched_actions.remove_action(&pk);
+            let _ = s.batched_actions.remove(&pk);
             Ok(())
         })
-        .await
-        .map_err(Error::Task)
-    }
+        .await?;
 
-    async fn remove_node(&self, public_key: &PublicKey) -> Result<()> {
-        // FIXME: error handling with task_exec! seems to suck a lot. Need to fix that.
-        let public_key = *public_key;
-        task_exec!(&self.task, async move |s| {
-            let _ = s.keepalive_actions.remove_action(&public_key);
-            Ok(())
-        })
-        .await
-        .map_err(Error::Task)
+        Ok(())
     }
 }
-struct State {
+struct Pingers {
     pinger_client_v4: PingerClient,
     pinger_client_v6: PingerClient,
-    keepalive_actions: RepeatedActions<PublicKey, Self, Result<()>>,
 }
 
+struct State {
+    pingers: Pingers,
+    batched_actions: Batcher<PublicKey, Self>,
+    nonbatched_actions: RepeatedActions<PublicKey, Self, Result<()>>,
+}
 #[async_trait]
 impl Runtime for State {
     const NAME: &'static str = "SessionKeeper";
@@ -228,17 +261,22 @@ impl Runtime for State {
         F: Future<Output = BoxAction<Self, std::result::Result<(), Self::Err>>> + Send,
     {
         tokio::select! {
-            Ok((pk, action)) = self.keepalive_actions.select_action() => {
+            Ok((pk, action)) = self.nonbatched_actions.select_action() => {
                 let pk = *pk;
-
-                telio_log_trace!("({}) name: \"{}\", action = actions.select_action()", Self::NAME, pk);
-
                 action(self)
                     .await
                     .map_or_else(|e| {
                         telio_log_warn!("({}) Error sending keepalive to {} node: {}", Self::NAME, pk, e.to_string());
                         Ok(())
                     }, |_| Ok(()))?;
+            }
+            batched_actions = self.batched_actions.get_actions() => {
+                for (pk, action) in batched_actions {
+                    action(self).await.map_or_else(|e| {
+                        telio_log_warn!("({}) Error sending batch-keepalive to {}: {:?}", Self::NAME, pk, e);
+                        Ok(())
+                    }, |_| Ok(()))?;
+                }
             }
             update = update => {
                 return update(self).await;
@@ -280,9 +318,10 @@ mod tests {
 
         sess_keep
             .add_node(
-                &pk,
+                pk,
                 (Some(Ipv4Addr::LOCALHOST), Some(Ipv6Addr::LOCALHOST)),
                 PERIOD,
+                None,
             )
             .await
             .unwrap();
@@ -297,7 +336,7 @@ mod tests {
         drop(sess_keep.get_pinger_client(ICMP::V4).await.unwrap());
 
         // Runtime
-        let _ = tokio::spawn(async move {
+        tokio::spawn(async move {
             let timeout = time::sleep(Duration::from_secs(1));
             tokio::pin!(timeout);
 
@@ -310,8 +349,6 @@ mod tests {
                     Ok(_) = sock.recv_from(&mut rx_buff) => {
                         // assert_eq!(len, 0);
                         // assert_eq!(addr, sess_keep_addr);
-
-                        println!("Hello");
 
                         if cnt == 0 {
                             start = Some(time::Instant::now());
