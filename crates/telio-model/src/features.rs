@@ -65,6 +65,10 @@ pub struct FeatureBatching {
     /// Direct connection threshold when batching (in seconds) [default 0s]
     #[default(0)]
     pub direct_connection_threshold: u32,
+
+    /// Disable use of WireGuard's Persistent-Keepalive and only rely on libtelio pings
+    #[default(false)]
+    pub disable_wg_persistent_keepalives_for_direct_peers: bool,
 }
 
 /// Configurable features for Wireguard peers
@@ -500,7 +504,8 @@ mod tests {
             },
             "multicast": true,
             "batching": {
-                "direct_connection_threshold": 60
+                "direct_connection_threshold": 60,
+                "disable_wg_persistent_keepalives_for_direct_peers": true
             }
         }
         "#;
@@ -585,6 +590,7 @@ mod tests {
                 multicast: true,
                 batching: Some(FeatureBatching {
                     direct_connection_threshold: 60,
+                    disable_wg_persistent_keepalives_for_direct_peers: true,
                 }),
             };
 

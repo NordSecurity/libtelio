@@ -78,7 +78,7 @@ def pytest_make_parametrize_id(config, val):
                 param_id += f"-{provider}"
 
         if val.features.batching is not None:
-            param_id += f"-{str(val.features.batching).replace('direct_connection_threshold', 'dir').replace('Batching', 'Batch')}"
+            param_id += f"-{str(val.features.batching).replace('direct_connection_threshold', 'dir').replace('Batching', 'Batch').replace('disable_wg_persistent_keepalives_for_direct_peers', 'disable_dir_wg_ka')}"
     elif isinstance(val, (ConnectionTag,)):
         param_id = val.name.removeprefix("DOCKER_")
     elif isinstance(val, (AdapterType,)):

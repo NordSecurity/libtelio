@@ -79,6 +79,7 @@ class Nurse(DataClassJsonMixin):
 @dataclass
 class Batching(DataClassJsonMixin):
     direct_connection_threshold: int = 0
+    disable_wg_persistent_keepalives_for_direct_peers: bool = False
 
 
 @dataclass_json(undefined=Undefined.EXCLUDE)

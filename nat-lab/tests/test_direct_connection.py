@@ -27,8 +27,19 @@ from utils.asyncio_util import run_async_context
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
 
-# Testing if batching being disabled or not there doesn't affect anything
-DISABLED_BATCHING_OPTIONS = (None, Batching(direct_connection_threshold=0))
+# So far we only test that batcher's existence doesn't break things
+BATCHING_OPTIONS = (
+    None,
+    Batching(
+        direct_connection_threshold=0,
+        disable_wg_persistent_keepalives_for_direct_peers=False,
+    ),
+    Batching(
+        direct_connection_threshold=0,
+        disable_wg_persistent_keepalives_for_direct_peers=True,
+    ),
+)
+
 ANY_PROVIDERS = ["local", "stun"]
 
 DOCKER_CONE_GW_2_IP = "10.0.254.2"
@@ -178,7 +189,7 @@ UHP_WORKING_PATHS = [
         _generate_setup_parameter_pair((a[0], a[1], batch_a), (b[0], b[1], batch_b)), ip
     )
     for (a, b), ip in UHP_WORKING_PATHS_PARAMS
-    for (batch_a, batch_b) in itertools.product(DISABLED_BATCHING_OPTIONS, repeat=2)
+    for (batch_a, batch_b) in itertools.product(BATCHING_OPTIONS, repeat=2)
 ]
 
 UHP_FAILING_PATHS_PARAMS = [
@@ -225,7 +236,7 @@ UHP_FAILING_PATHS = [
         _generate_setup_parameter_pair((a[0], a[1], batch_a), (b[0], b[1], batch_b)),
     )
     for (a, b) in UHP_FAILING_PATHS_PARAMS
-    for (batch_a, batch_b) in itertools.product(DISABLED_BATCHING_OPTIONS, repeat=2)
+    for (batch_a, batch_b) in itertools.product(BATCHING_OPTIONS, repeat=2)
 ]
 
 
@@ -614,7 +625,7 @@ ENDPOINT_GONE_PARAMS = [
             _generate_setup_parameter_pair((a[0], a[1], batch_a), (b[0], b[1], batch_b))
         )
         for (a, b) in ENDPOINT_GONE_PARAMS
-        for (batch_a, batch_b) in itertools.product(DISABLED_BATCHING_OPTIONS, repeat=2)
+        for (batch_a, batch_b) in itertools.product(BATCHING_OPTIONS, repeat=2)
     ],
 )
 async def test_direct_connection_endpoint_gone(
@@ -701,7 +712,7 @@ async def test_direct_connection_endpoint_gone(
             (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
             (ConnectionTag.DOCKER_CONE_CLIENT_2, ["stun"]),
         )]
-        for (batch_a, batch_b) in itertools.product(DISABLED_BATCHING_OPTIONS, repeat=2)
+        for (batch_a, batch_b) in itertools.product(BATCHING_OPTIONS, repeat=2)
     ],
 )
 async def test_infinite_stun_loop(setup_params: List[SetupParameters]) -> None:

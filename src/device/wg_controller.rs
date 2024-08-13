@@ -286,40 +286,40 @@ async fn consolidate_wg_peers<
                     }
                 };
 
-                // Start persistent keepalives
+                let keepalive_interval = Duration::from_secs(
+                    requested_peer
+                        .peer
+                        .persistent_keepalive_interval
+                        .unwrap_or(requested_state.keepalive_periods.direct)
+                        .into(),
+                );
+
+                let threshold = features.batching.as_ref().map(|batching| {
+                    Duration::from_secs(batching.direct_connection_threshold.into())
+                });
+                sk.add_node(
+                    requested_peer.peer.public_key,
+                    target,
+                    keepalive_interval,
+                    threshold,
+                )
+                .await?;
+
                 match &features.batching {
                     Some(batching) => {
-                        sk.add_node(
-                            requested_peer.peer.public_key,
-                            target,
-                            Duration::from_secs(
-                                requested_peer
-                                    .peer
-                                    .persistent_keepalive_interval
-                                    .unwrap_or(requested_state.keepalive_periods.direct)
-                                    .into(),
-                            ),
-                            Some(Duration::from_secs(
-                                batching.direct_connection_threshold as u64,
-                            )),
-                        )
-                        .await?
+                        if batching.disable_wg_persistent_keepalives_for_direct_peers {
+                            // Disable persistent-keepalives by WireGuard for direct peers as SessionKeeper is already
+                            // doing that. No need to have extra keepalives.
+                            wireguard_interface
+                                .add_peer({
+                                    let mut peer = requested_peer.peer.clone();
+                                    peer.persistent_keepalive_interval = Some(0);
+                                    peer
+                                })
+                                .await?;
+                        }
                     }
-                    None => {
-                        sk.add_node(
-                            requested_peer.peer.public_key,
-                            target,
-                            Duration::from_secs(
-                                requested_peer
-                                    .peer
-                                    .persistent_keepalive_interval
-                                    .unwrap_or(requested_state.keepalive_periods.direct)
-                                    .into(),
-                            ),
-                            None,
-                        )
-                        .await?
-                    }
+                    None => {}
                 }
             }
         }
@@ -1039,7 +1039,9 @@ mod tests {
     use telio_dns::MockDnsResolver;
     use telio_firewall::firewall::{MockFirewall, FILE_SEND_PORT};
     use telio_model::config::{Config, PeerBase, Server};
-    use telio_model::features::{EndpointProvider as ApiEndpointProvider, FeatureDns, TtlValue};
+    use telio_model::features::{
+        EndpointProvider as ApiEndpointProvider, FeatureBatching, FeatureDns, TtlValue,
+    };
     use telio_model::mesh::ExitNode;
     use telio_pq::MockPostQuantum;
     use telio_proto::Session;
@@ -1835,7 +1837,10 @@ mod tests {
     async fn when_upgrade_requested_by_peer_then_upgrade_and_batching() {
         let mut f = Fixture::new();
         f.features.ipv6 = true;
-        f.features.batching = Some(Default::default());
+        f.features.batching = Some(FeatureBatching {
+            direct_connection_threshold: 0,
+            disable_wg_persistent_keepalives_for_direct_peers: true,
+        });
 
         let pub_key = SecretKey::gen().public();
         let ip1 = IpAddr::from([1, 2, 3, 4]);
@@ -1872,7 +1877,7 @@ mod tests {
             remote_wg_endpoint,
             direct_keepalive_period,
             allowed_ips.iter().copied().map(|ip| ip.into()).collect(),
-            allowed_ips,
+            allowed_ips.clone(),
         )]);
         f.then_proxy_mute(vec![(
             pub_key,
@@ -1884,6 +1889,13 @@ mod tests {
             Some(ip1v6),
             direct_keepalive_period,
             Some(Duration::from_secs(0)),
+        )]);
+        f.then_add_peer(vec![(
+            pub_key,
+            remote_wg_endpoint,
+            0,
+            allowed_ips.iter().copied().map(|ip| ip.into()).collect(),
+            allowed_ips,
         )]);
 
         f.consolidate_peers().await;

@@ -556,6 +556,9 @@ dictionary Features {
 dictionary FeatureBatching {
     /// direct connection threshold for batching
     u32 direct_connection_threshold;
+
+    /// controls if WireGuard's Persistent-Keepalive should be additionally enabled for direct peers. This should be overshadowed by libtelio itself.
+    boolean disable_wg_persistent_keepalives_for_direct_peers;
 };
 
 /// Configurable features for Wireguard peers
