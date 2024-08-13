@@ -101,7 +101,7 @@ impl SecretKey {
     /// assert_ne!(secret_key_a, secret_key_b);
     /// ```
     pub fn gen() -> Self {
-        Self::gen_with(&mut rand::rngs::StdRng::from_entropy())
+        Self::gen_with(&mut rand::rngs::OsRng)
     }
 
     /// Generates a new random SecretKey with provided RNG

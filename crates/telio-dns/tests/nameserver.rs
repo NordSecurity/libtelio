@@ -10,7 +10,7 @@ use pnet_packet::{
     udp::{ipv4_checksum, ipv6_checksum, MutableUdpPacket, UdpPacket},
     Packet,
 };
-use rand::prelude::*;
+use rand::rngs::OsRng;
 use std::{
     io::ErrorKind,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
@@ -509,10 +509,10 @@ async fn init_client(
     let server_address: SocketAddr = ([127, 0, 0, 1], server_port).into();
     let server_socket = Arc::<tokio::net::UdpSocket>::from(server_socket);
 
-    let server_private_key = StaticSecret::random_from_rng(rand::rngs::StdRng::from_entropy());
+    let server_private_key = StaticSecret::random_from_rng(OsRng);
     let server_public_key = PublicKey::from(&server_private_key);
 
-    let client_secret_key = StaticSecret::random_from_rng(rand::rngs::StdRng::from_entropy());
+    let client_secret_key = StaticSecret::random_from_rng(OsRng);
     let client_public_key = PublicKey::from(&client_secret_key);
 
     let server_peer = Arc::new(Mutex::new(
