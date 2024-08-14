@@ -193,37 +193,68 @@ async def perform_pretest_cleanups():
         await cleanup()
 
 
+async def _copy_binaries_on_ci(session):
+    mac_vm, win_vm_1, win_vm_2 = False, False, False
+
+    for item in session.items:
+        if "WINDOWS_VM_1" in item.name:
+            win_vm_1 = True
+
+        if "WINDOWS_VM_2" in item.name:
+            win_vm_2 = True
+
+        if "MAC_VM" in item.name:
+            mac_vm = True
+
+    if win_vm_1:
+        async with windows_vm_util.new_connection(
+            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_1], copy_binaries=True
+        ):
+            pass
+
+    if win_vm_2:
+        async with windows_vm_util.new_connection(
+            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_2], copy_binaries=True
+        ):
+            pass
+
+    if mac_vm:
+        async with mac_vm_util.new_connection(copy_binaries=True):
+            pass
+
+
+async def _copy_binaries_on_local_run():
+    try:
+        async with windows_vm_util.new_connection(
+            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_1], copy_binaries=True
+        ):
+            pass
+    except OSError as e:
+        print(e)
+
+    try:
+        async with windows_vm_util.new_connection(
+            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_2], copy_binaries=True
+        ):
+            pass
+    except OSError as e:
+        print(e)
+
+    try:
+        async with mac_vm_util.new_connection(copy_binaries=True):
+            pass
+    except OSError as e:
+        print(e)
+
+
 def pytest_collection_finish(session):
-    async def copy_binaries():
-        mac_vm, win_vm_1, win_vm_2 = False, False, False
-
-        for item in session.items:
-            if "WINDOWS_VM_1" in item.name:
-                win_vm_1 = True
-
-            if "WINDOWS_VM_2" in item.name:
-                win_vm_2 = True
-
-            if "MAC_VM" in item.name:
-                mac_vm = True
-
-        if win_vm_1:
-            async with windows_vm_util.new_connection(
-                LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_1], copy_binaries=True
-            ):
-                pass
-
-        if win_vm_2:
-            async with windows_vm_util.new_connection(
-                LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_2], copy_binaries=True
-            ):
-                pass
-
-        if mac_vm:
-            async with mac_vm_util.new_connection(copy_binaries=True):
-                pass
-
-    asyncio.run(copy_binaries())
+    is_ci = os.environ.get("CUSTOM_ENV_GITLAB_CI") is not None and os.environ.get(
+        "CUSTOM_ENV_GITLAB_CI"
+    )
+    if is_ci:
+        asyncio.run(_copy_binaries_on_ci(session))
+    else:
+        asyncio.run(_copy_binaries_on_local_run())
 
     if not asyncio.run(perform_setup_checks()):
         pytest.exit("Setup checks failed, exiting ...")
