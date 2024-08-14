@@ -656,11 +656,22 @@ class Client:
 
                 print(datetime.now(), "Test cleanup stage 4. Stopping device")
                 if self._process.is_executing():
-                    await self.stop_device()
+                    if self._libtelio_proxy:
+                        await self.stop_device()
+                    else:
+                        print(
+                            datetime.now(),
+                            "[Debug] We don't have LibtelioProxy instance, Stop() not called.",
+                        )
                     self._quit = True
-
                 print(datetime.now(), "Test cleanup stage 5. Shutting down")
-                self.get_proxy().shutdown(self._connection.target_name())
+                if self._libtelio_proxy:
+                    self.get_proxy().shutdown(self._connection.target_name())
+                else:
+                    print(
+                        datetime.now(),
+                        "[Debug] We don't have LibtelioProxy instance, Shutdown() not called.",
+                    )
 
                 print(datetime.now(), "Test cleanup stage 6. Clearing up routes")
                 if self._router:
@@ -1153,7 +1164,11 @@ class Client:
         log_dir = "logs"
         os.makedirs(log_dir, exist_ok=True)
 
-        log_content = await self.get_log()
+        try:
+            log_content = await self.get_log()
+        except ProcessExecError as err:
+            err.print()
+            return
 
         system_log_content = await self.get_system_log()
 

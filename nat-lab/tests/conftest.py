@@ -2,7 +2,6 @@ import asyncio
 import os
 import pytest
 import subprocess
-import time
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_connections
 from interderp_cli import InterDerpClient
@@ -19,6 +18,9 @@ DERP_SERVER_2_ADDR = "http://10.0.10.2:8765"
 DERP_SERVER_3_ADDR = "http://10.0.10.3:8765"
 DERP_SERVER_1_SECRET_KEY = "yBTYHj8yPlG9VtMYMwJSRHdzNdyAlVXGc6X2xJkjfHQ="
 DERP_SERVER_2_SECRET_KEY = "2NgALOCSKJcDxwr8MtA+6lYbf7b98KSdAROGoUwZ1V0="
+
+SETUP_CHECK_TIMEOUT_S = 30
+SETUP_CHECK_RETRIES = 5
 
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
@@ -140,26 +142,23 @@ async def setup_check_interderp():
 
 
 SETUP_CHECKS = [
-    (setup_check_interderp, 30.0),
+    (setup_check_interderp, SETUP_CHECK_TIMEOUT_S, SETUP_CHECK_RETRIES),
 ]
 
 
 async def perform_setup_checks() -> bool:
-    for target, timeout in SETUP_CHECKS:
-        start_time = time.time()
-        while True:
-            if time.time() - start_time > timeout:
-                print(f"Target timeout reached for {target}().")
-                return False
+    for target, timeout, retries in SETUP_CHECKS:
+        while retries > 0:
             try:
-                await asyncio.wait_for(target(), timeout)
+                await asyncio.wait_for(asyncio.shield(target()), timeout)
                 break
             except asyncio.TimeoutError:
                 print(f"{target}() timeout, retrying...")
-                continue
             except Exception as e:  # pylint: disable=broad-exception-caught
                 print(f"An error occurred: {e}, retrying...")
-                continue
+            retries -= 1
+        else:
+            return False
 
     return True
 
@@ -247,17 +246,18 @@ async def _copy_binaries_on_local_run():
         print(e)
 
 
-def pytest_collection_finish(session):
-    is_ci = os.environ.get("CUSTOM_ENV_GITLAB_CI") is not None and os.environ.get(
-        "CUSTOM_ENV_GITLAB_CI"
-    )
-    if is_ci:
-        asyncio.run(_copy_binaries_on_ci(session))
-    else:
-        asyncio.run(_copy_binaries_on_local_run())
+def pytest_runtestloop(session):
+    if not session.config.option.collectonly:
+        is_ci = os.environ.get("CUSTOM_ENV_GITLAB_CI") is not None and os.environ.get(
+            "CUSTOM_ENV_GITLAB_CI"
+        )
+        if is_ci:
+            asyncio.run(_copy_binaries_on_ci(session))
+        else:
+            asyncio.run(_copy_binaries_on_local_run())
 
-    if not asyncio.run(perform_setup_checks()):
-        pytest.exit("Setup checks failed, exiting ...")
+        if not asyncio.run(perform_setup_checks()):
+            pytest.exit("Setup checks failed, exiting ...")
 
 
 def pytest_runtest_setup():
@@ -266,18 +266,17 @@ def pytest_runtest_setup():
 
 # pylint: disable=unused-argument
 def pytest_sessionfinish(session, exitstatus):
-    num_containers = 3
+    if not session.config.option.collectonly:
+        num_containers = 3
 
-    for i in range(1, num_containers + 1):
-        container_name = f"nat-lab-derp-{i:02d}-1"
-        destination_path = f"logs/derp_{i:02d}_relay.log"
+        for i in range(1, num_containers + 1):
+            container_name = f"nat-lab-derp-{i:02d}-1"
+            destination_path = f"logs/derp_{i:02d}_relay.log"
 
-        docker_cp_command = (
-            f"docker cp {container_name}:/etc/nordderper/relay.log {destination_path}"
-        )
+            docker_cp_command = f"docker cp {container_name}:/etc/nordderper/relay.log {destination_path}"
 
-        try:
-            subprocess.run(docker_cp_command, shell=True, check=True)
-            print(f"Log file copied successfully from {container_name}")
-        except subprocess.CalledProcessError:
-            print(f"Error copying log file from {container_name}")
+            try:
+                subprocess.run(docker_cp_command, shell=True, check=True)
+                print(f"Log file copied successfully from {container_name}")
+            except subprocess.CalledProcessError:
+                print(f"Error copying log file from {container_name}")

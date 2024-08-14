@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import AsyncIterator, Dict, Tuple, Optional, List, Union
-from utils.connection import Connection, TargetOS
+from utils.connection import Connection, TargetOS, DockerConnection
 from utils.connection_tracker import (
     ConnectionTracker,
     ConnectionTrackerConfig,
@@ -17,7 +17,7 @@ from utils.network_switcher import (
     NetworkSwitcherMac,
     NetworkSwitcherWindows,
 )
-from utils.vm import container_util, windows_vm_util, mac_vm_util
+from utils.vm import windows_vm_util, mac_vm_util
 
 
 class ConnectionTag(Enum):
@@ -205,11 +205,14 @@ async def new_connection_raw(
 ) -> AsyncIterator[Connection]:
     if tag in DOCKER_SERVICE_IDS:
         async with Docker() as docker:
-            async with container_util.get(docker, container_id(tag)) as connection:
-                try:
-                    yield connection
-                finally:
-                    pass
+            connection: Connection = await DockerConnection.new(
+                docker, container_id(tag)
+            )
+            try:
+                yield connection
+            finally:
+                await connection.restore_ip_tables()
+                await connection.clean_interface()
 
     elif tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
         async with windows_vm_util.new_connection(LAN_ADDR_MAP[tag]) as connection:

@@ -39,3 +39,9 @@ class Connection(ABC):
 
     async def mapped_ports(self) -> tuple[str, str]:
         return ("0", "0")
+
+    async def restore_ip_tables(self) -> None:
+        pass
+
+    async def clean_interface(self) -> None:
+        pass

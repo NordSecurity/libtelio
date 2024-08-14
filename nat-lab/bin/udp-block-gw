@@ -26,6 +26,10 @@ iptables -A INPUT -p udp -j DROP
 iptables -A OUTPUT -p udp -j DROP
 iptables -A FORWARD -p udp -j DROP
 
+# Backup IP tables
+iptables-save -f iptables_backup
+ip6tables-save -f ip6tables_backup
+
 touch /ready
 
 sleep infinity

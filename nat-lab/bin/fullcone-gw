@@ -23,6 +23,10 @@ iptables -t filter -P INPUT DROP
 iptables -t nat -A POSTROUTING -o $public_itf -j FULLCONENAT
 iptables -t nat -A PREROUTING -i $public_itf -j FULLCONENAT
 
+# Backup IP tables
+iptables-save -f iptables_backup
+ip6tables-save -f ip6tables_backup
+
 touch /ready
 
 sleep infinity

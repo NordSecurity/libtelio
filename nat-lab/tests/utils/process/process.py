@@ -19,6 +19,11 @@ class ProcessExecError(Exception):
         self.stdout = stdout
         self.stderr = stderr
 
+    def print(self) -> None:
+        print(
+            f"Executed command {self.cmd} exited with ret code '{self.returncode}'. STDOUT: '{self.stdout}'. STDERR: '{self.stderr}'"
+        )
+
 
 class Process(ABC):
     @abstractmethod

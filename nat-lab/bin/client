@@ -14,6 +14,10 @@ sleep 5
 iptables -A INPUT -m conntrack --ctstate ESTABLISHED -j LOG --log-level debug
 ip6tables -A INPUT -m conntrack --ctstate ESTABLISHED -j LOG --log-level debug
 
+# Backup IP tables
+iptables-save -f iptables_backup
+ip6tables-save -f ip6tables_backup
+
 /libtelio/nat-lab/bin/configure_route.sh primary
 
 touch /ready

@@ -18,7 +18,6 @@ FWMARK_VALUE = "11673110"  # LIBTELIO
 # 32766:  from all lookup main
 # 32767:  from all lookup default
 ROUTING_PRIORITY = "32111"
-INTERFACE_NAME = "tun10"
 
 
 class AddressError(Exception):
@@ -39,7 +38,7 @@ class LinuxRouter(Router):
     def __init__(self, connection: Connection, ip_stack: IPStack):
         super().__init__(ip_stack)
         self._connection = connection
-        self._interface_name = INTERFACE_NAME
+        self._interface_name = config.LINUX_INTERFACE_NAME
 
     def get_interface_name(self) -> str:
         return self._interface_name
