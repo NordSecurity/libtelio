@@ -52,11 +52,6 @@ def _generate_setup_parameter_pair(
             adapter_type=telio.AdapterType.BoringTun,
             features=TelioFeatures(
                 direct=Direct(providers=endpoint_providers),
-                nurse=Nurse(
-                    enable_nat_traversal_conn_data=True,
-                    enable_nat_type_collection=True,
-                ),
-                lana=Lana(prod=False, event_path="/event.db"),
                 batching=batching,
             ),
             fingerprint=f"{conn_tag}",
@@ -293,6 +288,12 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
     reflexive_ip: str,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
+        for param in setup_params:
+            param.features.nurse = Nurse(
+                enable_nat_traversal_conn_data=True,
+                enable_nat_type_collection=True,
+            )
+            param.features.lana = Lana(prod=False, event_path="/event.db")
         env = await setup_mesh_nodes(exit_stack, setup_params)
         alpha, beta = env.nodes
         alpha_client, beta_client = env.clients
