@@ -192,72 +192,43 @@ async def perform_pretest_cleanups():
         await cleanup()
 
 
-async def _copy_binaries_on_ci(session):
-    mac_vm, win_vm_1, win_vm_2 = False, False, False
-
-    for item in session.items:
-        if "WINDOWS_VM_1" in item.name:
-            win_vm_1 = True
-
-        if "WINDOWS_VM_2" in item.name:
-            win_vm_2 = True
-
-        if "MAC_VM" in item.name:
-            mac_vm = True
-
-    if win_vm_1:
-        async with windows_vm_util.new_connection(
-            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_1], copy_binaries=True
-        ):
-            pass
-
-    if win_vm_2:
-        async with windows_vm_util.new_connection(
-            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_2], copy_binaries=True
-        ):
-            pass
-
-    if mac_vm:
-        async with mac_vm_util.new_connection(copy_binaries=True):
-            pass
-
-
-async def _copy_binaries_on_local_run():
-    try:
-        async with windows_vm_util.new_connection(
-            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_1], copy_binaries=True
-        ):
-            pass
-    except OSError as e:
-        print(e)
-
-    try:
-        async with windows_vm_util.new_connection(
-            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_2], copy_binaries=True
-        ):
-            pass
-    except OSError as e:
-        print(e)
-
-    try:
-        async with mac_vm_util.new_connection(copy_binaries=True):
-            pass
-    except OSError as e:
-        print(e)
-
-
 def pytest_runtestloop(session):
     if not session.config.option.collectonly:
-        is_ci = os.environ.get("CUSTOM_ENV_GITLAB_CI") is not None and os.environ.get(
-            "CUSTOM_ENV_GITLAB_CI"
-        )
-        if is_ci:
-            asyncio.run(_copy_binaries_on_ci(session))
-        else:
-            asyncio.run(_copy_binaries_on_local_run())
+        for item in session.items:
+            if "WINDOWS_VM_1" in item.name:
+                _copy_vm_binaries(ConnectionTag.WINDOWS_VM_1)
+            elif "WINDOWS_VM_2" in item.name:
+                _copy_vm_binaries(ConnectionTag.WINDOWS_VM_2)
+            elif "MAC_VM" in item.name:
+                _copy_vm_binaries(ConnectionTag.MAC_VM)
 
-        if not asyncio.run(perform_setup_checks()):
-            pytest.exit("Setup checks failed, exiting ...")
+            if not asyncio.run(perform_setup_checks()):
+                pytest.exit("Setup checks failed, exiting ...")
+
+
+async def _copy_vm_binaries(tag: ConnectionTag):
+    is_ci = os.environ.get("CUSTOM_ENV_GITLAB_CI") is not None and os.environ.get(
+        "CUSTOM_ENV_GITLAB_CI"
+    )
+    if tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
+        try:
+            print(f"copying for {tag}")
+            async with windows_vm_util.new_connection(
+                LAN_ADDR_MAP[tag], copy_binaries=True
+            ):
+                pass
+        except OSError as e:
+            if is_ci:
+                raise e
+            print(e)
+    elif tag is ConnectionTag.MAC_VM:
+        try:
+            async with mac_vm_util.new_connection(copy_binaries=True):
+                pass
+        except OSError as e:
+            if is_ci:
+                raise e
+            print(e)
 
 
 def pytest_runtest_setup():
