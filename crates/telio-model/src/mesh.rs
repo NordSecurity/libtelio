@@ -124,7 +124,10 @@ impl From<&PeerBase> for Node {
         Self {
             identifier: peer.identifier.clone(),
             public_key: peer.public_key,
-            nickname: peer.nickname.clone(),
+            nickname: peer
+                .nickname
+                .as_ref()
+                .map(|hidden_nick| hidden_nick.0.to_owned()),
             allowed_ips: peer
                 .ip_addresses
                 .as_ref()
@@ -140,7 +143,10 @@ impl From<&Peer> for Node {
     fn from(peer: &Peer) -> Self {
         Self {
             public_key: peer.public_key,
-            nickname: peer.nickname.clone(),
+            nickname: peer
+                .nickname
+                .as_ref()
+                .map(|hidden_nick| hidden_nick.0.to_owned()),
             allowed_ips: peer
                 .ip_addresses
                 .as_ref()

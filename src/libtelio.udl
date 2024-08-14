@@ -733,7 +733,7 @@ dictionary PeerBase {
     /// Ip address of peer
     sequence<IpAddr>? ip_addresses;
     /// Nickname for the peer
-    string? nickname;
+    HiddenString? nickname;
 };
 
 /// Description of a peer
