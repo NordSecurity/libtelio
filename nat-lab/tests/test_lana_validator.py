@@ -1,6 +1,6 @@
-import utils.analytics as Validator
+from utils import analytics
 
-TEST_EVENT = Validator.Event(
+TEST_EVENT = analytics.Event(
     name="heartbeat",
     category="service_quality",
     datetime_local="2023-08-10T15:03:25.605768807+00:00",
@@ -22,7 +22,7 @@ TEST_EVENT = Validator.Event(
     mem_nat_types="Symmetric,PortRestrictedCone",
 )
 
-DUMMY_EVENT = Validator.Event(
+DUMMY_EVENT = analytics.Event(
     name="heartbeet",
     category="service_qwuality",
     datetime_local="2026-08-10T15:03:25.605768807+00:00",
@@ -46,63 +46,67 @@ DUMMY_EVENT = Validator.Event(
 
 
 def check_validator(validator, true_event, false_event) -> None:
-    assert validator.validate(true_event)
-    assert not validator.validate(false_event)
+    res = validator.validate(true_event)
+    assert res[0] if issubclass(type(validator), analytics.EventValidator) else res
+    res = validator.validate(false_event)
+    assert not (
+        res[0] if issubclass(type(validator), analytics.EventValidator) else res
+    )
 
 
 def test_existance_validator() -> None:
-    check_validator(Validator.ExistanceValidator(), "test", "")
+    check_validator(analytics.ExistanceValidator(), "test", "")
 
 
 def test_inexistance_validator() -> None:
-    check_validator(Validator.InexistanceValidator(), "", "test")
+    check_validator(analytics.InexistanceValidator(), "", "test")
 
 
 def test_string_equals_validator() -> None:
-    check_validator(Validator.StringEqualsValidator("test"), "test", "apple")
+    check_validator(analytics.StringEqualsValidator("test"), "test", "apple")
 
 
 def test_string_containment_validator() -> None:
     check_validator(
-        Validator.StringContainmentValidator("test"), "truetestapple", "trueapple"
+        analytics.StringContainmentValidator("test"), "truetestapple", "trueapple"
     )
 
 
 def test_string_occurences_validator() -> None:
     check_validator(
-        Validator.StringOccurrencesValidator(count=2, value="true"),
+        analytics.StringOccurrencesValidator(count=2, value="true"),
         "testtrueappletrue",
         "testappletrue",
     )
 
 
 def test_integer_equals_validator() -> None:
-    check_validator(Validator.IntegerEqualsValidator(7), 7, 5)
+    check_validator(analytics.IntegerEqualityValidator(7), 7, 5)
 
 
 def test_integer_not_equals_validator() -> None:
-    check_validator(Validator.IntegerNotEqualsValidator(5), 7, 5)
+    check_validator(analytics.IntegerEqualityValidator(5, False), 7, 5)
 
 
 def test_connection_count_validator() -> None:
-    check_validator(Validator.ConnectionCountValidator(2), "gamma, beta", "beta")
+    check_validator(analytics.ConnectionCountValidator(2), "gamma, beta", "beta")
 
 
 def test_connection_state_validator() -> None:
     check_validator(
-        Validator.ConnectionStateValidator(
+        analytics.ConnectionStateValidator(
             expected_states=[
                 (
-                    Validator.DERP_BIT
-                    | Validator.WG_BIT
-                    | Validator.IPV4_BIT
-                    | Validator.IPV6_BIT
+                    analytics.DERP_BIT
+                    | analytics.WG_BIT
+                    | analytics.IPV4_BIT
+                    | analytics.IPV6_BIT
                 ),
                 (
-                    Validator.DERP_BIT
-                    | Validator.WG_BIT
-                    | Validator.IPV4_BIT
-                    | Validator.IPV6_BIT
+                    analytics.DERP_BIT
+                    | analytics.WG_BIT
+                    | analytics.IPV4_BIT
+                    | analytics.IPV6_BIT
                 ),
             ],
             all_connections_up=False,
@@ -111,7 +115,7 @@ def test_connection_state_validator() -> None:
         DUMMY_EVENT.external_links,
     )
     check_validator(
-        Validator.ConnectionStateValidator(
+        analytics.ConnectionStateValidator(
             all_connections_up=True,
         ),
         TEST_EVENT.external_links,
@@ -121,7 +125,7 @@ def test_connection_state_validator() -> None:
 
 def test_string_validator() -> None:
     check_validator(
-        Validator.StringValidator(
+        analytics.StringValidator(
             exists=True,
             equals="truetest",
             contains=["test"],
@@ -133,18 +137,18 @@ def test_string_validator() -> None:
 
 
 def test_name_validator() -> None:
-    check_validator(Validator.NameValidator("heartbeat"), TEST_EVENT, DUMMY_EVENT)
+    check_validator(analytics.NameValidator("heartbeat"), TEST_EVENT, DUMMY_EVENT)
 
 
 def test_category_validator() -> None:
     check_validator(
-        Validator.CategoryValidator("service_quality"), TEST_EVENT, DUMMY_EVENT
+        analytics.CategoryValidator("service_quality"), TEST_EVENT, DUMMY_EVENT
     )
 
 
 def test_external_links_validator() -> None:
     check_validator(
-        Validator.ExternalLinksValidator(
+        analytics.ExternalLinksValidator(
             exists=True,
             contains=["delta", "charlie"],
             does_not_contain=["alpha"],
@@ -152,16 +156,16 @@ def test_external_links_validator() -> None:
             no_of_connections=2,
             expected_states=[
                 (
-                    Validator.DERP_BIT
-                    | Validator.WG_BIT
-                    | Validator.IPV4_BIT
-                    | Validator.IPV6_BIT
+                    analytics.DERP_BIT
+                    | analytics.WG_BIT
+                    | analytics.IPV4_BIT
+                    | analytics.IPV6_BIT
                 ),
                 (
-                    Validator.DERP_BIT
-                    | Validator.WG_BIT
-                    | Validator.IPV4_BIT
-                    | Validator.IPV6_BIT
+                    analytics.DERP_BIT
+                    | analytics.WG_BIT
+                    | analytics.IPV4_BIT
+                    | analytics.IPV6_BIT
                 ),
             ],
         ),
@@ -169,7 +173,7 @@ def test_external_links_validator() -> None:
         DUMMY_EVENT,
     )
     check_validator(
-        Validator.ExternalLinksValidator(
+        analytics.ExternalLinksValidator(
             exists=True,
             contains=["delta", "charlie"],
             does_not_contain=["alpha"],
@@ -183,25 +187,25 @@ def test_external_links_validator() -> None:
 
 def test_connectivity_matrix_validator() -> None:
     check_validator(
-        Validator.ConnectivityMatrixValidator(
+        analytics.ConnectivityMatrixValidator(
             exists=True, no_of_connections=3, all_connections_up=True
         ),
         TEST_EVENT,
         DUMMY_EVENT,
     )
     check_validator(
-        Validator.ConnectivityMatrixValidator(
+        analytics.ConnectivityMatrixValidator(
             exists=True,
             no_of_connections=3,
             all_connections_up=False,
             expected_states=[
-                (Validator.DERP_BIT | Validator.WG_BIT | Validator.IPV4_BIT),
-                (Validator.DERP_BIT | Validator.WG_BIT | Validator.IPV6_BIT),
+                (analytics.DERP_BIT | analytics.WG_BIT | analytics.IPV4_BIT),
+                (analytics.DERP_BIT | analytics.WG_BIT | analytics.IPV6_BIT),
                 (
-                    Validator.DERP_BIT
-                    | Validator.WG_BIT
-                    | Validator.IPV4_BIT
-                    | Validator.IPV6_BIT
+                    analytics.DERP_BIT
+                    | analytics.WG_BIT
+                    | analytics.IPV4_BIT
+                    | analytics.IPV6_BIT
                 ),
             ],
         ),
@@ -212,13 +216,13 @@ def test_connectivity_matrix_validator() -> None:
 
 def test_fingerprint_validator() -> None:
     check_validator(
-        Validator.FingerprintValidator(equals="86bee206-9082"), TEST_EVENT, DUMMY_EVENT
+        analytics.FingerprintValidator(equals="86bee206-9082"), TEST_EVENT, DUMMY_EVENT
     )
 
 
 def test_members_validator() -> None:
     check_validator(
-        Validator.MembersValidator(
+        analytics.MembersValidator(
             exists=True,
             contains=["gamma", "beta"],
             does_not_contain=["alpha"],
@@ -229,85 +233,93 @@ def test_members_validator() -> None:
 
 
 def test_connection_duration_validator() -> None:
-    check_validator(Validator.ConnectionDurationValidator(), TEST_EVENT, DUMMY_EVENT)
+    check_validator(analytics.ConnectionDurationValidator(), TEST_EVENT, DUMMY_EVENT)
 
 
 def test_heartbeat_interval_validator() -> None:
-    check_validator(Validator.HeartbeatIntervalValidator(3600), TEST_EVENT, DUMMY_EVENT)
+    check_validator(analytics.HeartbeatIntervalValidator(3600), TEST_EVENT, DUMMY_EVENT)
 
 
 def test_recieved_data_validator() -> None:
-    check_validator(Validator.ReceivedDataValidator(), TEST_EVENT, DUMMY_EVENT)
+    check_validator(analytics.ReceivedDataValidator(), TEST_EVENT, DUMMY_EVENT)
 
 
 def test_rtt_validator() -> None:
-    check_validator(Validator.RttValidator(), TEST_EVENT, DUMMY_EVENT)
+    check_validator(analytics.RttValidator(), TEST_EVENT, DUMMY_EVENT)
 
 
 def test_rtt_loss_validator() -> None:
-    check_validator(Validator.RttLossValidator(), TEST_EVENT, DUMMY_EVENT)
+    check_validator(analytics.RttLossValidator(), TEST_EVENT, DUMMY_EVENT)
 
 
 def test_rtt6_validator() -> None:
-    check_validator(Validator.Rtt6Validator(), TEST_EVENT, DUMMY_EVENT)
+    check_validator(analytics.Rtt6Validator(), TEST_EVENT, DUMMY_EVENT)
 
 
 def test_rtt6_loss_validator() -> None:
-    check_validator(Validator.Rtt6LossValidator(), TEST_EVENT, DUMMY_EVENT)
+    check_validator(analytics.Rtt6LossValidator(), TEST_EVENT, DUMMY_EVENT)
 
 
 def test_sent_data_validator() -> None:
-    check_validator(Validator.SentDataValidator(), TEST_EVENT, DUMMY_EVENT)
+    check_validator(analytics.SentDataValidator(), TEST_EVENT, DUMMY_EVENT)
 
 
 def test_nat_type_validator() -> None:
     check_validator(
-        Validator.NatTypeValidator("PortRestrictedCone"), TEST_EVENT, DUMMY_EVENT
+        analytics.SelfNatTypeValidator("PortRestrictedCone"), TEST_EVENT, DUMMY_EVENT
     )
 
 
 def test_nat_traversal_conn_info() -> None:
-    check_validator(Validator.NatTraversalConnInfoValidator(), TEST_EVENT, DUMMY_EVENT)
+    check_validator(
+        analytics.NatTraversalConnInfoValidator(
+            "aaaa", "bbbb", False, equals="1:2:120:49:2000:4000"
+        ),
+        TEST_EVENT,
+        DUMMY_EVENT,
+    )
 
 
 def test_derp_conn_info() -> None:
-    check_validator(Validator.DerpConnInfoValidator(), TEST_EVENT, DUMMY_EVENT)
+    check_validator(analytics.DerpConnInfoValidator(), TEST_EVENT, DUMMY_EVENT)
 
 
 def test_mem_nat_type_validator() -> None:
     check_validator(
-        Validator.MemNatTypeValidator(["Symmetric", "PortRestrictedCone"]),
+        analytics.MembersNatTypeValidator(["Symmetric", "PortRestrictedCone"]),
         TEST_EVENT,
         DUMMY_EVENT,
     )
 
 
 def test_lana_event_validator() -> None:
-    test_validator = (
-        Validator.basic_validator("beta", meshnet_id="86bee206-9082")
-        .add_connectivity_matrix_validator(
+    test_validator = analytics.EventValidator.new_with_basic_validators(
+        "beta", meshnet_id="86bee206-9082"
+    ).add_validator_list([
+        analytics.ConnectivityMatrixValidator(
             exists=True,
             no_of_connections=3,
             all_connections_up=True,
-        )
-        .add_members_validator(
+        ),
+        analytics.MembersValidator(
             exists=True,
             contains=["gamma", "beta"],
             does_not_contain=["alpha"],
-        )
-        .add_nat_type_validators(
-            is_nat_type_collection_enabled=True,
+        ),
+        analytics.SelfNatTypeValidator(
             nat_type="PortRestrictedCone",
-            nat_mem=["Symmetric", "PortRestrictedCone"],
-        )
-        .add_external_links_validator(
+        ),
+        analytics.MembersNatTypeValidator(
+            members_nat_type=["Symmetric", "PortRestrictedCone"],
+        ),
+        analytics.ExternalLinksValidator(
             exists=True,
             contains=["delta", "charlie"],
             does_not_contain=["alpha", "beta", "gamma"],
             all_connections_up=True,
             no_of_connections=2,
-        )
-    )
+        ),
+    ])
     res = test_validator.validate(TEST_EVENT)
     assert res[0], res[1]
     res = test_validator.validate(DUMMY_EVENT)
