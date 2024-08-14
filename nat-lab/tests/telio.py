@@ -20,6 +20,7 @@ from typing import AsyncIterator, List, Optional, Set
 from uniffi.libtelio_proxy import LibtelioProxy, ProxyConnectionError
 from uniffi.telio_bindings import NatType
 from utils import asyncio_util
+from utils.command_grepper import CommandGrepper
 from utils.connection import Connection, DockerConnection, TargetOS
 from utils.connection_util import get_uniffi_path
 from utils.output_notifier import OutputNotifier
@@ -796,6 +797,27 @@ class Client:
 
     async def receive_ping(self) -> str:
         return await asyncio.to_thread(self.get_proxy().receive_ping)
+
+    async def wait_for_listen_port_ready(
+        self,
+        protocol: str,
+        port: int,
+        process: str = "python3",
+        timeout: Optional[float] = None,
+    ) -> None:
+        assert (
+            self._connection.target_os == TargetOS.Linux
+        ), "Waiting for listen ports is supported only on Linux hosts"
+
+        if not await CommandGrepper(
+            self._connection,
+            [
+                "netstat",
+                "-lpn",
+            ],
+            timeout,
+        ).check_exists(f":{port} ", [protocol, process]):
+            raise Exception("Listening socket could not be found")
 
     async def get_nat(self, ip: str, port: int) -> NatType:
         return self.get_proxy().get_nat(ip, port)
