@@ -31,6 +31,9 @@ pub struct Features {
     /// Test environment (natlab) requires binding feature disabled
     /// TODO: Remove it once mac integration tests support the binding mechanism
     pub is_test_env: Option<bool>,
+    /// Controll if IP addresses should be hidden in logs
+    #[default(true)]
+    pub hide_ips: bool,
     /// Derp server specific configuration
     pub derp: Option<FeatureDerp>,
     /// Flag to specify if keys should be validated
@@ -467,6 +470,7 @@ mod tests {
                 }
             },
             "is_test_env": true,
+            "hide_ips": false,
             "derp": {
                 "tcp_keepalive": 13,
                 "derp_keepalive": 14,
@@ -551,6 +555,7 @@ mod tests {
                     }),
                 }),
                 is_test_env: Some(true),
+                hide_ips: false,
                 derp: Some(FeatureDerp {
                     tcp_keepalive: Some(13),
                     derp_keepalive: Some(14),
@@ -752,6 +757,21 @@ mod tests {
             let actual = from_str::<Features>(json).unwrap().wireguard;
             let expected = FeatureWireguard::default();
             assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn test_hide_ips() {
+            let json = r#"{}"#;
+            let actual = from_str::<Features>(json).unwrap();
+            assert_eq!(actual.hide_ips, true);
+
+            let json = r#"{"hide_ips": false}"#;
+            let actual = from_str::<Features>(json).unwrap();
+            assert_eq!(actual.hide_ips, false);
+
+            let json = r#"{"hide_ips": true}"#;
+            let actual = from_str::<Features>(json).unwrap();
+            assert_eq!(actual.hide_ips, true);
         }
     }
 

@@ -23,6 +23,7 @@ impl FeaturesDefaultsBuilder {
             paths: None,
             direct: None,
             is_test_env: None,
+            hide_ips: true,
             // All inner values of derp are None's or false's
             // and as it does not actualy control derp
             // builder part is not added

@@ -127,6 +127,7 @@ class Firewall(DataClassJsonMixin):
 @dataclass
 class TelioFeatures(DataClassJsonMixin):
     is_test_env: Optional[bool] = True
+    hide_ips: Optional[bool] = False
     direct: Optional[Direct] = None
     lana: Optional[Lana] = None
     nurse: Optional[Nurse] = None

@@ -1468,6 +1468,7 @@ mod tests {
                     } else {
                         None
                     },
+                    hide_ips: false,
                     derp: None,
                     validate_keys: Default::default(),
                     ipv6: true,
