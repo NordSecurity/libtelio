@@ -126,7 +126,7 @@ ipnet = { version = "2.3", features = ["serde"] }
 itertools = "0.10"
 lazy_static = "1.4.0"
 libc = "0.2.112"
-tracing = { version = "0.1.37", features = ["max_level_trace", "release_max_level_debug"] }
+tracing = { version = "0.1.37", features = ["max_level_trace", "release_max_level_trace"] }
 maplit = "1"
 mockall = "0.11.3"
 modifier = "0.1.0"
@@ -168,7 +168,7 @@ windows = { version = "0.56", features = [
     "Win32_NetworkManagement_IpHelper",
 ] }
 
-boringtun = { git = "https://github.com/NordSecurity/boringtun.git", tag = "v1.2.6", features = ["device"] }
+boringtun = { git = "https://github.com/NordSecurity/boringtun.git", branch = "enable_tracing_logs_in_release", features = ["device"] }
 x25519-dalek = { version = "2.0.1", features = ["reusable_secrets", "static_secrets"] }
 
 

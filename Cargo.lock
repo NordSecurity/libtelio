@@ -477,7 +477,7 @@ dependencies = [
 [[package]]
 name = "boringtun"
 version = "0.6.0"
-source = "git+https://github.com/NordSecurity/boringtun.git?tag=v1.2.6#ae0c7a7c9510c882c30633f4024833d89c885ae0"
+source = "git+https://github.com/NordSecurity/boringtun.git?branch=enable_tracing_logs_in_release#13929da2699af0146347b0e71dd8e75ae15d3a4b"
 dependencies = [
  "aead",
  "base64 0.13.1",
