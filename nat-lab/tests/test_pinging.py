@@ -1,12 +1,20 @@
 import asyncio
 import pytest
-import telio
 from contextlib import AsyncExitStack
 from datetime import datetime
 from helpers import setup_mesh_nodes, SetupParameters
-from telio import PathType, State
-from telio_features import TelioFeatures, Direct, Nurse, Qos, Lana
 from typing import Tuple
+from utils.bindings import (
+    Features,
+    FeaturesDefaultsBuilder,
+    FeatureQoS,
+    FeatureLana,
+    EndpointProvider,
+    RttType,
+    PathType,
+    TelioAdapterType,
+    NodeState
+)
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionTracker, ConnectionLimits
 from utils.connection_util import (
@@ -61,36 +69,48 @@ async def build_conntracker(
     )
 
 
+def stun_features() -> Features:
+    features = FeaturesDefaultsBuilder().enable_direct().enable_ipv6().build()
+    assert features.direct 
+    features.direct.providers=[EndpointProvider.STUN]
+    return features
+
+
+def nurse_features() -> Features:
+    features = FeaturesDefaultsBuilder().enable_lana("/event.db", False).enable_nurse().enable_ipv6().build()
+    assert features.nurse 
+    features.nurse.qos=FeatureQoS(
+        rtt_interval=5, rtt_tries=1, rtt_types=[RttType.PING], buckets=1
+    )
+    features.nurse.heartbeat_interval=10
+    features.nurse.initial_heartbeat_interval=1
+    return features
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
         pytest.param(
             SetupParameters(
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(
-                    direct=Direct(providers=["stun"]),
-                    ipv6=True,
-                ),
+                features=stun_features(),
             )
         ),
         pytest.param(
             SetupParameters(
-                adapter_type=telio.AdapterType.LinuxNativeWg,
+                adapter_type=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(
-                    direct=Direct(providers=["stun"]),
-                    ipv6=True,
-                ),
+                features=stun_features(),
             ),
             marks=pytest.mark.linux_native,
         ),
@@ -105,17 +125,14 @@ async def build_conntracker(
     [
         pytest.param(
             SetupParameters(
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
                 ip_stack=IPStack.IPv4v6,
-                features=TelioFeatures(
-                    direct=Direct(providers=["stun"]),
-                    ipv6=True,
-                ),
+                features=stun_features(),
             )
         )
     ],
@@ -156,13 +173,13 @@ async def test_session_keeper(
         await asyncio.gather(
             alpha_client.wait_for_state_peer(
                 beta.public_key,
-                [State.Connected],
-                [PathType.Direct],
+                [NodeState.CONNECTED],
+                [PathType.DIRECT],
             ),
             beta_client.wait_for_state_peer(
                 alpha.public_key,
-                [State.Connected],
-                [PathType.Direct],
+                [NodeState.CONNECTED],
+                [PathType.DIRECT],
             ),
             wait_for_conntracker(),
         )
@@ -174,45 +191,25 @@ async def test_session_keeper(
     [
         pytest.param(
             SetupParameters(
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(
-                    lana=Lana(prod=False, event_path="/event.db"),
-                    nurse=Nurse(
-                        qos=Qos(
-                            rtt_interval=5, rtt_tries=1, rtt_types=["Ping"], buckets=1
-                        ),
-                        heartbeat_interval=10,
-                        initial_heartbeat_interval=1,
-                    ),
-                    ipv6=True,
-                ),
+                features=nurse_features(),
                 fingerprint="alpha_fingerprint",
             )
         ),
         pytest.param(
             SetupParameters(
-                adapter_type=telio.AdapterType.LinuxNativeWg,
+                adapter_type=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(
-                    lana=Lana(prod=False, event_path="/event.db"),
-                    nurse=Nurse(
-                        qos=Qos(
-                            rtt_interval=5, rtt_tries=1, rtt_types=["Ping"], buckets=1
-                        ),
-                        heartbeat_interval=10,
-                        initial_heartbeat_interval=1,
-                    ),
-                    ipv6=True,
-                ),
+                features=nurse_features(),
                 fingerprint="alpha_fingerprint",
             )
         ),
@@ -227,16 +224,14 @@ async def test_session_keeper(
     [
         pytest.param(
             SetupParameters(
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
                 ip_stack=IPStack.IPv4v6,
-                features=TelioFeatures(
-                    ipv6=True,
-                ),
+                features=FeaturesDefaultsBuilder().enable_ipv6().build(),
             )
         )
     ],
@@ -273,11 +268,11 @@ async def test_qos(
         await asyncio.gather(
             alpha_client.wait_for_state_peer(
                 beta.public_key,
-                [State.Connected],
+                [NodeState.CONNECTED],
             ),
             beta_client.wait_for_state_peer(
                 alpha.public_key,
-                [State.Connected],
+                [NodeState.CONNECTED],
             ),
             wait_for_conntracker(),
         )

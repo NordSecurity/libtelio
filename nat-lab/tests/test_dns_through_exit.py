@@ -1,10 +1,10 @@
 import asyncio
 import config
 import pytest
-import telio
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
 from typing import List, Tuple
+from utils.bindings import TelioAdapterType
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.dns import query_dns
@@ -55,7 +55,7 @@ from utils.router import IPStack
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -65,7 +65,7 @@ from utils.router import IPStack
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=telio.AdapterType.LinuxNativeWg,
+                adapter_type=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -77,7 +77,7 @@ from utils.router import IPStack
         # pytest.param(
         #     SetupParameters(
         #         connection_tag=ConnectionTag.MAC_VM,
-        #         adapter_type=telio.AdapterType.BoringTun,
+        #         adapter_type=TelioAdapterType.BORING_TUN,
         #         connection_tracker_config=generate_connection_tracker_config(
         #             ConnectionTag.MAC_VM,
         #             derp_1_limits=ConnectionLimits(1, 1),

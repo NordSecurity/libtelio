@@ -3,13 +3,13 @@
 import asyncio
 import config
 import pytest
-import telio
 from contextlib import AsyncExitStack
 from datetime import datetime
 from helpers import SetupParameters, setup_mesh_nodes, setup_api
 from mesh_api import Node
-from typing import Tuple
+from typing import Tuple, Optional
 from utils import testing, stun
+from utils.bindings import TelioAdapterType
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.output_notifier import OutputNotifier
@@ -34,7 +34,7 @@ def get_ips_and_stack(alpha: Node, beta: Node) -> Tuple[IPProto, str, str]:
 
 def _setup_params(
     connection_tag: ConnectionTag,
-    adapter_type: telio.AdapterType = telio.AdapterType.Default,
+    adapter_type: Optional[TelioAdapterType] = None,
     stun_limits: ConnectionLimits = ConnectionLimits(0, 0),
 ) -> SetupParameters:
     return SetupParameters(
@@ -91,7 +91,7 @@ async def test_mesh_firewall_successful_passthrough(
             exit_stack,
             [
                 _setup_params(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1, telio.AdapterType.BoringTun
+                    ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN
                 ),
                 _setup_params(ConnectionTag.DOCKER_CONE_CLIENT_2),
             ],
@@ -194,7 +194,7 @@ async def test_mesh_firewall_reject_packet(
             exit_stack,
             [
                 _setup_params(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1, telio.AdapterType.BoringTun
+                    ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN
                 ),
                 _setup_params(ConnectionTag.DOCKER_CONE_CLIENT_2),
             ],
@@ -253,7 +253,7 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
             [
                 _setup_params(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    telio.AdapterType.BoringTun,
+                    TelioAdapterType.BORING_TUN,
                     stun_limits=ConnectionLimits(1, 1),
                 ),
                 _setup_params(
@@ -421,7 +421,7 @@ async def test_mesh_firewall_file_share_port(
             exit_stack,
             [
                 _setup_params(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1, telio.AdapterType.BoringTun
+                    ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN
                 ),
                 _setup_params(ConnectionTag.DOCKER_CONE_CLIENT_2),
             ],
@@ -540,14 +540,14 @@ async def test_mesh_firewall_file_share_port(
 @pytest.mark.parametrize(
     "alpha_adapter_type, beta_adapter_type",
     [
-        (telio.AdapterType.BoringTun, telio.AdapterType.BoringTun),
-        (telio.AdapterType.BoringTun, telio.AdapterType.LinuxNativeWg),
-        (telio.AdapterType.LinuxNativeWg, telio.AdapterType.BoringTun),
+        (TelioAdapterType.BORING_TUN, TelioAdapterType.BORING_TUN),
+        (TelioAdapterType.BORING_TUN, TelioAdapterType.LINUX_NATIVE_TUN),
+        (TelioAdapterType.LINUX_NATIVE_TUN, TelioAdapterType.BORING_TUN),
     ],
 )
 async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_side(
-    alpha_adapter_type: telio.AdapterType,
-    beta_adapter_type: telio.AdapterType,
+    alpha_adapter_type: Optional[TelioAdapterType],
+    beta_adapter_type: Optional[TelioAdapterType],
     alpha_ip_stack: IPStack,
     beta_ip_stack: IPStack,
 ) -> None:
@@ -680,14 +680,14 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
 @pytest.mark.parametrize(
     "alpha_adapter_type, beta_adapter_type",
     [
-        (telio.AdapterType.BoringTun, telio.AdapterType.BoringTun),
-        (telio.AdapterType.BoringTun, telio.AdapterType.LinuxNativeWg),
-        (telio.AdapterType.LinuxNativeWg, telio.AdapterType.BoringTun),
+        (TelioAdapterType.BORING_TUN, TelioAdapterType.BORING_TUN),
+        (TelioAdapterType.BORING_TUN, TelioAdapterType.LINUX_NATIVE_TUN),
+        (TelioAdapterType.LINUX_NATIVE_TUN, TelioAdapterType.BORING_TUN),
     ],
 )
 async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_side(
-    alpha_adapter_type: telio.AdapterType,
-    beta_adapter_type: telio.AdapterType,
+    alpha_adapter_type: Optional[TelioAdapterType],
+    beta_adapter_type: Optional[TelioAdapterType],
     alpha_ip_stack: IPStack,
     beta_ip_stack: IPStack,
 ) -> None:

@@ -2,9 +2,8 @@ import config
 import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_connections
-from telio import AdapterType
-from telio_features import TelioFeatures, PmtuDiscovery
 from utils import stun
+from utils.bindings import FeaturesDefaultsBuilder, TelioAdapterType
 from utils.connection_util import (
     ConnectionTag,
     generate_connection_tracker_config,
@@ -22,7 +21,7 @@ from utils.router import IPStack
             SetupParameters(
                 ip_stack=IPStack.IPv4,
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                features=TelioFeatures(pmtu_discovery=PmtuDiscovery()),
+                features=FeaturesDefaultsBuilder().enable_pmtu_discovery().build(),
             )
         ),
         # TODO(msz): Disable IPv6 tests since the docker netowrk uses local link addresses
@@ -62,7 +61,7 @@ async def test_pmtu_black_hole(setup_params: SetupParameters) -> None:
             SetupParameters(
                 ip_stack=IPStack.IPv4,
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                features=TelioFeatures(pmtu_discovery=PmtuDiscovery()),
+                features=FeaturesDefaultsBuilder().enable_pmtu_discovery().build(),
             )
         ),
         # TODO(msz): Disable IPv6 tests since the docker netowrk uses local link addresses
@@ -107,7 +106,7 @@ async def test_pmtu_with_nexthop(setup_params: SetupParameters) -> None:
             SetupParameters(
                 ip_stack=IPStack.IPv4,
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                features=TelioFeatures(pmtu_discovery=PmtuDiscovery()),
+                features=FeaturesDefaultsBuilder().enable_pmtu_discovery().build(),
             )
         ),
         # TODO(msz): Disable IPv6 tests since the docker netowrk uses local link addresses
@@ -153,27 +152,27 @@ async def test_pmtu_without_nexthop(setup_params: SetupParameters) -> None:
     [
         pytest.param(
             SetupParameters(
-                adapter_type=AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     vpn_1_limits=ConnectionLimits(1, 1),
                     stun_limits=ConnectionLimits(1, 1),
                     ping_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(pmtu_discovery=PmtuDiscovery()),
+                features=FeaturesDefaultsBuilder().enable_pmtu_discovery().build(),
                 is_meshnet=False,
             ),
         ),
         pytest.param(
             SetupParameters(
-                adapter_type=AdapterType.LinuxNativeWg,
+                adapter_type=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     vpn_1_limits=ConnectionLimits(1, 1),
                     stun_limits=ConnectionLimits(1, 1),
                     ping_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(pmtu_discovery=PmtuDiscovery()),
+                features=FeaturesDefaultsBuilder().enable_pmtu_discovery().build(),
                 is_meshnet=False,
             ),
             marks=pytest.mark.linux_native,

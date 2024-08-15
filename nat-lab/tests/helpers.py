@@ -6,9 +6,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from itertools import product, zip_longest
 from mesh_api import Node, Meshmap, API, stop_tcpdump
-from telio import Client, AdapterType, State, PathType
-from telio_features import TelioFeatures
+from telio import Client
 from typing import AsyncIterator, List, Tuple, Optional, Union, Dict, Any
+from utils.bindings import FeaturesDefaultsBuilder, Features, PathType, TelioAdapterType, RelayState, NodeState
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionTrackerConfig
 from utils.connection_util import (
@@ -18,6 +18,11 @@ from utils.connection_util import (
 )
 from utils.router import IPStack
 
+
+def default_test_features() -> Features:
+    features = FeaturesDefaultsBuilder().build()
+    features.is_test_env = True
+    return features
 
 @dataclass
 class SetupParameters:
@@ -31,7 +36,7 @@ class SetupParameters:
     * connection_tag - connection tag of the used Docker container (DOCKER_CONE_CLIENT_1 by default)
     * connection_tracker_config - Configuration of the tracking connections with a different nodes
                                   (None by default, which implies that connection checking is disabled)
-    * adapter_type - type of the used Wireguard adapter (the default value is AdapterType.Default, which
+    * adapter_type - type of the used Wireguard adapter (the default value is None, which
                      allows Telio client to select the most feasible adapter for the given OS)
     * features - features used with the created Telio instance (while only `is_test_env` is enabled by
                  default, some of the features (like ipv6 support) might be enabled implicitly by other
@@ -47,10 +52,8 @@ class SetupParameters:
     connection_tracker_config: Optional[List[ConnectionTrackerConfig]] = field(
         default=None
     )
-    adapter_type: AdapterType = field(default=AdapterType.Default)
-    features: TelioFeatures = field(
-        default_factory=lambda: TelioFeatures(is_test_env=True)
-    )
+    adapter_type: Optional[TelioAdapterType] = None
+    features: Features = field(default_factory=lambda: default_test_features())
     is_meshnet: bool = field(default=True)
     derp_servers: Optional[List[Dict[str, Any]]] = field(default=None)
     fingerprint: str = ""
@@ -160,8 +163,8 @@ async def setup_clients(
         Tuple[
             Connection,
             Node,
-            AdapterType,
-            TelioFeatures,
+            TelioAdapterType,
+            Features,
             str,
             Optional[Meshmap],
         ]
@@ -228,11 +231,11 @@ async def setup_environment(
             [
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1
-                    adapter_type=AdapterType.BoringTun,
+                    adapter_type=TelioAdapterType.BORING_TUN,
                 ),
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2
-                    adapter_type=AdapterType.BoringTun,
+                    adapter_type=TelioAdapterType.BORING_TUN,
                 ),
             ],
         )
@@ -334,7 +337,7 @@ async def setup_mesh_nodes(
     )
 
     await asyncio.gather(*[
-        client.wait_for_state_on_any_derp([State.Connected])
+        client.wait_for_state_on_any_derp([RelayState.CONNECTED])
         for client, instance in zip_longest(env.clients, instances)
         if instance.derp_servers != []
     ])
@@ -342,11 +345,11 @@ async def setup_mesh_nodes(
     connection_future = asyncio.gather(*[
         client.wait_for_state_peer(
             other_node.public_key,
-            [State.Connected],
+            [NodeState.CONNECTED],
             (
-                [PathType.Direct]
+                [PathType.DIRECT]
                 if instance.features.direct and other_instance.features.direct
-                else [PathType.Relay]
+                else [PathType.RELAY]
             ),
             timeout=90 if is_timeout_expected else None,
         )

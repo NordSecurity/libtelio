@@ -78,6 +78,11 @@ async def _copy_binaries(
             f"{VM_UNIFFI_DIR}libtelio_remote.py",
             True,
         ),
+        (
+            f"{LOCAL_UNIFFI_PATH}serialization.py",
+            f"{VM_UNIFFI_DIR}serialization.py",
+            True,
+        ),
     ]
     for src, dst, set_exec in files_to_copy:
         await asyncssh.scp(

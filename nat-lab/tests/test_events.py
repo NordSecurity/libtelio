@@ -4,9 +4,9 @@ import pytest
 import timeouts
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_mesh_nodes, setup_api
-from telio import AdapterType, PathType, PeerInfo, State, Client
-from telio_features import TelioFeatures, Direct
+from telio import Client
 from utils import stun
+from utils.bindings import features_with_endpoint_providers, EndpointProvider, PathType, telio_node, TelioAdapterType, RelayState, NodeState
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.ping import ping
@@ -20,7 +20,7 @@ from utils.router import IPStack
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -30,7 +30,7 @@ from utils.router import IPStack
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.LinuxNativeWg,
+                adapter_type=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -41,7 +41,7 @@ from utils.router import IPStack
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WindowsNativeWg,
+                adapter_type=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -52,7 +52,7 @@ from utils.router import IPStack
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WireguardGo,
+                adapter_type=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -63,7 +63,7 @@ from utils.router import IPStack
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -106,36 +106,28 @@ async def test_event_content_meshnet(
         await ping(connection_alpha, beta.ip_addresses[0])
         await ping(connection_beta, alpha.ip_addresses[0])
 
-        assert client_alpha.get_node_state(beta.public_key) == PeerInfo(
+        assert client_alpha.get_node_state(beta.public_key) == telio_node(
             identifier=beta.id,
             public_key=beta.public_key,
-            state=State.Connected,
-            is_exit=False,
-            is_vpn=False,
+            state=NodeState.CONNECTED,
             ip_addresses=beta.ip_addresses,
             allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
             nickname="BETA",
-            endpoint=None,
             hostname=beta.name + ".nord",
             allow_incoming_connections=True,
             allow_peer_send_files=True,
-            path=PathType.Relay,
         )
 
-        assert client_beta.get_node_state(alpha.public_key) == PeerInfo(
+        assert client_beta.get_node_state(alpha.public_key) == telio_node(
             identifier=alpha.id,
             public_key=alpha.public_key,
-            state=State.Connected,
-            is_exit=False,
-            is_vpn=False,
+            state=NodeState.CONNECTED,
             ip_addresses=alpha.ip_addresses,
             allowed_ips=env.api.get_allowed_ip_list(alpha.ip_addresses),
             nickname="alpha",
-            endpoint=None,
             hostname=alpha.name + ".nord",
             allow_incoming_connections=True,
             allow_peer_send_files=True,
-            path=PathType.Relay,
         )
 
         api.remove(beta.id)
@@ -147,20 +139,17 @@ async def test_event_content_meshnet(
 
         await asyncio.sleep(1)
 
-        assert client_alpha.get_node_state(beta.public_key) == PeerInfo(
+        assert client_alpha.get_node_state(beta.public_key) == telio_node(
             identifier=beta.id,
             public_key=beta.public_key,
-            state=State.Disconnected,
-            is_exit=False,
-            is_vpn=False,
+            state=NodeState.DISCONNECTED,
             ip_addresses=beta.ip_addresses,
             allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
             nickname="BETA",
-            endpoint=None,
             hostname=beta.name + ".nord",
             allow_incoming_connections=True,
             allow_peer_send_files=True,
-            path=PathType.Direct,
+            path=PathType.DIRECT,
         )
 
 
@@ -171,7 +160,7 @@ async def test_event_content_meshnet(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     vpn_1_limits=ConnectionLimits(1, 1),
@@ -184,7 +173,7 @@ async def test_event_content_meshnet(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.LinuxNativeWg,
+                adapter_type=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     vpn_1_limits=ConnectionLimits(1, 1),
@@ -198,7 +187,7 @@ async def test_event_content_meshnet(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WindowsNativeWg,
+                adapter_type=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     vpn_1_limits=ConnectionLimits(1, 1),
@@ -214,7 +203,7 @@ async def test_event_content_meshnet(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WireguardGo,
+                adapter_type=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     vpn_1_limits=ConnectionLimits(1, 1),
@@ -230,7 +219,7 @@ async def test_event_content_meshnet(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     vpn_1_limits=ConnectionLimits(1, 1),
@@ -264,10 +253,10 @@ async def test_event_content_vpn_connection(
 
         await ping(connection, config.PHOTO_ALBUM_IP)
 
-        assert client_alpha.get_node_state(str(wg_server["public_key"])) == PeerInfo(
+        assert client_alpha.get_node_state(str(wg_server["public_key"])) == telio_node(
             identifier="natlab",
             public_key=str(wg_server["public_key"]),
-            state=State.Connected,
+            state=NodeState.CONNECTED,
             is_exit=True,
             is_vpn=True,
             ip_addresses=[
@@ -275,12 +264,8 @@ async def test_event_content_vpn_connection(
                 "100.64.0.1",
             ],
             allowed_ips=["0.0.0.0/0", "::/0"],
-            nickname=None,
             endpoint=f'{wg_server["ipv4"]}:{wg_server["port"]}',
-            hostname=None,
-            allow_incoming_connections=False,
-            allow_peer_send_files=False,
-            path=PathType.Direct,
+            path=PathType.DIRECT,
         )
 
         ip = await stun.get(connection, config.STUN_SERVER)
@@ -291,10 +276,9 @@ async def test_event_content_vpn_connection(
         ip = await stun.get(connection, config.STUN_SERVER)
         assert ip == alpha_public_ip, f"wrong public IP before connecting to VPN {ip}"
 
-        assert client_alpha.get_node_state(str(wg_server["public_key"])) == PeerInfo(
+        assert client_alpha.get_node_state(str(wg_server["public_key"])) == telio_node(
             identifier="natlab",
             public_key=str(wg_server["public_key"]),
-            state=State.Disconnected,
             is_exit=True,
             is_vpn=True,
             ip_addresses=[
@@ -302,12 +286,8 @@ async def test_event_content_vpn_connection(
                 "100.64.0.1",
             ],
             allowed_ips=["0.0.0.0/0", "::/0"],
-            nickname=None,
             endpoint=f'{wg_server["ipv4"]}:{wg_server["port"]}',
-            hostname=None,
-            allow_incoming_connections=False,
-            allow_peer_send_files=False,
-            path=PathType.Direct,
+            path=PathType.DIRECT,
         )
 
 
@@ -318,7 +298,7 @@ async def test_event_content_vpn_connection(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -328,7 +308,7 @@ async def test_event_content_vpn_connection(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.LinuxNativeWg,
+                adapter_type=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -339,7 +319,7 @@ async def test_event_content_vpn_connection(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WindowsNativeWg,
+                adapter_type=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -350,7 +330,7 @@ async def test_event_content_vpn_connection(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WireguardGo,
+                adapter_type=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -361,7 +341,7 @@ async def test_event_content_vpn_connection(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -406,20 +386,14 @@ async def test_event_content_exit_through_peer(
 
         await ping(connection_alpha, beta.ip_addresses[0])
 
-        assert client_alpha.get_node_state(beta.public_key) == PeerInfo(
+        assert client_alpha.get_node_state(beta.public_key) == telio_node(
             identifier=beta.id,
             public_key=beta.public_key,
-            state=State.Connected,
-            is_exit=False,
-            is_vpn=False,
+            state=NodeState.CONNECTED,
             ip_addresses=beta.ip_addresses,
             allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
             nickname="BETA",
-            endpoint=None,
             hostname=beta.name + ".nord",
-            allow_incoming_connections=False,
-            allow_peer_send_files=False,
-            path=PathType.Relay,
         )
 
         await client_beta.get_router().create_exit_node_route()
@@ -431,20 +405,15 @@ async def test_event_content_exit_through_peer(
 
         assert ip_alpha == ip_beta
 
-        assert client_alpha.get_node_state(beta.public_key) == PeerInfo(
+        assert client_alpha.get_node_state(beta.public_key) == telio_node(
             identifier=beta.id,
             public_key=beta.public_key,
-            state=State.Connected,
+            state=NodeState.CONNECTED,
             is_exit=True,
-            is_vpn=False,
             ip_addresses=beta.ip_addresses,
             allowed_ips=["0.0.0.0/0", "::/0"],
             nickname="BETA",
-            endpoint=None,
             hostname=beta.name + ".nord",
-            allow_incoming_connections=False,
-            allow_peer_send_files=False,
-            path=PathType.Relay,
         )
 
 
@@ -456,24 +425,26 @@ async def test_event_content_exit_through_peer(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["stun"])),
+                features=features_with_endpoint_providers([EndpointProvider.STUN]
+                ),
             ),
             "10.0.254.1",
         ),
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.LinuxNativeWg,
+                adapter_type=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["stun"])),
+                features=features_with_endpoint_providers([EndpointProvider.STUN]
+                ),
             ),
             "10.0.254.1",
             marks=pytest.mark.linux_native,
@@ -481,12 +452,13 @@ async def test_event_content_exit_through_peer(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WindowsNativeWg,
+                adapter_type=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["stun"])),
+                features=features_with_endpoint_providers([EndpointProvider.STUN])
+                ,
             ),
             "10.0.254.7",
             marks=pytest.mark.windows,
@@ -494,12 +466,13 @@ async def test_event_content_exit_through_peer(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WireguardGo,
+                adapter_type=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["stun"])),
+                features=features_with_endpoint_providers([EndpointProvider.STUN])
+                ,
             ),
             "10.0.254.7",
             marks=pytest.mark.windows,
@@ -507,12 +480,13 @@ async def test_event_content_exit_through_peer(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["stun"])),
+                features=features_with_endpoint_providers([EndpointProvider.STUN])
+                ,
             ),
             "10.0.254.7",
             marks=[pytest.mark.mac],
@@ -559,20 +533,16 @@ async def test_event_content_meshnet_node_upgrade_direct(
 
         beta_node_state = client_alpha.get_node_state(beta.public_key)
         assert beta_node_state
-        assert beta_node_state == PeerInfo(
+        assert beta_node_state == telio_node(
             identifier=beta.id,
             public_key=beta.public_key,
-            state=State.Connected,
-            is_exit=False,
-            is_vpn=False,
+            state=NodeState.CONNECTED,
             ip_addresses=beta.ip_addresses,
             allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
             nickname="BETA",
-            endpoint=None,
             hostname=beta.name + ".nord",
             allow_incoming_connections=True,
             allow_peer_send_files=True,
-            path=PathType.Relay,
         )
         assert (
             beta_node_state.endpoint and beta_public_ip not in beta_node_state.endpoint
@@ -580,20 +550,16 @@ async def test_event_content_meshnet_node_upgrade_direct(
 
         alpha_node_state = client_beta.get_node_state(alpha.public_key)
         assert alpha_node_state
-        assert alpha_node_state == PeerInfo(
+        assert alpha_node_state == telio_node(
             identifier=alpha.id,
             public_key=alpha.public_key,
-            state=State.Connected,
-            is_exit=False,
-            is_vpn=False,
+            state=NodeState.CONNECTED,
             ip_addresses=alpha.ip_addresses,
             allowed_ips=env.api.get_allowed_ip_list(alpha.ip_addresses),
             nickname="alpha",
-            endpoint=None,
             hostname=alpha.name + ".nord",
             allow_incoming_connections=True,
             allow_peer_send_files=True,
-            path=PathType.Relay,
         )
         assert (
             alpha_node_state.endpoint
@@ -607,18 +573,19 @@ async def test_event_content_meshnet_node_upgrade_direct(
             Client(
                 connection_beta,
                 beta,
-                telio_features=TelioFeatures(direct=Direct(providers=["stun"])),
+                telio_features=features_with_endpoint_providers([EndpointProvider.STUN]
+                ),
             ).run(api.get_meshmap(beta.id))
         )
 
-        await client_beta.wait_for_state_on_any_derp([State.Connected])
+        await client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED])
 
         await asyncio.gather(
             client_alpha.wait_for_state_peer(
-                beta.public_key, [State.Connected], [PathType.Direct]
+                beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
             client_beta.wait_for_state_peer(
-                alpha.public_key, [State.Connected], [PathType.Direct]
+                alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
         )
 
@@ -627,39 +594,33 @@ async def test_event_content_meshnet_node_upgrade_direct(
 
         beta_node_state = client_alpha.get_node_state(beta.public_key)
         assert beta_node_state
-        assert beta_node_state == PeerInfo(
+        assert beta_node_state == telio_node(
             identifier=beta.id,
             public_key=beta.public_key,
-            state=State.Connected,
-            is_exit=False,
-            is_vpn=False,
+            state=NodeState.CONNECTED,
             ip_addresses=beta.ip_addresses,
             allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
             nickname="BETA",
-            endpoint=None,
             hostname=beta.name + ".nord",
             allow_incoming_connections=True,
             allow_peer_send_files=True,
-            path=PathType.Direct,
+            path=PathType.DIRECT,
         )
         assert beta_node_state.endpoint and beta_public_ip in beta_node_state.endpoint
 
         alpha_node_state = client_beta.get_node_state(alpha.public_key)
         assert alpha_node_state
-        assert alpha_node_state == PeerInfo(
+        assert alpha_node_state == telio_node(
             identifier=alpha.id,
             public_key=alpha.public_key,
-            state=State.Connected,
-            is_exit=False,
-            is_vpn=False,
+            state=NodeState.CONNECTED,
             ip_addresses=alpha.ip_addresses,
             allowed_ips=env.api.get_allowed_ip_list(alpha.ip_addresses),
             nickname="alpha",
-            endpoint=None,
             hostname=alpha.name + ".nord",
             allow_incoming_connections=True,
             allow_peer_send_files=True,
-            path=PathType.Direct,
+            path=PathType.DIRECT,
         )
         assert (
             alpha_node_state.endpoint and alpha_public_ip in alpha_node_state.endpoint

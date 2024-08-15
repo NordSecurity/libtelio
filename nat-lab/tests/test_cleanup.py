@@ -1,7 +1,7 @@
 import pytest
-import telio
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment
+from utils.bindings import TelioAdapterType
 from utils.connection_util import ConnectionTag, new_connection_raw
 from utils.vm.windows_vm_util import _get_network_interface_tunnel_keys
 
@@ -11,8 +11,8 @@ from utils.vm.windows_vm_util import _get_network_interface_tunnel_keys
 @pytest.mark.parametrize(
     "adapter_type, name",
     [
-        (telio.AdapterType.WireguardGo, "Wintun Userspace Tunnel"),
-        (telio.AdapterType.WindowsNativeWg, "WireGuard Tunnel"),
+        (TelioAdapterType.WIREGUARD_GO_TUN, "Wintun Userspace Tunnel"),
+        (TelioAdapterType.WINDOWS_NATIVE_TUN, "WireGuard Tunnel"),
     ],
 )
 async def test_get_network_interface_tunnel_keys(adapter_type, name) -> None:
@@ -31,7 +31,7 @@ async def test_get_network_interface_tunnel_keys(adapter_type, name) -> None:
                     ),
                     SetupParameters(
                         connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-                        adapter_type=telio.AdapterType.LinuxNativeWg,
+                        adapter_type=TelioAdapterType.LINUX_NATIVE_TUN,
                     ),
                 ],
             )

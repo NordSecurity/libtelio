@@ -4,10 +4,10 @@ import copy
 import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_connections
-from telio import AdapterType, Client, generate_public_key, generate_secret_key
-from telio_features import TelioFeatures, Firewall
+from telio import Client
 from typing import Optional
 from utils import testing, stun
+from utils.bindings import FeaturesDefaultsBuilder, FeatureFirewall, TelioAdapterType, generate_secret_key, generate_public_key
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionLimits, ConnectionTrackerConfig
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
@@ -63,7 +63,7 @@ class VpnConfig:
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=ConnectionLimits(1, 1),
@@ -75,7 +75,7 @@ class VpnConfig:
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.LinuxNativeWg,
+                adapter_type=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=ConnectionLimits(1, 1),
@@ -88,7 +88,7 @@ class VpnConfig:
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WindowsNativeWg,
+                adapter_type=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=ConnectionLimits(1, 1),
@@ -103,7 +103,7 @@ class VpnConfig:
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WireguardGo,
+                adapter_type=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=ConnectionLimits(1, 1),
@@ -118,7 +118,7 @@ class VpnConfig:
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     stun_limits=ConnectionLimits(1, 1),
@@ -223,7 +223,7 @@ async def test_vpn_connection(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     vpn_1_limits=ConnectionLimits(1, 1),
@@ -237,7 +237,7 @@ async def test_vpn_connection(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.LinuxNativeWg,
+                adapter_type=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     vpn_1_limits=ConnectionLimits(1, 1),
@@ -252,7 +252,7 @@ async def test_vpn_connection(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WindowsNativeWg,
+                adapter_type=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     vpn_1_limits=ConnectionLimits(1, 1),
@@ -269,7 +269,7 @@ async def test_vpn_connection(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WireguardGo,
+                adapter_type=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     vpn_1_limits=ConnectionLimits(1, 1),
@@ -286,7 +286,7 @@ async def test_vpn_connection(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     vpn_1_limits=ConnectionLimits(1, 1),
@@ -349,18 +349,18 @@ async def test_vpn_reconnect(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 ip_stack=IPStack.IPv4,
-                features=TelioFeatures(firewall=Firewall(boringtun_reset_conns=True)),
+                features=FeaturesDefaultsBuilder().enable_firewall_connection_reset().build(),
             )
         ),
         # TODO(msz): IPv6 public server, it doesn't work with the current VPN implementation
         # pytest.param(
         #     SetupParameters(
         #         connection_tag=ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
-        #         adapter_type=AdapterType.BoringTun,
+        #         adapter_type=TelioAdapterType.BORING_TUN,
         #         ip_stack=IPStack.IPv6,
-        #         telio_features=TelioFeatures(boringtun_reset_conns=True),
+        #         telio_features=FeaturesDefaultsBuilder().enable_firewall_connection_reset().build(),
         #     )
         # ),
     ],
@@ -487,18 +487,18 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 ip_stack=IPStack.IPv4,
-                features=TelioFeatures(firewall=Firewall(boringtun_reset_conns=True)),
+                features=FeaturesDefaultsBuilder().enable_firewall_connection_reset().build(),
             )
         ),
         # TODO(msz): IPv6 public server, it doesn't work with the current VPN implementation
         # pytest.param(
         #     SetupParameters(
         #         connection_tag=ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
-        #         adapter_type=AdapterType.BoringTun,
+        #         adapter_type=TelioAdapterType.BORING_TUN,
         #         ip_stack=IPStack.IPv6,
-        #         telio_features=TelioFeatures(boringtun_reset_conns=True),
+        #         telio_features=FeaturesDefaultsBuilder().enable_firewall_connection_reset().build(),
         #     )
         # ),
     ],
@@ -582,7 +582,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=ConnectionLimits(1, 1),
@@ -595,7 +595,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.LinuxNativeWg,
+                adapter_type=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=ConnectionLimits(1, 1),
@@ -609,7 +609,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WindowsNativeWg,
+                adapter_type=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=ConnectionLimits(1, 1),
@@ -625,7 +625,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WireguardGo,
+                adapter_type=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=ConnectionLimits(1, 1),
@@ -641,7 +641,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     stun_limits=ConnectionLimits(1, 1),

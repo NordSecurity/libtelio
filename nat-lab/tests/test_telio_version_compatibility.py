@@ -2,11 +2,11 @@ import asyncio
 import json
 import pytest
 import shlex
-import telio
+from telio import Client
 from contextlib import AsyncExitStack
 from mesh_api import API
-from telio_features import Direct, TelioFeatures
 from utils import testing
+from utils.bindings import features_with_endpoint_providers, EndpointProvider, TelioAdapterType, NodeState, RelayState
 from utils.connection_util import (
     ConnectionTag,
     ConnectionLimits,
@@ -17,14 +17,14 @@ from utils.output_notifier import OutputNotifier
 from utils.ping import ping
 from utils.router import IPProto, IPStack, new_router
 
-STUN_PROVIDER = ["stun"]
+STUN_PROVIDER = [EndpointProvider.STUN]
 
 UHP_conn_client_types = [
     (
         STUN_PROVIDER,
         ConnectionTag.DOCKER_CONE_CLIENT_1,
         ConnectionTag.DOCKER_CONE_CLIENT_2,
-        telio.AdapterType.BoringTun,
+        TelioAdapterType.BORING_TUN,
     ),
 ]
 
@@ -90,12 +90,11 @@ async def test_connect_different_telio_version_through_relay(
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.Client(
+            Client(
                 alpha_conn,
                 alpha,
                 adapter_type,
-                telio_features=TelioFeatures(
-                    direct=Direct(providers=endpoint_providers)
+                telio_features=features_with_endpoint_providers(endpoint_providers
                 ),
             ).run(api.get_meshmap(alpha.id))
         )
@@ -130,8 +129,8 @@ async def test_connect_different_telio_version_through_relay(
             shlex.quote(json.dumps(api.get_meshmap(beta.id))),
         ])
 
-        await alpha_client.wait_for_state_on_any_derp([telio.State.Connected])
-        await alpha_client.wait_for_state_peer(beta.public_key, [telio.State.Connected])
+        await alpha_client.wait_for_state_on_any_derp([RelayState.CONNECTED])
+        await alpha_client.wait_for_state_peer(beta.public_key, [NodeState.CONNECTED])
 
         await ping(
             alpha_conn,

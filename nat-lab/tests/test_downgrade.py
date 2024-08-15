@@ -2,41 +2,44 @@ import asyncio
 import pytest
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
-from telio import PathType, State, AdapterType
-from telio_features import (
-    TelioFeatures,
-    Direct,
-    Wireguard,
-    LinkDetection,
-    PersistentKeepalive,
-)
 from typing import List, Tuple
+from utils.bindings import (
+    FeaturesDefaultsBuilder,
+    FeatureWireguard,
+    FeatureLinkDetection,
+    FeaturePersistentKeepalive,
+    EndpointProvider,
+    PathType,
+    TelioAdapterType,
+    NodeState,
+)
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
 
 
-def long_persistent_keepalive_periods() -> Wireguard:
-    return Wireguard(
-        persistent_keepalive=PersistentKeepalive(
+def long_persistent_keepalive_periods() -> FeatureWireguard:
+    return FeatureWireguard(
+        persistent_keepalive=FeaturePersistentKeepalive(
             proxying=3600, direct=3600, vpn=3600, stun=3600
         )
     )
 
 
 def _generate_setup_parameter_pair(
-    cfg: List[Tuple[ConnectionTag, AdapterType]],
+    cfg: List[Tuple[ConnectionTag, TelioAdapterType]],
 ) -> List[SetupParameters]:
+    features = FeaturesDefaultsBuilder().enable_link_detection().enable_direct().build()
+    features.wireguard = long_persistent_keepalive_periods()
+    features.link_detection = FeatureLinkDetection(
+                    rtt_seconds=1, no_of_pings=1, use_for_downgrade=True
+                )
+    assert features.direct 
+    features.direct.providers = [EndpointProvider.STUN, EndpointProvider.LOCAL]
     return [
         SetupParameters(
             connection_tag=tag,
             adapter_type=adapter,
-            features=TelioFeatures(
-                link_detection=LinkDetection(
-                    rtt_seconds=1, no_of_pings=1, use_for_downgrade=True
-                ),
-                direct=Direct(providers=["stun", "local"]),
-                wireguard=long_persistent_keepalive_periods(),
-            ),
+            features=features,
         )
         for tag, adapter in cfg
     ]
@@ -48,8 +51,8 @@ def _generate_setup_parameter_pair(
     [
         pytest.param(
             _generate_setup_parameter_pair([
-                (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
-                (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN),
+                (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.BORING_TUN),
             ])
         )
     ],
@@ -92,10 +95,10 @@ async def test_downgrade_using_link_detection(
         # Expect downgrade to relay
         await asyncio.gather(
             alpha_client.wait_for_state_peer(
-                beta.public_key, [State.Connected], [PathType.Relay], timeout=35
+                beta.public_key, [NodeState.CONNECTED], [PathType.RELAY], timeout=35
             ),
             beta_client.wait_for_state_peer(
-                alpha.public_key, [State.Connected], [PathType.Relay], timeout=35
+                alpha.public_key, [NodeState.CONNECTED], [PathType.RELAY], timeout=35
             ),
         )
 
@@ -110,8 +113,8 @@ async def test_downgrade_using_link_detection(
     [
         pytest.param(
             _generate_setup_parameter_pair([
-                (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
-                (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN),
+                (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.BORING_TUN),
             ])  # Disable enhanced detection via pinging to reduce the test duration
         )
     ],
@@ -154,10 +157,10 @@ async def test_downgrade_using_link_detection_with_silent_connection(
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.gather(
                 alpha_client.wait_for_state_peer(
-                    beta.public_key, [State.Connected], [PathType.Relay], timeout=15
+                    beta.public_key, [NodeState.CONNECTED], [PathType.RELAY], timeout=15
                 ),
                 beta_client.wait_for_state_peer(
-                    alpha.public_key, [State.Connected], [PathType.Relay], timeout=15
+                    alpha.public_key, [NodeState.CONNECTED], [PathType.RELAY], timeout=15
                 ),
             )
 
@@ -170,10 +173,10 @@ async def test_downgrade_using_link_detection_with_silent_connection(
         # Expect downgrade to relay
         await asyncio.gather(
             alpha_client.wait_for_state_peer(
-                beta.public_key, [State.Connected], [PathType.Relay], timeout=35
+                beta.public_key, [NodeState.CONNECTED], [PathType.RELAY], timeout=35
             ),
             beta_client.wait_for_state_peer(
-                alpha.public_key, [State.Connected], [PathType.Relay], timeout=35
+                alpha.public_key, [NodeState.CONNECTED], [PathType.RELAY], timeout=35
             ),
         )
 

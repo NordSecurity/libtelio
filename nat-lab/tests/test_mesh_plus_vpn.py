@@ -1,14 +1,14 @@
 import asyncio
 import config
 import pytest
-import telio
+from telio import Client
 import timeouts
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from mesh_api import API
-from telio import AdapterType, State
-from telio_features import TelioFeatures, Direct
+from typing import Optional
 from utils import stun
+from utils.bindings import features_with_endpoint_providers, EndpointProvider, TelioAdapterType, PathType, NodeState, RelayState
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
     generate_connection_tracker_config,
@@ -26,7 +26,7 @@ from utils.ping import ping
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -37,7 +37,7 @@ from utils.ping import ping
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=telio.AdapterType.LinuxNativeWg,
+                adapter_type=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -49,7 +49,7 @@ from utils.ping import ping
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=telio.AdapterType.WindowsNativeWg,
+                adapter_type=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -61,7 +61,7 @@ from utils.ping import ping
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=telio.AdapterType.WireguardGo,
+                adapter_type=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -75,7 +75,7 @@ from utils.ping import ping
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -137,7 +137,7 @@ async def test_mesh_plus_vpn_one_peer(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -148,7 +148,7 @@ async def test_mesh_plus_vpn_one_peer(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=telio.AdapterType.LinuxNativeWg,
+                adapter_type=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -160,7 +160,7 @@ async def test_mesh_plus_vpn_one_peer(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=telio.AdapterType.WindowsNativeWg,
+                adapter_type=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -172,7 +172,7 @@ async def test_mesh_plus_vpn_one_peer(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=telio.AdapterType.WireguardGo,
+                adapter_type=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -186,7 +186,7 @@ async def test_mesh_plus_vpn_one_peer(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -262,37 +262,37 @@ async def test_mesh_plus_vpn_both_peers(
     [
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
-            AdapterType.BoringTun,
+            TelioAdapterType.BORING_TUN,
             "10.0.254.1",
         ),
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
-            AdapterType.LinuxNativeWg,
+            TelioAdapterType.LINUX_NATIVE_TUN,
             "10.0.254.1",
             marks=pytest.mark.linux_native,
         ),
         pytest.param(
             ConnectionTag.WINDOWS_VM_1,
-            AdapterType.WindowsNativeWg,
+            TelioAdapterType.WINDOWS_NATIVE_TUN,
             "10.0.254.7",
             marks=pytest.mark.windows,
         ),
         pytest.param(
             ConnectionTag.WINDOWS_VM_1,
-            AdapterType.WireguardGo,
+            TelioAdapterType.WIREGUARD_GO_TUN,
             "10.0.254.7",
             marks=pytest.mark.windows,
         ),
         pytest.param(
             ConnectionTag.MAC_VM,
-            AdapterType.Default,
+            None,
             "10.0.254.7",
             marks=pytest.mark.mac,
         ),
     ],
 )
 async def test_vpn_plus_mesh(
-    alpha_connection_tag: ConnectionTag, adapter_type: AdapterType, public_ip: str
+    alpha_connection_tag: ConnectionTag, adapter_type: Optional[TelioAdapterType], public_ip: str
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -323,7 +323,7 @@ async def test_vpn_plus_mesh(
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha, adapter_type).run()
+            Client(connection_alpha, alpha, adapter_type).run()
         )
 
         wg_server = config.WG_SERVER
@@ -340,16 +340,16 @@ async def test_vpn_plus_mesh(
         await client_alpha.set_meshmap(api.get_meshmap(alpha.id))
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run(api.get_meshmap(beta.id))
+            Client(connection_beta, beta).run(api.get_meshmap(beta.id))
         )
 
         await asyncio.gather(
-            client_alpha.wait_for_state_on_any_derp([State.Connected]),
-            client_beta.wait_for_state_on_any_derp([State.Connected]),
+            client_alpha.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
         )
         await asyncio.gather(
-            client_alpha.wait_for_state_peer(beta.public_key, [State.Connected]),
-            client_beta.wait_for_state_peer(alpha.public_key, [State.Connected]),
+            client_alpha.wait_for_state_peer(beta.public_key, [NodeState.CONNECTED]),
+            client_beta.wait_for_state_peer(alpha.public_key, [NodeState.CONNECTED]),
         )
 
         await ping(connection_alpha, beta.ip_addresses[0])
@@ -357,7 +357,7 @@ async def test_vpn_plus_mesh(
         # Testing if the VPN node is not cleared after disabling meshnet. See LLT-4266 for more details.
         await client_alpha.set_mesh_off()
         await client_alpha.wait_for_event_peer(
-            beta.public_key, [State.Disconnected], list(telio.PathType)
+            beta.public_key, [NodeState.DISCONNECTED], list(PathType)
         )
         ip = await stun.get(connection_alpha, config.STUN_SERVER)
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
@@ -374,25 +374,29 @@ async def test_vpn_plus_mesh(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    
+                ),
             ),
         ),
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=telio.AdapterType.LinuxNativeWg,
+                adapter_type=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    
+                ),
             ),
             marks=[
                 pytest.mark.linux_native,
@@ -401,13 +405,15 @@ async def test_vpn_plus_mesh(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=telio.AdapterType.WindowsNativeWg,
+                adapter_type=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    
+                ),
             ),
             marks=[
                 pytest.mark.windows,
@@ -416,13 +422,15 @@ async def test_vpn_plus_mesh(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=telio.AdapterType.WireguardGo,
+                adapter_type=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    
+                ),
             ),
             marks=[
                 pytest.mark.windows,
@@ -431,13 +439,15 @@ async def test_vpn_plus_mesh(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    
+                ),
             ),
             marks=[
                 pytest.mark.mac,
@@ -456,7 +466,9 @@ async def test_vpn_plus_mesh(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    
+                ),
             )
         )
     ],
@@ -516,51 +528,59 @@ async def test_vpn_plus_mesh_over_direct(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    
+                ),
             )
         ),
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=telio.AdapterType.LinuxNativeWg,
+                adapter_type=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    
+                ),
             ),
             marks=pytest.mark.linux_native,
         ),
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=telio.AdapterType.WindowsNativeWg,
+                adapter_type=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    
+                ),
             ),
             marks=pytest.mark.windows,
         ),
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=telio.AdapterType.WireguardGo,
+                adapter_type=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    
+                ),
             ),
             marks=[
                 pytest.mark.windows,
@@ -569,13 +589,15 @@ async def test_vpn_plus_mesh_over_direct(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    
+                ),
             ),
             marks=[
                 pytest.mark.mac,
@@ -594,7 +616,9 @@ async def test_vpn_plus_mesh_over_direct(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=TelioFeatures(direct=Direct(providers=["local", "stun"])),
+                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
+                    
+                ),
             )
         )
     ],

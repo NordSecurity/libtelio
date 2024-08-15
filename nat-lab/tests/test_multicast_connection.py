@@ -1,23 +1,20 @@
 import pytest
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
-from telio import AdapterType
-from telio_features import TelioFeatures
 from typing import List, Tuple
+from utils.bindings import FeaturesDefaultsBuilder, TelioAdapterType
 from utils.connection_util import ConnectionTag, Connection, TargetOS
 from utils.multicast import MulticastClient, MulticastServer
 
 
 def generate_setup_parameter_pair(
-    cfg: List[Tuple[ConnectionTag, AdapterType]],
+    cfg: List[Tuple[ConnectionTag, TelioAdapterType]],
 ) -> List[SetupParameters]:
     return [
         SetupParameters(
             connection_tag=conn_tag,
             adapter_type=adapter_type,
-            features=TelioFeatures(
-                multicast=True,
-            ),
+            features=FeaturesDefaultsBuilder().enable_multicast().build(),
         )
         for conn_tag, adapter_type in cfg
     ]
@@ -26,29 +23,29 @@ def generate_setup_parameter_pair(
 MUILTICAST_TEST_PARAMS = [
     pytest.param(
         generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, AdapterType.BoringTun),
-            (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, AdapterType.BoringTun),
+            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, TelioAdapterType.BORING_TUN),
+            (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, TelioAdapterType.BORING_TUN),
         ]),
         "ssdp",
     ),
     pytest.param(
         generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, AdapterType.BoringTun),
-            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2, AdapterType.BoringTun),
+            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, TelioAdapterType.BORING_TUN),
+            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2, TelioAdapterType.BORING_TUN),
         ]),
         "mdns",
     ),
     pytest.param(
         generate_setup_parameter_pair([
-            (ConnectionTag.WINDOWS_VM_1, AdapterType.WireguardGo),
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
+            (ConnectionTag.WINDOWS_VM_1, TelioAdapterType.WIREGUARD_GO_TUN),
+            (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN),
         ]),
         "ssdp",
     ),
     pytest.param(
         generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
-            (ConnectionTag.WINDOWS_VM_1, AdapterType.WindowsNativeWg),
+            (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN),
+            (ConnectionTag.WINDOWS_VM_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
         ]),
         "mdns",
     ),

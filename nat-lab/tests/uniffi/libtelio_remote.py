@@ -5,11 +5,16 @@ import Pyro5.api  # type: ignore
 import Pyro5.server  # type: ignore
 import sys
 import telio_bindings as libtelio  # type: ignore # pylint: disable=import-error
+from serialization import (  # type: ignore # pylint: disable=import-error
+    init_serialization,
+)
 from threading import Lock
 from typing import List
 
 REMOTE_LOG = "remote.log"
 TCLI_LOG = "tcli.log"
+
+init_serialization(libtelio)
 
 
 def serialize_error(f):
@@ -32,45 +37,16 @@ def serialize_error(f):
     return wrap
 
 
-# This function is meant to be a temporary way to deal with
-# structured events until natlab has been migrated to use
-# the types provided by the generated bindings
-def serialize_event(event: libtelio.Event) -> str:
-    def extract_value(original) -> str:
-        return str(original).lower().rsplit(".", maxsplit=1)[-1]
-
-    event_dict = {}
-    body = event.body.__dict__
-    if event.is_relay():
-        event_dict["type"] = "relay"
-        body["conn_state"] = extract_value(body["conn_state"])
-    elif event.is_node():
-        event_dict["type"] = "node"
-        body["state"] = extract_value(body["state"])
-        if body["link_state"] is not None:
-            body["link_state"] = extract_value(body["link_state"])
-        body["path"] = extract_value(body["path"])
-    elif event.is_error():
-        event_dict["type"] = "error"
-        body["level"] = extract_value(body["level"])
-        body["code"] = extract_value(body["code"])
-    event_dict["body"] = body
-    event_str = json.dumps(event_dict)
-    event_str = event_str.replace(": ", ":")
-    event_str = event_str.replace(", ", ",")
-    return event_str
-
-
 class TelioEventCbImpl(libtelio.TelioEventCb):
     def __init__(self):
-        self._events = []
+        self._events: list[libtelio.Event] = []
 
     def event(self, payload):
         self._events.append(payload)
 
-    def next_event(self):
+    def next_event(self) -> libtelio.Event:
         if len(self._events) > 0:
-            return serialize_event(self._events.pop(0))
+            return self._events.pop(0)
         return None
 
 
@@ -115,12 +91,11 @@ class LibtelioWrapper:
         self._daemon.shutdown()
 
     @serialize_error
-    def create(self, features: str):
-        features = libtelio.deserialize_feature_config(features)
+    def create(self, features: libtelio.Features):
         self._libtelio = libtelio.Telio(features, self._event_cb)
 
     @serialize_error
-    def next_event(self):
+    def next_event(self) -> libtelio.Event:
         return self._event_cb.next_event()
 
     @serialize_error

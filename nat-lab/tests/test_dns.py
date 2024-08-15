@@ -9,9 +9,8 @@ import timeouts
 from config import LIBTELIO_DNS_IPV4, LIBTELIO_DNS_IPV6
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_api, setup_environment, setup_mesh_nodes
-from telio import AdapterType, TelioFeatures
-from telio_features import Dns
 from typing import List
+from utils.bindings import features_with_endpoint_providers, FeaturesDefaultsBuilder, Features, FeatureDns, TelioAdapterType
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import ConnectionTag, generate_connection_tracker_config
 from utils.dns import query_dns, query_dns_port
@@ -370,7 +369,7 @@ async def test_dns_after_mesh_off(alpha_ip_stack: IPStack) -> None:
                             ConnectionTag.DOCKER_CONE_CLIENT_1
                         ),
                         derp_servers=[],
-                        features=TelioFeatures(ipv6=True),
+                        features=FeaturesDefaultsBuilder().enable_ipv6().build(),
                     )
                 ],
                 provided_api=api,
@@ -439,7 +438,7 @@ async def test_dns_stability(alpha_ip_stack: IPStack) -> None:
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                     ip_stack=alpha_ip_stack,
-                    adapter_type=AdapterType.BoringTun,
+                    adapter_type=TelioAdapterType.BORING_TUN,
                     connection_tracker_config=generate_connection_tracker_config(
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
                         derp_1_limits=ConnectionLimits(1, 1),
@@ -698,7 +697,7 @@ async def test_dns_nickname() -> None:
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
                         derp_1_limits=ConnectionLimits(1, 1),
                     ),
-                    features=TelioFeatures(nicknames=True),
+                    features=FeaturesDefaultsBuilder().enable_nicknames().build(),
                 ),
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
@@ -706,7 +705,7 @@ async def test_dns_nickname() -> None:
                         ConnectionTag.DOCKER_CONE_CLIENT_2,
                         derp_1_limits=ConnectionLimits(1, 1),
                     ),
-                    features=TelioFeatures(nicknames=True),
+                    features=FeaturesDefaultsBuilder().enable_nicknames().build(),
                 ),
             ],
             provided_api=api,
@@ -743,7 +742,7 @@ async def test_dns_change_nickname() -> None:
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
                         derp_1_limits=ConnectionLimits(1, 1),
                     ),
-                    features=TelioFeatures(nicknames=True),
+                    features=FeaturesDefaultsBuilder().enable_nicknames().build(),
                 ),
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
@@ -751,7 +750,7 @@ async def test_dns_change_nickname() -> None:
                         ConnectionTag.DOCKER_CONE_CLIENT_2,
                         derp_1_limits=ConnectionLimits(1, 1),
                     ),
-                    features=TelioFeatures(nicknames=True),
+                    features=FeaturesDefaultsBuilder().enable_nicknames().build(),
                 ),
             ],
             provided_api=api,
@@ -821,7 +820,7 @@ async def test_dns_wildcarded_records() -> None:
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
                         derp_1_limits=ConnectionLimits(1, 1),
                     ),
-                    features=TelioFeatures(nicknames=True),
+                    features=FeaturesDefaultsBuilder().enable_nicknames().build(),
                 ),
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
@@ -829,7 +828,7 @@ async def test_dns_wildcarded_records() -> None:
                         ConnectionTag.DOCKER_CONE_CLIENT_2,
                         derp_1_limits=ConnectionLimits(1, 1),
                     ),
-                    features=TelioFeatures(nicknames=True),
+                    features=FeaturesDefaultsBuilder().enable_nicknames().build(),
                 ),
             ],
             provided_api=api,
@@ -859,6 +858,11 @@ async def test_dns_ttl_value() -> None:
 
         EXPECTED_TTL_VALUE = 1234
 
+        def features() -> Features:
+            features = FeaturesDefaultsBuilder().build()
+            features.dns = FeatureDns(exit_dns=None, ttl_value=EXPECTED_TTL_VALUE)
+            return features
+
         api, (_, _) = setup_api([(False, IPStack.IPv4v6), (False, IPStack.IPv4v6)])
         env = await setup_mesh_nodes(
             exit_stack,
@@ -869,9 +873,7 @@ async def test_dns_ttl_value() -> None:
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
                         derp_1_limits=ConnectionLimits(1, 1),
                     ),
-                    features=TelioFeatures(
-                        dns=Dns(exit_dns=None, ttl_value=EXPECTED_TTL_VALUE)
-                    ),
+                    features=features(),
                 ),
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,

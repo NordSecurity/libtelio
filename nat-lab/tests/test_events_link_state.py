@@ -2,23 +2,29 @@ import asyncio
 import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
-from telio import AdapterType, LinkState
-from telio_features import TelioFeatures, LinkDetection, Wireguard, PersistentKeepalive
 from typing import List, Tuple
+from utils.bindings import (
+    FeaturesDefaultsBuilder,
+    FeatureLinkDetection,
+    FeatureWireguard,
+    FeaturePersistentKeepalive,
+    LinkState,
+    TelioAdapterType,
+)
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
 
 
-def long_persistent_keepalive_periods() -> Wireguard:
-    return Wireguard(
-        persistent_keepalive=PersistentKeepalive(
+def long_persistent_keepalive_periods() -> FeatureWireguard:
+    return FeatureWireguard(
+        persistent_keepalive=FeaturePersistentKeepalive(
             proxying=3600, direct=3600, vpn=3600, stun=3600
         )
     )
 
 
-def _generate_setup_paramete_pair(
-    cfg: List[Tuple[ConnectionTag, AdapterType]],
+def _generate_setup_parameter_pair(
+    cfg: List[Tuple[ConnectionTag, TelioAdapterType]],
     enhaced_detection: bool,
 ) -> List[SetupParameters]:
     if enhaced_detection:
@@ -26,14 +32,17 @@ def _generate_setup_paramete_pair(
     else:
         count = 0
 
+    features = FeaturesDefaultsBuilder().enable_link_detection().build()
+    features.link_detection = FeatureLinkDetection(
+                    rtt_seconds=1, no_of_pings=count, use_for_downgrade=False
+                )
+    features.wireguard = long_persistent_keepalive_periods()
+
     return [
         SetupParameters(
             connection_tag=tag,
             adapter_type=adapter,
-            features=TelioFeatures(
-                link_detection=LinkDetection(rtt_seconds=1, no_of_pings=count),
-                wireguard=long_persistent_keepalive_periods(),
-            ),
+            features=features,
         )
         for tag, adapter in cfg
     ]
@@ -43,62 +52,62 @@ FEATURE_ENABLED_PARAMS = [
     # This scenario has been removed because it was causing flakyness due to LLT-5014.
     # Add it back when the issue is fixed.
     # pytest.param(
-    #     _generate_setup_paramete_pair([
-    #         (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.LinuxNativeWg),
-    #         (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.LinuxNativeWg),
+    #     _generate_setup_parameter_pair([
+    #         (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.LINUX_NATIVE_TUN),
+    #         (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.LINUX_NATIVE_TUN),
     #     ])
     # ),
     pytest.param(
-        _generate_setup_paramete_pair(
+        _generate_setup_parameter_pair(
             [
-                (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.LinuxNativeWg),
-                (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.LINUX_NATIVE_TUN),
+                (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.BORING_TUN),
             ],
             False,
         )
     ),
     pytest.param(
-        _generate_setup_paramete_pair(
+        _generate_setup_parameter_pair(
             [
-                (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.LinuxNativeWg),
-                (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.LINUX_NATIVE_TUN),
+                (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.BORING_TUN),
             ],
             True,
         )
     ),
     pytest.param(
-        _generate_setup_paramete_pair(
+        _generate_setup_parameter_pair(
             [
-                (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
-                (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN),
+                (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.BORING_TUN),
             ],
             False,
         )
     ),
     pytest.param(
-        _generate_setup_paramete_pair(
+        _generate_setup_parameter_pair(
             [
-                (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
-                (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN),
+                (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.BORING_TUN),
             ],
             True,
         )
     ),
     pytest.param(
-        _generate_setup_paramete_pair(
+        _generate_setup_parameter_pair(
             [
-                (ConnectionTag.WINDOWS_VM_1, AdapterType.WindowsNativeWg),
-                (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
+                (ConnectionTag.WINDOWS_VM_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN),
             ],
             False,
         ),
         marks=pytest.mark.windows,
     ),
     pytest.param(
-        _generate_setup_paramete_pair(
+        _generate_setup_parameter_pair(
             [
-                (ConnectionTag.WINDOWS_VM_1, AdapterType.WindowsNativeWg),
-                (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
+                (ConnectionTag.WINDOWS_VM_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN),
             ],
             True,
         ),
@@ -110,11 +119,11 @@ FEATURE_DISABLED_PARAMS = [
     pytest.param([
         SetupParameters(
             connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-            adapter_type=AdapterType.BoringTun,
+            adapter_type=TelioAdapterType.BORING_TUN,
         ),
         SetupParameters(
             connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-            adapter_type=AdapterType.BoringTun,
+            adapter_type=TelioAdapterType.BORING_TUN,
         ),
     ])
 ]
@@ -136,8 +145,8 @@ async def test_event_link_state_peers_idle_all_time(
         beta_events = client_alpha.get_link_state_events(beta.public_key)
 
         # 1 down when node is Connecting, 1 up when still Connecting and 1 up when node is Connected
-        assert alpha_events == [LinkState.Down, LinkState.Up, LinkState.Up]
-        assert beta_events == [LinkState.Down, LinkState.Up, LinkState.Up]
+        assert alpha_events == [LinkState.DOWN, LinkState.UP, LinkState.UP]
+        assert beta_events == [LinkState.DOWN, LinkState.UP, LinkState.UP]
 
 
 @pytest.mark.asyncio
@@ -163,8 +172,8 @@ async def test_event_link_state_peers_exchanging_data_for_a_long_time(
         beta_events = client_alpha.get_link_state_events(beta.public_key)
 
         # 1 down when node is Connecting, 1 up when still Connecting and 1 up when node is Connected
-        assert alpha_events == [LinkState.Down, LinkState.Up, LinkState.Up]
-        assert beta_events == [LinkState.Down, LinkState.Up, LinkState.Up]
+        assert alpha_events == [LinkState.DOWN, LinkState.UP, LinkState.UP]
+        assert beta_events == [LinkState.DOWN, LinkState.UP, LinkState.UP]
 
 
 @pytest.mark.asyncio
@@ -193,8 +202,8 @@ async def test_event_link_state_peers_exchanging_data_then_idling_then_resume(
         beta_events = client_alpha.get_link_state_events(beta.public_key)
 
         # 1 down when node is Connecting, 1 up when still Connecting and 1 up when node is Connected
-        assert alpha_events == [LinkState.Down, LinkState.Up, LinkState.Up]
-        assert beta_events == [LinkState.Down, LinkState.Up, LinkState.Up]
+        assert alpha_events == [LinkState.DOWN, LinkState.UP, LinkState.UP]
+        assert beta_events == [LinkState.DOWN, LinkState.UP, LinkState.UP]
 
 
 @pytest.mark.asyncio
@@ -225,13 +234,13 @@ async def test_event_link_state_peer_goes_offline(
         beta_events = client_alpha.get_link_state_events(beta.public_key)
 
         # 1 down when node is Connecting, 1 up when still Connecting and 1 up when node is Connected
-        assert alpha_events == [LinkState.Down, LinkState.Up, LinkState.Up]
+        assert alpha_events == [LinkState.DOWN, LinkState.UP, LinkState.UP]
         # beta will have 2 down events: 1 when is Connecting and 1 detected and 2 up when Connecting and Connected
         assert beta_events == [
-            LinkState.Down,
-            LinkState.Up,
-            LinkState.Up,
-            LinkState.Down,
+            LinkState.DOWN,
+            LinkState.UP,
+            LinkState.UP,
+            LinkState.DOWN,
         ]
 
 
