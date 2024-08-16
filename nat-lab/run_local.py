@@ -64,6 +64,7 @@ def main() -> int:
         "--notypecheck", action="store_true", help="Don't run typecheck, `mypy`"
     )
     parser.add_argument("--reruns", type=int, default=0, help="Pass `reruns` to pytest")
+    parser.add_argument("--count", type=int, default=1, help="Pass `count` to pytest")
     parser.add_argument("--moose", action="store_true", help="Build with moose")
     parser.add_argument(
         "--no-verify-setup-correctness",
@@ -88,7 +89,13 @@ def main() -> int:
         run_command(["mypy", "."])
 
     if not args.notests:
-        pytest_cmd = ["pytest", "-vv", "--durations=0", f"--reruns={args.reruns}"]
+        pytest_cmd = [
+            "pytest",
+            "-vv",
+            "--durations=0",
+            f"--reruns={args.reruns}",
+            f"--count={args.count}",
+        ]
 
         pytest_cmd += [
             f"--timeout={TEST_TIMEOUT}",
