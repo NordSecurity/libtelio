@@ -31,9 +31,9 @@ def _generate_setup_parameter_pair(
     features = FeaturesDefaultsBuilder().enable_link_detection().enable_direct().build()
     features.wireguard = long_persistent_keepalive_periods()
     features.link_detection = FeatureLinkDetection(
-                    rtt_seconds=1, no_of_pings=1, use_for_downgrade=True
-                )
-    assert features.direct 
+        rtt_seconds=1, no_of_pings=1, use_for_downgrade=True
+    )
+    assert features.direct
     features.direct.providers = [EndpointProvider.STUN, EndpointProvider.LOCAL]
     return [
         SetupParameters(
@@ -160,7 +160,10 @@ async def test_downgrade_using_link_detection_with_silent_connection(
                     beta.public_key, [NodeState.CONNECTED], [PathType.RELAY], timeout=15
                 ),
                 beta_client.wait_for_state_peer(
-                    alpha.public_key, [NodeState.CONNECTED], [PathType.RELAY], timeout=15
+                    alpha.public_key,
+                    [NodeState.CONNECTED],
+                    [PathType.RELAY],
+                    timeout=15,
                 ),
             )
 

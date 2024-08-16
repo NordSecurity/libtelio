@@ -32,8 +32,7 @@ async def test_enable_all_direct_features() -> None:
             exit_stack,
             [
                 SetupParameters(
-                    features=features_with_endpoint_providers(ALL_DIRECT_FEATURES
-                    )
+                    features=features_with_endpoint_providers(ALL_DIRECT_FEATURES)
                 )
             ],
         )

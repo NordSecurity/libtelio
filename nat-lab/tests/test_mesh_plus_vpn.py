@@ -1,14 +1,21 @@
 import asyncio
 import config
 import pytest
-from telio import Client
 import timeouts
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from mesh_api import API
+from telio import Client
 from typing import Optional
 from utils import stun
-from utils.bindings import features_with_endpoint_providers, EndpointProvider, TelioAdapterType, PathType, NodeState, RelayState
+from utils.bindings import (
+    features_with_endpoint_providers,
+    EndpointProvider,
+    TelioAdapterType,
+    PathType,
+    NodeState,
+    RelayState,
+)
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
     generate_connection_tracker_config,
@@ -292,7 +299,9 @@ async def test_mesh_plus_vpn_both_peers(
     ],
 )
 async def test_vpn_plus_mesh(
-    alpha_connection_tag: ConnectionTag, adapter_type: Optional[TelioAdapterType], public_ip: str
+    alpha_connection_tag: ConnectionTag,
+    adapter_type: Optional[TelioAdapterType],
+    public_ip: str,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         api = API()
@@ -380,8 +389,8 @@ async def test_vpn_plus_mesh(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
-                    
+                features=features_with_endpoint_providers(
+                    [EndpointProvider.LOCAL, EndpointProvider.STUN]
                 ),
             ),
         ),
@@ -394,8 +403,8 @@ async def test_vpn_plus_mesh(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
-                    
+                features=features_with_endpoint_providers(
+                    [EndpointProvider.LOCAL, EndpointProvider.STUN]
                 ),
             ),
             marks=[
@@ -411,8 +420,8 @@ async def test_vpn_plus_mesh(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
-                    
+                features=features_with_endpoint_providers(
+                    [EndpointProvider.LOCAL, EndpointProvider.STUN]
                 ),
             ),
             marks=[
@@ -428,8 +437,8 @@ async def test_vpn_plus_mesh(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
-                    
+                features=features_with_endpoint_providers(
+                    [EndpointProvider.LOCAL, EndpointProvider.STUN]
                 ),
             ),
             marks=[
@@ -445,8 +454,8 @@ async def test_vpn_plus_mesh(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
-                    
+                features=features_with_endpoint_providers(
+                    [EndpointProvider.LOCAL, EndpointProvider.STUN]
                 ),
             ),
             marks=[
@@ -466,8 +475,8 @@ async def test_vpn_plus_mesh(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
-                    
+                features=features_with_endpoint_providers(
+                    [EndpointProvider.LOCAL, EndpointProvider.STUN]
                 ),
             )
         )
@@ -534,8 +543,8 @@ async def test_vpn_plus_mesh_over_direct(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
-                    
+                features=features_with_endpoint_providers(
+                    [EndpointProvider.LOCAL, EndpointProvider.STUN]
                 ),
             )
         ),
@@ -548,8 +557,8 @@ async def test_vpn_plus_mesh_over_direct(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
-                    
+                features=features_with_endpoint_providers(
+                    [EndpointProvider.LOCAL, EndpointProvider.STUN]
                 ),
             ),
             marks=pytest.mark.linux_native,
@@ -563,8 +572,8 @@ async def test_vpn_plus_mesh_over_direct(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
-                    
+                features=features_with_endpoint_providers(
+                    [EndpointProvider.LOCAL, EndpointProvider.STUN]
                 ),
             ),
             marks=pytest.mark.windows,
@@ -578,8 +587,8 @@ async def test_vpn_plus_mesh_over_direct(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
-                    
+                features=features_with_endpoint_providers(
+                    [EndpointProvider.LOCAL, EndpointProvider.STUN]
                 ),
             ),
             marks=[
@@ -595,8 +604,8 @@ async def test_vpn_plus_mesh_over_direct(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
-                    
+                features=features_with_endpoint_providers(
+                    [EndpointProvider.LOCAL, EndpointProvider.STUN]
                 ),
             ),
             marks=[
@@ -616,8 +625,8 @@ async def test_vpn_plus_mesh_over_direct(
                     derp_1_limits=ConnectionLimits(1, 1),
                     vpn_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=features_with_endpoint_providers([EndpointProvider.LOCAL, EndpointProvider.STUN]
-                    
+                features=features_with_endpoint_providers(
+                    [EndpointProvider.LOCAL, EndpointProvider.STUN]
                 ),
             )
         )

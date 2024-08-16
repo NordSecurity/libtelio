@@ -4,7 +4,6 @@ import asyncio
 import base64
 import pytest
 import subprocess
-from telio import Client
 from config import (
     WG_SERVER,
     STUN_SERVER,
@@ -15,6 +14,7 @@ from config import (
 )
 from contextlib import AsyncExitStack
 from mesh_api import API, Node
+from telio import Client
 from typing import List, Optional, Dict
 from utils import testing, stun
 from utils.analytics import fetch_moose_events, DERP_BIT, WG_BIT, IPV4_BIT, IPV6_BIT
@@ -40,14 +40,13 @@ from utils.analytics.event_validator import (
 from utils.bindings import (
     FeaturesDefaultsBuilder,
     Features,
-    FeatureLana,
     FeatureQoS,
     FeatureEndpointProvidersOptimization,
     EndpointProvider,
     RttType,
     PathType,
     NodeState,
-    RelayState
+    RelayState,
 )
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionLimits
@@ -115,24 +114,30 @@ IP_STACK_TEST_CONFIGS = [
 
 
 def build_telio_features(initial_heartbeat_interval: int = 300) -> Features:
-    features = FeaturesDefaultsBuilder().enable_lana(CONTAINER_EVENT_PATH, False).enable_direct().enable_nurse().build()
-    assert features.direct 
+    features = (
+        FeaturesDefaultsBuilder()
+        .enable_lana(CONTAINER_EVENT_PATH, False)
+        .enable_direct()
+        .enable_nurse()
+        .build()
+    )
+    assert features.direct
     features.direct.providers = [EndpointProvider.STUN]
-    features.direct.endpoint_providers_optimization=(
-                FeatureEndpointProvidersOptimization(
-                    optimize_direct_upgrade_stun=False,
-                    optimize_direct_upgrade_upnp=False,
-                )
-            )
+    features.direct.endpoint_providers_optimization = (
+        FeatureEndpointProvidersOptimization(
+            optimize_direct_upgrade_stun=False,
+            optimize_direct_upgrade_upnp=False,
+        )
+    )
     assert features.nurse
-    features.nurse.initial_heartbeat_interval=initial_heartbeat_interval
-    features.nurse.qos=FeatureQoS(
+    features.nurse.initial_heartbeat_interval = initial_heartbeat_interval
+    features.nurse.qos = FeatureQoS(
         rtt_types=[RttType.PING],
         rtt_interval=RTT_INTERVAL,
         buckets=5,
         rtt_tries=1,
     )
-    features.nurse.enable_nat_type_collection=COLLECT_NAT_TYPE
+    features.nurse.enable_nat_type_collection = COLLECT_NAT_TYPE
     return features
 
 

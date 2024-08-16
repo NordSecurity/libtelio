@@ -9,16 +9,25 @@ import uuid
 from collections import Counter
 from config import DERP_SERVERS
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
-from dataclasses_json import DataClassJsonMixin, dataclass_json
 from datetime import datetime
-from enum import Enum
 from mesh_api import Meshmap, Node, start_tcpdump, stop_tcpdump
 from typing import AsyncIterator, List, Optional, Set
 from uniffi.libtelio_proxy import LibtelioProxy, ProxyConnectionError
 from uniffi.telio_bindings import NatType
 from utils import asyncio_util
-from utils.bindings import FeaturesDefaultsBuilder, Features, PathType, NodeState, LinkState, RelayState, TelioAdapterType, TelioNode, Server, ErrorEvent, Event, generate_secret_key, generate_public_key
+from utils.bindings import (
+    FeaturesDefaultsBuilder,
+    Features,
+    PathType,
+    NodeState,
+    LinkState,
+    RelayState,
+    TelioAdapterType,
+    TelioNode,
+    Server,
+    ErrorEvent,
+    Event,
+)
 from utils.command_grepper import CommandGrepper
 from utils.connection import Connection, DockerConnection, TargetOS
 from utils.connection_util import get_uniffi_path
@@ -50,10 +59,9 @@ class Runtime:
         self.allowed_pub_keys = set()
 
     async def handle_output_line(self, line) -> bool:
-        return (
-            await self._output_notifier.handle_output(line)
-            or self._handle_task_information(line)
-        )
+        return await self._output_notifier.handle_output(
+            line
+        ) or self._handle_task_information(line)
 
     def _handle_task_information(self, line) -> bool:
         if line.startswith("task started - "):
@@ -563,7 +571,9 @@ class Client:
     ) -> None:
         async with asyncio_util.run_async_contexts([
             self.get_events().wait_for_state_derp(
-                str(derp["ipv4"]), [RelayState.DISCONNECTED, RelayState.CONNECTING], timeout
+                str(derp["ipv4"]),
+                [RelayState.DISCONNECTED, RelayState.CONNECTING],
+                timeout,
             )
             for derp in DERP_SERVERS
         ]) as futures:

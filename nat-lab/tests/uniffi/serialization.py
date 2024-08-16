@@ -13,7 +13,12 @@ def init_serialization(libtelio):
                 if not name.startswith("_"):
                     public_members.append(cls)
 
-    classes = tuple(filter(lambda m: str(m).startswith("<class ") and libtelio.__name__ in str(m), public_members))
+    classes = tuple(
+        filter(
+            lambda m: str(m).startswith("<class ") and libtelio.__name__ in str(m),
+            public_members,
+        )
+    )
     enums = tuple(filter(lambda m: str(m).startswith("<enum "), public_members))
 
     def serialize_obj(obj):

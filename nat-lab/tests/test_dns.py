@@ -10,7 +10,12 @@ from config import LIBTELIO_DNS_IPV4, LIBTELIO_DNS_IPV6
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_api, setup_environment, setup_mesh_nodes
 from typing import List
-from utils.bindings import features_with_endpoint_providers, FeaturesDefaultsBuilder, Features, FeatureDns, TelioAdapterType
+from utils.bindings import (
+    FeaturesDefaultsBuilder,
+    Features,
+    FeatureDns,
+    TelioAdapterType,
+)
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import ConnectionTag, generate_connection_tracker_config
 from utils.dns import query_dns, query_dns_port

@@ -7,7 +7,12 @@ from helpers import SetupParameters, setup_environment, setup_connections
 from telio import Client
 from typing import Optional
 from utils import testing, stun
-from utils.bindings import FeaturesDefaultsBuilder, FeatureFirewall, TelioAdapterType, generate_secret_key, generate_public_key
+from utils.bindings import (
+    FeaturesDefaultsBuilder,
+    TelioAdapterType,
+    generate_secret_key,
+    generate_public_key,
+)
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionLimits, ConnectionTrackerConfig
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
@@ -351,7 +356,9 @@ async def test_vpn_reconnect(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 adapter_type=TelioAdapterType.BORING_TUN,
                 ip_stack=IPStack.IPv4,
-                features=FeaturesDefaultsBuilder().enable_firewall_connection_reset().build(),
+                features=FeaturesDefaultsBuilder()
+                .enable_firewall_connection_reset()
+                .build(),
             )
         ),
         # TODO(msz): IPv6 public server, it doesn't work with the current VPN implementation
@@ -489,7 +496,9 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 adapter_type=TelioAdapterType.BORING_TUN,
                 ip_stack=IPStack.IPv4,
-                features=FeaturesDefaultsBuilder().enable_firewall_connection_reset().build(),
+                features=FeaturesDefaultsBuilder()
+                .enable_firewall_connection_reset()
+                .build(),
             )
         ),
         # TODO(msz): IPv6 public server, it doesn't work with the current VPN implementation

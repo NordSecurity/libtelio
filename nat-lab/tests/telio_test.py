@@ -2,8 +2,14 @@ import asyncio
 import copy
 import pytest
 from telio import Runtime, Events
-from utils.bindings import PathType, TelioNode, telio_node, NodeState, Server, RelayState
 from utils.asyncio_util import run_async_contexts, run_async_context
+from utils.bindings import (
+    PathType,
+    telio_node,
+    NodeState,
+    Server,
+    RelayState,
+)
 
 
 def create_derpserver_config(state: RelayState) -> Server:
@@ -58,11 +64,15 @@ class TestRuntime:
         )
 
         runtime.set_peer(
-            telio_node(public_key="BBB", state=NodeState.DISCONNECTED, path=PathType.DIRECT)
+            telio_node(
+                public_key="BBB", state=NodeState.DISCONNECTED, path=PathType.DIRECT
+            )
         )
 
         await runtime.notify_peer_state("AAA", [NodeState.CONNECTED], [PathType.RELAY])
-        await runtime.notify_peer_state("BBB", [NodeState.DISCONNECTED], [PathType.DIRECT])
+        await runtime.notify_peer_state(
+            "BBB", [NodeState.DISCONNECTED], [PathType.DIRECT]
+        )
 
         # it should pass again
         await runtime.notify_peer_state(
@@ -72,14 +82,18 @@ class TestRuntime:
         # it should fail (wrong state)
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.wait_for(
-                runtime.notify_peer_state("BBB", [NodeState.CONNECTED], [PathType.DIRECT]),
+                runtime.notify_peer_state(
+                    "BBB", [NodeState.CONNECTED], [PathType.DIRECT]
+                ),
                 0.1,
             )
 
         # it should fail (wrong path)
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.wait_for(
-                runtime.notify_peer_state("AAA", [NodeState.CONNECTED], [PathType.DIRECT]),
+                runtime.notify_peer_state(
+                    "AAA", [NodeState.CONNECTED], [PathType.DIRECT]
+                ),
                 0.1,
             )
 
@@ -99,7 +113,9 @@ class TestRuntime:
 
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.wait_for(
-                runtime.notify_peer_event("AAA", [NodeState.CONNECTED], [PathType.RELAY]),
+                runtime.notify_peer_event(
+                    "AAA", [NodeState.CONNECTED], [PathType.RELAY]
+                ),
                 0.1,
             )
 
@@ -186,11 +202,15 @@ class TestEvents:
             telio_node(public_key="AAA", state=NodeState.CONNECTED, path=PathType.RELAY)
         )
         runtime.set_peer(
-            telio_node(public_key="BBB", state=NodeState.DISCONNECTED, path=PathType.DIRECT)
+            telio_node(
+                public_key="BBB", state=NodeState.DISCONNECTED, path=PathType.DIRECT
+            )
         )
 
         await events.wait_for_state_peer("AAA", [NodeState.CONNECTED], [PathType.RELAY])
-        await events.wait_for_state_peer("BBB", [NodeState.DISCONNECTED], [PathType.DIRECT])
+        await events.wait_for_state_peer(
+            "BBB", [NodeState.DISCONNECTED], [PathType.DIRECT]
+        )
 
         # it should pass again
         await events.wait_for_state_peer(
@@ -227,8 +247,12 @@ class TestEvents:
         runtime.set_peer(telio_node(public_key="AAA", state=NodeState.DISCONNECTED))
         runtime.set_peer(telio_node(public_key="BBB", state=NodeState.DISCONNECTED))
 
-        await events.wait_for_state_peer("BBB", [NodeState.DISCONNECTED], [PathType.RELAY])
-        await events.wait_for_state_peer("AAA", [NodeState.DISCONNECTED], [PathType.RELAY])
+        await events.wait_for_state_peer(
+            "BBB", [NodeState.DISCONNECTED], [PathType.RELAY]
+        )
+        await events.wait_for_state_peer(
+            "AAA", [NodeState.DISCONNECTED], [PathType.RELAY]
+        )
 
         # It should pass again
         await events.wait_for_state_peer(
@@ -278,7 +302,9 @@ class TestEvents:
                 await asyncio.wait_for(asyncio.shield(future), 0.1)
 
             runtime.set_peer(
-                telio_node(public_key="AAA", state=NodeState.CONNECTED, path=PathType.DIRECT)
+                telio_node(
+                    public_key="AAA", state=NodeState.CONNECTED, path=PathType.DIRECT
+                )
             )
             with pytest.raises(asyncio.TimeoutError):
                 await asyncio.wait_for(asyncio.shield(future), 0.1)
@@ -322,10 +348,14 @@ class TestEvents:
             await asyncio.sleep(0)
 
             runtime.set_peer(
-                telio_node(public_key="BBB", state=NodeState.CONNECTED, path=PathType.RELAY)
+                telio_node(
+                    public_key="BBB", state=NodeState.CONNECTED, path=PathType.RELAY
+                )
             )
             runtime.set_peer(
-                telio_node(public_key="AAA", state=NodeState.CONNECTED, path=PathType.DIRECT)
+                telio_node(
+                    public_key="AAA", state=NodeState.CONNECTED, path=PathType.DIRECT
+                )
             )
             for future in futures:
                 with pytest.raises(asyncio.TimeoutError):
@@ -337,10 +367,14 @@ class TestEvents:
                 )
             )
             runtime.set_peer(
-                telio_node(public_key="AAA", state=NodeState.CONNECTING, path=PathType.RELAY)
+                telio_node(
+                    public_key="AAA", state=NodeState.CONNECTING, path=PathType.RELAY
+                )
             )
             runtime.set_peer(
-                telio_node(public_key="AAA", state=NodeState.CONNECTED, path=PathType.RELAY)
+                telio_node(
+                    public_key="AAA", state=NodeState.CONNECTED, path=PathType.RELAY
+                )
             )
             runtime.set_peer(
                 telio_node(
@@ -348,10 +382,14 @@ class TestEvents:
                 )
             )
             runtime.set_peer(
-                telio_node(public_key="BBB", state=NodeState.CONNECTING, path=PathType.DIRECT)
+                telio_node(
+                    public_key="BBB", state=NodeState.CONNECTING, path=PathType.DIRECT
+                )
             )
             runtime.set_peer(
-                telio_node(public_key="BBB", state=NodeState.CONNECTED, path=PathType.DIRECT)
+                telio_node(
+                    public_key="BBB", state=NodeState.CONNECTED, path=PathType.DIRECT
+                )
             )
 
             for future in futures:
@@ -380,7 +418,9 @@ class TestEvents:
 
         # it should fail (wrong IP)
         with pytest.raises(asyncio.TimeoutError):
-            await events.wait_for_state_derp("1.1.1.2", [RelayState.CONNECTED], timeout=0.1)
+            await events.wait_for_state_derp(
+                "1.1.1.2", [RelayState.CONNECTED], timeout=0.1
+            )
 
     @pytest.mark.asyncio
     async def test_derp_change_state(self) -> None:
@@ -391,7 +431,9 @@ class TestEvents:
         await events.wait_for_state_derp("1.1.1.1", [RelayState.CONNECTED], timeout=0.1)
 
         runtime.set_derp(create_derpserver_config(RelayState.DISCONNECTED))
-        await events.wait_for_state_derp("1.1.1.1", [RelayState.DISCONNECTED], timeout=0.1)
+        await events.wait_for_state_derp(
+            "1.1.1.1", [RelayState.DISCONNECTED], timeout=0.1
+        )
 
         # It should pass again
         await events.wait_for_state_derp(
@@ -434,7 +476,9 @@ class TestEvents:
             await future
 
         with pytest.raises(asyncio.TimeoutError):
-            await events.wait_for_event_derp("1.1.1.1", [RelayState.CONNECTED], timeout=0.1)
+            await events.wait_for_event_derp(
+                "1.1.1.1", [RelayState.CONNECTED], timeout=0.1
+            )
 
     @pytest.mark.asyncio
     async def test_derp_with_multiple_events(self) -> None:

@@ -1,10 +1,10 @@
 import asyncio
 import config
 import pytest
-from telio import Client
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
 from mesh_api import API
+from telio import Client
 from typing import Optional
 from utils import testing, stun
 from utils.bindings import TelioAdapterType, PathType, NodeState, RelayState
@@ -221,9 +221,7 @@ async def test_mesh_exit_through_peer(
                 pytest.mark.windows,
             ],
         ),
-        pytest.param(
-            ConnectionTag.MAC_VM, None, marks=pytest.mark.mac
-        ),
+        pytest.param(ConnectionTag.MAC_VM, None, marks=pytest.mark.mac),
     ],
 )
 @pytest.mark.asyncio
@@ -262,9 +260,7 @@ async def test_ipv6_exit_node(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            Client(connection_alpha, alpha, adapter_type).run(
-                api.get_meshmap(alpha.id)
-            )
+            Client(connection_alpha, alpha, adapter_type).run(api.get_meshmap(alpha.id))
         )
 
         client_beta = await exit_stack.enter_async_context(

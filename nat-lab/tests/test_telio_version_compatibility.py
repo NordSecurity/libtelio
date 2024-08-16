@@ -2,11 +2,17 @@ import asyncio
 import json
 import pytest
 import shlex
-from telio import Client
 from contextlib import AsyncExitStack
 from mesh_api import API
+from telio import Client
 from utils import testing
-from utils.bindings import features_with_endpoint_providers, EndpointProvider, TelioAdapterType, NodeState, RelayState
+from utils.bindings import (
+    features_with_endpoint_providers,
+    EndpointProvider,
+    TelioAdapterType,
+    NodeState,
+    RelayState,
+)
 from utils.connection_util import (
     ConnectionTag,
     ConnectionLimits,
@@ -94,8 +100,7 @@ async def test_connect_different_telio_version_through_relay(
                 alpha_conn,
                 alpha,
                 adapter_type,
-                telio_features=features_with_endpoint_providers(endpoint_providers
-                ),
+                telio_features=features_with_endpoint_providers(endpoint_providers),
             ).run(api.get_meshmap(alpha.id))
         )
 

@@ -8,7 +8,14 @@ from itertools import product, zip_longest
 from mesh_api import Node, Meshmap, API, stop_tcpdump
 from telio import Client
 from typing import AsyncIterator, List, Tuple, Optional, Union, Dict, Any
-from utils.bindings import FeaturesDefaultsBuilder, Features, PathType, TelioAdapterType, RelayState, NodeState
+from utils.bindings import (
+    FeaturesDefaultsBuilder,
+    Features,
+    PathType,
+    TelioAdapterType,
+    RelayState,
+    NodeState,
+)
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionTrackerConfig
 from utils.connection_util import (
@@ -23,6 +30,7 @@ def default_test_features() -> Features:
     features = FeaturesDefaultsBuilder().build()
     features.is_test_env = True
     return features
+
 
 @dataclass
 class SetupParameters:
@@ -53,7 +61,7 @@ class SetupParameters:
         default=None
     )
     adapter_type: Optional[TelioAdapterType] = None
-    features: Features = field(default_factory=lambda: default_test_features())
+    features: Features = field(default_factory=default_test_features)
     is_meshnet: bool = field(default=True)
     derp_servers: Optional[List[Dict[str, Any]]] = field(default=None)
     fingerprint: str = ""

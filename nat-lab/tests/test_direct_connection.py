@@ -30,7 +30,7 @@ from utils.bindings import (
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
 
-# Testing if batching being disabled or not there doesn't affect anything 
+# Testing if batching being disabled or not there doesn't affect anything
 DISABLED_BATCHING_OPTIONS = (None, FeatureBatching(direct_connection_threshold=0))
 ANY_PROVIDERS = [EndpointProvider.LOCAL, EndpointProvider.STUN]
 
@@ -49,9 +49,11 @@ def _generate_setup_parameter_pair(
     left: Tuple[ConnectionTag, List[EndpointProvider], Optional[FeatureBatching]],
     right: Tuple[ConnectionTag, List[EndpointProvider], Optional[FeatureBatching]],
 ) -> List[SetupParameters]:
-    def features(providers: list[EndpointProvider], batching: Optional[FeatureBatching]) -> Features:
+    def features(
+        providers: list[EndpointProvider], batching: Optional[FeatureBatching]
+    ) -> Features:
         features = FeaturesDefaultsBuilder().enable_direct().build()
-        assert features.direct 
+        assert features.direct
         features.direct.providers = providers
         features.batching = batching
         return features
@@ -60,8 +62,7 @@ def _generate_setup_parameter_pair(
         SetupParameters(
             connection_tag=conn_tag,
             adapter_type=TelioAdapterType.BORING_TUN,
-            features=features(endpoint_providers,
-                batching),
+            features=features(endpoint_providers, batching),
             fingerprint=f"{conn_tag}",
         )
         for (conn_tag, endpoint_providers, batching) in (left, right)
@@ -486,7 +487,9 @@ async def test_direct_short_connection_loss(
             await beta_connection.create_process(["conntrack", "-F"]).execute()
             task = await temp_exit_stack.enter_async_context(
                 run_async_context(
-                    alpha_client.wait_for_event_peer(beta.public_key, [NodeState.CONNECTED])
+                    alpha_client.wait_for_event_peer(
+                        beta.public_key, [NodeState.CONNECTED]
+                    )
                 )
             )
 
@@ -689,8 +692,12 @@ async def test_direct_connection_endpoint_gone(
             )
 
             await asyncio.gather(
-                alpha_client.wait_for_state_peer(beta.public_key, [NodeState.CONNECTED]),
-                beta_client.wait_for_state_peer(alpha.public_key, [NodeState.CONNECTED]),
+                alpha_client.wait_for_state_peer(
+                    beta.public_key, [NodeState.CONNECTED]
+                ),
+                beta_client.wait_for_state_peer(
+                    alpha.public_key, [NodeState.CONNECTED]
+                ),
             )
 
             await ping(alpha_connection, beta.ip_addresses[0])

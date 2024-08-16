@@ -34,8 +34,8 @@ def _generate_setup_parameter_pair(
 
     features = FeaturesDefaultsBuilder().enable_link_detection().build()
     features.link_detection = FeatureLinkDetection(
-                    rtt_seconds=1, no_of_pings=count, use_for_downgrade=False
-                )
+        rtt_seconds=1, no_of_pings=count, use_for_downgrade=False
+    )
     features.wireguard = long_persistent_keepalive_periods()
 
     return [

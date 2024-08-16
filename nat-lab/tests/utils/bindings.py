@@ -1,5 +1,5 @@
-from typing import Optional, List
-from uniffi.telio_bindings import *
+from typing import Optional
+from uniffi.telio_bindings import *  # pylint: disable=wildcard-import, unused-wildcard-import
 
 
 def feature_nurse(
@@ -24,22 +24,24 @@ def feature_nurse(
     )
 
 
-def features_with_endpoint_providers(providers: Optional[list[EndpointProvider]]) -> Features:
+def features_with_endpoint_providers(
+    providers: Optional[list[EndpointProvider]],
+) -> Features:
     features = FeaturesDefaultsBuilder().enable_direct().build()
-    assert features.direct 
+    assert features.direct
     features.direct.providers = providers
     return features
 
 
-def telio_node(
+def telio_node(  # pylint: disable=dangerous-default-value
     identifier: str = "",
     public_key: str = "",
     state: NodeState = NodeState.DISCONNECTED,
     link_state: Optional[LinkState] = None,
     is_exit: bool = False,
     is_vpn: bool = False,
-    ip_addresses: List[str] = [],
-    allowed_ips: List[str] = [],
+    ip_addresses: list[str] = [],
+    allowed_ips: list[str] = [],
     nickname: Optional[str] = None,
     endpoint: Optional[str] = None,
     hostname: Optional[str] = None,

@@ -93,16 +93,18 @@ async def test_mesh_off(direct) -> None:
 @pytest.mark.timeout(TEST_MESH_STATE_AFTER_DISCONNECTING_NODE_TIMEOUT)
 async def test_mesh_state_after_disconnecting_node() -> None:
     async with AsyncExitStack() as exit_stack:
-        features = FeaturesDefaultsBuilder().enable_direct().enable_link_detection().build()
-        assert features.direct 
-        features.direct.providers=[
-                                EndpointProvider.STUN,
-                                EndpointProvider.LOCAL,
-                                EndpointProvider.UPNP,
-                            ]
-        features.link_detection=FeatureLinkDetection(
-                            rtt_seconds=5, no_of_pings=0, use_for_downgrade=False
-                        )
+        features = (
+            FeaturesDefaultsBuilder().enable_direct().enable_link_detection().build()
+        )
+        assert features.direct
+        features.direct.providers = [
+            EndpointProvider.STUN,
+            EndpointProvider.LOCAL,
+            EndpointProvider.UPNP,
+        ]
+        features.link_detection = FeatureLinkDetection(
+            rtt_seconds=5, no_of_pings=0, use_for_downgrade=False
+        )
         env = await setup_mesh_nodes(
             exit_stack,
             [

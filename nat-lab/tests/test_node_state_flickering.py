@@ -5,7 +5,14 @@ import timeouts
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from typing import Tuple
-from utils.bindings import features_with_endpoint_providers, EndpointProvider, TelioAdapterType, NodeState, RelayState, PathType
+from utils.bindings import (
+    features_with_endpoint_providers,
+    EndpointProvider,
+    TelioAdapterType,
+    NodeState,
+    RelayState,
+    PathType,
+)
 from utils.connection import TargetOS
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
@@ -148,23 +155,19 @@ async def test_node_state_flickering_direct(
                     connection_tag=alpha_conn_tag,
                     adapter_type=alpha_adapter_type,
                     features=features_with_endpoint_providers([
-                                EndpointProvider.STUN,
-                                EndpointProvider.LOCAL,
-                                EndpointProvider.UPNP,
-                            ]
-                        
-                    ),
+                        EndpointProvider.STUN,
+                        EndpointProvider.LOCAL,
+                        EndpointProvider.UPNP,
+                    ]),
                 ),
                 SetupParameters(
                     connection_tag=beta_conn_tag,
                     adapter_type=beta_adapter_type,
                     features=features_with_endpoint_providers([
-                                EndpointProvider.STUN,
-                                EndpointProvider.LOCAL,
-                                EndpointProvider.UPNP,
-                            ]
-                        
-                    ),
+                        EndpointProvider.STUN,
+                        EndpointProvider.LOCAL,
+                        EndpointProvider.UPNP,
+                    ]),
                 ),
             ],
         )

@@ -8,12 +8,11 @@ from utils.bindings import (
     Features,
     FeaturesDefaultsBuilder,
     FeatureQoS,
-    FeatureLana,
     EndpointProvider,
     RttType,
     PathType,
     TelioAdapterType,
-    NodeState
+    NodeState,
 )
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionTracker, ConnectionLimits
@@ -71,19 +70,25 @@ async def build_conntracker(
 
 def stun_features() -> Features:
     features = FeaturesDefaultsBuilder().enable_direct().enable_ipv6().build()
-    assert features.direct 
-    features.direct.providers=[EndpointProvider.STUN]
+    assert features.direct
+    features.direct.providers = [EndpointProvider.STUN]
     return features
 
 
 def nurse_features() -> Features:
-    features = FeaturesDefaultsBuilder().enable_lana("/event.db", False).enable_nurse().enable_ipv6().build()
-    assert features.nurse 
-    features.nurse.qos=FeatureQoS(
+    features = (
+        FeaturesDefaultsBuilder()
+        .enable_lana("/event.db", False)
+        .enable_nurse()
+        .enable_ipv6()
+        .build()
+    )
+    assert features.nurse
+    features.nurse.qos = FeatureQoS(
         rtt_interval=5, rtt_tries=1, rtt_types=[RttType.PING], buckets=1
     )
-    features.nurse.heartbeat_interval=10
-    features.nurse.initial_heartbeat_interval=1
+    features.nurse.heartbeat_interval = 10
+    features.nurse.initial_heartbeat_interval = 1
     return features
 
 
