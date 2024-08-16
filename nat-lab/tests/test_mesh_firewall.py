@@ -444,11 +444,6 @@ async def test_mesh_firewall_file_share_port(
                 await ping(connection_beta, CLIENT_ALPHA_IP, 15)
 
         output_notifier = OutputNotifier()
-
-        async def on_stdout(stdout: str) -> None:
-            for line in stdout.splitlines():
-                output_notifier.handle_output(line)
-
         listening_start_event = asyncio.Event()
         sender_start_event = asyncio.Event()
         connected_event = asyncio.Event()
@@ -475,7 +470,10 @@ async def test_mesh_firewall_file_share_port(
                 "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
                 CLIENT_ALPHA_IP,
                 str(PORT),
-            ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
+            ]).run(
+                stdout_callback=output_notifier.handle_output,
+                stderr_callback=output_notifier.handle_output,
+            )
         )
 
         # wait for listening to start
@@ -491,7 +489,10 @@ async def test_mesh_firewall_file_share_port(
                 CLIENT_BETA_IP,
                 CLIENT_ALPHA_IP,
                 str(PORT),
-            ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
+            ]).run(
+                stdout_callback=output_notifier.handle_output,
+                stderr_callback=output_notifier.handle_output,
+            )
         )
 
         # wait for sender to start
@@ -576,13 +577,13 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
         async def on_stdout(stdout: str) -> None:
             for line in stdout.splitlines():
                 print(datetime.now(), f"nc output: {line}")
-                output_notifier.handle_output(line)
+            await output_notifier.handle_output(stdout)
 
         async def conntrack_on_stdout(stdout: str) -> None:
             for line in stdout.splitlines():
                 if f"src={CLIENT_BETA_IP} dst={CLIENT_ALPHA_IP}" in line:
                     print(datetime.now(), f"Conntrack event: {line}")
-                    output_notifier.handle_output(line)
+                    await output_notifier.handle_output(line)
 
         listening_start_event = asyncio.Event()
         sender_start_event = asyncio.Event()
@@ -713,14 +714,10 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
 
         output_notifier = OutputNotifier()
 
-        async def on_stdout(stdout: str) -> None:
-            for line in stdout.splitlines():
-                output_notifier.handle_output(line)
-
         async def conntrack_on_stdout(stdout: str) -> None:
             for line in stdout.splitlines():
                 if f"src={CLIENT_ALPHA_IP} dst={CLIENT_BETA_IP}" in line:
-                    output_notifier.handle_output(line)
+                    await output_notifier.handle_output(line)
 
         listening_start_event = asyncio.Event()
         sender_start_event = asyncio.Event()
@@ -758,7 +755,10 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
                 "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
                 CLIENT_ALPHA_IP,
                 str(PORT),
-            ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as listener:
+            ]).run(
+                stdout_callback=output_notifier.handle_output,
+                stderr_callback=output_notifier.handle_output,
+            ) as listener:
                 await listener.wait_stdin_ready()
                 await listening_start_event.wait()
                 # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
@@ -770,7 +770,10 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
                     CLIENT_BETA_IP,
                     CLIENT_ALPHA_IP,
                     str(PORT),
-                ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as client:
+                ]).run(
+                    stdout_callback=output_notifier.handle_output,
+                    stderr_callback=output_notifier.handle_output,
+                ) as client:
                     await client.wait_stdin_ready()
                     await sender_start_event.wait()
                     await connected_event.wait()

@@ -398,14 +398,10 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
 
         output_notifier = OutputNotifier()
 
-        async def on_stdout(stdout: str) -> None:
-            for line in stdout.splitlines():
-                output_notifier.handle_output(line)
-
         async def conntrack_on_stdout(stdout: str) -> None:
             for line in stdout.splitlines():
                 if f"dst={serv_ip}" in line:
-                    output_notifier.handle_output(line)
+                    await output_notifier.handle_output(line)
 
         sender_start_event = asyncio.Event()
         close_wait_event = asyncio.Event()
@@ -438,7 +434,10 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
                     alpha_ip,
                     serv_ip,
                     str(80),
-                ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
+                ]).run(
+                    stdout_callback=output_notifier.handle_output,
+                    stderr_callback=output_notifier.handle_output,
+                )
             )
 
             # Second client, this time sending some data to check proper TCP sequence number generation
@@ -451,7 +450,10 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
                     alpha_ip,
                     serv_ip,
                     str(80),
-                ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
+                ]).run(
+                    stdout_callback=output_notifier.handle_output,
+                    stderr_callback=output_notifier.handle_output,
+                )
             )
 
             await proc.wait_stdin_ready()
@@ -534,10 +536,6 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
 
         output_notifier = OutputNotifier()
 
-        async def on_stdout(stdout: str) -> None:
-            for line in stdout.splitlines():
-                output_notifier.handle_output(line)
-
         sender_start_event = asyncio.Event()
 
         output_notifier.notify_output(
@@ -561,7 +559,10 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
         ])
 
         await exit_stack.enter_async_context(
-            proc.run(stdout_callback=on_stdout, stderr_callback=on_stdout)
+            proc.run(
+                stdout_callback=output_notifier.handle_output,
+                stderr_callback=output_notifier.handle_output,
+            )
         )
 
         await sender_start_event.wait()

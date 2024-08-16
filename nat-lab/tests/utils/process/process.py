@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
-from typing import List, Optional, Callable, Awaitable, AsyncIterator
+from typing import List, Optional, Callable, Awaitable, AsyncIterator, Any
 
-StreamCallback = Callable[[str], Awaitable[None]]
+StreamCallback = Callable[[str], Awaitable[Any]]
 
 
 class ProcessExecError(Exception):

@@ -64,9 +64,9 @@ class IperfServer:
         await event.wait()
 
     async def on_stdout(self, stdout: str) -> None:
+        await self._output_notifier.handle_output(stdout)
         self._stdout += stdout
         for line in stdout.splitlines():
-            self._output_notifier.handle_output(line)
             if self._verbose:
                 print(f"[{self._log_prefix}] - Server: {line}")
 
@@ -157,7 +157,7 @@ class IperfClient:
         return int(match.group(1))
 
     async def on_stdout(self, stdout: str) -> None:
-        self._output_notifier.handle_output(stdout)
+        await self._output_notifier.handle_output(stdout)
         self._stdout += stdout
         for line in stdout.splitlines():
             if self._verbose:
