@@ -106,7 +106,7 @@ async def test_connect_different_telio_version_through_relay(
 
         async def on_stdout_stderr(output):
             print(f"[{beta.name}]: stdout: {output}")
-            output_notifier.handle_output(output)
+            await output_notifier.handle_output(output)
 
         beta_router = new_router(beta_conn, beta.ip_stack)
         beta_client_v3_6 = await exit_stack.enter_async_context(

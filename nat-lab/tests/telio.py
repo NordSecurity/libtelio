@@ -215,10 +215,10 @@ class Runtime:
         self._stopped_tasks = []
         self.allowed_pub_keys = set()
 
-    def handle_output_line(self, line) -> bool:
+    async def handle_output_line(self, line) -> bool:
         return (
             self._handle_node_event(line)
-            or self._output_notifier.handle_output(line)
+            or await self._output_notifier.handle_output(line)
             or self._handle_derp_event(line)
             or self._handle_task_information(line)
             or self._handle_error_event(line)
@@ -541,13 +541,13 @@ class Client:
                 if not any(string in line for string in supress_print_list):
                     print(f"[{self._node.name}]: stdout: {line}")
                 if self._runtime:
-                    self._runtime.handle_output_line(line)
+                    await self._runtime.handle_output_line(line)
 
-        async def on_stderr(stdout: str) -> None:
-            for line in stdout.splitlines():
+        async def on_stderr(stderr: str) -> None:
+            for line in stderr.splitlines():
                 print(f"[{self._node.name}]: stderr: {line}")
                 if self._runtime:
-                    self._runtime.handle_output_line(line)
+                    await self._runtime.handle_output_line(line)
 
         self._runtime = Runtime()
         self._events = Events(self._runtime)
@@ -1013,7 +1013,7 @@ class Client:
                 while event:
                     if self._runtime:
                         print(f"[{self._node.name}]: event [{datetime.now()}]: {event}")
-                        self._runtime.handle_output_line(event)
+                        await self._runtime.handle_output_line(event)
                         event = self.get_proxy().next_event()
                 await asyncio.sleep(1)
             except:

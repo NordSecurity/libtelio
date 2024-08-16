@@ -6,11 +6,11 @@ from typing import List, Dict, Set, Iterator
 class OutputCapture:
     def __init__(self, what: str) -> None:
         self.what: str = what
-        self.lines: List[str] = []
+        self.matches: List[str] = []
 
-    def handle_output(self, line: str) -> None:
-        if self.what in line:
-            self.lines.append(line)
+    def handle_output(self, output: str) -> None:
+        if self.what in output:
+            self.matches.append(output)
 
 
 class OutputNotifier:
@@ -37,12 +37,12 @@ class OutputNotifier:
         finally:
             self._captures.remove(capture)
 
-    def handle_output(self, line) -> bool:
+    async def handle_output(self, output: str) -> bool:
         if not self._case_sensitive:
-            line = line.lower()
+            output = output.lower()
 
         hit_list: Set[str] = set(
-            filter(lambda what: what in line, self._output_events.keys())
+            filter(lambda what: what in output, self._output_events.keys())
         )
 
         for what in hit_list:
@@ -51,6 +51,6 @@ class OutputNotifier:
                 event.set()
 
         for capture in self._captures:
-            capture.handle_output(line)
+            capture.handle_output(output)
 
         return len(hit_list) > 0

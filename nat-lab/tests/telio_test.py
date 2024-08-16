@@ -38,11 +38,11 @@ class TestRuntime:
         ]) as future_list:
             await asyncio.sleep(0)
 
-            assert runtime.handle_output_line("- started telio...")
-            assert not runtime.handle_output_line("- started telio...")
+            assert await runtime.handle_output_line("- started telio...")
+            assert not await runtime.handle_output_line("- started telio...")
 
-            assert runtime.handle_output_line("natlab injected")
-            assert not runtime.handle_output_line("natlab injected")
+            assert await runtime.handle_output_line("natlab injected")
+            assert not await runtime.handle_output_line("natlab injected")
 
             for future in future_list:
                 await future
@@ -147,7 +147,7 @@ class TestRuntime:
     async def test_handle_derp_event(self) -> None:
         runtime = Runtime()
 
-        assert runtime.handle_output_line(
+        assert await runtime.handle_output_line(
             '{"type":"relay","body":{"region_code":"test","name":"test","hostname"'
             + ':"test","ipv4":"1.1.1.1","relay_port":1111,"stun_port":1111,'
             + '"stun_plaintext_port":1111,"public_key":"test","weight":1,'
@@ -161,7 +161,7 @@ class TestRuntime:
         runtime = Runtime()
         runtime.allowed_pub_keys = set(["AAA"])
 
-        assert runtime.handle_output_line(
+        assert await runtime.handle_output_line(
             '{"type":"node","body":'
             + '{"identifier":"tcli","public_key":"AAA","state":"connected","is_exit":true,'
             + '"is_vpn":true,"ip_addresses":[],"allowed_ips":[],"endpoint":null,"hostname":null,'
