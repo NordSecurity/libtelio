@@ -409,23 +409,52 @@ pub struct FeaturePmtuDiscovery {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::from_str;
-
     use super::*;
+
+    macro_rules! assert_json {
+        ($json_str:expr, $expected:expr, $access_expr:ident . $($access_rest:tt)* ) => {
+            {
+                assert_json!(Features, $json_str, $expected, $access_expr.$($access_rest)*);
+            }
+        };
+        ($json_str:expr, $expected:expr, $access_expr:ident ) => {
+            {
+                assert_json!(Features, $json_str, $expected, $access_expr);
+            }
+        };
+        ($t:ty, $json_str:expr, $expected:expr, $access_expr:ident . $($access_rest:tt)* ) => {
+            {
+                let parsed: $t = serde_json::from_str($json_str).expect("Failed to parse JSON");
+                assert_eq!(parsed.$access_expr.$($access_rest)*, $expected);
+            }
+        };
+        ($t:ty, $json_str:expr, $expected:expr, $access_expr:ident ) => {
+            {
+                let parsed: $t = serde_json::from_str($json_str).expect("Failed to parse JSON");
+                assert_eq!(parsed.$access_expr, $expected);
+            }
+        };
+        ($t:ty, $json_str:expr, $expected:expr) => {
+            {
+                let parsed: $t = serde_json::from_str($json_str).expect("Failed to parse JSON");
+                assert_eq!(parsed, $expected);
+            }
+        };
+    }
 
     mod deserialization {
         use super::*;
 
         #[test]
         fn test_empty_json() {
-            let json = "{}";
-            let features = from_str::<Features>(json).unwrap();
-            assert_eq!(features, Features::default());
+            assert_json!(Features, "{}", Features::default());
         }
 
         #[test]
         fn test_all_fields_with_non_default_values() {
-            let json = r#"
+            assert_json!(
+                Features,
+                r#"
         {
             "wireguard": {
                 "persistent_keepalive": {
@@ -507,271 +536,245 @@ mod tests {
                 "direct_connection_threshold": 60
             }
         }
-        "#;
-            let actual = from_str::<Features>(json).unwrap();
-
-            let mut endpoint_providers = HashSet::new();
-            endpoint_providers.insert(EndpointProvider::Local);
-            let expected = Features {
-                wireguard: FeatureWireguard {
-                    persistent_keepalive: FeaturePersistentKeepalive {
-                        vpn: Some(1),
-                        direct: 2,
-                        proxying: Some(3),
-                        stun: Some(4),
+        "#,
+                Features {
+                    wireguard: FeatureWireguard {
+                        persistent_keepalive: FeaturePersistentKeepalive {
+                            vpn: Some(1),
+                            direct: 2,
+                            proxying: Some(3),
+                            stun: Some(4),
+                        },
                     },
-                },
-                nurse: Some(FeatureNurse {
-                    heartbeat_interval: 5,
-                    initial_heartbeat_interval: 6,
-                    qos: Some(FeatureQoS {
-                        rtt_interval: 7,
-                        rtt_tries: 8,
-                        rtt_types: vec![RttType::Ping],
-                        buckets: 9,
+                    nurse: Some(FeatureNurse {
+                        heartbeat_interval: 5,
+                        initial_heartbeat_interval: 6,
+                        qos: Some(FeatureQoS {
+                            rtt_interval: 7,
+                            rtt_tries: 8,
+                            rtt_types: vec![RttType::Ping],
+                            buckets: 9,
+                        }),
+                        enable_nat_type_collection: true,
+                        enable_relay_conn_data: false,
+                        enable_nat_traversal_conn_data: false,
+                        state_duration_cap: 10,
                     }),
-                    enable_nat_type_collection: true,
-                    enable_relay_conn_data: false,
-                    enable_nat_traversal_conn_data: false,
-                    state_duration_cap: 10,
-                }),
-                lana: Some(FeatureLana {
-                    event_path: "some/test/path.db".to_owned(),
-                    prod: true,
-                }),
-                paths: Some(FeaturePaths {
-                    priority: vec![PathType::Direct],
-                    force: Some(PathType::Relay),
-                }),
-                direct: Some(FeatureDirect {
-                    providers: Some(endpoint_providers),
-                    endpoint_interval_secs: 11,
-                    skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
-                        no_rx_threshold_secs: 12,
+                    lana: Some(FeatureLana {
+                        event_path: "some/test/path.db".to_owned(),
+                        prod: true,
                     }),
-                    endpoint_providers_optimization: Some(FeatureEndpointProvidersOptimization {
-                        optimize_direct_upgrade_stun: false,
-                        optimize_direct_upgrade_upnp: false,
+                    paths: Some(FeaturePaths {
+                        priority: vec![PathType::Direct],
+                        force: Some(PathType::Relay),
                     }),
-                }),
-                is_test_env: Some(true),
-                hide_ips: false,
-                derp: Some(FeatureDerp {
-                    tcp_keepalive: Some(13),
-                    derp_keepalive: Some(14),
-                    enable_polling: Some(true),
-                    use_built_in_root_certificates: true,
-                }),
-                validate_keys: FeatureValidateKeys(false),
-                ipv6: true,
-                nicknames: true,
-                firewall: FeatureFirewall {
-                    boringtun_reset_conns: true,
-                },
-                flush_events_on_stop_timeout_seconds: Some(15),
-                post_quantum_vpn: FeaturePostQuantumVPN {
-                    handshake_retry_interval_s: 15,
-                    rekey_interval_s: 16,
-                },
-                link_detection: Some(FeatureLinkDetection {
-                    rtt_seconds: 17,
-                    no_of_pings: 18,
-                    use_for_downgrade: true,
-                }),
-                dns: FeatureDns {
-                    ttl_value: TtlValue(19),
-                    exit_dns: Some(FeatureExitDns {
-                        auto_switch_dns_ips: Some(true),
+                    direct: Some(FeatureDirect {
+                        providers: Some([EndpointProvider::Local].iter().copied().collect()),
+                        endpoint_interval_secs: 11,
+                        skip_unresponsive_peers: Some(FeatureSkipUnresponsivePeers {
+                            no_rx_threshold_secs: 12,
+                        }),
+                        endpoint_providers_optimization: Some(
+                            FeatureEndpointProvidersOptimization {
+                                optimize_direct_upgrade_stun: false,
+                                optimize_direct_upgrade_upnp: false,
+                            }
+                        ),
                     }),
-                },
-                pmtu_discovery: Some(FeaturePmtuDiscovery {
-                    response_wait_timeout_s: 20,
-                }),
-                multicast: true,
-                batching: Some(FeatureBatching {
-                    direct_connection_threshold: 60,
-                }),
-            };
-
-            assert_eq!(actual, expected);
+                    is_test_env: Some(true),
+                    hide_ips: false,
+                    derp: Some(FeatureDerp {
+                        tcp_keepalive: Some(13),
+                        derp_keepalive: Some(14),
+                        enable_polling: Some(true),
+                        use_built_in_root_certificates: true,
+                    }),
+                    validate_keys: FeatureValidateKeys(false),
+                    ipv6: true,
+                    nicknames: true,
+                    firewall: FeatureFirewall {
+                        boringtun_reset_conns: true,
+                    },
+                    flush_events_on_stop_timeout_seconds: Some(15),
+                    post_quantum_vpn: FeaturePostQuantumVPN {
+                        handshake_retry_interval_s: 15,
+                        rekey_interval_s: 16,
+                    },
+                    link_detection: Some(FeatureLinkDetection {
+                        rtt_seconds: 17,
+                        no_of_pings: 18,
+                        use_for_downgrade: true,
+                    }),
+                    dns: FeatureDns {
+                        ttl_value: TtlValue(19),
+                        exit_dns: Some(FeatureExitDns {
+                            auto_switch_dns_ips: Some(true),
+                        }),
+                    },
+                    pmtu_discovery: Some(FeaturePmtuDiscovery {
+                        response_wait_timeout_s: 20,
+                    }),
+                    multicast: true,
+                    batching: Some(FeatureBatching {
+                        direct_connection_threshold: 60,
+                    }),
+                }
+            );
         }
 
         #[test]
         fn test_empty_wireguard() {
-            let json = r#"{"wireguard": {}}"#;
-            let actual = from_str::<Features>(json).unwrap().wireguard;
-            let expected = FeatureWireguard::default();
-            assert_eq!(actual, expected);
+            assert_json!(
+                r#"{"wireguard": {}}"#,
+                FeatureWireguard::default(),
+                wireguard
+            );
         }
 
         #[test]
         fn test_empty_wireguard_persistent_keepalive() {
-            let json = r#"{"wireguard": {"persistent_keepalive": {}}}"#;
-            let actual = from_str::<Features>(json)
-                .unwrap()
-                .wireguard
-                .persistent_keepalive;
-            let expected = FeaturePersistentKeepalive::default();
-            assert_eq!(actual, expected);
+            assert_json!(
+                r#"{"wireguard": {"persistent_keepalive": {}}}"#,
+                FeaturePersistentKeepalive::default(),
+                wireguard.persistent_keepalive
+            );
         }
 
         #[test]
         fn test_empty_nurse() {
-            let json = r#"{"nurse": {"fingerprint": ""}}"#;
-            let actual = from_str::<Features>(json).unwrap().nurse.unwrap();
-            let expected = FeatureNurse::default();
-            assert_eq!(actual, expected);
+            assert_json!(
+                r#"{"nurse": {"fingerprint": ""}}"#,
+                FeatureNurse::default(),
+                nurse.unwrap()
+            );
         }
 
         #[test]
         fn test_empty_nurse_qos() {
-            let json = r#"{"nurse": {"fingerprint": "", "qos": {}}}"#;
-            let actual = from_str::<Features>(json)
-                .unwrap()
-                .nurse
-                .unwrap()
-                .qos
-                .unwrap();
-            let expected = FeatureQoS::default();
-            assert_eq!(actual, expected);
+            assert_json!(
+                r#"{"nurse": {"fingerprint": "", "qos": {}}}"#,
+                FeatureQoS::default(),
+                nurse.unwrap().qos.unwrap()
+            );
         }
 
         #[test]
         fn test_empty_paths() {
-            let json = r#"{"paths": {"priority": []}}"#;
-            let actual = from_str::<Features>(json).unwrap().paths.unwrap();
-            let expected = FeaturePaths::default();
-            assert_eq!(actual, expected);
+            assert_json!(
+                r#"{"paths": {"priority": []}}"#,
+                FeaturePaths::default(),
+                paths.unwrap()
+            );
         }
 
         #[test]
         fn test_empty_direct() {
-            let json = r#"{"direct": {}}"#;
-            let actual = from_str::<Features>(json).unwrap().direct.unwrap();
-            let expected = FeatureDirect::default();
-            assert_eq!(actual, expected);
+            assert_json!(
+                r#"{"direct": {}}"#,
+                FeatureDirect::default(),
+                direct.unwrap()
+            );
         }
 
         #[test]
         fn test_empty_direct_skip_unresponsive_peers() {
-            let json = r#"{"direct": {"skip_unresponsive_peers": {}}}"#;
-            let actual = from_str::<Features>(json)
-                .unwrap()
-                .direct
-                .unwrap()
-                .skip_unresponsive_peers
-                .unwrap();
-            let expected = FeatureSkipUnresponsivePeers::default();
-            assert_eq!(actual, expected);
+            assert_json!(
+                r#"{"direct": {"skip_unresponsive_peers": {}}}"#,
+                FeatureSkipUnresponsivePeers::default(),
+                direct.unwrap().skip_unresponsive_peers.unwrap()
+            );
         }
 
         #[test]
         fn test_empty_direct_endpoint_providers_optimization() {
-            let json = r#"{"direct": {"endpoint_providers_optimization": {}}}"#;
-            let actual = from_str::<Features>(json)
-                .unwrap()
-                .direct
-                .unwrap()
-                .endpoint_providers_optimization
-                .unwrap();
-            let expected = FeatureEndpointProvidersOptimization::default();
-            assert_eq!(actual, expected);
+            assert_json!(
+                r#"{"direct": {"endpoint_providers_optimization": {}}}"#,
+                FeatureEndpointProvidersOptimization::default(),
+                direct.unwrap().endpoint_providers_optimization.unwrap()
+            );
         }
 
         #[test]
         fn test_empty_derp() {
-            let json = r#"{"derp": {}}"#;
-            let actual = from_str::<Features>(json).unwrap().derp.unwrap();
-            let expected = FeatureDerp::default();
-            assert_eq!(actual, expected);
+            assert_json!(r#"{"derp": {}}"#, FeatureDerp::default(), derp.unwrap());
         }
 
         #[test]
         fn test_empty_firewall() {
-            let json = r#"{"firewall": {}}"#;
-            let actual = from_str::<Features>(json).unwrap().firewall;
-            let expected = FeatureFirewall::default();
-            assert_eq!(actual, expected);
+            assert_json!(r#"{"firewall": {}}"#, FeatureFirewall::default(), firewall);
         }
 
         #[test]
         fn test_empty_post_quantum_vpn() {
-            let json = r#"{"post_quantum_vpn": {}}"#;
-            let actual = from_str::<Features>(json).unwrap().post_quantum_vpn;
-            let expected = FeaturePostQuantumVPN::default();
-            assert_eq!(actual, expected);
+            assert_json!(
+                r#"{"post_quantum_vpn": {}}"#,
+                FeaturePostQuantumVPN::default(),
+                post_quantum_vpn
+            );
         }
 
         #[test]
         fn test_empty_link_detection() {
-            let json = r#"{"link_detection": {}}"#;
-            let actual = from_str::<Features>(json).unwrap().link_detection.unwrap();
-            let expected = FeatureLinkDetection::default();
-            assert_eq!(actual, expected);
+            assert_json!(
+                r#"{"link_detection": {}}"#,
+                FeatureLinkDetection::default(),
+                link_detection.unwrap()
+            );
         }
 
         #[test]
         fn test_empty_dns() {
-            let json = r#"{"dns": {}}"#;
-            let actual = from_str::<Features>(json).unwrap().dns;
-            let expected = FeatureDns::default();
-            assert_eq!(actual, expected);
+            assert_json!(r#"{"dns": {}}"#, FeatureDns::default(), dns);
         }
 
         #[test]
         fn test_empty_dns_exit_dns() {
-            let json = r#"{"dns": {"exit_dns": {}}}"#;
-            let actual = from_str::<Features>(json).unwrap().dns.exit_dns.unwrap();
-            let expected = FeatureExitDns::default();
-            assert_eq!(actual, expected);
+            assert_json!(
+                r#"{"dns": {"exit_dns": {}}}"#,
+                FeatureExitDns::default(),
+                dns.exit_dns.unwrap()
+            );
         }
 
         #[test]
         fn test_empty_pmtu_discovery() {
-            let json = r#"{"pmtu_discovery": {}}"#;
-            let actual = from_str::<Features>(json).unwrap().pmtu_discovery.unwrap();
-            let expected = FeaturePmtuDiscovery::default();
-            assert_eq!(actual, expected);
+            assert_json!(
+                r#"{"pmtu_discovery": {}}"#,
+                FeaturePmtuDiscovery::default(),
+                pmtu_discovery.unwrap()
+            );
         }
 
         #[test]
         fn test_json_direct_accepts_arbitrary_providers() {
-            let json = r#"{"providers": ["local", "stun", "stun", "stun", "other", "none"]}"#;
-
-            let actual = from_str::<FeatureDirect>(json).unwrap();
-            let expected = FeatureDirect {
-                providers: Some(
-                    vec![EndpointProvider::Local, EndpointProvider::Stun]
-                        .into_iter()
-                        .collect(),
-                ),
-                ..Default::default()
-            };
-
-            assert_eq!(actual, expected);
+            assert_json!(
+                FeatureDirect,
+                r#"{"providers": ["local", "stun", "stun", "stun", "other", "none"]}"#,
+                FeatureDirect {
+                    providers: Some(
+                        vec![EndpointProvider::Local, EndpointProvider::Stun]
+                            .into_iter()
+                            .collect(),
+                    ),
+                    ..Default::default()
+                }
+            );
         }
 
         #[test]
         fn test_json_allow_null_for_wireguard() {
-            let json = r#"{"wireguard": null}"#;
-            let actual = from_str::<Features>(json).unwrap().wireguard;
-            let expected = FeatureWireguard::default();
-            assert_eq!(actual, expected);
+            assert_json!(
+                r#"{"wireguard": null}"#,
+                FeatureWireguard::default(),
+                wireguard
+            );
         }
 
         #[test]
         fn test_hide_ips() {
-            let json = r#"{}"#;
-            let actual = from_str::<Features>(json).unwrap();
-            assert_eq!(actual.hide_ips, true);
-
-            let json = r#"{"hide_ips": false}"#;
-            let actual = from_str::<Features>(json).unwrap();
-            assert_eq!(actual.hide_ips, false);
-
-            let json = r#"{"hide_ips": true}"#;
-            let actual = from_str::<Features>(json).unwrap();
-            assert_eq!(actual.hide_ips, true);
+            assert_json!(r#"{}"#, true, hide_ips);
+            assert_json!(r#"{"hide_ips": false}"#, false, hide_ips);
+            assert_json!(r#"{"hide_ips": true}"#, true, hide_ips);
         }
     }
 
