@@ -296,7 +296,7 @@ async def setup_environment(
         print(datetime.now(), "Checking connection limits")
         for conn_manager in connection_managers:
             if conn_manager.tracker:
-                limits = conn_manager.tracker.get_out_of_limits()
+                limits = await conn_manager.tracker.get_out_of_limits()
                 assert limits is None, f"conntracker reported out of limits {limits}"
     finally:
         stop_tcpdump([server["container"] for server in WG_SERVERS])

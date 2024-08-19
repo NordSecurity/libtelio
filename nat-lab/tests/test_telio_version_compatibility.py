@@ -138,5 +138,5 @@ async def test_connect_different_telio_version_through_relay(
             testing.unpack_optional(beta.get_ip_address(IPProto.IPv4)),
         )
 
-        assert alpha_conn_tracker.get_out_of_limits() is None
-        assert beta_conn_tracker.get_out_of_limits() is None
+        assert await alpha_conn_tracker.get_out_of_limits() is None
+        assert await beta_conn_tracker.get_out_of_limits() is None

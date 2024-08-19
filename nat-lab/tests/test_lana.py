@@ -403,9 +403,9 @@ async def run_default_scenario(
     )
     assert gamma_events
 
-    assert alpha_conn_tracker.get_out_of_limits() is None
-    assert beta_conn_tracker.get_out_of_limits() is None
-    assert gamma_conn_tracker.get_out_of_limits() is None
+    assert await alpha_conn_tracker.get_out_of_limits() is None
+    assert await beta_conn_tracker.get_out_of_limits() is None
+    assert await gamma_conn_tracker.get_out_of_limits() is None
 
     (alpha_expected_states, beta_expected_states, gamma_expected_states) = (
         [
@@ -1420,8 +1420,8 @@ async def test_lana_with_meshnet_exit_node(
         # Validate all nodes have the same meshnet id
         assert alpha_events[0].fp == beta_events[0].fp
 
-        assert alpha_conn_tracker.get_out_of_limits() is None
-        assert beta_conn_tracker.get_out_of_limits() is None
+        assert await alpha_conn_tracker.get_out_of_limits() is None
+        assert await beta_conn_tracker.get_out_of_limits() is None
 
         # LLT-5532: To be cleaned up...
         client_alpha.allow_errors(
@@ -1823,8 +1823,8 @@ async def test_lana_with_disconnected_node(
             == beta_events[0].fp
             == beta_events[1].fp
         )
-        assert alpha_conn_tracker.get_out_of_limits() is None
-        assert beta_conn_tracker.get_out_of_limits() is None
+        assert await alpha_conn_tracker.get_out_of_limits() is None
+        assert await beta_conn_tracker.get_out_of_limits() is None
 
 
 @pytest.mark.moose
@@ -1918,8 +1918,8 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
         else:
             assert False, "[PANIC] Public keys match!"
 
-        assert alpha_conn_tracker.get_out_of_limits() is None
-        assert beta_conn_tracker.get_out_of_limits() is None
+        assert await alpha_conn_tracker.get_out_of_limits() is None
+        assert await beta_conn_tracker.get_out_of_limits() is None
 
         # LLT-5532: To be cleaned up...
         client_alpha.allow_errors(

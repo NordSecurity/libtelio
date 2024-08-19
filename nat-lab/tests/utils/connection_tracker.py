@@ -1,10 +1,13 @@
 import asyncio
 import platform
 import re
+import threading
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
+from threading import Lock
 from typing import Optional, List, Dict, AsyncIterator
 from utils.connection import Connection
 from utils.ping import Ping
@@ -80,6 +83,13 @@ def parse_input(input_string) -> FiveTuple:
     return five_tuple
 
 
+class SynchronizeState(Enum):
+    NOT_SYNCHRONIZED = 0
+    WAITING_TO_SYNCHRONIZE = 1
+    RECEIVED_SYNC_PING = 2
+    SYNCHRONIZED = 3
+
+
 class ConnectionTracker:
     def __init__(
         self,
@@ -92,8 +102,10 @@ class ConnectionTracker:
         self._connection: Connection = connection
         self._config: Optional[List[ConnectionTrackerConfig]] = configuration
         self._events: List[FiveTuple] = []
+        self._lock: Lock = threading.Lock()
 
         self._initialized: bool = False
+        self._synchronize: SynchronizeState = SynchronizeState.NOT_SYNCHRONIZED
         self._init_connection: FiveTuple = FiveTuple(
             protocol="icmp", dst_ip="127.0.0.1"
         )
@@ -102,23 +114,33 @@ class ConnectionTracker:
         if not self._config:
             return
 
-        for line in stdout.splitlines():
-            connection = parse_input(line)
-            if connection is FiveTuple():
-                continue
-
-            if not self._initialized:
-                if self._init_connection.partial_eq(connection):
-                    self._initialized = True
+        with self._lock:
+            for line in stdout.splitlines():
+                connection = parse_input(line)
+                if connection is FiveTuple():
                     continue
 
-            matching_configs = [
-                cfg for cfg in self._config if cfg.target.partial_eq(connection)
-            ]
-            if not matching_configs:
-                continue
+                if not self._initialized:
+                    if self._init_connection.partial_eq(connection):
+                        self._initialized = True
+                        continue
 
-            self._events.append(connection)
+                if self._synchronize == SynchronizeState.WAITING_TO_SYNCHRONIZE:
+                    if self._init_connection.partial_eq(connection):
+                        self._synchronize = SynchronizeState.RECEIVED_SYNC_PING
+                        continue
+
+                matching_configs = [
+                    cfg for cfg in self._config if cfg.target.partial_eq(connection)
+                ]
+                if not matching_configs:
+                    continue
+
+                self._events.append(connection)
+
+            # we received the sync ping
+            if self._synchronize == SynchronizeState.RECEIVED_SYNC_PING:
+                self._synchronize = SynchronizeState.SYNCHRONIZED
 
     async def execute(self) -> None:
         if platform.system() == "Darwin":
@@ -128,28 +150,64 @@ class ConnectionTracker:
 
         await self._process.execute(stdout_callback=self.on_stdout)
 
-    def get_out_of_limits(self) -> Optional[Dict[str, int]]:
+    async def get_out_of_limits(self) -> Optional[Dict[str, int]]:
         if platform.system() == "Darwin":
             return None
         if not self._config:
             return None
 
+        await self.synchronize()
+
         out_of_limit_connections: Dict[str, int] = {}
 
-        for cfg in self._config:
-            count = len(
-                [event for event in self._events if cfg.target.partial_eq(event)]
-            )
-            if cfg.limits.max is not None:
-                if count > cfg.limits.max:
-                    out_of_limit_connections[cfg.key] = count
-                    continue
-            if cfg.limits.min is not None:
-                if count < cfg.limits.min:
-                    out_of_limit_connections[cfg.key] = count
-                    continue
+        with self._lock:
+            for cfg in self._config:
+                count = len(
+                    [event for event in self._events if cfg.target.partial_eq(event)]
+                )
+                if cfg.limits.max is not None:
+                    if count > cfg.limits.max:
+                        out_of_limit_connections[cfg.key] = count
+                        print(
+                            datetime.now(),
+                            "ConnectionTracker for",
+                            cfg.target.src_ip,
+                            cfg.key,
+                            "is over the limit:",
+                            count,
+                            ">",
+                            cfg.limits.max,
+                        )
+                        continue
+                if cfg.limits.min is not None:
+                    if count < cfg.limits.min:
+                        out_of_limit_connections[cfg.key] = count
+                        print(
+                            datetime.now(),
+                            "ConnectionTracker for",
+                            cfg.target.src_ip,
+                            cfg.key,
+                            "is under the limit:",
+                            count,
+                            "<",
+                            cfg.limits.min,
+                        )
+                        continue
 
         return out_of_limit_connections if bool(out_of_limit_connections) else None
+
+    async def synchronize(self):
+        self._synchronize = SynchronizeState.WAITING_TO_SYNCHRONIZE
+        # We wait to synchronize over a known event, or at least
+        # wait for a second to make sure all events are parsed.
+        async with Ping(self._connection, "127.0.0.1").run():
+            start_time = time.time()
+            while not self._synchronize == SynchronizeState.SYNCHRONIZED:
+                if time.time() - start_time >= 1:
+                    print(datetime.now(), "ConnectionTracker synchronize timeout.")
+                    break
+                await asyncio.sleep(0.1)
+            self._synchronize = SynchronizeState.NOT_SYNCHRONIZED
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator["ConnectionTracker"]:
