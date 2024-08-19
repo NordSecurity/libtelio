@@ -12,6 +12,7 @@ from utils.bindings import (
     TelioAdapterType,
     NodeState,
     RelayState,
+    Config,
 )
 from utils.connection_util import (
     ConnectionTag,
@@ -33,6 +34,30 @@ UHP_conn_client_types = [
         TelioAdapterType.BORING_TUN,
     ),
 ]
+
+
+def serialize_config(cfg: Config) -> str:
+    cfg_dict = cfg.this.__dict__
+
+    peers = []
+    if cfg.peers is not None:
+        for peer in cfg.peers:
+            peer_dict = {**peer.__dict__, **peer.base.__dict__}
+            del peer_dict["base"]
+
+    derp = []
+    if cfg.derp_servers is not None:
+        for server in cfg.derp_servers:
+            derp_dict = server.__dict__
+            derp_dict["conn_state"] = derp_dict["conn_state"].name.lower()
+            derp.append(derp_dict)
+    
+    cfg_dict["peers"] = peers 
+    cfg_dict["derp_servers"] = derp
+
+    cfg_str = json.dumps(cfg_dict)
+    print(f"Serialized cfg {cfg_str}")
+    return cfg_str
 
 
 # NOTE: This test can only run on natlab linux containers or on linux
@@ -131,7 +156,7 @@ async def test_connect_different_telio_version_through_relay(
         await beta_client_v3_6.escape_and_write_stdin([
             "mesh",
             "config",
-            shlex.quote(json.dumps(api.get_meshnet_config(beta.id))),
+            shlex.quote(serialize_config(api.get_meshnet_config(beta.id))),
         ])
 
         await alpha_client.wait_for_state_on_any_derp([RelayState.CONNECTED])

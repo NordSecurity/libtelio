@@ -32,7 +32,7 @@ class NetworkSwitcherMac(NetworkSwitcher):
                 [
                     "route",
                     "add",
-                    str(derp.get("ipv4")) + "/32",
+                    str(derp.ipv4) + "/32",
                     LINUX_VM_PRIMARY_GATEWAY,
                 ],
             ).execute()
@@ -55,7 +55,7 @@ class NetworkSwitcherMac(NetworkSwitcher):
                 [
                     "route",
                     "add",
-                    str(derp.get("ipv4")) + "/32",
+                    str(derp.ipv4) + "/32",
                     LINUX_VM_SECONDARY_GATEWAY,
                 ],
             ).execute()
@@ -71,6 +71,6 @@ class NetworkSwitcherMac(NetworkSwitcher):
                 [
                     "route",
                     "delete",
-                    str(derp.get("ipv4")) + "/32",
+                    str(derp.ipv4) + "/32",
                 ],
             ).execute()
