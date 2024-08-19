@@ -314,7 +314,11 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
         alpha_client, beta_client = env.clients
 
         def get_provider_name(provider: EndpointProvider):
-            return "UPnP" if provider == EndpointProvider.UPNP else provider.value
+            if provider == EndpointProvider.UPNP:
+                return "UPnP"
+            if provider == EndpointProvider.LOCAL:
+                return "Local"
+            return "Stun"
 
         alpha_direct = alpha_client.get_features().direct
         # Asserts are here to silence mypy...
