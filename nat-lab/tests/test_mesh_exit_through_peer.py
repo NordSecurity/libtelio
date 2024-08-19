@@ -260,11 +260,11 @@ async def test_ipv6_exit_node(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            Client(connection_alpha, alpha, adapter_type).run(api.get_meshmap(alpha.id))
+            Client(connection_alpha, alpha, adapter_type).run(api.get_meshnet_config(alpha.id))
         )
 
         client_beta = await exit_stack.enter_async_context(
-            Client(connection_beta, beta).run(api.get_meshmap(beta.id))
+            Client(connection_beta, beta).run(api.get_meshnet_config(beta.id))
         )
 
         await asyncio.gather(

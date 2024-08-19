@@ -2,6 +2,7 @@ import mesh_api
 import platform
 import pytest
 from mesh_api import Node, API
+from utils.bindings import Config, Peer, PeerBase
 
 if platform.machine() != "x86_64":
     import pure_wg as Key
@@ -30,32 +31,32 @@ class TestNode:
         node.nickname = "ff"
         node.endpoints = ["ee"]
 
-        expected = {
-            "identifier": "aa",
-            "public_key": "bb",
-            "hostname": "cc",
-            "ip_addresses": ["dd"],
-            "nickname": "ff",
-            "endpoints": ["ee"],
-            "is_local": False,
-            "allow_connections": False,
-            "allow_incoming_connections": False,
-            "allow_peer_send_files": False,
-        }
+        expected = Peer(
+            base=PeerBase(
+                identifier="aa",
+                public_key="bb",
+                hostname="cc",
+                ip_addresses=["dd"],
+                nickname="ff"
+            ),
+            is_local=False,
+            allow_incoming_connections=False,
+            allow_peer_send_files=False,
+            allow_multicast=False,
+            peer_allows_multicast=False,
+        )
         assert expected == node.to_peer_config_for_node(node)
 
         node = Node()
         node.is_local = True
-        assert node.to_peer_config_for_node(node)["is_local"]
+        assert node.to_peer_config_for_node(node).is_local
 
         node = Node()
-        node.allow_connections = True
-        assert node.to_peer_config_for_node(node)["allow_connections"]
 
         node = Node()
         node.set_peer_firewall_settings(node.id, True)
-        assert node.to_peer_config_for_node(node)["allow_incoming_connections"]
-        assert not node.to_peer_config_for_node(node)["allow_peer_send_files"]
+        assert node.to_peer_config_for_node(node).allow_incoming_connections
+        assert not node.to_peer_config_for_node(node).allow_peer_send_files
 
 
 class TestMeshApi:
@@ -77,13 +78,13 @@ class TestMeshApi:
 
         assert e.value.node_id == "bb"
 
-    def test_get_meshmap_missing_node(self) -> None:
+    def test_get_meshnet_config_missing_node(self) -> None:
         api = API()
         with pytest.raises(mesh_api.MissingNodeError) as e:
-            api.get_meshmap(node_id="aa")
+            api.get_meshnet_config(node_id="aa")
         assert e.value.node_id == "aa"
 
-    def test_get_meshmap(self) -> None:
+    def test_get_meshnet_config(self) -> None:
         api = API()
 
         sk_alpha, pk_alpha = Key.key_pair()
@@ -103,27 +104,30 @@ class TestMeshApi:
             name="beta", node_id="id-beta", private_key="sk-beta", public_key="pk-beta"
         )
 
-        meshmap = api.get_meshmap("id-alpha")
+        meshnet_config = api.get_meshnet_config("id-alpha")
 
-        expected = {
-            "identifier": "id-alpha",
-            "public_key": pk_alpha,
-            "hostname": "aaa",
-            "ip_addresses": ["bbb"],
-            "nickname": "fff",
-            "endpoints": ["ccc"],
-            "peers": [beta.to_peer_config_for_node(alpha)],
-            "derp_servers": mesh_api.DERP_SERVERS,
-        }
-        assert meshmap == expected
+        expected = Config(
+            this=PeerBase(
+                identifier="id-alpha",
+                public_key=pk_alpha,
+                hostname="aaa",
+                ip_addresses=["bbb"],
+                nickname="fff",
+            ),
+            peers=[beta.to_peer_config_for_node(alpha)],
+            derp_servers=mesh_api.DERP_SERVERS,
+            dns=None,
+        )
 
-    def test_get_meshmap_derp_servers(self):
+        assert meshnet_config == expected
+
+    def test_get_meshnet_config_derp_servers(self):
         api = API()
         api.register(name="name", node_id="id", private_key="sk", public_key="pk")
 
         derp_servers = [{"aaa": "bbb"}]
-        meshmap = api.get_meshmap("id", derp_servers=derp_servers)
-        assert meshmap["derp_servers"] == derp_servers
+        meshnet_config = api.get_meshnet_config("id", derp_servers=derp_servers)
+        assert meshnet_config.derp_servers == derp_servers
 
     def test_assign_ip_collision(self):
         api = API()

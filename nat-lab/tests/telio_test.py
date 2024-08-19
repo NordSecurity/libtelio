@@ -9,6 +9,7 @@ from utils.bindings import (
     NodeState,
     Server,
     RelayState,
+    Event,
 )
 
 
@@ -164,12 +165,22 @@ class TestRuntime:
     async def test_handle_derp_event(self) -> None:
         runtime = Runtime()
 
-        assert await runtime.handle_output_line(
-            '{"type":"relay","body":{"region_code":"test","name":"test","hostname"'
-            + ':"test","ipv4":"1.1.1.1","relay_port":1111,"stun_port":1111,'
-            + '"stun_plaintext_port":1111,"public_key":"test","weight":1,'
-            + '"use_plain_text":true,"conn_state":"connected"}}'
+        derp = Server(
+            region_code="test",
+            name="test",
+            hostname="test",
+            ipv4="1.1.1.1",
+            relay_port=1111,
+            stun_port=1111,
+            stun_plaintext_port=1111,
+            public_key="test",
+            weight=1,
+            use_plain_text=True,
+            conn_state=RelayState.CONNECTED
         )
+        event = Event.RELAY(derp)
+
+        runtime.handle_event(event)
 
         await runtime.notify_derp_state("1.1.1.1", [RelayState.CONNECTED])
 
@@ -178,12 +189,23 @@ class TestRuntime:
         runtime = Runtime()
         runtime.allowed_pub_keys = set(["AAA"])
 
-        assert await runtime.handle_output_line(
-            '{"type":"node","body":'
-            + '{"identifier":"tcli","public_key":"AAA","state":"connected","is_exit":true,'
-            + '"is_vpn":true,"ip_addresses":[],"allowed_ips":[],"endpoint":null,"hostname":null,'
-            + '"allow_incoming_connections":false,"allow_peer_send_files":false,"path":"relay"}}'
+        node = telio_node(
+            identifier="tcli",
+            public_key="AAA",
+            state=NodeState.CONNECTED,
+            is_exit=True,
+            is_vpn=True,
+            ip_addresses=[],
+            allowed_ips=[],
+            endpoint=None,
+            hostname=None,
+            allow_incoming_connections=False,
+            allow_peer_send_files=False,
+            path=PathType.RELAY,
         )
+        event = Event.NODE(node)
+
+        runtime.handle_event(event)
 
         await runtime.notify_peer_state(
             "AAA", [NodeState.CONNECTED], [PathType.RELAY], is_exit=True, is_vpn=True

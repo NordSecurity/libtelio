@@ -101,7 +101,7 @@ async def test_connect_different_telio_version_through_relay(
                 alpha,
                 adapter_type,
                 telio_features=features_with_endpoint_providers(endpoint_providers),
-            ).run(api.get_meshmap(alpha.id))
+            ).run(api.get_meshnet_config(alpha.id))
         )
 
         output_notifier = OutputNotifier()
@@ -131,7 +131,7 @@ async def test_connect_different_telio_version_through_relay(
         await beta_client_v3_6.escape_and_write_stdin([
             "mesh",
             "config",
-            shlex.quote(json.dumps(api.get_meshmap(beta.id))),
+            shlex.quote(json.dumps(api.get_meshnet_config(beta.id))),
         ])
 
         await alpha_client.wait_for_state_on_any_derp([RelayState.CONNECTED])

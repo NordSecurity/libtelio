@@ -346,10 +346,10 @@ async def test_vpn_plus_mesh(
         ip = await stun.get(connection_alpha, config.STUN_SERVER)
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
-        await client_alpha.set_meshmap(api.get_meshmap(alpha.id))
+        await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
 
         client_beta = await exit_stack.enter_async_context(
-            Client(connection_beta, beta).run(api.get_meshmap(beta.id))
+            Client(connection_beta, beta).run(api.get_meshnet_config(beta.id))
         )
 
         await asyncio.gather(

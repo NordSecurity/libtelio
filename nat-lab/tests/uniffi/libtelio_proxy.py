@@ -5,7 +5,6 @@ from datetime import datetime
 from Pyro5.api import Proxy  # type: ignore
 from typing import Optional
 from uniffi.serialization import init_serialization  # type: ignore
-from uniffi.telio_bindings import Features, NatType
 
 init_serialization(libtelio)
 
@@ -19,7 +18,7 @@ class ProxyConnectionError(Exception):
 
 
 class LibtelioProxy:
-    def __init__(self, object_uri: str, features: Features):
+    def __init__(self, object_uri: str, features: libtelio.Features):
         self._uri = object_uri
         iterations = 20
         for i in range(0, iterations):
@@ -70,7 +69,7 @@ class LibtelioProxy:
                 raise Exception(err)
             return res
 
-    def _create(self, features: Features):
+    def _create(self, features: libtelio.Features):
         self.handle_remote_error(lambda r: r.create(features))
 
     def next_event(self) -> libtelio.Event:
@@ -109,7 +108,7 @@ class LibtelioProxy:
     def disable_magic_dns(self):
         self.handle_remote_error(lambda r: r.disable_magic_dns())
 
-    def set_meshnet(self, cfg: str):
+    def set_meshnet(self, cfg: libtelio.Config):
         self.handle_remote_error(lambda r: r.set_meshnet(cfg))
 
     def set_meshnet_off(self):
@@ -133,5 +132,5 @@ class LibtelioProxy:
     def probe_pmtu(self, host: str) -> int:
         return self.handle_remote_error(lambda r: r.probe_pmtu(host))
 
-    def get_nat(self, ip: str, port: int) -> NatType:
+    def get_nat(self, ip: str, port: int) -> libtelio.NatType:
         return self.handle_remote_error(lambda r: r.get_nat(ip, port))

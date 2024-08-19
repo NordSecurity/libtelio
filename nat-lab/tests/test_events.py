@@ -140,7 +140,7 @@ async def test_event_content_meshnet(
 
         api.remove(beta.id)
 
-        await client_alpha.set_meshmap(api.get_meshmap(alpha.id))
+        await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
 
         with pytest.raises(asyncio.TimeoutError):
             await ping(connection_alpha, beta.ip_addresses[0], 5)
@@ -579,7 +579,7 @@ async def test_event_content_meshnet_node_upgrade_direct(
                 telio_features=features_with_endpoint_providers(
                     [EndpointProvider.STUN]
                 ),
-            ).run(api.get_meshmap(beta.id))
+            ).run(api.get_meshnet_config(beta.id))
         )
 
         await client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED])

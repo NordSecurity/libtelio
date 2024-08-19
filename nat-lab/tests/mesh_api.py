@@ -8,6 +8,7 @@ from config import DERP_SERVERS, LIBTELIO_IPV6_WG_SUBNET, WG_SERVERS
 from datetime import datetime
 from ipaddress import ip_address
 from typing import Dict, Any, List, Tuple, Optional
+from utils.bindings import Config, Server, Peer, PeerBase, DnsConfig
 from utils.router import IPStack, IPProto, get_ip_address_type
 from utils.testing import test_name_safe_for_file_name
 
@@ -15,8 +16,6 @@ if platform.machine() != "x86_64":
     import pure_wg as Key
 else:
     from python_wireguard import Key  # type: ignore
-
-Meshmap = Dict[str, Any]
 
 GREEK_ALPHABET = [
     "alpha",
@@ -150,21 +149,23 @@ class Node:
 
         return None
 
-    def to_peer_config_for_node(self, node) -> Dict[str, Any]:
+    def to_peer_config_for_node(self, node) -> Peer:
         firewall_config = node.get_firewall_config(self.id)
 
-        return {
-            "identifier": self.id,
-            "public_key": self.public_key,
-            "hostname": self.hostname,
-            "ip_addresses": self.ip_addresses,
-            "nickname": self.nickname,
-            "endpoints": self.endpoints,
-            "is_local": node.is_local and self.is_local,
-            "allow_connections": self.allow_connections,
-            "allow_incoming_connections": firewall_config.allow_incoming_connections,
-            "allow_peer_send_files": firewall_config.allow_peer_send_files,
-        }
+        return Peer(
+            base=PeerBase(
+                identifier=self.id,
+                public_key=self.public_key,
+                hostname=self.hostname,
+                ip_addresses=self.ip_addresses,
+                nickname=self.nickname,
+            ),
+            is_local=node.is_local and self.is_local,
+            allow_incoming_connections=firewall_config.allow_incoming_connections,
+            allow_peer_send_files=firewall_config.allow_peer_send_files,
+            allow_multicast=False,
+            peer_allows_multicast=False,
+        )
 
     def set_peer_firewall_settings(
         self,
@@ -260,28 +261,27 @@ class API:
         node = self._get_node(node_id)
         node.nickname = None
 
-    def get_meshmap(
-        self, node_id: str, derp_servers: Optional[List[Dict[str, Any]]] = None
-    ) -> Meshmap:
+    def get_meshnet_config(
+        self, node_id: str, derp_servers: Optional[List[Server]] = None
+    ) -> Config:
         node = self._get_node(node_id)
 
-        peers: List[Dict[str, Any]] = []
-        for key, other_node in self.nodes.items():
-            if key != node_id:
-                peers.append(other_node.to_peer_config_for_node(node))
+        peers = [other_node.to_peer_config_for_node(node) for key, other_node in self.nodes.items() if key != node_id]
 
-        meshmap = {
-            "identifier": node.id,
-            "public_key": node.public_key,
-            "hostname": node.hostname,
-            "ip_addresses": node.ip_addresses,
-            "nickname": node.nickname,
-            "endpoints": node.endpoints,
-            "peers": peers,
-            "derp_servers": derp_servers if derp_servers is not None else DERP_SERVERS,
-        }
+        meshnet_config = Config(
+            this=PeerBase(
+                identifier=node.id,
+                public_key=node.public_key,
+                hostname=node.hostname,
+                ip_addresses=node.ip_addresses,
+                nickname=node.nickname,
+            ),
+            peers=peers,
+            derp_servers=derp_servers if derp_servers is not None else DERP_SERVERS,
+            dns=None,
+        )
 
-        return meshmap
+        return meshnet_config
 
     def default_config_one_node(
         self,

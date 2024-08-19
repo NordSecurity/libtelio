@@ -140,8 +140,7 @@ class LibtelioWrapper:
         self._libtelio.disable_magic_dns()
 
     @serialize_error
-    def set_meshnet(self, cfg: str):
-        cfg = libtelio.deserialize_meshnet_config(cfg)
+    def set_meshnet(self, cfg: libtelio.Config):
         self._libtelio.set_meshnet(cfg)
 
     @serialize_error

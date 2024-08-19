@@ -254,10 +254,10 @@ async def test_direct_failing_paths(setup_params: List[SetupParameters]) -> None
 
         for server in DERP_SERVERS:
             await exit_stack.enter_async_context(
-                alpha_client.get_router().break_tcp_conn_to_host(str(server["ipv4"]))
+                alpha_client.get_router().break_tcp_conn_to_host(str(server.ipv4))
             )
             await exit_stack.enter_async_context(
-                beta_client.get_router().break_tcp_conn_to_host(str(server["ipv4"]))
+                beta_client.get_router().break_tcp_conn_to_host(str(server.ipv4))
             )
 
         await asyncio.gather(
@@ -283,10 +283,10 @@ async def test_direct_working_paths(
 
         for server in DERP_SERVERS:
             await exit_stack.enter_async_context(
-                alpha_client.get_router().break_tcp_conn_to_host(str(server["ipv4"]))
+                alpha_client.get_router().break_tcp_conn_to_host(str(server.ipv4))
             )
             await exit_stack.enter_async_context(
-                beta_client.get_router().break_tcp_conn_to_host(str(server["ipv4"]))
+                beta_client.get_router().break_tcp_conn_to_host(str(server.ipv4))
             )
 
         await ping(alpha_connection, beta.ip_addresses[0])
@@ -455,10 +455,10 @@ async def test_direct_working_paths_stun_ipv6() -> None:
 
         for server in DERP_SERVERS:
             await exit_stack.enter_async_context(
-                alpha_client.get_router().break_tcp_conn_to_host(str(server["ipv4"]))
+                alpha_client.get_router().break_tcp_conn_to_host(str(server.ipv4))
             )
             await exit_stack.enter_async_context(
-                beta_client.get_router().break_tcp_conn_to_host(str(server["ipv4"]))
+                beta_client.get_router().break_tcp_conn_to_host(str(server.ipv4))
             )
 
         await ping(alpha_connection, beta.ip_addresses[0])
@@ -588,7 +588,7 @@ async def test_direct_working_paths_with_skip_unresponsive_peers(
         )
 
         await alpha_client.simple_start()
-        await alpha_client.set_meshmap(api.get_meshmap(alpha.id))
+        await alpha_client.set_meshnet_config(api.get_meshnet_config(alpha.id))
 
         await asyncio.gather(
             alpha_client.wait_for_state_peer(
@@ -652,12 +652,12 @@ async def test_direct_connection_endpoint_gone(
                 for derp in DERP_SERVERS:
                     await temp_exit_stack.enter_async_context(
                         alpha_client.get_router().break_tcp_conn_to_host(
-                            str(derp["ipv4"])
+                            str(derp.ipv4)
                         )
                     )
                     await temp_exit_stack.enter_async_context(
                         beta_client.get_router().break_tcp_conn_to_host(
-                            str(derp["ipv4"])
+                            str(derp.ipv4)
                         )
                     )
 
@@ -737,7 +737,7 @@ async def test_infinite_stun_loop(setup_params: List[SetupParameters]) -> None:
 
         for server in config.DERP_SERVERS:
             await exit_stack.enter_async_context(
-                alpha_client.get_router().break_udp_conn_to_host(str(server["ipv4"]))
+                alpha_client.get_router().break_udp_conn_to_host(str(server.ipv4))
             )
 
         # 3478 and 3479 are STUN ports in natlab containers
