@@ -1,9 +1,12 @@
 import Pyro5.errors  # type:ignore
 import time
+import uniffi.telio_bindings as libtelio
 from datetime import datetime
 from Pyro5.api import Proxy  # type: ignore
 from typing import Optional
-from uniffi.telio_bindings import NatType
+from uniffi.serialization import init_serialization  # type: ignore
+
+init_serialization(libtelio)
 
 
 class ProxyConnectionError(Exception):
@@ -129,5 +132,5 @@ class LibtelioProxy:
     def probe_pmtu(self, host: str) -> int:
         return self.handle_remote_error(lambda r: r.probe_pmtu(host))
 
-    def get_nat(self, ip: str, port: int) -> NatType:
+    def get_nat(self, ip: str, port: int) -> libtelio.NatType:
         return self.handle_remote_error(lambda r: r.get_nat(ip, port))

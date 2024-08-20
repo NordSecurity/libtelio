@@ -84,6 +84,11 @@ async def _copy_binaries(
             True,
         ),
         (f"{LOCAL_BIN_DIR}multicast.py", f"{VM_TCLI_DIR}multicast.py", True),
+        (
+            f"{LOCAL_UNIFFI_PATH}serialization.py",
+            f"{VM_UNIFFI_DIR}serialization.py",
+            True,
+        ),
     ]
     for src, dst, set_exec in files_to_copy:
         await asyncssh.scp(

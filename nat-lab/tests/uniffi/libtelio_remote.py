@@ -5,11 +5,16 @@ import Pyro5.api  # type: ignore
 import Pyro5.server  # type: ignore
 import sys
 import telio_bindings as libtelio  # type: ignore # pylint: disable=import-error
+from serialization import (  # type: ignore # pylint: disable=import-error
+    init_serialization,
+)
 from threading import Lock
 from typing import List
 
 REMOTE_LOG = "remote.log"
 TCLI_LOG = "tcli.log"
+
+init_serialization(libtelio)
 
 
 def serialize_error(f):

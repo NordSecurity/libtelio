@@ -134,6 +134,7 @@ async def _copy_binaries(
         (f"{DIST_DIR}*", VM_TCLI_DIR, False),
         (f"{LOCAL_UNIFFI_DIR}telio_bindings.py", VM_UNIFFI_DIR, False),
         (f"{LOCAL_UNIFFI_DIR}libtelio_remote.py", VM_UNIFFI_DIR, False),
+        (f"{LOCAL_UNIFFI_DIR}serialization.py", VM_UNIFFI_DIR, False),
         (f"{DIST_DIR}telio.dll", f"{VM_UNIFFI_DIR}", False),
         (f"{DIST_DIR}sqlite3.dll", VM_UNIFFI_DIR, True),
         (f"{DIST_DIR}wireguard.dll", VM_UNIFFI_DIR, False),
