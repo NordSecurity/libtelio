@@ -22,6 +22,7 @@ class SshProcess(Process):
         ssh_connection: asyncssh.SSHClientConnection,
         command: List[str],
         escape_argument: Callable[[str], str],
+        request_pty: bool | str,
     ) -> None:
         self._ssh_connection = ssh_connection
         self._command = command
@@ -33,6 +34,7 @@ class SshProcess(Process):
         self._escape_argument = escape_argument
         self._process = None
         self._running = False
+        self._request_pty = request_pty
 
     async def execute(
         self,
@@ -42,7 +44,9 @@ class SshProcess(Process):
         escaped = [self._escape_argument(arg) for arg in self._command]
         command_str = " ".join(escaped)
 
-        self._process = await self._ssh_connection.create_process(command_str)
+        self._process = await self._ssh_connection.create_process(
+            command_str, request_pty=self._request_pty
+        )
         self._running = True
         self._stdin = self._process.stdin
         self._stdin_ready.set()

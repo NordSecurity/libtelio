@@ -9,8 +9,6 @@ from utils.process import Process
 def _get_python(connection: Connection) -> str:
     if connection.target_os == TargetOS.Windows:
         return "python"
-    if connection.target_os == TargetOS.Mac:
-        return "/usr/local/bin/python3"
     return "python3"
 
 

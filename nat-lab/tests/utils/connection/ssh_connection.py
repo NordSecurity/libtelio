@@ -25,7 +25,13 @@ class SshConnection(Connection):
         else:
             assert False, f"not supported target_os '{self._target_os}'"
 
-        return SshProcess(self._connection, command, escape_argument)
+        request_pty: bool | str
+        if self._target_os == TargetOS.Mac:
+            request_pty = "force"
+        else:
+            request_pty = True
+
+        return SshProcess(self._connection, command, escape_argument, request_pty)
 
     async def get_ip_address(self) -> tuple[str, str]:
         ip = self._connection._host  # pylint: disable=protected-access

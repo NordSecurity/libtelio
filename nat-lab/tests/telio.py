@@ -567,16 +567,13 @@ class Client:
             python_cmd = "python3"
         uniffi_path = get_uniffi_path(self._connection)
 
-        if isinstance(self.get_router(), MacRouter):
-            self._process = self._connection.create_process(["/bin/sh"])
-        else:
-            self._process = self._connection.create_process([
-                python_cmd,
-                uniffi_path,
-                object_name,
-                container_ip,
-                container_port,
-            ])
+        self._process = self._connection.create_process([
+            python_cmd,
+            uniffi_path,
+            object_name,
+            container_ip,
+            container_port,
+        ])
 
         await self.clear_system_log()
 
@@ -585,18 +582,6 @@ class Client:
         ):
             try:
                 await self._process.wait_stdin_ready()
-
-                if isinstance(self.get_router(), MacRouter):
-                    await self._process.escape_and_write_stdin(
-                        ["source", "/etc/profile"]
-                    )
-                    await self._process.escape_and_write_stdin([
-                        python_cmd,
-                        uniffi_path,
-                        object_name,
-                        container_ip,
-                        container_port,
-                    ])
 
                 # There are two scenarios when it comes to what port is being used to connect to the Pyro5 remote.
                 # Scenario 1 - docker with mapped ports mapped ports:
