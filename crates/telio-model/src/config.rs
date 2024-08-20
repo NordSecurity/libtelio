@@ -29,7 +29,7 @@ pub struct PeerBase {
     /// Ip address of peer
     pub ip_addresses: Option<Vec<IpAddr>>,
     /// Nickname for the peer
-    pub nickname: Option<String>,
+    pub nickname: Option<Hidden<String>>,
 }
 
 /// Description of a peer
@@ -440,7 +440,7 @@ mod tests {
                     .unwrap(),
                 hostname: telio_utils::Hidden("everest-alice.nord".to_owned()),
                 ip_addresses: Some(vec!["198.51.100.42".parse().unwrap()]),
-                nickname: Some("bunnyg".to_owned()),
+                nickname: Some(telio_utils::Hidden("bunnyg".to_owned())),
             },
             peers: Some(vec![
                 Peer {
@@ -451,7 +451,7 @@ mod tests {
                             .unwrap(),
                         hostname: telio_utils::Hidden("everest-bob.nord".to_owned()),
                         ip_addresses: Some(vec!["198.51.100.43".parse().unwrap()]),
-                        nickname: Some("".to_owned()),
+                        nickname: Some(telio_utils::Hidden("".to_owned())),
                     },
                     is_local: true,
                     allow_incoming_connections: true,

@@ -934,9 +934,9 @@ impl RequestedState {
             })
             .filter(|(nick, _)| validate_nickname(nick))
             .fold(Records::new(), |mut records, (mut nick, ip)| {
-                nick += ".nord";
+                nick.0 += ".nord";
 
-                if let Entry::Vacant(e) = records.entry(nick.to_owned()) {
+                if let Entry::Vacant(e) = records.entry(nick.0.to_owned()) {
                     e.insert(ip);
                 } else {
                     telio_log_warn!("Nickname is already assigned: {nick:?}. Ignore");
@@ -2152,7 +2152,11 @@ impl Runtime {
                 Some(Node {
                     identifier: meshnet_peer.base.identifier.clone(),
                     public_key: meshnet_peer.base.public_key,
-                    nickname: meshnet_peer.base.nickname.clone(),
+                    nickname: meshnet_peer
+                        .base
+                        .nickname
+                        .as_ref()
+                        .map(|hidden_nick| hidden_nick.0.to_owned()),
                     state: state.unwrap_or_else(|| peer.state()),
                     link_state,
                     is_exit: peer
@@ -2499,7 +2503,9 @@ mod tests {
         PeerBase {
             hostname: telio_utils::Hidden(hostname),
             ip_addresses,
-            nickname,
+            nickname: nickname
+                .as_ref()
+                .map(|nick| telio_utils::Hidden(nick.to_owned())),
             ..Default::default()
         }
     }
@@ -2803,7 +2809,7 @@ mod tests {
             public_key: pubkey,
             hostname: telio_utils::Hidden("hostname".to_owned()),
             ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
-            nickname: Some("nickname".to_owned()),
+            nickname: Some(telio_utils::Hidden("nickname".to_owned())),
         };
         let get_config = Config {
             this: peer_base.clone(),
@@ -2879,7 +2885,7 @@ mod tests {
                 public_key: private_key.public(),
                 hostname: telio_utils::Hidden("hostname".to_owned()),
                 ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
-                nickname: Some("nickname".to_owned()),
+                nickname: Some(telio_utils::Hidden("nickname".to_owned())),
             },
             peers: Some(vec![
                 Peer {
@@ -2968,7 +2974,7 @@ mod tests {
             public_key: pubkey,
             hostname: telio_utils::Hidden("hostname".to_owned()),
             ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
-            nickname: Some("nickname".to_owned()),
+            nickname: Some(telio_utils::Hidden("nickname".to_owned())),
         };
         let config = Some(Config {
             this: peer_base.clone(),
@@ -3067,7 +3073,7 @@ mod tests {
             public_key: pubkey,
             hostname: telio_utils::Hidden("hostname".to_owned()),
             ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
-            nickname: Some("nickname".to_owned()),
+            nickname: Some(telio_utils::Hidden("nickname".to_owned())),
         };
         let config = Some(Config {
             this: peer_base.clone(),
@@ -3147,7 +3153,7 @@ mod tests {
             public_key: pubkey,
             hostname: telio_utils::Hidden("hostname".to_owned()),
             ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
-            nickname: Some("nickname".to_owned()),
+            nickname: Some(telio_utils::Hidden("nickname".to_owned())),
         };
         let config = Some(Config {
             this: peer_base.clone(),
@@ -3239,7 +3245,7 @@ mod tests {
             public_key: pubkey,
             hostname: telio_utils::Hidden("hostname".to_owned()),
             ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
-            nickname: Some("nickname".to_owned()),
+            nickname: Some(telio_utils::Hidden("nickname".to_owned())),
         };
         let config = Some(Config {
             this: peer_base.clone(),
@@ -3307,7 +3313,7 @@ mod tests {
                 public_key,
                 hostname: telio_utils::Hidden("hostname".to_owned()),
                 ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
-                nickname: Some("nickname".to_owned()),
+                nickname: Some(telio_utils::Hidden("nickname".to_owned())),
             };
             Config {
                 this: peer_base.clone(),
@@ -3403,7 +3409,7 @@ mod tests {
                 public_key,
                 hostname: telio_utils::Hidden("hostname".to_owned()),
                 ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
-                nickname: Some("nickname".to_owned()),
+                nickname: Some(telio_utils::Hidden("nickname".to_owned())),
             };
             Config {
                 this: peer_base.clone(),
@@ -3462,7 +3468,7 @@ mod tests {
             public_key: new_private_key.public(),
             hostname: telio_utils::Hidden("hostname".to_owned()),
             ip_addresses: Some(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]),
-            nickname: Some("nickname".to_owned()),
+            nickname: Some(telio_utils::Hidden("nickname".to_owned())),
         };
         let config = Config {
             this: peer_base.clone(),
@@ -3575,7 +3581,7 @@ mod tests {
                 IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
                 IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0xc00a, 0x2ff)),
             ]),
-            nickname: Some("nickname".to_owned()),
+            nickname: Some(telio_utils::Hidden("nickname".to_owned())),
         };
         let config = Config {
             this: peer_base.clone(),
