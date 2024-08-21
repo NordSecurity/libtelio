@@ -85,6 +85,9 @@ use telio_model::{
     EndpointMap,
 };
 
+#[cfg(target_os = "android")]
+use telio_network_monitors::monitor::PATH_CHANGE_BROADCAST;
+
 pub use wg::{
     uapi::Event as WGEvent, uapi::Interface, AdapterType, DynamicWg, Error as AdapterError,
     FirewallCb, Tun, WireGuard,
@@ -1604,6 +1607,9 @@ impl Runtime {
 
             meshnet_entities.derp.reconnect().await;
         }
+
+        #[cfg(target_os = "android")]
+        PATH_CHANGE_BROADCAST.send(());
 
         self.log_nat().await;
         Ok(())
