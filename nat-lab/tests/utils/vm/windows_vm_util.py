@@ -5,6 +5,7 @@ from config import (
     LIBTELIO_BINARY_PATH_WINDOWS_VM,
     UNIFFI_PATH_WINDOWS_VM,
     WINDOWS_1_VM_IP,
+    VM_TCP_CONN_TIMEOUT_S,
 )
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -33,6 +34,7 @@ async def new_connection(
             "aes128-ctr",
         ],
         compression_algs=None,
+        connect_timeout=VM_TCP_CONN_TIMEOUT_S,
     )
 
     async with asyncssh.connect(
