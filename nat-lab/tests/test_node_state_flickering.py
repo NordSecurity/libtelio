@@ -112,17 +112,21 @@ async def test_node_state_flickering_relay(
 
 
 CFG = [
-    (TargetOS.Windows, telio.AdapterType.WindowsNativeWg),
-    (TargetOS.Windows, telio.AdapterType.WireguardGo),
-    (TargetOS.Linux, telio.AdapterType.BoringTun),
-    (TargetOS.Linux, telio.AdapterType.LinuxNativeWg),
+    (telio.AdapterType.WindowsNativeWg, [pytest.mark.windows]),
+    (telio.AdapterType.WireguardGo, [pytest.mark.windows]),
+    (telio.AdapterType.BoringTun, []),
+    (telio.AdapterType.LinuxNativeWg, []),
 ]
 
 
 @pytest.mark.long
 @pytest.mark.timeout(timeouts.TEST_NODE_STATE_FLICKERING_DIRECT_TIMEOUT)
 @pytest.mark.parametrize(
-    "alpha_cfg, beta_cfg", itertools.combinations_with_replacement(CFG, 2)
+    "alpha_cfg,beta_cfg",
+    [
+        pytest.param(alpha_cfg, beta_cfg, marks=alpha_cfg[1] + beta_cfg[1])
+        for alpha_cfg, beta_cfg in itertools.combinations_with_replacement(CFG, 2)
+    ],
 )
 async def test_node_state_flickering_direct(
     alpha_cfg: Tuple[TargetOS, telio.AdapterType],
@@ -131,6 +135,7 @@ async def test_node_state_flickering_direct(
     async with AsyncExitStack() as exit_stack:
         (alpha_target_os, alpha_adapter_type) = alpha_cfg
         (beta_target_os, beta_adapter_type) = beta_cfg
+
         alpha_conn_tag = (
             ConnectionTag.WINDOWS_VM_1
             if alpha_target_os == TargetOS.Windows
