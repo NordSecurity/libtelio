@@ -261,6 +261,9 @@ async def test_dns_port(alpha_ip_stack: IPStack) -> None:
                 dns_server_address_alpha,
             )
 
+        # LLT-5532: To be cleaned up...
+        client_alpha.allow_errors(["telio_dns::nameserver.*Invalid DNS port"])
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
@@ -608,6 +611,11 @@ async def test_dns_update(alpha_ip_stack: IPStack) -> None:
         await query_dns(
             connection, "google.com", ["Name:	google.com\nAddress:"], dns_server_address
         )
+
+        # LLT-5532: To be cleaned up...
+        client_alpha.allow_errors([
+            "telio_dns::nameserver.*Lookup failed Error performing lookup: Unknown response code"
+        ])
 
 
 @pytest.mark.asyncio

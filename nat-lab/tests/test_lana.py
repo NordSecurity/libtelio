@@ -1473,6 +1473,14 @@ async def test_lana_with_meshnet_exit_node(
         assert alpha_conn_tracker.get_out_of_limits() is None
         assert beta_conn_tracker.get_out_of_limits() is None
 
+        # LLT-5532: To be cleaned up...
+        client_alpha.allow_errors(
+            ["telio_proxy::proxy.*Unable to send. WG Address not available"]
+        )
+        client_beta.allow_errors(
+            ["telio_proxy::proxy.*Unable to send. WG Address not available"]
+        )
+
 
 @pytest.mark.moose
 @pytest.mark.asyncio

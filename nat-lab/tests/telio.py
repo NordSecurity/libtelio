@@ -512,6 +512,7 @@ class Client:
         self._libtelio_proxy: Optional[LibtelioProxy] = None
         self._proxy_port = ""
         self._fingerprint: Optional[tuple[str, str]] = None
+        self._allowed_errors: Optional[List[re.Pattern]] = None
         # Automatically enables IPv6 feature when the IPv6 stack is enabled
         if (
             self._node.ip_stack in (IPStack.IPv4v6, IPStack.IPv6)
@@ -637,12 +638,12 @@ class Client:
                         await self.set_meshmap(meshmap)
                     yield self
             finally:
-                print(datetime.now(), "Test cleanup stage 1. Saving logs")
+                print(datetime.now(), "Test cleanup: Saving logs")
                 await self.save_logs()
 
                 print(
                     datetime.now(),
-                    "Test cleanup stage 2. Stopping tcpdump and collecting core dumps",
+                    "Test cleanup: Stopping tcpdump and collecting core dumps",
                 )
                 if isinstance(self._connection, DockerConnection):
                     stop_tcpdump([self._connection.container_name()])
@@ -650,11 +651,11 @@ class Client:
 
                 print(
                     datetime.now(),
-                    "Test cleanup stage 3. Saving MacOS network info",
+                    "Test cleanup: Saving MacOS network info",
                 )
                 await self.save_mac_network_info()
 
-                print(datetime.now(), "Test cleanup stage 4. Stopping device")
+                print(datetime.now(), "Test cleanup: Stopping device")
                 if self._process.is_executing():
                     if self._libtelio_proxy:
                         await self.stop_device()
@@ -664,7 +665,8 @@ class Client:
                             "[Debug] We don't have LibtelioProxy instance, Stop() not called.",
                         )
                     self._quit = True
-                print(datetime.now(), "Test cleanup stage 5. Shutting down")
+
+                print(datetime.now(), "Test cleanup: Shutting down")
                 if self._libtelio_proxy:
                     self.get_proxy().shutdown(self._connection.target_name())
                 else:
@@ -673,14 +675,17 @@ class Client:
                         "[Debug] We don't have LibtelioProxy instance, Shutdown() not called.",
                     )
 
-                print(datetime.now(), "Test cleanup stage 6. Clearing up routes")
+                print(datetime.now(), "Test cleanup: Clearing up routes")
                 if self._router:
                     await self._router.delete_vpn_route()
                     await self._router.delete_exit_node_route()
                     await self._router.delete_interface()
 
-                print(datetime.now(), "Test cleanup stage 7. Saving moose dbs")
+                print(datetime.now(), "Test cleanup: Saving moose dbs")
                 await self.save_moose_db()
+
+                print(datetime.now(), "Test cleanup: Checking logs")
+                await self.check_logs_for_errors()
 
                 print(datetime.now(), "Test cleanup complete")
 
@@ -981,6 +986,11 @@ class Client:
         assert self._telio_features
         return self._telio_features
 
+    def allow_errors(self, allowed_errors: List[str]) -> None:
+        if self._allowed_errors is None:
+            self._allowed_errors = []
+        self._allowed_errors.extend(re.compile(e) for e in allowed_errors)
+
     async def stop_device(self) -> None:
         self.get_proxy().stop()
         self._interface_configured = False
@@ -1156,6 +1166,17 @@ class Client:
                 + "\n"
             )
         return ""
+
+    async def check_logs_for_errors(self) -> None:
+        log_content = await self.get_log()
+        for line in log_content.splitlines():
+            if "TelioLogLevel.ERROR" in line:
+                if not self._allowed_errors or not any(
+                    allowed.search(line) for allowed in self._allowed_errors
+                ):
+                    raise Exception(
+                        f"Unexpected error found in {self._node.name} log: {line}"
+                    )
 
     async def save_logs(self) -> None:
         if os.environ.get("NATLAB_SAVE_LOGS") is None:

@@ -80,6 +80,14 @@ async def test_upnp_route_removed(
         await ping(beta_conn.connection, alpha.ip_addresses[0])
         await ping(alpha_conn.connection, beta.ip_addresses[0])
 
+        # LLT-5532: To be cleaned up...
+        alpha_client.allow_errors(
+            ["telio_proxy::proxy.*Unable to send. WG Address not available"]
+        )
+        beta_client.allow_errors(
+            ["telio_proxy::proxy.*Unable to send. WG Address not available"]
+        )
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(

@@ -180,3 +180,11 @@ async def test_dns_through_exit(
             dns_server=dns_server_address_local,
             expected_output=["Name:.*google.com.*Address"],
         )
+
+        # LLT-5532: To be cleaned up...
+        client_alpha.allow_errors(
+            ["telio_dns::nameserver.*Invalid protocol for DNS request"]
+        )
+        client_exit.allow_errors(
+            ["telio_dns::nameserver.*Invalid protocol for DNS request"]
+        )

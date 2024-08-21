@@ -320,3 +320,11 @@ async def test_mesh_network_switch_direct(
             await direct
 
         await ping(alpha_connection, beta.ip_addresses[0])
+
+        # LLT-5532: To be cleaned up...
+        alpha_client.allow_errors([
+            "telio_traversal::endpoint_providers::stun.*Starting session failed.*A socket operation was attempted to an unreachable network"
+        ])
+        beta_client.allow_errors([
+            "telio_traversal::endpoint_providers::stun.*Starting session failed.*A socket operation was attempted to an unreachable network"
+        ])
