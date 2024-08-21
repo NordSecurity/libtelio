@@ -28,7 +28,7 @@ from utils.connection_util import ConnectionTag
 from utils.ping import ping
 
 # Testing if batching being disabled or not there doesn't affect anything
-DISABLED_BATCHING_OPTIONS = (None, Batching(direct_connection_threshold=0))
+DISABLED_BATCHING_OPTIONS = (None, Batching(direct_connection_threshold=5))
 ANY_PROVIDERS = ["local", "stun"]
 
 DOCKER_CONE_GW_2_IP = "10.0.254.2"
@@ -53,6 +53,9 @@ def _generate_setup_parameter_pair(
             features=TelioFeatures(
                 direct=Direct(providers=endpoint_providers),
                 batching=batching,
+                wireguard=Wireguard(
+                    persistent_keepalive=PersistentKeepalive(direct=10),
+                ),
             ),
             fingerprint=f"{conn_tag}",
         )
