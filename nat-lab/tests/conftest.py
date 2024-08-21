@@ -192,20 +192,6 @@ async def perform_pretest_cleanups():
         await cleanup()
 
 
-def pytest_runtestloop(session):
-    if not session.config.option.collectonly:
-        for item in session.items:
-            if "WINDOWS_VM_1" in item.name:
-                _copy_vm_binaries(ConnectionTag.WINDOWS_VM_1)
-            elif "WINDOWS_VM_2" in item.name:
-                _copy_vm_binaries(ConnectionTag.WINDOWS_VM_2)
-            elif "MAC_VM" in item.name:
-                _copy_vm_binaries(ConnectionTag.MAC_VM)
-
-            if not asyncio.run(perform_setup_checks()):
-                pytest.exit("Setup checks failed, exiting ...")
-
-
 async def _copy_vm_binaries(tag: ConnectionTag):
     is_ci = os.environ.get("CUSTOM_ENV_GITLAB_CI") is not None and os.environ.get(
         "CUSTOM_ENV_GITLAB_CI"
@@ -229,6 +215,32 @@ async def _copy_vm_binaries(tag: ConnectionTag):
             if is_ci:
                 raise e
             print(e)
+
+
+async def _copy_vm_binaries_if_needed(items):
+    windows_bins_copied = False
+    mac_bins_copied = False
+
+    for item in items:
+        for mark in item.own_markers:
+            if mark.name == "windows" and not windows_bins_copied:
+                await _copy_vm_binaries(ConnectionTag.WINDOWS_VM_1)
+                await _copy_vm_binaries(ConnectionTag.WINDOWS_VM_2)
+                windows_bins_copied = True
+            elif mark.name == "mac" and not mac_bins_copied:
+                await _copy_vm_binaries(ConnectionTag.MAC_VM)
+                mac_bins_copied = True
+
+            if windows_bins_copied and mac_bins_copied:
+                return
+
+
+def pytest_runtestloop(session):
+    if not session.config.option.collectonly:
+        asyncio.run(_copy_vm_binaries_if_needed(session.items))
+
+        if not asyncio.run(perform_setup_checks()):
+            pytest.exit("Setup checks failed, exiting ...")
 
 
 def pytest_runtest_setup():
