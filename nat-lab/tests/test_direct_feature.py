@@ -1,10 +1,15 @@
 import pytest
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
-from telio_features import TelioFeatures, Direct
+from typing import List
+from utils.bindings import features_with_endpoint_providers, EndpointProvider
 
-ALL_DIRECT_FEATURES = ["upnp", "local", "stun"]
-EMPTY_PROVIDER = [""]
+ALL_DIRECT_FEATURES = [
+    EndpointProvider.UPNP,
+    EndpointProvider.LOCAL,
+    EndpointProvider.STUN,
+]
+EMPTY_PROVIDER: List[EndpointProvider] = []
 
 
 @pytest.mark.asyncio
@@ -12,7 +17,7 @@ async def test_default_direct_features() -> None:
     async with AsyncExitStack() as exit_stack:
         env = await setup_mesh_nodes(
             exit_stack,
-            [SetupParameters(features=TelioFeatures(direct=Direct(providers=None)))],
+            [SetupParameters(features=features_with_endpoint_providers(None))],
         )
         started_tasks = env.clients[0].get_runtime().get_started_tasks()
         assert "UpnpEndpointProvider" not in started_tasks
@@ -27,7 +32,7 @@ async def test_enable_all_direct_features() -> None:
             exit_stack,
             [
                 SetupParameters(
-                    features=TelioFeatures(direct=Direct(providers=ALL_DIRECT_FEATURES))
+                    features=features_with_endpoint_providers(ALL_DIRECT_FEATURES)
                 )
             ],
         )
@@ -44,7 +49,7 @@ async def test_check_features_with_empty_direct_providers() -> None:
             exit_stack,
             [
                 SetupParameters(
-                    features=TelioFeatures(direct=Direct(providers=EMPTY_PROVIDER))
+                    features=features_with_endpoint_providers(EMPTY_PROVIDER)
                 )
             ],
         )

@@ -10,26 +10,25 @@ from config import DERP_SERVERS
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
 from telio import PathType, State
-from telio_features import (
-    Batching,
-    TelioFeatures,
-    Direct,
-    Lana,
-    Nurse,
-    Wireguard,
-    SkipUnresponsivePeers,
-    FeatureEndpointProvidersOptimization,
-    PersistentKeepalive,
-)
 from typing import List, Optional, Tuple
 from utils.asyncio_util import run_async_context
+from utils.bindings import (
+    Features,
+    default_features,
+    features_with_endpoint_providers,
+    FeatureLana,
+    FeatureBatching,
+    FeatureSkipUnresponsivePeers,
+    FeatureEndpointProvidersOptimization,
+    EndpointProvider,
+)
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
 from utils.telio_log_notifier import TelioLogNotifier
 
 # Testing if batching being disabled or not there doesn't affect anything
-DISABLED_BATCHING_OPTIONS = (None, Batching(direct_connection_threshold=5))
-ANY_PROVIDERS = ["local", "stun"]
+DISABLED_BATCHING_OPTIONS = (None, FeatureBatching(direct_connection_threshold=5))
+ANY_PROVIDERS = [EndpointProvider.LOCAL, EndpointProvider.STUN]
 
 DOCKER_CONE_GW_2_IP = "10.0.254.2"
 DOCKER_FULLCONE_GW_1_IP = "10.0.254.9"
@@ -43,20 +42,24 @@ DOCKER_UPNP_CLIENT_2_IP = "10.0.254.12"
 
 
 def _generate_setup_parameter_pair(
-    left: Tuple[ConnectionTag, List[str], Optional[Batching]],
-    right: Tuple[ConnectionTag, List[str], Optional[Batching]],
+    left: Tuple[ConnectionTag, List[EndpointProvider], Optional[FeatureBatching]],
+    right: Tuple[ConnectionTag, List[EndpointProvider], Optional[FeatureBatching]],
 ) -> List[SetupParameters]:
+    def features(
+        providers: list[EndpointProvider], batching: Optional[FeatureBatching]
+    ) -> Features:
+        features = default_features(enable_direct=True, enable_nurse=True)
+        assert features.direct
+        features.direct.providers = providers
+        features.wireguard.persistent_keepalive.direct = 10
+        features.batching = batching
+        return features
+
     return [
         SetupParameters(
             connection_tag=conn_tag,
             adapter_type=telio.AdapterType.BoringTun,
-            features=TelioFeatures(
-                direct=Direct(providers=endpoint_providers),
-                batching=batching,
-                wireguard=Wireguard(
-                    persistent_keepalive=PersistentKeepalive(direct=10),
-                ),
-            ),
+            features=features(endpoint_providers, batching),
             fingerprint=f"{conn_tag}",
         )
         for (conn_tag, endpoint_providers, batching) in (left, right)
@@ -66,106 +69,112 @@ def _generate_setup_parameter_pair(
 UHP_WORKING_PATHS_PARAMS = [
     (
         (
-            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["stun"]),
-            (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, ["stun"]),
+            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, [EndpointProvider.STUN]),
+            (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, [EndpointProvider.STUN]),
         ),
         DOCKER_FULLCONE_GW_2_IP,
     ),
     (
         (
-            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ["stun"]),
-            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["stun"]),
+            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, [EndpointProvider.STUN]),
+            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, [EndpointProvider.STUN]),
         ),
         DOCKER_FULLCONE_GW_1_IP,
     ),
     (
         (
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["stun"]),
-            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["stun"]),
+            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, [EndpointProvider.STUN]),
+            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, [EndpointProvider.STUN]),
         ),
         DOCKER_FULLCONE_GW_1_IP,
     ),
     (
         (
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
-            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["stun"]),
+            (ConnectionTag.DOCKER_CONE_CLIENT_1, [EndpointProvider.STUN]),
+            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, [EndpointProvider.STUN]),
         ),
         DOCKER_FULLCONE_GW_1_IP,
     ),
     (
         (
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
-            (ConnectionTag.DOCKER_CONE_CLIENT_2, ["stun"]),
+            (ConnectionTag.DOCKER_CONE_CLIENT_1, [EndpointProvider.STUN]),
+            (ConnectionTag.DOCKER_CONE_CLIENT_2, [EndpointProvider.STUN]),
         ),
         DOCKER_CONE_GW_2_IP,
     ),
     (
         (
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["stun"]),
+            (ConnectionTag.DOCKER_CONE_CLIENT_1, [EndpointProvider.STUN]),
+            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, [EndpointProvider.STUN]),
         ),
         DOCKER_OPEN_INTERNET_CLIENT_1_IP,
     ),
     (
         (
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["stun"]),
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2, ["stun"]),
+            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, [EndpointProvider.STUN]),
+            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2, [EndpointProvider.STUN]),
         ),
         DOCKER_OPEN_INTERNET_CLIENT_2_IP,
     ),
     (
         (
-            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ["stun"]),
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["stun"]),
+            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, [EndpointProvider.STUN]),
+            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, [EndpointProvider.STUN]),
         ),
         DOCKER_OPEN_INTERNET_CLIENT_1_IP,
     ),
     (
         (
-            (ConnectionTag.DOCKER_UPNP_CLIENT_1, ["upnp"]),
-            (ConnectionTag.DOCKER_UPNP_CLIENT_2, ["upnp"]),
+            (ConnectionTag.DOCKER_UPNP_CLIENT_1, [EndpointProvider.UPNP]),
+            (ConnectionTag.DOCKER_UPNP_CLIENT_2, [EndpointProvider.UPNP]),
         ),
         DOCKER_UPNP_CLIENT_2_IP,
     ),
     (
         (
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK, ["stun"]),
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2, ["stun"]),
+            (
+                ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
+                [EndpointProvider.STUN],
+            ),
+            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2, [EndpointProvider.STUN]),
         ),
         DOCKER_OPEN_INTERNET_CLIENT_2_IP,
     ),
     (
         (
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["stun"]),
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK, ["stun"]),
+            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, [EndpointProvider.STUN]),
+            (
+                ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
+                [EndpointProvider.STUN],
+            ),
         ),
         DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK_IP,
     ),
     (
         (
-            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ["local"]),
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, [EndpointProvider.LOCAL]),
+            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, [EndpointProvider.LOCAL]),
         ),
         DOCKER_OPEN_INTERNET_CLIENT_1_IP,
     ),
     (
         (
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, ["local"]),
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+            (ConnectionTag.DOCKER_CONE_CLIENT_1, [EndpointProvider.LOCAL]),
+            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, [EndpointProvider.LOCAL]),
         ),
         DOCKER_OPEN_INTERNET_CLIENT_1_IP,
     ),
     (
         (
-            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["local"]),
-            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, [EndpointProvider.LOCAL]),
+            (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, [EndpointProvider.LOCAL]),
         ),
         DOCKER_OPEN_INTERNET_CLIENT_1_IP,
     ),
     (
         (
-            (ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT, ["local"]),
-            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ["local"]),
+            (ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT, [EndpointProvider.LOCAL]),
+            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, [EndpointProvider.LOCAL]),
         ),
         DOCKER_SYMMETRIC_CLIENT_1_IP,
     ),
@@ -205,16 +214,16 @@ UHP_FAILING_PATHS_PARAMS = [
         (ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2, ANY_PROVIDERS),
     ),
     (
-        (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
-        (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, ["local"]),
+        (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, [EndpointProvider.LOCAL]),
+        (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, [EndpointProvider.LOCAL]),
     ),
     (
-        (ConnectionTag.DOCKER_CONE_CLIENT_1, ["local"]),
-        (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+        (ConnectionTag.DOCKER_CONE_CLIENT_1, [EndpointProvider.LOCAL]),
+        (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, [EndpointProvider.LOCAL]),
     ),
     (
-        (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, ["local"]),
-        (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+        (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, [EndpointProvider.LOCAL]),
+        (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, [EndpointProvider.LOCAL]),
     ),
 ]
 
@@ -300,31 +309,34 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         for param in setup_params:
-            param.features.nurse = Nurse(
-                enable_nat_traversal_conn_data=True,
-                enable_nat_type_collection=True,
-            )
-            param.features.lana = Lana(prod=False, event_path="/event.db")
+            assert param.features.nurse
+            param.features.nurse.enable_nat_traversal_conn_data = True
+            param.features.nurse.enable_nat_type_collection = True
+            param.features.lana = FeatureLana(prod=False, event_path="/event.db")
         env = await setup_mesh_nodes(exit_stack, setup_params)
         alpha, beta = env.nodes
         alpha_client, beta_client = env.clients
 
-        def fix_provider_name(name):
-            return "UPnP" if name == "upnp" else name.title()
+        def resolve_provider_name(provider: EndpointProvider):
+            if provider == EndpointProvider.UPNP:
+                return "UPnP"
+            if provider == EndpointProvider.LOCAL:
+                return "Local"
+            return "Stun"
 
         alpha_direct = alpha_client.get_features().direct
         # Asserts are here to silence mypy...
         assert alpha_direct is not None
         assert alpha_direct.providers is not None
         assert len(alpha_direct.providers) > 0
-        alpha_provider = fix_provider_name(alpha_direct.providers[0])
+        alpha_provider = resolve_provider_name(alpha_direct.providers[0])
 
         beta_direct = beta_client.get_features().direct
         # Asserts are here to silence mypy...
         assert beta_direct is not None
         assert beta_direct.providers is not None
         assert len(beta_direct.providers) > 0
-        beta_provider = fix_provider_name(beta_direct.providers[0])
+        beta_provider = resolve_provider_name(beta_direct.providers[0])
 
         alpha_connection, beta_connection = [
             conn.connection for conn in env.connections
@@ -415,16 +427,13 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
 @pytest.mark.asyncio
 async def test_direct_working_paths_stun_ipv6() -> None:
     # This test only checks if stun works well with IPv6, no need to add more setups here
+    features = features_with_endpoint_providers([EndpointProvider.STUN])
+    features.ipv6 = True
     setup_params = [
         SetupParameters(
             connection_tag=conn_tag,
             adapter_type=telio.AdapterType.BoringTun,
-            features=TelioFeatures(
-                direct=Direct(
-                    providers=["stun"],
-                ),
-                ipv6=True,
-            ),
+            features=features,
         )
         for conn_tag in [
             (ConnectionTag.DOCKER_FULLCONE_CLIENT_1),
@@ -559,12 +568,11 @@ async def test_direct_working_paths_with_skip_unresponsive_peers(
         # in order to allow for three packet drops
         for param in setup_params:
             assert param.features.direct is not None
-            param.features.direct.skip_unresponsive_peers = SkipUnresponsivePeers(
-                no_rx_threshold_secs=16
+            param.features.direct.skip_unresponsive_peers = (
+                FeatureSkipUnresponsivePeers(no_rx_threshold_secs=16)
             )
-            param.features.wireguard = Wireguard(
-                persistent_keepalive=PersistentKeepalive(proxying=5, direct=5)
-            )
+            param.features.wireguard.persistent_keepalive.direct = 5
+            param.features.wireguard.persistent_keepalive.proxying = 5
 
         env = await setup_mesh_nodes(exit_stack, setup_params)
         api = env.api
@@ -609,24 +617,24 @@ async def test_direct_working_paths_with_skip_unresponsive_peers(
 
 ENDPOINT_GONE_PARAMS = [
     (
-        (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
-        (ConnectionTag.DOCKER_CONE_CLIENT_2, ["stun"]),
+        (ConnectionTag.DOCKER_CONE_CLIENT_1, [EndpointProvider.STUN]),
+        (ConnectionTag.DOCKER_CONE_CLIENT_2, [EndpointProvider.STUN]),
     ),
     (
-        (ConnectionTag.DOCKER_UPNP_CLIENT_1, ["upnp"]),
-        (ConnectionTag.DOCKER_UPNP_CLIENT_2, ["upnp"]),
+        (ConnectionTag.DOCKER_UPNP_CLIENT_1, [EndpointProvider.UPNP]),
+        (ConnectionTag.DOCKER_UPNP_CLIENT_2, [EndpointProvider.UPNP]),
     ),
     (
-        (ConnectionTag.DOCKER_UPNP_CLIENT_1, ["upnp"]),
-        (ConnectionTag.DOCKER_CONE_CLIENT_2, ["stun"]),
+        (ConnectionTag.DOCKER_UPNP_CLIENT_1, [EndpointProvider.UPNP]),
+        (ConnectionTag.DOCKER_CONE_CLIENT_2, [EndpointProvider.STUN]),
     ),
     (
-        (ConnectionTag.DOCKER_UPNP_CLIENT_1, ["upnp"]),
-        (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+        (ConnectionTag.DOCKER_UPNP_CLIENT_1, [EndpointProvider.UPNP]),
+        (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, [EndpointProvider.LOCAL]),
     ),
     (
-        (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
-        (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, ["local"]),
+        (ConnectionTag.DOCKER_CONE_CLIENT_1, [EndpointProvider.STUN]),
+        (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, [EndpointProvider.LOCAL]),
     ),
 ]
 
@@ -739,8 +747,8 @@ async def test_direct_connection_endpoint_gone(
             _generate_setup_parameter_pair((a[0], a[1], batch_a), (b[0], b[1], batch_b))
         )
         for (a, b) in [(
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, ["stun"]),
-            (ConnectionTag.DOCKER_CONE_CLIENT_2, ["stun"]),
+            (ConnectionTag.DOCKER_CONE_CLIENT_1, [EndpointProvider.STUN]),
+            (ConnectionTag.DOCKER_CONE_CLIENT_2, [EndpointProvider.STUN]),
         )]
         for (batch_a, batch_b) in itertools.product(DISABLED_BATCHING_OPTIONS, repeat=2)
     ],
@@ -803,13 +811,13 @@ async def test_direct_working_paths_with_pausing_upnp_and_stun(
 
             if (
                 param.features.direct.providers is not None
-                and "stun" in param.features.direct.providers
+                and EndpointProvider.STUN in param.features.direct.providers
             ):
                 stun_enabled = True
 
             if (
                 param.features.direct.providers is not None
-                and "upnp" in param.features.direct.providers
+                and EndpointProvider.UPNP in param.features.direct.providers
             ):
                 upnp_enabled = True
 

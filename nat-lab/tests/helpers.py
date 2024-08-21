@@ -7,8 +7,8 @@ from datetime import datetime
 from itertools import product, zip_longest
 from mesh_api import Node, Meshmap, API, stop_tcpdump
 from telio import Client, AdapterType, State, PathType
-from telio_features import TelioFeatures
 from typing import AsyncIterator, List, Tuple, Optional, Union, Dict, Any
+from utils.bindings import default_features, Features
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionTrackerConfig
 from utils.connection_util import (
@@ -48,9 +48,7 @@ class SetupParameters:
         default=None
     )
     adapter_type: AdapterType = field(default=AdapterType.Default)
-    features: TelioFeatures = field(
-        default_factory=lambda: TelioFeatures(is_test_env=True)
-    )
+    features: Features = field(default_factory=default_features)
     is_meshnet: bool = field(default=True)
     derp_servers: Optional[List[Dict[str, Any]]] = field(default=None)
     fingerprint: str = ""
@@ -161,7 +159,7 @@ async def setup_clients(
             Connection,
             Node,
             AdapterType,
-            TelioFeatures,
+            Features,
             str,
             Optional[Meshmap],
         ]

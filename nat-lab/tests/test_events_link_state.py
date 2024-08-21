@@ -3,21 +3,26 @@ import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from telio import AdapterType, LinkState
-from telio_features import TelioFeatures, LinkDetection, Wireguard, PersistentKeepalive
 from typing import List, Tuple
+from utils.bindings import (
+    default_features,
+    FeatureLinkDetection,
+    FeatureWireguard,
+    FeaturePersistentKeepalive,
+)
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
 
 
-def long_persistent_keepalive_periods() -> Wireguard:
-    return Wireguard(
-        persistent_keepalive=PersistentKeepalive(
+def long_persistent_keepalive_periods() -> FeatureWireguard:
+    return FeatureWireguard(
+        persistent_keepalive=FeaturePersistentKeepalive(
             proxying=3600, direct=3600, vpn=3600, stun=3600
         )
     )
 
 
-def _generate_setup_paramete_pair(
+def _generate_setup_parameter_pair(
     cfg: List[Tuple[ConnectionTag, AdapterType]],
     enhaced_detection: bool,
 ) -> List[SetupParameters]:
@@ -26,14 +31,17 @@ def _generate_setup_paramete_pair(
     else:
         count = 0
 
+    features = default_features(enable_link_detection=True)
+    features.link_detection = FeatureLinkDetection(
+        rtt_seconds=1, no_of_pings=count, use_for_downgrade=False
+    )
+    features.wireguard = long_persistent_keepalive_periods()
+
     return [
         SetupParameters(
             connection_tag=tag,
             adapter_type=adapter,
-            features=TelioFeatures(
-                link_detection=LinkDetection(rtt_seconds=1, no_of_pings=count),
-                wireguard=long_persistent_keepalive_periods(),
-            ),
+            features=features,
         )
         for tag, adapter in cfg
     ]
@@ -49,7 +57,7 @@ FEATURE_ENABLED_PARAMS = [
     #     ])
     # ),
     pytest.param(
-        _generate_setup_paramete_pair(
+        _generate_setup_parameter_pair(
             [
                 (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.LinuxNativeWg),
                 (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
@@ -58,7 +66,7 @@ FEATURE_ENABLED_PARAMS = [
         )
     ),
     pytest.param(
-        _generate_setup_paramete_pair(
+        _generate_setup_parameter_pair(
             [
                 (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.LinuxNativeWg),
                 (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
@@ -67,7 +75,7 @@ FEATURE_ENABLED_PARAMS = [
         )
     ),
     pytest.param(
-        _generate_setup_paramete_pair(
+        _generate_setup_parameter_pair(
             [
                 (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
                 (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
@@ -76,7 +84,7 @@ FEATURE_ENABLED_PARAMS = [
         )
     ),
     pytest.param(
-        _generate_setup_paramete_pair(
+        _generate_setup_parameter_pair(
             [
                 (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
                 (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
@@ -85,7 +93,7 @@ FEATURE_ENABLED_PARAMS = [
         )
     ),
     pytest.param(
-        _generate_setup_paramete_pair(
+        _generate_setup_parameter_pair(
             [
                 (ConnectionTag.WINDOWS_VM_1, AdapterType.WindowsNativeWg),
                 (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
@@ -95,7 +103,7 @@ FEATURE_ENABLED_PARAMS = [
         marks=pytest.mark.windows,
     ),
     pytest.param(
-        _generate_setup_paramete_pair(
+        _generate_setup_parameter_pair(
             [
                 (ConnectionTag.WINDOWS_VM_1, AdapterType.WindowsNativeWg),
                 (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),

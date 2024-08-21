@@ -16,11 +16,10 @@ from dataclasses_json import DataClassJsonMixin, dataclass_json
 from datetime import datetime
 from enum import Enum
 from mesh_api import Meshmap, Node, start_tcpdump, stop_tcpdump
-from telio_features import TelioFeatures
 from typing import AsyncIterator, List, Optional, Set
 from uniffi.libtelio_proxy import LibtelioProxy, ProxyConnectionError
-from uniffi.telio_bindings import NatType
 from utils import asyncio_util
+from utils.bindings import default_features, Features, NatType
 from utils.command_grepper import CommandGrepper
 from utils.connection import Connection, DockerConnection, TargetOS
 from utils.connection_util import get_uniffi_path
@@ -497,7 +496,7 @@ class Client:
         connection: Connection,
         node: Node,
         adapter_type: AdapterType = AdapterType.Default,
-        telio_features: TelioFeatures = TelioFeatures(),
+        telio_features: Features = default_features(),
         force_ipv6_feature: bool = False,
         fingerprint: str = "",
     ) -> None:
@@ -594,7 +593,7 @@ class Client:
                 await self._process.wait_stdin_ready()
 
                 # There are two scenarios when it comes to what port is being used to connect to the Pyro5 remote.
-                # Scenario 1 - docker with mapped ports mapped ports:
+                # Scenario 1 - docker with mapped ports:
                 #   In this case we just use the mapped ports.
                 #   We get this from docker_connection#mapped_ports by inspecting the container
                 # Scenario 2 - non-docker scenarios or docker without mapped ports (like in our CI):
@@ -610,7 +609,7 @@ class Client:
 
                 try:
                     self._libtelio_proxy = LibtelioProxy(
-                        object_uri, self._telio_features.to_json()
+                        object_uri, self._telio_features
                     )
                 except ProxyConnectionError as err:
                     print(str(err))
@@ -980,7 +979,7 @@ class Client:
         assert self._process
         return self._process.get_stderr()
 
-    def get_features(self) -> TelioFeatures:
+    def get_features(self) -> Features:
         assert self._telio_features
         return self._telio_features
 

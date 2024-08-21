@@ -5,7 +5,7 @@ import timeouts
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from telio import AdapterType, PathType, State
-from telio_features import TelioFeatures, Direct
+from utils.bindings import features_with_endpoint_providers, EndpointProvider
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 
@@ -120,25 +120,27 @@ CFG = [
 @pytest.mark.long
 @pytest.mark.timeout(timeouts.TEST_NODE_STATE_FLICKERING_DIRECT_TIMEOUT)
 @pytest.mark.parametrize(
-    "alpha_adapter,beta_adapter",
+    "alpha_adapter_type,beta_adapter_type",
     [
         pytest.param(alpha_cfg[0], beta_cfg[0], marks=alpha_cfg[1] + beta_cfg[1])
         for alpha_cfg, beta_cfg in itertools.combinations_with_replacement(CFG, 2)
     ],
 )
 async def test_node_state_flickering_direct(
-    alpha_adapter: AdapterType,
-    beta_adapter: AdapterType,
+    alpha_adapter_type: AdapterType,
+    beta_adapter_type: AdapterType,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         alpha_conn_tag = (
             ConnectionTag.WINDOWS_VM_1
-            if alpha_adapter in [AdapterType.WindowsNativeWg, AdapterType.WireguardGo]
+            if alpha_adapter_type
+            in [AdapterType.WindowsNativeWg, AdapterType.WireguardGo]
             else ConnectionTag.DOCKER_CONE_CLIENT_1
         )
         beta_conn_tag = (
             ConnectionTag.WINDOWS_VM_2
-            if beta_adapter in [AdapterType.WindowsNativeWg, AdapterType.WireguardGo]
+            if beta_adapter_type
+            in [AdapterType.WindowsNativeWg, AdapterType.WireguardGo]
             else ConnectionTag.DOCKER_CONE_CLIENT_2
         )
 
@@ -147,17 +149,21 @@ async def test_node_state_flickering_direct(
             [
                 SetupParameters(
                     connection_tag=alpha_conn_tag,
-                    adapter_type=alpha_adapter,
-                    features=TelioFeatures(
-                        direct=Direct(providers=["stun", "local", "upnp"])
-                    ),
+                    adapter_type=alpha_adapter_type,
+                    features=features_with_endpoint_providers([
+                        EndpointProvider.STUN,
+                        EndpointProvider.LOCAL,
+                        EndpointProvider.UPNP,
+                    ]),
                 ),
                 SetupParameters(
                     connection_tag=beta_conn_tag,
-                    adapter_type=beta_adapter,
-                    features=TelioFeatures(
-                        direct=Direct(providers=["stun", "local", "upnp"])
-                    ),
+                    adapter_type=beta_adapter_type,
+                    features=features_with_endpoint_providers([
+                        EndpointProvider.STUN,
+                        EndpointProvider.LOCAL,
+                        EndpointProvider.UPNP,
+                    ]),
                 ),
             ],
         )

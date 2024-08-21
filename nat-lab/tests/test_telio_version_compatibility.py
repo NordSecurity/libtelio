@@ -5,8 +5,8 @@ import shlex
 import telio
 from contextlib import AsyncExitStack
 from mesh_api import API
-from telio_features import Direct, TelioFeatures
 from utils import testing
+from utils.bindings import features_with_endpoint_providers, EndpointProvider
 from utils.connection_util import (
     ConnectionTag,
     ConnectionLimits,
@@ -17,7 +17,7 @@ from utils.output_notifier import OutputNotifier
 from utils.ping import ping
 from utils.router import IPProto, IPStack, new_router
 
-STUN_PROVIDER = ["stun"]
+STUN_PROVIDER = [EndpointProvider.STUN]
 
 UHP_conn_client_types = [
     (
@@ -94,9 +94,7 @@ async def test_connect_different_telio_version_through_relay(
                 alpha_conn,
                 alpha,
                 adapter_type,
-                telio_features=TelioFeatures(
-                    direct=Direct(providers=endpoint_providers)
-                ),
+                telio_features=features_with_endpoint_providers(endpoint_providers),
             ).run(api.get_meshmap(alpha.id))
         )
 

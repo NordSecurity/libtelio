@@ -14,6 +14,7 @@ from typing import List
 REMOTE_LOG = "remote.log"
 TCLI_LOG = "tcli.log"
 
+# This call will allow the remote-side of the Pyro5 connection to handle types defined in libtelio.udl
 init_serialization(libtelio)
 
 
@@ -120,8 +121,7 @@ class LibtelioWrapper:
         self._daemon.shutdown()
 
     @serialize_error
-    def create(self, features: str):
-        features = libtelio.deserialize_feature_config(features)
+    def create(self, features: libtelio.Features):
         self._libtelio = libtelio.Telio(features, self._event_cb)
 
     @serialize_error

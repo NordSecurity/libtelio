@@ -1,12 +1,22 @@
+import enum
 import inspect
 import Pyro5.api  # type: ignore
 
 
+# This function sets up serialization and deserialization for all public classes and enums in a module
+#
+# A module is passed as a parameter, and then all public classes and enums are extracted from that module
+# Functions are then defined to recursively (de)serialize all of those types to and from python dicts
+# Finally, the (de)serialier functions are registered as Pyro5 (de)serializers for all of the relevant types
+#
+# This function needs to be called once per session to work.
+# For natlab, that means it has to be called both on the test host and on the container/VM,
+# which can be represented by libtelio_proxy.py and libtelio_remote.py, respectively.
 def init_serialization(libtelio):
     all_members = inspect.getmembers(libtelio, inspect.isclass)
     public_members = []
     for name, cls in all_members:
-        if not name.startswith("_"):
+        if cls.__module__ == libtelio.__name__ and not name.startswith("_"):
             public_members.append(cls)
             nested_members = inspect.getmembers(cls, inspect.isclass)
             for name, cls in nested_members:
@@ -15,11 +25,11 @@ def init_serialization(libtelio):
 
     classes = tuple(
         filter(
-            lambda m: str(m).startswith("<class ") and libtelio.__name__ in str(m),
+            lambda m: not issubclass(m, enum.Enum),
             public_members,
         )
     )
-    enums = tuple(filter(lambda m: str(m).startswith("<enum "), public_members))
+    enums = tuple(filter(lambda m: issubclass(m, enum.Enum), public_members))
 
     def serialize_obj(obj):
         if isinstance(obj, classes):
