@@ -3,7 +3,8 @@ import pytest
 import timeouts
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
-from telio import AdapterType, State
+from telio import AdapterType
+from utils.bindings import NodeState
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.ping import ping
@@ -53,4 +54,4 @@ async def test_fire_connecting_event(
         with pytest.raises(asyncio.TimeoutError):
             await ping(connection_alpha, beta.ip_addresses[0], 15)
 
-        await client_alpha.wait_for_event_peer(beta.public_key, [State.Connecting])
+        await client_alpha.wait_for_event_peer(beta.public_key, [NodeState.CONNECTING])

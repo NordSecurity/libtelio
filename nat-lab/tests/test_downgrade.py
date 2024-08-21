@@ -2,13 +2,15 @@ import asyncio
 import pytest
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
-from telio import PathType, State, AdapterType
+from telio import AdapterType
 from typing import List, Tuple
 from utils.bindings import (
     default_features,
     FeatureLinkDetection,
     FeaturePersistentKeepalive,
     EndpointProvider,
+    PathType,
+    NodeState,
 )
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
@@ -86,10 +88,10 @@ async def test_downgrade_using_link_detection(
         # Expect downgrade to relay
         await asyncio.gather(
             alpha_client.wait_for_state_peer(
-                beta.public_key, [State.Connected], [PathType.Relay], timeout=35
+                beta.public_key, [NodeState.CONNECTED], [PathType.RELAY], timeout=35
             ),
             beta_client.wait_for_state_peer(
-                alpha.public_key, [State.Connected], [PathType.Relay], timeout=35
+                alpha.public_key, [NodeState.CONNECTED], [PathType.RELAY], timeout=35
             ),
         )
 
@@ -148,10 +150,13 @@ async def test_downgrade_using_link_detection_with_silent_connection(
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.gather(
                 alpha_client.wait_for_state_peer(
-                    beta.public_key, [State.Connected], [PathType.Relay], timeout=15
+                    beta.public_key, [NodeState.CONNECTED], [PathType.RELAY], timeout=15
                 ),
                 beta_client.wait_for_state_peer(
-                    alpha.public_key, [State.Connected], [PathType.Relay], timeout=15
+                    alpha.public_key,
+                    [NodeState.CONNECTED],
+                    [PathType.RELAY],
+                    timeout=15,
                 ),
             )
 
@@ -164,10 +169,10 @@ async def test_downgrade_using_link_detection_with_silent_connection(
         # Expect downgrade to relay
         await asyncio.gather(
             alpha_client.wait_for_state_peer(
-                beta.public_key, [State.Connected], [PathType.Relay], timeout=35
+                beta.public_key, [NodeState.CONNECTED], [PathType.RELAY], timeout=35
             ),
             beta_client.wait_for_state_peer(
-                alpha.public_key, [State.Connected], [PathType.Relay], timeout=35
+                alpha.public_key, [NodeState.CONNECTED], [PathType.RELAY], timeout=35
             ),
         )
 

@@ -2,8 +2,8 @@ import asyncio
 import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
-from telio import PeerInfo
 from typing import Optional
+from utils.bindings import TelioNode
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
 
@@ -46,7 +46,7 @@ async def test_proxy_endpoint_map_update() -> None:
         )
 
 
-def node_port(peer_info: Optional[PeerInfo]) -> int:
+def node_port(peer_info: Optional[TelioNode]) -> int:
     assert peer_info
     endpoint = peer_info.endpoint
     assert endpoint

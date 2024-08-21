@@ -5,8 +5,8 @@ from config import DERP_PRIMARY, DERP_SECONDARY, DERP_TERTIARY, DERP_SERVERS
 from contextlib import AsyncExitStack
 from copy import deepcopy
 from helpers import SetupParameters, setup_mesh_nodes
-from telio import State
 from typing import List
+from utils.bindings import RelayState
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
 
@@ -60,7 +60,7 @@ async def test_derp_reconnect_2clients(setup_params: List[SetupParameters]) -> N
 
         # Wait till connection is broken
         await beta_client.wait_for_state_derp(
-            DERP1_IP, [State.Disconnected, State.Connecting]
+            DERP1_IP, [RelayState.DISCONNECTED, RelayState.CONNECTING]
         )
 
         # ==============================================================
@@ -73,7 +73,7 @@ async def test_derp_reconnect_2clients(setup_params: List[SetupParameters]) -> N
         #   /           \
         # [ALPHA]     [BETA]
 
-        await beta_client.wait_for_state_derp(DERP2_IP, [State.Connected])
+        await beta_client.wait_for_state_derp(DERP2_IP, [RelayState.CONNECTED])
 
         # Ping peer to check if connection truly works
         await ping(alpha_connection, beta.ip_addresses[0])
@@ -146,10 +146,10 @@ async def test_derp_reconnect_3clients(setup_params: List[SetupParameters]) -> N
         )
 
         await beta_client.wait_for_state_derp(
-            DERP1_IP, [State.Disconnected, State.Connecting]
+            DERP1_IP, [RelayState.DISCONNECTED, RelayState.CONNECTING]
         )
         await gamma_client.wait_for_state_derp(
-            DERP1_IP, [State.Disconnected, State.Connecting]
+            DERP1_IP, [RelayState.DISCONNECTED, RelayState.CONNECTING]
         )
 
         # ==============================================================
@@ -166,9 +166,9 @@ async def test_derp_reconnect_3clients(setup_params: List[SetupParameters]) -> N
         # (* - connection to the escaped client, but DERP does not know):
 
         await asyncio.gather(
-            alpha_client.wait_for_state_derp(DERP1_IP, [State.Connected]),
-            beta_client.wait_for_state_derp(DERP2_IP, [State.Connected]),
-            gamma_client.wait_for_state_derp(DERP2_IP, [State.Connected]),
+            alpha_client.wait_for_state_derp(DERP1_IP, [RelayState.CONNECTED]),
+            beta_client.wait_for_state_derp(DERP2_IP, [RelayState.CONNECTED]),
+            gamma_client.wait_for_state_derp(DERP2_IP, [RelayState.CONNECTED]),
         )
 
         # ==============================================================
@@ -186,7 +186,7 @@ async def test_derp_reconnect_3clients(setup_params: List[SetupParameters]) -> N
             gamma_client.get_router().break_tcp_conn_to_host(DERP2_IP)
         )
         await gamma_client.wait_for_state_derp(
-            DERP2_IP, [State.Disconnected, State.Connecting]
+            DERP2_IP, [RelayState.DISCONNECTED, RelayState.CONNECTING]
         )
 
         # ==============================================================
@@ -202,9 +202,9 @@ async def test_derp_reconnect_3clients(setup_params: List[SetupParameters]) -> N
         # [ALPHA]    [BETA]     [GAMMA]
 
         await asyncio.gather(
-            alpha_client.wait_for_state_derp(DERP1_IP, [State.Connected]),
-            beta_client.wait_for_state_derp(DERP2_IP, [State.Connected]),
-            gamma_client.wait_for_state_derp(DERP3_IP, [State.Connected]),
+            alpha_client.wait_for_state_derp(DERP1_IP, [RelayState.CONNECTED]),
+            beta_client.wait_for_state_derp(DERP2_IP, [RelayState.CONNECTED]),
+            gamma_client.wait_for_state_derp(DERP3_IP, [RelayState.CONNECTED]),
         )
 
         # Ping ALPHA --> BETA
@@ -314,9 +314,9 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
         os.system("docker restart nat-lab-derp-01-1")
 
         await asyncio.gather(
-            alpha_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
-            beta_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
-            gamma_client.wait_for_state_derp(_DERP3_IP, [State.Connected]),
+            alpha_client.wait_for_state_derp(_DERP2_IP, [RelayState.CONNECTED]),
+            beta_client.wait_for_state_derp(_DERP2_IP, [RelayState.CONNECTED]),
+            gamma_client.wait_for_state_derp(_DERP3_IP, [RelayState.CONNECTED]),
         )
 
         # Ping ALPHA --> BETA
@@ -345,9 +345,9 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
         os.system("docker restart nat-lab-derp-02-1")
 
         await asyncio.gather(
-            alpha_client.wait_for_state_derp(_DERP1_IP, [State.Connected]),
-            beta_client.wait_for_state_derp(_DERP3_IP, [State.Connected]),
-            gamma_client.wait_for_state_derp(_DERP3_IP, [State.Connected]),
+            alpha_client.wait_for_state_derp(_DERP1_IP, [RelayState.CONNECTED]),
+            beta_client.wait_for_state_derp(_DERP3_IP, [RelayState.CONNECTED]),
+            gamma_client.wait_for_state_derp(_DERP3_IP, [RelayState.CONNECTED]),
         )
 
         # Ping ALPHA --> BETA
@@ -376,9 +376,9 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
         os.system("docker restart nat-lab-derp-03-1")
 
         await asyncio.gather(
-            alpha_client.wait_for_state_derp(_DERP1_IP, [State.Connected]),
-            beta_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
-            gamma_client.wait_for_state_derp(_DERP2_IP, [State.Connected]),
+            alpha_client.wait_for_state_derp(_DERP1_IP, [RelayState.CONNECTED]),
+            beta_client.wait_for_state_derp(_DERP2_IP, [RelayState.CONNECTED]),
+            gamma_client.wait_for_state_derp(_DERP2_IP, [RelayState.CONNECTED]),
         )
 
         # Ping ALPHA --> BETA
@@ -437,7 +437,7 @@ async def test_derp_server_list_exhaustion(setup_params: List[SetupParameters]) 
             await beta_client.wait_for_every_derp_disconnection()
 
         # iptables rules are dropped already
-        await beta_client.wait_for_state_on_any_derp([State.Connected])
+        await beta_client.wait_for_state_on_any_derp([RelayState.CONNECTED])
 
         # Ping peer to check if connection truly works
         await ping(alpha_connection, beta.ip_addresses[0])

@@ -9,7 +9,6 @@ import timeouts
 from config import DERP_SERVERS
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
-from telio import PathType, State
 from typing import List, Optional, Tuple
 from utils.asyncio_util import run_async_context
 from utils.bindings import (
@@ -21,6 +20,9 @@ from utils.bindings import (
     FeatureSkipUnresponsivePeers,
     FeatureEndpointProvidersOptimization,
     EndpointProvider,
+    PathType,
+    NodeState,
+    RelayState,
 )
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
@@ -258,8 +260,8 @@ async def test_direct_failing_paths(setup_params: List[SetupParameters]) -> None
             )
 
         await asyncio.gather(
-            alpha_client.wait_for_state_on_any_derp([State.Connecting]),
-            beta_client.wait_for_state_on_any_derp([State.Connecting]),
+            alpha_client.wait_for_state_on_any_derp([RelayState.CONNECTING]),
+            beta_client.wait_for_state_on_any_derp([RelayState.CONNECTING]),
         )
 
         with pytest.raises(asyncio.TimeoutError):
@@ -356,10 +358,10 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
 
         await asyncio.gather(
             alpha_client.wait_for_state_peer(
-                beta.public_key, [State.Connected], [PathType.Direct]
+                beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
             beta_client.wait_for_state_peer(
-                alpha.public_key, [State.Connected], [PathType.Direct]
+                alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
         )
         await ping(alpha_connection, beta.ip_addresses[0])
@@ -381,13 +383,13 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
             await asyncio.gather(
                 alpha_client.wait_for_state_peer(
                     beta.public_key,
-                    [State.Connected],
-                    [PathType.Relay],
+                    [NodeState.CONNECTED],
+                    [PathType.RELAY],
                 ),
                 beta_client.wait_for_state_peer(
                     alpha.public_key,
-                    [State.Connected],
-                    [PathType.Relay],
+                    [NodeState.CONNECTED],
+                    [PathType.RELAY],
                 ),
                 relayed_state_reported.wait(),
             )
@@ -401,10 +403,10 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
 
         await asyncio.gather(
             alpha_client.wait_for_state_peer(
-                beta.public_key, [State.Connected], [PathType.Direct]
+                beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
             beta_client.wait_for_state_peer(
-                alpha.public_key, [State.Connected], [PathType.Direct]
+                alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
             direct_state_reported.wait(),
         )
@@ -488,7 +490,9 @@ async def test_direct_short_connection_loss(
             await beta_connection.create_process(["conntrack", "-F"]).execute()
             task = await temp_exit_stack.enter_async_context(
                 run_async_context(
-                    alpha_client.wait_for_event_peer(beta.public_key, [State.Connected])
+                    alpha_client.wait_for_event_peer(
+                        beta.public_key, [NodeState.CONNECTED]
+                    )
                 )
             )
 
@@ -534,10 +538,10 @@ async def test_direct_connection_loss_for_infinity(
                 run_async_context(
                     asyncio.gather(
                         alpha_client.wait_for_event_peer(
-                            beta.public_key, [State.Connected]
+                            beta.public_key, [NodeState.CONNECTED]
                         ),
                         beta_client.wait_for_event_peer(
-                            alpha.public_key, [State.Connected]
+                            alpha.public_key, [NodeState.CONNECTED]
                         ),
                     )
                 )
@@ -593,10 +597,10 @@ async def test_direct_working_paths_with_skip_unresponsive_peers(
 
         await asyncio.gather(
             alpha_client.wait_for_state_peer(
-                beta.public_key, [State.Connected], [PathType.Direct]
+                beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
             beta_client.wait_for_state_peer(
-                alpha.public_key, [State.Connected], [PathType.Direct]
+                alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
         )
 
@@ -672,10 +676,10 @@ async def test_direct_connection_endpoint_gone(
 
                 await asyncio.gather(
                     alpha_client.wait_for_state_on_any_derp(
-                        [State.Connecting, State.Disconnected]
+                        [RelayState.CONNECTING, RelayState.DISCONNECTED]
                     ),
                     beta_client.wait_for_state_on_any_derp(
-                        [State.Connecting, State.Disconnected]
+                        [RelayState.CONNECTING, RelayState.DISCONNECTED]
                     ),
                 )
 
@@ -684,8 +688,8 @@ async def test_direct_connection_endpoint_gone(
         await _check_if_true_direct_connection()
 
         await asyncio.gather(
-            alpha_client.wait_for_state_on_any_derp([State.Connected]),
-            beta_client.wait_for_state_on_any_derp([State.Connected]),
+            alpha_client.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            beta_client.wait_for_state_on_any_derp([RelayState.CONNECTED]),
         )
 
         async with AsyncExitStack() as temp_exit_stack:
@@ -701,18 +705,22 @@ async def test_direct_connection_endpoint_gone(
             )
 
             await asyncio.gather(
-                alpha_client.wait_for_state_peer(beta.public_key, [State.Connected]),
-                beta_client.wait_for_state_peer(alpha.public_key, [State.Connected]),
+                alpha_client.wait_for_state_peer(
+                    beta.public_key, [NodeState.CONNECTED]
+                ),
+                beta_client.wait_for_state_peer(
+                    alpha.public_key, [NodeState.CONNECTED]
+                ),
             )
 
             await ping(alpha_connection, beta.ip_addresses[0])
 
         await asyncio.gather(
             alpha_client.wait_for_state_peer(
-                beta.public_key, [State.Connected], [PathType.Direct]
+                beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
             beta_client.wait_for_state_peer(
-                alpha.public_key, [State.Connected], [PathType.Direct]
+                alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
         )
 

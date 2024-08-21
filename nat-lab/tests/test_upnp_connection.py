@@ -2,9 +2,15 @@ import asyncio
 import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes, setup_environment
-from telio import AdapterType, PathType, State
+from telio import AdapterType
 from utils.asyncio_util import run_async_context
-from utils.bindings import features_with_endpoint_providers, EndpointProvider
+from utils.bindings import (
+    features_with_endpoint_providers,
+    EndpointProvider,
+    PathType,
+    NodeState,
+    RelayState,
+)
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
 from utils.router import new_router, IPStack
@@ -55,7 +61,9 @@ async def test_upnp_route_removed(
             await temp_exit_stack.enter_async_context(beta_gw_router.reset_upnpd())
             task = await temp_exit_stack.enter_async_context(
                 run_async_context(
-                    alpha_client.wait_for_event_peer(beta.public_key, [State.Connected])
+                    alpha_client.wait_for_event_peer(
+                        beta.public_key, [NodeState.CONNECTED]
+                    )
                 )
             )
             try:
@@ -70,10 +78,10 @@ async def test_upnp_route_removed(
 
         await asyncio.gather(
             alpha_client.wait_for_event_peer(
-                beta.public_key, [State.Connected], [PathType.Direct]
+                beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
             beta_client.wait_for_event_peer(
-                alpha.public_key, [State.Connected], [PathType.Direct]
+                alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
         )
 
@@ -158,8 +166,8 @@ async def test_upnp_without_support(
         (alpha_conn_mgr, beta_conn_mgr) = env.connections
 
         await asyncio.gather(
-            alpha_client.wait_for_state_on_any_derp([State.Connected]),
-            beta_client.wait_for_state_on_any_derp([State.Connected]),
+            alpha_client.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            beta_client.wait_for_state_on_any_derp([RelayState.CONNECTED]),
         )
 
         # Giving time for upnp gateway search to start
@@ -167,14 +175,14 @@ async def test_upnp_without_support(
             await asyncio.gather(
                 alpha_client.wait_for_event_peer(
                     beta_node.public_key,
-                    [State.Connected],
-                    [PathType.Direct],
+                    [NodeState.CONNECTED],
+                    [PathType.DIRECT],
                     timeout=10,
                 ),
                 beta_client.wait_for_event_peer(
                     alpha_node.public_key,
-                    [State.Connected],
-                    [PathType.Direct],
+                    [NodeState.CONNECTED],
+                    [PathType.DIRECT],
                     timeout=10,
                 ),
             )

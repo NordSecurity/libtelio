@@ -16,7 +16,6 @@ from config import (
 from contextlib import AsyncExitStack
 from helpers import connectivity_stack
 from mesh_api import API, Node
-from telio import PathType
 from typing import List, Optional
 from utils import testing, stun
 from utils.analytics import fetch_moose_events, DERP_BIT, WG_BIT, IPV4_BIT, IPV6_BIT
@@ -50,6 +49,9 @@ from utils.bindings import (
     FeatureEndpointProvidersOptimization,
     EndpointProvider,
     RttType,
+    PathType,
+    NodeState,
+    RelayState,
 )
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionLimits
@@ -389,26 +391,26 @@ async def run_default_scenario(
     )
 
     await asyncio.gather(
-        client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
-        client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
-        client_gamma.wait_for_state_on_any_derp([telio.State.Connected]),
+        client_alpha.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+        client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+        client_gamma.wait_for_state_on_any_derp([RelayState.CONNECTED]),
     )
     # Note: GAMMA is symmetric, so it will not connect to ALPHA or BETA in direct mode
     await asyncio.gather(
         client_alpha.wait_for_state_peer(
             beta.public_key,
-            [telio.State.Connected],
-            [PathType.Direct],
+            [NodeState.CONNECTED],
+            [PathType.DIRECT],
         ),
-        client_alpha.wait_for_state_peer(gamma.public_key, [telio.State.Connected]),
+        client_alpha.wait_for_state_peer(gamma.public_key, [NodeState.CONNECTED]),
         client_beta.wait_for_state_peer(
             alpha.public_key,
-            [telio.State.Connected],
-            [PathType.Direct],
+            [NodeState.CONNECTED],
+            [PathType.DIRECT],
         ),
-        client_beta.wait_for_state_peer(gamma.public_key, [telio.State.Connected]),
-        client_gamma.wait_for_state_peer(alpha.public_key, [telio.State.Connected]),
-        client_gamma.wait_for_state_peer(beta.public_key, [telio.State.Connected]),
+        client_beta.wait_for_state_peer(gamma.public_key, [NodeState.CONNECTED]),
+        client_gamma.wait_for_state_peer(alpha.public_key, [NodeState.CONNECTED]),
+        client_gamma.wait_for_state_peer(beta.public_key, [NodeState.CONNECTED]),
     )
 
     if alpha_has_vpn_connection:
@@ -1313,15 +1315,15 @@ async def test_lana_with_meshnet_exit_node(
         )
 
         await asyncio.gather(
-            client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
-            client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
+            client_alpha.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
         )
         await asyncio.gather(
             client_alpha.wait_for_state_peer(
-                beta.public_key, [telio.State.Connected], [PathType.Direct]
+                beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
             client_beta.wait_for_state_peer(
-                alpha.public_key, [telio.State.Connected], [PathType.Direct]
+                alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
         )
 
@@ -1541,15 +1543,15 @@ async def test_lana_with_disconnected_node(
         )
 
         await asyncio.gather(
-            client_alpha.wait_for_state_on_any_derp([telio.State.Connected]),
-            client_beta.wait_for_state_on_any_derp([telio.State.Connected]),
+            client_alpha.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
         )
         await asyncio.gather(
             client_alpha.wait_for_state_peer(
-                beta.public_key, [telio.State.Connected], [PathType.Direct]
+                beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
             client_beta.wait_for_state_peer(
-                alpha.public_key, [telio.State.Connected], [PathType.Direct]
+                alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
         )
 
@@ -1948,10 +1950,10 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
 
         await asyncio.gather(
             client_alpha.wait_for_state_peer(
-                beta.public_key, [telio.State.Connected], [PathType.Direct]
+                beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
             client_beta.wait_for_state_peer(
-                alpha.public_key, [telio.State.Connected], [PathType.Direct]
+                alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
         )
 

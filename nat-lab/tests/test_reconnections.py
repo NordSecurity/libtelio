@@ -4,6 +4,7 @@ import telio
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
 from utils import asyncio_util
+from utils.bindings import NodeState, RelayState
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.ping import ping
@@ -114,17 +115,17 @@ async def test_mesh_reconnect(
         async with asyncio_util.run_async_context(
             asyncio.gather(
                 client_alpha.wait_for_event_peer(
-                    beta.public_key, [telio.State.Connected]
+                    beta.public_key, [NodeState.CONNECTED]
                 ),
-                client_alpha.wait_for_event_on_any_derp([telio.State.Connected]),
+                client_alpha.wait_for_event_on_any_derp([RelayState.CONNECTED]),
             ),
         ) as event:
             await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
             await event
 
         await asyncio.gather(
-            client_alpha.wait_for_state_peer(beta.public_key, [telio.State.Connected]),
-            client_beta.wait_for_state_peer(alpha.public_key, [telio.State.Connected]),
+            client_alpha.wait_for_state_peer(beta.public_key, [NodeState.CONNECTED]),
+            client_beta.wait_for_state_peer(alpha.public_key, [NodeState.CONNECTED]),
         )
 
         await ping(alpha_connection, beta.ip_addresses[0])

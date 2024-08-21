@@ -1,7 +1,8 @@
 import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes, setup_connections
-from telio import AdapterType, ErrorEvent, ErrorCode, ErrorLevel
+from telio import AdapterType
+from utils.bindings import ErrorEvent, ErrorCode, ErrorLevel
 from utils.connection import TargetOS
 from utils.connection_util import ConnectionTag
 from utils.process import ProcessExecError
@@ -69,7 +70,7 @@ async def test_adapter_gone_event(alpha_setup_params: SetupParameters) -> None:
             raise RuntimeError("unsupported os")
 
         await client.wait_for_event_error(
-            ErrorEvent(ErrorLevel.Critical, ErrorCode.Unknown, "Interface gone")
+            ErrorEvent(ErrorLevel.CRITICAL, ErrorCode.UNKNOWN, "Interface gone")
         )
 
         client.allow_errors([

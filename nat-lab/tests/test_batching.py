@@ -6,7 +6,7 @@ from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment
 from itertools import zip_longest
 from scapy.layers.inet import TCP, UDP  # type: ignore
-from telio import State, AdapterType
+from telio import AdapterType
 from timeouts import TEST_BATCHING_TIMEOUT
 from typing import List, Tuple
 from utils.batching import (
@@ -20,6 +20,7 @@ from utils.bindings import (
     FeaturePersistentKeepalive,
     FeatureBatching,
     EndpointProvider,
+    RelayState,
 )
 from utils.connection import DockerConnection
 from utils.connection_util import DOCKER_GW_MAP, ConnectionTag, container_id
@@ -172,7 +173,7 @@ async def test_batching(
         )
 
         await asyncio.gather(*[
-            client.wait_for_state_on_any_derp([State.Connected])
+            client.wait_for_state_on_any_derp([RelayState.CONNECTED])
             for client, instance in zip_longest(env.clients, setup_params)
             if instance.derp_servers != []
         ])

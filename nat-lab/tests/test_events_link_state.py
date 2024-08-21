@@ -144,8 +144,8 @@ async def test_event_link_state_peers_idle_all_time(
         beta_events = client_alpha.get_link_state_events(beta.public_key)
 
         # 1 down when node is Connecting, 1 up when still Connecting and 1 up when node is Connected
-        assert alpha_events == [LinkState.Down, LinkState.Up, LinkState.Up]
-        assert beta_events == [LinkState.Down, LinkState.Up, LinkState.Up]
+        assert alpha_events == [LinkState.DOWN, LinkState.UP, LinkState.UP]
+        assert beta_events == [LinkState.DOWN, LinkState.UP, LinkState.UP]
 
 
 @pytest.mark.asyncio
@@ -171,8 +171,8 @@ async def test_event_link_state_peers_exchanging_data_for_a_long_time(
         beta_events = client_alpha.get_link_state_events(beta.public_key)
 
         # 1 down when node is Connecting, 1 up when still Connecting and 1 up when node is Connected
-        assert alpha_events == [LinkState.Down, LinkState.Up, LinkState.Up]
-        assert beta_events == [LinkState.Down, LinkState.Up, LinkState.Up]
+        assert alpha_events == [LinkState.DOWN, LinkState.UP, LinkState.UP]
+        assert beta_events == [LinkState.DOWN, LinkState.UP, LinkState.UP]
 
 
 @pytest.mark.asyncio
@@ -201,8 +201,8 @@ async def test_event_link_state_peers_exchanging_data_then_idling_then_resume(
         beta_events = client_alpha.get_link_state_events(beta.public_key)
 
         # 1 down when node is Connecting, 1 up when still Connecting and 1 up when node is Connected
-        assert alpha_events == [LinkState.Down, LinkState.Up, LinkState.Up]
-        assert beta_events == [LinkState.Down, LinkState.Up, LinkState.Up]
+        assert alpha_events == [LinkState.DOWN, LinkState.UP, LinkState.UP]
+        assert beta_events == [LinkState.DOWN, LinkState.UP, LinkState.UP]
 
 
 @pytest.mark.asyncio
@@ -233,13 +233,13 @@ async def test_event_link_state_peer_goes_offline(
         beta_events = client_alpha.get_link_state_events(beta.public_key)
 
         # 1 down when node is Connecting, 1 up when still Connecting and 1 up when node is Connected
-        assert alpha_events == [LinkState.Down, LinkState.Up, LinkState.Up]
+        assert alpha_events == [LinkState.DOWN, LinkState.UP, LinkState.UP]
         # beta will have 2 down events: 1 when is Connecting and 1 detected and 2 up when Connecting and Connected
         assert beta_events == [
-            LinkState.Down,
-            LinkState.Up,
-            LinkState.Up,
-            LinkState.Down,
+            LinkState.DOWN,
+            LinkState.UP,
+            LinkState.UP,
+            LinkState.DOWN,
         ]
 
 
