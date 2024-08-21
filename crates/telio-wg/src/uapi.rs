@@ -34,6 +34,8 @@ pub struct Peer {
     pub public_key: PublicKey,
     /// Peer's endpoint with `IP address` and `UDP port` number
     pub endpoint: Option<SocketAddr>,
+    /// Peer's enpoint roamed, changed from adapter not wg_controller
+    pub endpoint_roamed: bool,
     /// Mesh's IP addresses of peer
     pub ip_addresses: Vec<IpAddr>,
     /// Keep alive interval, `seconds` or `None`
@@ -60,6 +62,7 @@ impl From<get::Peer> for Peer {
         Self {
             public_key: PublicKey(item.public_key),
             endpoint: item.endpoint,
+            endpoint_roamed: false,
             ip_addresses: Default::default(),
             persistent_keepalive_interval: Some(item.persistent_keepalive_interval.into()),
             allowed_ips: item

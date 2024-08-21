@@ -500,6 +500,10 @@ impl WireGuard for DynamicWg {
                 new_peer.persistent_keepalive_interval = Some(0);
             }
 
+            // Peer changed here no longer considered roamed, it's verfied by
+            // telio to be what wg_controller expects
+            new_peer.endpoint_roamed = false;
+
             to.peers.insert(new_peer.public_key, new_peer);
             let _ = s.update(to, true).await;
             Ok(())
@@ -600,7 +604,7 @@ struct DiffKeys {
 impl State {
     async fn sync(&mut self) -> Result<(), Error> {
         if let Some(to) = self.uapi_request(&uapi::Cmd::Get).await?.interface {
-            let _ = self.update(to, false).await;
+            let _ = self.update(to, /* from_telio: */ false).await;
         }
 
         Ok(())
@@ -709,7 +713,7 @@ impl State {
         &mut self,
         to: &uapi::Interface,
         diff_keys: &DiffKeys,
-        push: bool,
+        from_telio: bool,
     ) -> Result<(), Error> {
         let from = &self.interface;
 
@@ -793,7 +797,7 @@ impl State {
                 }
                 let link_detection_update_result = {
                     if let Some(link_detection) = self.link_detection.as_mut() {
-                        link_detection.update(key, node_addresses, push).await
+                        link_detection.update(key, node_addresses, from_telio).await
                     } else {
                         LinkDetectionUpdateResult {
                             ..Default::default()
@@ -874,22 +878,35 @@ impl State {
         }
     }
 
-    fn update_endpoint_change_timestamps(&mut self, diff_keys: &DiffKeys, to: &uapi::Interface) {
+    fn update_endpoint_changes(
+        &mut self,
+        diff_keys: &DiffKeys,
+        to: &mut uapi::Interface,
+        from_telio: bool,
+    ) {
         for key in diff_keys
             .insert_keys
             .iter()
             .chain(diff_keys.update_keys.iter())
         {
-            let old_endpoint = self.interface.peers.get(key).map(|p| p.endpoint);
-            let new_endpoint = to.peers.get(key).map(|p| p.endpoint);
+            let old_endpoint = self.interface.peers.get(key).and_then(|p| p.endpoint);
+            let new_peer = to.peers.get_mut(key);
 
+            let new_endpoint = new_peer.as_ref().and_then(|p| p.endpoint);
             if old_endpoint != new_endpoint {
                 telio_log_debug!(
-                    "Endpoint change detected {:?} -> {:?}",
+                    "Endpoint change detected {:?} -> {:?}, roamed: {}",
                     old_endpoint,
-                    new_endpoint
+                    new_endpoint,
+                    !from_telio
                 );
                 self.last_endpoint_change.insert(*key, Instant::now());
+                if let Some(peer) = new_peer {
+                    // Endpoint change comming from adapter is considered to be roamed
+                    if !from_telio {
+                        peer.endpoint_roamed = true;
+                    }
+                }
             }
         }
 
@@ -899,7 +916,7 @@ impl State {
     }
 
     #[allow(mpsc_blocking_send)]
-    async fn update(&mut self, mut to: uapi::Interface, push: bool) -> Result<bool, Error> {
+    async fn update(&mut self, mut to: uapi::Interface, from_telio: bool) -> Result<bool, Error> {
         for (pk, peer) in &mut to.peers {
             peer.time_since_last_rx = self.time_since_last_rx(*pk);
         }
@@ -915,25 +932,43 @@ impl State {
             }
         }
 
+        let is_same = Self::is_same_interface(&self.interface, &to);
+        let unromed = self.collect_unroamed_peers(from_telio, &to);
+
         // We need to track failed driver calls in uapi_request().
         // Because uapi_request() now needs a mut self, the mut borrow for self.uapi_request()
         // would collide with HashSet<&PublicKey> and with from=&self.interface,
         // which was used throughout this function for better readability.
-        if Self::is_same_interface(&self.interface, &to) {
+        if is_same && unromed.is_empty() {
             return Err(Error::InternalError(
                 "Same interface received in update function",
             ));
         }
 
+        // We do an eraly unroam setting, latter changes should not ovveride as they are built
+        // from same to interface
+        for key in unromed.into_iter() {
+            if let Some(peer) = self.interface.peers.get_mut(&key) {
+                telio_log_debug!("Unroaming peer's {} endpoint", key);
+                peer.endpoint_roamed = false;
+            }
+        }
+        if is_same {
+            // Only unroams happened, no need to report
+            return Ok(true);
+        }
+
         let diff_keys = self.update_calculate_changes(&to);
 
-        self.update_endpoint_change_timestamps(&diff_keys, &to);
+        self.update_endpoint_changes(&diff_keys, &mut to, from_telio);
 
-        self.update_send_notification_events(&to, &diff_keys, push)
+        self.update_send_notification_events(&to, &diff_keys, from_telio)
             .await?;
 
         let mut success = true;
-        if push {
+
+        // If update comes from telio we need to push updates to adapter
+        if from_telio {
             let dev = self.update_construct_set_device(&to, &diff_keys);
             // mut self required here
             success = self
@@ -976,6 +1011,32 @@ impl State {
         self.interface = to;
 
         Ok(success)
+    }
+
+    // Collect all peers that there unroamed by telio logic
+    fn collect_unroamed_peers(&self, from_telio: bool, to_interface: &Interface) -> Vec<PublicKey> {
+        let mut unroamed = Vec::new();
+        if !from_telio {
+            // It's only possible to unroam, then called from telio
+            return unroamed;
+        }
+
+        let from: HashSet<_> = self.interface.peers.keys().collect();
+        let to: HashSet<_> = to_interface.peers.keys().collect();
+        // Only existing peers can be unroamed
+        let same = &from & &to;
+        for key in same.into_iter() {
+            let Some(old) = self.interface.peers.get(key) else {
+                continue;
+            };
+            let Some(new) = to_interface.peers.get(key) else {
+                continue;
+            };
+            if old.endpoint_roamed && !new.endpoint_roamed {
+                unroamed.push(*key);
+            }
+        }
+        unroamed
     }
 
     /// This is like the normal '==' but ignores the time_since_last_rx field in peers
@@ -1080,6 +1141,7 @@ pub mod tests {
                     rng.gen::<u32>().into(),
                     rng.gen(),
                 ))),
+                endpoint_roamed: rng.gen::<bool>(),
                 ip_addresses: vec![
                     IpAddr::V4(rng.gen::<u32>().into()),
                     IpAddr::V4(rng.gen::<u32>().into()),
@@ -1761,6 +1823,171 @@ pub mod tests {
 
         adapter.lock().await.expect_stop().return_once(|| ());
         wg.stop().await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_endpoint_roaming() {
+        let Env {
+            adapter,
+            wg,
+            mut event,
+            ..
+        } = setup().await;
+
+        let pk = SecretKey::gen().public();
+        let to_peer = |i: Result<Interface, _>| {
+            i.expect("valid interface")
+                .peers
+                .get(&pk)
+                .cloned()
+                .expect("peer exists")
+        };
+        let with_peer = |peer: Peer| {
+            move |_: &_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: Some(Interface {
+                        peers: vec![(pk, peer.clone())].into_iter().collect(),
+                        ..Default::default()
+                    }),
+                })
+            }
+        };
+        let peer = Peer {
+            public_key: pk,
+            endpoint: Some(([1, 1, 1, 1], 123).into()),
+            persistent_keepalive_interval: Some(25),
+            ..Default::default()
+        };
+
+        // CASE: Adding node
+        adapter
+            .lock()
+            .await
+            .expect_send_uapi_cmd()
+            .times(1)
+            .withf(|c| matches!(c, Cmd::Set(_)))
+            .returning(|_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: None,
+                })
+            });
+        wg.add_peer(peer.clone()).await.unwrap();
+        adapter.lock().await.checkpoint();
+        let actual_peer = wg.get_interface().map(to_peer).await;
+        assert_eq!(actual_peer, peer);
+        assert!(event.try_recv().is_ok(), "one event reported");
+        assert!(event.try_recv().is_err(), "no more events");
+
+        // CASE: Adding peer with roaming set to true, must be ignored.
+        // Roaming can only happen from adapter side.
+        wg.add_peer(Peer {
+            endpoint_roamed: true,
+            ..peer.clone()
+        })
+        .await
+        .unwrap();
+        adapter.lock().await.checkpoint();
+        let actual_peer = wg.get_interface().map(to_peer).await;
+        assert_eq!(actual_peer, peer);
+        assert!(event.try_recv().is_err(), "no extra events reported");
+
+        // CASE: Adding peer with roaming set to true is ignored
+        // Roaming can only happen from adapter side.
+        wg.add_peer(Peer {
+            endpoint_roamed: true,
+            ..peer.clone()
+        })
+        .await
+        .unwrap();
+        adapter.lock().await.checkpoint();
+        let actual_peer = wg.get_interface().map(to_peer).await;
+        assert_eq!(actual_peer, peer);
+        assert!(event.try_recv().is_err(), "no extra events reported");
+
+        // CASE: Changing endpoint with add, is not detected as roaming
+        adapter
+            .lock()
+            .await
+            .expect_send_uapi_cmd()
+            .times(1)
+            .withf(|c| matches!(c, Cmd::Set(_)))
+            .returning(|_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: None,
+                })
+            });
+        wg.add_peer(Peer {
+            endpoint: Some(([1, 1, 1, 1], 321).into()),
+            ..peer.clone()
+        })
+        .await
+        .unwrap();
+        adapter.lock().await.checkpoint();
+        let actual_peer = wg.get_interface().map(to_peer).await;
+        assert_eq!(
+            actual_peer,
+            Peer {
+                endpoint: Some(([1, 1, 1, 1], 321).into()),
+                ..peer.clone()
+            }
+        );
+        assert!(event.try_recv().is_ok(), "event is reported");
+        assert!(event.try_recv().is_err(), "no more events");
+
+        // CASE: Change of endpoint, detected as roaming
+        adapter
+            .lock()
+            .await
+            .expect_send_uapi_cmd()
+            .times(1)
+            .with(predicate::eq(Cmd::Get))
+            .returning(with_peer(Peer {
+                endpoint: Some(([127, 0, 0, 1], 666).into()),
+                ..peer.clone()
+            }));
+        time::advance(Duration::from_millis(1050)).await;
+
+        assert!(
+            event.recv().await.is_some(),
+            "one connecting event reported"
+        );
+        let actual_peer = wg.get_interface().map(to_peer).await;
+        adapter.lock().await.checkpoint();
+
+        assert_eq!(
+            actual_peer,
+            Peer {
+                endpoint: Some(([127, 0, 0, 1], 666).into()),
+                endpoint_roamed: true,
+                ..peer.clone()
+            }
+        );
+        assert!(event.try_recv().is_err(), "no more events");
+
+        // CASE: Setting same endpoint back, transform into not roaming
+        // This will be used by wg_controller to "confirm" change
+        wg.add_peer(Peer {
+            endpoint: Some(([127, 0, 0, 1], 666).into()),
+            ..peer.clone()
+        })
+        .await
+        .unwrap();
+        adapter.lock().await.checkpoint();
+        let actual_peer = wg.get_interface().map(to_peer).await;
+        assert_eq!(
+            actual_peer,
+            Peer {
+                endpoint: Some(([127, 0, 0, 1], 666).into()),
+                ..peer.clone()
+            }
+        );
+        assert!(
+            event.try_recv().is_err(),
+            "no additional event reported for roaming true -> false change"
+        );
     }
 
     #[test]

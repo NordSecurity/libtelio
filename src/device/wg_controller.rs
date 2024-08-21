@@ -40,6 +40,8 @@ pub enum Error {
 enum PeerState {
     Disconnected,
     Proxying,
+    /// Roamed(proxying)
+    Roamed(bool),
     Upgrading,
     Direct,
 }
@@ -176,6 +178,8 @@ async fn consolidate_wg_peers<
         wireguard_interface,
         cross_ping_check,
         upgrade_sync,
+        session_keeper,
+        proxy,
         dns,
         &proxy_endpoints,
         starcast_vpeer,
@@ -449,6 +453,8 @@ async fn build_requested_peers_list<
     W: WireGuard,
     C: CrossPingCheckTrait,
     U: UpgradeSyncTrait,
+    S: SessionKeeperTrait,
+    P: Proxy,
     D: DnsResolver,
     E: EndpointProvider,
 >(
@@ -456,6 +462,8 @@ async fn build_requested_peers_list<
     wireguard_interface: &W,
     cross_ping_check: Option<&Arc<C>>,
     upgrade_sync: Option<&Arc<U>>,
+    session_keeper: Option<&Arc<S>>,
+    proxy: Option<&P>,
     dns: &Mutex<crate::device::DNS<D>>,
     proxy_endpoints: &EndpointMap,
     starcast_vpeer: Option<&Arc<StarcastPeer>>,
@@ -470,6 +478,8 @@ async fn build_requested_peers_list<
         wireguard_interface,
         cross_ping_check,
         upgrade_sync,
+        session_keeper,
+        proxy,
         proxy_endpoints,
         remote_peer_states,
         features,
@@ -617,11 +627,15 @@ async fn build_requested_meshnet_peers_list<
     W: WireGuard,
     C: CrossPingCheckTrait,
     U: UpgradeSyncTrait,
+    S: SessionKeeperTrait,
+    P: Proxy,
 >(
     requested_state: &RequestedState,
     wireguard_interface: &W,
     cross_ping_check: Option<&Arc<C>>,
     upgrade_sync: Option<&Arc<U>>,
+    session_keeper: Option<&Arc<S>>,
+    proxy: Option<&P>,
     proxy_endpoints: &EndpointMap,
     remote_peer_states: &PeersStatesMap,
     features: &Features,
@@ -746,8 +760,18 @@ async fn build_requested_meshnet_peers_list<
             requested_state,
         );
 
-        // If we are in direct state, tell cross ping check about it
-        if peer_state == PeerState::Direct {
+        if peer_state == PeerState::Roamed(true) {
+            // If endpoint roamed back to proxied, tell cross ping check to chill
+            if let Some(cpc) = cross_ping_check {
+                cpc.notify_failed_wg_connection(*public_key).await?;
+            }
+            if let Some(sk) = session_keeper {
+                sk.remove_node(public_key).await?
+            }
+            if let Some(proxy) = proxy {
+                proxy.mute_peer(*public_key, None).await?
+            }
+        } else if peer_state == PeerState::Direct || peer_state == PeerState::Roamed(false) {
             if let Some(cpc) = cross_ping_check {
                 cpc.notify_successfull_wg_connection_upgrade(*public_key)
                     .await?;
@@ -846,7 +870,7 @@ async fn select_endpoint_for_peer<'a>(
     upgrade_request_endpoint: &Option<SocketAddr>,
 ) -> Result<(Option<SocketAddr>, Option<EndpointState>)> {
     // Retrieve some helper information
-    let actual_endpoint = actual_peer.clone().and_then(|p| p.endpoint);
+    let actual_endpoint = actual_peer.as_ref().and_then(|p| p.endpoint);
 
     // Use match statement to cover all possible variants
     match (upgrade_request_endpoint, peer_state, checked_endpoint) {
@@ -889,6 +913,16 @@ async fn select_endpoint_for_peer<'a>(
                 time_since_last_rx,
             );
             Ok((proxy_endpoint.first().copied(), None))
+        }
+
+        // If endpoint roamed -> keep it
+        (None, PeerState::Roamed(_), _) => {
+            telio_log_info!(
+                "Detected that peer's {:?} endpoint roamed to {:?}",
+                public_key,
+                actual_endpoint,
+            );
+            Ok((actual_endpoint, None))
         }
 
         // Just proxying, nothing to upgrade to...
@@ -948,6 +982,7 @@ async fn select_endpoint_for_peer<'a>(
 fn compare_peers(a: &telio_wg::uapi::Peer, b: &telio_wg::uapi::Peer) -> bool {
     a.public_key == b.public_key
         && a.endpoint == b.endpoint
+        && a.endpoint_roamed == b.endpoint_roamed
         && a.persistent_keepalive_interval == b.persistent_keepalive_interval
         && a.allowed_ips == b.allowed_ips
         && a.preshared_key == b.preshared_key
@@ -1019,11 +1054,17 @@ fn peer_state(
         time_since_last_rx < &peer_connectivity_timeout
     };
 
-    match (has_contact, is_proxying, is_in_upgrade_window) {
-        (false, _, _) => PeerState::Disconnected,
-        (true, true, _) => PeerState::Proxying,
-        (true, false, true) => PeerState::Upgrading,
-        (true, false, false) => PeerState::Direct,
+    match (
+        has_contact,
+        peer.endpoint_roamed,
+        is_proxying,
+        is_in_upgrade_window,
+    ) {
+        (false, _, _, _) => PeerState::Disconnected,
+        (true, true, p, _) => PeerState::Roamed(p),
+        (true, false, true, _) => PeerState::Proxying,
+        (true, false, false, true) => PeerState::Upgrading,
+        (true, false, false, false) => PeerState::Direct,
     }
 }
 
@@ -1549,7 +1590,10 @@ mod tests {
             }
         }
 
-        fn when_current_peers(&mut self, input: Vec<(PublicKey, SocketAddr, u32, AllowedIps)>) {
+        fn when_current_peers(
+            &mut self,
+            input: Vec<(PublicKey, SocketAddr, u32, AllowedIps, bool)>,
+        ) {
             let peers: BTreeMap<PublicKey, Peer> = input
                 .into_iter()
                 .map(|i| {
@@ -1558,6 +1602,7 @@ mod tests {
                         Peer {
                             public_key: i.0,
                             endpoint: Some(i.1),
+                            endpoint_roamed: i.4,
                             persistent_keepalive_interval: Some(i.2),
                             allowed_ips: i.3.into_iter().map(|ip| ip.into()).collect(),
                             ..Default::default()
@@ -1654,6 +1699,7 @@ mod tests {
                     .with(eq(Peer {
                         public_key: i.0,
                         endpoint: Some(i.1),
+                        endpoint_roamed: false,
                         ip_addresses: i.4,
                         persistent_keepalive_interval: Some(i.2),
                         allowed_ips: i.3,
@@ -1688,6 +1734,7 @@ mod tests {
                     .with(eq(Peer {
                         public_key: i.0,
                         endpoint: Some(i.1),
+                        endpoint_roamed: false,
                         ip_addresses: i.4,
                         persistent_keepalive_interval: Some(i.2),
                         allowed_ips: i.3,
@@ -1862,6 +1909,7 @@ mod tests {
             proxy_endpoint,
             TEST_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
+            false,
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 5)]);
         f.when_time_since_last_endpoint_change(vec![(pub_key, 5)]);
@@ -1919,6 +1967,7 @@ mod tests {
             proxy_endpoint,
             TEST_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
+            false,
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 5)]);
         f.when_time_since_last_endpoint_change(vec![(pub_key, 5)]);
@@ -1978,6 +2027,7 @@ mod tests {
             proxy_endpoint,
             TEST_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
+            false,
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 5)]);
         f.when_time_since_last_endpoint_change(vec![(pub_key, 5)]);
@@ -2076,6 +2126,7 @@ mod tests {
             proxy_endpoint,
             TEST_PERSISTENT_KEEPALIVE_PERIOD,
             vec![ip1, ip1v6, ip2, ip2v6],
+            false,
         )]);
         f.when_time_since_last_rx(vec![]);
         f.when_time_since_last_endpoint_change(vec![]);
@@ -2107,6 +2158,7 @@ mod tests {
             proxy_endpoint,
             TEST_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips,
+            false,
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 4)]);
         f.when_time_since_last_endpoint_change(vec![(pub_key, 4)]);
@@ -2136,6 +2188,7 @@ mod tests {
             wg_endpoint,
             TEST_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
+            false,
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 5)]);
         f.when_time_since_last_endpoint_change(vec![(pub_key, DEFAULT_PEER_UPGRADE_WINDOW)]);
@@ -2311,6 +2364,7 @@ mod tests {
             proxy_endpoint,
             TEST_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
+            false,
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 20)]);
         f.when_time_since_last_endpoint_change(vec![(pub_key, 100)]);

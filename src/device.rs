@@ -21,10 +21,9 @@ use telio_task::{
     io::{chan, mc_chan, mc_chan::Tx, Chan, McChan},
     task_exec, BoxAction, Runtime as TaskRuntime, Task,
 };
-use telio_traversal::SessionKeeperTrait;
 use telio_traversal::{
     connectivity_check,
-    cross_ping_check::{CrossPingCheck, CrossPingCheckTrait, Io as CpcIo, UpgradeController},
+    cross_ping_check::{CrossPingCheck, CrossPingCheckTrait, Io as CpcIo},
     endpoint_providers::{
         self,
         local::LocalInterfacesEndpointProvider,
@@ -2285,38 +2284,7 @@ impl TaskRuntime for Runtime {
             },
 
             Some(mesh_event) = self.event_listeners.wg_event_subscriber.recv() => {
-                let public_key = mesh_event.peer.public_key;
-
-                if let Some(mesh_entities) = self.entities.meshnet.left() {
-                    if let Some(proxy_endpoints) = mesh_entities.proxy.get_endpoint_map().await.ok().as_mut().and_then(|proxy_map| proxy_map.remove(&public_key)) {
-                        let is_proxying = mesh_event.peer.endpoint.map_or(false, |ep| proxy_endpoints.contains(&ep));
-                        let was_proxying = mesh_event.old_peer.as_ref().and_then(|peer| peer.endpoint.map(|ep| proxy_endpoints.contains(&ep))).unwrap_or_default();
-
-                        if !was_proxying && is_proxying {
-                            if let Some(direct_entities) = mesh_entities.direct.as_ref() {
-                                // We have downgraded the connection. Notify cross ping check about that.
-                                direct_entities.cross_ping_check.notify_failed_wg_connection(public_key)
-                                    .await?;
-
-                                direct_entities.session_keeper.remove_node(&public_key).await?;
-
-                                let mut event = AnalyticsEvent::from_event(&mesh_event);
-                                event.peer_state = PeerState::Connected;
-                                self.entities.aggregator.change_peer_state_relayed(&event).await;
-                            } else {
-                                telio_log_warn!("Connection downgraded while direct entities are disabled");
-                            }
-
-                            // Unmute pair to allow communication through proxy
-                            mesh_entities.proxy.mute_peer(public_key, None).await?;
-
-                            telio_log_info!("Peer {} was downgraded", public_key);
-                        }
-                    }
-                }
-
                 let node = self.peer_to_node(&mesh_event.peer, Some(mesh_event.state), mesh_event.link_state).await;
-
                 if let Some(node) = node {
                     if mesh_event.state != PeerState::Connecting && node.path == PathType::Relay {
                         self.entities.aggregator.change_peer_state_relayed(
@@ -2326,11 +2294,19 @@ impl TaskRuntime for Runtime {
                     // Publish WG event to app
                     let event = Event::builder::<Node>().set(node).build();
                     if let Some(event) = event {
-                    let _ = self.event_publishers.libtelio_event_publisher.send(
-                        Box::new(event)
-                    );
+                        let _ = self.event_publishers.libtelio_event_publisher.send(
+                            Box::new(event)
+                        );
+                    }
                 }
-                }
+
+                telio_log_debug!("WG consolidation triggered wg event");
+                wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
+                    .await
+                    .unwrap_or_else(
+                        |e| {
+                            telio_log_warn!("WireGuard controller failure: {:?}. Ignoring", e);
+                        });
 
                 Ok(())
             },

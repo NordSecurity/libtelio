@@ -57,10 +57,10 @@ impl LinkDetection {
         &mut self,
         public_key: &PublicKey,
         node_addresses: Vec<IpAddr>,
-        push: bool,
+        from_telio: bool,
     ) -> LinkDetectionUpdateResult {
-        // We want to update info only on pull
-        if push {
+        // We want to update info only then infromation is comes from adapter
+        if from_telio {
             return self.push_update(public_key);
         }
 
