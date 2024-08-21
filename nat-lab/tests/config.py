@@ -1,6 +1,7 @@
 import os
 import platform
 from typing import Dict, Union
+from utils.bindings import Server, RelayState
 
 if platform.machine() != "x86_64":
     import pure_wg as Key
@@ -129,58 +130,62 @@ WG_SERVERS = [WG_SERVER, WG_SERVER_2, NLX_SERVER]
 # and replace dictionaries with objects
 
 # DERP servers
-DERP_PRIMARY = {
-    "region_code": "nl",
-    "name": "Natlab #0001",
-    "hostname": "derp-01",
-    "ipv4": "10.0.10.1",
-    "relay_port": 8765,
-    "stun_port": 3479,
-    "stun_plaintext_port": 3478,
-    "public_key": "qK/ICYOGBu45EIGnopVu+aeHDugBrkLAZDroKGTuKU0=",  # NOTE: this is hardcoded key for transient docker container existing only during the tests
-    "weight": 1,
-    "use_plain_text": True,
-}
+DERP_PRIMARY = Server(
+    region_code="nl",
+    name="Natlab #0001",
+    hostname="derp-01",
+    ipv4="10.0.10.1",
+    relay_port=8765,
+    stun_port=3479,
+    stun_plaintext_port=3478,
+    public_key="qK/ICYOGBu45EIGnopVu+aeHDugBrkLAZDroKGTuKU0=",  # NOTE: this is hardcoded key for transient docker container existing only during the tests
+    weight=1,
+    use_plain_text=True,
+    conn_state=RelayState.DISCONNECTED,
+)
 
-DERP_FAKE = {
-    "region_code": "fk",
-    "name": "Natlab #0002-fake",
-    "hostname": "derp-00",
-    "ipv4": "10.0.10.245",
-    "relay_port": 8765,
-    "stun_port": 3479,
-    "stun_plaintext_port": 3478,
-    "public_key": "aAY0rU8pW8LV3BJlY5u5WYH7nbAwS5H0mBMJppVDRGs=",  # NOTE: this is hardcoded key for transient docker container existing only during the tests
-    "weight": 2,
-    "use_plain_text": True,
-}
+DERP_FAKE = Server(
+    region_code="fk",
+    name="Natlab #0002-fake",
+    hostname="derp-00",
+    ipv4="10.0.10.245",
+    relay_port=8765,
+    stun_port=3479,
+    stun_plaintext_port=3478,
+    public_key="aAY0rU8pW8LV3BJlY5u5WYH7nbAwS5H0mBMJppVDRGs=",  # NOTE: this is hardcoded key for transient docker container existing only during the tests
+    weight=2,
+    use_plain_text=True,
+    conn_state=RelayState.DISCONNECTED,
+)
 # we kept it because the test on  mesh_api
 
-DERP_SECONDARY = {
-    "region_code": "de",
-    "name": "Natlab #0002",
-    "hostname": "derp-02",
-    "ipv4": "10.0.10.2",
-    "relay_port": 8765,
-    "stun_port": 3479,
-    "stun_plaintext_port": 3478,
-    "public_key": "KmcnUJ7EfhCIF9o1S5ycShaNc3y1DmioKUlkMvEVoRI=",  # NOTE: this is hardcoded key for transient docker container existing only during the tests
-    "weight": 3,
-    "use_plain_text": True,
-}
+DERP_SECONDARY = Server(
+    region_code="de",
+    name="Natlab #0002",
+    hostname="derp-02",
+    ipv4="10.0.10.2",
+    relay_port=8765,
+    stun_port=3479,
+    stun_plaintext_port=3478,
+    public_key="KmcnUJ7EfhCIF9o1S5ycShaNc3y1DmioKUlkMvEVoRI=",  # NOTE: this is hardcoded key for transient docker container existing only during the tests
+    weight=3,
+    use_plain_text=True,
+    conn_state=RelayState.DISCONNECTED,
+)
 
-DERP_TERTIARY = {
-    "region_code": "us",
-    "name": "Natlab #0003",
-    "hostname": "derp-03",
-    "ipv4": "10.0.10.3",
-    "relay_port": 8765,
-    "stun_port": 3479,
-    "stun_plaintext_port": 3478,
-    "public_key": "A4ggUMw5DmMSjz1uSz3IkjM3A/CRgJxEHoGigwT0W3k=",  # NOTE: this is hardcoded key for transient docker container existing only during the tests
-    "weight": 4,
-    "use_plain_text": True,
-}
+DERP_TERTIARY = Server(
+    region_code="us",
+    name="Natlab #0003",
+    hostname="derp-03",
+    ipv4="10.0.10.3",
+    relay_port=8765,
+    stun_port=3479,
+    stun_plaintext_port=3478,
+    public_key="A4ggUMw5DmMSjz1uSz3IkjM3A/CRgJxEHoGigwT0W3k=",  # NOTE: this is hardcoded key for transient docker container existing only during the tests
+    weight=4,
+    use_plain_text=True,
+    conn_state=RelayState.DISCONNECTED,
+)
 
 
 # separating in objects

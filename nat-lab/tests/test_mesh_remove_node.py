@@ -132,8 +132,8 @@ async def test_mesh_remove_node(
 
         api.remove(gamma.id)
 
-        await client_alpha.set_meshmap(api.get_meshmap(alpha.id))
-        await client_beta.set_meshmap(api.get_meshmap(beta.id))
+        await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
+        await client_beta.set_meshnet_config(api.get_meshnet_config(beta.id))
 
         await ping(connection_alpha, beta.ip_addresses[0])
         with pytest.raises(asyncio.TimeoutError):

@@ -1,11 +1,10 @@
 # pylint: disable=too-many-lines
 import asyncio
 import glob
-import json
 import os
 import platform
 import re
-import uniffi.telio_bindings as libtelio  # type: ignore
+import uniffi.telio_bindings as libtelio
 import uuid
 import warnings
 from collections import Counter
@@ -15,11 +14,11 @@ from dataclasses import dataclass, field
 from dataclasses_json import DataClassJsonMixin, dataclass_json
 from datetime import datetime
 from enum import Enum
-from mesh_api import Meshmap, Node, start_tcpdump, stop_tcpdump
+from mesh_api import Node, start_tcpdump, stop_tcpdump
 from typing import AsyncIterator, List, Optional, Set
 from uniffi.libtelio_proxy import LibtelioProxy, ProxyConnectionError
 from utils import asyncio_util
-from utils.bindings import default_features, Features, NatType
+from utils.bindings import default_features, Features, NatType, Config
 from utils.command_grepper import CommandGrepper
 from utils.connection import Connection, DockerConnection, TargetOS
 from utils.connection_util import get_uniffi_path
@@ -535,7 +534,9 @@ class Client:
         return self._proxy_port
 
     @asynccontextmanager
-    async def run(self, meshmap: Optional[Meshmap] = None) -> AsyncIterator["Client"]:
+    async def run(
+        self, meshnet_config: Optional[Config] = None
+    ) -> AsyncIterator["Client"]:
         if isinstance(self._connection, DockerConnection):
             start_tcpdump(self._connection.container_name())
             await self.clear_core_dumps()
@@ -627,8 +628,8 @@ class Client:
                     self.get_proxy().set_fwmark(int(LINUX_FWMARK_VALUE))
 
                 async with asyncio_util.run_async_context(self._event_request_loop()):
-                    if meshmap:
-                        await self.set_meshmap(meshmap)
+                    if meshnet_config:
+                        await self.set_meshnet_config(meshnet_config)
                     yield self
             finally:
                 print(datetime.now(), "Test cleanup: Saving logs")
@@ -738,7 +739,7 @@ class Client:
         self, states: List[State], timeout: Optional[float] = None
     ) -> None:
         async with asyncio_util.run_async_contexts([
-            self.get_events().wait_for_state_derp(str(derp["ipv4"]), states, timeout)
+            self.get_events().wait_for_state_derp(str(derp.ipv4), states, timeout)
             for derp in DERP_SERVERS
         ]) as futures:
             try:
@@ -752,7 +753,7 @@ class Client:
     ) -> None:
         async with asyncio_util.run_async_contexts([
             self.get_events().wait_for_state_derp(
-                str(derp["ipv4"]), [State.Disconnected, State.Connecting], timeout
+                str(derp.ipv4), [State.Disconnected, State.Connecting], timeout
             )
             for derp in DERP_SERVERS
         ]) as futures:
@@ -771,7 +772,7 @@ class Client:
         self, states: List[State], timeout: Optional[float] = None
     ) -> None:
         async with asyncio_util.run_async_contexts([
-            self.get_events().wait_for_event_derp(str(derp["ipv4"]), states, timeout)
+            self.get_events().wait_for_event_derp(str(derp.ipv4), states, timeout)
             for derp in DERP_SERVERS
         ]) as futures:
             try:
@@ -783,7 +784,7 @@ class Client:
     async def wait_for_event_error(self, err: ErrorEvent):
         await self.get_events().wait_for_event_error(err)
 
-    async def set_meshmap(self, meshmap: Meshmap) -> None:
+    async def set_meshnet_config(self, meshnet_config: Config) -> None:
         made_changes = await self._configure_interface()
 
         # Linux native WG takes ~1.5s to setup listen port for WG interface. Since
@@ -793,12 +794,12 @@ class Client:
         if made_changes and self._adapter_type == AdapterType.LinuxNativeWg:
             await asyncio.sleep(2)
 
-        if "peers" in meshmap:
-            peers = meshmap["peers"]
-            for peer in peers:
-                self.get_runtime().allowed_pub_keys.add(peer["public_key"])
+        if meshnet_config.peers is not None:
+            peer_pkeys = [peer.base.public_key for peer in meshnet_config.peers]
+            for peer_pkey in peer_pkeys:
+                self.get_runtime().allowed_pub_keys.add(peer_pkey)
 
-        self.get_proxy().set_meshnet(json.dumps(meshmap))
+        self.get_proxy().set_meshnet(meshnet_config)
 
     async def set_mesh_off(self):
         self.get_proxy().set_meshnet_off()

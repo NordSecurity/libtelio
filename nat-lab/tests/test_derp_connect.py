@@ -3,15 +3,16 @@ import os
 import pytest
 from config import DERP_PRIMARY, DERP_SECONDARY, DERP_TERTIARY, DERP_SERVERS
 from contextlib import AsyncExitStack
+from copy import deepcopy
 from helpers import SetupParameters, setup_mesh_nodes
 from telio import State
 from typing import List
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
 
-DERP1_IP = str(DERP_PRIMARY["ipv4"])
-DERP2_IP = str(DERP_SECONDARY["ipv4"])
-DERP3_IP = str(DERP_TERTIARY["ipv4"])
+DERP1_IP = str(DERP_PRIMARY.ipv4)
+DERP2_IP = str(DERP_SECONDARY.ipv4)
+DERP3_IP = str(DERP_TERTIARY.ipv4)
 
 
 @pytest.mark.asyncio
@@ -233,35 +234,35 @@ async def test_derp_reconnect_3clients(setup_params: List[SetupParameters]) -> N
 async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
     async with AsyncExitStack() as exit_stack:
         DERP_SERVERS1 = [
-            DERP_PRIMARY.copy(),
-            DERP_SECONDARY.copy(),
-            DERP_TERTIARY.copy(),
+            deepcopy(DERP_PRIMARY),
+            deepcopy(DERP_SECONDARY),
+            deepcopy(DERP_TERTIARY),
         ]
-        DERP_SERVERS1[0]["weight"] = 1
-        DERP_SERVERS1[1]["weight"] = 2
-        DERP_SERVERS1[2]["weight"] = 3
+        DERP_SERVERS1[0].weight = 1
+        DERP_SERVERS1[1].weight = 2
+        DERP_SERVERS1[2].weight = 3
 
         DERP_SERVERS2 = [
-            DERP_PRIMARY.copy(),
-            DERP_SECONDARY.copy(),
-            DERP_TERTIARY.copy(),
+            deepcopy(DERP_PRIMARY),
+            deepcopy(DERP_SECONDARY),
+            deepcopy(DERP_TERTIARY),
         ]
-        DERP_SERVERS2[0]["weight"] = 3
-        DERP_SERVERS2[1]["weight"] = 1
-        DERP_SERVERS2[2]["weight"] = 2
+        DERP_SERVERS2[0].weight = 3
+        DERP_SERVERS2[1].weight = 1
+        DERP_SERVERS2[2].weight = 2
 
         DERP_SERVERS3 = [
-            DERP_PRIMARY.copy(),
-            DERP_SECONDARY.copy(),
-            DERP_TERTIARY.copy(),
+            deepcopy(DERP_PRIMARY),
+            deepcopy(DERP_SECONDARY),
+            deepcopy(DERP_TERTIARY),
         ]
-        DERP_SERVERS3[0]["weight"] = 3
-        DERP_SERVERS3[1]["weight"] = 2
-        DERP_SERVERS3[2]["weight"] = 1
+        DERP_SERVERS3[0].weight = 3
+        DERP_SERVERS3[1].weight = 2
+        DERP_SERVERS3[2].weight = 1
 
-        _DERP1_IP = str(DERP_SERVERS1[0]["ipv4"])
-        _DERP2_IP = str(DERP_SERVERS1[1]["ipv4"])
-        _DERP3_IP = str(DERP_SERVERS1[2]["ipv4"])
+        _DERP1_IP = str(DERP_SERVERS1[0].ipv4)
+        _DERP2_IP = str(DERP_SERVERS1[1].ipv4)
+        _DERP3_IP = str(DERP_SERVERS1[2].ipv4)
 
         setup_params[0].derp_servers = DERP_SERVERS1
         setup_params[1].derp_servers = DERP_SERVERS2
@@ -428,7 +429,7 @@ async def test_derp_server_list_exhaustion(setup_params: List[SetupParameters]) 
             for derp_server in DERP_SERVERS:
                 await exit_stack_iptables.enter_async_context(
                     beta_client.get_router().break_tcp_conn_to_host(
-                        str(derp_server["ipv4"])
+                        str(derp_server.ipv4)
                     )
                 )
 

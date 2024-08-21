@@ -290,10 +290,10 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
         # Block traffic both ways
 
         alpha.set_peer_firewall_settings(exit_node.id, allow_incoming_connections=False)
-        await client_alpha.set_meshmap(api.get_meshmap(alpha.id))
+        await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
 
         exit_node.set_peer_firewall_settings(alpha.id, allow_incoming_connections=False)
-        await client_exit_node.set_meshmap(api.get_meshmap(exit_node.id))
+        await client_exit_node.set_meshnet_config(api.get_meshnet_config(exit_node.id))
 
         # Ping should fail both ways
         with pytest.raises(asyncio.TimeoutError):
@@ -305,10 +305,10 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
         # Allow traffic both ways
 
         alpha.set_peer_firewall_settings(exit_node.id, allow_incoming_connections=True)
-        await client_alpha.set_meshmap(api.get_meshmap(alpha.id))
+        await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
 
         exit_node.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
-        await client_exit_node.set_meshmap(api.get_meshmap(exit_node.id))
+        await client_exit_node.set_meshnet_config(api.get_meshnet_config(exit_node.id))
 
         # Ping should again work both ways
 
@@ -337,7 +337,7 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
         # Block traffic from exit node
 
         alpha.set_peer_firewall_settings(exit_node.id, allow_incoming_connections=False)
-        await client_alpha.set_meshmap(api.get_meshmap(alpha.id))
+        await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
 
         # Ping should only work in one direction
 

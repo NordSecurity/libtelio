@@ -109,7 +109,7 @@ class LibtelioProxy:
     def disable_magic_dns(self):
         self.handle_remote_error(lambda r: r.disable_magic_dns())
 
-    def set_meshnet(self, cfg: str):
+    def set_meshnet(self, cfg: libtelio.Config):
         self.handle_remote_error(lambda r: r.set_meshnet(cfg))
 
     def set_meshnet_off(self):

@@ -205,7 +205,7 @@ async def test_batching(
         async def start_node_manually(client, node, sleep_min: int, sleep_max: int):
             await asyncio.sleep(random.randint(sleep_min, sleep_max))
             await client.simple_start()
-            await client.set_meshmap(env.api.get_meshmap(node.id))
+            await client.set_meshnet_config(env.api.get_meshnet_config(node.id))
 
         await asyncio.gather(*[
             start_node_manually(

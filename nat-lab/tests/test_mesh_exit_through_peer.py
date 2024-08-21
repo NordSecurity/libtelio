@@ -262,12 +262,12 @@ async def test_ipv6_exit_node(
 
         client_alpha = await exit_stack.enter_async_context(
             telio.Client(connection_alpha, alpha, adapter_type).run(
-                api.get_meshmap(alpha.id)
+                api.get_meshnet_config(alpha.id)
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run(api.get_meshmap(beta.id))
+            telio.Client(connection_beta, beta).run(api.get_meshnet_config(beta.id))
         )
 
         await asyncio.gather(
