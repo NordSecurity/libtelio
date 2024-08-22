@@ -5,6 +5,7 @@ use telio_crypto::{PublicKey, SecretKey};
 use telio_firewall::firewall::{Firewall, StatefullFirewall};
 use telio_lana::init_lana;
 use telio_nat_detect::nat_detection::{retrieve_single_nat, NatData};
+use telio_network_monitors::monitor::NetworkMonitor;
 use telio_pq::PostQuantum;
 use telio_proto::HeartbeatMessage;
 use telio_proxy::{Config as ProxyConfig, Io as ProxyIo, Proxy, UdpProxy};
@@ -89,9 +90,6 @@ pub use wg::{
     FirewallCb, Tun, WireGuard,
 };
 
-#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
-static NETWORK_PATH_MONITOR_START: std::sync::Once = std::sync::Once::new();
-
 #[cfg(test)]
 use wg::tests::AdapterExpectation;
 
@@ -172,6 +170,8 @@ pub enum Error {
     StarcastError(#[from] telio_starcast::starcast_peer::Error),
     #[error(transparent)]
     TransportError(#[from] telio_starcast::transport::Error),
+    #[error(transparent)]
+    NetworkMonitor(#[from] telio_utils::GetIFError),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -300,6 +300,8 @@ pub struct Entities {
     postquantum_wg: telio_pq::Entity,
 
     pmtu_detection: Option<telio_pmtu::Entity>,
+
+    network_monitor: NetworkMonitor,
 }
 
 impl Entities {
@@ -457,10 +459,6 @@ impl Device {
         telio_log_info!("Created libtelio instance {}, {}", version_tag, commit_sha);
 
         telio_log_info!("libtelio is starting up with features : {:?}", features);
-
-        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
-        NETWORK_PATH_MONITOR_START
-            .call_once(telio_sockets::protector::platform::setup_network_path_monitor);
 
         if let Some(lana) = &features.lana {
             if init_lana(lana.event_path.clone(), version_tag.to_string(), lana.prod).is_err() {
@@ -1033,6 +1031,7 @@ impl Runtime {
             None
         };
 
+        let network_monitor = NetworkMonitor::new(telio_utils::SystemGetIfAddrs)?;
         let socket_pool = Arc::new({
             if let Some(protect) = protect.clone() {
                 SocketPool::new(protect)
@@ -1212,6 +1211,7 @@ impl Runtime {
                 aggregator: aggregator.clone(),
                 postquantum_wg,
                 pmtu_detection,
+                network_monitor,
             },
             event_listeners: EventListeners {
                 wg_endpoint_publish_event_subscriber: wg_endpoint_publish_events.rx,
@@ -1274,6 +1274,8 @@ impl Runtime {
                 }))
                 .await;
         }
+
+        self.entities.network_monitor.start();
 
         // Start Direct entities if "direct" feature is on
         let direct = if let Some(direct) = &self.features.direct {
@@ -2431,6 +2433,7 @@ impl TaskRuntime for Runtime {
         }
 
         drop(self.entities.aggregator);
+        drop(self.entities.network_monitor);
 
         stop_arc_entity!(self.entities.wireguard_interface, "WireguardInterface");
 

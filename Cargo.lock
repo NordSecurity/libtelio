@@ -4235,6 +4235,7 @@ dependencies = [
  "telio-lana",
  "telio-model",
  "telio-nat-detect",
+ "telio-network-monitors",
  "telio-nurse",
  "telio-pmtu",
  "telio-pq",
@@ -4364,6 +4365,21 @@ version = "0.1.0"
 dependencies = [
  "nat-detect",
  "tokio",
+]
+
+[[package]]
+name = "telio-network-monitors"
+version = "0.1.0"
+dependencies = [
+ "block",
+ "dispatch",
+ "if-addrs",
+ "network-framework-sys",
+ "once_cell",
+ "parking_lot",
+ "telio-utils",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -4530,14 +4546,11 @@ dependencies = [
 name = "telio-sockets"
 version = "0.1.0"
 dependencies = [
- "block",
  "boringtun",
  "debug_panic",
- "dispatch",
  "futures",
  "libc",
  "mockall",
- "network-framework-sys",
  "nix 0.28.0",
  "objc",
  "objc-foundation",
@@ -4546,6 +4559,7 @@ dependencies = [
  "rstest",
  "socket2 0.5.7",
  "system-configuration 0.5.1 (git+https://github.com/NordSecurity/system-configuration-rs.git)",
+ "telio-network-monitors",
  "telio-utils",
  "thiserror",
  "tokio",
@@ -4647,6 +4661,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "hashlink",
+ "if-addrs",
  "ipnet",
  "lru_time_cache",
  "maplit",
