@@ -147,6 +147,9 @@ SETUP_CHECKS = [
 
 
 async def perform_setup_checks() -> bool:
+    if "NATLAB_SKIP_SETUP_CHECKS" in os.environ:
+        return True
+
     for target, timeout, retries in SETUP_CHECKS:
         while retries > 0:
             try:
