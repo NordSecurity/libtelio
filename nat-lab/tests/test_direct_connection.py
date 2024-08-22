@@ -422,6 +422,11 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
         ]
         assert expected == deduplicated_lines
 
+        # This is expected. Clients can still receive messages from
+        # the previous sessions.
+        alpha_client.allow_errors(["boringtun::device.*Decapsulate error"])
+        beta_client.allow_errors(["boringtun::device.*Decapsulate error"])
+
         # LLT-5532: To be cleaned up...
         alpha_client.allow_errors(
             ["telio_proxy::proxy.*Unable to send. WG Address not available"]
@@ -613,6 +618,10 @@ async def test_direct_working_paths_with_skip_unresponsive_peers(
 
         await ping(alpha_connection, beta.ip_addresses[0])
 
+        # This is expected. Alpha client can still receive messages from
+        # the previous session from beta after the restart.
+        alpha_client.allow_errors(["boringtun::device.*Decapsulate error"])
+
         # LLT-5532: To be cleaned up...
         alpha_client.allow_errors(
             ["telio_proxy::proxy.*Unable to send. WG Address not available"]
@@ -728,6 +737,13 @@ async def test_direct_connection_endpoint_gone(
         )
 
         await _check_if_true_direct_connection()
+
+        # This is expected. Clients can still receive messages from
+        # the previous sessions.
+        alpha_client.allow_errors(["boringtun::device.*Decapsulate error"])
+        beta_client.allow_errors([
+            "boringtun::device.*Decapsulate error",
+        ])
 
         # LLT-5532: To be cleaned up...
         alpha_client.allow_errors(

@@ -102,5 +102,6 @@ async def test_connected_state_after_routing(
 
         # LLT-5532: To be cleaned up...
         client_beta.allow_errors([
-            "boringtun::device.*Decapsulate error error=UnexpectedPacket public_key=.*"
+            "boringtun::device.*Decapsulate error error=UnexpectedPacket public_key=.*",
+            "telio_wg::adapter::wireguard_go.*wg_go.*Failed to derive keypair: invalid state for keypair derivation: handshakeInitiationConsumed",
         ])
