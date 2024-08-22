@@ -4,11 +4,16 @@ import pytest
 import timeouts
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_mesh_nodes, setup_api
+from mesh_api import API
 from telio import AdapterType, PathType, PeerInfo, State, Client
 from telio_features import TelioFeatures, Direct
 from utils import stun
 from utils.connection_tracker import ConnectionLimits
-from utils.connection_util import generate_connection_tracker_config, ConnectionTag
+from utils.connection_util import (
+    generate_connection_tracker_config,
+    ConnectionTag,
+    new_connection_with_conn_tracker,
+)
 from utils.ping import ping
 from utils.router import IPStack
 
@@ -541,67 +546,100 @@ async def test_event_content_meshnet_node_upgrade_direct(
     beta_public_ip: str,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
-        env = await setup_mesh_nodes(
-            exit_stack, [alpha_setup_params, beta_setup_params]
+        api = API()
+        (alpha, beta) = api.default_config_two_nodes(
+            alpha_setup_params.is_local,
+            beta_setup_params.is_local,
+            alpha_setup_params.ip_stack,
+            beta_setup_params.ip_stack,
         )
-
-        api = env.api
-        alpha, beta = env.nodes
+        alpha.set_peer_firewall_settings(beta.id, True, True)
+        beta.set_peer_firewall_settings(alpha.id, True, True)
+        (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                alpha_setup_params.connection_tag,
+                alpha_setup_params.connection_tracker_config,
+            )
+        )
+        (connection_beta, beta_conn_tracker) = await exit_stack.enter_async_context(
+            new_connection_with_conn_tracker(
+                beta_setup_params.connection_tag,
+                beta_setup_params.connection_tracker_config,
+            )
+        )
         alpha.nickname = "alpha"
         beta.nickname = "BETA"
-        connection_alpha, connection_beta = [
-            conn.connection for conn in env.connections
-        ]
-        client_alpha, client_beta = env.clients
 
-        await ping(connection_alpha, beta.ip_addresses[0])
-        await ping(connection_beta, alpha.ip_addresses[0])
-
-        beta_node_state = client_alpha.get_node_state(beta.public_key)
-        assert beta_node_state
-        assert beta_node_state == PeerInfo(
-            identifier=beta.id,
-            public_key=beta.public_key,
-            state=State.Connected,
-            is_exit=False,
-            is_vpn=False,
-            ip_addresses=beta.ip_addresses,
-            allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
-            nickname="BETA",
-            endpoint=None,
-            hostname=beta.name + ".nord",
-            allow_incoming_connections=True,
-            allow_peer_send_files=True,
-            path=PathType.Relay,
-        )
-        assert (
-            beta_node_state.endpoint and beta_public_ip not in beta_node_state.endpoint
+        client_alpha = await exit_stack.enter_async_context(
+            Client(
+                connection_alpha,
+                alpha,
+                alpha_setup_params.adapter_type,
+                alpha_setup_params.features,
+            ).run(api.get_meshmap(alpha.id))
         )
 
-        alpha_node_state = client_beta.get_node_state(alpha.public_key)
-        assert alpha_node_state
-        assert alpha_node_state == PeerInfo(
-            identifier=alpha.id,
-            public_key=alpha.public_key,
-            state=State.Connected,
-            is_exit=False,
-            is_vpn=False,
-            ip_addresses=alpha.ip_addresses,
-            allowed_ips=env.api.get_allowed_ip_list(alpha.ip_addresses),
-            nickname="alpha",
-            endpoint=None,
-            hostname=alpha.name + ".nord",
-            allow_incoming_connections=True,
-            allow_peer_send_files=True,
-            path=PathType.Relay,
-        )
-        assert (
-            alpha_node_state.endpoint
-            and alpha_public_ip not in alpha_node_state.endpoint
-        )
+        async with Client(
+            connection_beta,
+            beta,
+            beta_setup_params.adapter_type,
+            beta_setup_params.features,
+        ).run(api.get_meshmap(beta.id)) as client_beta:
+            await asyncio.gather(
+                client_alpha.wait_for_state_on_any_derp([State.Connected]),
+                client_beta.wait_for_state_on_any_derp([State.Connected]),
+            )
+            await asyncio.gather(
+                client_alpha.wait_for_state_peer(beta.public_key, [State.Connected]),
+                client_beta.wait_for_state_peer(alpha.public_key, [State.Connected]),
+            )
 
-        await client_beta.stop_device()
-        del client_beta
+            await ping(connection_alpha, beta.ip_addresses[0], 10)
+            await ping(connection_beta, alpha.ip_addresses[0], 10)
+
+            beta_node_state = client_alpha.get_node_state(beta.public_key)
+            assert beta_node_state
+            assert beta_node_state == PeerInfo(
+                identifier=beta.id,
+                public_key=beta.public_key,
+                state=State.Connected,
+                is_exit=False,
+                is_vpn=False,
+                ip_addresses=beta.ip_addresses,
+                allowed_ips=api.get_allowed_ip_list(beta.ip_addresses),
+                nickname="BETA",
+                endpoint=None,
+                hostname=beta.name + ".nord",
+                allow_incoming_connections=True,
+                allow_peer_send_files=True,
+                path=PathType.Relay,
+            )
+            assert (
+                beta_node_state.endpoint
+                and beta_public_ip not in beta_node_state.endpoint
+            )
+
+            alpha_node_state = client_beta.get_node_state(alpha.public_key)
+            assert alpha_node_state
+            assert alpha_node_state == PeerInfo(
+                identifier=alpha.id,
+                public_key=alpha.public_key,
+                state=State.Connected,
+                is_exit=False,
+                is_vpn=False,
+                ip_addresses=alpha.ip_addresses,
+                allowed_ips=api.get_allowed_ip_list(alpha.ip_addresses),
+                nickname="alpha",
+                endpoint=None,
+                hostname=alpha.name + ".nord",
+                allow_incoming_connections=True,
+                allow_peer_send_files=True,
+                path=PathType.Relay,
+            )
+            assert (
+                alpha_node_state.endpoint
+                and alpha_public_ip not in alpha_node_state.endpoint
+            )
 
         client_beta = await exit_stack.enter_async_context(
             Client(
@@ -634,7 +672,7 @@ async def test_event_content_meshnet_node_upgrade_direct(
             is_exit=False,
             is_vpn=False,
             ip_addresses=beta.ip_addresses,
-            allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
+            allowed_ips=api.get_allowed_ip_list(beta.ip_addresses),
             nickname="BETA",
             endpoint=None,
             hostname=beta.name + ".nord",
@@ -653,7 +691,7 @@ async def test_event_content_meshnet_node_upgrade_direct(
             is_exit=False,
             is_vpn=False,
             ip_addresses=alpha.ip_addresses,
-            allowed_ips=env.api.get_allowed_ip_list(alpha.ip_addresses),
+            allowed_ips=api.get_allowed_ip_list(alpha.ip_addresses),
             nickname="alpha",
             endpoint=None,
             hostname=alpha.name + ".nord",
@@ -664,3 +702,6 @@ async def test_event_content_meshnet_node_upgrade_direct(
         assert (
             alpha_node_state.endpoint and alpha_public_ip in alpha_node_state.endpoint
         )
+
+        assert alpha_conn_tracker.get_out_of_limits() is None
+        assert beta_conn_tracker.get_out_of_limits() is None
