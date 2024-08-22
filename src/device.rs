@@ -2300,13 +2300,18 @@ impl TaskRuntime for Runtime {
                     }
                 }
 
-                telio_log_debug!("WG consolidation triggered wg event");
-                wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
-                    .await
-                    .unwrap_or_else(
-                        |e| {
-                            telio_log_warn!("WireGuard controller failure: {:?}. Ignoring", e);
-                        });
+                match (mesh_event.old_peer, mesh_event.peer) {
+                    (Some(uapi::Peer { endpoint_roamed: false, .. }), uapi::Peer { endpoint_roamed: true, .. }) => {
+                        telio_log_debug!("WG consolidation triggered wg roam");
+                        wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
+                            .await
+                            .unwrap_or_else(
+                                |e| {
+                                    telio_log_warn!("WireGuard controller failure: {:?}. Ignoring", e);
+                                });
+                    }
+                    _ => {}
+                }
 
                 Ok(())
             },
