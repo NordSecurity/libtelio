@@ -61,13 +61,16 @@ def start():
 
         check_containers()
     finally:
-        log_dir = "logs"
-        os.makedirs(log_dir, exist_ok=True)
-        dmesg = get_dmesg_from_host()
-        if dmesg:
-            with open(os.path.join(log_dir, "dmesg.txt"), "w", encoding="utf-8") as f:
-                f.write(dmesg)
-        save_audit_log()
+        if os.environ.get("NATLAB_SAVE_LOGS") is not None:
+            log_dir = "logs"
+            os.makedirs(log_dir, exist_ok=True)
+            dmesg = get_dmesg_from_host()
+            if dmesg:
+                with open(
+                    os.path.join(log_dir, "dmesg.txt"), "w", encoding="utf-8"
+                ) as f:
+                    f.write(dmesg)
+            save_audit_log()
 
 
 def get_dmesg_from_host():
