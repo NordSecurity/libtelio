@@ -1031,7 +1031,7 @@ impl Runtime {
             None
         };
 
-        let network_monitor = NetworkMonitor::new(telio_utils::SystemGetIfAddrs)?;
+        let network_monitor = NetworkMonitor::new(telio_utils::SystemGetIfAddrs).await?;
         let socket_pool = Arc::new({
             if let Some(protect) = protect.clone() {
                 SocketPool::new(protect)
@@ -1274,8 +1274,6 @@ impl Runtime {
                 }))
                 .await;
         }
-
-        self.entities.network_monitor.start();
 
         // Start Direct entities if "direct" feature is on
         let direct = if let Some(direct) = &self.features.direct {
