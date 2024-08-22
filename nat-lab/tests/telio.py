@@ -29,7 +29,11 @@ from utils.router import IPStack, Router, new_router
 from utils.router.linux_router import LinuxRouter, FWMARK_VALUE as LINUX_FWMARK_VALUE
 from utils.router.mac_router import MacRouter
 from utils.router.windows_router import WindowsRouter
-from utils.testing import test_name_safe_for_file_name
+from utils.testing import (
+    format_path_string,
+    get_current_test_log_path,
+    get_current_test_case_name,
+)
 
 
 # Equivalent of `libtelio/telio-wg/src/uapi.rs`
@@ -1182,7 +1186,7 @@ class Client:
         if os.environ.get("NATLAB_SAVE_LOGS") is None:
             return
 
-        log_dir = "logs"
+        log_dir = get_current_test_log_path("logs")
         os.makedirs(log_dir, exist_ok=True)
 
         try:
@@ -1198,11 +1202,9 @@ class Client:
             await process.execute()
             container_id = process.get_stdout().strip()
         else:
-            container_id = str(self._connection.target_os)
+            container_id = format_path_string(str(self._connection.target_os))
 
-        test_name = test_name_safe_for_file_name()
-
-        filename = str(test_name) + "_" + container_id + ".log"
+        filename = container_id + ".log"
         if len(filename.encode("utf-8")) > 256:
             filename = f"{filename[:251]}.log"
 
@@ -1230,16 +1232,13 @@ class Client:
         if os.environ.get("NATLAB_SAVE_LOGS") is None:
             return
 
-        log_dir = "logs"
+        log_dir = get_current_test_log_path("logs")
         os.makedirs(log_dir, exist_ok=True)
-
-        test_name = test_name_safe_for_file_name()
 
         moose_db_files = glob.glob("*-events.db", recursive=False)
 
         for original_filename in moose_db_files:
-            new_filename = f"{test_name}_{original_filename}"
-            new_filepath = os.path.join(log_dir, new_filename)
+            new_filepath = os.path.join(log_dir, original_filename)
             os.rename(original_filename, new_filepath)
 
     async def save_mac_network_info(self) -> None:
@@ -1249,16 +1248,14 @@ class Client:
         if self._connection.target_os != TargetOS.Mac:
             return
 
-        log_dir = "logs"
+        log_dir = get_current_test_log_path("logs")
         os.makedirs(log_dir, exist_ok=True)
 
         network_info_info = await self.get_network_info()
 
-        container_id = str(self._connection.target_os)
+        container_id = format_path_string(str(self._connection.target_os))
 
-        test_name = test_name_safe_for_file_name()
-
-        filename = str(test_name) + "_" + container_id + "_network_info"
+        filename = container_id + "_network_info.log"
         if len(filename.encode("utf-8")) > 256:
             filename = f"{filename[:251]}.log"
 
@@ -1326,7 +1323,7 @@ class Client:
         # if we collected some core dumps, copy them
         if isinstance(self._connection, DockerConnection) and should_copy_coredumps:
             container_name = self._connection.container_name()
-            test_name = test_name_safe_for_file_name()
+            test_name = get_current_test_case_name()
             for i, file_path in enumerate(dump_files):
                 file_name = file_path.rsplit("/", 1)[-1]
                 core_dump_destination = (
