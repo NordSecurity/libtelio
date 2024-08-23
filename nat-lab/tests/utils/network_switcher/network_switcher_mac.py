@@ -17,12 +17,12 @@ class NetworkSwitcherMac(NetworkSwitcher):
 
     @asynccontextmanager
     async def switch_to_primary_network(self) -> AsyncIterator:
-        await self._delete_existing_route()
+        """Set default route via Linux VM @ $LINUX_VM_PRIMARY_GATEWAY"""
 
+        await self._delete_existing_route()
         await self._connection.create_process(
             ["route", "add", "default", LINUX_VM_PRIMARY_GATEWAY]
         ).execute()
-
         await self._connection.create_process(
             ["route", "add", "-inet", VPN_SERVER_SUBNET, LINUX_VM_PRIMARY_GATEWAY]
         ).execute()
@@ -40,12 +40,12 @@ class NetworkSwitcherMac(NetworkSwitcher):
 
     @asynccontextmanager
     async def switch_to_secondary_network(self) -> AsyncIterator:
-        await self._delete_existing_route()
+        """Set default route via Linux VM @ $LINUX_VM_SECONDARY_GATEWAY"""
 
+        await self._delete_existing_route()
         await self._connection.create_process(
             ["route", "add", "default", LINUX_VM_SECONDARY_GATEWAY]
         ).execute()
-
         await self._connection.create_process(
             ["route", "add", "-inet", VPN_SERVER_SUBNET, LINUX_VM_SECONDARY_GATEWAY]
         ).execute()
