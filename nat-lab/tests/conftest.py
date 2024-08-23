@@ -266,6 +266,9 @@ def pytest_runtest_setup():
 
 # pylint: disable=unused-argument
 def pytest_sessionfinish(session, exitstatus):
+    if os.environ.get("NATLAB_SAVE_LOGS") is None:
+        return
+
     if not session.config.option.collectonly:
         num_containers = 3
 
