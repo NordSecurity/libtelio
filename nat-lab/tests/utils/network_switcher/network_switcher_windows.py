@@ -86,6 +86,8 @@ class NetworkSwitcherWindows(NetworkSwitcher):
 
     @asynccontextmanager
     async def switch_to_primary_network(self) -> AsyncIterator:
+        """Set default route via Linux VM @ $LINUX_VM_PRIMARY_GATEWAY"""
+
         await self._delete_existing_route()
         await self._connection.create_process([
             "netsh",
@@ -128,6 +130,8 @@ class NetworkSwitcherWindows(NetworkSwitcher):
 
     @asynccontextmanager
     async def switch_to_secondary_network(self) -> AsyncIterator:
+        """Set default route via Linux VM @ $LINUX_VM_SECONDARY_GATEWAY"""
+
         await self._delete_existing_route()
         await self._connection.create_process([
             "netsh",
