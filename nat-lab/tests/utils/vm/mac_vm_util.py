@@ -1,19 +1,24 @@
 import asyncssh
-import config
 import subprocess
-from config import get_root_path
+from config import (
+    get_root_path,
+    LIBTELIO_BINARY_PATH_MAC_VM,
+    MAC_VM_IP,
+    UNIFFI_PATH_MAC_VM,
+    VM_TCP_CONN_TIMEOUT_S,
+)
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 from utils.connection import Connection, SshConnection, TargetOS
 from utils.process import ProcessExecError
 
-VM_TCLI_DIR = config.LIBTELIO_BINARY_PATH_MAC_VM
-VM_UNIFFI_DIR = config.UNIFFI_PATH_MAC_VM
+VM_TCLI_DIR = LIBTELIO_BINARY_PATH_MAC_VM
+VM_UNIFFI_DIR = UNIFFI_PATH_MAC_VM
 
 
 @asynccontextmanager
 async def new_connection(
-    ip: str = config.MAC_VM_IP, copy_binaries: bool = False
+    ip: str = MAC_VM_IP, copy_binaries: bool = False
 ) -> AsyncIterator[Connection]:
     subprocess.check_call(["sudo", "bash", "vm_nat.sh", "disable"])
     subprocess.check_call(["sudo", "bash", "vm_nat.sh", "enable"])
@@ -27,6 +32,7 @@ async def new_connection(
             "aes128-ctr",
         ],
         compression_algs=None,
+        connect_timeout=VM_TCP_CONN_TIMEOUT_S,
     )
 
     async with asyncssh.connect(
