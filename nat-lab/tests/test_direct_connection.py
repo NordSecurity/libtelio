@@ -4,7 +4,6 @@ import config
 import itertools
 import pytest
 import re
-import telio
 import timeouts
 from config import DERP_SERVERS
 from contextlib import AsyncExitStack
@@ -21,6 +20,7 @@ from utils.bindings import (
     FeatureEndpointProvidersOptimization,
     EndpointProvider,
     PathType,
+    TelioAdapterType,
     NodeState,
     RelayState,
 )
@@ -60,7 +60,7 @@ def _generate_setup_parameter_pair(
     return [
         SetupParameters(
             connection_tag=conn_tag,
-            adapter_type=telio.AdapterType.BoringTun,
+            adapter_type_override=TelioAdapterType.BORING_TUN,
             features=features(endpoint_providers, batching),
             fingerprint=f"{conn_tag}",
         )
@@ -434,7 +434,7 @@ async def test_direct_working_paths_stun_ipv6() -> None:
     setup_params = [
         SetupParameters(
             connection_tag=conn_tag,
-            adapter_type=telio.AdapterType.BoringTun,
+            adapter_type_override=TelioAdapterType.BORING_TUN,
             features=features,
         )
         for conn_tag in [

@@ -2,13 +2,13 @@ import asyncio
 import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes, setup_environment
-from telio import AdapterType
 from utils.asyncio_util import run_async_context
 from utils.bindings import (
     features_with_endpoint_providers,
     EndpointProvider,
     PathType,
     NodeState,
+    TelioAdapterType,
     RelayState,
 )
 from utils.connection_util import ConnectionTag
@@ -22,7 +22,7 @@ from utils.router import new_router, IPStack
     [
         SetupParameters(
             connection_tag=ConnectionTag.DOCKER_UPNP_CLIENT_1,
-            adapter_type=AdapterType.BoringTun,
+            adapter_type_override=TelioAdapterType.BORING_TUN,
             features=features_with_endpoint_providers([EndpointProvider.UPNP]),
         ),
     ],
@@ -32,7 +32,7 @@ from utils.router import new_router, IPStack
     [
         SetupParameters(
             connection_tag=ConnectionTag.DOCKER_UPNP_CLIENT_2,
-            adapter_type=AdapterType.BoringTun,
+            adapter_type_override=TelioAdapterType.BORING_TUN,
             features=features_with_endpoint_providers([EndpointProvider.UPNP]),
         ),
     ],
@@ -104,14 +104,14 @@ async def test_upnp_route_removed(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
                 features=features_with_endpoint_providers([EndpointProvider.UPNP]),
             ),
         ),
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.LinuxNativeWg,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                 features=features_with_endpoint_providers([EndpointProvider.UPNP]),
             ),
             marks=pytest.mark.linux_native,
@@ -119,7 +119,7 @@ async def test_upnp_route_removed(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WindowsNativeWg,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 features=features_with_endpoint_providers([EndpointProvider.UPNP]),
             ),
             marks=pytest.mark.windows,
@@ -127,7 +127,7 @@ async def test_upnp_route_removed(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WireguardGo,
+                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 features=features_with_endpoint_providers([EndpointProvider.UPNP]),
             ),
             marks=pytest.mark.windows,
@@ -135,7 +135,7 @@ async def test_upnp_route_removed(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
                 features=features_with_endpoint_providers([EndpointProvider.UPNP]),
             ),
             marks=pytest.mark.mac,
@@ -148,7 +148,7 @@ async def test_upnp_route_removed(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
                 features=features_with_endpoint_providers([EndpointProvider.UPNP]),
             )
         )

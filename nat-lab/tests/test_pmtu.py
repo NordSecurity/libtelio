@@ -2,9 +2,13 @@ import config
 import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_connections
-from telio import AdapterType
 from utils import stun
-from utils.bindings import default_features, Features, FeaturePmtuDiscovery
+from utils.bindings import (
+    default_features,
+    Features,
+    FeaturePmtuDiscovery,
+    TelioAdapterType,
+)
 from utils.connection_util import (
     ConnectionTag,
     generate_connection_tracker_config,
@@ -159,7 +163,7 @@ async def test_pmtu_without_nexthop(setup_params: SetupParameters) -> None:
     [
         pytest.param(
             SetupParameters(
-                adapter_type=AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     vpn_1_limits=ConnectionLimits(1, 1),
@@ -172,7 +176,7 @@ async def test_pmtu_without_nexthop(setup_params: SetupParameters) -> None:
         ),
         pytest.param(
             SetupParameters(
-                adapter_type=AdapterType.LinuxNativeWg,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     vpn_1_limits=ConnectionLimits(1, 1),

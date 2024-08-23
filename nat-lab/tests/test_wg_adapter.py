@@ -1,7 +1,7 @@
 import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment
-from telio import AdapterType
+from utils.bindings import TelioAdapterType
 from utils.connection_util import ConnectionTag, new_connection_by_tag
 from utils.process import ProcessExecError
 
@@ -26,7 +26,7 @@ async def test_wg_adapter_cleanup(conn_tag: ConnectionTag):
                     [
                         SetupParameters(
                             connection_tag=conn_tag,
-                            adapter_type=AdapterType.WireguardGo,
+                            adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                         )
                     ],
                 )
@@ -61,7 +61,7 @@ async def test_wg_adapter_cleanup(conn_tag: ConnectionTag):
                 [
                     SetupParameters(
                         connection_tag=conn_tag,
-                        adapter_type=AdapterType.WireguardGo,
+                        adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                     )
                 ],
             )

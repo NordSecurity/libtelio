@@ -40,7 +40,6 @@ async def test_derp_reconnect_2clients(setup_params: List[SetupParameters]) -> N
         #  [GW1]     [GW2]
         #   /           \
         # [ALPHA]     [BETA]
-
         await ping(alpha_connection, beta.ip_addresses[0])
 
         # ==============================================================

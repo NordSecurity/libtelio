@@ -2,10 +2,10 @@ import asyncio
 import json
 import pytest
 import shlex
-import telio
 from config import DERP_SERVERS
 from contextlib import AsyncExitStack
 from mesh_api import API
+from telio import Client
 from typing import Any, List, Dict
 from utils import testing
 from utils.bindings import (
@@ -14,6 +14,7 @@ from utils.bindings import (
     Config,
     Peer,
     Server,
+    TelioAdapterType,
     RelayState,
     NodeState,
 )
@@ -34,7 +35,7 @@ UHP_conn_client_types = [
         STUN_PROVIDER,
         ConnectionTag.DOCKER_CONE_CLIENT_1,
         ConnectionTag.DOCKER_CONE_CLIENT_2,
-        telio.AdapterType.BoringTun,
+        TelioAdapterType.BORING_TUN,
     ),
 ]
 
@@ -154,7 +155,7 @@ async def test_connect_different_telio_version_through_relay(
         )
 
         alpha_client = await exit_stack.enter_async_context(
-            telio.Client(
+            Client(
                 alpha_conn,
                 alpha,
                 adapter_type,

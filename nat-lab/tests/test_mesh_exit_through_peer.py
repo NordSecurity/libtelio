@@ -1,13 +1,12 @@
 import asyncio
 import config
 import pytest
-import telio
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
 from mesh_api import API
-from telio import AdapterType
+from telio import Client
 from utils import testing, stun
-from utils.bindings import PathType, NodeState, RelayState
+from utils.bindings import PathType, NodeState, RelayState, TelioAdapterType
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
     generate_connection_tracker_config,
@@ -40,7 +39,7 @@ from utils.router import IPProto, IPStack
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 ip_stack=IPStack.IPv4v6,
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -51,7 +50,7 @@ from utils.router import IPProto, IPStack
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 ip_stack=IPStack.IPv4v6,
-                adapter_type=telio.AdapterType.LinuxNativeWg,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -63,7 +62,7 @@ from utils.router import IPProto, IPStack
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
                 ip_stack=IPStack.IPv4v6,
-                adapter_type=telio.AdapterType.WindowsNativeWg,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -75,7 +74,7 @@ from utils.router import IPProto, IPStack
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
                 ip_stack=IPStack.IPv4v6,
-                adapter_type=telio.AdapterType.WireguardGo,
+                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -87,7 +86,7 @@ from utils.router import IPProto, IPStack
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
                 ip_stack=IPStack.IPv4v6,
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -201,35 +200,35 @@ async def test_mesh_exit_through_peer(
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type",
     [
-        pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, telio.AdapterType.BoringTun),
+        pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN),
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
-            telio.AdapterType.LinuxNativeWg,
+            TelioAdapterType.LINUX_NATIVE_TUN,
             marks=pytest.mark.linux_native,
         ),
         pytest.param(
             ConnectionTag.WINDOWS_VM_1,
-            telio.AdapterType.WindowsNativeWg,
+            TelioAdapterType.WINDOWS_NATIVE_TUN,
             marks=[
                 pytest.mark.windows,
             ],
         ),
         pytest.param(
             ConnectionTag.WINDOWS_VM_1,
-            telio.AdapterType.WireguardGo,
+            TelioAdapterType.WIREGUARD_GO_TUN,
             marks=[
                 pytest.mark.windows,
             ],
         ),
         pytest.param(
-            ConnectionTag.MAC_VM, telio.AdapterType.Default, marks=pytest.mark.mac
+            ConnectionTag.MAC_VM, TelioAdapterType.BORING_TUN, marks=pytest.mark.mac
         ),
     ],
 )
 @pytest.mark.asyncio
 async def test_ipv6_exit_node(
     alpha_connection_tag: ConnectionTag,
-    adapter_type: AdapterType,
+    adapter_type: TelioAdapterType,
     exit_ip_stack: IPStack,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
@@ -262,13 +261,13 @@ async def test_ipv6_exit_node(
         )
 
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(connection_alpha, alpha, adapter_type).run(
+            Client(connection_alpha, alpha, adapter_type).run(
                 api.get_meshnet_config(alpha.id)
             )
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(connection_beta, beta).run(api.get_meshnet_config(beta.id))
+            Client(connection_beta, beta).run(api.get_meshnet_config(beta.id))
         )
 
         await asyncio.gather(

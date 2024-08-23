@@ -3,8 +3,7 @@ import pytest
 import timeouts
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
-from telio import AdapterType
-from utils.bindings import NodeState
+from utils.bindings import NodeState, TelioAdapterType
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.ping import ping
@@ -18,7 +17,7 @@ from utils.ping import ping
     [
         SetupParameters(
             connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-            adapter_type=AdapterType.BoringTun,
+            adapter_type_override=TelioAdapterType.BORING_TUN,
             connection_tracker_config=generate_connection_tracker_config(
                 ConnectionTag.DOCKER_CONE_CLIENT_1, derp_1_limits=ConnectionLimits(1, 1)
             ),

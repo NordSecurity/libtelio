@@ -6,7 +6,7 @@ from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_connections
 from interderp_cli import InterDerpClient
 from mesh_api import start_tcpdump, stop_tcpdump
-from telio import AdapterType
+from utils.bindings import TelioAdapterType
 from utils.connection import DockerConnection
 from utils.connection_util import ConnectionTag, LAN_ADDR_MAP
 from utils.router import IPStack
@@ -70,7 +70,7 @@ def pytest_make_parametrize_id(config, val):
         param_id = f"{param_id[1:]}"
     elif isinstance(val, (SetupParameters,)):
         short_conn_tag_name = val.connection_tag.name.removeprefix("DOCKER_")
-        param_id = f"{short_conn_tag_name}-{val.adapter_type.name}"
+        param_id = f"{short_conn_tag_name}-{val.adapter_type_override.name.replace('_', '') if val.adapter_type_override is not None else ''}"
         if (
             val.features.direct is not None
             and val.features.direct.providers is not None
@@ -84,8 +84,8 @@ def pytest_make_parametrize_id(config, val):
             )
     elif isinstance(val, (ConnectionTag,)):
         param_id = val.name.removeprefix("DOCKER_")
-    elif isinstance(val, (AdapterType,)):
-        param_id = val.name
+    elif isinstance(val, (TelioAdapterType,)):
+        param_id = val.name.replace("_", "")
     elif isinstance(val, IPStack):
         if val == IPStack.IPv4:
             param_id = "IPv4"
