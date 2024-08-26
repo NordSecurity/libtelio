@@ -5,7 +5,6 @@ from config import (
     LIBTELIO_BINARY_PATH_MAC_VM,
     MAC_VM_IP,
     UNIFFI_PATH_MAC_VM,
-    VM_TCP_CONN_TIMEOUT_S,
 )
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -32,7 +31,6 @@ async def new_connection(
             "aes128-ctr",
         ],
         compression_algs=None,
-        connect_timeout=VM_TCP_CONN_TIMEOUT_S,
     )
 
     async with asyncssh.connect(
