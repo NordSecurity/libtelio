@@ -15,4 +15,4 @@ libtelio-build-pipeline:
 
   trigger:
     project: $LIBTELIO_BUILD_PROJECT_PATH
-    branch: v2.2.1 # REMEMBER to also update in .github/workflows/gitlab.yml
+    branch: LLT-5541_fix_pages_job # REMEMBER to also update in .github/workflows/gitlab.yml
