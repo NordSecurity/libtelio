@@ -1,7 +1,8 @@
 import base64
 from abc import ABC, abstractmethod
 from hashlib import md5
-from typing import List, Optional, Dict, Type
+from helpers import connectivity_stack
+from typing import List, Optional, Type
 from typing_extensions import Self
 from utils import testing
 from utils.router import IPStack
@@ -10,6 +11,11 @@ DERP_BIT = 0b00000001
 WG_BIT = 0b00000010
 IPV4_BIT = 0b00000100
 IPV6_BIT = 0b00001000
+
+ALPHA_FINGERPRINT = "alpha_fingerprint"
+BETA_FINGERPRINT = "beta_fingerprint"
+GAMMA_FINGERPRINT = "gamma_fingerprint"
+NODES_FINGERPRINTS = [ALPHA_FINGERPRINT, BETA_FINGERPRINT, GAMMA_FINGERPRINT]
 
 
 class Validator(ABC):
@@ -341,66 +347,95 @@ class EventValidator(Validator):
         return self
 
     def add_rtt_validators(
-        self, nodes_ip_stack: Dict[str, Optional[IPStack | None]]
+        self,
+        ip_stacks: List[Optional[IPStack]],
     ) -> Self:
-        primary_node_ip_stack = nodes_ip_stack.pop(self._node_fingerprint)
-        for fingerprint in nodes_ip_stack:
-            secondary_node_ip_stack = nodes_ip_stack.get(fingerprint)
-            if secondary_node_ip_stack is not None:
+        node_ip_stacks = dict(zip(NODES_FINGERPRINTS, ip_stacks))
+        primary_node_ip_stack = node_ip_stacks.pop(self.get_node_fingerprint())
+
+        for fingerprint in node_ip_stacks:
+            secondary_node_ip_stack = node_ip_stacks.get(fingerprint)
+
+            if (
+                secondary_node_ip_stack is not None
+                and primary_node_ip_stack is not None
+            ):
+                (
+                    rtt_c,
+                    rtt_dnc,
+                    rtt_loss_c,
+                    rtt_loss_dnc,
+                    rtt6_c,
+                    rtt6_dnc,
+                    rtt6_loss_c,
+                    rtt6_loss_dnc,
+                ) = (None, None, None, None, None, None, None, None)
+                rtt_eq, rtt_loss_eq, rtt6_eq, rtt6_loss_eq = "", "", "", ""
+
+                conn_stack = connectivity_stack(
+                    primary_node_ip_stack, secondary_node_ip_stack
+                )
+
+                if conn_stack == IPStack.IPv4:
+                    # IPv4 only
+                    rtt_dnc = ["null:null:null:null:null"]
+                    rtt_loss_dnc = ["null:null:null:null:null"]
+                    rtt6_c = ["null:null:null:null:null"]
+                    rtt6_loss_c = ["null:null:null:null:null"]
+                    rtt_loss_c = ["0:0:0:0:0"]
+                elif conn_stack is None:
+                    # No connection
+                    rtt_eq = "null:null:null:null:null"
+                    rtt_loss_eq = "null:null:null:null:null"
+                    rtt6_eq = "null:null:null:null:null"
+                    rtt6_loss_eq = "null:null:null:null:null"
+                elif conn_stack == IPStack.IPv6:
+                    # IPv6 only
+                    rtt_c = ["null:null:null:null:null"]
+                    rtt_loss_c = ["null:null:null:null:null"]
+                    rtt6_dnc = ["null:null:null:null:null"]
+                    rtt6_loss_dnc = ["null:null:null:null:null"]
+                    rtt6_loss_c = ["0:0:0:0:0"]
+                elif conn_stack == IPStack.IPv4v6:
+                    # IPv4 and IPv6
+                    rtt_dnc = ["null:null:null:null:null"]
+                    rtt_loss_dnc = ["null:null:null:null:null"]
+                    rtt6_dnc = ["null:null:null:null:null"]
+                    rtt6_loss_dnc = ["null:null:null:null:null"]
+                    rtt_loss_c = ["0:0:0:0:0"]
+                    rtt6_loss_c = ["0:0:0:0:0"]
+
                 self.add_validator_list([
                     RttValidator(
                         exists=True,
                         members=[fingerprint],
-                        does_not_contain=(
-                            ["0:0:0:0:0"]
-                            if primary_node_ip_stack is not IPStack.IPv6
-                            and secondary_node_ip_stack is not IPStack.IPv6
-                            else None
-                        ),
-                        contains=(
-                            ["0:0:0:0:0"]
-                            if primary_node_ip_stack is IPStack.IPv6
-                            or secondary_node_ip_stack is IPStack.IPv6
-                            else None
-                        ),
+                        does_not_contain=rtt_dnc,
+                        contains=rtt_c,
+                        equals=rtt_eq,
                     ),
                     RttLossValidator(
                         exists=True,
                         members=[fingerprint],
-                        contains=(
-                            ["100:100:100:100:100"]
-                            if primary_node_ip_stack is IPStack.IPv6
-                            and secondary_node_ip_stack is not IPStack.IPv6
-                            else ["0:0:0:0:0"]
-                        ),
+                        does_not_contain=rtt_loss_dnc,
+                        contains=rtt_loss_c,
+                        equals=rtt_loss_eq,
                     ),
                     Rtt6Validator(
                         exists=True,
                         members=[fingerprint],
-                        does_not_contain=(
-                            ["0:0:0:0:0"]
-                            if primary_node_ip_stack is not IPStack.IPv4
-                            and secondary_node_ip_stack is not IPStack.IPv4
-                            else None
-                        ),
-                        contains=(
-                            ["0:0:0:0:0"]
-                            if primary_node_ip_stack is IPStack.IPv4
-                            or secondary_node_ip_stack is IPStack.IPv4
-                            else None
-                        ),
+                        does_not_contain=rtt6_dnc,
+                        contains=rtt6_c,
+                        equals=rtt6_eq,
                     ),
                     Rtt6LossValidator(
                         exists=True,
                         members=[fingerprint],
-                        contains=(
-                            ["100:100:100:100:100"]
-                            if primary_node_ip_stack is IPStack.IPv4
-                            and secondary_node_ip_stack is not IPStack.IPv4
-                            else ["0:0:0:0:0"]
-                        ),
+                        does_not_contain=rtt6_loss_dnc,
+                        contains=rtt6_loss_c,
+                        equals=rtt6_loss_eq,
                     ),
                 ])
+
         return self
 
     def validate(self, value):
@@ -410,6 +445,9 @@ class EventValidator(Validator):
                     "validator: " + type(validator).__name__ + ", event: " + str(value)
                 )
         return True, ""
+
+    def get_node_fingerprint(self):
+        return self._node_fingerprint
 
 
 class ConnectivityMatrixValidator(EventValidator):

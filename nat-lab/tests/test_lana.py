@@ -14,6 +14,7 @@ from config import (
     DERP_TERTIARY,
 )
 from contextlib import AsyncExitStack
+from helpers import connectivity_stack
 from mesh_api import API, Node
 from telio import PathType
 from telio_features import (
@@ -24,7 +25,7 @@ from telio_features import (
     Direct,
     FeatureEndpointProvidersOptimization,
 )
-from typing import List, Optional, Dict
+from typing import List, Optional
 from utils import testing, stun
 from utils.analytics import fetch_moose_events, DERP_BIT, WG_BIT, IPV4_BIT, IPV6_BIT
 from utils.analytics.event_validator import (
@@ -45,6 +46,10 @@ from utils.analytics.event_validator import (
     Rtt6Validator,
     SentDataValidator,
     SelfNatTypeValidator,
+    ALPHA_FINGERPRINT,
+    BETA_FINGERPRINT,
+    GAMMA_FINGERPRINT,
+    NODES_FINGERPRINTS,
 )
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionLimits
@@ -65,10 +70,6 @@ ALPHA_EVENTS_PATH = "./alpha-events.db"
 BETA_EVENTS_PATH = "./beta-events.db"
 GAMMA_EVENTS_PATH = "./gamma-events.db"
 
-ALPHA_FINGERPRINT = "alpha_fingerprint"
-BETA_FINGERPRINT = "beta_fingerprint"
-GAMMA_FINGERPRINT = "gamma_fingerprint"
-NODES_FINGERPRINTS = [ALPHA_FINGERPRINT, BETA_FINGERPRINT, GAMMA_FINGERPRINT]
 
 DERP_SERVERS_STRS = [
     f"{DERP_PRIMARY['ipv4']}:{DERP_PRIMARY['relay_port']}",
@@ -491,9 +492,6 @@ async def test_lana_with_same_meshnet(
             gamma_ip_stack=gamma_ip_stack,
         )
 
-        nodes_ip_stack: Dict[str, IPStack | None] = dict(
-            zip(NODES_FINGERPRINTS, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
-        )
         # Alpha has smallest public key when sorted lexicographically
         expected_meshnet_id = alpha_events[0].fp
 
@@ -501,7 +499,7 @@ async def test_lana_with_same_meshnet(
             EventValidator.new_with_basic_validators(
                 ALPHA_FINGERPRINT, meshnet_id=expected_meshnet_id
             )
-            .add_rtt_validators(nodes_ip_stack)
+            .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
             .add_validator_list([
                 ExternalLinksValidator(exists=False),
                 ConnectivityMatrixValidator(
@@ -541,7 +539,7 @@ async def test_lana_with_same_meshnet(
             EventValidator.new_with_basic_validators(
                 BETA_FINGERPRINT, meshnet_id=expected_meshnet_id
             )
-            .add_rtt_validators(nodes_ip_stack)
+            .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
             .add_validator_list([
                 ExternalLinksValidator(exists=False),
                 ConnectivityMatrixValidator(
@@ -581,7 +579,7 @@ async def test_lana_with_same_meshnet(
             EventValidator.new_with_basic_validators(
                 GAMMA_FINGERPRINT, meshnet_id=expected_meshnet_id
             )
-            .add_rtt_validators(nodes_ip_stack)
+            .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
             .add_validator_list([
                 ExternalLinksValidator(exists=False),
                 ConnectivityMatrixValidator(
@@ -672,13 +670,9 @@ async def test_lana_with_external_node(
             gamma_ip_stack=gamma_ip_stack,
         )
 
-        nodes_ip_stack: Dict[str, IPStack | None] = dict(
-            zip(NODES_FINGERPRINTS, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
-        )
-
         alpha_validator = (
             EventValidator.new_with_basic_validators(ALPHA_FINGERPRINT)
-            .add_rtt_validators(nodes_ip_stack)
+            .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
             .add_validator_list([
                 ExternalLinksValidator(
                     exists=True,
@@ -724,7 +718,7 @@ async def test_lana_with_external_node(
         )
         beta_validator = (
             EventValidator.new_with_basic_validators(BETA_FINGERPRINT)
-            .add_rtt_validators(nodes_ip_stack)
+            .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
             .add_validator_list([
                 ExternalLinksValidator(
                     exists=True,
@@ -770,7 +764,7 @@ async def test_lana_with_external_node(
         )
         gamma_validator = (
             EventValidator.new_with_basic_validators(GAMMA_FINGERPRINT)
-            .add_rtt_validators(nodes_ip_stack)
+            .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
             .add_validator_list([
                 ExternalLinksValidator(
                     exists=True,
@@ -859,13 +853,9 @@ async def test_lana_all_external(
             gamma_ip_stack=gamma_ip_stack,
         )
 
-        nodes_ip_stack: Dict[str, IPStack | None] = dict(
-            zip(NODES_FINGERPRINTS, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
-        )
-
         alpha_validator = (
             EventValidator.new_with_basic_validators(ALPHA_FINGERPRINT)
-            .add_rtt_validators(nodes_ip_stack)
+            .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
             .add_validator_list([
                 ExternalLinksValidator(
                     exists=True,
@@ -905,7 +895,7 @@ async def test_lana_all_external(
         )
         beta_validator = (
             EventValidator.new_with_basic_validators(BETA_FINGERPRINT)
-            .add_rtt_validators(nodes_ip_stack)
+            .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
             .add_validator_list([
                 ExternalLinksValidator(
                     exists=True,
@@ -945,7 +935,7 @@ async def test_lana_all_external(
         )
         gamma_validator = (
             EventValidator.new_with_basic_validators(GAMMA_FINGERPRINT)
-            .add_rtt_validators(nodes_ip_stack)
+            .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
             .add_validator_list([
                 ExternalLinksValidator(
                     exists=True,
@@ -1046,9 +1036,6 @@ async def test_lana_with_vpn_connection(
             gamma_ip_stack=gamma_ip_stack,
         )
 
-        nodes_ip_stack: Dict[str, IPStack | None] = dict(
-            zip(NODES_FINGERPRINTS, [alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
-        )
         # Alpha has smallest public key when sorted lexicographically
         expected_meshnet_id = alpha_events[0].fp
 
@@ -1056,7 +1043,7 @@ async def test_lana_with_vpn_connection(
             EventValidator.new_with_basic_validators(
                 ALPHA_FINGERPRINT, meshnet_id=expected_meshnet_id
             )
-            .add_rtt_validators(nodes_ip_stack)
+            .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
             .add_validator_list([
                 ExternalLinksValidator(
                     exists=True,
@@ -1097,39 +1084,6 @@ async def test_lana_with_vpn_connection(
                     does_not_contain=["0:0:0:0:0:0"],
                     count=1,
                 ),
-                RttValidator(
-                    exists=True,
-                    members=["vpn"],
-                    contains=["0:0:0:0:0"] if alpha_ip_stack is IPStack.IPv6 else None,
-                    does_not_contain=(
-                        ["0:0:0:0:0"] if alpha_ip_stack is not IPStack.IPv6 else None
-                    ),
-                ),
-                RttLossValidator(
-                    exists=True,
-                    members=["vpn"],
-                    contains=(
-                        ["100:100:100:100:100"]
-                        if alpha_ip_stack is IPStack.IPv6
-                        else ["0:0:0:0:0"]
-                    ),
-                ),
-                Rtt6Validator(
-                    exists=True,
-                    members=["vpn"],
-                    # TODO: At the moment VPN IPv6 Address is not reachable
-                    contains=["0:0:0:0:0"],
-                ),
-                Rtt6LossValidator(
-                    exists=True,
-                    members=["vpn"],
-                    # TODO: At the moment VPN IPv6 Address is not reachable
-                    contains=(
-                        ["0:0:0:0:0"]
-                        if alpha_ip_stack is IPStack.IPv4
-                        else ["100:100:100:100:100"]
-                    ),
-                ),
             ])
         )
 
@@ -1137,7 +1091,7 @@ async def test_lana_with_vpn_connection(
             EventValidator.new_with_basic_validators(
                 BETA_FINGERPRINT, meshnet_id=expected_meshnet_id
             )
-            .add_rtt_validators(nodes_ip_stack)
+            .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
             .add_validator_list([
                 ExternalLinksValidator(exists=False),
                 ConnectivityMatrixValidator(
@@ -1177,7 +1131,7 @@ async def test_lana_with_vpn_connection(
             EventValidator.new_with_basic_validators(
                 GAMMA_FINGERPRINT, meshnet_id=expected_meshnet_id
             )
-            .add_rtt_validators(nodes_ip_stack)
+            .add_rtt_validators([alpha_ip_stack, beta_ip_stack, gamma_ip_stack])
             .add_validator_list([
                 ExternalLinksValidator(exists=False),
                 ConnectivityMatrixValidator(
@@ -1355,13 +1309,9 @@ async def test_lana_with_meshnet_exit_node(
         assert alpha_events
         assert beta_events
 
-        nodes_ip_stack: Dict[str, IPStack | None] = dict(
-            zip(NODES_FINGERPRINTS, [alpha_ip_stack, beta_ip_stack, None])
-        )
-
         alpha_validator = (
             EventValidator.new_with_basic_validators(ALPHA_FINGERPRINT)
-            .add_rtt_validators(nodes_ip_stack)
+            .add_rtt_validators([alpha_ip_stack, beta_ip_stack, None])
             .add_validator_list([
                 ExternalLinksValidator(exists=False),
                 ConnectivityMatrixValidator(
@@ -1407,7 +1357,7 @@ async def test_lana_with_meshnet_exit_node(
         )
         beta_validator = (
             EventValidator.new_with_basic_validators(BETA_FINGERPRINT)
-            .add_rtt_validators(nodes_ip_stack)
+            .add_rtt_validators([alpha_ip_stack, beta_ip_stack, None])
             .add_validator_list([
                 ExternalLinksValidator(exists=False),
                 ConnectivityMatrixValidator(
@@ -1590,13 +1540,9 @@ async def test_lana_with_disconnected_node(
         )
         assert alpha_events
 
-        nodes_ip_stack: Dict[str, IPStack | None] = dict(
-            zip(NODES_FINGERPRINTS, [alpha_ip_stack, beta_ip_stack, None])
-        )
-
         alpha_validator = (
             EventValidator.new_with_basic_validators(ALPHA_FINGERPRINT)
-            .add_rtt_validators(nodes_ip_stack)
+            .add_rtt_validators([alpha_ip_stack, beta_ip_stack, None])
             .add_validator_list([
                 ExternalLinksValidator(exists=False),
                 ConnectivityMatrixValidator(
@@ -1643,7 +1589,7 @@ async def test_lana_with_disconnected_node(
 
         beta_validator = (
             EventValidator.new_with_basic_validators(BETA_FINGERPRINT)
-            .add_rtt_validators(nodes_ip_stack)
+            .add_rtt_validators([alpha_ip_stack, beta_ip_stack, None])
             .add_validator_list([
                 ExternalLinksValidator(exists=False),
                 ConnectivityMatrixValidator(
@@ -1726,37 +1672,86 @@ async def test_lana_with_disconnected_node(
                 does_not_contain=["0:0:0:0:0:0"],
                 count=1,
             ),
+        ])
+
+        (
+            rtt_c,
+            rtt_dnc,
+            rtt_loss_c,
+            rtt_loss_dnc,
+            rtt6_c,
+            rtt6_dnc,
+            rtt6_loss_c,
+            rtt6_loss_dnc,
+        ) = (None, None, None, None, None, None, None, None)
+        rtt_eq, rtt_loss_eq, rtt6_eq, rtt6_loss_eq = "", "", "", ""
+        match connectivity_stack(alpha_ip_stack, beta_ip_stack):
+            case IPStack.IPv4:
+                # IPv4 only
+                rtt_c = ["0:0:0:0:0"]
+                rtt_dnc = ["null:null:null:null:null"]
+                rtt_loss_c = ["100:100:100:100:100"]
+                rtt_loss_dnc = ["null:null:null:null:null", "0:0:0:0:0"]
+                rtt6_c = ["null:null:null:null:null"]
+                rtt6_dnc = ["0:0:0:0:0"]
+                rtt6_loss_c = ["null:null:null:null:null"]
+                rtt6_loss_dnc = ["0:0:0:0:0", "100:100:100:100:100"]
+            case None:
+                assert False, "No IP stack"
+            case IPStack.IPv6:
+                # IPv6 only
+                rtt_c = ["null:null:null:null:null"]
+                rtt_dnc = ["0:0:0:0:0"]
+                rtt_loss_c = ["null:null:null:null:null"]
+                rtt_loss_dnc = ["0:0:0:0:0", "100:100:100:100:100"]
+                rtt6_c = ["0:0:0:0:0"]
+                rtt6_dnc = ["null:null:null:null:null"]
+                rtt6_loss_c = ["100:100:100:100:100"]
+                rtt6_loss_dnc = ["null:null:null:null:null", "0:0:0:0:0"]
+            case IPStack.IPv4v6:
+                # IPv4 and IPv6
+                rtt_c = ["0:0:0:0:0"]
+                rtt_dnc = ["null:null:null:null:null"]
+                rtt_loss_c = ["100:100:100:100:100"]
+                rtt_loss_dnc = ["null:null:null:null:null", "0:0:0:0:0"]
+                rtt6_c = ["0:0:0:0:0"]
+                rtt6_dnc = ["null:null:null:null:null"]
+                rtt6_loss_c = ["100:100:100:100:100"]
+                rtt6_loss_dnc = ["null:null:null:null:null", "0:0:0:0:0"]
+
+        alpha_validator.add_validator_list([
             RttValidator(
                 exists=True,
                 members=[BETA_FINGERPRINT],
-                contains=["0:0:0:0:0"],
+                does_not_contain=rtt_dnc,
+                contains=rtt_c,
+                equals=rtt_eq,
             ),
             RttLossValidator(
                 exists=True,
                 members=[BETA_FINGERPRINT],
-                contains=(
-                    ["100:100:100:100:100"]
-                    if beta_ip_stack is not IPStack.IPv6
-                    else ["0:0:0:0:0"]
-                ),
+                does_not_contain=rtt_loss_dnc,
+                contains=rtt_loss_c,
+                equals=rtt_loss_eq,
             ),
             Rtt6Validator(
                 exists=True,
                 members=[BETA_FINGERPRINT],
-                contains=["0:0:0:0:0"],
+                does_not_contain=rtt6_dnc,
+                contains=rtt6_c,
+                equals=rtt6_eq,
             ),
             Rtt6LossValidator(
                 exists=True,
                 members=[BETA_FINGERPRINT],
-                contains=(
-                    ["100:100:100:100:100"]
-                    if beta_ip_stack is not IPStack.IPv4
-                    else ["0:0:0:0:0"]
-                ),
+                does_not_contain=rtt6_loss_dnc,
+                contains=rtt6_loss_c,
+                equals=rtt6_loss_eq,
             ),
         ])
-        if COLLECT_NAT_TYPE:
-            alpha_validator.add_validator(SelfNatTypeValidator("PortRestrictedCone"))
+
+        res = alpha_validator.validate(alpha_events[1])
+        assert res[0], res[1]
 
         beta_validator = EventValidator(BETA_FINGERPRINT).add_validator_list([
             NameValidator("disconnect"),
