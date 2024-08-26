@@ -15,7 +15,8 @@ use telio_model::{
 };
 use telio_task::io::{chan, Chan};
 use telio_utils::{
-    telio_err_with_log, telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn,
+    get_ip_stack, telio_err_with_log, telio_log_debug, telio_log_error, telio_log_trace,
+    telio_log_warn, IpStack,
 };
 
 use crate::wg::{BytesAndTimestamps, WG_KEEPALIVE};
@@ -25,16 +26,16 @@ mod enhanced_detection;
 pub struct LinkDetection {
     cfg_max_allowed_rtt: Duration,
     enhanced_detection: Option<EnhancedDetection>,
-    ping_channel: chan::Tx<Vec<IpAddr>>,
+    ping_channel: chan::Tx<(Vec<IpAddr>, Option<IpStack>)>,
     peers: HashMap<PublicKey, State>,
     use_for_downgrade: bool,
 }
 
 impl LinkDetection {
-    pub fn new(cfg: FeatureLinkDetection) -> Self {
+    pub fn new(cfg: FeatureLinkDetection, ipv6_enabled: bool) -> Self {
         let ping_channel = Chan::default();
         let enhanced_detection = if cfg.no_of_pings != 0 {
-            EnhancedDetection::start_with(ping_channel.rx, cfg.no_of_pings).ok()
+            EnhancedDetection::start_with(ping_channel.rx, cfg.no_of_pings, ipv6_enabled).ok()
         } else {
             None
         };
@@ -58,6 +59,7 @@ impl LinkDetection {
         public_key: &PublicKey,
         node_addresses: Vec<IpAddr>,
         push: bool,
+        curr_ip_stack: Option<IpStack>,
     ) -> LinkDetectionUpdateResult {
         // We want to update info only on pull
         if push {
@@ -69,7 +71,11 @@ impl LinkDetection {
             let result = state.update(self.cfg_max_allowed_rtt, ping_enabled);
 
             if ping_enabled && result.should_ping {
-                if let Err(e) = self.ping_channel.send(node_addresses).await {
+                if let Err(e) = self
+                    .ping_channel
+                    .send((node_addresses, curr_ip_stack))
+                    .await
+                {
                     telio_log_warn!("Failed to trigger ping to {:?} {:?}", public_key, e);
                 }
             }

@@ -1,5 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
+use crate::IpStack;
+
 /// Possible [DualTarget] errors.
 #[derive(thiserror::Error, Debug)]
 pub enum DualTargetError {
@@ -29,6 +31,18 @@ impl DualTarget {
         }
 
         Ok(DualTarget { target })
+    }
+
+    /// Delete target address(es)
+    pub fn delete_address(&mut self, ip_stack: IpStack) {
+        match ip_stack {
+            IpStack::IPv4 => self.target.0 = None,
+            IpStack::IPv6 => self.target.1 = None,
+            IpStack::IPv4v6 => {
+                self.target.0 = None;
+                self.target.1 = None;
+            }
+        }
     }
 
     /// Get target IPs
