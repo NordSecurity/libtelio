@@ -11,7 +11,10 @@ pub static PATH_CHANGE_BROADCAST: Lazy<Sender<()>> = Lazy::new(|| Sender::new(2)
 /// Vector containing all local interfaces
 pub static LOCAL_ADDRS_CACHE: Lazy<Arc<StdMutex<Vec<if_addrs::Interface>>>> =
     Lazy::new(|| Arc::new(StdMutex::new(Vec::new())));
-#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+#[cfg(all(
+    not(test),
+    any(target_os = "macos", target_os = "ios", target_os = "tvos")
+))]
 static NETWORK_PATH_MONITOR_START: std::sync::Once = std::sync::Once::new();
 
 #[derive(Debug)]
