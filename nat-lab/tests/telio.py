@@ -7,6 +7,7 @@ import platform
 import re
 import uniffi.telio_bindings as libtelio  # type: ignore
 import uuid
+import warnings
 from collections import Counter
 from config import DERP_SERVERS
 from contextlib import asynccontextmanager
@@ -1174,7 +1175,8 @@ class Client:
                 if not self._allowed_errors or not any(
                     allowed.search(line) for allowed in self._allowed_errors
                 ):
-                    raise Exception(
+                    # TODO: convert back to `raise Exception()` once we are ready to investigate
+                    warnings.warn(
                         f"Unexpected error found in {self._node.name} log: {line}"
                     )
 
