@@ -289,6 +289,7 @@ impl CrossPingCheckTrait for CrossPingCheck {
                                         v.provider_type,
                                     ),
                                     session: *session,
+                                    changed_at: v.last_state_transition,
                                 },
                             )),
                             _ => None,
@@ -866,18 +867,23 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
                                 ApiEndpointProvider::Local
                             }
                         };
+
+                        do_state_transition!(m, Publish, self);
                         let wg_publish_event = WireGuardEndpointCandidateChangeEvent {
                             public_key: self.public_key,
                             remote_endpoint: (remote_endpoint, remote_endpoint_type),
                             local_endpoint: (self.local_endpoint_candidate.wg, self.provider_type),
                             session: self.local_session,
+                            changed_at: self.last_state_transition,
                         };
                         telio_log_info!("Publishing validated WG endpoint: {:?}, local ep type: {:?}, remote ep type: {:?}",
                             wg_publish_event, self.provider_type, event.msg.get_ponging_ep_provider());
-                        wg_ep_publisher.send(wg_publish_event).await?;
                         self.last_validated_endpoint =
                             Some((remote_endpoint, remote_endpoint_type));
-                        do_state_transition!(m, Publish, self);
+                        wg_ep_publisher
+                            .send(wg_publish_event)
+                            .await
+                            .map_err(Box::new)?;
                     } else {
                         telio_log_debug!(
                             "Received a pong for session {:?} for a different candidate {:?} on stun socket, ignoring.",

@@ -608,7 +608,7 @@ impl Device {
         let private_key = *private_key; //Going into async context, therefore just copy for lifetimes
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.set_private_key(&private_key).await)
+                Ok(rt.set_private_key(&private_key).boxed().await)
             })
             .await?
         })
@@ -626,7 +626,11 @@ impl Device {
     #[cfg_attr(docsrs, doc(cfg(target_os = "linux")))]
     pub fn set_fwmark(&self, fwmark: u32) -> Result {
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt.set_fwmark(fwmark).await)).await?
+            task_exec!(self.rt()?, async move |rt| Ok(rt
+                .set_fwmark(fwmark)
+                .boxed()
+                .await))
+            .await?
         })
     }
 
@@ -785,7 +789,7 @@ impl Device {
     /// Undoes the effects of `device::enable_magic_dns()` call
     pub fn disable_magic_dns(&self) -> Result {
         self.async_runtime()?.block_on(async {
-            task_exec!(self.rt()?, async move |rt| Ok(rt.stop_dns().await)).await?
+            task_exec!(self.rt()?, async move |rt| Ok(rt.stop_dns().boxed().await)).await?
         })
     }
 
@@ -2428,7 +2432,7 @@ impl TaskRuntime for Runtime {
             }};
         }
 
-        let _ = self.stop_dns().await;
+        let _ = self.stop_dns().boxed().await;
 
         // Nurse is keeping Arc to Derp, so we need to get rid of it before stopping Derp
         if let Some(nurse) = self.entities.nurse.as_ref() {

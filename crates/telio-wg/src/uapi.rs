@@ -34,6 +34,8 @@ pub struct Peer {
     pub public_key: PublicKey,
     /// Peer's endpoint with `IP address` and `UDP port` number
     pub endpoint: Option<SocketAddr>,
+    /// At what point in time, was last endpoint changed
+    pub endpoint_changed_at: Option<tokio::time::Instant>,
     /// Mesh's IP addresses of peer
     pub ip_addresses: Vec<IpAddr>,
     /// Keep alive interval, `seconds` or `None`
@@ -60,6 +62,8 @@ impl From<get::Peer> for Peer {
         Self {
             public_key: PublicKey(item.public_key),
             endpoint: item.endpoint,
+            // Unknown here
+            endpoint_changed_at: None,
             ip_addresses: Default::default(),
             persistent_keepalive_interval: Some(item.persistent_keepalive_interval.into()),
             allowed_ips: item
