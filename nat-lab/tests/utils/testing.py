@@ -1,6 +1,5 @@
 import os
 import re
-import warnings
 from datetime import datetime
 from typing import Optional, Tuple, TypeVar
 
@@ -21,22 +20,13 @@ def get_current_test_case_and_parameters() -> Tuple[Optional[str], Optional[str]
     """
     test_name = os.environ.get("PYTEST_CURRENT_TEST")
     if test_name:
-        try:
-            test_part, param_part = (
-                test_name.split("::", 1)[-1].split(" ")[0].split("[", 1)
+        test_parts = test_name.split("::", 1)[-1].split(" ")[0].split("[", 1)
+        if len(test_parts) > 1:
+            return (
+                format_path_string(test_parts[0]),
+                format_path_string(test_parts[1]),
             )
-            if param_part:
-                return (format_path_string(test_part), format_path_string(param_part))
-            return (format_path_string(test_part), None)
-        except IndexError as e:
-            warnings.warn(
-                (
-                    f"get_current_test_case_and_parameters() for {test_name} exception:"
-                    f" {e} "
-                ),
-                RuntimeWarning,
-            )
-            return (format_path_string(test_name), None)
+        return (format_path_string(test_parts[0]), None)
     print(datetime.now(), "PYTEST_CURRENT_TEST is None")
     return (None, None)
 
