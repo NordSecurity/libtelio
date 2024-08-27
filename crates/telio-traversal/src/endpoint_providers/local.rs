@@ -15,22 +15,19 @@ use telio_sockets::External;
 use telio_task::{io::chan, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
     interval,
-    local_interfaces::{self, GetIfAddrs, SystemGetIfAddrs},
-    telio_log_debug, telio_log_info, telio_log_warn,
+    local_interfaces::{self, GetIfAddrs},
+    system_get_if_addr, telio_log_debug, telio_log_info, telio_log_warn,
 };
 use telio_wg::{DynamicWg, WireGuard};
 use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
 use tokio::time::Interval;
 
-pub struct LocalInterfacesEndpointProvider<
-    T: WireGuard = DynamicWg,
-    G: GetIfAddrs = SystemGetIfAddrs,
-> {
-    task: Task<State<T, G>>,
+pub struct LocalInterfacesEndpointProvider<T: WireGuard = DynamicWg> {
+    task: Task<State<T>>,
 }
 
-pub struct State<T: WireGuard, G: GetIfAddrs> {
+pub struct State<T: WireGuard> {
     endpoint_candidates_change_publisher: Option<chan::Tx<EndpointCandidatesChangeEvent>>,
     pong_publisher: Option<chan::Tx<PongEvent>>,
     last_endpoint_candidates_event: Vec<EndpointCandidate>,
@@ -38,11 +35,11 @@ pub struct State<T: WireGuard, G: GetIfAddrs> {
     wireguard_interface: Arc<T>,
     udp_socket: External<UdpSocket>,
     ping_pong_handler: Arc<Mutex<PingPongHandler>>,
-    get_if_addr: G,
+    get_if_addr: GetIfAddrs,
 }
 
 #[async_trait]
-impl<T: WireGuard, G: GetIfAddrs> EndpointProvider for LocalInterfacesEndpointProvider<T, G> {
+impl<T: WireGuard> EndpointProvider for LocalInterfacesEndpointProvider<T> {
     fn name(&self) -> &'static str {
         "local"
     }
@@ -110,18 +107,18 @@ impl<T: WireGuard> LocalInterfacesEndpointProvider<T> {
             wireguard_interface,
             poll_interval,
             ping_pong_handler,
-            local_interfaces::SystemGetIfAddrs,
+            system_get_if_addr,
         )
     }
 }
 
-impl<T: WireGuard, G: GetIfAddrs> LocalInterfacesEndpointProvider<T, G> {
+impl<T: WireGuard> LocalInterfacesEndpointProvider<T> {
     pub fn new_with(
         udp_socket: External<UdpSocket>,
         wireguard_interface: Arc<T>,
         poll_interval: Duration,
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
-        get_if_addr: G,
+        get_if_addr: GetIfAddrs,
     ) -> Self {
         telio_log_info!("Starting local interfaces endpoint provider");
         let poll_timer = interval(poll_interval);
@@ -144,7 +141,7 @@ impl<T: WireGuard, G: GetIfAddrs> LocalInterfacesEndpointProvider<T, G> {
     }
 }
 
-impl<T: WireGuard, G: GetIfAddrs> State<T, G> {
+impl<T: WireGuard> State<T> {
     async fn get_wg_port(&self) -> Result<u16, Error> {
         if let Some(wg_port) = self
             .wireguard_interface
@@ -171,7 +168,7 @@ impl<T: WireGuard, G: GetIfAddrs> State<T, G> {
                 }
             };
 
-            let itfs = local_interfaces::gather_local_interfaces(&self.get_if_addr)?;
+            let itfs = local_interfaces::gather_local_interfaces(self.get_if_addr)?;
 
             let candidates: Vec<_> = itfs
                 .iter()
@@ -230,7 +227,7 @@ impl<T: WireGuard, G: GetIfAddrs> State<T, G> {
 }
 
 #[async_trait]
-impl<T: WireGuard, G: GetIfAddrs> Runtime for State<T, G> {
+impl<T: WireGuard> Runtime for State<T> {
     const NAME: &'static str = "LocalInterfacesEndpointProvider";
     type Err = ();
 
@@ -270,7 +267,10 @@ mod tests {
 
     use super::*;
     use maplit::hashmap;
-    use std::net::{Ipv4Addr, Ipv6Addr};
+    use std::{
+        net::Ipv4Addr,
+        sync::atomic::{AtomicU8, Ordering},
+    };
     use telio_crypto::{
         encryption::{decrypt_request, decrypt_response, encrypt_request, encrypt_response},
         SecretKey,
@@ -279,7 +279,6 @@ mod tests {
     use telio_sockets::NativeProtector;
     use telio_sockets::SocketPool;
     use telio_task::io::Chan;
-    use telio_utils::{gather_local_interfaces, local_interfaces::MockGetIfAddrs};
     use telio_wg::{uapi::Interface, MockWireGuard};
     use tokio::time::timeout;
 
@@ -294,12 +293,8 @@ mod tests {
 
     async fn prepare_state_test(
         wg_mock: MockWireGuard,
-        get_if_addrs_mock: MockGetIfAddrs,
-    ) -> (
-        State<MockWireGuard, MockGetIfAddrs>,
-        SecretKey,
-        Arc<Mutex<PingPongHandler>>,
-    ) {
+        get_if_addrs_mock: GetIfAddrs,
+    ) -> (State<MockWireGuard>, SecretKey, Arc<Mutex<PingPongHandler>>) {
         let secret_key = SecretKey::gen();
         let ping_pong_handler = Arc::new(Mutex::new(PingPongHandler::new(secret_key)));
         (
@@ -329,9 +324,9 @@ mod tests {
 
     async fn prepare_local_provider_test(
         wg_mock: MockWireGuard,
-        get_if_addrs_mock: MockGetIfAddrs,
+        get_if_addrs_mock: GetIfAddrs,
     ) -> (
-        LocalInterfacesEndpointProvider<MockWireGuard, MockGetIfAddrs>,
+        LocalInterfacesEndpointProvider<MockWireGuard>,
         chan::Rx<EndpointCandidatesChangeEvent>,
         chan::Rx<PongEvent>,
         telio_sockets::External<tokio::net::UdpSocket>,
@@ -392,66 +387,6 @@ mod tests {
         )
     }
 
-    #[tokio::test]
-    async fn gather_local_interfaces_filtering() {
-        let wg_mock = MockWireGuard::new();
-        let mut get_if_addrs_mock = MockGetIfAddrs::new();
-        get_if_addrs_mock.expect_get().return_once(|| {
-            Ok(vec![
-                if_addrs::Interface {
-                    name: "localhost".to_owned(),
-                    addr: if_addrs::IfAddr::V4(if_addrs::Ifv4Addr {
-                        ip: Ipv4Addr::new(127, 0, 0, 1),
-                        netmask: Ipv4Addr::new(255, 0, 0, 0),
-                        broadcast: None,
-                    }),
-                    index: None,
-                    #[cfg(windows)]
-                    adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
-                },
-                if_addrs::Interface {
-                    name: "correct".to_owned(),
-                    addr: if_addrs::IfAddr::V4(if_addrs::Ifv4Addr {
-                        ip: Ipv4Addr::new(10, 0, 0, 1),
-                        netmask: Ipv4Addr::new(255, 255, 255, 0),
-                        broadcast: None,
-                    }),
-                    index: None,
-                    #[cfg(windows)]
-                    adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
-                },
-                if_addrs::Interface {
-                    name: "internal".to_owned(),
-                    addr: if_addrs::IfAddr::V4(if_addrs::Ifv4Addr {
-                        ip: Ipv4Addr::new(100, 64, 0, 1),
-                        netmask: Ipv4Addr::new(255, 192, 0, 0),
-                        broadcast: None,
-                    }),
-                    index: None,
-                    #[cfg(windows)]
-                    adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
-                },
-                if_addrs::Interface {
-                    name: "ipv6".to_owned(),
-                    addr: if_addrs::IfAddr::V6(if_addrs::Ifv6Addr {
-                        ip: Ipv6Addr::new(0, 0, 0, 0, 0, 0, 12, 34),
-                        netmask: Ipv6Addr::new(255, 255, 255, 255, 0, 0, 0, 0),
-                        broadcast: None,
-                    }),
-                    index: None,
-                    #[cfg(windows)]
-                    adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
-                },
-            ])
-        });
-
-        let state = prepare_state_test(wg_mock, get_if_addrs_mock).await;
-
-        let interfaces = gather_local_interfaces(&state.0.get_if_addr).unwrap();
-        assert!(interfaces.len() == 1);
-        assert!(interfaces[0].name == "correct");
-    }
-
     fn generate_fake_local_interface(addr_suffix: u8) -> std::io::Result<Vec<if_addrs::Interface>> {
         Ok(vec![if_addrs::Interface {
             name: "random_name".to_owned(),
@@ -476,23 +411,15 @@ mod tests {
             })
         });
 
-        fn expect_get_once(
-            seq: &mut mockall::Sequence,
-            mock: &mut MockGetIfAddrs,
-            addr_suffix: u8,
-        ) {
-            mock.expect_get()
-                .times(1)
-                .in_sequence(seq)
-                .return_once(move || generate_fake_local_interface(addr_suffix));
-        }
-
-        let mut seq = mockall::Sequence::new();
-        let mut get_if_addrs_mock = MockGetIfAddrs::new();
-        expect_get_once(&mut seq, &mut get_if_addrs_mock, 1);
-        expect_get_once(&mut seq, &mut get_if_addrs_mock, 2);
-        expect_get_once(&mut seq, &mut get_if_addrs_mock, 3);
-        expect_get_once(&mut seq, &mut get_if_addrs_mock, 3);
+        let get_if_addrs_mock = || {
+            static COUNTER: AtomicU8 = AtomicU8::new(1);
+            let current = COUNTER.fetch_add(1, Ordering::Relaxed);
+            if current < 3 {
+                generate_fake_local_interface(current)
+            } else {
+                generate_fake_local_interface(3)
+            }
+        };
 
         let (local_provider, mut candidates_rx, _, _, _, provider_addr, _, _) =
             prepare_local_provider_test(wg_mock, get_if_addrs_mock).await;
@@ -539,10 +466,7 @@ mod tests {
             })
         });
 
-        let mut get_if_addrs_mock = MockGetIfAddrs::new();
-        get_if_addrs_mock
-            .expect_get()
-            .returning(|| generate_fake_local_interface(1));
+        let get_if_addrs_mock = || generate_fake_local_interface(1);
 
         let (
             local_provider,
@@ -612,10 +536,7 @@ mod tests {
             })
         });
 
-        let mut get_if_addrs_mock = MockGetIfAddrs::new();
-        get_if_addrs_mock
-            .expect_get()
-            .returning(|| generate_fake_local_interface(1));
+        let get_if_addrs_mock = || generate_fake_local_interface(1);
 
         let (local_provider, _, mut pong_rx, peer_socket, peer_addr, _, local_sk, _) =
             prepare_local_provider_test(wg_mock, get_if_addrs_mock).await;
@@ -669,10 +590,7 @@ mod tests {
             }
         });
 
-        let mut get_if_addrs_mock = MockGetIfAddrs::new();
-        get_if_addrs_mock
-            .expect_get()
-            .returning(|| generate_fake_local_interface(1));
+        let get_if_addrs_mock = || generate_fake_local_interface(1);
 
         let (state, remote_sk, ping_pong_handler) =
             prepare_state_test(wg_mock, get_if_addrs_mock).await;
@@ -731,10 +649,7 @@ mod tests {
             }
         });
 
-        let mut get_if_addrs_mock = MockGetIfAddrs::new();
-        get_if_addrs_mock
-            .expect_get()
-            .returning(|| generate_fake_local_interface(1));
+        let get_if_addrs_mock = || generate_fake_local_interface(1);
 
         let (state, remote_sk, ping_pong_handler) =
             prepare_state_test(wg_mock, get_if_addrs_mock).await;

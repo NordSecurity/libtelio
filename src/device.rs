@@ -173,8 +173,6 @@ pub enum Error {
     StarcastError(#[from] telio_starcast::starcast_peer::Error),
     #[error(transparent)]
     TransportError(#[from] telio_starcast::transport::Error),
-    #[error(transparent)]
-    NetworkMonitor(#[from] telio_utils::GetIFError),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -1034,7 +1032,7 @@ impl Runtime {
             None
         };
 
-        let network_monitor = NetworkMonitor::new(telio_utils::SystemGetIfAddrs).await?;
+        let network_monitor = NetworkMonitor::new(telio_utils::system_get_if_addr).await?;
         let socket_pool = Arc::new({
             if let Some(protect) = protect.clone() {
                 SocketPool::new(protect)

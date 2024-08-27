@@ -1,66 +1,22 @@
-#[cfg(feature = "test-util")]
-use if_addrs::{IfAddr, Ifv4Addr, Interface};
-
-use ipnet::{Ipv4Net, PrefixLenError};
+use ipnet::Ipv4Net;
 use std::net::{IpAddr, Ipv4Addr};
-use thiserror::Error as TError;
 
-#[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
-/// Mockable trait to get IF Address for easy testing
-pub trait GetIfAddrs: Send + Sync + Default + 'static {
-    /// Returns a list of network interfaces available on the system.
-    fn get(&self) -> std::io::Result<Vec<if_addrs::Interface>>;
-}
+/// Function type of a function returning interface addresses from the system
+pub type GetIfAddrs = fn() -> std::io::Result<Vec<if_addrs::Interface>>;
 
-#[cfg(feature = "test-util")]
-impl Clone for MockGetIfAddrs {
-    fn clone(&self) -> Self {
-        MockGetIfAddrs::new()
-    }
-}
-
-#[derive(Debug, TError)]
-/// Error types of getting local interfaces
-pub enum GetIFError {
-    /// Error in computing or parsing the IP address prefix length
-    #[error(transparent)]
-    PrefixLenError(#[from] PrefixLenError),
-    /// IO Error when attempting to fetch network interfaces
-    #[error(transparent)]
-    IOError(#[from] std::io::Error),
-}
-
-#[derive(Default, Clone)]
-/// This struct is intended to be the main implementation used in production,
-/// where real network interfaces need to be queried.
-pub struct SystemGetIfAddrs;
-impl GetIfAddrs for SystemGetIfAddrs {
-    fn get(&self) -> std::io::Result<Vec<if_addrs::Interface>> {
-        #[cfg(not(feature = "test-util"))]
-        return if_addrs::get_if_addrs();
-        #[cfg(feature = "test-util")]
-        Ok(vec![Interface {
-            name: "eth0".to_string(),
-            addr: IfAddr::V4(Ifv4Addr {
-                ip: Ipv4Addr::new(192, 168, 1, 10),
-                netmask: Ipv4Addr::new(192, 168, 1, 0),
-                broadcast: None,
-            }),
-            index: Some(12),
-            #[cfg(windows)]
-            adapter_name: "adapter".to_string(),
-        }])
-    }
+/// Function returning interface addresses from the system
+pub fn system_get_if_addr() -> std::io::Result<Vec<if_addrs::Interface>> {
+    if_addrs::get_if_addrs()
 }
 
 /// Method that returns vector of Interfaces on the system
 /// Filtering out meshnet and loopback IP
-pub fn gather_local_interfaces<G: GetIfAddrs>(
-    get_if_addr: &G,
-) -> Result<Vec<if_addrs::Interface>, GetIFError> {
-    let shared_range: Ipv4Net = Ipv4Net::new(Ipv4Addr::new(100, 64, 0, 0), 10)?;
-    Ok(get_if_addr
-        .get()?
+pub fn gather_local_interfaces(
+    get_if_addr: GetIfAddrs,
+) -> std::io::Result<Vec<if_addrs::Interface>> {
+    let shared_range: Ipv4Net = Ipv4Net::new(Ipv4Addr::new(100, 64, 0, 0), 10).unwrap_or_default();
+    Ok(get_if_addr()?
+        // .get()?
         .into_iter()
         .filter(|x| !x.addr.is_loopback())
         .filter(|x| match x.addr.ip() {
@@ -70,4 +26,66 @@ pub fn gather_local_interfaces<G: GetIfAddrs>(
             _ => false,
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    #[tokio::test]
+    async fn gather_local_interfaces_filtering() {
+        let mock_get_if_addrs = || {
+            Ok(vec![
+                if_addrs::Interface {
+                    name: "localhost".to_owned(),
+                    addr: if_addrs::IfAddr::V4(if_addrs::Ifv4Addr {
+                        ip: Ipv4Addr::new(127, 0, 0, 1),
+                        netmask: Ipv4Addr::new(255, 0, 0, 0),
+                        broadcast: None,
+                    }),
+                    index: None,
+                    #[cfg(windows)]
+                    adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
+                },
+                if_addrs::Interface {
+                    name: "correct".to_owned(),
+                    addr: if_addrs::IfAddr::V4(if_addrs::Ifv4Addr {
+                        ip: Ipv4Addr::new(10, 0, 0, 1),
+                        netmask: Ipv4Addr::new(255, 255, 255, 0),
+                        broadcast: None,
+                    }),
+                    index: None,
+                    #[cfg(windows)]
+                    adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
+                },
+                if_addrs::Interface {
+                    name: "internal".to_owned(),
+                    addr: if_addrs::IfAddr::V4(if_addrs::Ifv4Addr {
+                        ip: Ipv4Addr::new(100, 64, 0, 1),
+                        netmask: Ipv4Addr::new(255, 192, 0, 0),
+                        broadcast: None,
+                    }),
+                    index: None,
+                    #[cfg(windows)]
+                    adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
+                },
+                if_addrs::Interface {
+                    name: "ipv6".to_owned(),
+                    addr: if_addrs::IfAddr::V6(if_addrs::Ifv6Addr {
+                        ip: Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0x12, 0x34, 0x56, 0),
+                        netmask: Ipv6Addr::new(255, 255, 255, 255, 0, 0, 0, 0),
+                        broadcast: None,
+                    }),
+                    index: None,
+                    #[cfg(windows)]
+                    adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
+                },
+            ])
+        };
+
+        let interfaces = gather_local_interfaces(mock_get_if_addrs).unwrap();
+        assert!(interfaces.len() == 1);
+        assert!(interfaces[0].name == "correct");
+    }
 }

@@ -4,7 +4,7 @@
 use once_cell::sync::Lazy;
 use std::io;
 use std::sync::{Arc, Mutex as StdMutex};
-use telio_utils::{local_interfaces, telio_log_debug, telio_log_warn, GetIFError, GetIfAddrs};
+use telio_utils::{local_interfaces, telio_log_debug, telio_log_warn, GetIfAddrs};
 use tokio::{sync::broadcast::Sender, task::JoinHandle};
 /// Sender to notify if there is a change in OS interface order
 pub static PATH_CHANGE_BROADCAST: Lazy<Sender<()>> = Lazy::new(|| Sender::new(2));
@@ -28,12 +28,9 @@ pub struct NetworkMonitor {
 
 impl NetworkMonitor {
     /// Sets up and spawns network monitor
-    pub async fn new<G>(if_addr: G) -> Result<NetworkMonitor, GetIFError>
-    where
-        G: GetIfAddrs + Clone,
-    {
+    pub async fn new(if_addr: GetIfAddrs) -> std::io::Result<NetworkMonitor> {
         if let Ok(mut guard) = LOCAL_ADDRS_CACHE.lock() {
-            *guard = local_interfaces::gather_local_interfaces(&if_addr)?;
+            *guard = local_interfaces::gather_local_interfaces(if_addr)?;
             telio_log_debug!("local cache {:?}", *guard);
         }
 
@@ -42,7 +39,7 @@ impl NetworkMonitor {
             async move {
                 loop {
                     match notify.recv().await {
-                        Ok(()) => match local_interfaces::gather_local_interfaces(&if_addr) {
+                        Ok(()) => match local_interfaces::gather_local_interfaces(if_addr) {
                             Ok(v) => {
                                 if let Ok(mut guard) = LOCAL_ADDRS_CACHE.lock() {
                                     telio_log_debug!("Updating local addr cache");
@@ -59,13 +56,17 @@ impl NetworkMonitor {
             }
         }));
 
-        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+        // Only add in production, otherwise network triggers from OS can occur
+        // which can make the test (test_path_change_notification) flaky sometimes
+        #[cfg(all(
+            not(test),
+            any(target_os = "macos", target_os = "ios", target_os = "tvos")
+        ))]
         NETWORK_PATH_MONITOR_START.call_once(crate::apple::setup_network_monitor);
-
-        #[cfg(target_os = "linux")]
+        #[cfg(all(not(test), target_os = "linux"))]
         let monitor_handle = crate::linux::setup_network_monitor().await;
 
-        #[cfg(target_os = "windows")]
+        #[cfg(all(not(test), target_os = "windows"))]
         let monitor_handle = crate::windows::setup_network_monitor();
 
         Ok(Self {
@@ -96,15 +97,17 @@ impl Drop for NetworkMonitor {
 
 #[cfg(test)]
 mod tests {
-    use telio_utils::local_interfaces::MockGetIfAddrs;
-
     use super::*;
-    use std::net::Ipv4Addr;
+    use std::{
+        net::Ipv4Addr,
+        sync::atomic::{AtomicU8, Ordering},
+    };
 
     #[tokio::test]
     async fn test_path_change_notification() {
-        let mut get_if_addrs_mock = MockGetIfAddrs::new();
-        get_if_addrs_mock.expect_get().times(2).returning(|| {
+        static CALL_COUNT: AtomicU8 = AtomicU8::new(0);
+        let mock_get_if_addrs = || {
+            CALL_COUNT.fetch_add(1, Ordering::Relaxed);
             Ok(vec![if_addrs::Interface {
                 name: "old".to_owned(),
                 addr: if_addrs::IfAddr::V4(if_addrs::Ifv4Addr {
@@ -116,12 +119,13 @@ mod tests {
                 #[cfg(windows)]
                 adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
             }])
-        });
-        let network_monitor = NetworkMonitor::new(get_if_addrs_mock).await.unwrap();
-
+        };
+        let _network_monitor = NetworkMonitor::new(mock_get_if_addrs).await.unwrap();
         if let Err(e) = PATH_CHANGE_BROADCAST.send(()) {
             println!("Failed to notify about changed path, error: {e}");
         }
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+
+        assert_eq!(CALL_COUNT.load(Ordering::SeqCst), 2);
     }
 }
