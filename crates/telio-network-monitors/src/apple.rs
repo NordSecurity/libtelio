@@ -40,7 +40,22 @@ extern "C" {
     pub fn nw_path_enumerate_interfaces(path: nw_path_t, enumerate_block: *const c_void);
 }
 
-/// Setup network path monitor in Apple framework
+/// This function configuresa a network path monitor using Apple's networking framework that tracks
+/// changes in the network path and updates the local interface cache.
+///
+/// # How it Works
+///
+/// 1. **Objective-C Blocks**: The Apple `Network.framework` uses blocks as callbacks
+///    for handling asynchronous events.
+///
+/// 3. **Global Queue Setup**: The monitor runs on a background queue using Grand Central Dispatch (GCD).
+///    This allows it to handle updates without blocking the main thread.
+///
+/// 4. **Broadcast Notification**: After the interfaces are updated, a notification is sent via a broadcast channel
+///    (`PATH_CHANGE_BROADCAST`) to inform other parts of the system that the path has changed.
+///
+/// For more details on Apple's `Network.framework` see:
+/// - [Apple Network.framework Documentation](https://developer.apple.com/documentation/network)
 pub fn setup_network_monitor() {
     let update_handler = block::ConcreteBlock::new(|path: nw_path_t| {
         let names = Rc::new(RefCell::new(vec![]));
