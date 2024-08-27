@@ -46,5 +46,4 @@ async def test_network_monitor(
         time.sleep(DEFAULT_WAITING_TIME)
         await client_alpha.restart_interface()
 
-        time.sleep(DEFAULT_WAITING_TIME)
         await client_alpha.wait_for_log("Updating local addr cache")

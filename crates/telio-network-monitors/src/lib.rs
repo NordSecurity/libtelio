@@ -5,7 +5,7 @@ pub mod monitor;
 
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 /// Utility to get monitor network on apple
-pub mod mac;
+pub mod apple;
 
 #[cfg(target_os = "linux")]
 /// Utility to get monitor network on linux

@@ -17,13 +17,13 @@ static NETWORK_PATH_MONITOR_START: std::sync::Once = std::sync::Once::new();
 #[derive(Debug)]
 /// Struct to monitor network
 pub struct NetworkMonitor {
-    nw_path_monitor_monitor_handle: Option<JoinHandle<io::Result<()>>>,
+    if_cache_updater_handle: Option<JoinHandle<io::Result<()>>>,
     // Mac and Windows use callbacks, whereas in Linux a socket is registered
     // with netlink multicast group messages
-    #[cfg(target_os = "linux")]
-    linux_monitor_handle: Option<JoinHandle<io::Result<()>>>,
-    #[cfg(target_os = "windows")]
-    windows_monitor_handle: crate::windows::SafeHandle,
+    #[cfg(all(not(test), target_os = "linux"))]
+    monitor_handle: Option<JoinHandle<io::Result<()>>>,
+    #[cfg(all(not(test), target_os = "windows"))]
+    monitor_handle: crate::windows::SafeHandle,
 }
 
 impl NetworkMonitor {
@@ -37,7 +37,7 @@ impl NetworkMonitor {
             telio_log_debug!("local cache {:?}", *guard);
         }
 
-        let nw_path_monitor_monitor_handle = Some(tokio::spawn({
+        let if_cache_updater_handle = Some(tokio::spawn({
             let mut notify = PATH_CHANGE_BROADCAST.subscribe();
             async move {
                 loop {
@@ -60,36 +60,36 @@ impl NetworkMonitor {
         }));
 
         #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
-        NETWORK_PATH_MONITOR_START.call_once(crate::mac::setup_network_monitor);
+        NETWORK_PATH_MONITOR_START.call_once(crate::apple::setup_network_monitor);
 
         #[cfg(target_os = "linux")]
-        let linux_monitor_handle = crate::linux::setup_network_monitor().await;
+        let monitor_handle = crate::linux::setup_network_monitor().await;
 
         #[cfg(target_os = "windows")]
-        let windows_monitor_handle = crate::windows::setup_network_monitor();
+        let monitor_handle = crate::windows::setup_network_monitor();
 
         Ok(Self {
-            nw_path_monitor_monitor_handle,
-            #[cfg(target_os = "linux")]
-            linux_monitor_handle,
-            #[cfg(target_os = "windows")]
-            windows_monitor_handle,
+            if_cache_updater_handle,
+            #[cfg(all(not(test), target_os = "linux"))]
+            monitor_handle,
+            #[cfg(all(not(test), target_os = "windows"))]
+            monitor_handle,
         })
     }
 }
 
 impl Drop for NetworkMonitor {
     fn drop(&mut self) {
-        if let Some(handle) = &self.nw_path_monitor_monitor_handle {
+        if let Some(handle) = &self.if_cache_updater_handle {
             handle.abort();
         }
-        #[cfg(target_os = "linux")]
-        if let Some(handle) = &self.linux_monitor_handle {
+        #[cfg(all(not(test), target_os = "linux"))]
+        if let Some(handle) = &self.monitor_handle {
             handle.abort();
         }
-        #[cfg(target_os = "windows")]
-        if !self.windows_monitor_handle.0.is_null() {
-            crate::windows::deregister_network_monitor(self.windows_monitor_handle.clone());
+        #[cfg(all(not(test), target_os = "windows"))]
+        if !self.monitor_handle.0.is_null() {
+            crate::windows::deregister_network_monitor(self.monitor_handle.clone());
         }
     }
 }

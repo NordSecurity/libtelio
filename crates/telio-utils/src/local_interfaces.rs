@@ -6,9 +6,9 @@ use std::net::{IpAddr, Ipv4Addr};
 use thiserror::Error as TError;
 
 #[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
-/// Trait to get IF Address
+/// Mockable trait to get IF Address for easy testing
 pub trait GetIfAddrs: Send + Sync + Default + 'static {
-    /// Signature of method that returns IF addresses
+    /// Returns a list of network interfaces available on the system.
     fn get(&self) -> std::io::Result<Vec<if_addrs::Interface>>;
 }
 
@@ -22,16 +22,17 @@ impl Clone for MockGetIfAddrs {
 #[derive(Debug, TError)]
 /// Error types of getting local interfaces
 pub enum GetIFError {
-    /// IP address prefix length error
+    /// Error in computing or parsing the IP address prefix length
     #[error(transparent)]
     PrefixLenError(#[from] PrefixLenError),
-    /// IO Error
+    /// IO Error when attempting to fetch network interfaces
     #[error(transparent)]
     IOError(#[from] std::io::Error),
 }
 
 #[derive(Default, Clone)]
-/// Defination of struct to get system interfaces
+/// This struct is intended to be the main implementation used in production,
+/// where real network interfaces need to be queried.
 pub struct SystemGetIfAddrs;
 impl GetIfAddrs for SystemGetIfAddrs {
     fn get(&self) -> std::io::Result<Vec<if_addrs::Interface>> {

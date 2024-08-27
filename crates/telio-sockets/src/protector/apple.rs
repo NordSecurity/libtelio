@@ -1,7 +1,7 @@
 use debug_panic::debug_panic;
 use parking_lot::{Mutex, RwLock};
 use telio_network_monitors::{
-    mac::INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER, monitor::PATH_CHANGE_BROADCAST,
+    apple::INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER, monitor::PATH_CHANGE_BROADCAST,
 };
 
 use std::{
@@ -450,7 +450,7 @@ fn spawn_dynamic_store_loop(sockets: Weak<Mutex<Sockets>>) {
 #[cfg(test)]
 mod tests {
     use socket2::{Domain, Protocol, Socket, Type};
-    use telio_network_monitors::mac::setup_network_monitor;
+    use telio_network_monitors::apple::setup_network_monitor;
 
     use crate::native::AsNativeSocket;
 
