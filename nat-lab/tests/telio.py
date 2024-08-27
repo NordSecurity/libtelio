@@ -30,9 +30,8 @@ from utils.router.linux_router import LinuxRouter, FWMARK_VALUE as LINUX_FWMARK_
 from utils.router.mac_router import MacRouter
 from utils.router.windows_router import WindowsRouter
 from utils.testing import (
-    format_path_string,
     get_current_test_log_path,
-    get_current_test_case_name,
+    get_current_test_case_and_parameters,
 )
 
 
@@ -1186,7 +1185,7 @@ class Client:
         if os.environ.get("NATLAB_SAVE_LOGS") is None:
             return
 
-        log_dir = get_current_test_log_path("logs")
+        log_dir = get_current_test_log_path()
         os.makedirs(log_dir, exist_ok=True)
 
         try:
@@ -1202,7 +1201,7 @@ class Client:
             await process.execute()
             container_id = process.get_stdout().strip()
         else:
-            container_id = format_path_string(str(self._connection.target_os))
+            container_id = str(self._connection.target_os.name)
 
         filename = container_id + ".log"
         if len(filename.encode("utf-8")) > 256:
@@ -1232,7 +1231,7 @@ class Client:
         if os.environ.get("NATLAB_SAVE_LOGS") is None:
             return
 
-        log_dir = get_current_test_log_path("logs")
+        log_dir = get_current_test_log_path()
         os.makedirs(log_dir, exist_ok=True)
 
         moose_db_files = glob.glob("*-events.db", recursive=False)
@@ -1248,12 +1247,12 @@ class Client:
         if self._connection.target_os != TargetOS.Mac:
             return
 
-        log_dir = get_current_test_log_path("logs")
+        log_dir = get_current_test_log_path()
         os.makedirs(log_dir, exist_ok=True)
 
         network_info_info = await self.get_network_info()
 
-        container_id = format_path_string(str(self._connection.target_os))
+        container_id = str(self._connection.target_os.name)
 
         filename = container_id + "_network_info.log"
         if len(filename.encode("utf-8")) > 256:
@@ -1323,7 +1322,7 @@ class Client:
         # if we collected some core dumps, copy them
         if isinstance(self._connection, DockerConnection) and should_copy_coredumps:
             container_name = self._connection.container_name()
-            test_name = get_current_test_case_name()
+            test_name = get_current_test_case_and_parameters()[0] or ""
             for i, file_path in enumerate(dump_files):
                 file_name = file_path.rsplit("/", 1)[-1]
                 core_dump_destination = (

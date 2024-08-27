@@ -2,7 +2,6 @@ import os
 from utils.connection import Connection, TargetOS
 from utils.connection_util import get_libtelio_binary_path
 from utils.process import Process
-from utils.testing import format_path_string
 
 
 class InterDerpClient:
@@ -53,7 +52,7 @@ class InterDerpClient:
             await process.execute()
             container_id = process.get_stdout().strip()
         else:
-            container_id = format_path_string(str(self._connection.target_os))
+            container_id = str(self._connection.target_os.name)
 
         filename = (
             "preconditions_interderpcli_" + container_id + "_" + str(count) + ".log"

@@ -442,7 +442,7 @@ def start_tcpdump(container_name):
 def stop_tcpdump(container_names):
     if os.environ.get("NATLAB_SAVE_LOGS") is None:
         return
-    log_dir = get_current_test_log_path("logs")
+    log_dir = get_current_test_log_path()
     os.makedirs(log_dir, exist_ok=True)
     for container_name in container_names:
         cmd = f"docker exec --privileged {container_name} killall tcpdump"
