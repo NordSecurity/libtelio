@@ -12,7 +12,7 @@ use crate::{telio_log_debug, telio_log_error, DualTarget};
 /// Can be used with both IPv4 and IPv6 addresses.
 pub struct Pinger {
     client_v4: Arc<Client>,
-    client_v6: Arc<Client>,
+    client_v6: Option<Arc<Client>>,
     /// Number of tries
     pub no_of_tries: u32,
 }
@@ -47,10 +47,16 @@ impl Pinger {
     /// # Arguments
     ///
     /// * `no_of_tries` - How many pings should be sent.
-    pub fn new(no_of_tries: u32) -> std::io::Result<Self> {
+    pub fn new(no_of_tries: u32, ipv6: bool) -> std::io::Result<Self> {
+        let client_v6 = if ipv6 {
+            Some(Arc::new(Self::build_client(ICMP::V6)?))
+        } else {
+            None
+        };
+
         Ok(Self {
             client_v4: Arc::new(Self::build_client(ICMP::V4)?),
-            client_v6: Arc::new(Self::build_client(ICMP::V6)?),
+            client_v6,
             no_of_tries,
         })
     }
@@ -74,20 +80,20 @@ impl Pinger {
             Ok(t) => {
                 match t.0 {
                     IpAddr::V4(_) => {
-                        dpresults.v4 = Some(self.ping_action(t.0).await);
+                        dpresults.v4 = self.ping_action(t.0).await;
                     }
                     IpAddr::V6(_) => {
-                        dpresults.v6 = Some(self.ping_action(t.0).await);
+                        dpresults.v6 = self.ping_action(t.0).await;
                     }
                 }
 
                 if let Some(secondary) = t.1 {
                     match secondary {
                         IpAddr::V4(_) => {
-                            dpresults.v4 = Some(self.ping_action(secondary).await);
+                            dpresults.v4 = self.ping_action(secondary).await;
                         }
                         IpAddr::V6(_) => {
-                            dpresults.v6 = Some(self.ping_action(secondary).await);
+                            dpresults.v6 = self.ping_action(secondary).await;
                         }
                     }
                 }
@@ -100,7 +106,7 @@ impl Pinger {
         dpresults
     }
 
-    async fn ping_action(&self, host: IpAddr) -> PingResults {
+    async fn ping_action(&self, host: IpAddr) -> Option<PingResults> {
         let mut results = PingResults {
             host: Some(host),
             ..Default::default()
@@ -116,10 +122,14 @@ impl Pinger {
                     .await
             }
             IpAddr::V6(_) => {
-                self.client_v6
-                    .clone()
-                    .pinger(host, PingIdentifier(rand::random()))
-                    .await
+                if let Some(client) = &self.client_v6 {
+                    client
+                        .clone()
+                        .pinger(host, PingIdentifier(rand::random()))
+                        .await
+                } else {
+                    return None;
+                }
             }
         };
 
@@ -146,7 +156,7 @@ impl Pinger {
         }
 
         results.avg_rtt = sum.checked_div(results.successful_pings);
-        results
+        Some(results)
     }
 
     fn build_client(proto: ICMP) -> std::io::Result<Client> {

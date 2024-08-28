@@ -15,10 +15,10 @@ use telio_task::{io::mc_chan, Runtime, RuntimeExt, WaitResponse};
 use telio_wg::uapi::{AnalyticsEvent, PeerState};
 
 use telio_utils::{
-    interval, telio_log_debug, telio_log_trace, DualPingResults, DualTarget, Pinger,
+    interval, telio_log_debug, telio_log_trace, DualPingResults, DualTarget, IpStack, Pinger,
 };
 
-use crate::config::QoSConfig;
+use crate::{config::QoSConfig, data::MeshConfigUpdateEvent};
 
 /// Information about a node in the meshnet.
 #[derive(Clone)]
@@ -115,10 +115,10 @@ impl OutputData {
     #[allow(dead_code)]
     pub fn new(buckets: u32) -> Self {
         OutputData {
-            rtt: Analytics::empty_data(buckets),
-            rtt_loss: Analytics::empty_data(buckets),
-            rtt6: Analytics::empty_data(buckets),
-            rtt6_loss: Analytics::empty_data(buckets),
+            rtt: Analytics::null_data(buckets),
+            rtt_loss: Analytics::null_data(buckets),
+            rtt6: Analytics::null_data(buckets),
+            rtt6_loss: Analytics::null_data(buckets),
             tx: Analytics::empty_data(buckets),
             rx: Analytics::empty_data(buckets),
             connection_duration: String::from("0"),
@@ -142,6 +142,15 @@ impl OutputData {
         }
     }
 
+    pub fn push_rtt_data(histogram: Option<&Histogram>, buckets: u32, output: &mut String) {
+        output.push_str(&histogram.filter(|h| h.entries() > 0).map_or_else(
+            || Analytics::null_data(buckets),
+            |h| Analytics::percentile_histogram(h, buckets),
+        ));
+
+        output.push(',');
+    }
+
     fn merge_strings(a: String, b: String, separator: char) -> String {
         let mut result = String::new();
         if a.is_empty() {
@@ -161,6 +170,7 @@ impl OutputData {
 pub struct Io {
     pub wg_channel: mc_chan::Rx<Box<AnalyticsEvent>>,
     pub manual_trigger_channel: mc_chan::Rx<()>,
+    pub config_update_channel: mc_chan::Rx<Box<MeshConfigUpdateEvent>>,
 }
 
 /// Analytics data about a meshnet.
@@ -172,6 +182,7 @@ pub struct Analytics {
     ping_channel_rx: mpsc::Receiver<(PublicKey, DualPingResults)>,
     ping_channel_tx: mpsc::WeakSender<(PublicKey, DualPingResults)>,
     buckets: u32,
+    ip_stack: Option<IpStack>,
     #[cfg(test)]
     ping_cnt: u32,
 }
@@ -188,6 +199,14 @@ impl Runtime for Analytics {
             Ok(wg_event) = self.io.wg_channel.recv() => {
                 Self::guard(async move {
                     self.handle_wg_event(&wg_event).await;
+                    Ok(())
+                })
+            },
+
+            // Config event
+            Ok(config_event) = self.io.config_update_channel.recv() => {
+                Self::guard(async move {
+                    self.handle_config_event(&config_event).await;
                     Ok(())
                 })
             },
@@ -225,11 +244,11 @@ impl Analytics {
     /// # Returns
     ///
     /// A new `Analytics` instance with the given configuration but with no nodes.
-    pub fn new(config: QoSConfig, io: Io) -> Self {
+    pub fn new(config: QoSConfig, io: Io, ipv6_enabled: bool) -> Self {
         let (ping_channel_tx, ping_channel_rx) = mpsc::channel(1);
 
         let ping_backend = if config.rtt_types.contains(&RttType::Ping) {
-            Arc::new(Pinger::new(config.rtt_tries).ok())
+            Arc::new(Pinger::new(config.rtt_tries, ipv6_enabled).ok())
         } else {
             Arc::new(None)
         };
@@ -243,6 +262,7 @@ impl Analytics {
             ping_channel_rx,
             ping_channel_tx: ping_channel_tx.downgrade(),
             buckets: config.buckets,
+            ip_stack: None,
             // TODO: introduce mocked `ping_backend` for testing
             #[cfg(test)]
             ping_cnt: 0,
@@ -274,29 +294,18 @@ impl Analytics {
         for key in sorted_public_keys {
             if let Some(node) = nodes.get(key) {
                 // RTT
-                output.rtt.push_str(&Analytics::percentile_histogram(
-                    &node.rtt_histogram,
+                OutputData::push_rtt_data(Some(&node.rtt_histogram), buckets, &mut output.rtt);
+                OutputData::push_rtt_data(
+                    Some(&node.rtt_loss_histogram),
                     buckets,
-                ));
-                output.rtt.push(',');
-
-                output.rtt_loss.push_str(&Analytics::percentile_histogram(
-                    &node.rtt_loss_histogram,
+                    &mut output.rtt_loss,
+                );
+                OutputData::push_rtt_data(Some(&node.rtt6_histogram), buckets, &mut output.rtt6);
+                OutputData::push_rtt_data(
+                    Some(&node.rtt6_loss_histogram),
                     buckets,
-                ));
-                output.rtt_loss.push(',');
-
-                output.rtt6.push_str(&Analytics::percentile_histogram(
-                    &node.rtt6_histogram,
-                    buckets,
-                ));
-                output.rtt6.push(',');
-
-                output.rtt6_loss.push_str(&Analytics::percentile_histogram(
-                    &node.rtt6_loss_histogram,
-                    buckets,
-                ));
-                output.rtt6_loss.push(',');
+                    &mut output.rtt6_loss,
+                );
 
                 // Throughput
                 output.tx.push_str(&Analytics::percentile_histogram(
@@ -316,17 +325,10 @@ impl Analytics {
                     .push_str(&node.connected_time.as_secs().to_string());
                 output.connection_duration.push(';');
             } else {
-                output.rtt.push_str(&Analytics::empty_data(buckets));
-                output.rtt.push(',');
-
-                output.rtt_loss.push_str(&Analytics::empty_data(buckets));
-                output.rtt_loss.push(',');
-
-                output.rtt6.push_str(&Analytics::empty_data(buckets));
-                output.rtt6.push(',');
-
-                output.rtt6_loss.push_str(&Analytics::empty_data(buckets));
-                output.rtt6_loss.push(',');
+                OutputData::push_rtt_data(None, buckets, &mut output.rtt);
+                OutputData::push_rtt_data(None, buckets, &mut output.rtt_loss);
+                OutputData::push_rtt_data(None, buckets, &mut output.rtt6);
+                OutputData::push_rtt_data(None, buckets, &mut output.rtt6_loss);
 
                 output.tx.push_str(&Analytics::empty_data(buckets));
                 output.tx.push(',');
@@ -400,6 +402,14 @@ impl Analytics {
             .or_insert_with(|| NodeInfo::from(event.clone()));
     }
 
+    /// Update peer data from a received config event.
+    /// # Arguments
+    ///
+    /// * `event` - Received config event.
+    async fn handle_config_event(&mut self, event: &MeshConfigUpdateEvent) {
+        self.ip_stack = event.ip_stack.clone();
+    }
+
     /// Launch ping task for every node.
     fn perform_ping(&mut self) {
         #[cfg(test)]
@@ -425,6 +435,7 @@ impl Analytics {
                 let (pk, ip_addresses) = (node.public_key, node.ip_addresses.clone());
                 let pinger = Arc::clone(&self.ping_backend);
                 let ping_channel_tx = ping_channel_tx.clone();
+                let curr_ip_stack = self.ip_stack.clone();
 
                 tokio::spawn(async move {
                     if let Some(pinger) = &*pinger {
@@ -432,7 +443,20 @@ impl Analytics {
                         let mut ip_addresses = ip_addresses.iter().peekable();
 
                         while let Some(ip_address) = ip_addresses.next() {
-                            dpr = Box::pin(pinger.perform(*ip_address)).await;
+                            let mut dpt = *ip_address;
+
+                            // Adjust target based on local IP stack
+                            match curr_ip_stack {
+                                Some(IpStack::IPv4) | None => {
+                                    dpt.delete_address(IpStack::IPv6);
+                                }
+                                Some(IpStack::IPv6) => {
+                                    dpt.delete_address(IpStack::IPv4);
+                                }
+                                _ => {}
+                            }
+
+                            dpr = Box::pin(pinger.perform(dpt)).await;
 
                             if let Some(results_v4) = &dpr.v4 {
                                 if results_v4.successful_pings != 0 {
@@ -466,32 +490,33 @@ impl Analytics {
         if let Some(pinger) = &*self.ping_backend {
             self.nodes.entry(dpr.0).and_modify(|node| {
                 if let Some(results_v4) = dpr.1.v4 {
-                    let rtt_avg = std::convert::TryInto::try_into(
-                        results_v4
-                            .avg_rtt
-                            .map_or(Duration::from_millis(0), |a| a)
-                            .as_millis(),
-                    )
-                    .unwrap_or(0u64);
-                    let rtt_loss =
-                        (100 * results_v4.unsuccessful_pings / pinger.no_of_tries) as u64;
-
-                    let _ = node.rtt_histogram.increment(rtt_avg);
-                    let _ = node.rtt_loss_histogram.increment(rtt_loss);
+                    if let Some(avg_rtt) = results_v4.avg_rtt {
+                        let avg_v4 = avg_rtt.as_millis() as u64;
+                        let _ = node.rtt_histogram.increment(avg_v4);
+                        let _ = node.rtt_loss_histogram.increment(
+                            (100 * results_v4.unsuccessful_pings / pinger.no_of_tries) as u64,
+                        );
+                    } else if results_v4.unsuccessful_pings > 0 {
+                        let _ = node.rtt_histogram.increment(0u64);
+                        let _ = node.rtt_loss_histogram.increment(
+                            (100 * results_v4.unsuccessful_pings / pinger.no_of_tries) as u64,
+                        );
+                    }
                 }
 
                 if let Some(results_v6) = dpr.1.v6 {
-                    let u64_avg = std::convert::TryInto::try_into(
-                        results_v6
-                            .avg_rtt
-                            .map_or(Duration::from_millis(0), |a| a)
-                            .as_millis(),
-                    )
-                    .unwrap_or(0u64);
-                    let _ = node.rtt6_histogram.increment(u64_avg);
-                    let _ = node.rtt6_loss_histogram.increment(
-                        (100 * results_v6.unsuccessful_pings / pinger.no_of_tries) as u64,
-                    );
+                    if let Some(avg_rtt) = results_v6.avg_rtt {
+                        let avg_v6 = avg_rtt.as_millis() as u64;
+                        let _ = node.rtt6_histogram.increment(avg_v6);
+                        let _ = node.rtt6_loss_histogram.increment(
+                            (100 * results_v6.unsuccessful_pings / pinger.no_of_tries) as u64,
+                        );
+                    } else if results_v6.unsuccessful_pings > 0 {
+                        let _ = node.rtt6_histogram.increment(0u64);
+                        let _ = node.rtt6_loss_histogram.increment(
+                            (100 * results_v6.unsuccessful_pings / pinger.no_of_tries) as u64,
+                        );
+                    }
                 }
             });
         }
@@ -531,6 +556,16 @@ impl Analytics {
         let mut output = String::new();
         for _ in 0..buckets {
             output.push_str("0:");
+        }
+        // Pop last ':'
+        output.pop();
+        output
+    }
+
+    fn null_data(buckets: u32) -> String {
+        let mut output = String::new();
+        for _ in 0..buckets {
+            output.push_str("null:");
         }
         // Pop last ':'
         output.pop();
@@ -612,10 +647,10 @@ mod tests {
         );
 
         let expected_output = OutputData {
-            rtt: String::from("20:40:70:90:100,0:0:0:0:0,20:40:70:90:100"),
-            rtt_loss: String::from("20:40:70:90:100,0:0:0:0:0,20:40:70:90:100"),
-            rtt6: String::from("20:40:70:90:100,0:0:0:0:0,20:40:70:90:100"),
-            rtt6_loss: String::from("20:40:70:90:100,0:0:0:0:0,20:40:70:90:100"),
+            rtt: String::from("20:40:70:90:100,null:null:null:null:null,20:40:70:90:100"),
+            rtt_loss: String::from("20:40:70:90:100,null:null:null:null:null,20:40:70:90:100"),
+            rtt6: String::from("20:40:70:90:100,null:null:null:null:null,20:40:70:90:100"),
+            rtt6_loss: String::from("20:40:70:90:100,null:null:null:null:null,20:40:70:90:100"),
             tx: String::from("20:40:70:90:100,0:0:0:0:0,20:40:70:90:100"),
             rx: String::from("20:40:70:90:100,0:0:0:0:0,20:40:70:90:100"),
             connection_duration: String::from("100;0;200"),
@@ -699,8 +734,15 @@ mod tests {
 
         let output = analytics.get_data(&BTreeSet::<PublicKey>::from([event.public_key]));
 
-        // pinging localhost is usually < 0ms so histograms look empty
-        assert_eq!(output, OutputData::new(analytics.buckets));
+        // Pinging localhost is usually < 0ms so histograms looks "zeroed"
+        // TODO make a mock pinger, to guarantee the "0" results
+        let after_ping = {
+            let mut od = OutputData::new(analytics.buckets);
+            od.rtt = Analytics::empty_data(analytics.buckets);
+            od.rtt_loss = Analytics::empty_data(analytics.buckets);
+            od
+        };
+        assert_eq!(output, after_ping);
 
         // Add invalid ipv6 address and some dummy data
         event.dual_ip_addresses = vec![DualTarget::new((
@@ -718,7 +760,7 @@ mod tests {
         event.rx_bytes = 80;
         analytics.handle_wg_event(&event).await;
 
-        // perform ping with new data
+        // Perform ping with new data
         analytics.perform_ping();
         let node_ping_res = analytics.ping_channel_rx.recv().await.unwrap();
         analytics.process_node_ping_results((node_ping_res.0, node_ping_res.1));
@@ -732,12 +774,13 @@ mod tests {
         assert_eq!(node.last_tx_bytes, 50);
         assert_eq!(node.last_rx_bytes, 80);
 
+        // Although ipv6 address was added, we're on ipv4-only stack, so no pings happens, hence the nulls
         let output = analytics.get_data(&BTreeSet::<PublicKey>::from([event.public_key]));
         let expected_output = OutputData {
             rtt: "0:0:0:0:0".to_owned(),
             rtt_loss: "0:0:0:0:0".to_owned(),
-            rtt6: "0:0:0:0:0".to_owned(),
-            rtt6_loss: "0:0:0:100:100".to_owned(),
+            rtt6: "null:null:null:null:null".to_owned(),
+            rtt6_loss: "null:null:null:null:null".to_owned(),
             tx: "5:8:8:8:8".to_owned(),
             rx: "10:12:12:12:12".to_owned(),
             connection_duration: String::from("7"),
@@ -872,10 +915,12 @@ mod tests {
     }
 
     fn setup() -> (Analytics, Tx<()>, Tx<Box<AnalyticsEvent>>) {
-        let (manual_trigger_channel, wg_channel) = (McChan::new(1), McChan::new(1));
+        let (manual_trigger_channel, wg_channel, config_update_channel) =
+            (McChan::new(1), McChan::new(1), McChan::new(1));
         let io = Io {
             wg_channel: wg_channel.rx,
             manual_trigger_channel: manual_trigger_channel.rx,
+            config_update_channel: config_update_channel.rx,
         };
         let config = QoSConfig {
             rtt_interval: RTT,
@@ -885,7 +930,7 @@ mod tests {
         };
 
         (
-            Analytics::new(config, io),
+            Analytics::new(config, io, true),
             manual_trigger_channel.tx,
             wg_channel.tx,
         )

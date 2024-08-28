@@ -43,6 +43,10 @@ pub use lru_cache::*;
 pub mod interval;
 pub use interval::*;
 
+/// IPstack helper
+pub mod ip_stack;
+pub use ip_stack::*;
+
 /// Basic ICMP Pinger
 pub mod pinger;
 pub use pinger::*;

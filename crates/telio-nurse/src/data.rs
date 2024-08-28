@@ -1,9 +1,7 @@
 use std::collections::{BTreeSet, HashMap};
 use telio_crypto::PublicKey;
-use telio_model::{
-    config::Config,
-    mesh::{get_ip_stack, IpStack},
-};
+use telio_model::config::Config;
+use telio_utils::{get_ip_stack, IpStack};
 
 /// Information about a heartbeat, for analytics.
 #[derive(Clone, Debug, Default)]

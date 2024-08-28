@@ -3,7 +3,7 @@ import pytest
 import telio
 from contextlib import AsyncExitStack
 from datetime import datetime
-from helpers import setup_mesh_nodes, SetupParameters
+from helpers import connectivity_stack, setup_mesh_nodes, SetupParameters
 from telio import PathType, State
 from telio_features import TelioFeatures, Direct, Nurse, Qos, Lana
 from typing import Tuple
@@ -35,25 +35,31 @@ IP_STACKS = [
 async def build_conntracker(
     exit_stack: AsyncExitStack,
     tag: ConnectionTag,
-    ip_stack: IPStack,
-    qos_expected: bool,
+    primary_ip_stack: IPStack,
+    secondary_ip_stack: IPStack,
+    for_session_keeper: bool = False,
 ) -> Tuple[Connection, ConnectionTracker]:
     # Set connection tracker expectations according to IP stack parameter
-    conntrack_config = (
-        generate_connection_tracker_config(
-            tag,
-            derp_1_limits=ConnectionLimits(1, 1),
-            ping_limits=ConnectionLimits(1, 2),
-        )
-        if ip_stack == IPStack.IPv4
-        else generate_connection_tracker_config(
-            tag,
-            derp_1_limits=ConnectionLimits(1, 1),
-            ping_limits=(
-                ConnectionLimits(1, 2) if qos_expected else ConnectionLimits(0, 0)
-            ),
-            ping6_limits=ConnectionLimits(1, 2),
-        )
+    connection = connectivity_stack(primary_ip_stack, secondary_ip_stack)
+
+    ping_limits = ConnectionLimits(0, 0)
+    ping6_limits = ConnectionLimits(0, 0)
+
+    if connection == IPStack.IPv4:
+        ping_limits = ConnectionLimits(1, 2)
+    elif connection == IPStack.IPv6:
+        ping6_limits = ConnectionLimits(1, 2)
+    elif connection == IPStack.IPv4v6:
+        # Session keeper prioritizes IPv6, and only when IPv6 is not available, it uses IPv4
+        if not for_session_keeper:
+            ping_limits = ConnectionLimits(1, 2)
+        ping6_limits = ConnectionLimits(1, 2)
+
+    conntrack_config = generate_connection_tracker_config(
+        tag,
+        derp_1_limits=ConnectionLimits(1, 1),
+        ping_limits=ping_limits,
+        ping6_limits=ping6_limits,
     )
 
     return await exit_stack.enter_async_context(
@@ -130,10 +136,18 @@ async def test_session_keeper(
 
         # Initialize node conntracker before starting nodes
         _, alpha_conntrack = await build_conntracker(
-            exit_stack, alpha_setup_params.connection_tag, alpha_ip_stack, False
+            exit_stack,
+            alpha_setup_params.connection_tag,
+            alpha_ip_stack,
+            beta_setup_params.ip_stack,
+            for_session_keeper=True,
         )
         _, beta_conntrack = await build_conntracker(
-            exit_stack, beta_setup_params.connection_tag, alpha_ip_stack, False
+            exit_stack,
+            beta_setup_params.connection_tag,
+            alpha_ip_stack,
+            beta_setup_params.ip_stack,
+            for_session_keeper=True,
         )
 
         # Startup meshnet
@@ -254,7 +268,7 @@ async def test_qos(
             exit_stack,
             alpha_setup_params.connection_tag,
             alpha_setup_params.ip_stack,
-            True,
+            beta_setup_params.ip_stack,
         )
 
         env = await setup_mesh_nodes(
@@ -266,6 +280,7 @@ async def test_qos(
 
         async def wait_for_conntracker() -> None:
             while True:
+                print("wait_for_conntracker(): ", alpha_conntrack.get_out_of_limits())
                 if alpha_conntrack.get_out_of_limits() is None:
                     return
                 await asyncio.sleep(1.0)

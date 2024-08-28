@@ -14,6 +14,10 @@ public_itf=$(ip route show | awk '/10.0.0.0\/16.*dev [a-z0-0]+/ {print $3}')
 # Configure standart linux NAT, this will be port restricted cone NAT
 iptables -t nat -A POSTROUTING -p tcp -o $public_itf -j MASQUERADE
 
+# Drop all out-of-tunnel meshnet traffic
+iptables -t filter -A FORWARD -s 100.64.0.0/10 -j DROP
+iptables -t filter -A FORWARD -d 100.64.0.0/10 -j DROP
+
 # incase some1 will need dns, uncomment following lines
 # iptables -A INPUT -p udp --sport 53 -j ACCEPT
 # iptables -A INPUT -p udp --dport 53 -j ACCEPT

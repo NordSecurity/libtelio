@@ -366,3 +366,30 @@ async def setup_mesh_nodes(
         await connection_future
 
     return env
+
+
+def connectivity_stack(node1_stack: IPStack, node2_stack: IPStack) -> Optional[IPStack]:
+    """
+    Checks, through which paths (v4, v6 or both) the nodes can communicate with each other.
+    """
+    if (
+        (node1_stack, node2_stack) == (IPStack.IPv4, IPStack.IPv4)
+        or (node1_stack, node2_stack) == (IPStack.IPv4, IPStack.IPv4v6)
+        or (node1_stack, node2_stack) == (IPStack.IPv4v6, IPStack.IPv4)
+    ):
+        return IPStack.IPv4
+    if (node1_stack, node2_stack) == (IPStack.IPv4, IPStack.IPv6) or (
+        node1_stack,
+        node2_stack,
+    ) == (IPStack.IPv6, IPStack.IPv4):
+        return None
+    if (
+        (node1_stack, node2_stack) == (IPStack.IPv6, IPStack.IPv6)
+        or (node1_stack, node2_stack) == (IPStack.IPv6, IPStack.IPv4v6)
+        or (node1_stack, node2_stack) == (IPStack.IPv4v6, IPStack.IPv6)
+    ):
+        return IPStack.IPv6
+    if (node1_stack, node2_stack) == (IPStack.IPv4v6, IPStack.IPv4v6):
+        return IPStack.IPv4v6
+
+    raise ValueError(f"Unsupported IPStack combination: {node1_stack}, {node2_stack}")
