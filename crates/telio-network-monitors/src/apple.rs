@@ -1,15 +1,10 @@
 //! Module to monitor network changes in Apple
 
 use network_framework_sys::{
-    nw_interface_get_name, nw_interface_t, nw_path_monitor_create, nw_path_monitor_set_queue,
-    nw_path_monitor_start, nw_path_monitor_t, nw_path_t,
+    nw_path_monitor_create, nw_path_monitor_set_queue, nw_path_monitor_start, nw_path_monitor_t,
+    nw_path_t,
 };
-use parking_lot::Mutex;
-use std::{
-    cell::RefCell,
-    ffi::{c_long, c_void, CStr},
-    rc::Rc,
-};
+use std::ffi::{c_long, c_void};
 use telio_utils::{telio_log_info, telio_log_warn};
 
 use crate::monitor::PATH_CHANGE_BROADCAST;
@@ -22,9 +17,6 @@ pub const DISPATCH_QUEUE_PRIORITY_DEFAULT: c_long = 0;
 pub const DISPATCH_QUEUE_PRIORITY_LOW: c_long = -2;
 /// Dispatch queue priority as background queue
 pub const DISPATCH_QUEUE_PRIORITY_BACKGROUND: c_long = -1 << 15;
-
-/// Vector containing interface names in OS order
-pub static INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 extern "C" {
     /// Obj-c signature:
@@ -57,42 +49,12 @@ extern "C" {
 /// For more details on Apple's `Network.framework` see:
 /// - [Apple Network.framework Documentation](https://developer.apple.com/documentation/network)
 pub fn setup_network_monitor() {
-    let update_handler = block::ConcreteBlock::new(|path: nw_path_t| {
-        let names = Rc::new(RefCell::new(vec![]));
-        let names_copy = names.clone();
-
-        let enumerate_callback =
-            block::ConcreteBlock::new(move |interface: nw_interface_t| -> bool {
-                let c_name = unsafe { nw_interface_get_name(interface) };
-                if !c_name.is_null() {
-                    let name = unsafe { CStr::from_ptr(c_name) };
-                    if let Ok(name) = name.to_str() {
-                        names_copy.borrow_mut().push(name.to_owned());
-                    }
-                }
-                true
-            })
-            .copy();
-
-        unsafe {
-            nw_path_enumerate_interfaces(
-                path,
-                &*enumerate_callback as *const block::Block<_, _> as *const c_void,
-            )
-        };
-
-        *INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER.lock() = names.borrow().clone();
+    let update_handler = block::ConcreteBlock::new(|_path: nw_path_t| {
         if let Err(e) = PATH_CHANGE_BROADCAST.send(()) {
-            telio_log_warn!(
-                "Failed to notify about changed path, error: {e}, path: {:?}",
-                names.borrow()
-            );
+            telio_log_warn!("Failed to notify about changed path, error: {e}");
         }
 
-        telio_log_info!(
-            "Path change notification sent, current network path in os preference order: {:?}",
-            names.borrow()
-        );
+        telio_log_info!("Path change notification sent");
     })
     .copy();
     unsafe {

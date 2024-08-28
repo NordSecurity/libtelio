@@ -1,8 +1,6 @@
 use debug_panic::debug_panic;
 use parking_lot::{Mutex, RwLock};
-use telio_network_monitors::{
-    apple::INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER, monitor::PATH_CHANGE_BROADCAST,
-};
+use telio_network_monitors::{monitor::LOCAL_ADDRS_CACHE, monitor::PATH_CHANGE_BROADCAST};
 
 use std::{
     io, os,
@@ -378,8 +376,11 @@ fn get_primary_interface_names() -> Vec<String> {
         }
     }
 
-    let mut interface_names_in_os_preference_order: Vec<String> =
-        INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER.lock().clone();
+    let mut interface_names_in_os_preference_order: Vec<String> = LOCAL_ADDRS_CACHE
+        .lock()
+        .iter()
+        .map(|interface| interface.name.clone())
+        .collect();
     telio_log_info!(
         "Discovered these primary IPv4 interfaces for use in socket binding: {:?} (OS pereference order: {interface_names_in_os_preference_order:?})",
         primary_ipv4_interface_names
@@ -450,19 +451,22 @@ fn spawn_dynamic_store_loop(sockets: Weak<Mutex<Sockets>>) {
 #[cfg(test)]
 mod tests {
     use socket2::{Domain, Protocol, Socket, Type};
-    use telio_network_monitors::apple::setup_network_monitor;
+    use telio_network_monitors::{apple::setup_network_monitor, monitor::NetworkMonitor};
 
     use crate::native::AsNativeSocket;
 
     use super::*;
 
-    #[test]
-    fn test_ipv6_sk_bind() {
+    #[tokio::test]
+    async fn test_ipv6_sk_bind() {
         setup_network_monitor();
 
         let socket2_socket = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP));
 
         let socket_fd = socket2_socket.as_ref().unwrap().as_native_socket();
+        let _network_monitor = NetworkMonitor::new(telio_utils::system_get_if_addr)
+            .await
+            .unwrap();
 
         if let Err(e) = bind(get_primary_interface(0).unwrap() as u32, socket_fd) {
             panic!("Test failed with error : {}", e)

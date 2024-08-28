@@ -16,14 +16,16 @@ pub fn gather_local_interfaces(
 ) -> std::io::Result<Vec<if_addrs::Interface>> {
     let shared_range: Ipv4Net = Ipv4Net::new(Ipv4Addr::new(100, 64, 0, 0), 10).unwrap_or_default();
     Ok(get_if_addr()?
-        // .get()?
         .into_iter()
-        .filter(|x| !x.addr.is_loopback())
-        .filter(|x| match x.addr.ip() {
-            // Filter 100.64/10 libtelio's meshnet network.
-            IpAddr::V4(v4) => !shared_range.contains(&v4),
-            // Filter IPv6
-            _ => false,
+        .filter(|x| {
+            !x.addr.is_loopback() && {
+                match x.addr.ip() {
+                    // Filter 100.64/10 libtelio's meshnet network.
+                    IpAddr::V4(v4) => !shared_range.contains(&v4),
+                    // Filter IPv6
+                    _ => false,
+                }
+            }
         })
         .collect())
 }

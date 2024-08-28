@@ -2,20 +2,21 @@
 //! Get notified about that network path has changed
 //! and update local IP address cache
 use once_cell::sync::Lazy;
+use parking_lot::Mutex;
 use std::io;
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
 use telio_utils::{local_interfaces, telio_log_debug, telio_log_warn, GetIfAddrs};
 use tokio::{sync::broadcast::Sender, task::JoinHandle};
 /// Sender to notify if there is a change in OS interface order
 pub static PATH_CHANGE_BROADCAST: Lazy<Sender<()>> = Lazy::new(|| Sender::new(2));
 /// Vector containing all local interfaces
-pub static LOCAL_ADDRS_CACHE: Lazy<Arc<StdMutex<Vec<if_addrs::Interface>>>> =
-    Lazy::new(|| Arc::new(StdMutex::new(Vec::new())));
+pub static LOCAL_ADDRS_CACHE: Lazy<Arc<Mutex<Vec<if_addrs::Interface>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(Vec::new())));
 #[cfg(all(
     not(test),
     any(target_os = "macos", target_os = "ios", target_os = "tvos")
 ))]
-static NETWORK_PATH_MONITOR_START: std::sync::Once = std::sync::Once::new();
+static NW_PATH_MONITOR_START: std::sync::Once = std::sync::Once::new();
 
 #[derive(Debug)]
 /// Struct to monitor network
@@ -32,10 +33,7 @@ pub struct NetworkMonitor {
 impl NetworkMonitor {
     /// Sets up and spawns network monitor
     pub async fn new(if_addr: GetIfAddrs) -> std::io::Result<NetworkMonitor> {
-        if let Ok(mut guard) = LOCAL_ADDRS_CACHE.lock() {
-            *guard = local_interfaces::gather_local_interfaces(if_addr)?;
-            telio_log_debug!("local cache {:?}", *guard);
-        }
+        *(LOCAL_ADDRS_CACHE.lock()) = local_interfaces::gather_local_interfaces(if_addr)?;
 
         let if_cache_updater_handle = Some(tokio::spawn({
             let mut notify = PATH_CHANGE_BROADCAST.subscribe();
@@ -44,10 +42,8 @@ impl NetworkMonitor {
                     match notify.recv().await {
                         Ok(()) => match local_interfaces::gather_local_interfaces(if_addr) {
                             Ok(v) => {
-                                if let Ok(mut guard) = LOCAL_ADDRS_CACHE.lock() {
-                                    telio_log_debug!("Updating local addr cache");
-                                    *guard = v;
-                                }
+                                telio_log_debug!("Updating local addr cache");
+                                *(LOCAL_ADDRS_CACHE.lock()) = v;
                             }
                             Err(e) => telio_log_warn!("Unable to get local interfaces {e}"),
                         },
@@ -65,7 +61,7 @@ impl NetworkMonitor {
             not(test),
             any(target_os = "macos", target_os = "ios", target_os = "tvos")
         ))]
-        NETWORK_PATH_MONITOR_START.call_once(crate::apple::setup_network_monitor);
+        NW_PATH_MONITOR_START.call_once(crate::apple::setup_network_monitor);
         #[cfg(all(not(test), target_os = "linux"))]
         let monitor_handle = crate::linux::setup_network_monitor().await;
 
