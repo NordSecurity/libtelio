@@ -38,6 +38,7 @@ use telio_traversal::{
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 use telio_sockets::native;
 
+use telio_network_monitors::system_get_if_addr;
 use telio_nurse::{
     aggregator::ConnectivityDataAggregator, config::AggregatorConfig,
     config::Config as NurseConfig, data::MeshConfigUpdateEvent,
@@ -1032,7 +1033,7 @@ impl Runtime {
             None
         };
 
-        let network_monitor = NetworkMonitor::new(telio_utils::system_get_if_addr).await?;
+        let network_monitor = NetworkMonitor::new(system_get_if_addr).await?;
         let socket_pool = Arc::new({
             if let Some(protect) = protect.clone() {
                 SocketPool::new(protect)

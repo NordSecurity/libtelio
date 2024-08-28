@@ -52,6 +52,3 @@ pub mod test;
 
 /// IpNet const constructor
 pub mod const_ipnet;
-/// Get local interfaces
-pub mod local_interfaces;
-pub use local_interfaces::*;

@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 if-addrs.workspace = true
+ipnet.workspace = true
 telio-utils.workspace = true
 tracing.workspace = true
 parking_lot.workspace = true

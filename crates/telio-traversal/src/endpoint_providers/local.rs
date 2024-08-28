@@ -10,14 +10,14 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use telio_crypto::PublicKey;
+use telio_network_monitors::{
+    local_interfaces::{self, GetIfAddrs},
+    system_get_if_addr,
+};
 use telio_proto::{Session, WGPort};
 use telio_sockets::External;
 use telio_task::{io::chan, task_exec, BoxAction, Runtime, Task};
-use telio_utils::{
-    interval,
-    local_interfaces::{self, GetIfAddrs},
-    system_get_if_addr, telio_log_debug, telio_log_info, telio_log_warn,
-};
+use telio_utils::{interval, telio_log_debug, telio_log_info, telio_log_warn};
 use telio_wg::{DynamicWg, WireGuard};
 use tokio::net::UdpSocket;
 use tokio::sync::Mutex;

@@ -4402,6 +4402,7 @@ dependencies = [
  "block",
  "dispatch",
  "if-addrs",
+ "ipnet",
  "neli 0.6.4",
  "network-framework-sys",
  "once_cell",
@@ -4674,6 +4675,7 @@ dependencies = [
  "surge-ping",
  "telio-crypto",
  "telio-model",
+ "telio-network-monitors",
  "telio-nurse",
  "telio-proto",
  "telio-sockets",
@@ -4692,7 +4694,6 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "hashlink",
- "if-addrs",
  "ipnet",
  "lru_time_cache",
  "maplit",

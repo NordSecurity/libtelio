@@ -1,17 +1,16 @@
 //! Module to monitor changes in network.
-//! Get notified about that network path has changed
+//! Get notified when network paths change
 //! and update local IP address cache
+use crate::{local_interfaces, GetIfAddrs};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::io;
-use std::sync::Arc;
-use telio_utils::{local_interfaces, telio_log_debug, telio_log_warn, GetIfAddrs};
+use telio_utils::{telio_log_debug, telio_log_warn};
 use tokio::{sync::broadcast::Sender, task::JoinHandle};
 /// Sender to notify if there is a change in OS interface order
 pub static PATH_CHANGE_BROADCAST: Lazy<Sender<()>> = Lazy::new(|| Sender::new(2));
 /// Vector containing all local interfaces
-pub static LOCAL_ADDRS_CACHE: Lazy<Arc<Mutex<Vec<if_addrs::Interface>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(Vec::new())));
+pub static LOCAL_ADDRS_CACHE: Mutex<Vec<if_addrs::Interface>> = Mutex::new(Vec::new());
 #[cfg(all(
     not(test),
     any(target_os = "macos", target_os = "ios", target_os = "tvos")
@@ -70,9 +69,7 @@ impl NetworkMonitor {
 
         Ok(Self {
             if_cache_updater_handle,
-            #[cfg(all(not(test), target_os = "linux"))]
-            monitor_handle,
-            #[cfg(all(not(test), target_os = "windows"))]
+            #[cfg(all(not(test), any(target_os = "linux", target_os = "windows")))]
             monitor_handle,
         })
     }

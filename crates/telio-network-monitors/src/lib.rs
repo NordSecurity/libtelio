@@ -14,3 +14,7 @@ pub mod linux;
 #[cfg(target_os = "windows")]
 /// Utility to get monitor network on windows
 pub mod windows;
+
+/// Get local interfaces
+pub mod local_interfaces;
+pub use local_interfaces::*;
