@@ -4642,7 +4642,6 @@ dependencies = [
  "telio-batcher",
  "telio-crypto",
  "telio-model",
- "telio-nurse",
  "telio-proto",
  "telio-sockets",
  "telio-task",

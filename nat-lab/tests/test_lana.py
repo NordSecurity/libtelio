@@ -63,6 +63,7 @@ from utils.connection_util import (
 )
 from utils.ping import ping
 from utils.router import IPStack, IPProto
+from utils.telio_log_notifier import TelioLogNotifier
 
 CONTAINER_EVENT_PATH = "/event.db"
 CONTAINER_EVENT_BACKUP_PATH = "/event_backup.db"
@@ -70,6 +71,8 @@ ALPHA_EVENTS_PATH = "./alpha-events.db"
 BETA_EVENTS_PATH = "./beta-events.db"
 GAMMA_EVENTS_PATH = "./gamma-events.db"
 
+DOCKER_CONE_GW_1_IPv4 = "10.0.254.1"
+DOCKER_CONE_GW_1_IPv6 = "2001:db8:85a4::1000:2541"
 
 DERP_SERVERS_STRS = [
     f"{DERP_PRIMARY['ipv4']}:{DERP_PRIMARY['relay_port']}",
@@ -245,6 +248,60 @@ def ip_stack_to_bits(ip_stack: IPStack) -> int:
     return IPV4_BIT | IPV6_BIT
 
 
+async def start_alpha_beta_in_relay(
+    exit_stack: AsyncExitStack,
+    api: API,
+    alpha: Node,
+    beta: Node,
+    connection_alpha: Connection,
+    connection_beta: Connection,
+    alpha_features: TelioFeatures,
+    beta_features: TelioFeatures,
+) -> tuple[telio.Client, telio.Client]:
+    client_alpha = await exit_stack.enter_async_context(
+        telio.Client(
+            connection_alpha,
+            alpha,
+            telio_features=alpha_features,
+            fingerprint=ALPHA_FINGERPRINT,
+        ).run(api.get_meshmap(alpha.id))
+    )
+
+    client_beta = telio.Client(
+        connection_beta,
+        beta,
+        telio_features=beta_features,
+        fingerprint=BETA_FINGERPRINT,
+    )
+
+    if base64.b64decode(alpha.public_key) < base64.b64decode(beta.public_key):
+        reporting_connection = connection_alpha
+        losing_key = beta.public_key
+    else:
+        reporting_connection = connection_beta
+        losing_key = alpha.public_key
+
+    async with AsyncExitStack() as direct_disabled_exit_stack:
+        telio_log_notifier = await direct_disabled_exit_stack.enter_async_context(
+            TelioLogNotifier(reporting_connection).run()
+        )
+
+        for path in [DOCKER_CONE_GW_1_IPv4, DOCKER_CONE_GW_1_IPv6]:
+            await direct_disabled_exit_stack.enter_async_context(
+                client_beta.get_router().disable_path(path)
+            )
+
+        relayed_state_reported = telio_log_notifier.notify_output(
+            f'Relayed peer state change for "{losing_key[:4]}...{losing_key[-4:]}" to Connected will be reported'
+        )
+
+        await exit_stack.enter_async_context(client_beta.run(api.get_meshmap(beta.id)))
+
+        await relayed_state_reported.wait()
+
+    return client_alpha, client_beta
+
+
 async def run_default_scenario(
     exit_stack: AsyncExitStack,
     alpha_is_local,
@@ -307,24 +364,16 @@ async def run_default_scenario(
     await clean_container(connection_beta)
     await clean_container(connection_gamma)
 
-    client_alpha = await exit_stack.enter_async_context(
-        telio.Client(
-            connection_alpha,
-            alpha,
-            telio_features=build_telio_features(),
-            fingerprint=ALPHA_FINGERPRINT,
-        ).run(api.get_meshmap(alpha.id))
+    client_alpha, client_beta = await start_alpha_beta_in_relay(
+        exit_stack,
+        api,
+        alpha,
+        beta,
+        connection_alpha,
+        connection_beta,
+        build_telio_features(),
+        build_telio_features(),
     )
-
-    client_beta = await exit_stack.enter_async_context(
-        telio.Client(
-            connection_beta,
-            beta,
-            telio_features=build_telio_features(),
-            fingerprint=BETA_FINGERPRINT,
-        ).run(api.get_meshmap(beta.id))
-    )
-
     client_gamma = await exit_stack.enter_async_context(
         telio.Client(
             connection_gamma,
@@ -1247,21 +1296,15 @@ async def test_lana_with_meshnet_exit_node(
         await clean_container(connection_alpha)
         await clean_container(connection_beta)
 
-        client_alpha = await exit_stack.enter_async_context(
-            telio.Client(
-                connection_alpha,
-                alpha,
-                telio_features=build_telio_features(),
-                fingerprint=ALPHA_FINGERPRINT,
-            ).run(api.get_meshmap(alpha.id))
-        )
-        client_beta = await exit_stack.enter_async_context(
-            telio.Client(
-                connection_beta,
-                beta,
-                telio_features=build_telio_features(),
-                fingerprint=BETA_FINGERPRINT,
-            ).run(api.get_meshmap(beta.id))
+        client_alpha, client_beta = await start_alpha_beta_in_relay(
+            exit_stack,
+            api,
+            alpha,
+            beta,
+            connection_alpha,
+            connection_beta,
+            build_telio_features(),
+            build_telio_features(),
         )
 
         await asyncio.gather(
@@ -1481,21 +1524,15 @@ async def test_lana_with_disconnected_node(
             features.nurse.qos.rtt_interval = RTT_INTERVAL * 10
             return features
 
-        client_alpha = await exit_stack.enter_async_context(
-            telio.Client(
-                connection_alpha,
-                alpha,
-                telio_features=get_features_with_long_qos(),
-                fingerprint=ALPHA_FINGERPRINT,
-            ).run(api.get_meshmap(alpha.id))
-        )
-        client_beta = await exit_stack.enter_async_context(
-            telio.Client(
-                connection_beta,
-                beta,
-                telio_features=get_features_with_long_qos(),
-                fingerprint=BETA_FINGERPRINT,
-            ).run(api.get_meshmap(beta.id))
+        client_alpha, client_beta = await start_alpha_beta_in_relay(
+            exit_stack,
+            api,
+            alpha,
+            beta,
+            connection_alpha,
+            connection_beta,
+            get_features_with_long_qos(),
+            get_features_with_long_qos(),
         )
 
         await asyncio.gather(
@@ -1529,8 +1566,25 @@ async def test_lana_with_disconnected_node(
         )
         assert alpha_events
         assert beta_events
-        # disconnect beta and trigger analytics on alpha
-        await client_beta.stop_device()
+
+        if base64.b64decode(alpha.public_key) < base64.b64decode(beta.public_key):
+            reporting_connection = connection_alpha
+            losing_key = beta.public_key
+        else:
+            reporting_connection = connection_beta
+            losing_key = alpha.public_key
+
+        async with TelioLogNotifier(reporting_connection).run() as telio_log_notifier:
+            if losing_key == beta.public_key:
+                relayed_state_reported = telio_log_notifier.notify_output(
+                    f'Relayed peer state change for "{losing_key[:4]}...{losing_key[-4:]}" to Connected will be reported'
+                )
+
+            # disconnect beta and trigger analytics on alpha
+            await client_beta.stop_device()
+
+            if losing_key == beta.public_key:
+                await relayed_state_reported.wait()
 
         beta_events = await wait_for_event_dump(
             ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=2

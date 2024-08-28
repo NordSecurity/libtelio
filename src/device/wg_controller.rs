@@ -1,4 +1,5 @@
 use super::{Entities, RequestedState, Result};
+use futures::FutureExt;
 use ipnet::IpNet;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::iter::FromIterator;
@@ -10,10 +11,11 @@ use telio_dns::DnsResolver;
 use telio_firewall::firewall::{Firewall, FILE_SEND_PORT};
 use telio_model::constants::{VPN_EXTERNAL_IPV4, VPN_INTERNAL_IPV4, VPN_INTERNAL_IPV6};
 use telio_model::features::Features;
-use telio_model::mesh::LinkState;
 use telio_model::mesh::NodeState::Connected;
+use telio_model::mesh::{LinkState, NodeState};
 use telio_model::EndpointMap;
 use telio_model::SocketAddr;
+use telio_nurse::aggregator::ConnectivityDataAggregator;
 use telio_proto::{PeersStatesMap, Session};
 use telio_proxy::Proxy;
 use telio_starcast::starcast_peer::StarcastPeer;
@@ -22,9 +24,11 @@ use telio_traversal::{
     SessionKeeperTrait, UpgradeSyncTrait, WireGuardEndpointCandidateChangeEvent,
 };
 use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn};
+use telio_wg::uapi::AnalyticsEvent;
 use telio_wg::{uapi::Peer, WireGuard};
 use thiserror::Error as TError;
 use tokio::sync::Mutex;
+use tokio::time::Instant;
 
 pub const DEFAULT_PEER_UPGRADE_WINDOW: u64 = 15;
 
@@ -82,6 +86,7 @@ pub async fn consolidate_wg_state(
         entities.meshnet.left().map(|m| &*m.proxy),
         entities.cross_ping_check(),
         entities.upgrade_sync(),
+        &entities.aggregator,
         entities.session_keeper(),
         &*entities.dns,
         remote_peer_states,
@@ -99,6 +104,7 @@ pub async fn consolidate_wg_state(
         entities.starcast_vpeer(),
         features,
     )
+    .boxed()
     .await?;
     let starcast_pub_key = if let Some(starcast_vpeer) = entities.starcast_vpeer() {
         Some(starcast_vpeer.get_peer().await?.public_key)
@@ -157,6 +163,7 @@ async fn consolidate_wg_peers<
     proxy: Option<&P>,
     cross_ping_check: Option<&Arc<C>>,
     upgrade_sync: Option<&Arc<U>>,
+    aggregator: &ConnectivityDataAggregator,
     session_keeper: Option<&Arc<S>>,
     dns: &Mutex<crate::device::DNS<D>>,
     remote_peer_states: PeersStatesMap,
@@ -198,14 +205,29 @@ async fn consolidate_wg_peers<
     let update_keys = &requested_keys & &actual_keys;
 
     for key in delete_keys {
-        telio_log_info!("Removing peer: {:?}", actual_peers.get(key));
+        let actual_peer = actual_peers.get(key).ok_or(Error::PeerNotFound)?;
+        telio_log_info!("Removing peer: {:?}", actual_peer);
+
+        let event = AnalyticsEvent {
+            public_key: *key,
+            dual_ip_addresses: actual_peer.get_dual_ip_addresses(),
+            tx_bytes: actual_peer.tx_bytes.unwrap_or_default(),
+            rx_bytes: actual_peer.rx_bytes.unwrap_or_default(),
+            peer_state: NodeState::Disconnected,
+            timestamp: Instant::now(),
+        };
+        aggregator.report_peer_state_relayed(&event).await;
+
         wireguard_interface.del_peer(*key).await?;
     }
 
     for key in insert_keys {
-        telio_log_info!("Inserting peer: {:?}", requested_peers.get(key));
-        let peer = requested_peers.get(key).ok_or(Error::PeerNotFound)?;
-        wireguard_interface.add_peer(peer.peer.clone()).await?;
+        let requested_peer = requested_peers.get(key).ok_or(Error::PeerNotFound)?;
+        telio_log_info!("Inserting peer: {:?}", requested_peer);
+
+        wireguard_interface
+            .add_peer(requested_peer.peer.clone())
+            .await?;
 
         if let Some(stun) = stun_ep_provider {
             if let Some(wg_stun_server) = requested_state.wg_stun_server.as_ref() {
@@ -236,7 +258,31 @@ async fn consolidate_wg_peers<
         }
 
         let is_actual_peer_proxying = is_peer_proxying(actual_peer, &proxy_endpoints);
-        if is_actual_peer_proxying && !is_peer_proxying(&requested_peer.peer, &proxy_endpoints) {
+        let is_reqested_peer_proxying = is_peer_proxying(&requested_peer.peer, &proxy_endpoints);
+
+        let event = AnalyticsEvent {
+            public_key: *key,
+            dual_ip_addresses: actual_peer.get_dual_ip_addresses(),
+            tx_bytes: actual_peer.tx_bytes.unwrap_or_default(),
+            rx_bytes: actual_peer.rx_bytes.unwrap_or_default(),
+            peer_state: actual_peer.state(),
+            timestamp: Instant::now(),
+        };
+        if is_actual_peer_proxying {
+            aggregator.report_peer_state_relayed(&event).await;
+        } else if let Some(us) = upgrade_sync {
+            if let Some(accepted_direct_session) = us.get_accepted_session(*key).await {
+                aggregator
+                    .report_peer_state_direct(
+                        &event,
+                        accepted_direct_session.local_ep,
+                        accepted_direct_session.remote_ep,
+                    )
+                    .await;
+            }
+        }
+
+        if is_actual_peer_proxying && !is_reqested_peer_proxying {
             // We have upgraded the connection. If the upgrade happened because we have
             // selected a new direct endpoint candidate -> notify the other node about our own
             // local side endpoint, such that the other node can do this upgrade too.
@@ -1054,6 +1100,7 @@ mod tests {
     use super::*;
     use crate::device::{DeviceConfig, DNS};
     use mockall::predicate::{self, eq};
+    use telio_nurse::config::AggregatorConfig;
 
     use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4};
 
@@ -1801,6 +1848,11 @@ mod tests {
                     .once()
                     .with(eq(i))
                     .return_once(|_| Ok(()));
+                self.upgrade_sync
+                    .expect_get_accepted_session()
+                    .once()
+                    .with(eq(i))
+                    .return_once(|_| None);
             }
         }
 
@@ -1817,13 +1869,20 @@ mod tests {
             let session_keeper = Arc::new(self.session_keeper);
             let stun_ep_provider = { self.stun_ep_provider.map(Arc::new) };
             let upnp_ep_provider: Option<Arc<MockEndpointProvider>> = None;
+            let wireguard_interface = Arc::new(self.wireguard_interface);
+            let aggregator = ConnectivityDataAggregator::new(
+                AggregatorConfig::default(),
+                wireguard_interface.clone(),
+                Default::default(),
+            );
 
             consolidate_wg_peers(
                 &self.requested_state,
-                &self.wireguard_interface,
+                wireguard_interface.as_ref(),
                 Some(&self.proxy),
                 Some(&cross_ping_check),
                 Some(&upgrade_sync),
+                &aggregator,
                 Some(&session_keeper),
                 &self.dns,
                 HashMap::new(),

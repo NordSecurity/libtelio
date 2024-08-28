@@ -9,7 +9,6 @@ import timeouts
 from config import DERP_SERVERS
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
-from itertools import groupby
 from telio import PathType, State
 from telio_features import (
     Batching,
@@ -26,6 +25,7 @@ from typing import List, Optional, Tuple
 from utils.asyncio_util import run_async_context
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
+from utils.telio_log_notifier import TelioLogNotifier
 
 # Testing if batching being disabled or not there doesn't affect anything
 DISABLED_BATCHING_OPTIONS = (None, Batching(direct_connection_threshold=5))
@@ -326,104 +326,77 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
         assert len(beta_direct.providers) > 0
         beta_provider = fix_provider_name(beta_direct.providers[0])
 
-        alpha_connection, _ = [conn.connection for conn in env.connections]
+        alpha_connection, beta_connection = [
+            conn.connection for conn in env.connections
+        ]
 
-        await ping(alpha_connection, beta.ip_addresses[0])
-
-        # Break UHP
-        async with AsyncExitStack() as temp_exit_stack:
-            await temp_exit_stack.enter_async_context(
-                alpha_client.get_router().disable_path(reflexive_ip)
-            )
-
-            await asyncio.gather(
-                alpha_client.wait_for_state_peer(
-                    beta.public_key,
-                    [State.Connected],
-                    [PathType.Relay],
-                ),
-                beta_client.wait_for_state_peer(
-                    alpha.public_key,
-                    [State.Connected],
-                    [PathType.Relay],
-                ),
-            )
-
-            await ping(alpha_connection, beta.ip_addresses[0])
-
-        await asyncio.gather(
-            alpha_client.wait_for_state_peer(
-                beta.public_key, [State.Connected], [PathType.Direct]
-            ),
-            beta_client.wait_for_state_peer(
-                alpha.public_key, [State.Connected], [PathType.Direct]
-            ),
-        )
-
-        await ping(alpha_connection, beta.ip_addresses[0])
-
-        # Break UHP
-        async with AsyncExitStack() as temp_exit_stack:
-            await temp_exit_stack.enter_async_context(
-                alpha_client.get_router().disable_path(reflexive_ip)
-            )
-
-            await asyncio.gather(
-                alpha_client.wait_for_state_peer(
-                    beta.public_key,
-                    [State.Connected],
-                    [PathType.Relay],
-                ),
-                beta_client.wait_for_state_peer(
-                    alpha.public_key,
-                    [State.Connected],
-                    [PathType.Relay],
-                ),
-            )
-
-            await ping(alpha_connection, beta.ip_addresses[0])
-
-        await asyncio.gather(
-            alpha_client.wait_for_state_peer(
-                beta.public_key, [State.Connected], [PathType.Direct]
-            ),
-            beta_client.wait_for_state_peer(
-                alpha.public_key, [State.Connected], [PathType.Direct]
-            ),
-        )
-
-        pred = (
-            '.* "telio_nurse::aggregator":\\d+ (.* peer state change for .* will be'
-            " reported)"
-        )
         # We need to compare the decoded forms, not the base64 encoded strings
         if base64.b64decode(alpha.public_key) < base64.b64decode(beta.public_key):
+            reporting_connection = alpha_connection
             losing_key = beta.public_key
-            log_lines = await alpha_client.get_log_lines(pred)
             from_provider = alpha_provider
             to_provider = beta_provider
         else:
+            reporting_connection = beta_connection
             losing_key = alpha.public_key
-            log_lines = await beta_client.get_log_lines(pred)
             from_provider = beta_provider
             to_provider = alpha_provider
-        deduplicated_lines = [l for l, _ in groupby(log_lines)]
-        direct_event = (
-            f"Direct peer state change for {losing_key} to Connected"
-            f" ({from_provider} -> {to_provider}) will be reported"
+
+        await asyncio.gather(
+            alpha_client.wait_for_state_peer(
+                beta.public_key, [State.Connected], [PathType.Direct]
+            ),
+            beta_client.wait_for_state_peer(
+                alpha.public_key, [State.Connected], [PathType.Direct]
+            ),
         )
-        relayed_event = (
-            f"Relayed peer state change for {losing_key} to Connected will be reported"
+        await ping(alpha_connection, beta.ip_addresses[0])
+
+        telio_log_notifier = await exit_stack.enter_async_context(
+            TelioLogNotifier(reporting_connection).run()
         )
-        expected = [
-            relayed_event,
-            direct_event,
-            relayed_event,
-            direct_event,
-            relayed_event,
-            direct_event,
-        ]
-        assert expected == deduplicated_lines
+
+        # Break UHP
+        async with AsyncExitStack() as direct_disabled_exit_stack:
+            relayed_state_reported = telio_log_notifier.notify_output(
+                f'Relayed peer state change for "{losing_key[:4]}...{losing_key[-4:]}" to Connected will be reported'
+            )
+
+            await direct_disabled_exit_stack.enter_async_context(
+                alpha_client.get_router().disable_path(reflexive_ip)
+            )
+
+            await asyncio.gather(
+                alpha_client.wait_for_state_peer(
+                    beta.public_key,
+                    [State.Connected],
+                    [PathType.Relay],
+                ),
+                beta_client.wait_for_state_peer(
+                    alpha.public_key,
+                    [State.Connected],
+                    [PathType.Relay],
+                ),
+                relayed_state_reported.wait(),
+            )
+
+            await ping(alpha_connection, beta.ip_addresses[0])
+
+            direct_state_reported = telio_log_notifier.notify_output(
+                f'Direct peer state change for "{losing_key[:4]}...{losing_key[-4:]}" to Connected'
+                f" ({from_provider} -> {to_provider}) will be reported",
+            )
+
+        await asyncio.gather(
+            alpha_client.wait_for_state_peer(
+                beta.public_key, [State.Connected], [PathType.Direct]
+            ),
+            beta_client.wait_for_state_peer(
+                alpha.public_key, [State.Connected], [PathType.Direct]
+            ),
+            direct_state_reported.wait(),
+        )
+        await ping(alpha_connection, beta.ip_addresses[0])
 
         # This is expected. Clients can still receive messages from
         # the previous sessions.

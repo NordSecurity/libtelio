@@ -1056,7 +1056,7 @@ impl Analytics {
                 internal_sorted_fingerprints.push(fp);
             }
 
-            sorted_index = i;
+            sorted_index += 1;
         }
 
         // Add external nodes to the index map (needed for aggregator to work properly)

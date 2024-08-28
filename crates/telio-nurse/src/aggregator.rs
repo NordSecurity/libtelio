@@ -11,7 +11,7 @@ use telio_model::{
     features::EndpointProvider,
     HashMap,
 };
-use telio_utils::{telio_log_debug, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn};
 use telio_wg::{
     uapi::{AnalyticsEvent, PeerState},
     WireGuard,
@@ -159,8 +159,8 @@ impl PeerConnDataSegment {
     ) -> Self {
         PeerConnDataSegment {
             node: peer_event.public_key,
-            start: peer_event.timestamp.into(),
-            duration: target_timestamp.duration_since(peer_event.timestamp.into()),
+            start: peer_event.timestamp,
+            duration: target_timestamp.duration_since(peer_event.timestamp),
             connection_data: PeerConnectionData {
                 endpoints,
                 rx_bytes: target_rx_bytes - peer_event.rx_bytes,
@@ -225,13 +225,13 @@ impl ConnectivityDataAggregator {
     /// * `event` - Analytic event with the current direct peer state.
     /// * `local_ep` - Endpoint provider used by the direct connection on this node.
     /// * `remote_ep` - Endpoint provider used by the direct connection on remote node.
-    pub async fn change_peer_state_direct(
+    pub async fn report_peer_state_direct(
         &self,
         event: &AnalyticsEvent,
         local_ep: EndpointProvider,
         remote_ep: EndpointProvider,
     ) {
-        self.change_peer_state_common(
+        self.report_peer_state_common(
             event,
             PeerEndpointTypes {
                 local_ep: local_ep.into(),
@@ -246,8 +246,8 @@ impl ConnectivityDataAggregator {
     /// # Arguments
     ///
     /// * `event` - Analytic event with the current relayed peer state.
-    pub async fn change_peer_state_relayed(&self, event: &AnalyticsEvent) {
-        self.change_peer_state_common(
+    pub async fn report_peer_state_relayed(&self, event: &AnalyticsEvent) {
+        self.report_peer_state_common(
             event,
             PeerEndpointTypes {
                 local_ep: EndpointType::Relay,
@@ -257,7 +257,25 @@ impl ConnectivityDataAggregator {
         .await
     }
 
-    async fn change_peer_state_common(&self, event: &AnalyticsEvent, endpoints: PeerEndpointTypes) {
+    fn log_new_state(event: &AnalyticsEvent, endpoints: &PeerEndpointTypes) {
+        if endpoints.local_ep == EndpointType::Relay && endpoints.remote_ep == EndpointType::Relay {
+            telio_log_info!(
+                "Relayed peer state change for {:?} to {:?} will be reported",
+                event.public_key,
+                event.peer_state
+            );
+        } else {
+            telio_log_info!(
+                "Direct peer state change for {:?} to {:?} ({:?} -> {:?}) will be reported",
+                event.public_key,
+                event.peer_state,
+                endpoints.local_ep,
+                endpoints.remote_ep,
+            );
+        }
+    }
+
+    async fn report_peer_state_common(&self, event: &AnalyticsEvent, endpoints: PeerEndpointTypes) {
         if !self.config.nat_traversal_events {
             return;
         }
@@ -283,22 +301,6 @@ impl ConnectivityDataAggregator {
             return;
         }
 
-        if endpoints.local_ep == EndpointType::Relay && endpoints.remote_ep == EndpointType::Relay {
-            telio_log_debug!(
-                "Relayed peer state change for {} to {:?} will be reported",
-                event.public_key,
-                event.peer_state
-            );
-        } else {
-            telio_log_debug!(
-                "Direct peer state change for {} to {:?} ({:?} -> {:?}) will be reported",
-                event.public_key,
-                event.peer_state,
-                endpoints.local_ep,
-                endpoints.remote_ep,
-            );
-        }
-
         let new_segment = match data_guard.current_peer_events.entry(event.public_key) {
             Entry::Occupied(mut entry)
                 if entry.get().0.peer_state != event.peer_state || entry.get().1 != endpoints =>
@@ -306,7 +308,7 @@ impl ConnectivityDataAggregator {
                 let new_segment = PeerConnDataSegment::new(
                     &entry.get().0,
                     entry.get().1,
-                    event.timestamp.into(),
+                    event.timestamp,
                     event.rx_bytes,
                     event.tx_bytes,
                 );
@@ -315,12 +317,14 @@ impl ConnectivityDataAggregator {
                     entry.remove();
                 } else {
                     entry.insert((event.clone(), endpoints));
+                    Self::log_new_state(event, &endpoints);
                 }
 
                 Some(new_segment)
             }
             Entry::Vacant(entry) if event.peer_state == PeerState::Connected => {
                 entry.insert((event.clone(), endpoints));
+                Self::log_new_state(event, &endpoints);
                 None
             }
             _ => None,
@@ -402,8 +406,7 @@ impl ConnectivityDataAggregator {
         let mut new_peer_segments = Vec::new();
         if let Ok(wg_peers) = wg_interface.map(|wgi| wgi.peers) {
             for (peer_event, peer_state) in data_guard.current_peer_events.values_mut() {
-                let since_last_event =
-                    current_timestamp.duration_since(Instant::from_std(peer_event.timestamp));
+                let since_last_event = current_timestamp.duration_since(peer_event.timestamp);
                 if since_last_event > self.config.state_duration_cap || force_save {
                     wg_peers
                         .get(&peer_event.public_key)
@@ -422,7 +425,7 @@ impl ConnectivityDataAggregator {
                                 ));
                                 peer_event.rx_bytes = rx_bytes;
                                 peer_event.tx_bytes = tx_bytes;
-                                peer_event.timestamp = current_timestamp.into();
+                                peer_event.timestamp = current_timestamp;
                             },
                         );
                 }
@@ -756,7 +759,7 @@ mod tests {
         // Initial event
         let mut current_peer_event = env.create_basic_peer_event(KeyKind::Losing);
         env.connectivity_data_aggregator
-            .change_peer_state_direct(
+            .report_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Upnp,
                 EndpointProvider::Local,
@@ -769,7 +772,7 @@ mod tests {
         current_peer_event.rx_bytes += 1000;
         current_peer_event.tx_bytes += 2000;
         env.connectivity_data_aggregator
-            .change_peer_state_relayed(&current_peer_event)
+            .report_peer_state_relayed(&current_peer_event)
             .await;
 
         let segments = env
@@ -789,7 +792,7 @@ mod tests {
         let mut current_peer_event = env.create_basic_peer_event(KeyKind::Losing);
         let segment_start = current_peer_event.timestamp;
         env.connectivity_data_aggregator
-            .change_peer_state_direct(
+            .report_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Upnp,
                 EndpointProvider::Local,
@@ -801,7 +804,7 @@ mod tests {
         current_peer_event.rx_bytes += 1000;
         current_peer_event.tx_bytes += 2000;
         env.connectivity_data_aggregator
-            .change_peer_state_direct(
+            .report_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Upnp,
                 EndpointProvider::Local,
@@ -822,7 +825,7 @@ mod tests {
         current_peer_event.rx_bytes += 1000;
         current_peer_event.tx_bytes += 2000;
         env.connectivity_data_aggregator
-            .change_peer_state_relayed(&current_peer_event)
+            .report_peer_state_relayed(&current_peer_event)
             .await;
 
         // And after 60 seconds connect again
@@ -831,7 +834,7 @@ mod tests {
         current_peer_event.rx_bytes += 1000;
         current_peer_event.tx_bytes += 2000;
         env.connectivity_data_aggregator
-            .change_peer_state_relayed(&current_peer_event)
+            .report_peer_state_relayed(&current_peer_event)
             .await;
 
         // We don't gather periods of time when peer is disconnected, so we should have here only one segment
@@ -867,7 +870,7 @@ mod tests {
         let mut current_peer_event = env.create_basic_peer_event(KeyKind::Losing);
         let first_segment_start = current_peer_event.timestamp;
         env.connectivity_data_aggregator
-            .change_peer_state_direct(
+            .report_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Upnp,
                 EndpointProvider::Local,
@@ -880,7 +883,7 @@ mod tests {
         current_peer_event.rx_bytes += 1000;
         current_peer_event.tx_bytes += 2000;
         env.connectivity_data_aggregator
-            .change_peer_state_direct(
+            .report_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Upnp,
                 EndpointProvider::Upnp,
@@ -892,7 +895,7 @@ mod tests {
         current_peer_event.rx_bytes += 2000;
         current_peer_event.tx_bytes += 4000;
         env.connectivity_data_aggregator
-            .change_peer_state_direct(
+            .report_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Local,
                 EndpointProvider::Upnp,
@@ -958,7 +961,7 @@ mod tests {
 
         // Insert the first event
         env.connectivity_data_aggregator
-            .change_peer_state_relayed(&current_peer_event)
+            .report_peer_state_relayed(&current_peer_event)
             .await;
 
         let segments = env
@@ -1048,7 +1051,7 @@ mod tests {
 
         // Insert the first event
         env.connectivity_data_aggregator
-            .change_peer_state_relayed(&current_peer_event)
+            .report_peer_state_relayed(&current_peer_event)
             .await;
 
         let segments = env
@@ -1204,7 +1207,7 @@ mod tests {
         let current_peer_event = env.create_basic_peer_event(KeyKind::Losing);
 
         env.connectivity_data_aggregator
-            .change_peer_state_direct(
+            .report_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Upnp,
                 EndpointProvider::Stun,
@@ -1275,7 +1278,7 @@ mod tests {
         // Initial event
         let first_segment_start = current_peer_event.timestamp;
         env.connectivity_data_aggregator
-            .change_peer_state_direct(
+            .report_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Upnp,
                 EndpointProvider::Local,
@@ -1287,7 +1290,7 @@ mod tests {
         current_peer_event.rx_bytes += 1000;
         current_peer_event.tx_bytes += 2000;
         env.connectivity_data_aggregator
-            .change_peer_state_direct(
+            .report_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Upnp,
                 EndpointProvider::Upnp,
@@ -1346,7 +1349,7 @@ mod tests {
             .await;
 
         env.connectivity_data_aggregator
-            .change_peer_state_direct(
+            .report_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Local,
                 EndpointProvider::Upnp,
@@ -1358,7 +1361,7 @@ mod tests {
         current_peer_event.rx_bytes += 1000;
         current_peer_event.tx_bytes += 2000;
         env.connectivity_data_aggregator
-            .change_peer_state_relayed(&current_peer_event)
+            .report_peer_state_relayed(&current_peer_event)
             .await;
 
         let segments = env
@@ -1467,10 +1470,10 @@ mod tests {
         event_to_be_ignored.tx_bytes = 0;
         let segment_start = event_to_be_recorded.timestamp;
         env.connectivity_data_aggregator
-            .change_peer_state_relayed(&event_to_be_recorded)
+            .report_peer_state_relayed(&event_to_be_recorded)
             .await;
         env.connectivity_data_aggregator
-            .change_peer_state_relayed(&event_to_be_ignored)
+            .report_peer_state_relayed(&event_to_be_ignored)
             .await;
 
         event_to_be_recorded.timestamp = segment_start + Duration::from_secs(30);
@@ -1478,14 +1481,14 @@ mod tests {
         event_to_be_ignored.timestamp = segment_start + Duration::from_secs(30);
         event_to_be_ignored.tx_bytes = 1000;
         env.connectivity_data_aggregator
-            .change_peer_state_direct(
+            .report_peer_state_direct(
                 &event_to_be_recorded,
                 EndpointProvider::Stun,
                 EndpointProvider::Stun,
             )
             .await;
         env.connectivity_data_aggregator
-            .change_peer_state_direct(
+            .report_peer_state_direct(
                 &event_to_be_ignored,
                 EndpointProvider::Stun,
                 EndpointProvider::Stun,
@@ -1517,13 +1520,13 @@ mod tests {
         current_peer_event.tx_bytes = 0;
         let start_timestamp = current_peer_event.timestamp;
         env.connectivity_data_aggregator
-            .change_peer_state_relayed(&current_peer_event)
+            .report_peer_state_relayed(&current_peer_event)
             .await;
 
         current_peer_event.timestamp = start_timestamp + Duration::from_secs(30);
         current_peer_event.tx_bytes = 1000;
         env.connectivity_data_aggregator
-            .change_peer_state_direct(
+            .report_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Stun,
                 EndpointProvider::Stun,
@@ -1533,13 +1536,13 @@ mod tests {
         current_peer_event.timestamp = start_timestamp + Duration::from_secs(30 + 31);
         current_peer_event.tx_bytes = 1000 + 1001;
         env.connectivity_data_aggregator
-            .change_peer_state_relayed(&current_peer_event)
+            .report_peer_state_relayed(&current_peer_event)
             .await;
 
         current_peer_event.timestamp = start_timestamp + Duration::from_secs(30 + 31 + 32);
         current_peer_event.tx_bytes = 1000 + 1001 + 1002;
         env.connectivity_data_aggregator
-            .change_peer_state_direct(
+            .report_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Local,
                 EndpointProvider::Local,
@@ -1549,14 +1552,14 @@ mod tests {
         current_peer_event.timestamp = start_timestamp + Duration::from_secs(30 + 31 + 32 + 33);
         current_peer_event.tx_bytes = 1000 + 1001 + 1002 + 1003;
         env.connectivity_data_aggregator
-            .change_peer_state_relayed(&current_peer_event)
+            .report_peer_state_relayed(&current_peer_event)
             .await;
 
         current_peer_event.timestamp =
             start_timestamp + Duration::from_secs(30 + 31 + 32 + 33 + 34);
         current_peer_event.tx_bytes = 1000 + 1001 + 1002 + 1003 + 1004;
         env.connectivity_data_aggregator
-            .change_peer_state_direct(
+            .report_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Upnp,
                 EndpointProvider::Upnp,
@@ -1622,7 +1625,7 @@ mod tests {
         }];
 
         env.connectivity_data_aggregator
-            .change_peer_state_direct(
+            .report_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Upnp,
                 EndpointProvider::Local,
@@ -1635,7 +1638,7 @@ mod tests {
         current_peer_event.tx_bytes += 2000;
         current_peer_event.peer_state = NodeState::Disconnected;
         env.connectivity_data_aggregator
-            .change_peer_state_direct(
+            .report_peer_state_direct(
                 &current_peer_event,
                 EndpointProvider::Upnp,
                 EndpointProvider::Local,

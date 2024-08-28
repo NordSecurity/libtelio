@@ -8,7 +8,6 @@ publish = false
 
 [dependencies]
 generic-array = "0.14.5"
-mockall_double = "0.3.1"
 rand_core = { version = "0.6.3", default-features = false }
 rustls-pemfile = "1.0.0"
 tokio-rustls = { version = "0.24.1", default-features = false }
@@ -22,6 +21,7 @@ crypto_box.workspace = true
 futures.workspace = true
 httparse.workspace = true
 libc.workspace = true
+mockall_double.workspace = true
 num_enum.workspace = true
 rand.workspace = true
 serde.workspace = true
