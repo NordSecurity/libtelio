@@ -8,6 +8,7 @@ use telio_model::{features::EndpointProvider, SocketAddr};
 
 use telio_crypto::PublicKey;
 use telio_proto::{CallMeMaybeMsg, Session};
+use tokio::time::Instant;
 
 #[derive(Debug, TError)]
 pub enum Error {
@@ -23,7 +24,7 @@ pub enum Error {
     ),
     #[error("Error publishing WG endpoint")]
     PublishingWireGuardEndpointError(
-        #[from] tokio::sync::mpsc::error::SendError<WireGuardEndpointCandidateChangeEvent>,
+        #[from] Box<tokio::sync::mpsc::error::SendError<WireGuardEndpointCandidateChangeEvent>>,
     ),
     #[error("Task Execution error")]
     TaskExecError(#[from] telio_task::ExecError),
@@ -37,4 +38,5 @@ pub struct WireGuardEndpointCandidateChangeEvent {
     pub remote_endpoint: (SocketAddr, EndpointProvider),
     pub local_endpoint: (SocketAddr, EndpointProvider),
     pub session: Session,
+    pub changed_at: Instant,
 }

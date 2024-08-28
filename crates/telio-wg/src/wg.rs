@@ -74,11 +74,6 @@ pub trait WireGuard: Send + Sync + 'static {
     async fn drop_connected_sockets(&self) -> Result<(), Error>;
     /// Retrieve time since last RXed (and accepted) packet
     async fn time_since_last_rx(&self, public_key: PublicKey) -> Result<Option<Duration>, Error>;
-    /// Retrieve time since last endpoint (either roamed or manual) change
-    async fn time_since_last_endpoint_change(
-        &self,
-        public_key: PublicKey,
-    ) -> Result<Option<Duration>, Error>;
     /// Stop adapter
     async fn stop(self);
     /// Inject apropiate packets into the tunel to reset exising connections.
@@ -218,7 +213,6 @@ struct State {
     interval: Interval,
     interface: Interface,
     event: Tx<Box<Event>>,
-    last_endpoint_change: HashMap<PublicKey, Instant>,
     analytics_tx: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
 
     // Detecting unexpected driver failures, such as a malicious removal
@@ -349,7 +343,6 @@ impl DynamicWg {
                 interval,
                 interface: Default::default(),
                 event: io.events,
-                last_endpoint_change: Default::default(),
                 analytics_tx: io.analytics_tx,
                 uapi_fail_counter: 0,
                 link_detection: link_detection.map(LinkDetection::new),
@@ -529,17 +522,6 @@ impl WireGuard for DynamicWg {
         Ok(task_exec!(&self.task, async move |s| Ok(
             s.time_since_last_rx(public_key)
         ))
-        .await?)
-    }
-
-    async fn time_since_last_endpoint_change(
-        &self,
-        public_key: PublicKey,
-    ) -> Result<Option<Duration>, Error> {
-        Ok(task_exec!(&self.task, async move |s| Ok(s
-            .last_endpoint_change
-            .get(&public_key)
-            .map(|t| Instant::now() - *t)))
         .await?)
     }
 
@@ -874,14 +856,15 @@ impl State {
         }
     }
 
-    fn update_endpoint_change_timestamps(&mut self, diff_keys: &DiffKeys, to: &uapi::Interface) {
+    fn update_endpoint_change_timestamps(&self, diff_keys: &DiffKeys, to: &mut uapi::Interface) {
         for key in diff_keys
             .insert_keys
             .iter()
             .chain(diff_keys.update_keys.iter())
         {
-            let old_endpoint = self.interface.peers.get(key).map(|p| p.endpoint);
-            let new_endpoint = to.peers.get(key).map(|p| p.endpoint);
+            let old_endpoint = self.interface.peers.get(key).and_then(|p| p.endpoint);
+            let new_peer = to.peers.get_mut(key);
+            let new_endpoint = new_peer.as_ref().and_then(|p| p.endpoint);
 
             if old_endpoint != new_endpoint {
                 telio_log_debug!(
@@ -889,12 +872,11 @@ impl State {
                     old_endpoint,
                     new_endpoint
                 );
-                self.last_endpoint_change.insert(*key, Instant::now());
+                let at = Instant::now();
+                if let Some(p) = new_peer {
+                    p.endpoint_changed_at = Some(at);
+                }
             }
-        }
-
-        for key in diff_keys.delete_keys.iter() {
-            let _ = self.last_endpoint_change.remove(key);
         }
     }
 
@@ -905,7 +887,8 @@ impl State {
         }
         // Diff and report events
 
-        // Adapter doesn't keep track of mesh addresses, therefore they are not retrieved from UAPI requests
+        // Adapter doesn't keep track of mesh addresses, or endpoint changes,
+        // therefore they are not retrieved from UAPI requests
         // so we need to keep track of it.
         for (pk, peer) in &mut to.peers {
             if peer.ip_addresses.is_empty() {
@@ -913,6 +896,13 @@ impl State {
                     peer.ip_addresses = old_peer.ip_addresses.clone();
                 }
             }
+            // This forbids changes from outside, endpoint change is always
+            // determided by update_endpoint_change function
+            peer.endpoint_changed_at = self
+                .interface
+                .peers
+                .get(pk)
+                .and_then(|p| p.endpoint_changed_at)
         }
 
         // We need to track failed driver calls in uapi_request().
@@ -927,7 +917,7 @@ impl State {
 
         let diff_keys = self.update_calculate_changes(&to);
 
-        self.update_endpoint_change_timestamps(&diff_keys, &to);
+        self.update_endpoint_change_timestamps(&diff_keys, &mut to);
 
         self.update_send_notification_events(&to, &diff_keys, push)
             .await?;
@@ -1080,6 +1070,7 @@ pub mod tests {
                     rng.gen::<u32>().into(),
                     rng.gen(),
                 ))),
+                endpoint_changed_at: Some(tokio::time::Instant::now()),
                 ip_addresses: vec![
                     IpAddr::V4(rng.gen::<u32>().into()),
                     IpAddr::V4(rng.gen::<u32>().into()),
@@ -1299,6 +1290,7 @@ pub mod tests {
             public_key: pkc,
             endpoint: Some(([1, 1, 1, 1], 123).into()),
             persistent_keepalive_interval: Some(25),
+            endpoint_changed_at: Some(Instant::now()),
             ..Default::default()
         };
 
@@ -1335,6 +1327,7 @@ pub mod tests {
         let mut peer = Peer {
             public_key: pkc,
             endpoint: Some(([1, 1, 1, 1], 123).into()),
+            endpoint_changed_at: Some(Instant::now()),
             persistent_keepalive_interval: Some(25),
             rx_bytes: Some(1),
             ..Default::default()
@@ -1403,6 +1396,7 @@ pub mod tests {
         let mut peer = Peer {
             public_key: pkc,
             endpoint: Some(([1, 1, 1, 1], 123).into()),
+            endpoint_changed_at: Some(Instant::now()),
             persistent_keepalive_interval: Some(25),
             rx_bytes: Some(1),
             ..Default::default()
@@ -1588,6 +1582,7 @@ pub mod tests {
         let mut peer = Peer {
             public_key: pubkey,
             endpoint: Some(([1, 1, 1, 1], 123).into()),
+            endpoint_changed_at: Some(Instant::now()),
             persistent_keepalive_interval: Some(25),
             preshared_key: Some(preshared1),
             ..Default::default()
@@ -1655,6 +1650,15 @@ pub mod tests {
         } = setup().await;
 
         let pkc = SecretKey::gen().public();
+        let get = |i: Result<Interface, _>| {
+            i.unwrap()
+                .peers
+                .get(&pkc)
+                .unwrap()
+                .endpoint_changed_at
+                .unwrap()
+        };
+
         let peer = Peer {
             public_key: pkc,
             endpoint: Some(([1, 1, 1, 1], 123).into()),
@@ -1677,19 +1681,13 @@ pub mod tests {
         adapter.lock().await.checkpoint();
 
         assert_eq!(
-            wg.time_since_last_endpoint_change(pkc)
-                .await
-                .unwrap()
-                .unwrap(),
+            wg.get_interface().map(get).await.elapsed(),
             Duration::from_millis(0)
         );
 
         time::advance(Duration::from_millis(100)).await;
         assert_eq!(
-            wg.time_since_last_endpoint_change(pkc)
-                .await
-                .unwrap()
-                .unwrap(),
+            wg.get_interface().map(get).await.elapsed(),
             Duration::from_millis(100)
         );
 
@@ -1698,10 +1696,7 @@ pub mod tests {
         wg.add_peer(peer.clone()).await.unwrap();
         adapter.lock().await.checkpoint();
         assert_eq!(
-            wg.time_since_last_endpoint_change(pkc)
-                .await
-                .unwrap()
-                .unwrap(),
+            wg.get_interface().map(get).await.elapsed(),
             Duration::from_millis(100)
         );
 
@@ -1715,20 +1710,14 @@ pub mod tests {
         wg.add_peer(peer).await.unwrap();
         adapter.lock().await.checkpoint();
         assert_eq!(
-            wg.time_since_last_endpoint_change(pkc)
-                .await
-                .unwrap()
-                .unwrap(),
+            wg.get_interface().map(get).await.elapsed(),
             Duration::from_millis(100)
         );
 
         // Check if the time is still properly updated
         time::advance(Duration::from_millis(100)).await;
         assert_eq!(
-            wg.time_since_last_endpoint_change(pkc)
-                .await
-                .unwrap()
-                .unwrap(),
+            wg.get_interface().map(get).await.elapsed(),
             Duration::from_millis(200)
         );
 
@@ -1744,20 +1733,9 @@ pub mod tests {
         wg.add_peer(peer).await.unwrap();
         adapter.lock().await.checkpoint();
         assert_eq!(
-            wg.time_since_last_endpoint_change(pkc)
-                .await
-                .unwrap()
-                .unwrap(),
+            wg.get_interface().map(get).await.elapsed(),
             Duration::from_millis(0)
         );
-
-        // And in the end let's check if the time of the last
-        // endpoint change is removed if the corresponding
-        // endpoint is removed
-        adapter.expect_send_uapi_cmd_generic_call(1).await;
-        wg.del_peer(pkc).await.unwrap();
-        adapter.lock().await.checkpoint();
-        assert_eq!(wg.time_since_last_endpoint_change(pkc).await.unwrap(), None);
 
         adapter.lock().await.expect_stop().return_once(|| ());
         wg.stop().await;

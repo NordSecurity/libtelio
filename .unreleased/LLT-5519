@@ -1,0 +1,1 @@
+Fixed a low-probability race-condition which may cause unnecessary path transitions
