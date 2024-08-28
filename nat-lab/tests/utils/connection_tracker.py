@@ -4,7 +4,6 @@ import re
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
 from typing import Optional, List, Dict, AsyncIterator
 from utils.connection import Connection
 from utils.ping import Ping
@@ -80,12 +79,6 @@ def parse_input(input_string) -> FiveTuple:
     return five_tuple
 
 
-class SynchronizeState(Enum):
-    NOT_SYNCED = 0
-    WAITING_TO_SYNC = 1
-    RECEIVED_SYNC_PING = 2
-
-
 class ConnectionTracker:
     def __init__(
         self,
@@ -99,7 +92,6 @@ class ConnectionTracker:
         self._config: Optional[List[ConnectionTrackerConfig]] = configuration
         self._events: List[FiveTuple] = []
         self._lock: asyncio.Lock = asyncio.Lock()
-        self._sync_state: SynchronizeState = SynchronizeState.NOT_SYNCED
         self._sync_event: asyncio.Event = asyncio.Event()
         self._sync_connection: FiveTuple = FiveTuple(
             protocol="icmp", dst_ip="127.0.0.2"
@@ -115,9 +107,10 @@ class ConnectionTracker:
                 if connection is FiveTuple():
                     continue
 
-                if self._sync_state == SynchronizeState.WAITING_TO_SYNC:
+                if not self._sync_event.is_set():
                     if self._sync_connection.partial_eq(connection):
-                        self._sync_state = SynchronizeState.RECEIVED_SYNC_PING
+                        print(datetime.now(), "ConnectionTracker sending _sync_event")
+                        self._sync_event.set()
                         continue
 
                 matching_configs = [
@@ -128,10 +121,6 @@ class ConnectionTracker:
 
                 self._events.append(connection)
 
-            # we received the sync ping
-            if self._sync_state == SynchronizeState.RECEIVED_SYNC_PING:
-                print(datetime.now(), "ConnectionTracker sending _sync_event")
-                self._sync_event.set()
 
     async def execute(self) -> None:
         if platform.system() == "Darwin":
@@ -191,8 +180,6 @@ class ConnectionTracker:
         if not self._config:
             return None
 
-        async with self._lock:
-            self._sync_state = SynchronizeState.WAITING_TO_SYNC
         # wait to synchronize over a known event
         async with Ping(self._connection, "127.0.0.2").run():
             print(datetime.now(), "ConnectionTracker waiting for _sync_event")
@@ -200,7 +187,6 @@ class ConnectionTracker:
             print(datetime.now(), "ConnectionTracker got _sync_event")
             async with self._lock:
                 self._sync_event.clear()
-                self._sync_state = SynchronizeState.NOT_SYNCED
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator["ConnectionTracker"]:
