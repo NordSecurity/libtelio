@@ -1,7 +1,6 @@
 import asyncio
 import platform
 import re
-import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
@@ -82,8 +81,8 @@ def parse_input(input_string) -> FiveTuple:
 
 
 class SynchronizeState(Enum):
-    NOT_SYNCHRONIZED = 0
-    WAITING_TO_SYNCHRONIZE = 1
+    NOT_SYNCED = 0
+    WAITING_TO_SYNC = 1
     RECEIVED_SYNC_PING = 2
 
 
@@ -100,7 +99,7 @@ class ConnectionTracker:
         self._config: Optional[List[ConnectionTrackerConfig]] = configuration
         self._events: List[FiveTuple] = []
         self._lock: asyncio.Lock = asyncio.Lock()
-        self._sync_state: SynchronizeState = SynchronizeState.NOT_SYNCHRONIZED
+        self._sync_state: SynchronizeState = SynchronizeState.NOT_SYNCED
         self._sync_event: asyncio.Event = asyncio.Event()
         self._sync_connection: FiveTuple = FiveTuple(
             protocol="icmp", dst_ip="127.0.0.2"
@@ -108,21 +107,17 @@ class ConnectionTracker:
 
     async def on_stdout(self, stdout: str) -> None:
         if not self._config:
-            print(datetime.now(), "ConnectionTracker on_stdout no config")
             return
 
         async with self._lock:
-            print(datetime.now(), "ConnectionTracker on_stdout lock")
             for line in stdout.splitlines():
                 connection = parse_input(line)
                 if connection is FiveTuple():
                     continue
 
-                if self._sync_state == SynchronizeState.WAITING_TO_SYNCHRONIZE:
-                    print(datetime.now(), "ConnectionTracker waiting for synchronize ping")
+                if self._sync_state == SynchronizeState.WAITING_TO_SYNC:
                     if self._sync_connection.partial_eq(connection):
                         self._sync_state = SynchronizeState.RECEIVED_SYNC_PING
-                        print(datetime.now(), "ConnectionTracker received synchronize ping")
                         continue
 
                 matching_configs = [
@@ -142,7 +137,6 @@ class ConnectionTracker:
         if platform.system() == "Darwin":
             return None
         if not self._config:
-            print(datetime.now(), "ConnectionTracker execute no config")
             return
 
         await self._process.execute(stdout_callback=self.on_stdout)
@@ -151,17 +145,14 @@ class ConnectionTracker:
         if platform.system() == "Darwin":
             return None
         if not self._config:
-            print(datetime.now(), "ConnectionTracker get_out_of_limits no config")
             return None
 
-        print(datetime.now(), "ConnectionTracker get_out_of_limits synchronize")
         await self.synchronize()
 
         out_of_limit_connections: Dict[str, int] = {}
 
         for cfg in self._config:
             async with self._lock:
-                print(datetime.now(), "ConnectionTracker get_out_of_limits lock")
                 count = len(
                     [event for event in self._events if cfg.target.partial_eq(event)]
                 )
@@ -198,27 +189,24 @@ class ConnectionTracker:
 
     async def synchronize(self):
         if not self._config:
-            print(datetime.now(), "ConnectionTracker synchronize no config")
             return None
 
         async with self._lock:
-            self._sync_state = SynchronizeState.WAITING_TO_SYNCHRONIZE
-        await asyncio.sleep(0.1) # take a nap to settle things in
-        # We wait to synchronize over a known event, or at least
-        # wait for a second to make sure all events are parsed.
+            self._sync_state = SynchronizeState.WAITING_TO_SYNC
+        # wait to synchronize over a known event
         async with Ping(self._connection, "127.0.0.2").run():
             print(datetime.now(), "ConnectionTracker waiting for _sync_event")
             await self._sync_event.wait()
             print(datetime.now(), "ConnectionTracker got _sync_event")
             async with self._lock:
                 self._sync_event.clear()
-                self._sync_state = SynchronizeState.NOT_SYNCHRONIZED
+                self._sync_state = SynchronizeState.NOT_SYNCED
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator["ConnectionTracker"]:
         async with self._process.run(stdout_callback=self.on_stdout):
             await self._process.wait_stdin_ready()
-            # initialization is just waiting for first conntrack event,
-            print(datetime.now(), "ConnectionTracker init synchronize")
+            # initialization is just waiting for first conntrack event
+            await asyncio.sleep(0.1)  # take a nap to settle things in
             await self.synchronize()
             yield self

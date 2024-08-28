@@ -703,5 +703,5 @@ async def test_event_content_meshnet_node_upgrade_direct(
             alpha_node_state.endpoint and alpha_public_ip in alpha_node_state.endpoint
         )
 
-        assert alpha_conn_tracker.get_out_of_limits() is None
-        assert beta_conn_tracker.get_out_of_limits() is None
+        assert await alpha_conn_tracker.get_out_of_limits() is None
+        assert await beta_conn_tracker.get_out_of_limits() is None
