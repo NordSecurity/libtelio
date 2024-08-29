@@ -109,7 +109,6 @@ class ConnectionTracker:
 
                 if not self._sync_event.is_set():
                     if self._sync_connection.partial_eq(connection):
-                        print(datetime.now(), "ConnectionTracker sending _sync_event")
                         self._sync_event.set()
                         continue
 
@@ -182,8 +181,11 @@ class ConnectionTracker:
         # wait to synchronize over a known event
         async with Ping(self._connection, "127.0.0.2").run():
             print(datetime.now(), "ConnectionTracker waiting for _sync_event")
-            await self._sync_event.wait()
-            print(datetime.now(), "ConnectionTracker got _sync_event")
+            try:
+                await asyncio.wait_for(self._sync_event.wait(), timeout=10.0)
+                print(datetime.now(), "ConnectionTracker got _sync_event")
+            except TimeoutError:
+                print(datetime.now(), "ConnectionTracker sync timeout")
             async with self._lock:
                 self._sync_event.clear()
 
@@ -191,6 +193,11 @@ class ConnectionTracker:
     async def run(self) -> AsyncIterator["ConnectionTracker"]:
         async with self._process.run(stdout_callback=self.on_stdout):
             await self._process.wait_stdin_ready()
+
+            # magic sleep, for unknown reason it takes a moment before
+            # conntrack on_stdout is ready to process events
+            await asyncio.sleep(0.1)
+
             # initialization is just waiting for first conntrack event
             await self.synchronize()
             yield self
