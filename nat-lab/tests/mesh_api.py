@@ -9,7 +9,7 @@ from datetime import datetime
 from ipaddress import ip_address
 from typing import Dict, Any, List, Tuple, Optional
 from utils.router import IPStack, IPProto, get_ip_address_type
-from utils.testing import test_name_safe_for_file_name
+from utils.testing import get_current_test_log_path
 
 if platform.machine() != "x86_64":
     import pure_wg as Key
@@ -442,24 +442,23 @@ def start_tcpdump(container_name):
 def stop_tcpdump(container_names):
     if os.environ.get("NATLAB_SAVE_LOGS") is None:
         return
-    test_name = test_name_safe_for_file_name()
-    log_dir = "logs"
+    log_dir = get_current_test_log_path()
     os.makedirs(log_dir, exist_ok=True)
     for container_name in container_names:
         cmd = f"docker exec --privileged {container_name} killall tcpdump"
         os.system(cmd)
-        path = find_unique_path_for_tcpdump(log_dir, test_name, container_name)
+        path = find_unique_path_for_tcpdump(log_dir, container_name)
         cmd = f"docker container cp {container_name}:{PCAP_FILE_PATH} {path}"
         os.system(cmd)
 
 
-def find_unique_path_for_tcpdump(log_dir, test_name, container_name):
-    candidate_path = f"./{log_dir}/{test_name}-{container_name}.pcap"
+def find_unique_path_for_tcpdump(log_dir, container_name):
+    candidate_path = f"./{log_dir}/{container_name}.pcap"
     counter = 1
     # NOTE: counter starting from '1' means that the file will either have no suffix or
     # will have a suffix starting from '2'. This is to make it clear that it's not the
     # first log for that container/client.
     while os.path.isfile(candidate_path):
         counter += 1
-        candidate_path = f"./{log_dir}/{test_name}-{container_name}-{counter}.pcap"
+        candidate_path = f"./{log_dir}/{container_name}-{counter}.pcap"
     return candidate_path

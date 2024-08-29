@@ -52,7 +52,7 @@ class InterDerpClient:
             await process.execute()
             container_id = process.get_stdout().strip()
         else:
-            container_id = str(self._connection.target_os)
+            container_id = str(self._connection.target_os.name)
 
         filename = (
             "preconditions_interderpcli_" + container_id + "_" + str(count) + ".log"
