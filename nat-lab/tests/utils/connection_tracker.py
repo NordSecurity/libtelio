@@ -121,7 +121,6 @@ class ConnectionTracker:
 
                 self._events.append(connection)
 
-
     async def execute(self) -> None:
         if platform.system() == "Darwin":
             return None
@@ -193,6 +192,5 @@ class ConnectionTracker:
         async with self._process.run(stdout_callback=self.on_stdout):
             await self._process.wait_stdin_ready()
             # initialization is just waiting for first conntrack event
-            await asyncio.sleep(0.1)  # take a nap to settle things in
             await self.synchronize()
             yield self
