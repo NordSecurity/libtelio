@@ -23,15 +23,15 @@ def get_current_test_case_and_parameters() -> Tuple[Optional[str], Optional[str]
         test_parts = test_name.split("::", 1)[-1].split(" ")[0].split("[", 1)
         if len(test_parts) > 1:
             return (
-                format_path_string(test_parts[0]),
-                format_path_string(test_parts[1]),
+                _format_path_string(test_parts[0]),
+                _format_path_string(test_parts[1]),
             )
-        return (format_path_string(test_parts[0]), None)
+        return (_format_path_string(test_parts[0]), None)
     print(datetime.now(), "PYTEST_CURRENT_TEST is None")
     return (None, None)
 
 
-def format_path_string(input_str: str) -> str:
+def _format_path_string(input_str: str) -> str:
     """
     Format the input string to be safely used as a system path or file name.
     """
@@ -45,7 +45,7 @@ def get_current_test_log_path(base_dir: str = "logs") -> str:
     """
     Returns a path to the log files of the currently running test.
     """
-    base_dir = format_path_string(base_dir)
+    base_dir = _format_path_string(base_dir)
     # get current test case, if we are in a test
     test_name, test_parameters = get_current_test_case_and_parameters()
     if test_name:
