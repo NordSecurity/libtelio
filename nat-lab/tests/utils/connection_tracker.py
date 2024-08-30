@@ -1,7 +1,6 @@
 import asyncio
 import platform
 import re
-import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
@@ -92,33 +91,34 @@ class ConnectionTracker:
         self._connection: Connection = connection
         self._config: Optional[List[ConnectionTrackerConfig]] = configuration
         self._events: List[FiveTuple] = []
-
-        self._initialized: bool = False
-        self._init_connection: FiveTuple = FiveTuple(
-            protocol="icmp", dst_ip="127.0.0.1"
+        self._lock: asyncio.Lock = asyncio.Lock()
+        self._sync_event: asyncio.Event = asyncio.Event()
+        self._sync_connection: FiveTuple = FiveTuple(
+            protocol="icmp", dst_ip="127.0.0.2"
         )
 
     async def on_stdout(self, stdout: str) -> None:
         if not self._config:
             return
 
-        for line in stdout.splitlines():
-            connection = parse_input(line)
-            if connection is FiveTuple():
-                continue
-
-            if not self._initialized:
-                if self._init_connection.partial_eq(connection):
-                    self._initialized = True
+        async with self._lock:
+            for line in stdout.splitlines():
+                connection = parse_input(line)
+                if connection is FiveTuple():
                     continue
 
-            matching_configs = [
-                cfg for cfg in self._config if cfg.target.partial_eq(connection)
-            ]
-            if not matching_configs:
-                continue
+                if not self._sync_event.is_set():
+                    if self._sync_connection.partial_eq(connection):
+                        self._sync_event.set()
+                        continue
 
-            self._events.append(connection)
+                matching_configs = [
+                    cfg for cfg in self._config if cfg.target.partial_eq(connection)
+                ]
+                if not matching_configs:
+                    continue
+
+                self._events.append(connection)
 
     async def execute(self) -> None:
         if platform.system() == "Darwin":
@@ -128,42 +128,76 @@ class ConnectionTracker:
 
         await self._process.execute(stdout_callback=self.on_stdout)
 
-    def get_out_of_limits(self) -> Optional[Dict[str, int]]:
+    async def get_out_of_limits(self) -> Optional[Dict[str, int]]:
         if platform.system() == "Darwin":
             return None
         if not self._config:
             return None
 
+        await self.synchronize()
+
         out_of_limit_connections: Dict[str, int] = {}
 
         for cfg in self._config:
-            count = len(
-                [event for event in self._events if cfg.target.partial_eq(event)]
-            )
+            async with self._lock:
+                count = len(
+                    [event for event in self._events if cfg.target.partial_eq(event)]
+                )
             if cfg.limits.max is not None:
                 if count > cfg.limits.max:
                     out_of_limit_connections[cfg.key] = count
+                    print(
+                        datetime.now(),
+                        "ConnectionTracker for",
+                        cfg.target.src_ip,
+                        cfg.key,
+                        "is over the limit:",
+                        count,
+                        ">",
+                        cfg.limits.max,
+                    )
                     continue
             if cfg.limits.min is not None:
                 if count < cfg.limits.min:
                     out_of_limit_connections[cfg.key] = count
+                    print(
+                        datetime.now(),
+                        "ConnectionTracker for",
+                        cfg.target.src_ip,
+                        cfg.key,
+                        "is under the limit:",
+                        count,
+                        "<",
+                        cfg.limits.min,
+                    )
                     continue
 
         return out_of_limit_connections if bool(out_of_limit_connections) else None
+
+    async def synchronize(self):
+        if not self._config:
+            return None
+
+        # wait to synchronize over a known event
+        async with Ping(self._connection, "127.0.0.2").run():
+            print(datetime.now(), "ConnectionTracker waiting for _sync_event")
+            try:
+                await asyncio.wait_for(self._sync_event.wait(), timeout=10.0)
+                print(datetime.now(), "ConnectionTracker got _sync_event")
+            except TimeoutError:
+                print(datetime.now(), "ConnectionTracker sync timeout")
+            async with self._lock:
+                self._sync_event.clear()
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator["ConnectionTracker"]:
         async with self._process.run(stdout_callback=self.on_stdout):
             await self._process.wait_stdin_ready()
-            # initialization is just waiting for first conntrack event,
-            # since it has no other indication if it is truly running.
-            # Or wait for 1 second and pray it was initialized
-            async with Ping(self._connection, "127.0.0.1").run():
-                start_time = time.time()
-                while not self._initialized:
-                    if time.time() - start_time >= 1:
-                        self._initialized = True
-                        break
-                    await asyncio.sleep(0.1)
 
+            # magic sleep, for unknown reason it takes a moment before
+            # conntrack on_stdout is ready to process events
+            await asyncio.sleep(0.1)
+
+            # initialization is just waiting for first conntrack event
+            await self.synchronize()
             yield self

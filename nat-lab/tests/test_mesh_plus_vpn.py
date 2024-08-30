@@ -362,8 +362,8 @@ async def test_vpn_plus_mesh(
         ip = await stun.get(connection_alpha, config.STUN_SERVER)
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
-        assert alpha_conn_tracker.get_out_of_limits() is None
-        assert beta_conn_tracker.get_out_of_limits() is None
+        assert await alpha_conn_tracker.get_out_of_limits() is None
+        assert await beta_conn_tracker.get_out_of_limits() is None
 
 
 @pytest.mark.asyncio

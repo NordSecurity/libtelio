@@ -160,8 +160,8 @@ async def test_session_keeper(
 
         async def wait_for_conntracker() -> None:
             while True:
-                alpha_limits = alpha_conntrack.get_out_of_limits()
-                beta_limits = beta_conntrack.get_out_of_limits()
+                alpha_limits = await alpha_conntrack.get_out_of_limits()
+                beta_limits = await beta_conntrack.get_out_of_limits()
                 print(datetime.now(), "Conntracker state: ", alpha_limits, beta_limits)
                 if alpha_limits is None and beta_limits is None:
                     return
@@ -280,8 +280,9 @@ async def test_qos(
 
         async def wait_for_conntracker() -> None:
             while True:
-                print("wait_for_conntracker(): ", alpha_conntrack.get_out_of_limits())
-                if alpha_conntrack.get_out_of_limits() is None:
+                alpha_limits = await alpha_conntrack.get_out_of_limits()
+                print("wait_for_conntracker(): ", alpha_limits)
+                if alpha_limits is None:
                     return
                 await asyncio.sleep(1.0)
 

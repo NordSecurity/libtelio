@@ -294,5 +294,5 @@ async def test_ipv6_exit_node(
         ip_beta = await stun.get(connection_beta, config.STUNV6_SERVER)
         assert ip_alpha == ip_beta
 
-        assert alpha_conn_tracker.get_out_of_limits() is None
-        assert beta_conn_tracker.get_out_of_limits() is None
+        assert await alpha_conn_tracker.get_out_of_limits() is None
+        assert await beta_conn_tracker.get_out_of_limits() is None
