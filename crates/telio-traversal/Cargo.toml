@@ -35,7 +35,6 @@ tokio = { workspace = true, features = ["full"] }
 telio-batcher.workspace = true
 telio-crypto.workspace = true
 telio-model.workspace = true
-telio-nurse.workspace = true
 telio-proto.workspace = true
 telio-sockets.workspace = true
 telio-task.workspace = true

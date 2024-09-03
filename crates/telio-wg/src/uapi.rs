@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use telio_crypto::{KeyDecodeError, PresharedKey, PublicKey, SecretKey};
 use telio_model::mesh::{LinkState, Node, NodeState};
 use telio_utils::{telio_log_warn, DualTarget, DualTargetError};
+use tokio::time::Instant;
 use wireguard_uapi::{get, xplatform::set};
 
 use std::{
@@ -16,7 +17,7 @@ use std::{
     panic,
     str::FromStr,
     sync::Arc,
-    time::{Duration, Instant, SystemTime, SystemTimeError, UNIX_EPOCH},
+    time::{Duration, SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
 /// Error types from uapi responses

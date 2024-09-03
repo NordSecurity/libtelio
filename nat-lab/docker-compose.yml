@@ -73,7 +73,7 @@ services:
     networks:
       cone-net-01:
         ipv4_address: 192.168.101.104
-    # Note: in certain scenarios this port mapping can be changed as part of `./natlab.py --start`. 
+    # Note: in certain scenarios this port mapping can be changed as part of `./natlab.py --start`.
     # When this comment was added, the only scenario where the port mapping is changed is CI running tests
     ports: ["58001"]
     ulimits:
@@ -250,6 +250,7 @@ services:
     networks:
       internet:
         ipv4_address: 10.0.254.1
+        ipv6_address: 2001:db8:85a4::1000:2541
         priority: 1000
       cone-net-01:
         ipv4_address: 192.168.101.254

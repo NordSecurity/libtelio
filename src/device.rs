@@ -21,7 +21,6 @@ use telio_task::{
     io::{chan, mc_chan, mc_chan::Tx, Chan, McChan},
     task_exec, BoxAction, Runtime as TaskRuntime, Task,
 };
-use telio_traversal::SessionKeeperTrait;
 use telio_traversal::{
     connectivity_check,
     cross_ping_check::{CrossPingCheck, CrossPingCheckTrait, Io as CpcIo, UpgradeController},
@@ -36,6 +35,7 @@ use telio_traversal::{
     ping_pong_handler::PingPongHandler,
     SessionKeeper, UpgradeRequestChangeEvent, UpgradeSync, WireGuardEndpointCandidateChangeEvent,
 };
+use telio_traversal::{SessionKeeperTrait, UpgradeSyncTrait};
 
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 use telio_sockets::native;
@@ -56,7 +56,7 @@ use tokio::{
 use telio_dns::{DnsResolver, LocalDnsResolver, Records};
 
 use telio_dns::bind_tun;
-use wg::uapi::{self, AnalyticsEvent, PeerState};
+use wg::uapi::{self, PeerState};
 
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
@@ -1427,8 +1427,6 @@ impl Runtime {
                 cross_ping_check.clone(),
                 multiplexer.get_channel().await?,
                 self.requested_state.device_config.private_key.public(),
-                self.entities.aggregator.clone(),
-                self.entities.wireguard_interface.clone(),
             )?);
 
             match SessionKeeper::start(self.entities.socket_pool.clone()).map(Arc::new) {
@@ -1576,6 +1574,7 @@ impl Runtime {
         }
 
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
+            .boxed()
             .await?;
         Ok(())
     }
@@ -1594,6 +1593,7 @@ impl Runtime {
 
         self.entities.socket_pool.set_fwmark(fwmark);
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
+            .boxed()
             .await?;
         Ok(())
     }
@@ -1681,6 +1681,7 @@ impl Runtime {
         self.upsert_dns_peers().await?;
 
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
+            .boxed()
             .await?;
 
         Ok(())
@@ -1704,6 +1705,7 @@ impl Runtime {
         };
 
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
+            .boxed()
             .await?;
         Ok(())
     }
@@ -1902,6 +1904,7 @@ impl Runtime {
         }
 
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
+            .boxed()
             .await?;
 
         for ep in self.entities.endpoint_providers().iter() {
@@ -2013,6 +2016,7 @@ impl Runtime {
 
         let old_exit_node = self.requested_state.exit_node.replace(exit_node);
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
+            .boxed()
             .await?;
 
         if let Some(last_exit) = old_exit_node
@@ -2087,6 +2091,7 @@ impl Runtime {
                 &self.entities,
                 &self.features,
             )
+            .boxed()
             .await?;
         }
 
@@ -2293,6 +2298,7 @@ impl TaskRuntime for Runtime {
             Some(_) = self.event_listeners.wg_endpoint_publish_event_subscriber.recv() => {
                 telio_log_debug!("WG consolidation triggered by endpoint publish event");
                 wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
+                    .boxed()
                     .await
                     .unwrap_or_else(
                         |e| {
@@ -2314,12 +2320,8 @@ impl TaskRuntime for Runtime {
                                 // We have downgraded the connection. Notify cross ping check about that.
                                 direct_entities.cross_ping_check.notify_failed_wg_connection(public_key)
                                     .await?;
-
                                 direct_entities.session_keeper.remove_node(&public_key).await?;
-
-                                let mut event = AnalyticsEvent::from_event(&mesh_event);
-                                event.peer_state = PeerState::Connected;
-                                self.entities.aggregator.change_peer_state_relayed(&event).await;
+                                direct_entities.upgrade_sync.clear_accepted_session(public_key).await;
                             } else {
                                 telio_log_warn!("Connection downgraded while direct entities are disabled");
                             }
@@ -2335,18 +2337,13 @@ impl TaskRuntime for Runtime {
                 let node = self.peer_to_node(&mesh_event.peer, Some(mesh_event.state), mesh_event.link_state).await;
 
                 if let Some(node) = node {
-                    if mesh_event.state != PeerState::Connecting && node.path == PathType::Relay {
-                        self.entities.aggregator.change_peer_state_relayed(
-                            &AnalyticsEvent::from_event(&mesh_event)
-                        ).await;
-                    }
                     // Publish WG event to app
                     let event = Event::builder::<Node>().set(node).build();
                     if let Some(event) = event {
-                    let _ = self.event_publishers.libtelio_event_publisher.send(
-                        Box::new(event)
-                    );
-                }
+                        let _ = self.event_publishers.libtelio_event_publisher.send(
+                            Box::new(event)
+                        );
+                    }
                 }
 
                 Ok(())
@@ -2365,6 +2362,7 @@ impl TaskRuntime for Runtime {
             Some(_) = self.event_listeners.endpoint_upgrade_event_subscriber.recv() => {
                 telio_log_debug!("WG consolidation triggered by upgrade sync request");
                 wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
+                    .boxed()
                     .await
                     .unwrap_or_else(
                         |e| {
@@ -2380,6 +2378,7 @@ impl TaskRuntime for Runtime {
                 self.requested_state.wg_stun_server = wg_stun_server;
 
                 wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
+                    .boxed()
                     .await
                     .unwrap_or_else(
                         |e| {
@@ -2394,7 +2393,7 @@ impl TaskRuntime for Runtime {
                 self.entities.postquantum_wg.on_event(pq_event);
 
                 if let Err(err) = wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
-                    .await
+                    .boxed().await
                 {
                     telio_log_warn!("WireGuard controller failure: {err:?}. Ignoring");
                 }
@@ -2405,6 +2404,7 @@ impl TaskRuntime for Runtime {
             _ = self.polling_interval.tick() => {
                 telio_log_debug!("WG consolidation triggered by tick event");
                 wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
+                    .boxed()
                     .await
                     .unwrap_or_else(
                         |e| {

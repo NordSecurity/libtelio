@@ -16,6 +16,7 @@ async-trait.workspace = true
 crypto_box.workspace = true
 futures.workspace = true
 mockall = { workspace = true, optional = true }
+mockall_double.workspace = true
 nat-detect.workspace = true
 rand.workspace = true
 serde.workspace = true
@@ -36,8 +37,6 @@ telio-task.workspace = true
 telio-utils.workspace = true
 telio-wg.workspace = true
 once_cell.workspace = true
-
-mockall_double = "0.3.1"
 
 [dev-dependencies]
 telio-sockets.workspace = true

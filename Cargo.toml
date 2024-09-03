@@ -84,6 +84,7 @@ tokio = { workspace = true, features = ["test-util"] }
 
 telio-dns = { workspace = true, features = ["mockall"] }
 telio-firewall = { workspace = true, features = ["mockall"] }
+telio-nurse = { workspace = true, features = ["mockall"] }
 telio-proxy = { workspace = true, features = ["mockall"] }
 telio-batcher = { workspace = true }
 telio-pq = { workspace = true, features = ["mockall"] }
@@ -129,6 +130,7 @@ libc = "0.2.112"
 tracing = { version = "0.1.37", features = ["max_level_trace", "release_max_level_debug"] }
 maplit = "1"
 mockall = "0.11.3"
+mockall_double = "0.3.1"
 modifier = "0.1.0"
 nat-detect = { git = "https://github.com/NordSecurity/nat-detect.git", tag = "v0.1.8" }
 ntest = "0.7"

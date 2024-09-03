@@ -3,11 +3,10 @@ use histogram::Histogram;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::time::Instant;
 use telio_model::constants::{VPN_INTERNAL_IPV4, VPN_INTERNAL_IPV6};
 
 use tokio::sync::mpsc;
-use tokio::time::{Duration, Interval};
+use tokio::time::{Duration, Instant, Interval};
 
 use telio_crypto::PublicKey;
 use telio_model::features::RttType;

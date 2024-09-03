@@ -314,7 +314,7 @@ impl DynamicWg {
     ///             firewall_reset_connections: None,
     ///         },
     ///         None,
-    ///         true,   
+    ///         true,
     ///     );
     /// }
     /// ```
@@ -978,7 +978,7 @@ impl State {
                         tx_bytes,
                         rx_bytes,
                         peer_state,
-                        timestamp: std::time::Instant::now(),
+                        timestamp: tokio::time::Instant::now(),
                     };
                     if analytics_tx.send(Box::new(event)).is_err() {
                         telio_log_debug!("Failed to send analytics info for {:?}", pubkey);

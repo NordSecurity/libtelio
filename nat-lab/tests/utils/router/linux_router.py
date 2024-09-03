@@ -1,5 +1,5 @@
 import config
-from .router import Router, IPStack, IPProto
+from .router import Router, IPStack, IPProto, get_ip_address_type
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, List
 from utils.connection import Connection
@@ -285,10 +285,8 @@ class LinuxRouter(Router):
 
     @asynccontextmanager
     async def disable_path(self, address: str) -> AsyncIterator:
-        addr_proto = self.check_ip_address(address)
-
-        if addr_proto is None:
-            pass
+        addr_proto = get_ip_address_type(address)
+        assert addr_proto, "Incorrect address passed to disable_path"
 
         iptables_string = ("ip" if addr_proto == IPProto.IPv4 else "ip6") + "tables"
 

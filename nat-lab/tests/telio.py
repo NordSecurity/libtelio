@@ -501,7 +501,6 @@ class Client:
         force_ipv6_feature: bool = False,
         fingerprint: str = "",
     ) -> None:
-        self._router: Optional[Router] = None
         self._events: Optional[Events] = None
         self._runtime: Optional[Runtime] = None
         self._process: Optional[Process] = None
@@ -509,6 +508,7 @@ class Client:
         self._message_idx = 0
         self._node = node
         self._connection = connection
+        self._router: Router = new_router(self._connection, self._node.ip_stack)
         self._adapter_type = adapter_type
         self._telio_features = telio_features
         self._quit = False
@@ -556,7 +556,6 @@ class Client:
 
         self._runtime = Runtime()
         self._events = Events(self._runtime)
-        self._router = new_router(self._connection, self._node.ip_stack)
 
         object_name = str(uuid.uuid4()).replace("-", "")
         (host_ip, container_ip) = await self._connection.get_ip_address()
@@ -680,10 +679,9 @@ class Client:
                     )
 
                 print(datetime.now(), "Test cleanup: Clearing up routes")
-                if self._router:
-                    await self._router.delete_vpn_route()
-                    await self._router.delete_exit_node_route()
-                    await self._router.delete_interface()
+                await self._router.delete_vpn_route()
+                await self._router.delete_exit_node_route()
+                await self._router.delete_interface()
 
                 print(datetime.now(), "Test cleanup: Saving moose dbs")
                 await self.save_moose_db()
@@ -959,7 +957,6 @@ class Client:
             await event
 
     def get_router(self) -> Router:
-        assert self._router
         return self._router
 
     def get_runtime(self) -> Runtime:
