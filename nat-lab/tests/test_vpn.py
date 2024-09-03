@@ -9,7 +9,13 @@ from telio_features import TelioFeatures, Firewall
 from typing import Optional
 from utils import testing, stun
 from utils.connection import Connection
-from utils.connection_tracker import ConnectionLimits, ConnectionTrackerConfig
+from utils.connection_tracker import (
+    ConnectionLimits,
+    ConnectionTrackerConfig,
+    ConnectionTracker,
+    FiveTuple,
+    TcpState,
+)
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.output_notifier import OutputNotifier
 from utils.ping import ping
@@ -398,27 +404,28 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
 
         output_notifier = OutputNotifier()
 
-        async def conntrack_on_stdout(stdout: str) -> None:
-            for line in stdout.splitlines():
-                if f"dst={serv_ip}" in line:
-                    await output_notifier.handle_output(line)
-
         sender_start_event = asyncio.Event()
-        close_wait_event = asyncio.Event()
+        close_event_1 = asyncio.Event()
+        close_event_2 = asyncio.Event()
 
         output_notifier.notify_output(
             "80 port [tcp/*] succeeded!",
             sender_start_event,
         )
-        output_notifier.notify_output("CLOSE", close_wait_event)
 
-        async with connection.create_process([
-            "conntrack",
-            "--family",
-            "ipv6" if setup_params.ip_stack == IPStack.IPv6 else "ipv4",
-            "-E",
-        ]).run(stdout_callback=conntrack_on_stdout) as conntrack_proc:
-            await conntrack_proc.wait_stdin_ready()
+        async with ConnectionTracker(
+            connection,
+            [
+                ConnectionTrackerConfig(
+                    "nc",
+                    ConnectionLimits(),
+                    FiveTuple(protocol="tcp", dst_ip=serv_ip, dst_port=80),
+                )
+            ],
+            True,
+        ).run() as conntrack:
+            conntrack.notify_on_tcp_state(TcpState.CLOSE, close_event_1)
+            conntrack.notify_on_tcp_state(TcpState.CLOSE, close_event_2)
 
             ip_proto = (
                 IPProto.IPv6 if setup_params.ip_stack == IPStack.IPv6 else IPProto.IPv4
@@ -472,11 +479,11 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
                 config.WG_SERVER_2,
             )
 
-            # if everything is correct -> conntrack should show FIN_WAIT -> CLOSE_WAIT
-            # or our connection killing mechanism will reset connection resulting in CLOSE output.
+            # under normal circumstances -> conntrack should show FIN_WAIT -> CLOSE_WAIT
+            # But our connection killing mechanism will reset connection resulting in CLOSE output.
             # Wait for close on both clients
-            await close_wait_event.wait()
-            await close_wait_event.wait()
+            await close_event_1.wait()
+            await close_event_2.wait()
 
 
 @pytest.mark.asyncio

@@ -10,7 +10,13 @@ from helpers import SetupParameters, setup_mesh_nodes, setup_api
 from mesh_api import Node
 from typing import Tuple
 from utils import testing, stun
-from utils.connection_tracker import ConnectionLimits
+from utils.connection_tracker import (
+    ConnectionLimits,
+    ConnectionTrackerConfig,
+    FiveTuple,
+    TcpState,
+    ConnectionTracker,
+)
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.output_notifier import OutputNotifier
 from utils.ping import ping
@@ -579,12 +585,6 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
                 print(datetime.now(), f"nc output: {line}")
             await output_notifier.handle_output(stdout)
 
-        async def conntrack_on_stdout(stdout: str) -> None:
-            for line in stdout.splitlines():
-                if f"src={CLIENT_BETA_IP} dst={CLIENT_ALPHA_IP}" in line:
-                    print(datetime.now(), f"Conntrack event: {line}")
-                    await output_notifier.handle_output(line)
-
         listening_start_event = asyncio.Event()
         sender_start_event = asyncio.Event()
         connected_event = asyncio.Event()
@@ -605,16 +605,20 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
             connected_event,
         )
 
-        output_notifier.notify_output("LAST_ACK", last_ack_event)
-        output_notifier.notify_output("TIME_WAIT", time_wait_event)
+        async with ConnectionTracker(
+            connection_beta,
+            [
+                ConnectionTrackerConfig(
+                    "nc",
+                    ConnectionLimits(),
+                    FiveTuple(protocol="tcp", dst_ip=CLIENT_ALPHA_IP, dst_port=PORT),
+                )
+            ],
+            True,
+        ).run() as conntrack:
+            conntrack.notify_on_tcp_state(TcpState.LAST_ACK, last_ack_event)
+            conntrack.notify_on_tcp_state(TcpState.TIME_WAIT, time_wait_event)
 
-        async with connection_beta.create_process([
-            "conntrack",
-            "--family",
-            "ipv4" if CLIENT_PROTO == IPProto.IPv4 else "ipv6",
-            "-E",
-        ]).run(stdout_callback=conntrack_on_stdout) as conntrack_proc:
-            await conntrack_proc.wait_stdin_ready()
             # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
             async with connection_alpha.create_process([
                 "nc",
@@ -640,7 +644,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
                 await connected_event.wait()
 
             # kill server and check what is happening in conntrack events
-            # if everything is correct -> conntrack should show FIN_WAIT -> CLOSE_WAIT
+            # if everything is correct -> conntrack should show LAST_ACK -> TIME_WAIT
             # if something goes wrong, it will be stuck at LAST_ACK state
             await last_ack_event.wait()
             await time_wait_event.wait()
@@ -714,11 +718,6 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
 
         output_notifier = OutputNotifier()
 
-        async def conntrack_on_stdout(stdout: str) -> None:
-            for line in stdout.splitlines():
-                if f"src={CLIENT_ALPHA_IP} dst={CLIENT_BETA_IP}" in line:
-                    await output_notifier.handle_output(line)
-
         listening_start_event = asyncio.Event()
         sender_start_event = asyncio.Event()
         connected_event = asyncio.Event()
@@ -739,16 +738,19 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
             connected_event,
         )
 
-        output_notifier.notify_output("LAST_ACK", last_ack_event)
-        output_notifier.notify_output("TIME_WAIT", time_wait_event)
-
-        async with connection_beta.create_process([
-            "conntrack",
-            "--family",
-            "ipv4" if CLIENT_PROTO == IPProto.IPv4 else "ipv6",
-            "-E",
-        ]).run(stdout_callback=conntrack_on_stdout) as conntrack_proc:
-            await conntrack_proc.wait_stdin_ready()
+        async with ConnectionTracker(
+            connection_beta,
+            [
+                ConnectionTrackerConfig(
+                    "nc",
+                    ConnectionLimits(),
+                    FiveTuple(protocol="tcp", dst_ip=CLIENT_ALPHA_IP, dst_port=PORT),
+                )
+            ],
+            True,
+        ).run() as conntrack:
+            conntrack.notify_on_tcp_state(TcpState.LAST_ACK, last_ack_event)
+            conntrack.notify_on_tcp_state(TcpState.TIME_WAIT, time_wait_event)
             async with connection_alpha.create_process([
                 "nc",
                 "-nlv",
