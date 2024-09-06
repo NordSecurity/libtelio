@@ -1,7 +1,35 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### 5.0.0
+### **Chicken Salad**
+---
+* LLT-5124: Remove unneeded rupnp crate
+* LLT-5351: Fix Boringtun issues resulting in ~50 times slower network speeds.
+* LLT-4935: Do not rotate wg-stun peers, when stun ep is paused
+* LLT-5494: Added a builder for feature config
+* LLT-5452: Removed fingerprint from nurse feature config and made nurse enabled by default
+* LLT-5493: Assume libmoose initialized after moose::init has successfully returned
+* LLT-5450: Improved boringtun speeds ~20% compared in v4.x telio
+* LLT-5473: Collect derp logs in Nat-lab
+* LLT-5310: Add feature config option for nurse state duration cap
+* LLT-5309: Add starcast to Libtelio for multicast support
+* LLT-5515-fix-meshnet-connection-monitoring: Fix incorrect entries in nat_traversal_conn_info
+* LLT-5072: Implement binary full stripping
+* LLT-5430: Additional information fields are now shown in logs
+* LLT-5384: Handle non-UDP packets more gracefully in telio-dns (UDP is still the only protocol we actually support for DNS)
+* LLT-5319: Bump crypto_box and thus curve25519-dalek to get rid of RUSTSEC-2024-0344
+* LLT-5222: Add downgrade logic using link detection
+* LLT-4928: Hide IP addresses in release version logs by replacing them with some hashes
+* lock_android_cores: Lock boringtun to 4 threads on Android
+* LLT-5507: Make it possible to control using the `hide_ips` if the IP addresses are hidden in logs
+* LLT-5324: Use single performance core on boringtun on Apple's devices
+* LLT-5498: Pinger should not ping the address class, if the ip stack does not match
+* LLT-5519: Fixed a low-probability race-condition which may cause unnecessary path transitions
+
+<br>
+
 ### v5.0.0-rc2
-### ****
+### **Chicken Salad**
 ---
 * LLT-5211: Wait for windows services before starting adapters
 * LLT-5278: Make separate feature config for firewall
