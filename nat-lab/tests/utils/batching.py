@@ -3,6 +3,7 @@ import math
 import os
 import pytest
 import subprocess
+import tempfile
 import typing
 from scapy.all import PcapReader, Packet  # type: ignore
 from typing import Callable, List, Optional
@@ -43,22 +44,24 @@ async def capture_traffic(container_name: str, duration_s: int) -> str:
 
     await asyncio.sleep(duration_s)
 
-    local_path = f"{container_name}.pcap"
-    subprocess.run([
-        "docker",
-        "cp",
-        container_name + ":" + "/home/capture.pcap",
-        local_path,
-    ])
+    with tempfile.NamedTemporaryFile() as tmpfile:
+        local_path = f"{tmpfile.name}.pcap"
+        print(f"Copying pcap to {local_path}")
+        subprocess.run([
+            "docker",
+            "cp",
+            container_name + ":" + "/home/capture.pcap",
+            local_path,
+        ])
 
-    cmd_rm = f"docker exec --privileged {container_name} pkill tcpdump"
-    os.system(cmd_rm)
+        cmd_rm = f"docker exec --privileged {container_name} pkill tcpdump"
+        os.system(cmd_rm)
 
-    return local_path
+        return local_path
 
 
 # Render ASCII histogram drawing for visual inspection
-def save_histogram(name: str, data: List[int], save_dir: str, max_height=None):
+def print_histogram(name: str, data: List[int], max_height=None):
     output = []
     if not data:
         output.append(f"No data provided for {name}")
@@ -84,20 +87,13 @@ def save_histogram(name: str, data: List[int], save_dir: str, max_height=None):
     output.append(f"0{' ' * (len(data)-1)}{len(data)}")
     output.append(f"^-Histogram of {name}")
 
-    # try to save `name.hist` and warn if it already exists by asserting false
-    file_name = f"{name}.hist"
-    file_path = os.path.join(save_dir, file_name)
-
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(output))
-
-    print(f"Histogram saved successfully as '{file_name}' in '{save_dir}'.")
+    print("\n".join(output))
 
 
 def generate_histogram_from_pcap(
     pcap_path: str,
     buckets: int,
-    packet_filter: Optional[Callable[[Packet], bool]],
+    allow_packet_filter: Optional[Callable[[Packet], bool]],
 ) -> typing.List[int]:
     print("Looking for a pcap at", pcap_path)
 
@@ -111,7 +107,7 @@ def generate_histogram_from_pcap(
                 first_packet_time = pkt.time
                 first_packet = False
 
-            if packet_filter and not packet_filter(pkt):
+            if allow_packet_filter and not allow_packet_filter(pkt):
                 continue
 
             timestamps.append(pkt.time - first_packet_time)
