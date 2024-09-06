@@ -1033,7 +1033,7 @@ impl Runtime {
             None
         };
 
-        let network_monitor = NetworkMonitor::new(system_get_if_addr).await?;
+        let network_monitor = NetworkMonitor::new().await?;
         let socket_pool = Arc::new({
             if let Some(protect) = protect.clone() {
                 SocketPool::new(protect)

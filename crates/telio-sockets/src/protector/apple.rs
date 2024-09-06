@@ -464,7 +464,7 @@ mod tests {
         let socket2_socket = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP));
 
         let socket_fd = socket2_socket.as_ref().unwrap().as_native_socket();
-        let _network_monitor = NetworkMonitor::new(telio_network_monitors::system_get_if_addr)
+        let _network_monitor = NetworkMonitor::new()
             .await
             .unwrap();
 
