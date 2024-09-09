@@ -256,6 +256,7 @@ LIBTELIO_CONFIG = {
             "tcli": {"tcli": "tcli"},
             "derpcli": {"derpcli": "derpcli"},
             "interderpcli": {"interderpcli": "interderpcli"},
+            "teliod": {"teliod": "teliod"},
             NAME: {f"lib{NAME}": f"lib{NAME}.so"},
         },
     },
