@@ -1003,6 +1003,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "daemon-common"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "daemonize",
+ "interprocess",
+ "sysinfo",
+ "tokio",
+]
+
+[[package]]
 name = "daemonize"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4028,11 +4039,10 @@ dependencies = [
  "base64 0.13.1",
  "clap 3.2.25",
  "crypto_box",
- "daemonize",
+ "daemon-common",
  "dirs",
  "futures",
  "hex",
- "interprocess",
  "ipnet",
  "parking_lot",
  "rand",
@@ -4043,7 +4053,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "shellwords",
- "sysinfo",
  "telio",
  "telio-crypto",
  "telio-model",

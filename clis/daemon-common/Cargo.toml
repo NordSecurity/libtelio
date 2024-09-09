@@ -1,0 +1,20 @@
+[package]
+name = "daemon-common"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+tokio = { workspace = true, features = ["full"] }
+
+# Used as a lightweight and safe (because a TCP server has the risk of remote code execution)
+# way for the API and daemon to communicate.
+# Tokio support is needed, because the daemon runs on the async runtime.
+interprocess = "1.2.1"
+
+# Used to avoid the manual work of daemonizing the libtelio process.
+# Also is the only reason why Windows isn't supported.
+daemonize = "0.5.0"
+
+# Used only for checking if the daemon is running.
+sysinfo = "0.30.11"

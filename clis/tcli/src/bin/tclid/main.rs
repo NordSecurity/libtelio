@@ -4,30 +4,28 @@
 
 //! Main and code for the API which is used for sending commands to libtelio which runs on a daemon.
 
-use std::path::PathBuf;
-
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use clap::Parser;
+use daemon_common::{
+    comms::DaemonSocket,
+    daemon::{Daemon, ProcessType},
+};
 use tokio::time::Duration;
 
-mod coms;
-mod daemon;
 mod tclid;
 mod telio_cli_interface;
-
-use coms::DaemonSocket;
-use daemon::{Daemon, ProcessType};
 use telio_cli_interface::TelioCliInterface;
-
-/// Name for the local socket file which will be used for inter process communication.
-const DAEMON_IPC_SOCKET: &str = "tclid.sock";
-/// Path where all the logs, local socket and pid file will be stored, relative to the path of this binary.
-const TCLID_WD_PATH: &str = "/var/run/tclid_wd";
 
 // TODO Add meshnet examples.
 // TODO Add --restart flag which would restart the whole daemon before executing the provided command for faster iterating when debugging.
 // TODO figure out logging, because multiple tracing subscribers can't be used. Maybe reroute STDIO of daemon?
 // TODO Maybe add auto completion support? (probably won't work due to mixed parsing implementation)
+
+struct TcliDaemon;
+
+impl Daemon for TcliDaemon {
+    const NAME: &'static str = "Tclid";
+}
 
 /// Argument structure for the TCLID API used by Clap to parse the arguments.
 #[derive(Parser)]
@@ -55,7 +53,7 @@ fn main() -> Result<()> {
         Err(e) => {
             #[cfg(unix)]
             // For convenience printing stderr of the daemon to inform the user that something's wrong.
-            if let Ok(stderr) = Daemon::get_stderr() {
+            if let Ok(stderr) = TcliDaemon::get_stderr() {
                 if !stderr.is_empty() {
                     println!("Daemon stderr: {}", stderr);
                 }
@@ -63,20 +61,6 @@ fn main() -> Result<()> {
             Err(e)
         }
     }
-}
-
-/// Helper function for putting together the directory in which the TCLID socket file will reside.
-///
-/// # Returns
-///
-/// Path to the IPC socket.
-fn get_ipc_socket_path() -> Result<PathBuf> {
-    // Using current_exe() so that if the path was relative, the path configuration would still work.
-    Ok(std::env::current_dir()?
-        .parent()
-        .ok_or(anyhow!("Can't create working directory at root"))?
-        .join(TCLID_WD_PATH)
-        .join(DAEMON_IPC_SOCKET))
 }
 
 /// Separate function that handles printing the help message,
@@ -111,15 +95,16 @@ fn run_api(args: Args) -> Result<()> {
     match args.input.first().map(|s| s.as_str()) {
         // If no arguments are supplied default behavior is starting the daemon.
         None => {
-            if Daemon::is_running()? {
+            if TcliDaemon::is_running()? {
                 eprintln!("TCLID daemon is already running, stop it by calling `tclid quit`");
             } else {
                 start_daemon(args.features.clone())?;
             }
         }
         Some("quit") => {
-            if Daemon::is_running()? {
-                let response = DaemonSocket::send_command(&get_ipc_socket_path()?, "quit")?;
+            if TcliDaemon::is_running()? {
+                let response =
+                    DaemonSocket::send_command(&TcliDaemon::get_ipc_socket_path()?, "quit")?;
 
                 if response.as_str() == "OK" {
                     println!("TCLID daemon stopped");
@@ -131,13 +116,15 @@ fn run_api(args: Args) -> Result<()> {
             }
         }
         Some(_) => {
-            if !Daemon::is_running()? {
+            if !TcliDaemon::is_running()? {
                 start_daemon(args.features.clone())?;
             } else if args.features.is_some() {
                 eprintln!("Features cannot be set while TCLID daemon is running.");
             }
-            let response =
-                DaemonSocket::send_command(&get_ipc_socket_path()?, &args.input.join(" "))?;
+            let response = DaemonSocket::send_command(
+                &TcliDaemon::get_ipc_socket_path()?,
+                &args.input.join(" "),
+            )?;
             println!("{}", response);
         }
     };
@@ -154,14 +141,14 @@ fn run_api(args: Args) -> Result<()> {
 /// * `features` - Optional string containing the features specification for Telio in JSON.
 fn start_daemon(features: Option<String>) -> Result<()> {
     println!("Starting TCLID daemon...");
-    match Daemon::start() {
+    match TcliDaemon::start() {
         Ok(ProcessType::Api) => {
             // Verifying that the server had been started, but we have no way of synchronizing
             // the verification with the daemon, so using retries instead.
             // The delay values had been chose experimentally to get a fast, but efficient start of the daemon.
             // This delay mostly depends on how quickly Telio initializes itself from inside the daemon.
             DaemonSocket::send_command_with_retries(
-                &get_ipc_socket_path()?,
+                &TcliDaemon::get_ipc_socket_path()?,
                 "status",
                 &[
                     Duration::from_millis(400),

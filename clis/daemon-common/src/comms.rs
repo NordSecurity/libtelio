@@ -9,7 +9,7 @@ use std::{
 use anyhow::Result;
 use interprocess::local_socket::{LocalSocketListener, LocalSocketStream};
 
-/// Struct for handling connections of the TCLID daemon's side of the IPC communication with the API.
+/// Struct for handling connections of the daemon's side of the IPC communication with the API.
 pub struct DaemonSocket {
     /// The inner socket over which the actual communication is happening.
     socket: LocalSocketListener,
@@ -121,10 +121,7 @@ impl DaemonConnection {
         let mut reader = BufReader::new(std::io::Read::by_ref(&mut self.stream));
         reader.read_line(&mut command_buffer)?;
         // Removing the trailing newline used as a message ending according to platform.
-        #[cfg(unix)]
         command_buffer.pop();
-        #[cfg(not(unix))]
-        todo!("Windows support is not implemented yet");
 
         Ok(command_buffer)
     }

@@ -98,7 +98,7 @@ impl Nord {
         let client = Client::new();
 
         let mut auth: OAuth = client
-            .post(&format!("{}/users/oauth/login", API_BASE))
+            .post(format!("{}/users/oauth/login", API_BASE))
             .form(&[("challenge", &*sha256), ("preferred_flow", "login")])
             .send()?
             .checked()?
@@ -113,13 +113,13 @@ impl Nord {
             std::str::from_utf8(auth.chalenge.as_ref().ok_or(Error::MissingOauthChallenge)?)
                 .map_err(Error::InvalidOauthString)?;
         let login: LoginInfo = client
-            .get(&format!("{}/users/oauth/token", API_BASE))
+            .get(format!("{}/users/oauth/token", API_BASE))
             .query(&[("attempt", &*auth.attempt), ("verifier", verifier)])
             .send()?
             .checked()?
             .json()?;
         let creds: Creds = client
-            .get(&format!("{}/users/services/credentials", API_BASE))
+            .get(format!("{}/users/services/credentials", API_BASE))
             .header(header::AUTHORIZATION, format!("token:{}", &login.token))
             .send()?
             .checked()?
@@ -135,14 +135,14 @@ impl Nord {
     pub fn login(user: &str, pass: &str) -> Result<Self, Error> {
         let client = Client::new();
         let login: LoginInfo = client
-            .post(&format!("{}/users/tokens", API_BASE))
+            .post(format!("{}/users/tokens", API_BASE))
             .form(&[("username", &user), ("password", &pass)])
             .send()?
             .checked()?
             .json()?;
 
         let creds: Creds = client
-            .get(&format!("{}/users/services/credentials", API_BASE))
+            .get(format!("{}/users/services/credentials", API_BASE))
             .header(header::AUTHORIZATION, format!("token:{}", &login.token))
             .send()?
             .checked()?
@@ -161,7 +161,7 @@ impl Nord {
         };
         let client = Client::new();
         let creds: Creds = client
-            .get(&format!("{}/users/services/credentials", API_BASE))
+            .get(format!("{}/users/services/credentials", API_BASE))
             .header(header::AUTHORIZATION, format!("token:{}", &login.token))
             .send()?
             .checked()?
@@ -181,7 +181,7 @@ impl Nord {
     pub fn find_server(&self) -> Result<ExitNode, Error> {
         let client = Client::new();
         let server: [Server; 1] = client
-            .get(&format!("{}/servers/recommendations", API_BASE))
+            .get(format!("{}/servers/recommendations", API_BASE))
             .query(&[
                 ("filters[servers_technologies][identifier]", "wireguard_udp"),
                 ("filters[servers_technologies][pivot][status]", "online"),
@@ -218,7 +218,7 @@ impl Nord {
     pub fn register(&self, name: &str, public_key: &PublicKey) -> Result<String, Error> {
         let client = Client::new();
         let register: MeshDev = client
-            .post(&format!("{}/meshnet/machines", API_BASE))
+            .post(format!("{}/meshnet/machines", API_BASE))
             .header(
                 header::AUTHORIZATION,
                 format!("Bearer token:{}", &self.login.token),
@@ -242,7 +242,7 @@ impl Nord {
     pub fn get_meshmap(&self, id: &str) -> Result<String, Error> {
         let client = Client::new();
         Ok(client
-            .get(&format!("{}/meshnet/machines/{}/map", API_BASE, id))
+            .get(format!("{}/meshnet/machines/{}/map", API_BASE, id))
             .header(
                 header::AUTHORIZATION,
                 format!("Bearer token:{}", &self.login.token),
