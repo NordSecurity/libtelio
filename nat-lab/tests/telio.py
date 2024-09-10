@@ -526,6 +526,15 @@ class Client:
         if telio_features.nurse is not None and telio_features.lana is not None:
             self._fingerprint = telio_features.lana.event_path, fingerprint
 
+    def is_node(self, node: Node) -> bool:
+        return self._node == node
+
+    def get_connection(self):
+        return self._connection
+
+    def get_proxy_port(self):
+        return self._proxy_port
+
     @asynccontextmanager
     async def run(self, meshmap: Optional[Meshmap] = None) -> AsyncIterator["Client"]:
         if isinstance(self._connection, DockerConnection):
