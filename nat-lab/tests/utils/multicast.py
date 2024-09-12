@@ -1,6 +1,8 @@
+import asyncio
 from asyncio import Event
 from config import LIBTELIO_BINARY_PATH_MAC_VM, LIBTELIO_BINARY_PATH_WINDOWS_VM
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import AsyncIterator
 from utils.connection import Connection, TargetOS
 from utils.process import Process
@@ -9,6 +11,8 @@ from utils.process import Process
 def _get_python(connection: Connection) -> str:
     if connection.target_os == TargetOS.Windows:
         return "python"
+    if connection.target_os == TargetOS.Mac:
+        return "/usr/local/bin/python3"
     return "python3"
 
 
@@ -62,9 +66,12 @@ class MulticastServer:
                 self._server_ready_event.set()
 
     async def wait_till_ready(self) -> None:
-        await self._server_ready_event.wait()
+        await asyncio.wait_for(self._server_ready_event.wait(), timeout=10.0)
+        print(datetime.now(), "MulticastServer is ready")
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator["MulticastServer"]:
+        print(datetime.now(), "MulticastServer starting")
         async with self._process.run(stdout_callback=self.on_stdout):
+            await asyncio.sleep(0.1)
             yield self
