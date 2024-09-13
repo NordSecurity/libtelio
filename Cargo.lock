@@ -4628,6 +4628,7 @@ dependencies = [
  "anyhow",
  "clap 3.2.25",
  "daemon-common",
+ "nix 0.28.0",
  "serde",
  "serde_json",
  "telio",

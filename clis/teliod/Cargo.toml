@@ -12,5 +12,7 @@ tracing.workspace = true
 tracing-appender.workspace = true
 tracing-subscriber.workspace = true
 
+nix = "0.28.0"
+
 daemon-common = { version = "0.1.0", path = "../daemon-common" }
 telio = { path = "../.." }

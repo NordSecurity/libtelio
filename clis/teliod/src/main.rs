@@ -4,8 +4,9 @@ use anyhow::Result;
 use clap::Parser;
 use std::{
     fs::{self, File},
+    io::{Read, Write},
+    os::fd::AsRawFd,
     str::FromStr,
-    time::Duration,
 };
 use tracing::{error, info, level_filters::LevelFilter, warn};
 
@@ -17,6 +18,8 @@ use daemon_common::{
 use telio::{device::Device, telio_model::features::Features};
 
 use serde::{de, Deserialize, Deserializer, Serialize};
+
+use nix::unistd::{close, pipe};
 
 struct TeliodDaemon;
 
@@ -88,6 +91,8 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+const DAEMON_START_MSG: &'static str = "ready";
+
 /// Starts the Teliod daemon which will run actual Telio.
 ///
 /// # Arguments
@@ -95,34 +100,36 @@ fn main() -> Result<()> {
 /// * `config` - Daemon config.
 fn start_daemon(config: TeliodDaemonConfig) -> Result<()> {
     println!("Starting Teliod daemon...");
+
+    let (api_fd, daemon_fd) = pipe()?;
+
     match TeliodDaemon::start() {
         Ok(ProcessType::Api) => {
-            // Verifying that the server had been started, but we have no way of synchronizing
-            // the verification with the daemon, so using retries instead.
-            // The delay values had been chose experimentally to get a fast, but efficient start of the daemon.
-            // This delay mostly depends on how quickly Telio initializes itself from inside the daemon.
-            DaemonSocket::send_command_with_retries(
-                &TeliodDaemon::get_ipc_socket_path()?,
-                "hello_world",
-                &[
-                    Duration::from_millis(400),
-                    Duration::from_millis(100),
-                    Duration::from_millis(100),
-                    Duration::from_millis(100),
-                    Duration::from_millis(500),
-                ],
-            )?;
+            let _ = close(daemon_fd.as_raw_fd());
 
-            println!("Teliod daemon started");
+            // Daemon sends to API process a message that it is ready
+            let mut api_pipe_end = File::from(api_fd);
+            let mut message = String::new();
+            api_pipe_end.read_to_string(&mut message)?;
 
+            if message == DAEMON_START_MSG {
+                println!("Teliod daemon started");
+            } else {
+                print!("Unexpected pipe message: {}", message);
+            }
+
+            // We really can't do anything with wrong pipe message, so we return Ok anyway
             Ok(())
         }
-        Ok(ProcessType::Daemon) => daemon_event_loop(config),
+        Ok(ProcessType::Daemon) => {
+            let _ = close(api_fd.as_raw_fd());
+            daemon_event_loop(config, File::from(daemon_fd))
+        }
         Err(e) => Err(e),
     }
 }
 
-fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<()> {
+fn daemon_event_loop(config: TeliodDaemonConfig, mut readiness_pipe: File) -> Result<()> {
     let (non_blocking_writer, _tracing_worker_guard) =
         tracing_appender::non_blocking(fs::File::create(config.log_file_path)?);
     tracing_subscriber::fmt()
@@ -143,6 +150,13 @@ fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<()> {
     );
 
     info!("Entered event loop");
+
+    if let Err(err) = readiness_pipe.write(DAEMON_START_MSG.as_bytes()) {
+        warn!("Could not send \"ready\" message to API process: {:?}", err)
+    }
+
+    // This closes the daemon's pipe end
+    drop(readiness_pipe);
 
     loop {
         let mut connection = match socket.accept() {
