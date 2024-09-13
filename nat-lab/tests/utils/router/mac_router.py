@@ -46,6 +46,35 @@ class MacRouter(Router):
                     ],
                 ).execute()
 
+    async def deconfigure_interface(self, addresses: List[str]) -> None:
+        for address in addresses:
+            addr_proto = self.check_ip_address(address)
+
+            if addr_proto == IPProto.IPv4:
+                await self._connection.create_process(
+                    [
+                        "ifconfig",
+                        self._interface_name,
+                        "inet",
+                        "delete",
+                        address,
+                        "255.192.0.0",
+                        address,
+                    ],
+                ).execute()
+            elif addr_proto == IPProto.IPv6:
+                await self._connection.create_process(
+                    [
+                        "ifconfig",
+                        self._interface_name,
+                        "inet6",
+                        "delete",
+                        address,
+                        "prefixlen",
+                        "64",
+                    ],
+                ).execute()
+
     async def create_meshnet_route(self) -> None:
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
             await self._connection.create_process(

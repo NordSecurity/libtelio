@@ -75,6 +75,10 @@ class Router(ABC):
         pass
 
     @abstractmethod
+    async def deconfigure_interface(self, addresses: List[str]) -> None:
+        pass
+
+    @abstractmethod
     async def create_meshnet_route(self) -> None:
         pass
 
