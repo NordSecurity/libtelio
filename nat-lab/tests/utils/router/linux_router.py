@@ -61,6 +61,23 @@ class LinuxRouter(Router):
             ["ip", "link", "set", "up", "dev", self._interface_name]
         ).execute()
 
+    async def deconfigure_interface(self, addresses: List[str]) -> None:
+        for address in addresses:
+            await self._connection.create_process(
+                [
+                    "ip",
+                    ("-4" if self.check_ip_address(address) == IPProto.IPv4 else "-6"),
+                    "addr",
+                    "del",
+                    address,
+                    "dev",
+                    self._interface_name,
+                ],
+            ).execute()
+        await self._connection.create_process(
+            ["ip", "link", "set", "down", "dev", self._interface_name]
+        ).execute()
+
     async def create_meshnet_route(self):
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
             await self._connection.create_process(

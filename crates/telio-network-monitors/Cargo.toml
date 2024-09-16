@@ -1,0 +1,38 @@
+[package]
+name = "telio-network-monitors"
+version = "0.1.0"
+edition = "2018"
+license = "GPL-3.0-only"
+repository = "https://github.com/NordSecurity/libtelio"
+publish = false
+
+[dependencies]
+if-addrs.workspace = true
+ipnet.workspace = true
+telio-utils.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+tokio = { workspace = true, features = ["sync", "test-util", "time", "rt", "macros"] }
+once_cell.workspace = true
+mockall.workspace = true
+
+[target.'cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))'.dependencies]
+dispatch = { git = "https://github.com/NordSecurity/rust-dispatch.git", rev = "13447cd7221a74ebcce1277ae0cfc9a421a28ec5" }
+network-framework-sys = "0.1"
+block = "0.1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+neli = { version = "0.6.4", features = ["async"] }
+
+[target.'cfg(windows)'.dependencies]
+winapi = { workspace = true, features = ["iphlpapi", "netioapi", "winnt", "ws2def"] }
+windows = { version = "0.34.0", features = [
+    "alloc",
+    "Win32_Networking_WinSock",
+    "Win32_NetworkManagement_IpHelper",
+] }
+
+[dev-dependencies]
+assert_matches = "1.5.0"
+lazy_static.workspace = true
+serial_test = "3.1.1"

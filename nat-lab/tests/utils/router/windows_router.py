@@ -62,6 +62,46 @@ class WindowsRouter(Router):
             ).check_exists(address, None):
                 raise Exception("Failed to set up the interface")
 
+    async def deconfigure_interface(self, addresses: List[str]) -> None:
+        for address in addresses:
+            addr_proto = self.check_ip_address(address)
+
+            if addr_proto == IPProto.IPv4:
+                await self._connection.create_process([
+                    "netsh",
+                    "interface",
+                    "ipv4",
+                    "delete",
+                    "address",
+                    self._interface_name,
+                    address,
+                    "255.255.255.255",
+                ]).execute()
+            elif addr_proto == IPProto.IPv6:
+                await self._connection.create_process([
+                    "netsh",
+                    "interface",
+                    "ipv6",
+                    "delete",
+                    "address",
+                    self._interface_name,
+                    address,
+                ]).execute()
+
+            if not await CommandGrepper(
+                self._connection,
+                [
+                    "netsh",
+                    "interface",
+                    "ipv4" if addr_proto == IPProto.IPv4 else "ipv6",
+                    "show",
+                    "addresses",
+                    self._interface_name,
+                ],
+                timeout=self._status_check_timeout,
+            ).check_not_exists(address, None):
+                raise Exception("Failed to deconfigure the interface")
+
     async def create_meshnet_route(self) -> None:
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
             try:
