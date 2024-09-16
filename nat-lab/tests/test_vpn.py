@@ -13,6 +13,7 @@ from utils.connection_tracker import ConnectionLimits, ConnectionTrackerConfig
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.output_notifier import OutputNotifier
 from utils.ping import ping
+from utils.python import get_python_binary
 from utils.router import IPProto, IPStack
 
 VAGRANT_LIBVIRT_MANAGEMENT_IP = "192.168.121"
@@ -182,10 +183,8 @@ async def test_vpn_connection(
         client_alpha, *_ = env.clients
 
         if alpha_setup_params.connection_tag == ConnectionTag.MAC_VM:
-            # Using the 'env python3' at the beginning of the script fails with:
-            # xcode-select: error: no developer tools were found at '/Applications/Xcode.app', and no install could be requested (perhaps no UI is present), please install manually from 'developer.apple.com'.
             process = await client_conn.create_process([
-                "/usr/local/bin/python3",
+                get_python_binary(client_conn),
                 f"{config.LIBTELIO_BINARY_PATH_MAC_VM}/list_interfaces_with_router_property.py",
             ]).execute()
             interfaces_with_router_prop = process.get_stdout().splitlines()
