@@ -5,7 +5,7 @@ use crate::{
 };
 use bytes::BufMut;
 use protobuf::{Message, RepeatedField};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use telio_crypto::PublicKey;
 
@@ -13,26 +13,29 @@ use telio_crypto::PublicKey;
 pub type PeersStatesMap = HashMap<PublicKey, bool>;
 
 /// # Examples
-/// Encoding poll request message:
+/// Encoding and decoding poll request message:
 /// ```rust
 /// use telio_crypto::PublicKey;
 /// use telio_proto::{Codec, DerpPollRequestMsg, PacketTypeControl};
+/// use std::collections::HashSet;
 /// const PEER1: [u8; 32] = [3u8; 32];
 /// const PEER2: [u8; 32] = [5u8; 32];
-/// const REQUEST_BYTES_TWO_PEERS: [u8; 101] = [
-///     0, 0, 0, 0, 0, 0, 0, 0, 19, 10, 44, 65, 119, 77, 68, 65, 119, 77, 68, 65, 119, 77, 68, 65,
-///     119, 77, 68, 65, 119, 77, 68, 65, 119, 77, 68, 65, 119, 77, 68, 65, 119, 77, 68, 65, 119,
-///     77, 68, 65, 119, 77, 68, 65, 119, 77, 61, 10, 44, 66, 81, 85, 70, 66, 81, 85, 70, 66, 81,
-///     85, 70, 66, 81, 85, 70, 66, 81, 85, 70, 66, 81, 85, 70, 66, 81, 85, 70, 66, 81, 85, 70, 66,
-///     81, 85, 70, 66, 81, 85, 70, 66, 81, 85, 61,
-/// ];
+///
+/// let mut peers = HashSet::new();
+/// peers.insert(PublicKey::from(&PEER1));
+/// peers.insert(PublicKey::from(&PEER2));
+///
 /// let req = DerpPollRequestMsg::new(
 /// 19_u64,
-/// &vec![PublicKey::from(&PEER1), PublicKey::from(&PEER2)],
+/// &peers,
 /// );
 ///
 /// let encoded = req.encode().unwrap();
-/// assert_eq!(encoded, REQUEST_BYTES_TWO_PEERS.as_slice());
+/// let decoded =
+///     DerpPollRequestMsg::decode(encoded.as_slice()).expect("Failed to parse packet");
+///
+/// let peers = decoded.get_peers();
+/// assert_eq!(peers.len(), 2);
 /// ```
 #[derive(Debug, PartialEq, Clone)]
 pub struct DerpPollRequestMsg {
@@ -42,7 +45,7 @@ pub struct DerpPollRequestMsg {
 
 impl DerpPollRequestMsg {
     /// Creates new request message from `peers`.
-    pub fn new(session: Session, peers: &[PublicKey]) -> Self {
+    pub fn new(session: Session, peers: &HashSet<PublicKey>) -> Self {
         Self {
             session,
             msg: DerpPollRequest {
@@ -271,6 +274,8 @@ impl std::fmt::Display for DerpPollResponseMsg {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
 
     const PEER1: [u8; 32] = [3u8; 32];
@@ -296,19 +301,19 @@ mod tests {
     #[test]
     fn encode_request() {
         // test empty message
-        let req = DerpPollRequestMsg::new(100_u64, &vec![]);
+        let req = DerpPollRequestMsg::new(100_u64, &HashSet::new());
 
         let encoded = req.encode().unwrap();
         assert_eq!(encoded, REQUEST_BYTES_EMPTY.as_slice());
 
+        let mut peers = HashSet::new();
+        peers.insert(PublicKey::from(&PEER1));
+        peers.insert(PublicKey::from(&PEER2));
         // test message with two peers
-        let req = DerpPollRequestMsg::new(
-            19_u64,
-            &vec![PublicKey::from(&PEER1), PublicKey::from(&PEER2)],
-        );
-
+        let mut req = DerpPollRequestMsg::new(19_u64, &peers);
+        req.msg.peers.sort();
         let encoded = req.encode().unwrap();
-        assert_eq!(encoded, REQUEST_BYTES_TWO_PEERS.as_slice());
+        assert_eq!(encoded, REQUEST_BYTES_TWO_PEERS);
     }
 
     #[test]

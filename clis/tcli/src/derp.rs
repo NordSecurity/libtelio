@@ -101,7 +101,7 @@ impl DerpClient {
 
                 let keys = allowed_pk.split(' ');
                 for key in keys {
-                    config.allowed_pk.insert(cli_try!(res; key.parse()));
+                    config.meshnet_peers.insert(cli_try!(res; key.parse()));
                 }
 
                 if let Some(inst) = &mut self.inst {

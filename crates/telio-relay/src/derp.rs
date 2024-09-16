@@ -166,7 +166,7 @@ pub struct Config {
     /// List of potential Derp servers
     pub servers: SortedServers,
     /// Remote peer list that we accept traffic from
-    pub allowed_pk: HashSet<PublicKey>,
+    pub meshnet_peers: HashSet<PublicKey>,
     /// Timeout used for connecting to derp server
     #[default(proto::TCP_CONNECT_TIMEOUT)]
     pub timeout: Duration,
@@ -175,8 +175,6 @@ pub struct Config {
     pub server_keepalives: DerpKeepaliveConfig,
     /// Enable mechanism for turning off keepalive to offline peers
     pub enable_polling: bool,
-    /// Derp polling will be done asking status of these meshnet peers
-    pub meshnet_peers: Vec<PublicKey>,
     /// Use Mozilla's root certificates instead of OS ones [default false]
     pub use_built_in_root_certificates: bool,
 }
@@ -582,7 +580,7 @@ impl State {
         buf: Vec<u8>,
         config: &Config,
     ) {
-        if config.allowed_pk.contains(&pk) {
+        if config.meshnet_peers.contains(&pk) {
             match DerpRelay::decrypt_if_needed(config.secret_key, pk, &buf) {
                 Ok(plain_text) => match PacketRelayed::decode(&plain_text) {
                     Ok(msg) => {
