@@ -5,6 +5,7 @@ import paho.mqtt.client as mqtt  # type: ignore # pylint: disable=import-error
 from dataclasses import asdict, dataclass
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pprint import pprint
+from typing import Optional
 from uuid import uuid4
 
 
@@ -18,15 +19,15 @@ def next_id():
 @dataclass
 class MachineCreateRequest:
     public_key: str
-    app_user_uid: str
     hardware_identifier: str
     os: str
     os_version: str
-    device_type: str
-    nickname: str
-    discovery_key: str
-    relay_address: str
-    traffic_routing_supported: bool
+    device_type: str = "other"
+    app_user_uid: Optional[str] = None
+    nickname: Optional[str] = None
+    discovery_key: Optional[str] = None
+    relay_address: Optional[str] = None
+    traffic_routing_supported: bool = False
 
 
 @dataclass
@@ -75,6 +76,7 @@ class CoreApiHandler(BaseHTTPRequestHandler):
     def handle_register_machine(self):
         content_length = int(self.headers["Content-Length"])
         post_data = self.rfile.read(content_length)
+        print(f"The POST data: {post_data}")
         json_obj = json.loads(post_data)
         req = MachineCreateRequest(**json_obj)
 
@@ -119,6 +121,8 @@ class CoreApiHandler(BaseHTTPRequestHandler):
         print("uuid:", uid)
 
         if self.server.remove_machine(uid):
+            self.server.send_notification()
+
             print(f"{uid} removed")
             self.send_response(204)
         else:
