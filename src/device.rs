@@ -1815,7 +1815,7 @@ impl Runtime {
             let derp_config = DerpConfig {
                 secret_key,
                 servers: SortedServers::new(config.derp_servers.clone().unwrap_or_default()),
-                allowed_pk: peers,
+                meshnet_peers: peers,
                 timeout: Duration::from_secs(10), //TODO: make configurable
                 server_keepalives: DerpKeepaliveConfig::from(&self.features.derp),
                 enable_polling: self
@@ -1824,11 +1824,6 @@ impl Runtime {
                     .clone()
                     .unwrap_or_default()
                     .enable_polling
-                    .unwrap_or_default(),
-                meshnet_peers: config
-                    .peers
-                    .as_ref()
-                    .map(|peers| peers.iter().map(|peer| peer.public_key).collect())
                     .unwrap_or_default(),
                 use_built_in_root_certificates: self
                     .features
