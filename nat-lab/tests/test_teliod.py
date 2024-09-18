@@ -8,7 +8,7 @@ CONFIG_FILE_PATH = "/etc/teliod/config.json"
 
 TELIOD_START_PARAMS = [
     TELIOD_EXEC_PATH,
-    "start",
+    "daemon",
     CONFIG_FILE_PATH,
 ]
 
@@ -24,19 +24,16 @@ async def test_teliod() -> None:
         )[0].connection
 
         # Run teliod
-        assert (
-            "Starting Teliod daemon...Teliod daemon started"
-            == (
-                await asyncio.wait_for(
-                    connection.create_process(TELIOD_START_PARAMS).execute(),
-                    1,
-                )
-            ).get_stdout()
+        teliod_process = await exit_stack.enter_async_context(
+            connection.create_process(TELIOD_START_PARAMS).run()
         )
+
+        # Let the daemon start
+        await asyncio.sleep(1)
 
         # Try to run it again - some error message should be retuned
         assert (
-            "Teliod is already running, stop it by calling `teliod stop`"
+            "Teliod is already running"
             == (
                 await asyncio.wait_for(
                     connection.create_process(TELIOD_START_PARAMS).execute(),
@@ -56,27 +53,28 @@ async def test_teliod() -> None:
             ).get_stdout()
         )
 
-        # Stop teliod
-        assert (
-            "Command executed successfully"
-            == (
-                await asyncio.wait_for(
-                    connection.create_process(TELIOD_STOP_PARAMS).execute(),
-                    1,
-                )
-            ).get_stdout()
+        assert not teliod_process.is_done()
+
+        # Get Teliod PID
+        teliod_pid = (
+            await asyncio.wait_for(
+                connection.create_process(["cat", "/var/teliod.pid"]).execute(),
+                1,
+            )
+        ).get_stderr()
+
+        print(f"Teliod PID: {teliod_pid}")
+
+        # Send SIGTERM to the daemon
+        await asyncio.wait_for(
+            connection.create_process(["kill", "{teliod_pid}"]).execute(),
+            1,
         )
 
-        # Stopping while not runnign returns an error message
-        assert (
-            "Teliod daemon is not running"
-            == (
-                await asyncio.wait_for(
-                    connection.create_process(TELIOD_STOP_PARAMS).execute(),
-                    1,
-                )
-            ).get_stderr()
-        )
+        # Let the daemon stop
+        await asyncio.sleep(1)
+
+        assert teliod_process.is_done()
 
         # Run the hello-world command again - this time it should fail
         assert (

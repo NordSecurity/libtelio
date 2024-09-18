@@ -1007,7 +1007,6 @@ name = "daemon-common"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "daemonize",
  "interprocess",
  "sysinfo",
  "tokio",
@@ -4040,6 +4039,7 @@ dependencies = [
  "clap 3.2.25",
  "crypto_box",
  "daemon-common",
+ "daemonize",
  "dirs",
  "futures",
  "hex",

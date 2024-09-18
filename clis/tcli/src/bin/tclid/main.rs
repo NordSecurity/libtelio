@@ -4,6 +4,8 @@
 
 //! Main and code for the API which is used for sending commands to libtelio which runs on a daemon.
 
+use std::path::PathBuf;
+
 use anyhow::Result;
 use clap::Parser;
 use daemon_common::{
@@ -25,6 +27,61 @@ struct TcliDaemon;
 
 impl Daemon for TcliDaemon {
     const NAME: &'static str = "Tclid";
+
+    fn get_wd_path() -> Result<PathBuf> {
+        Ok(std::env::current_exe()?
+            .parent()
+            .ok_or(anyhow::anyhow!(
+                "Cannot create daemon working directory at root"
+            ))?
+            .join(format!("/var/run/{}_wd", Self::NAME)))
+    }
+}
+
+impl TcliDaemon {
+    /// Forks the daemon from the API process.
+    ///
+    /// # Returns
+    ///
+    /// Current process type indicating whether it's the API or the Daemon.
+    /// This is useful because of how the fork syscall.
+    fn start() -> Result<ProcessType> {
+        use std::fs::File;
+        let wd_path = Self::get_wd_path()?;
+
+        std::fs::create_dir_all(&wd_path)?;
+        let stderr = File::create(wd_path.join(format!("{}.err", Self::NAME)))?;
+
+        // Every method except `new` and `start` is optional, see `Daemonize` documentation for
+        // default behavior.
+        let daemonize = daemonize::Daemonize::new()
+            .pid_file(Self::get_pid_path()?)
+            .chown_pid_file(true)
+            .working_directory(wd_path)
+            .stderr(stderr);
+
+        match daemonize.execute() {
+            daemonize::Outcome::Parent(Ok(daemonize::Parent { .. })) => Ok(ProcessType::Api),
+            daemonize::Outcome::Parent(Err(err)) => Err(err.into()),
+            daemonize::Outcome::Child(Ok(_)) => Ok(ProcessType::Daemon),
+            daemonize::Outcome::Child(Err(err)) => Err(err.into()),
+        }
+    }
+
+    /// Function for conveniently printing the stderr file of the daemon.
+    /// Used by the API to quickly inform the user if something is wrong
+    /// with the daemon. Works only when daemon is started with `start()`.
+    ///
+    /// # Returns
+    ///
+    /// The whole contents of the daemons stderr file as a String.
+    fn get_stderr() -> Result<String> {
+        let stderr_file = Self::get_wd_path()?.join(format!("{}.err", Self::NAME));
+
+        let stderr_string = std::fs::read_to_string(stderr_file)?;
+
+        Ok(stderr_string)
+    }
 }
 
 /// Argument structure for the TCLID API used by Clap to parse the arguments.

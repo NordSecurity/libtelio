@@ -2,29 +2,49 @@
 
 use anyhow::Result;
 use clap::Parser;
+use nix::libc::SIGTERM;
+use signal_hook_tokio::Signals;
 use std::{
     fs::{self, File},
-    io::{Read, Write},
-    os::fd::AsRawFd,
+    io::Write,
+    path::{Path, PathBuf},
+    process::{self, id},
     str::FromStr,
 };
+use tokio::{spawn, sync::mpsc};
 use tracing::{error, info, level_filters::LevelFilter, warn};
 
-use daemon_common::{
-    comms::DaemonSocket,
-    daemon::{Daemon, ProcessType},
-};
+use daemon_common::{comms::DaemonSocket, daemon::Daemon};
 
-use telio::{device::Device, telio_model::features::Features};
+use telio::{device::Device, telio_model::features::Features, telio_utils::select};
 
 use serde::{de, Deserialize, Deserializer, Serialize};
 
-use nix::unistd::{close, pipe};
+use futures::stream::StreamExt;
 
 struct TeliodDaemon;
 
 impl Daemon for TeliodDaemon {
     const NAME: &'static str = "teliod";
+
+    fn get_wd_path() -> Result<PathBuf> {
+        if Path::new("/run").exists() {
+            Ok(PathBuf::from("/run/"))
+        } else {
+            Ok(PathBuf::from("/var/run/"))
+        }
+    }
+}
+
+impl TeliodDaemon {
+    /// Inits the daemon on the same process
+    fn init() -> Result<()> {
+        // Create pid file
+        let pid = id();
+        let mut pid_file = File::create(Self::get_pid_path()?)?;
+        pid_file.write_fmt(format_args!("{}", pid))?;
+        Ok(())
+    }
 }
 
 #[derive(Deserialize)]
@@ -49,25 +69,30 @@ where
 #[clap()]
 #[derive(Serialize, Deserialize)]
 enum Cmd {
-    #[clap(about = "Starts the daemon")]
-    Start { config_path: String },
+    #[clap(about = "Runs the teliod event loop")]
+    Daemon { config_path: String },
     #[clap(
         about = "Forces daemon to add a log, added for testing to be, to be removed when the daemon will be more mature"
     )]
     HelloWorld { name: String },
-    #[clap(about = "Same as 'status' but in json string")]
-    Stop,
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     match Cmd::parse() {
-        Cmd::Start { config_path } => {
+        Cmd::Daemon { config_path } => {
             if TeliodDaemon::is_running()? {
-                eprintln!("Teliod is already running, stop it by calling `teliod stop`");
+                eprintln!("Teliod is already running");
             } else {
                 let file = File::open(config_path)?;
                 let config: TeliodDaemonConfig = serde_json::from_reader(file)?;
-                start_daemon(config)?;
+                TeliodDaemon::init()?;
+                if daemon_event_loop(config).await.is_ok() {
+                    info!("Ended event loop: ok");
+                } else {
+                    info!("Ended event loop: not ok");
+                }
+                info!("Exited daemon event loop");
             }
         }
         cmd => {
@@ -75,7 +100,8 @@ fn main() -> Result<()> {
                 let response = DaemonSocket::send_command(
                     &TeliodDaemon::get_ipc_socket_path()?,
                     &serde_json::to_string(&cmd)?,
-                )?;
+                )
+                .await?;
 
                 if response.as_str() == "OK" {
                     println!("Command executed successfully");
@@ -91,45 +117,12 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-const DAEMON_START_MSG: &'static str = "ready";
-
-/// Starts the Teliod daemon which will run actual Telio.
-///
-/// # Arguments
-///
-/// * `config` - Daemon config.
-fn start_daemon(config: TeliodDaemonConfig) -> Result<()> {
-    println!("Starting Teliod daemon...");
-
-    let (api_fd, daemon_fd) = pipe()?;
-
-    match TeliodDaemon::start() {
-        Ok(ProcessType::Api) => {
-            let _ = close(daemon_fd.as_raw_fd());
-
-            // Daemon sends to API process a message that it is ready
-            let mut api_pipe_end = File::from(api_fd);
-            let mut message = String::new();
-            api_pipe_end.read_to_string(&mut message)?;
-
-            if message == DAEMON_START_MSG {
-                println!("Teliod daemon started");
-            } else {
-                print!("Unexpected pipe message: {}", message);
-            }
-
-            // We really can't do anything with wrong pipe message, so we return Ok anyway
-            Ok(())
-        }
-        Ok(ProcessType::Daemon) => {
-            let _ = close(api_fd.as_raw_fd());
-            daemon_event_loop(config, File::from(daemon_fd))
-        }
-        Err(e) => Err(e),
-    }
+enum EventLoopCommand {
+    HelloWorld(String),
+    Err,
 }
 
-fn daemon_event_loop(config: TeliodDaemonConfig, mut readiness_pipe: File) -> Result<()> {
+async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<()> {
     let (non_blocking_writer, _tracing_worker_guard) =
         tracing_appender::non_blocking(fs::File::create(config.log_file_path)?);
     tracing_subscriber::fmt()
@@ -149,47 +142,117 @@ fn daemon_event_loop(config: TeliodDaemonConfig, mut readiness_pipe: File) -> Re
         None,
     );
 
-    info!("Entered event loop");
+    let mut signals = Signals::new(&[SIGTERM])?;
 
-    if let Err(err) = readiness_pipe.write(DAEMON_START_MSG.as_bytes()) {
-        warn!("Could not send \"ready\" message to API process: {:?}", err)
-    }
-
-    // This closes the daemon's pipe end
-    drop(readiness_pipe);
-
-    loop {
-        let mut connection = match socket.accept() {
+    // The thread handles recieves commands, makes the basic validation and if they seem to be correct it passes them to the main event loop
+    let (command_sender, mut command_receiver) = mpsc::channel(10);
+    let cmd_task_handle = async move {
+        let mut connection = match socket.accept().await {
             Ok(conn) => conn,
             Err(err) => {
                 error!("Failed to accept connection: {:?} - stopping daemon", err);
+                let _ = command_sender.send(EventLoopCommand::Err).await;
                 break;
             }
         };
 
-        let command_str = connection.read_command()?;
+        let Ok(command_str) = connection.read_command().await else {
+            warn!("Unknown command");
+            continue;
+        };
 
-        if let Ok(command) = serde_json::from_str::<Cmd>(&command_str) {
-            match command {
-                Cmd::Start { .. } => {
+        if let Ok(cmd) = serde_json::from_str::<Cmd>(&command_str) {
+            match cmd {
+                Cmd::Daemon { .. } => {
                     warn!("Start command should never be passed to the daemon");
-                    connection.respond("ERR".to_owned())?;
+                    if connection.respond("ERR".to_owned()).await.is_err() {
+                        if command_sender.send(EventLoopCommand::Err).await.is_err() {
+                            error!("Broken channel, exiting");
+                            break;
+                        }
+                    } else {
+                        continue;
+                    }
                 }
                 Cmd::HelloWorld { name } => {
-                    info!("Hello {}!", name);
-                    connection.respond("OK".to_owned())?;
+                    if match connection.respond("OK".to_owned()).await {
+                        Ok(_) => {
+                            command_sender
+                                .send(EventLoopCommand::HelloWorld(name))
+                                .await
+                        }
+                        Err(_) => command_sender.send(EventLoopCommand::Err).await,
+                    }
+                    .is_err()
+                    {
+                        error!("Broken channel, exiting");
+                        break;
+                    }
                 }
-                Cmd::Stop => {
-                    info!("Stopping daemon");
-                    connection.respond("OK".to_owned())?;
-                    break;
-                }
-            };
+            }
         } else {
-            warn!("Unknown command");
-            connection.respond("ERR".to_owned())?;
-        };
+            warn!("Received unknown command: {}", command_str);
+            if connection.respond("ERR".to_owned()).await.is_err()
+                && command_sender.send(EventLoopCommand::Err).await.is_err()
+            {
+                error!("Broken channel, exiting");
+                break;
+            }
+        }
+    };
+
+    info!("Entering event loop");
+
+    let _ = loop {
+        select! {
+            maybe_cmd = command_receiver.recv() => {
+                match maybe_cmd {
+                    Some(EventLoopCommand::HelloWorld(name)) => {
+                        info!("Hello {}", name);
+                    }
+                    Some(EventLoopCommand::Err) => {
+                        break Some("Socket closed")
+                    }
+                    None => {
+                        break Some("Channel closed")
+                    }
+                }
+            },
+            signal = signals.next() => {
+                match signal {
+                    Some(SIGTERM) => {
+                        info!("Recieved SIGTERM signal, exiting");
+                        break None;
+                    }
+                    Some(_) => {
+                        info!("Recieved unexpected signal, ignoring");
+                    }
+                    None => {
+                        break Some("Signal channel broken")
+                    }
+                }
+            }
+        }
+    };
+
+    info!("Before abort");
+
+    if !signals.handle().is_closed() {
+        signals.handle().close();
     }
+
+    info!("After abort");
+
+    info!("CMD task finished");
+
+    // TODO: There are these two blocking processes, so we cannot just
+    // return as it will hang on them, thus we exit process instead.
+    // This should be done in some nicer way.
+    // if let Some(_) = result {
+    //     process::exit(1);
+    // } else {
+    //     process::exit(0);
+    // }
 
     Ok(())
 }

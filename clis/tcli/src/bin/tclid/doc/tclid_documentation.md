@@ -60,7 +60,7 @@ So TCLID can be stopped by running:
 ./tclid quit
 ```
 
->NOTE: If due to a bug the daemon fails to stop using the `quit` command, you can run `sudo cat /var/run/tclid_wd/tclid.pid | sudo xargs kill -9` from the root of the libtelio repo (or wherever the tclid.pid fie is visible from).
+>NOTE: If due to a bug the daemon fails to stop using the `quit` command, you can run `sudo cat /run/tclid.pid | sudo xargs kill -9` from the root of the libtelio repo (or wherever the tclid.pid fie is visible from).
 
 ### Feature Flags
 
