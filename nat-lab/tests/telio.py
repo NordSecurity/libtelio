@@ -26,9 +26,9 @@ from utils.connection import Connection, DockerConnection, TargetOS
 from utils.connection_util import get_uniffi_path
 from utils.output_notifier import OutputNotifier
 from utils.process import Process, ProcessExecError
+from utils.python import get_python_binary
 from utils.router import IPStack, Router, new_router
 from utils.router.linux_router import LinuxRouter, FWMARK_VALUE as LINUX_FWMARK_VALUE
-from utils.router.mac_router import MacRouter
 from utils.router.windows_router import WindowsRouter
 from utils.testing import (
     get_current_test_log_path,
@@ -574,22 +574,16 @@ class Client:
             host_ip = container_ip
         (host_port, container_port) = await self._connection.mapped_ports()
 
-        if isinstance(self.get_router(), WindowsRouter):
-            python_cmd = "python"
-        else:
-            python_cmd = "python3"
+        python_cmd = get_python_binary(self._connection)
         uniffi_path = get_uniffi_path(self._connection)
 
-        if isinstance(self.get_router(), MacRouter):
-            self._process = self._connection.create_process(["/bin/sh"])
-        else:
-            self._process = self._connection.create_process([
-                python_cmd,
-                uniffi_path,
-                object_name,
-                container_ip,
-                container_port,
-            ])
+        self._process = self._connection.create_process([
+            python_cmd,
+            uniffi_path,
+            object_name,
+            container_ip,
+            container_port,
+        ])
 
         await self.clear_system_log()
 
@@ -598,18 +592,6 @@ class Client:
         ):
             try:
                 await self._process.wait_stdin_ready()
-
-                if isinstance(self.get_router(), MacRouter):
-                    await self._process.escape_and_write_stdin(
-                        ["source", "/etc/profile"]
-                    )
-                    await self._process.escape_and_write_stdin([
-                        python_cmd,
-                        uniffi_path,
-                        object_name,
-                        container_ip,
-                        container_port,
-                    ])
 
                 # There are two scenarios when it comes to what port is being used to connect to the Pyro5 remote.
                 # Scenario 1 - docker with mapped ports mapped ports:

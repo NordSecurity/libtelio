@@ -6,14 +6,7 @@ from datetime import datetime
 from typing import AsyncIterator
 from utils.connection import Connection, TargetOS
 from utils.process import Process
-
-
-def _get_python(connection: Connection) -> str:
-    if connection.target_os == TargetOS.Windows:
-        return "python"
-    if connection.target_os == TargetOS.Mac:
-        return "/usr/local/bin/python3"
-    return "python3"
+from utils.python import get_python_binary
 
 
 def _get_multicast_script_path(connection: Connection) -> str:
@@ -31,7 +24,7 @@ class MulticastClient:
     def __init__(self, connection: Connection, protocol: str) -> None:
         self._connection = connection
         self._process = connection.create_process([
-            _get_python(connection),
+            get_python_binary(connection),
             _get_multicast_script_path(connection),
             f"--{protocol}",
             "-c",
@@ -52,7 +45,7 @@ class MulticastServer:
         self._connection = connection
         self._server_ready_event = Event()
         self._process = connection.create_process([
-            _get_python(connection),
+            get_python_binary(connection),
             _get_multicast_script_path(connection),
             f"--{protocol}",
             "-s",
