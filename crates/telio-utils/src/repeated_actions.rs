@@ -119,6 +119,13 @@ where
             .ok_or(RepeatedActionError::RepeatedActionNotFound)
             .map(|(s, f)| (s, f.clone()))
     }
+
+    /// Returns the interval period in seconds
+    pub fn get_interval(&self, key: &K) -> Option<u32> {
+        self.actions
+            .get(key)
+            .and_then(|(i, _)| i.period().as_secs().try_into().ok())
+    }
 }
 
 impl<K, C, R, const N: usize> From<[Action<K, C, R>; N]> for RepeatedActions<K, C, R>

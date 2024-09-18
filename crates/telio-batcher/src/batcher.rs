@@ -113,6 +113,12 @@ where
         self.actions.insert(key, (entry, action));
         self.notify_add.notify_waiters();
     }
+
+    pub fn get_interval(&self, key: &K) -> Option<u32> {
+        self.actions
+            .get(key)
+            .and_then(|(entry, _)| entry.interval.as_secs().try_into().ok())
+    }
 }
 
 /// Tests provide near-perfect immediate sleeps due to how tokio runtime acts when it's paused(basically sleeps are resolved immediately)

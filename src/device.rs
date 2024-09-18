@@ -2319,8 +2319,14 @@ impl TaskRuntime for Runtime {
                                 // We have downgraded the connection. Notify cross ping check about that.
                                 direct_entities.cross_ping_check.notify_failed_wg_connection(public_key)
                                     .await?;
-                                direct_entities.session_keeper.remove_node(&public_key).await?;
                                 direct_entities.upgrade_sync.clear_accepted_session(public_key).await;
+
+                                if self.features.batching.is_none() {
+                                    // When the batcher is enabled we use session keeper for all the connections
+                                    // direct, proxy, vpn and stun. This call is guarded by the batcher feature flag
+                                    // because it can disable keepalives when we don't want to.
+                                    direct_entities.session_keeper.remove_node(&public_key).await?;
+                                }
                             } else {
                                 telio_log_warn!("Connection downgraded while direct entities are disabled");
                             }
