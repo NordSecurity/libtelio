@@ -1,16 +1,17 @@
 use super::{Error, WireGuardEndpointCandidateChangeEvent};
 use crate::{
+    do_state_transition,
     endpoint_providers::{
         EndpointCandidate, EndpointCandidatesChangeEvent, EndpointProvider, EndpointProviderType,
         Error as EndPointError, PongEvent,
     },
+    endpoint_state::{EndpointState, EndpointStateMachine, Event},
     last_rx_time_provider::{is_peer_alive, TimeSinceLastRxProvider},
     ping_pong_handler::PingPongHandler,
 };
 use async_trait::async_trait;
 use enum_map::EnumMap;
 use futures::Future;
-use sm::sm;
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
@@ -32,56 +33,6 @@ use tokio::time::{Instant, Interval};
 const CPC_TIMEOUT: Duration = Duration::from_secs(10);
 const UPGRADE_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_SESSION_CANDIDATES: usize = 512;
-
-// Cross ping state machine definintion
-sm! {
-    EndpointState {
-        InitialStates { Disconnected }
-
-        SendCallMeMaybeRequest {
-            Disconnected => EndpointGathering
-        }
-
-        ReceiveCallMeMaybeResponse {
-            EndpointGathering => Ping
-        }
-
-        Publish {
-            Ping => Published
-        }
-
-        Timeout {
-            EndpointGathering => Disconnected
-            Ping => Disconnected
-        }
-
-        EndpointGone {
-            Published => Disconnected
-        }
-    }
-}
-use EndpointState::Variant::*;
-use EndpointState::*;
-macro_rules! do_state_transition {
-    ($machine: expr, $event: expr, $ep: expr) => {{
-        if $machine.state() == EndpointState::Published || $event == EndpointState::Publish {
-            do_state_transition!($machine, $event, $ep, telio_log_info);
-        } else {
-            do_state_transition!($machine, $event, $ep, telio_log_debug);
-        }
-    }};
-    ($machine: expr, $event: expr, $ep: expr, $log: ident) => {{
-        $log!(
-            "Node's {:?} EP {:?} state transition {:?} -> {:?}",
-            $ep.public_key,
-            $ep.local_endpoint_candidate.udp,
-            $machine.state(),
-            $event
-        );
-        $ep.last_state_transition = Instant::now();
-        $ep.state = $machine.transition($event).as_enum();
-    }};
-}
 
 #[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
 #[async_trait]
@@ -278,8 +229,8 @@ impl CrossPingCheckTrait for CrossPingCheck {
                 Ok(s.endpoint_connectivity_check_state
                     .iter()
                     .filter_map(
-                        |(session, v)| match (v.state.clone(), v.last_validated_endpoint) {
-                            (PublishedByPublish(_), Some(ep)) => Some((
+                        |(session, v)| match (v.state.get(), v.last_validated_endpoint) {
+                            (EndpointState::Published, Some(ep)) => Some((
                                 v.public_key,
                                 WireGuardEndpointCandidateChangeEvent {
                                     public_key: v.public_key,
@@ -312,7 +263,7 @@ impl CrossPingCheckTrait for CrossPingCheck {
                 .values_mut()
                 .filter(|v| v.public_key == public_key);
             for session in sessions {
-                session.handle_endpoint_succesfull_notification();
+                session.handle_endpoint_successfull_notification();
             }
             Ok(())
         })
@@ -398,7 +349,7 @@ impl<E: Backoff> State<E> {
                     let session = EndpointConnectivityCheckState {
                         public_key: added_node,
                         local_endpoint_candidate: endpoint.clone(),
-                        state: Machine::new(Disconnected).as_enum(),
+                        state: EndpointStateMachine::default(),
                         last_state_transition: Instant::now(),
                         last_validated_endpoint: None,
                         last_rx_time_provider: self.last_rx_time_provider.clone(),
@@ -463,7 +414,7 @@ impl<E: Backoff> State<E> {
                     public_key: node,
                     local_endpoint_candidate: added_endpoint.clone(),
                     local_session: session_id,
-                    state: Machine::new(Disconnected).as_enum(),
+                    state: EndpointStateMachine::default(),
                     last_state_transition: Instant::now(),
                     last_validated_endpoint: None,
                     last_rx_time_provider: self.last_rx_time_provider.clone(),
@@ -737,7 +688,7 @@ pub struct EndpointConnectivityCheckState<E: Backoff> {
     public_key: PublicKey,
     local_endpoint_candidate: EndpointCandidate,
     local_session: Session,
-    state: EndpointState::Variant,
+    state: EndpointStateMachine,
     last_state_transition: Instant,
     last_validated_endpoint: Option<(SocketAddr, ApiEndpointProvider)>,
     last_rx_time_provider: Option<Arc<dyn TimeSinceLastRxProvider>>,
@@ -792,18 +743,18 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
     }
 
     async fn handle_endpoint_gone_notification(&mut self) -> Result<(), Error> {
-        if let PublishedByPublish(m) = self.state.clone() {
+        if self.state.get() == &EndpointState::Published {
             telio_log_info!(
                 "Endpoint gone, next retry after {}s",
                 self.exponential_backoff.get_backoff().as_secs_f64()
             );
-            do_state_transition!(m, EndpointGone, self);
+            do_state_transition!(self, Event::EndpointGone);
         }
         Ok(())
     }
 
-    fn handle_endpoint_succesfull_notification(&mut self) {
-        if let PublishedByPublish(_) = self.state.clone() {
+    fn handle_endpoint_successfull_notification(&mut self) {
+        if self.state.get() == &EndpointState::Published {
             self.exponential_backoff.reset();
         }
     }
@@ -814,8 +765,8 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
         (public_key, message): (PublicKey, CallMeMaybeMsg),
         ep_providers: Vec<Arc<dyn EndpointProvider>>,
     ) -> Result<(), Error> {
-        match self.state.clone() {
-            EndpointGatheringBySendCallMeMaybeRequest(m) => {
+        match self.state.get() {
+            EndpointState::EndpointGathering => {
                 telio_log_debug!(
                     "Received a CMM response from {:?}: {:?}",
                     public_key,
@@ -832,7 +783,7 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
                     .await?;
                 }
 
-                do_state_transition!(m, ReceiveCallMeMaybeResponse, self);
+                do_state_transition!(self, Event::ReceiveCallMeMaybeResponse);
             }
             _ => {
                 telio_log_warn!("Received a CMM response for session {:?} during non-gather state {:?}. Ignoring", message.get_session(), self.state);
@@ -847,8 +798,8 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
         event: PongEvent,
         wg_ep_publisher: chan::Tx<WireGuardEndpointCandidateChangeEvent>,
     ) -> Result<(), Error> {
-        match self.state.clone() {
-            PingByReceiveCallMeMaybeResponse(m) => {
+        match self.state.get() {
+            EndpointState::Ping => {
                 let nice_ep_provider = matches!(
                     event.msg.get_ponging_ep_provider(),
                     Ok(Some(telio_model::features::EndpointProvider::Local))
@@ -868,7 +819,7 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
                             }
                         };
 
-                        do_state_transition!(m, Publish, self);
+                        do_state_transition!(self, Event::Publish);
                         let wg_publish_event = WireGuardEndpointCandidateChangeEvent {
                             public_key: self.public_key,
                             remote_endpoint: (remote_endpoint, remote_endpoint_type),
@@ -949,32 +900,32 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
         let duration_in_state = Instant::now() - self.last_state_transition;
         let timeout = CPC_TIMEOUT; // TODO: make configurable
 
-        match self.state.clone() {
-            EndpointGatheringBySendCallMeMaybeRequest(m) => {
+        match (self.state.get(), self.state.last_event()) {
+            (EndpointState::EndpointGathering, _) => {
                 if duration_in_state > timeout {
                     // Timeout occured
                     telio_log_debug!(
                         "Timeout waiting for CMM response, next retry after {}s",
                         self.exponential_backoff.get_backoff().as_secs_f64()
                     );
-                    do_state_transition!(m, Timeout, self);
+                    do_state_transition!(self, Event::Timeout);
                 }
             }
-            PingByReceiveCallMeMaybeResponse(m) => {
+            (EndpointState::Ping, _) => {
                 if duration_in_state > timeout {
                     // Timeout occured
                     telio_log_debug!(
                         "Timeout waiting for pongs, next retry after {}s",
                         self.exponential_backoff.get_backoff().as_secs_f64()
                     );
-                    do_state_transition!(m, Timeout, self);
+                    do_state_transition!(self, Event::Timeout);
                 }
             }
-            InitialDisconnected(m) => {
+            (EndpointState::Disconnected, None) => {
                 self.send_call_me_maybe_request(session, intercoms).await?;
-                do_state_transition!(m, SendCallMeMaybeRequest, self);
+                do_state_transition!(self, Event::SendCallMeMaybeRequest);
             }
-            DisconnectedByTimeout(m) => {
+            (EndpointState::Disconnected, Some(Event::Timeout)) => {
                 match self
                     .should_resend_call_me_maybe_request(duration_in_state)
                     .await
@@ -982,7 +933,7 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
                     ShouldSendCMMResult::Yes => {
                         self.exponential_backoff.next_backoff();
                         self.send_call_me_maybe_request(session, intercoms).await?;
-                        do_state_transition!(m, SendCallMeMaybeRequest, self);
+                        do_state_transition!(self, Event::SendCallMeMaybeRequest);
                     }
                     reason => {
                         telio_log_debug!(
@@ -992,7 +943,7 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
                     }
                 }
             }
-            DisconnectedByEndpointGone(m) => {
+            (EndpointState::Disconnected, Some(Event::EndpointGone)) => {
                 match self
                     .should_resend_call_me_maybe_request(duration_in_state)
                     .await
@@ -1000,7 +951,7 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
                     ShouldSendCMMResult::Yes => {
                         self.exponential_backoff.next_backoff();
                         self.send_call_me_maybe_request(session, intercoms).await?;
-                        do_state_transition!(m, SendCallMeMaybeRequest, self);
+                        do_state_transition!(self, Event::SendCallMeMaybeRequest);
                     }
                     reason => {
                         telio_log_debug!(
@@ -1038,8 +989,6 @@ mod tests {
         sync::mpsc::{Receiver, Sender},
         time::{self, Instant},
     };
-
-    use assert_matches::assert_matches;
 
     use telio_crypto::{PublicKey, SecretKey};
     use telio_model::{
@@ -1155,7 +1104,7 @@ mod tests {
     }
 
     fn prepare_test_session_in_state(
-        state: EndpointState::Variant,
+        state: (EndpointState, Option<Event>),
         endpoint: SocketAddr,
         last_rx_time_provider: Arc<dyn TimeSinceLastRxProvider>,
     ) -> EndpointConnectivityCheckState<MockBackoff> {
@@ -1166,7 +1115,7 @@ mod tests {
                 udp: endpoint,
             },
             local_session: rand::random(),
-            state,
+            state: EndpointStateMachine::new(state.0, state.1),
             last_state_transition: Instant::now(),
             last_validated_endpoint: None,
             last_rx_time_provider: Some(last_rx_time_provider),
@@ -1242,7 +1191,7 @@ mod tests {
     async fn endpoint_connectivity_check_state_send_cmm_request() {
         let last_rx_time_provider_mock = Arc::new(Mutex::new(MockTimeSinceLastRxProvider::new()));
         let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
-            Machine::new(Disconnected).as_enum(),
+            (EndpointState::Disconnected, None),
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080),
             last_rx_time_provider_mock,
         );
@@ -1253,9 +1202,12 @@ mod tests {
             .await
             .unwrap();
 
-        assert_matches!(
+        assert_eq!(
             endpoint_connectivity_check_state.state,
-            EndpointGatheringBySendCallMeMaybeRequest(_)
+            (
+                EndpointState::EndpointGathering,
+                Some(Event::SendCallMeMaybeRequest)
+            ),
         );
     }
 
@@ -1268,9 +1220,10 @@ mod tests {
             .expect_send_ping()
             .returning(|_, _, _| Ok(()));
         let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
-            Machine::new(Disconnected)
-                .transition(SendCallMeMaybeRequest)
-                .as_enum(),
+            (
+                EndpointState::EndpointGathering,
+                Some(Event::SendCallMeMaybeRequest),
+            ),
             endpoint,
             last_rx_time_provider_mock.clone(),
         );
@@ -1285,9 +1238,9 @@ mod tests {
             .await
             .unwrap();
 
-        assert_matches!(
+        assert_eq!(
             endpoint_connectivity_check_state.state,
-            PingByReceiveCallMeMaybeResponse(_)
+            (EndpointState::Ping, Some(Event::ReceiveCallMeMaybeResponse))
         );
     }
 
@@ -1296,10 +1249,7 @@ mod tests {
         let last_rx_time_provider_mock = Arc::new(Mutex::new(MockTimeSinceLastRxProvider::new()));
         let endpoint = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080);
         let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
-            Machine::new(Disconnected)
-                .transition(SendCallMeMaybeRequest)
-                .transition(ReceiveCallMeMaybeResponse)
-                .as_enum(),
+            (EndpointState::Ping, Some(Event::ReceiveCallMeMaybeResponse)),
             endpoint,
             last_rx_time_provider_mock.clone(),
         );
@@ -1323,9 +1273,9 @@ mod tests {
             .await
             .unwrap();
 
-        assert_matches!(
+        assert_eq!(
             endpoint_connectivity_check_state.state,
-            PublishedByPublish(_)
+            (EndpointState::Published, Some(Event::Publish))
         );
     }
 
@@ -1333,11 +1283,7 @@ mod tests {
     async fn endpoint_connectivity_check_state_endpoint_gone() {
         let last_rx_time_provider_mock = Arc::new(Mutex::new(MockTimeSinceLastRxProvider::new()));
         let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
-            Machine::new(Disconnected)
-                .transition(SendCallMeMaybeRequest)
-                .transition(ReceiveCallMeMaybeResponse)
-                .transition(Publish)
-                .as_enum(),
+            (EndpointState::Published, Some(Event::Publish)),
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080),
             last_rx_time_provider_mock.clone(),
         );
@@ -1347,9 +1293,9 @@ mod tests {
             .await
             .unwrap();
 
-        assert_matches!(
+        assert_eq!(
             endpoint_connectivity_check_state.state,
-            DisconnectedByEndpointGone(_)
+            (EndpointState::Disconnected, Some(Event::EndpointGone))
         );
     }
 
@@ -1357,9 +1303,10 @@ mod tests {
     async fn endpoint_connectivity_check_state_timeout_endpoint_gathering() {
         let last_rx_time_provider_mock = Arc::new(Mutex::new(MockTimeSinceLastRxProvider::new()));
         let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
-            Machine::new(Disconnected)
-                .transition(SendCallMeMaybeRequest)
-                .as_enum(),
+            (
+                EndpointState::EndpointGathering,
+                Some(Event::SendCallMeMaybeRequest),
+            ),
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080),
             last_rx_time_provider_mock.clone(),
         );
@@ -1370,9 +1317,9 @@ mod tests {
             .await
             .unwrap();
 
-        assert_matches!(
+        assert_eq!(
             endpoint_connectivity_check_state.state,
-            DisconnectedByTimeout(_)
+            (EndpointState::Disconnected, Some(Event::Timeout))
         );
     }
 
@@ -1380,9 +1327,10 @@ mod tests {
     async fn endpoint_connectivity_check_state_timeout_ping() {
         let last_rx_time_provider_mock = Arc::new(Mutex::new(MockTimeSinceLastRxProvider::new()));
         let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
-            Machine::new(Disconnected)
-                .transition(SendCallMeMaybeRequest)
-                .as_enum(),
+            (
+                EndpointState::EndpointGathering,
+                Some(Event::SendCallMeMaybeRequest),
+            ),
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080),
             last_rx_time_provider_mock.clone(),
         );
@@ -1393,9 +1341,9 @@ mod tests {
             .await
             .unwrap();
 
-        assert_matches!(
+        assert_eq!(
             endpoint_connectivity_check_state.state,
-            DisconnectedByTimeout(_)
+            (EndpointState::Disconnected, Some(Event::Timeout))
         );
     }
 
@@ -1408,7 +1356,7 @@ mod tests {
             .expect_max_no_rx_time()
             .return_const(Duration::from_secs(180));
         let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
-            Machine::new(Disconnected).as_enum(),
+            (EndpointState::Disconnected, None),
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080),
             last_rx_time_provider_mock.clone(),
         );
@@ -1500,9 +1448,10 @@ mod tests {
             .returning(|_, _, _| Ok(()));
 
         let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
-            Machine::new(Disconnected)
-                .transition(SendCallMeMaybeRequest)
-                .as_enum(),
+            (
+                EndpointState::EndpointGathering,
+                Some(Event::SendCallMeMaybeRequest),
+            ),
             endpoint,
             last_rx_time_provider_mock.clone(),
         );
@@ -1520,9 +1469,9 @@ mod tests {
             .await
             .unwrap();
 
-        assert_matches!(
+        assert_eq!(
             endpoint_connectivity_check_state.state,
-            PingByReceiveCallMeMaybeResponse(_)
+            (EndpointState::Ping, Some(Event::ReceiveCallMeMaybeResponse))
         );
     }
 
@@ -1533,7 +1482,7 @@ mod tests {
     async fn failure_to_get_last_rx_time_means_peer_is_dead(#[case] which_error: u8) {
         let last_rx_time_provider_mock = Arc::new(Mutex::new(MockTimeSinceLastRxProvider::new()));
         let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
-            Machine::new(Disconnected).as_enum(),
+            (EndpointState::Disconnected, None),
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080),
             last_rx_time_provider_mock.clone(),
         );
@@ -1584,10 +1533,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(matches!(
+        assert_eq!(
             endpoint_connectivity_check_state.state,
-            DisconnectedByTimeout(_)
-        ));
+            (EndpointState::Disconnected, Some(Event::Timeout))
+        );
 
         // Skip the expected time
         let time_to_skip = Duration::from_millis(backoff + 1);
