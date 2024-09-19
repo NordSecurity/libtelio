@@ -1,6 +1,7 @@
 use std::{
     net::{IpAddr, SocketAddr},
     sync::Arc,
+    time::Duration,
 };
 
 use async_trait::async_trait;
@@ -15,7 +16,13 @@ use telio_task::{
     io::{wait_for_tx, Chan},
     task_exec, Runtime, RuntimeExt, Task, WaitResponse,
 };
-use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn};
+use telio_utils::{
+    exponential_backoff::{
+        Backoff, Error as ExponentialBackoffError, ExponentialBackoff, ExponentialBackoffBounds,
+    },
+    PinnedSleep,
+};
+use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn};
 
 use telio_model::constants::{
     IPV4_MULTICAST_NETWORK, IPV4_STARCAST_ADDRESS, IPV6_MULTICAST_NETWORK, IPV6_STARCAST_ADDRESS,
@@ -61,6 +68,12 @@ pub enum Error {
     /// Task execution failed
     #[error(transparent)]
     TaskError(#[from] telio_task::ExecError),
+    /// Transport socket isn't open yet, probably because tunnel interface hadn't been configured yet.
+    #[error("Transport socket isn't open yet")]
+    TransportSocketNotOpen,
+    /// Exponential backoff error
+    #[error(transparent)]
+    ExponentialBackoffError(#[from] ExponentialBackoffError),
 }
 
 /// A peer in the meshnet
@@ -91,7 +104,7 @@ impl Transport {
     /// Starts the transport component
     ///
     /// Parameters:
-    /// * meshnet_ip - the meshnet IP of the node on which this component is currently running
+    /// * meshnet_ip - The meshnet IP of the node on which this component is currently running
     /// * socket_pool - To create the transport socket
     /// * packet_chan - A channel to send packets to and receive packets from the virtual peer component
     pub async fn start(
@@ -99,16 +112,29 @@ impl Transport {
         socket_pool: Arc<SocketPool>,
         packet_chan: Chan<Vec<u8>>,
     ) -> Result<Self, Error> {
-        let transport_socket = socket_pool
-            .new_internal_udp(SocketAddr::new(meshnet_ip, MULTICAST_TRANSPORT_PORT), None)
-            .await
-            .map_err(|e| {
-                telio_log_error!("Failed to bind multicast socket: {:?}", e);
-                Error::SocketBindError(e.to_string())
-            })?;
-        let transport_socket = Arc::new(transport_socket);
-
         let multicast_ips = vec![IPV4_MULTICAST_NETWORK.into(), IPV6_MULTICAST_NETWORK.into()];
+        let exponential_backoff = ExponentialBackoff::new(ExponentialBackoffBounds {
+            initial: Duration::from_secs(2),
+            maximal: Some(Duration::from_secs(120)),
+        })?;
+        // If transport socket cannot be opened right now (for example, if meshnet had been started before
+        // the tunnel interface's IP had been configured), transport socket cannot be opened at start and
+        // will be opened later. In the mean time the channel between the starcast peer and transport
+        // component will buffer the multicast messages until the transport socket will be opened. If the
+        // buffers fill up, the messages will be ignored.
+        let transport_socket =
+            match open_transport_socket(socket_pool.clone(), meshnet_ip, MULTICAST_TRANSPORT_PORT)
+                .await
+            {
+                Ok(transport_socket) => Some(transport_socket),
+                Err(_) => {
+                    telio_log_warn!(
+                        "Starcast will try to open transport socket again in {:?}",
+                        exponential_backoff.get_backoff()
+                    );
+                    None
+                }
+            };
 
         Ok(Self {
             task: Task::start(State {
@@ -118,6 +144,9 @@ impl Transport {
                 recv_buffer: vec![0; MAX_PACKET_SIZE],
                 nat: StarcastNat::new(IPV4_STARCAST_ADDRESS, IPV6_STARCAST_ADDRESS),
                 peers: Vec::new(),
+                socket_pool,
+                meshnet_ip,
+                exponential_backoff,
             }),
         })
     }
@@ -138,13 +167,32 @@ impl Transport {
     }
 }
 
+async fn open_transport_socket(
+    socket_pool: Arc<SocketPool>,
+    ip: IpAddr,
+    port: u16,
+) -> Result<Arc<UdpSocket>, Error> {
+    let transport_socket = socket_pool
+        .new_internal_udp(SocketAddr::new(ip, port), None)
+        .await
+        .map_err(|e| {
+            telio_log_warn!("Failed to bind multicast socket: {:?}", e);
+            Error::SocketBindError(e.to_string())
+        })?;
+
+    Ok(Arc::new(transport_socket))
+}
+
 struct State {
-    transport_socket: Arc<UdpSocket>,
+    transport_socket: Option<Arc<UdpSocket>>,
     packet_chan: Chan<Vec<u8>>,
     recv_buffer: Vec<u8>,
     nat: StarcastNat,
     peers: Vec<Peer>,
     multicast_ips: Vec<IpNet>,
+    socket_pool: Arc<SocketPool>,
+    meshnet_ip: IpAddr,
+    exponential_backoff: ExponentialBackoff,
 }
 
 impl State {
@@ -165,8 +213,11 @@ impl State {
     }
 
     async fn handle_local_multicast_packet(&mut self, packet: Vec<u8>) -> Result<(), Error> {
+        let Some(transport_socket) = self.transport_socket.as_ref() else {
+            return Err(Error::TransportSocketNotOpen);
+        };
         let failed_peers = join_all(self.peers.iter().map(|peer| {
-            self.transport_socket
+            transport_socket
                 .send_to(&packet, peer.addr)
                 .map_err(|_| peer.public_key)
         }))
@@ -197,6 +248,8 @@ impl State {
             .map(|p| p.addr)
             .ok_or(Error::NoIpForPeer)?;
         self.transport_socket
+            .as_ref()
+            .ok_or(Error::TransportSocketNotOpen)?
             .send_to(&packet, peer_ip)
             .await
             .map(|_| ())
@@ -228,6 +281,30 @@ impl Runtime for State {
     type Err = Error;
 
     async fn wait(&mut self) -> WaitResponse<'_, Self::Err> {
+        let transport_socket = match &self.transport_socket {
+            Some(transport_socket) => transport_socket.to_owned(),
+            None => {
+                PinnedSleep::new(self.exponential_backoff.get_backoff(), ()).await;
+                let Ok(transport_socket) = open_transport_socket(
+                    self.socket_pool.clone(),
+                    self.meshnet_ip,
+                    MULTICAST_TRANSPORT_PORT,
+                )
+                .await
+                else {
+                    telio_log_warn!(
+                        "Starcast transport socket still not opened, will retry in {:?}",
+                        self.exponential_backoff.get_backoff()
+                    );
+                    self.exponential_backoff.next_backoff();
+                    return Self::next();
+                };
+                telio_log_info!("Starcast transport socket opened");
+                self.transport_socket = Some(transport_socket.clone());
+                self.exponential_backoff.reset();
+                transport_socket
+            }
+        };
         let res = tokio::select! {
             Some(mut packet) = self.packet_chan.rx.recv() => {
                 match self.has_multicast_dst(&mut packet) {
@@ -236,7 +313,7 @@ impl Runtime for State {
                     Err(e) => Err(e),
                 }
             }
-            Some((permit, Ok(bytes_read))) = wait_for_tx(&self.packet_chan.tx, self.transport_socket.recv(&mut self.recv_buffer)) => {
+            Some((permit, Ok(bytes_read))) = wait_for_tx(&self.packet_chan.tx, transport_socket.recv(&mut self.recv_buffer)) => {
                 #[allow(clippy::expect_used)]
                 let mut packet = self.recv_buffer.get(..bytes_read).expect("We know bytes_read bytes should be in the buffer at this point").to_vec();
                 self.nat.translate_incoming(&mut packet)
@@ -259,7 +336,7 @@ impl Runtime for State {
 
 #[cfg(test)]
 mod tests {
-    use std::net::SocketAddrV4;
+    use std::{net::Ipv4Addr, time::Duration};
 
     use pnet_packet::{ipv4::Ipv4Packet, udp::UdpPacket};
     use telio_crypto::SecretKey;
@@ -293,14 +370,29 @@ mod tests {
                 })
                 .collect();
             let multicast_ips = vec![IpNet::new("224.0.0.0".parse().unwrap(), 4).unwrap()];
+            let socket_pool = SocketPool::new(
+                telio_sockets::NativeProtector::new(
+                    #[cfg(target_os = "macos")]
+                    false,
+                )
+                .unwrap(),
+            );
+
+            let exponential_backoff_bounds = ExponentialBackoffBounds {
+                initial: Duration::from_secs(2),
+                maximal: Some(Duration::from_secs(120)),
+            };
 
             let task = Task::start(State {
-                transport_socket: transport_socket.clone(),
+                transport_socket: Some(transport_socket.clone()),
                 packet_chan,
                 recv_buffer: vec![0; TEST_MAX_PACKET_SIZE],
                 nat: StarcastNat::new(IPV4_NAT_ADDR, IPV6_NAT_ADDR),
                 peers: task_peers,
+                exponential_backoff: ExponentialBackoff::new(exponential_backoff_bounds).unwrap(),
                 multicast_ips,
+                meshnet_ip: IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
+                socket_pool: Arc::new(socket_pool),
             });
 
             Self {
@@ -320,6 +412,42 @@ mod tests {
                 .await
                 .unwrap()
         }
+    }
+
+    #[tokio::test]
+    async fn test_transport_socket_wait() {
+        let (packet_chan, external_packet_chan) = Chan::pipe();
+        // The `transport_socket` field get's abstracted away and becomes inaccessible from the `Scaffold`
+        // struct, so just creating the `State` and running `.wait()` manually.
+        let mut state = State {
+            transport_socket: None,
+            packet_chan,
+            recv_buffer: vec![0; TEST_MAX_PACKET_SIZE],
+            nat: StarcastNat::new(IPV4_NAT_ADDR, IPV6_NAT_ADDR),
+            peers: vec![],
+            exponential_backoff: ExponentialBackoff::new(ExponentialBackoffBounds {
+                initial: Duration::from_millis(10),
+                maximal: Some(Duration::from_millis(120)),
+            })
+            .unwrap(),
+            multicast_ips: vec![IpNet::new("224.0.0.0".parse().unwrap(), 4).unwrap()],
+            // Using loopback IP here, because it's guaranteed to be available:
+            meshnet_ip: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            socket_pool: Arc::new(SocketPool::new(
+                telio_sockets::NativeProtector::new(
+                    #[cfg(target_os = "macos")]
+                    false,
+                )
+                .unwrap(),
+            )),
+        };
+
+        // Dropping the packet channel here so the wait loop doesn't wait forever for a packet to arrive
+        // since we're only interested in the `transport_socket` field anyway.
+        std::mem::drop(external_packet_chan);
+        state.wait().await;
+
+        assert!(state.transport_socket.is_some());
     }
 
     #[tokio::test]
@@ -412,17 +540,32 @@ mod tests {
         use super::*;
 
         async fn create_state_with_multicast_ips(multicast_ips: Vec<IpNet>) -> State {
+            let socket_pool = SocketPool::new(
+                telio_sockets::NativeProtector::new(
+                    #[cfg(target_os = "macos")]
+                    false,
+                )
+                .unwrap(),
+            );
+            let exponential_backoff_bounds = ExponentialBackoffBounds {
+                initial: Duration::from_secs(2),
+                maximal: Some(Duration::from_secs(120)),
+            };
+
             State {
-                transport_socket: Arc::new(
+                transport_socket: Some(Arc::new(
                     UdpSocket::bind(SocketAddr::new("127.0.0.1".parse().unwrap(), 0))
                         .await
                         .unwrap(),
-                ),
+                )),
                 packet_chan: Chan::new(1),
                 recv_buffer: Vec::new(),
                 nat: StarcastNat::new(IPV4_NAT_ADDR, IPV6_NAT_ADDR),
                 peers: Vec::new(),
+                exponential_backoff: ExponentialBackoff::new(exponential_backoff_bounds).unwrap(),
                 multicast_ips,
+                meshnet_ip: IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
+                socket_pool: Arc::new(socket_pool),
             }
         }
 
