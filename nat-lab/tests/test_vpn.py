@@ -22,7 +22,7 @@ from utils.connection_tracker import (
     TcpState,
 )
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
-from utils.output_notifier import OutputNotifier
+from utils.netcat import NetCatClient
 from utils.ping import ping
 from utils.python import get_python_binary
 from utils.router import IPProto, IPStack
@@ -406,16 +406,8 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
             config.WG_SERVER,
         )
 
-        output_notifier = OutputNotifier()
-
-        sender_start_event = asyncio.Event()
         close_event_1 = asyncio.Event()
         close_event_2 = asyncio.Event()
-
-        output_notifier.notify_output(
-            "80 port [tcp/*] succeeded!",
-            sender_start_event,
-        )
 
         async with ConnectionTracker(
             connection,
@@ -436,45 +428,35 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
             )
             alpha_ip = testing.unpack_optional(alpha.get_ip_address(ip_proto))
 
-            await exit_stack.enter_async_context(
-                connection.create_process([
-                    "nc",
-                    "-nv",
-                    "-6" if setup_params.ip_stack == IPStack.IPv6 else "-4",
-                    "-s",
-                    alpha_ip,
+            nc_client_1 = await exit_stack.enter_async_context(
+                NetCatClient(
+                    connection,
                     serv_ip,
-                    str(80),
-                ]).run(
-                    stdout_callback=output_notifier.handle_output,
-                    stderr_callback=output_notifier.handle_output,
-                )
+                    80,
+                    ipv6=ip_proto == IPProto.IPv6,
+                    source_ip=alpha_ip,
+                ).run()
             )
 
             # Second client, this time sending some data to check proper TCP sequence number generation
-            proc = await exit_stack.enter_async_context(
-                connection.create_process([
-                    "nc",
-                    "-nv",
-                    "-6" if setup_params.ip_stack == IPStack.IPv6 else "-4",
-                    "-s",
-                    alpha_ip,
+            nc_client_2 = await exit_stack.enter_async_context(
+                NetCatClient(
+                    connection,
                     serv_ip,
-                    str(80),
-                ]).run(
-                    stdout_callback=output_notifier.handle_output,
-                    stderr_callback=output_notifier.handle_output,
-                )
+                    80,
+                    ipv6=ip_proto == IPProto.IPv6,
+                    source_ip=alpha_ip,
+                ).run()
             )
 
-            await proc.wait_stdin_ready()
-            await asyncio.sleep(2.0)
-            # Without this sleep nc get EOF on stdin for some reason
-            await proc.write_stdin("GET")
-
             # Wait for both netcat processes
-            await sender_start_event.wait()
-            await sender_start_event.wait()
+            await asyncio.gather(
+                nc_client_1.connection_succeeded(), nc_client_2.connection_succeeded()
+            )
+
+            # exchange some data
+            await nc_client_2.send_data("GET")
+            await nc_client_2.receive_data()
 
             # the key is generated uniquely each time natlab runs
             await client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
@@ -554,38 +536,23 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
             config.WG_SERVER,
         )
 
-        output_notifier = OutputNotifier()
-
-        sender_start_event = asyncio.Event()
-
-        output_notifier.notify_output(
-            "[udp/*] succeeded!",
-            sender_start_event,
-        )
-
         ip_proto = (
             IPProto.IPv6 if setup_params.ip_stack == IPStack.IPv6 else IPProto.IPv4
         )
         alpha_ip = testing.unpack_optional(alpha.get_ip_address(ip_proto))
 
-        proc = connection.create_process([
-            "nc",
-            "-nuv",
-            "-6" if setup_params.ip_stack == IPStack.IPv6 else "-4",
-            "-s",
-            alpha_ip,
-            serv_ip,
-            str(2000),
-        ])
-
-        await exit_stack.enter_async_context(
-            proc.run(
-                stdout_callback=output_notifier.handle_output,
-                stderr_callback=output_notifier.handle_output,
-            )
+        nc_client = await exit_stack.enter_async_context(
+            NetCatClient(
+                connection,
+                serv_ip,
+                2000,
+                udp=True,
+                ipv6=ip_proto == IPProto.IPv6,
+                source_ip=alpha_ip,
+            ).run()
         )
 
-        await sender_start_event.wait()
+        await nc_client.connection_succeeded()
         await client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
 
         await connect(
@@ -593,7 +560,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
         )
 
         # nc client should be closed by the reset mechanism
-        await proc.is_done()
+        await nc_client.is_done()
 
 
 @pytest.mark.parametrize(
