@@ -77,7 +77,7 @@ def pytest_make_parametrize_id(config, val):
             and val.features.direct.providers is not None
         ):
             for provider in val.features.direct.providers:
-                param_id += f"-{provider}"
+                param_id += f"-{provider.name}"
 
         if val.features.batching is not None:
             param_id += (

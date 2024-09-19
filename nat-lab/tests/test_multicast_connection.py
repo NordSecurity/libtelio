@@ -2,8 +2,8 @@ import pytest
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
 from telio import AdapterType
-from telio_features import TelioFeatures
 from typing import List, Tuple
+from utils.bindings import default_features
 from utils.connection_util import ConnectionTag, Connection, TargetOS
 from utils.multicast import MulticastClient, MulticastServer
 
@@ -15,9 +15,7 @@ def generate_setup_parameter_pair(
         SetupParameters(
             connection_tag=conn_tag,
             adapter_type=adapter_type,
-            features=TelioFeatures(
-                multicast=True,
-            ),
+            features=default_features(enable_multicast=True),
         )
         for conn_tag, adapter_type in cfg
     ]

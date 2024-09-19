@@ -1,9 +1,13 @@
 import Pyro5.errors  # type:ignore
 import time
+import uniffi.telio_bindings as libtelio
 from datetime import datetime
 from Pyro5.api import Proxy  # type: ignore
 from typing import Optional
-from uniffi.telio_bindings import NatType
+from uniffi.serialization import init_serialization  # type: ignore
+
+# This call will allow the proxy-side of the Pyro5 connection to handle types defined in libtelio.udl
+init_serialization(libtelio)
 
 
 class ProxyConnectionError(Exception):
@@ -15,7 +19,7 @@ class ProxyConnectionError(Exception):
 
 
 class LibtelioProxy:
-    def __init__(self, object_uri: str, features: str):
+    def __init__(self, object_uri: str, features: libtelio.Features):
         self._uri = object_uri
         iterations = 20
         for i in range(0, iterations):
@@ -66,7 +70,7 @@ class LibtelioProxy:
                 raise Exception(err)
             return res
 
-    def _create(self, features: str):
+    def _create(self, features: libtelio.Features):
         self.handle_remote_error(lambda r: r.create(features))
 
     def next_event(self):
@@ -129,5 +133,5 @@ class LibtelioProxy:
     def probe_pmtu(self, host: str) -> int:
         return self.handle_remote_error(lambda r: r.probe_pmtu(host))
 
-    def get_nat(self, ip: str, port: int) -> NatType:
+    def get_nat(self, ip: str, port: int) -> libtelio.NatType:
         return self.handle_remote_error(lambda r: r.get_nat(ip, port))
