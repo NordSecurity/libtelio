@@ -332,10 +332,11 @@ pub mod moose {
         derpConnectionDuration: i32,
         nat_monitoring: String,
         derp_monitoring: String,
+        debug_json: Option<String>,
     ) -> std::result::Result<Result, Error> {
         let heartbeatIntervalString = heartbeatInterval.to_string();
         let derpConnectionDurationStr = derpConnectionDuration.to_string();
-        let args = vec![
+        let mut args = vec![
             connectionDuration.as_str(),
             rtt.as_str(),
             rtt_loss.as_str(),
@@ -348,6 +349,9 @@ pub mod moose {
             nat_monitoring.as_str(),
             derp_monitoring.as_str(),
         ];
+        if let Some(dbg_json) = debug_json.as_ref() {
+            args.push(dbg_json.as_str());
+        }
 
         match super::event_log("send_serviceQuality_node_heartbeat", Some(args)) {
             Ok(_) => Ok(Result::Success),
@@ -370,10 +374,11 @@ pub mod moose {
         derpConnectionDuration: i32,
         nat_monitoring: String,
         derp_monitoring: String,
+        debug_json: Option<String>,
     ) -> std::result::Result<Result, Error> {
         let heartbeatIntervalString = heartbeatInterval.to_string();
         let derpConnectionDurationStr = derpConnectionDuration.to_string();
-        let args = vec![
+        let mut args = vec![
             connectionDuration.as_str(),
             rtt.as_str(),
             rtt_loss.as_str(),
@@ -386,6 +391,9 @@ pub mod moose {
             nat_monitoring.as_str(),
             derp_monitoring.as_str(),
         ];
+        if let Some(dbg_json) = debug_json.as_ref() {
+            args.push(dbg_json.as_str());
+        }
 
         match super::event_log("send_serviceQuality_node_disconnect", Some(args)) {
             Ok(_) => Ok(Result::Success),
@@ -410,18 +418,20 @@ pub mod moose {
         arbitraryIntegerValue: i32,
         logLevel: LibtelioappLogLevel,
         message: String,
+        debug_json: Option<String>,
     ) -> std::result::Result<Result, Error> {
         let arbitraryIntegerValue = arbitraryIntegerValue.to_string();
         let logLevel = format!("{logLevel:?}");
+        let mut args = vec![
+            arbitraryIntegerValue.as_str(),
+            logLevel.as_str(),
+            message.as_str(),
+        ];
+        if let Some(dbg_json) = debug_json.as_ref() {
+            args.push(dbg_json.as_str());
+        }
 
-        match super::event_log(
-            "send_developer_logging_log",
-            Some(vec![
-                arbitraryIntegerValue.as_str(),
-                logLevel.as_str(),
-                message.as_str(),
-            ]),
-        ) {
+        match super::event_log("send_developer_logging_log", Some(args)) {
             Ok(_) => Ok(Result::Success),
             _ => Err(Error::EventLogError),
         }
