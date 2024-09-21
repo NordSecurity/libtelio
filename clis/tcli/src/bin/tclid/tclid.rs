@@ -5,8 +5,9 @@ use std::fs;
 use anyhow::Result;
 use tracing::{info, level_filters::LevelFilter};
 
-use crate::{telio_cli_interface::TelioCliInterface, TcliDaemon};
-use daemon_common::{comms::DaemonSocket, daemon::Daemon};
+use crate::coms::DaemonSocket;
+use crate::get_ipc_socket_path;
+use crate::telio_cli_interface::TelioCliInterface;
 
 /// Function to setup the TCLID daemon's dependencies (including Telio itself) and and run it.
 /// AKA the event loop.
@@ -31,7 +32,7 @@ pub fn run_tclid(features: Option<String>) -> Result<()> {
 
     let nord_token = std::env::var("NORD_TOKEN").ok();
     let mut telio_cli = TelioCliInterface::new(nord_token, features)?;
-    let socket = DaemonSocket::new(&TcliDaemon::get_ipc_socket_path()?)?;
+    let socket = DaemonSocket::new(&get_ipc_socket_path()?)?;
     info!("Entered event loop");
 
     loop {

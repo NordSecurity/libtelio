@@ -1,6 +1,6 @@
 //! Main and implementation of config and commands for Teliod - simple telio daemon for Linux and OpenWRT
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::Parser;
 use nix::libc::SIGTERM;
 use signal_hook_tokio::Signals;
@@ -8,13 +8,15 @@ use std::{
     fs::{self, File},
     io::Write,
     path::{Path, PathBuf},
-    process::{self, id},
+    process::id,
     str::FromStr,
 };
-use tokio::{spawn, sync::mpsc};
-use tracing::{error, info, level_filters::LevelFilter, warn};
+use tracing::{error, info, level_filters::LevelFilter};
 
-use daemon_common::{comms::DaemonSocket, daemon::Daemon};
+mod comms;
+mod daemon;
+
+use crate::{comms::DaemonSocket, daemon::Daemon};
 
 use telio::{device::Device, telio_model::features::Features, telio_utils::select};
 
@@ -88,11 +90,11 @@ async fn main() -> Result<()> {
                 let config: TeliodDaemonConfig = serde_json::from_reader(file)?;
                 TeliodDaemon::init()?;
                 if daemon_event_loop(config).await.is_ok() {
-                    info!("Ended event loop: ok");
+                    eprintln!("Ended event loop: ok");
                 } else {
-                    info!("Ended event loop: not ok");
+                    eprintln!("Ended event loop: not ok");
                 }
-                info!("Exited daemon event loop");
+                eprintln!("Exited daemon event loop");
             }
         }
         cmd => {
@@ -119,7 +121,61 @@ async fn main() -> Result<()> {
 
 enum EventLoopCommand {
     HelloWorld(String),
-    Err,
+}
+
+struct CommandListener {
+    socket: DaemonSocket,
+}
+
+impl CommandListener {
+    async fn get_command(&self) -> Result<EventLoopCommand, String> {
+        let mut connection = match self.socket.accept().await {
+            Ok(conn) => conn,
+            Err(err) => {
+                return Err(format!(
+                    "Failed to accept connection: {:?} - stopping daemon",
+                    err
+                ));
+            }
+        };
+
+        let Ok(command_str) = connection.read_command().await else {
+            return Err("Unknown command".to_string());
+        };
+
+        if let Ok(cmd) = serde_json::from_str::<Cmd>(&command_str) {
+            match cmd {
+                Cmd::Daemon { .. } => {
+                    if connection.respond("ERR".to_owned()).await.is_err() {
+                        Err("Socket failed on sending response".to_string())
+                    } else {
+                        Err("Start command should never be passed to the daemon".to_string())
+                    }
+                }
+                Cmd::HelloWorld { name } => {
+                    if connection.respond("OK".to_owned()).await.is_err() {
+                        Err("Socket failed on sending response".to_string())
+                    } else {
+                        Ok(EventLoopCommand::HelloWorld(name))
+                    }
+                }
+            }
+        } else if connection.respond("ERR".to_owned()).await.is_err() {
+            Err("Socket failed on sending response".to_string())
+        } else {
+            Err("Received unknown command".to_string())
+        }
+    }
+}
+
+// From async context Telio needs to be run in separate task
+fn telio_task() {
+    let _telio = Device::new(
+        Features::default(),
+        // TODO: replace this with some real event handling
+        move |event| info!("Incoming event: {:?}", event),
+        None,
+    );
 }
 
 async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<()> {
@@ -134,87 +190,24 @@ async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<()> {
         .init();
 
     let socket = DaemonSocket::new(&TeliodDaemon::get_ipc_socket_path()?)?;
+    let cmd_listener = CommandListener { socket };
 
-    let _telio = Device::new(
-        Features::default(),
-        // TODO: replace this with some real event handling
-        move |event| info!("Incoming event: {:?}", event),
-        None,
-    );
+    let telio_task_handle = tokio::task::spawn_blocking(telio_task);
 
-    let mut signals = Signals::new(&[SIGTERM])?;
-
-    // The thread handles recieves commands, makes the basic validation and if they seem to be correct it passes them to the main event loop
-    let (command_sender, mut command_receiver) = mpsc::channel(10);
-    let cmd_task_handle = async move {
-        let mut connection = match socket.accept().await {
-            Ok(conn) => conn,
-            Err(err) => {
-                error!("Failed to accept connection: {:?} - stopping daemon", err);
-                let _ = command_sender.send(EventLoopCommand::Err).await;
-                break;
-            }
-        };
-
-        let Ok(command_str) = connection.read_command().await else {
-            warn!("Unknown command");
-            continue;
-        };
-
-        if let Ok(cmd) = serde_json::from_str::<Cmd>(&command_str) {
-            match cmd {
-                Cmd::Daemon { .. } => {
-                    warn!("Start command should never be passed to the daemon");
-                    if connection.respond("ERR".to_owned()).await.is_err() {
-                        if command_sender.send(EventLoopCommand::Err).await.is_err() {
-                            error!("Broken channel, exiting");
-                            break;
-                        }
-                    } else {
-                        continue;
-                    }
-                }
-                Cmd::HelloWorld { name } => {
-                    if match connection.respond("OK".to_owned()).await {
-                        Ok(_) => {
-                            command_sender
-                                .send(EventLoopCommand::HelloWorld(name))
-                                .await
-                        }
-                        Err(_) => command_sender.send(EventLoopCommand::Err).await,
-                    }
-                    .is_err()
-                    {
-                        error!("Broken channel, exiting");
-                        break;
-                    }
-                }
-            }
-        } else {
-            warn!("Received unknown command: {}", command_str);
-            if connection.respond("ERR".to_owned()).await.is_err()
-                && command_sender.send(EventLoopCommand::Err).await.is_err()
-            {
-                error!("Broken channel, exiting");
-                break;
-            }
-        }
-    };
+    let mut signals = Signals::new([SIGTERM])?;
 
     info!("Entering event loop");
 
-    let _ = loop {
+    let err_str = loop {
         select! {
-            maybe_cmd = command_receiver.recv() => {
+            maybe_cmd = cmd_listener.get_command() => {
                 match maybe_cmd {
-                    Some(EventLoopCommand::HelloWorld(name)) => {
+                    Ok(EventLoopCommand::HelloWorld(name)) => {
                         info!("Hello {}", name);
                     }
-                    Some(EventLoopCommand::Err) => {
-                        break Some("Socket closed")
-                    }
-                    None => {
-                        break Some("Channel closed")
+                    Err(err_str) => {
+                        error!(err_str);
+                        break Some(err_str);
                     }
                 }
             },
@@ -228,31 +221,20 @@ async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<()> {
                         info!("Recieved unexpected signal, ignoring");
                     }
                     None => {
-                        break Some("Signal channel broken")
+                        break Some("Signal channel broken".to_string());
                     }
                 }
             }
         }
     };
 
-    info!("Before abort");
+    // Wait until Telio task ends
+    // TODO: When it will be doing something some channel with commands etc. might be needed
+    telio_task_handle.await?;
 
-    if !signals.handle().is_closed() {
-        signals.handle().close();
+    if let Some(err_str) = err_str {
+        bail!(err_str);
+    } else {
+        Ok(())
     }
-
-    info!("After abort");
-
-    info!("CMD task finished");
-
-    // TODO: There are these two blocking processes, so we cannot just
-    // return as it will hang on them, thus we exit process instead.
-    // This should be done in some nicer way.
-    // if let Some(_) = result {
-    //     process::exit(1);
-    // } else {
-    //     process::exit(0);
-    // }
-
-    Ok(())
 }

@@ -7,17 +7,15 @@ A daemonized version of TCLI, which can be used in scripts.
 Currently TCLID is implemented as a package of the libtelio project, just like TCLI, so it is build just like TCLI too:
 
 ```shell
-cargo build -p tcli --bin tclid --features="tclid"
+cargo build -p tcli --bin tclid
 ```
-
-Bear in mind that for building tclid you need `tclid` feature to be enabled.
 
 ### Building The Documentation
 
 The full documentation for TCLID can be built with the following command:
 
 ```shell
-cargo doc -p tcli --bin tclid --features="tclid" --open --no-deps --document-private-items
+cargo doc -p tcli --bin tclid --open --no-deps --document-private-items
 ```
 
 ## How To Use TCLID
@@ -35,7 +33,7 @@ Here's an example of how to run meshnet using TCLID:
 You can also use TCLID directly through cargo to build and run using only one command:
 
 ```shell
-cargo run -p tcli --bin tclid --features="tclid" -- mesh on tun10
+cargo run -p tcli --bin tclid -- mesh on tun10
 ```
 
 See `example_vpn_enable_linux.sh` and `example_vpn_disable_linux.sh` for examples on how to use TCLID in a script.
@@ -60,7 +58,7 @@ So TCLID can be stopped by running:
 ./tclid quit
 ```
 
->NOTE: If due to a bug the daemon fails to stop using the `quit` command, you can run `sudo cat /run/tclid.pid | sudo xargs kill -9` from the root of the libtelio repo (or wherever the tclid.pid fie is visible from).
+>NOTE: If due to a bug the daemon fails to stop using the `quit` command, you can run `sudo cat /var/run/tclid_wd/tclid.pid | sudo xargs kill -9` from the root of the libtelio repo (or wherever the tclid.pid fie is visible from).
 
 ### Feature Flags
 

@@ -12,7 +12,18 @@ tracing.workspace = true
 tracing-appender.workspace = true
 tracing-subscriber.workspace = true
 
+# Used as a lightweight and safe (because a TCP server has the risk of remote code execution)
+# way for the API and daemon to communicate.
+# Tokio support is needed, because the daemon runs on the async runtime.
+interprocess = { version = "2.2.1", features = ["tokio"] }
+
+# Used only for checking if the daemon is running.
+sysinfo = "0.30.11"
+
 nix = "0.28.0"
 
-daemon-common = { version = "0.1.0", path = "../daemon-common" }
 telio = { path = "../.." }
+tokio.workspace = true
+signal-hook = "0.3.17"
+signal-hook-tokio = { version = "0.3.1", features = ["futures-v0_3"]}
+futures.workspace = true

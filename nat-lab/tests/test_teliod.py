@@ -53,28 +53,28 @@ async def test_teliod() -> None:
             ).get_stdout()
         )
 
-        assert not teliod_process.is_done()
+        assert teliod_process.is_executing()
 
         # Get Teliod PID
         teliod_pid = (
             await asyncio.wait_for(
-                connection.create_process(["cat", "/var/teliod.pid"]).execute(),
+                connection.create_process(["cat", "/run/teliod.pid"]).execute(),
                 1,
             )
-        ).get_stderr()
+        ).get_stdout()
 
         print(f"Teliod PID: {teliod_pid}")
 
         # Send SIGTERM to the daemon
         await asyncio.wait_for(
-            connection.create_process(["kill", "{teliod_pid}"]).execute(),
+            connection.create_process(["kill", f"{teliod_pid}"]).execute(),
             1,
         )
 
         # Let the daemon stop
         await asyncio.sleep(1)
 
-        assert teliod_process.is_done()
+        assert not teliod_process.is_executing()
 
         # Run the hello-world command again - this time it should fail
         assert (

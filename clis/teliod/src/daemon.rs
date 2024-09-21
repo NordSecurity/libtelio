@@ -5,15 +5,6 @@ use std::path::PathBuf;
 use anyhow::Result;
 use sysinfo::{ProcessRefreshKind, RefreshKind, System};
 
-/// Enum for figuring out the current process after the daemon is forked away
-/// from the API by the daemonization.
-pub enum ProcessType {
-    /// Getting this value after the daemonization means that the current process is the API.
-    Api,
-    /// Getting this value after the daemonization means that the current process is the Daemon.
-    Daemon,
-}
-
 /// Struct for packaging together the functions for managing the daemon.
 /// Currently does not need any members, since most of the data is stored
 /// in files anyway.
