@@ -590,6 +590,12 @@ services:
       internet:
         ipv4_address: 10.0.80.85
         ipv6_address: 2001:db8:85a4::adda:edde:a
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -tlnp | grep 1883 | grep LISTEN"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   core-api:
     hostname: core-api
@@ -603,6 +609,9 @@ services:
       internet:
         ipv4_address: 10.0.80.86
         ipv6_address: 2001:db8:85a4::adda:edde:b
+    depends_on:
+      mqtt-broker:
+        condition: service_healthy
 
 networks:
   # Network representing public internet,

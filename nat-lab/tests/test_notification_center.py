@@ -1,5 +1,6 @@
 import json
-from asyncio import sleep
+import paho.mqtt.client as mqtt
+import queue
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from utils.connection_util import ConnectionTag, new_connection_by_tag
@@ -40,29 +41,33 @@ def verify_mqtt_payload(payload):
         verify_uuid(machine_uuid)
 
 
-async def run_mqtt_listener(exit_stack, connection):
-    # Start listening for mqtt message
-    mqtt_process = await exit_stack.enter_async_context(
-        connection.create_process(["python3", "/opt/bin/mqtt_listener.py"]).run()
-    )
+def run_mqtt_listener():
+    payload_queue = queue.Queue(1)
 
-    # Allows mqtt process to run
-    await sleep(0.1)
+    def on_message(_client, _userdata, message):
+        payload_queue.put(f"{message.payload.decode()}")
 
-    return mqtt_process
+    mqttc = mqtt.Client(client_id="reciever", protocol=mqtt.MQTTv311)
+
+    mqttc.on_message = on_message
+
+    # TODO: add credentials when LLT-5604 will be ready
+    mqttc.connect("10.0.80.85", port=1883, keepalive=1)
+    mqttc.subscribe("meshnet", qos=0)
+
+    mqttc.loop_start()
+
+    return (payload_queue, mqttc)
 
 
 async def test_nc_register():
     async with AsyncExitStack() as exit_stack:
         # Setup connections
-        connection_alpha = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
-        )
         connection_beta = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
         )
 
-        mqtt_process = await run_mqtt_listener(exit_stack, connection_alpha)
+        (mqtt_payload_queue, mqttc) = run_mqtt_listener()
 
         # Register machine - this is a minimal version which should be also supported
         request_json = {
@@ -96,12 +101,8 @@ async def test_nc_register():
         assert request_json["device_type"] == response.device_type
         assert response.traffic_routing_supported is False
 
-        # With 1 second keepalive it should get the message after this sleep
-        await sleep(2)
-
-        verify_mqtt_payload(mqtt_process.get_stdout())
-
-        mqtt_process = await run_mqtt_listener(exit_stack, connection_alpha)
+        mqtt_payload = mqtt_payload_queue.get()
+        verify_mqtt_payload(mqtt_payload)
 
         http_process = await connection_beta.create_process([
             "curl",
@@ -114,7 +115,8 @@ async def test_nc_register():
         status = http_process.get_stdout().split(" ")[1]
         assert status == "204"
 
-        # With 1 second keepalive it should get the message after this sleep
-        await sleep(2)
+        mqtt_payload = mqtt_payload_queue.get()
+        verify_mqtt_payload(mqtt_payload)
 
-        verify_mqtt_payload(mqtt_process.get_stdout())
+        # MQTT client cleanup
+        mqttc.loop_stop()
