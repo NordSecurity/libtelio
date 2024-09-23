@@ -503,8 +503,7 @@ pub(super) fn response_from_str(string: &str) -> Result<Response, Error> {
     response_from_read(string.as_bytes())
 }
 
-#[allow(unwrap_check)]
-pub(super) fn response_from_read<R: Read>(reader: R) -> Result<Response, Error> {
+fn response_from_read<R: Read>(reader: R) -> Result<Response, Error> {
     let mut reader = BufReader::new(reader);
     let mut interface = Interface::default();
     let mut inited = false;
@@ -591,7 +590,6 @@ pub(super) fn response_from_read<R: Read>(reader: R) -> Result<Response, Error> 
     })
 }
 
-#[allow(unwrap_check)]
 fn parse_peer<R: Read>(
     public_key: PublicKey,
     reader: &mut BufReader<R>,
