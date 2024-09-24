@@ -14,12 +14,14 @@ class NetCat:
     def __init__(
         self,
         connection: Connection,
-        host: Optional[str],
+        host_ip: Optional[str],
         port: int,
         listen: bool = False,  # l-flag
         udp: bool = False,  # u-flag
         detached: bool = False,  # d-flag
         port_scan: bool = False,  # z-flag
+        ipv6: bool = False,  # 6-flag
+        source_ip: Optional[str] = None,  # s-flag
     ):
         """
         Create an instance of the nc command
@@ -30,8 +32,8 @@ class NetCat:
                 Target connection to run the command on
             port : int
                 Port number to connect to
-            host : str | None
-                IP address of the host to connect to, nott necessery when the listen option is used
+            host_ip : str | None
+                IP address of the host to connect to, not necessery when the listen option is used
             listen : bool
                 Listen for an incoming connection rather than initiate a connection to a remote host
             udp : bool
@@ -40,20 +42,29 @@ class NetCat:
                 Do not attempt to read from stdin
             port_scan : bool
                 Scan for listening daemons, without sending any data
+            ipv6 : bool
+                Force to use ipv6 addresses only
+            source_ip : str | None
+                Specifies the IP of the interface which is used to send the packets
         """
         flags = "-nv"  # don't do any dns lookups and enable vebose output
+        flags += "6" if ipv6 else "4"
         if listen:
             flags += "l"
         if udp:
             flags += "u"
         if detached:
             flags += "d"
-        if port_scan:
+        if port_scan and not listen:
             flags += "z"
 
         command = ["nc", flags, str(port)]
-        if host:
-            command.insert(-1, host)
+
+        if source_ip and not listen:
+            command.insert(-1, "-s")
+            command.insert(-1, source_ip)
+        if host_ip:
+            command.insert(-1, host_ip)
 
         self._process: Process = connection.create_process(command)
         self._connection: Connection = connection
@@ -91,6 +102,9 @@ class NetCat:
         await self._process.execute(
             stdout_callback=self.on_stdout, stderr_callback=self.on_stderr
         )
+
+    async def is_done(self) -> None:
+        await self._process.is_done()
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator["NetCat"]:
@@ -131,7 +145,7 @@ class NetCatServer(NetCat):
 
     async def listening_started(self) -> None:
         """Wait for listening started event"""
-        # macOS nc does not report any verbose events wiht -l flag
+        # macOS nc does not report any verbose events when listening
         if platform.system() == "Darwin":
             return None
 
@@ -140,7 +154,7 @@ class NetCatServer(NetCat):
 
     async def connection_received(self) -> None:
         """Wait for connection received event"""
-        # macOS nc does not report any verbose events wiht -l flag
+        # macOS nc does not report any verbose events when listening
         if platform.system() == "Darwin":
             return None
 
@@ -159,6 +173,8 @@ class NetCatClient(NetCat):
         udp: bool = False,
         detached: bool = False,
         port_scan: bool = False,
+        ipv6: bool = False,
+        source_ip: Optional[str] = None,
     ):
         super().__init__(
             connection,
@@ -168,6 +184,8 @@ class NetCatClient(NetCat):
             udp=udp,
             detached=detached,
             port_scan=port_scan,
+            ipv6=ipv6,
+            source_ip=source_ip,
         )
         self._connection_event: asyncio.Event = asyncio.Event()
         protocol = "tcp" if not udp else "udp"
