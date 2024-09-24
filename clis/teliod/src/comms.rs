@@ -1,10 +1,9 @@
 //! Code for handling inter process communication and abstracting away it's dependencies.
 
-use std::{fs, io::Write, path::Path};
+use std::{fs, io::Result, io::Write, path::Path};
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
-use anyhow::Result;
 use interprocess::{
     local_socket::{
         tokio::{Listener as LocalSocketListener, Stream as LocalSocketStream},

@@ -4665,7 +4665,6 @@ dependencies = [
 name = "teliod"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "clap 3.2.25",
  "futures",
  "interprocess 2.2.1",
@@ -4676,6 +4675,7 @@ dependencies = [
  "signal-hook-tokio",
  "sysinfo",
  "telio",
+ "thiserror",
  "tokio",
  "tracing",
  "tracing-appender",

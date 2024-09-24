@@ -33,7 +33,7 @@ impl Daemon {
             RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
         );
 
-        match std::fs::read_to_string(get_wd_path()?.join("tclid.pid")) {
+        match std::fs::read_to_string(get_runtime_data_directory()?.join("tclid.pid")) {
             Ok(pid_str) => {
                 let pid: usize = pid_str.trim().parse()?;
                 match system.process(sysinfo::Pid::from(pid)) {
@@ -56,7 +56,7 @@ impl Daemon {
     ///
     /// The whole contents of the daemons stderr file as a String.
     pub fn get_stderr() -> Result<String> {
-        let stderr_file = get_wd_path()?.join("tclid.err");
+        let stderr_file = get_runtime_data_directory()?.join("tclid.err");
 
         let stderr_string = std::fs::read_to_string(stderr_file)?;
 
@@ -76,7 +76,7 @@ impl Daemon {
             // This crate only works on unix systems and not Windows.
             use daemonize::Daemonize;
 
-            let tclid_wd_path = get_wd_path()?;
+            let tclid_wd_path = get_runtime_data_directory()?;
 
             std::fs::create_dir_all(&tclid_wd_path)?;
             let stderr = File::create(tclid_wd_path.join("tclid.err"))?;
@@ -104,7 +104,7 @@ impl Daemon {
 /// # Returns
 ///
 /// Result containing the path of the daemons work directory.
-fn get_wd_path() -> Result<PathBuf> {
+fn get_runtime_data_directory() -> Result<PathBuf> {
     Ok(std::env::current_exe()?
         .parent()
         .ok_or(anyhow::anyhow!(

@@ -2,6 +2,7 @@ import asyncio
 from contextlib import AsyncExitStack
 from helpers import setup_connections
 from utils.connection_util import ConnectionTag
+from utils.process.process import ProcessExecError
 
 TELIOD_EXEC_PATH = "/libtelio/dist/linux/release/x86_64/teliod"
 CONFIG_FILE_PATH = "/etc/teliod/config.json"
@@ -31,16 +32,14 @@ async def test_teliod() -> None:
         # Let the daemon start
         await asyncio.sleep(1)
 
-        # Try to run it again - some error message should be retuned
-        assert (
-            "Teliod is already running"
-            == (
-                await asyncio.wait_for(
-                    connection.create_process(TELIOD_START_PARAMS).execute(),
-                    1,
-                )
-            ).get_stderr()
-        )
+        try:
+            await asyncio.wait_for(
+                connection.create_process(TELIOD_START_PARAMS).execute(),
+                1,
+            )
+            assert False
+        except ProcessExecError as err:
+            assert err.stderr == "Error: DaemonIsRunning"
 
         # Run the hello-world command
         assert (
@@ -77,12 +76,10 @@ async def test_teliod() -> None:
         assert not teliod_process.is_executing()
 
         # Run the hello-world command again - this time it should fail
-        assert (
-            "Teliod daemon is not running"
-            == (
-                await asyncio.wait_for(
-                    connection.create_process(TELIOD_HELLO_WORLD_PARAMS).execute(),
-                    1,
-                )
-            ).get_stderr()
-        )
+        try:
+            await asyncio.wait_for(
+                connection.create_process(TELIOD_HELLO_WORLD_PARAMS).execute(),
+                1,
+            )
+        except ProcessExecError as err:
+            assert err.stderr == "Error: DaemonIsNotRunning"
