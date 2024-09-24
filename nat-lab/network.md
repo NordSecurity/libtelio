@@ -43,6 +43,12 @@ graph LR
     pmtu-probe("pmtu-probe
         10.0.80.84
         2001:db8:85a4::adda:edde:9")
+    mqtt-broker("mqtt-broker
+        10.0.80.85
+        2001:db8:85a4::adda:edde:a")
+    core-api("core-api
+        10.0.80.86
+        2001:db8:85a4::adda:edde:b")
   end
 
   %% Network cone-net-05
