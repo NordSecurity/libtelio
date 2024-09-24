@@ -1,4 +1,5 @@
 import asyncssh
+import os
 import subprocess
 from config import (
     get_root_path,
@@ -126,7 +127,7 @@ async def _copy_binaries(
             ):
                 raise exception
 
-    DIST_DIR = "dist/windows/release/x86_64/"
+    DIST_DIR = f"dist/windows/{os.getenv('TELIO_BIN_PROFILE')}/x86_64/"
     LOCAL_UNIFFI_DIR = "nat-lab/tests/uniffi/"
     LOCAL_BIN_DIR = "nat-lab/bin/"
 
