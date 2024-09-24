@@ -1,6 +1,10 @@
 //! Code for handling inter process communication and abstracting away it's dependencies.
 
-use std::{fs, io::Result, io::Write, path::Path};
+use std::{
+    fs,
+    io::{Error, ErrorKind, Result, Write},
+    path::Path,
+};
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
@@ -69,6 +73,13 @@ impl DaemonSocket {
     ///
     /// A Result containing a response string.
     pub async fn send_command(addr: &Path, cmd: &str) -> Result<String> {
+        if cmd.find("\n").is_some() {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "Command cannot contain newline characters",
+            ));
+        }
+
         let mut stream =
             LocalSocketStream::connect(addr.to_fs_name::<FilesystemUdSocket>()?).await?;
         let mut buffer = Vec::<u8>::new();

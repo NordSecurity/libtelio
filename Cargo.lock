@@ -4673,7 +4673,6 @@ dependencies = [
  "serde_json",
  "signal-hook",
  "signal-hook-tokio",
- "sysinfo",
  "telio",
  "thiserror",
  "tokio",

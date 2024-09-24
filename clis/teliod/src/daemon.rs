@@ -1,13 +1,11 @@
 //! Code for general daemon handling utilities and abstracting away related dependencies.
 
 use std::{
-    fs::File,
+    fs::{self, File},
     io::{Error, ErrorKind, Result, Write},
     path::{Path, PathBuf},
     process::id,
 };
-
-use sysinfo::{ProcessRefreshKind, RefreshKind, System};
 
 /// Daemon name, used for naming daemon files
 const DAEMON_NAME: &str = "teliod";
@@ -15,42 +13,21 @@ const DAEMON_NAME: &str = "teliod";
 /// Struct for packaging together the functions for managing the daemon.
 /// Currently does not need any members, since most of the data is stored
 /// in files anyway.
-pub struct TeliodDaemon {}
+pub struct TeliodDaemon {
+    pid_path: PathBuf,
+}
 
 impl TeliodDaemon {
     /// Initializes all of the needed daemon stuff, currently just creates a PID file
-    pub fn init() -> Result<()> {
+    pub fn new() -> Result<Self> {
+        let pid_path = Self::get_runtime_data_directory()?.join(format!("{}.pid", &DAEMON_NAME));
+
         // Create pid file
         let pid = id();
-        let mut pid_file = File::create(Self::get_pid_path()?)?;
-        pid_file.write_fmt(format_args!("{}", pid))?;
-        Ok(())
-    }
+        let mut pid_file = File::create(&pid_path)?;
+        pid_file.write_fmt(format_args!("{}\n", pid))?;
 
-    /// Checks whether the daemon is currently running.
-    pub fn is_running() -> Result<bool> {
-        let system = System::new_with_specifics(
-            RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
-        );
-
-        match std::fs::read_to_string(Self::get_pid_path()?) {
-            Ok(pid_str) => {
-                let pid: usize = pid_str.trim().parse().map_err(|_| {
-                    Error::new(
-                        ErrorKind::InvalidData,
-                        "Cannot parse the PID from the daemon's PID file",
-                    )
-                })?;
-                match system.process(sysinfo::Pid::from(pid)) {
-                    Some(_) => Ok(true),
-                    None => Ok(false),
-                }
-            }
-            Err(e) => match e.kind() {
-                ErrorKind::NotFound => Ok(false),
-                _ => Err(e),
-            },
-        }
+        Ok(Self { pid_path })
     }
 
     /// Returns the path to the directory in which Teliod stores runtime data
@@ -74,8 +51,14 @@ impl TeliodDaemon {
         Self::get_runtime_data_directory().map(|path| path.join(format!("{}.sock", &DAEMON_NAME)))
     }
 
-    /// Returns path to pid file
-    pub fn get_pid_path() -> Result<PathBuf> {
-        Self::get_runtime_data_directory().map(|path| path.join(format!("{}.pid", &DAEMON_NAME)))
+    /// Checks whether the daemon is currently running.
+    pub fn is_running() -> Result<bool> {
+        Ok(Self::get_ipc_socket_path()?.exists())
+    }
+}
+
+impl Drop for TeliodDaemon {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.pid_path);
     }
 }

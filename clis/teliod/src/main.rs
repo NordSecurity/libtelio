@@ -70,8 +70,6 @@ enum TeliodError {
     BrokenSignalStream,
     #[error(transparent)]
     TelioTaskError(#[from] JoinError),
-    #[error("Cannot find any feasible runtime data directory")]
-    NoRuntimeDataDirectory,
     #[error(transparent)]
     ParsingError(#[from] SerdeJsonError),
     #[error("Command failed to execute: {0:?}")]
@@ -91,7 +89,7 @@ async fn main() -> Result<(), TeliodError> {
             } else {
                 let file = File::open(config_path)?;
                 let config: TeliodDaemonConfig = serde_json::from_reader(file)?;
-                TeliodDaemon::init()?;
+                let _daemon_guard = TeliodDaemon::new()?;
                 daemon_event_loop(config).await
             }
         }
@@ -156,9 +154,7 @@ async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodError
         .with_level(true)
         .init();
 
-    let socket = DaemonSocket::new(
-        &TeliodDaemon::get_ipc_socket_path().map_err(|_| TeliodError::NoRuntimeDataDirectory)?,
-    )?;
+    let socket = DaemonSocket::new(&TeliodDaemon::get_ipc_socket_path()?)?;
     let cmd_listener = CommandListener { socket };
 
     let telio_task_handle = tokio::task::spawn_blocking(telio_task);

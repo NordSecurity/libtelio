@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 clap.workspace = true
-serde = { workspace = true, default-features = false }
+serde = { workspace = true }
 serde_json.workspace = true
 tracing.workspace = true
 tracing-appender.workspace = true
@@ -15,9 +15,6 @@ tracing-subscriber.workspace = true
 # way for the API and daemon to communicate.
 # Tokio support is needed, because the daemon runs on the async runtime.
 interprocess = { version = "2.2.1", features = ["tokio"] }
-
-# Used only for checking if the daemon is running.
-sysinfo = "0.30.11"
 
 nix = "0.28.0"
 
