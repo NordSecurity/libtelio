@@ -3,7 +3,7 @@
 use std::{
     fs,
     io::{Error, ErrorKind, Result, Write},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
@@ -24,6 +24,25 @@ pub struct DaemonSocket {
 }
 
 impl DaemonSocket {
+    /// Returns the path to the Teliod socket, when available it uses `/run/`, then
+    /// checks `/var/run` and if none of them is available it returns an error.
+    ///
+    /// # Returns
+    ///
+    /// A path to the Teliod socket wrapped inside result
+    pub fn get_ipc_socket_path() -> Result<PathBuf> {
+        if Path::new("/run").exists() {
+            Ok(PathBuf::from("/run/teliod.sock"))
+        } else if Path::new("/var/run/").exists() {
+            Ok(PathBuf::from("/var/run/teliod.sock"))
+        } else {
+            Err(Error::new(
+                ErrorKind::NotFound,
+                "Neither /run/ nor /var/run/ exists",
+            ))
+        }
+    }
+
     /// Binds the IPC socket to the specified address and returns a handle to the struct
     /// containing the IPC socket.
     ///
@@ -73,7 +92,7 @@ impl DaemonSocket {
     ///
     /// A Result containing a response string.
     pub async fn send_command(addr: &Path, cmd: &str) -> Result<String> {
-        if cmd.find("\n").is_some() {
+        if cmd.contains('\n') {
             return Err(Error::new(
                 ErrorKind::InvalidData,
                 "Command cannot contain newline characters",

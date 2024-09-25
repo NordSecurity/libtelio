@@ -12,9 +12,8 @@ use tokio::task::JoinError;
 use tracing::{error, info, level_filters::LevelFilter, warn};
 
 mod comms;
-mod daemon;
 
-use crate::{comms::DaemonSocket, daemon::TeliodDaemon};
+use crate::comms::DaemonSocket;
 
 use telio::{device::Device, telio_model::features::Features, telio_utils::select};
 
@@ -84,22 +83,19 @@ enum TeliodError {
 async fn main() -> Result<(), TeliodError> {
     match Cmd::parse() {
         Cmd::Daemon { config_path } => {
-            if TeliodDaemon::is_running()? {
+            if DaemonSocket::get_ipc_socket_path()?.exists() {
                 Err(TeliodError::DaemonIsRunning)
             } else {
                 let file = File::open(config_path)?;
                 let config: TeliodDaemonConfig = serde_json::from_reader(file)?;
-                let _daemon_guard = TeliodDaemon::new()?;
                 daemon_event_loop(config).await
             }
         }
         Cmd::Client(cmd) => {
-            if TeliodDaemon::is_running()? {
-                let response = DaemonSocket::send_command(
-                    &TeliodDaemon::get_ipc_socket_path()?,
-                    &serde_json::to_string(&cmd)?,
-                )
-                .await?;
+            let socket_path = DaemonSocket::get_ipc_socket_path()?;
+            if socket_path.exists() {
+                let response =
+                    DaemonSocket::send_command(&socket_path, &serde_json::to_string(&cmd)?).await?;
 
                 if response.as_str() == "OK" {
                     println!("Command executed successfully");
@@ -154,7 +150,7 @@ async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodError
         .with_level(true)
         .init();
 
-    let socket = DaemonSocket::new(&TeliodDaemon::get_ipc_socket_path()?)?;
+    let socket = DaemonSocket::new(&DaemonSocket::get_ipc_socket_path()?)?;
     let cmd_listener = CommandListener { socket };
 
     let telio_task_handle = tokio::task::spawn_blocking(telio_task);

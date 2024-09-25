@@ -57,7 +57,7 @@ async def test_teliod() -> None:
         # Get Teliod PID
         teliod_pid = (
             await asyncio.wait_for(
-                connection.create_process(["cat", "/run/teliod.pid"]).execute(),
+                connection.create_process(["pidof", "teliod"]).execute(),
                 1,
             )
         ).get_stdout()
