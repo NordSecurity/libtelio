@@ -444,16 +444,6 @@ def exec_build(args):
             moose_utils.fetch_moose_dependencies(args.os, MOOSE_MAP[args.arch])
 
         moose_utils.set_cargo_dependencies()
-        # TODO: remove when we get rid of sm crate (LLT-4929)
-        # We are using an outdated library in telio-traversal called sm
-        # It uses some old versions of quote, proc-macro2 and syn.
-        # When the moose dependency is injected by the build script it tries to
-        # use these old versions of quote, proc-macro2 and syn. A cargo update
-        # should fix it for now, but it's prone to errors, so we should find an
-        # alternative solution for the sm library.
-        rutils.run_command(["cargo", "update", "-p", "quote@0.6.13"])
-        rutils.run_command(["cargo", "update", "-p", "proc-macro2@0.4.30"])
-        rutils.run_command(["cargo", "update", "-p", "syn@0.15.44"])
     else:
         moose_utils.unset_cargo_dependencies()
 

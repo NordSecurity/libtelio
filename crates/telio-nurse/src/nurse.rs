@@ -272,7 +272,8 @@ impl State {
                 info.heartbeat_interval,
                 0, // TODO Derp Connection Duration
                 info.nat_traversal_conn_info.clone(),
-                info.derp_conn_info.clone()
+                info.derp_conn_info.clone(),
+                None
             )
         } else {
             lana!(
@@ -287,7 +288,8 @@ impl State {
                 info.heartbeat_interval,
                 0, // TODO Derp Connection Duration
                 info.nat_traversal_conn_info.clone(),
-                info.derp_conn_info.clone()
+                info.derp_conn_info.clone(),
+                None
             )
         };
 
