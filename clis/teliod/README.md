@@ -1,6 +1,6 @@
 ### Building Teliod
 
-For typical Linux environment it might be build using simply:
+For typical Linux environment it might be built using simply:
 
 ```cargo build```
 
