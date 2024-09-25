@@ -31,9 +31,6 @@ def _generate_histogram(
 
 
 async def capture_traffic(container_name: str, duration_s: int) -> str:
-    cmd_rm = f"docker exec --privileged {container_name} rm /home/capture.pcap"
-    os.system(cmd_rm)
-
     iface = "any"
     capture_path = "/home/capture.pcap"
 
@@ -44,20 +41,19 @@ async def capture_traffic(container_name: str, duration_s: int) -> str:
 
     await asyncio.sleep(duration_s)
 
-    with tempfile.NamedTemporaryFile() as tmpfile:
-        local_path = f"{tmpfile.name}.pcap"
-        print(f"Copying pcap to {local_path}")
-        subprocess.run([
-            "docker",
-            "cp",
-            container_name + ":" + "/home/capture.pcap",
-            local_path,
-        ])
+    local_path = f"{tempfile.mkstemp(suffix='.pcap')[1]}"
+    print(f"Copying pcap to {local_path}")
+    subprocess.run([
+        "docker",
+        "cp",
+        container_name + ":" + "/home/capture.pcap",
+        local_path,
+    ])
 
-        cmd_rm = f"docker exec --privileged {container_name} pkill tcpdump"
-        os.system(cmd_rm)
+    cmd_rm = f"docker exec --privileged {container_name} pkill tcpdump"
+    os.system(cmd_rm)
 
-        return local_path
+    return local_path
 
 
 # Render ASCII histogram drawing for visual inspection

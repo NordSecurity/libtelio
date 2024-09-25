@@ -218,6 +218,41 @@ impl BytesAndTimestamps {
     }
 }
 
+/// Interface for retrieving stats about network activity
+#[async_trait]
+pub trait LatestNetworkActivityGetter: Sync + Send {
+    /// Get network activity timestamps
+    async fn get_latest_network_activity_ts(&self) -> Result<Option<Instant>, Error>;
+}
+
+#[async_trait]
+impl LatestNetworkActivityGetter for DynamicWg {
+    async fn get_latest_network_activity_ts(&self) -> Result<Option<Instant>, Error> {
+        Ok(task_exec!(&self.task, async move |s| {
+            let mut ts: Option<Instant> = None;
+
+            use std::cmp::max;
+
+            for k in s.stats.values() {
+                match k.lock() {
+                    Ok(s) => {
+                        if let (Some(tx_ts), Some(rx_ts)) = (s.get_tx_ts(), s.get_rx_ts()) {
+                            ts = Some(
+                                ts.map_or_else(|| max(tx_ts, rx_ts), |v| max(v, max(tx_ts, rx_ts))),
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        telio_log_error!("Poisoned lock - {}", e);
+                    }
+                }
+            }
+            Ok(ts)
+        })
+        .await?)
+    }
+}
+
 struct State {
     #[cfg(unix)]
     cfg: Config,

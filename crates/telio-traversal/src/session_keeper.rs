@@ -15,7 +15,7 @@ use telio_task::{task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
     dual_target, repeated_actions, telio_log_debug, telio_log_warn, DualTarget, RepeatedActions,
 };
-
+use telio_wg::LatestNetworkActivityGetter;
 const PING_PAYLOAD_SIZE: usize = 56;
 
 /// Possible [SessionKeeper] errors.
@@ -62,7 +62,10 @@ pub struct SessionKeeper {
 }
 
 impl SessionKeeper {
-    pub fn start(sock_pool: Arc<SocketPool>) -> Result<Self> {
+    pub fn start(
+        sock_pool: Arc<SocketPool>,
+        network_activity_getter: Option<Arc<dyn LatestNetworkActivityGetter>>,
+    ) -> Result<Self> {
         let (client_v4, client_v6) = (
             PingerClient::new(&Self::make_builder(ICMP::V4).build())
                 .map_err(|e| Error::PingerCreationError(ICMP::V4, e))?,
@@ -81,6 +84,8 @@ impl SessionKeeper {
                 },
                 batched_actions: Batcher::new(),
                 nonbatched_actions: RepeatedActions::default(),
+                network_activity_getter,
+                last_network_activity: None,
             }),
         })
     }
@@ -128,14 +133,19 @@ async fn ping(pingers: &Pingers, targets: (&PublicKey, &DualTarget)) -> Result<(
     let (primary, secondary) = targets.1.get_targets()?;
     let public_key = targets.0;
 
-    telio_log_debug!("Pinging primary target {:?} on {:?}", public_key, primary);
-
     let primary_client = match primary {
         IpAddr::V4(_) => &pingers.pinger_client_v4,
         IpAddr::V6(_) => &pingers.pinger_client_v6,
     };
 
     let ping_id = PingIdentifier(rand::random());
+
+    telio_log_debug!(
+        "Pinging primary target {:?} on {:?} with ping_id: {:?}",
+        public_key,
+        primary,
+        ping_id
+    );
     if let Err(e) = primary_client
         .pinger(primary, ping_id)
         .await
@@ -264,7 +274,10 @@ struct State {
     pingers: Pingers,
     batched_actions: Batcher<PublicKey, Self>,
     nonbatched_actions: RepeatedActions<PublicKey, Self, Result<()>>,
+    network_activity_getter: Option<Arc<dyn LatestNetworkActivityGetter>>,
+    last_network_activity: Option<tokio::time::Instant>,
 }
+
 #[async_trait]
 impl Runtime for State {
     const NAME: &'static str = "SessionKeeper";
@@ -274,6 +287,19 @@ impl Runtime for State {
     where
         F: Future<Output = BoxAction<Self, std::result::Result<(), Self::Err>>> + Send,
     {
+        if let Some(wg) = self.network_activity_getter.as_ref() {
+            if let Ok(Some(latest_ts)) = wg.get_latest_network_activity_ts().await {
+                if self
+                    .last_network_activity
+                    .map_or(false, |ts| latest_ts > ts)
+                {
+                    telio_log_debug!("Triggering batcher based on network activity");
+                    self.batched_actions.trigger();
+                    self.last_network_activity = Some(latest_ts);
+                }
+            }
+        }
+
         tokio::select! {
             Ok((pk, action)) = self.nonbatched_actions.select_action() => {
                 let pk = *pk;
@@ -324,7 +350,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let sess_keep = SessionKeeper::start(socket_pool).unwrap();
+        let sess_keep = SessionKeeper::start(socket_pool, None).unwrap();
 
         let pk = "REjdn4zY2TFx2AMujoNGPffo9vDiRDXpGG4jHPtx2AY="
             .parse::<PublicKey>()
