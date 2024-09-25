@@ -190,7 +190,7 @@ class NetCatClient(NetCat):
         self._connection_event: asyncio.Event = asyncio.Event()
         protocol = "tcp" if not udp else "udp"
         self._output_notifier.notify_output(
-            f"Connection to {host} {str(port)} port [{protocol}/*] succeeded!",
+            f"[{protocol}/*] succeeded",
             self._connection_event,
         )
 
