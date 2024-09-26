@@ -1790,6 +1790,12 @@ impl Runtime {
                     .peers
                     .unwrap_or_default()
                     .iter()
+                    .filter(|p| {
+                        // Because both inbound and outbound multicast packets are dropped if
+                        // allow_multicast is false, we can simply filter those peers out of the
+                        // meshnet config right now.
+                        p.allow_multicast
+                    })
                     .filter_map(|p| {
                         p.ip_addresses
                             .to_owned()
@@ -1797,7 +1803,7 @@ impl Runtime {
                             .iter()
                             // While IPV6 support is not added yet for multicast, only using IPV4 IPs
                             .find(|ip| ip.is_ipv4())
-                            .map(|ip| (p.base.public_key, ip.to_owned()))
+                            .map(|ip| (p.base.public_key, ip.to_owned(), p.peer_allows_multicast))
                     })
                     .collect();
                 let starcast_transport_config = StarcastTransportConfig::Simple(multicast_peers);

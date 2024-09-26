@@ -5,6 +5,7 @@ from typing import List, Tuple
 from utils.bindings import default_features, TelioAdapterType
 from utils.connection_util import ConnectionTag, Connection, TargetOS
 from utils.multicast import MulticastClient, MulticastServer
+from utils.process import ProcessExecError
 
 
 def generate_setup_parameter_pair(
@@ -99,3 +100,53 @@ async def test_multicast(setup_params: List[SetupParameters], protocol: str) -> 
         async with MulticastServer(beta_connection, protocol).run() as server:
             await server.wait_till_ready()
             await MulticastClient(alpha_connection, protocol).execute()
+
+
+MUILTICAST_DISALLOWED_TEST_PARAMS = [
+    pytest.param(
+        generate_setup_parameter_pair([
+            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, TelioAdapterType.BORING_TUN),
+            (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, TelioAdapterType.BORING_TUN),
+        ]),
+        "ssdp",
+    ),
+    pytest.param(
+        generate_setup_parameter_pair([
+            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, TelioAdapterType.BORING_TUN),
+            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2, TelioAdapterType.BORING_TUN),
+        ]),
+        "mdns",
+    ),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("setup_params, protocol", MUILTICAST_DISALLOWED_TEST_PARAMS)
+async def test_multicast_disallowed(
+    setup_params: List[SetupParameters], protocol: str
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+
+        alpha_connection, beta_connection = [
+            conn.connection for conn in env.connections
+        ]
+
+        # Only setting allow_multicast to False, because peer_allow_multicast flag is
+        # tested by a unit test in Libtelio.
+        client_alpha, _ = env.clients
+        alpha, beta = env.nodes
+        mesh_config = env.api.get_meshnet_config(alpha.id)
+        if mesh_config.peers is not None:
+            for peer in mesh_config.peers:
+                if peer.base.hostname == beta.hostname:
+                    peer.allow_multicast = False
+        await client_alpha.set_meshnet_config(mesh_config)
+
+        await add_multicast_route(alpha_connection)
+        await add_multicast_route(beta_connection)
+
+        with pytest.raises(ProcessExecError):
+            async with MulticastServer(beta_connection, protocol).run() as server:
+                await server.wait_till_ready()
+                await MulticastClient(alpha_connection, protocol).execute()

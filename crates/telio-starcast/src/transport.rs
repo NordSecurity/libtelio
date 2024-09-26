@@ -83,15 +83,17 @@ pub struct Peer {
     pub addr: SocketAddr,
     /// The public key of the peer
     pub public_key: PublicKey,
+    /// Whether the peer accepts multicast messages or not.
+    pub peer_allow_multicast: bool,
 }
 
 /// Config for transport component
 /// Contains fields that can change at runtime
 pub enum Config {
     /// Simple transport config, has IP of peer but not port
-    Simple(Vec<(PublicKey, IpAddr)>),
+    Simple(Vec<(PublicKey, IpAddr, bool)>),
     /// Full transport config, has full socket address of peer
-    Full(Vec<(PublicKey, SocketAddr)>),
+    Full(Vec<(PublicKey, SocketAddr, bool)>),
 }
 
 /// The starcast transport component
@@ -200,14 +202,19 @@ impl State {
         self.peers = match config {
             Config::Simple(peers) => peers
                 .into_iter()
-                .map(|(public_key, addr)| Peer {
+                .map(|(public_key, addr, peer_allow_multicast)| Peer {
                     public_key,
                     addr: SocketAddr::new(addr, MULTICAST_TRANSPORT_PORT),
+                    peer_allow_multicast,
                 })
                 .collect(),
             Config::Full(peers) => peers
                 .into_iter()
-                .map(|(public_key, addr)| Peer { public_key, addr })
+                .map(|(public_key, addr, peer_allow_multicast)| Peer {
+                    public_key,
+                    addr,
+                    peer_allow_multicast,
+                })
                 .collect(),
         };
     }
@@ -216,11 +223,15 @@ impl State {
         let Some(transport_socket) = self.transport_socket.as_ref() else {
             return Err(Error::TransportSocketNotOpen);
         };
-        let failed_peers = join_all(self.peers.iter().map(|peer| {
-            transport_socket
-                .send_to(&packet, peer.addr)
-                .map_err(|_| peer.public_key)
-        }))
+        // If peer_allow_multicast is false for a peer, we cannot send multicast packets to that peer,
+        // but we can still receive multicast packets from that peer.
+        let failed_peers = join_all(self.peers.iter().filter(|p| p.peer_allow_multicast).map(
+            |peer| {
+                transport_socket
+                    .send_to(&packet, peer.addr)
+                    .map_err(|_| peer.public_key)
+            },
+        ))
         .await
         .into_iter()
         .filter_map(|res| match res {
@@ -350,23 +361,29 @@ mod tests {
         task: Task<State>,
         transport_socket: Arc<UdpSocket>,
         channel: Chan<Vec<u8>>,
-        peers: Vec<(PublicKey, UdpSocket)>,
+        peers: Vec<(PublicKey, UdpSocket, bool)>,
     }
 
     impl Scaffold {
         async fn start() -> Self {
             let transport_socket = Arc::new(Self::bind_local_socket().await);
             let mut peers = Vec::with_capacity(3);
-            for _ in 0..3 {
-                peers.push((SecretKey::gen().public(), Self::bind_local_socket().await));
+            for i in 0..3 {
+                let peer_allow_multicast = i != 1;
+                peers.push((
+                    SecretKey::gen().public(),
+                    Self::bind_local_socket().await,
+                    peer_allow_multicast,
+                ));
             }
             let (packet_chan, channel) = Chan::pipe();
 
             let task_peers = peers
                 .iter()
-                .map(|(pk, s)| Peer {
+                .map(|(pk, s, peer_allow_multicast)| Peer {
                     public_key: *pk,
                     addr: s.local_addr().unwrap(),
+                    peer_allow_multicast: *peer_allow_multicast,
                 })
                 .collect();
             let multicast_ips = vec![IpNet::new("224.0.0.0".parse().unwrap(), 4).unwrap()];
@@ -458,11 +475,19 @@ mod tests {
 
         scaffold.channel.tx.send(packet.clone()).await.unwrap();
 
-        for (_, socket) in &scaffold.peers {
+        for (_, socket, peer_allow_multicast) in &scaffold.peers {
             let mut buffer = vec![0; TEST_MAX_PACKET_SIZE];
-            let bytes_read = socket.recv(&mut buffer).await.unwrap();
-            buffer.truncate(bytes_read);
-            assert_eq!(buffer, packet);
+            if *peer_allow_multicast {
+                let bytes_read = socket.recv(&mut buffer).await.unwrap();
+                buffer.truncate(bytes_read);
+                assert_eq!(buffer, packet);
+            } else {
+                // Using timeout here, because otherwise the socket will just wait forever.
+                let result =
+                    tokio::time::timeout(Duration::from_millis(100), socket.recv_from(&mut buffer))
+                        .await;
+                assert!(result.is_err());
+            }
         }
 
         scaffold.stop().await;
@@ -493,7 +518,7 @@ mod tests {
 
         tokio::task::yield_now().await;
 
-        for (_, socket) in scaffold.peers.iter().skip(1) {
+        for (_, socket, _) in scaffold.peers.iter().skip(1) {
             let mut buffer = vec![0; TEST_MAX_PACKET_SIZE];
             assert!(socket.try_recv(&mut buffer).is_err());
         }
