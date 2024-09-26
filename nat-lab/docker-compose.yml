@@ -92,6 +92,7 @@ services:
       - "pmtu-probe:10.0.80.84"
     volumes:
       - ../:/libtelio
+      - ./data/teliod:/etc/teliod
     healthcheck:
       test: "ls /ready"
   cone-client-02:

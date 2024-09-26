@@ -1,0 +1,4 @@
+{
+    "log_level": "trace",
+    "log_file_path": "example_log_file.log"
+}

@@ -1,0 +1,26 @@
+[package]
+name = "teliod"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap.workspace = true
+serde = { workspace = true }
+serde_json.workspace = true
+tracing.workspace = true
+tracing-appender.workspace = true
+tracing-subscriber.workspace = true
+
+# Used as a lightweight and safe (because a TCP server has the risk of remote code execution)
+# way for the API and daemon to communicate.
+# Tokio support is needed, because the daemon runs on the async runtime.
+interprocess = { version = "2.2.1", features = ["tokio"] }
+
+nix = "0.28.0"
+
+telio = { path = "../.." }
+tokio.workspace = true
+signal-hook = "0.3.17"
+signal-hook-tokio = { version = "0.3.1", features = ["futures-v0_3"]}
+futures.workspace = true
+thiserror.workspace = true

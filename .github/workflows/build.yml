@@ -97,3 +97,22 @@ jobs:
         with:
           name: libtelio-build-${{ matrix.target_os }}-${{ matrix.arch }}
           path: dist/
+
+  build-tclid:
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+          - arch: aarch64
+    runs-on: ubuntu-22.04
+    container: |-
+      ${{ 'ghcr.io/nordsecurity/build-linux-rust1.77.2:v0.0.4' }}
+    steps:
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+        with:
+          submodules: true
+      - uses: Swatinem/rust-cache@23bce251a8cd2ffc3c1075eaa2367cf899916d84 # v2.7.3
+        with:
+          key: linux-${{ matrix.arch }}
+      - name: Build tclid
+        run: cargo build -p tcli --bin tclid --features="tclid" --target ${{ matrix.arch }}-unknown-linux-gnu
