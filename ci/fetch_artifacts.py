@@ -28,6 +28,9 @@ class ArtifactsDownloader:
         self.tag_prefix = tag_prefix
 
     def download(self):
+        print(f"commit-sha: {self.commit_sha}")
+        print(f"repo_dir: {self.repo_dir}")
+        print(f"tag_prefix: {self.tag_prefix}")
         tag, tag_msg = self._get_latest_tag()
 
         print(f"Selected {tag} for artifact download")

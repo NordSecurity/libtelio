@@ -317,7 +317,7 @@ def main() -> None:
     for parsers in [build_parser, bindings_parser]:
         parsers.add_argument(
             "--try-fetch-from-pipeline",
-            choices=["main", "nightly", "staging"],
+            choices=["main", "nightly", "staging", "LLT-5468_speedup_dev_builds"],
             help="pipeline tag in gitlab.",
         )
 
