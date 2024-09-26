@@ -233,6 +233,7 @@ pub struct FeatureDirect {
     #[default(Some(Default::default()))]
     pub skip_unresponsive_peers: Option<FeatureSkipUnresponsivePeers>,
     /// Parameters to optimize battery lifetime
+    #[default(Some(Default::default()))]
     pub endpoint_providers_optimization: Option<FeatureEndpointProvidersOptimization>,
 }
 
