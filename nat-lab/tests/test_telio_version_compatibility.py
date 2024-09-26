@@ -3,10 +3,18 @@ import json
 import pytest
 import shlex
 import telio
+from config import DERP_SERVERS
 from contextlib import AsyncExitStack
 from mesh_api import API
+from typing import Any, List, Dict
 from utils import testing
-from utils.bindings import features_with_endpoint_providers, EndpointProvider
+from utils.bindings import (
+    features_with_endpoint_providers,
+    EndpointProvider,
+    Config,
+    Peer,
+    Server,
+)
 from utils.connection_util import (
     ConnectionTag,
     ConnectionLimits,
@@ -27,6 +35,60 @@ UHP_conn_client_types = [
         telio.AdapterType.BoringTun,
     ),
 ]
+
+
+def backport_config(cfg: Config) -> str:
+    def backport_peer(peer: Peer) -> Dict[str, Any]:
+        return {
+            "identifier": peer.base.identifier,
+            "public_key": peer.base.public_key,
+            "hostname": peer.base.hostname,
+            "ip_addresses": peer.base.ip_addresses,
+            "nickname": peer.base.nickname,
+            "endpoints": None,
+            "is_local": peer.is_local,
+            "allow_connections": peer.allow_incoming_connections,
+            "allow_incoming_connections": peer.allow_incoming_connections,
+            "allow_peer_send_files": peer.allow_peer_send_files,
+        }
+
+    def backport_derp(derp: Server) -> Dict[str, Any]:
+        return {
+            "region_code": derp.region_code,
+            "name": derp.name,
+            "hostname": derp.hostname,
+            "ipv4": derp.ipv4,
+            "relay_port": derp.relay_port,
+            "stun_port": derp.stun_port,
+            "stun_plaintext_port": derp.stun_plaintext_port,
+            "public_key": derp.public_key,
+            "weight": derp.weight,
+            "use_plain_text": derp.use_plain_text,
+        }
+
+    peers: List[Dict[str, Any]] = list(
+        map(backport_peer, cfg.peers if cfg.peers is not None else [])
+    )
+    derp_servers: List[Dict[str, Any]] = list(
+        map(
+            backport_derp,
+            cfg.derp_servers if cfg.derp_servers is not None else DERP_SERVERS,
+        )
+    )
+
+    meshmap = {
+        "identifier": cfg.this.identifier,
+        "public_key": cfg.this.public_key,
+        "hostname": cfg.this.hostname,
+        "ip_addresses": cfg.this.ip_addresses,
+        "nickname": cfg.this.nickname,
+        "endpoints": None,
+        "peers": peers,
+        "derp_servers": derp_servers,
+    }
+
+    cfg_str = json.dumps(meshmap)
+    return cfg_str
 
 
 # NOTE: This test can only run on natlab linux containers or on linux
@@ -95,7 +157,7 @@ async def test_connect_different_telio_version_through_relay(
                 alpha,
                 adapter_type,
                 telio_features=features_with_endpoint_providers(endpoint_providers),
-            ).run(api.get_meshmap(alpha.id))
+            ).run(api.get_meshnet_config(alpha.id))
         )
 
         output_notifier = OutputNotifier()
@@ -125,7 +187,7 @@ async def test_connect_different_telio_version_through_relay(
         await beta_client_v3_6.escape_and_write_stdin([
             "mesh",
             "config",
-            shlex.quote(json.dumps(api.get_meshmap(beta.id))),
+            shlex.quote(backport_config(api.get_meshnet_config(beta.id))),
         ])
 
         await alpha_client.wait_for_state_on_any_derp([telio.State.Connected])

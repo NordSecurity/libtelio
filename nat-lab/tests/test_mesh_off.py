@@ -69,7 +69,7 @@ async def test_mesh_off(direct) -> None:
             beta.public_key, [State.Disconnected], [path_type]
         )
 
-        await client_alpha.set_meshmap(env.api.get_meshmap(alpha.id))
+        await client_alpha.set_meshnet_config(env.api.get_meshnet_config(alpha.id))
 
         asyncio.gather(
             client_alpha.wait_for_state_peer(
@@ -139,7 +139,7 @@ async def test_mesh_state_after_disconnecting_node() -> None:
             )
 
         await client_beta.simple_start()
-        await client_beta.set_meshmap(env.api.get_meshmap(beta.id))
+        await client_beta.set_meshnet_config(env.api.get_meshnet_config(beta.id))
 
         await client_alpha.wait_for_state_peer(
             beta.public_key, [State.Connected], [PathType.Direct]

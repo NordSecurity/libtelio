@@ -119,7 +119,7 @@ async def test_mesh_reconnect(
                 client_alpha.wait_for_event_on_any_derp([telio.State.Connected]),
             ),
         ) as event:
-            await client_alpha.set_meshmap(api.get_meshmap(alpha.id))
+            await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
             await event
 
         await asyncio.gather(

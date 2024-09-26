@@ -5,10 +5,10 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from itertools import product, zip_longest
-from mesh_api import Node, Meshmap, API, stop_tcpdump
+from mesh_api import Node, API, stop_tcpdump
 from telio import Client, AdapterType, State, PathType
-from typing import AsyncIterator, List, Tuple, Optional, Union, Dict, Any
-from utils.bindings import default_features, Features
+from typing import AsyncIterator, List, Tuple, Optional, Union
+from utils.bindings import default_features, Features, Server, Config
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionTrackerConfig
 from utils.connection_util import (
@@ -50,7 +50,7 @@ class SetupParameters:
     adapter_type: AdapterType = field(default=AdapterType.Default)
     features: Features = field(default_factory=default_features)
     is_meshnet: bool = field(default=True)
-    derp_servers: Optional[List[Dict[str, Any]]] = field(default=None)
+    derp_servers: Optional[List[Server]] = field(default=None)
     fingerprint: str = ""
 
 
@@ -161,7 +161,7 @@ async def setup_clients(
             AdapterType,
             Features,
             str,
-            Optional[Meshmap],
+            Optional[Config],
         ]
     ],
 ) -> List[Client]:
@@ -184,9 +184,9 @@ async def setup_clients(
         exit_stack.enter_async_context(
             Client(
                 connection, node, adapter_type, features, fingerprint=fingerprint
-            ).run(meshmap)
+            ).run(meshnet_config)
         )
-        for connection, node, adapter_type, features, fingerprint, meshmap in client_parameters
+        for connection, node, adapter_type, features, fingerprint, meshnet_config in client_parameters
     ])
 
 
@@ -278,7 +278,7 @@ async def setup_environment(
                 [instance.fingerprint for instance in instances],
                 [
                     (
-                        api.get_meshmap(nodes[idx].id, instance.derp_servers)
+                        api.get_meshnet_config(nodes[idx].id, instance.derp_servers)
                         if instance.is_meshnet
                         else None
                     )

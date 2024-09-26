@@ -389,7 +389,7 @@ def generate_connection_tracker_config(
             FiveTuple(
                 protocol="tcp",
                 src_ip=lan_addr,
-                dst_ip=str(config.DERP_FAKE.get("ipv4")),
+                dst_ip=str(config.DERP_FAKE.ipv4),
                 dst_port=8765,
             ),
         ),
@@ -399,7 +399,7 @@ def generate_connection_tracker_config(
             FiveTuple(
                 protocol="tcp",
                 src_ip=lan_addr,
-                dst_ip=str(config.DERP_PRIMARY.get("ipv4")),
+                dst_ip=str(config.DERP_PRIMARY.ipv4),
                 dst_port=8765,
             ),
         ),
@@ -409,7 +409,7 @@ def generate_connection_tracker_config(
             FiveTuple(
                 protocol="tcp",
                 src_ip=lan_addr,
-                dst_ip=str(config.DERP_SECONDARY.get("ipv4")),
+                dst_ip=str(config.DERP_SECONDARY.ipv4),
                 dst_port=8765,
             ),
         ),
@@ -419,7 +419,7 @@ def generate_connection_tracker_config(
             FiveTuple(
                 protocol="tcp",
                 src_ip=lan_addr,
-                dst_ip=str(config.DERP_TERTIARY.get("ipv4")),
+                dst_ip=str(config.DERP_TERTIARY.ipv4),
                 dst_port=8765,
             ),
         ),

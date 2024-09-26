@@ -75,9 +75,9 @@ DOCKER_CONE_GW_1_IPv4 = "10.0.254.1"
 DOCKER_CONE_GW_1_IPv6 = "2001:db8:85a4::1000:2541"
 
 DERP_SERVERS_STRS = [
-    f"{DERP_PRIMARY['ipv4']}:{DERP_PRIMARY['relay_port']}",
-    f"{DERP_SECONDARY['ipv4']}:{DERP_SECONDARY['relay_port']}",
-    f"{DERP_TERTIARY['ipv4']}:{DERP_TERTIARY['relay_port']}",
+    f"{DERP_PRIMARY.ipv4}:{DERP_PRIMARY.relay_port}",
+    f"{DERP_SECONDARY.ipv4}:{DERP_SECONDARY.relay_port}",
+    f"{DERP_TERTIARY.ipv4}:{DERP_TERTIARY.relay_port}",
 ]
 
 DEFAULT_WAITING_TIME = 5
@@ -267,7 +267,7 @@ async def start_alpha_beta_in_relay(
             alpha,
             telio_features=alpha_features,
             fingerprint=ALPHA_FINGERPRINT,
-        ).run(api.get_meshmap(alpha.id))
+        ).run(api.get_meshnet_config(alpha.id))
     )
 
     client_beta = telio.Client(
@@ -298,7 +298,9 @@ async def start_alpha_beta_in_relay(
             f'Relayed peer state change for "{losing_key[:4]}...{losing_key[-4:]}" to Connected will be reported'
         )
 
-        await exit_stack.enter_async_context(client_beta.run(api.get_meshmap(beta.id)))
+        await exit_stack.enter_async_context(
+            client_beta.run(api.get_meshnet_config(beta.id))
+        )
 
         await relayed_state_reported.wait()
 
@@ -383,7 +385,7 @@ async def run_default_scenario(
             gamma,
             telio_features=build_telio_features(),
             fingerprint=GAMMA_FINGERPRINT,
-        ).run(api.get_meshmap(gamma.id))
+        ).run(api.get_meshnet_config(gamma.id))
     )
 
     await asyncio.gather(
@@ -1910,7 +1912,7 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
                 beta,
                 telio_features=build_telio_features(),
                 fingerprint=BETA_FINGERPRINT,
-            ).run(api.get_meshmap(beta.id))
+            ).run(api.get_meshnet_config(beta.id))
         )
 
         await client_beta.trigger_event_collection()
@@ -1938,11 +1940,11 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
                 alpha,
                 telio_features=build_telio_features(),
                 fingerprint=ALPHA_FINGERPRINT,
-            ).run(api.get_meshmap(alpha.id))
+            ).run(api.get_meshnet_config(alpha.id))
         )
 
         beta.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
-        await client_beta.set_meshmap(api.get_meshmap(beta.id))
+        await client_beta.set_meshnet_config(api.get_meshnet_config(beta.id))
 
         await asyncio.gather(
             client_alpha.wait_for_state_peer(
@@ -2006,7 +2008,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
             beta,
             telio_features=build_telio_features(),
             fingerprint=BETA_FINGERPRINT,
-        ).run(api.get_meshmap(beta.id)) as client_beta:
+        ).run(api.get_meshnet_config(beta.id)) as client_beta:
 
             await client_beta.trigger_event_collection()
             beta_events = await wait_for_event_dump(
@@ -2028,7 +2030,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
                 beta,
                 telio_features=build_telio_features(),
                 fingerprint=BETA_FINGERPRINT,
-            ).run(api.get_meshmap(beta.id))
+            ).run(api.get_meshnet_config(beta.id))
         )
 
         await client_beta.trigger_event_collection()
@@ -2066,7 +2068,7 @@ async def test_lana_initial_heartbeat_no_trigger(
                     initial_heartbeat_interval=initial_heartbeat_interval,
                 ),
                 fingerprint=ALPHA_FINGERPRINT,
-            ).run(api.get_meshmap(alpha.id))
+            ).run(api.get_meshnet_config(alpha.id))
         )
 
         if initial_heartbeat_interval == 5:

@@ -336,7 +336,9 @@ async def test_vpn_dns(alpha_ip_stack: IPStack) -> None:
 
         # Test interop with meshnet
         await client_alpha.enable_magic_dns(["10.0.80.82"])
-        await client_alpha.set_meshmap(api.get_meshmap(alpha.id, derp_servers=[]))
+        await client_alpha.set_meshnet_config(
+            api.get_meshnet_config(alpha.id, derp_servers=[])
+        )
 
         await query_dns(connection, "google.com", dns_server=dns_server_address)
 
@@ -508,7 +510,7 @@ async def test_dns_stability(alpha_ip_stack: IPStack) -> None:
         ),
     ],
 )
-async def test_set_meshmap_dns_update(
+async def test_set_meshnet_config_dns_update(
     alpha_ip_stack: IPStack,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
@@ -546,7 +548,9 @@ async def test_set_meshmap_dns_update(
         beta = api.default_config_one_node(ip_stack=IPStack.IPv4v6)
 
         # Check if setting meshnet updates nord names for dns resolver
-        await client_alpha.set_meshmap(api.get_meshmap(alpha.id, derp_servers=[]))
+        await client_alpha.set_meshnet_config(
+            api.get_meshnet_config(alpha.id, derp_servers=[])
+        )
 
         await query_dns(
             connection_alpha, "beta.nord", [beta.ip_addresses[0]], dns_server_address
@@ -772,11 +776,15 @@ async def test_dns_change_nickname() -> None:
         await client_alpha.enable_magic_dns([])
         await client_beta.enable_magic_dns([])
 
-        # Set new meshmap with different nicknames
+        # Set new meshnet config with different nicknames
         api.assign_nickname(alpha.id, "rotten")
         api.assign_nickname(beta.id, "ono")
-        await client_alpha.set_meshmap(api.get_meshmap(alpha.id, derp_servers=[]))
-        await client_beta.set_meshmap(api.get_meshmap(beta.id, derp_servers=[]))
+        await client_alpha.set_meshnet_config(
+            api.get_meshnet_config(alpha.id, derp_servers=[])
+        )
+        await client_beta.set_meshnet_config(
+            api.get_meshnet_config(beta.id, derp_servers=[])
+        )
 
         with pytest.raises(ProcessExecError):
             await query_dns(connection_alpha, "yoko.nord")
@@ -793,11 +801,15 @@ async def test_dns_change_nickname() -> None:
         await query_dns(connection_beta, "rotten.nord", alpha.ip_addresses)
         await query_dns(connection_beta, "ono.nord", beta.ip_addresses)
 
-        # Set new meshmap removing nicknames
+        # Set new meshnet config removing nicknames
         api.reset_nickname(alpha.id)
         api.reset_nickname(beta.id)
-        await client_alpha.set_meshmap(api.get_meshmap(alpha.id, derp_servers=[]))
-        await client_beta.set_meshmap(api.get_meshmap(beta.id, derp_servers=[]))
+        await client_alpha.set_meshnet_config(
+            api.get_meshnet_config(alpha.id, derp_servers=[])
+        )
+        await client_beta.set_meshnet_config(
+            api.get_meshnet_config(beta.id, derp_servers=[])
+        )
 
         with pytest.raises(ProcessExecError):
             await query_dns(connection_alpha, "ono.nord")
