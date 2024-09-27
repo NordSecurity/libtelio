@@ -10,15 +10,26 @@ import warnings
 from collections import Counter
 from config import DERP_SERVERS
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
-from dataclasses_json import DataClassJsonMixin, dataclass_json
 from datetime import datetime
 from enum import Enum
 from mesh_api import Node, start_tcpdump, stop_tcpdump
 from typing import AsyncIterator, List, Optional, Set
 from uniffi.libtelio_proxy import LibtelioProxy, ProxyConnectionError
 from utils import asyncio_util
-from utils.bindings import default_features, Features, NatType, Config
+from utils.bindings import (
+    default_features,
+    Features,
+    NatType,
+    Config,
+    TelioNode,
+    Server,
+    ErrorEvent,
+    Event,
+    PathType,
+    NodeState,
+    RelayState,
+    LinkState,
+)
 from utils.command_grepper import CommandGrepper
 from utils.connection import Connection, DockerConnection, TargetOS
 from utils.connection_util import get_uniffi_path
@@ -32,149 +43,6 @@ from utils.testing import (
     get_current_test_log_path,
     get_current_test_case_and_parameters,
 )
-
-
-# Equivalent of `libtelio/telio-wg/src/uapi.rs`
-class State(Enum):
-    Disconnected = "disconnected"
-    Connecting = "connecting"
-    Connected = "connected"
-
-
-class LinkState(Enum):
-    Down = "down"
-    Up = "up"
-
-
-# Equivalent of `libtelio/crates/telio-model/src/features.rs:PathType`
-class PathType(Enum):
-    Relay = "relay"
-    Direct = "direct"
-
-
-@dataclass_json
-@dataclass
-class DerpServer(DataClassJsonMixin):
-    region_code: str
-    name: str
-    hostname: str
-    ipv4: str
-    relay_port: int
-    stun_port: int
-    stun_plaintext_port: int
-    public_key: str
-    weight: int
-    use_plain_text: bool
-    conn_state: State
-
-    def __hash__(self):
-        return hash((
-            self.region_code,
-            self.name,
-            self.hostname,
-            self.ipv4,
-            self.relay_port,
-            self.stun_port,
-            self.stun_plaintext_port,
-            self.public_key,
-            self.weight,
-            self.use_plain_text,
-            self.conn_state,
-        ))
-
-
-# Equivalent of `libtelio/crates/telio-model/src/mesh.rs:Node`
-@dataclass_json
-@dataclass
-class PeerInfo(DataClassJsonMixin):
-    identifier: str = ""
-    public_key: str = ""
-    state: State = State.Disconnected
-    link_state: Optional[LinkState] = None
-    is_exit: bool = False
-    is_vpn: bool = False
-    ip_addresses: List[str] = field(default_factory=lambda: [])
-    allowed_ips: List[str] = field(default_factory=lambda: [])
-    nickname: Optional[str] = None
-    endpoint: Optional[str] = None
-    hostname: Optional[str] = None
-    allow_incoming_connections: bool = False
-    allow_peer_send_files: bool = False
-    path: PathType = PathType.Relay
-
-    def __hash__(self):
-        return hash((
-            self.identifier,
-            self.public_key,
-            self.state,
-            self.link_state,
-            self.is_exit,
-            self.is_vpn,
-            tuple(self.ip_addresses),
-            tuple(self.allowed_ips),
-            self.nickname,
-            self.endpoint,
-            self.hostname,
-            self.allow_incoming_connections,
-            self.allow_peer_send_files,
-            self.path,
-        ))
-
-    def __eq__(self, other):
-        if not isinstance(other, PeerInfo):
-            return False
-        return (
-            self.identifier == other.identifier
-            and self.public_key == other.public_key
-            and self.state == other.state
-            and (
-                self.link_state is None
-                or other.link_state is None
-                or self.link_state == other.link_state
-            )
-            and self.is_exit == other.is_exit
-            and self.is_vpn == other.is_vpn
-            and self.ip_addresses == other.ip_addresses
-            and self.allowed_ips == other.allowed_ips
-            and (
-                self.endpoint is None
-                or other.endpoint is None
-                or self.endpoint == other.endpoint
-            )
-            and (
-                self.hostname is None
-                or other.hostname is None
-                or self.hostname == other.hostname
-            )
-            and (
-                self.nickname is None
-                or other.nickname is None
-                or self.nickname == other.nickname
-            )
-            and self.allow_incoming_connections == other.allow_incoming_connections
-            and self.allow_peer_send_files == other.allow_peer_send_files
-            and self.path == other.path
-        )
-
-
-class ErrorLevel(Enum):
-    Critical = "critical"
-    Severe = "severe"
-    Warning = "warning"
-    Notice = "notice"
-
-
-class ErrorCode(Enum):
-    NoError = "noerror"
-    Unknown = "unknown"
-
-
-@dataclass_json
-@dataclass
-class ErrorEvent(DataClassJsonMixin):
-    level: ErrorLevel = ErrorLevel.Critical
-    code: ErrorCode = ErrorCode.NoError
-    msg: str = ""
 
 
 # Equivalent of `libtelio/telio-wg/src/adapter/mod.rs`
@@ -201,8 +69,8 @@ class AdapterType(Enum):
 
 class Runtime:
     _output_notifier: OutputNotifier
-    _peer_state_events: List[PeerInfo]
-    _derp_state_events: List[DerpServer]
+    _peer_state_events: List[TelioNode]
+    _derp_state_events: List[Server]
     _error_events: List[ErrorEvent]
     _started_tasks: List[str]
     _stopped_tasks: List[str]
@@ -218,13 +86,9 @@ class Runtime:
         self.allowed_pub_keys = set()
 
     async def handle_output_line(self, line) -> bool:
-        return (
-            self._handle_node_event(line)
-            or await self._output_notifier.handle_output(line)
-            or self._handle_derp_event(line)
-            or self._handle_task_information(line)
-            or self._handle_error_event(line)
-        )
+        return await self._output_notifier.handle_output(
+            line
+        ) or self._handle_task_information(line)
 
     def _handle_task_information(self, line) -> bool:
         if line.startswith("task started - "):
@@ -239,13 +103,36 @@ class Runtime:
 
         return False
 
+    def handle_event(self, event: Event):
+        if isinstance(event, Event.NODE):
+            self._handle_node_event(event.body)
+        elif isinstance(event, Event.RELAY):
+            self._handle_derp_event(event.body)
+        elif isinstance(event, Event.ERROR):
+            self._handle_error_event(event.body)
+        else:
+            raise TypeError(f"Got invalid event type: {event}")
+
+    def _handle_node_event(self, node_event: TelioNode):
+        assert node_event.is_exit or (
+            "0.0.0.0/0" not in node_event.allowed_ips
+            and "::/0" not in node_event.allowed_ips
+        )
+        self.set_peer(node_event)
+
+    def _handle_derp_event(self, server: Server):
+        self.set_derp(server)
+
+    def _handle_error_event(self, error_event: ErrorEvent):
+        self._error_events.append(error_event)
+
     def get_output_notifier(self) -> OutputNotifier:
         return self._output_notifier
 
     async def notify_peer_state(
         self,
         public_key: str,
-        states: List[State],
+        states: List[NodeState],
         paths: List[PathType],
         is_exit: bool = False,
         is_vpn: bool = False,
@@ -265,12 +152,12 @@ class Runtime:
     async def notify_peer_event(
         self,
         public_key: str,
-        states: List[State],
+        states: List[NodeState],
         paths: List[PathType],
         is_exit: bool = False,
         is_vpn: bool = False,
     ) -> None:
-        def _get_events() -> List[PeerInfo]:
+        def _get_events() -> List[TelioNode]:
             return [
                 peer
                 for peer in self._peer_state_events
@@ -297,7 +184,7 @@ class Runtime:
             if peer and peer.public_key == public_key
         ]
 
-    def get_peer_info(self, public_key: str) -> Optional[PeerInfo]:
+    def get_peer_info(self, public_key: str) -> Optional[TelioNode]:
         events = [
             peer_event
             for peer_event in self._peer_state_events
@@ -310,7 +197,7 @@ class Runtime:
     async def notify_derp_state(
         self,
         server_ip: str,
-        states: List[State],
+        states: List[RelayState],
     ) -> None:
         while True:
             derp = self.get_derp_info(server_ip)
@@ -321,9 +208,9 @@ class Runtime:
     async def notify_derp_event(
         self,
         server_ip: str,
-        states: List[State],
+        states: List[RelayState],
     ) -> None:
-        def _get_events() -> List[DerpServer]:
+        def _get_events() -> List[Server]:
             return [
                 event
                 for event in self._derp_state_events
@@ -338,84 +225,24 @@ class Runtime:
                 return
             await asyncio.sleep(0.1)
 
-    def get_derp_info(self, server_ip: str) -> Optional[DerpServer]:
+    def get_derp_info(self, server_ip: str) -> Optional[Server]:
         events = [event for event in self._derp_state_events if event.ipv4 == server_ip]
         if events:
             return events[-1]
         return None
 
-    def set_peer(self, peer: PeerInfo) -> None:
+    def set_peer(self, peer: TelioNode) -> None:
         assert peer.public_key in self.allowed_pub_keys
         self._peer_state_events.append(peer)
 
-    def _extract_event_tokens(self, line: str, event_type: str) -> Optional[List[str]]:
-        if line.startswith(f'{{"type":"{event_type}","body":'):
-            return line[:-1].split(f'{{"type":"{event_type}","body":')
-        return None
-
-    def _handle_node_event(self, line) -> bool:
-        def _check_node_event(node_event: PeerInfo):
-            assert node_event.is_exit or (
-                "0.0.0.0/0" not in node_event.allowed_ips
-                and "::/0" not in node_event.allowed_ips
-            )
-
-        tokens = self._extract_event_tokens(line, "node")
-        if tokens is None:
-            return False
-
-        json_string = tokens[1].strip()
-        result = re.search("{(.*)}", json_string)
-        if result:
-            node_state = PeerInfo.from_json(
-                "{" + result.group(1).replace("\\", "") + "}"
-            )
-            assert isinstance(node_state, PeerInfo)
-            _check_node_event(node_state)
-            self.set_peer(node_state)
-            return True
-        return False
-
-    def set_derp(self, derp: DerpServer) -> None:
+    def set_derp(self, derp: Server) -> None:
         self._derp_state_events.append(derp)
-
-    def _handle_derp_event(self, line) -> bool:
-        tokens = self._extract_event_tokens(line, "relay")
-        if tokens is None:
-            return False
-
-        json_string = tokens[1].strip()
-        result = re.search("{(.*)}", json_string)
-        if result:
-            derp_server_json = DerpServer.from_json(
-                "{" + result.group(1).replace("\\", "") + "}"
-            )
-            assert isinstance(derp_server_json, DerpServer)
-            self.set_derp(derp_server_json)
-            return True
-        return False
 
     def get_started_tasks(self) -> List[str]:
         return self._started_tasks
 
     def get_stopped_tasks(self) -> List[str]:
         return self._stopped_tasks
-
-    def _handle_error_event(self, line) -> bool:
-        tokens = self._extract_event_tokens(line, "error")
-        if tokens is None:
-            return False
-
-        json_string = tokens[1].strip()
-        result = re.search("{(.*)}", json_string)
-        if result:
-            error_event = ErrorEvent.from_json(
-                "{" + result.group(1).replace("\\", "") + "}"
-            )
-            assert isinstance(error_event, ErrorEvent)
-            self._error_events.append(error_event)
-            return True
-        return False
 
     async def notify_error_event(self, err: ErrorEvent) -> None:
         def _get_events() -> List[ErrorEvent]:
@@ -441,7 +268,7 @@ class Events:
     async def wait_for_state_peer(
         self,
         public_key: str,
-        state: List[State],
+        state: List[NodeState],
         paths: List[PathType],
         is_exit: bool = False,
         is_vpn: bool = False,
@@ -455,7 +282,7 @@ class Events:
     async def wait_for_event_peer(
         self,
         public_key: str,
-        states: List[State],
+        states: List[NodeState],
         paths: List[PathType],
         is_exit: bool = False,
         is_vpn: bool = False,
@@ -470,14 +297,14 @@ class Events:
         return self._runtime.get_link_state_events(public_key)
 
     async def wait_for_state_derp(
-        self, server_ip: str, states: List[State], timeout: Optional[float] = None
+        self, server_ip: str, states: List[RelayState], timeout: Optional[float] = None
     ) -> None:
         await asyncio.wait_for(
             self._runtime.notify_derp_state(server_ip, states), timeout
         )
 
     async def wait_for_event_derp(
-        self, server_ip: str, states: List[State], timeout: Optional[float] = None
+        self, server_ip: str, states: List[RelayState], timeout: Optional[float] = None
     ) -> None:
         await asyncio.wait_for(
             self._runtime.notify_derp_event(server_ip, states), timeout
@@ -694,7 +521,7 @@ class Client:
     async def wait_for_state_peer(
         self,
         public_key,
-        states: List[State],
+        states: List[NodeState],
         paths: Optional[List[PathType]] = None,
         is_exit: bool = False,
         is_vpn: bool = False,
@@ -703,7 +530,7 @@ class Client:
         await self.get_events().wait_for_state_peer(
             public_key,
             states,
-            paths if paths else [PathType.Relay],
+            paths if paths else [PathType.RELAY],
             is_exit,
             is_vpn,
             timeout,
@@ -712,7 +539,7 @@ class Client:
     async def wait_for_event_peer(
         self,
         public_key: str,
-        states: List[State],
+        states: List[NodeState],
         paths: Optional[List[PathType]] = None,
         is_exit: bool = False,
         is_vpn: bool = False,
@@ -721,7 +548,7 @@ class Client:
         await self.get_events().wait_for_event_peer(
             public_key,
             states,
-            paths if paths else [PathType.Relay],
+            paths if paths else [PathType.RELAY],
             is_exit,
             is_vpn,
             timeout,
@@ -731,12 +558,12 @@ class Client:
         return self.get_events().get_link_state_events(public_key)
 
     async def wait_for_state_derp(
-        self, derp_ip, states: List[State], timeout: Optional[float] = None
+        self, derp_ip, states: List[RelayState], timeout: Optional[float] = None
     ) -> None:
         await self.get_events().wait_for_state_derp(derp_ip, states, timeout)
 
     async def wait_for_state_on_any_derp(
-        self, states: List[State], timeout: Optional[float] = None
+        self, states: List[RelayState], timeout: Optional[float] = None
     ) -> None:
         async with asyncio_util.run_async_contexts([
             self.get_events().wait_for_state_derp(str(derp.ipv4), states, timeout)
@@ -753,7 +580,9 @@ class Client:
     ) -> None:
         async with asyncio_util.run_async_contexts([
             self.get_events().wait_for_state_derp(
-                str(derp.ipv4), [State.Disconnected, State.Connecting], timeout
+                str(derp.ipv4),
+                [RelayState.DISCONNECTED, RelayState.CONNECTING],
+                timeout,
             )
             for derp in DERP_SERVERS
         ]) as futures:
@@ -764,12 +593,12 @@ class Client:
                 pass
 
     async def wait_for_event_derp(
-        self, derp_ip, states: List[State], timeout: Optional[float] = None
+        self, derp_ip, states: List[RelayState], timeout: Optional[float] = None
     ) -> None:
         await self.get_events().wait_for_event_derp(derp_ip, states, timeout)
 
     async def wait_for_event_on_any_derp(
-        self, states: List[State], timeout: Optional[float] = None
+        self, states: List[RelayState], timeout: Optional[float] = None
     ) -> None:
         async with asyncio_util.run_async_contexts([
             self.get_events().wait_for_event_derp(str(derp.ipv4), states, timeout)
@@ -844,7 +673,7 @@ class Client:
         async with asyncio_util.run_async_context(
             self.wait_for_event_peer(
                 public_key,
-                [State.Connected],
+                [NodeState.CONNECTED],
                 list(PathType),
                 is_exit=True,
                 is_vpn=True,
@@ -878,7 +707,7 @@ class Client:
         async with asyncio_util.run_async_context(
             self.wait_for_event_peer(
                 public_key,
-                [State.Disconnected],
+                [NodeState.DISCONNECTED],
                 list(PathType),
                 is_exit=True,
                 is_vpn=True,
@@ -898,7 +727,7 @@ class Client:
     ) -> None:
         async with asyncio_util.run_async_context(
             self.wait_for_event_peer(
-                public_key, [State.Connected], list(PathType), timeout=timeout
+                public_key, [NodeState.CONNECTED], list(PathType), timeout=timeout
             )
         ) as event:
             self.get_proxy().disconnect_from_exit_nodes()
@@ -942,7 +771,7 @@ class Client:
         async with asyncio_util.run_async_context(
             self.wait_for_event_peer(
                 public_key,
-                [State.Connected],
+                [NodeState.CONNECTED],
                 list(PathType),
                 is_exit=True,
                 timeout=timeout,
@@ -1008,10 +837,10 @@ class Client:
                     f" tasks: {started_tasks} | stopped tasks: {stopped_tasks}"
                 )
 
-    def get_node_state(self, public_key: str) -> Optional[PeerInfo]:
+    def get_node_state(self, public_key: str) -> Optional[TelioNode]:
         return self.get_runtime().get_peer_info(public_key)
 
-    def get_derp_state(self, server_ip: str) -> Optional[DerpServer]:
+    def get_derp_state(self, server_ip: str) -> Optional[Server]:
         return self.get_runtime().get_derp_info(server_ip)
 
     async def _event_request_loop(self) -> None:
@@ -1021,7 +850,7 @@ class Client:
                 while event:
                     if self._runtime:
                         print(f"[{self._node.name}]: event [{datetime.now()}]: {event}")
-                        await self._runtime.handle_output_line(event)
+                        self._runtime.handle_event(event)
                         event = self.get_proxy().next_event()
                 await asyncio.sleep(1)
             except:

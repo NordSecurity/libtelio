@@ -3,8 +3,7 @@ import pytest
 import telio
 from contextlib import AsyncExitStack
 from datetime import datetime
-from helpers import connectivity_stack, setup_mesh_nodes, SetupParameters
-from telio import PathType, State
+from helpers import setup_mesh_nodes, SetupParameters, connectivity_stack
 from typing import Tuple
 from utils.bindings import (
     Features,
@@ -12,6 +11,8 @@ from utils.bindings import (
     FeatureQoS,
     EndpointProvider,
     RttType,
+    PathType,
+    NodeState,
 )
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionTracker, ConnectionLimits
@@ -189,13 +190,13 @@ async def test_session_keeper(
         await asyncio.gather(
             alpha_client.wait_for_state_peer(
                 beta.public_key,
-                [State.Connected],
-                [PathType.Direct],
+                [NodeState.CONNECTED],
+                [PathType.DIRECT],
             ),
             beta_client.wait_for_state_peer(
                 alpha.public_key,
-                [State.Connected],
-                [PathType.Direct],
+                [NodeState.CONNECTED],
+                [PathType.DIRECT],
             ),
             wait_for_conntracker(),
         )
@@ -286,11 +287,11 @@ async def test_qos(
         await asyncio.gather(
             alpha_client.wait_for_state_peer(
                 beta.public_key,
-                [State.Connected],
+                [NodeState.CONNECTED],
             ),
             beta_client.wait_for_state_peer(
                 alpha.public_key,
-                [State.Connected],
+                [NodeState.CONNECTED],
             ),
             wait_for_conntracker(),
         )

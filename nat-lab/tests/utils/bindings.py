@@ -1,4 +1,4 @@
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 from uniffi.telio_bindings import *  # pylint: disable=wildcard-import, unused-wildcard-import  # isort: skip
 
@@ -50,3 +50,41 @@ def default_features(
     features.hide_ips = False
     features.dns.exit_dns = FeatureExitDns(auto_switch_dns_ips=True)
     return features
+
+
+def telio_node(  # pylint: disable=dangerous-default-value
+    identifier: str = "",
+    public_key: str = "",
+    state: NodeState = NodeState.DISCONNECTED,
+    hostname: Optional[str] = None,
+    nickname: Optional[str] = None,
+    is_exit: bool = False,
+    is_vpn: bool = False,
+    ip_addresses: List[str] = [],
+    allowed_ips: List[str] = [],
+    endpoint: Optional[str] = None,
+    path: PathType = PathType.RELAY,
+    allow_incoming_connections: bool = False,
+    allow_peer_send_files: bool = False,
+    link_state: Optional[LinkState] = None,
+    allow_multicast: bool = False,
+    peer_allows_multicast: bool = False,
+) -> TelioNode:
+    return TelioNode(
+        identifier=identifier,
+        public_key=public_key,
+        state=state,
+        hostname=hostname,
+        nickname=nickname,
+        is_exit=is_exit,
+        is_vpn=is_vpn,
+        ip_addresses=ip_addresses,
+        allowed_ips=allowed_ips,
+        endpoint=endpoint,
+        path=path,
+        allow_incoming_connections=allow_incoming_connections,
+        allow_peer_send_files=allow_peer_send_files,
+        link_state=link_state,
+        allow_multicast=allow_multicast,
+        peer_allows_multicast=peer_allows_multicast,
+    )

@@ -4,8 +4,14 @@ import pytest
 import timeouts
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
-from telio import AdapterType, PathType, State
-from utils.bindings import features_with_endpoint_providers, EndpointProvider
+from telio import AdapterType
+from utils.bindings import (
+    features_with_endpoint_providers,
+    EndpointProvider,
+    PathType,
+    NodeState,
+    RelayState,
+)
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 
@@ -99,13 +105,13 @@ async def test_node_state_flickering_relay(
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.gather(
                 client_alpha.wait_for_event_peer(
-                    beta.public_key, list(State), timeout=120
+                    beta.public_key, list(NodeState), timeout=120
                 ),
                 client_beta.wait_for_event_peer(
-                    alpha.public_key, list(State), timeout=120
+                    alpha.public_key, list(NodeState), timeout=120
                 ),
-                client_alpha.wait_for_event_on_any_derp(list(State), timeout=120),
-                client_beta.wait_for_event_on_any_derp(list(State), timeout=120),
+                client_alpha.wait_for_event_on_any_derp(list(RelayState), timeout=120),
+                client_beta.wait_for_event_on_any_derp(list(RelayState), timeout=120),
             )
 
 
@@ -174,16 +180,16 @@ async def test_node_state_flickering_direct(
             await asyncio.gather(
                 client_alpha.wait_for_event_peer(
                     beta.public_key,
-                    list(State),
+                    list(NodeState),
                     list(PathType),
                     timeout=120,
                 ),
                 client_beta.wait_for_event_peer(
                     alpha.public_key,
-                    list(State),
+                    list(NodeState),
                     list(PathType),
                     timeout=120,
                 ),
-                client_alpha.wait_for_event_on_any_derp(list(State), timeout=120),
-                client_beta.wait_for_event_on_any_derp(list(State), timeout=120),
+                client_alpha.wait_for_event_on_any_derp(list(RelayState), timeout=120),
+                client_beta.wait_for_event_on_any_derp(list(RelayState), timeout=120),
             )

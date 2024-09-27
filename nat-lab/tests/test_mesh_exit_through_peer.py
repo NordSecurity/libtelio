@@ -5,8 +5,9 @@ import telio
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
 from mesh_api import API
-from telio import State, AdapterType
+from telio import AdapterType
 from utils import testing, stun
+from utils.bindings import PathType, NodeState, RelayState
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
     generate_connection_tracker_config,
@@ -153,17 +154,17 @@ async def test_mesh_exit_through_peer(
         disconnect_task = asyncio.create_task(
             client_alpha.wait_for_event_peer(
                 beta.public_key,
-                [State.Disconnected],
-                list(telio.PathType),
+                [NodeState.DISCONNECTED],
+                list(PathType),
                 is_exit=True,
             )
         )
-        # Using a list of all State variants except for Disconnect just in case new variants are added in the future.
-        all_other_states = list(State)
-        all_other_states.remove(State.Disconnected)
+        # Using a list of all NodeState variants except for Disconnect just in case new variants are added in the future.
+        all_other_states = list(NodeState)
+        all_other_states.remove(NodeState.DISCONNECTED)
         any_other_state_task = asyncio.create_task(
             client_alpha.wait_for_event_peer(
-                beta.public_key, all_other_states, list(telio.PathType)
+                beta.public_key, all_other_states, list(PathType)
             )
         )
         await client_alpha.set_mesh_off()
@@ -180,7 +181,7 @@ async def test_mesh_exit_through_peer(
         ), "disconnect from beta never happened after disabling meshnet"
         with pytest.raises(asyncio.TimeoutError):
             await client_alpha.wait_for_event_peer(
-                beta.public_key, list(State), list(telio.PathType), timeout=5
+                beta.public_key, list(NodeState), list(PathType), timeout=5
             )
 
 
@@ -271,12 +272,12 @@ async def test_ipv6_exit_node(
         )
 
         await asyncio.gather(
-            client_alpha.wait_for_state_on_any_derp([State.Connected]),
-            client_beta.wait_for_state_on_any_derp([State.Connected]),
+            client_alpha.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
         )
         await asyncio.gather(
-            client_alpha.wait_for_state_peer(beta.public_key, [State.Connected]),
-            client_beta.wait_for_state_peer(alpha.public_key, [State.Connected]),
+            client_alpha.wait_for_state_peer(beta.public_key, [NodeState.CONNECTED]),
+            client_beta.wait_for_state_peer(alpha.public_key, [NodeState.CONNECTED]),
         )
 
         # Ping in-tunnel node with IPv6

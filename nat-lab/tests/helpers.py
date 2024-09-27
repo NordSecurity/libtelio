@@ -6,9 +6,17 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from itertools import product, zip_longest
 from mesh_api import Node, API, stop_tcpdump
-from telio import Client, AdapterType, State, PathType
+from telio import Client, AdapterType
 from typing import AsyncIterator, List, Tuple, Optional, Union
-from utils.bindings import default_features, Features, Server, Config
+from utils.bindings import (
+    default_features,
+    Features,
+    Server,
+    Config,
+    RelayState,
+    NodeState,
+    PathType,
+)
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionTrackerConfig
 from utils.connection_util import (
@@ -332,7 +340,7 @@ async def setup_mesh_nodes(
     )
 
     await asyncio.gather(*[
-        client.wait_for_state_on_any_derp([State.Connected])
+        client.wait_for_state_on_any_derp([RelayState.CONNECTED])
         for client, instance in zip_longest(env.clients, instances)
         if instance.derp_servers != []
     ])
@@ -340,11 +348,11 @@ async def setup_mesh_nodes(
     connection_future = asyncio.gather(*[
         client.wait_for_state_peer(
             other_node.public_key,
-            [State.Connected],
+            [NodeState.CONNECTED],
             (
-                [PathType.Direct]
+                [PathType.DIRECT]
                 if instance.features.direct and other_instance.features.direct
-                else [PathType.Relay]
+                else [PathType.RELAY]
             ),
             timeout=90 if is_timeout_expected else None,
         )

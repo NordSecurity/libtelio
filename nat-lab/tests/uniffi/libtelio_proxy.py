@@ -73,7 +73,7 @@ class LibtelioProxy:
     def _create(self, features: libtelio.Features):
         self.handle_remote_error(lambda r: r.create(features))
 
-    def next_event(self):
+    def next_event(self) -> libtelio.Event:
         return self.handle_remote_error(lambda r: r.next_event())
 
     def stop(self):

@@ -3,9 +3,8 @@ import pytest
 import telio
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
-from telio import PathType, State
 from timeouts import TEST_MESH_STATE_AFTER_DISCONNECTING_NODE_TIMEOUT
-from utils.bindings import default_features, EndpointProvider
+from utils.bindings import default_features, EndpointProvider, PathType, NodeState
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
 
@@ -63,20 +62,20 @@ async def test_mesh_off(direct) -> None:
             "peer:" not in wg_show_stdout.strip().split()
         ), f"There are leftover WireGuard peers after mesh is set to off: {wg_show_stdout}"
 
-        path_type = PathType.Direct if direct else PathType.Relay
+        path_type = PathType.DIRECT if direct else PathType.RELAY
 
         await client_alpha.wait_for_state_peer(
-            beta.public_key, [State.Disconnected], [path_type]
+            beta.public_key, [NodeState.DISCONNECTED], [path_type]
         )
 
         await client_alpha.set_meshnet_config(env.api.get_meshnet_config(alpha.id))
 
         asyncio.gather(
             client_alpha.wait_for_state_peer(
-                beta.public_key, [State.Connected], [path_type]
+                beta.public_key, [NodeState.CONNECTED], [path_type]
             ),
             client_beta.wait_for_state_peer(
-                alpha.public_key, [State.Connected], [path_type]
+                alpha.public_key, [NodeState.CONNECTED], [path_type]
             ),
         )
 
@@ -130,19 +129,19 @@ async def test_mesh_state_after_disconnecting_node() -> None:
         await client_beta.stop_device()
 
         await client_alpha.wait_for_state_peer(
-            beta.public_key, [State.Connecting], list(PathType)
+            beta.public_key, [NodeState.CONNECTING], list(PathType)
         )
 
         with pytest.raises(asyncio.TimeoutError):
             await client_alpha.wait_for_state_peer(
-                beta.public_key, [State.Connected], list(PathType), timeout=15
+                beta.public_key, [NodeState.CONNECTED], list(PathType), timeout=15
             )
 
         await client_beta.simple_start()
         await client_beta.set_meshnet_config(env.api.get_meshnet_config(beta.id))
 
         await client_alpha.wait_for_state_peer(
-            beta.public_key, [State.Connected], [PathType.Direct]
+            beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
         )
 
         # LLT-5532: To be cleaned up...

@@ -5,9 +5,17 @@ import timeouts
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_mesh_nodes, setup_api
 from mesh_api import API
-from telio import AdapterType, PathType, PeerInfo, State, Client
+from telio import AdapterType, Client
 from utils import stun
-from utils.bindings import features_with_endpoint_providers, EndpointProvider
+from utils.bindings import (
+    features_with_endpoint_providers,
+    EndpointProvider,
+    PathType,
+    TelioNode,
+    NodeState,
+    RelayState,
+    telio_node,
+)
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
     generate_connection_tracker_config,
@@ -16,6 +24,41 @@ from utils.connection_util import (
 )
 from utils.ping import ping
 from utils.router import IPStack
+
+
+def node_cmp(left: TelioNode, right: TelioNode):
+    return (
+        left.identifier == right.identifier
+        and left.public_key == right.public_key
+        and left.state == right.state
+        and (
+            left.link_state is None
+            or right.link_state is None
+            or left.link_state == right.link_state
+        )
+        and left.is_exit == right.is_exit
+        and left.is_vpn == right.is_vpn
+        and left.ip_addresses == right.ip_addresses
+        and left.allowed_ips == right.allowed_ips
+        and (
+            left.endpoint is None
+            or right.endpoint is None
+            or left.endpoint == right.endpoint
+        )
+        and (
+            left.hostname is None
+            or right.hostname is None
+            or left.hostname == right.hostname
+        )
+        and (
+            left.nickname is None
+            or right.nickname is None
+            or left.nickname == right.nickname
+        )
+        and left.allow_incoming_connections == right.allow_incoming_connections
+        and left.allow_peer_send_files == right.allow_peer_send_files
+        and left.path == right.path
+    )
 
 
 @pytest.mark.asyncio
@@ -111,36 +154,38 @@ async def test_event_content_meshnet(
         await ping(connection_alpha, beta.ip_addresses[0])
         await ping(connection_beta, alpha.ip_addresses[0])
 
-        assert client_alpha.get_node_state(beta.public_key) == PeerInfo(
-            identifier=beta.id,
-            public_key=beta.public_key,
-            state=State.Connected,
-            is_exit=False,
-            is_vpn=False,
-            ip_addresses=beta.ip_addresses,
-            allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
-            nickname="BETA",
-            endpoint=None,
-            hostname=beta.name + ".nord",
-            allow_incoming_connections=True,
-            allow_peer_send_files=True,
-            path=PathType.Relay,
+        beta_node_state = client_alpha.get_node_state(beta.public_key)
+        assert beta_node_state
+        assert node_cmp(
+            beta_node_state,
+            telio_node(
+                identifier=beta.id,
+                public_key=beta.public_key,
+                state=NodeState.CONNECTED,
+                ip_addresses=beta.ip_addresses,
+                allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
+                nickname="BETA",
+                hostname=beta.name + ".nord",
+                allow_incoming_connections=True,
+                allow_peer_send_files=True,
+            ),
         )
 
-        assert client_beta.get_node_state(alpha.public_key) == PeerInfo(
-            identifier=alpha.id,
-            public_key=alpha.public_key,
-            state=State.Connected,
-            is_exit=False,
-            is_vpn=False,
-            ip_addresses=alpha.ip_addresses,
-            allowed_ips=env.api.get_allowed_ip_list(alpha.ip_addresses),
-            nickname="alpha",
-            endpoint=None,
-            hostname=alpha.name + ".nord",
-            allow_incoming_connections=True,
-            allow_peer_send_files=True,
-            path=PathType.Relay,
+        alpha_node_state = client_beta.get_node_state(alpha.public_key)
+        assert alpha_node_state
+        assert node_cmp(
+            alpha_node_state,
+            telio_node(
+                identifier=alpha.id,
+                public_key=alpha.public_key,
+                state=NodeState.CONNECTED,
+                ip_addresses=alpha.ip_addresses,
+                allowed_ips=env.api.get_allowed_ip_list(alpha.ip_addresses),
+                nickname="alpha",
+                hostname=alpha.name + ".nord",
+                allow_incoming_connections=True,
+                allow_peer_send_files=True,
+            ),
         )
 
         api.remove(beta.id)
@@ -152,20 +197,22 @@ async def test_event_content_meshnet(
 
         await asyncio.sleep(1)
 
-        assert client_alpha.get_node_state(beta.public_key) == PeerInfo(
-            identifier=beta.id,
-            public_key=beta.public_key,
-            state=State.Disconnected,
-            is_exit=False,
-            is_vpn=False,
-            ip_addresses=beta.ip_addresses,
-            allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
-            nickname="BETA",
-            endpoint=None,
-            hostname=beta.name + ".nord",
-            allow_incoming_connections=True,
-            allow_peer_send_files=True,
-            path=PathType.Direct,
+        beta_node_state = client_alpha.get_node_state(beta.public_key)
+        assert beta_node_state
+        assert node_cmp(
+            beta_node_state,
+            telio_node(
+                identifier=beta.id,
+                public_key=beta.public_key,
+                state=NodeState.DISCONNECTED,
+                ip_addresses=beta.ip_addresses,
+                allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
+                nickname="BETA",
+                hostname=beta.name + ".nord",
+                allow_incoming_connections=True,
+                allow_peer_send_files=True,
+                path=PathType.DIRECT,
+            ),
         )
 
 
@@ -269,23 +316,24 @@ async def test_event_content_vpn_connection(
 
         await ping(connection, config.PHOTO_ALBUM_IP)
 
-        assert client_alpha.get_node_state(str(wg_server["public_key"])) == PeerInfo(
-            identifier="natlab",
-            public_key=str(wg_server["public_key"]),
-            state=State.Connected,
-            is_exit=True,
-            is_vpn=True,
-            ip_addresses=[
-                "10.5.0.1",
-                "100.64.0.1",
-            ],
-            allowed_ips=["0.0.0.0/0", "::/0"],
-            nickname=None,
-            endpoint=f'{wg_server["ipv4"]}:{wg_server["port"]}',
-            hostname=None,
-            allow_incoming_connections=False,
-            allow_peer_send_files=False,
-            path=PathType.Direct,
+        wg_node_state = client_alpha.get_node_state(str(wg_server["public_key"]))
+        assert wg_node_state
+        assert node_cmp(
+            wg_node_state,
+            telio_node(
+                identifier="natlab",
+                public_key=str(wg_server["public_key"]),
+                state=NodeState.CONNECTED,
+                is_exit=True,
+                is_vpn=True,
+                ip_addresses=[
+                    "10.5.0.1",
+                    "100.64.0.1",
+                ],
+                allowed_ips=["0.0.0.0/0", "::/0"],
+                endpoint=f'{wg_server["ipv4"]}:{wg_server["port"]}',
+                path=PathType.DIRECT,
+            ),
         )
 
         ip = await stun.get(connection, config.STUN_SERVER)
@@ -296,23 +344,23 @@ async def test_event_content_vpn_connection(
         ip = await stun.get(connection, config.STUN_SERVER)
         assert ip == alpha_public_ip, f"wrong public IP before connecting to VPN {ip}"
 
-        assert client_alpha.get_node_state(str(wg_server["public_key"])) == PeerInfo(
-            identifier="natlab",
-            public_key=str(wg_server["public_key"]),
-            state=State.Disconnected,
-            is_exit=True,
-            is_vpn=True,
-            ip_addresses=[
-                "10.5.0.1",
-                "100.64.0.1",
-            ],
-            allowed_ips=["0.0.0.0/0", "::/0"],
-            nickname=None,
-            endpoint=f'{wg_server["ipv4"]}:{wg_server["port"]}',
-            hostname=None,
-            allow_incoming_connections=False,
-            allow_peer_send_files=False,
-            path=PathType.Direct,
+        wg_node_state = client_alpha.get_node_state(str(wg_server["public_key"]))
+        assert wg_node_state
+        assert node_cmp(
+            wg_node_state,
+            telio_node(
+                identifier="natlab",
+                public_key=str(wg_server["public_key"]),
+                is_exit=True,
+                is_vpn=True,
+                ip_addresses=[
+                    "10.5.0.1",
+                    "100.64.0.1",
+                ],
+                allowed_ips=["0.0.0.0/0", "::/0"],
+                endpoint=f'{wg_server["ipv4"]}:{wg_server["port"]}',
+                path=PathType.DIRECT,
+            ),
         )
 
 
@@ -411,20 +459,19 @@ async def test_event_content_exit_through_peer(
 
         await ping(connection_alpha, beta.ip_addresses[0])
 
-        assert client_alpha.get_node_state(beta.public_key) == PeerInfo(
-            identifier=beta.id,
-            public_key=beta.public_key,
-            state=State.Connected,
-            is_exit=False,
-            is_vpn=False,
-            ip_addresses=beta.ip_addresses,
-            allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
-            nickname="BETA",
-            endpoint=None,
-            hostname=beta.name + ".nord",
-            allow_incoming_connections=False,
-            allow_peer_send_files=False,
-            path=PathType.Relay,
+        beta_node_state = client_alpha.get_node_state(beta.public_key)
+        assert beta_node_state
+        assert node_cmp(
+            beta_node_state,
+            telio_node(
+                identifier=beta.id,
+                public_key=beta.public_key,
+                state=NodeState.CONNECTED,
+                ip_addresses=beta.ip_addresses,
+                allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
+                nickname="BETA",
+                hostname=beta.name + ".nord",
+            ),
         )
 
         await client_beta.get_router().create_exit_node_route()
@@ -436,20 +483,20 @@ async def test_event_content_exit_through_peer(
 
         assert ip_alpha == ip_beta
 
-        assert client_alpha.get_node_state(beta.public_key) == PeerInfo(
-            identifier=beta.id,
-            public_key=beta.public_key,
-            state=State.Connected,
-            is_exit=True,
-            is_vpn=False,
-            ip_addresses=beta.ip_addresses,
-            allowed_ips=["0.0.0.0/0", "::/0"],
-            nickname="BETA",
-            endpoint=None,
-            hostname=beta.name + ".nord",
-            allow_incoming_connections=False,
-            allow_peer_send_files=False,
-            path=PathType.Relay,
+        beta_node_state = client_alpha.get_node_state(beta.public_key)
+        assert beta_node_state
+        assert node_cmp(
+            beta_node_state,
+            telio_node(
+                identifier=beta.id,
+                public_key=beta.public_key,
+                state=NodeState.CONNECTED,
+                is_exit=True,
+                ip_addresses=beta.ip_addresses,
+                allowed_ips=["0.0.0.0/0", "::/0"],
+                nickname="BETA",
+                hostname=beta.name + ".nord",
+            ),
         )
 
 
@@ -586,12 +633,16 @@ async def test_event_content_meshnet_node_upgrade_direct(
             beta_setup_params.features,
         ).run(api.get_meshnet_config(beta.id)) as client_beta:
             await asyncio.gather(
-                client_alpha.wait_for_state_on_any_derp([State.Connected]),
-                client_beta.wait_for_state_on_any_derp([State.Connected]),
+                client_alpha.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+                client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
             )
             await asyncio.gather(
-                client_alpha.wait_for_state_peer(beta.public_key, [State.Connected]),
-                client_beta.wait_for_state_peer(alpha.public_key, [State.Connected]),
+                client_alpha.wait_for_state_peer(
+                    beta.public_key, [NodeState.CONNECTED]
+                ),
+                client_beta.wait_for_state_peer(
+                    alpha.public_key, [NodeState.CONNECTED]
+                ),
             )
 
             await ping(connection_alpha, beta.ip_addresses[0], 10)
@@ -599,20 +650,19 @@ async def test_event_content_meshnet_node_upgrade_direct(
 
             beta_node_state = client_alpha.get_node_state(beta.public_key)
             assert beta_node_state
-            assert beta_node_state == PeerInfo(
-                identifier=beta.id,
-                public_key=beta.public_key,
-                state=State.Connected,
-                is_exit=False,
-                is_vpn=False,
-                ip_addresses=beta.ip_addresses,
-                allowed_ips=api.get_allowed_ip_list(beta.ip_addresses),
-                nickname="BETA",
-                endpoint=None,
-                hostname=beta.name + ".nord",
-                allow_incoming_connections=True,
-                allow_peer_send_files=True,
-                path=PathType.Relay,
+            assert node_cmp(
+                beta_node_state,
+                telio_node(
+                    identifier=beta.id,
+                    public_key=beta.public_key,
+                    state=NodeState.CONNECTED,
+                    ip_addresses=beta.ip_addresses,
+                    allowed_ips=api.get_allowed_ip_list(beta.ip_addresses),
+                    nickname="BETA",
+                    hostname=beta.name + ".nord",
+                    allow_incoming_connections=True,
+                    allow_peer_send_files=True,
+                ),
             )
             assert (
                 beta_node_state.endpoint
@@ -621,20 +671,19 @@ async def test_event_content_meshnet_node_upgrade_direct(
 
             alpha_node_state = client_beta.get_node_state(alpha.public_key)
             assert alpha_node_state
-            assert alpha_node_state == PeerInfo(
-                identifier=alpha.id,
-                public_key=alpha.public_key,
-                state=State.Connected,
-                is_exit=False,
-                is_vpn=False,
-                ip_addresses=alpha.ip_addresses,
-                allowed_ips=api.get_allowed_ip_list(alpha.ip_addresses),
-                nickname="alpha",
-                endpoint=None,
-                hostname=alpha.name + ".nord",
-                allow_incoming_connections=True,
-                allow_peer_send_files=True,
-                path=PathType.Relay,
+            assert node_cmp(
+                alpha_node_state,
+                telio_node(
+                    identifier=alpha.id,
+                    public_key=alpha.public_key,
+                    state=NodeState.CONNECTED,
+                    ip_addresses=alpha.ip_addresses,
+                    allowed_ips=api.get_allowed_ip_list(alpha.ip_addresses),
+                    nickname="alpha",
+                    hostname=alpha.name + ".nord",
+                    allow_incoming_connections=True,
+                    allow_peer_send_files=True,
+                ),
             )
             assert (
                 alpha_node_state.endpoint
@@ -651,14 +700,14 @@ async def test_event_content_meshnet_node_upgrade_direct(
             ).run(api.get_meshnet_config(beta.id))
         )
 
-        await client_beta.wait_for_state_on_any_derp([State.Connected])
+        await client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED])
 
         await asyncio.gather(
             client_alpha.wait_for_state_peer(
-                beta.public_key, [State.Connected], [PathType.Direct]
+                beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
             client_beta.wait_for_state_peer(
-                alpha.public_key, [State.Connected], [PathType.Direct]
+                alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
         )
 
@@ -667,39 +716,39 @@ async def test_event_content_meshnet_node_upgrade_direct(
 
         beta_node_state = client_alpha.get_node_state(beta.public_key)
         assert beta_node_state
-        assert beta_node_state == PeerInfo(
-            identifier=beta.id,
-            public_key=beta.public_key,
-            state=State.Connected,
-            is_exit=False,
-            is_vpn=False,
-            ip_addresses=beta.ip_addresses,
-            allowed_ips=api.get_allowed_ip_list(beta.ip_addresses),
-            nickname="BETA",
-            endpoint=None,
-            hostname=beta.name + ".nord",
-            allow_incoming_connections=True,
-            allow_peer_send_files=True,
-            path=PathType.Direct,
+        assert node_cmp(
+            beta_node_state,
+            telio_node(
+                identifier=beta.id,
+                public_key=beta.public_key,
+                state=NodeState.CONNECTED,
+                ip_addresses=beta.ip_addresses,
+                allowed_ips=api.get_allowed_ip_list(beta.ip_addresses),
+                nickname="BETA",
+                hostname=beta.name + ".nord",
+                allow_incoming_connections=True,
+                allow_peer_send_files=True,
+                path=PathType.DIRECT,
+            ),
         )
         assert beta_node_state.endpoint and beta_public_ip in beta_node_state.endpoint
 
         alpha_node_state = client_beta.get_node_state(alpha.public_key)
         assert alpha_node_state
-        assert alpha_node_state == PeerInfo(
-            identifier=alpha.id,
-            public_key=alpha.public_key,
-            state=State.Connected,
-            is_exit=False,
-            is_vpn=False,
-            ip_addresses=alpha.ip_addresses,
-            allowed_ips=api.get_allowed_ip_list(alpha.ip_addresses),
-            nickname="alpha",
-            endpoint=None,
-            hostname=alpha.name + ".nord",
-            allow_incoming_connections=True,
-            allow_peer_send_files=True,
-            path=PathType.Direct,
+        assert node_cmp(
+            alpha_node_state,
+            telio_node(
+                identifier=alpha.id,
+                public_key=alpha.public_key,
+                state=NodeState.CONNECTED,
+                ip_addresses=alpha.ip_addresses,
+                allowed_ips=api.get_allowed_ip_list(alpha.ip_addresses),
+                nickname="alpha",
+                hostname=alpha.name + ".nord",
+                allow_incoming_connections=True,
+                allow_peer_send_files=True,
+                path=PathType.DIRECT,
+            ),
         )
         assert (
             alpha_node_state.endpoint and alpha_public_ip in alpha_node_state.endpoint

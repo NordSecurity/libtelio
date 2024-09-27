@@ -6,9 +6,15 @@ import timeouts
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from mesh_api import API
-from telio import AdapterType, State
+from telio import AdapterType
 from utils import stun
-from utils.bindings import features_with_endpoint_providers, EndpointProvider
+from utils.bindings import (
+    features_with_endpoint_providers,
+    EndpointProvider,
+    PathType,
+    RelayState,
+    NodeState,
+)
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
     generate_connection_tracker_config,
@@ -344,12 +350,12 @@ async def test_vpn_plus_mesh(
         )
 
         await asyncio.gather(
-            client_alpha.wait_for_state_on_any_derp([State.Connected]),
-            client_beta.wait_for_state_on_any_derp([State.Connected]),
+            client_alpha.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
         )
         await asyncio.gather(
-            client_alpha.wait_for_state_peer(beta.public_key, [State.Connected]),
-            client_beta.wait_for_state_peer(alpha.public_key, [State.Connected]),
+            client_alpha.wait_for_state_peer(beta.public_key, [NodeState.CONNECTED]),
+            client_beta.wait_for_state_peer(alpha.public_key, [NodeState.CONNECTED]),
         )
 
         await ping(connection_alpha, beta.ip_addresses[0])
@@ -357,7 +363,7 @@ async def test_vpn_plus_mesh(
         # Testing if the VPN node is not cleared after disabling meshnet. See LLT-4266 for more details.
         await client_alpha.set_mesh_off()
         await client_alpha.wait_for_event_peer(
-            beta.public_key, [State.Disconnected], list(telio.PathType)
+            beta.public_key, [NodeState.DISCONNECTED], list(PathType)
         )
         ip = await stun.get(connection_alpha, config.STUN_SERVER)
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"

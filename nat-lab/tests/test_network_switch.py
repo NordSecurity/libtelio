@@ -10,10 +10,16 @@ from helpers import (
     setup_mesh_nodes,
     SetupParameters,
 )
-from telio import AdapterType, PathType, State
+from telio import AdapterType
 from utils import stun
 from utils.asyncio_util import run_async_contexts
-from utils.bindings import features_with_endpoint_providers, EndpointProvider
+from utils.bindings import (
+    features_with_endpoint_providers,
+    EndpointProvider,
+    PathType,
+    NodeState,
+    RelayState,
+)
 from utils.connection import TargetOS
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
@@ -295,16 +301,16 @@ async def test_mesh_network_switch_direct(
         await ping(alpha_connection, beta.ip_addresses[0])
 
         derp_connected_future = alpha_client.wait_for_event_on_any_derp(
-            [State.Connected]
+            [RelayState.CONNECTED]
         )
 
         # Beta doesn't change its endpoint, so WG roaming may be used by alpha node to restore
         # the connection, so no node event is logged in that case
         peers_connected_relay_future = beta_client.wait_for_event_peer(
-            alpha.public_key, [State.Connected], [PathType.Relay]
+            alpha.public_key, [NodeState.CONNECTED], [PathType.RELAY]
         )
         peers_connected_direct_future = beta_client.wait_for_event_peer(
-            alpha.public_key, [State.Connected], [PathType.Direct]
+            alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
         )
         async with run_async_contexts([
             derp_connected_future,
