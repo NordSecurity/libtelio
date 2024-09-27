@@ -8,7 +8,7 @@ from helpers import SetupParameters, setup_mesh_nodes, setup_api
 from mesh_api import Node
 from typing import Tuple, Optional
 from utils import testing, stun
-from utils.bindings import TelioAdapterType
+from utils.bindings import default_features, Features, TelioAdapterType
 from utils.connection_tracker import (
     FiveTuple,
     TCPStateSequence,
@@ -40,6 +40,9 @@ def _setup_params(
     connection_tag: ConnectionTag,
     adapter_type_override: Optional[TelioAdapterType] = None,
     stun_limits=(0, 0),
+    features: Features = default_features(
+        enable_firewall=("10.0.0.0/8", False),
+    ),
 ) -> SetupParameters:
     return SetupParameters(
         connection_tag=connection_tag,
@@ -49,6 +52,7 @@ def _setup_params(
             derp_1_limits=(1, 1),
             stun_limits=stun_limits,
         ),
+        features=features,
     )
 
 
@@ -259,10 +263,12 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     TelioAdapterType.NEP_TUN,
                     stun_limits=(1, 1),
+                    features=default_features(enable_firewall=("10.0.0.0/8", False)),
                 ),
                 _setup_params(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
                     stun_limits=(1, 5),
+                    features=default_features(enable_firewall=("10.0.0.0/8", False)),
                 ),
             ],
         )
@@ -305,7 +311,9 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
         alpha.set_peer_firewall_settings(exit_node.id, allow_incoming_connections=True)
         await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
 
-        exit_node.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
+        exit_node.set_peer_firewall_settings(
+            alpha.id, allow_incoming_connections=True, allow_peer_traffic_routing=True
+        )
         await client_exit_node.set_meshnet_config(api.get_meshnet_config(exit_node.id))
 
         # Ping should again work both ways
