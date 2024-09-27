@@ -1,9 +1,10 @@
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
+use ipnet::Ipv4Net;
 use parking_lot::Mutex;
 use telio_model::features::{
-    FeatureDerp, FeatureLana, FeaturePersistentKeepalive, FeatureValidateKeys, FeatureWireguard,
-    Features,
+    FeatureDerp, FeatureFirewall, FeatureLana, FeaturePersistentKeepalive, FeatureValidateKeys,
+    FeatureWireguard, Features,
 };
 
 pub struct FeaturesDefaultsBuilder {
@@ -65,9 +66,20 @@ impl FeaturesDefaultsBuilder {
         self
     }
 
-    /// Enable firewall connection resets when NepTUN is enabled
-    pub fn enable_firewall_connection_reset(self: Arc<Self>) -> Arc<Self> {
-        self.config.lock().firewall.neptun_reset_conns = true;
+    /// Enable firewall connection resets when boringtun is enabled
+    /// custom_ips are needed only for integration tests as the stun server
+    /// is in a private_ip and it gets blocked, so in order to circumvent that
+    /// custom_ips was added as a feature
+    pub fn enable_firewall(
+        self: Arc<Self>,
+        custom_ips: String,
+        neptun_reset_conns: bool,
+    ) -> Arc<Self> {
+        self.config.lock().firewall = FeatureFirewall {
+            custom_private_ip_range: Ipv4Net::from_str(&custom_ips).ok(),
+            neptun_reset_conns,
+            boringtun_reset_conns: neptun_reset_conns,
+        };
         self
     }
 

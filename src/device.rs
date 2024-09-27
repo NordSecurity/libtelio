@@ -1043,10 +1043,7 @@ impl Runtime {
         features: Features,
         protect: Option<Arc<dyn Protector>>,
     ) -> Result<Self> {
-        let neptun_reset_conns =
-            features.firewall.neptun_reset_conns || features.firewall.boringtun_reset_conns;
-
-        let firewall = Arc::new(StatefullFirewall::new(features.ipv6, neptun_reset_conns));
+        let firewall = Arc::new(StatefullFirewall::new(features.ipv6, features.firewall));
 
         let firewall_filter_inbound_packets = {
             let fw = firewall.clone();
@@ -1056,7 +1053,7 @@ impl Runtime {
             let fw = firewall.clone();
             move |peer: &[u8; 32], packet: &[u8]| fw.process_outbound_packet(peer, packet)
         };
-        let firewall_reset_connections = if neptun_reset_conns {
+        let firewall_reset_connections = if features.firewall.neptun_reset_conns {
             let fw = firewall.clone();
             let cb = move |exit_pubkey: &PublicKey,
                            exit_ipv4: Ipv4Addr,
@@ -2103,9 +2100,7 @@ impl Runtime {
     async fn disconnect_exit_node(&mut self, node_key: &PublicKey) -> Result {
         match self.requested_state.exit_node.as_ref() {
             Some(exit_node) if &exit_node.public_key == node_key => {
-                self.entities
-                    .firewall
-                    .remove_from_peer_whitelist(exit_node.public_key);
+                self.entities.firewall.remove_vpn_peer();
                 self.disconnect_exit_nodes().boxed().await
             }
             _ => Err(Error::InvalidNode),
@@ -2231,6 +2226,8 @@ impl Runtime {
                     endpoint,
                     hostname: Some(meshnet_peer.base.hostname.0.clone().to_string()),
                     allow_incoming_connections: meshnet_peer.allow_incoming_connections,
+                    allow_peer_traffic_routing: meshnet_peer.allow_peer_traffic_routing,
+                    allow_peer_local_network_access: meshnet_peer.allow_peer_local_network_access,
                     allow_peer_send_files: meshnet_peer.allow_peer_send_files,
                     path: path_type,
                     allow_multicast: meshnet_peer.allow_multicast,
@@ -2597,6 +2594,8 @@ fn node_from_exit_node(exit_node: &ExitNode) -> Node {
         endpoint: exit_node.endpoint,
         hostname: None,
         allow_incoming_connections: false,
+        allow_peer_traffic_routing: false,
+        allow_peer_local_network_access: false,
         allow_peer_send_files: false,
         path: PathType::Direct,
         allow_multicast: false,
