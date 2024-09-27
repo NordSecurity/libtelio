@@ -150,10 +150,11 @@ class ConnectionTracker:
             if connection is FiveTuple():
                 continue
 
-            if not self._sync_event.is_set():
-                if self._sync_connection.partial_eq(connection):
+            if self._sync_connection.partial_eq(connection):
+                if not self._sync_event.is_set():
                     self._sync_event.set()
-                    continue
+                # always skip events from sync_connection
+                continue
 
             # skip if we are only interested in new events
             if not self._process_update_events and event.event_type != EventType.NEW:
