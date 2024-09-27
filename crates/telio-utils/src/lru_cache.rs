@@ -38,7 +38,14 @@ impl<'a, K: Hash + Eq, V> OccupiedEntry<'a, K, V> {
     /// Gets a mutable reference to the value in the entry.
     #[inline(always)]
     pub fn get_mut(&mut self) -> &mut V {
-        &mut self.occupied_entry().into_mut().data
+        &mut self.occupied_entry().0.into_mut().data
+    }
+
+    /// Returns a mutable reference to the value and its key
+    #[inline(always)]
+    pub fn get_mut_with_key(&mut self) -> (&mut V, &K) {
+        let occ = self.occupied_entry();
+        (&mut occ.0.into_mut().data, &occ.1)
     }
 
     /// Gets a immutable reference to the value in the entry.
@@ -58,16 +65,16 @@ impl<'a, K: Hash + Eq, V> OccupiedEntry<'a, K, V> {
     /// Removes the entry from the map.
     #[inline(always)]
     pub fn remove(&mut self) {
-        self.occupied_entry().remove();
+        self.occupied_entry().0.remove();
     }
 
-    fn occupied_entry(&'_ mut self) -> RawOccupiedEntryMut<'_, K, TimedValue<V>> {
+    fn occupied_entry(&'_ mut self) -> (RawOccupiedEntryMut<'_, K, TimedValue<V>>, &K) {
         if let RawEntryMut::Occupied(e) = self
             .map
             .raw_entry_mut()
             .from_key_hashed_nocheck(self.hash, &self.key)
         {
-            e
+            (e, &self.key)
         } else {
             unreachable!()
         }
@@ -184,7 +191,7 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
 
     /// Gets the given key’s corresponding entry in the map for in-place manipulation.
     #[inline(always)]
-    pub fn entry(&mut self, key: Key) -> Entry<'_, Key, Value> {
+    pub fn entry(&mut self, key: Key, update_last_time: bool) -> Entry<'_, Key, Value> {
         let hash = self.map.hasher().hash_one(&key);
         match self.map.raw_entry_mut().from_key_hashed_nocheck(hash, &key) {
             RawEntryMut::Occupied(mut e) => {
@@ -198,7 +205,9 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
                         max_map_size: self.capacity,
                     });
                 }
-                Self::update_last_time(&mut e, now);
+                if update_last_time {
+                    Self::update_last_time(&mut e, now)
+                }
                 Entry::Occupied(OccupiedEntry {
                     key,
                     hash,
@@ -492,7 +501,7 @@ mod tests {
         assert_eq!(lru_cache.len(), 1);
 
         advance_time_by_ms(300);
-        lru_cache.entry(0);
+        lru_cache.entry(0, true);
         advance_time_by_ms(300);
         assert_eq!(Some(&0), lru_cache.peek(&0));
         advance_time_by_ms(300);
@@ -631,7 +640,7 @@ mod tests {
                             old.remove(&k);
                         },
                         Op::GetUsingEntry(k) => {
-                            let new_val = match new.entry(k) {
+                            let new_val = match new.entry(k, true) {
                                 Entry::Occupied(mut e) => {
                                     Some(*e.get_mut())
                                 },
@@ -642,7 +651,7 @@ mod tests {
                             assert_eq!(new_val, old.get(&k).copied());
                         },
                         Op::GetMutUsingEntry(k) => {
-                            if let Entry::Occupied(mut e) = new.entry(k) {
+                            if let Entry::Occupied(mut e) = new.entry(k, true) {
                                 *e.get_mut() += 1;
                             }
                             if let Some(v) = old.get_mut(&k) {
