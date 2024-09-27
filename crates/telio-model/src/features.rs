@@ -3,6 +3,7 @@
 
 use std::{collections::HashSet, fmt};
 
+use ipnetwork::Ipv4Network;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{de::IntoDeserializer, Deserialize, Deserializer, Serialize};
 use smart_default::SmartDefault;
@@ -337,6 +338,8 @@ pub struct FeatureFirewall {
     /// Turns on connection resets upon VPN server change
     #[serde(default)]
     pub boringtun_reset_conns: bool,
+    /// Custom private IP range
+    pub custom_private_ip_range: Option<Ipv4Network>,
 }
 
 /// Turns on post quantum VPN tunnel
@@ -510,9 +513,6 @@ mod tests {
             "validate_keys": false,
             "ipv6": true,
             "nicknames": true,
-            "firewall": {
-                "boringtun_reset_conns": true
-            },
             "flush_events_on_stop_timeout_seconds": 15,
             "post_quantum_vpn": {
                 "handshake_retry_interval_s": 15,
@@ -522,6 +522,10 @@ mod tests {
                 "rtt_seconds": 17,
                 "no_of_pings": 18,
                 "use_for_downgrade": true
+            },
+            "firewall": {
+                "boringtun_reset_conns": true,
+                "custom_private_ip_range": null
             },
             "dns": {
                 "ttl_value": 19,
@@ -595,6 +599,7 @@ mod tests {
                     nicknames: true,
                     firewall: FeatureFirewall {
                         boringtun_reset_conns: true,
+                        custom_private_ip_range: None,
                     },
                     flush_events_on_stop_timeout_seconds: Some(15),
                     post_quantum_vpn: FeaturePostQuantumVPN {

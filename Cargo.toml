@@ -24,6 +24,7 @@ base64.workspace = true
 crypto_box.workspace = true
 futures.workspace = true
 ipnet.workspace = true
+ipnetwork.workspace = true
 if-addrs.workspace = true
 lazy_static.workspace = true
 libc.workspace = true
@@ -92,6 +93,7 @@ telio-batcher = { workspace = true }
 telio-pq = { workspace = true, features = ["mockall"] }
 telio-test.workspace = true
 telio-traversal = { workspace = true, features = ["mockall"] }
+telio-utils.workspace = true
 telio-wg = { workspace = true, features = ["mockall", "test-adapter"] }
 
 [build-dependencies]

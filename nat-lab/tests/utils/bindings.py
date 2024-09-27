@@ -15,7 +15,7 @@ def features_with_endpoint_providers(
 def default_features(
     enable_lana: Optional[Tuple[str, bool]] = None,
     enable_nurse: bool = False,
-    enable_firewall_connection_reset: bool = False,
+    enable_firewall: Optional[Tuple[str, bool]] = None,
     enable_direct: bool = False,
     enable_ipv6: bool = False,
     enable_nicknames: bool = False,
@@ -30,8 +30,9 @@ def default_features(
 
     if enable_nurse:
         features_builder = features_builder.enable_nurse()
-    if enable_firewall_connection_reset:
-        features_builder = features_builder.enable_firewall_connection_reset()
+    if enable_firewall is not None:
+        ips, reset_conns = enable_firewall
+        features_builder = features_builder.enable_firewall(ips, reset_conns)
     if enable_direct:
         features_builder = features_builder.enable_direct()
     if enable_ipv6:

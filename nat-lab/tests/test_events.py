@@ -436,6 +436,7 @@ async def test_event_content_vpn_connection(
                     derp_1_limits=ConnectionLimits(1, 1),
                     stun_limits=ConnectionLimits(1, 2),
                 ),
+                features=default_features(enable_firewall=("10.0.0.0/8", False)),
             )
         )
     ],
@@ -450,6 +451,9 @@ async def test_event_content_exit_through_peer(
         alpha.nickname = "alpha"
         beta.nickname = "BETA"
         alpha.set_peer_firewall_settings(beta.id)
+        beta.set_peer_firewall_settings(
+            alpha.id, allow_incoming_connections=True, allow_peer_traffic_routing=True
+        )
         env = await setup_mesh_nodes(
             exit_stack, [alpha_setup_params, beta_setup_params], provided_api=api
         )

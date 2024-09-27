@@ -361,7 +361,7 @@ async def test_vpn_reconnect(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 adapter_type_override=TelioAdapterType.BORING_TUN,
                 ip_stack=IPStack.IPv4,
-                features=default_features(enable_firewall_connection_reset=True),
+                features=default_features(enable_firewall=("10.0.0.0/8", True)),
             )
         ),
         # TODO(msz): IPv6 public server, it doesn't work with the current VPN implementation
@@ -500,7 +500,7 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 adapter_type_override=TelioAdapterType.BORING_TUN,
                 ip_stack=IPStack.IPv4,
-                features=default_features(enable_firewall_connection_reset=True),
+                features=default_features(enable_firewall=("10.0.0.0/8", True)),
             )
         ),
         pytest.param(

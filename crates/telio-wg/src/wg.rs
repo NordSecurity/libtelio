@@ -262,6 +262,7 @@ impl DynamicWg {
     /// ```
     /// use std::{sync::Arc, io};
     /// use telio_firewall::firewall::{StatefullFirewall, Firewall};
+    /// use telio_model::features::FeatureFirewall;
     /// use telio_sockets::{native::NativeSocket, Protector, SocketPool, Protect};
     /// use telio_task::io::Chan;
     /// pub use telio_wg::{AdapterType, DynamicWg, Tun, Io, Config};
@@ -281,7 +282,10 @@ impl DynamicWg {
     ///         fn set_tunnel_interface(&self, interface: u64);
     ///         }
     ///     }
-    ///     let firewall = Arc::new(StatefullFirewall::new(true, false));
+    ///     let firewall = Arc::new(StatefullFirewall::new(true,  FeatureFirewall {
+    ///            boringtun_reset_conns: false,
+    ///            custom_private_ip_range: None,
+    ///        },));
     ///     let firewall_filter_inbound_packets = {
     ///         let fw = firewall.clone();
     ///         move |peer: &[u8; 32], packet: &[u8]| fw.process_inbound_packet(peer, packet)
