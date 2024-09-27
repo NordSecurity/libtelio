@@ -132,6 +132,9 @@ typedef string IpAddr;
 typedef string IpNet;
 
 [Custom]
+typedef string Ipv4Network;
+
+[Custom]
 typedef string Ipv4Addr;
 
 [Custom]
@@ -451,7 +454,7 @@ callback interface TelioProtectCb {
 /// features with defaults comming from libtelio lib.
 ///
 /// !!! Should only be used then remote config is inaccessible !!!
-/// 
+///
 interface FeaturesDefaultsBuilder {
     /// Create a builder for Features with minimal defaults.
     constructor();
@@ -461,36 +464,36 @@ interface FeaturesDefaultsBuilder {
 
     /// Enable lana, this requires input from apps
     [Self=ByArc]
-    FeaturesDefaultsBuilder enable_lana(string event_path, boolean is_prod);    
-    
+    FeaturesDefaultsBuilder enable_lana(string event_path, boolean is_prod);
+
     /// Enable nurse with defaults
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_nurse();
 
     /// Enable firewall connection resets when boringtun is used
     [Self=ByArc]
-    FeaturesDefaultsBuilder enable_firewall_connection_reset();
-    
+    FeaturesDefaultsBuilder enable_firewall(string custom_ips, boolean boringtun_reset_conns);
+
     /// Enable direct connections with defaults;
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_direct();
-    
+
     /// Enable default wireguard timings, derp timings and other features for best battery performance
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_battery_saving_defaults();
-    
+
     /// Enable key valiation in set_config call with defaults
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_validate_keys();
-    
+
     /// Enable IPv6 with defaults
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_ipv6();
-    
+
     /// Enable nicknames with defaults
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_nicknames();
-    
+
     /// Enable blocking event flush with timout on stop with defaults
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_flush_events_on_stop_timeout_seconds();
@@ -670,12 +673,6 @@ dictionary FeatureDerp {
     boolean use_built_in_root_certificates;
 };
 
-/// Feature config for firewall
-dictionary FeatureFirewall {
-    /// Turns on connection resets upon VPN server change
-    boolean boringtun_reset_conns;
-};
-
 /// Link detection mechanism
 dictionary FeatureLinkDetection {
     /// Configurable rtt in seconds
@@ -706,6 +703,14 @@ dictionary FeaturePostQuantumVPN {
 dictionary FeaturePmtuDiscovery {
     /// A timeout for wait for the ICMP response packet
     u32 response_wait_timeout_s;
+};
+
+/// Configuration of telio-firewall
+dictionary FeatureFirewall {
+    /// Turns on connection resets upon VPN server change
+    boolean boringtun_reset_conns;
+    /// Custom private IP range
+    Ipv4Network? custom_private_ip_range;
 };
 
 
@@ -744,6 +749,10 @@ dictionary Peer {
     boolean is_local;
     /// Flag to control whether the peer allows incoming connections
     boolean allow_incoming_connections;
+    /// Flag to control whether the Node allows routing through
+    boolean allow_peer_traffic_routing;
+    /// Flag to control whether the Node allows incoming local area access
+    boolean allow_peer_local_network_access;
     /// Flag to control whether the peer allows incoming files
     boolean allow_peer_send_files;
     /// Flag to control whether we allow multicast messages from the peer
@@ -814,6 +823,10 @@ dictionary TelioNode {
     string? hostname;
     /// Flag to control whether the Node allows incoming connections
     boolean allow_incoming_connections;
+    /// Flag to control whether the Node allows routing through
+    boolean allow_peer_traffic_routing;
+    /// Flag to control whether the Node allows incoming local area access
+    boolean allow_peer_local_network_access;
     /// Flag to control whether the Node allows incoming files
     boolean allow_peer_send_files;
     /// Connection type in the network mesh (through Relay or hole punched directly)
