@@ -42,6 +42,10 @@ pub struct Peer {
     pub is_local: bool,
     /// Flag to control whether the peer allows incoming connections
     pub allow_incoming_connections: bool,
+    /// Flag to control whether the Node allows routing through
+    pub allow_peer_traffic_routing: bool,
+    /// Flag to control whether the Node allows incoming local area access
+    pub allow_peer_local_network_access: bool,
     #[serde(default)]
     /// Flag to control whether the peer allows incoming files
     pub allow_peer_send_files: bool,
@@ -345,6 +349,7 @@ mod tests {
                   "is_local": true,
                   "user_email": "alice@example.com",
                   "allow_incoming_connections": true,
+                  "allow_peer_local_network_access": true,
                   "allow_peer_send_files": true,
                   "peer_allows_traffic_routing": false,
                   "allow_peer_traffic_routing": true,
@@ -364,6 +369,7 @@ mod tests {
                   "is_local": false,
                   "user_email": "bob@example.com",
                   "allow_incoming_connections": false,
+                  "allow_peer_local_network_access": false,
                   "allow_peer_send_files": false,
                   "peer_allows_traffic_routing": true,
                   "allow_peer_traffic_routing": false,
@@ -455,6 +461,8 @@ mod tests {
                     },
                     is_local: true,
                     allow_incoming_connections: true,
+                    allow_peer_traffic_routing: true,
+                    allow_peer_local_network_access: true,
                     allow_peer_send_files: true,
                     allow_multicast: true,
                     peer_allows_multicast: true,
@@ -471,6 +479,8 @@ mod tests {
                     },
                     is_local: false,
                     allow_incoming_connections: false,
+                    allow_peer_traffic_routing: false,
+                    allow_peer_local_network_access: false,
                     allow_peer_send_files: false,
                     allow_multicast: true,
                     peer_allows_multicast: false,
