@@ -132,7 +132,7 @@ def run_build_command(operating_system, args):
             operating_system,
         ]
     command.extend(["--uniffi-test-bindings"])
-    if args.debug_bin:
+    if args.telio_debug:
         command.append("--debug")
     if args.restart:
         command.append("--restart")
