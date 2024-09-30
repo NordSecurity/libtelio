@@ -23,4 +23,4 @@ async def test_nat_type(connection_tag: ConnectionTag, nat_type: NatType) -> Non
             )
         )
         client, *_ = env.clients
-        assert await client.get_nat("10.0.1.1", 3478) == nat_type.value
+        assert (await client.get_nat("10.0.1.1", 3478)) == nat_type

@@ -42,7 +42,7 @@ def verify_mqtt_payload(payload):
 
 
 def run_mqtt_listener():
-    payload_queue = queue.Queue(1)
+    payload_queue: queue.Queue[str] = queue.Queue(1)
 
     def on_message(_client, _userdata, message):
         payload_queue.put(f"{message.payload.decode()}")

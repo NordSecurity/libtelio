@@ -70,7 +70,7 @@ async def test_mesh_off(direct) -> None:
 
         await client_alpha.set_meshnet_config(env.api.get_meshnet_config(alpha.id))
 
-        asyncio.gather(
+        await asyncio.gather(
             client_alpha.wait_for_state_peer(
                 beta.public_key, [NodeState.CONNECTED], [path_type]
             ),

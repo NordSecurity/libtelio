@@ -939,7 +939,11 @@ async def test_dns_nickname_in_any_case() -> None:
         api.assign_nickname(beta.id, "yoko")
 
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [SetupParameters()], provided_api=api)
+            setup_environment(
+                exit_stack,
+                [SetupParameters(features=default_features(enable_nicknames=True))],
+                provided_api=api,
+            )
         )
         connection_alpha, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
@@ -951,7 +955,7 @@ async def test_dns_nickname_in_any_case() -> None:
             for name in all_cases("yoko")
         ]
 
-        asyncio.gather(*queries)
+        await asyncio.gather(*queries)
 
 
 def all_cases(name: str) -> List[str]:

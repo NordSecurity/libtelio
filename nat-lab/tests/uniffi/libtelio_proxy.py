@@ -134,4 +134,4 @@ class LibtelioProxy:
         return self.handle_remote_error(lambda r: r.probe_pmtu(host))
 
     def get_nat(self, ip: str, port: int) -> libtelio.NatType:
-        return self.handle_remote_error(lambda r: r.get_nat(ip, port))
+        return libtelio.NatType(self.handle_remote_error(lambda r: r.get_nat(ip, port)))

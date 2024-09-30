@@ -244,9 +244,7 @@ async def test_batching(
 
         for container, pcap_path in zip(container_names, pcap_paths):
             for filt in allow_pcap_filters:
-                filter_name = filt[0] if filt else "none"
-                hs = generate_histogram_from_pcap(
-                    pcap_path, capture_duration, filt[1] if filt else None
-                )
+                filter_name = filt[0]
+                hs = generate_histogram_from_pcap(pcap_path, capture_duration, filt[1])
                 title = f"{container}-filter({filter_name})"
                 print_histogram(title, hs, max_height=12)
