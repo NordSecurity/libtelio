@@ -498,6 +498,15 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
                 features=default_features(enable_firewall_connection_reset=True),
             )
         ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.MAC_VM,
+                adapter_type=AdapterType.BoringTun,
+                ip_stack=IPStack.IPv4,
+                features=default_features(enable_firewall_connection_reset=True),
+            ),
+            marks=pytest.mark.mac,
+        ),
         # TODO(msz): IPv6 public server, it doesn't work with the current VPN implementation
         # pytest.param(
         #     SetupParameters(
@@ -545,7 +554,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
         sender_start_event = asyncio.Event()
 
         output_notifier.notify_output(
-            "2000 port [udp/*] succeeded!",
+            "[udp/*] succeeded!",
             sender_start_event,
         )
 
