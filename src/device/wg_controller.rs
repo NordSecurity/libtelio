@@ -178,6 +178,34 @@ async fn consolidate_wg_peers<
     } else {
         Default::default()
     };
+
+    let actual_peers = wireguard_interface.get_interface().await?.peers;
+    let mut is_any_peer_eligible_for_upgrade = false;
+
+    for (_, peer) in actual_peers.iter() {
+        if is_peer_proxying(peer, &proxy_endpoints) && peer.state() == NodeState::Connected {
+            is_any_peer_eligible_for_upgrade = true;
+        }
+    }
+
+    let ep_control = |ep: Arc<dyn EndpointProvider>| async move {
+        if is_any_peer_eligible_for_upgrade {
+            telio_log_debug!("Unpausing {} provider", ep.name());
+            ep.unpause().await;
+        } else {
+            telio_log_debug!("Pausing {} provider", ep.name());
+            ep.pause().await;
+        }
+    };
+
+    if let Some(stun) = stun_ep_provider {
+        ep_control(stun.clone()).await;
+    }
+
+    if let Some(upnp) = upnp_ep_provider {
+        ep_control(upnp.clone()).await;
+    }
+
     let requested_peers = build_requested_peers_list(
         requested_state,
         wireguard_interface,
@@ -194,8 +222,6 @@ async fn consolidate_wg_peers<
     .await?;
 
     check_allowed_ips_correctness(&requested_peers)?;
-
-    let actual_peers = wireguard_interface.get_interface().await?.peers;
 
     // Calculate diff between requested and actual list of peers
     let requested_keys: HashSet<&PublicKey> = requested_peers.keys().collect();
@@ -266,8 +292,6 @@ async fn consolidate_wg_peers<
             }
         }
     }
-
-    let mut is_any_peer_eligible_for_upgrade = false;
 
     for key in update_keys {
         let requested_peer = requested_peers.get(key).ok_or(Error::PeerNotFound)?;
@@ -404,27 +428,6 @@ async fn consolidate_wg_peers<
             actual_peer.state(),
             actual_peer.time_since_last_handshake
         );
-        if is_actual_peer_proxying && actual_peer.state() == NodeState::Connected {
-            is_any_peer_eligible_for_upgrade = true;
-        }
-    }
-
-    let ep_control = |ep: Arc<dyn EndpointProvider>| async move {
-        if is_any_peer_eligible_for_upgrade {
-            telio_log_debug!("Unpausing {} provider", ep.name());
-            ep.unpause().await;
-        } else {
-            telio_log_debug!("Pausing {} provider", ep.name());
-            ep.pause().await;
-        }
-    };
-
-    if let Some(stun) = stun_ep_provider {
-        ep_control(stun.clone()).await;
-    }
-
-    if let Some(upnp) = upnp_ep_provider {
-        ep_control(upnp.clone()).await;
     }
 
     Ok(())
