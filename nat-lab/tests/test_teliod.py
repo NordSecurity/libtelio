@@ -1,11 +1,12 @@
 import asyncio
 import pytest
+from config import LIBTELIO_BINARY_PATH_DOCKER
 from contextlib import AsyncExitStack
 from helpers import setup_connections
 from utils.connection_util import ConnectionTag
 from utils.process.process import ProcessExecError
 
-TELIOD_EXEC_PATH = "/libtelio/dist/linux/release/x86_64/teliod"
+TELIOD_EXEC_PATH = f"{LIBTELIO_BINARY_PATH_DOCKER}/teliod"
 CONFIG_FILE_PATH = "/etc/teliod/config.json"
 SOCKET_FILE_PATH = "/run/teliod.sock"
 
