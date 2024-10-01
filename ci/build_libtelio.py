@@ -263,6 +263,7 @@ LIBTELIO_CONFIG = {
     "macos": {
         "packages": {
             "tcli": {"tcli": "tcli"},
+            "teliod": {"teliod": "teliod"},
             NAME: {f"lib{NAME}": f"lib{NAME}.dylib"},
         },
         "post_build": [post_copy_darwin_debug_symbols_to_distribution_dir],
