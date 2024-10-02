@@ -48,7 +48,7 @@ use smart_default::SmartDefault;
 
 use self::{http::connect_http_and_start, http::DerpConnection};
 
-pub use self::{proto::Error as DerpError, proto::FrameChannel};
+pub use self::proto::Error as DerpError;
 
 /// Helper container structure for specific server ordering
 #[derive(Clone, Debug, Default)]

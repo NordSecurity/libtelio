@@ -10,7 +10,7 @@ use crypto_box::{
     aead::{Aead, AeadCore},
     SalsaBox,
 };
-use num_enum::{IntoPrimitive, TryFromPrimitive, TryFromPrimitiveError};
+use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
 use std::{
     array::TryFromSliceError,
     convert::TryFrom,
@@ -69,25 +69,6 @@ const_assert!(
         && ((TCP_KEEPALIVE_INTERVAL.as_secs()) as u32 <= (i8::MAX as u32))
         && ((TCP_KEEPALIVE_COUNT) <= (i8::MAX as u32))
 );
-
-#[repr(u8)]
-#[derive(
-    Debug, Hash, PartialEq, Eq, Copy, Clone, strum::EnumIter, TryFromPrimitive, IntoPrimitive,
-)]
-/// Descriptor of packet, for which telio types it is destined
-pub enum FrameChannel {
-    /// Ordinary user's data
-    Data = 0x00,
-    /// Natter requests/responses
-    Natter = 0x01,
-    /// Commander requests/responses
-    Cmder = 0x02,
-    /// Telio-nurse requests/responses
-    Nurse = 0x03,
-
-    /// Error
-    Unknown = 0xFF,
-}
 
 #[repr(u8)]
 #[derive(Debug, PartialEq, TryFromPrimitive)]
@@ -216,18 +197,13 @@ pub async fn start_read<R: AsyncRead + Unpin>(
                     <PublicKey as TryFrom<&[u8]>>::try_from(data.drain(0..KEY_SIZE).as_slice())?;
 
                 if enabled!(Level::TRACE) {
-                    // Glance at first byte, which describes the destination
-                    let chan = FrameChannel::try_from(
-                        *data.first().unwrap_or(&(FrameChannel::Unknown as u8)),
-                    );
                     telio_log_trace!(
-                        "DERP Rx: {} -> {}, frame type: {:?}, data len: {}, pubkey: {:?}, channel: {:?}",
+                        "DERP Rx: {} -> {}, frame type: {:?}, data len: {}, pubkey: {:?}",
                         addr.remote,
                         addr.local,
                         frame_type,
                         data.len(),
                         public_key,
-                        chan,
                     );
                 }
                 sender_relayed.send((public_key, data)).await?
@@ -266,16 +242,12 @@ pub async fn start_write<W: AsyncWrite + Unpin>(
                     buf.write_all(&data).await?;
 
                     if enabled!(Level::TRACE) {
-                        // Glance at first byte, which describes the destination
-                        let chan =
-                            FrameChannel::try_from(*data.first().unwrap_or(&(FrameChannel::Unknown as u8)));
                         telio_log_trace!(
-                            "DERP Tx: {} -> {}, data len: {}, pubkey: {:?}, channel: {:?}",
+                            "DERP Tx: {} -> {}, data len: {}, pubkey: {:?}",
                             addr.local,
                             addr.remote,
                             data.len(),
                             public_key,
-                            chan,
                         );
                     }
 
