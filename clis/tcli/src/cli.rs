@@ -235,7 +235,11 @@ enum DevCmd {
 #[derive(Parser)]
 enum VpnCmd {
     #[clap(about = "Connect to vpn server.")]
-    On,
+    On {
+        /// Turns on the post-quantum tunnel
+        #[clap(long = "pq")]
+        postquantum: bool,
+    },
     #[clap(about = "Disconnect from vpn server.")]
     Off,
     #[clap(about = "Set 10.5.0.2 address for the adapter")]
@@ -560,7 +564,7 @@ impl Cli {
         let mut res = Vec::new();
         use VpnCmd::*;
         match cmd {
-            On => {
+            On { postquantum } => {
                 let nord = cli_try!(res; self.nord.as_ref().ok_or(Error::NeedsLogin));
                 let server = cli_try!(res; nord.find_server());
                 if !self.telio.is_running() {
@@ -576,7 +580,12 @@ impl Cli {
                         name: DEFAULT_TUNNEL_NAME.to_owned(),
                     })));
                 }
-                cli_try!(self.telio.connect_exit_node(&server));
+
+                if postquantum {
+                    cli_try!(self.telio.connect_vpn_post_quantum(&server));
+                } else {
+                    cli_try!(self.telio.connect_exit_node(&server));
+                }
             }
             SetIp { name } => {
                 cli_try!(self.set_ip(&name, "10.5.0.2/16"));
