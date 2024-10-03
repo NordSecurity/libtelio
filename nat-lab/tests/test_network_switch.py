@@ -1,7 +1,6 @@
 import asyncio
 import config
 import pytest
-import telio
 import timeouts
 from contextlib import AsyncExitStack
 from helpers import (
@@ -10,13 +9,13 @@ from helpers import (
     setup_mesh_nodes,
     SetupParameters,
 )
-from telio import AdapterType
 from utils import stun
 from utils.asyncio_util import run_async_contexts
 from utils.bindings import (
     features_with_endpoint_providers,
     EndpointProvider,
     PathType,
+    TelioAdapterType,
     NodeState,
     RelayState,
 )
@@ -69,27 +68,27 @@ async def test_network_switcher(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_SHARED_CLIENT_1,
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
             ),
         ),
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_SHARED_CLIENT_1,
-                adapter_type=telio.AdapterType.LinuxNativeWg,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
             ),
             marks=pytest.mark.linux_native,
         ),
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=telio.AdapterType.WindowsNativeWg,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
             ),
             marks=pytest.mark.windows,
         ),
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=telio.AdapterType.WireguardGo,
+                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
             ),
             marks=[
                 pytest.mark.windows,
@@ -98,7 +97,7 @@ async def test_network_switcher(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
             ),
             marks=[
                 pytest.mark.mac,
@@ -143,14 +142,14 @@ async def test_mesh_network_switch(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_SHARED_CLIENT_1,
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
                 is_meshnet=False,
             ),
         ),
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_SHARED_CLIENT_1,
-                adapter_type=telio.AdapterType.LinuxNativeWg,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                 is_meshnet=False,
             ),
             marks=pytest.mark.linux_native,
@@ -158,7 +157,7 @@ async def test_mesh_network_switch(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=telio.AdapterType.WindowsNativeWg,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 is_meshnet=False,
             ),
             marks=[pytest.mark.windows],
@@ -166,7 +165,7 @@ async def test_mesh_network_switch(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=telio.AdapterType.WireguardGo,
+                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 is_meshnet=False,
             ),
             marks=[pytest.mark.windows],
@@ -174,7 +173,7 @@ async def test_mesh_network_switch(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
                 is_meshnet=False,
             ),
             marks=[
@@ -229,7 +228,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_SHARED_CLIENT_1,
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
                 features=features_with_endpoint_providers([EndpointProvider.STUN]),
             ),
             marks=[],
@@ -237,7 +236,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_SHARED_CLIENT_1,
-                adapter_type=telio.AdapterType.LinuxNativeWg,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                 features=features_with_endpoint_providers([EndpointProvider.STUN]),
             ),
             marks=pytest.mark.linux_native,
@@ -245,7 +244,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=telio.AdapterType.WindowsNativeWg,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 features=features_with_endpoint_providers([EndpointProvider.STUN]),
             ),
             marks=[
@@ -255,7 +254,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=telio.AdapterType.WireguardGo,
+                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 features=features_with_endpoint_providers([EndpointProvider.STUN]),
             ),
             marks=pytest.mark.windows,
@@ -263,7 +262,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
                 features=features_with_endpoint_providers([EndpointProvider.STUN]),
             ),
             marks=[
@@ -278,7 +277,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
                 features=features_with_endpoint_providers([EndpointProvider.STUN]),
             )
         )

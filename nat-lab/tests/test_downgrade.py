@@ -2,7 +2,6 @@ import asyncio
 import pytest
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
-from telio import AdapterType
 from typing import List, Tuple
 from utils.bindings import (
     default_features,
@@ -10,6 +9,7 @@ from utils.bindings import (
     FeaturePersistentKeepalive,
     EndpointProvider,
     PathType,
+    TelioAdapterType,
     NodeState,
 )
 from utils.connection_util import ConnectionTag
@@ -17,7 +17,7 @@ from utils.ping import ping
 
 
 def _generate_setup_parameter_pair(
-    cfg: List[Tuple[ConnectionTag, AdapterType]],
+    cfg: List[Tuple[ConnectionTag, TelioAdapterType]],
 ) -> List[SetupParameters]:
     features = default_features(enable_link_detection=True, enable_direct=True)
     features.wireguard.persistent_keepalive = FeaturePersistentKeepalive(
@@ -31,7 +31,7 @@ def _generate_setup_parameter_pair(
     return [
         SetupParameters(
             connection_tag=tag,
-            adapter_type=adapter,
+            adapter_type_override=adapter,
             features=features,
         )
         for tag, adapter in cfg
@@ -44,8 +44,8 @@ def _generate_setup_parameter_pair(
     [
         pytest.param(
             _generate_setup_parameter_pair([
-                (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
-                (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN),
+                (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.BORING_TUN),
             ])
         )
     ],
@@ -106,8 +106,8 @@ async def test_downgrade_using_link_detection(
     [
         pytest.param(
             _generate_setup_parameter_pair([
-                (ConnectionTag.DOCKER_CONE_CLIENT_1, AdapterType.BoringTun),
-                (ConnectionTag.DOCKER_CONE_CLIENT_2, AdapterType.BoringTun),
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN),
+                (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.BORING_TUN),
             ])  # Disable enhanced detection via pinging to reduce the test duration
         )
     ],

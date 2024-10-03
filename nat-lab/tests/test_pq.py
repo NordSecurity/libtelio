@@ -2,8 +2,9 @@ import config
 import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment
-from telio import AdapterType, Client
+from telio import Client
 from utils import stun
+from utils.bindings import TelioAdapterType
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
@@ -50,7 +51,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=ConnectionLimits(1, 1),
@@ -63,7 +64,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.LinuxNativeWg,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=ConnectionLimits(1, 1),
@@ -77,7 +78,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WindowsNativeWg,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=ConnectionLimits(1, 1),
@@ -93,7 +94,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WireguardGo,
+                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=ConnectionLimits(1, 1),
@@ -109,7 +110,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     stun_limits=ConnectionLimits(1, 1),
@@ -149,7 +150,7 @@ async def test_pq_vpn_connection(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=ConnectionLimits(1, 1),
@@ -162,7 +163,7 @@ async def test_pq_vpn_connection(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.LinuxNativeWg,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=ConnectionLimits(1, 1),
@@ -176,7 +177,7 @@ async def test_pq_vpn_connection(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WindowsNativeWg,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=ConnectionLimits(1, 1),
@@ -192,7 +193,7 @@ async def test_pq_vpn_connection(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WireguardGo,
+                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=ConnectionLimits(1, 1),
@@ -208,7 +209,7 @@ async def test_pq_vpn_connection(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     stun_limits=ConnectionLimits(1, 1),

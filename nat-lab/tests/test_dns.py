@@ -9,9 +9,8 @@ import timeouts
 from config import LIBTELIO_DNS_IPV4, LIBTELIO_DNS_IPV6
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_api, setup_environment, setup_mesh_nodes
-from telio import AdapterType
 from typing import List
-from utils.bindings import default_features, FeatureDns
+from utils.bindings import default_features, FeatureDns, TelioAdapterType
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import ConnectionTag, generate_connection_tracker_config
 from utils.dns import query_dns, query_dns_port
@@ -444,7 +443,7 @@ async def test_dns_stability(alpha_ip_stack: IPStack) -> None:
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                     ip_stack=alpha_ip_stack,
-                    adapter_type=AdapterType.BoringTun,
+                    adapter_type_override=TelioAdapterType.BORING_TUN,
                     connection_tracker_config=generate_connection_tracker_config(
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
                         derp_1_limits=ConnectionLimits(1, 1),

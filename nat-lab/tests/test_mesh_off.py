@@ -1,10 +1,15 @@
 import asyncio
 import pytest
-import telio
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from timeouts import TEST_MESH_STATE_AFTER_DISCONNECTING_NODE_TIMEOUT
-from utils.bindings import default_features, EndpointProvider, PathType, NodeState
+from utils.bindings import (
+    default_features,
+    EndpointProvider,
+    PathType,
+    TelioAdapterType,
+    NodeState,
+)
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
 
@@ -29,12 +34,12 @@ async def test_mesh_off(direct) -> None:
             [
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    adapter_type=telio.AdapterType.LinuxNativeWg,
+                    adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                     features=features,
                 ),
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    adapter_type=telio.AdapterType.LinuxNativeWg,
+                    adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                     features=features,
                 ),
             ],

@@ -1,12 +1,10 @@
 import asyncio
 import pytest
 import random
-import telio
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment
 from itertools import zip_longest
 from scapy.layers.inet import TCP, UDP  # type: ignore
-from telio import AdapterType
 from timeouts import TEST_BATCHING_TIMEOUT
 from typing import List, Tuple
 from utils.batching import (
@@ -21,6 +19,7 @@ from utils.bindings import (
     FeatureBatching,
     EndpointProvider,
     RelayState,
+    TelioAdapterType,
 )
 from utils.connection import DockerConnection
 from utils.connection_util import DOCKER_GW_MAP, ConnectionTag, container_id
@@ -30,7 +29,7 @@ BATCHING_CAPTURE_TIME = 240  # Tied to TEST_BATCHING_TIMEOUT
 
 
 def _generate_setup_parameters(
-    conn_tag: ConnectionTag, adapter: telio.AdapterType, batching: bool
+    conn_tag: ConnectionTag, adapter: TelioAdapterType, batching: bool
 ) -> SetupParameters:
     features = features_with_endpoint_providers(
         [EndpointProvider.UPNP, EndpointProvider.LOCAL, EndpointProvider.STUN]
@@ -51,7 +50,7 @@ def _generate_setup_parameters(
 
     return SetupParameters(
         connection_tag=conn_tag,
-        adapter_type=adapter,
+        adapter_type_override=adapter,
         features=features,
     )
 
@@ -59,64 +58,64 @@ def _generate_setup_parameters(
 ALL_NODES = [
     (
         ConnectionTag.DOCKER_CONE_CLIENT_1,
-        AdapterType.LinuxNativeWg,
+        TelioAdapterType.LINUX_NATIVE_TUN,
     ),
     (
         ConnectionTag.DOCKER_CONE_CLIENT_2,
-        AdapterType.LinuxNativeWg,
+        TelioAdapterType.LINUX_NATIVE_TUN,
     ),
     (
         ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
-        AdapterType.LinuxNativeWg,
+        TelioAdapterType.LINUX_NATIVE_TUN,
     ),
     (
         ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2,
-        AdapterType.LinuxNativeWg,
+        TelioAdapterType.LINUX_NATIVE_TUN,
     ),
     (
         ConnectionTag.DOCKER_UPNP_CLIENT_1,
-        AdapterType.LinuxNativeWg,
+        TelioAdapterType.LINUX_NATIVE_TUN,
     ),
     (
         ConnectionTag.DOCKER_UPNP_CLIENT_2,
-        AdapterType.LinuxNativeWg,
+        TelioAdapterType.LINUX_NATIVE_TUN,
     ),
     (
         ConnectionTag.DOCKER_SHARED_CLIENT_1,
-        AdapterType.LinuxNativeWg,
+        TelioAdapterType.LINUX_NATIVE_TUN,
     ),
     (
         ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
-        AdapterType.LinuxNativeWg,
+        TelioAdapterType.LINUX_NATIVE_TUN,
     ),
     (
         ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2,
-        AdapterType.LinuxNativeWg,
+        TelioAdapterType.LINUX_NATIVE_TUN,
     ),
     (
         ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
-        AdapterType.LinuxNativeWg,
+        TelioAdapterType.LINUX_NATIVE_TUN,
     ),
     (
         ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1,
-        AdapterType.LinuxNativeWg,
+        TelioAdapterType.LINUX_NATIVE_TUN,
     ),
     (
         ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2,
-        AdapterType.LinuxNativeWg,
+        TelioAdapterType.LINUX_NATIVE_TUN,
     ),
     (
         ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT,
-        AdapterType.LinuxNativeWg,
+        TelioAdapterType.LINUX_NATIVE_TUN,
     ),
-    (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, AdapterType.LinuxNativeWg),
-    (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, AdapterType.LinuxNativeWg),
+    (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, TelioAdapterType.LINUX_NATIVE_TUN),
+    (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, TelioAdapterType.LINUX_NATIVE_TUN),
     (
         ConnectionTag.MAC_VM,
-        AdapterType.BoringTun,
+        TelioAdapterType.BORING_TUN,
     ),
-    (ConnectionTag.WINDOWS_VM_1, AdapterType.WindowsNativeWg),
-    (ConnectionTag.WINDOWS_VM_2, AdapterType.WireguardGo),
+    (ConnectionTag.WINDOWS_VM_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
+    (ConnectionTag.WINDOWS_VM_2, TelioAdapterType.WIREGUARD_GO_TUN),
 ]
 # This test captures histograms of network activity to evaluate the effect of local batching in libtelio.
 # Since only local batching is implemented, no client-generated traffic should occur during the test.

@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from itertools import product, zip_longest
 from mesh_api import Node, API, stop_tcpdump
-from telio import Client, AdapterType
+from telio import Client
 from typing import AsyncIterator, List, Tuple, Optional, Union
 from utils.bindings import (
     default_features,
@@ -16,6 +16,7 @@ from utils.bindings import (
     RelayState,
     NodeState,
     PathType,
+    TelioAdapterType,
 )
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionTrackerConfig
@@ -39,8 +40,8 @@ class SetupParameters:
     * connection_tag - connection tag of the used Docker container (DOCKER_CONE_CLIENT_1 by default)
     * connection_tracker_config - Configuration of the tracking connections with a different nodes
                                   (None by default, which implies that connection checking is disabled)
-    * adapter_type - type of the used Wireguard adapter (the default value is AdapterType.Default, which
-                     allows Telio client to select the most feasible adapter for the given OS)
+    * adapter_type_override - type of the Wireguard adapter to use instead of the default for the given
+                 OS (passing None means no override, which means using the default for the given OS)
     * features - features used with the created Telio instance (while only `is_test_env` is enabled by
                  default, some of the features (like ipv6 support) might be enabled implicitly by other
                  parts of the config)
@@ -55,7 +56,7 @@ class SetupParameters:
     connection_tracker_config: Optional[List[ConnectionTrackerConfig]] = field(
         default=None
     )
-    adapter_type: AdapterType = field(default=AdapterType.Default)
+    adapter_type_override: Optional[TelioAdapterType] = None
     features: Features = field(default_factory=default_features)
     is_meshnet: bool = field(default=True)
     derp_servers: Optional[List[Server]] = field(default=None)
@@ -166,7 +167,7 @@ async def setup_clients(
         Tuple[
             Connection,
             Node,
-            AdapterType,
+            TelioAdapterType,
             Features,
             str,
             Optional[Config],
@@ -191,10 +192,14 @@ async def setup_clients(
     return await asyncio.gather(*[
         exit_stack.enter_async_context(
             Client(
-                connection, node, adapter_type, features, fingerprint=fingerprint
+                connection,
+                node,
+                adapter_type_override,
+                features,
+                fingerprint=fingerprint,
             ).run(meshnet_config)
         )
-        for connection, node, adapter_type, features, fingerprint, meshnet_config in client_parameters
+        for connection, node, adapter_type_override, features, fingerprint, meshnet_config in client_parameters
     ])
 
 
@@ -234,11 +239,11 @@ async def setup_environment(
             [
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1
-                    adapter_type=AdapterType.BoringTun,
+                    adapter_type_override=TelioAdapterType.BORING_TUN,
                 ),
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2
-                    adapter_type=AdapterType.BoringTun,
+                    adapter_type_override=TelioAdapterType.BORING_TUN,
                 ),
             ],
         )
@@ -281,7 +286,7 @@ async def setup_environment(
             zip(
                 [conn_manager.connection for conn_manager in connection_managers],
                 nodes,
-                [instance.adapter_type for instance in instances],
+                [instance.adapter_type_override for instance in instances],
                 [instance.features for instance in instances],
                 [instance.fingerprint for instance in instances],
                 [

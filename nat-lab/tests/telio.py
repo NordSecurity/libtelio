@@ -4,14 +4,12 @@ import glob
 import os
 import platform
 import re
-import uniffi.telio_bindings as libtelio
 import uuid
 import warnings
 from collections import Counter
 from config import DERP_SERVERS
 from contextlib import asynccontextmanager
 from datetime import datetime
-from enum import Enum
 from mesh_api import Node, start_tcpdump, stop_tcpdump
 from typing import AsyncIterator, List, Optional, Set
 from uniffi.libtelio_proxy import LibtelioProxy, ProxyConnectionError
@@ -29,6 +27,7 @@ from utils.bindings import (
     NodeState,
     RelayState,
     LinkState,
+    TelioAdapterType,
 )
 from utils.command_grepper import CommandGrepper
 from utils.connection import Connection, DockerConnection, TargetOS
@@ -43,28 +42,6 @@ from utils.testing import (
     get_current_test_log_path,
     get_current_test_case_and_parameters,
 )
-
-
-# Equivalent of `libtelio/telio-wg/src/adapter/mod.rs`
-class AdapterType(Enum):
-    Default = ""
-    BoringTun = "boringtun"
-    LinuxNativeWg = "linux-native"
-    WireguardGo = "wireguard-go"
-    WindowsNativeWg = "wireguard-nt"
-
-    def convert_adapter_type(self, router: Router) -> libtelio.TelioAdapterType:
-        if self == AdapterType.BoringTun:
-            return libtelio.TelioAdapterType.BORING_TUN
-        if self == AdapterType.LinuxNativeWg:
-            return libtelio.TelioAdapterType.LINUX_NATIVE_TUN
-        if self == AdapterType.WireguardGo:
-            return libtelio.TelioAdapterType.WIREGUARD_GO_TUN
-        if self == AdapterType.WindowsNativeWg:
-            return libtelio.TelioAdapterType.WINDOWS_NATIVE_TUN
-        if isinstance(router, WindowsRouter):
-            return libtelio.TelioAdapterType.WIREGUARD_GO_TUN
-        return libtelio.TelioAdapterType.BORING_TUN
 
 
 class Runtime:
@@ -321,7 +298,7 @@ class Client:
         self,
         connection: Connection,
         node: Node,
-        adapter_type: AdapterType = AdapterType.Default,
+        adapter_type: Optional[TelioAdapterType] = None,
         telio_features: Features = default_features(),
         force_ipv6_feature: bool = False,
         fingerprint: str = "",
@@ -334,7 +311,16 @@ class Client:
         self._node = node
         self._connection = connection
         self._router: Router = new_router(self._connection, self._node.ip_stack)
-        self._adapter_type = adapter_type
+        # If the passed adapter_type is None, use the default for the given OS
+        # At the time of writing this comment, that means:
+        #   Windows -> WireguardGo
+        #   All other platforms -> BoringTun
+        if adapter_type is not None:
+            self._adapter_type = adapter_type
+        elif isinstance(self.get_router(), WindowsRouter):
+            self._adapter_type = TelioAdapterType.WIREGUARD_GO_TUN
+        else:
+            self._adapter_type = TelioAdapterType.BORING_TUN
         self._telio_features = telio_features
         self._quit = False
         self._start_time = datetime.now()
@@ -447,7 +433,7 @@ class Client:
 
                 self.get_proxy().start_named(
                     private_key=self._node.private_key,
-                    adapter=self._adapter_type.convert_adapter_type(self.get_router()),
+                    adapter=self._adapter_type,
                     name=self.get_router().get_interface_name(),
                 )
 
@@ -512,7 +498,7 @@ class Client:
     async def simple_start(self):
         self.get_proxy().start_named(
             private_key=self._node.private_key,
-            adapter=self._adapter_type.convert_adapter_type(self.get_router()),
+            adapter=self._adapter_type,
             name=self.get_router().get_interface_name(),
         )
         if isinstance(self.get_router(), LinuxRouter):
@@ -620,7 +606,7 @@ class Client:
         # listen port is required for mesh connection, there is no other way to
         # bypass this waiting period. Another option would be to retry `mesh config`
         # multiple times until the command succeeds.
-        if made_changes and self._adapter_type == AdapterType.LinuxNativeWg:
+        if made_changes and self._adapter_type == TelioAdapterType.LINUX_NATIVE_TUN:
             await asyncio.sleep(2)
 
         if meshnet_config.peers is not None:
@@ -1158,11 +1144,3 @@ class Client:
                     f" {container_name}:{file_path} {core_dump_destination}"
                 )
                 os.system(cmd)
-
-
-def generate_secret_key() -> str:
-    return libtelio.generate_secret_key()
-
-
-def generate_public_key(private_key: str) -> str:
-    return libtelio.generate_public_key(private_key)

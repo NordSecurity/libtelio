@@ -4,7 +4,6 @@ import asyncio
 import base64
 import pytest
 import subprocess
-import telio
 from config import (
     WG_SERVER,
     STUN_SERVER,
@@ -16,6 +15,7 @@ from config import (
 from contextlib import AsyncExitStack
 from helpers import connectivity_stack
 from mesh_api import API, Node
+from telio import Client
 from typing import List, Optional
 from utils import testing, stun
 from utils.analytics import fetch_moose_events, DERP_BIT, WG_BIT, IPV4_BIT, IPV6_BIT
@@ -262,9 +262,9 @@ async def start_alpha_beta_in_relay(
     connection_beta: Connection,
     alpha_features: Features,
     beta_features: Features,
-) -> tuple[telio.Client, telio.Client]:
+) -> tuple[Client, Client]:
     client_alpha = await exit_stack.enter_async_context(
-        telio.Client(
+        Client(
             connection_alpha,
             alpha,
             telio_features=alpha_features,
@@ -272,7 +272,7 @@ async def start_alpha_beta_in_relay(
         ).run(api.get_meshnet_config(alpha.id))
     )
 
-    client_beta = telio.Client(
+    client_beta = Client(
         connection_beta,
         beta,
         telio_features=beta_features,
@@ -382,7 +382,7 @@ async def run_default_scenario(
         build_telio_features(),
     )
     client_gamma = await exit_stack.enter_async_context(
-        telio.Client(
+        Client(
             connection_gamma,
             gamma,
             telio_features=build_telio_features(),
@@ -1908,7 +1908,7 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
         await clean_container(connection_beta)
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(
+            Client(
                 connection_beta,
                 beta,
                 telio_features=build_telio_features(),
@@ -1936,7 +1936,7 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
 
         alpha.set_peer_firewall_settings(beta.id, allow_incoming_connections=True)
         client_alpha = await exit_stack.enter_async_context(
-            telio.Client(
+            Client(
                 connection_alpha,
                 alpha,
                 telio_features=build_telio_features(),
@@ -2004,7 +2004,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
         )
         await clean_container(connection_beta)
 
-        async with telio.Client(
+        async with Client(
             connection_beta,
             beta,
             telio_features=build_telio_features(),
@@ -2026,7 +2026,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
         )
 
         client_beta = await exit_stack.enter_async_context(
-            telio.Client(
+            Client(
                 connection_beta,
                 beta,
                 telio_features=build_telio_features(),
@@ -2062,7 +2062,7 @@ async def test_lana_initial_heartbeat_no_trigger(
         await clean_container(connection_alpha)
 
         await exit_stack.enter_async_context(
-            telio.Client(
+            Client(
                 connection_alpha,
                 alpha,
                 telio_features=build_telio_features(

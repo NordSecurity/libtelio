@@ -1,6 +1,5 @@
 import asyncio
 import pytest
-import telio
 from contextlib import AsyncExitStack
 from datetime import datetime
 from helpers import setup_mesh_nodes, SetupParameters, connectivity_stack
@@ -12,6 +11,7 @@ from utils.bindings import (
     EndpointProvider,
     RttType,
     PathType,
+    TelioAdapterType,
     NodeState,
 )
 from utils.connection import Connection
@@ -102,7 +102,7 @@ def nurse_features() -> Features:
     [
         pytest.param(
             SetupParameters(
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -113,7 +113,7 @@ def nurse_features() -> Features:
         ),
         pytest.param(
             SetupParameters(
-                adapter_type=telio.AdapterType.LinuxNativeWg,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -134,7 +134,7 @@ def nurse_features() -> Features:
     [
         pytest.param(
             SetupParameters(
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
@@ -208,7 +208,7 @@ async def test_session_keeper(
     [
         pytest.param(
             SetupParameters(
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -220,7 +220,7 @@ async def test_session_keeper(
         ),
         pytest.param(
             SetupParameters(
-                adapter_type=telio.AdapterType.LinuxNativeWg,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -241,7 +241,7 @@ async def test_session_keeper(
     [
         pytest.param(
             SetupParameters(
-                adapter_type=telio.AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,

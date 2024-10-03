@@ -4,11 +4,11 @@ import pytest
 import timeouts
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
-from telio import AdapterType
 from utils.bindings import (
     features_with_endpoint_providers,
     EndpointProvider,
     PathType,
+    TelioAdapterType,
     NodeState,
     RelayState,
 )
@@ -25,7 +25,7 @@ from utils.connection_util import generate_connection_tracker_config, Connection
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -35,7 +35,7 @@ from utils.connection_util import generate_connection_tracker_config, Connection
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.LinuxNativeWg,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -46,7 +46,7 @@ from utils.connection_util import generate_connection_tracker_config, Connection
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WindowsNativeWg,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -57,7 +57,7 @@ from utils.connection_util import generate_connection_tracker_config, Connection
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WireguardGo,
+                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -68,7 +68,7 @@ from utils.connection_util import generate_connection_tracker_config, Connection
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -116,10 +116,10 @@ async def test_node_state_flickering_relay(
 
 
 CFG = [
-    (AdapterType.WindowsNativeWg, [pytest.mark.windows]),
-    (AdapterType.WireguardGo, [pytest.mark.windows]),
-    (AdapterType.BoringTun, []),
-    (AdapterType.LinuxNativeWg, []),
+    (TelioAdapterType.WINDOWS_NATIVE_TUN, [pytest.mark.windows]),
+    (TelioAdapterType.WIREGUARD_GO_TUN, [pytest.mark.windows]),
+    (TelioAdapterType.BORING_TUN, []),
+    (TelioAdapterType.LINUX_NATIVE_TUN, []),
 ]
 
 
@@ -133,20 +133,20 @@ CFG = [
     ],
 )
 async def test_node_state_flickering_direct(
-    alpha_adapter_type: AdapterType,
-    beta_adapter_type: AdapterType,
+    alpha_adapter_type: TelioAdapterType,
+    beta_adapter_type: TelioAdapterType,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         alpha_conn_tag = (
             ConnectionTag.WINDOWS_VM_1
             if alpha_adapter_type
-            in [AdapterType.WindowsNativeWg, AdapterType.WireguardGo]
+            in [TelioAdapterType.WINDOWS_NATIVE_TUN, TelioAdapterType.WIREGUARD_GO_TUN]
             else ConnectionTag.DOCKER_CONE_CLIENT_1
         )
         beta_conn_tag = (
             ConnectionTag.WINDOWS_VM_2
             if beta_adapter_type
-            in [AdapterType.WindowsNativeWg, AdapterType.WireguardGo]
+            in [TelioAdapterType.WINDOWS_NATIVE_TUN, TelioAdapterType.WIREGUARD_GO_TUN]
             else ConnectionTag.DOCKER_CONE_CLIENT_2
         )
 
@@ -155,7 +155,7 @@ async def test_node_state_flickering_direct(
             [
                 SetupParameters(
                     connection_tag=alpha_conn_tag,
-                    adapter_type=alpha_adapter_type,
+                    adapter_type_override=alpha_adapter_type,
                     features=features_with_endpoint_providers([
                         EndpointProvider.STUN,
                         EndpointProvider.LOCAL,
@@ -164,7 +164,7 @@ async def test_node_state_flickering_direct(
                 ),
                 SetupParameters(
                     connection_tag=beta_conn_tag,
-                    adapter_type=beta_adapter_type,
+                    adapter_type_override=beta_adapter_type,
                     features=features_with_endpoint_providers([
                         EndpointProvider.STUN,
                         EndpointProvider.LOCAL,

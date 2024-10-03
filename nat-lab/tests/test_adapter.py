@@ -1,8 +1,7 @@
 import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes, setup_connections
-from telio import AdapterType
-from utils.bindings import ErrorEvent, ErrorCode, ErrorLevel
+from utils.bindings import ErrorEvent, ErrorCode, ErrorLevel, TelioAdapterType
 from utils.connection import TargetOS
 from utils.connection_util import ConnectionTag
 from utils.process import ProcessExecError
@@ -14,27 +13,27 @@ from utils.process import ProcessExecError
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
             ),
         ),
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type=AdapterType.LinuxNativeWg,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
             ),
             marks=[pytest.mark.linux_native],
         ),
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WindowsNativeWg,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
             ),
             marks=[pytest.mark.windows],
         ),
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WireguardGo,
+                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
             ),
             marks=[pytest.mark.windows],
         ),
@@ -86,14 +85,14 @@ async def test_adapter_gone_event(alpha_setup_params: SetupParameters) -> None:
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WindowsNativeWg,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
             ),
             marks=[pytest.mark.windows],
         ),
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type=AdapterType.WireguardGo,
+                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
             ),
             marks=[pytest.mark.windows],
         ),
