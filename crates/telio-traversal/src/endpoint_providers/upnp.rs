@@ -34,18 +34,24 @@ use mockall::automock;
 const MAX_SUPPORTED_PACKET_SIZE: usize = 1500;
 const GET_INTERFACE_TIMEOUT_S: Duration = Duration::from_secs(2);
 
+const EPHEMERAL_PORT_RANGE: std::ops::RangeInclusive<u16> = 49152..=65535;
+
+const DEFAULT_LEASE_DURATION_S: u32 = 600;
+
 type Result<T> = std::result::Result<T, Error>;
 
 #[cfg_attr(test, automock)]
 #[async_trait]
 pub trait UpnpEpCommands: Send + Default + 'static {
     async fn check_endpoint_routes(&self, proxy_port: u16, wg_port: u16) -> Result<bool>;
-    async fn add_any_endpoint_routes(
+    async fn add_endpoint_routes(
         &self,
         ip_addr: Ipv4Addr,
-        proxy_port: u16,
-        wg_port: u16,
-    ) -> Result<(u16, u16)>;
+        proxy_port_internal: u16,
+        proxy_port_external: u16,
+        wg_port_internal: u16,
+        wg_port_external: u16,
+    ) -> Result<()>;
     async fn extend_endpoint_duration(
         &self,
         ip_addr: Ipv4Addr,
@@ -90,7 +96,7 @@ impl UpnpEpCommands for IgdGateway {
         while let Ok(resp) = gw.get_generic_port_mapping_entry(i).await {
             i += 1;
 
-            if resp.lease_duration < 10 * 60 {
+            if resp.lease_duration < DEFAULT_LEASE_DURATION_S {
                 extend_timeout = true;
             }
 
@@ -138,34 +144,35 @@ impl UpnpEpCommands for IgdGateway {
         Ok(())
     }
 
-    async fn add_any_endpoint_routes(
+    async fn add_endpoint_routes(
         &self,
         ip_addr: Ipv4Addr,
-        proxy_port: u16,
-        wg_port: u16,
-    ) -> Result<(u16, u16)> {
-        let mut new_ext_port: (u16, u16) = (0, 0);
+        proxy_port_internal: u16,
+        proxy_port_external: u16,
+        wg_port_internal: u16,
+        wg_port_external: u16,
+    ) -> Result<()> {
         let gw = match &self.gw {
             Some(gw) => gw,
             None => return Err(Error::NoIGDGateway),
         };
-        new_ext_port.0 = gw
-            .add_any_port(
-                PortMappingProtocol::UDP,
-                SocketAddrV4::new(ip_addr, proxy_port),
-                3600,
-                "libminiupnp",
-            )
-            .await?;
-        new_ext_port.1 = gw
-            .add_any_port(
-                PortMappingProtocol::UDP,
-                SocketAddrV4::new(ip_addr, wg_port),
-                3600,
-                "libminiupnp",
-            )
-            .await?;
-        Ok(new_ext_port)
+        gw.add_port(
+            PortMappingProtocol::UDP,
+            proxy_port_external,
+            SocketAddrV4::new(ip_addr, proxy_port_internal),
+            3600,
+            "libminiupnp",
+        )
+        .await?;
+        gw.add_port(
+            PortMappingProtocol::UDP,
+            wg_port_external,
+            SocketAddrV4::new(ip_addr, wg_port_internal),
+            3600,
+            "libminiupnp",
+        )
+        .await?;
+        Ok(())
     }
 
     async fn delete_endpoint_routes(&self, proxy_port: u16, wg_port: u16) -> Result<()> {
@@ -545,9 +552,9 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
     }
 
     fn create_random_endpoint_ports(&mut self) {
-        self.wg_port_mapping.external = rand::thread_rng().gen_range(1024..49151);
+        self.wg_port_mapping.external = rand::thread_rng().gen_range(EPHEMERAL_PORT_RANGE);
         self.proxy_port_mapping.external = loop {
-            let rand = rand::thread_rng().gen_range(1024..49151);
+            let rand = rand::thread_rng().gen_range(EPHEMERAL_PORT_RANGE);
             if rand != self.wg_port_mapping.external {
                 break rand;
             }
@@ -570,17 +577,15 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
         };
         self.ip_addr = get_my_local_endpoints(ext_ip)?;
 
-        (
-            self.proxy_port_mapping.external,
-            self.wg_port_mapping.external,
-        ) = {
-            let add = self.igd_gw.add_any_endpoint_routes(
+        self.igd_gw
+            .add_endpoint_routes(
                 self.ip_addr,
                 self.proxy_port_mapping.internal,
+                self.proxy_port_mapping.external,
                 self.wg_port_mapping.internal,
-            );
-            add.await?
-        };
+                self.wg_port_mapping.external,
+            )
+            .await?;
 
         self.endpoint_candidate = Some(EndpointCandidate {
             wg: SocketAddr::new(IpAddr::V4(ext_ip), self.wg_port_mapping.external),
@@ -687,8 +692,9 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
 
 #[cfg(test)]
 mod tests {
-    use crate::endpoint_providers::upnp::{
+    use super::{
         async_trait, EndpointCandidate, MockUpnpEpCommands, UpnpEndpointProvider,
+        EPHEMERAL_PORT_RANGE,
     };
     use crate::endpoint_providers::Error;
     use crate::ping_pong_handler::PingPongHandler;
@@ -747,17 +753,17 @@ mod tests {
     }
 
     fn check_endpoint_route(proxy: u16, wg: u16) -> Result<bool> {
-        if ENDPOINT.lock().wg.port() == proxy && ENDPOINT.lock().udp.port() == wg {
+        if ENDPOINT.lock().wg.port() == wg && ENDPOINT.lock().udp.port() == proxy {
             return Ok(false);
         }
         Err(Error::FailedToGetUpnpService)
     }
 
-    fn add_any_endpoint(wg: u16, proxy: u16) -> Result<(u16, u16)> {
+    fn add_endpoint(wg: u16, proxy: u16) -> Result<()> {
         let mut epc = ENDPOINT.lock();
         epc.wg.set_port(wg);
         epc.udp.set_port(proxy);
-        Ok((0, 0))
+        Ok(())
     }
 
     fn delete_endpoint_routes() -> Result<()> {
@@ -794,7 +800,7 @@ mod tests {
             .unwrap(),
         );
         let udp_socket = spool
-            .new_external_udp((Ipv4Addr::UNSPECIFIED, 0), None)
+            .new_external_udp((Ipv4Addr::UNSPECIFIED, 55555), None)
             .await
             .unwrap();
 
@@ -805,7 +811,7 @@ mod tests {
 
         // These are not properly used yet, just dummy variables
         let mut wg = MockWg::default();
-        let wg_port = 12345;
+        let wg_port = 55345;
         let wg_peers = Vec::<(PublicKey, Peer)>::new();
         let backoff_array = [100, 200, 400, 800, 1600, 3200];
         wg.expect_get_interface().returning(move || {
@@ -819,8 +825,10 @@ mod tests {
             .returning(move |_| Ok(wg_port));
         wg.expect_get_link_state().returning(|_| Ok(None));
         let mut mock = MockUpnpEpCommands::new();
-        mock.expect_add_any_endpoint_routes()
-            .returning(move |_, wg_port, proxy_port| add_any_endpoint(wg_port, proxy_port));
+        mock.expect_add_endpoint_routes()
+            .returning(move |_, proxy_port_int, _, wg_port_int, _| {
+                add_endpoint(wg_port_int, proxy_port_int)
+            });
         mock.expect_delete_endpoint_routes()
             .returning(move |_, _| delete_endpoint_routes());
         mock.expect_has_igd_gateway().returning(has_igd_gateway);
@@ -876,8 +884,18 @@ mod tests {
         let upnp = prepare_test_setup().await;
         tokio::time::sleep(Duration::from_millis(100 + 20)).await;
 
-        // Upnp will change the static port to a random port
-        assert!(ENDPOINT.lock().wg.port() != 1000);
+        let udp_int_port = ENDPOINT.lock().udp.port();
+        let wg_int_port = ENDPOINT.lock().wg.port();
+
+        assert_eq!(udp_int_port, 55555);
+        assert_eq!(wg_int_port, 55345);
+
+        let epc = upnp.get_endpoint_candidate().await.unwrap();
+        let epc_wg_port = epc.wg.port();
+        let epc_udp_port = epc.udp.port();
+
+        assert!((EPHEMERAL_PORT_RANGE).contains(&epc_wg_port));
+        assert!((EPHEMERAL_PORT_RANGE).contains(&epc_udp_port));
 
         // When Upnp is stopped it should set the port to 0
         let _ = upnp.stop().await;
