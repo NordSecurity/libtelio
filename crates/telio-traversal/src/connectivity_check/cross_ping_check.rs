@@ -820,6 +820,10 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
                         };
 
                         do_state_transition!(self, Event::Publish);
+
+                        // Reset exponential backoff on succesfull endpoint verification
+                        self.exponential_backoff.reset();
+
                         let wg_publish_event = WireGuardEndpointCandidateChangeEvent {
                             public_key: self.public_key,
                             remote_endpoint: (remote_endpoint, remote_endpoint_type),
@@ -1244,6 +1248,12 @@ mod tests {
             endpoint,
             last_rx_time_provider_mock.clone(),
         );
+
+        endpoint_connectivity_check_state
+            .exponential_backoff
+            .expect_reset()
+            .times(1)
+            .returning(|| ());
 
         let msg = PingerMsg::ping(WGPort(2), 1, 10_u64)
             .pong(
