@@ -506,7 +506,7 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type=AdapterType.BoringTun,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
                 ip_stack=IPStack.IPv4,
                 features=default_features(enable_firewall_connection_reset=True),
             ),
