@@ -421,24 +421,23 @@ class Client:
                 else:
                     object_uri = f"PYRO:{object_name}@localhost:{host_port}"
 
+                self._libtelio_proxy = LibtelioProxy(object_uri, self._telio_features)
                 try:
-                    self._libtelio_proxy = LibtelioProxy(
-                        object_uri, self._telio_features
-                    )
+                    await self.get_proxy().create()
                 except ProxyConnectionError as err:
                     print(str(err))
                     raise err
 
                 await self.maybe_write_device_fingerprint_to_moose_db()
 
-                self.get_proxy().start_named(
+                await self.get_proxy().start_named(
                     private_key=self._node.private_key,
                     adapter=self._adapter_type,
                     name=self.get_router().get_interface_name(),
                 )
 
                 if isinstance(self.get_router(), LinuxRouter):
-                    self.get_proxy().set_fwmark(int(LINUX_FWMARK_VALUE))
+                    await self.get_proxy().set_fwmark(int(LINUX_FWMARK_VALUE))
 
                 async with asyncio_util.run_async_context(self._event_request_loop()):
                     if meshnet_config:
@@ -475,7 +474,7 @@ class Client:
 
                 print(datetime.now(), "Test cleanup: Shutting down")
                 if self._libtelio_proxy:
-                    self.get_proxy().shutdown(self._connection.target_name())
+                    await self.get_proxy().shutdown(self._connection.target_name())
                 else:
                     print(
                         datetime.now(),
@@ -496,13 +495,13 @@ class Client:
                 print(datetime.now(), "Test cleanup complete")
 
     async def simple_start(self):
-        self.get_proxy().start_named(
+        await self.get_proxy().start_named(
             private_key=self._node.private_key,
             adapter=self._adapter_type,
             name=self.get_router().get_interface_name(),
         )
         if isinstance(self.get_router(), LinuxRouter):
-            self.get_proxy().set_fwmark(int(LINUX_FWMARK_VALUE))
+            await self.get_proxy().set_fwmark(int(LINUX_FWMARK_VALUE))
 
     async def wait_for_state_peer(
         self,
@@ -614,13 +613,13 @@ class Client:
             for peer_pkey in peer_pkeys:
                 self.get_runtime().allowed_pub_keys.add(peer_pkey)
 
-        self.get_proxy().set_meshnet(meshnet_config)
+        await self.get_proxy().set_meshnet(meshnet_config)
 
     async def set_mesh_off(self):
-        self.get_proxy().set_meshnet_off()
+        await self.get_proxy().set_meshnet_off()
 
     async def receive_ping(self) -> str:
-        return await asyncio.to_thread(self.get_proxy().receive_ping)
+        return await self.get_proxy().receive_ping()
 
     async def wait_for_listen_port_ready(
         self,
@@ -644,7 +643,7 @@ class Client:
             raise Exception("Listening socket could not be found")
 
     async def get_nat(self, ip: str, port: int) -> NatType:
-        return self.get_proxy().get_nat(ip, port)
+        return await self.get_proxy().get_nat(ip, port)
 
     async def connect_to_vpn(
         self,
@@ -669,13 +668,13 @@ class Client:
             self.get_runtime().allowed_pub_keys.add(public_key)
 
             if pq:
-                self.get_proxy().connect_to_exit_node_pq(
+                await self.get_proxy().connect_to_exit_node_pq(
                     public_key=public_key,
                     allowed_ips=None,
                     endpoint=f"{ip}:{port}",
                 )
             else:
-                self.get_proxy().connect_to_exit_node(
+                await self.get_proxy().connect_to_exit_node(
                     public_key=public_key,
                     allowed_ips=None,
                     endpoint=f"{ip}:{port}",
@@ -683,7 +682,7 @@ class Client:
             await event
 
     async def set_secret_key(self, secret_key: str):
-        self.get_proxy().set_secret_key(secret_key)
+        await self.get_proxy().set_secret_key(secret_key)
 
     async def disconnect_from_vpn(
         self,
@@ -700,7 +699,7 @@ class Client:
                 timeout=timeout,
             )
         ) as event:
-            self.get_proxy().disconnect_from_exit_nodes()
+            await self.get_proxy().disconnect_from_exit_nodes()
             await asyncio.gather(
                 event,
                 self.get_router().delete_vpn_route(),
@@ -716,20 +715,20 @@ class Client:
                 public_key, [NodeState.CONNECTED], list(PathType), timeout=timeout
             )
         ) as event:
-            self.get_proxy().disconnect_from_exit_nodes()
+            await self.get_proxy().disconnect_from_exit_nodes()
             await asyncio.gather(
                 event,
                 self.get_router().delete_vpn_route(),
             )
 
     async def enable_magic_dns(self, forward_servers: List[str]) -> None:
-        self.get_proxy().enable_magic_dns(forward_servers)
+        await self.get_proxy().enable_magic_dns(forward_servers)
 
     async def disable_magic_dns(self) -> None:
-        self.get_proxy().disable_magic_dns()
+        await self.get_proxy().disable_magic_dns()
 
     async def notify_network_change(self) -> None:
-        self.get_proxy().notify_network_change()
+        await self.get_proxy().notify_network_change()
 
     async def _configure_interface(self) -> bool:
         if not self._interface_configured:
@@ -763,7 +762,7 @@ class Client:
                 timeout=timeout,
             )
         ) as event:
-            self.get_proxy().connect_to_exit_node(
+            await self.get_proxy().connect_to_exit_node(
                 public_key=public_key, allowed_ips=None, endpoint=None
             )
             await event
@@ -805,7 +804,7 @@ class Client:
         self._allowed_errors.extend(re.compile(e) for e in allowed_errors)
 
     async def stop_device(self) -> None:
-        self.get_proxy().stop()
+        await self.get_proxy().stop()
         self._interface_configured = False
 
         # Check every .5s, up to maximum 10 seconds, that the started and stopped tasks are the same
@@ -832,12 +831,12 @@ class Client:
     async def _event_request_loop(self) -> None:
         while True:
             try:
-                event = self.get_proxy().next_event()
+                event = await self.get_proxy().next_event()
                 while event:
                     if self._runtime:
                         print(f"[{self._node.name}]: event [{datetime.now()}]: {event}")
                         self._runtime.handle_event(event)
-                        event = self.get_proxy().next_event()
+                        event = await self.get_proxy().next_event()
                 await asyncio.sleep(1)
             except:
                 if self._quit:
@@ -860,10 +859,10 @@ class Client:
             ]).execute()
 
     async def trigger_event_collection(self) -> None:
-        self.get_proxy().trigger_analytics_event()
+        await self.get_proxy().trigger_analytics_event()
 
     async def trigger_qos_collection(self) -> None:
-        self.get_proxy().trigger_qos_collection()
+        await self.get_proxy().trigger_qos_collection()
 
     def get_endpoint_address(self, public_key: str) -> str:
         node = self.get_node_state(public_key)
@@ -1082,7 +1081,7 @@ class Client:
             f.write(network_info_info)
 
     async def probe_pmtu(self, host: str) -> int:
-        return self.get_proxy().probe_pmtu(host)
+        return await self.get_proxy().probe_pmtu(host)
 
     # This is where natlab expects coredumps to be placed
     # For CI and our internal linux VM, this path is set in our provisioning scripts

@@ -1,7 +1,9 @@
+import asyncio
 import Pyro5.errors  # type:ignore
 import time
 import uniffi.telio_bindings as libtelio
 from datetime import datetime
+from functools import wraps
 from Pyro5.api import Proxy  # type: ignore
 from typing import Optional
 from uniffi.serialization import init_serialization  # type: ignore
@@ -18,19 +20,31 @@ class ProxyConnectionError(Exception):
         return f"ProxyConnectionError: {self._inner}"
 
 
+def move_to_async_thread(f):
+    @wraps(f)
+    async def wrap(*args, **kwargs):
+        return await asyncio.to_thread(f, *args, **kwargs)
+
+    return wrap
+
+
 class LibtelioProxy:
     def __init__(self, object_uri: str, features: libtelio.Features):
         self._uri = object_uri
-        iterations = 20
-        for i in range(0, iterations):
-            try:
-                self._create(features)
-                return
-            except Pyro5.errors.CommunicationError as err:
-                if i == iterations - 1:
-                    raise ProxyConnectionError(err) from err
-                time.sleep(0.25)
+        self._iterations = 20
+        self._features = features
 
+    def _handle_remote_error(self, f):
+        with Proxy(self._uri) as remote:
+            fn_res = f(remote)
+            if fn_res is None:
+                return None
+            (res, err) = fn_res
+            if err is not None:
+                raise Exception(err)
+            return res
+
+    @move_to_async_thread
     def shutdown(self, container_or_vm_name: Optional[str] = None):
         try:
             with Proxy(self._uri) as remote:
@@ -60,78 +74,97 @@ class LibtelioProxy:
                 e,
             )
 
-    def handle_remote_error(self, f):
-        with Proxy(self._uri) as remote:
-            fn_res = f(remote)
-            if fn_res is None:
-                return None
-            (res, err) = fn_res
-            if err is not None:
-                raise Exception(err)
-            return res
+    @move_to_async_thread
+    def create(self):
+        for i in range(0, self._iterations):
+            try:
+                self._handle_remote_error(lambda r: r.create(self._features))
+                return
+            except Pyro5.errors.CommunicationError as err:
+                if i == self._iterations - 1:
+                    raise ProxyConnectionError(err) from err
+                time.sleep(0.25)
 
-    def _create(self, features: libtelio.Features):
-        self.handle_remote_error(lambda r: r.create(features))
-
+    @move_to_async_thread
     def next_event(self) -> libtelio.Event:
-        return self.handle_remote_error(lambda r: r.next_event())
+        return self._handle_remote_error(lambda r: r.next_event())
 
+    @move_to_async_thread
     def stop(self):
-        self.handle_remote_error(lambda r: r.stop())
+        self._handle_remote_error(lambda r: r.stop())
 
+    @move_to_async_thread
     def start_named(self, private_key, adapter, name: str):
-        self.handle_remote_error(
+        self._handle_remote_error(
             lambda r: r.start_named(private_key, adapter.value, name)
         )
 
+    @move_to_async_thread
     def set_fwmark(self, fwmark: int):
-        self.handle_remote_error(lambda r: r.set_fwmark(fwmark))
+        self._handle_remote_error(lambda r: r.set_fwmark(fwmark))
 
+    @move_to_async_thread
     def notify_network_change(self):
-        self.handle_remote_error(lambda r: r.notify_network_change())
+        self._handle_remote_error(lambda r: r.notify_network_change())
 
+    @move_to_async_thread
     def connect_to_exit_node(self, public_key, allowed_ips, endpoint):
-        self.handle_remote_error(
+        self._handle_remote_error(
             lambda r: r.connect_to_exit_node(public_key, allowed_ips, endpoint)
         )
 
+    @move_to_async_thread
     def connect_to_exit_node_pq(self, public_key, allowed_ips, endpoint):
-        self.handle_remote_error(
+        self._handle_remote_error(
             lambda r: r.connect_to_exit_node_pq(public_key, allowed_ips, endpoint)
         )
 
+    @move_to_async_thread
     def disconnect_from_exit_nodes(self):
-        self.handle_remote_error(lambda r: r.disconnect_from_exit_nodes())
+        self._handle_remote_error(lambda r: r.disconnect_from_exit_nodes())
 
+    @move_to_async_thread
     def enable_magic_dns(self, forward_servers):
-        self.handle_remote_error(lambda r: r.enable_magic_dns(forward_servers))
+        self._handle_remote_error(lambda r: r.enable_magic_dns(forward_servers))
 
+    @move_to_async_thread
     def disable_magic_dns(self):
-        self.handle_remote_error(lambda r: r.disable_magic_dns())
+        self._handle_remote_error(lambda r: r.disable_magic_dns())
 
+    @move_to_async_thread
     def set_meshnet(self, cfg: libtelio.Config):
-        self.handle_remote_error(lambda r: r.set_meshnet(cfg))
+        self._handle_remote_error(lambda r: r.set_meshnet(cfg))
 
+    @move_to_async_thread
     def set_meshnet_off(self):
-        self.handle_remote_error(lambda r: r.set_meshnet_off())
+        self._handle_remote_error(lambda r: r.set_meshnet_off())
 
+    @move_to_async_thread
     def set_secret_key(self, secret_key):
-        self.handle_remote_error(lambda r: r.set_secret_key(secret_key))
+        self._handle_remote_error(lambda r: r.set_secret_key(secret_key))
 
+    @move_to_async_thread
     def is_running(self) -> bool:
-        return self.handle_remote_error(lambda r: r.is_running())
+        return self._handle_remote_error(lambda r: r.is_running())
 
+    @move_to_async_thread
     def trigger_analytics_event(self) -> None:
-        self.handle_remote_error(lambda r: r.trigger_analytics_event())
+        self._handle_remote_error(lambda r: r.trigger_analytics_event())
 
+    @move_to_async_thread
     def trigger_qos_collection(self) -> None:
-        self.handle_remote_error(lambda r: r.trigger_qos_collection())
+        self._handle_remote_error(lambda r: r.trigger_qos_collection())
 
+    @move_to_async_thread
     def receive_ping(self) -> str:
-        return self.handle_remote_error(lambda r: r.receive_ping())
+        return self._handle_remote_error(lambda r: r.receive_ping())
 
+    @move_to_async_thread
     def probe_pmtu(self, host: str) -> int:
-        return self.handle_remote_error(lambda r: r.probe_pmtu(host))
+        return self._handle_remote_error(lambda r: r.probe_pmtu(host))
 
+    @move_to_async_thread
     def get_nat(self, ip: str, port: int) -> libtelio.NatType:
-        return libtelio.NatType(self.handle_remote_error(lambda r: r.get_nat(ip, port)))
+        return libtelio.NatType(
+            self._handle_remote_error(lambda r: r.get_nat(ip, port))
+        )
