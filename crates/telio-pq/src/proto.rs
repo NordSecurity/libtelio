@@ -2,7 +2,7 @@ use std::{
     io::{self, Read},
     net::Ipv4Addr,
     ops::RangeInclusive,
-    time::SystemTime,
+    time::{Duration, SystemTime},
 };
 
 use blake2::Digest;
@@ -29,6 +29,8 @@ const CIPHERTEXT_LEN: u32 = kyber768::ciphertext_bytes() as _;
 
 const IPV4_HEADER_LEN: usize = 20;
 const UDP_HEADER_LEN: usize = 8;
+
+const RECV_TIMEOUT: Duration = Duration::from_secs(4);
 
 struct TunnelSock {
     tunn: noise::Tunn,
@@ -84,7 +86,7 @@ pub async fn fetch_keys(
     }
 
     // Receive response
-    let read = sock.recv(&mut recvbuf).await?;
+    let read = tokio::time::timeout(RECV_TIMEOUT, sock.recv(&mut recvbuf)).await??;
     telio_log_debug!("Received packet of size {read}");
 
     let mut msgbuf = [0u8; 2048]; // 2 KiB buffer should shuffice
@@ -134,7 +136,7 @@ pub async fn rekey(
     sock.send(&pkgbuf).await?;
 
     let mut recvbuf = [0u8; 2048];
-    let read = sock.recv(&mut recvbuf).await?;
+    let read = tokio::time::timeout(RECV_TIMEOUT, sock.recv(&mut recvbuf)).await??;
     telio_log_debug!("Received packet of size {read}");
 
     #[allow(index_access_check)]

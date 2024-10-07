@@ -4,7 +4,7 @@ use tokio::task::JoinHandle;
 
 use telio_model::features::FeaturePostQuantumVPN;
 use telio_task::io::chan;
-use telio_utils::{interval, telio_log_debug, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_warn};
 
 use crate::proto;
 
@@ -27,7 +27,7 @@ impl ConnKeyRotation {
         let request_retry = Duration::from_secs(features.handshake_retry_interval_s as _);
 
         let task = async move {
-            let mut interval = interval(request_retry);
+            let mut interval = telio_utils::interval(request_retry);
 
             let proto::KeySet {
                 mut wg_keys,
@@ -79,7 +79,12 @@ impl ConnKeyRotation {
                         #[allow(mpsc_blocking_send)]
                         let _ = chan.send(super::Event::Rekey(wg_keys)).await;
                     }
-                    Err(err) => telio_log_warn!("Failed to perform PQ rekey: {err}"),
+                    Err(err) => {
+                        telio_log_warn!("Failed to perform PQ rekey: {err}");
+                        if matches!(err, super::Error::Timeout) {
+                            interval.reset_immediately();
+                        }
+                    }
                 }
             }
         };
