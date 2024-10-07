@@ -64,6 +64,7 @@ async def test_teliod() -> None:
         ).execute()
 
         assert not teliod_process.is_executing()
+        assert not await is_teliod_running(connection)
 
         # Run the hello-world command again - this time it should fail
         with pytest.raises(ProcessExecError) as err:

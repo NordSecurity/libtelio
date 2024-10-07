@@ -1,9 +1,12 @@
 use std::{num::NonZeroU64, path::PathBuf, str::FromStr};
 
-use serde::{de, Deserialize, Deserializer};
+use serde::{de, Deserialize, Deserializer, Serialize};
 use smart_default::SmartDefault;
-use tracing::level_filters::LevelFilter;
+use std::fs;
+use tracing::{debug, info, level_filters::LevelFilter};
 use uuid::Uuid;
+
+use telio::crypto::SecretKey;
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, SmartDefault)]
 #[repr(transparent)]
@@ -50,11 +53,40 @@ fn reconnect_after_expiry_default() -> Percentage {
     Percentage(90)
 }
 
+#[derive(Serialize, Deserialize, Debug, Default)]
+pub struct DeviceIdentity {
+    pub hw_identifier: String,
+    pub private_key: SecretKey,
+    pub machine_identifier: String,
+}
+
+pub fn generate_hw_identifier(private_key: SecretKey) -> String {
+    // Generate hw_identifier
+    let public_key = private_key.public();
+    debug!("Generating hw identifier");
+    format!("{}.{}", public_key, "teliod")
+}
+
+impl DeviceIdentity {
+    pub fn from_file(identity_path: &PathBuf) -> Option<DeviceIdentity> {
+        info!("Fetching config");
+
+        if let Ok(file) = fs::File::open(identity_path) {
+            debug!("found existing config.");
+            if let Ok(c) = serde_json::from_reader(file) {
+                return Some(c);
+            }
+        }
+        None
+    }
+}
+
 #[derive(PartialEq, Eq, Deserialize, Debug)]
 pub struct TeliodDaemonConfig {
     #[serde(deserialize_with = "deserialize_log_level")]
     pub log_level: LevelFilter,
     pub log_file_path: String,
+    pub interface_name: String,
 
     pub app_user_uid: Uuid,
 
@@ -124,6 +156,7 @@ mod tests {
             log_level: LevelFilter::INFO,
             log_file_path: "test.log".to_owned(),
             app_user_uid: Uuid::from_str("2ba97921-38d7-4736-9d47-261cf3e5c223").unwrap(),
+            interface_name: "utun10".to_owned(),
             authentication_token:
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
             http_certificate_file_path: None,
@@ -140,6 +173,7 @@ mod tests {
             "log_level": "Info",
             "log_file_path": "test.log",
             "app_user_uid": "2ba97921-38d7-4736-9d47-261cf3e5c223",
+            "interface_name": "utun10",
             "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             }"#;
 
@@ -151,6 +185,7 @@ mod tests {
                 "log_level": "Info",
                 "log_file_path": "test.log",
                 "app_user_uid": "2ba97921-38d7-4736-9d47-261cf3e5c223",
+                "interface_name": "utun10",
                 "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 "mqtt": {}
             }"#;
