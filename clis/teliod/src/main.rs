@@ -1,19 +1,22 @@
 //! Main and implementation of config and commands for Teliod - simple telio daemon for Linux and OpenWRT
 
 use clap::Parser;
-use nix::libc::SIGTERM;
+use nix::libc::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
 use signal_hook_tokio::Signals;
 use std::{
     fs::{self, File},
     str::FromStr,
+    sync::Arc,
 };
 use thiserror::Error as ThisError;
 use tokio::task::JoinError;
 use tracing::{error, info, level_filters::LevelFilter, warn};
+use uuid::Uuid;
 
 mod comms;
+mod nc;
 
-use crate::comms::DaemonSocket;
+use crate::{comms::DaemonSocket, nc::NotificationCenter};
 
 use telio::{device::Device, telio_model::features::Features, telio_utils::select};
 
@@ -27,6 +30,11 @@ struct TeliodDaemonConfig {
     #[serde(deserialize_with = "deserialize_log_level")]
     log_level: LevelFilter,
     log_file_path: String,
+
+    app_user_id: Uuid,
+
+    #[serde(deserialize_with = "deserialize_authentication_token")]
+    authentication_token: String,
 }
 
 fn deserialize_log_level<'de, D>(deserializer: D) -> Result<LevelFilter, D::Error>
@@ -40,12 +48,24 @@ where
     })
 }
 
+fn deserialize_authentication_token<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<String, D::Error> {
+    let raw_string: String = de::Deserialize::deserialize(deserializer)?;
+    let re = regex::Regex::new("[0-9a-f]{64}").map_err(de::Error::custom)?;
+    if re.is_match(&raw_string) {
+        Ok(raw_string)
+    } else {
+        Err(de::Error::custom("Incorrect authentication token"))
+    }
+}
+
 #[derive(Parser, Debug)]
 #[clap()]
 #[derive(Serialize, Deserialize)]
 enum ClientCmd {
     #[clap(
-        about = "Forces daemon to add a log, added for testing to be, to be removed when the daemon will be more mature"
+        about = "Forces daemon to add a log, added for testing, to be removed when the daemon will be more mature"
     )]
     HelloWorld { name: String },
 }
@@ -77,6 +97,8 @@ enum TeliodError {
     DaemonIsNotRunning,
     #[error("Daemon is running")]
     DaemonIsRunning,
+    #[error("NotificationCenter failure: {0}")]
+    NotificationCenter(#[from] nc::Error),
 }
 
 #[tokio::main]
@@ -153,9 +175,23 @@ async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodError
     let socket = DaemonSocket::new(&DaemonSocket::get_ipc_socket_path()?)?;
     let cmd_listener = CommandListener { socket };
 
+    let nc = NotificationCenter::new(
+        &config.authentication_token,
+        config.app_user_id,
+        vec![Arc::new(|am| {
+            println!("Example callback registered at the start: {am:?}")
+        })],
+    )
+    .await?;
+
+    nc.add_callback(Arc::new(|am| {
+        println!("Example callback registered after nc start: {am:?}")
+    }))
+    .await;
+
     let telio_task_handle = tokio::task::spawn_blocking(telio_task);
 
-    let mut signals = Signals::new([SIGTERM])?;
+    let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
 
     info!("Entering event loop");
 
@@ -176,12 +212,12 @@ async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodError
             },
             signal = signals.next() => {
                 match signal {
-                    Some(SIGTERM) => {
-                        info!("Received SIGTERM signal, exiting");
+                    Some(s @ SIGHUP | s @ SIGTERM | s @ SIGINT | s @ SIGQUIT) => {
+                        info!("Received signal {s}, exiting");
                         break Ok(());
                     }
-                    Some(_) => {
-                        info!("Received unexpected signal, ignoring");
+                    Some(s) => {
+                        info!("Received unexpected signal {s:?}, ignoring");
                     }
                     None => {
                         break Err(TeliodError::BrokenSignalStream);
