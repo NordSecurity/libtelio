@@ -1,4 +1,6 @@
 {
     "log_level": "trace",
-    "log_file_path": "example_log_file.log"
+    "log_file_path": "example_log_file.log",
+    "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "app_user_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 }

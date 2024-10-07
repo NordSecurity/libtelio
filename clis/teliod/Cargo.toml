@@ -24,3 +24,10 @@ signal-hook = "0.3.17"
 signal-hook-tokio = { version = "0.3.1", features = ["futures-v0_3"]}
 futures.workspace = true
 thiserror.workspace = true
+regex.workspace = true
+reqwest = { version = "0.12.8", default-features = false, features = ["json", "rustls-tls"] }
+uuid = { workspace = true, features = ["serde"] }
+rumqttc = "0.24.0"
+tokio-rustls = "0.25.0" # This version needs to be the same as the one used by the rumqttc
+rustls-native-certs = "0.8"
+anyhow.workspace = true
