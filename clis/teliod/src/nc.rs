@@ -1,4 +1,10 @@
+use reqwest::{Client, StatusCode, Url};
+use rumqttc::{AsyncClient, MqttOptions, QoS, TlsConfiguration, Transport};
 use serde::{Deserialize, Serialize};
+use std::{sync::Arc, time::Duration};
+use telio::telio_utils::Hidden;
+use tokio_rustls::rustls::ClientConfig;
+use tracing::{error, info};
 use uuid::Uuid;
 
 const TOKENS_URL: &'static str = "https://api.nordvpn.com/v1/notifications/tokens";
@@ -20,8 +26,49 @@ impl NotificationCenter {
     pub async fn new(authentication_token: &str, app_user_uid: Uuid) -> Result<Self, Error> {
         let nc_config = request_nc_config(authentication_token, app_user_uid).await?;
 
-        dbg!(nc_config);
-        todo!()
+        dbg!(&nc_config);
+
+        let mut mqttoptions = MqttOptions::new(
+            app_user_uid.to_string(),
+            nc_config.endpoint.host().unwrap().to_string(),
+            nc_config.endpoint.port().unwrap(),
+        );
+        mqttoptions.set_credentials(nc_config.username, &*nc_config.password);
+        mqttoptions.set_keep_alive(Duration::from_secs(30));
+        mqttoptions.set_clean_session(true);
+
+        // Use rustls-native-certs to load root certificates from the operating system.
+        let mut root_cert_store = tokio_rustls::rustls::RootCertStore::empty();
+        root_cert_store.add_parsable_certificates(
+            rustls_native_certs::load_native_certs().expect("could not load platform certs"),
+        );
+
+        let client_config = Arc::new(
+            ClientConfig::builder()
+                .with_root_certificates(root_cert_store)
+                .with_no_client_auth(),
+        );
+
+        mqttoptions.set_transport(Transport::tls_with_config(TlsConfiguration::Rustls(
+            client_config,
+        )));
+
+        let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
+        client.subscribe("meshnet", QoS::AtLeastOnce).await.unwrap();
+
+        tokio::spawn(async move {
+            loop {
+                match eventloop.poll().await {
+                    Ok(v) => info!("mqtt success: {v:?}"),
+                    Err(e) => {
+                        error!("mqtt event loop error: {e}");
+                        break;
+                    }
+                }
+            }
+        });
+
+        Ok(Self {})
     }
 }
 
@@ -29,7 +76,7 @@ async fn request_nc_config(
     authentication_token: &str,
     app_user_uid: Uuid,
 ) -> Result<NotificationCenterConfig, Error> {
-    let client = reqwest::Client::new();
+    let client = Client::new();
 
     let data = TokenHttpRequestData {
         app_user_uid: app_user_uid.to_string(),
@@ -43,7 +90,7 @@ async fn request_nc_config(
         .await?;
     let status = resp.status();
     let text = resp.text().await?;
-    if status != 201 {
+    if status != StatusCode::CREATED {
         return Err(Error::TokenError(text));
     }
 
@@ -59,8 +106,8 @@ struct TokenHttpRequestData {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct NotificationCenterConfig {
-    endpoint: String,
+    endpoint: Url,
     username: String,
-    password: String,
+    password: Hidden<String>,
     expires_in: u64,
 }
