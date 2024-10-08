@@ -1,4 +1,5 @@
 import asyncio
+import itertools
 import pytest
 from config import WG_SERVERS
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -25,6 +26,7 @@ from utils.connection_util import (
     ConnectionTag,
     new_connection_manager_by_tag,
 )
+from utils.ping import ping
 from utils.router import IPStack
 
 
@@ -404,3 +406,13 @@ def connectivity_stack(node1_stack: IPStack, node2_stack: IPStack) -> Optional[I
         return IPStack.IPv4v6
 
     raise ValueError(f"Unsupported IPStack combination: {node1_stack}, {node2_stack}")
+
+
+async def ping_between_all_nodes(env: Environment) -> None:
+    await asyncio.gather(*[
+        ping(conn.connection, node.ip_addresses[0])
+        for (client, conn), node in itertools.product(
+            zip(env.clients, env.connections), env.nodes
+        )
+        if not client.is_node(node)
+    ])
