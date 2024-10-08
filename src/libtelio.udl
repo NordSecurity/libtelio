@@ -642,6 +642,8 @@ dictionary FeatureDirect {
     FeatureSkipUnresponsivePeers? skip_unresponsive_peers;
     /// Parameters to optimize battery lifetime
     FeatureEndpointProvidersOptimization? endpoint_providers_optimization;
+    /// Configurable features for UPNP endpoint provider
+    FeatureUpnp? upnp_features;
 };
 
 /// Avoid sending periodic messages to peers with no traffic reported by wireguard
@@ -706,6 +708,12 @@ dictionary FeaturePostQuantumVPN {
 dictionary FeaturePmtuDiscovery {
     /// A timeout for wait for the ICMP response packet
     u32 response_wait_timeout_s;
+};
+
+/// Configurable features for UPNP endpoint provider
+dictionary FeatureUpnp {
+    /// The upnp lease_duration parameter, in seconds. A value of 0 is infinite.
+    u32 lease_duration_s;
 };
 
 

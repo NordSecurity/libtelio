@@ -235,6 +235,9 @@ pub struct FeatureDirect {
     /// Parameters to optimize battery lifetime
     #[default(Some(Default::default()))]
     pub endpoint_providers_optimization: Option<FeatureEndpointProvidersOptimization>,
+    /// Configurable features for UPNP endpoint provider
+    #[default(Some(Default::default()))]
+    pub upnp_features: Option<FeatureUpnp>,
 }
 
 fn deserialize_providers<'de, D>(de: D) -> Result<Option<EndpointProviders>, D::Error>
@@ -408,6 +411,15 @@ pub struct FeaturePmtuDiscovery {
     pub response_wait_timeout_s: u32,
 }
 
+/// Configurable features for UPNP endpoint provider
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[serde(default)]
+pub struct FeatureUpnp {
+    /// The upnp lease_duration parameter, in seconds. A value of 0 is infinite. Default: 3600
+    #[default = 3600]
+    pub lease_duration_s: u32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -497,6 +509,9 @@ mod tests {
                 "endpoint_providers_optimization": {
                     "optimize_direct_upgrade_stun": false,
                     "optimize_direct_upgrade_upnp": false
+                },
+                "upnp_features": {
+                    "lease_duration_s": 60
                 }
             },
             "is_test_env": true,
@@ -581,6 +596,9 @@ mod tests {
                                 optimize_direct_upgrade_upnp: false,
                             }
                         ),
+                        upnp_features: Some(FeatureUpnp {
+                            lease_duration_s: 60
+                        }),
                     }),
                     is_test_env: Some(true),
                     hide_ips: false,
@@ -692,6 +710,15 @@ mod tests {
                 r#"{"direct": {"endpoint_providers_optimization": {}}}"#,
                 FeatureEndpointProvidersOptimization::default(),
                 direct.unwrap().endpoint_providers_optimization.unwrap()
+            );
+        }
+
+        #[test]
+        fn test_empty_direct_upnp_features() {
+            assert_json!(
+                r#"{"direct": {"upnp_features": {}}}"#,
+                FeatureUpnp::default(),
+                direct.unwrap().upnp_features.unwrap()
             );
         }
 

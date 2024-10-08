@@ -36,7 +36,7 @@ const GET_INTERFACE_TIMEOUT_S: Duration = Duration::from_secs(2);
 
 const EPHEMERAL_PORT_RANGE: std::ops::RangeInclusive<u16> = 49152..=65535;
 
-const DEFAULT_LEASE_DURATION_S: u32 = 600;
+const LEASE_RENEWAL_LIMIT_S: u32 = 600;
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -71,6 +71,7 @@ type GatewaySearch = Pin<Box<dyn Future<Output = Result<Gateway>> + Send + Sync 
 pub struct IgdGateway {
     search: Option<GatewaySearch>,
     gw: Option<Gateway>,
+    lease_duration_s: u32,
 }
 
 impl Debug for IgdGateway {
@@ -78,6 +79,7 @@ impl Debug for IgdGateway {
         f.debug_struct("IgdGateway")
             .field("search", &self.search.is_some())
             .field("gw", &self.gw)
+            .field("lease_duration", &self.lease_duration_s)
             .finish()
     }
 }
@@ -85,18 +87,18 @@ impl Debug for IgdGateway {
 #[async_trait]
 impl UpnpEpCommands for IgdGateway {
     async fn check_endpoint_routes(&self, proxy_port: u16, wg_port: u16) -> Result<bool> {
-        let mut i = 0;
-        let mut map_ok: (bool, bool) = (false, false);
-        let mut extend_timeout: bool = false;
         let gw = match &self.gw {
             Some(gw) => gw,
             None => return Err(Error::NoIGDGateway),
         };
 
+        let mut i = 0;
+        let mut extend_timeout: bool = false;
+        let mut map_ok: (bool, bool) = (false, false);
         while let Ok(resp) = gw.get_generic_port_mapping_entry(i).await {
             i += 1;
 
-            if resp.lease_duration < DEFAULT_LEASE_DURATION_S {
+            if resp.lease_duration < LEASE_RENEWAL_LIMIT_S {
                 extend_timeout = true;
             }
 
@@ -129,7 +131,7 @@ impl UpnpEpCommands for IgdGateway {
             PortMappingProtocol::UDP,
             proxy_port.external,
             SocketAddrV4::new(ip_addr, proxy_port.internal),
-            3600,
+            self.lease_duration_s,
             "libminiupnp",
         )
         .await?;
@@ -137,7 +139,7 @@ impl UpnpEpCommands for IgdGateway {
             PortMappingProtocol::UDP,
             wg_port.external,
             SocketAddrV4::new(ip_addr, wg_port.internal),
-            3600,
+            self.lease_duration_s,
             "libminiupnp",
         )
         .await?;
@@ -160,7 +162,7 @@ impl UpnpEpCommands for IgdGateway {
             PortMappingProtocol::UDP,
             proxy_port_external,
             SocketAddrV4::new(ip_addr, proxy_port_internal),
-            3600,
+            self.lease_duration_s,
             "libminiupnp",
         )
         .await?;
@@ -168,7 +170,7 @@ impl UpnpEpCommands for IgdGateway {
             PortMappingProtocol::UDP,
             wg_port_external,
             SocketAddrV4::new(ip_addr, wg_port_internal),
-            3600,
+            self.lease_duration_s,
             "libminiupnp",
         )
         .await?;
@@ -273,13 +275,18 @@ impl<Wg: WireGuard> UpnpEndpointProvider<Wg> {
         exponential_backoff_bounds: ExponentialBackoffBounds,
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
         is_battery_optimization_on: bool,
+        lease_duration_s: u32,
     ) -> Result<Self> {
         Ok(Self::start_with(
             udp_socket,
             wg,
             ExponentialBackoff::new(exponential_backoff_bounds)?,
             ping_pong_handler,
-            IgdGateway::default(),
+            IgdGateway {
+                search: Default::default(),
+                gw: Default::default(),
+                lease_duration_s,
+            },
             is_battery_optimization_on,
         ))
     }
@@ -297,7 +304,6 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
         let udp_socket = Arc::new(udp_socket);
         let rx_buff = vec![0u8; MAX_SUPPORTED_PACKET_SIZE];
         let initial_upnp_interval = exponential_backoff.get_backoff();
-
         Self {
             task: Task::start(State {
                 udp_socket,
@@ -521,17 +527,18 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
                 }
             }
             Err(e) => {
-                if let Error::NoIGDGateway = e {
-                    telio_log_info!("Failed to check route: route does not exist")
-                } else {
-                    telio_log_info!("Error: {}", e);
+                telio_log_info!("Error validating endpoint: {}", e);
 
-                    telio_log_info!("Deleting an old Upnp endpoint");
-                    let detete = self.igd_gw.delete_endpoint_routes(
+                telio_log_info!("Dropping Upnp endpoint");
+                if let Err(e) = self
+                    .igd_gw
+                    .delete_endpoint_routes(
                         self.proxy_port_mapping.external,
                         self.wg_port_mapping.external,
-                    );
-                    let _ = detete.await;
+                    )
+                    .await
+                {
+                    telio_log_info!("Error dropping Upnp endpoint: {}", e);
                 }
 
                 telio_log_info!("Creating a new Upnp endpoint");
@@ -540,6 +547,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
                 return Err(Error::NoIGDGateway);
             }
         };
+
         Ok(())
     }
 
@@ -824,6 +832,7 @@ mod tests {
         wg.expect_wait_for_listen_port()
             .returning(move |_| Ok(wg_port));
         wg.expect_get_link_state().returning(|_| Ok(None));
+
         let mut mock = MockUpnpEpCommands::new();
         mock.expect_add_endpoint_routes()
             .returning(move |_, proxy_port_int, _, wg_port_int, _| {
