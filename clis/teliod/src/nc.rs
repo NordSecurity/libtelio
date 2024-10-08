@@ -11,6 +11,7 @@ use uuid::Uuid;
 use self::outgoing::{Acknowledgement, DeliveryConfirmation};
 
 const TOKENS_URL: &'static str = "https://api.nordvpn.com/v1/notifications/tokens";
+const USERNAME: &'static str = "token";
 const ROUTER_PLATFORM_ID: u64 = 900;
 
 const TOPIC_SUBSCRIBE: &'static str = "meshnet";
@@ -51,14 +52,11 @@ async fn start_mqtt(nc_config: NotificationCenterConfig, app_user_uid: Uuid) -> 
     mqttoptions.set_keep_alive(Duration::from_secs(30));
     mqttoptions.set_clean_session(true);
 
-    // // Use rustls-native-certs to load root certificates from the operating system.
-    // let mut root_cert_store = tokio_rustls::rustls::RootCertStore::empty();
-    // root_cert_store.add_parsable_certificates(
-    //     rustls_native_certs::load_native_certs().expect("could not load platform certs"),
-    // );
-    let root_cert_store = tokio_rustls::rustls::RootCertStore {
-        roots: webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect(),
-    };
+    // Use rustls-native-certs to load root certificates from the operating system.
+    let mut root_cert_store = tokio_rustls::rustls::RootCertStore::empty();
+    root_cert_store.add_parsable_certificates(
+        rustls_native_certs::load_native_certs().expect("could not load platform certs"),
+    );
 
     let client_config = Arc::new(
         ClientConfig::builder()
@@ -162,7 +160,7 @@ async fn request_nc_config(
     };
     let resp = client
         .post(TOKENS_URL)
-        .basic_auth("token", Some(authentication_token))
+        .basic_auth(USERNAME, Some(authentication_token))
         .json(&data)
         .send()
         .await?;
