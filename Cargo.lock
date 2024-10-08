@@ -5056,6 +5056,7 @@ dependencies = [
 name = "teliod"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "clap 3.2.25",
  "futures",
  "interprocess 2.2.1",
