@@ -57,11 +57,20 @@ IPERF_BINARY_WINDOWS = "C:/workspace/iperf3/iperf3.exe".replace("/", "\\")
 # since its stable unlike `libtelio/dist`.
 #
 # Libtelio binary path inside Docker containers.
+if os.getenv("TELIO_BIN_PROFILE") not in ["release", "debug"]:
+    raise ValueError(
+        'TELIO_BIN_PROFILE environment variable must be set to either "release" or "debug".'
+    )
+
 if platform.system() == "Darwin":
-    LIBTELIO_BINARY_PATH_DOCKER = "/libtelio/target/aarch64-unknown-linux-gnu/release/"
+    LIBTELIO_BINARY_PATH_DOCKER = (
+        f"/libtelio/target/aarch64-unknown-linux-gnu/{os.getenv('TELIO_BIN_PROFILE')}/"
+    )
 else:
     LIBTELIO_BINARY_PATH_DOCKER = (
-        "/libtelio/dist/linux/release/" + platform.uname().machine + "/"
+        f"/libtelio/dist/linux/{os.getenv('TELIO_BIN_PROFILE')}/"
+        + platform.uname().machine
+        + "/"
     )
 
 # Libtelio binary path inside Windows and Mac VMs

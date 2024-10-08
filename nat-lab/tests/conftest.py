@@ -158,8 +158,6 @@ async def perform_setup_checks() -> bool:
                 break
             except asyncio.TimeoutError:
                 print(f"{target}() timeout, retrying...")
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                print(f"An error occurred: {e}, retrying...")
             retries -= 1
         else:
             return False

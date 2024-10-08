@@ -48,12 +48,12 @@ def main() -> int:
     parser.add_argument(
         "--windows",
         action="store_true",
-        help="Build TCLI for Windows, run tests with 'windows' mark",
+        help="Windows build, run tests with 'windows' mark",
     )
     parser.add_argument(
         "--mac",
         action="store_true",
-        help="Build TCLI for Mac, run tests with 'mac' mark",
+        help="MacOS build, run tests with 'mac' mark",
     )
     parser.add_argument(
         "--linux-native", action="store_true", help="Run tests with 'linux_native' mark"
@@ -70,6 +70,11 @@ def main() -> int:
         "--no-verify-setup-correctness",
         action="store_true",
         help="Disable verification of setup correctness",
+    )
+    parser.add_argument(
+        "--telio-debug",
+        action="store_true",
+        help="Use libtelio debug build binaries",
     )
     args = parser.parse_args()
 
@@ -127,6 +132,8 @@ def run_build_command(operating_system, args):
             operating_system,
         ]
     command.extend(["--uniffi-test-bindings"])
+    if args.telio_debug:
+        command.append("--debug")
     if args.restart:
         command.append("--restart")
     if args.moose:
@@ -137,6 +144,11 @@ def run_build_command(operating_system, args):
 
 def get_pytest_arguments(options) -> List[str]:
     args = []
+
+    if options.telio_debug:
+        os.environ["TELIO_BIN_PROFILE"] = "debug"
+    else:
+        os.environ["TELIO_BIN_PROFILE"] = "release"
 
     if options.v:
         args.extend(["--capture=no"])

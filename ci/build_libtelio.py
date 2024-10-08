@@ -263,6 +263,7 @@ LIBTELIO_CONFIG = {
     "macos": {
         "packages": {
             "tcli": {"tcli": "tcli"},
+            "teliod": {"teliod": "teliod"},
             NAME: {f"lib{NAME}": f"lib{NAME}.dylib"},
         },
         "post_build": [post_copy_darwin_debug_symbols_to_distribution_dir],
@@ -284,9 +285,10 @@ LIBTELIO_CONFIG = {
 
 def main() -> None:
     parser = rutils.create_cli_parser()
-    (build_parser, bindings_parser) = (
+    (build_parser, bindings_parser, lipo_parser) = (
         parser._subparsers._group_actions[0].choices["build"],
         parser._subparsers._group_actions[0].choices["bindings"],
+        parser._subparsers._group_actions[0].choices["lipo"],
     )
     build_parser.add_argument("--moose", action="store_true", help="Use libmoose")
     build_parser.add_argument(
@@ -302,6 +304,16 @@ def main() -> None:
         action="store_true",
         help="Generate python bindings with uniffi",
     )
+    build_parser.add_argument(
+        "--tcli",
+        action="store_true",
+        help="Include tcli package",
+    )
+    lipo_parser.add_argument(
+        "--tcli",
+        action="store_true",
+        help="Include tcli package",
+    )
 
     for parsers in [build_parser, bindings_parser]:
         parsers.add_argument(
@@ -315,6 +327,15 @@ def main() -> None:
     if "true" not in [os.getenv("GITLAB_CI"), os.getenv("GITHUB_ACTIONS")]:
         if "BYPASS_LLT_SECRETS" not in os.environ:
             check_llt_secrets()
+
+    # Remove tcli from packages when --debug AND NOT --tcli.
+    # Only relevant for lipo and build commands.
+    if args.command in ["lipo", "build"]:
+        target_os = "macos" if args.command == "lipo" else args.os
+
+        packages = LIBTELIO_CONFIG[target_os].get("packages", None)
+        if args.debug and not args.tcli and "tcli" in packages:
+            LIBTELIO_CONFIG[target_os]["packages"].pop("tcli")
 
     if args.command == "build":
         exec_build(args)
@@ -538,6 +559,9 @@ def copy_uniffi_files_for_testing(args):
         binary_dest = f"{uniffi_dir}telio.dll"
     else:
         pass
+
+    if args.debug:
+        binary_src = binary_src.replace("release", "debug")
 
     rutils.copy_tree_or_file(bindings_src, bindings_dest)
     if copy_binaries:

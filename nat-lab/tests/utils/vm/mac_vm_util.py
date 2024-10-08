@@ -1,4 +1,5 @@
 import asyncssh
+import os
 import subprocess
 from config import (
     get_root_path,
@@ -62,12 +63,10 @@ async def _copy_binaries(
                 raise exception
         await connection.create_process(["mkdir", "-p", directory]).execute()
 
-    DIST_PATH = "dist/darwin/macos/release/x86_64/"
+    DIST_PATH = f"dist/darwin/macos/{os.getenv('TELIO_BIN_PROFILE')}/x86_64/"
     LOCAL_UNIFFI_PATH = "nat-lab/tests/uniffi/"
     LOCAL_BIN_DIR = "nat-lab/bin/"
-
     files_to_copy = [
-        (f"{DIST_PATH}tcli", f"{VM_TCLI_DIR}tcli", True),
         (
             f"{DIST_PATH}libtelio.dylib",
             f"{VM_UNIFFI_DIR}libtelio.dylib",
