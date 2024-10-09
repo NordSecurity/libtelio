@@ -101,13 +101,12 @@ class NetCat:
         """Handle incoming data"""
         self._stdout_data += stdout
         self._data_received.set()
-
         return None
 
     async def on_stderr(self, stderr: str) -> None:
         """Handle verbose status messages"""
         print(datetime.now(), "netcat:", stderr.strip())
-        await self._output_notifier.handle_output(stderr)
+        await self._output_notifier.handle_output(stderr.strip())
         return None
 
     async def execute(self) -> None:
@@ -144,7 +143,7 @@ class NetCatServer(NetCat):
         )
         self._connection_event: asyncio.Event = asyncio.Event()
         self._output_notifier.notify_output(
-            "Connection received on ", self._connection_event
+            "Connection received on", self._connection_event
         )
 
     @asynccontextmanager
