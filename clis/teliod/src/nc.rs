@@ -96,32 +96,37 @@ async fn start_mqtt(
         maximal: Some(Duration::from_secs(300)),
     };
     let backoff = ExponentialBackoff::new(backoff_bounds)?;
-    let (client, mut eventloop, expires_at) =
-        connect_to_mqtt_with_backoff(&nc_config, app_user_uid, backoff).await?;
-
-    client.subscribe(TOPIC_SUBSCRIBE, QoS::AtLeastOnce).await?;
 
     tokio::spawn(async move {
         loop {
-            select! {
-                _ = tokio::time::sleep_until(expires_at) => {
-                    info!("Notification Center credentials expired, mqtt will be restarted");
-                    break;
-                },
-                event = eventloop.poll() => {
-                    match event {
-                        Ok(Event::Incoming(Packet::Publish(p))) => {
-                            if let Err(e) = handle_incoming_publish(&client, p, &callbacks).await {
-                                error!("Failed to handle incomming publish: {e}");
+            let (client, mut eventloop, expires_at) = Box::pin(connect_to_nc_with_backoff(
+                &nc_config,
+                app_user_uid,
+                backoff.clone(),
+            ))
+            .await;
+
+            loop {
+                select! {
+                    _ = tokio::time::sleep_until(expires_at) => {
+                        info!("Notification Center credentials expired, mqtt will be restarted");
+                        break;
+                    },
+                    event = eventloop.poll() => {
+                        match event {
+                            Ok(Event::Incoming(Packet::Publish(p))) => {
+                                if let Err(e) = handle_incoming_publish(&client, p, &callbacks).await {
+                                    error!("Failed to handle incomming publish: {e}");
+                                }
                             }
-                        }
-                        Ok(Event::Incoming(p)) => {
-                            info!("mqtt incomming: {p:?}");
-                        }
-                        Ok(Event::Outgoing(p)) => info!("mqtt outgoing: {p:?}"),
-                        Err(e) => {
-                            error!("mqtt event loop error: {e}");
-                            break;
+                            Ok(Event::Incoming(p)) => {
+                                debug!("mqtt incomming: {p:?}");
+                            }
+                            Ok(Event::Outgoing(p)) => debug!("mqtt outgoing event: {p:?}"),
+                            Err(e) => {
+                                error!("mqtt event loop error: {e}");
+                                break;
+                            }
                         }
                     }
                 }
@@ -132,14 +137,14 @@ async fn start_mqtt(
     Ok(())
 }
 
-async fn connect_to_mqtt_with_backoff(
+async fn connect_to_nc_with_backoff(
     nc_config: &NotificationCenterConfig,
     app_user_uid: Uuid,
     mut backoff: ExponentialBackoff,
-) -> Result<(AsyncClient, EventLoop, Instant), BackoffError> {
+) -> (AsyncClient, EventLoop, Instant) {
     loop {
-        match connect_to_mqtt(nc_config, app_user_uid).await {
-            Ok(mqtt) => return Ok(mqtt),
+        match connect_to_nc(nc_config, app_user_uid).await {
+            Ok(mqtt) => return mqtt,
             Err(e) => {
                 warn!(
                     "Failed to connect to mqtt: {e}, will wait for {:?} and retry",
@@ -152,7 +157,7 @@ async fn connect_to_mqtt_with_backoff(
     }
 }
 
-async fn connect_to_mqtt(
+async fn connect_to_nc(
     nc_config: &NotificationCenterConfig,
     app_user_uid: Uuid,
 ) -> Result<(AsyncClient, EventLoop, Instant), Error> {
@@ -182,9 +187,12 @@ async fn connect_to_mqtt(
     )));
 
     let (client, eventloop) = AsyncClient::new(mqttoptions, 10);
-    let eventloop = wait_for_connection(eventloop, MQTT_CONNECTION_TIMEOUT).await?;
-    info!("Mqtt connection established");
+    let eventloop = Box::pin(wait_for_connection(eventloop, MQTT_CONNECTION_TIMEOUT)).await?;
     let expires_at = Instant::now() + Duration::from_secs(nc_config.expires_in);
+    client.subscribe(TOPIC_SUBSCRIBE, QoS::AtLeastOnce).await?;
+
+    info!("Notification Center connection established");
+
     return Ok((client, eventloop, expires_at));
 }
 
