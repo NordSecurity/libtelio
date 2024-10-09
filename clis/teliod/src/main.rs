@@ -6,6 +6,7 @@ use signal_hook_tokio::Signals;
 use std::{
     fs::{self, File},
     str::FromStr,
+    sync::Arc,
 };
 use thiserror::Error as ThisError;
 use tokio::task::JoinError;
@@ -174,7 +175,17 @@ async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodError
     let socket = DaemonSocket::new(&DaemonSocket::get_ipc_socket_path()?)?;
     let cmd_listener = CommandListener { socket };
 
-    let nc = NotificationCenter::new(&config.authentication_token, config.app_user_id).await?;
+    let nc = NotificationCenter::new(
+        &config.authentication_token,
+        config.app_user_id,
+        vec![Arc::new(|am| println!("Affected machines are: {am:?}"))],
+    )
+    .await?;
+
+    nc.add_callback(Arc::new(|am| {
+        println!("all your base are belong to us! {am:?}")
+    }))
+    .await;
 
     let telio_task_handle = tokio::task::spawn_blocking(telio_task);
 

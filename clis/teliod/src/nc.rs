@@ -4,6 +4,7 @@ use rumqttc::{AsyncClient, Event, MqttOptions, Packet, Publish, QoS, TlsConfigur
 use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Duration};
 use telio::telio_utils::Hidden;
+use tokio::sync::Mutex;
 use tokio_rustls::rustls::ClientConfig;
 use tracing::{error, info};
 use uuid::Uuid;
@@ -28,21 +29,39 @@ pub enum Error {
     MalformedNotificationCenterJsonResponse(#[from] serde_json::Error),
 }
 
-pub struct NotificationCenter {}
+type Callback = Arc<dyn Fn(&[Uuid]) + Send + Sync>;
+
+pub struct NotificationCenter {
+    callbacks: Arc<Mutex<Vec<Callback>>>,
+}
 
 impl NotificationCenter {
-    pub async fn new(authentication_token: &str, app_user_uid: Uuid) -> Result<Self, Error> {
+    pub async fn new(
+        authentication_token: &str,
+        app_user_uid: Uuid,
+        callbacks: Vec<Callback>,
+    ) -> Result<Self, Error> {
+        let callbacks = Arc::new(Mutex::new(callbacks));
         let nc_config = request_nc_config(authentication_token, app_user_uid).await?;
 
         dbg!(&nc_config);
 
-        start_mqtt(nc_config, app_user_uid).await?;
+        start_mqtt(nc_config, app_user_uid, callbacks.clone()).await?;
 
-        Ok(Self {})
+        Ok(Self { callbacks })
+    }
+
+    pub async fn add_callback(&self, callback: Callback) {
+        let mut callbacks = self.callbacks.lock().await;
+        callbacks.push(callback);
     }
 }
 
-async fn start_mqtt(nc_config: NotificationCenterConfig, app_user_uid: Uuid) -> Result<(), Error> {
+async fn start_mqtt(
+    nc_config: NotificationCenterConfig,
+    app_user_uid: Uuid,
+    callbacks: Arc<Mutex<Vec<Callback>>>,
+) -> Result<(), Error> {
     let mut mqttoptions = MqttOptions::new(
         app_user_uid.to_string(),
         nc_config.endpoint.host().unwrap().to_string(),
@@ -78,7 +97,7 @@ async fn start_mqtt(nc_config: NotificationCenterConfig, app_user_uid: Uuid) -> 
         loop {
             match eventloop.poll().await {
                 Ok(Event::Incoming(Packet::Publish(p))) => {
-                    if let Err(e) = handle_incoming_publish(&client, p).await {
+                    if let Err(e) = handle_incoming_publish(&client, p, &callbacks).await {
                         error!("Failed to handle incomming publish: {e}");
                     }
                 }
@@ -97,7 +116,11 @@ async fn start_mqtt(nc_config: NotificationCenterConfig, app_user_uid: Uuid) -> 
     Ok(())
 }
 
-async fn handle_incoming_publish(client: &AsyncClient, p: Publish) -> Result<(), anyhow::Error> {
+async fn handle_incoming_publish(
+    client: &AsyncClient,
+    p: Publish,
+    callbacks: &Arc<Mutex<Vec<Callback>>>,
+) -> Result<(), anyhow::Error> {
     let text = std::str::from_utf8(&*p.payload)?;
     let notification: incoming::Notification = serde_json::from_str(&text)?;
     info!("mqtt incomming publish: {p:?}: {text:?}");
@@ -111,6 +134,12 @@ async fn handle_incoming_publish(client: &AsyncClient, p: Publish) -> Result<(),
 
     send_delivery_confirmation(client, notification.message_id()).await?;
     send_acknowledgement(client, notification.message_id()).await?;
+
+    let callbacks: Vec<Callback> = (*callbacks.lock().await).clone();
+
+    callbacks
+        .into_iter()
+        .for_each(|c| c(&notification.message.data.event.attributes.affected_machines));
 
     Ok(())
 }
@@ -197,7 +226,7 @@ mod incoming {
 
     #[derive(Debug, Serialize, Deserialize)]
     pub struct Notification {
-        message: Message,
+        pub message: Message,
     }
 
     impl Notification {
@@ -210,13 +239,13 @@ mod incoming {
     }
 
     #[derive(Debug, Serialize, Deserialize)]
-    struct Message {
-        data: Data,
+    pub struct Message {
+        pub data: Data,
     }
 
     #[derive(Debug, Serialize, Deserialize)]
-    struct Data {
-        event: Event,
+    pub struct Data {
+        pub event: Event,
         metadata: Metadata,
     }
 
@@ -229,15 +258,15 @@ mod incoming {
     }
 
     #[derive(Debug, Serialize, Deserialize)]
-    struct Event {
+    pub struct Event {
         #[serde(rename = "type")]
         type_: String,
-        attributes: Attributes,
+        pub attributes: Attributes,
     }
 
     #[derive(Debug, Serialize, Deserialize)]
-    struct Attributes {
-        affected_machines: Vec<Uuid>,
+    pub struct Attributes {
+        pub affected_machines: Vec<Uuid>,
     }
 }
 
