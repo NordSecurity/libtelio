@@ -4,8 +4,7 @@ import select
 import socket
 import sys
 import time
-from collections.abc import Iterable
-from typing import Any
+from typing import TextIO, List, Union
 
 UDP_SCAN_COUNT: int = 4
 
@@ -22,7 +21,7 @@ def vprint(*args, **kwargs):
 class NetCat:
     def __init__(self, args):
         global verbose
-        verbose: bool = args.v
+        verbose = args.v
         self.args = args
         self.udp: bool = self.args.u
         self.sock_type: str = "udp" if self.udp else "tcp"
@@ -123,7 +122,7 @@ class NetCat:
             self.sock.send(b"X")
 
     def _readwrite(self):
-        inputs: Iterable[Any] = [self.sock]
+        inputs: List[Union[socket.socket, TextIO]] = [self.sock]
         if not self.args.d:
             inputs.append(sys.stdin)
         while True:
