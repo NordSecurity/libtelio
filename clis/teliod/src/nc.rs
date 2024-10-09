@@ -1,19 +1,24 @@
 use anyhow::ensure;
 use reqwest::{Client, StatusCode, Url};
 use rumqttc::{
-    AsyncClient, ConnAck, ConnectReturnCode, Event, EventLoop, Incoming, MqttOptions, Packet,
-    Publish, QoS, TlsConfiguration, Transport,
+    AsyncClient, ConnAck, ConnectReturnCode, Event, EventLoop, MqttOptions, Packet, Publish, QoS,
+    TlsConfiguration, Transport,
 };
 use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Duration};
-use telio::telio_utils::Hidden;
+use telio::telio_utils::{
+    exponential_backoff::{
+        Backoff, Error as BackoffError, ExponentialBackoff, ExponentialBackoffBounds,
+    },
+    Hidden,
+};
 use tokio::{
     select,
     sync::Mutex,
     time::{error::Elapsed, timeout, Instant},
 };
 use tokio_rustls::rustls::ClientConfig;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use self::outgoing::{Acknowledgement, DeliveryConfirmation};
@@ -43,6 +48,8 @@ pub enum Error {
     MqttConnectionTimeout,
     #[error("Mqtt connection error: {0}")]
     MqttConnectionError(rumqttc::ConnectionError),
+    #[error(transparent)]
+    BackoffBoundsError(#[from] BackoffError),
 }
 
 type Callback = Arc<dyn Fn(&[Uuid]) + Send + Sync>;
@@ -78,7 +85,12 @@ async fn start_mqtt(
     app_user_uid: Uuid,
     callbacks: Arc<Mutex<Vec<Callback>>>,
 ) -> Result<(), Error> {
-    let (client, mut eventloop, expires_at) = connect_to_mqtt(nc_config, app_user_uid).await?;
+    let backoff_bounds = ExponentialBackoffBounds {
+        initial: Duration::from_secs(1),
+        maximal: Some(Duration::from_secs(300)),
+    };
+    let (client, mut eventloop, expires_at) =
+        connect_to_mqtt_with_backoff(&nc_config, app_user_uid, backoff_bounds).await?;
 
     client
         .subscribe(TOPIC_SUBSCRIBE, QoS::AtLeastOnce)
@@ -114,9 +126,29 @@ async fn start_mqtt(
 
     Ok(())
 }
+async fn connect_to_mqtt_with_backoff(
+    nc_config: &NotificationCenterConfig,
+    app_user_uid: Uuid,
+    backoff_bounds: ExponentialBackoffBounds,
+) -> Result<(AsyncClient, EventLoop, Instant), BackoffError> {
+    let mut backoff = ExponentialBackoff::new(backoff_bounds)?;
+    loop {
+        match connect_to_mqtt(nc_config, app_user_uid).await {
+            Ok(mqtt) => return Ok(mqtt),
+            Err(e) => {
+                warn!(
+                    "Failed to connect to mqtt: {e}, will wait for {:?} and retry",
+                    backoff.get_backoff()
+                );
+                tokio::time::sleep(backoff.get_backoff()).await;
+                backoff.next_backoff();
+            }
+        }
+    }
+}
 
 async fn connect_to_mqtt(
-    nc_config: NotificationCenterConfig,
+    nc_config: &NotificationCenterConfig,
     app_user_uid: Uuid,
 ) -> Result<(AsyncClient, EventLoop, Instant), Error> {
     let mut mqttoptions = MqttOptions::new(
@@ -147,10 +179,8 @@ async fn connect_to_mqtt(
     let (client, eventloop) = AsyncClient::new(mqttoptions, 10);
     let eventloop = wait_for_connection(eventloop, MQTT_CONNECTION_TIMEOUT).await?;
     info!("Mqtt connection established");
-    let start = Instant::now();
-    let expires_in = Duration::from_secs(nc_config.expires_in);
-    let expires_at = start + expires_in;
-    Ok((client, eventloop, expires_at))
+    let expires_at = Instant::now() + Duration::from_secs(nc_config.expires_in);
+    return Ok((client, eventloop, expires_at));
 }
 
 async fn handle_incoming_publish(
