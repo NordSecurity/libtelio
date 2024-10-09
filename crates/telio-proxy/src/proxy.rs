@@ -328,9 +328,15 @@ impl StateEgress {
                     }
                 }
             }
-            _ => {
+            (sock, wg_addr) => {
                 self.handle_error(
-                    std::io::Error::new(ErrorKind::AddrNotAvailable, "WG Address not available"),
+                    std::io::Error::new(
+                        ErrorKind::AddrNotAvailable,
+                        format!(
+                            "WG Address not available - socket: {}, wg_addr: {wg_addr:?}",
+                            sock.is_some()
+                        ),
+                    ),
                     Some(pk),
                 )
                 .await;
