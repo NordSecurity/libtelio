@@ -1,10 +1,17 @@
 use anyhow::ensure;
 use reqwest::{Client, StatusCode, Url};
-use rumqttc::{AsyncClient, Event, MqttOptions, Packet, Publish, QoS, TlsConfiguration, Transport};
+use rumqttc::{
+    AsyncClient, ConnAck, ConnectReturnCode, Event, EventLoop, Incoming, MqttOptions, Packet,
+    Publish, QoS, TlsConfiguration, Transport,
+};
 use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Duration};
 use telio::telio_utils::Hidden;
-use tokio::sync::Mutex;
+use tokio::{
+    select,
+    sync::Mutex,
+    time::{error::Elapsed, timeout, Instant},
+};
 use tokio_rustls::rustls::ClientConfig;
 use tracing::{error, info};
 use uuid::Uuid;
@@ -14,6 +21,7 @@ use self::outgoing::{Acknowledgement, DeliveryConfirmation};
 const TOKENS_URL: &'static str = "https://api.nordvpn.com/v1/notifications/tokens";
 const USERNAME: &'static str = "token";
 const ROUTER_PLATFORM_ID: u64 = 900;
+const MQTT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
 
 const TOPIC_SUBSCRIBE: &'static str = "meshnet";
 const TOPIC_DELIVERED: &'static str = "delivered";
@@ -27,6 +35,14 @@ pub enum Error {
     TokenError(String),
     #[error("Malformed notification center json response: {0}")]
     MalformedNotificationCenterJsonResponse(#[from] serde_json::Error),
+    #[error("Mqtt broker rejected connection: {0:?}")]
+    MqttConnectionRejected(ConnectReturnCode),
+    #[error("Unexpected mqtt event before connection established: {0:?}")]
+    MqttUnexpectedEventBeforeConnection(Event),
+    #[error("Mqtt connection timeout")]
+    MqttConnectionTimeout,
+    #[error("Mqtt connection error: {0}")]
+    MqttConnectionError(rumqttc::ConnectionError),
 }
 
 type Callback = Arc<dyn Fn(&[Uuid]) + Send + Sync>;
@@ -62,12 +78,53 @@ async fn start_mqtt(
     app_user_uid: Uuid,
     callbacks: Arc<Mutex<Vec<Callback>>>,
 ) -> Result<(), Error> {
+    let (client, mut eventloop, expires_at) = connect_to_mqtt(nc_config, app_user_uid).await?;
+
+    client
+        .subscribe(TOPIC_SUBSCRIBE, QoS::AtLeastOnce)
+        .await
+        .unwrap();
+
+    tokio::spawn(async move {
+        loop {
+            select! {
+                _ = tokio::time::sleep_until(expires_at) => {
+
+                },
+                event = eventloop.poll() => {
+                    match event {
+                        Ok(Event::Incoming(Packet::Publish(p))) => {
+                            if let Err(e) = handle_incoming_publish(&client, p, &callbacks).await {
+                                error!("Failed to handle incomming publish: {e}");
+                            }
+                        }
+                        Ok(Event::Incoming(p)) => {
+                            info!("mqtt incomming: {p:?}");
+                        }
+                        Ok(Event::Outgoing(p)) => info!("mqtt outgoing: {p:?}"),
+                        Err(e) => {
+                            error!("mqtt event loop error: {e}");
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    Ok(())
+}
+
+async fn connect_to_mqtt(
+    nc_config: NotificationCenterConfig,
+    app_user_uid: Uuid,
+) -> Result<(AsyncClient, EventLoop, Instant), Error> {
     let mut mqttoptions = MqttOptions::new(
         app_user_uid.to_string(),
         nc_config.endpoint.host().unwrap().to_string(),
         nc_config.endpoint.port().unwrap(),
     );
-    mqttoptions.set_credentials(nc_config.username, &*nc_config.password);
+    mqttoptions.set_credentials(nc_config.username.clone(), &*nc_config.password);
     mqttoptions.set_keep_alive(Duration::from_secs(30));
     mqttoptions.set_clean_session(true);
 
@@ -87,33 +144,13 @@ async fn start_mqtt(
         client_config,
     )));
 
-    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
-    client
-        .subscribe(TOPIC_SUBSCRIBE, QoS::AtLeastOnce)
-        .await
-        .unwrap();
-
-    tokio::spawn(async move {
-        loop {
-            match eventloop.poll().await {
-                Ok(Event::Incoming(Packet::Publish(p))) => {
-                    if let Err(e) = handle_incoming_publish(&client, p, &callbacks).await {
-                        error!("Failed to handle incomming publish: {e}");
-                    }
-                }
-                Ok(Event::Incoming(p)) => {
-                    info!("mqtt incomming: {p:?}");
-                }
-                Ok(Event::Outgoing(p)) => info!("mqtt outgoing: {p:?}"),
-                Err(e) => {
-                    error!("mqtt event loop error: {e}");
-                    break;
-                }
-            }
-        }
-    });
-
-    Ok(())
+    let (client, eventloop) = AsyncClient::new(mqttoptions, 10);
+    let eventloop = wait_for_connection(eventloop, MQTT_CONNECTION_TIMEOUT).await?;
+    info!("Mqtt connection established");
+    let start = Instant::now();
+    let expires_in = Duration::from_secs(nc_config.expires_in);
+    let expires_at = start + expires_in;
+    Ok((client, eventloop, expires_at))
 }
 
 async fn handle_incoming_publish(
@@ -201,6 +238,23 @@ async fn request_nc_config(
 
     let resp: NotificationCenterConfig = serde_json::from_str(&text)?;
     Ok(resp)
+}
+
+async fn wait_for_connection(mut event_loop: EventLoop, t: Duration) -> Result<EventLoop, Error> {
+    match timeout(t, event_loop.poll()).await {
+        Ok(Ok(Event::Incoming(Packet::ConnAck(ConnAck { code, .. })))) => {
+            if code == ConnectReturnCode::Success {
+                Ok(event_loop)
+            } else {
+                Err(Error::MqttConnectionRejected(code))
+            }
+        }
+        Ok(Ok(unexpected_event)) => {
+            Err(Error::MqttUnexpectedEventBeforeConnection(unexpected_event))
+        }
+        Err(Elapsed { .. }) => Err(Error::MqttConnectionTimeout),
+        Ok(Err(err)) => Err(Error::MqttConnectionError(err)),
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
