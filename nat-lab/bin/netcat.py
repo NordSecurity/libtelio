@@ -8,20 +8,9 @@ from typing import TextIO, List, Union
 
 UDP_SCAN_COUNT: int = 4
 
-# control -v flag
-verbose: bool = False
-
-
-# print a message only in verbose mode
-def vprint(*args, **kwargs):
-    if verbose:
-        print(*args, **kwargs, file=sys.stderr)
-
-
 class NetCat:
     def __init__(self, args):
-        global verbose
-        verbose = args.v
+        self.verbose = args.v
         self.args = args
         self.udp: bool = self.args.u
         self.sock_type: str = "udp" if self.udp else "tcp"
@@ -29,6 +18,11 @@ class NetCat:
         self.ipv6: bool = self.args.ipv6
         self.sock: socket.socket = self._create_socket()
         self.client_addr: str | None = None
+
+    # print an event to stderr in verbose mode
+    def _vprint(self, *args, **kwargs):
+        if self.verbose:
+            print(*args, **kwargs, file=sys.stderr)
 
     def _create_socket(self) -> socket.socket:
 
@@ -39,7 +33,7 @@ class NetCat:
             s = socket.socket(family, sock_type)
             return s
         except OSError as e:
-            print(f"error creating socket: {e}")
+            print(f"error creating socket: {e}", file=sys.stderr)
             sys.exit(1)
 
     def _resolve_hostname(self) -> str:
@@ -48,7 +42,7 @@ class NetCat:
                 socket.inet_aton(self.args.hostname)
                 return self.args.hostname
             except socket.error:
-                print("Error: Hostname is not a valid IP address.")
+                print("Error: Hostname is not a valid IP address.", file=sys.stderr)
                 sys.exit(1)
         else:
             try:
@@ -61,7 +55,7 @@ class NetCat:
                 # getaddrinfo returns a list of tuples, we can extract the first resolved IP address
                 return addr_info[0][4][0]
             except socket.gaierror as e:
-                print(f"Error resolving hostname: {e}")
+                print(f"Error resolving hostname: {e}", file=sys.stderr)
                 sys.exit(1)
 
     def _connect(self):
@@ -79,7 +73,7 @@ class NetCat:
             self.sock.connect((hostname, port))
             if self.udp:
                 self._udptest()
-            vprint(
+            self._vprint(
                 f"Connection to {hostname} port {port} [{self.sock_type}/*] succeeded!"
             )
         except OSError as e:
@@ -87,7 +81,7 @@ class NetCat:
                 # conenction closed
                 sys.exit(0)
             print(
-                f"nc: connect to {hostname} port {port} ({self.sock_type}) failed: {e.strerror}"
+                f"nc: connect to {hostname} port {port} ({self.sock_type}) failed: {e.strerror}", file=sys.stderr
             )
             sys.exit(1)
 
@@ -95,7 +89,7 @@ class NetCat:
         # Set SO_REUSEPORT option
         try:
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-        except AttributeError:
+        except OSError:
             # SO_REUSEPORT may not be available on all systems, fall back to SO_REUSEADDR
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
@@ -105,12 +99,12 @@ class NetCat:
 
         if not self.udp:
             self.sock.listen(1)
-            vprint(f"Listening on {bind_addr} {port}")
+            self._vprint(f"Listening on {bind_addr} {port}")
             conn, addr = self.sock.accept()
-            vprint(f"Connection received on {addr[0]} {addr[1]}")
+            self._vprint(f"Connection received on {addr[0]} {addr[1]}")
             self.sock = conn
         else:
-            vprint(f"Bound on {bind_addr} {port}")
+            self._vprint(f"Bound on {bind_addr} {port}")
 
     def _udptest(self):
         # Try sending data to the socket
@@ -132,7 +126,7 @@ class NetCat:
                 if r == self.sock:
                     data, addr = self.sock.recvfrom(4096)
                     if self.udp and self.listen and not self.client_addr:
-                        vprint(f"Connection received on {addr[0]} {addr[1]}")
+                        self._vprint(f"Connection received on {addr[0]} {addr[1]}")
                         self.client_addr = addr
                     if not data:
                         # connection closed
@@ -162,10 +156,10 @@ class NetCat:
             print("")
             sys.exit(2)
         except OSError as e:
-            if e.errno == errno.EBADF:
+            if e.errno == errno.EBADF or e.errno == errno.ECONNREFUSED:
                 # connection closed
                 sys.exit(0)
-            print(f"nc: {e}")
+            print(f"nc: {e}", file=sys.stderr)
             sys.exit(1)
         finally:
             self.sock.close()
@@ -174,24 +168,24 @@ class NetCat:
 def main():
     parser = argparse.ArgumentParser(description="Netcat clone in Python")
     parser.add_argument(
-        "-6", type=bool, dest="ipv6", action="store_true", help="Use IPv6"
+        "-6", dest="ipv6", action="store_true", help="Use IPv6"
     )
     parser.add_argument(
-        "-4", type=bool, dest="ipv4", action="store_true", help="Use IPv4 addresses"
+        "-4", dest="ipv4", action="store_true", help="Use IPv4 addresses"
     )
-    parser.add_argument("-v", type=bool, action="store_true", help="Verbose mode")
+    parser.add_argument("-v", action="store_true", help="Verbose mode")
     parser.add_argument(
-        "-n", type=bool, action="store_true", help="Do not resolve hostnames"
-    )
-    parser.add_argument(
-        "-l", type=bool, action="store_true", help="Listen mode (server)"
-    )
-    parser.add_argument("-u", type=bool, action="store_true", help="UDP mode")
-    parser.add_argument(
-        "-d", type=bool, action="store_true", help="Do not read from stdin"
+        "-n", action="store_true", help="Do not resolve hostnames"
     )
     parser.add_argument(
-        "-z", type=bool, action="store_true", help="Zero-I/O mode [used for scanning]"
+        "-l", action="store_true", help="Listen mode (server)"
+    )
+    parser.add_argument("-u", action="store_true", help="UDP mode")
+    parser.add_argument(
+        "-d", action="store_true", help="Do not read from stdin"
+    )
+    parser.add_argument(
+        "-z", action="store_true", help="Zero-I/O mode [used for scanning]"
     )
     parser.add_argument("-p", type=int, help="Bind to local port number")
     parser.add_argument("-s", type=str, help="Bind to local source address")
