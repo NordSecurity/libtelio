@@ -1,8 +1,8 @@
 use anyhow::ensure;
 use reqwest::{Client, StatusCode, Url};
 use rumqttc::{
-    AsyncClient, ConnAck, ConnectReturnCode, Event, EventLoop, MqttOptions, Packet, Publish, QoS,
-    TlsConfiguration, Transport,
+    AsyncClient, ClientError, ConnAck, ConnectReturnCode, Event, EventLoop, MqttOptions, Packet,
+    Publish, QoS, TlsConfiguration, Transport,
 };
 use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Duration};
@@ -50,6 +50,12 @@ pub enum Error {
     MqttConnectionError(rumqttc::ConnectionError),
     #[error(transparent)]
     BackoffBoundsError(#[from] BackoffError),
+    #[error(transparent)]
+    MqttClientError(#[from] ClientError),
+    #[error("Notification Center credentials are missing hostname")]
+    CredentialsMissingHostname,
+    #[error("Notification Center credentials are missing port number")]
+    CredentialsMissingPortNumber,
 }
 
 type Callback = Arc<dyn Fn(&[Uuid]) + Send + Sync>;
@@ -89,19 +95,18 @@ async fn start_mqtt(
         initial: Duration::from_secs(1),
         maximal: Some(Duration::from_secs(300)),
     };
+    let backoff = ExponentialBackoff::new(backoff_bounds)?;
     let (client, mut eventloop, expires_at) =
-        connect_to_mqtt_with_backoff(&nc_config, app_user_uid, backoff_bounds).await?;
+        connect_to_mqtt_with_backoff(&nc_config, app_user_uid, backoff).await?;
 
-    client
-        .subscribe(TOPIC_SUBSCRIBE, QoS::AtLeastOnce)
-        .await
-        .unwrap();
+    client.subscribe(TOPIC_SUBSCRIBE, QoS::AtLeastOnce).await?;
 
     tokio::spawn(async move {
         loop {
             select! {
                 _ = tokio::time::sleep_until(expires_at) => {
-
+                    info!("Notification Center credentials expired, mqtt will be restarted");
+                    break;
                 },
                 event = eventloop.poll() => {
                     match event {
@@ -126,12 +131,12 @@ async fn start_mqtt(
 
     Ok(())
 }
+
 async fn connect_to_mqtt_with_backoff(
     nc_config: &NotificationCenterConfig,
     app_user_uid: Uuid,
-    backoff_bounds: ExponentialBackoffBounds,
+    mut backoff: ExponentialBackoff,
 ) -> Result<(AsyncClient, EventLoop, Instant), BackoffError> {
-    let mut backoff = ExponentialBackoff::new(backoff_bounds)?;
     loop {
         match connect_to_mqtt(nc_config, app_user_uid).await {
             Ok(mqtt) => return Ok(mqtt),
@@ -153,8 +158,8 @@ async fn connect_to_mqtt(
 ) -> Result<(AsyncClient, EventLoop, Instant), Error> {
     let mut mqttoptions = MqttOptions::new(
         app_user_uid.to_string(),
-        nc_config.endpoint.host().unwrap().to_string(),
-        nc_config.endpoint.port().unwrap(),
+        nc_config.host()?,
+        nc_config.port()?,
     );
     mqttoptions.set_credentials(nc_config.username.clone(), &*nc_config.password);
     mqttoptions.set_keep_alive(Duration::from_secs(30));
@@ -299,6 +304,22 @@ struct NotificationCenterConfig {
     username: String,
     password: Hidden<String>,
     expires_in: u64,
+}
+
+impl NotificationCenterConfig {
+    fn host(&self) -> Result<String, Error> {
+        match self.endpoint.host_str() {
+            Some(host) => Ok(host.to_owned()),
+            None => Err(Error::CredentialsMissingHostname),
+        }
+    }
+
+    fn port(&self) -> Result<u16, Error> {
+        match self.endpoint.port() {
+            Some(port) => Ok(port),
+            None => Err(Error::CredentialsMissingPortNumber),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
