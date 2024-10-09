@@ -1,16 +1,16 @@
 import argparse
-from collections.abc import Iterable
+import errno
+import select
 import socket
 import sys
-import select
 import time
-import errno
+from collections.abc import Iterable
 from typing import Any
 
-UDP_SCAN_COUNT = 4
+UDP_SCAN_COUNT: int = 4
 
 # control -v flag
-verbose = False
+verbose: bool = False
 
 
 # print a message only in verbose mode
@@ -22,18 +22,16 @@ def vprint(*args, **kwargs):
 class NetCat:
     def __init__(self, args):
         global verbose
-        verbose = args.v
+        verbose: bool = args.v
         self.args = args
-        self.udp = self.args.u
-        self.sock_type = "udp" if self.udp else "tcp"
-        self.listen = self.args.l
-        self.ipv6 = self.args.ipv6
-        self.sock = self._create_socket()
-        self.client_addr = None
-        self.run()
+        self.udp: bool = self.args.u
+        self.sock_type: str = "udp" if self.udp else "tcp"
+        self.listen: bool = self.args.l
+        self.ipv6: bool = self.args.ipv6
+        self.sock: socket.socket = self._create_socket()
+        self.client_addr: str | None = None
 
-    def _create_socket(self):
-        """Create a socket based on the protocol and IP version."""
+    def _create_socket(self) -> socket.socket:
 
         family = socket.AF_INET6 if self.ipv6 else socket.AF_INET
         sock_type = socket.SOCK_DGRAM if self.udp else socket.SOCK_STREAM
@@ -45,7 +43,7 @@ class NetCat:
             print(f"error creating socket: {e}")
             sys.exit(1)
 
-    def _resolve_hostname(self):
+    def _resolve_hostname(self) -> str:
         if self.args.n:
             try:
                 socket.inet_aton(self.args.hostname)
@@ -124,7 +122,7 @@ class NetCat:
             time.sleep(1)
             self.sock.send(b"X")
 
-    def readwrite(self):
+    def _readwrite(self):
         inputs: Iterable[Any] = [self.sock]
         if not self.args.d:
             inputs.append(sys.stdin)
@@ -160,7 +158,7 @@ class NetCat:
             else:
                 self._connect()
             if not self.args.z:
-                self.readwrite()
+                self._readwrite()
         except KeyboardInterrupt:
             print("")
             sys.exit(2)
@@ -176,20 +174,28 @@ class NetCat:
 
 def main():
     parser = argparse.ArgumentParser(description="Netcat clone in Python")
-    parser.add_argument("-6", dest="ipv6", action="store_true", help="Use IPv6")
     parser.add_argument(
-        "-4", dest="ipv4", action="store_true", help="Use IPv4 addresses"
+        "-6", type=bool, dest="ipv6", action="store_true", help="Use IPv6"
     )
-    parser.add_argument("-v", action="store_true", help="Verbose mode")
-    parser.add_argument("-n", action="store_true", help="Do not resolve hostnames")
-    parser.add_argument("-l", action="store_true", help="Listen mode (server)")
-    parser.add_argument("-u", action="store_true", help="UDP mode")
-    parser.add_argument("-d", action="store_true", help="Do not read from stdin")
     parser.add_argument(
-        "-z", action="store_true", help="Zero-I/O mode [used for scanning]"
+        "-4", type=bool, dest="ipv4", action="store_true", help="Use IPv4 addresses"
     )
-    parser.add_argument("-p", type=int, help="Specify local port number")
-    parser.add_argument("-s", help="Specify local source address")
+    parser.add_argument("-v", type=bool, action="store_true", help="Verbose mode")
+    parser.add_argument(
+        "-n", type=bool, action="store_true", help="Do not resolve hostnames"
+    )
+    parser.add_argument(
+        "-l", type=bool, action="store_true", help="Listen mode (server)"
+    )
+    parser.add_argument("-u", type=bool, action="store_true", help="UDP mode")
+    parser.add_argument(
+        "-d", type=bool, action="store_true", help="Do not read from stdin"
+    )
+    parser.add_argument(
+        "-z", type=bool, action="store_true", help="Zero-I/O mode [used for scanning]"
+    )
+    parser.add_argument("-p", type=int, help="Bind to local port number")
+    parser.add_argument("-s", type=str, help="Bind to local source address")
     parser.add_argument("hostname", nargs="?", help="Hostname or IP address")
     parser.add_argument("port", type=int, help="Port number")
     args = parser.parse_args()
