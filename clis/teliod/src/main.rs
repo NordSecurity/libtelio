@@ -32,7 +32,7 @@ mod config;
 mod core_api;
 mod nc;
 
-use crate::{comms::DaemonSocket, nc::NotificationCenter};
+use crate::{comms::DaemonSocket, config::ClientConfig, nc::NotificationCenter};
 
 const MAX_RETRIES: u32 = 5;
 const BASE_DELAY_MS: u64 = 500;
@@ -106,6 +106,10 @@ enum TeliodError {
     CoreApiError(#[from] ApiError),
     #[error(transparent)]
     DeviceError(#[from] DeviceError),
+    #[error("Unable to update machine due to Error: {0}")]
+    UpdateMachineError(StatusCode),
+    #[error("Max retries exceeding to update machine")]
+    UpdateMachineTimeoutError,
 }
 
 #[tokio::main]
@@ -160,23 +164,26 @@ impl CommandListener {
 }
 
 async fn init_api(config: &mut TeliodDaemonConfig, config_path: String) -> Result<(), TeliodError> {
-    let mut tokens = fetch_tokens(config).await;
+    let mut client_config = ClientConfig::new(config).await?;
 
     let mut retries = 0;
     loop {
-        let status = update_machine(&tokens).await?;
+        let status = update_machine(&client_config).await?;
         match status {
             StatusCode::OK => break,
             StatusCode::FORBIDDEN | StatusCode::UNAUTHORIZED | StatusCode::BAD_REQUEST => {
                 // exit daemon
-                panic!("{:?} response recieved. Exiting", status);
+                return Err(TeliodError::UpdateMachineError(status));
             }
             StatusCode::NOT_FOUND => {
                 // Retry machine update after registering. To make sure everything was successful
                 // If registering fails. Close the daemon
-                if register_machine(&mut tokens).await.is_err() {
-                    panic!("Unable to register machien. Exiting");
-                }
+                client_config.machine_identifier = register_machine(
+                    &client_config.hw_identifier,
+                    client_config.public_key,
+                    &client_config.auth_token,
+                )
+                .await?;
             }
             _ => {
                 // Retry with exp back-off
@@ -188,15 +195,16 @@ async fn init_api(config: &mut TeliodDaemonConfig, config_path: String) -> Resul
                     retries += 1;
                 } else {
                     // If max retries exceeded, exit daemon
-                    panic!("Max retries reached. Exiting.");
+                    return Err(TeliodError::UpdateMachineTimeoutError);
+                    // panic!("Max retries reached. Exiting.");
                 }
             }
         }
     }
 
-    config.private_key = Some(tokens.private_key.clone());
-    config.hw_identifier = Some(tokens.hw_identifier.clone());
-    config.machine_identifier = Some(tokens.machine_identifier.clone());
+    config.private_key = Some(client_config.private_key.clone());
+    config.hw_identifier = Some(client_config.hw_identifier.clone());
+    config.machine_identifier = Some(client_config.machine_identifier.clone());
 
     let mut file = File::create(config_path)?;
     serde_json::to_writer(&mut file, &config)?;
@@ -205,7 +213,7 @@ async fn init_api(config: &mut TeliodDaemonConfig, config_path: String) -> Resul
 
 // From async context Telio needs to be run in separate task
 fn telio_task(
-    tokens: Tokens,
+    client_config: ClientConfig,
     mut rx_channel: mpsc::Receiver<TelioTaskCmd>,
 ) -> Result<(), TeliodError> {
     debug!("Initializing telio device");
@@ -220,8 +228,8 @@ fn telio_task(
     // tests with core API. This is to not look for tokens in a test environment
     // right now as the values are dummy and program will not run as it expects
     // real tokens.
-    if !tokens.auth_token.eq("") {
-        if let Err(e) = update_meshmap(&tokens, &telio) {
+    if !client_config.auth_token.eq("") {
+        if let Err(e) = update_meshmap(&client_config, &telio) {
             error!("Unable to set meshmap due to {e}");
         }
 
@@ -229,7 +237,7 @@ fn telio_task(
             info!("Got command {:?}", cmd);
             match cmd {
                 TelioTaskCmd::UpdateMeshmap => {
-                    if let Err(e) = update_meshmap(&tokens, &telio) {
+                    if let Err(e) = update_meshmap(&client_config, &telio) {
                         error!("Unable to set meshmap due to {e}");
                     }
                 }
@@ -239,52 +247,56 @@ fn telio_task(
     Ok(())
 }
 
-fn update_meshmap(tokens: &Tokens, telio: &Device) -> Result<(), TeliodError> {
-    let meshmap: MeshMap = serde_json::from_str(&get_meshmap(tokens)?)?;
+fn update_meshmap(client_config: &ClientConfig, telio: &Device) -> Result<(), TeliodError> {
+    let meshmap: MeshMap = serde_json::from_str(&get_meshmap(client_config)?)?;
     trace!("Meshmap {:#?}", meshmap);
     telio.set_config(&Some(meshmap))?;
     Ok(())
 }
 
-async fn fetch_tokens(config: &mut TeliodDaemonConfig) -> Tokens {
-    info!("Fetching tokens");
-    let mut tokens: Tokens = Tokens {
-        auth_token: config.authentication_token.clone(),
-        ..Default::default()
-    };
+impl ClientConfig {
+    async fn new(config: &mut TeliodDaemonConfig) -> Result<ClientConfig, TeliodError> {
+        info!("Fetching tokens");
 
-    // Copy or generate Secret/public key pair
-    if let Some(sk) = config.private_key {
-        tokens.private_key = sk;
-    } else {
-        debug!("Generating secret key!");
-        tokens.private_key = SecretKey::gen();
-    }
-    tokens.public_key = tokens.private_key.public();
+        // Copy or generate Secret/public key pair
+        let private_key = if let Some(sk) = config.private_key {
+            sk
+        } else {
+            debug!("Generating secret key!");
+            SecretKey::gen()
+        };
+        let public_key = private_key.public();
 
-    // Copy or generate hw_identifier
-    if let Some(hw_id) = &config.hw_identifier {
-        tokens.hw_identifier = hw_id.to_string();
-    } else {
-        debug!("Generating hw identifier");
-        tokens.hw_identifier = format!("{}.{}", tokens.public_key, "openWRT");
-    }
+        // Copy or generate hw_identifier
+        let hw_identifier = if let Some(hw_id) = &config.hw_identifier {
+            hw_id.to_string()
+        } else {
+            debug!("Generating hw identifier");
+            format!("{}.{}", public_key, "openWRT")
+        };
 
-    // Copy or generate machine_identifier
-    if let Some(machine_id) = &config.machine_identifier {
-        tokens.machine_identifier = machine_id.to_string();
-    } else {
-        let identifier_loaded = load_identifier_from_api(&mut tokens).await;
-        if identifier_loaded.is_err() {
-            debug!("Machine not yet registered");
-            // If registering fails. Close the daemon
-            if register_machine(&mut tokens).await.is_err() {
-                panic!("Unable to register machine. Exiting");
+        // Copy or generate machine_identifier
+        let machine_identifier = if let Some(machine_id) = &config.machine_identifier {
+            machine_id.to_string()
+        } else {
+            if let Ok(id) = load_identifier_from_api(&config.authentication_token, public_key).await
+            {
+                id
+            } else {
+                debug!("Machine not yet registered");
+                // If registering fails. Close the daemon
+                register_machine(&hw_identifier, public_key, &config.authentication_token).await?
             }
-        }
-    }
+        };
 
-    tokens
+        Ok(ClientConfig {
+            hw_identifier,
+            auth_token: config.authentication_token.clone(),
+            private_key,
+            public_key,
+            machine_identifier,
+        })
+    }
 }
 
 async fn daemon_event_loop(
@@ -327,11 +339,11 @@ async fn daemon_event_loop(
     // tests with core API. This is to not look for tokens in a test environment
     // right now as the values are dummy and program will not run as it expects
     // real tokens.
-    let mut tokens = Tokens::default();
+    let mut client_config = ClientConfig::default();
     if !config.authentication_token.eq("abcd1234") {
         init_api(&mut config, config_path).await?;
 
-        tokens = Tokens {
+        client_config = ClientConfig {
             hw_identifier: config.hw_identifier.ok_or(TeliodError::TokenError)?,
             auth_token: config.authentication_token,
             machine_identifier: config.machine_identifier.ok_or(TeliodError::TokenError)?,
@@ -339,7 +351,7 @@ async fn daemon_event_loop(
             public_key: config.private_key.ok_or(TeliodError::TokenError)?.public(),
         };
     }
-    let telio_task_handle = tokio::task::spawn_blocking(|| telio_task(tokens, rx));
+    let telio_task_handle = tokio::task::spawn_blocking(|| telio_task(client_config, rx));
     let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
 
     info!("Entering event loop");

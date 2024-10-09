@@ -50,6 +50,15 @@ fn reconnect_after_expiry_default() -> Percentage {
     Percentage(90)
 }
 
+#[derive(Deserialize, Debug, Default)]
+pub struct ClientConfig {
+    pub hw_identifier: String,
+    pub auth_token: String,
+    pub private_key: SecretKey,
+    pub public_key: PublicKey,
+    pub machine_identifier: String,
+}
+
 #[derive(PartialEq, Eq, Deserialize, Debug)]
 pub struct TeliodDaemonConfig {
     #[serde(deserialize_with = "deserialize_log_level")]
