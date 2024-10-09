@@ -99,8 +99,12 @@ async fn start_mqtt(
 
     tokio::spawn(async move {
         loop {
-            let (client, mut eventloop, expires_at) =
-                connect_to_nc_with_backoff(&nc_config, app_user_uid, backoff.clone()).await;
+            let (client, mut eventloop, expires_at) = Box::pin(connect_to_nc_with_backoff(
+                &nc_config,
+                app_user_uid,
+                backoff.clone(),
+            ))
+            .await;
 
             loop {
                 select! {
@@ -183,7 +187,7 @@ async fn connect_to_nc(
     )));
 
     let (client, eventloop) = AsyncClient::new(mqttoptions, 10);
-    let eventloop = wait_for_connection(eventloop, MQTT_CONNECTION_TIMEOUT).await?;
+    let eventloop = Box::pin(wait_for_connection(eventloop, MQTT_CONNECTION_TIMEOUT)).await?;
     let expires_at = Instant::now() + Duration::from_secs(nc_config.expires_in);
     client.subscribe(TOPIC_SUBSCRIBE, QoS::AtLeastOnce).await?;
 
