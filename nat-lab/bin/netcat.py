@@ -25,10 +25,8 @@ class NetCat:
             print(*args, **kwargs, file=sys.stderr)
 
     def _create_socket(self) -> socket.socket:
-
         family = socket.AF_INET6 if self.ipv6 else socket.AF_INET
         sock_type = socket.SOCK_DGRAM if self.udp else socket.SOCK_STREAM
-
         try:
             s = socket.socket(family, sock_type)
             return s
@@ -128,6 +126,7 @@ class NetCat:
                     if self.udp and self.listen and not self.client_addr:
                         self._vprint(f"Connection received on {addr[0]} {addr[1]}")
                         self.client_addr = addr
+                        self.sock.connect(addr)
                     if not data:
                         # connection closed
                         return
