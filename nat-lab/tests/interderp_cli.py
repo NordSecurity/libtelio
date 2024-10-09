@@ -9,9 +9,16 @@ class InterDerpClient:
     _connection: Connection
 
     def __init__(
-        self, connection: Connection, server_1: str, server_2: str, sk1: str, sk2: str
+        self,
+        connection: Connection,
+        server_1: str,
+        server_2: str,
+        sk1: str,
+        sk2: str,
+        instance_id: int,
     ) -> None:
         self._stop = None
+        self._instance_id = instance_id
         self._process = connection.create_process([
             get_libtelio_binary_path("interderpcli", connection),
             "-v",
@@ -27,7 +34,12 @@ class InterDerpClient:
         self._connection = connection
 
     async def execute(self) -> None:
-        await self._process.execute()
+        try:
+            await self._process.execute()
+        except Exception as e:
+            print(f"Interderpcli process execution failed: {e}")
+            await self.save_logs()
+            raise
 
     async def get_log(self) -> str:
         process = (
@@ -38,7 +50,7 @@ class InterDerpClient:
         await process.execute()
         return process.get_stdout()
 
-    async def save_logs(self, count) -> None:
+    async def save_logs(self) -> None:
         if os.environ.get("NATLAB_SAVE_LOGS") is None:
             return
 
@@ -55,7 +67,11 @@ class InterDerpClient:
             container_id = str(self._connection.target_os.name)
 
         filename = (
-            "preconditions_interderpcli_" + container_id + "_" + str(count) + ".log"
+            "preconditions_interderpcli_"
+            + container_id
+            + "_"
+            + str(self._instance_id)
+            + ".log"
         )
         if len(filename.encode("utf-8")) > 256:
             filename = f"{filename[:251]}.log"

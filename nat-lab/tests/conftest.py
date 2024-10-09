@@ -116,9 +116,10 @@ async def setup_check_interderp():
                 DERP_SERVER_2_ADDR,
                 DERP_SERVER_1_SECRET_KEY,
                 DERP_SERVER_2_SECRET_KEY,
+                1,
             )
             await derp_test_12.execute()
-            await derp_test_12.save_logs(1)
+            await derp_test_12.save_logs()
 
             derp_test_23 = InterDerpClient(
                 connection,
@@ -126,9 +127,10 @@ async def setup_check_interderp():
                 DERP_SERVER_3_ADDR,
                 DERP_SERVER_1_SECRET_KEY,
                 DERP_SERVER_2_SECRET_KEY,
+                2,
             )
             await derp_test_23.execute()
-            await derp_test_23.save_logs(2)
+            await derp_test_23.save_logs()
 
             derp_test_31 = InterDerpClient(
                 connection,
@@ -136,9 +138,10 @@ async def setup_check_interderp():
                 DERP_SERVER_1_ADDR,
                 DERP_SERVER_1_SECRET_KEY,
                 DERP_SERVER_2_SECRET_KEY,
+                3,
             )
             await derp_test_31.execute()
-            await derp_test_31.save_logs(3)
+            await derp_test_31.save_logs()
             stop_tcpdump([connection.container_name()])
 
 
