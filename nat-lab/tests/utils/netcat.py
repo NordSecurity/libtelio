@@ -3,10 +3,18 @@ import platform
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional, AsyncIterator
-from utils.connection import Connection
+from utils.connection import Connection, TargetOS
 from utils.output_notifier import OutputNotifier
 from utils.process import Process
+from config import LIBTELIO_BINARY_PATH_MAC_VM, LIBTELIO_BINARY_PATH_WINDOWS_VM
+from utils.python import get_python_binary
 
+def _get_netcat_script_path(connection: Connection) -> str:
+    if connection.target_os == TargetOS.Windows:
+        return LIBTELIO_BINARY_PATH_WINDOWS_VM + "netcat.py"
+    elif connection.target_os == TargetOS.Mac:
+        return LIBTELIO_BINARY_PATH_MAC_VM + "netcat.py"
+    return "nc"
 
 class NetCat:
     """Wrapper class for the NC command"""
@@ -58,7 +66,11 @@ class NetCat:
         if port_scan and not listen:
             flags += "z"
 
-        command = ["nc", flags, str(port)]
+        # use the built in netcat command on linux or macOS in client mode
+        if connection.target_os == TargetOS.Linux or connection.target_os == TargetOS.Mac and not listen:
+            command = ["nc", flags, str(port)]
+        else:
+            command = [get_python_binary(connection), _get_netcat_script_path(connection),  flags, str(port)]
 
         if source_ip and not listen:
             command.insert(-1, "-s")
@@ -94,7 +106,7 @@ class NetCat:
 
     async def on_stderr(self, stderr: str) -> None:
         """Handle verbose status messages"""
-        print(datetime.now(), "netcat:", stderr)
+        print(datetime.now(), "netcat:", stderr.strip())
         await self._output_notifier.handle_output(stderr)
         return None
 
@@ -189,6 +201,7 @@ class NetCatClient(NetCat):
         )
         self._connection_event: asyncio.Event = asyncio.Event()
         protocol = "tcp" if not udp else "udp"
+        # macOS and linux verbose messages differ slightly
         self._output_notifier.notify_output(
             f"[{protocol}/*] succeeded",
             self._connection_event,
