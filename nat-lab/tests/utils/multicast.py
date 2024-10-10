@@ -50,7 +50,7 @@ class MulticastServer:
             f"--{protocol}",
             "-s",
             "-t",
-            "10",
+            "11",
         ])
 
     async def on_stdout(self, stdout: str) -> None:
