@@ -66,8 +66,8 @@ class NetCat:
         if port_scan and not listen:
             flags += "z"
 
-        # use the built in netcat command on linux or macOS in client mode
-        if connection.target_os == TargetOS.Linux or connection.target_os == TargetOS.Mac and not listen:
+        # use the built in netcat command on linux
+        if connection.target_os == TargetOS.Linux:
             command = ["nc", flags, str(port)]
         else:
             command = [get_python_binary(connection), _get_netcat_script_path(connection),  flags, str(port)]
@@ -156,20 +156,16 @@ class NetCatServer(NetCat):
 
     async def listening_started(self) -> None:
         """Wait for listening started event"""
-        # macOS nc does not report any verbose events when listening
-        if platform.system() == "Darwin":
-            return None
-
+        print("waiting for listening event")
         await self._listening_event.wait()
+        print("got listening event")
         self._listening_event.clear()
 
     async def connection_received(self) -> None:
         """Wait for connection received event"""
-        # macOS nc does not report any verbose events when listening
-        if platform.system() == "Darwin":
-            return None
-
+        print("server waiting for connection event")
         await self._connection_event.wait()
+        print("server got connection event")
         self._connection_event.clear()
 
 
@@ -216,5 +212,7 @@ class NetCatClient(NetCat):
 
     async def connection_succeeded(self) -> None:
         """Wait for connection succeeded event"""
+        print("client waiting for connection event")
         await self._connection_event.wait()
+        print("client got connection event")
         self._connection_event.clear()

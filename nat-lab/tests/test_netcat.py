@@ -5,12 +5,12 @@ from utils.connection_util import ConnectionTag, new_connection_by_tag
 from utils.netcat import NetCatServer, NetCatClient
 from helpers import SetupParameters, setup_environment, setup_connections
 
-TEST_STRING = "test data"
+TEST_STRING = "test_data"
 PORT = 12345
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(10)
+@pytest.mark.timeout(15)
 @pytest.mark.parametrize(
     "setup_params",
     [
@@ -33,9 +33,9 @@ PORT = 12345
         pytest.param(
             True
         ),
-        # pytest.param(
-        #     False
-        # ),
+        pytest.param(
+            False
+        ),
     ]
 )
 async def test_netcat(setup_params: SetupParameters, udp: bool) -> None:
