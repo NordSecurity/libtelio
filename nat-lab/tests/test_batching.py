@@ -6,7 +6,7 @@ from helpers import SetupParameters, setup_environment
 from itertools import zip_longest
 from scapy.layers.inet import TCP, UDP  # type: ignore
 from timeouts import TEST_BATCHING_TIMEOUT
-from typing import List, Tuple
+from typing import List, Tuple, Any
 from utils.batching import (
     capture_traffic,
     print_histogram,
@@ -24,8 +24,8 @@ from utils.bindings import (
 from utils.connection import DockerConnection
 from utils.connection_util import DOCKER_GW_MAP, ConnectionTag, container_id
 
-BATCHING_MISALIGN_RANGE = (0, 5)  # Seconds to sleep for peers before starting
-BATCHING_CAPTURE_TIME = 240  # Tied to TEST_BATCHING_TIMEOUT
+BATCHING_MISALIGN_RANGE = (0, 3)  # Seconds to sleep for peers before starting
+BATCHING_CAPTURE_TIME = 30  # Tied to TEST_BATCHING_TIMEOUT
 
 
 def _generate_setup_parameters(
@@ -49,9 +49,7 @@ def _generate_setup_parameters(
     )
 
     return SetupParameters(
-        connection_tag=conn_tag,
-        adapter_type_override=adapter,
-        features=features,
+        connection_tag=conn_tag, adapter_type_override=adapter, features=features
     )
 
 
@@ -167,20 +165,14 @@ async def test_batching(
     capture_duration: int,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
-        env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, setup_params)
-        )
-
-        await asyncio.gather(*[
-            client.wait_for_state_on_any_derp([RelayState.CONNECTED])
-            for client, instance in zip_longest(env.clients, setup_params)
-            if instance.derp_servers != []
-        ])
-
         # We capture the traffic from all nodes and gateways.
         # On gateways we are sure the traffic has left the machine, however no easy way to
         # inspect the packets(encrypted by wireguard). For packet inspection
         # client traffic can be inspected.
+        env = await exit_stack.enter_async_context(
+            setup_environment(exit_stack, setup_params)
+        )
+
         gateways = [DOCKER_GW_MAP[param.connection_tag] for param in setup_params]
         gateway_container_names = [container_id(conn_tag) for conn_tag in gateways]
         conns = [client.get_connection() for client in env.clients]
@@ -191,22 +183,39 @@ async def test_batching(
         ]
 
         container_names = gateway_container_names + node_container_names
-        print("Will capture batching on containers: ", container_names)
-        cnodes = zip(env.clients, env.nodes)
+        print("Will capture traffic on containers: ", container_names)
 
-        # Misalign the peers by first stopping all of them and then restarting after various delays.
-        # This will have an effect of forcing neighboring libtelio node to add the peer to internal lists
-        # for keepalives at various points in time thus allowing us to observe better
-        # if the local batching is in action.
+        pcap_capture_tasks: List[Any] = []
+        for name in container_names:
+            pcap_task = asyncio.create_task(
+                capture_traffic(
+                    name,
+                    capture_duration,
+                )
+            )
+            pcap_capture_tasks.append(pcap_task)
+
+        # at this point packet captures are running
+        await asyncio.gather(*[
+            client.wait_for_state_on_any_derp([RelayState.CONNECTED])
+            for client, instance in zip_longest(env.clients, setup_params)
+            if instance.derp_servers != []
+        ])
+
+        # At this stage all peers have been started and connected to DERP server meaning they are ready.
+        # It's a good time to misalign the peers by stopping all of them and then sleeping for random amounts
+        # of time in parallel before starting again. This gives a more realistic view as when peer comes online,
+        # it's added to other peers meshmaps and misalignment occurs naturally since peers already were online.
+        # In NatLab all peers start at more or less the same time normally, preventing batching to do anything useful.
         for client in env.clients:
             await client.stop_device()
 
-        # misalign the peers by sleeping some before starting each node again
         async def start_node_manually(client, node, sleep_min: int, sleep_max: int):
             await asyncio.sleep(random.randint(sleep_min, sleep_max))
             await client.simple_start()
             await client.set_meshnet_config(env.api.get_meshnet_config(node.id))
 
+        cnodes = zip(env.clients, env.nodes)
         await asyncio.gather(*[
             start_node_manually(
                 client, node, misalign_sleep_range[0], misalign_sleep_range[1]
@@ -229,21 +238,20 @@ async def test_batching(
             ),
         ]
 
-        pcap_capture_tasks = []
-        for name in container_names:
-            pcap_task = asyncio.create_task(
-                capture_traffic(
-                    name,
-                    capture_duration,
-                )
-            )
-            pcap_capture_tasks.append(pcap_task)
+        await asyncio.gather(*[
+            client.wait_for_state_on_any_derp([RelayState.CONNECTED])
+            for client, instance in zip_longest(env.clients, setup_params)
+            if instance.derp_servers != []
+        ])
 
-        pcap_paths = await asyncio.gather(*pcap_capture_tasks)
+        pcap_paths: list[str] = await asyncio.gather(*pcap_capture_tasks)
 
+        # Once capture tasks end, we reached the end of the test
         for container, pcap_path in zip(container_names, pcap_paths):
             for filt in allow_pcap_filters:
                 filter_name = filt[0]
                 hs = generate_histogram_from_pcap(pcap_path, capture_duration, filt[1])
                 title = f"{container}-filter({filter_name})"
                 print_histogram(title, hs, max_height=12)
+
+        # In the end, the histograms are captured that can now be used for observing the results

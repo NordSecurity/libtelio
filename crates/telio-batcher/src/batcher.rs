@@ -3,15 +3,28 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::{collections::HashMap, sync::Arc};
 
-use telio_utils::telio_log_debug;
+use telio_utils::{telio_log_debug, telio_log_warn};
+use tokio;
 use tokio::time::sleep_until;
 
 type Action<V, R = std::result::Result<(), ()>> =
     Arc<dyn for<'a> Fn(&'a mut V) -> BoxFuture<'a, R> + Sync + Send>;
 
+/// Guards against triggers that happened long time ago
+const TRIGGER_EFFECTIVE_DURATION: tokio::time::Duration = tokio::time::Duration::from_secs(5);
+
+/// Batcher holds (actions, interval, threshold). When polled, batcher will
+/// return a list of actions that should be executed now.
 pub struct Batcher<K, V> {
     actions: HashMap<K, (BatchEntry, Action<V>)>,
+
+    /// Adding new action must be immediately returned from `get_actions` if polled right away.
+    /// In case we're already polling, we need to notify the tokio::select! about such an event.
     notify_add: tokio::sync::Notify,
+
+    /// Triggering batcher must be handled inside of tokio::select!
+    notify_trigger_timestamp: Option<tokio::time::Instant>,
+    notify_trigger: tokio::sync::Notify,
 }
 
 struct BatchEntry {
@@ -37,13 +50,15 @@ where
         Self {
             actions: HashMap::new(),
             notify_add: tokio::sync::Notify::new(),
+            notify_trigger: tokio::sync::Notify::new(),
+            notify_trigger_timestamp: None,
         }
     }
 
-    /// Batching works by sleeping until the nearest future and then trying to batch more actions
-    /// based on the threshold value. Higher delay before calling the function will increase the chances of batching
-    /// because the deadlines will _probably_ be in the past already.
-    /// Adding a new action wakes up the batcher due to immediate trigger of the action.
+    /// Batcher works in a polling manner, meaning the call site must invoke the actions.
+    /// When polled, batcher will await until the nearest future, new action addition or a trigger.
+    /// Once resolved, batcher will try to batch all the actions that are within their respective
+    /// thresholds.
     pub async fn get_actions(&mut self) -> Vec<(K, Action<V>)> {
         let mut batched_actions: Vec<(K, Action<V>)> = vec![];
 
@@ -51,40 +66,58 @@ where
             if !self.actions.is_empty() {
                 let actions = &mut self.actions;
 
-                // TODO: This can be optimized by early breaking and precollecting items beforehand
-                if let Some(closest_entry) = actions.values().min_by_key(|entry| entry.0.deadline) {
-                    tokio::select! {
-                        _ = self.notify_add.notified() => {
-                            // Item was added, we need to immediately emit it
-                        }
-                        _ = sleep_until(closest_entry.0.deadline) => {
-                            // Closest action should now be emitted
+                let active_trigger = self
+                    .notify_trigger_timestamp
+                    .take()
+                    .map_or(false, |ts| ts.elapsed() < TRIGGER_EFFECTIVE_DURATION);
+
+                if !active_trigger {
+                    if let Some(closest_entry) =
+                        actions.values().min_by_key(|entry| entry.0.deadline)
+                    {
+                        tokio::select! {
+                            _ = self.notify_add.notified() => {
+                                telio_log_debug!("New item added");
+                            }
+                            _ = sleep_until(closest_entry.0.deadline) => {
+                                telio_log_debug!("Action deadline reached");
+                            }
+                            _ = self.notify_trigger.notified() => {
+                                telio_log_debug!("Trigger received");
+                            }
                         }
                     }
+                }
 
-                    let now = tokio::time::Instant::now();
-                    // at this point in time we know we're at the earliest spot for batching, thus we can check if we have more actions to add
-                    for (key, action) in actions.iter_mut() {
-                        let adjusted_action_deadline = now + action.0.threshold;
+                let now = tokio::time::Instant::now();
+                for (key, action) in actions.iter_mut() {
+                    let adjusted_deadline = now + action.0.threshold;
 
-                        if action.0.deadline <= adjusted_action_deadline {
-                            action.0.deadline = now + action.0.interval;
-                            batched_actions.push((key.clone(), action.1.clone()));
-                        }
+                    if action.0.deadline <= adjusted_deadline {
+                        action.0.deadline = now + action.0.interval;
+                        batched_actions.push((key.clone(), action.1.clone()));
                     }
                 }
 
                 return batched_actions;
             } else {
-                let _ = self.notify_add.notified().await;
+                _ = self.notify_add.notified().await;
             }
         }
     }
-
     /// Remove batcher action. Action is no longer eligible for batching
     pub fn remove(&mut self, key: &K) {
-        telio_log_debug!("removing item from batcher with key({:?})", key);
+        telio_log_debug!("Removing item from batcher with key({:?})", key);
         self.actions.remove(key);
+    }
+
+    /// This function allows for premature evaluation of actions.
+    /// Calling this function in a tight loop with result in actions
+    /// being returned at [T-threshold] interval.
+    pub fn trigger(&mut self) {
+        telio_log_debug!("Triggering batcher");
+        self.notify_trigger_timestamp = Some(tokio::time::Instant::now());
+        self.notify_trigger.notify_waiters();
     }
 
     /// Add batcher action. Batcher itself doesn't run the tasks and depends
@@ -99,11 +132,25 @@ where
         action: Action<V>,
     ) {
         telio_log_debug!(
-            "adding item to batcher with key({:?}), interval({:?}), threshold({:?})",
+            "Adding item to batcher with key({:?}), interval({:?}), threshold({:?})",
             key,
             interval,
             threshold,
         );
+
+        let threshold = {
+            if threshold >= interval {
+                let capped_threshold = interval / 2;
+                telio_log_warn!(
+                    "Threshold should not be bigger than the interval. Overriding to ({:?})",
+                    capped_threshold
+                );
+                capped_threshold
+            } else {
+                threshold
+            }
+        };
+
         let entry = BatchEntry {
             deadline: tokio::time::Instant::now(),
             interval,
@@ -132,6 +179,86 @@ mod tests {
     use std::{sync::Arc, time::Duration};
 
     use crate::batcher::Batcher;
+
+    #[tokio::test(start_paused = true)]
+    async fn batch_and_trigger() {
+        let start_time = tokio::time::Instant::now();
+        let mut batcher = Batcher::<String, TestChecker>::new();
+
+        batcher.add(
+            "key".to_owned(),
+            Duration::from_secs(100),
+            Duration::from_secs(50),
+            Arc::new(|s: _| {
+                Box::pin(async move {
+                    s.values
+                        .push(("key".to_owned(), tokio::time::Instant::now()));
+                    Ok(())
+                })
+            }),
+        );
+
+        let mut test_checker = TestChecker { values: Vec::new() };
+
+        // pick up the immediate fire
+        for ac in batcher.get_actions().await {
+            ac.1(&mut test_checker).await.unwrap();
+        }
+        assert!(test_checker.values.len() == 1);
+
+        let create_time_checkpoint =
+            |add: u64| tokio::time::Instant::now() + tokio::time::Duration::from_secs(add);
+
+        let mut trigger_timepoints = vec![
+            create_time_checkpoint(10),
+            create_time_checkpoint(20),
+            create_time_checkpoint(60),
+            create_time_checkpoint(90),
+            create_time_checkpoint(200),
+            create_time_checkpoint(270),
+            create_time_checkpoint(280),
+            create_time_checkpoint(730),
+            create_time_checkpoint(1000),
+        ];
+
+        use tokio::time::sleep_until;
+        loop {
+            tokio::select! {
+            _ = sleep_until(trigger_timepoints[0]) => {
+                batcher.trigger();
+                trigger_timepoints.remove(0);
+                if trigger_timepoints.len() == 0 {
+                    break
+                }
+            }
+
+                actions = batcher.get_actions() => {
+                    for ac in &actions {
+                        ac.1(&mut test_checker).await.unwrap();
+                    }
+                }
+            }
+        }
+
+        let items: Vec<tokio::time::Duration> = test_checker
+            .values
+            .iter()
+            .filter(|e| e.0 == "key")
+            .map(|e| e.1.duration_since(start_time))
+            .collect();
+
+        let expected_diff_values: Vec<Duration> =
+            vec![0, 60, 160, 260, 360, 460, 560, 660, 730, 830, 930]
+                .iter()
+                .map(|v| tokio::time::Duration::from_secs(*v))
+                .collect();
+        assert!(
+            items == expected_diff_values,
+            "expected: {:?}, got: {:?}",
+            expected_diff_values,
+            items
+        );
+    }
 
     #[tokio::test(start_paused = true)]
     async fn batch_one() {

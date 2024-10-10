@@ -44,6 +44,22 @@ use std::{
     time::Duration,
 };
 
+/// Interface for retrieving stats about network activity
+#[async_trait]
+pub trait NetworkActivityGetter: Sync + Send {
+    /// Get network activity timestamps
+    async fn get_ts(&self) -> Result<Option<TxRxTimestampPair>, Error>;
+}
+
+#[async_trait]
+impl NetworkActivityGetter for DynamicWg {
+    /// Retrieves latest tx/rx change accross all the nodes. Essentially showing the time of last
+    /// egress or ingress activity
+    async fn get_ts(&self) -> Result<Option<TxRxTimestampPair>, Error> {
+        Ok(task_exec!(&self.task, async move |s| Ok(s.network_activity_ts)).await?)
+    }
+}
+
 /// WireGuard adapter interface
 #[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
 #[async_trait]
@@ -208,6 +224,16 @@ impl BytesAndTimestamps {
     }
 }
 
+/// Timestamp pair for egress and ingress activity
+#[derive(Copy, Clone, Debug)]
+pub struct TxRxTimestampPair {
+    /// Egress activity timestamp
+    pub tx_ts: Instant,
+
+    /// Ingress activity timestamp
+    pub rx_ts: Instant,
+}
+
 struct State {
     #[cfg(unix)]
     cfg: Config,
@@ -227,7 +253,7 @@ struct State {
     libtelio_event: Option<mc_chan::Tx<Box<LibtelioEvent>>>,
 
     stats: HashMap<PublicKey, Arc<Mutex<BytesAndTimestamps>>>,
-
+    network_activity_ts: Option<TxRxTimestampPair>,
     ip_stack: Option<IpStack>,
 }
 
@@ -362,6 +388,7 @@ impl DynamicWg {
                 libtelio_event: io.libtelio_wide_event_publisher,
                 stats: HashMap::new(),
                 ip_stack: None,
+                network_activity_ts: Default::default(),
             }),
         }
     }
@@ -786,10 +813,17 @@ impl State {
 
                 if let Some(stats) = self.stats.get_mut(key) {
                     match stats.lock().as_mut() {
-                        Ok(s) => s.update(
-                            new.rx_bytes.unwrap_or_default(),
-                            new.tx_bytes.unwrap_or_default(),
-                        ),
+                        Ok(s) => {
+                            s.update(
+                                new.rx_bytes.unwrap_or_default(),
+                                new.tx_bytes.unwrap_or_default(),
+                            );
+
+                            if let (Some(tx_ts), Some(rx_ts)) = (s.get_tx_ts(), s.get_rx_ts()) {
+                                self.network_activity_ts = Some(TxRxTimestampPair { tx_ts, rx_ts });
+                            }
+                        }
+
                         Err(e) => {
                             telio_log_error!("poisoned lock - {}", e);
                         }
