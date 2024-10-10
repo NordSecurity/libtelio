@@ -723,8 +723,6 @@ impl State {
                 "Disconnected peer missing from old list",
             ))?;
 
-            self.stats.remove(key);
-
             // Remove all disconnected peers from no link detection mechanism
             if let Some(link_detection) = self.link_detection.as_mut() {
                 link_detection.remove(key);
@@ -746,16 +744,14 @@ impl State {
                 .get(key)
                 .ok_or(Error::InternalError("New peer missing from new list"))?;
 
-            let bytes_and_ts = Arc::new(Mutex::new(BytesAndTimestamps::new(
-                peer.rx_bytes,
-                peer.tx_bytes,
-            )));
-
-            self.stats.insert(*key, bytes_and_ts.clone());
+            let stats = self
+                .stats
+                .get(key)
+                .ok_or(Error::InternalError("No stats available for peer"))?;
 
             // Node is new and default LinkState is down. Save it before sending the event
             if let Some(link_detection) = self.link_detection.as_mut() {
-                link_detection.insert(key, bytes_and_ts.clone());
+                link_detection.insert(key, stats.clone());
             }
 
             self.send_event(
@@ -783,18 +779,6 @@ impl State {
                 let old_state = old.state();
                 let new_state = new.state();
                 let node_addresses = new.ip_addresses.clone();
-
-                if let Some(stats) = self.stats.get_mut(key) {
-                    match stats.lock().as_mut() {
-                        Ok(s) => s.update(
-                            new.rx_bytes.unwrap_or_default(),
-                            new.tx_bytes.unwrap_or_default(),
-                        ),
-                        Err(e) => {
-                            telio_log_error!("poisoned lock - {}", e);
-                        }
-                    }
-                }
                 let link_detection_update_result = {
                     if let Some(link_detection) = self.link_detection.as_mut() {
                         link_detection
@@ -907,8 +891,32 @@ impl State {
     #[allow(mpsc_blocking_send)]
     async fn update(&mut self, mut to: uapi::Interface, push: bool) -> Result<bool, Error> {
         for (pk, peer) in &mut to.peers {
+            match self.stats.get_mut(pk) {
+                Some(stats) => match stats.lock().as_mut() {
+                    Ok(s) => {
+                        s.update(
+                            peer.rx_bytes.unwrap_or_default(),
+                            peer.tx_bytes.unwrap_or_default(),
+                        );
+                    }
+                    Err(e) => {
+                        telio_log_error!("poisoned lock - {}", e);
+                    }
+                },
+                None => {
+                    self.stats.insert(
+                        *pk,
+                        Arc::new(Mutex::new(BytesAndTimestamps::new(
+                            peer.rx_bytes,
+                            peer.tx_bytes,
+                        ))),
+                    );
+                }
+            }
             peer.time_since_last_rx = self.time_since_last_rx(*pk);
         }
+        self.stats.retain(|pk, _| to.peers.contains_key(pk));
+
         // Diff and report events
 
         // Adapter doesn't keep track of mesh addresses, or endpoint changes,
@@ -1354,7 +1362,6 @@ pub mod tests {
             endpoint: Some(([1, 1, 1, 1], 123).into()),
             endpoint_changed_at: Some(Instant::now()),
             persistent_keepalive_interval: Some(25),
-            rx_bytes: Some(1),
             ..Default::default()
         };
         let old_peer = Some(peer.clone());
@@ -1377,6 +1384,13 @@ pub mod tests {
         // Connect
         peer.time_since_last_handshake = Some(Duration::from_secs(15));
         ifa.peers.insert(pkc, peer.clone());
+
+        let _ = task_exec!(&wg.task, async move |s| {
+            s.stats.get_mut(&pkc).unwrap().lock().unwrap().update(1, 0);
+            Ok(())
+        })
+        .await;
+
         tokio::time::advance(Duration::from_secs(7)).await;
         adapter
             .lock()
@@ -1423,7 +1437,6 @@ pub mod tests {
             endpoint: Some(([1, 1, 1, 1], 123).into()),
             endpoint_changed_at: Some(Instant::now()),
             persistent_keepalive_interval: Some(25),
-            rx_bytes: Some(1),
             ..Default::default()
         };
         let old_peer = Some(peer.clone());
@@ -1445,7 +1458,13 @@ pub mod tests {
 
         // Connects
         peer.time_since_last_handshake = Some(Duration::from_secs(94));
-        peer.rx_bytes = Some(1);
+
+        let _ = task_exec!(&wg.task, async move |s| {
+            s.stats.get_mut(&pkc).unwrap().lock().unwrap().update(1, 0);
+            Ok(())
+        })
+        .await;
+
         let second_old_peer = Some(peer.clone());
         ifa.peers.insert(pkc, peer.clone());
         tokio::time::advance(Duration::from_secs(94)).await;
