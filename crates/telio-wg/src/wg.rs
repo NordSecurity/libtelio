@@ -198,12 +198,9 @@ impl BytesAndTimestamps {
 
     /// Checks if the link is up based on the round-trip time (RTT) and WireGuard keepalive interval.
     pub fn is_link_up(&self, rtt: Duration) -> bool {
-        if let (Some(rx_ts), Some(tx_ts)) = (self.rx_ts, self.tx_ts) {
-            tx_ts <= rx_ts
-        } else if let Some(rx_ts) = self.rx_ts {
-            rx_ts.elapsed() < WG_KEEPALIVE + rtt
-        } else {
-            false
+        match (self.rx_ts, self.tx_ts) {
+            (Some(rx_ts), Some(tx_ts)) => tx_ts <= rx_ts || rx_ts.elapsed() < WG_KEEPALIVE + rtt,
+            _ => false,
         }
     }
 }
@@ -1818,5 +1815,39 @@ pub mod tests {
                 &i1_with_modified_other_field
             ));
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_bytes_and_timestamps() {
+        let build = |rx_ts, tx_ts| BytesAndTimestamps {
+            rx_bytes: 5,
+            tx_bytes: 5,
+            rx_ts,
+            tx_ts,
+        };
+
+        let now = Instant::now();
+        let a_second_ago = now.checked_sub(Duration::from_secs(1)).unwrap();
+        let eleven_seconds_ago = now.checked_sub(Duration::from_secs(11)).unwrap();
+        let rtt = Duration::from_secs(0);
+
+        let missing_ts_1 = build(None, None);
+        let missing_ts_2 = build(Some(now), None);
+        let missing_ts_3 = build(None, Some(now));
+        assert_eq!(missing_ts_1.is_link_up(rtt), false);
+        assert_eq!(missing_ts_2.is_link_up(rtt), false);
+        assert_eq!(missing_ts_3.is_link_up(rtt), false);
+
+        let up_1 = build(Some(now), Some(now));
+        let up_2 = build(Some(now), Some(a_second_ago));
+        let up_3 = build(Some(a_second_ago), Some(now));
+        let up_4 = build(Some(now), Some(eleven_seconds_ago));
+        assert_eq!(up_1.is_link_up(rtt), true);
+        assert_eq!(up_2.is_link_up(rtt), true);
+        assert_eq!(up_3.is_link_up(rtt), true);
+        assert_eq!(up_4.is_link_up(rtt), true);
+
+        let down = build(Some(eleven_seconds_ago), Some(now));
+        assert_eq!(down.is_link_up(rtt), false);
     }
 }
