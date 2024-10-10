@@ -32,6 +32,7 @@ fn build() -> Result<cc::Build> {
         // https://github.com/msys2/MINGW-packages/issues/5868
     } else {
         build.flag("-D_FORTIFY_SOURCE=2");
+        build.flag("-fstack-protector-strong");
     }
     Ok(build)
 }
