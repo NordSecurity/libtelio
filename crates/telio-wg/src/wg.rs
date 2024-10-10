@@ -892,17 +892,17 @@ impl State {
     async fn update(&mut self, mut to: uapi::Interface, push: bool) -> Result<bool, Error> {
         for (pk, peer) in &mut to.peers {
             match self.stats.get_mut(pk) {
-                Some(stats) => {
-                    if let Ok(mut s) = stats.lock() {
+                Some(stats) => match stats.lock().as_mut() {
+                    Ok(s) => {
                         s.update(
                             peer.rx_bytes.unwrap_or_default(),
                             peer.tx_bytes.unwrap_or_default(),
                         );
-                    } else {
-                        telio_log_error!("poisoned lock for peer - {:?}", pk);
-                        continue;
                     }
-                }
+                    Err(e) => {
+                        telio_log_error!("poisoned lock - {}", e);
+                    }
+                },
                 None => {
                     self.stats.insert(
                         *pk,
@@ -913,12 +913,10 @@ impl State {
                     );
                 }
             }
+            peer.time_since_last_rx = self.time_since_last_rx(*pk);
         }
         self.stats.retain(|pk, _| to.peers.contains_key(pk));
 
-        for (pk, peer) in &mut to.peers {
-            peer.time_since_last_rx = self.time_since_last_rx(*pk);
-        }
         // Diff and report events
 
         // Adapter doesn't keep track of mesh addresses, or endpoint changes,
