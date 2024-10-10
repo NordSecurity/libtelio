@@ -2058,15 +2058,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ipnetwork"
-version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4088d739b183546b239688ddbc79891831df421773df95e236daf7867866d355"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "is-terminal"
 version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4137,7 +4128,6 @@ dependencies = [
  "h2",
  "if-addrs",
  "ipnet",
- "ipnetwork",
  "jni",
  "lazy_static",
  "libc",
@@ -4253,7 +4243,7 @@ dependencies = [
  "criterion",
  "hashlink",
  "if-addrs",
- "ipnetwork",
+ "ipnet",
  "mockall",
  "pnet_packet",
  "proptest",
@@ -4288,7 +4278,6 @@ name = "telio-model"
 version = "0.1.0"
 dependencies = [
  "ipnet",
- "ipnetwork",
  "itertools",
  "modifier",
  "num_enum",

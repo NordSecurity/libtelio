@@ -3,7 +3,7 @@
 
 use std::{collections::HashSet, fmt};
 
-use ipnetwork::Ipv4Network;
+use ipnet::Ipv4Net;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{de::IntoDeserializer, Deserialize, Deserializer, Serialize};
 use smart_default::SmartDefault;
@@ -339,7 +339,7 @@ pub struct FeatureFirewall {
     #[serde(default)]
     pub boringtun_reset_conns: bool,
     /// Custom private IP range
-    pub custom_private_ip_range: Option<Ipv4Network>,
+    pub custom_private_ip_range: Option<Ipv4Net>,
 }
 
 /// Turns on post quantum VPN tunnel

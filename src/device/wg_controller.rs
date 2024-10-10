@@ -480,8 +480,6 @@ fn upsert_peer_whitelist<F: Firewall>(
     requested_state: &RequestedState,
     firewall: &F,
     permission: Permissions,
-    starcast_vpeer_pubkey: Option<PublicKey>,
-    dns_pubkey: Option<PublicKey>,
 ) {
     let from_keys_peer_whitelist: HashSet<PublicKey> = firewall
         .get_peer_whitelist(permission.clone())
@@ -507,21 +505,6 @@ fn upsert_peer_whitelist<F: Firewall>(
     }
     for key in add_keys {
         firewall.add_to_peer_whitelist(key, permission.clone());
-    }
-
-    if permission == Permissions::RoutingConnections {
-        if let Some(key) = dns_pubkey {
-            firewall.add_to_peer_whitelist(key, permission.clone());
-        }
-        if let Some(key) = starcast_vpeer_pubkey {
-            firewall.add_to_peer_whitelist(key, permission.clone());
-        }
-    }
-
-    if permission == Permissions::IncomingConnections {
-        if let Some(key) = starcast_vpeer_pubkey {
-            firewall.add_to_peer_whitelist(key, permission.clone());
-        }
     }
 }
 
@@ -552,27 +535,18 @@ async fn consolidate_firewall<F: Firewall>(
         .collect();
 
     // Upsert peer-whitelists
-    upsert_peer_whitelist(
-        requested_state,
-        firewall,
-        Permissions::IncomingConnections,
-        starcast_vpeer_pubkey,
-        dns_pubkey,
-    );
-    upsert_peer_whitelist(
-        requested_state,
-        firewall,
-        Permissions::LocalAreaConnections,
-        starcast_vpeer_pubkey,
-        dns_pubkey,
-    );
-    upsert_peer_whitelist(
-        requested_state,
-        firewall,
-        Permissions::RoutingConnections,
-        starcast_vpeer_pubkey,
-        dns_pubkey,
-    );
+    for permission in Permissions::VALUES {
+        upsert_peer_whitelist(requested_state, firewall, permission);
+    }
+
+    if let Some(key) = starcast_vpeer_pubkey {
+        firewall.add_to_peer_whitelist(key, Permissions::RoutingConnections);
+        firewall.add_to_peer_whitelist(key, Permissions::IncomingConnections);
+    }
+
+    if let Some(key) = dns_pubkey {
+        firewall.add_to_peer_whitelist(key, Permissions::RoutingConnections);
+    }
 
     // Consolidate port-whitelist
     let delete_keys = &from_keys_ports_whitelist - &to_keys_ports_whitelist;

@@ -13,7 +13,6 @@ pretend_to_be_macos = []
 [dependencies]
 strum_macros = "0.26"
 
-ipnetwork.workspace = true
 ipnet.workspace = true
 itertools.workspace = true
 tracing.workspace = true
