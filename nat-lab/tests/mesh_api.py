@@ -1,3 +1,4 @@
+import json
 import os
 import platform
 import pprint
@@ -93,6 +94,9 @@ class FirewallRule:
         self.allow_incoming_connections = allow_incoming_connections
         self.allow_peer_send_files = allow_peer_send_files
 
+    def __str__(self):
+        return pprint.pformat(vars(self))
+
 
 class Node:
     name: str
@@ -186,7 +190,17 @@ class Node:
 
     # Pretty and informational string for debug messages, e.g. assert false, f"{node}"
     def __str__(self):
-        return pprint.pformat(vars(self))
+        node_dict = vars(self).copy()
+        node_dict["firewall_rules"] = {
+            key: rule.to_dict() if hasattr(rule, "to_dict") else str(rule)
+            for key, rule in self.firewall_rules.items()
+        }
+        node_dict["ip_stack"] = (
+            self.ip_stack.to_dict()
+            if hasattr(self.ip_stack, "to_dict")
+            else str(self.ip_stack)
+        )
+        return json.dumps(node_dict, indent=4, sort_keys=True, ensure_ascii=False)
 
 
 class API:

@@ -119,6 +119,11 @@ def setup_api(node_params: List[Tuple[bool, IPStack]]) -> Tuple[API, List[Node]]
     for node, other_node in product(nodes, repeat=2):
         if node != other_node:
             node.set_peer_firewall_settings(other_node.id, True, True)
+
+    print("Nodes in API:")
+    for node in api.nodes.values():
+        print(node)
+
     return api, nodes
 
 
