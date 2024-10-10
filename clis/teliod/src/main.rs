@@ -5,6 +5,7 @@ use nix::libc::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
 use signal_hook_tokio::Signals;
 use std::{
     fs::{self, File},
+    path::PathBuf,
     str::FromStr,
     sync::Arc,
 };
@@ -31,10 +32,15 @@ struct TeliodDaemonConfig {
     log_level: LevelFilter,
     log_file_path: String,
 
-    app_user_id: Uuid,
+    app_user_uid: Uuid,
 
     #[serde(deserialize_with = "deserialize_authentication_token")]
     authentication_token: String,
+
+    /// Path to a http pem certificate to be used when connecting to CoreApi
+    http_certificate_file_path: Option<PathBuf>,
+    /// Path to a mqtt pem certificate to be used when connecting to Notification Center
+    mqtt_certificate_file_path: Option<PathBuf>,
 }
 
 fn deserialize_log_level<'de, D>(deserializer: D) -> Result<LevelFilter, D::Error>
@@ -163,7 +169,7 @@ fn telio_task() {
 
 async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodError> {
     let (non_blocking_writer, _tracing_worker_guard) =
-        tracing_appender::non_blocking(fs::File::create(config.log_file_path)?);
+        tracing_appender::non_blocking(fs::File::create(&config.log_file_path)?);
     tracing_subscriber::fmt()
         .with_max_level(config.log_level)
         .with_writer(non_blocking_writer)
@@ -176,8 +182,7 @@ async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodError
     let cmd_listener = CommandListener { socket };
 
     let nc = NotificationCenter::new(
-        &config.authentication_token,
-        config.app_user_id,
+        &config,
         vec![Arc::new(|am| {
             println!("Example callback registered at the start: {am:?}")
         })],
