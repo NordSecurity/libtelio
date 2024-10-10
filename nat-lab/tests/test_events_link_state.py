@@ -11,6 +11,7 @@ from utils.bindings import (
     LinkState,
     TelioAdapterType,
 )
+from utils.connection import Connection
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
 
@@ -269,3 +270,74 @@ async def test_event_link_state_feature_disabled(
         assert len(beta_events) > 1
         assert all(e is None for e in alpha_events)
         assert all(e is None for e in beta_events)
+
+
+class ICMP_control:
+    def __init__(self, conn: Connection):
+        self._conn = conn
+
+    async def __aenter__(self):
+        proc = self._conn.create_process([
+            "iptables",
+            "-I",
+            "INPUT",
+            "-p",
+            "icmp",
+            "--icmp-type",
+            "echo-request",
+            "-j",
+            "DROP",
+        ])
+        await proc.execute()
+
+    async def __aexit__(self, _exc_t, exc_v, exc_tb):
+        proc = self._conn.create_process([
+            "iptables",
+            "-D",
+            "INPUT",
+            "-p",
+            "icmp",
+            "--icmp-type",
+            "echo-request",
+            "-j",
+            "DROP",
+        ])
+        await proc.execute()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("setup_params", FEATURE_ENABLED_PARAMS)
+async def test_event_link_state_peer_doesnt_respond(
+    setup_params: List[SetupParameters],
+) -> None:
+    # Peer is online, however doesn't respond to ICMP ECHO REQUESTS.
+    # This means that link detection must not consider the peer offline since it will sent WG-PASSIVE_KEEPALIVE back and this test assures that.
+    async with AsyncExitStack() as exit_stack:
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+        alpha, beta = env.nodes
+        client_alpha, client_beta = env.clients
+        connection_alpha, connection_beta = [
+            conn.connection for conn in env.connections
+        ]
+
+        async with ICMP_control(connection_beta):
+            with pytest.raises(asyncio.TimeoutError):
+                await ping(connection_alpha, beta.ip_addresses[0], 8)
+
+            alpha_events = client_beta.get_link_state_events(alpha.public_key)
+            beta_events = client_alpha.get_link_state_events(beta.public_key)
+
+            # The connection is normal and events should be: initial down, then several up events but no more down events
+            assert alpha_events.count(LinkState.DOWN) == 1
+            assert beta_events.count(LinkState.DOWN) == 1
+
+            # wait enough to pass 10 second mark since our ping request, which should trigger passive-keepalive by wireguard
+            await asyncio.sleep(5)
+
+            alpha_events = client_beta.get_link_state_events(alpha.public_key)
+            beta_events = client_alpha.get_link_state_events(beta.public_key)
+
+            # there should be no additional link down event
+
+            assert alpha_events.count(LinkState.DOWN) == 1
+            assert beta_events.count(LinkState.DOWN) == 1

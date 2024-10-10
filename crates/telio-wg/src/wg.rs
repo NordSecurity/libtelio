@@ -1071,6 +1071,9 @@ pub mod tests {
 
     use telio_task::io::{Chan, McChan};
 
+    #[cfg(not(feature = "test-adapter"))]
+    use rstest::rstest;
+
     use super::*;
     use crate::adapter::{Error as AdapterError, MockAdapter};
 
@@ -1817,37 +1820,36 @@ pub mod tests {
         }
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn test_bytes_and_timestamps() {
-        let build = |rx_ts, tx_ts| BytesAndTimestamps {
+    #[cfg(not(feature = "test-adapter"))]
+    #[rstest]
+    #[case(None, None, 0, false)]
+    #[case(Some(0), None, 0, false)]
+    #[case(None, Some(0), 0, false)]
+    #[case(Some(0), Some(0), 0, true)]
+    #[case(Some(0), Some(1), 0, true)]
+    #[case(Some(1), Some(0), 0, true)]
+    #[case(Some(0), Some(11), 0, true)]
+    #[case(Some(0), Some(100), 0, true)]
+    #[case(Some(0), Some(1000), 0, true)]
+    #[case(Some(11), Some(0), 0, false)]
+    #[case(Some(11), Some(0), 15, true)]
+    fn test_bytes_and_timestamps(
+        #[case] rx_sec_ago: Option<u64>,
+        #[case] tx_sec_ago: Option<u64>,
+        #[case] rtt: u64,
+        #[case] expect_link_up: bool,
+    ) {
+        let now = Instant::now();
+        let rx_ts = rx_sec_ago.and_then(|v| now.checked_sub(Duration::from_secs(v)));
+        let tx_ts = tx_sec_ago.and_then(|v| now.checked_sub(Duration::from_secs(v)));
+        let rtt = Duration::from_secs(rtt);
+
+        let stats = BytesAndTimestamps {
             rx_bytes: 5,
             tx_bytes: 5,
             rx_ts,
             tx_ts,
         };
-
-        let now = Instant::now();
-        let a_second_ago = now.checked_sub(Duration::from_secs(1)).unwrap();
-        let eleven_seconds_ago = now.checked_sub(Duration::from_secs(11)).unwrap();
-        let rtt = Duration::from_secs(0);
-
-        let missing_ts_1 = build(None, None);
-        let missing_ts_2 = build(Some(now), None);
-        let missing_ts_3 = build(None, Some(now));
-        assert_eq!(missing_ts_1.is_link_up(rtt), false);
-        assert_eq!(missing_ts_2.is_link_up(rtt), false);
-        assert_eq!(missing_ts_3.is_link_up(rtt), false);
-
-        let up_1 = build(Some(now), Some(now));
-        let up_2 = build(Some(now), Some(a_second_ago));
-        let up_3 = build(Some(a_second_ago), Some(now));
-        let up_4 = build(Some(now), Some(eleven_seconds_ago));
-        assert_eq!(up_1.is_link_up(rtt), true);
-        assert_eq!(up_2.is_link_up(rtt), true);
-        assert_eq!(up_3.is_link_up(rtt), true);
-        assert_eq!(up_4.is_link_up(rtt), true);
-
-        let down = build(Some(eleven_seconds_ago), Some(now));
-        assert_eq!(down.is_link_up(rtt), false);
+        assert_eq!(stats.is_link_up(rtt), expect_link_up);
     }
 }
