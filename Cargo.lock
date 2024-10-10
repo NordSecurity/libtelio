@@ -4699,6 +4699,7 @@ dependencies = [
  "pretty_assertions",
  "proptest",
  "rand",
+ "rstest",
  "serde",
  "serde_json",
  "sha2",
