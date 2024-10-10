@@ -1,11 +1,11 @@
 use anyhow::ensure;
-use reqwest::{Client, StatusCode, Url};
+use reqwest::{Certificate, ClientBuilder, StatusCode, Url};
 use rumqttc::{
     AsyncClient, ClientError, ConnAck, ConnectReturnCode, Event, EventLoop, MqttOptions, Packet,
     Publish, QoS, TlsConfiguration, Transport,
 };
 use serde::{Deserialize, Serialize};
-use std::{sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 use telio::telio_utils::{
     exponential_backoff::{
         Backoff, Error as BackoffError, ExponentialBackoff, ExponentialBackoffBounds,
@@ -17,7 +17,10 @@ use tokio::{
     sync::Mutex,
     time::{error::Elapsed, timeout, Instant},
 };
-use tokio_rustls::rustls::ClientConfig;
+use tokio_rustls::rustls::{
+    pki_types::{pem::PemObject, CertificateDer},
+    ClientConfig,
+};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -34,7 +37,7 @@ const TOPIC_ACKNOWLEDGED: &'static str = "ack";
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Failed to get send http request for token: {0}")]
+    #[error("Failed to send http request for token: {0}")]
     TokenHttpError(#[from] reqwest::Error),
     #[error("Failed to get token: {0}")]
     TokenError(String),
@@ -56,6 +59,14 @@ pub enum Error {
     CredentialsMissingHostname,
     #[error("Notification Center credentials are missing port number")]
     CredentialsMissingPortNumber,
+    #[error("Failed to read http cert file: {0}")]
+    FailedToReadHttpCertFile(std::io::Error),
+    #[error("Failed to read mqtt cert file: {0}")]
+    FailedToReadMqttCertFile(std::io::Error),
+    #[error("Failed to parse mqtt pem certificate: {0:?}")]
+    FailedToParseMqttCertificate(tokio_rustls::rustls::pki_types::pem::Error),
+    #[error("Failed to load native certs: {0:?}")]
+    FailedToLoadNativeCerts(Vec<rustls_native_certs::Error>),
 }
 
 type Callback = Arc<dyn Fn(&[Uuid]) + Send + Sync>;
@@ -64,18 +75,31 @@ pub struct NotificationCenter {
     callbacks: Arc<Mutex<Vec<Callback>>>,
 }
 
+struct NCConfig {
+    authentication_token: String,
+    app_user_uid: Uuid,
+    callbacks: Arc<Mutex<Vec<Callback>>>,
+    http_certificate_file_path: Option<PathBuf>,
+    mqtt_certificate_file_path: Option<PathBuf>,
+}
+
 impl NotificationCenter {
     pub async fn new(
-        authentication_token: &str,
-        app_user_uid: Uuid,
+        config: &super::TeliodDaemonConfig,
         callbacks: Vec<Callback>,
     ) -> Result<Self, Error> {
         let callbacks = Arc::new(Mutex::new(callbacks));
-        let nc_config = request_nc_config(authentication_token, app_user_uid).await?;
 
-        dbg!(&nc_config);
+        let nc_config = NCConfig {
+            authentication_token: config.authentication_token.clone(),
+            app_user_uid: config.app_user_uid,
+            callbacks: callbacks.clone(),
 
-        start_mqtt(nc_config, app_user_uid, callbacks.clone()).await?;
+            http_certificate_file_path: config.http_certificate_file_path.clone(),
+            mqtt_certificate_file_path: config.mqtt_certificate_file_path.clone(),
+        };
+
+        start_mqtt(nc_config).await?;
 
         Ok(Self { callbacks })
     }
@@ -86,11 +110,7 @@ impl NotificationCenter {
     }
 }
 
-async fn start_mqtt(
-    nc_config: NotificationCenterConfig,
-    app_user_uid: Uuid,
-    callbacks: Arc<Mutex<Vec<Callback>>>,
-) -> Result<(), Error> {
+async fn start_mqtt(nc_config: NCConfig) -> Result<(), Error> {
     let backoff_bounds = ExponentialBackoffBounds {
         initial: Duration::from_secs(1),
         maximal: Some(Duration::from_secs(300)),
@@ -99,12 +119,8 @@ async fn start_mqtt(
 
     tokio::spawn(async move {
         loop {
-            let (client, mut eventloop, expires_at) = Box::pin(connect_to_nc_with_backoff(
-                &nc_config,
-                app_user_uid,
-                backoff.clone(),
-            ))
-            .await;
+            let (client, mut eventloop, expires_at) =
+                Box::pin(connect_to_nc_with_backoff(&nc_config, backoff.clone())).await;
 
             loop {
                 select! {
@@ -115,7 +131,7 @@ async fn start_mqtt(
                     event = eventloop.poll() => {
                         match event {
                             Ok(Event::Incoming(Packet::Publish(p))) => {
-                                if let Err(e) = handle_incoming_publish(&client, p, &callbacks).await {
+                                if let Err(e) = handle_incoming_publish(&client, p, &nc_config.callbacks).await {
                                     error!("Failed to handle incomming publish: {e}");
                                 }
                             }
@@ -138,12 +154,11 @@ async fn start_mqtt(
 }
 
 async fn connect_to_nc_with_backoff(
-    nc_config: &NotificationCenterConfig,
-    app_user_uid: Uuid,
+    nc_config: &NCConfig,
     mut backoff: ExponentialBackoff,
 ) -> (AsyncClient, EventLoop, Instant) {
     loop {
-        match connect_to_nc(nc_config, app_user_uid).await {
+        match connect_to_nc(nc_config).await {
             Ok(mqtt) => return mqtt,
             Err(e) => {
                 warn!(
@@ -157,24 +172,37 @@ async fn connect_to_nc_with_backoff(
     }
 }
 
-async fn connect_to_nc(
-    nc_config: &NotificationCenterConfig,
-    app_user_uid: Uuid,
-) -> Result<(AsyncClient, EventLoop, Instant), Error> {
+async fn connect_to_nc(nc_config: &NCConfig) -> Result<(AsyncClient, EventLoop, Instant), Error> {
+    let credentials = request_nc_credentials(&nc_config).await?;
+
     let mut mqttoptions = MqttOptions::new(
-        app_user_uid.to_string(),
-        nc_config.host()?,
-        nc_config.port()?,
+        nc_config.app_user_uid.to_string(),
+        credentials.host()?,
+        credentials.port()?,
     );
-    mqttoptions.set_credentials(nc_config.username.clone(), &*nc_config.password);
+    mqttoptions.set_credentials(credentials.username.clone(), &*credentials.password);
     mqttoptions.set_keep_alive(Duration::from_secs(30));
     mqttoptions.set_clean_session(true);
 
     // Use rustls-native-certs to load root certificates from the operating system.
     let mut root_cert_store = tokio_rustls::rustls::RootCertStore::empty();
-    root_cert_store.add_parsable_certificates(
-        rustls_native_certs::load_native_certs().expect("could not load platform certs"),
-    );
+
+    if let Some(cert_path) = &nc_config.mqtt_certificate_file_path {
+        debug!("Using custom mqtt cert file from {cert_path:?}");
+        let certs = tokio::fs::read(cert_path)
+            .await
+            .map_err(Error::FailedToReadMqttCertFile)?;
+        let certs: Result<Vec<_>, _> = CertificateDer::pem_slice_iter(&certs).collect();
+        root_cert_store
+            .add_parsable_certificates(certs.map_err(Error::FailedToParseMqttCertificate)?);
+    } else {
+        let cert_loading_result = rustls_native_certs::load_native_certs();
+        if cert_loading_result.errors.is_empty() {
+            root_cert_store.add_parsable_certificates(cert_loading_result.certs);
+        } else {
+            return Err(Error::FailedToLoadNativeCerts(cert_loading_result.errors));
+        }
+    }
 
     let client_config = Arc::new(
         ClientConfig::builder()
@@ -188,7 +216,7 @@ async fn connect_to_nc(
 
     let (client, eventloop) = AsyncClient::new(mqttoptions, 10);
     let eventloop = Box::pin(wait_for_connection(eventloop, MQTT_CONNECTION_TIMEOUT)).await?;
-    let expires_at = Instant::now() + Duration::from_secs(nc_config.expires_in);
+    let expires_at = Instant::now() + Duration::from_secs(credentials.expires_in);
     client.subscribe(TOPIC_SUBSCRIBE, QoS::AtLeastOnce).await?;
 
     info!("Notification Center connection established");
@@ -256,19 +284,28 @@ async fn send_acknowledgement(
     Ok(())
 }
 
-async fn request_nc_config(
-    authentication_token: &str,
-    app_user_uid: Uuid,
-) -> Result<NotificationCenterConfig, Error> {
-    let client = Client::new();
+async fn request_nc_credentials(
+    nc_config: &NCConfig,
+) -> Result<NotificationCenterCredentials, Error> {
+    let mut builder = ClientBuilder::new();
+    if let Some(cert_path) = &nc_config.http_certificate_file_path {
+        debug!("Using custom http cert file from {cert_path:?}");
+        let cert = tokio::fs::read(cert_path)
+            .await
+            .map_err(Error::FailedToReadHttpCertFile)?;
+        for cert in Certificate::from_pem_bundle(&cert)? {
+            builder = builder.add_root_certificate(cert);
+        }
+    }
+    let client = builder.build()?;
 
     let data = TokenHttpRequestData {
-        app_user_uid: app_user_uid.to_string(),
+        app_user_uid: nc_config.app_user_uid.to_string(),
         platform_id: ROUTER_PLATFORM_ID,
     };
     let resp = client
         .post(TOKENS_URL)
-        .basic_auth(USERNAME, Some(authentication_token))
+        .basic_auth(USERNAME, Some(nc_config.authentication_token.clone()))
         .json(&data)
         .send()
         .await?;
@@ -278,7 +315,7 @@ async fn request_nc_config(
         return Err(Error::TokenError(text));
     }
 
-    let resp: NotificationCenterConfig = serde_json::from_str(&text)?;
+    let resp: NotificationCenterCredentials = serde_json::from_str(&text)?;
     Ok(resp)
 }
 
@@ -306,14 +343,14 @@ struct TokenHttpRequestData {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct NotificationCenterConfig {
+struct NotificationCenterCredentials {
     endpoint: Url,
     username: String,
     password: Hidden<String>,
     expires_in: u64,
 }
 
-impl NotificationCenterConfig {
+impl NotificationCenterCredentials {
     fn host(&self) -> Result<String, Error> {
         match self.endpoint.host_str() {
             Some(host) => Ok(host.to_owned()),
