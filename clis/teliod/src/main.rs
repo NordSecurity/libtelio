@@ -180,12 +180,19 @@ async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodError
         config.app_user_id,
         vec![Arc::new(|am| println!("Affected machines are: {am:?}"))],
     )
-    .await?;
-
-    nc.add_callback(Arc::new(|am| {
-        println!("all your base are belong to us! {am:?}")
-    }))
     .await;
+
+    match nc {
+        Ok(nc) => {
+            nc.add_callback(Arc::new(|am| {
+                println!("all your base are belong to us! {am:?}")
+            }))
+            .await;
+        }
+        Err(err) => {
+            warn!("Failed to start Notification Center client: {err}");
+        }
+    }
 
     let telio_task_handle = tokio::task::spawn_blocking(telio_task);
 
