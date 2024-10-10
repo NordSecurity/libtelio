@@ -42,23 +42,6 @@ def test_telio_features_builder_firewall():
         "nicknames": false
     }
     """
-    # json = """
-    # {
-    #     "lana": {
-    #         "event_path": "some/path",
-    #         "prod": false
-    #     },
-    #     "nurse": null,
-    #     "direct": null,
-    #     "derp": null,
-    #     "link_detection": null,
-    #     "pmtu_discovery": null,
-    #     "flush_events_on_stop_timeout_seconds": null,
-    #     "multicast": false,
-    #     "ipv6": false,
-    #     "nicknames": false
-    # }
-    # """
     expect = deserialize_feature_config(json)
 
     assert expect == built

@@ -132,7 +132,7 @@ typedef string IpAddr;
 typedef string IpNet;
 
 [Custom]
-typedef string Ipv4Network;
+typedef string Ipv4Net;
 
 [Custom]
 typedef string Ipv4Addr;
@@ -710,7 +710,7 @@ dictionary FeatureFirewall {
     /// Turns on connection resets upon VPN server change
     boolean boringtun_reset_conns;
     /// Custom private IP range
-    Ipv4Network? custom_private_ip_range;
+    Ipv4Net? custom_private_ip_range;
 };
 
 

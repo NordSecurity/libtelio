@@ -1,7 +1,7 @@
 //! Telio firewall component used to track open connections
 //! with other devices§
 
-use ipnetwork::Ipv4Network;
+use ipnet::Ipv4Net;
 use pnet_packet::{
     icmp::{
         destination_unreachable::IcmpCodes, IcmpPacket, IcmpType, IcmpTypes, MutableIcmpPacket,
@@ -234,6 +234,15 @@ pub enum Permissions {
     RoutingConnections,
 }
 
+impl Permissions {
+    /// Array of permissions to iterate over
+    pub const VALUES: [Self; 3] = [
+        Self::IncomingConnections,
+        Self::LocalAreaConnections,
+        Self::RoutingConnections,
+    ];
+}
+
 enum PacketAction {
     PassThrough,
     Drop,
@@ -254,7 +263,7 @@ struct Whitelist {
     /// List of whitelisted peers identified by public key from which any packet will be accepted
     routing_whitelist: HashSet<PublicKey>,
 
-    /// Hash of public of vpn peer
+    /// Hash of public key of vpn peer
     vpn_peer: Option<PublicKey>,
 }
 
@@ -285,7 +294,7 @@ pub struct StatefullFirewall {
     /// Local node ip addresses
     ip_address: RwLock<Vec<StdIpAddr>>,
     /// Custom IPv4 range to check against
-    custom_ip_range: Option<Ipv4Network>,
+    custom_ip_range: Option<Ipv4Net>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -1329,17 +1338,10 @@ impl StatefullFirewall {
     }
 
     fn is_private_address_except_local_interface(&self, ip: &StdIpAddr) -> bool {
-        {
-            println!("{:?}", *LOCAL_ADDRS_CACHE.lock());
-        }
         if (*LOCAL_ADDRS_CACHE.lock())
             .iter()
-            .filter(|itf| itf.addr.ip().eq(ip))
-            .collect::<Vec<_>>()
-            .len()
-            .ne(&0)
+            .any(|itf| itf.addr.ip().eq(ip))
         {
-            println!("Packet destination is for local node");
             return false;
         }
 
@@ -1349,25 +1351,18 @@ impl StatefullFirewall {
                 ipv4.is_private()
                     && !self
                         .custom_ip_range
-                        .map(|range| range.contains(*ipv4))
+                        .map(|range| range.contains(ipv4))
                         .unwrap_or(false)
             }
             StdIpAddr::V6(ipv6) => {
-                // Check if IPv6 address is loopback (::1) or within Unique Local Addresses range, except for meshnet IP
+                // Check if IPv6 address is within Unique Local Addresses range, except for meshnet IP
                 // fd74:656c:696f:0000/64
-                let first_segment = *(ipv6.segments().first().unwrap_or(&0));
-                if (first_segment & 0xfc00) == 0xfc00 {
-                    if ((first_segment ^ 0xfd74)
-                        | ((*(ipv6.segments().get(1).unwrap_or(&0))) ^ 0x656c)
-                        | ((*(ipv6.segments().get(2).unwrap_or(&0))) ^ 0x696f)
-                        | (*(ipv6.segments().get(3).unwrap_or(&0))))
-                        == 0
-                    {
-                        return false;
-                    }
-                    return true;
+                match ipv6.segments() {
+                    // If the first segment matches 0xfc00 and the next few match specific values
+                    [0xfd74, 0x656c, 0x696f, 0, ..] => false,
+                    [first_segment, ..] if (first_segment & 0xfc00) == 0xfc00 => true,
+                    _ => false,
                 }
-                false
             }
         }
     }
@@ -1379,43 +1374,42 @@ impl StatefullFirewall {
         whitelist: RwLockReadGuard<'_, Whitelist>,
     ) -> PacketAction {
         let local_ip = unwrap_lock_or_return!(self.ip_address.read(), PacketAction::Drop);
-        match self.is_private_address_except_local_interface(&local_addr) {
-            true => {
-                if !whitelist.local_conn_whitelist.contains(&pubkey) {
-                    telio_log_trace!("Local connection policy failed");
-                    return PacketAction::Drop;
-                }
-            }
-            false => {
-                if local_ip.contains(&local_addr) {
-                    return PacketAction::HandleLocally;
-                } else if !whitelist.routing_whitelist.contains(&pubkey) {
-                    telio_log_trace!("Routing policy failed");
-                    return PacketAction::Drop;
-                }
+        if self.is_private_address_except_local_interface(&local_addr) {
+            if whitelist.local_conn_whitelist.contains(&pubkey) {
+                return PacketAction::PassThrough;
+            } else {
+                telio_log_trace!("Local connection policy failed");
+                return PacketAction::Drop;
             }
         }
-        PacketAction::PassThrough
+
+        if local_ip.contains(&local_addr) {
+            return PacketAction::HandleLocally;
+        }
+
+        if whitelist.routing_whitelist.contains(&pubkey) {
+            telio_log_trace!("Forwarding due to Routing policy");
+            return PacketAction::PassThrough;
+        }
+
+        PacketAction::Drop
     }
 
     fn is_connection_policy_compliant(&self, pubkey: PublicKey, local_port: u16) -> PacketAction {
         let whitelist = unwrap_lock_or_return!(self.whitelist.read(), PacketAction::Drop);
-        match whitelist.incoming_conn_whitelist.contains(&pubkey) {
-            true => {
-                if self.record_whitelisted {
-                    PacketAction::HandleLocally
-                } else {
-                    PacketAction::PassThrough
-                }
-            }
-            false => {
-                if !whitelist.is_port_whitelisted(&pubkey, local_port) {
-                    PacketAction::Drop
-                } else {
-                    PacketAction::HandleLocally
-                }
+        if whitelist.incoming_conn_whitelist.contains(&pubkey) {
+            if self.record_whitelisted {
+                return PacketAction::HandleLocally;
+            } else {
+                return PacketAction::PassThrough;
             }
         }
+
+        if !whitelist.is_port_whitelisted(&pubkey, local_port) {
+            return PacketAction::Drop;
+        }
+
+        PacketAction::HandleLocally
     }
 }
 
@@ -3272,10 +3266,8 @@ pub mod tests {
         }
     }
 
-    #[rustfmt::skip]
     #[test]
     fn test_local_network_range() {
-
         use if_addrs::{IfAddr, Ifv4Addr, Interface};
 
         *LOCAL_ADDRS_CACHE.lock() = vec![Interface {
@@ -3295,28 +3287,57 @@ pub mod tests {
             (StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))),
             StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
         ]));
-        assert!(!fw.is_private_address_except_local_interface(&(StdIpAddr::V4(StdIpv4Addr::new(192, 168, 1, 10)))));
-        assert!(fw.is_private_address_except_local_interface(&(StdIpAddr::V4(StdIpv4Addr::new(10, 10, 10, 10)))));
-        assert!(fw.is_private_address_except_local_interface(&(StdIpAddr::V4(StdIpv4Addr::new(172, 20, 10, 8)))));
-        assert!(!fw.is_private_address_except_local_interface(&(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1)))));
-        assert!(fw.is_private_address_except_local_interface(&(StdIpAddr::V6(StdIpv6Addr::new(0xfc53, 0, 0, 1, 0, 0, 0, 1)))));
-        assert!(fw.is_private_address_except_local_interface(&(StdIpAddr::V6(StdIpv6Addr::new(0xfd47, 0xde82, 0, 1, 0, 0, 0, 1)))));
-        assert!(fw.is_private_address_except_local_interface(&(StdIpAddr::V6(StdIpv6Addr::new(0xfc47, 0x656c, 0x696f, 0, 0, 0, 0, 1)))));
-        assert!(!fw.is_private_address_except_local_interface(&(StdIpAddr::V6(StdIpv6Addr::new(0xefab, 0, 0, 1, 0, 0, 0, 1)))));
+        assert!(!fw.is_private_address_except_local_interface(
+            &(StdIpAddr::V4(StdIpv4Addr::new(192, 168, 1, 10)))
+        ));
+        assert!(fw.is_private_address_except_local_interface(
+            &(StdIpAddr::V4(StdIpv4Addr::new(10, 10, 10, 10)))
+        ));
+        assert!(fw.is_private_address_except_local_interface(
+            &(StdIpAddr::V4(StdIpv4Addr::new(172, 20, 10, 8)))
+        ));
+        assert!(!fw.is_private_address_except_local_interface(
+            &(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1)))
+        ));
+        assert!(fw.is_private_address_except_local_interface(
+            &(StdIpAddr::V6(StdIpv6Addr::new(0xfc53, 0, 0, 1, 0, 0, 0, 1)))
+        ));
+        assert!(fw.is_private_address_except_local_interface(
+            &(StdIpAddr::V6(StdIpv6Addr::new(0xfd47, 0xde82, 0, 1, 0, 0, 0, 1)))
+        ));
+        assert!(fw.is_private_address_except_local_interface(
+            &(StdIpAddr::V6(StdIpv6Addr::new(0xfc47, 0x656c, 0x696f, 0, 0, 0, 0, 1)))
+        ));
+        assert!(!fw.is_private_address_except_local_interface(
+            &(StdIpAddr::V6(StdIpv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 1)))
+        ));
+        assert!(!fw.is_private_address_except_local_interface(
+            &(StdIpAddr::V6(StdIpv6Addr::new(0xefab, 0, 0, 1, 0, 0, 0, 1)))
+        ));
     }
 
-    #[rustfmt::skip]
     #[test]
     fn test_local_network_range_with_custom_range() {
-        let fw = StatefullFirewall::new_custom(LRU_CAPACITY, LRU_TIMEOUT, true, FeatureFirewall {
-            custom_private_ip_range: Some(Ipv4Network::new(StdIpv4Addr::new(10, 0, 0, 0), 8).unwrap()),
-            boringtun_reset_conns: false},
+        let fw = StatefullFirewall::new_custom(
+            LRU_CAPACITY,
+            LRU_TIMEOUT,
+            true,
+            FeatureFirewall {
+                custom_private_ip_range: Some(
+                    Ipv4Net::new(StdIpv4Addr::new(10, 0, 0, 0), 8).unwrap(),
+                ),
+                boringtun_reset_conns: false,
+            },
         );
-        fw.set_ip_address(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
-        assert!(!fw.is_private_address_except_local_interface(&(StdIpAddr::V4(StdIpv4Addr::new(10, 10, 10, 10)))));
+        fw.set_ip_address(Some(vec![
+            (StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))),
+            StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
+        ]));
+        assert!(!fw.is_private_address_except_local_interface(
+            &(StdIpAddr::V4(StdIpv4Addr::new(10, 10, 10, 10)))
+        ));
     }
 
-    #[rustfmt::skip]
     #[test]
     fn firewall_test_permissions() {
         struct TestInput {
@@ -3346,81 +3367,152 @@ pub mod tests {
                 external_dst: "[2001:4860:4860::8888]:8888",
                 make_udp: &make_udp6,
                 make_tcp: &make_tcp6,
-            }
+            },
         ];
-        for TestInput { src1, src2, local_dst, area_dst, external_dst, make_udp, make_tcp} in test_inputs {
-
-            let fw = StatefullFirewall::new_custom(LRU_CAPACITY, LRU_TIMEOUT, true, Default::default(),);
-            fw.set_ip_address(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
-            assert!(fw.get_peer_whitelist(Permissions::IncomingConnections).is_empty());
-            assert!(fw.get_peer_whitelist(Permissions::RoutingConnections).is_empty());
-            assert!(fw.get_peer_whitelist(Permissions::LocalAreaConnections).is_empty());
+        for TestInput {
+            src1,
+            src2,
+            local_dst,
+            area_dst,
+            external_dst,
+            make_udp,
+            make_tcp,
+        } in test_inputs
+        {
+            let fw =
+                StatefullFirewall::new_custom(LRU_CAPACITY, LRU_TIMEOUT, true, Default::default());
+            fw.set_ip_address(Some(vec![
+                (StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))),
+                StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
+            ]));
+            assert!(fw
+                .get_peer_whitelist(Permissions::IncomingConnections)
+                .is_empty());
+            assert!(fw
+                .get_peer_whitelist(Permissions::RoutingConnections)
+                .is_empty());
+            assert!(fw
+                .get_peer_whitelist(Permissions::LocalAreaConnections)
+                .is_empty());
 
             // No permissions. Incoming packet should FAIL
             assert!(!fw.process_inbound_packet(&make_peer(), &make_udp(src1, local_dst,)));
-            assert!(!fw.process_inbound_packet(&make_peer(), &make_tcp(src1, local_dst, TcpFlags::PSH)));
+            assert!(
+                !fw.process_inbound_packet(&make_peer(), &make_tcp(src1, local_dst, TcpFlags::PSH))
+            );
 
             // Allow incoming connection
             fw.add_to_peer_whitelist((&make_peer()).into(), Permissions::IncomingConnections);
-            assert_eq!(fw.get_peer_whitelist(Permissions::IncomingConnections).len(), 1);
+            assert_eq!(
+                fw.get_peer_whitelist(Permissions::IncomingConnections)
+                    .len(),
+                1
+            );
 
             // Packet destined for local node
             assert!(fw.process_inbound_packet(&make_peer(), &make_udp(src1, local_dst,)));
-            assert!(fw.process_inbound_packet(&make_peer(), &make_tcp(src1, local_dst, TcpFlags::PSH)));
+            assert!(
+                fw.process_inbound_packet(&make_peer(), &make_tcp(src1, local_dst, TcpFlags::PSH))
+            );
             // Packet destined for foreign node but within local area. Should FAIL
             assert!(!fw.process_inbound_packet(&make_peer(), &make_udp(src1, area_dst,)));
-            assert!(!fw.process_inbound_packet(&make_peer(), &make_tcp(src1, area_dst, TcpFlags::PSH)));
+            assert!(
+                !fw.process_inbound_packet(&make_peer(), &make_tcp(src1, area_dst, TcpFlags::PSH))
+            );
             // Packet destined for totally external node. Should FAIL
             assert!(!fw.process_inbound_packet(&make_peer(), &make_udp(src1, external_dst,)));
-            assert!(!fw.process_inbound_packet(&make_peer(), &make_tcp(src1, external_dst, TcpFlags::PSH)));
+            assert!(!fw.process_inbound_packet(
+                &make_peer(),
+                &make_tcp(src1, external_dst, TcpFlags::PSH)
+            ));
 
             // Allow local area connections
             fw.add_to_peer_whitelist((&make_peer()).into(), Permissions::LocalAreaConnections);
-            assert_eq!(fw.get_peer_whitelist(Permissions::LocalAreaConnections).len(), 1);
+            assert_eq!(
+                fw.get_peer_whitelist(Permissions::LocalAreaConnections)
+                    .len(),
+                1
+            );
             // Packet destined for foreign node but within local area
             assert!(fw.process_inbound_packet(&make_peer(), &make_udp(src1, area_dst,)));
-            assert!(fw.process_inbound_packet(&make_peer(), &make_tcp(src1, area_dst, TcpFlags::PSH)));
+            assert!(
+                fw.process_inbound_packet(&make_peer(), &make_tcp(src1, area_dst, TcpFlags::PSH))
+            );
             // Packet destined for totally external node. Should FAIL
             assert!(!fw.process_inbound_packet(&make_peer(), &make_udp(src1, external_dst,)));
-            assert!(!fw.process_inbound_packet(&make_peer(), &make_tcp(src1, external_dst, TcpFlags::PSH)));
+            assert!(!fw.process_inbound_packet(
+                &make_peer(),
+                &make_tcp(src1, external_dst, TcpFlags::PSH)
+            ));
 
             // Allow routing permissiongs but no local area connection
             fw.remove_from_peer_whitelist((&make_peer()).into(), Permissions::LocalAreaConnections);
-            assert_eq!(fw.get_peer_whitelist(Permissions::LocalAreaConnections).len(), 0);
+            assert_eq!(
+                fw.get_peer_whitelist(Permissions::LocalAreaConnections)
+                    .len(),
+                0
+            );
 
             fw.add_to_peer_whitelist((&make_peer()).into(), Permissions::RoutingConnections);
-            assert_eq!(fw.get_peer_whitelist(Permissions::RoutingConnections).len(), 1);
+            assert_eq!(
+                fw.get_peer_whitelist(Permissions::RoutingConnections).len(),
+                1
+            );
             // Packet destined for foreign node but within local area. Should FAIL
             assert!(!fw.process_inbound_packet(&make_peer(), &make_udp(src1, area_dst,)));
-            assert!(!fw.process_inbound_packet(&make_peer(), &make_tcp(src1, area_dst, TcpFlags::PSH)));
+            assert!(
+                !fw.process_inbound_packet(&make_peer(), &make_tcp(src1, area_dst, TcpFlags::PSH))
+            );
             // Packet destined for totally external node
             assert!(fw.process_inbound_packet(&make_peer(), &make_udp(src1, external_dst,)));
-            assert!(fw.process_inbound_packet(&make_peer(), &make_tcp(src1, external_dst, TcpFlags::PSH)));
+            assert!(fw.process_inbound_packet(
+                &make_peer(),
+                &make_tcp(src1, external_dst, TcpFlags::PSH)
+            ));
 
             // Allow only routing
             fw.remove_from_peer_whitelist((&make_peer()).into(), Permissions::IncomingConnections);
-            assert_eq!(fw.get_peer_whitelist(Permissions::IncomingConnections).len(), 0);
+            assert_eq!(
+                fw.get_peer_whitelist(Permissions::IncomingConnections)
+                    .len(),
+                0
+            );
 
             // Packet destined for local node. Should FAIL
             assert!(!fw.process_inbound_packet(&make_peer(), &make_udp(src1, local_dst,)));
-            assert!(!fw.process_inbound_packet(&make_peer(), &make_tcp(src1, local_dst, TcpFlags::PSH)));
+            assert!(
+                !fw.process_inbound_packet(&make_peer(), &make_tcp(src1, local_dst, TcpFlags::PSH))
+            );
             // Packet destined for totally external node
             assert!(fw.process_inbound_packet(&make_peer(), &make_udp(src1, external_dst,)));
-            assert!(fw.process_inbound_packet(&make_peer(), &make_tcp(src1, external_dst, TcpFlags::PSH)));
+            assert!(fw.process_inbound_packet(
+                &make_peer(),
+                &make_tcp(src1, external_dst, TcpFlags::PSH)
+            ));
 
             fw.remove_from_peer_whitelist((&make_peer()).into(), Permissions::RoutingConnections);
-            assert_eq!(fw.get_peer_whitelist(Permissions::RoutingConnections).len(), 0);
+            assert_eq!(
+                fw.get_peer_whitelist(Permissions::RoutingConnections).len(),
+                0
+            );
 
             // All packets should FAIL
             // Packet destined for local node
             assert!(!fw.process_inbound_packet(&make_peer(), &make_udp(src1, local_dst,)));
-            assert!(!fw.process_inbound_packet(&make_peer(), &make_tcp(src1, local_dst, TcpFlags::PSH)));
+            assert!(
+                !fw.process_inbound_packet(&make_peer(), &make_tcp(src1, local_dst, TcpFlags::PSH))
+            );
             // Packet destined for foreign node but within local area
             assert!(!fw.process_inbound_packet(&make_peer(), &make_udp(src1, area_dst,)));
-            assert!(!fw.process_inbound_packet(&make_peer(), &make_tcp(src1, area_dst, TcpFlags::PSH)));
+            assert!(
+                !fw.process_inbound_packet(&make_peer(), &make_tcp(src1, area_dst, TcpFlags::PSH))
+            );
             // Packet destined for totally external node
             assert!(!fw.process_inbound_packet(&make_peer(), &make_udp(src1, external_dst,)));
-            assert!(!fw.process_inbound_packet(&make_peer(), &make_tcp(src1, external_dst, TcpFlags::PSH)));
+            assert!(!fw.process_inbound_packet(
+                &make_peer(),
+                &make_tcp(src1, external_dst, TcpFlags::PSH)
+            ));
         }
     }
 

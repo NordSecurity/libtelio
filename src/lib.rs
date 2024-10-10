@@ -67,7 +67,7 @@ pub use uniffi_libtelio::*;
 mod uniffi_libtelio {
     use std::net::{IpAddr, SocketAddr};
 
-    use ipnetwork::Ipv4Network;
+    use ipnet::Ipv4Net;
 
     use super::crypto::{PublicKey, SecretKey};
     use super::*;
@@ -161,7 +161,7 @@ mod uniffi_libtelio {
         }
     }
 
-    impl UniffiCustomTypeConverter for Ipv4Network {
+    impl UniffiCustomTypeConverter for Ipv4Net {
         type Builtin = String;
 
         fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
