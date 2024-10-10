@@ -83,6 +83,7 @@ async def _copy_binaries(
             True,
         ),
         (f"{LOCAL_BIN_DIR}multicast.py", f"{VM_TCLI_DIR}multicast.py", True),
+        (f"{LOCAL_BIN_DIR}netcat.py", f"{VM_TCLI_DIR}netcat.py", True),
         (
             f"{LOCAL_UNIFFI_PATH}serialization.py",
             f"{VM_UNIFFI_DIR}serialization.py",
