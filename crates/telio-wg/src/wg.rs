@@ -1364,7 +1364,6 @@ pub mod tests {
             endpoint: Some(([1, 1, 1, 1], 123).into()),
             endpoint_changed_at: Some(Instant::now()),
             persistent_keepalive_interval: Some(25),
-            rx_bytes: Some(1),
             ..Default::default()
         };
         let old_peer = Some(peer.clone());
@@ -1387,6 +1386,13 @@ pub mod tests {
         // Connect
         peer.time_since_last_handshake = Some(Duration::from_secs(15));
         ifa.peers.insert(pkc, peer.clone());
+
+        let _ = task_exec!(&wg.task, async move |s| {
+            s.stats.get_mut(&pkc).unwrap().lock().unwrap().update(1, 0);
+            Ok(())
+        })
+        .await;
+
         tokio::time::advance(Duration::from_secs(7)).await;
         adapter
             .lock()
@@ -1433,7 +1439,6 @@ pub mod tests {
             endpoint: Some(([1, 1, 1, 1], 123).into()),
             endpoint_changed_at: Some(Instant::now()),
             persistent_keepalive_interval: Some(25),
-            rx_bytes: Some(1),
             ..Default::default()
         };
         let old_peer = Some(peer.clone());
@@ -1455,7 +1460,13 @@ pub mod tests {
 
         // Connects
         peer.time_since_last_handshake = Some(Duration::from_secs(94));
-        peer.rx_bytes = Some(1);
+
+        let _ = task_exec!(&wg.task, async move |s| {
+            s.stats.get_mut(&pkc).unwrap().lock().unwrap().update(1, 0);
+            Ok(())
+        })
+        .await;
+
         let second_old_peer = Some(peer.clone());
         ifa.peers.insert(pkc, peer.clone());
         tokio::time::advance(Duration::from_secs(94)).await;
