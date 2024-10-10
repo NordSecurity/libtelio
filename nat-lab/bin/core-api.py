@@ -3,11 +3,29 @@
 import json
 import paho.mqtt.client as mqtt  # type: ignore # pylint: disable=import-error
 from dataclasses import asdict, dataclass
+from enum import Enum
+from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from itertools import count
-from pprint import pprint
-from typing import Optional
+from typing import Dict, Optional
 from uuid import uuid4
+
+DERP_SERVER = {
+    "region_code": "nl",
+    "name": "Natlab #0001",
+    "hostname": "derp-01",
+    "ipv4": "10.0.10.1",
+    "relay_port": 8765,
+    "stun_port": 3479,
+    "stun_plaintext_port": 3478,
+    "public_key": "qK/ICYOGBu45EIGnopVu+aeHDugBrkLAZDroKGTuKU0=",  # NOTE: this is hardcoded key for transient docker container existing only during the tests
+    "weight": 1,
+}
+
+
+class CoreApiErrorCode(Enum):
+    MACHINE_ALREADY_EXISTS = 101117
+    MACHINE_NOT_FOUND = 101102
 
 
 @dataclass
@@ -16,7 +34,7 @@ class MachineCreateRequest:
     hardware_identifier: str
     os: str
     os_version: str
-    device_type: str = "other"
+    device_type: Optional[str] = None
     app_user_uid: Optional[str] = None
     nickname: Optional[str] = None
     discovery_key: Optional[str] = None
@@ -42,10 +60,9 @@ class Node:
 class CoreServer(HTTPServer):
     def __init__(self, server_address, RequestHandlerClass, mqttc: mqtt.Client) -> None:
         super().__init__(server_address, RequestHandlerClass)
-        # NOTE: In future this will most likely need to become a map from uuids to nodes so that it's possible
-        # to implement 'GET /v1/meshnet/machines/{machineIdentifier}/map'
-        self._known_machines: set[str] = set()
+        self._known_machines: Dict[str, Node] = {}
         self._mqttc = mqttc
+        self._id_counter = count(1)
 
     def _send_notification(self):
         message = {
@@ -65,28 +82,53 @@ class CoreServer(HTTPServer):
         msg_info.wait_for_publish()
 
     def add_machine(self, node):
-        self._known_machines.add(node.identifier)
+        self._known_machines[node.identifier] = node
         self._send_notification()
 
     def remove_machine(self, uid):
-        self._known_machines.remove(uid)
-        self._send_notification()
+        if self._known_machines.pop(uid, None) is not None:
+            self._send_notification()
+            return True
+        return False
+
+    def get_machines(self):
+        return self._known_machines
+
+    def next_id(self):
+        return next(self._id_counter)
 
 
 class CoreApiHandler(BaseHTTPRequestHandler):
     def __init__(self, request, client_address, server: CoreServer):
         self.server: CoreServer
         self.machines_path = "/v1/meshnet/machines"
-        self.next_id_generator = count(1)
         super().__init__(request, client_address, server)
 
-    def _set_headers(self):
-        self.send_response(200)
-        self.send_header("Content-type", "text/html")
+    def _set_headers(
+        self, content_type="application/json", status_code: int = HTTPStatus.OK
+    ):
+        self.send_response(status_code)
+        self.send_header("Content-type", content_type)
         self.end_headers()
 
+    def _write_response(self, response, status_code: int = HTTPStatus.OK):
+        self._set_headers(status_code=status_code)
+        self.wfile.write(json.dumps(response).encode("utf-8"))
+
+    def _send_error_response(
+        self, error_code: CoreApiErrorCode, message: str, status_code: int
+    ):
+        error_response = {"errors": {"code": error_code.value, "message": message}}
+        self._write_response(error_response, status_code)
+
     def do_GET(self):
-        self._set_headers()
+        if self.path == "/":
+            self.handle_root_path()
+        elif self.path == self.machines_path:
+            self.handle_get_machines()
+        elif self.path.split("/")[-1] == "map":
+            machine_id = self.path.split("/")[-2]
+            self.handle_get_machine_map(machine_id)
 
     def do_HEAD(self):
         self._set_headers()
@@ -103,23 +145,35 @@ class CoreApiHandler(BaseHTTPRequestHandler):
         else:
             print(f"unsupported endpoint '{self.path}'")
 
+    def do_PATCH(self):
+        if self.path.startswith(self.machines_path):
+            machine_id = self.path.removeprefix(self.machines_path + "/")
+            self.handle_patch_machine(machine_id)
+
+    def handle_root_path(self):
+        self._set_headers()
+
     def handle_register_machine(self):
         content_length = int(self.headers["Content-Length"])
         post_data = self.rfile.read(content_length)
         print(f"The POST data: {post_data.decode()}")
         json_obj = json.loads(post_data)
+
+        machines = self.server.get_machines().values()
+        if any(machine.public_key == json_obj["public_key"] for machine in machines):
+            self._send_error_response(
+                CoreApiErrorCode.MACHINE_ALREADY_EXISTS,
+                "Machine with this public key already exists",
+                HTTPStatus.CONFLICT,
+            )
+            return
+
         req = MachineCreateRequest(**json_obj)
-
         node = self.add_node(req)
-
-        resp = json.dumps(asdict(node))
-        self.send_response(201)
-        self.end_headers()
-        self.wfile.write(str.encode(resp))
+        self._write_response(asdict(node))
 
     def add_node(self, req):
-        uid = next(self.next_id_generator)
-
+        uid = self.server.next_id()
         identifier, hostname, ip_addresses = (
             str(uuid4()),
             f"everest{uid}-someuser.nord",
@@ -132,31 +186,89 @@ class CoreApiHandler(BaseHTTPRequestHandler):
             public_key=req.public_key,
             os=req.os,
             os_version=req.os_version,
-            device_type=req.device_type,
-            nickname=req.nickname,
-            discovery_key=req.discovery_key,
-            relay_address=req.relay_address,
+            device_type=req.device_type or "",
+            nickname=req.nickname or "",
+            discovery_key=req.discovery_key or "",
+            relay_address=req.relay_address or "",
             traffic_routing_supported=req.traffic_routing_supported,
         )
 
         self.server.add_machine(node)
 
-        pprint(node)
         return node
 
     def handle_machines_delete(self):
         uid = self.path.removeprefix(self.machines_path)[1:]
-        print("uuid:", uid)
 
-        try:
-            self.server.remove_machine(uid)
-            print(f"{uid} removed")
-            self.send_response(204)
-        except KeyError:
-            print(f"{uid} unknown")
-            self.send_response(400)
+        if self.server.remove_machine(uid):
+            self._set_headers(status_code=HTTPStatus.NO_CONTENT)
+        else:
+            self._send_error_response(
+                CoreApiErrorCode.MACHINE_NOT_FOUND,
+                "Machine not found",
+                HTTPStatus.NOT_FOUND,
+            )
 
-        self.end_headers()
+    def handle_patch_machine(self, machine_id):
+        machine = self.server.get_machines().get(machine_id)
+        if not machine:
+            self._send_error_response(
+                CoreApiErrorCode.MACHINE_NOT_FOUND,
+                "Machine not found",
+                HTTPStatus.NOT_FOUND,
+            )
+            return
+
+        content_length = int(self.headers["Content-Length"])
+        patch_data = self.rfile.read(content_length)
+        updates = json.loads(patch_data)
+
+        updated = False
+        for key, value in updates.items():
+            if hasattr(machine, key):
+                setattr(machine, key, value)
+                updated = True
+
+        if updated:
+            self._set_headers()
+            resp = json.dumps(asdict(machine))
+            self.wfile.write(resp.encode("utf-8"))
+
+    def handle_get_machines(self):
+        machines = self.server.get_machines()
+        self._write_response(
+            [asdict(machine) for machine in machines.values()] if machines else []
+        )
+
+    def handle_get_machine_map(self, machine_id):
+        machine = self.server.get_machines().get(machine_id)
+        if not machine:
+            self._send_error_response(
+                CoreApiErrorCode.MACHINE_NOT_FOUND,
+                "Machine not found",
+                HTTPStatus.NOT_FOUND,
+            )
+            return
+        self._write_response(self.get_meshmap(machine_id))
+
+    def get_meshmap(self, machine_id):
+        node = self.server.get_machines().get(machine_id)
+        peers = [
+            {
+                **vars(peer_node),
+                "is_local": True,
+                "allow_incoming_connections": True,
+            }
+            for peer_id, peer_node in self.server.get_machines().items()
+            if peer_id != machine_id
+        ]
+
+        return {
+            **vars(node),
+            "peers": peers,
+            "dns": {"domains": [], "hosts": {}},
+            "derp_servers": [DERP_SERVER],
+        }
 
 
 def run(mqttc, port=8080):
