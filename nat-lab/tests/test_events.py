@@ -9,6 +9,7 @@ from telio import Client
 from utils import stun
 from utils.bindings import (
     features_with_endpoint_providers,
+    default_features,
     EndpointProvider,
     PathType,
     TelioNode,
