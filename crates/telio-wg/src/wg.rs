@@ -198,12 +198,9 @@ impl BytesAndTimestamps {
 
     /// Checks if the link is up based on the round-trip time (RTT) and WireGuard keepalive interval.
     pub fn is_link_up(&self, rtt: Duration) -> bool {
-        if let (Some(rx_ts), Some(tx_ts)) = (self.rx_ts, self.tx_ts) {
-            tx_ts <= rx_ts
-        } else if let Some(rx_ts) = self.rx_ts {
-            rx_ts.elapsed() < WG_KEEPALIVE + rtt
-        } else {
-            false
+        match (self.rx_ts, self.tx_ts) {
+            (Some(rx_ts), Some(tx_ts)) => tx_ts <= rx_ts || rx_ts.elapsed() < WG_KEEPALIVE + rtt,
+            _ => false,
         }
     }
 }
@@ -1074,6 +1071,9 @@ pub mod tests {
 
     use telio_task::io::{Chan, McChan};
 
+    #[cfg(not(feature = "test-adapter"))]
+    use rstest::rstest;
+
     use super::*;
     use crate::adapter::{Error as AdapterError, MockAdapter};
 
@@ -1818,5 +1818,38 @@ pub mod tests {
                 &i1_with_modified_other_field
             ));
         }
+    }
+
+    #[cfg(not(feature = "test-adapter"))]
+    #[rstest]
+    #[case(None, None, 0, false)]
+    #[case(Some(0), None, 0, false)]
+    #[case(None, Some(0), 0, false)]
+    #[case(Some(0), Some(0), 0, true)]
+    #[case(Some(0), Some(1), 0, true)]
+    #[case(Some(1), Some(0), 0, true)]
+    #[case(Some(0), Some(11), 0, true)]
+    #[case(Some(0), Some(100), 0, true)]
+    #[case(Some(0), Some(1000), 0, true)]
+    #[case(Some(11), Some(0), 0, false)]
+    #[case(Some(11), Some(0), 15, true)]
+    fn test_bytes_and_timestamps(
+        #[case] rx_sec_ago: Option<u64>,
+        #[case] tx_sec_ago: Option<u64>,
+        #[case] rtt: u64,
+        #[case] expect_link_up: bool,
+    ) {
+        let now = Instant::now();
+        let rx_ts = rx_sec_ago.and_then(|v| now.checked_sub(Duration::from_secs(v)));
+        let tx_ts = tx_sec_ago.and_then(|v| now.checked_sub(Duration::from_secs(v)));
+        let rtt = Duration::from_secs(rtt);
+
+        let stats = BytesAndTimestamps {
+            rx_bytes: 5,
+            tx_bytes: 5,
+            rx_ts,
+            tx_ts,
+        };
+        assert_eq!(stats.is_link_up(rtt), expect_link_up);
     }
 }
