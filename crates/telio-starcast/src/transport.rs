@@ -337,6 +337,7 @@ impl Runtime for State {
 #[cfg(test)]
 mod tests {
     use std::{net::Ipv4Addr, time::Duration};
+    use tokio::time::timeout;
 
     use pnet_packet::{ipv4::Ipv4Packet, udp::UdpPacket};
     use telio_crypto::SecretKey;
@@ -499,7 +500,13 @@ mod tests {
         }
 
         let mut buffer = vec![0; TEST_MAX_PACKET_SIZE];
-        scaffold.peers[0].1.try_recv(&mut buffer).unwrap();
+        timeout(
+            Duration::from_secs(1),
+            scaffold.peers[0].1.recv(&mut buffer),
+        )
+        .await
+        .unwrap()
+        .unwrap();
 
         assert_src_dst_v4!(buffer, transport_addr.to_string(), peer1_addr.to_string());
 
