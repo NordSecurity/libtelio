@@ -132,11 +132,11 @@ async fn start_mqtt(nc_config: NCConfig) -> Result<(), Error> {
                         match event {
                             Ok(Event::Incoming(Packet::Publish(p))) => {
                                 if let Err(e) = handle_incoming_publish(&client, p, &nc_config.callbacks).await {
-                                    error!("Failed to handle incomming publish: {e}");
+                                    error!("Failed to handle incoming publish: {e}");
                                 }
                             }
                             Ok(Event::Incoming(p)) => {
-                                debug!("mqtt incomming: {p:?}");
+                                debug!("mqtt incoming: {p:?}");
                             }
                             Ok(Event::Outgoing(p)) => debug!("mqtt outgoing event: {p:?}"),
                             Err(e) => {
@@ -231,7 +231,7 @@ async fn handle_incoming_publish(
 ) -> Result<(), anyhow::Error> {
     let text = std::str::from_utf8(&*p.payload)?;
     let notification: incoming::Notification = serde_json::from_str(&text)?;
-    debug!("mqtt incomming publish: {p:?}: {text:?}");
+    debug!("mqtt incoming publish: {p:?}: {text:?}");
 
     ensure!(
         !notification.is_acked(),
@@ -342,7 +342,7 @@ struct TokenHttpRequestData {
     platform_id: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 struct NotificationCenterCredentials {
     endpoint: Url,
     username: String,
@@ -366,14 +366,14 @@ impl NotificationCenterCredentials {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct MessageID(Uuid);
 
 mod incoming {
     use super::*;
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(PartialEq, Eq, Debug, Serialize, Deserialize)]
     pub struct Notification {
         pub message: Message,
     }
@@ -387,33 +387,33 @@ mod incoming {
         }
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(PartialEq, Eq, Debug, Serialize, Deserialize)]
     pub struct Message {
         pub data: Data,
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(PartialEq, Eq, Debug, Serialize, Deserialize)]
     pub struct Data {
         pub event: Event,
-        metadata: Metadata,
+        pub metadata: Metadata,
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
-    struct Metadata {
-        acked: bool,
-        created_at: u64,
-        message_id: MessageID,
-        target_uid: String,
+    #[derive(PartialEq, Eq, Debug, Serialize, Deserialize)]
+    pub struct Metadata {
+        pub acked: bool,
+        pub created_at: u64,
+        pub message_id: MessageID,
+        pub target_uid: String,
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(PartialEq, Eq, Debug, Serialize, Deserialize)]
     pub struct Event {
         #[serde(rename = "type")]
-        type_: String,
+        pub type_: String,
         pub attributes: Attributes,
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(PartialEq, Eq, Debug, Serialize, Deserialize)]
     pub struct Attributes {
         pub affected_machines: Vec<Uuid>,
     }
@@ -442,5 +442,92 @@ mod outgoing {
         pub message_id: MessageID,
         pub track_type: TrackType,
         pub action_slug: Option<String>,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_token_response() {
+        let input = r#"
+{
+    "endpoint": "tcp://example.com:1883",
+    "username": "A790124142",
+    "password": "foo-bar-baz",
+    "expires_in": 86400
+}
+        "#;
+
+        let expected = NotificationCenterCredentials {
+            endpoint: Url::parse("tcp://example.com:1883").unwrap(),
+            username: "A790124142".to_owned(),
+            password: Hidden("foo-bar-baz".to_owned()),
+            expires_in: 86400,
+        };
+
+        let credentials: NotificationCenterCredentials = serde_json::from_str(&input).unwrap();
+        assert_eq!(expected, credentials);
+    }
+
+    #[test]
+    fn parse_notification() {
+        let input = r#"
+{
+  "message": {
+    "data": {
+      "event": {
+        "type": "meshnet_network_update",
+        "attributes": {
+          "affected_machines": [
+            "8d8469c9-f06b-42d4-a7dc-9444566c374b",
+            "264081b1-b06d-40b8-a237-0283766c002e",
+            "49b655cb-c6a7-4d02-a8dd-70e8540a2c10",
+            "1ada0209-76b3-4173-b94d-de6c9c4a5e9a",
+            "f41e43ef-5295-4fb2-a033-4fc6f90ed74c"
+          ]
+        }
+      },
+      "metadata": {
+        "acked": false,
+        "created_at": 1728637984,
+        "message_id": "99289a53-ed53-4b0a-9012-63df9539b16c",
+        "target_uid": "ecd92ba8-14a2-4ec6-aead-c49364251407"
+      }
+    },
+    "notification": null
+  }
+}
+        "#;
+        use incoming::*;
+        let expected = Notification {
+            message: Message {
+                data: Data {
+                    event: Event {
+                        type_: "meshnet_network_update".to_owned(),
+                        attributes: Attributes {
+                            affected_machines: vec![
+                                Uuid::parse_str("8d8469c9-f06b-42d4-a7dc-9444566c374b").unwrap(),
+                                Uuid::parse_str("264081b1-b06d-40b8-a237-0283766c002e").unwrap(),
+                                Uuid::parse_str("49b655cb-c6a7-4d02-a8dd-70e8540a2c10").unwrap(),
+                                Uuid::parse_str("1ada0209-76b3-4173-b94d-de6c9c4a5e9a").unwrap(),
+                                Uuid::parse_str("f41e43ef-5295-4fb2-a033-4fc6f90ed74c").unwrap(),
+                            ],
+                        },
+                    },
+                    metadata: Metadata {
+                        acked: false,
+                        created_at: 1728637984,
+                        message_id: MessageID(
+                            Uuid::parse_str("99289a53-ed53-4b0a-9012-63df9539b16c").unwrap(),
+                        ),
+                        target_uid: "ecd92ba8-14a2-4ec6-aead-c49364251407".to_owned(),
+                    },
+                },
+            },
+        };
+        let notification: Notification = serde_json::from_str(&input).unwrap();
+        assert_eq!(expected, notification);
     }
 }
