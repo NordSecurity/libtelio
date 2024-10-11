@@ -723,8 +723,6 @@ impl State {
                 "Disconnected peer missing from old list",
             ))?;
 
-            self.stats.remove(key);
-
             // Remove all disconnected peers from no link detection mechanism
             if let Some(link_detection) = self.link_detection.as_mut() {
                 link_detection.remove(key);
@@ -746,16 +744,14 @@ impl State {
                 .get(key)
                 .ok_or(Error::InternalError("New peer missing from new list"))?;
 
-            let bytes_and_ts = Arc::new(Mutex::new(BytesAndTimestamps::new(
-                peer.rx_bytes,
-                peer.tx_bytes,
-            )));
-
-            self.stats.insert(*key, bytes_and_ts.clone());
+            let stats = self
+                .stats
+                .get(key)
+                .ok_or(Error::InternalError("No stats available for peer"))?;
 
             // Node is new and default LinkState is down. Save it before sending the event
             if let Some(link_detection) = self.link_detection.as_mut() {
-                link_detection.insert(key, bytes_and_ts.clone());
+                link_detection.insert(key, stats.clone());
             }
 
             self.send_event(
@@ -783,18 +779,6 @@ impl State {
                 let old_state = old.state();
                 let new_state = new.state();
                 let node_addresses = new.ip_addresses.clone();
-
-                if let Some(stats) = self.stats.get_mut(key) {
-                    match stats.lock().as_mut() {
-                        Ok(s) => s.update(
-                            new.rx_bytes.unwrap_or_default(),
-                            new.tx_bytes.unwrap_or_default(),
-                        ),
-                        Err(e) => {
-                            telio_log_error!("poisoned lock - {}", e);
-                        }
-                    }
-                }
                 let link_detection_update_result = {
                     if let Some(link_detection) = self.link_detection.as_mut() {
                         link_detection
@@ -907,8 +891,32 @@ impl State {
     #[allow(mpsc_blocking_send)]
     async fn update(&mut self, mut to: uapi::Interface, push: bool) -> Result<bool, Error> {
         for (pk, peer) in &mut to.peers {
+            match self.stats.get_mut(pk) {
+                Some(stats) => match stats.lock().as_mut() {
+                    Ok(s) => {
+                        s.update(
+                            peer.rx_bytes.unwrap_or_default(),
+                            peer.tx_bytes.unwrap_or_default(),
+                        );
+                    }
+                    Err(e) => {
+                        telio_log_error!("poisoned lock - {}", e);
+                    }
+                },
+                None => {
+                    self.stats.insert(
+                        *pk,
+                        Arc::new(Mutex::new(BytesAndTimestamps::new(
+                            peer.rx_bytes,
+                            peer.tx_bytes,
+                        ))),
+                    );
+                }
+            }
             peer.time_since_last_rx = self.time_since_last_rx(*pk);
         }
+        self.stats.retain(|pk, _| to.peers.contains_key(pk));
+
         // Diff and report events
 
         // Adapter doesn't keep track of mesh addresses, or endpoint changes,
@@ -1354,7 +1362,6 @@ pub mod tests {
             endpoint: Some(([1, 1, 1, 1], 123).into()),
             endpoint_changed_at: Some(Instant::now()),
             persistent_keepalive_interval: Some(25),
-            rx_bytes: Some(1),
             ..Default::default()
         };
         let old_peer = Some(peer.clone());
@@ -1376,6 +1383,7 @@ pub mod tests {
 
         // Connect
         peer.time_since_last_handshake = Some(Duration::from_secs(15));
+        peer.rx_bytes = Some(1);
         ifa.peers.insert(pkc, peer.clone());
         tokio::time::advance(Duration::from_secs(7)).await;
         adapter
@@ -1395,7 +1403,7 @@ pub mod tests {
                 state: PeerState::Connected,
                 link_state: None,
                 peer: Peer {
-                    time_since_last_rx: Some(Duration::from_secs(7)),
+                    time_since_last_rx: Some(Duration::from_secs(0)),
                     ..peer.clone()
                 },
                 old_peer
@@ -1423,14 +1431,14 @@ pub mod tests {
             endpoint: Some(([1, 1, 1, 1], 123).into()),
             endpoint_changed_at: Some(Instant::now()),
             persistent_keepalive_interval: Some(25),
-            rx_bytes: Some(1),
             ..Default::default()
         };
-        let old_peer = Some(peer.clone());
+        let old_peer = peer.clone();
 
         ifa.peers.insert(pkc, peer.clone());
         adapter.expect_send_uapi_cmd_generic_call(1).await;
         wg.add_peer(peer.clone()).await.unwrap();
+
         assert_eq!(
             Some(Box::new(Event {
                 state: PeerState::Connecting,
@@ -1446,7 +1454,6 @@ pub mod tests {
         // Connects
         peer.time_since_last_handshake = Some(Duration::from_secs(94));
         peer.rx_bytes = Some(1);
-        let second_old_peer = Some(peer.clone());
         ifa.peers.insert(pkc, peer.clone());
         tokio::time::advance(Duration::from_secs(94)).await;
         adapter
@@ -1469,10 +1476,10 @@ pub mod tests {
                 state: PeerState::Connected,
                 link_state: None,
                 peer: Peer {
-                    time_since_last_rx: Some(Duration::from_secs(94)),
+                    time_since_last_rx: Some(Duration::from_secs(0)),
                     ..peer.clone()
                 },
-                old_peer
+                old_peer: Some(old_peer.clone())
             })),
             event.recv().await
         );
@@ -1480,7 +1487,7 @@ pub mod tests {
         // Disconnects
         peer.time_since_last_handshake = Some(Duration::from_secs(182));
         ifa.peers.insert(pkc, peer.clone());
-        tokio::time::advance(Duration::from_secs(88)).await;
+        tokio::time::advance(Duration::from_secs(182)).await;
 
         adapter
             .lock()
@@ -1488,11 +1495,14 @@ pub mod tests {
             .expect_send_uapi_cmd()
             .with(predicate::eq(Cmd::Get))
             .times(1)
-            .returning(move |_| {
-                Ok(Response {
-                    errno: 0,
-                    interface: Some(ifa.clone()),
-                })
+            .returning({
+                let ifa = ifa.clone();
+                move |_| {
+                    Ok(Response {
+                        errno: 0,
+                        interface: Some(ifa.clone()),
+                    })
+                }
             });
 
         assert_eq!(
@@ -1501,11 +1511,14 @@ pub mod tests {
                 link_state: None,
                 peer: Peer {
                     time_since_last_rx: Some(Duration::from_secs(182)),
+                    time_since_last_handshake: Some(Duration::from_secs(182)),
                     ..peer.clone()
                 },
                 old_peer: Some(Peer {
-                    time_since_last_rx: Some(Duration::from_secs(94)),
-                    ..second_old_peer.unwrap()
+                    time_since_last_rx: Some(Duration::from_secs(0)),
+                    time_since_last_handshake: Some(Duration::from_secs(94)),
+                    rx_bytes: Some(1),
+                    ..old_peer.clone()
                 }),
             })),
             event.recv().await
@@ -1660,6 +1673,148 @@ pub mod tests {
         adapter.lock().await.checkpoint();
 
         assert_eq!(iface.clone(), wg.get_interface().await.unwrap());
+
+        adapter.lock().await.expect_stop().return_once(|| ());
+        wg.stop().await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn wg_peer_time_since_last_rx_update_update() {
+        let Env {
+            adapter,
+            wg,
+            mut event,
+            ..
+        } = setup().await;
+        let pkc = SecretKey::gen().public();
+        let mut ifa = Interface::default();
+        let mut peer = Peer {
+            public_key: pkc,
+            endpoint: Some(([1, 1, 1, 1], 123).into()),
+            endpoint_changed_at: Some(Instant::now()),
+            persistent_keepalive_interval: Some(25),
+            ..Default::default()
+        };
+
+        ifa.peers.insert(pkc, peer.clone());
+        adapter.expect_send_uapi_cmd_generic_call(1).await;
+        wg.add_peer(peer.clone()).await.unwrap();
+        assert_eq!(
+            Some(Box::new(Event {
+                state: PeerState::Connecting,
+                link_state: None,
+                peer: peer.clone(),
+                old_peer: None
+            })),
+            event.recv().await
+        );
+        adapter.lock().await.checkpoint();
+        assert_eq!(ifa.clone(), wg.get_interface().await.unwrap());
+
+        // Connect
+        let mut old_peer = peer.clone();
+        peer.time_since_last_handshake = Some(Duration::from_secs(15));
+        peer.rx_bytes = Some(100);
+        ifa.peers.insert(pkc, peer.clone());
+
+        adapter
+            .lock()
+            .await
+            .expect_send_uapi_cmd()
+            .with(predicate::eq(Cmd::Get))
+            .times(1)
+            .returning({
+                let ifa = ifa.clone();
+                move |_| {
+                    Ok(Response {
+                        errno: 0,
+                        interface: Some(ifa.clone()),
+                    })
+                }
+            });
+        assert_eq!(
+            Some(Box::new(Event {
+                state: PeerState::Connected,
+                link_state: None,
+                peer: Peer {
+                    time_since_last_rx: Some(Duration::from_secs(0)),
+                    ..peer.clone()
+                },
+                old_peer: Some(old_peer)
+            })),
+            event.recv().await
+        );
+
+        old_peer = Peer {
+            time_since_last_rx: Some(Duration::from_secs(0)),
+            ..peer.clone()
+        };
+        peer.time_since_last_handshake = Some(Duration::from_secs(182));
+        time::advance(Duration::from_secs(182)).await;
+        ifa.peers.insert(pkc, peer.clone());
+
+        adapter
+            .lock()
+            .await
+            .expect_send_uapi_cmd()
+            .with(predicate::eq(Cmd::Get))
+            .times(1)
+            .returning({
+                let ifa = ifa.clone();
+                move |_| {
+                    Ok(Response {
+                        errno: 0,
+                        interface: Some(ifa.clone()),
+                    })
+                }
+            });
+        assert_eq!(
+            Some(Box::new(Event {
+                state: PeerState::Connecting,
+                link_state: None,
+                peer: Peer {
+                    time_since_last_rx: Some(Duration::from_secs(182)),
+                    ..peer.clone()
+                },
+                old_peer: Some(old_peer),
+            })),
+            event.recv().await
+        );
+
+        old_peer = Peer {
+            time_since_last_handshake: Some(Duration::from_secs(182)),
+            time_since_last_rx: Some(Duration::from_secs(182)),
+            ..peer.clone()
+        };
+        peer.time_since_last_handshake = Some(Duration::from_secs(1));
+        peer.rx_bytes = Some(200);
+        time::advance(Duration::from_secs(1)).await;
+        ifa.peers.insert(pkc, peer.clone());
+
+        adapter
+            .lock()
+            .await
+            .expect_send_uapi_cmd()
+            .with(predicate::eq(Cmd::Get))
+            .times(1)
+            .returning(move |_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: Some(ifa.clone()),
+                })
+            });
+        assert_eq!(
+            Some(Box::new(Event {
+                state: PeerState::Connected,
+                link_state: None,
+                peer: Peer {
+                    time_since_last_rx: Some(Duration::from_secs(0)),
+                    ..peer.clone()
+                },
+                old_peer: Some(old_peer),
+            })),
+            event.recv().await
+        );
 
         adapter.lock().await.expect_stop().return_once(|| ());
         wg.stop().await;
