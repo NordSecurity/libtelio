@@ -145,9 +145,9 @@ async def test_event_link_state_peers_idle_all_time(
         alpha_events = client_beta.get_link_state_events(alpha.public_key)
         beta_events = client_alpha.get_link_state_events(beta.public_key)
 
-        # 1 down when node is Connecting, 1 up when still Connecting and 1 up when node is Connected
-        assert alpha_events == [LinkState.DOWN, LinkState.UP, LinkState.UP]
-        assert beta_events == [LinkState.DOWN, LinkState.UP, LinkState.UP]
+        # 1 down event when Connecting, 1 up event when Connected
+        assert alpha_events == [LinkState.DOWN, LinkState.UP]
+        assert beta_events == [LinkState.DOWN, LinkState.UP]
 
 
 @pytest.mark.asyncio
@@ -172,9 +172,9 @@ async def test_event_link_state_peers_exchanging_data_for_a_long_time(
         alpha_events = client_beta.get_link_state_events(alpha.public_key)
         beta_events = client_alpha.get_link_state_events(beta.public_key)
 
-        # 1 down when node is Connecting, 1 up when still Connecting and 1 up when node is Connected
-        assert alpha_events == [LinkState.DOWN, LinkState.UP, LinkState.UP]
-        assert beta_events == [LinkState.DOWN, LinkState.UP, LinkState.UP]
+        # 1 down event when Connecting, 1 up event when Connected
+        assert alpha_events == [LinkState.DOWN, LinkState.UP]
+        assert beta_events == [LinkState.DOWN, LinkState.UP]
 
 
 @pytest.mark.asyncio
@@ -202,9 +202,9 @@ async def test_event_link_state_peers_exchanging_data_then_idling_then_resume(
         alpha_events = client_beta.get_link_state_events(alpha.public_key)
         beta_events = client_alpha.get_link_state_events(beta.public_key)
 
-        # 1 down when node is Connecting, 1 up when still Connecting and 1 up when node is Connected
-        assert alpha_events == [LinkState.DOWN, LinkState.UP, LinkState.UP]
-        assert beta_events == [LinkState.DOWN, LinkState.UP, LinkState.UP]
+        # 1 down event when Connecting, 1 up event when Connected
+        assert alpha_events == [LinkState.DOWN, LinkState.UP]
+        assert beta_events == [LinkState.DOWN, LinkState.UP]
 
 
 @pytest.mark.asyncio
@@ -234,15 +234,10 @@ async def test_event_link_state_peer_goes_offline(
         alpha_events = client_beta.get_link_state_events(alpha.public_key)
         beta_events = client_alpha.get_link_state_events(beta.public_key)
 
-        # 1 down when node is Connecting, 1 up when still Connecting and 1 up when node is Connected
-        assert alpha_events == [LinkState.DOWN, LinkState.UP, LinkState.UP]
-        # beta will have 2 down events: 1 when is Connecting and 1 detected and 2 up when Connecting and Connected
-        assert beta_events == [
-            LinkState.DOWN,
-            LinkState.UP,
-            LinkState.UP,
-            LinkState.DOWN,
-        ]
+        # 1 down event when Connecting, 1 up event when Connected
+        assert alpha_events == [LinkState.DOWN, LinkState.UP]
+        # 1 down event when Connecting, 1 up event when Connected, 1 down event when client is stopped
+        assert beta_events == [LinkState.DOWN, LinkState.UP, LinkState.DOWN]
 
 
 @pytest.mark.asyncio
