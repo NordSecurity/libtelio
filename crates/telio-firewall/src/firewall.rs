@@ -1,6 +1,7 @@
 //! Telio firewall component used to track open connections
 //! with other devices§
 
+use core::fmt;
 use ipnet::Ipv4Net;
 use pnet_packet::{
     icmp::{
@@ -181,7 +182,7 @@ pub trait Firewall {
     fn get_port_whitelist(&self) -> HashMap<PublicKey, u16>;
 
     /// Clears the peer whitelist
-    fn clear_peer_whitelist(&self, permissions: Permissions);
+    fn clear_peer_whitelists(&self);
 
     /// Add peer to whitelist
     fn add_to_peer_whitelist(&self, peer: PublicKey, permissions: Permissions);
@@ -220,7 +221,7 @@ pub trait Firewall {
     ) -> io::Result<()>;
 
     /// Saves local node Ip address into firewall object
-    fn set_ip_address(&self, ip_addrs: Option<Vec<StdIpAddr>>);
+    fn set_ip_addresses(&self, ip_addrs: Option<Vec<StdIpAddr>>);
 }
 
 /// Possible permissions of the peer
@@ -241,6 +242,16 @@ impl Permissions {
         Self::LocalAreaConnections,
         Self::RoutingConnections,
     ];
+}
+
+impl fmt::Display for Permissions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Permissions::IncomingConnections => write!(f, "Incoming Connections"),
+            Permissions::LocalAreaConnections => write!(f, "Local Area Connections"),
+            Permissions::RoutingConnections => write!(f, "Routing Connections"),
+        }
+    }
 }
 
 enum PacketAction {
@@ -292,7 +303,7 @@ pub struct StatefullFirewall {
     /// Used for connection reset mechanism
     record_whitelisted: bool,
     /// Local node ip addresses
-    ip_address: RwLock<Vec<StdIpAddr>>,
+    ip_addresses: RwLock<Vec<StdIpAddr>>,
     /// Custom IPv4 range to check against
     custom_ip_range: Option<Ipv4Net>,
 }
@@ -441,6 +452,25 @@ macro_rules! unwrap_lock_or_return {
     };
 }
 
+macro_rules! map_whitelist {
+    ($permission:expr, $peer:expr, $whitelist:expr, $action_name:expr, $action:ident(), $($pattern:path => $field:ident,)*) => {
+        match $permission {
+            $(
+            $pattern => {
+                telio_log_debug!(
+                    "{} {:?} peer in firewall {} whitelist",
+                    $action_name,
+                    $peer,
+                    $pattern
+                );
+                unwrap_lock_or_return!($whitelist.write())
+                    .$field
+                    .$action($peer);
+            })*
+        }
+    };
+}
+
 impl StatefullFirewall {
     /// Constructs firewall with default timeout (2 mins) and capacity (4096 entries).
     pub fn new(use_ipv6: bool, feature: FeatureFirewall) -> Self {
@@ -465,7 +495,7 @@ impl StatefullFirewall {
             whitelist: RwLock::new(Whitelist::default()),
             allow_ipv6: use_ipv6,
             record_whitelisted: feature.boringtun_reset_conns,
-            ip_address: RwLock::new(Vec::<StdIpAddr>::new()),
+            ip_addresses: RwLock::new(Vec::<StdIpAddr>::new()),
             custom_ip_range: feature.custom_private_ip_range,
         }
     }
@@ -568,11 +598,10 @@ impl StatefullFirewall {
             return false;
         }
 
-        let check_connection_policy =
-            |pubkey, port| self.is_connection_policy_compliant(pubkey, port);
+        let check_connection_policy = |pubkey, port| self.decide_connection_handling(pubkey, port);
 
         // Check packet policy first
-        match self.is_packet_policy_compliant(
+        match self.decide_packet_handling(
             peer,
             From::<IpAddr>::from(ip.get_destination().into()),
             whitelist,
@@ -693,7 +722,7 @@ impl StatefullFirewall {
 
     fn handle_inbound_udp<'a>(
         &self,
-        is_conn_policy_compliant: impl Fn(PublicKey, u16) -> PacketAction,
+        decide_connection_handling: impl Fn(PublicKey, u16) -> PacketAction,
         peer: &PublicKey,
         ip: &impl IpPacket<'a>,
     ) -> bool {
@@ -718,7 +747,7 @@ impl StatefullFirewall {
                 );
 
                 if connection_info.is_remote_initiated {
-                    match is_conn_policy_compliant(*peer, local_port) {
+                    match decide_connection_handling(*peer, local_port) {
                         PacketAction::Drop => {
                             telio_log_trace!("Removing UDP conntrack entry {:?}", key);
                             occ.remove();
@@ -731,9 +760,9 @@ impl StatefullFirewall {
             Entry::Vacant(vacc) => {
                 let key = vacc.key();
 
-                match is_conn_policy_compliant(*peer, local_port) {
+                match decide_connection_handling(*peer, local_port) {
                     PacketAction::PassThrough => {
-                        telio_log_trace!("Accepting UDP packet {:?} {:?}", ip, peer);
+                        telio_log_trace!("Accepting UDP packet {:?} {:?}", key, peer);
                         return true;
                     }
                     PacketAction::Drop => {
@@ -771,10 +800,7 @@ impl StatefullFirewall {
         let local_port = key.link.local_port;
 
         let mut cache = unwrap_lock_or_return!(self.tcp.lock(), false);
-        match cache.entry(
-            key,
-            ip.get_next_level_protocol() == IpNextHeaderProtocols::Udp,
-        ) {
+        match cache.entry(key, false) {
             Entry::Occupied(mut occ) => {
                 let (connection_info, key) = occ.get_mut_with_key();
                 telio_log_trace!("Matched conntrack entry {:?} {:?}", key, connection_info);
@@ -1367,13 +1393,13 @@ impl StatefullFirewall {
         }
     }
 
-    fn is_packet_policy_compliant(
+    fn decide_packet_handling(
         &self,
         pubkey: PublicKey,
         local_addr: StdIpAddr,
         whitelist: RwLockReadGuard<'_, Whitelist>,
     ) -> PacketAction {
-        let local_ip = unwrap_lock_or_return!(self.ip_address.read(), PacketAction::Drop);
+        let local_ip = unwrap_lock_or_return!(self.ip_addresses.read(), PacketAction::Drop);
         if self.is_private_address_except_local_interface(&local_addr) {
             if whitelist.local_conn_whitelist.contains(&pubkey) {
                 return PacketAction::PassThrough;
@@ -1395,7 +1421,7 @@ impl StatefullFirewall {
         PacketAction::Drop
     }
 
-    fn is_connection_policy_compliant(&self, pubkey: PublicKey, local_port: u16) -> PacketAction {
+    fn decide_connection_handling(&self, pubkey: PublicKey, local_port: u16) -> PacketAction {
         let whitelist = unwrap_lock_or_return!(self.whitelist.read(), PacketAction::Drop);
         if whitelist.incoming_conn_whitelist.contains(&pubkey) {
             if self.record_whitelisted {
@@ -1438,79 +1464,43 @@ impl Firewall for StatefullFirewall {
             .clone()
     }
 
-    fn clear_peer_whitelist(&self, permissions: Permissions) {
-        match permissions {
-            Permissions::IncomingConnections => {
-                telio_log_debug!("Clearing firewall incoming connections whitelist");
-                unwrap_lock_or_return!(self.whitelist.write())
-                    .incoming_conn_whitelist
-                    .clear();
-            }
-            Permissions::LocalAreaConnections => {
-                telio_log_debug!("Clearing firewall local area connections whitelist");
-                unwrap_lock_or_return!(self.whitelist.write())
-                    .local_conn_whitelist
-                    .clear();
-            }
-            Permissions::RoutingConnections => {
-                telio_log_debug!("Clearing firewall routing whitelist");
-                unwrap_lock_or_return!(self.whitelist.write())
-                    .routing_whitelist
-                    .clear();
-            }
-        }
+    fn clear_peer_whitelists(&self) {
+        telio_log_debug!("Clearing all firewall whitelist");
+        unwrap_lock_or_return!(self.whitelist.write())
+            .incoming_conn_whitelist
+            .clear();
+        unwrap_lock_or_return!(self.whitelist.write())
+            .local_conn_whitelist
+            .clear();
+        unwrap_lock_or_return!(self.whitelist.write())
+            .routing_whitelist
+            .clear();
     }
 
     fn add_to_peer_whitelist(&self, peer: PublicKey, permissions: Permissions) {
-        match permissions {
-            Permissions::IncomingConnections => {
-                telio_log_debug!(
-                    "Adding {:?} peer to firewall incoming connection whitelist",
-                    peer
-                );
-                unwrap_lock_or_return!(self.whitelist.write())
-                    .incoming_conn_whitelist
-                    .insert(peer);
-            }
-            Permissions::LocalAreaConnections => {
-                telio_log_debug!("Adding {:?} peer to firewall local area whitelist", peer);
-                unwrap_lock_or_return!(self.whitelist.write())
-                    .local_conn_whitelist
-                    .insert(peer);
-            }
-            Permissions::RoutingConnections => {
-                telio_log_debug!("Adding {:?} peer to firewall routing whitelist", peer);
-                unwrap_lock_or_return!(self.whitelist.write())
-                    .routing_whitelist
-                    .insert(peer);
-            }
-        }
+        map_whitelist!(
+            permissions,
+            peer,
+            self.whitelist,
+            "Adding",
+            insert(),
+            Permissions::IncomingConnections => incoming_conn_whitelist,
+            Permissions::LocalAreaConnections => local_conn_whitelist,
+            Permissions::RoutingConnections => routing_whitelist,
+        );
     }
 
     fn remove_from_peer_whitelist(&self, peer: PublicKey, permissions: Permissions) {
-        match permissions {
-            Permissions::IncomingConnections => {
-                telio_log_debug!(
-                    "Remove {:?} peer from firewall incoming connection whitelist",
-                    peer
-                );
-                unwrap_lock_or_return!(self.whitelist.write())
-                    .incoming_conn_whitelist
-                    .remove(&peer);
-            }
-            Permissions::LocalAreaConnections => {
-                telio_log_debug!("Remove {:?} peer from firewall local area whitelist", peer);
-                unwrap_lock_or_return!(self.whitelist.write())
-                    .local_conn_whitelist
-                    .remove(&peer);
-            }
-            Permissions::RoutingConnections => {
-                telio_log_debug!("Remove {:?} peer from firewall routing whitelist", peer);
-                unwrap_lock_or_return!(self.whitelist.write())
-                    .routing_whitelist
-                    .remove(&peer);
-            }
-        }
+        map_whitelist!(
+            permissions,
+            &peer,
+            self.whitelist,
+            "Remove",
+            remove(),
+            Permissions::IncomingConnections => incoming_conn_whitelist,
+            Permissions::LocalAreaConnections => local_conn_whitelist,
+            Permissions::RoutingConnections => routing_whitelist,
+        );
     }
 
     fn get_peer_whitelist(&self, permissions: Permissions) -> HashSet<PublicKey> {
@@ -1586,8 +1576,8 @@ impl Firewall for StatefullFirewall {
         Ok(())
     }
 
-    fn set_ip_address(&self, ip_addrs: Option<Vec<StdIpAddr>>) {
-        let mut node_ip_address = unwrap_lock_or_return!(self.ip_address.write());
+    fn set_ip_addresses(&self, ip_addrs: Option<Vec<StdIpAddr>>) {
+        let mut node_ip_address = unwrap_lock_or_return!(self.ip_addresses.write());
         for ip in unwrap_option_or_return!(ip_addrs) {
             node_ip_address.push(ip);
         }
@@ -2051,7 +2041,7 @@ pub mod tests {
                 boringtun_reset_conns: false,
                 custom_private_ip_range: None,
             });
-            fw.set_ip_address(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
+            fw.set_ip_addresses(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
             // Should FAIL (no matching outgoing connections yet)
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src1)), false);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src2)), false);
@@ -2122,7 +2112,7 @@ pub mod tests {
                 boringtun_reset_conns: false,
                 custom_private_ip_range: None,
             },);
-            fw.set_ip_address(Some(vec![
+            fw.set_ip_addresses(Some(vec![
                 (StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))),
                 StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
             ]));
@@ -2200,7 +2190,7 @@ pub mod tests {
                 boringtun_reset_conns: false,
                 custom_private_ip_range: None,
             },);
-            fw.set_ip_address(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
+            fw.set_ip_addresses(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
             // Should FAIL (no matching outgoing connections yet)
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src1)), false);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src2)), false);
@@ -2260,7 +2250,7 @@ pub mod tests {
                 boringtun_reset_conns: false,
                 custom_private_ip_range: None,
             },);
-            fw.set_ip_address(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
+            fw.set_ip_addresses(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
             let peer = make_peer();
 
             assert_eq!(fw.process_inbound_packet(&peer, &make_tcp(them, us, TcpFlags::SYN)), false);
@@ -2329,7 +2319,7 @@ pub mod tests {
                 boringtun_reset_conns: false,
                 custom_private_ip_range: None,
             },);
-            fw.set_ip_address(Some(vec![
+            fw.set_ip_addresses(Some(vec![
                 (StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))),
                 StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
             ]));
@@ -2395,7 +2385,7 @@ pub mod tests {
                 boringtun_reset_conns: false,
                 custom_private_ip_range: None,
             },);
-            fw.set_ip_address(Some(vec![
+            fw.set_ip_addresses(Some(vec![
                 (StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))),
                 StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
             ]));
@@ -2463,7 +2453,7 @@ pub mod tests {
                 boringtun_reset_conns: false,
                 custom_private_ip_range: None,
             },);
-            fw.set_ip_address(Some(vec![
+            fw.set_ip_addresses(Some(vec![
                 (StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))),
                 StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
             ]));
@@ -2507,7 +2497,7 @@ pub mod tests {
         ];
         for TestInput{ src, dst, make_icmp } in test_inputs {
             let fw = StatefullFirewall::new_custom(LRU_CAPACITY, LRU_TIMEOUT, true, Default::default());
-            fw.set_ip_address(Some(vec![
+            fw.set_ip_addresses(Some(vec![
                 (StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))),
                 StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
             ]));
@@ -2597,7 +2587,7 @@ pub mod tests {
                         true,
                         Default::default(),
                     );
-                    fw.set_ip_address(Some(vec![
+                    fw.set_ip_addresses(Some(vec![
                         (StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))),
                         StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
                     ]));
@@ -2641,7 +2631,7 @@ pub mod tests {
         ] {
             let fw =
                 StatefullFirewall::new_custom(LRU_CAPACITY, LRU_TIMEOUT, true, Default::default());
-            fw.set_ip_address(Some(vec![
+            fw.set_ip_addresses(Some(vec![
                 (StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))),
                 StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
             ]));
@@ -2721,7 +2711,7 @@ pub mod tests {
         ] {
             let fw =
                 StatefullFirewall::new_custom(LRU_CAPACITY, LRU_TIMEOUT, true, Default::default());
-            fw.set_ip_address(Some(vec![
+            fw.set_ip_addresses(Some(vec![
                 (StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))),
                 StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
             ]));
@@ -2792,7 +2782,7 @@ pub mod tests {
         ] {
             let fw =
                 StatefullFirewall::new_custom(LRU_CAPACITY, LRU_TIMEOUT, true, Default::default());
-            fw.set_ip_address(Some(vec![
+            fw.set_ip_addresses(Some(vec![
                 (StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))),
                 StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
             ]));
@@ -2897,7 +2887,7 @@ pub mod tests {
 
         for TestInput { src, dst, make_udp } in test_inputs {
             let fw = StatefullFirewall::new_custom(3, 100, true, Default::default(),);
-            fw.set_ip_address(Some(vec![
+            fw.set_ip_addresses(Some(vec![
                 (StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))),
                 StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
             ]));
@@ -2962,7 +2952,7 @@ pub mod tests {
         fw.remove_from_peer_whitelist(peer, Permissions::IncomingConnections);
         assert_eq!(fw.get_peer_whitelist(Permissions::IncomingConnections).len(), 1);
 
-        fw.clear_peer_whitelist(Permissions::IncomingConnections);
+        fw.clear_peer_whitelists();
         assert!(fw.get_peer_whitelist(Permissions::IncomingConnections).is_empty());
     }
 
@@ -3013,7 +3003,7 @@ pub mod tests {
         ];
         for TestInput { src1, src2, src3, src4, src5, dst1, dst2, make_udp, make_tcp, make_icmp } in test_inputs {
             let fw = StatefullFirewall::new_custom(LRU_CAPACITY, LRU_TIMEOUT, true, Default::default(),);
-            fw.set_ip_address(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
+            fw.set_ip_addresses(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
             let peer1 = make_random_peer();
             let peer2 = make_random_peer();
 
@@ -3062,7 +3052,7 @@ pub mod tests {
         for TestInput { us, them, make_icmp, is_v4 } in test_inputs {
             // Set number of conntrack entries to 0 to test only the whitelist
             let fw = StatefullFirewall::new_custom(0, 20, true, Default::default(),);
-            fw.set_ip_address(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
+            fw.set_ip_addresses(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
 
             let peer = make_random_peer();
             assert_eq!(fw.process_outbound_packet(&peer.0, &make_icmp(us, them, IcmpTypes::EchoRequest.into())), true);
@@ -3097,7 +3087,7 @@ pub mod tests {
 
         for TestInput { us, them, make_udp } in test_inputs {
             let fw = StatefullFirewall::new_custom(LRU_CAPACITY, LRU_TIMEOUT, true, Default::default(),);
-            fw.set_ip_address(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
+            fw.set_ip_addresses(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
 
             let them_peer = make_random_peer();
 
@@ -3126,7 +3116,7 @@ pub mod tests {
 
         for TestInput { us, them, make_udp } in test_inputs {
             let fw = StatefullFirewall::new_custom(LRU_CAPACITY, LRU_TIMEOUT, true, Default::default(),);
-            fw.set_ip_address(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
+            fw.set_ip_addresses(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
             let them_peer = make_random_peer();
 
             fw.add_to_port_whitelist(them_peer,1111);
@@ -3152,7 +3142,7 @@ pub mod tests {
         ];
         for TestInput { us, them, make_tcp } in test_inputs {
             let fw = StatefullFirewall::new_custom(LRU_CAPACITY, LRU_TIMEOUT, true, Default::default(),);
-            fw.set_ip_address(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
+            fw.set_ip_addresses(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
 
             let them_peer = make_random_peer();
 
@@ -3188,7 +3178,7 @@ pub mod tests {
                 true,
                 Default::default(),
             );
-            fw.set_ip_address(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
+            fw.set_ip_addresses(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
 
             let them_peer = make_random_peer();
 
@@ -3240,7 +3230,7 @@ pub mod tests {
         ];
         for TestInput { src1, src2, dst, make_udp, make_tcp, make_icmp } in test_inputs {
             let fw = StatefullFirewall::new_custom(LRU_CAPACITY, LRU_TIMEOUT, true, Default::default(),);
-            fw.set_ip_address(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
+            fw.set_ip_addresses(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
             assert!(fw.get_peer_whitelist(Permissions::IncomingConnections).is_empty());
 
             let src2_ip = src2.parse::<StdSocketAddr>().unwrap().ip().to_string();
@@ -3283,7 +3273,7 @@ pub mod tests {
         }];
 
         let fw = StatefullFirewall::new_custom(LRU_CAPACITY, LRU_TIMEOUT, true, Default::default());
-        fw.set_ip_address(Some(vec![
+        fw.set_ip_addresses(Some(vec![
             (StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))),
             StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
         ]));
@@ -3329,7 +3319,7 @@ pub mod tests {
                 boringtun_reset_conns: false,
             },
         );
-        fw.set_ip_address(Some(vec![
+        fw.set_ip_addresses(Some(vec![
             (StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))),
             StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
         ]));
@@ -3381,7 +3371,7 @@ pub mod tests {
         {
             let fw =
                 StatefullFirewall::new_custom(LRU_CAPACITY, LRU_TIMEOUT, true, Default::default());
-            fw.set_ip_address(Some(vec![
+            fw.set_ip_addresses(Some(vec![
                 (StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))),
                 StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
             ]));
@@ -3551,7 +3541,7 @@ pub mod tests {
                 true,
                 Default::default(),
             );
-            fw.set_ip_address(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
+            fw.set_ip_addresses(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]));
             assert!(fw.get_peer_whitelist(Permissions::IncomingConnections).is_empty());
             assert!(fw.get_port_whitelist().is_empty());
 
@@ -3583,7 +3573,7 @@ pub mod tests {
     fn firewall_tcp_conns_reset() {
         let fw =
             StatefullFirewall::new_custom(LRU_CAPACITY, LRU_TIMEOUT, false, Default::default());
-        fw.set_ip_address(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1)))]));
+        fw.set_ip_addresses(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1)))]));
         let peer = make_peer();
         fw.add_to_port_whitelist(PublicKey(peer), FILE_SEND_PORT);
 
@@ -3776,7 +3766,7 @@ pub mod tests {
         let src2 = "127.0.0.1";
 
         let fw = StatefullFirewall::new_custom(2, LRU_TIMEOUT, false, Default::default());
-        fw.set_ip_address(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1)))]));
+        fw.set_ip_addresses(Some(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1)))]));
         let good_peer = make_random_peer();
         let bad_peer = make_random_peer();
 
@@ -3808,7 +3798,7 @@ pub mod tests {
         let random = "192.168.0.1:7777";
 
         let fw = StatefullFirewall::new_custom(3, LRU_TIMEOUT, false, Default::default());
-        fw.set_ip_address(Some(vec![
+        fw.set_ip_addresses(Some(vec![
             (StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))),
             StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
         ]));
@@ -3850,7 +3840,7 @@ pub mod tests {
 
         for TestInput { src, dst, make_udp } in test_inputs {
             let fw = StatefullFirewall::new_custom(3, LRU_TIMEOUT, true, Default::default());
-            fw.set_ip_address(Some(vec![
+            fw.set_ip_addresses(Some(vec![
                 (StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))),
                 StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
             ]));

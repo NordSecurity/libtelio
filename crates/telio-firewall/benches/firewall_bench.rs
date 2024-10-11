@@ -92,7 +92,7 @@ pub fn firewall_tcp_inbound_benchmarks(c: &mut Criterion) {
                     &parameter,
                     |b, param| {
                         let firewall = StatefullFirewall::new(true, FeatureFirewall::default());
-                        firewall.set_ip_address(Some(vec![
+                        firewall.set_ip_addresses(Some(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
                         ]));
@@ -136,7 +136,7 @@ pub fn firewall_tcp_inbound_benchmarks(c: &mut Criterion) {
                     &parameter,
                     |b, param| {
                         let firewall = StatefullFirewall::new(true, FeatureFirewall::default());
-                        firewall.set_ip_address(Some(vec![
+                        firewall.set_ip_addresses(Some(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
                         ]));
@@ -178,7 +178,7 @@ pub fn firewall_tcp_inbound_benchmarks(c: &mut Criterion) {
                     &parameter,
                     |b, param| {
                         let firewall = StatefullFirewall::new(true, FeatureFirewall::default());
-                        firewall.set_ip_address(Some(vec![
+                        firewall.set_ip_addresses(Some(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
                         ]));
@@ -225,7 +225,7 @@ pub fn firewall_tcp_inbound_benchmarks(c: &mut Criterion) {
                     &parameter,
                     |b, param| {
                         let firewall = StatefullFirewall::new(true, FeatureFirewall::default());
-                        firewall.set_ip_address(Some(vec![
+                        firewall.set_ip_addresses(Some(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
                         ]));
@@ -397,7 +397,7 @@ pub fn firewall_udp_inbound_benchmarks(c: &mut Criterion) {
                     &parameter,
                     |b, param| {
                         let firewall = StatefullFirewall::new(true, FeatureFirewall::default());
-                        firewall.set_ip_address(Some(vec![
+                        firewall.set_ip_addresses(Some(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
                         ]));
@@ -441,7 +441,7 @@ pub fn firewall_udp_inbound_benchmarks(c: &mut Criterion) {
                     &parameter,
                     |b, param| {
                         let firewall = StatefullFirewall::new(true, FeatureFirewall::default());
-                        firewall.set_ip_address(Some(vec![
+                        firewall.set_ip_addresses(Some(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
                         ]));
@@ -483,7 +483,7 @@ pub fn firewall_udp_inbound_benchmarks(c: &mut Criterion) {
                     &parameter,
                     |b, param| {
                         let firewall = StatefullFirewall::new(true, FeatureFirewall::default());
-                        firewall.set_ip_address(Some(vec![
+                        firewall.set_ip_addresses(Some(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
                         ]));
@@ -530,7 +530,7 @@ pub fn firewall_udp_inbound_benchmarks(c: &mut Criterion) {
                     &parameter,
                     |b, param| {
                         let firewall = StatefullFirewall::new(true, FeatureFirewall::default());
-                        firewall.set_ip_address(Some(vec![
+                        firewall.set_ip_addresses(Some(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
                         ]));

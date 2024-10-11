@@ -6,7 +6,13 @@ from helpers import setup_api, setup_mesh_nodes, SetupParameters
 from mesh_api import API
 from telio import Client
 from utils import testing, stun
-from utils.bindings import PathType, NodeState, RelayState, TelioAdapterType
+from utils.bindings import (
+    default_features,
+    PathType,
+    NodeState,
+    RelayState,
+    TelioAdapterType,
+)
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
     generate_connection_tracker_config,

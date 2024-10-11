@@ -559,7 +559,7 @@ async fn consolidate_firewall<F: Firewall>(
     }
 
     // Save local node ip addresses
-    firewall.set_ip_address(
+    firewall.set_ip_addresses(
         requested_state
             .meshnet_config
             .as_ref()
@@ -1493,7 +1493,7 @@ mod tests {
             .return_once(Default::default);
 
         expect_add_to_vpeer_whitelist(&mut firewall, pub_key_starcast_vpeer);
-        firewall.expect_set_ip_address().once().return_const(());
+        firewall.expect_set_ip_addresses().once().return_const(());
 
         expect_add_to_peer_whitelist(&mut firewall, pub_key_1);
         expect_add_to_port_whitelist(&mut firewall, pub_key_1);
@@ -1552,7 +1552,7 @@ mod tests {
         expect_remove_from_peer_whitelist(&mut firewall, pub_key_4);
         expect_remove_from_port_whitelist(&mut firewall, pub_key_4);
 
-        firewall.expect_set_ip_address().once().return_const(());
+        firewall.expect_set_ip_addresses().once().return_const(());
         consolidate_firewall(
             &requested_state,
             &firewall,
@@ -1581,7 +1581,7 @@ mod tests {
 
         expect_add_to_vpeer_whitelist(&mut firewall, pub_key_starcast_vpeer);
 
-        firewall.expect_set_ip_address().once().return_const(());
+        firewall.expect_set_ip_addresses().once().return_const(());
 
         expect_get_peer_whitelist(&mut firewall, vec![pub_key_1]);
         expect_get_port_whitelist(&mut firewall, vec![]);
@@ -1618,7 +1618,7 @@ mod tests {
             ..Default::default()
         });
 
-        firewall.expect_set_ip_address().once().return_const(());
+        firewall.expect_set_ip_addresses().once().return_const(());
         expect_add_to_vpeer_whitelist(&mut firewall, pub_key_starcast_vpeer);
 
         expect_get_peer_whitelist(&mut firewall, vec![]);
@@ -1657,7 +1657,7 @@ mod tests {
 
         expect_remove_from_peer_whitelist(&mut firewall, pub_key_1);
 
-        firewall.expect_set_ip_address().once().return_const(());
+        firewall.expect_set_ip_addresses().once().return_const(());
 
         consolidate_firewall(
             &requested_state,

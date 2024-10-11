@@ -4,7 +4,7 @@ import pytest
 from contextlib import AsyncExitStack
 from helpers import setup_api, setup_mesh_nodes, SetupParameters
 from typing import List, Tuple
-from utils.bindings import TelioAdapterType
+from utils.bindings import default_features, TelioAdapterType
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.dns import query_dns

@@ -9,7 +9,7 @@ from helpers import SetupParameters, setup_mesh_nodes, setup_api
 from mesh_api import Node
 from typing import Tuple, Optional
 from utils import testing, stun
-from utils.bindings import TelioAdapterType
+from utils.bindings import default_features, Features, TelioAdapterType
 from utils.connection_tracker import (
     ConnectionLimits,
     ConnectionTrackerConfig,
