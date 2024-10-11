@@ -1,5 +1,6 @@
 import asyncio
 import itertools
+import json
 import pytest
 from config import WG_SERVERS
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -28,6 +29,7 @@ from utils.connection_util import (
 )
 from utils.ping import ping
 from utils.router import IPStack
+from uuid import UUID
 
 
 @dataclass
@@ -421,3 +423,38 @@ async def ping_between_all_nodes(env: Environment) -> None:
         )
         if not client.is_node(node)
     ])
+
+
+async def send_https_request(
+    connection, endpoint, method, ca_cert_path, data=None, expect_response=True
+):
+    curl_command = [
+        "curl",
+        "--cacert",
+        ca_cert_path,
+        "-X",
+        method,
+        endpoint,
+        "-H",
+        "Content-Type: application/json",
+    ]
+
+    if data:
+        curl_command.extend(["-d", data])
+
+    process = await connection.create_process(curl_command).execute()
+    response = process.get_stdout()
+    if expect_response:
+        try:
+            return json.loads(response)
+        except json.JSONDecodeError:
+            assert False, f"Expected JSON response but got: {response}"
+    return None
+
+
+def verify_uuid(uuid_to_test, version=4):
+    try:
+        uuid_obj = UUID(uuid_to_test, version=version)
+    except ValueError:
+        assert False, "Not a valid UUID"
+    assert str(uuid_obj) == uuid_to_test, "Not a valid UUID"

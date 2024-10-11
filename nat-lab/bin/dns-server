@@ -8,14 +8,22 @@ KNOWN = {
         b"google.com": dns.Record_AAAA(address="2a00:1450:400e:80c::200e"),
         b"www.google.com": dns.Record_AAAA(address="2a00:1450:400e:80c::200e"),
         b"error-with-noerror-return-code.com": None,
+        b"api.nordvpn.com": dns.Record_AAAA(address="2001:db8:85a4::adda:edde:b"),
+        b"mqtt.nordvpn.com": dns.Record_AAAA(address="2001:db8:85a4::adda:edde:a"),
     },
     dns.A: {
         b"google.com": dns.Record_A(address="142.250.179.206"),
         b"www.google.com": dns.Record_A(address="142.250.179.206"),
         b"error-with-noerror-return-code.com": None,
+        b"api.nordvpn.com": dns.Record_A(address="10.0.80.86"),
+        b"mqtt.nordvpn.com": dns.Record_A(address="10.0.80.85"),
     },
     dns.CNAME: {
         b"www.microsoft.com": dns.Record_CNAME(name="www.microsoft.com-c-3.edgekey.net.")
+    },
+    dns.PTR: {
+        b"85.80.0.10.in-addr.arpa": dns.Record_PTR(name="mqtt.nordvpn.com"),
+        b"86.80.0.10.in-addr.arpa": dns.Record_PTR(name="api.nordvpn.com"),
     }
 }
 

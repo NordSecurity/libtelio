@@ -90,9 +90,11 @@ services:
       - "derp-03:10.0.10.3"
       - "derp-00:10.0.10.245"
       - "pmtu-probe:10.0.80.84"
+      - "api.nordvpn.com:10.0.80.86"
     volumes:
       - ../:/libtelio
       - ./data/teliod:/etc/teliod
+      - ./data/core_api/server.pem:/etc/ssl/server_certificate/server.pem
     healthcheck:
       test: "ls /ready"
   cone-client-02:
@@ -586,17 +588,20 @@ services:
   mqtt-broker:
     hostname: mqtt-broker
     image: bytebeamio/rumqttd
-    entrypoint: rumqttd -v
+    entrypoint: rumqttd -c /etc/mqtt/rumqttd.toml
     networks:
       internet:
         ipv4_address: 10.0.80.85
         ipv6_address: 2001:db8:85a4::adda:edde:a
     healthcheck:
-      test: ["CMD-SHELL", "netstat -tlnp | grep 1883 | grep LISTEN"]
+      test: ["CMD-SHELL", "netstat -tlnp | grep 8883 | grep LISTEN"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 5s
+    volumes:
+      - ./data/core_api/rumqttd.toml:/etc/mqtt/rumqttd.toml
+      - ./data/core_api/server.pem:/etc/ssl/server_certificate/server.pem
 
   core-api:
     hostname: core-api
@@ -605,7 +610,7 @@ services:
     environment:
       PYTHONUNBUFFERED: 1
     healthcheck:
-      test: "curl http://localhost:8080" # Here the port comes directly from the source code of api server where it is hardcoded
+      test: "curl --cacert /etc/ssl/server_certificate/server.pem https://api.nordvpn.com/v1/health"
     networks:
       internet:
         ipv4_address: 10.0.80.86
@@ -613,6 +618,11 @@ services:
     depends_on:
       mqtt-broker:
         condition: service_healthy
+    volumes:
+      - ./data/core_api/server.pem:/etc/ssl/server_certificate/server.pem
+    dns:
+      - 10.0.80.82
+      - 10.0.80.83
 
 networks:
   # Network representing public internet,
