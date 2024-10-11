@@ -1430,7 +1430,12 @@ impl Runtime {
                 self.requested_state.device_config.private_key.public(),
             )?);
 
-            match SessionKeeper::start(self.entities.socket_pool.clone()).map(Arc::new) {
+            match SessionKeeper::start(
+                self.entities.socket_pool.clone(),
+                Some(self.entities.wireguard_interface.clone()),
+            )
+            .map(Arc::new)
+            {
                 Ok(session_keeper) => Some(DirectEntities {
                     local_interfaces_endpoint_provider,
                     stun_endpoint_provider,
@@ -1835,7 +1840,6 @@ impl Runtime {
 
             // Update configuration for DERP client
             meshnet_entities.derp.configure(Some(derp_config)).await;
-
             // Refresh the lists of servers for STUN endpoint provider
             if let Some(direct) = meshnet_entities.direct.as_ref() {
                 if let Some(stun_ep) = direct.stun_endpoint_provider.as_ref() {
