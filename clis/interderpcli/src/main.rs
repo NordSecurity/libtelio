@@ -17,6 +17,8 @@ use tracing_appender;
 use tracing_subscriber;
 use url::{Host, Url};
 
+const TIMEOUT: Duration = Duration::from_secs(10);
+
 #[derive(Parser)]
 #[command(version)]
 struct Opt {
@@ -106,7 +108,7 @@ async fn connect_client(
         addr,
         DerpConfig {
             secret_key: private_key,
-            timeout: Duration::from_secs(10),
+            timeout: TIMEOUT,
             ..Default::default()
         },
     ))
@@ -148,7 +150,7 @@ async fn ping_each_other(
     }
 
     info!("Try to receive message on client 1");
-    timeout(Duration::from_secs(3), async move {
+    timeout(TIMEOUT, async move {
         loop {
             let rx_msg1 = client_1
                 .comms_relayed
@@ -162,10 +164,13 @@ async fn ping_each_other(
         }
     })
     .await
-    .context("First client did not receive the ping message from the second client in 10s")??;
+    .context(format!(
+        "First client did not receive the ping message from the second client in {:?}",
+        TIMEOUT
+    ))??;
 
     info!("Try to receive message on client 2");
-    timeout(Duration::from_secs(3), async move {
+    timeout(TIMEOUT, async move {
         loop {
             let rx_msg2 = client_2
                 .comms_relayed
@@ -179,7 +184,10 @@ async fn ping_each_other(
         }
     })
     .await
-    .context("Second client did not receive the ping message from the first client in 10s")??;
+    .context(format!(
+        "Second client did not receive the ping message from the first client in {:?}",
+        TIMEOUT
+    ))??;
 
     Ok(())
 }
