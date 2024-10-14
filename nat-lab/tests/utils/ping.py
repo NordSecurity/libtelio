@@ -16,7 +16,10 @@ async def ping(
     connection: Connection, ip: str, timeout: Optional[float] = None
 ) -> None:
     async with Ping(connection, ip).run() as ping_process:
-        await ping_process.wait_for_any_ping(timeout)
+        await asyncio.create_task(
+            ping_process.wait_for_any_ping(timeout),
+            name=f"ping({connection}, {ip}, {timeout})",
+        )
 
 
 class Ping:
