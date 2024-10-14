@@ -40,6 +40,12 @@ impl LinkDetection {
             None
         };
 
+        telio_log_debug!(
+            "instantiating link detection. cfg.rtt_seconds: {:?}, enhanced_detection: {}",
+            enhanced_detection.is_some(),
+            cfg.rtt_seconds
+        );
+
         LinkDetection {
             cfg_max_allowed_rtt: Duration::from_secs(cfg.rtt_seconds),
             enhanced_detection,
@@ -50,6 +56,7 @@ impl LinkDetection {
     }
 
     pub fn insert(&mut self, public_key: &PublicKey, stats: Arc<Mutex<BytesAndTimestamps>>) {
+        telio_log_debug!("insert {}", public_key);
         self.peers
             .insert(*public_key, State::new(stats, self.cfg_max_allowed_rtt));
     }
@@ -61,6 +68,13 @@ impl LinkDetection {
         push: bool,
         curr_ip_stack: Option<IpStack>,
     ) -> LinkDetectionUpdateResult {
+        telio_log_debug!(
+            "update for {}, node_addresses: {:?}, push: {}, curr_ip_stack: {:?}",
+            public_key,
+            node_addresses,
+            push,
+            curr_ip_stack
+        );
         // We want to update info only on pull
         if push {
             return self.push_update(public_key);
@@ -70,6 +84,12 @@ impl LinkDetection {
             let ping_enabled = self.enhanced_detection.is_some();
             let result = state.update(self.cfg_max_allowed_rtt, ping_enabled);
 
+            telio_log_debug!(
+                "ping_enabled: {}, result.should_ping: {}. result.link_detection_update_result: {:?}",
+                ping_enabled,
+                result.should_ping,
+                result.link_detection_update_result
+            );
             if ping_enabled && result.should_ping {
                 if let Err(e) = self
                     .ping_channel
@@ -82,6 +102,7 @@ impl LinkDetection {
 
             result.link_detection_update_result
         } else {
+            telio_log_debug!("no peer to update");
             LinkDetectionUpdateResult {
                 should_notify: false,
                 link_state: Some(LinkState::Down),
@@ -90,6 +111,7 @@ impl LinkDetection {
     }
 
     pub fn remove(&mut self, public_key: &PublicKey) {
+        telio_log_debug!("remove {}", public_key);
         self.peers.remove(public_key);
     }
 
@@ -108,18 +130,21 @@ impl LinkDetection {
     }
 
     fn push_update(&self, public_key: &PublicKey) -> LinkDetectionUpdateResult {
-        LinkDetectionUpdateResult {
+        let res = LinkDetectionUpdateResult {
             should_notify: false,
             link_state: Some(
                 self.peers
                     .get(public_key)
                     .map_or(LinkState::Down, |p| p.current_link_state()),
             ),
-        }
+        };
+
+        telio_log_debug!("push_update: {:?}", res);
+        res
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct LinkDetectionUpdateResult {
     pub should_notify: bool,
     pub link_state: Option<LinkState>,
@@ -140,17 +165,20 @@ pub struct LinkDetectionUpdateResult {
 // Transitions to StateVariant::Up are straight forward, when the is_link_up condition is true
 // Transition from StateVariant::Up to StateVariant::Down is made through an additional state
 // StateVariant::PossibleDown which introduces a little delay of 3 seconds until we report link state Down
+#[derive(Debug)]
 enum StateVariant {
     Down,
     PossibleDown { deadline: Instant },
     Up,
 }
 
+#[derive(Debug)]
 struct StateUpdateResult {
     should_ping: bool,
     link_detection_update_result: LinkDetectionUpdateResult,
 }
 
+#[derive(Debug)]
 enum StateDecision {
     NoAction,
     Notify,
@@ -167,6 +195,7 @@ impl StateDecision {
     }
 }
 
+#[derive(Debug)]
 struct State {
     stats: Arc<Mutex<BytesAndTimestamps>>,
     variant: StateVariant,
@@ -254,9 +283,11 @@ impl State {
                             .checked_add(delay)
                             .unwrap_or_else(Instant::now),
                     };
+                    telio_log_debug!("Possibly down. delay={:?}", delay);
                     Self::build_result(StateDecision::Ping, LinkState::Up)
                 } else {
                     // Current link_state is Up
+                    telio_log_debug!("definitely up");
                     Self::build_result(StateDecision::NoAction, LinkState::Up)
                 }
             }

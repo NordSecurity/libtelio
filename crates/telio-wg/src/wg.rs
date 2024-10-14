@@ -126,7 +126,7 @@ pub const KEEPALIVE_PACKET_SIZE: u64 = 32;
 /// Default wireguard keepalive duration
 pub const WG_KEEPALIVE: Duration = Duration::from_secs(10);
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 /// A structure to hold the bytes and timestamps for received and transmitted data.
 pub struct BytesAndTimestamps {
     /// Number of received bytes.
@@ -198,8 +198,21 @@ impl BytesAndTimestamps {
 
     /// Checks if the link is up based on the round-trip time (RTT) and WireGuard keepalive interval.
     pub fn is_link_up(&self, rtt: Duration) -> bool {
+        telio_log_debug!(
+            "is_link_up. rtt={:?} self.rx_ts={:?} self.tx_ts={:?}",
+            rtt,
+            self.rx_ts,
+            self.tx_ts
+        );
         match (self.rx_ts, self.tx_ts) {
-            (Some(rx_ts), Some(tx_ts)) => tx_ts <= rx_ts || rx_ts.elapsed() < WG_KEEPALIVE + rtt,
+            (Some(rx_ts), Some(tx_ts)) => {
+                telio_log_debug!(
+                    "is_link_up:: rx_ts.elapsed: {:?}, rx_ts.elapsed() < WG_KEEPALIVE + rtt: {}",
+                    rx_ts.elapsed(),
+                    rx_ts.elapsed() < WG_KEEPALIVE + rtt
+                );
+                tx_ts <= rx_ts || rx_ts.elapsed() < WG_KEEPALIVE + rtt
+            }
             _ => false,
         }
     }

@@ -4,6 +4,7 @@ use std::net::IpAddr;
 use telio_task::{io::chan, task_exec, Runtime, RuntimeExt, Task, WaitResponse};
 use telio_utils::{ip_stack, DualTarget, IpStack, Pinger};
 
+use telio_utils::telio_log_debug;
 /// Component used to check the link state when we think it's down.
 ///
 /// Can be used with both IPv4 and IPv6 addresses.
@@ -53,6 +54,7 @@ impl Runtime for State {
 
     async fn wait(&mut self) -> WaitResponse<'_, Self::Err> {
         if let Some(targets) = self.ping_channel.recv().await {
+            telio_log_debug!("ping channel received trigger");
             Self::guard(async move {
                 let curr_ip_stack = targets.1;
 
@@ -68,12 +70,15 @@ impl Runtime for State {
                             (IpStack::IPv4, IpAddr::V6(_)) | (IpStack::IPv6, IpAddr::V4(_)) => {
                                 continue
                             }
-                            _ => (),
+                            _ => telio_log_debug!("Unsupported target combination"),
                         }
                         if let Ok(t) = DualTarget::new(t) {
+                            telio_log_debug!("Perform actual ping");
                             let _ = self.pinger.perform(t).await;
                         }
                     }
+                } else {
+                    telio_log_debug!("No targets to ping");
                 }
                 Ok(())
             })
