@@ -1,7 +1,7 @@
 import os
 from utils.connection import Connection, TargetOS
 from utils.connection_util import get_libtelio_binary_path
-from utils.process import Process
+from utils.process import Process, ProcessExecError
 
 
 class InterDerpClient:
@@ -34,9 +34,12 @@ class InterDerpClient:
         self._connection = connection
 
     async def execute(self) -> None:
+        async def on_output(output: str) -> None:
+            print(f"interderpcli_{self._instance_id}: {output}")
+
         try:
-            await self._process.execute()
-        except Exception as e:
+            await self._process.execute(on_output, on_output)
+        except ProcessExecError as e:
             print(f"Interderpcli process execution failed: {e}")
             await self.save_logs()
             raise

@@ -351,7 +351,7 @@ class Client:
         self, meshnet_config: Optional[Config] = None
     ) -> AsyncIterator["Client"]:
         if isinstance(self._connection, DockerConnection):
-            start_tcpdump(self._connection.container_name())
+            start_tcpdump([self._connection.container_name()])
             await self.clear_core_dumps()
 
         async def on_stdout(stdout: str) -> None:
