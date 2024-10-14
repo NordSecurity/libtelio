@@ -1,8 +1,9 @@
 use crate::ClientConfig;
 use base64::{prelude::*, DecodeError};
-use reqwest::{blocking::Client as BlockingClient, header, Client, StatusCode};
+use reqwest::{header, Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
 use telio::crypto::PublicKey;
 use thiserror::Error;
 use tracing::info;
@@ -112,22 +113,26 @@ pub async fn update_machine(client_config: &ClientConfig) -> Result<StatusCode, 
         .status())
 }
 
-pub fn get_meshmap(client_config: &ClientConfig) -> Result<String, Error> {
+pub async fn get_meshmap(client_config: Arc<ClientConfig>) -> Result<String, Error> {
     info!("Getting meshmap");
-    let client = BlockingClient::new();
-    Ok(client
-        .get(&format!(
-            "{}/meshnet/machines/{}/map",
-            API_BASE,
-            client_config.machine_identifier.clone()
-        ))
-        .header(
-            header::AUTHORIZATION,
-            format!("Bearer token:{}", client_config.auth_token),
-        )
-        .header(header::ACCEPT, "application/json")
-        .send()?
-        .text()?)
+    let client = Client::new();
+    Ok({
+        client
+            .get(&format!(
+                "{}/meshnet/machines/{}/map",
+                API_BASE,
+                client_config.machine_identifier.clone()
+            ))
+            .header(
+                header::AUTHORIZATION,
+                format!("Bearer token:{}", client_config.auth_token),
+            )
+            .header(header::ACCEPT, "application/json")
+            .send()
+            .await?
+            .text()
+            .await?
+    })
 }
 
 pub async fn register_machine(

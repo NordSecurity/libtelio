@@ -21,8 +21,8 @@ use std::cmp::min;
 use telio::{
     crypto::{PublicKey, SecretKey},
     device::{Device, DeviceConfig, Error as DeviceError},
-    telio_model::config::Config as MeshMap,
-    telio_model::features::Features,
+    telio_model::{config::Config as MeshMap, features::Features},
+    telio_task::io::wait_for_tx,
     telio_utils::select,
     telio_wg::AdapterType,
 };
@@ -32,7 +32,12 @@ mod config;
 mod core_api;
 mod nc;
 
+use crate::core_api::{
+    get_meshmap as get_meshmap_from_server, load_identifier_from_api, register_machine,
+    update_machine, Error as ApiError,
+};
 use crate::{comms::DaemonSocket, config::ClientConfig, nc::NotificationCenter};
+use futures::stream::StreamExt;
 
 const MAX_RETRIES: u32 = 5;
 const BASE_DELAY_MS: u64 = 500;
@@ -76,8 +81,9 @@ enum Cmd {
 }
 
 #[derive(Debug)]
-enum TelioTaskCmd {
-    UpdateMeshmap,
+pub enum TelioTaskCmd {
+    UpdateMeshmap(String),
+    GetMeshmap,
 }
 
 #[derive(Debug, ThisError)]
@@ -215,6 +221,7 @@ async fn init_api(config: &mut TeliodDaemonConfig, config_path: String) -> Resul
 fn telio_task(
     client_config: ClientConfig,
     mut rx_channel: mpsc::Receiver<TelioTaskCmd>,
+    tx_channel: mpsc::Sender<TelioTaskCmd>,
 ) -> Result<(), TeliodError> {
     debug!("Initializing telio device");
     let mut telio = Device::new(
@@ -224,21 +231,21 @@ fn telio_task(
         None,
     )?;
 
+    let client_arc = std::sync::Arc::new(client_config);
     // TODO: This is temporary to be removed later on when we have proper integration
     // tests with core API. This is to not look for tokens in a test environment
     // right now as the values are dummy and program will not run as it expects
     // real tokens.
-    if !client_config.auth_token.eq("") {
-        start_telio(&mut telio, client_config.private_key)?;
-        if let Err(e) = update_meshmap(&client_config, &telio) {
-            error!("Unable to set meshmap due to {e}");
-        }
+    if !client_arc.auth_token.eq("") {
+        start_telio(&mut telio, client_arc.private_key)?;
+        get_meshmap(client_arc.clone(), tx_channel.clone());
 
         while let Some(cmd) = rx_channel.blocking_recv() {
             info!("Got command {:?}", cmd);
             match cmd {
-                TelioTaskCmd::UpdateMeshmap => {
-                    if let Err(e) = update_meshmap(&client_config, &telio) {
+                TelioTaskCmd::GetMeshmap => get_meshmap(client_arc.clone(), tx_channel.clone()),
+                TelioTaskCmd::UpdateMeshmap(map) => {
+                    if let Err(e) = update_meshmap(&map, &telio) {
                         error!("Unable to set meshmap due to {e}");
                     }
                 }
@@ -248,8 +255,24 @@ fn telio_task(
     Ok(())
 }
 
-fn update_meshmap(client_config: &ClientConfig, telio: &Device) -> Result<(), TeliodError> {
-    let meshmap: MeshMap = serde_json::from_str(&get_meshmap(client_config)?)?;
+#[allow(mpsc_blocking_send)]
+fn get_meshmap(client_config: Arc<ClientConfig>, tx: mpsc::Sender<TelioTaskCmd>) {
+    let config_clone = client_config.clone();
+    tokio::spawn(async move {
+        let result = get_meshmap_from_server(config_clone).await;
+        match result {
+            Ok(map) => {
+                if let Err(e) = tx.send(TelioTaskCmd::UpdateMeshmap(map)).await {
+                    error!("Unable to send meshmap due to {e}");
+                }
+            }
+            Err(e) => error!("Getting meshmap failed due to {e}"),
+        }
+    });
+}
+
+fn update_meshmap(map: &str, telio: &Device) -> Result<(), TeliodError> {
+    let meshmap: MeshMap = serde_json::from_str(map)?;
     trace!("Meshmap {:#?}", meshmap);
     telio.set_config(&Some(meshmap))?;
     Ok(())
@@ -372,7 +395,9 @@ async fn daemon_event_loop(
             public_key: config.private_key.ok_or(TeliodError::TokenError)?.public(),
         };
     }
-    let telio_task_handle = tokio::task::spawn_blocking(|| telio_task(client_config, rx));
+    let tx_clone = tx.clone();
+    let telio_task_handle =
+        tokio::task::spawn_blocking(move || telio_task(client_config, rx, tx_clone));
     let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
 
     info!("Entering event loop");
@@ -385,7 +410,7 @@ async fn daemon_event_loop(
                         info!("Hello {}", name);
                     }
                     Ok(ClientCmd::GetMeshmap) => {
-                        if let Err(e) = tx.try_send(TelioTaskCmd::UpdateMeshmap) {
+                        if let Err(e) = tx.try_send(TelioTaskCmd::GetMeshmap) {
                             error!("Channel closed or telio not yet started. {e}");
                         };
                     }
