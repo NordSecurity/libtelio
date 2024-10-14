@@ -2,6 +2,7 @@
 //! with other devices§
 
 use core::fmt;
+use enum_map::{Enum, EnumMap};
 use ipnet::Ipv4Net;
 use pnet_packet::{
     icmp::{
@@ -225,7 +226,7 @@ pub trait Firewall {
 }
 
 /// Possible permissions of the peer
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Enum, PartialEq)]
 pub enum Permissions {
     /// Permission to allow incoming connections
     IncomingConnections,
@@ -266,13 +267,7 @@ struct Whitelist {
     port_whitelist: HashMap<PublicKey, u16>,
 
     /// List of whitelisted peers identified by public key from which any packet will be accepted
-    incoming_conn_whitelist: HashSet<PublicKey>,
-
-    /// List of whitelisted peers identified by public key from which any packet will be accepted
-    local_conn_whitelist: HashSet<PublicKey>,
-
-    /// List of whitelisted peers identified by public key from which any packet will be accepted
-    routing_whitelist: HashSet<PublicKey>,
+    whitelist: EnumMap<Permissions, HashSet<PublicKey>>,
 
     /// Hash of public key of vpn peer
     vpn_peer: Option<PublicKey>,
@@ -452,25 +447,6 @@ macro_rules! unwrap_lock_or_return {
     };
 }
 
-macro_rules! map_whitelist {
-    ($permission:expr, $peer:expr, $whitelist:expr, $action_name:expr, $action:ident(), $($pattern:path => $field:ident,)*) => {
-        match $permission {
-            $(
-            $pattern => {
-                telio_log_debug!(
-                    "{} {:?} peer in firewall {} whitelist",
-                    $action_name,
-                    $peer,
-                    $pattern
-                );
-                unwrap_lock_or_return!($whitelist.write())
-                    .$field
-                    .$action($peer);
-            })*
-        }
-    };
-}
-
 impl StatefullFirewall {
     /// Constructs firewall with default timeout (2 mins) and capacity (4096 entries).
     pub fn new(use_ipv6: bool, feature: FeatureFirewall) -> Self {
@@ -513,7 +489,7 @@ impl StatefullFirewall {
         let whitelist = unwrap_lock_or_return!(self.whitelist.read(), false);
 
         // If peer is whitelisted - allow immediately
-        if whitelist.incoming_conn_whitelist.contains(&peer) {
+        if whitelist.whitelist[Permissions::IncomingConnections].contains(&peer) {
             telio_log_trace!(
                 "Outbound IP packet is for whitelisted peer, forwarding: {:?}",
                 ip
@@ -900,7 +876,7 @@ impl StatefullFirewall {
         let icmp_packet = unwrap_option_or_return!(IcmpPacket::new(ip.payload()), false);
         let whitelist = unwrap_lock_or_return!(self.whitelist.read(), false);
 
-        if whitelist.incoming_conn_whitelist.contains(&peer) {
+        if whitelist.whitelist[Permissions::IncomingConnections].contains(&peer) {
             telio_log_trace!("Accepting ICMP packet {:?} {:?}", ip, peer);
             return true;
         } else if P::Icmp::BLOCKED_TYPES.contains(&icmp_packet.get_icmp_type().0) {
@@ -1401,7 +1377,7 @@ impl StatefullFirewall {
     ) -> PacketAction {
         let local_ip = unwrap_lock_or_return!(self.ip_addresses.read(), PacketAction::Drop);
         if self.is_private_address_except_local_interface(&local_addr) {
-            if whitelist.local_conn_whitelist.contains(&pubkey) {
+            if whitelist.whitelist[Permissions::LocalAreaConnections].contains(&pubkey) {
                 return PacketAction::PassThrough;
             } else {
                 telio_log_trace!("Local connection policy failed");
@@ -1413,7 +1389,7 @@ impl StatefullFirewall {
             return PacketAction::HandleLocally;
         }
 
-        if whitelist.routing_whitelist.contains(&pubkey) {
+        if whitelist.whitelist[Permissions::RoutingConnections].contains(&pubkey) {
             telio_log_trace!("Forwarding due to Routing policy");
             return PacketAction::PassThrough;
         }
@@ -1423,7 +1399,7 @@ impl StatefullFirewall {
 
     fn decide_connection_handling(&self, pubkey: PublicKey, local_port: u16) -> PacketAction {
         let whitelist = unwrap_lock_or_return!(self.whitelist.read(), PacketAction::Drop);
-        if whitelist.incoming_conn_whitelist.contains(&pubkey) {
+        if whitelist.whitelist[Permissions::IncomingConnections].contains(&pubkey) {
             if self.record_whitelisted {
                 return PacketAction::HandleLocally;
             } else {
@@ -1467,60 +1443,24 @@ impl Firewall for StatefullFirewall {
     fn clear_peer_whitelists(&self) {
         telio_log_debug!("Clearing all firewall whitelist");
         unwrap_lock_or_return!(self.whitelist.write())
-            .incoming_conn_whitelist
-            .clear();
-        unwrap_lock_or_return!(self.whitelist.write())
-            .local_conn_whitelist
-            .clear();
-        unwrap_lock_or_return!(self.whitelist.write())
-            .routing_whitelist
-            .clear();
+            .whitelist
+            .iter_mut()
+            .for_each(|(_, whitelist)| whitelist.clear());
     }
 
     fn add_to_peer_whitelist(&self, peer: PublicKey, permissions: Permissions) {
-        map_whitelist!(
-            permissions,
-            peer,
-            self.whitelist,
-            "Adding",
-            insert(),
-            Permissions::IncomingConnections => incoming_conn_whitelist,
-            Permissions::LocalAreaConnections => local_conn_whitelist,
-            Permissions::RoutingConnections => routing_whitelist,
-        );
+        unwrap_lock_or_return!(self.whitelist.write(), Default::default()).whitelist[permissions]
+            .insert(peer);
     }
 
     fn remove_from_peer_whitelist(&self, peer: PublicKey, permissions: Permissions) {
-        map_whitelist!(
-            permissions,
-            &peer,
-            self.whitelist,
-            "Remove",
-            remove(),
-            Permissions::IncomingConnections => incoming_conn_whitelist,
-            Permissions::LocalAreaConnections => local_conn_whitelist,
-            Permissions::RoutingConnections => routing_whitelist,
-        );
+        unwrap_lock_or_return!(self.whitelist.write(), Default::default()).whitelist[permissions]
+            .remove(&peer);
     }
 
     fn get_peer_whitelist(&self, permissions: Permissions) -> HashSet<PublicKey> {
-        match permissions {
-            Permissions::IncomingConnections => {
-                unwrap_lock_or_return!(self.whitelist.write(), Default::default())
-                    .incoming_conn_whitelist
-                    .clone()
-            }
-            Permissions::LocalAreaConnections => {
-                unwrap_lock_or_return!(self.whitelist.write(), Default::default())
-                    .local_conn_whitelist
-                    .clone()
-            }
-            Permissions::RoutingConnections => {
-                unwrap_lock_or_return!(self.whitelist.write(), Default::default())
-                    .routing_whitelist
-                    .clone()
-            }
-        }
+        unwrap_lock_or_return!(self.whitelist.write(), Default::default()).whitelist[permissions]
+            .clone()
     }
 
     fn add_vpn_peer(&self, vpn_peer: PublicKey) {
