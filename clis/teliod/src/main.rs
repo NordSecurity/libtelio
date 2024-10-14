@@ -22,7 +22,6 @@ use telio::{
     crypto::{PublicKey, SecretKey},
     device::{Device, DeviceConfig, Error as DeviceError},
     telio_model::{config::Config as MeshMap, features::Features},
-    telio_task::io::wait_for_tx,
     telio_utils::select,
     telio_wg::AdapterType,
 };
@@ -328,8 +327,7 @@ impl ClientConfig {
                 id
             } else {
                 debug!("Machine not yet registered");
-                // If registering fails. Close the daemon
-                register_machine(&hw_identifier, public_key, &config.authentication_token).await?
+                "".to_string()
             }
         };
 
