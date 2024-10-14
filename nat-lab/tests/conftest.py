@@ -2,13 +2,13 @@ import asyncio
 import os
 import pytest
 import subprocess
-from contextlib import AsyncExitStack
-from helpers import SetupParameters, setup_connections
+from helpers import SetupParameters
 from interderp_cli import InterDerpClient
+from itertools import combinations
 from mesh_api import start_tcpdump, stop_tcpdump
 from utils.bindings import TelioAdapterType
 from utils.connection import DockerConnection
-from utils.connection_util import ConnectionTag, LAN_ADDR_MAP
+from utils.connection_util import ConnectionTag, LAN_ADDR_MAP, new_connection_raw
 from utils.router import IPStack
 from utils.vm import windows_vm_util, mac_vm_util
 
@@ -104,45 +104,34 @@ def pytest_make_parametrize_id(config, val):
 
 
 async def setup_check_interderp():
-    async with AsyncExitStack() as exit_stack:
-        connection = (
-            await setup_connections(exit_stack, [ConnectionTag.DOCKER_CONE_CLIENT_1])
-        )[0].connection
-        if isinstance(connection, DockerConnection):
-            start_tcpdump(connection.container_name())
-            derp_test_12 = InterDerpClient(
-                connection,
-                DERP_SERVER_1_ADDR,
-                DERP_SERVER_2_ADDR,
-                DERP_SERVER_1_SECRET_KEY,
-                DERP_SERVER_2_SECRET_KEY,
-                1,
-            )
-            await derp_test_12.execute()
-            await derp_test_12.save_logs()
-
-            derp_test_23 = InterDerpClient(
-                connection,
-                DERP_SERVER_2_ADDR,
-                DERP_SERVER_3_ADDR,
-                DERP_SERVER_1_SECRET_KEY,
-                DERP_SERVER_2_SECRET_KEY,
-                2,
-            )
-            await derp_test_23.execute()
-            await derp_test_23.save_logs()
-
-            derp_test_31 = InterDerpClient(
-                connection,
-                DERP_SERVER_3_ADDR,
-                DERP_SERVER_1_ADDR,
-                DERP_SERVER_1_SECRET_KEY,
-                DERP_SERVER_2_SECRET_KEY,
-                3,
-            )
-            await derp_test_31.execute()
-            await derp_test_31.save_logs()
-            stop_tcpdump([connection.container_name()])
+    async with new_connection_raw(ConnectionTag.DOCKER_CONE_CLIENT_1) as connection:
+        if not isinstance(connection, DockerConnection):
+            raise Exception("Not docker connection")
+        containers = [
+            connection.container_name(),
+            "nat-lab-derp-01-1",
+            "nat-lab-derp-02-1",
+            "nat-lab-derp-03-1",
+        ]
+        start_tcpdump(containers)
+        try:
+            for idx, (server1, server2) in enumerate(
+                combinations(
+                    [DERP_SERVER_1_ADDR, DERP_SERVER_2_ADDR, DERP_SERVER_3_ADDR], 2
+                )
+            ):
+                derp_test = InterDerpClient(
+                    connection,
+                    server1,
+                    server2,
+                    DERP_SERVER_1_SECRET_KEY,
+                    DERP_SERVER_2_SECRET_KEY,
+                    idx,
+                )
+                await derp_test.execute()
+                await derp_test.save_logs()
+        finally:
+            stop_tcpdump(containers)
 
 
 SETUP_CHECKS = [

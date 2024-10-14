@@ -371,7 +371,7 @@ class API:
         )
 
         for node in node_list:
-            start_tcpdump(server_config["container"])
+            start_tcpdump([server_config["container"]])
             if "type" in server_config and server_config["type"] == "nordlynx":
                 priv_key = server_config["private_key"]
                 commands = [
@@ -444,17 +444,17 @@ class API:
         return tuple(list(self.nodes.values())[current_node_list_len:])
 
 
-def start_tcpdump(container_name):
+def start_tcpdump(container_names: List[str]):
     if os.environ.get("NATLAB_SAVE_LOGS") is None:
         return
-    # First make sure that no leftover processes/files will interfere
-    cmd = f"docker exec --privileged {container_name} killall tcpdump"
-    os.system(cmd)
-    cmd = f"docker exec --privileged {container_name} rm {PCAP_FILE_PATH}"
-    os.system(cmd)
-
-    cmd = f"docker exec -d --privileged {container_name} tcpdump -i any -U -w {PCAP_FILE_PATH}"
-    os.system(cmd)
+    for container_name in container_names:
+        # First make sure that no leftover processes/files will interfere
+        cmd = f"docker exec --privileged {container_name} killall tcpdump"
+        os.system(cmd)
+        cmd = f"docker exec --privileged {container_name} rm {PCAP_FILE_PATH}"
+        os.system(cmd)
+        cmd = f"docker exec -d --privileged {container_name} tcpdump -i any -U -w {PCAP_FILE_PATH}"
+        os.system(cmd)
 
 
 def stop_tcpdump(container_names):
