@@ -1,10 +1,9 @@
 import argparse
 import errno
-import select
+import selectors
 import socket
 import sys
 import time
-from typing import TextIO, List, Union
 
 UDP_SCAN_COUNT: int = 5
 RECV_SIZE = 4096
@@ -22,6 +21,8 @@ class NetCat:
         self.ipv6: bool = self.args.ipv6
         self.sock: socket.socket = self._create_socket()
         self.client_addr: str | None = None
+        self.selector = selectors.DefaultSelector()
+        self.should_close = False
 
     def _vprint(self, *args, **kwargs):
         """print an event to stderr in verbose mode"""
@@ -97,36 +98,44 @@ class NetCat:
             self.sock.send(b"X")
             time.sleep(1)
 
-    def _readwrite(self):
-        """Loop reading though sockets and stdin"""
-        inputs: List[Union[socket.socket, TextIO]] = [self.sock]
+    def _register_socket(self):
+        """Register the socket to the selector for read events"""
+        self.selector.register(self.sock, selectors.EVENT_READ, self._read_from_socket)
+
+    def _register_stdin(self):
+        """Register stdin to the selector for read events, unless disabled"""
         if not self.args.d:
-            inputs.append(sys.stdin)
-        while True:
-            readable, _, _ = select.select(inputs, [], [])
-            for r in readable:
-                # read socket
-                if r == self.sock:
-                    data, addr = self.sock.recvfrom(RECV_SIZE)
-                    if self.udp and self.listen and not self.client_addr:
-                        self._vprint(f"Connection received on {addr[0]} {addr[1]}")
-                        self.client_addr = addr
-                        self.sock.connect(addr)
-                    if not data:
-                        # connection closed
-                        return
-                    sys.stdout.buffer.write(data)
-                    sys.stdout.flush()
-                # read stdin
-                elif r == sys.stdin:
-                    data = sys.stdin.buffer.readline()
-                    if not data:
-                        # EOF on stdin
-                        return
-                    if self.listen and self.client_addr:
-                        self.sock.sendto(data, self.client_addr)
-                    else:
-                        self.sock.send(data)
+            self.selector.register(
+                sys.stdin, selectors.EVENT_READ, self._read_from_stdin
+            )
+
+    def _read_from_socket(self):
+        """Handle incoming data from the socket"""
+        data, addr = self.sock.recvfrom(RECV_SIZE)
+        if self.udp and self.listen and not self.client_addr:
+            self._vprint(f"Connection received on {addr[0]} {addr[1]}")
+            self.client_addr = addr
+            self.sock.connect(addr)
+        if data:
+            sys.stdout.buffer.write(data)
+            sys.stdout.flush()
+        else:
+            # Connection closed
+            self.selector.unregister(self.sock)
+            self.should_close = True
+
+    def _read_from_stdin(self):
+        """Handle input from stdin and send it over the socket"""
+        data = sys.stdin.buffer.readline()
+        if data:
+            if self.listen and self.client_addr:
+                self.sock.sendto(data, self.client_addr)
+            else:
+                self.sock.send(data)
+        else:
+            # EOF on stdin
+            self.selector.unregister(sys.stdin)
+            self.should_close = True
 
     def run(self):
         try:
@@ -135,7 +144,13 @@ class NetCat:
             else:
                 self._connect()
             if not self.args.z:
-                self._readwrite()
+                self._register_socket()
+                self._register_stdin()
+                while not self.should_close:
+                    events = self.selector.select(timeout=None)
+                    for key, _ in events:
+                        callback = key.data
+                        callback()
         except KeyboardInterrupt:
             print("")
             sys.exit(2)
@@ -146,7 +161,9 @@ class NetCat:
             print(f"nc: {e}", file=sys.stderr)
             sys.exit(1)
         finally:
-            self.sock.close()
+            self.selector.close()
+            if self.sock:
+                self.sock.close()
 
 
 def main():
