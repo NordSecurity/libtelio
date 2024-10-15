@@ -1,13 +1,13 @@
 use std::{
     io::{self, ErrorKind},
-    net::IpAddr,
+    net::{Ipv4Addr, Ipv6Addr},
     str::{from_utf8, FromStr},
     sync::{atomic::AtomicBool, Arc, Mutex},
 };
 
 use once_cell::sync::Lazy;
 use rand::Rng;
-use regex::{Captures, Regex, RegexBuilder};
+use regex::{Captures, Match, Regex, RegexBuilder};
 
 use tracing::{level_filters::LevelFilter, Subscriber};
 use tracing_subscriber::{
@@ -177,22 +177,26 @@ impl LogCensor {
         #[allow(clippy::expect_used)]
         RegexBuilder::new(
             r"
-                (?:
+                (?<IP4>
+                    \b
+                    (?:
+                        (?:
+                            25[0-5]
+                            |  2[0-4][0-9]
+                            |  1[0-9]{2}
+                            |  [1-9]?[0-9]
+                        )\.
+                    ){3}
                     (?:
                         25[0-5]
                         |  2[0-4][0-9]
                         |  1[0-9]{2}
                         |  [1-9]?[0-9]
-                    )\.
-                ){3}
-                (?:
-                    25[0-5]
-                    |  2[0-4][0-9]
-                    |  1[0-9]{2}
-                    |  [1-9]?[0-9]
+                    )
+                    \b
                 )
                 |
-                (?:
+                (?<IP6>
                     ([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}
                     |   :(:[0-9a-fA-F]{1,4}){1,7}
                     |   ([0-9a-fA-F]{1,4}:){1}(:[0-9a-fA-F]{1,4}){1,6}
@@ -202,6 +206,11 @@ impl LogCensor {
                     |   ([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}
                     |   ([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}
                     |   ([0-9a-fA-F]{1,4}:){1,7}:
+                )
+                |
+                (?<DOMAIN>
+                    (([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)+
+                    ([A-Za-z]|[A-Za-z][A-Za-z]*[A-Za-z])\.
                 )
                 ",
         )
@@ -224,46 +233,50 @@ impl LogCensor {
         self.is_enabled.load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    fn incorret_chars_on_bounds(input: &str, m: &Match) -> bool {
+        return [m.start().wrapping_sub(1), m.end()]
+            .iter()
+            .flat_map(|pos| input.chars().nth(*pos))
+            .any(|c| c.is_alphanumeric() || c == '_' || c == '.');
+    }
+
+    fn hash(&self, name: &str, input: &[u8]) -> String {
+        let mut hasher = blake3::Hasher::new();
+
+        hasher.update(input);
+        hasher.update(&self.ip_mask_seed);
+        let hash_prefix = &hasher.finalize().to_hex();
+
+        // Blake3 hash is much bigger than 8 bytes / 16 nibbles
+        format!("{name}({hash_prefix:.16})")
+    }
+
     fn censor_logs(&self, log: String) -> String {
         if !self.should_censor() {
             return log;
         }
         // Gather all of the IPs
         let replaced = self.ip_regex.replace_all(&log, |captures: &Captures| {
-            captures
-                .get(0)
-                .map(|ip_match| {
-                    let incorret_chars_on_bounds =
-                        [ip_match.start().wrapping_sub(1), ip_match.end()]
-                            .iter()
-                            .flat_map(|pos| log.chars().nth(*pos))
-                            .any(|c| c.is_alphanumeric() || c == '_' || c == '.');
-                    if incorret_chars_on_bounds {
-                        return ip_match.as_str().to_string();
+            if let Some(m) = captures.name("IP4") {
+                if let Ok(ip) = Ipv4Addr::from_str(m.as_str()) {
+                    return self.hash("IP", ip.octets().as_slice());
+                }
+            }
+            if let Some(m) = captures.name("IP6") {
+                if let Ok(ip) = Ipv6Addr::from_str(m.as_str()) {
+                    if Self::incorret_chars_on_bounds(&log, &m) {
+                        return m.as_str().to_owned();
                     }
-
-                    IpAddr::from_str(ip_match.as_str())
-                        .map(|ip_addr| {
-                            // Probably good enough protection for this usecase
-                            let mut hasher = blake3::Hasher::new();
-                            match ip_addr {
-                                IpAddr::V4(ipv4) => hasher.update(ipv4.octets().as_slice()),
-                                IpAddr::V6(ipv6) => hasher.update(ipv6.octets().as_slice()),
-                            };
-                            hasher.update(&self.ip_mask_seed);
-
-                            // Blake3 hash is much bigger than 8 bytes
-                            #[allow(index_access_check)]
-                            let hash_prefix = &hasher.finalize().to_hex()[..16];
-
-                            format!("IP({})", hash_prefix)
-                        })
-                        .unwrap_or(ip_match.as_str().to_owned())
-                })
-                .unwrap_or(
-                    "Regex crate guarantees this, too low priority to panic on its fail, though"
-                        .to_string(),
-                )
+                    return self.hash("IP", ip.octets().as_slice());
+                }
+            }
+            if let Some(m) = captures.name("DOMAIN") {
+                return self.hash("DOMAIN", m.as_str().as_bytes());
+            }
+            captures.get(0).map(|s| s.as_str().to_owned()).unwrap_or(
+                "Regex crate guarantees this, too low priority to panic on its fail, though"
+                    .to_string(),
+            )
         });
 
         match replaced {
@@ -341,7 +354,7 @@ mod test {
         }
     }
 
-    const EXAMPLES: [(&'static str, &'static str); 11] = [
+    const EXAMPLES: [(&'static str, &'static str); 15] = [
             (
                 "1999-09-09 [INFO] New endpoint (1.2.3.4:1234) created",
                 "1999-09-09 [INFO] New endpoint (IP(959535cab4852bd4):1234) created",
@@ -386,7 +399,23 @@ mod test {
                 "A list of IPv6, IPv4 and some strange mix: [a:b:c::d:e:f, 1.2.3.4, 1.2::c:d]",
                 "A list of IPv6, IPv4 and some strange mix: [IP(46ba26199a45b3a1), IP(959535cab4852bd4), 1.2::c:d]",
             ),
-        ];
+            (
+                r#"2024-10-15 09:39:44.161127 TelioLogLevel.DEBUG "telio_dns::forward":220 forwarding lookup: google.com. A"#,
+                r#"2024-10-15 09:39:44.161127 TelioLogLevel.DEBUG "telio_dns::forward":220 forwarding lookup: DOMAIN(c6f130761097acd8) A"#
+            ),
+            (
+                r#"2024-10-15 09:39:44.160969 TelioLogLevel.DEBUG "telio_dns::nameserver":221 DNS request: Request { message: MessageRequest { header: Header { id: 43687, message_type: Query, op_code: Query, authoritative: false, truncation: false, recursion_desired: true, recursion_available: false, authentic_data: false, checking_disabled: false, response_code: NoError, query_count: 1, answer_count: 0, name_server_count: 0, additional_count: 0 }, query: WireQuery { query: LowerQuery { name: LowerName(Name("google.com.")), original: Query { name: Name("google.com."), query_type: A, query_class: IN } }, original: [6, 103, 111, 111, 103, 108, 101, 3, 99, 111, 109, 0, 0, 1, 0, 1] }, answers: [], name_servers: [], additionals: [], sig0: [], edns: None }, src: 100.127.234.27:41983, protocol: UDP }"#,
+                r#"2024-10-15 09:39:44.160969 TelioLogLevel.DEBUG "telio_dns::nameserver":221 DNS request: Request { message: MessageRequest { header: Header { id: 43687, message_type: Query, op_code: Query, authoritative: false, truncation: false, recursion_desired: true, recursion_available: false, authentic_data: false, checking_disabled: false, response_code: NoError, query_count: 1, answer_count: 0, name_server_count: 0, additional_count: 0 }, query: WireQuery { query: LowerQuery { name: LowerName(Name("DOMAIN(c6f130761097acd8)")), original: Query { name: Name("DOMAIN(c6f130761097acd8)"), query_type: A, query_class: IN } }, original: [6, 103, 111, 111, 103, 108, 101, 3, 99, 111, 109, 0, 0, 1, 0, 1] }, answers: [], name_servers: [], additionals: [], sig0: [], edns: None }, src: IP(5b06ebcfbb9e3791):41983, protocol: UDP }"#
+            ),
+            (
+                r#"2024-10-15 09:38:38.506464 TelioLogLevel.DEBUG "hickory_resolver::name_server::name_server_pool":374 got a request result: Ok(DnsResponse { message: Message { header: Header { id: 7817, message_type: Response, op_code: Query, authoritative: false, truncation: false, recursion_desired: false, recursion_available: true, authentic_data: false, checking_disabled: false, response_code: NoError, query_count: 1, answer_count: 1, name_server_count: 0, additional_count: 0 }, queries: [Query { name: Name("www.google.com."), query_type: A, query_class: IN }], answers: [Record { name_labels: Name("www.google.com."), rr_type: A, dns_class: IN, ttl: 0, rdata: Some(A(A(142.250.179.206))) }], name_servers: [], additionals: [], signature: [], edns: None }, buffer: [30, 137, 128, 128, 0, 1, 0, 1, 0, 0, 0, 0, 3, 119, 119, 119, 6, 103, 111, 111, 103, 108, 101, 3, 99, 111, 109, 0, 0, 1, 0, 1, 192, 12, 0, 1, 0, 1, 0, 0, 0, 0, 0, 4, 142, 250, 179, 206] })"#,
+                r#"2024-10-15 09:38:38.506464 TelioLogLevel.DEBUG "hickory_resolver::name_server::name_server_pool":374 got a request result: Ok(DnsResponse { message: Message { header: Header { id: 7817, message_type: Response, op_code: Query, authoritative: false, truncation: false, recursion_desired: false, recursion_available: true, authentic_data: false, checking_disabled: false, response_code: NoError, query_count: 1, answer_count: 1, name_server_count: 0, additional_count: 0 }, queries: [Query { name: Name("DOMAIN(f30af60341878496)"), query_type: A, query_class: IN }], answers: [Record { name_labels: Name("DOMAIN(f30af60341878496)"), rr_type: A, dns_class: IN, ttl: 0, rdata: Some(A(A(IP(555b05df3fa71ebb)))) }], name_servers: [], additionals: [], signature: [], edns: None }, buffer: [30, 137, 128, 128, 0, 1, 0, 1, 0, 0, 0, 0, 3, 119, 119, 119, 6, 103, 111, 111, 103, 108, 101, 3, 99, 111, 109, 0, 0, 1, 0, 1, 192, 12, 0, 1, 0, 1, 0, 0, 0, 0, 0, 4, 142, 250, 179, 206] })"#,
+            ),
+            (
+                r#"2024-10-15 09:39:25.924396 TelioLogLevel.DEBUG "hickory_resolver::name_server::name_server_pool":374 got a request result: Ok(DnsResponse { message: Message { header: Header { id: 2866, message_type: Response, op_code: Query, authoritative: false, truncation: false, recursion_desired: false, recursion_available: true, authentic_data: false, checking_disabled: false, response_code: NoError, query_count: 1, answer_count: 1, name_server_count: 0, additional_count: 0 }, queries: [Query { name: Name("www.microsoft.com."), query_type: CNAME, query_class: IN }], answers: [Record { name_labels: Name("www.microsoft.com."), rr_type: CNAME, dns_class: IN, ttl: 0, rdata: Some(CNAME(CNAME(Name("www.microsoft.com-c-3.edgekey.net.")))) }], name_servers: [], additionals: [], signature: [], edns: None }, buffer: [11, 50, 128, 128, 0, 1, 0, 1, 0, 0, 0, 0, 3, 119, 119, 119, 9, 109, 105, 99, 114, 111, 115, 111, 102, 116, 3, 99, 111, 109, 0, 0, 5, 0, 1, 192, 12, 0, 5, 0, 1, 0, 0, 0, 0, 0, 35, 3, 119, 119, 119, 9, 109, 105, 99, 114, 111, 115, 111, 102, 116, 7, 99, 111, 109, 45, 99, 45, 51, 7, 101, 100, 103, 101, 107, 101, 121, 3, 110, 101, 116, 0] })"#,
+                r#"2024-10-15 09:39:25.924396 TelioLogLevel.DEBUG "hickory_resolver::name_server::name_server_pool":374 got a request result: Ok(DnsResponse { message: Message { header: Header { id: 2866, message_type: Response, op_code: Query, authoritative: false, truncation: false, recursion_desired: false, recursion_available: true, authentic_data: false, checking_disabled: false, response_code: NoError, query_count: 1, answer_count: 1, name_server_count: 0, additional_count: 0 }, queries: [Query { name: Name("DOMAIN(8b89951f30d3bd35)"), query_type: CNAME, query_class: IN }], answers: [Record { name_labels: Name("DOMAIN(8b89951f30d3bd35)"), rr_type: CNAME, dns_class: IN, ttl: 0, rdata: Some(CNAME(CNAME(Name("DOMAIN(67fab06dc801422c)")))) }], name_servers: [], additionals: [], signature: [], edns: None }, buffer: [11, 50, 128, 128, 0, 1, 0, 1, 0, 0, 0, 0, 3, 119, 119, 119, 9, 109, 105, 99, 114, 111, 115, 111, 102, 116, 3, 99, 111, 109, 0, 0, 5, 0, 1, 192, 12, 0, 5, 0, 1, 0, 0, 0, 0, 0, 35, 3, 119, 119, 119, 9, 109, 105, 99, 114, 111, 115, 111, 102, 116, 7, 99, 111, 109, 45, 99, 45, 51, 7, 101, 100, 103, 101, 107, 101, 121, 3, 110, 101, 116, 0] })"#,
+            )
+    ];
 
     #[test]
     fn test_log_censor() {
