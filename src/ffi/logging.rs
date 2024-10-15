@@ -166,8 +166,8 @@ fn filter_log_message(msg: String) -> Option<String> {
 
 #[derive(Debug)]
 pub struct LogCensor {
-    ip_mask_seed: [u8; 32],
-    ip_regex: Regex,
+    mask_seed: [u8; 32],
+    regex: Regex,
     is_enabled: AtomicBool,
 }
 
@@ -217,8 +217,8 @@ impl LogCensor {
         .ignore_whitespace(true)
         .build()
         .map(|re| LogCensor {
-            ip_mask_seed: rand::thread_rng().gen::<[u8; 32]>(),
-            ip_regex: re,
+            mask_seed: rand::thread_rng().gen::<[u8; 32]>(),
+            regex: re,
             is_enabled: AtomicBool::new(true),
         })
         .expect("Statically known string for LogCensor is a valid regex")
@@ -244,7 +244,7 @@ impl LogCensor {
         let mut hasher = blake3::Hasher::new();
 
         hasher.update(input);
-        hasher.update(&self.ip_mask_seed);
+        hasher.update(&self.mask_seed);
         let hash_prefix = &hasher.finalize().to_hex();
 
         // Blake3 hash is much bigger than 8 bytes / 16 nibbles
@@ -255,8 +255,8 @@ impl LogCensor {
         if !self.should_censor() {
             return log;
         }
-        // Gather all of the IPs
-        let replaced = self.ip_regex.replace_all(&log, |captures: &Captures| {
+
+        let replaced = self.regex.replace_all(&log, |captures: &Captures| {
             if let Some(m) = captures.name("IP4") {
                 if let Ok(ip) = Ipv4Addr::from_str(m.as_str()) {
                     return self.hash("IP", ip.octets().as_slice());
@@ -422,7 +422,7 @@ mod test {
         let mut censor = LogCensor::new();
 
         // For the tests we need it repeatable and seed filled with zeros is good as any other
-        censor.ip_mask_seed = [0; 32];
+        censor.mask_seed = [0; 32];
 
         for (original_log, expected_censored_log) in EXAMPLES {
             assert_eq!(
