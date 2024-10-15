@@ -104,21 +104,24 @@ impl LogCensor {
         }
 
         let replaced = self.regex.replace_all(&log, |captures: &Captures| {
-            if let Some(m) = captures.name("IP4") {
+            let name = "IP4";
+            if let Some(m) = captures.name(name) {
                 if let Ok(ip) = Ipv4Addr::from_str(m.as_str()) {
-                    return self.hash("IP", ip.octets().as_slice());
+                    return self.hash(name, ip.octets().as_slice());
                 }
             }
-            if let Some(m) = captures.name("IP6") {
+            let name = "IP6";
+            if let Some(m) = captures.name(name) {
                 if let Ok(ip) = Ipv6Addr::from_str(m.as_str()) {
                     if Self::incorret_chars_on_bounds(&log, &m) {
                         return m.as_str().to_owned();
                     }
-                    return self.hash("IP", ip.octets().as_slice());
+                    return self.hash(name, ip.octets().as_slice());
                 }
             }
-            if let Some(m) = captures.name("DOMAIN") {
-                return self.hash("DOMAIN", m.as_str().as_bytes());
+            let name = "DOMAIN";
+            if let Some(m) = captures.name(name) {
+                return self.hash(name, m.as_str().as_bytes());
             }
             captures.get(0).map(|s| s.as_str().to_owned()).unwrap_or(
                 "Regex crate guarantees this, too low priority to panic on its fail, though"
@@ -139,23 +142,23 @@ mod test {
     const EXAMPLES: [(&'static str, &'static str); 15] = [
             (
                 "1999-09-09 [INFO] New endpoint (1.2.3.4:1234) created",
-                "1999-09-09 [INFO] New endpoint (IP(959535cab4852bd4):1234) created",
+                "1999-09-09 [INFO] New endpoint (IP4(959535cab4852bd4):1234) created",
             ),
             (
                 "1999-09-09 [INFO] New endpoint ([::aabb]:1234) created",
-                "1999-09-09 [INFO] New endpoint ([IP(e64601d879a35ebc)]:1234) created",
+                "1999-09-09 [INFO] New endpoint ([IP6(e64601d879a35ebc)]:1234) created",
             ),
             (
                 "1999-09-09 [INFO] New endpoint ([aabb:1234::]:1234) created",
-                "1999-09-09 [INFO] New endpoint ([IP(3b50080d1fdc9e80)]:1234) created",
+                "1999-09-09 [INFO] New endpoint ([IP6(3b50080d1fdc9e80)]:1234) created",
             ),
             (
                 "1999-09-09 [INFO] New endpoint ([1:2:3:4:5:6:7:8]:1234) created",
-                "1999-09-09 [INFO] New endpoint ([IP(6673d2027ae3aae5)]:1234) created",
+                "1999-09-09 [INFO] New endpoint ([IP6(6673d2027ae3aae5)]:1234) created",
             ),
             (
                 "1999-09-09 [INFO] New endpoints: [1:2::8]:1234 and 4.3.2.1:1234 created",
-                "1999-09-09 [INFO] New endpoints: [IP(dd87bb66675bdace)]:1234 and IP(89e69e5aeec9ec9b):1234 created",
+                "1999-09-09 [INFO] New endpoints: [IP6(dd87bb66675bdace)]:1234 and IP4(89e69e5aeec9ec9b):1234 created",
             ),
             (
                 "1999-09-09 [INFO] \"telio::device::wg_controller\":295 peer \"YOla...oFc=\" proxying: true, state: Connected, last handshake: Some(1719486326.132445116s)",
@@ -163,7 +166,7 @@ mod test {
             ),
             (
                 "255.255.255.255 IPv4 at the beginning and at the end 0.0.0.0",
-                "IP(8be193f535e5b88f) IPv4 at the beginning and at the end IP(245097bfbd7049db)",
+                "IP4(8be193f535e5b88f) IPv4 at the beginning and at the end IP4(245097bfbd7049db)",
             ),
             (
                 "255.255.255.255aa we don't count these as IPv4s 0.0.0.0_a",
@@ -171,7 +174,7 @@ mod test {
             ),
             (
                 "::cd IPv6 at the beginning and at the end a:b::c:d",
-                "IP(c3d82cb949013623) IPv6 at the beginning and at the end IP(0525ccdac7d4904a)",
+                "IP6(c3d82cb949013623) IPv6 at the beginning and at the end IP6(0525ccdac7d4904a)",
             ),
             (
                 "mace::cdcd no IPv6 addresses here crypto_aead::aead",
@@ -179,7 +182,7 @@ mod test {
             ),
             (
                 "A list of IPv6, IPv4 and some strange mix: [a:b:c::d:e:f, 1.2.3.4, 1.2::c:d]",
-                "A list of IPv6, IPv4 and some strange mix: [IP(46ba26199a45b3a1), IP(959535cab4852bd4), 1.2::c:d]",
+                "A list of IPv6, IPv4 and some strange mix: [IP6(46ba26199a45b3a1), IP4(959535cab4852bd4), 1.2::c:d]",
             ),
             (
                 r#"2024-10-15 09:39:44.161127 TelioLogLevel.DEBUG "telio_dns::forward":220 forwarding lookup: google.com. A"#,
@@ -187,11 +190,11 @@ mod test {
             ),
             (
                 r#"2024-10-15 09:39:44.160969 TelioLogLevel.DEBUG "telio_dns::nameserver":221 DNS request: Request { message: MessageRequest { header: Header { id: 43687, message_type: Query, op_code: Query, authoritative: false, truncation: false, recursion_desired: true, recursion_available: false, authentic_data: false, checking_disabled: false, response_code: NoError, query_count: 1, answer_count: 0, name_server_count: 0, additional_count: 0 }, query: WireQuery { query: LowerQuery { name: LowerName(Name("google.com.")), original: Query { name: Name("google.com."), query_type: A, query_class: IN } }, original: [6, 103, 111, 111, 103, 108, 101, 3, 99, 111, 109, 0, 0, 1, 0, 1] }, answers: [], name_servers: [], additionals: [], sig0: [], edns: None }, src: 100.127.234.27:41983, protocol: UDP }"#,
-                r#"2024-10-15 09:39:44.160969 TelioLogLevel.DEBUG "telio_dns::nameserver":221 DNS request: Request { message: MessageRequest { header: Header { id: 43687, message_type: Query, op_code: Query, authoritative: false, truncation: false, recursion_desired: true, recursion_available: false, authentic_data: false, checking_disabled: false, response_code: NoError, query_count: 1, answer_count: 0, name_server_count: 0, additional_count: 0 }, query: WireQuery { query: LowerQuery { name: LowerName(Name("DOMAIN(c6f130761097acd8)")), original: Query { name: Name("DOMAIN(c6f130761097acd8)"), query_type: A, query_class: IN } }, original: [6, 103, 111, 111, 103, 108, 101, 3, 99, 111, 109, 0, 0, 1, 0, 1] }, answers: [], name_servers: [], additionals: [], sig0: [], edns: None }, src: IP(5b06ebcfbb9e3791):41983, protocol: UDP }"#
+                r#"2024-10-15 09:39:44.160969 TelioLogLevel.DEBUG "telio_dns::nameserver":221 DNS request: Request { message: MessageRequest { header: Header { id: 43687, message_type: Query, op_code: Query, authoritative: false, truncation: false, recursion_desired: true, recursion_available: false, authentic_data: false, checking_disabled: false, response_code: NoError, query_count: 1, answer_count: 0, name_server_count: 0, additional_count: 0 }, query: WireQuery { query: LowerQuery { name: LowerName(Name("DOMAIN(c6f130761097acd8)")), original: Query { name: Name("DOMAIN(c6f130761097acd8)"), query_type: A, query_class: IN } }, original: [6, 103, 111, 111, 103, 108, 101, 3, 99, 111, 109, 0, 0, 1, 0, 1] }, answers: [], name_servers: [], additionals: [], sig0: [], edns: None }, src: IP4(5b06ebcfbb9e3791):41983, protocol: UDP }"#
             ),
             (
                 r#"2024-10-15 09:38:38.506464 TelioLogLevel.DEBUG "hickory_resolver::name_server::name_server_pool":374 got a request result: Ok(DnsResponse { message: Message { header: Header { id: 7817, message_type: Response, op_code: Query, authoritative: false, truncation: false, recursion_desired: false, recursion_available: true, authentic_data: false, checking_disabled: false, response_code: NoError, query_count: 1, answer_count: 1, name_server_count: 0, additional_count: 0 }, queries: [Query { name: Name("www.google.com."), query_type: A, query_class: IN }], answers: [Record { name_labels: Name("www.google.com."), rr_type: A, dns_class: IN, ttl: 0, rdata: Some(A(A(142.250.179.206))) }], name_servers: [], additionals: [], signature: [], edns: None }, buffer: [30, 137, 128, 128, 0, 1, 0, 1, 0, 0, 0, 0, 3, 119, 119, 119, 6, 103, 111, 111, 103, 108, 101, 3, 99, 111, 109, 0, 0, 1, 0, 1, 192, 12, 0, 1, 0, 1, 0, 0, 0, 0, 0, 4, 142, 250, 179, 206] })"#,
-                r#"2024-10-15 09:38:38.506464 TelioLogLevel.DEBUG "hickory_resolver::name_server::name_server_pool":374 got a request result: Ok(DnsResponse { message: Message { header: Header { id: 7817, message_type: Response, op_code: Query, authoritative: false, truncation: false, recursion_desired: false, recursion_available: true, authentic_data: false, checking_disabled: false, response_code: NoError, query_count: 1, answer_count: 1, name_server_count: 0, additional_count: 0 }, queries: [Query { name: Name("DOMAIN(f30af60341878496)"), query_type: A, query_class: IN }], answers: [Record { name_labels: Name("DOMAIN(f30af60341878496)"), rr_type: A, dns_class: IN, ttl: 0, rdata: Some(A(A(IP(555b05df3fa71ebb)))) }], name_servers: [], additionals: [], signature: [], edns: None }, buffer: [30, 137, 128, 128, 0, 1, 0, 1, 0, 0, 0, 0, 3, 119, 119, 119, 6, 103, 111, 111, 103, 108, 101, 3, 99, 111, 109, 0, 0, 1, 0, 1, 192, 12, 0, 1, 0, 1, 0, 0, 0, 0, 0, 4, 142, 250, 179, 206] })"#,
+                r#"2024-10-15 09:38:38.506464 TelioLogLevel.DEBUG "hickory_resolver::name_server::name_server_pool":374 got a request result: Ok(DnsResponse { message: Message { header: Header { id: 7817, message_type: Response, op_code: Query, authoritative: false, truncation: false, recursion_desired: false, recursion_available: true, authentic_data: false, checking_disabled: false, response_code: NoError, query_count: 1, answer_count: 1, name_server_count: 0, additional_count: 0 }, queries: [Query { name: Name("DOMAIN(f30af60341878496)"), query_type: A, query_class: IN }], answers: [Record { name_labels: Name("DOMAIN(f30af60341878496)"), rr_type: A, dns_class: IN, ttl: 0, rdata: Some(A(A(IP4(555b05df3fa71ebb)))) }], name_servers: [], additionals: [], signature: [], edns: None }, buffer: [30, 137, 128, 128, 0, 1, 0, 1, 0, 0, 0, 0, 3, 119, 119, 119, 6, 103, 111, 111, 103, 108, 101, 3, 99, 111, 109, 0, 0, 1, 0, 1, 192, 12, 0, 1, 0, 1, 0, 0, 0, 0, 0, 4, 142, 250, 179, 206] })"#,
             ),
             (
                 r#"2024-10-15 09:39:25.924396 TelioLogLevel.DEBUG "hickory_resolver::name_server::name_server_pool":374 got a request result: Ok(DnsResponse { message: Message { header: Header { id: 2866, message_type: Response, op_code: Query, authoritative: false, truncation: false, recursion_desired: false, recursion_available: true, authentic_data: false, checking_disabled: false, response_code: NoError, query_count: 1, answer_count: 1, name_server_count: 0, additional_count: 0 }, queries: [Query { name: Name("www.microsoft.com."), query_type: CNAME, query_class: IN }], answers: [Record { name_labels: Name("www.microsoft.com."), rr_type: CNAME, dns_class: IN, ttl: 0, rdata: Some(CNAME(CNAME(Name("www.microsoft.com-c-3.edgekey.net.")))) }], name_servers: [], additionals: [], signature: [], edns: None }, buffer: [11, 50, 128, 128, 0, 1, 0, 1, 0, 0, 0, 0, 3, 119, 119, 119, 9, 109, 105, 99, 114, 111, 115, 111, 102, 116, 3, 99, 111, 109, 0, 0, 5, 0, 1, 192, 12, 0, 5, 0, 1, 0, 0, 0, 0, 0, 35, 3, 119, 119, 119, 9, 109, 105, 99, 114, 111, 115, 111, 102, 116, 7, 99, 111, 109, 45, 99, 45, 51, 7, 101, 100, 103, 101, 107, 101, 121, 3, 110, 101, 116, 0] })"#,
