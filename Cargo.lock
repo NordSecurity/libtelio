@@ -4119,7 +4119,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "base64 0.13.1",
- "blake3",
  "cc",
  "cfg-if",
  "crypto_box",
@@ -4598,6 +4597,7 @@ dependencies = [
 name = "telio-utils"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "futures",
  "hashlink",
  "ipnet",
@@ -4608,6 +4608,7 @@ dependencies = [
  "proptest",
  "proptest-derive",
  "rand",
+ "regex",
  "rustc-hash",
  "serde",
  "smart-default",
