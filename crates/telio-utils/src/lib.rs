@@ -56,3 +56,6 @@ pub mod test;
 
 /// IpNet const constructor
 pub mod const_ipnet;
+
+/// Log censoring via postprocessing utilities
+pub mod log_censor;
