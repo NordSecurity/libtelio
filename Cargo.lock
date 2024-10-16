@@ -4993,6 +4993,7 @@ dependencies = [
  "serde_json",
  "signal-hook",
  "signal-hook-tokio",
+ "smart-default",
  "telio",
  "thiserror",
  "tokio",

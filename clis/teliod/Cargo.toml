@@ -31,3 +31,4 @@ rumqttc = "0.24.0"
 tokio-rustls = "0.25.0" # This version needs to be the same as the one used by the rumqttc
 rustls-native-certs = "0.8"
 anyhow.workspace = true
+smart-default = "0.7.1"

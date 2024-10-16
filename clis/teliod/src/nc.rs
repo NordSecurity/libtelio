@@ -24,6 +24,8 @@ use tokio_rustls::rustls::{
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
+use crate::MqttConfig;
+
 use self::outgoing::{Acknowledgement, DeliveryConfirmation};
 
 const TOKENS_URL: &'static str = "https://api.nordvpn.com/v1/notifications/tokens";
@@ -80,7 +82,7 @@ struct NCConfig {
     app_user_uid: Uuid,
     callbacks: Arc<Mutex<Vec<Callback>>>,
     http_certificate_file_path: Option<PathBuf>,
-    mqtt_certificate_file_path: Option<PathBuf>,
+    mqtt: MqttConfig,
 }
 
 impl NotificationCenter {
@@ -96,7 +98,7 @@ impl NotificationCenter {
             callbacks: callbacks.clone(),
 
             http_certificate_file_path: config.http_certificate_file_path.clone(),
-            mqtt_certificate_file_path: config.mqtt_certificate_file_path.clone(),
+            mqtt: config.mqtt.clone(),
         };
 
         start_mqtt(nc_config).await?;
@@ -112,8 +114,8 @@ impl NotificationCenter {
 
 async fn start_mqtt(nc_config: NCConfig) -> Result<(), Error> {
     let backoff_bounds = ExponentialBackoffBounds {
-        initial: Duration::from_secs(1),
-        maximal: Some(Duration::from_secs(300)),
+        initial: Duration::from_secs(nc_config.mqtt.backoff_initial.get()),
+        maximal: Some(Duration::from_secs(nc_config.mqtt.backoff_maximal.get())),
     };
     let backoff = ExponentialBackoff::new(backoff_bounds)?;
 
@@ -187,7 +189,7 @@ async fn connect_to_nc(nc_config: &NCConfig) -> Result<(AsyncClient, EventLoop, 
     // Use rustls-native-certs to load root certificates from the operating system.
     let mut root_cert_store = tokio_rustls::rustls::RootCertStore::empty();
 
-    if let Some(cert_path) = &nc_config.mqtt_certificate_file_path {
+    if let Some(cert_path) = &nc_config.mqtt.certificate_file_path {
         debug!("Using custom mqtt cert file from {cert_path:?}");
         let certs = tokio::fs::read(cert_path)
             .await
@@ -216,7 +218,8 @@ async fn connect_to_nc(nc_config: &NCConfig) -> Result<(AsyncClient, EventLoop, 
 
     let (client, eventloop) = AsyncClient::new(mqttoptions, 10);
     let eventloop = Box::pin(wait_for_connection(eventloop, MQTT_CONNECTION_TIMEOUT)).await?;
-    let expires_at = Instant::now() + Duration::from_secs(credentials.expires_in);
+    let expires_at = Instant::now()
+        + nc_config.mqtt.reconnect_after_expiry * Duration::from_secs(credentials.expires_in);
     client.subscribe(TOPIC_SUBSCRIBE, QoS::AtLeastOnce).await?;
 
     info!("Notification Center connection established");
