@@ -28,7 +28,8 @@ use crate::MqttConfig;
 
 use self::outgoing::{Acknowledgement, DeliveryConfirmation};
 
-const TOKENS_URL: &'static str = "https://api.nordvpn.com/v1/notifications/tokens";
+const TOKENS_REQUEST_URL: &'static str = "https://api.nordvpn.com/v1/notifications/tokens";
+const TOKENS_REVOKE_URL: &'static str = "https://api.nordvpn.com/v1/notifications/tokens/revoke";
 const USERNAME: &'static str = "token";
 const ROUTER_PLATFORM_ID: u64 = 900;
 const MQTT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
@@ -38,13 +39,29 @@ const TOPIC_DELIVERED: &'static str = "delivered";
 const TOPIC_ACKNOWLEDGED: &'static str = "ack";
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum CredentialsError {
+    #[error("Failed to read http cert file: {0}")]
+    FailedToReadHttpCertFile(std::io::Error),
     #[error("Failed to send http request for token: {0}")]
     TokenHttpError(#[from] reqwest::Error),
     #[error("Failed to get token: {0}")]
     TokenError(String),
+    #[error("Revocation failed")]
+    RevocationFailed,
     #[error("Malformed notification center json response: {0}")]
     MalformedNotificationCenterJsonResponse(#[from] serde_json::Error),
+}
+
+impl CredentialsError {
+    fn is_revocation_needed(&self) -> bool {
+        matches!(self, Self::MalformedNotificationCenterJsonResponse { .. })
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("Failed to get notification center credentials: {0}")]
+    CredentialRequestError(#[from] CredentialsError),
     #[error("Mqtt broker rejected connection: {0:?}")]
     MqttConnectionRejected(ConnectReturnCode),
     #[error("Unexpected mqtt event before connection established: {0:?}")]
@@ -61,14 +78,21 @@ pub enum Error {
     CredentialsMissingHostname,
     #[error("Notification Center credentials are missing port number")]
     CredentialsMissingPortNumber,
-    #[error("Failed to read http cert file: {0}")]
-    FailedToReadHttpCertFile(std::io::Error),
     #[error("Failed to read mqtt cert file: {0}")]
     FailedToReadMqttCertFile(std::io::Error),
     #[error("Failed to parse mqtt pem certificate: {0:?}")]
     FailedToParseMqttCertificate(tokio_rustls::rustls::pki_types::pem::Error),
     #[error("Failed to load native certs: {0:?}")]
     FailedToLoadNativeCerts(Vec<rustls_native_certs::Error>),
+}
+
+impl Error {
+    fn is_revocation_needed(&self) -> bool {
+        match self {
+            Self::CredentialRequestError(e) => e.is_revocation_needed(),
+            _ => true,
+        }
+    }
 }
 
 type Callback = Arc<dyn Fn(&[Uuid]) + Send + Sync>;
@@ -143,6 +167,11 @@ async fn start_mqtt(nc_config: NCConfig) -> Result<(), Error> {
                             Ok(Event::Outgoing(p)) => debug!("mqtt outgoing event: {p:?}"),
                             Err(e) => {
                                 error!("mqtt event loop error: {e}");
+
+                                if let Err(e) = revoke_nc_credentials(&nc_config).await {
+                                    warn!("Failed to revoke notification center credentials: {e}");
+                                }
+
                                 break;
                             }
                         }
@@ -167,6 +196,12 @@ async fn connect_to_nc_with_backoff(
                     "Failed to connect to mqtt: {e}, will wait for {:?} and retry",
                     backoff.get_backoff()
                 );
+                if e.is_revocation_needed() {
+                    // Revocation will not be retried
+                    if let Err(e) = revoke_nc_credentials(nc_config).await {
+                        warn!("Failed to revoke notification center credentials: {e}");
+                    }
+                }
                 tokio::time::sleep(backoff.get_backoff()).await;
                 backoff.next_backoff();
             }
@@ -232,9 +267,8 @@ async fn handle_incoming_publish(
     p: Publish,
     callbacks: &Arc<Mutex<Vec<Callback>>>,
 ) -> Result<(), anyhow::Error> {
-    let text = std::str::from_utf8(&*p.payload)?;
-    let notification: incoming::Notification = serde_json::from_str(&text)?;
-    debug!("mqtt incoming publish: {p:?}: {text:?}");
+    let notification: incoming::Notification = serde_json::from_slice(&p.payload)?;
+    debug!("mqtt incoming publish: {p:?}: {notification:?}");
 
     ensure!(
         !notification.is_acked(),
@@ -289,25 +323,17 @@ async fn send_acknowledgement(
 
 async fn request_nc_credentials(
     nc_config: &NCConfig,
-) -> Result<NotificationCenterCredentials, Error> {
-    let mut builder = ClientBuilder::new();
-    if let Some(cert_path) = &nc_config.http_certificate_file_path {
-        debug!("Using custom http cert file from {cert_path:?}");
-        let cert = tokio::fs::read(cert_path)
-            .await
-            .map_err(Error::FailedToReadHttpCertFile)?;
-        for cert in Certificate::from_pem_bundle(&cert)? {
-            builder = builder.add_root_certificate(cert);
-        }
-    }
-    let client = builder.build()?;
+) -> Result<NotificationCenterCredentials, CredentialsError> {
+    use CredentialsError as Error;
+
+    let client = build_http_client(nc_config).await?;
 
     let data = TokenHttpRequestData {
         app_user_uid: nc_config.app_user_uid.to_string(),
         platform_id: ROUTER_PLATFORM_ID,
     };
     let resp = client
-        .post(TOKENS_URL)
+        .post(TOKENS_REQUEST_URL)
         .basic_auth(USERNAME, Some(nc_config.authentication_token.clone()))
         .json(&data)
         .send()
@@ -320,6 +346,38 @@ async fn request_nc_credentials(
 
     let resp: NotificationCenterCredentials = serde_json::from_str(&text)?;
     Ok(resp)
+}
+
+async fn revoke_nc_credentials(nc_config: &NCConfig) -> Result<(), CredentialsError> {
+    let client = build_http_client(nc_config).await?;
+    let data = TokenHttpRevokeData {
+        app_user_uid: nc_config.app_user_uid.to_string(),
+    };
+    let resp = client
+        .post(TOKENS_REVOKE_URL)
+        .basic_auth(USERNAME, Some(nc_config.authentication_token.clone()))
+        .json(&data)
+        .send()
+        .await?;
+    if resp.status() != StatusCode::OK {
+        return Err(CredentialsError::RevocationFailed);
+    }
+
+    Ok(())
+}
+
+async fn build_http_client(nc_config: &NCConfig) -> Result<reqwest::Client, CredentialsError> {
+    let mut builder = ClientBuilder::new();
+    if let Some(cert_path) = &nc_config.http_certificate_file_path {
+        debug!("Using custom http cert file from {cert_path:?}");
+        let cert = tokio::fs::read(cert_path)
+            .await
+            .map_err(CredentialsError::FailedToReadHttpCertFile)?;
+        for cert in Certificate::from_pem_bundle(&cert)? {
+            builder = builder.add_root_certificate(cert);
+        }
+    }
+    Ok(builder.build()?)
 }
 
 async fn wait_for_connection(mut event_loop: EventLoop, t: Duration) -> Result<EventLoop, Error> {
@@ -343,6 +401,11 @@ async fn wait_for_connection(mut event_loop: EventLoop, t: Duration) -> Result<E
 struct TokenHttpRequestData {
     app_user_uid: String,
     platform_id: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct TokenHttpRevokeData {
+    app_user_uid: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -450,6 +513,8 @@ mod outgoing {
 
 #[cfg(test)]
 mod tests {
+    use serde::de::Error;
+
     use super::*;
 
     #[test]
@@ -532,5 +597,31 @@ mod tests {
         };
         let notification: Notification = serde_json::from_str(&input).unwrap();
         assert_eq!(expected, notification);
+    }
+
+    #[test]
+    fn test_revocation_errors() {
+        // This is just a small subset of all possible errors. Some of the ones
+        // not present can't be easily constructed since they have no public
+        // method for building them.
+        assert!(
+            !CredentialsError::FailedToReadHttpCertFile(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "other"
+            ))
+            .is_revocation_needed()
+        );
+        assert!(!CredentialsError::TokenError("".to_owned()).is_revocation_needed());
+        assert!(!CredentialsError::RevocationFailed.is_revocation_needed());
+        assert!(
+            !super::Error::CredentialRequestError(CredentialsError::RevocationFailed)
+                .is_revocation_needed()
+        );
+
+        assert!(super::Error::MqttConnectionTimeout.is_revocation_needed());
+        assert!(CredentialsError::MalformedNotificationCenterJsonResponse(
+            serde_json::Error::custom("")
+        )
+        .is_revocation_needed());
     }
 }
