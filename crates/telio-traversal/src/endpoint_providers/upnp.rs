@@ -23,7 +23,7 @@ use telio_sockets::External;
 use telio_task::{io::chan::Tx, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
     exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
-    telio_log_debug, telio_log_info, PinnedSleep,
+    telio_log_debug, telio_log_info, telio_log_warn, PinnedSleep,
 };
 use telio_wg::{DynamicWg, WireGuard};
 use tokio::{net::UdpSocket, pin, sync::Mutex};
@@ -527,9 +527,8 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
                 }
             }
             Err(e) => {
-                telio_log_info!("Error validating endpoint: {}", e);
+                telio_log_warn!("Invalid UPnP endpoint, dropping: {}", e);
 
-                telio_log_info!("Dropping Upnp endpoint");
                 if let Err(e) = self
                     .igd_gw
                     .delete_endpoint_routes(
@@ -538,10 +537,9 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
                     )
                     .await
                 {
-                    telio_log_info!("Error dropping Upnp endpoint: {}", e);
+                    telio_log_warn!("Error while dropping endpoint: {}", e);
                 }
 
-                telio_log_info!("Creating a new Upnp endpoint");
                 self.igd_gw.drop_igd_gateway();
 
                 return Err(Error::NoIGDGateway);
@@ -570,10 +568,11 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
     }
 
     async fn create_endpoint_candidate(&mut self) -> Result<()> {
+        telio_log_info!("Creating a new Upnp endpoint");
+
         self.create_random_endpoint_ports();
 
         self.proxy_port_mapping.internal = self.udp_socket.local_addr()?.port();
-
         self.wg_port_mapping.internal = self
             .wg
             .wait_for_listen_port(GET_INTERFACE_TIMEOUT_S)
@@ -670,7 +669,8 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
             }
             result = self.igd_gw.ensure_igd_gateway(), if !self.igd_gw.has_igd_gateway() => {
                 if result.is_ok() {
-                    if self.create_endpoint_candidate().await.is_err() {
+                    if let Err(e) = self.create_endpoint_candidate().await {
+                        telio_log_warn!("Error creating UPnP endpoint: {}", e);
                         self.igd_gw.drop_igd_gateway();
                     }
                     self.exponential_backoff.reset();
