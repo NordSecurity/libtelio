@@ -10,12 +10,14 @@ publish = false
 sn_fake_clock = ["dep:sn_fake_clock"]
 
 [dependencies]
+blake3 = "1.5.4"
 futures.workspace = true
 hashlink.workspace = true
 ipnet.workspace = true
 mockall = { workspace = true, optional = true }
 parking_lot.workspace = true
 rand.workspace = true
+regex.workspace = true
 rustc-hash.workspace = true
 serde.workspace = true
 smart-default.workspace = true
