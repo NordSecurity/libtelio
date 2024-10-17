@@ -36,8 +36,6 @@ const GET_INTERFACE_TIMEOUT_S: Duration = Duration::from_secs(2);
 
 const EPHEMERAL_PORT_RANGE: std::ops::RangeInclusive<u16> = 49152..=65535;
 
-const LEASE_RENEWAL_LIMIT_S: u32 = 600;
-
 type Result<T> = std::result::Result<T, Error>;
 
 #[cfg_attr(test, automock)]
@@ -98,7 +96,7 @@ impl UpnpEpCommands for IgdGateway {
         while let Ok(resp) = gw.get_generic_port_mapping_entry(i).await {
             i += 1;
 
-            if resp.lease_duration < LEASE_RENEWAL_LIMIT_S {
+            if resp.lease_duration < self.lease_duration_s.div_ceil(10) {
                 extend_timeout = true;
             }
 
@@ -277,6 +275,12 @@ impl<Wg: WireGuard> UpnpEndpointProvider<Wg> {
         is_battery_optimization_on: bool,
         lease_duration_s: u32,
     ) -> Result<Self> {
+        if Duration::new(lease_duration_s.into(), 0)
+            .saturating_sub(exponential_backoff_bounds.initial)
+            == Duration::ZERO
+        {
+            telio_log_warn!("Lease duration is smaller than endpoint validation period, this may result in undefined behaviour!");
+        }
         Ok(Self::start_with(
             udp_socket,
             wg,
