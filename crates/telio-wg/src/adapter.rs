@@ -215,7 +215,6 @@ impl FromStr for AdapterType {
     }
 }
 
-#[cfg(not(any(test, feature = "test-adapter")))]
 pub(crate) async fn start(cfg: &Config) -> Result<Box<dyn Adapter>, Error> {
     #![allow(unused_variables)]
 
