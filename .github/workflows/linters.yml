@@ -48,17 +48,10 @@ jobs:
             command: clippy
             args: --target "x86_64-pc-windows-gnu" --lib --color always -- --deny warnings --allow unknown-lints -W clippy::expect_used -W clippy::panic -W clippy::unwrap_used
   clippy-mac:
-      runs-on: macos-12
+      runs-on: macos-13
       steps:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-        - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
-          with:
-            target: x86_64-apple-darwin
-            components: clippy
-        - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
-          with:
-            command: clippy
-            args: --target "x86_64-apple-darwin" --lib --color always -- --deny warnings --allow unknown-lints -W clippy::expect_used -W clippy::panic -W clippy::unwrap_used
+        - run: cargo clippy --verbose --target "x86_64-apple-darwin" --lib --color always -- --deny warnings --allow unknown-lints -W clippy::expect_used -W clippy::panic -W clippy::unwrap_used
   deny:
       runs-on: ubuntu-22.04
       steps:
