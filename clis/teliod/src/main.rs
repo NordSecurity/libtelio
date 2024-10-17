@@ -81,7 +81,7 @@ enum Cmd {
 
 #[derive(Debug)]
 pub enum TelioTaskCmd {
-    UpdateMeshmap(String),
+    UpdateMeshmap(MeshMap),
     GetMeshmap,
 }
 
@@ -181,14 +181,22 @@ async fn init_api(config: &mut TeliodDaemonConfig, config_path: String) -> Resul
                 return Err(TeliodError::UpdateMachineError(status));
             }
             StatusCode::NOT_FOUND => {
-                // Retry machine update after registering. To make sure everything was successful
-                // If registering fails. Close the daemon
-                client_config.machine_identifier = register_machine(
-                    &client_config.hw_identifier,
-                    client_config.public_key,
-                    &client_config.auth_token,
-                )
-                .await?;
+                client_config.machine_identifier = if let Ok(id) =
+                    load_identifier_from_api(&config.authentication_token, client_config.public_key)
+                        .await
+                {
+                    id
+                } else {
+                    debug!("Machine not yet registered");
+                    // Retry machine update after registering. To make sure everything was successful
+                    // If registering fails. Close the daemon
+                    register_machine(
+                        &client_config.hw_identifier,
+                        client_config.public_key,
+                        &client_config.auth_token,
+                    )
+                    .await?
+                }
             }
             _ => {
                 // Retry with exp back-off
@@ -201,7 +209,6 @@ async fn init_api(config: &mut TeliodDaemonConfig, config_path: String) -> Resul
                 } else {
                     // If max retries exceeded, exit daemon
                     return Err(TeliodError::UpdateMachineTimeoutError);
-                    // panic!("Max retries reached. Exiting.");
                 }
             }
         }
@@ -244,7 +251,7 @@ fn telio_task(
             match cmd {
                 TelioTaskCmd::GetMeshmap => get_meshmap(client_arc.clone(), tx_channel.clone()),
                 TelioTaskCmd::UpdateMeshmap(map) => {
-                    if let Err(e) = update_meshmap(&map, &telio) {
+                    if let Err(e) = telio.set_config(&Some(map)) {
                         error!("Unable to set meshmap due to {e}");
                     }
                 }
@@ -261,20 +268,15 @@ fn get_meshmap(client_config: Arc<ClientConfig>, tx: mpsc::Sender<TelioTaskCmd>)
         let result = get_meshmap_from_server(config_clone).await;
         match result {
             Ok(map) => {
-                if let Err(e) = tx.send(TelioTaskCmd::UpdateMeshmap(map)).await {
+                let meshmap: MeshMap = serde_json::from_str(&map).unwrap();
+                trace!("Meshmap {:#?}", meshmap);
+                if let Err(e) = tx.send(TelioTaskCmd::UpdateMeshmap(meshmap)).await {
                     error!("Unable to send meshmap due to {e}");
                 }
             }
             Err(e) => error!("Getting meshmap failed due to {e}"),
         }
     });
-}
-
-fn update_meshmap(map: &str, telio: &Device) -> Result<(), TeliodError> {
-    let meshmap: MeshMap = serde_json::from_str(map)?;
-    trace!("Meshmap {:#?}", meshmap);
-    telio.set_config(&Some(meshmap))?;
-    Ok(())
 }
 
 fn start_telio(telio: &mut Device, private_key: SecretKey) -> Result<(), DeviceError> {
@@ -322,13 +324,7 @@ impl ClientConfig {
         let machine_identifier = if let Some(machine_id) = &config.machine_identifier {
             machine_id.to_string()
         } else {
-            if let Ok(id) = load_identifier_from_api(&config.authentication_token, public_key).await
-            {
-                id
-            } else {
-                debug!("Machine not yet registered");
-                "".to_string()
-            }
+            "".to_string()
         };
 
         Ok(ClientConfig {
