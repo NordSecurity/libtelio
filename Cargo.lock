@@ -4676,6 +4676,7 @@ dependencies = [
  "futures",
  "interprocess 2.2.1",
  "nix 0.28.0",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",
