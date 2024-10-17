@@ -1,5 +1,10 @@
 //! Main and implementation of config and commands for Teliod - simple telio daemon for Linux and OpenWRT
 
+use crate::comms::DaemonSocket;
+use crate::core_api::{
+    get_meshmap as get_meshmap_from_server, load_identifier_from_api, register_machine,
+    update_machine, Error as ApiError,
+};
 use clap::Parser;
 use config::TeliodDaemonConfig;
 use futures::stream::StreamExt;
@@ -9,9 +14,17 @@ use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::error::Error as SerdeJsonError;
 use signal_hook_tokio::Signals;
+use std::cmp::min;
 use std::{
     fs::{self, File},
     sync::Arc,
+};
+use telio::{
+    crypto::{PublicKey, SecretKey},
+    device::{Device, DeviceConfig, Error as DeviceError},
+    telio_model::{config::Config as MeshMap, features::Features},
+    telio_utils::select,
+    telio_wg::AdapterType,
 };
 use thiserror::Error as ThisError;
 use tokio::{sync::mpsc, task::JoinError, time::Duration};
@@ -58,6 +71,18 @@ where
     serializer.serialize_str(level_str)
 }
 
+fn deserialize_authentication_token<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<String, D::Error> {
+    let raw_string: String = de::Deserialize::deserialize(deserializer)?;
+    let re = regex::Regex::new("[0-9a-f]{64}").map_err(de::Error::custom)?;
+    if re.is_match(&raw_string) {
+        Ok(raw_string)
+    } else {
+        Err(de::Error::custom("Incorrect authentication token"))
+    }
+}
+
 #[derive(Parser, Debug)]
 #[clap()]
 #[derive(Serialize, Deserialize)]
@@ -81,7 +106,9 @@ enum Cmd {
 
 #[derive(Debug)]
 pub enum TelioTaskCmd {
+    // Command to set the downloaded meshmap to telio instance
     UpdateMeshmap(MeshMap),
+    // Triggers downloading meshmap from server
     GetMeshmap,
 }
 
@@ -114,7 +141,7 @@ enum TeliodError {
     #[error("Unable to update machine due to Error: {0}")]
     UpdateMachineError(StatusCode),
     #[error("Max retries exceeding to update machine")]
-    UpdateMachineTimeoutError,
+    UpdateMachineTimeout,
 }
 
 #[tokio::main]
@@ -168,7 +195,10 @@ impl CommandListener {
     }
 }
 
-async fn init_api(config: &mut TeliodDaemonConfig, config_path: String) -> Result<(), TeliodError> {
+async fn init_api(
+    config: &mut TeliodDaemonConfig,
+    config_path: String,
+) -> Result<ClientConfig, TeliodError> {
     let mut client_config = ClientConfig::new(config).await?;
 
     let mut retries = 0;
@@ -181,21 +211,24 @@ async fn init_api(config: &mut TeliodDaemonConfig, config_path: String) -> Resul
                 return Err(TeliodError::UpdateMachineError(status));
             }
             StatusCode::NOT_FOUND => {
-                client_config.machine_identifier = if let Ok(id) =
-                    load_identifier_from_api(&config.authentication_token, client_config.public_key)
-                        .await
+                client_config.machine_identifier = match load_identifier_from_api(
+                    &config.authentication_token,
+                    client_config.public_key,
+                )
+                .await
                 {
-                    id
-                } else {
-                    debug!("Machine not yet registered");
-                    // Retry machine update after registering. To make sure everything was successful
-                    // If registering fails. Close the daemon
-                    register_machine(
-                        &client_config.hw_identifier,
-                        client_config.public_key,
-                        &client_config.auth_token,
-                    )
-                    .await?
+                    Ok(id) => id,
+                    Err(e) => {
+                        info!("Unable to load identifier due to {e}");
+                        // Retry machine update after registering. To make sure everything was successful
+                        // If registering fails. Close the daemon
+                        register_machine(
+                            &client_config.hw_identifier,
+                            client_config.public_key,
+                            &client_config.auth_token,
+                        )
+                        .await?
+                    }
                 }
             }
             _ => {
@@ -208,7 +241,7 @@ async fn init_api(config: &mut TeliodDaemonConfig, config_path: String) -> Resul
                     retries += 1;
                 } else {
                     // If max retries exceeded, exit daemon
-                    return Err(TeliodError::UpdateMachineTimeoutError);
+                    return Err(TeliodError::UpdateMachineTimeout);
                 }
             }
         }
@@ -220,7 +253,7 @@ async fn init_api(config: &mut TeliodDaemonConfig, config_path: String) -> Resul
 
     let mut file = File::create(config_path)?;
     serde_json::to_writer(&mut file, &config)?;
-    Ok(())
+    Ok(client_config)
 }
 
 // From async context Telio needs to be run in separate task
@@ -237,19 +270,19 @@ fn telio_task(
         None,
     )?;
 
-    let client_arc = std::sync::Arc::new(client_config);
+    let config_ptr = std::sync::Arc::new(client_config);
     // TODO: This is temporary to be removed later on when we have proper integration
     // tests with core API. This is to not look for tokens in a test environment
     // right now as the values are dummy and program will not run as it expects
     // real tokens.
-    if !client_arc.auth_token.eq("") {
-        start_telio(&mut telio, client_arc.private_key)?;
-        get_meshmap(client_arc.clone(), tx_channel.clone());
+    if !config_ptr.auth_token.eq("") {
+        start_telio(&mut telio, config_ptr.private_key)?;
+        get_meshmap(config_ptr.clone(), tx_channel.clone());
 
         while let Some(cmd) = rx_channel.blocking_recv() {
             info!("Got command {:?}", cmd);
             match cmd {
-                TelioTaskCmd::GetMeshmap => get_meshmap(client_arc.clone(), tx_channel.clone()),
+                TelioTaskCmd::GetMeshmap => get_meshmap(config_ptr.clone(), tx_channel.clone()),
                 TelioTaskCmd::UpdateMeshmap(map) => {
                     if let Err(e) = telio.set_config(&Some(map)) {
                         error!("Unable to set meshmap due to {e}");
@@ -268,7 +301,13 @@ fn get_meshmap(client_config: Arc<ClientConfig>, tx: mpsc::Sender<TelioTaskCmd>)
         let result = get_meshmap_from_server(config_clone).await;
         match result {
             Ok(map) => {
-                let meshmap: MeshMap = serde_json::from_str(&map).unwrap();
+                let meshmap: MeshMap = match serde_json::from_str(&map) {
+                    Ok(map) => map,
+                    Err(e) => {
+                        error!("Unable to parse meshmap due to {e}");
+                        return;
+                    }
+                };
                 trace!("Meshmap {:#?}", meshmap);
                 if let Err(e) = tx.send(TelioTaskCmd::UpdateMeshmap(meshmap)).await {
                     error!("Unable to send meshmap due to {e}");
@@ -373,21 +412,16 @@ async fn daemon_event_loop(
     // telio task
     let (tx, rx) = mpsc::channel(10);
 
-    // TODO: This is temporary to be removed later on when we have proper integration
-    // tests with core API. This is to not look for tokens in a test environment
-    // right now as the values are dummy and program will not run as it expects
-    // real tokens.
+    // TODO: This if condition and ::default call is temporary to be removed later
+    // on when we have proper integration tests with core API.
+    // This is to not look for tokens in a test environment right now as the values
+    // are dummy and program will not run as it expects real tokens.
     let mut client_config = ClientConfig::default();
-    if !config.authentication_token.eq("abcd1234") {
-        init_api(&mut config, config_path).await?;
-
-        client_config = ClientConfig {
-            hw_identifier: config.hw_identifier.ok_or(TeliodError::TokenError)?,
-            auth_token: config.authentication_token,
-            machine_identifier: config.machine_identifier.ok_or(TeliodError::TokenError)?,
-            private_key: config.private_key.ok_or(TeliodError::TokenError)?,
-            public_key: config.private_key.ok_or(TeliodError::TokenError)?.public(),
-        };
+    if !config
+        .authentication_token
+        .eq("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    {
+        client_config = init_api(&mut config, config_path).await?;
     }
     let tx_clone = tx.clone();
     let telio_task_handle =

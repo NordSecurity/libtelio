@@ -6,7 +6,8 @@ use serde_json::Value;
 use std::sync::Arc;
 use telio::crypto::PublicKey;
 use thiserror::Error;
-use tracing::info;
+use tracing::{debug, info};
+
 const API_BASE: &str = "https://api.nordvpn.com/v1";
 
 #[cfg(windows)]
@@ -19,7 +20,7 @@ const OS_NAME: &str = "linux";
 #[derive(Debug, Error)]
 pub enum Error {
     #[error(transparent)]
-    Reqwest(#[from] reqwest::Error),
+    ReqwestError(#[from] reqwest::Error),
     #[error(transparent)]
     DeserializeError(#[from] serde_json::Error),
     #[error("Machine Identifier not found due to Error: {0}")]
@@ -32,8 +33,8 @@ pub enum Error {
     InvalidResponse,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct MeshDev {
+#[derive(Default, Serialize, Deserialize)]
+struct MeshConfig {
     public_key: PublicKey,
     hardware_identifier: String,
     os: String,
@@ -46,9 +47,9 @@ pub async fn load_identifier_from_api(
     auth_token: &String,
     public_key: PublicKey,
 ) -> Result<String, Error> {
-    info!("fetching machine identifier");
+    debug!("Fetching machine identifier");
     let client = Client::new();
-    let register = client
+    let response = client
         .get(&format!("{}/meshnet/machines", API_BASE))
         .header(
             header::AUTHORIZATION,
@@ -58,9 +59,8 @@ pub async fn load_identifier_from_api(
         .send()
         .await?;
 
-    info!("Status {}", register.status());
-    let status = register.status().clone();
-    let json_data: Value = serde_json::from_str(&register.text().await?)?;
+    let status = response.status().clone();
+    let json_data: Value = serde_json::from_str(&response.text().await?)?;
 
     if let Some(items) = json_data.as_array() {
         for item in items {
@@ -86,7 +86,7 @@ pub async fn load_identifier_from_api(
 }
 
 pub async fn update_machine(client_config: &ClientConfig) -> Result<StatusCode, Error> {
-    info!("Updating machine");
+    debug!("Updating machine");
     let client = Client::new();
     Ok(client
         .patch(&format!(
@@ -100,7 +100,7 @@ pub async fn update_machine(client_config: &ClientConfig) -> Result<StatusCode, 
         )
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::ACCEPT, "application/json")
-        .json(&MeshDev {
+        .json(&MeshConfig {
             public_key: client_config.public_key,
             hardware_identifier: client_config.hw_identifier.clone(),
             os: OS_NAME.to_owned(),
@@ -114,14 +114,13 @@ pub async fn update_machine(client_config: &ClientConfig) -> Result<StatusCode, 
 }
 
 pub async fn get_meshmap(client_config: Arc<ClientConfig>) -> Result<String, Error> {
-    info!("Getting meshmap");
+    debug!("Getting meshmap");
     let client = Client::new();
     Ok({
         client
             .get(&format!(
                 "{}/meshnet/machines/{}/map",
-                API_BASE,
-                client_config.machine_identifier.clone()
+                API_BASE, client_config.machine_identifier
             ))
             .header(
                 header::AUTHORIZATION,
@@ -142,7 +141,7 @@ pub async fn register_machine(
 ) -> Result<String, Error> {
     info!("Registering machine");
     let client = Client::new();
-    let result = client
+    let response = client
         .post(&format!("{}/meshnet/machines", API_BASE))
         .header(
             header::AUTHORIZATION,
@@ -150,7 +149,7 @@ pub async fn register_machine(
         )
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::ACCEPT, "application/json")
-        .json(&MeshDev {
+        .json(&MeshConfig {
             public_key: public_key,
             hardware_identifier: hw_identifier.clone(),
             os: OS_NAME.to_owned(),
@@ -162,8 +161,8 @@ pub async fn register_machine(
         .await?;
 
     // Save the machine identifier received from API
-    if result.status() == StatusCode::CREATED {
-        let response: Value = serde_json::from_str(&result.text().await?)?;
+    if response.status() == StatusCode::CREATED {
+        let response: Value = serde_json::from_str(&response.text().await?)?;
         if let Some(machine_identifier) = response.get("identifier").and_then(|i| i.as_str()) {
             info!("Machine Registered!");
             return Ok(machine_identifier.to_owned());
@@ -171,6 +170,6 @@ pub async fn register_machine(
             Err(Error::InvalidResponse)
         }
     } else {
-        Err(Error::PeerRegisteringError(result.status()))
+        Err(Error::PeerRegisteringError(response.status()))
     }
 }
