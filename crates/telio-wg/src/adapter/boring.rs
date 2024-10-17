@@ -17,7 +17,6 @@ pub use boringtun::device::Error;
 use libc::socket;
 use telio_sockets::SocketPool;
 
-#[cfg(not(any(test, feature = "test-adapter")))]
 pub type FirewallCb = Option<Arc<dyn Fn(&[u8; 32], &[u8]) -> bool + Send + Sync>>;
 
 pub struct BoringTun {
@@ -26,7 +25,6 @@ pub struct BoringTun {
 }
 
 impl BoringTun {
-    #[cfg(not(any(test, feature = "test-adapter")))]
     pub fn start(
         name: &str,
         tun: Option<NativeTun>,

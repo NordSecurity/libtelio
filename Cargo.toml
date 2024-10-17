@@ -84,6 +84,8 @@ pretty_assertions.workspace = true
 rstest.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 
+dersp = { git = "https://github.com/mathiaspeters/dersp.git", branch = "librarification"}
+
 telio-dns = { workspace = true, features = ["mockall"] }
 telio-firewall = { workspace = true, features = ["mockall"] }
 telio-nurse = { workspace = true, features = ["mockall"] }
@@ -107,6 +109,7 @@ resolver = "2"
 members = [
 	"crates/*",
 	"clis/*",
+	"systests",
 ]
 exclude = [
 	"wireguard-go-rust-wrapper"
@@ -161,7 +164,7 @@ socket2 = "0.5"
 strum = { version = "0.24.0", features = ["derive"] }
 surge-ping = { version = "0.8.0" }
 thiserror = "1.0"
-time = { version = "0.3.20", features = ["formatting"] }
+time = { version = "0.3.36", features = ["formatting"] }
 tokio = ">=1.22"
 tracing-subscriber = { version = "0.3.17", features = ["local-time"] }
 tracing-appender = "0.2.3"

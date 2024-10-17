@@ -199,7 +199,6 @@ impl FromStr for AdapterType {
     }
 }
 
-#[cfg(not(any(test, feature = "test-adapter")))]
 pub(crate) fn start(
     adapter: AdapterType,
     name: &str,
