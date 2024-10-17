@@ -6,7 +6,7 @@ For typical Linux environment it might be built using simply:
 
 For OpenWRT you might need a bit more complex command, including your router architecture and the fact the OpenWRT is MUSLE-based, for example:
 
-```CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER=rust-lld CC=/path/to/arm-linux-gnueabi-gcc cargo build -0 teliod --target armv7-unknown-linux-musleabihf```
+```CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER=rust-lld CC=/path/to/arm-linux-gnueabi-gcc cargo build --package teliod --target armv7-unknown-linux-musleabihf```
 
 You may need to download some sufficient MUSLE toolchains from `musle.cc`.
 
