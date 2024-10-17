@@ -4242,6 +4242,8 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "hashlink",
+ "if-addrs",
+ "ipnet",
  "mockall",
  "pnet_packet",
  "proptest",
@@ -4250,6 +4252,8 @@ dependencies = [
  "rustc-hash",
  "sn_fake_clock",
  "telio-crypto",
+ "telio-model",
+ "telio-network-monitors",
  "telio-utils",
  "tracing",
 ]
