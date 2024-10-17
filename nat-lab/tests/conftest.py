@@ -9,6 +9,7 @@ from mesh_api import start_tcpdump, stop_tcpdump
 from utils.bindings import TelioAdapterType
 from utils.connection import DockerConnection
 from utils.connection_util import ConnectionTag, LAN_ADDR_MAP, new_connection_raw
+from utils.process import ProcessExecError
 from utils.router import IPStack
 from utils.vm import windows_vm_util, mac_vm_util
 
@@ -150,6 +151,8 @@ async def perform_setup_checks() -> bool:
                 break
             except asyncio.TimeoutError:
                 print(f"{target}() timeout, retrying...")
+            except ProcessExecError as e:
+                print(f"{target}() process exec error {e}, retrying...")
             retries -= 1
         else:
             return False
