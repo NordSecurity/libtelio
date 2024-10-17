@@ -52,7 +52,7 @@ jobs:
       steps:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - run: rustup show
-        - run: cargo clippy --target "x86_64-apple-darwin" --lib --color always -- --deny warnings --allow unknown-lints -W clippy::expect_used -W clippy::panic -W clippy::unwrap_used
+        - run: cargo clippy --verbose --target "x86_64-apple-darwin" --lib --color always -- --deny warnings --allow unknown-lints -W clippy::expect_used -W clippy::panic -W clippy::unwrap_used
   deny:
       runs-on: ubuntu-22.04
       steps:
