@@ -83,15 +83,19 @@ pub struct Peer {
     pub addr: SocketAddr,
     /// The public key of the peer
     pub public_key: PublicKey,
+    /// Whether our node accepts multicast messages from the peer or not.
+    pub allow_multicast: bool,
+    /// Whether the peer node accepts multicast messages from our node or not.
+    pub peer_allows_multicast: bool,
 }
 
 /// Config for transport component
 /// Contains fields that can change at runtime
 pub enum Config {
     /// Simple transport config, has IP of peer but not port
-    Simple(Vec<(PublicKey, IpAddr)>),
+    Simple(Vec<(PublicKey, IpAddr, bool, bool)>),
     /// Full transport config, has full socket address of peer
-    Full(Vec<(PublicKey, SocketAddr)>),
+    Full(Vec<(PublicKey, SocketAddr, bool, bool)>),
 }
 
 /// The starcast transport component
@@ -200,14 +204,25 @@ impl State {
         self.peers = match config {
             Config::Simple(peers) => peers
                 .into_iter()
-                .map(|(public_key, addr)| Peer {
-                    public_key,
-                    addr: SocketAddr::new(addr, MULTICAST_TRANSPORT_PORT),
-                })
+                .map(
+                    |(public_key, addr, allow_multicast, peer_allows_multicast)| Peer {
+                        public_key,
+                        addr: SocketAddr::new(addr, MULTICAST_TRANSPORT_PORT),
+                        allow_multicast,
+                        peer_allows_multicast,
+                    },
+                )
                 .collect(),
             Config::Full(peers) => peers
                 .into_iter()
-                .map(|(public_key, addr)| Peer { public_key, addr })
+                .map(
+                    |(public_key, addr, allow_multicast, peer_allows_multicast)| Peer {
+                        public_key,
+                        addr,
+                        allow_multicast,
+                        peer_allows_multicast,
+                    },
+                )
                 .collect(),
         };
     }
@@ -216,11 +231,15 @@ impl State {
         let Some(transport_socket) = self.transport_socket.as_ref() else {
             return Err(Error::TransportSocketNotOpen);
         };
-        let failed_peers = join_all(self.peers.iter().map(|peer| {
-            transport_socket
-                .send_to(&packet, peer.addr)
-                .map_err(|_| peer.public_key)
-        }))
+        // If peer_allows_multicast is false for a peer, we cannot send multicast packets to that peer,
+        // but we can still receive multicast packets from that peer.
+        let failed_peers = join_all(self.peers.iter().filter(|p| p.peer_allows_multicast).map(
+            |peer| {
+                transport_socket
+                    .send_to(&packet, peer.addr)
+                    .map_err(|_| peer.public_key)
+            },
+        ))
         .await
         .into_iter()
         .filter_map(|res| match res {
@@ -254,6 +273,34 @@ impl State {
             .await
             .map(|_| ())
             .map_err(|_| Error::SocketSendError)
+    }
+
+    /// Separate method for handling starcast packets received on the transport socket from other
+    /// meshnet nodes and dropping those packets if multicast isn't allowed for those nodes.
+    async fn handle_incoming_packet(
+        &mut self,
+        mut packet: Vec<u8>,
+        send_permit: tokio::sync::mpsc::OwnedPermit<Vec<u8>>,
+    ) -> Result<(), Error> {
+        let peer_ip = self
+            .nat
+            .translate_incoming(&mut packet)
+            .map_err(Error::NatError)?;
+        if self
+            .peers
+            .iter()
+            .find(|peer| peer.addr.ip() == peer_ip)
+            // If allow_multicast is false for a peer, we drop any multicast packets that were
+            // received from that peer, but we can still send multicast packets to that peer.
+            .filter(|peer| peer.allow_multicast)
+            .is_some()
+        {
+            // If a starcast packet is received from a peer which is not present in the peer list,
+            // we assume that multicast is disallowed for it.
+            send_permit.send(packet);
+        };
+
+        Ok(())
     }
 
     fn has_multicast_dst(&self, packet: &mut [u8]) -> Result<bool, Error> {
@@ -315,12 +362,8 @@ impl Runtime for State {
             }
             Some((permit, Ok(bytes_read))) = wait_for_tx(&self.packet_chan.tx, transport_socket.recv(&mut self.recv_buffer)) => {
                 #[allow(clippy::expect_used)]
-                let mut packet = self.recv_buffer.get(..bytes_read).expect("We know bytes_read bytes should be in the buffer at this point").to_vec();
-                self.nat.translate_incoming(&mut packet)
-                    .map_err(Error::NatError)
-                    .map(|_| {
-                        let _ = permit.send(packet);
-                    })
+                let packet = self.recv_buffer.get(..bytes_read).expect("We know bytes_read bytes should be in the buffer at this point").to_vec();
+                self.handle_incoming_packet(packet, permit).await
             }
             else => {
                 telio_log_warn!("MutlicastListener: no events to wait on");
@@ -351,23 +394,49 @@ mod tests {
         task: Task<State>,
         transport_socket: Arc<UdpSocket>,
         channel: Chan<Vec<u8>>,
-        peers: Vec<(PublicKey, UdpSocket)>,
+        peers: Vec<(PublicKey, UdpSocket, bool, bool)>,
     }
 
     impl Scaffold {
         async fn start() -> Self {
             let transport_socket = Arc::new(Self::bind_local_socket().await);
-            let mut peers = Vec::with_capacity(3);
-            for _ in 0..3 {
-                peers.push((SecretKey::gen().public(), Self::bind_local_socket().await));
-            }
+            // Peers with all the different possible meshnet configurations:
+            let peers = vec![
+                (
+                    SecretKey::gen().public(),
+                    Self::bind_local_socket().await,
+                    true,
+                    true,
+                ),
+                (
+                    SecretKey::gen().public(),
+                    Self::bind_local_socket().await,
+                    false,
+                    true,
+                ),
+                (
+                    SecretKey::gen().public(),
+                    Self::bind_local_socket().await,
+                    true,
+                    false,
+                ),
+                (
+                    SecretKey::gen().public(),
+                    Self::bind_local_socket().await,
+                    false,
+                    false,
+                ),
+            ];
+
             let (packet_chan, channel) = Chan::pipe();
 
             let task_peers = peers
                 .iter()
-                .map(|(pk, s)| Peer {
+                .map(|(pk, s, allow_multicast, peer_allows_multicast)| Peer {
                     public_key: *pk,
                     addr: s.local_addr().unwrap(),
+                    allow_multicast: *allow_multicast,
+                    peer_allows_multicast: *peer_allows_multicast,
                 })
                 .collect();
             let multicast_ips = vec![IpNet::new("224.0.0.0".parse().unwrap(), 4).unwrap()];
@@ -459,11 +528,19 @@ mod tests {
 
         scaffold.channel.tx.send(packet.clone()).await.unwrap();
 
-        for (_, socket) in &scaffold.peers {
+        for (_, socket, _, peer_allows_multicast) in &scaffold.peers {
             let mut buffer = vec![0; TEST_MAX_PACKET_SIZE];
-            let bytes_read = socket.recv(&mut buffer).await.unwrap();
-            buffer.truncate(bytes_read);
-            assert_eq!(buffer, packet);
+            if *peer_allows_multicast {
+                let bytes_read = socket.recv(&mut buffer).await.unwrap();
+                buffer.truncate(bytes_read);
+                assert_eq!(buffer, packet);
+            } else {
+                // Using timeout here, because otherwise the socket will just wait forever.
+                let result =
+                    tokio::time::timeout(Duration::from_millis(100), socket.recv_from(&mut buffer))
+                        .await;
+                assert!(result.is_err());
+            }
         }
 
         scaffold.stop().await;
@@ -494,7 +571,7 @@ mod tests {
 
         tokio::task::yield_now().await;
 
-        for (_, socket) in scaffold.peers.iter().skip(1) {
+        for (_, socket, _, _) in scaffold.peers.iter().skip(1) {
             let mut buffer = vec![0; TEST_MAX_PACKET_SIZE];
             assert!(socket.try_recv(&mut buffer).is_err());
         }
