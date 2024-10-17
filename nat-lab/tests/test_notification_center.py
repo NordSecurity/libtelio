@@ -1,10 +1,15 @@
 import json
+import os
 import paho.mqtt.client as mqtt
 import queue
+import ssl
+import subprocess
+import tempfile
+from config import CORE_API_CA_CERTIFICATE_PATH, MQTT_BROKER_HOST, CORE_API_URL
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
-from utils.connection_util import ConnectionTag, new_connection_by_tag
-from uuid import UUID
+from helpers import send_https_request, verify_uuid
+from utils.connection_util import ConnectionTag, new_connection_by_tag, container_id
 
 
 @dataclass
@@ -22,14 +27,6 @@ class MachineResponse:
     traffic_routing_supported: bool
 
 
-def verify_uuid(uuid_to_test, version=4):
-    try:
-        uuid_obj = UUID(uuid_to_test, version=version)
-    except ValueError:
-        assert False, "Not a valid UUID"
-    assert str(uuid_obj) == uuid_to_test, "Not a valid UUID"
-
-
 def verify_mqtt_payload(payload):
     payload_json = json.loads(payload)
 
@@ -41,7 +38,21 @@ def verify_mqtt_payload(payload):
         verify_uuid(machine_uuid)
 
 
-def run_mqtt_listener():
+def copy_cert_to_temp_file(container, cert_path):
+    temp_dir = tempfile.mkdtemp()
+    cert_name = cert_path.split("/")[-1]
+    local_path = os.path.join(temp_dir, cert_name)
+    docker_cp_cmd = [
+        "docker",
+        "cp",
+        container + ":" + cert_path,
+        local_path,
+    ]
+    subprocess.run(docker_cp_cmd)
+    return local_path
+
+
+def run_mqtt_listener(cert_path):
     payload_queue: queue.Queue[str] = queue.Queue(1)
 
     def on_message(_client, _userdata, message):
@@ -51,23 +62,34 @@ def run_mqtt_listener():
 
     mqttc.on_message = on_message
 
-    # TODO: add credentials when LLT-5604 will be ready
-    mqttc.connect("10.0.80.85", port=1883, keepalive=1)
+    mqttc.tls_set(
+        ca_certs=cert_path,
+        certfile=cert_path,
+        keyfile=cert_path,
+        tls_version=ssl.PROTOCOL_TLSv1_2,
+        cert_reqs=ssl.CERT_REQUIRED,
+    )
+    mqttc.connect(MQTT_BROKER_HOST, port=8883, keepalive=1)
     mqttc.subscribe("meshnet", qos=0)
 
     mqttc.loop_start()
 
-    return (payload_queue, mqttc)
+    return payload_queue, mqttc
 
 
 async def test_nc_register():
     async with AsyncExitStack() as exit_stack:
         # Setup connections
-        connection_beta = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
+        connection_tag = ConnectionTag.DOCKER_CONE_CLIENT_1
+        connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(connection_tag)
         )
 
-        (mqtt_payload_queue, mqttc) = run_mqtt_listener()
+        cert_path = copy_cert_to_temp_file(container_id(connection_tag), CORE_API_CA_CERTIFICATE_PATH)
+        exit_stack.callback(os.remove, cert_path)
+        exit_stack.callback(os.rmdir, os.path.dirname(cert_path))
+
+        (mqtt_payload_queue, mqttc) = run_mqtt_listener(cert_path)
 
         # Register machine - this is a minimal version which should be also supported
         request_json = {
@@ -77,20 +99,17 @@ async def test_nc_register():
             "os_version": "5.10",
             "device_type": "router",
         }
+        machines_endpoint = f"{CORE_API_URL}/machines"
         payload = json.dumps(request_json, separators=(",", ":"))
-        http_process = await connection_beta.create_process([
-            "curl",
-            "-X",
-            "POST",
-            "http://10.0.80.86:8080/v1/meshnet/machines",
-            "-H",
-            '"Content-Type: application/json"',
-            "-d",
-            f"{payload}",
-        ]).execute()
 
-        json_obj = json.loads(http_process.get_stdout())
-        response = MachineResponse(**json_obj)
+        https_process_stdout = await send_https_request(
+            connection,
+            machines_endpoint,
+            "POST",
+            CORE_API_CA_CERTIFICATE_PATH,
+            payload,
+        )
+        response = MachineResponse(**https_process_stdout)
 
         identifier = response.identifier
         verify_uuid(identifier)
@@ -104,16 +123,23 @@ async def test_nc_register():
         mqtt_payload = mqtt_payload_queue.get()
         verify_mqtt_payload(mqtt_payload)
 
-        http_process = await connection_beta.create_process([
-            "curl",
-            "-i",
-            "-X",
+        await send_https_request(
+            connection,
+            f"{machines_endpoint}/{identifier}",
             "DELETE",
-            f"http://10.0.80.86:8080/v1/meshnet/machines/{identifier}",
-        ]).execute()
+            CORE_API_CA_CERTIFICATE_PATH,
+            payload,
+            expect_response=False,
+        )
 
-        status = http_process.get_stdout().split(" ")[1]
-        assert status == "204"
+        machines = await send_https_request(
+            connection,
+            machines_endpoint,
+            "GET",
+            CORE_API_CA_CERTIFICATE_PATH,
+        )
+
+        assert len(machines) == 0
 
         mqtt_payload = mqtt_payload_queue.get()
         verify_mqtt_payload(mqtt_payload)

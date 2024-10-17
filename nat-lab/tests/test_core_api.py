@@ -1,10 +1,11 @@
 import json
 import pytest
+from config import CORE_API_CA_CERTIFICATE_PATH, CORE_API_URL
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from enum import Enum
+from helpers import send_https_request, verify_uuid
 from utils.connection_util import ConnectionTag, new_connection_by_tag
-from uuid import UUID
 
 
 @dataclass
@@ -75,49 +76,20 @@ def validate_dict_structure(data_to_validate, expected_data_structure) -> None:
             raise ValueError(f"Unexpected type for key '{key}': {expected_type}")
 
 
-def verify_uuid(uuid_to_test, version=4):
-    try:
-        uuid_obj = UUID(uuid_to_test, version=version)
-    except ValueError:
-        assert False, "Not a valid UUID"
-    assert str(uuid_obj) == uuid_to_test, "Not a valid UUID"
-
-
-async def send_http_request(
-    connection, endpoint, method, data=None, expect_response=True
-):
-    curl_command = [
-        "curl",
-        "-X",
-        method,
-        endpoint,
-        "-H",
-        "Content-Type: application/json",
-    ]
-
-    if data:
-        curl_command.extend(["-d", data])
-
-    process = await connection.create_process(curl_command).execute()
-    response = process.get_stdout()
-    if expect_response:
-        try:
-            return json.loads(response)
-        except json.JSONDecodeError:
-            assert False, f"Expected JSON response but got: {response}"
-    return None
-
-
 async def clean_up_machines(connection, server_host):
-    machines = await send_http_request(
-        connection, f"{server_host}/v1/meshnet/machines", method="GET"
+    machines = await send_https_request(
+        connection,
+        f"{server_host}/v1/meshnet/machines",
+        "GET",
+        CORE_API_CA_CERTIFICATE_PATH,
     )
 
     for machine in machines:
-        await send_http_request(
+        await send_https_request(
             connection,
             f"{server_host}/v1/meshnet/machines/{machine['identifier']}",
-            method="DELETE",
+            "DELETE",
+            CORE_API_CA_CERTIFICATE_PATH,
             expect_response=False,
         )
 
@@ -144,7 +116,7 @@ def fixture_machine_data(request):
 
 @pytest.fixture(name="server_host")
 def fixture_server_host():
-    return "http://10.0.80.86:8080"
+    return CORE_API_URL
 
 
 @pytest.fixture(name="registered_machines")
@@ -161,10 +133,11 @@ async def fixture_register_machine(server_host, machine_data):
         for data in machine_data:
             payload = json.dumps(data.__dict__)
 
-            response_data = await send_http_request(
+            response_data = await send_https_request(
                 connection,
                 f"{server_host}/v1/meshnet/machines",
-                method="POST",
+                "POST",
+                CORE_API_CA_CERTIFICATE_PATH,
                 data=payload,
             )
             registered_machines.append(response_data)
@@ -212,8 +185,11 @@ async def test_get_all_machines(server_host, registered_machines, machine_data):
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
         )
 
-        response_data = await send_http_request(
-            connection, f"{server_host}/v1/meshnet/machines", "GET"
+        response_data = await send_https_request(
+            connection,
+            f"{server_host}/v1/meshnet/machines",
+            "GET",
+            CORE_API_CA_CERTIFICATE_PATH,
         )
 
         assert isinstance(response_data, list)
@@ -251,10 +227,11 @@ async def test_update_registered_machine_data(
 
         for machine in registered_machines:
 
-            response_data = await send_http_request(
+            response_data = await send_https_request(
                 connection,
                 f"{server_host}/v1/meshnet/machines/{machine['identifier']}",
                 "PATCH",
+                CORE_API_CA_CERTIFICATE_PATH,
                 data=payload,
             )
 
@@ -282,15 +259,19 @@ async def test_delete_registered_machine(
 
         machine = registered_machines[0]
 
-        await send_http_request(
+        await send_https_request(
             connection,
             f"{server_host}/v1/meshnet/machines/{machine['identifier']}",
             "DELETE",
+            CORE_API_CA_CERTIFICATE_PATH,
             expect_response=False,
         )
 
-        get_response_data = await send_http_request(
-            connection, f"{server_host}/v1/meshnet/machines", "GET"
+        get_response_data = await send_https_request(
+            connection,
+            f"{server_host}/v1/meshnet/machines",
+            "GET",
+            CORE_API_CA_CERTIFICATE_PATH,
         )
 
         assert len(get_response_data) == 0
@@ -314,10 +295,11 @@ async def test_get_mesh_map(server_host, registered_machines, machine_data):
 
         for machine in registered_machines:
 
-            response_data = await send_http_request(
+            response_data = await send_https_request(
                 connection,
                 f"{server_host}/v1/meshnet/machines/{machine['identifier']}/map",
                 "GET",
+                CORE_API_CA_CERTIFICATE_PATH,
             )
 
             assert isinstance(response_data["peers"], list)
@@ -339,18 +321,20 @@ async def not_able_to_register_same_machine_twice(server_host):
 
         payload = json.dumps(linux_vm.__dict__)
 
-        await send_http_request(
+        await send_https_request(
             connection,
             f"{server_host}/v1/meshnet/machines",
-            method="POST",
+            "POST",
+            CORE_API_CA_CERTIFICATE_PATH,
             data=payload,
             expect_response=False,
         )
 
-        response_data = await send_http_request(
+        response_data = await send_https_request(
             connection,
             f"{server_host}/v1/meshnet/machines",
-            method="POST",
+            "POST",
+            CORE_API_CA_CERTIFICATE_PATH,
             data=payload,
         )
 

@@ -204,3 +204,7 @@ DERP_SERVERS = [DERP_PRIMARY, DERP_FAKE, DERP_SECONDARY, DERP_TERTIARY]
 LIBDROP_PORT = 49111
 
 LINUX_INTERFACE_NAME = "tun10"
+
+CORE_API_URL = "https://api.nordvpn.com"
+MQTT_BROKER_HOST = "mqtt.nordvpn.com"
+CORE_API_CA_CERTIFICATE_PATH = "/etc/ssl/server_certificate/server.pem"

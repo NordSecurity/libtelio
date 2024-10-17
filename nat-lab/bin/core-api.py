@@ -2,6 +2,7 @@
 
 import json
 import paho.mqtt.client as mqtt  # type: ignore # pylint: disable=import-error
+import ssl
 from dataclasses import asdict, dataclass
 from enum import Enum
 from http import HTTPStatus
@@ -21,6 +22,8 @@ DERP_SERVER = {
     "public_key": "qK/ICYOGBu45EIGnopVu+aeHDugBrkLAZDroKGTuKU0=",  # NOTE: this is hardcoded key for transient docker container existing only during the tests
     "weight": 1,
 }
+
+CERTIFICATE_PATH = "/etc/ssl/server_certificate/server.pem"
 
 
 class CoreApiErrorCode(Enum):
@@ -129,6 +132,8 @@ class CoreApiHandler(BaseHTTPRequestHandler):
         elif self.path.split("/")[-1] == "map":
             machine_id = self.path.split("/")[-2]
             self.handle_get_machine_map(machine_id)
+        elif self.path == "/v1/health":
+            self.handle_root_path()
 
     def do_HEAD(self):
         self._set_headers()
@@ -271,9 +276,14 @@ class CoreApiHandler(BaseHTTPRequestHandler):
         }
 
 
-def run(mqttc, port=8080):
+def run(mqttc, port=443):
     server_address = ("", port)
     httpd = CoreServer(server_address, CoreApiHandler, mqttc)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(
+        certfile=CERTIFICATE_PATH,
+    )
+    httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
     print("Starting httpd...")
     httpd.serve_forever()
 
@@ -300,7 +310,14 @@ def main():
     mqttc.on_connect = on_connect
     mqttc.on_message = on_message
     mqttc.on_subscribe = on_subscribe
-    mqttc.connect("10.0.80.85", port=1883, keepalive=60)
+    mqttc.tls_set(
+        ca_certs=CERTIFICATE_PATH,
+        certfile=CERTIFICATE_PATH,
+        keyfile=CERTIFICATE_PATH,
+        tls_version=ssl.PROTOCOL_TLSv1_2,
+        cert_reqs=ssl.CERT_REQUIRED,
+    )
+    mqttc.connect("mqtt.nordvpn.com", port=8883, keepalive=60)
 
     mqttc.loop_start()
 
