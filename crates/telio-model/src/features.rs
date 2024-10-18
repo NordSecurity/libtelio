@@ -31,9 +31,10 @@ pub struct Features {
     /// Test environment (natlab) requires binding feature disabled
     /// TODO: Remove it once mac integration tests support the binding mechanism
     pub is_test_env: Option<bool>,
-    /// Controll if IP addresses should be hidden in logs
+    /// Controll if IP addresses and domains should be hidden in logs
+    #[serde(alias = "hide_ips")] // Old name
     #[default(true)]
-    pub hide_ips: bool,
+    pub hide_user_data: bool,
     /// Derp server specific configuration
     pub derp: Option<FeatureDerp>,
     /// Flag to specify if keys should be validated
@@ -500,7 +501,7 @@ mod tests {
                 }
             },
             "is_test_env": true,
-            "hide_ips": false,
+            "hide_user_data": false,
             "derp": {
                 "tcp_keepalive": 13,
                 "derp_keepalive": 14,
@@ -583,7 +584,7 @@ mod tests {
                         ),
                     }),
                     is_test_env: Some(true),
-                    hide_ips: false,
+                    hide_user_data: false,
                     derp: Some(FeatureDerp {
                         tcp_keepalive: Some(13),
                         derp_keepalive: Some(14),
@@ -772,10 +773,12 @@ mod tests {
         }
 
         #[test]
-        fn test_hide_ips() {
-            assert_json!(r#"{}"#, true, hide_ips);
-            assert_json!(r#"{"hide_ips": false}"#, false, hide_ips);
-            assert_json!(r#"{"hide_ips": true}"#, true, hide_ips);
+        fn test_hide_user_data() {
+            assert_json!(r#"{}"#, true, hide_user_data);
+            assert_json!(r#"{"hide_ips": false}"#, false, hide_user_data);
+            assert_json!(r#"{"hide_ips": true}"#, true, hide_user_data);
+            assert_json!(r#"{"hide_user_data": false}"#, false, hide_user_data);
+            assert_json!(r#"{"hide_user_data": true}"#, true, hide_user_data);
         }
     }
 
