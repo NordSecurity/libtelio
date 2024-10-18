@@ -84,15 +84,21 @@ class NicknameCollisionError(NodeError):
 
 class FirewallRule:
     allow_incoming_connections: bool
+    allow_peer_traffic_routing: bool
+    allow_peer_local_network_access: bool
     allow_peer_send_files: bool
 
     def __init__(
         self,
         allow_incoming_connections: bool = False,
+        allow_peer_traffic_routing: bool = False,
+        allow_peer_local_network_access: bool = False,
         allow_peer_send_files: bool = False,
     ):
         self.allow_incoming_connections = allow_incoming_connections
         self.allow_peer_send_files = allow_peer_send_files
+        self.allow_peer_local_network_access = allow_peer_local_network_access
+        self.allow_peer_traffic_routing = allow_peer_traffic_routing
 
     def __str__(self):
         return pprint.pformat(vars(self))
@@ -166,6 +172,8 @@ class Node:
             ),
             is_local=node.is_local and self.is_local,
             allow_incoming_connections=firewall_config.allow_incoming_connections,
+            allow_peer_traffic_routing=firewall_config.allow_peer_traffic_routing,
+            allow_peer_local_network_access=firewall_config.allow_peer_local_network_access,
             allow_peer_send_files=firewall_config.allow_peer_send_files,
             allow_multicast=False,
             peer_allows_multicast=False,
@@ -176,9 +184,12 @@ class Node:
         node_id: str,
         allow_incoming_connections: bool = False,
         allow_peer_send_files: bool = False,
+        allow_peer_traffic_routing: bool = False,
     ) -> None:
         self.firewall_rules[node_id] = FirewallRule(
-            allow_incoming_connections, allow_peer_send_files
+            allow_incoming_connections,
+            allow_peer_send_files=allow_peer_send_files,
+            allow_peer_traffic_routing=allow_peer_traffic_routing,
         )
 
     def get_firewall_config(self, node_id: str) -> FirewallRule:
@@ -315,12 +326,15 @@ class API:
         beta_is_local: bool = False,
         alpha_ip_stack: IPStack = IPStack.IPv4,
         beta_ip_stack: IPStack = IPStack.IPv4,
+        allow_peer_traffic_routing: bool = False,
     ) -> Tuple[Node, Node]:
         alpha, beta, *_ = self.config_dynamic_nodes(
             [(alpha_is_local, alpha_ip_stack), (beta_is_local, beta_ip_stack)]
         )
         alpha.set_peer_firewall_settings(beta.id, True)
-        beta.set_peer_firewall_settings(alpha.id, True)
+        beta.set_peer_firewall_settings(
+            alpha.id, True, allow_peer_traffic_routing=allow_peer_traffic_routing
+        )
         return alpha, beta
 
     def default_config_three_nodes(
