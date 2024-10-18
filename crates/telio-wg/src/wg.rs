@@ -244,19 +244,13 @@ struct State {
 const POLL_MILLIS: u64 = 1000;
 const MAX_UAPI_FAIL_COUNT: i32 = 10;
 
-#[cfg(all(not(any(test, feature = "test-adapter")), windows))]
+#[cfg(windows)]
 const DEFAULT_NAME: &str = "NordLynx";
 
-#[cfg(all(
-    not(any(test, feature = "test-adapter")),
-    any(target_os = "macos", target_os = "ios", target_os = "tvos")
-))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 const DEFAULT_NAME: &str = "utun10";
 
-#[cfg(all(
-    not(any(test, feature = "test-adapter")),
-    any(target_os = "linux", target_os = "android")
-))]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 const DEFAULT_NAME: &str = "nlx0";
 
 impl DynamicWg {
@@ -376,7 +370,6 @@ impl DynamicWg {
         }
     }
 
-    #[cfg(not(any(test, feature = "test-adapter")))]
     fn start_adapter(cfg: Config) -> Result<Box<dyn Adapter>, Error> {
         adapter::start(
             cfg.adapter,
@@ -387,17 +380,6 @@ impl DynamicWg {
             cfg.firewall_process_outbound_callback,
             cfg.firewall_reset_connections,
         )
-    }
-
-    #[cfg(any(test, feature = "test-adapter"))]
-    fn start_adapter(_cfg: Config) -> Result<Box<dyn Adapter>, Error> {
-        use std::sync::Mutex;
-
-        if let Some(adapter) = tests::RUNTIME_ADAPTER.lock().unwrap().take() {
-            Ok(adapter)
-        } else {
-            Err(Error::RestartFailed)
-        }
     }
 }
 

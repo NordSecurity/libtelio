@@ -607,9 +607,11 @@ impl State {
             }
         } else {
             telio_log_debug!(
-                "({}) DERP --> Rx, received a packet with unknown pubkey: {}",
+                "({}) DERP --> Rx, received a packet with unknown pubkey: {}. Config: {:?}. SK: {}",
                 Self::NAME,
-                pk
+                pk,
+                config,
+                config.secret_key.public().to_string()
             );
         }
     }
@@ -696,7 +698,7 @@ impl Runtime for State {
                 tokio::select! {
                     // Connection returned, reconnect
                     (err, _, _) = conn_join => {
-                        telio_log_info!("Disconnecting from DERP server, due to transmission tasks error");
+                        telio_log_info!("Disconnecting from DERP server, due to transmission tasks error: {err:?}");
 
                         self.last_disconnection_reason = match err {
                             Ok(Ok(())) => RelayConnectionChangeReason::ConfigurationChange,
