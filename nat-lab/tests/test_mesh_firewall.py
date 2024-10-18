@@ -4,7 +4,6 @@ import asyncio
 import config
 import pytest
 from contextlib import AsyncExitStack
-from datetime import datetime
 from helpers import SetupParameters, setup_mesh_nodes, setup_api
 from mesh_api import Node
 from typing import Tuple, Optional
@@ -18,7 +17,7 @@ from utils.connection_tracker import (
     ConnectionTracker,
 )
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
-from utils.output_notifier import OutputNotifier
+from utils.netcat import NetCatServer, NetCatClient
 from utils.ping import ping
 from utils.router import IPProto, IPStack
 
@@ -449,67 +448,30 @@ async def test_mesh_firewall_file_share_port(
             with pytest.raises(asyncio.TimeoutError):
                 await ping(connection_beta, CLIENT_ALPHA_IP, 15)
 
-        output_notifier = OutputNotifier()
-        listening_start_event = asyncio.Event()
-        sender_start_event = asyncio.Event()
-        connected_event = asyncio.Event()
+        async with NetCatServer(
+            connection_alpha, PORT, udp=True, ipv6=CLIENT_PROTO == IPProto.IPv6
+        ).run() as listener:
+            # wait for listening to start
+            await listener.listening_started()
 
-        output_notifier.notify_output(
-            f"Bound on {CLIENT_ALPHA_IP} {str(PORT)}", listening_start_event
-        )
-
-        output_notifier.notify_output(
-            f"Connection to {CLIENT_ALPHA_IP} {str(PORT)} port [udp/*] succeeded!",
-            sender_start_event,
-        )
-
-        output_notifier.notify_output(
-            f"Connection received on {CLIENT_BETA_IP}",
-            connected_event,
-        )
-
-        # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
-        await exit_stack.enter_async_context(
-            connection_alpha.create_process([
-                "nc",
-                "-nluv",
-                "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
+            async with NetCatClient(
+                connection_beta,
                 CLIENT_ALPHA_IP,
-                str(PORT),
-            ]).run(
-                stdout_callback=output_notifier.handle_output,
-                stderr_callback=output_notifier.handle_output,
-            )
-        )
+                PORT,
+                udp=True,
+                ipv6=CLIENT_PROTO == IPProto.IPv6,
+                port_scan=True,
+                source_ip=CLIENT_BETA_IP,
+            ).run() as client:
+                # wait for client to connect
+                await client.connection_succeeded()
 
-        # wait for listening to start
-        await listening_start_event.wait()
-
-        # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
-        await exit_stack.enter_async_context(
-            connection_beta.create_process([
-                "nc",
-                "-nuvz",
-                "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
-                "-s",
-                CLIENT_BETA_IP,
-                CLIENT_ALPHA_IP,
-                str(PORT),
-            ]).run(
-                stdout_callback=output_notifier.handle_output,
-                stderr_callback=output_notifier.handle_output,
-            )
-        )
-
-        # wait for sender to start
-        await sender_start_event.wait()
-
-        # check for connection status according to parameter provided
-        if successful:
-            await connected_event.wait()
-        else:
-            with pytest.raises(asyncio.TimeoutError):
-                await asyncio.wait_for(connected_event.wait(), 5)
+                # check for connection status according to parameter provided
+                if successful:
+                    await listener.connection_received()
+                else:
+                    with pytest.raises(asyncio.TimeoutError):
+                        await asyncio.wait_for(listener.connection_received(), 5)
 
 
 @pytest.mark.asyncio
@@ -578,32 +540,8 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
             conn.connection for conn in env.connections
         ]
 
-        output_notifier = OutputNotifier()
-
-        async def on_stdout(stdout: str) -> None:
-            for line in stdout.splitlines():
-                print(datetime.now(), f"nc output: {line}")
-            await output_notifier.handle_output(stdout)
-
-        listening_start_event = asyncio.Event()
-        sender_start_event = asyncio.Event()
-        connected_event = asyncio.Event()
         last_ack_event = asyncio.Event()
         time_wait_event = asyncio.Event()
-
-        output_notifier.notify_output(
-            f"Listening on {CLIENT_ALPHA_IP} {str(PORT)}", listening_start_event
-        )
-
-        output_notifier.notify_output(
-            f"Connection to {CLIENT_ALPHA_IP} {str(PORT)} port [tcp/*] succeeded!",
-            sender_start_event,
-        )
-
-        output_notifier.notify_output(
-            f"Connection received on {CLIENT_BETA_IP}",
-            connected_event,
-        )
 
         async with ConnectionTracker(
             connection_beta,
@@ -619,29 +557,21 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
             conntrack.notify_on_tcp_state(TcpState.LAST_ACK, last_ack_event)
             conntrack.notify_on_tcp_state(TcpState.TIME_WAIT, time_wait_event)
 
-            # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
-            async with connection_alpha.create_process([
-                "nc",
-                "-nlv",
-                "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
-                CLIENT_ALPHA_IP,
-                str(PORT),
-            ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout) as listener:
-                await listener.wait_stdin_ready()
-                await listening_start_event.wait()
-                await exit_stack.enter_async_context(
-                    connection_beta.create_process([
-                        "nc",
-                        "-nvd",
-                        "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
-                        "-s",
-                        CLIENT_BETA_IP,
-                        CLIENT_ALPHA_IP,
-                        str(PORT),
-                    ]).run(stdout_callback=on_stdout, stderr_callback=on_stdout)
-                )
-                await sender_start_event.wait()
-                await connected_event.wait()
+            async with NetCatServer(
+                connection_alpha, PORT, ipv6=CLIENT_PROTO == IPProto.IPv6
+            ).run() as listener:
+                await listener.listening_started()
+
+                async with NetCatClient(
+                    connection_beta,
+                    CLIENT_ALPHA_IP,
+                    PORT,
+                    ipv6=CLIENT_PROTO == IPProto.IPv6,
+                    source_ip=CLIENT_BETA_IP,
+                ).run() as client:
+                    await asyncio.gather(
+                        listener.connection_received(), client.connection_succeeded()
+                    )
 
             # kill server and check what is happening in conntrack events
             # if everything is correct -> conntrack should show LAST_ACK -> TIME_WAIT
@@ -716,27 +646,8 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
             conn.connection for conn in env.connections
         ]
 
-        output_notifier = OutputNotifier()
-
-        listening_start_event = asyncio.Event()
-        sender_start_event = asyncio.Event()
-        connected_event = asyncio.Event()
         last_ack_event = asyncio.Event()
         time_wait_event = asyncio.Event()
-
-        output_notifier.notify_output(
-            f"Listening on {CLIENT_ALPHA_IP} {str(PORT)}", listening_start_event
-        )
-
-        output_notifier.notify_output(
-            f"Connection to {CLIENT_ALPHA_IP} {str(PORT)} port [tcp/*] succeeded!",
-            sender_start_event,
-        )
-
-        output_notifier.notify_output(
-            f"Connection received on {CLIENT_BETA_IP}",
-            connected_event,
-        )
 
         async with ConnectionTracker(
             connection_beta,
@@ -751,34 +662,22 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
         ).run() as conntrack:
             conntrack.notify_on_tcp_state(TcpState.LAST_ACK, last_ack_event)
             conntrack.notify_on_tcp_state(TcpState.TIME_WAIT, time_wait_event)
-            async with connection_alpha.create_process([
-                "nc",
-                "-nlv",
-                "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
-                CLIENT_ALPHA_IP,
-                str(PORT),
-            ]).run(
-                stdout_callback=output_notifier.handle_output,
-                stderr_callback=output_notifier.handle_output,
-            ) as listener:
-                await listener.wait_stdin_ready()
-                await listening_start_event.wait()
-                # registering on_stdout callback on both streams, cuz most of the stdout goes to stderr somehow
-                async with connection_beta.create_process([
-                    "nc",
-                    "-nvd",
-                    "-4" if CLIENT_PROTO == IPProto.IPv4 else "-6",
-                    "-s",
-                    CLIENT_BETA_IP,
+            async with NetCatServer(
+                connection_alpha, PORT, ipv6=CLIENT_PROTO == IPProto.IPv6
+            ).run() as listener:
+                await listener.listening_started()
+
+                async with NetCatClient(
+                    connection_beta,
                     CLIENT_ALPHA_IP,
-                    str(PORT),
-                ]).run(
-                    stdout_callback=output_notifier.handle_output,
-                    stderr_callback=output_notifier.handle_output,
-                ) as client:
-                    await client.wait_stdin_ready()
-                    await sender_start_event.wait()
-                    await connected_event.wait()
+                    PORT,
+                    detached=True,
+                    ipv6=CLIENT_PROTO == IPProto.IPv6,
+                    source_ip=CLIENT_BETA_IP,
+                ).run() as client:
+                    await asyncio.gather(
+                        listener.connection_received(), client.connection_succeeded()
+                    )
 
                 # kill client and check what is happening in conntrack events
                 # if everything is correct -> conntrack should show LAST_ACK -> TIME_WAIT
