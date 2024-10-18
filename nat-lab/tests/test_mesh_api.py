@@ -43,8 +43,8 @@ class TestNode:
             is_local=False,
             allow_incoming_connections=False,
             allow_peer_send_files=False,
-            allow_multicast=False,
-            peer_allows_multicast=False,
+            allow_multicast=True,
+            peer_allows_multicast=True,
         )
         assert expected == node.to_peer_config_for_node(node)
 

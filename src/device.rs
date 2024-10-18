@@ -1790,6 +1790,11 @@ impl Runtime {
                     .peers
                     .unwrap_or_default()
                     .iter()
+                    .filter(|p| {
+                        // If neither our node nor peer node allow multicast, there's no point in keeping
+                        // that peer in the config.
+                        p.allow_multicast || p.peer_allows_multicast
+                    })
                     .filter_map(|p| {
                         p.ip_addresses
                             .to_owned()
@@ -1797,7 +1802,14 @@ impl Runtime {
                             .iter()
                             // While IPV6 support is not added yet for multicast, only using IPV4 IPs
                             .find(|ip| ip.is_ipv4())
-                            .map(|ip| (p.base.public_key, ip.to_owned()))
+                            .map(|ip| {
+                                (
+                                    p.base.public_key,
+                                    ip.to_owned(),
+                                    p.allow_multicast,
+                                    p.peer_allows_multicast,
+                                )
+                            })
                     })
                     .collect();
                 let starcast_transport_config = StarcastTransportConfig::Simple(multicast_peers);
