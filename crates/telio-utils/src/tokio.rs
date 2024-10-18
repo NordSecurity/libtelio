@@ -1,4 +1,4 @@
-use crate::telio_log_warn;
+use crate::{telio_log_debug, telio_log_warn};
 use rustc_hash::FxHashMap;
 use std::{
     sync::Arc,
@@ -7,6 +7,7 @@ use std::{
 };
 
 const ALERT_DURATION: Duration = Duration::from_secs(60);
+const UNPARKED_THRESHOLD: Duration = Duration::from_secs(1);
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 enum ThreadStatus {
@@ -33,8 +34,15 @@ impl Default for ThreadTracker {
 
 impl ThreadTracker {
     fn set_status(&mut self, status: ThreadStatus) {
-        self.last_change = Instant::now();
-        self.statuses.insert(current().id(), status);
+        let now = Instant::now();
+        let delta = now - self.last_change;
+        self.last_change = now;
+        if let Some(ThreadStatus::Unparked) = self.statuses.insert(current().id(), status) {
+            if status == ThreadStatus::Parked && delta > UNPARKED_THRESHOLD {
+                let tid = std::thread::current().id();
+                telio_log_debug!("Thread {tid:?} was unparked for too long: {delta:?}");
+            }
+        }
     }
 
     fn are_all_threads_parked(&self) -> bool {
