@@ -23,7 +23,7 @@ use telio_sockets::External;
 use telio_task::{io::chan::Tx, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
     exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
-    telio_log_debug, telio_log_info, PinnedSleep,
+    telio_log_debug, telio_log_info, telio_log_warn, PinnedSleep,
 };
 use telio_wg::{DynamicWg, WireGuard};
 use tokio::{net::UdpSocket, pin, sync::Mutex};
@@ -35,8 +35,6 @@ const MAX_SUPPORTED_PACKET_SIZE: usize = 1500;
 const GET_INTERFACE_TIMEOUT_S: Duration = Duration::from_secs(2);
 
 const EPHEMERAL_PORT_RANGE: std::ops::RangeInclusive<u16> = 49152..=65535;
-
-const DEFAULT_LEASE_DURATION_S: u32 = 600;
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -71,6 +69,7 @@ type GatewaySearch = Pin<Box<dyn Future<Output = Result<Gateway>> + Send + Sync 
 pub struct IgdGateway {
     search: Option<GatewaySearch>,
     gw: Option<Gateway>,
+    lease_duration_s: u32,
 }
 
 impl Debug for IgdGateway {
@@ -78,6 +77,7 @@ impl Debug for IgdGateway {
         f.debug_struct("IgdGateway")
             .field("search", &self.search.is_some())
             .field("gw", &self.gw)
+            .field("lease_duration", &self.lease_duration_s)
             .finish()
     }
 }
@@ -85,18 +85,18 @@ impl Debug for IgdGateway {
 #[async_trait]
 impl UpnpEpCommands for IgdGateway {
     async fn check_endpoint_routes(&self, proxy_port: u16, wg_port: u16) -> Result<bool> {
-        let mut i = 0;
-        let mut map_ok: (bool, bool) = (false, false);
-        let mut extend_timeout: bool = false;
         let gw = match &self.gw {
             Some(gw) => gw,
             None => return Err(Error::NoIGDGateway),
         };
 
+        let mut i = 0;
+        let mut extend_timeout: bool = false;
+        let mut map_ok: (bool, bool) = (false, false);
         while let Ok(resp) = gw.get_generic_port_mapping_entry(i).await {
             i += 1;
 
-            if resp.lease_duration < DEFAULT_LEASE_DURATION_S {
+            if resp.lease_duration < self.lease_duration_s.div_ceil(4) {
                 extend_timeout = true;
             }
 
@@ -129,7 +129,7 @@ impl UpnpEpCommands for IgdGateway {
             PortMappingProtocol::UDP,
             proxy_port.external,
             SocketAddrV4::new(ip_addr, proxy_port.internal),
-            3600,
+            self.lease_duration_s,
             "libminiupnp",
         )
         .await?;
@@ -137,7 +137,7 @@ impl UpnpEpCommands for IgdGateway {
             PortMappingProtocol::UDP,
             wg_port.external,
             SocketAddrV4::new(ip_addr, wg_port.internal),
-            3600,
+            self.lease_duration_s,
             "libminiupnp",
         )
         .await?;
@@ -160,7 +160,7 @@ impl UpnpEpCommands for IgdGateway {
             PortMappingProtocol::UDP,
             proxy_port_external,
             SocketAddrV4::new(ip_addr, proxy_port_internal),
-            3600,
+            self.lease_duration_s,
             "libminiupnp",
         )
         .await?;
@@ -168,7 +168,7 @@ impl UpnpEpCommands for IgdGateway {
             PortMappingProtocol::UDP,
             wg_port_external,
             SocketAddrV4::new(ip_addr, wg_port_internal),
-            3600,
+            self.lease_duration_s,
             "libminiupnp",
         )
         .await?;
@@ -273,13 +273,24 @@ impl<Wg: WireGuard> UpnpEndpointProvider<Wg> {
         exponential_backoff_bounds: ExponentialBackoffBounds,
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
         is_battery_optimization_on: bool,
+        lease_duration_s: u32,
     ) -> Result<Self> {
+        if Duration::new(lease_duration_s.into(), 0)
+            .saturating_sub(exponential_backoff_bounds.initial)
+            == Duration::ZERO
+        {
+            telio_log_warn!("Lease duration is smaller than endpoint validation period, this may result in undefined behaviour!");
+        }
         Ok(Self::start_with(
             udp_socket,
             wg,
             ExponentialBackoff::new(exponential_backoff_bounds)?,
             ping_pong_handler,
-            IgdGateway::default(),
+            IgdGateway {
+                search: Default::default(),
+                gw: Default::default(),
+                lease_duration_s,
+            },
             is_battery_optimization_on,
         ))
     }
@@ -297,7 +308,6 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
         let udp_socket = Arc::new(udp_socket);
         let rx_buff = vec![0u8; MAX_SUPPORTED_PACKET_SIZE];
         let initial_upnp_interval = exponential_backoff.get_backoff();
-
         Self {
             task: Task::start(State {
                 udp_socket,
@@ -508,7 +518,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
             Ok(epc_extend) => {
                 if epc_extend {
                     telio_log_info!(
-                        "Upnp lease duration is less than 10 minutes. Extending duration."
+                        "Upnp lease with less than 1/4 duration left. Extending duration."
                     );
                     let extend = self.igd_gw.extend_endpoint_duration(
                         self.ip_addr,
@@ -521,25 +531,25 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
                 }
             }
             Err(e) => {
-                if let Error::NoIGDGateway = e {
-                    telio_log_info!("Failed to check route: route does not exist")
-                } else {
-                    telio_log_info!("Error: {}", e);
+                telio_log_warn!("Invalid UPnP endpoint, dropping: {}", e);
 
-                    telio_log_info!("Deleting an old Upnp endpoint");
-                    let detete = self.igd_gw.delete_endpoint_routes(
+                if let Err(e) = self
+                    .igd_gw
+                    .delete_endpoint_routes(
                         self.proxy_port_mapping.external,
                         self.wg_port_mapping.external,
-                    );
-                    let _ = detete.await;
+                    )
+                    .await
+                {
+                    telio_log_warn!("Error while dropping endpoint: {}", e);
                 }
 
-                telio_log_info!("Creating a new Upnp endpoint");
                 self.igd_gw.drop_igd_gateway();
 
                 return Err(Error::NoIGDGateway);
             }
         };
+
         Ok(())
     }
 
@@ -562,10 +572,11 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
     }
 
     async fn create_endpoint_candidate(&mut self) -> Result<()> {
+        telio_log_info!("Creating a new Upnp endpoint");
+
         self.create_random_endpoint_ports();
 
         self.proxy_port_mapping.internal = self.udp_socket.local_addr()?.port();
-
         self.wg_port_mapping.internal = self
             .wg
             .wait_for_listen_port(GET_INTERFACE_TIMEOUT_S)
@@ -662,7 +673,8 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
             }
             result = self.igd_gw.ensure_igd_gateway(), if !self.igd_gw.has_igd_gateway() => {
                 if result.is_ok() {
-                    if self.create_endpoint_candidate().await.is_err() {
+                    if let Err(e) = self.create_endpoint_candidate().await {
+                        telio_log_warn!("Error creating UPnP endpoint: {}", e);
                         self.igd_gw.drop_igd_gateway();
                     }
                     self.exponential_backoff.reset();
@@ -824,6 +836,7 @@ mod tests {
         wg.expect_wait_for_listen_port()
             .returning(move |_| Ok(wg_port));
         wg.expect_get_link_state().returning(|_| Ok(None));
+
         let mut mock = MockUpnpEpCommands::new();
         mock.expect_add_endpoint_routes()
             .returning(move |_, proxy_port_int, _, wg_port_int, _| {
