@@ -47,6 +47,8 @@ pub trait UpgradeController: Send + Sync {
 
 #[async_trait]
 pub trait CrossPingCheckTrait: UpgradeController {
+    async fn pause(&self, key: PublicKey) -> Result<(), Error>;
+    async fn unpause(&self, key: PublicKey) -> Result<(), Error>;
     async fn configure(&self, config: Option<Config>) -> Result<(), Error>;
     async fn get_validated_endpoints(
         &self,
@@ -63,6 +65,8 @@ mockall::mock! {
 
     #[async_trait]
     impl CrossPingCheckTrait for CrossPingCheckTrait {
+        async fn pause(&self, key: PublicKey) -> Result<(), Error>;
+        async fn unpause(&self, key: PublicKey) -> Result<(), Error>;
         async fn configure(&self, config: Option<Config>) -> Result<(), Error>;
         async fn get_validated_endpoints(
             &self,
@@ -220,6 +224,49 @@ impl CrossPingCheck {
 
 #[async_trait]
 impl CrossPingCheckTrait for CrossPingCheck {
+    async fn pause(&self, key: PublicKey) -> Result<(), Error> {
+        telio_log_debug!("Pausing CPC for {}", key);
+
+        let _ = task_exec!(&self.task, async move |s| {
+            s.endpoint_connectivity_check_state
+                .values_mut()
+                .filter(|v| v.public_key == key)
+                .for_each(|v| {
+                    v.state = EndpointStateMachine::new(EndpointState::Paused);
+                });
+            Ok(())
+        })
+        .await;
+
+        Ok(())
+    }
+
+    // Pause and Unpause calls are very important to be idempotent. wg_controller's consolidation
+    // is called with the same arguments over and over again.
+    // For this it only makes sense to go back to `Disconnected` when we were explicitly paused
+    // before or else just leave the state as-is.
+    async fn unpause(&self, key: PublicKey) -> Result<(), Error> {
+        telio_log_debug!("Unpausing CPC for {}", key);
+
+        let _ = task_exec!(&self.task, async move |s| {
+            s.endpoint_connectivity_check_state
+                .values_mut()
+                .filter(|v| v.public_key == key)
+                .for_each(|v| {
+                    if v.state.get() == EndpointState::Paused {
+                        telio_log_debug!("CPC Unpausing endpoint(was paused) for {}", key);
+                        v.state =
+                            EndpointStateMachine::new(EndpointState::Disconnected(Event::StartUp));
+                    }
+                });
+
+            Ok(())
+        })
+        .await;
+
+        Ok(())
+    }
+
     async fn get_validated_endpoints(
         &self,
     ) -> Result<HashMap<PublicKey, WireGuardEndpointCandidateChangeEvent>, Error> {
@@ -286,7 +333,7 @@ impl CrossPingCheckTrait for CrossPingCheck {
 }
 
 impl<E: Backoff> State<E> {
-    fn get_connectivty_check_state<'a>(
+    fn get_connectivity_check_state<'a>(
         ep_connectivity_state: &'a mut HashMap<Session, EndpointConnectivityCheckState<E>>,
         session_id: &Session,
     ) -> Result<&'a mut EndpointConnectivityCheckState<E>, Error> {
@@ -451,7 +498,7 @@ impl<E: Backoff> State<E> {
 
     async fn handle_pong_rx_event(&mut self, event: PongEvent) -> Result<(), Error> {
         let session_id = event.msg.get_session();
-        let session = State::get_connectivty_check_state(
+        let session = State::get_connectivity_check_state(
             &mut self.endpoint_connectivity_check_state,
             &session_id,
         )?;
@@ -506,7 +553,7 @@ impl<E: Backoff> State<E> {
             CallMeMaybeType::RESPONDER => {
                 // Find session and forward the call me maybe message there
                 let session_id = message.get_session();
-                let session = State::get_connectivty_check_state(
+                let session = State::get_connectivity_check_state(
                     &mut self.endpoint_connectivity_check_state,
                     &session_id,
                 )?;
@@ -965,7 +1012,15 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
                     }
                 }
             }
-            _ => {}
+            EndpointState::Published
+            | EndpointState::Disconnected(Event::SendCallMeMaybeRequest)
+            | EndpointState::Disconnected(Event::ReceiveCallMeMaybeResponse)
+            | EndpointState::Disconnected(Event::Publish) => {
+                // nothing to do here.
+            }
+            EndpointState::Paused => {
+                // endpoint is paused, meaning it should be dormant, thus not do anything
+            }
         };
 
         Ok(())

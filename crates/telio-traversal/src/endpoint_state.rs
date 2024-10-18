@@ -1,5 +1,5 @@
 use std::fmt;
-use telio_utils::telio_log_warn;
+use telio_utils::{telio_log_debug, telio_log_warn};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum EndpointState {
@@ -7,6 +7,7 @@ pub enum EndpointState {
     EndpointGathering,
     Ping,
     Published,
+    Paused,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -51,7 +52,9 @@ impl EndpointStateMachine {
             (EndpointState::Published, Event::EndpointGone) => {
                 self.state = EndpointState::Disconnected(event);
             }
-
+            (EndpointState::Paused, event) => {
+                telio_log_debug!("Endpoint is paused, event ignored: {:?}", event);
+            }
             (_, event) => {
                 telio_log_warn!("Invalid state transition {:?} -> {:?}", &self.state, event);
             }
@@ -60,6 +63,10 @@ impl EndpointStateMachine {
 
     pub fn get(&self) -> EndpointState {
         self.state
+    }
+
+    pub fn new(state: EndpointState) -> EndpointStateMachine {
+        EndpointStateMachine { state }
     }
 }
 
@@ -72,13 +79,6 @@ impl PartialEq<EndpointState> for EndpointStateMachine {
 impl fmt::Display for EndpointStateMachine {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self.state)
-    }
-}
-
-#[cfg(test)]
-impl EndpointStateMachine {
-    pub fn new(state: EndpointState) -> EndpointStateMachine {
-        EndpointStateMachine { state }
     }
 }
 
