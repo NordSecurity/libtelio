@@ -10,8 +10,6 @@ use tracing::{debug, info};
 
 const API_BASE: &str = "https://api.nordvpn.com/v1";
 
-#[cfg(windows)]
-const OS_NAME: &str = "windows";
 #[cfg(target_os = "macos")]
 const OS_NAME: &str = "macos";
 #[cfg(target_os = "linux")]
@@ -62,21 +60,19 @@ pub async fn load_identifier_from_api(
     let status = response.status().clone();
     let json_data: Value = serde_json::from_str(&response.text().await?)?;
 
-    if let Some(items) = json_data.as_array() {
-        for item in items {
+    if let Some(nodes) = json_data.as_array() {
+        for node in nodes {
             // Get the public_key and identifier from each item
-            if let Some(recvd_pk) = item.get("public_key").and_then(|k| k.as_str()) {
+            if let Some(recvd_pk) = node.get("public_key").and_then(|k| k.as_str()) {
                 if BASE64_STANDARD
                     .decode(recvd_pk)?
                     .as_slice()
                     .cmp(&public_key.0)
                     .is_eq()
                 {
-                    if let Some(machine_identifier) =
-                        item.get("identifier").and_then(|i| i.as_str())
-                    {
-                        info!("Match found! Identifier: {}", machine_identifier);
-                        return Ok(machine_identifier.to_owned());
+                    if let Some(identifier) = node.get("identifier").and_then(|i| i.as_str()) {
+                        info!("Match found! Identifier: {}", identifier);
+                        return Ok(identifier.to_owned());
                     }
                 }
             }

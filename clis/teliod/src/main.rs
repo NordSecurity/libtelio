@@ -201,6 +201,24 @@ async fn init_api(
 ) -> Result<ClientConfig, TeliodError> {
     let mut client_config = ClientConfig::new(config).await?;
 
+    if client_config.machine_identifier.eq("") {
+        client_config.machine_identifier =
+            match load_identifier_from_api(&config.authentication_token, client_config.public_key)
+                .await
+            {
+                Ok(id) => id,
+                Err(e) => {
+                    debug!("Unable to load identifier due to {e}. Registering ...");
+                    register_machine(
+                        &client_config.hw_identifier,
+                        client_config.public_key,
+                        &client_config.auth_token,
+                    )
+                    .await?
+                }
+            }
+    }
+
     let mut retries = 0;
     loop {
         let status = update_machine(&client_config).await?;
@@ -211,25 +229,15 @@ async fn init_api(
                 return Err(TeliodError::UpdateMachineError(status));
             }
             StatusCode::NOT_FOUND => {
-                client_config.machine_identifier = match load_identifier_from_api(
-                    &config.authentication_token,
+                debug!("Unable to update. Registering machine ...");
+                // Retry machine update after registering. To make sure everything was successful
+                // If registering fails. Close the daemon
+                client_config.machine_identifier = register_machine(
+                    &client_config.hw_identifier,
                     client_config.public_key,
+                    &client_config.auth_token,
                 )
-                .await
-                {
-                    Ok(id) => id,
-                    Err(e) => {
-                        info!("Unable to load identifier due to {e}");
-                        // Retry machine update after registering. To make sure everything was successful
-                        // If registering fails. Close the daemon
-                        register_machine(
-                            &client_config.hw_identifier,
-                            client_config.public_key,
-                            &client_config.auth_token,
-                        )
-                        .await?
-                    }
-                }
+                .await?;
             }
             _ => {
                 // Retry with exp back-off
@@ -319,22 +327,14 @@ fn get_meshmap(client_config: Arc<ClientConfig>, tx: mpsc::Sender<TelioTaskCmd>)
 }
 
 fn start_telio(telio: &mut Device, private_key: SecretKey) -> Result<(), DeviceError> {
-    if !telio.is_running() {
-        let device_config = DeviceConfig {
-            private_key,
-            name: Some("utun10".to_owned()),
-            adapter: AdapterType::BoringTun,
-            ..Default::default()
-        };
+    telio.start(&DeviceConfig {
+        private_key,
+        name: Some("utun10".to_owned()),
+        adapter: AdapterType::BoringTun,
+        ..Default::default()
+    })?;
 
-        telio.start(&device_config)?;
-
-        info!(
-            "started telio with {:?}:{}...",
-            AdapterType::BoringTun,
-            private_key
-        );
-    }
+    debug!("started telio with {:?}...", AdapterType::BoringTun,);
     Ok(())
 }
 
