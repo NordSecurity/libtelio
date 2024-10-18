@@ -1537,7 +1537,7 @@ mod tests {
                     } else {
                         None
                     },
-                    hide_ips: false,
+                    hide_user_data: false,
                     derp: None,
                     validate_keys: Default::default(),
                     ipv6: true,
