@@ -22,13 +22,13 @@ jobs:
         include:
           - arch: x86_64
             target_os: macos
-            runner: macos-12
+            runner: macos-13
           - arch: aarch64
             target_os: macos
-            runner: macos-12
+            runner: macos-14
           - arch: aarch64
             target_os: ios
-            runner: macos-12
+            runner: macos-13
           - arch: x86_64
             target_os: windows
             runner: windows-2022
@@ -47,7 +47,7 @@ jobs:
         uses: egor-tensin/vs-shell@9a932a62d05192eae18ca370155cf877eecc2202 # v2.1
         if: ${{ matrix.target_os == 'windows' }}
       - name: install python3-requests
-        run: pip3 install requests==2.32.3
+        run: pip3 install requests==2.32.3 --break-system-packages
       - name: Build libtelio
         run: python3 ci/build_libtelio.py build ${{ matrix.target_os }} ${{ matrix.arch }} --msvc
       - uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
