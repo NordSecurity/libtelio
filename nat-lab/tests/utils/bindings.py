@@ -47,7 +47,7 @@ def default_features(
 
     features = features_builder.build()
     features.is_test_env = True
-    features.hide_ips = False
+    features.hide_user_data = False
     features.dns.exit_dns = FeatureExitDns(auto_switch_dns_ips=True)
     return features
 

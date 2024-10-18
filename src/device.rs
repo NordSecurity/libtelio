@@ -460,7 +460,7 @@ impl Device {
         event_cb: F,
         protect: Option<Arc<dyn Protector>>,
     ) -> Result<Self> {
-        LOG_CENSOR.set_enabled(features.hide_ips);
+        LOG_CENSOR.set_enabled(features.hide_user_data);
 
         let version_tag = version_tag();
         let commit_sha = commit_sha();
