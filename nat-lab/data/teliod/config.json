@@ -1,4 +1,6 @@
 {
     "log_level": "trace",
-    "log_file_path": "teliod_natlab.log"
+    "log_file_path": "teliod_natlab.log",
+    "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "app_user_uid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 }
