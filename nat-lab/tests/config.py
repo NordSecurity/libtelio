@@ -41,9 +41,9 @@ STUNV6_SERVER = "2001:db8:85a4::deed:6"
 STUN_BINARY_PATH_WINDOWS = "C:/workspace/stunserver/release/stunclient.exe".replace(
     "/", "\\"
 )
-STUN_BINARY_PATH_MAC = "/usr/local/bin/stunclient"
+STUN_BINARY_PATH_MAC = "/var/root/stunserver/stunclient"
 
-IPERF_BINARY_MAC = "/usr/local/bin/iperf3"
+IPERF_BINARY_MAC = "/var/root/iperf3/iperf3"
 IPERF_BINARY_WINDOWS = "C:/workspace/iperf3/iperf3.exe".replace("/", "\\")
 
 # JIRA issue: LLT-1664
