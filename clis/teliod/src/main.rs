@@ -470,7 +470,7 @@ async fn daemon_event_loop(
     // Wait until Telio task ends
     // TODO: When it will be doing something some channel with commands etc. might be needed
     let join_result = telio_task_handle.await?;
-
+    fs::remove_file("/var/run/teliod.sock")?;
     if result.is_err() {
         result
     } else {
