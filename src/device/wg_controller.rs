@@ -482,7 +482,7 @@ fn upsert_peer_whitelist<F: Firewall>(
     permission: Permissions,
 ) {
     let from_keys_peer_whitelist: HashSet<PublicKey> = firewall
-        .get_peer_whitelist(permission.clone())
+        .get_peer_whitelist(permission)
         .iter()
         .copied()
         .collect();
@@ -1423,18 +1423,12 @@ mod tests {
     }
 
     fn expect_remove_from_peer_whitelist(firewall: &mut MockFirewall, pub_key: PublicKey) {
-        firewall
-            .expect_remove_from_peer_whitelist()
-            .with(eq(pub_key), eq(Permissions::IncomingConnections))
-            .return_const(());
-        firewall
-            .expect_remove_from_peer_whitelist()
-            .with(eq(pub_key), eq(Permissions::LocalAreaConnections))
-            .return_const(());
-        firewall
-            .expect_remove_from_peer_whitelist()
-            .with(eq(pub_key), eq(Permissions::RoutingConnections))
-            .return_const(());
+        for permission in Permissions::VALUES {
+            firewall
+                .expect_remove_from_peer_whitelist()
+                .with(eq(pub_key), eq(permission))
+                .return_const(());
+        }
     }
 
     fn expect_add_to_port_whitelist(firewall: &mut MockFirewall, pub_key: PublicKey) {
@@ -1586,11 +1580,7 @@ mod tests {
         expect_get_peer_whitelist(&mut firewall, vec![pub_key_1]);
         expect_get_port_whitelist(&mut firewall, vec![]);
 
-        println!("Peer1 {:?} peer2 {:?}", pub_key_1, pub_key_2);
-
         expect_remove_from_peer_whitelist(&mut firewall, pub_key_1);
-
-        // expect_add_to_peer_whitelist(&mut firewall, pub_key_2);
         firewall.expect_add_vpn_peer().once().return_const(());
 
         consolidate_firewall(

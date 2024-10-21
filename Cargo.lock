@@ -4240,6 +4240,7 @@ name = "telio-firewall"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "enum-map",
  "hashlink",
  "if-addrs",
  "ipnet",
