@@ -541,7 +541,7 @@ services:
   dns-server-1:
     hostname: dns-server-1
     image: nat-lab:base
-    entrypoint: /opt/bin/dns-server
+    entrypoint: /opt/bin/dns-server.sh
     environment:
       PYTHONUNBUFFERED: 1
     networks:
@@ -553,7 +553,7 @@ services:
   dns-server-2:
     hostname: dns-server-2
     image: nat-lab:base
-    entrypoint: /opt/bin/dns-server
+    entrypoint: /opt/bin/dns-server.sh
     environment:
       PYTHONUNBUFFERED: 1
     networks:
