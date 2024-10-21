@@ -13,7 +13,7 @@ mod test_module {
     #[test]
     fn test_logger() {
         // Line number of tracing::info! location
-        const INFO_LINE: u32 = 50;
+        const INFO_LINE: u32 = 51;
 
         let call_count = Arc::new(AtomicUsize::new(0));
 
@@ -27,9 +27,10 @@ mod test_module {
                 log_level: telio::ffi_types::TelioLogLevel,
                 payload: String,
             ) -> FfiResult<()> {
+                let tid = std::thread::current().id();
                 assert!(matches!(log_level, telio::ffi_types::TelioLogLevel::Info));
                 assert_eq!(
-                    format!(r#""logger::test_module":{INFO_LINE} test message"#),
+                    format!(r#"{tid:?} "logger::test_module":{INFO_LINE} test message"#),
                     payload
                 );
                 assert_eq!(0, self.call_count.fetch_add(1, Ordering::Relaxed));
