@@ -23,7 +23,7 @@ use telio_traversal::{
     SessionKeeperTrait, UpgradeSyncTrait, WireGuardEndpointCandidateChangeEvent,
 };
 use telio_utils::{build_ping_endpoint, telio_log_debug, telio_log_info, telio_log_warn};
-use telio_wg::uapi::AnalyticsEvent;
+use telio_wg::uapi::{AnalyticsEvent, EndpointChangeReason};
 use telio_wg::{uapi::Peer, WireGuard};
 use thiserror::Error as TError;
 use tokio::sync::Mutex;
@@ -812,7 +812,7 @@ async fn build_requested_meshnet_peers_list<
         let actual_peer = actual_peers.get(public_key);
         let time_since_last_endpoint_change = actual_peer
             .and_then(|p| p.endpoint_changed_at)
-            .map(|t| t.elapsed());
+            .map(|(t, _)| t.elapsed());
         let checked_endpoint = checked_endpoints.get(public_key);
         let proxy_endpoint = proxy_endpoints.get(public_key);
         let upgrade_request_endpoint = upgrade_request_endpoints
@@ -961,7 +961,15 @@ async fn select_endpoint_for_peer<'a, C: CrossPingCheckTrait>(
         let changed_at = actual_peer.as_ref().and_then(|p| p.endpoint_changed_at);
         let checked_at = checked_endpoint.as_ref().map(|e| e.changed_at);
         match (changed_at, checked_at) {
-            (Some(wg), Some(cpc)) => wg >= cpc,
+            (Some((wg, reason)), Some(cpc)) => {
+                telio_log_debug!(
+                    "Wg endpoints timestamps: Current: {:?} Published: {:?} Last change reason: {:?}",
+                    wg,
+                    cpc,
+                    reason
+                );
+                wg >= cpc && reason == EndpointChangeReason::Pull
+            }
             _ => false,
         }
     };
@@ -1682,7 +1690,13 @@ mod tests {
 
         fn when_current_peers(
             &mut self,
-            input: Vec<(PublicKey, SocketAddr, u32, AllowedIps, Instant)>,
+            input: Vec<(
+                PublicKey,
+                SocketAddr,
+                u32,
+                AllowedIps,
+                (Instant, EndpointChangeReason),
+            )>,
         ) {
             let peers: BTreeMap<PublicKey, Peer> = input
                 .into_iter()
@@ -2068,7 +2082,10 @@ mod tests {
             proxy_endpoint,
             TEST_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
-            Instant::now() - Duration::from_secs(5),
+            (
+                Instant::now() - Duration::from_secs(5),
+                EndpointChangeReason::Pull,
+            ),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 5)]);
         f.when_cross_check_validated_endpoints(vec![]);
@@ -2133,7 +2150,7 @@ mod tests {
             proxy_endpoint,
             TEST_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
-            peer_endpoint_change_at,
+            (peer_endpoint_change_at, EndpointChangeReason::Push),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 5)]);
         f.when_cross_check_validated_endpoints(vec![]);
@@ -2196,7 +2213,7 @@ mod tests {
             proxy_endpoint,
             TEST_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
-            changed_endpoint_at,
+            (changed_endpoint_at, EndpointChangeReason::Pull),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 1)]);
         f.when_cross_check_validated_endpoints(vec![(
@@ -2271,7 +2288,7 @@ mod tests {
             proxy_endpoint,
             TEST_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
-            changed_endpoint_at,
+            (changed_endpoint_at, EndpointChangeReason::Pull),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 0)]);
         f.when_cross_check_validated_endpoints(vec![(
@@ -2283,6 +2300,81 @@ mod tests {
         f.when_upgrade_requests(vec![]);
         f.session_keeper.expect_get_interval().return_const(None);
         f.then_cross_ping_check_notfied_about_failed_connections(vec![pub_key]);
+
+        f.consolidate_peers().await;
+    }
+
+    #[tokio::test]
+    async fn when_cross_check_validated_is_old_but_set_by_telio_then_upgrade() {
+        let mut f = Fixture::new();
+        f.features.ipv6 = true;
+
+        let pub_key = SecretKey::gen().public();
+        let ip1 = IpAddr::from([1, 2, 3, 4]);
+        let ip1v6 = IpAddr::V6(Ipv6Addr::from([
+            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4,
+        ]));
+        let ip2 = IpAddr::from([5, 6, 7, 8]);
+        let ip2v6 = IpAddr::V6(Ipv6Addr::from([
+            5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8,
+        ]));
+        let allowed_ips = vec![ip1, ip1v6, ip2, ip2v6];
+        let remote_wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
+        let local_wg_endpoint = SocketAddr::from(([192, 168, 0, 2], 15));
+        let session_id = rand::random();
+        let mapped_port = 12;
+        let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
+
+        let direct_keepalive_period = 1234;
+        f.requested_state.keepalive_periods.direct = direct_keepalive_period;
+
+        let cpc_endpoint_at = Instant::now();
+        // changed_endpoint >= cpc_changed_endpoint
+        let changed_endpoint_at = cpc_endpoint_at;
+
+        f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
+        f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
+        f.when_current_peers(vec![(
+            pub_key,
+            proxy_endpoint,
+            TEST_PERSISTENT_KEEPALIVE_PERIOD,
+            allowed_ips.clone(),
+            (changed_endpoint_at, EndpointChangeReason::Push),
+        )]);
+        f.when_time_since_last_rx(vec![(pub_key, 0)]);
+        f.when_cross_check_validated_endpoints(vec![(
+            pub_key,
+            remote_wg_endpoint,
+            (local_wg_endpoint, session_id),
+            cpc_endpoint_at,
+        )]);
+        f.when_upgrade_requests(vec![]);
+        f.session_keeper.expect_get_interval().return_const(None);
+
+        f.then_add_peer(vec![(
+            pub_key,
+            remote_wg_endpoint,
+            Some(direct_keepalive_period),
+            allowed_ips.iter().copied().map(|ip| ip.into()).collect(),
+            allowed_ips,
+        )]);
+        f.then_request_upgrade(vec![(
+            pub_key,
+            remote_wg_endpoint,
+            local_wg_endpoint,
+            session_id,
+        )]);
+        f.then_proxy_mute(vec![(
+            pub_key,
+            Some(Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW)),
+        )]);
+        f.then_keeper_add_node(vec![(
+            pub_key,
+            ip1,
+            Some(ip1v6),
+            direct_keepalive_period,
+            None,
+        )]);
 
         f.consolidate_peers().await;
     }
@@ -2347,7 +2439,7 @@ mod tests {
             proxy_endpoint,
             TEST_PERSISTENT_KEEPALIVE_PERIOD,
             vec![ip1, ip1v6, ip2, ip2v6],
-            Instant::now(),
+            (Instant::now(), EndpointChangeReason::Pull),
         )]);
         f.when_time_since_last_rx(vec![]);
         f.when_cross_check_validated_endpoints(vec![]);
@@ -2379,7 +2471,10 @@ mod tests {
             proxy_endpoint,
             TEST_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips,
-            Instant::now() - Duration::from_secs(4),
+            (
+                Instant::now() - Duration::from_secs(4),
+                EndpointChangeReason::Pull,
+            ),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 4)]);
         f.when_cross_check_validated_endpoints(vec![]);
@@ -2408,7 +2503,10 @@ mod tests {
             wg_endpoint,
             TEST_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
-            Instant::now() - Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW),
+            (
+                Instant::now() - Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW),
+                EndpointChangeReason::Pull,
+            ),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 5)]);
         f.when_cross_check_validated_endpoints(vec![]);
@@ -2705,7 +2803,7 @@ mod tests {
             proxy_endpoint,
             TEST_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
-            endpoint_change_at,
+            (endpoint_change_at, EndpointChangeReason::Pull),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 20)]);
         f.when_cross_check_validated_endpoints(vec![(

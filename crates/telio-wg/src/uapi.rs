@@ -28,6 +28,15 @@ pub enum Error {
     ParsingError(&'static str, String),
 }
 
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+/// Possiblie reason of the endpoint change:
+pub enum EndpointChangeReason {
+    /// Endpoint changed by Telio and pushed to Wireguard
+    Push,
+    /// Endpoint changed by Wireguard and pulled by Telio
+    Pull,
+}
+
 /// telio implementation of wireguard::Peer
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct Peer {
@@ -36,7 +45,7 @@ pub struct Peer {
     /// Peer's endpoint with `IP address` and `UDP port` number
     pub endpoint: Option<SocketAddr>,
     /// At what point in time, was last endpoint changed
-    pub endpoint_changed_at: Option<tokio::time::Instant>,
+    pub endpoint_changed_at: Option<(tokio::time::Instant, EndpointChangeReason)>,
     /// Mesh's IP addresses of peer
     pub ip_addresses: Vec<IpAddr>,
     /// Keep alive interval, `seconds` or `None`
