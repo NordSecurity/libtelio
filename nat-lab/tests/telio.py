@@ -722,6 +722,12 @@ class Client:
             )
 
     async def enable_magic_dns(self, forward_servers: List[str]) -> None:
+        # Magic DNS required adapter port.
+        # For the reasoning behind this see `set_meshnet_config()`
+        configured = await self._configure_interface()
+        if configured and self._adapter_type == TelioAdapterType.LINUX_NATIVE_TUN:
+            await asyncio.sleep(2.0)
+
         await self.get_proxy().enable_magic_dns(forward_servers)
 
     async def disable_magic_dns(self) -> None:
