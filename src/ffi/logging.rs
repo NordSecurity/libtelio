@@ -45,10 +45,11 @@ where
         mut writer: fmt::format::Writer<'_>,
         event: &tracing::Event<'_>,
     ) -> std::fmt::Result {
+        let tid = std::thread::current().id();
         let meta = event.metadata();
         write!(
             writer,
-            "{:?}:{} ",
+            "{tid:?} {:?}:{} ",
             meta.module_path().unwrap_or("<unknown module>"),
             meta.line().unwrap_or(0),
         )?;
@@ -193,19 +194,20 @@ mod test {
             ); // +4
         };
         let mpath = module_path!();
+        let tid = std::thread::current().id();
         let expected = [
             (
                 TelioLogLevel::Debug,
-                format!("{:?}:{} second message", mpath, start + 2),
+                format!("{tid:?} {:?}:{} second message", mpath, start + 2),
             ),
             (
                 TelioLogLevel::Info,
-                format!("{:?}:{} third\nmutiline\nmessage", mpath, start + 3),
+                format!("{tid:?} {:?}:{} third\nmutiline\nmessage", mpath, start + 3),
             ),
             (
                 TelioLogLevel::Warning,
                 format!(
-                    "{:?}:{} fourth message with info n=2 extra=\"extra info\"",
+                    "{tid:?} {:?}:{} fourth message with info n=2 extra=\"extra info\"",
                     mpath,
                     start + 4
                 ),
