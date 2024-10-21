@@ -21,8 +21,8 @@ class NetCat:
         self.ipv6: bool = self.args.ipv6
         self.sock: socket.socket = self._create_socket()
         self.client_addr: str | None = None
-        self.selector = selectors.DefaultSelector()
-        self.should_close = False
+        self.selector: selectors.DefaultSelector = selectors.DefaultSelector()
+        self.should_close: bool = False
 
     def _vprint(self, *args, **kwargs):
         """print an event to stderr in verbose mode"""
@@ -79,7 +79,8 @@ class NetCat:
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
         port = self.args.port
-        bind_addr = "::" if self.ipv6 else "0.0.0.0"
+        hostname = self.args.hostname
+        bind_addr = hostname if hostname else "::" if self.ipv6 else "0.0.0.0"
         self.sock.bind((bind_addr, port))
 
         if self.udp:
