@@ -37,6 +37,8 @@ pub enum Error {
     BadAllowedIps,
     #[error("Peer not found error")]
     PeerNotFound,
+    #[error("Meshnet IP address not set")]
+    IpNotSet,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -501,10 +503,10 @@ fn upsert_peer_whitelist<F: Firewall>(
     let delete_keys = &from_keys_peer_whitelist - &to_keys_peer_whitelist;
     let add_keys = &to_keys_peer_whitelist - &from_keys_peer_whitelist;
     for key in delete_keys {
-        firewall.remove_from_peer_whitelist(key, permission.clone());
+        firewall.remove_from_peer_whitelist(key, permission);
     }
     for key in add_keys {
-        firewall.add_to_peer_whitelist(key, permission.clone());
+        firewall.add_to_peer_whitelist(key, permission);
     }
 }
 
@@ -558,13 +560,18 @@ async fn consolidate_firewall<F: Firewall>(
         firewall.add_to_port_whitelist(key, FILE_SEND_PORT);
     }
 
-    // Save local node ip addresses
-    firewall.set_ip_addresses(
-        requested_state
-            .meshnet_config
-            .as_ref()
-            .and_then(|c| c.this.ip_addresses.clone()),
-    );
+    // Meshnet config can be None in the beginning when this method
+    // is called.
+    if requested_state.meshnet_config.is_some() {
+        // Save local node ip addresses
+        firewall.set_ip_addresses(
+            requested_state
+                .meshnet_config
+                .as_ref()
+                .and_then(|c| c.this.ip_addresses.clone())
+                .ok_or(Error::IpNotSet)?,
+        );
+    }
     Ok(())
 }
 
@@ -1375,6 +1382,13 @@ mod tests {
 
         let mut meshnet_config = Config {
             peers: Some(vec![]),
+            this: PeerBase {
+                ip_addresses: Some(vec![
+                    (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
+                    IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
+                ]),
+                ..Default::default()
+            },
             ..Default::default()
         };
 
