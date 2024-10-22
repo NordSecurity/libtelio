@@ -13,6 +13,7 @@ use telio_utils::{
     telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn,
 };
 use telio_wg::uapi::AnalyticsEvent;
+use tokio::task::spawn_blocking;
 use uuid::Uuid;
 
 #[mockall_double::double]
@@ -345,9 +346,12 @@ impl State {
 
         self.handle_service_quality_event(&info, false).await;
 
-        telio_log_info!("Attempting to flush moose changes");
-        let r = lana!(flush_changes);
-        telio_log_info!("Flushing moose changes result: {:?}", r);
+        let _ = spawn_blocking(move || {
+            telio_log_info!("Attempting to flush moose changes");
+            let r = lana!(flush_changes);
+            telio_log_info!("Flushing moose changes result: {:?}", r);
+        })
+        .await;
     }
 
     fn meshnet_id() -> Uuid {
