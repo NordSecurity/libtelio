@@ -5,7 +5,7 @@ use smart_default::SmartDefault;
 use tracing::level_filters::LevelFilter;
 use uuid::Uuid;
 
-#[derive(Clone, Copy, Debug, SmartDefault)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug, SmartDefault)]
 #[repr(transparent)]
 pub struct Percentage(u8);
 
@@ -17,25 +17,22 @@ impl std::ops::Mul<std::time::Duration> for Percentage {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, SmartDefault)]
+#[derive(PartialEq, Eq, Clone, Debug, Deserialize, SmartDefault)]
+#[serde(default)]
 pub struct MqttConfig {
     /// Starting backoff time for mqtt retry, has to be at least one. (in seconds)
     #[default(backoff_initial_default())]
-    #[serde(default = "backoff_initial_default")]
     pub backoff_initial: NonZeroU64,
     /// Maximum backoff time for the mqtt retry. Has to be greater than the initial value. (in seconds)
     #[default(backoff_maximal_default())]
-    #[serde(default = "backoff_maximal_default")]
     pub backoff_maximal: NonZeroU64,
 
     /// Percentage of the expiry period after which new mqtt token will be requested
     #[default(reconnect_after_expiry_default())]
     #[serde(deserialize_with = "deserialize_percent")]
-    #[serde(default = "reconnect_after_expiry_default")]
     pub reconnect_after_expiry: Percentage,
 
     /// Path to a mqtt pem certificate to be used when connecting to Notification Center
-    #[serde(default)]
     pub certificate_file_path: Option<PathBuf>,
 }
 
@@ -53,7 +50,7 @@ fn reconnect_after_expiry_default() -> Percentage {
     Percentage(90)
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(PartialEq, Eq, Deserialize, Debug)]
 pub struct TeliodDaemonConfig {
     #[serde(deserialize_with = "deserialize_log_level")]
     pub log_level: LevelFilter,
@@ -119,5 +116,46 @@ mod tests {
         let expected = Duration::from_secs(77760);
         let percentage = Percentage(90);
         assert_eq!(expected, percentage * input);
+    }
+
+    #[test]
+    fn teliod_config_minimal_json() {
+        let expected = TeliodDaemonConfig {
+            log_level: LevelFilter::INFO,
+            log_file_path: "test.log".to_owned(),
+            app_user_uid: Uuid::from_str("2ba97921-38d7-4736-9d47-261cf3e5c223").unwrap(),
+            authentication_token:
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+            http_certificate_file_path: None,
+            mqtt: MqttConfig {
+                backoff_initial: NonZeroU64::new(1).unwrap(),
+                backoff_maximal: NonZeroU64::new(300).unwrap(),
+                reconnect_after_expiry: Percentage(90),
+                certificate_file_path: None,
+            },
+        };
+
+        {
+            let json = r#"{
+            "log_level": "Info",
+            "log_file_path": "test.log",
+            "app_user_uid": "2ba97921-38d7-4736-9d47-261cf3e5c223",
+            "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }"#;
+
+            assert_eq!(expected, serde_json::from_str(&json).unwrap());
+        }
+
+        {
+            let json = r#"{
+                "log_level": "Info",
+                "log_file_path": "test.log",
+                "app_user_uid": "2ba97921-38d7-4736-9d47-261cf3e5c223",
+                "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "mqtt": {}
+            }"#;
+
+            assert_eq!(expected, serde_json::from_str(&json).unwrap());
+        }
     }
 }
