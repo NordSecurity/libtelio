@@ -151,10 +151,8 @@ jobs:
           toolchain: 1.80.0
           override: true
           default: true
-      - uses: actions-rs/install@9da1d2adcfe5e7c16992e8242ca33a56b6d9b101
-        with:
-          crate: cargo-unused-features
-          version: 0.2.0
+      - name: Install cargo-unusued-features
+        run: cargo install --version 0.2.0 cargo-unused-features --locked
       - name: Run cargo-unused-features
         run: |
           for dir in ./crates/* ./clis/*; do
