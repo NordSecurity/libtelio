@@ -92,10 +92,10 @@ pub fn firewall_tcp_inbound_benchmarks(c: &mut Criterion) {
                     &parameter,
                     |b, param| {
                         let firewall = StatefullFirewall::new(true, FeatureFirewall::default());
-                        firewall.set_ip_addresses(Some(vec![
+                        firewall.set_ip_addresses(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
-                        ]));
+                        ]);
                         for _ in 0..param.peers {
                             let public_key = SecretKey::gen().public();
                             firewall.add_to_peer_whitelist(
@@ -136,10 +136,10 @@ pub fn firewall_tcp_inbound_benchmarks(c: &mut Criterion) {
                     &parameter,
                     |b, param| {
                         let firewall = StatefullFirewall::new(true, FeatureFirewall::default());
-                        firewall.set_ip_addresses(Some(vec![
+                        firewall.set_ip_addresses(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
-                        ]));
+                        ]);
                         let mut peers = vec![];
                         for _ in 0..param.peers {
                             let public_key = SecretKey::gen().public();
@@ -178,10 +178,10 @@ pub fn firewall_tcp_inbound_benchmarks(c: &mut Criterion) {
                     &parameter,
                     |b, param| {
                         let firewall = StatefullFirewall::new(true, FeatureFirewall::default());
-                        firewall.set_ip_addresses(Some(vec![
+                        firewall.set_ip_addresses(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
-                        ]));
+                        ]);
                         let mut peers_and_packets = vec![];
                         let port_base = 1111;
                         for i in 0..param.peers {
@@ -225,10 +225,10 @@ pub fn firewall_tcp_inbound_benchmarks(c: &mut Criterion) {
                     &parameter,
                     |b, param| {
                         let firewall = StatefullFirewall::new(true, FeatureFirewall::default());
-                        firewall.set_ip_addresses(Some(vec![
+                        firewall.set_ip_addresses(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
-                        ]));
+                        ]);
 
                         let public_key = SecretKey::gen().public();
                         firewall.add_vpn_peer(public_key);
@@ -397,10 +397,10 @@ pub fn firewall_udp_inbound_benchmarks(c: &mut Criterion) {
                     &parameter,
                     |b, param| {
                         let firewall = StatefullFirewall::new(true, FeatureFirewall::default());
-                        firewall.set_ip_addresses(Some(vec![
+                        firewall.set_ip_addresses(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
-                        ]));
+                        ]);
                         for _ in 0..param.peers {
                             let public_key = SecretKey::gen().public();
                             firewall.add_to_peer_whitelist(
@@ -441,10 +441,10 @@ pub fn firewall_udp_inbound_benchmarks(c: &mut Criterion) {
                     &parameter,
                     |b, param| {
                         let firewall = StatefullFirewall::new(true, FeatureFirewall::default());
-                        firewall.set_ip_addresses(Some(vec![
+                        firewall.set_ip_addresses(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
-                        ]));
+                        ]);
                         let mut peers = vec![];
                         for _ in 0..param.peers {
                             let public_key = SecretKey::gen().public();
@@ -483,10 +483,10 @@ pub fn firewall_udp_inbound_benchmarks(c: &mut Criterion) {
                     &parameter,
                     |b, param| {
                         let firewall = StatefullFirewall::new(true, FeatureFirewall::default());
-                        firewall.set_ip_addresses(Some(vec![
+                        firewall.set_ip_addresses(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
-                        ]));
+                        ]);
                         let mut peers_and_packets = vec![];
                         let port_base = 42;
                         for i in 0..param.peers {
@@ -530,10 +530,10 @@ pub fn firewall_udp_inbound_benchmarks(c: &mut Criterion) {
                     &parameter,
                     |b, param| {
                         let firewall = StatefullFirewall::new(true, FeatureFirewall::default());
-                        firewall.set_ip_addresses(Some(vec![
+                        firewall.set_ip_addresses(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
-                        ]));
+                        ]);
 
                         let public_key = SecretKey::gen().public();
                         firewall.add_vpn_peer(public_key);
