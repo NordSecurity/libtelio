@@ -58,6 +58,7 @@ impl DaemonSocket {
         let _ = fs::remove_file(ipc_socket_path);
         let socket = ListenerOptions::new()
             .name(ipc_socket_path.to_fs_name::<FilesystemUdSocket>()?)
+            .reclaim_name(true)
             .create_tokio()?;
 
         Ok(Self { socket })

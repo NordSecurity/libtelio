@@ -1,51 +1,35 @@
 //! Main and implementation of config and commands for Teliod - simple telio daemon for Linux and OpenWRT
 
 use clap::Parser;
-use nix::libc::SIGTERM;
+use config::TeliodDaemonConfig;
+use futures::stream::StreamExt;
+use nix::libc::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
+use nix::sys::signal::Signal;
+use serde::{Deserialize, Serialize};
+use serde_json::error::Error as SerdeJsonError;
 use signal_hook_tokio::Signals;
 use std::{
     fs::{self, File},
-    str::FromStr,
+    sync::Arc,
 };
 use thiserror::Error as ThisError;
 use tokio::task::JoinError;
-use tracing::{error, info, level_filters::LevelFilter, warn};
-
-mod comms;
-
-use crate::comms::DaemonSocket;
+use tracing::{debug, error, info, warn};
 
 use telio::{device::Device, telio_model::features::Features, telio_utils::select};
 
-use serde::{de, Deserialize, Deserializer, Serialize};
-use serde_json::error::Error as SerdeJsonError;
+mod comms;
+mod config;
+mod nc;
 
-use futures::stream::StreamExt;
-
-#[derive(Deserialize)]
-struct TeliodDaemonConfig {
-    #[serde(deserialize_with = "deserialize_log_level")]
-    log_level: LevelFilter,
-    log_file_path: String,
-}
-
-fn deserialize_log_level<'de, D>(deserializer: D) -> Result<LevelFilter, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Deserialize::deserialize(deserializer).and_then(|s: String| {
-        LevelFilter::from_str(&s).map_err(|_| {
-            de::Error::unknown_variant(&s, &["error", "warn", "info", "debug", "trace", "off"])
-        })
-    })
-}
+use crate::{comms::DaemonSocket, nc::NotificationCenter};
 
 #[derive(Parser, Debug)]
 #[clap()]
 #[derive(Serialize, Deserialize)]
 enum ClientCmd {
     #[clap(
-        about = "Forces daemon to add a log, added for testing to be, to be removed when the daemon will be more mature"
+        about = "Forces daemon to add a log, added for testing, to be removed when the daemon will be more mature"
     )]
     HelloWorld { name: String },
 }
@@ -77,6 +61,8 @@ enum TeliodError {
     DaemonIsNotRunning,
     #[error("Daemon is running")]
     DaemonIsRunning,
+    #[error("NotificationCenter failure: {0}")]
+    NotificationCenter(#[from] nc::Error),
 }
 
 #[tokio::main]
@@ -141,7 +127,7 @@ fn telio_task() {
 
 async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodError> {
     let (non_blocking_writer, _tracing_worker_guard) =
-        tracing_appender::non_blocking(fs::File::create(config.log_file_path)?);
+        tracing_appender::non_blocking(fs::File::create(&config.log_file_path)?);
     tracing_subscriber::fmt()
         .with_max_level(config.log_level)
         .with_writer(non_blocking_writer)
@@ -150,12 +136,27 @@ async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodError
         .with_level(true)
         .init();
 
+    debug!("started with config: {config:?}");
+
     let socket = DaemonSocket::new(&DaemonSocket::get_ipc_socket_path()?)?;
     let cmd_listener = CommandListener { socket };
 
+    let nc = NotificationCenter::new(
+        &config,
+        vec![Arc::new(|am| {
+            println!("Example callback registered at the start: {am:?}")
+        })],
+    )
+    .await?;
+
+    nc.add_callback(Arc::new(|am| {
+        println!("Example callback registered after nc start: {am:?}")
+    }))
+    .await;
+
     let telio_task_handle = tokio::task::spawn_blocking(telio_task);
 
-    let mut signals = Signals::new([SIGTERM])?;
+    let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
 
     info!("Entering event loop");
 
@@ -176,12 +177,12 @@ async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodError
             },
             signal = signals.next() => {
                 match signal {
-                    Some(SIGTERM) => {
-                        info!("Received SIGTERM signal, exiting");
+                    Some(s @ SIGHUP | s @ SIGTERM | s @ SIGINT | s @ SIGQUIT) => {
+                        info!("Received signal {:?}, exiting", Signal::try_from(s));
                         break Ok(());
                     }
-                    Some(_) => {
-                        info!("Received unexpected signal, ignoring");
+                    Some(s) => {
+                        info!("Received unexpected signal {s:?}, ignoring");
                     }
                     None => {
                         break Err(TeliodError::BrokenSignalStream);
