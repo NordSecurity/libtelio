@@ -2,6 +2,7 @@
 
 use clap::Parser;
 use nix::libc::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
+use nix::sys::signal::Signal;
 use signal_hook_tokio::Signals;
 use smart_default::SmartDefault;
 use std::{
@@ -284,7 +285,7 @@ async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodError
             signal = signals.next() => {
                 match signal {
                     Some(s @ SIGHUP | s @ SIGTERM | s @ SIGINT | s @ SIGQUIT) => {
-                        info!("Received signal {s}, exiting");
+                        info!("Received signal {:?}, exiting", Signal::try_from(s));
                         break Ok(());
                     }
                     Some(s) => {
