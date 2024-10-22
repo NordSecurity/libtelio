@@ -2,6 +2,7 @@ use std::{
     io::{self, ErrorKind},
     str::from_utf8,
     sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 
 use telio_utils::log_censor::LogCensor;
@@ -110,9 +111,19 @@ impl io::Write for FfiCallbackWriter {
         if let Some(filtered_msg) = filter_log_message(msg) {
             let filtered_msg = LOG_CENSOR.censor_logs(filtered_msg);
 
+            let start = Instant::now();
             self.cb
                 .log(self.level, filtered_msg)
                 .map_err(io::Error::other)?;
+            let delta = start.elapsed();
+            if delta > Duration::from_millis(100) {
+                self.cb
+                    .log(
+                        TelioLogLevel::Error,
+                        format!("Previous log took too long: {delta:?}"),
+                    )
+                    .map_err(io::Error::other)?;
+            }
         }
 
         Ok(buf.len())
