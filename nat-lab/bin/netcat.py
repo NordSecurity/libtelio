@@ -152,7 +152,7 @@ class NetCat:
                         callback = key.data
                         callback()
         except KeyboardInterrupt:
-            print("")
+            print("Keyboard Interrupt")
             sys.exit(2)
         except OSError as e:
             print(f"nc: {e}", file=sys.stderr)

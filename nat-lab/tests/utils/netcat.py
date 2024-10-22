@@ -141,11 +141,12 @@ class NetCatServer(NetCat):
         port: int,
         udp: bool = False,
         ipv6: bool = False,
+        bind_ip: Optional[str] = None,
     ):
-        super().__init__(connection, None, port, listen=True, udp=udp, ipv6=ipv6)
+        super().__init__(connection, bind_ip, port, listen=True, udp=udp, ipv6=ipv6)
         self._listening_event: asyncio.Event = asyncio.Event()
         status = "Listening" if not udp else "Bound"
-        address = "::" if ipv6 else "0.0.0.0"
+        address = bind_ip if bind_ip else "::" if ipv6 else "0.0.0.0"
         self._output_notifier.notify_output(
             f"{status} on {address} {str(port)}", self._listening_event
         )

@@ -449,7 +449,11 @@ async def test_mesh_firewall_file_share_port(
                 await ping(connection_beta, CLIENT_ALPHA_IP, 15)
 
         async with NetCatServer(
-            connection_alpha, PORT, udp=True, ipv6=CLIENT_PROTO == IPProto.IPv6
+            connection_alpha,
+            PORT,
+            udp=True,
+            ipv6=CLIENT_PROTO == IPProto.IPv6,
+            bind_ip=CLIENT_ALPHA_IP,
         ).run() as listener:
             # wait for listening to start
             await listener.listening_started()
@@ -558,7 +562,10 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
             conntrack.notify_on_tcp_state(TcpState.TIME_WAIT, time_wait_event)
 
             async with NetCatServer(
-                connection_alpha, PORT, ipv6=CLIENT_PROTO == IPProto.IPv6
+                connection_alpha,
+                PORT,
+                ipv6=CLIENT_PROTO == IPProto.IPv6,
+                bind_ip=CLIENT_ALPHA_IP,
             ).run() as listener:
                 await listener.listening_started()
 
@@ -663,7 +670,10 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
             conntrack.notify_on_tcp_state(TcpState.LAST_ACK, last_ack_event)
             conntrack.notify_on_tcp_state(TcpState.TIME_WAIT, time_wait_event)
             async with NetCatServer(
-                connection_alpha, PORT, ipv6=CLIENT_PROTO == IPProto.IPv6
+                connection_alpha,
+                PORT,
+                ipv6=CLIENT_PROTO == IPProto.IPv6,
+                bind_ip=CLIENT_ALPHA_IP,
             ).run() as listener:
                 await listener.listening_started()
 
