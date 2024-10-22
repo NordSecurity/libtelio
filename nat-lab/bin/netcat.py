@@ -5,7 +5,7 @@ import socket
 import sys
 import time
 
-UDP_SCAN_COUNT: int = 5
+UDP_SCAN_COUNT: int = 3
 RECV_SIZE = 4096
 
 
@@ -54,7 +54,7 @@ class NetCat:
                 self.sock.bind((local_address, local_port))
 
             self.sock.connect((hostname, port))
-            if self.udp:
+            if self.udp and self.verbose:
                 self._udptest()
             self._vprint(
                 f"Connection to {hostname} {port} port [{self.sock_type}/*] succeeded!"
@@ -97,7 +97,7 @@ class NetCat:
         # Try sending data to the socket
         for _ in range(UDP_SCAN_COUNT):
             self.sock.send(b"X")
-            time.sleep(1)
+            time.sleep(0.5)
 
     def _register_socket(self):
         """Register the socket to the selector for read events"""
