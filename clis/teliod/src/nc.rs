@@ -24,7 +24,7 @@ use tokio_rustls::rustls::{
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use crate::MqttConfig;
+use crate::config::MqttConfig;
 
 use self::outgoing::{Acknowledgement, DeliveryConfirmation};
 
