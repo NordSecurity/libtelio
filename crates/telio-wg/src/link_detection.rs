@@ -19,7 +19,10 @@ use telio_utils::{
     telio_log_warn, IpStack,
 };
 
-use crate::wg::{BytesAndTimestamps, WG_KEEPALIVE};
+use crate::{
+    uapi::UpdateReason,
+    wg::{BytesAndTimestamps, WG_KEEPALIVE},
+};
 
 mod enhanced_detection;
 
@@ -65,18 +68,18 @@ impl LinkDetection {
         &mut self,
         public_key: &PublicKey,
         node_addresses: Vec<IpAddr>,
-        push: bool,
+        reason: UpdateReason,
         curr_ip_stack: Option<IpStack>,
     ) -> LinkDetectionUpdateResult {
         telio_log_debug!(
-            "update for {}, node_addresses: {:?}, push: {}, curr_ip_stack: {:?}",
+            "update for {}, node_addresses: {:?}, reason: {:?}, curr_ip_stack: {:?}",
             public_key,
             node_addresses,
-            push,
+            reason,
             curr_ip_stack
         );
         // We want to update info only on pull
-        if push {
+        if reason == UpdateReason::Push {
             return self.push_update(public_key);
         }
 

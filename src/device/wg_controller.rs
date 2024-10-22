@@ -23,7 +23,7 @@ use telio_traversal::{
     SessionKeeperTrait, UpgradeSyncTrait, WireGuardEndpointCandidateChangeEvent,
 };
 use telio_utils::{build_ping_endpoint, telio_log_debug, telio_log_info, telio_log_warn};
-use telio_wg::uapi::{AnalyticsEvent, EndpointChangeReason};
+use telio_wg::uapi::{AnalyticsEvent, UpdateReason};
 use telio_wg::{uapi::Peer, WireGuard};
 use thiserror::Error as TError;
 use tokio::sync::Mutex;
@@ -968,7 +968,7 @@ async fn select_endpoint_for_peer<'a, C: CrossPingCheckTrait>(
                     cpc,
                     reason
                 );
-                wg >= cpc && reason == EndpointChangeReason::Pull
+                wg >= cpc && reason == UpdateReason::Pull
             }
             _ => false,
         }
@@ -1695,7 +1695,7 @@ mod tests {
                 SocketAddr,
                 u32,
                 AllowedIps,
-                (Instant, EndpointChangeReason),
+                (Instant, UpdateReason),
             )>,
         ) {
             let peers: BTreeMap<PublicKey, Peer> = input
@@ -2082,10 +2082,7 @@ mod tests {
             proxy_endpoint,
             TEST_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
-            (
-                Instant::now() - Duration::from_secs(5),
-                EndpointChangeReason::Pull,
-            ),
+            (Instant::now() - Duration::from_secs(5), UpdateReason::Pull),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 5)]);
         f.when_cross_check_validated_endpoints(vec![]);
@@ -2150,7 +2147,7 @@ mod tests {
             proxy_endpoint,
             TEST_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
-            (peer_endpoint_change_at, EndpointChangeReason::Push),
+            (peer_endpoint_change_at, UpdateReason::Push),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 5)]);
         f.when_cross_check_validated_endpoints(vec![]);
@@ -2213,7 +2210,7 @@ mod tests {
             proxy_endpoint,
             TEST_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
-            (changed_endpoint_at, EndpointChangeReason::Pull),
+            (changed_endpoint_at, UpdateReason::Pull),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 1)]);
         f.when_cross_check_validated_endpoints(vec![(
@@ -2288,7 +2285,7 @@ mod tests {
             proxy_endpoint,
             TEST_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
-            (changed_endpoint_at, EndpointChangeReason::Pull),
+            (changed_endpoint_at, UpdateReason::Pull),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 0)]);
         f.when_cross_check_validated_endpoints(vec![(
@@ -2339,7 +2336,7 @@ mod tests {
             proxy_endpoint,
             TEST_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
-            (changed_endpoint_at, EndpointChangeReason::Push),
+            (changed_endpoint_at, UpdateReason::Push),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 0)]);
         f.when_cross_check_validated_endpoints(vec![(
@@ -2439,7 +2436,7 @@ mod tests {
             proxy_endpoint,
             TEST_PERSISTENT_KEEPALIVE_PERIOD,
             vec![ip1, ip1v6, ip2, ip2v6],
-            (Instant::now(), EndpointChangeReason::Pull),
+            (Instant::now(), UpdateReason::Pull),
         )]);
         f.when_time_since_last_rx(vec![]);
         f.when_cross_check_validated_endpoints(vec![]);
@@ -2471,10 +2468,7 @@ mod tests {
             proxy_endpoint,
             TEST_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips,
-            (
-                Instant::now() - Duration::from_secs(4),
-                EndpointChangeReason::Pull,
-            ),
+            (Instant::now() - Duration::from_secs(4), UpdateReason::Pull),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 4)]);
         f.when_cross_check_validated_endpoints(vec![]);
@@ -2505,7 +2499,7 @@ mod tests {
             allowed_ips.clone(),
             (
                 Instant::now() - Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW),
-                EndpointChangeReason::Pull,
+                UpdateReason::Pull,
             ),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 5)]);
@@ -2803,7 +2797,7 @@ mod tests {
             proxy_endpoint,
             TEST_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
             allowed_ips.clone(),
-            (endpoint_change_at, EndpointChangeReason::Pull),
+            (endpoint_change_at, UpdateReason::Pull),
         )]);
         f.when_time_since_last_rx(vec![(pub_key, 20)]);
         f.when_cross_check_validated_endpoints(vec![(
