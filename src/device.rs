@@ -1363,13 +1363,16 @@ impl Runtime {
                         maximal: Some(Duration::from_secs(120)),
                     },
                     ping_pong_tracker.clone(),
-                    self.features
-                        .direct
-                        .clone()
-                        .unwrap_or_default()
+                    direct
                         .endpoint_providers_optimization
-                        .unwrap_or_default()
+                        .as_ref()
+                        .unwrap_or(&Default::default())
                         .optimize_direct_upgrade_upnp,
+                    direct
+                        .upnp_features
+                        .as_ref()
+                        .unwrap_or(&Default::default())
+                        .lease_duration_s,
                 )?);
                 endpoint_providers.push(ep.clone());
                 Some(ep)
