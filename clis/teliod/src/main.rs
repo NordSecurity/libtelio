@@ -1,10 +1,5 @@
 //! Main and implementation of config and commands for Teliod - simple telio daemon for Linux and OpenWRT
 
-use crate::comms::DaemonSocket;
-use crate::core_api::{
-    get_meshmap as get_meshmap_from_server, load_identifier_from_api, register_machine,
-    update_machine, Error as ApiError,
-};
 use clap::Parser;
 use config::TeliodDaemonConfig;
 use futures::stream::StreamExt;
@@ -20,7 +15,7 @@ use std::{
     sync::Arc,
 };
 use telio::{
-    crypto::{PublicKey, SecretKey},
+    crypto::SecretKey,
     device::{Device, DeviceConfig, Error as DeviceError},
     telio_model::{config::Config as MeshMap, features::Features},
     telio_utils::select,
@@ -29,15 +24,6 @@ use telio::{
 use thiserror::Error as ThisError;
 use tokio::{sync::mpsc, task::JoinError, time::Duration};
 use tracing::{debug, error, info, trace, warn};
-
-use std::cmp::min;
-use telio::{
-    crypto::{PublicKey, SecretKey},
-    device::{Device, DeviceConfig, Error as DeviceError},
-    telio_model::{config::Config as MeshMap, features::Features},
-    telio_utils::select,
-    telio_wg::AdapterType,
-};
 
 mod comms;
 mod config;
@@ -49,39 +35,10 @@ use crate::core_api::{
     update_machine, Error as ApiError,
 };
 use crate::{comms::DaemonSocket, config::ClientConfig, nc::NotificationCenter};
-use futures::stream::StreamExt;
 
 const MAX_RETRIES: u32 = 5;
 const BASE_DELAY_MS: u64 = 500;
 const MAX_BACKOFF_TIME: u64 = 5000;
-
-fn serialize_log_level<S>(level: &LevelFilter, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let level_str = match level {
-        &LevelFilter::ERROR => "error",
-        &LevelFilter::WARN => "warn",
-        &LevelFilter::INFO => "info",
-        &LevelFilter::DEBUG => "debug",
-        &LevelFilter::TRACE => "trace",
-        &LevelFilter::OFF => "off",
-    };
-
-    serializer.serialize_str(level_str)
-}
-
-fn deserialize_authentication_token<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<String, D::Error> {
-    let raw_string: String = de::Deserialize::deserialize(deserializer)?;
-    let re = regex::Regex::new("[0-9a-f]{64}").map_err(de::Error::custom)?;
-    if re.is_match(&raw_string) {
-        Ok(raw_string)
-    } else {
-        Err(de::Error::custom("Incorrect authentication token"))
-    }
-}
 
 #[derive(Parser, Debug)]
 #[clap()]
@@ -426,6 +383,7 @@ async fn daemon_event_loop(
     let tx_clone = tx.clone();
     let telio_task_handle =
         tokio::task::spawn_blocking(move || telio_task(client_config, rx, tx_clone));
+
     let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
 
     info!("Entering event loop");
@@ -470,7 +428,7 @@ async fn daemon_event_loop(
     // Wait until Telio task ends
     // TODO: When it will be doing something some channel with commands etc. might be needed
     let join_result = telio_task_handle.await?;
-    fs::remove_file("/var/run/teliod.sock")?;
+    // fs::remove_file("/var/run/teliod.sock")?;
     if result.is_err() {
         result
     } else {
