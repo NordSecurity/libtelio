@@ -60,13 +60,13 @@ class NetCat:
                 f"Connection to {hostname} {port} port [{self.sock_type}/*] succeeded!"
             )
         except OSError as e:
-            if e.errno == errno.EBADF:
-                # connection closed
-                sys.exit(0)
             print(
                 f"nc: connect to {hostname} port {port} ({self.sock_type}) failed: {e.strerror}",
                 file=sys.stderr,
             )
+            if e.errno == errno.EBADF:
+                # connection closed
+                sys.exit(0)
             sys.exit(1)
 
     def _listen(self):
@@ -116,7 +116,6 @@ class NetCat:
         if self.udp and self.listen and not self.client_addr:
             self._vprint(f"Connection received on {addr[0]} {addr[1]}")
             self.client_addr = addr
-            self.sock.connect(addr)
         if data:
             sys.stdout.buffer.write(data)
             sys.stdout.flush()
@@ -156,10 +155,9 @@ class NetCat:
             print("")
             sys.exit(2)
         except OSError as e:
-            if e.errno in (errno.EBADF, errno.ECONNREFUSED):
-                # connection closed
-                sys.exit(0)
             print(f"nc: {e}", file=sys.stderr)
+            if e.errno in (errno.EBADF, errno.ECONNREFUSED):
+                sys.exit(0)
             sys.exit(1)
         finally:
             self.selector.close()
