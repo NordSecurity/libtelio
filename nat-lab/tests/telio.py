@@ -444,9 +444,6 @@ class Client:
                         await self.set_meshnet_config(meshnet_config)
                     yield self
             finally:
-                print(datetime.now(), "Test cleanup: Saving logs")
-                await self.save_logs()
-
                 print(
                     datetime.now(),
                     "Test cleanup: Stopping tcpdump and collecting core dumps",
@@ -474,6 +471,7 @@ class Client:
 
                 print(datetime.now(), "Test cleanup: Shutting down")
                 if self._libtelio_proxy:
+                    await self.get_proxy().flush_logs()
                     await self.get_proxy().shutdown(self._connection.target_name())
                 else:
                     print(
@@ -490,7 +488,10 @@ class Client:
                 await self.save_moose_db()
 
                 print(datetime.now(), "Test cleanup: Checking logs")
-                await self.check_logs_for_errors()
+                await self._check_logs_for_errors()
+
+                print(datetime.now(), "Test cleanup: Saving logs")
+                await self._save_logs()
 
                 print(datetime.now(), "Test cleanup complete")
 
@@ -892,6 +893,15 @@ class Client:
             await asyncio.sleep(1)
 
     async def get_log(self) -> str:
+        await self.flush_logs()
+        return await self._get_log_without_flush()
+
+    async def _get_log_without_flush(self) -> str:
+        """
+        This function retrieves telio logs without flushing them. It may be needed to do that
+        if log retrieval is requested after process has already exited. In such a case there is
+        nothing to flush and attempting to do so will cause errors.
+        """
         process = (
             self._connection.create_process(["type", "tcli.log"])
             if self._connection.target_os == TargetOS.Windows
@@ -937,23 +947,6 @@ class Client:
                     f"Clear-EventLog -LogName {log_name}",
                 ]).execute()
 
-    async def get_log_lines(self, regex: Optional[str] = None) -> List[str]:
-        """
-        Get the tcli log as a list of strings
-
-        If regex is provided, only matching lines are returned (and only subset of lines that match the capture group).
-        """
-        log = await self.get_log()
-        lines = log.split("\n")
-        if regex:
-            ret, compiled_regex = [], re.compile(regex)
-            for line in lines:
-                m = compiled_regex.match(line)
-                if m:
-                    ret.append(m.group(1))
-            return ret
-        return lines
-
     async def get_network_info(self) -> str:
         if self._connection.target_os == TargetOS.Mac:
             interface_info = self._connection.create_process(["ifconfig", "-a"])
@@ -985,8 +978,17 @@ class Client:
             )
         return ""
 
-    async def check_logs_for_errors(self) -> None:
-        log_content = await self.get_log()
+    async def _check_logs_for_errors(self) -> None:
+        """
+        Check logs for error and raise error/warning if unexpected errors
+        has been found
+
+        In order to check all of the logs this function must be called
+        after process running libtelio has already exited. Or in worst case
+        at least after logs has been flushed.
+        """
+
+        log_content = await self._get_log_without_flush()
         for line in log_content.splitlines():
             if "TelioLogLevel.ERROR" in line:
                 if not self._allowed_errors or not any(
@@ -997,7 +999,14 @@ class Client:
                         f"Unexpected error found in {self._node.name} log: {line}"
                     )
 
-    async def save_logs(self) -> None:
+    async def _save_logs(self) -> None:
+        """
+        Save the logs from libtelio.
+        In order to collect all of the logs this function must be called
+        after process running libtelio has already exited. Or in worst case
+        at least after logs has been flushed.
+        """
+
         if os.environ.get("NATLAB_SAVE_LOGS") is None:
             return
 
@@ -1005,7 +1014,7 @@ class Client:
         os.makedirs(log_dir, exist_ok=True)
 
         try:
-            log_content = await self.get_log()
+            log_content = await self._get_log_without_flush()
         except ProcessExecError as err:
             err.print()
             return
@@ -1088,6 +1097,9 @@ class Client:
 
     async def probe_pmtu(self, host: str) -> int:
         return await self.get_proxy().probe_pmtu(host)
+
+    async def flush_logs(self) -> None:
+        await self.get_proxy().flush_logs()
 
     # This is where natlab expects coredumps to be placed
     # For CI and our internal linux VM, this path is set in our provisioning scripts
