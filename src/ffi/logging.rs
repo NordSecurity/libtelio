@@ -24,9 +24,18 @@ const LOG_BUFFER: usize = 1024;
 pub const START_ASYNC_LOGGER_MSG: &str = "Starting async logger thread";
 
 static DROPPED_LOGS: AtomicUsize = AtomicUsize::new(0);
+static DROPPED_LOGS_LAST_CHECKED_VALUE: AtomicUsize = AtomicUsize::new(0);
 
+/// Return the total number of log messages droppped since the process has started
 pub fn logs_dropped_until_now() -> usize {
     DROPPED_LOGS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Return the number of log messages dropped since the last time this function was called
+pub fn logs_dropped_since_last_checked() -> usize {
+    let current = DROPPED_LOGS.load(std::sync::atomic::Ordering::Relaxed);
+    let last = DROPPED_LOGS_LAST_CHECKED_VALUE.swap(current, std::sync::atomic::Ordering::Relaxed);
+    current - last
 }
 
 /// Build a tracing subscriber for use in ffi
@@ -300,6 +309,26 @@ mod test {
         assert_eq!(&expected[..], &actual[..]);
     }
 
+    #[test]
+    fn slow_telio_cb_handling() {
+        const LOGS_TO_DROP: usize = 5;
+        let log = SlowLog::default();
+        let subscriber = build_subscriber(TelioLogLevel::Debug, Box::new(log));
+
+        tracing::subscriber::with_default(subscriber, || {
+            for i in 0..(LOG_BUFFER + LOGS_TO_DROP) {
+                info!("Test log with some changing data: {i}");
+            }
+            assert_eq!(LOGS_TO_DROP, logs_dropped_since_last_checked());
+
+            info!("Another unique log message");
+
+            assert_eq!(1, logs_dropped_since_last_checked());
+        });
+
+        assert_eq!(LOGS_TO_DROP + 1, logs_dropped_until_now());
+    }
+
     #[derive(Default, Clone, Debug)]
     struct Log(Arc<Mutex<Vec<(TelioLogLevel, String)>>>);
     impl TelioLoggerCb for Log {
@@ -307,6 +336,14 @@ mod test {
             let mut logs = self.0.lock().expect("Unable to lock");
             logs.push((level, payload));
             Ok(())
+        }
+    }
+
+    #[derive(Default, Clone, Debug)]
+    struct SlowLog;
+    impl TelioLoggerCb for SlowLog {
+        fn log(&self, level: TelioLogLevel, payload: String) -> crate::FfiResult<()> {
+            loop {}
         }
     }
 }
