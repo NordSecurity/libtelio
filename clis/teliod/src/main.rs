@@ -253,7 +253,10 @@ fn telio_task(
                         error!("Unable to set meshmap due to {e}");
                     }
                 }
-                TelioTaskCmd::Quit => break,
+                TelioTaskCmd::Quit => {
+                    telio.stop();
+                    break;
+                }
             }
         }
     }
