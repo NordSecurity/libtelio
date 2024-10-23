@@ -167,6 +167,9 @@ mod tests {
                 reconnect_after_expiry: Percentage(90),
                 certificate_file_path: None,
             },
+            hw_identifier: None,
+            machine_identifier: None,
+            private_key: None,
         };
 
         {

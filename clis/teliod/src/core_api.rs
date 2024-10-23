@@ -4,7 +4,7 @@ use reqwest::{header, Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
-use telio::crypto::PublicKey;
+use telio::{crypto::PublicKey, telio_model::config::Config as MeshMap};
 use thiserror::Error;
 use tracing::{debug, info};
 
@@ -14,6 +14,8 @@ const API_BASE: &str = "https://api.nordvpn.com/v1";
 const OS_NAME: &str = "macos";
 #[cfg(target_os = "linux")]
 const OS_NAME: &str = "linux";
+
+type MachineIdentifier = String;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -44,7 +46,7 @@ struct MeshConfig {
 pub async fn load_identifier_from_api(
     auth_token: &String,
     public_key: PublicKey,
-) -> Result<String, Error> {
+) -> Result<MachineIdentifier, Error> {
     debug!("Fetching machine identifier");
     let client = Client::new();
     let response = client
@@ -109,11 +111,11 @@ pub async fn update_machine(client_config: &ClientConfig) -> Result<StatusCode, 
         .status())
 }
 
-pub async fn get_meshmap(client_config: Arc<ClientConfig>) -> Result<String, Error> {
+pub async fn get_meshmap(client_config: Arc<ClientConfig>) -> Result<MeshMap, Error> {
     debug!("Getting meshmap");
     let client = Client::new();
-    Ok({
-        client
+    Ok(serde_json::from_str(
+        &client
             .get(&format!(
                 "{}/meshnet/machines/{}/map",
                 API_BASE, client_config.machine_identifier
@@ -126,15 +128,15 @@ pub async fn get_meshmap(client_config: Arc<ClientConfig>) -> Result<String, Err
             .send()
             .await?
             .text()
-            .await?
-    })
+            .await?,
+    )?)
 }
 
 pub async fn register_machine(
     hw_identifier: &String,
     public_key: PublicKey,
     auth_token: &String,
-) -> Result<String, Error> {
+) -> Result<MachineIdentifier, Error> {
     info!("Registering machine");
     let client = Client::new();
     let response = client

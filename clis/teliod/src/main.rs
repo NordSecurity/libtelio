@@ -91,8 +91,6 @@ enum TeliodError {
     DaemonIsRunning,
     #[error("NotificationCenter failure: {0}")]
     NotificationCenter(#[from] nc::Error),
-    #[error("Token not fully loaded")]
-    TokenError,
     #[error(transparent)]
     CoreApiError(#[from] ApiError),
     #[error(transparent)]
@@ -268,14 +266,7 @@ fn get_meshmap(client_config: Arc<ClientConfig>, tx: mpsc::Sender<TelioTaskCmd>)
     tokio::spawn(async move {
         let result = get_meshmap_from_server(config_clone).await;
         match result {
-            Ok(map) => {
-                let meshmap: MeshMap = match serde_json::from_str(&map) {
-                    Ok(map) => map,
-                    Err(e) => {
-                        error!("Unable to parse meshmap due to {e}");
-                        return;
-                    }
-                };
+            Ok(meshmap) => {
                 trace!("Meshmap {:#?}", meshmap);
                 if let Err(e) = tx.send(TelioTaskCmd::UpdateMeshmap(meshmap)).await {
                     error!("Unable to send meshmap due to {e}");
@@ -434,7 +425,7 @@ async fn daemon_event_loop(
     // Wait until Telio task ends
     // TODO: When it will be doing something some channel with commands etc. might be needed
     let join_result = telio_task_handle.await?;
-    // fs::remove_file("/var/run/teliod.sock")?;
+
     if result.is_err() {
         result
     } else {
