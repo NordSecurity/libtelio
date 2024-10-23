@@ -32,7 +32,7 @@ use telio_task::{
 use crate::{
     adapter::{self, Adapter, AdapterType, Error, FirewallResetConnsCb, Tun},
     link_detection::{self, LinkDetection, LinkDetectionUpdateResult},
-    uapi::{self, AnalyticsEvent, Cmd, Event, Interface, Peer, PeerState, Response},
+    uapi::{self, AnalyticsEvent, Cmd, Event, Interface, Peer, PeerState, Response, UpdateReason},
     FirewallCb,
 };
 
@@ -467,7 +467,7 @@ impl WireGuard for DynamicWg {
         Ok(task_exec!(&self.task, async move |s| {
             let mut to = s.interface.clone();
             to.private_key = Some(key);
-            let _ = s.update(to, true).await;
+            let _ = s.update(to, UpdateReason::Push).await;
             Ok(())
         })
         .await?)
@@ -477,7 +477,7 @@ impl WireGuard for DynamicWg {
         Ok(task_exec!(&self.task, async move |s| {
             let mut to = s.interface.clone();
             to.fwmark = fwmark;
-            let _ = s.update(to, true).await;
+            let _ = s.update(to, UpdateReason::Push).await;
             Ok(())
         })
         .await?)
@@ -518,7 +518,7 @@ impl WireGuard for DynamicWg {
             }
 
             to.peers.insert(new_peer.public_key, new_peer);
-            let _ = s.update(to, true).await;
+            let _ = s.update(to, UpdateReason::Push).await;
             Ok(())
         })
         .await?)
@@ -528,7 +528,7 @@ impl WireGuard for DynamicWg {
         Ok(task_exec!(&self.task, async move |s| {
             let mut to = s.interface.clone();
             to.peers.remove(&key);
-            let _ = s.update(to, true).await;
+            let _ = s.update(to, UpdateReason::Push).await;
             Ok(())
         })
         .await?)
@@ -614,7 +614,7 @@ struct DiffKeys {
 impl State {
     async fn sync(&mut self) -> Result<(), Error> {
         if let Some(to) = self.uapi_request(&uapi::Cmd::Get).await?.interface {
-            let _ = self.update(to, false).await;
+            let _ = self.update(to, UpdateReason::Pull).await;
         }
 
         Ok(())
@@ -723,7 +723,7 @@ impl State {
         &mut self,
         to: &uapi::Interface,
         diff_keys: &DiffKeys,
-        push: bool,
+        reason: UpdateReason,
     ) -> Result<(), Error> {
         let from = &self.interface;
 
@@ -792,7 +792,7 @@ impl State {
                 let link_detection_update_result = {
                     if let Some(link_detection) = self.link_detection.as_mut() {
                         link_detection
-                            .update(key, node_addresses, push, self.ip_stack.clone())
+                            .update(key, node_addresses, reason, self.ip_stack.clone())
                             .await
                     } else {
                         LinkDetectionUpdateResult {
@@ -874,7 +874,12 @@ impl State {
         }
     }
 
-    fn update_endpoint_change_timestamps(&self, diff_keys: &DiffKeys, to: &mut uapi::Interface) {
+    fn update_endpoint_change_timestamps(
+        &self,
+        diff_keys: &DiffKeys,
+        reason: UpdateReason,
+        to: &mut uapi::Interface,
+    ) {
         for key in diff_keys
             .insert_keys
             .iter()
@@ -892,14 +897,18 @@ impl State {
                 );
                 let at = Instant::now();
                 if let Some(p) = new_peer {
-                    p.endpoint_changed_at = Some(at);
+                    p.endpoint_changed_at = Some((at, reason));
                 }
             }
         }
     }
 
     #[allow(mpsc_blocking_send)]
-    async fn update(&mut self, mut to: uapi::Interface, push: bool) -> Result<bool, Error> {
+    async fn update(
+        &mut self,
+        mut to: uapi::Interface,
+        reason: UpdateReason,
+    ) -> Result<bool, Error> {
         for (pk, peer) in &mut to.peers {
             match self.stats.get_mut(pk) {
                 Some(stats) => match stats.lock().as_mut() {
@@ -959,13 +968,13 @@ impl State {
 
         let diff_keys = self.update_calculate_changes(&to);
 
-        self.update_endpoint_change_timestamps(&diff_keys, &mut to);
+        self.update_endpoint_change_timestamps(&diff_keys, reason, &mut to);
 
-        self.update_send_notification_events(&to, &diff_keys, push)
+        self.update_send_notification_events(&to, &diff_keys, reason)
             .await?;
 
         let mut success = true;
-        if push {
+        if reason == UpdateReason::Push {
             let dev = self.update_construct_set_device(&to, &diff_keys);
             // mut self required here
             success = self
@@ -1115,7 +1124,7 @@ pub mod tests {
                     rng.gen::<u32>().into(),
                     rng.gen(),
                 ))),
-                endpoint_changed_at: Some(tokio::time::Instant::now()),
+                endpoint_changed_at: Some((tokio::time::Instant::now(), UpdateReason::Push)),
                 ip_addresses: vec![
                     IpAddr::V4(rng.gen::<u32>().into()),
                     IpAddr::V4(rng.gen::<u32>().into()),
@@ -1144,7 +1153,7 @@ pub mod tests {
             Ok(task_exec!(&self.task, async move |s| {
                 let mut ifc = s.interface.clone();
                 ifc.listen_port = Some(port);
-                let _ = s.update(ifc, true).await;
+                let _ = s.update(ifc, UpdateReason::Push).await;
                 Ok(())
             })
             .await?)
@@ -1336,7 +1345,7 @@ pub mod tests {
             public_key: pkc,
             endpoint: Some(([1, 1, 1, 1], 123).into()),
             persistent_keepalive_interval: Some(25),
-            endpoint_changed_at: Some(Instant::now()),
+            endpoint_changed_at: Some((Instant::now(), UpdateReason::Push)),
             ..Default::default()
         };
 
@@ -1373,7 +1382,7 @@ pub mod tests {
         let mut peer = Peer {
             public_key: pkc,
             endpoint: Some(([1, 1, 1, 1], 123).into()),
-            endpoint_changed_at: Some(Instant::now()),
+            endpoint_changed_at: Some((Instant::now(), UpdateReason::Push)),
             persistent_keepalive_interval: Some(25),
             ..Default::default()
         };
@@ -1442,7 +1451,7 @@ pub mod tests {
         let mut peer = Peer {
             public_key: pkc,
             endpoint: Some(([1, 1, 1, 1], 123).into()),
-            endpoint_changed_at: Some(Instant::now()),
+            endpoint_changed_at: Some((Instant::now(), UpdateReason::Push)),
             persistent_keepalive_interval: Some(25),
             ..Default::default()
         };
@@ -1633,7 +1642,7 @@ pub mod tests {
         let mut peer = Peer {
             public_key: pubkey,
             endpoint: Some(([1, 1, 1, 1], 123).into()),
-            endpoint_changed_at: Some(Instant::now()),
+            endpoint_changed_at: Some((Instant::now(), UpdateReason::Push)),
             persistent_keepalive_interval: Some(25),
             preshared_key: Some(preshared1),
             ..Default::default()
@@ -1704,7 +1713,7 @@ pub mod tests {
         let mut peer = Peer {
             public_key: pkc,
             endpoint: Some(([1, 1, 1, 1], 123).into()),
-            endpoint_changed_at: Some(Instant::now()),
+            endpoint_changed_at: Some((Instant::now(), UpdateReason::Push)),
             persistent_keepalive_interval: Some(25),
             ..Default::default()
         };
@@ -1874,13 +1883,13 @@ pub mod tests {
         adapter.lock().await.checkpoint();
 
         assert_eq!(
-            wg.get_interface().map(get).await.elapsed(),
+            wg.get_interface().map(get).await.0.elapsed(),
             Duration::from_millis(0)
         );
 
         time::advance(Duration::from_millis(100)).await;
         assert_eq!(
-            wg.get_interface().map(get).await.elapsed(),
+            wg.get_interface().map(get).await.0.elapsed(),
             Duration::from_millis(100)
         );
 
@@ -1889,7 +1898,7 @@ pub mod tests {
         wg.add_peer(peer.clone()).await.unwrap();
         adapter.lock().await.checkpoint();
         assert_eq!(
-            wg.get_interface().map(get).await.elapsed(),
+            wg.get_interface().map(get).await.0.elapsed(),
             Duration::from_millis(100)
         );
 
@@ -1903,14 +1912,14 @@ pub mod tests {
         wg.add_peer(peer).await.unwrap();
         adapter.lock().await.checkpoint();
         assert_eq!(
-            wg.get_interface().map(get).await.elapsed(),
+            wg.get_interface().map(get).await.0.elapsed(),
             Duration::from_millis(100)
         );
 
         // Check if the time is still properly updated
         time::advance(Duration::from_millis(100)).await;
         assert_eq!(
-            wg.get_interface().map(get).await.elapsed(),
+            wg.get_interface().map(get).await.0.elapsed(),
             Duration::from_millis(200)
         );
 
@@ -1926,7 +1935,7 @@ pub mod tests {
         wg.add_peer(peer).await.unwrap();
         adapter.lock().await.checkpoint();
         assert_eq!(
-            wg.get_interface().map(get).await.elapsed(),
+            wg.get_interface().map(get).await.0.elapsed(),
             Duration::from_millis(0)
         );
 
