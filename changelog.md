@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.0.1
+### **Chicken Salad**
+---
+* LLT-5593: Domain names in the logs are now hashed in the same way as IPs
+
+<br>
+
 ### v5.0.0
 ### **Chicken Salad**
 ---
