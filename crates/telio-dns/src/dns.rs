@@ -42,6 +42,8 @@ pub trait DnsResolver {
     fn get_exit_connected_dns_allowed_ips(&self) -> Vec<IpNet>;
     /// Get default DNS server IP addresses.
     fn get_default_dns_servers(&self) -> Vec<IpAddr>;
+    /// Change DNS peer's public key
+    async fn set_peer_public_key(&self, key: PublicKey);
 }
 
 /// Dns resolver server that can be run in process.
@@ -185,6 +187,25 @@ impl DnsResolver for LocalDnsResolver {
             IpAddr::V4(Ipv4Addr::new(100, 64, 0, 3)),
             IpAddr::V6(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 3)),
         ]
+    }
+
+    async fn set_peer_public_key(&self, pubkey: PublicKey) {
+        let peer = match Tunn::new(
+            StaticSecret::from(self.secret_key.into_bytes()),
+            PublicKeyDalek::from(pubkey.0),
+            None,
+            None,
+            0,
+            None,
+        ) {
+            Ok(peer) => peer,
+            Err(err) => {
+                telio_log_error!("Failed to change public key for DNS peer: {err}");
+                return;
+            }
+        };
+
+        *self.peer.lock().await = peer;
     }
 }
 

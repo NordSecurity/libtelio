@@ -12,6 +12,7 @@ from utils.connection_util import (
     ConnectionTag,
     new_connection_by_tag,
 )
+from utils.dns import query_dns
 from utils.ping import ping
 
 
@@ -263,3 +264,111 @@ async def test_pq_vpn_rekey(
         ), f"wrong public IP when connected to VPN {ip}"
 
         await ping(client_conn, config.PHOTO_ALBUM_IP)
+
+
+@pytest.mark.parametrize(
+    "alpha_setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    nlx_1_limits=ConnectionLimits(1, 2),
+                ),
+                is_meshnet=False,
+            ),
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    nlx_1_limits=ConnectionLimits(1, 2),
+                ),
+                is_meshnet=False,
+            ),
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.WINDOWS_VM_1,
+                    nlx_1_limits=ConnectionLimits(1, 2),
+                ),
+                is_meshnet=False,
+            ),
+            marks=[
+                pytest.mark.windows,
+            ],
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.WINDOWS_VM_1,
+                    nlx_1_limits=ConnectionLimits(1, 2),
+                ),
+                is_meshnet=False,
+            ),
+            marks=[
+                pytest.mark.windows,
+            ],
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.MAC_VM,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.MAC_VM,
+                    nlx_1_limits=ConnectionLimits(1, 2),
+                ),
+                is_meshnet=False,
+            ),
+            marks=pytest.mark.mac,
+        ),
+    ],
+)
+async def test_dns_with_pq(
+    alpha_setup_params: SetupParameters,
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        env = await exit_stack.enter_async_context(
+            setup_environment(exit_stack, [alpha_setup_params])
+        )
+
+        client_conn, *_ = [conn.connection for conn in env.connections]
+        client, *_ = env.clients
+
+        wg_srv = config.NLX_SERVER
+
+        await client.enable_magic_dns(["10.0.80.82"])
+
+        await client.connect_to_vpn(
+            str(wg_srv["ipv4"]),
+            int(wg_srv["port"]),
+            str(wg_srv["public_key"]),
+            pq=False,
+        )
+        await ping(client_conn, config.PHOTO_ALBUM_IP)
+
+        # Expect this to work
+        await query_dns(client_conn, "google.com")
+
+        await client.disconnect_from_vpn(str(wg_srv["public_key"]))
+
+        await client.connect_to_vpn(
+            str(wg_srv["ipv4"]),
+            int(wg_srv["port"]),
+            str(wg_srv["public_key"]),
+            pq=True,
+        )
+        await ping(client_conn, config.PHOTO_ALBUM_IP)
+
+        # Expect this to work as well after the secret key change
+        await query_dns(client_conn, "google.com")

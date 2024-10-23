@@ -77,6 +77,7 @@ pub async fn consolidate_wg_state(
         requested_state,
         &*entities.wireguard_interface,
         &entities.postquantum_wg,
+        &entities.dns,
     )
     .await?;
     consolidate_wg_fwmark(requested_state, &*entities.wireguard_interface).await?;
@@ -119,6 +120,7 @@ async fn consolidate_wg_private_key<W: WireGuard>(
     requested_state: &RequestedState,
     wireguard_interface: &W,
     post_quantum_vpn: &impl telio_pq::PostQuantum,
+    dns: &Mutex<crate::device::DNS<impl DnsResolver>>,
 ) -> Result {
     let private_key = if let Some(pq) = post_quantum_vpn.keys() {
         pq.wg_secret
@@ -130,6 +132,11 @@ async fn consolidate_wg_private_key<W: WireGuard>(
 
     if actual_private_key != Some(private_key) {
         wireguard_interface.set_secret_key(private_key).await?;
+        let dns = dns.lock().await;
+
+        if let Some(resolver) = dns.resolver.as_ref() {
+            resolver.set_peer_public_key(private_key.public()).await;
+        }
     }
 
     Ok(())
@@ -1193,6 +1200,8 @@ mod tests {
     async fn update_wg_private_key_when_changed() {
         let mut wg_mock = MockWireGuard::new();
         let mut pq_mock = MockPostQuantum::new();
+        let dns_mock: Mutex<DNS<MockDnsResolver>> = Mutex::default();
+
         let secret_key_a = SecretKey::gen();
         let secret_key_b = SecretKey::gen();
 
@@ -1218,7 +1227,7 @@ mod tests {
             ..Default::default()
         };
 
-        consolidate_wg_private_key(&requested_state, &wg_mock, &pq_mock)
+        consolidate_wg_private_key(&requested_state, &wg_mock, &pq_mock, &dns_mock)
             .await
             .unwrap();
     }
@@ -1227,6 +1236,8 @@ mod tests {
     async fn do_not_update_wg_private_key_when_not_changed() {
         let mut wg_mock = MockWireGuard::new();
         let mut pq_mock = MockPostQuantum::new();
+        let dns_mock: Mutex<DNS<MockDnsResolver>> = Mutex::default();
+
         let secret_key_a = SecretKey::gen();
         let secret_key_a_cpy = secret_key_a;
 
@@ -1248,7 +1259,7 @@ mod tests {
             ..Default::default()
         };
 
-        consolidate_wg_private_key(&requested_state, &wg_mock, &pq_mock)
+        consolidate_wg_private_key(&requested_state, &wg_mock, &pq_mock, &dns_mock)
             .await
             .unwrap();
     }
