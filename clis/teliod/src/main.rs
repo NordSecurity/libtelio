@@ -67,6 +67,8 @@ pub enum TelioTaskCmd {
     UpdateMeshmap(MeshMap),
     // Triggers downloading meshmap from server
     GetMeshmap,
+    // Break the recieve loop to quit the daemon and exit gracefully
+    Quit,
 }
 
 #[derive(Debug, ThisError)]
@@ -253,6 +255,7 @@ fn telio_task(
                         error!("Unable to set meshmap due to {e}");
                     }
                 }
+                TelioTaskCmd::Quit => break,
             }
         }
     }
@@ -412,6 +415,9 @@ async fn daemon_event_loop(
                 match signal {
                     Some(s @ SIGHUP | s @ SIGTERM | s @ SIGINT | s @ SIGQUIT) => {
                         info!("Received signal {:?}, exiting", Signal::try_from(s));
+                        if let Err(e) = tx.try_send(TelioTaskCmd::Quit) {
+                            error!("Channel closed or telio not yet started. {e}");
+                        };
                         break Ok(());
                     }
                     Some(s) => {
