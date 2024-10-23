@@ -260,6 +260,23 @@ LIBTELIO_CONFIG = {
             NAME: {f"lib{NAME}": f"lib{NAME}.so"},
         },
     },
+    "qnap": {
+        "archs": {
+            "x86_64": {
+                "env": {
+                    "RUSTFLAGS": (
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['x86_64']}  -C target-feature=+crt-static",
+                        "set",
+                    )
+                },
+            },
+        },
+        "post_build": [post_copy_libsqlite3_binary_to_dist],
+        "packages": {
+            "tcli": {"tcli": "tcli"},
+            NAME: {f"lib{NAME}": f"lib{NAME}.so"},
+        },
+    },
     "macos": {
         "packages": {
             "tcli": {"tcli": "tcli"},
@@ -334,7 +351,7 @@ def main() -> None:
         target_os = "macos" if args.command == "lipo" else args.os
 
         packages = LIBTELIO_CONFIG[target_os].get("packages", None)
-        if args.debug and not args.tcli and "tcli" in packages:
+        if args.debug and not args.tcli and "tcli" in packages and "qnap" not in args.os:
             LIBTELIO_CONFIG[target_os]["packages"].pop("tcli")
 
     if args.command == "build":
