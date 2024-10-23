@@ -99,7 +99,7 @@ pub use wg::{
 #[cfg(test)]
 use wg::tests::AdapterExpectation;
 
-use crate::logging::LOG_CENSOR;
+use crate::logging::{logs_dropped_until_now, LOG_CENSOR};
 
 #[derive(Debug, TError)]
 pub enum Error {
@@ -2422,7 +2422,7 @@ impl TaskRuntime for Runtime {
             },
 
             _ = self.polling_interval.tick() => {
-                telio_log_debug!("WG consolidation triggered by tick event");
+                telio_log_debug!("WG consolidation triggered by tick event, total logs dropped: {}", logs_dropped_until_now());
                 wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
                     .boxed()
                     .await
