@@ -3,6 +3,7 @@ import os
 import Pyro5.api  # type: ignore
 import Pyro5.server  # type: ignore
 import sys
+import time
 import telio_bindings as libtelio  # type: ignore # pylint: disable=import-error
 from serialization import (  # type: ignore # pylint: disable=import-error
     init_serialization,
@@ -58,15 +59,30 @@ class TelioLoggerCbImpl(libtelio.TelioLoggerCb):
         except FileNotFoundError:
             pass
 
-    def log(self, log_level, payload):
+    def _do_log(self, log_level, payload):
+        open_ts = None
+        write_ts = None
+        start_ts = time.time();
         with self.lock:
+            lock_acquired_ts = time.time()
             with open(TCLI_LOG, "a", encoding="utf-8") as logfile:
                 try:
+                    open_ts = time.time()
                     logfile.write(f"{datetime.datetime.now()} {log_level} {payload}\n")
+                    write_ts = time.time()
                 except IOError as e:
                     logfile.write(
                         f"{datetime.datetime.now()} Failed to write logline due to error {str(e)}\n"
                     )
+            closed_ts = time.time()
+        end_ts = time.time()
+        return (start_ts, lock_acquired_ts, open_ts, write_ts, closed_ts, end_ts)
+
+
+    def log(self, log_level, payload):
+        (start_ts, lock_acquired_ts, open_ts, write_ts, closed_ts, end_ts) = self._do_log(log_level, payload)
+        if end_ts - start_ts > 0.5:
+            self._do_log(log_level, f"Dumping log line took too long: {start_ts} {lock_acquired_ts} {open_ts} {write_ts} {closed_ts} {end_ts}")
 
 
 @Pyro5.api.expose
