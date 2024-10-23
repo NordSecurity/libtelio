@@ -167,8 +167,8 @@ class Node:
             is_local=node.is_local and self.is_local,
             allow_incoming_connections=firewall_config.allow_incoming_connections,
             allow_peer_send_files=firewall_config.allow_peer_send_files,
-            allow_multicast=False,
-            peer_allows_multicast=False,
+            allow_multicast=True,
+            peer_allows_multicast=True,
         )
 
     def set_peer_firewall_settings(
