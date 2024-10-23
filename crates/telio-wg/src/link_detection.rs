@@ -19,7 +19,10 @@ use telio_utils::{
     telio_log_warn, IpStack,
 };
 
-use crate::wg::{BytesAndTimestamps, WG_KEEPALIVE};
+use crate::{
+    uapi::UpdateReason,
+    wg::{BytesAndTimestamps, WG_KEEPALIVE},
+};
 
 mod enhanced_detection;
 
@@ -65,18 +68,18 @@ impl LinkDetection {
         &mut self,
         public_key: &PublicKey,
         node_addresses: Vec<IpAddr>,
-        push: bool,
+        reason: UpdateReason,
         curr_ip_stack: Option<IpStack>,
     ) -> LinkDetectionUpdateResult {
-        telio_log_debug!(
-            "update for {}, node_addresses: {:?}, push: {}, curr_ip_stack: {:?}",
+        telio_log_error!(
+            "update for {}, node_addresses: {:?}, reason: {:?}, curr_ip_stack: {:?}",
             public_key,
             node_addresses,
-            push,
+            reason,
             curr_ip_stack
         );
         // We want to update info only on pull
-        if push {
+        if reason == UpdateReason::Push {
             return self.push_update(public_key);
         }
 
@@ -84,7 +87,7 @@ impl LinkDetection {
             let ping_enabled = self.enhanced_detection.is_some();
             let result = state.update(self.cfg_max_allowed_rtt, ping_enabled);
 
-            telio_log_debug!(
+            telio_log_error!(
                 "ping_enabled: {}, result.should_ping: {}. result.link_detection_update_result: {:?}",
                 ping_enabled,
                 result.should_ping,
@@ -283,11 +286,11 @@ impl State {
                             .checked_add(delay)
                             .unwrap_or_else(Instant::now),
                     };
-                    telio_log_debug!("Possibly down. delay={:?}", delay);
+                    telio_log_error!("Possibly down. delay={:?}", delay);
                     Self::build_result(StateDecision::Ping, LinkState::Up)
                 } else {
                     // Current link_state is Up
-                    telio_log_debug!("definitely up");
+                    telio_log_error!("definitely up");
                     Self::build_result(StateDecision::NoAction, LinkState::Up)
                 }
             }

@@ -59,14 +59,15 @@ class TelioLoggerCbImpl(libtelio.TelioLoggerCb):
             pass
 
     def log(self, log_level, payload):
-        with self.lock:
-            with open(TCLI_LOG, "a", encoding="utf-8") as logfile:
-                try:
-                    logfile.write(f"{datetime.datetime.now()} {log_level} {payload}\n")
-                except IOError as e:
-                    logfile.write(
-                        f"{datetime.datetime.now()} Failed to write logline due to error {str(e)}\n"
-                    )
+        if log_level == libtelio.TelioLogLevel.ERROR or log_level == libtelio.TelioLogLevel.WARNING or log_level == libtelio.TelioLogLevel.INFO
+            with self.lock:
+                with open(TCLI_LOG, "a", encoding="utf-8") as logfile:
+                    try:
+                        logfile.write(f"{datetime.datetime.now()} {log_level} {payload}\n")
+                    except IOError as e:
+                        logfile.write(
+                            f"{datetime.datetime.now()} Failed to write logline due to error {str(e)}\n"
+                        )
 
 
 @Pyro5.api.expose
