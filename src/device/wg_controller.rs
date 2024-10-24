@@ -562,15 +562,9 @@ async fn consolidate_firewall<F: Firewall>(
 
     // Meshnet config can be None in the beginning when this method
     // is called.
-    if requested_state.meshnet_config.is_some() {
+    if let Some(config) = &requested_state.meshnet_config {
         // Save local node ip addresses
-        firewall.set_ip_addresses(
-            requested_state
-                .meshnet_config
-                .as_ref()
-                .and_then(|c| c.this.ip_addresses.clone())
-                .ok_or(Error::IpNotSet)?,
-        );
+        firewall.set_ip_addresses(config.this.ip_addresses.clone().ok_or(Error::IpNotSet)?);
     }
     Ok(())
 }
@@ -1224,9 +1218,9 @@ mod tests {
     use telio_firewall::firewall::{MockFirewall, FILE_SEND_PORT};
     use telio_model::config::{Config, PeerBase, Server};
     use telio_model::features::{
-        EndpointProvider as ApiEndpointProvider, FeatureDns, FeatureFirewall, TtlValue,
+        EndpointProvider as ApiEndpointProvider, FeatureBatching, FeatureDns, TtlValue,
     };
-    use telio_model::{features::FeatureBatching, mesh::ExitNode};
+    use telio_model::mesh::ExitNode;
     use telio_pq::MockPostQuantum;
     use telio_proto::Session;
     use telio_proxy::MockProxy;

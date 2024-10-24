@@ -38,14 +38,7 @@ impl<'a, K: Hash + Eq, V> OccupiedEntry<'a, K, V> {
     /// Gets a mutable reference to the value in the entry.
     #[inline(always)]
     pub fn get_mut(&mut self) -> &mut V {
-        &mut self.occupied_entry().0.into_mut().data
-    }
-
-    /// Returns a mutable reference to the value and its key
-    #[inline(always)]
-    pub fn get_mut_with_key(&mut self) -> (&mut V, &K) {
-        let occ = self.occupied_entry();
-        (&mut occ.0.into_mut().data, &occ.1)
+        &mut self.occupied_entry().into_mut().data
     }
 
     /// Gets a immutable reference to the value in the entry.
@@ -65,16 +58,16 @@ impl<'a, K: Hash + Eq, V> OccupiedEntry<'a, K, V> {
     /// Removes the entry from the map.
     #[inline(always)]
     pub fn remove(&mut self) {
-        self.occupied_entry().0.remove();
+        self.occupied_entry().remove();
     }
 
-    fn occupied_entry(&'_ mut self) -> (RawOccupiedEntryMut<'_, K, TimedValue<V>>, &K) {
+    fn occupied_entry(&'_ mut self) -> RawOccupiedEntryMut<'_, K, TimedValue<V>> {
         if let RawEntryMut::Occupied(e) = self
             .map
             .raw_entry_mut()
             .from_key_hashed_nocheck(self.hash, &self.key)
         {
-            (e, &self.key)
+            e
         } else {
             unreachable!()
         }
@@ -191,7 +184,7 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
 
     /// Gets the given key’s corresponding entry in the map for in-place manipulation.
     #[inline(always)]
-    pub fn entry(&mut self, key: Key, update_last_time: bool) -> Entry<'_, Key, Value> {
+    pub fn entry(&mut self, key: Key, update_last_access_time: bool) -> Entry<'_, Key, Value> {
         let hash = self.map.hasher().hash_one(&key);
         match self.map.raw_entry_mut().from_key_hashed_nocheck(hash, &key) {
             RawEntryMut::Occupied(mut e) => {
@@ -205,7 +198,7 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
                         max_map_size: self.capacity,
                     });
                 }
-                if update_last_time {
+                if update_last_access_time {
                     Self::update_last_time(&mut e, now)
                 }
                 Entry::Occupied(OccupiedEntry {

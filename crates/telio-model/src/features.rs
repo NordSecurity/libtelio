@@ -339,7 +339,8 @@ pub struct FeatureFirewall {
     /// Turns on connection resets upon VPN server change
     #[serde(default)]
     pub boringtun_reset_conns: bool,
-    /// Custom private IP range
+    /// Customizable private IP range to treat certain private IP ranges
+    /// as public IPs for testing purposes.
     pub custom_private_ip_range: Option<Ipv4Net>,
 }
 
