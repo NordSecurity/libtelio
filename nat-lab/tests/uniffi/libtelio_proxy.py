@@ -168,3 +168,7 @@ class LibtelioProxy:
         return libtelio.NatType(
             self._handle_remote_error(lambda r: r.get_nat(ip, port))
         )
+
+    @move_to_async_thread
+    def flush_logs(self) -> None:
+        self._handle_remote_error(lambda r: r.flush_logs())

@@ -4,6 +4,7 @@ import Pyro5.api  # type: ignore
 import Pyro5.server  # type: ignore
 import sys
 import telio_bindings as libtelio  # type: ignore # pylint: disable=import-error
+import time
 from serialization import (  # type: ignore # pylint: disable=import-error
     init_serialization,
 )
@@ -51,38 +52,36 @@ class TelioEventCbImpl(libtelio.TelioEventCb):
 
 
 class TelioLoggerCbImpl(libtelio.TelioLoggerCb):
-    def __init__(self):
+    def __init__(self, logfile):
         self.lock = Lock()
-        try:
-            os.remove(TCLI_LOG)
-        except FileNotFoundError:
-            pass
+        self.logfile = logfile
+
+    def _do_log(self, log_level, payload):
+        start_ts = time.time()
+        with self.lock:
+            lock_acquired_ts = time.time()
+            self.logfile.write(f"{datetime.datetime.now()} {log_level} {payload}\n")
+        end_ts = time.time()
+        return (start_ts, lock_acquired_ts, end_ts)
 
     def log(self, log_level, payload):
-        with self.lock:
-            with open(TCLI_LOG, "a", encoding="utf-8") as logfile:
-                try:
-                    logfile.write(f"{datetime.datetime.now()} {log_level} {payload}\n")
-                except IOError as e:
-                    logfile.write(
-                        f"{datetime.datetime.now()} Failed to write logline due to error {str(e)}\n"
-                    )
+        (start_ts, lock_acquired_ts, end_ts) = self._do_log(log_level, payload)
+        if end_ts - start_ts > 0.5:
+            self._do_log(
+                log_level,
+                f"Dumping log line took too long: {start_ts} {lock_acquired_ts} {end_ts}",
+            )
 
 
 @Pyro5.api.expose
 @Pyro5.server.behavior(instance_mode="single")
 class LibtelioWrapper:
-    def __init__(self, daemon):
-        try:
-            os.remove(REMOTE_LOG)
-        except:
-            pass
-
+    def __init__(self, daemon, logfile):
         self._daemon = daemon
 
         self._libtelio = None
         self._event_cb = TelioEventCbImpl()
-        self._logger_cb = TelioLoggerCbImpl()
+        self._logger_cb = TelioLoggerCbImpl(logfile)
         libtelio.set_global_logger(libtelio.TelioLogLevel.DEBUG, self._logger_cb)
 
     def shutdown(self):
@@ -176,23 +175,35 @@ class LibtelioWrapper:
     def get_nat(self, ip: str, port: int) -> libtelio.NatType:
         return self._libtelio.get_nat(ip, port)
 
+    @serialize_error
+    def flush_logs(self):
+        self._logger_cb.logfile.flush()
+
 
 def main():
     object_name = sys.argv[1]
     container_ip = sys.argv[2]
     port = int(sys.argv[3])
 
+    # Cleanup old log files if any exists
     try:
-        daemon = Pyro5.server.Daemon(host=container_ip, port=port)
-        _, port = daemon.sock.getsockname()
-        print(f"libtelio-port:{port}")
-        sys.stdout.flush()
+        os.remove(TCLI_LOG)
+        os.remove(REMOTE_LOG)
+    except FileNotFoundError:
+        pass
 
-        wrapper = LibtelioWrapper(daemon)
-        daemon.register(wrapper, objectId=object_name)
+    try:
+        with open(TCLI_LOG, "a", encoding="utf-8") as logfile:
+            daemon = Pyro5.server.Daemon(host=container_ip, port=port)
+            _, port = daemon.sock.getsockname()
+            print(f"libtelio-port:{port}")
+            sys.stdout.flush()
 
-        daemon.requestLoop()
-        daemon.close()
+            wrapper = LibtelioWrapper(daemon, logfile)
+            daemon.register(wrapper, objectId=object_name)
+
+            daemon.requestLoop()
+            daemon.close()
     except Exception as e:  # pylint: disable=broad-exception-caught
         print(f"libtelio_remote error: {e}")
         raise e
