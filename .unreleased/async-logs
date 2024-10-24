@@ -1,0 +1,1 @@
+Logging callback is now called only from a dedicated thread
