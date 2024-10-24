@@ -1,0 +1,3 @@
+Dockerfile mounts this directory and installs all found *.deb files.
+This is useful when adding temporary binaries for testing or for overriding
+existing ones, for example - *nordderper*.
