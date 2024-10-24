@@ -1,0 +1,8 @@
+on:
+  push:
+
+jobs:
+  test:
+    runs-on: gitlab
+    steps:
+      - run: echo "Test"
