@@ -349,22 +349,19 @@ async fn daemon_event_loop(
     let socket = DaemonSocket::new(&DaemonSocket::get_ipc_socket_path()?)?;
     let cmd_listener = CommandListener { socket };
 
-    let nc = NotificationCenter::new(
-        &config,
-        vec![Arc::new(|am| {
-            println!("Example callback registered at the start: {am:?}")
-        })],
-    )
-    .await?;
-
-    nc.add_callback(Arc::new(|am| {
-        println!("Example callback registered after nc start: {am:?}")
-    }))
-    .await;
+    let nc = NotificationCenter::new(&config, vec![]).await?;
 
     // Tx is unused here, but this channel can be used to communicate with the
     // telio task
     let (tx, rx) = mpsc::channel(10);
+
+    let tx_clone = tx.clone();
+    nc.add_callback(Arc::new(move |_am| {
+        if let Err(e) = tx_clone.try_send(TelioTaskCmd::GetMeshmap) {
+            error!("Channel closed or telio not yet started. {e}");
+        };
+    }))
+    .await;
 
     // TODO: This if condition and ::default call is temporary to be removed later
     // on when we have proper integration tests with core API.
