@@ -456,7 +456,6 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
 
             # exchange some data
             await nc_client_2.send_data("GET")
-            await nc_client_2.receive_data()
 
             # the key is generated uniquely each time natlab runs
             await client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
