@@ -1,0 +1,3 @@
+*.log
+*config.json
+!example_teliod_config.json

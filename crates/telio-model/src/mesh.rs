@@ -13,7 +13,7 @@ pub use ipnet::IpNet;
 pub use std::net::{Ipv4Addr, SocketAddr};
 
 /// Description of a Node
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Node {
     /// An identifier for a node
     /// Makes it possible to distinguish different nodes in the presence of key reuse
