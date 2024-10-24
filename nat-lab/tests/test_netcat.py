@@ -1,8 +1,8 @@
 import asyncio
 import pytest
 from contextlib import AsyncExitStack
-from helpers import SetupParameters, setup_environment, setup_connections
-from utils.connection_util import ConnectionTag
+from helpers import SetupParameters, setup_environment
+from utils.connection_util import ConnectionTag, new_connection_by_tag
 from utils.netcat import NetCatServer, NetCatClient
 
 TEST_STRING = "test_data"
@@ -17,9 +17,6 @@ PORT = 12345
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-            ),
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
             ),
             marks=pytest.mark.mac,
         ),
@@ -37,8 +34,12 @@ async def test_netcat(setup_params: SetupParameters, udp: bool) -> None:
         env = await exit_stack.enter_async_context(
             setup_environment(exit_stack, [setup_params])
         )
-        connection, client_connection = [conn.connection for conn in env.connections]
+        connection, *_ = [conn.connection for conn in env.connections]
         server_ip = (await connection.get_ip_address())[1]
+
+        client_connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
 
         async with NetCatServer(connection, PORT, udp=udp).run() as server:
             await server.listening_started()
