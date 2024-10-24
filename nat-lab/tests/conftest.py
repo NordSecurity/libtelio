@@ -245,6 +245,17 @@ def pytest_runtest_setup():
 
 
 # pylint: disable=unused-argument
+def pytest_runtest_call(item):
+    start_tcpdump([f"nat-lab-dns-server-{i}-1" for i in range(1, 3)])
+
+
+# pylint: disable=unused-argument
+def pytest_runtest_makereport(item, call):
+    if call.when == "call":
+        stop_tcpdump([f"nat-lab-dns-server-{i}-1" for i in range(1, 3)])
+
+
+# pylint: disable=unused-argument
 def pytest_sessionfinish(session, exitstatus):
     if os.environ.get("NATLAB_SAVE_LOGS") is None:
         return
