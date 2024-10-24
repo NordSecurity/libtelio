@@ -1649,6 +1649,7 @@ mod tests {
                 .expect_trigger_endpoint_candidates_discovery()
                 .returning(|_| Ok(()));
             stun_ep_provider.expect_pause().returning(|| ());
+            stun_ep_provider.expect_name().returning(|| "stun");
             stun_ep_provider
         }
 
