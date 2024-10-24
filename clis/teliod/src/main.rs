@@ -349,7 +349,7 @@ async fn daemon_event_loop(
     let socket = DaemonSocket::new(&DaemonSocket::get_ipc_socket_path()?)?;
     let cmd_listener = CommandListener { socket };
 
-    let nc = NotificationCenter::new(&config, vec![]).await?;
+    let nc = NotificationCenter::new(&config).await?;
 
     // Tx is unused here, but this channel can be used to communicate with the
     // telio task

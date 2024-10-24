@@ -86,11 +86,8 @@ struct NCConfig {
 }
 
 impl NotificationCenter {
-    pub async fn new(
-        config: &super::TeliodDaemonConfig,
-        callbacks: Vec<Callback>,
-    ) -> Result<Self, Error> {
-        let callbacks = Arc::new(Mutex::new(callbacks));
+    pub async fn new(config: &super::TeliodDaemonConfig) -> Result<Self, Error> {
+        let callbacks = Arc::new(Mutex::new(vec![]));
 
         let nc_config = NCConfig {
             authentication_token: config.authentication_token.clone(),
