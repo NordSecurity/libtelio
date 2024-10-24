@@ -1,5 +1,5 @@
 import asyncio
-from config import LIBTELIO_BINARY_PATH_MAC_VM, LIBTELIO_BINARY_PATH_WINDOWS_VM
+from config import LIBTELIO_BINARY_PATH_MAC_VM
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional, AsyncIterator
@@ -9,12 +9,17 @@ from utils.process import Process
 from utils.python import get_python_binary
 
 
-def _get_netcat_script_path(connection: Connection) -> str:
+def _get_netcat_base_command(connection: Connection) -> list[str]:
     if connection.target_os == TargetOS.Windows:
-        return LIBTELIO_BINARY_PATH_WINDOWS_VM + "netcat.py"
+        # TODO: LLT-5689 implement for windows
+        raise NotImplementedError
     if connection.target_os == TargetOS.Mac:
-        return LIBTELIO_BINARY_PATH_MAC_VM + "netcat.py"
-    return "nc"
+        return [
+            get_python_binary(connection),
+            LIBTELIO_BINARY_PATH_MAC_VM + "netcat.py",
+        ]
+    # use the built in netcat command on linux
+    return ["nc"]
 
 
 class NetCat:
@@ -67,16 +72,8 @@ class NetCat:
         if port_scan and not listen:
             flags += "z"
 
-        # use the built in netcat command on linux
-        if connection.target_os == TargetOS.Linux:
-            command = ["nc", flags, str(port)]
-        else:
-            command = [
-                get_python_binary(connection),
-                _get_netcat_script_path(connection),
-                flags,
-                str(port),
-            ]
+        command = _get_netcat_base_command(connection)
+        command.extend([flags, str(port)])
 
         if source_ip and not listen:
             command.insert(-1, "-s")
