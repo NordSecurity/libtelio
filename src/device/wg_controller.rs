@@ -192,6 +192,16 @@ async fn consolidate_wg_peers<
     for (_, peer) in actual_peers.iter() {
         if is_peer_proxying(peer, &proxy_endpoints) && peer.state() == NodeState::Connected {
             is_any_peer_eligible_for_upgrade = true;
+
+            if let Some(cpc) = cross_ping_check {
+                let _ = cpc.unpause(peer.public_key).await;
+            } else {
+                telio_log_debug!("CPC not available");
+            }
+        } else if let Some(cpc) = cross_ping_check {
+            let _ = cpc.pause(peer.public_key).await;
+        } else {
+            telio_log_debug!("CPC not available");
         }
     }
 
@@ -1690,6 +1700,14 @@ mod tests {
                 .returning(move || Ok(proxy_endpoint_map.clone()));
         }
 
+        fn then_cpc_paused(&mut self, key: PublicKey) {
+            self.cross_ping_check
+                .expect_pause()
+                .once()
+                .with(eq(key))
+                .return_once(|_| Ok(()));
+        }
+
         fn then_proxy_mute(&mut self, input: Vec<(PublicKey, Option<Duration>)>) {
             for i in input {
                 self.proxy
@@ -1919,16 +1937,6 @@ mod tests {
             }
         }
 
-        fn then_keeper_del_node(&mut self, input: Vec<PublicKey>) {
-            for pk in input {
-                self.session_keeper
-                    .expect_remove_node()
-                    .once()
-                    .with(eq(pk))
-                    .return_once(|_| Ok(()));
-            }
-        }
-
         fn then_notify_successfull_wg_connection_upgrade(&mut self, input: Vec<PublicKey>) {
             for i in input {
                 self.cross_ping_check
@@ -2121,6 +2129,7 @@ mod tests {
             pub_key,
             Some(Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW)),
         )]);
+        f.then_cpc_paused(pub_key);
 
         f.consolidate_peers().await;
     }
@@ -2184,7 +2193,7 @@ mod tests {
             direct_keepalive_period,
             None,
         )]);
-
+        f.then_cpc_paused(pub_key);
         f.consolidate_peers().await;
     }
 
@@ -2259,6 +2268,7 @@ mod tests {
             Some(Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW)),
         )]);
 
+        f.then_cpc_paused(pub_key);
         f.consolidate_peers().await;
     }
 
@@ -2310,6 +2320,7 @@ mod tests {
         f.session_keeper.expect_get_interval().return_const(None);
         f.then_cross_ping_check_notfied_about_failed_connections(vec![pub_key]);
 
+        f.then_cpc_paused(pub_key);
         f.consolidate_peers().await;
     }
 
@@ -2457,6 +2468,7 @@ mod tests {
 
         f.then_del_peer(vec![pub_key]);
 
+        f.then_cpc_paused(pub_key);
         f.consolidate_peers().await;
     }
 
@@ -2488,6 +2500,7 @@ mod tests {
         f.session_keeper.expect_get_interval().return_const(None);
         // then nothing happens
 
+        f.then_cpc_paused(pub_key);
         f.consolidate_peers().await;
     }
 
@@ -2519,7 +2532,7 @@ mod tests {
         f.when_upgrade_requests(vec![]);
         f.session_keeper.expect_get_interval().return_const(None);
         f.then_notify_successfull_wg_connection_upgrade(vec![pub_key]);
-
+        f.then_cpc_paused(pub_key);
         f.consolidate_peers().await;
     }
 
@@ -2839,7 +2852,7 @@ mod tests {
             TEST_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
             None,
         )]);
-
+        f.then_cpc_paused(pub_key);
         f.consolidate_peers().await;
     }
 

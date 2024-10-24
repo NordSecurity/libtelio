@@ -47,6 +47,8 @@ pub trait UpgradeController: Send + Sync {
 
 #[async_trait]
 pub trait CrossPingCheckTrait: UpgradeController {
+    async fn pause(&self, key: PublicKey) -> Result<(), Error>;
+    async fn unpause(&self, key: PublicKey) -> Result<(), Error>;
     async fn configure(&self, config: Option<Config>) -> Result<(), Error>;
     async fn get_validated_endpoints(
         &self,
@@ -63,6 +65,8 @@ mockall::mock! {
 
     #[async_trait]
     impl CrossPingCheckTrait for CrossPingCheckTrait {
+        async fn pause(&self, key: PublicKey) -> Result<(), Error>;
+        async fn unpause(&self, key: PublicKey) -> Result<(), Error>;
         async fn configure(&self, config: Option<Config>) -> Result<(), Error>;
         async fn get_validated_endpoints(
             &self,
@@ -220,6 +224,49 @@ impl CrossPingCheck {
 
 #[async_trait]
 impl CrossPingCheckTrait for CrossPingCheck {
+    async fn pause(&self, key: PublicKey) -> Result<(), Error> {
+        telio_log_debug!("Pausing CPC for {}", key);
+
+        let _ = task_exec!(&self.task, async move |s| {
+            s.endpoint_connectivity_check_state
+                .values_mut()
+                .filter(|v| v.public_key == key)
+                .for_each(|v| {
+                    v.state = EndpointStateMachine::new(EndpointState::Paused);
+                });
+            Ok(())
+        })
+        .await;
+
+        Ok(())
+    }
+
+    // Pause and Unpause calls are very important to be idempotent. wg_controller's consolidation
+    // is called with the same arguments over and over again.
+    // For this it only makes sense to go back to `Disconnected` when we were explicitly paused
+    // before or else just leave the state as-is.
+    async fn unpause(&self, key: PublicKey) -> Result<(), Error> {
+        telio_log_debug!("Unpausing CPC for {}", key);
+
+        let _ = task_exec!(&self.task, async move |s| {
+            s.endpoint_connectivity_check_state
+                .values_mut()
+                .filter(|v| v.public_key == key)
+                .for_each(|v| {
+                    if v.state.get() == EndpointState::Paused {
+                        telio_log_debug!("CPC Unpausing endpoint(was paused) for {}", key);
+                        v.state =
+                            EndpointStateMachine::new(EndpointState::Disconnected(Event::StartUp));
+                    }
+                });
+
+            Ok(())
+        })
+        .await;
+
+        Ok(())
+    }
+
     async fn get_validated_endpoints(
         &self,
     ) -> Result<HashMap<PublicKey, WireGuardEndpointCandidateChangeEvent>, Error> {
@@ -286,7 +333,7 @@ impl CrossPingCheckTrait for CrossPingCheck {
 }
 
 impl<E: Backoff> State<E> {
-    fn get_connectivty_check_state<'a>(
+    fn get_connectivity_check_state<'a>(
         ep_connectivity_state: &'a mut HashMap<Session, EndpointConnectivityCheckState<E>>,
         session_id: &Session,
     ) -> Result<&'a mut EndpointConnectivityCheckState<E>, Error> {
@@ -451,7 +498,7 @@ impl<E: Backoff> State<E> {
 
     async fn handle_pong_rx_event(&mut self, event: PongEvent) -> Result<(), Error> {
         let session_id = event.msg.get_session();
-        let session = State::get_connectivty_check_state(
+        let session = State::get_connectivity_check_state(
             &mut self.endpoint_connectivity_check_state,
             &session_id,
         )?;
@@ -506,7 +553,7 @@ impl<E: Backoff> State<E> {
             CallMeMaybeType::RESPONDER => {
                 // Find session and forward the call me maybe message there
                 let session_id = message.get_session();
-                let session = State::get_connectivty_check_state(
+                let session = State::get_connectivity_check_state(
                     &mut self.endpoint_connectivity_check_state,
                     &session_id,
                 )?;
@@ -965,7 +1012,15 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
                     }
                 }
             }
-            _ => {}
+            EndpointState::Published
+            | EndpointState::Disconnected(Event::SendCallMeMaybeRequest)
+            | EndpointState::Disconnected(Event::ReceiveCallMeMaybeResponse)
+            | EndpointState::Disconnected(Event::Publish) => {
+                // nothing to do here.
+            }
+            EndpointState::Paused => {
+                // endpoint is paused, meaning it should be dormant, thus not do anything
+            }
         };
 
         Ok(())
@@ -1191,11 +1246,16 @@ mod tests {
         assert!(checker.get_validated_endpoints().await.unwrap().is_empty());
     }
 
+    #[rstest]
+    #[case(EndpointState::Disconnected(Event::StartUp))]
+    #[case(EndpointState::Paused)]
     #[tokio::test]
-    async fn endpoint_connectivity_check_state_send_cmm_request() {
+    async fn endpoint_connectivity_check_state_send_cmm_request(
+        #[case] start_state: EndpointState,
+    ) {
         let last_rx_time_provider_mock = Arc::new(Mutex::new(MockTimeSinceLastRxProvider::new()));
         let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
-            EndpointStateMachine::new(EndpointState::Disconnected(Event::StartUp)),
+            EndpointStateMachine::new(start_state),
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080),
             last_rx_time_provider_mock,
         );
@@ -1208,12 +1268,21 @@ mod tests {
 
         assert_eq!(
             endpoint_connectivity_check_state.state,
-            EndpointState::EndpointGathering,
+            if start_state == EndpointState::Paused {
+                EndpointState::Paused
+            } else {
+                EndpointState::EndpointGathering
+            },
         );
     }
 
+    #[rstest]
+    #[case(EndpointState::EndpointGathering)]
+    #[case(EndpointState::Paused)]
     #[tokio::test]
-    async fn endpoint_connectivity_check_state_receive_cmm_response() {
+    async fn endpoint_connectivity_check_state_receive_cmm_response(
+        #[case] start_state: EndpointState,
+    ) {
         let last_rx_time_provider_mock = Arc::new(Mutex::new(MockTimeSinceLastRxProvider::new()));
         let mut endpoint_provider_mock = MockEndpointProvider::new();
         let endpoint = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080);
@@ -1221,7 +1290,7 @@ mod tests {
             .expect_send_ping()
             .returning(|_, _, _| Ok(()));
         let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
-            EndpointStateMachine::new(EndpointState::EndpointGathering),
+            EndpointStateMachine::new(start_state),
             endpoint,
             last_rx_time_provider_mock.clone(),
         );
@@ -1236,24 +1305,36 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(endpoint_connectivity_check_state.state, EndpointState::Ping);
+        assert_eq!(
+            endpoint_connectivity_check_state.state,
+            if start_state == EndpointState::Paused {
+                EndpointState::Paused
+            } else {
+                EndpointState::Ping
+            }
+        );
     }
 
+    #[rstest]
+    #[case(EndpointState::Ping)]
+    #[case(EndpointState::Paused)]
     #[tokio::test]
-    async fn endpoint_connectivity_check_state_publish() {
+    async fn endpoint_connectivity_check_state_publish(#[case] start_state: EndpointState) {
         let last_rx_time_provider_mock = Arc::new(Mutex::new(MockTimeSinceLastRxProvider::new()));
         let endpoint = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080);
         let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
-            EndpointStateMachine::new(EndpointState::Ping),
+            EndpointStateMachine::new(start_state),
             endpoint,
             last_rx_time_provider_mock.clone(),
         );
 
-        endpoint_connectivity_check_state
-            .exponential_backoff
-            .expect_reset()
-            .times(1)
-            .returning(|| ());
+        if start_state != EndpointState::Paused {
+            endpoint_connectivity_check_state
+                .exponential_backoff
+                .expect_reset()
+                .times(1)
+                .returning(|| ());
+        }
 
         let msg = PingerMsg::ping(WGPort(2), 1, 10_u64)
             .pong(
@@ -1276,15 +1357,22 @@ mod tests {
 
         assert_eq!(
             endpoint_connectivity_check_state.state,
-            EndpointState::Published
+            if start_state == EndpointState::Paused {
+                EndpointState::Paused
+            } else {
+                EndpointState::Published
+            }
         );
     }
 
+    #[rstest]
+    #[case(EndpointState::Published)]
+    #[case(EndpointState::Paused)]
     #[tokio::test]
-    async fn endpoint_connectivity_check_state_endpoint_gone() {
+    async fn endpoint_connectivity_check_state_endpoint_gone(#[case] start_state: EndpointState) {
         let last_rx_time_provider_mock = Arc::new(Mutex::new(MockTimeSinceLastRxProvider::new()));
         let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
-            EndpointStateMachine::new(EndpointState::Published),
+            EndpointStateMachine::new(start_state),
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080),
             last_rx_time_provider_mock.clone(),
         );
@@ -1296,15 +1384,24 @@ mod tests {
 
         assert_eq!(
             endpoint_connectivity_check_state.state,
-            (EndpointState::Disconnected(Event::EndpointGone))
+            if start_state == EndpointState::Paused {
+                EndpointState::Paused
+            } else {
+                EndpointState::Disconnected(Event::EndpointGone)
+            }
         );
     }
 
+    #[rstest]
+    #[case(EndpointState::EndpointGathering)]
+    #[case(EndpointState::Paused)]
     #[tokio::test(start_paused = true)]
-    async fn endpoint_connectivity_check_state_timeout_endpoint_gathering() {
+    async fn endpoint_connectivity_check_state_timeout_endpoint_gathering(
+        #[case] start_state: EndpointState,
+    ) {
         let last_rx_time_provider_mock = Arc::new(Mutex::new(MockTimeSinceLastRxProvider::new()));
         let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
-            EndpointStateMachine::new(EndpointState::EndpointGathering),
+            EndpointStateMachine::new(start_state),
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080),
             last_rx_time_provider_mock.clone(),
         );
@@ -1317,28 +1414,11 @@ mod tests {
 
         assert_eq!(
             endpoint_connectivity_check_state.state,
-            (EndpointState::Disconnected(Event::Timeout))
-        );
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn endpoint_connectivity_check_state_timeout_ping() {
-        let last_rx_time_provider_mock = Arc::new(Mutex::new(MockTimeSinceLastRxProvider::new()));
-        let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
-            EndpointStateMachine::new(EndpointState::EndpointGathering),
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080),
-            last_rx_time_provider_mock.clone(),
-        );
-
-        time::advance(Duration::from_secs(11)).await;
-        endpoint_connectivity_check_state
-            .handle_tick_event(0, Chan::default().tx)
-            .await
-            .unwrap();
-
-        assert_eq!(
-            endpoint_connectivity_check_state.state,
-            (EndpointState::Disconnected(Event::Timeout))
+            if start_state == EndpointState::Paused {
+                EndpointState::Paused
+            } else {
+                EndpointState::Disconnected(Event::Timeout)
+            }
         );
     }
 
@@ -1427,8 +1507,13 @@ mod tests {
         }
     }
 
+    #[rstest]
+    #[case(EndpointState::EndpointGathering)]
+    #[case(EndpointState::Paused)]
     #[tokio::test]
-    async fn endpoint_connectivity_check_send_ping_to_all_providers_even_if_one_fails() {
+    async fn endpoint_connectivity_check_send_ping_to_all_providers_even_if_one_fails(
+        #[case] start_state: EndpointState,
+    ) {
         let last_rx_time_provider_mock = Arc::new(Mutex::new(MockTimeSinceLastRxProvider::new()));
         let endpoint = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080);
 
@@ -1443,7 +1528,7 @@ mod tests {
             .returning(|_, _, _| Ok(()));
 
         let mut endpoint_connectivity_check_state = prepare_test_session_in_state(
-            EndpointStateMachine::new(EndpointState::EndpointGathering),
+            EndpointStateMachine::new(start_state),
             endpoint,
             last_rx_time_provider_mock.clone(),
         );
@@ -1461,7 +1546,14 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(endpoint_connectivity_check_state.state, EndpointState::Ping);
+        assert_eq!(
+            endpoint_connectivity_check_state.state,
+            if start_state == EndpointState::Paused {
+                EndpointState::Paused
+            } else {
+                EndpointState::Ping
+            }
+        );
     }
 
     #[rstest]
