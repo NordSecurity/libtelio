@@ -1,11 +1,13 @@
 use std::{num::NonZeroU64, path::PathBuf, str::FromStr};
 
-use serde::{de, Deserialize, Deserializer};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use smart_default::SmartDefault;
 use tracing::level_filters::LevelFilter;
 use uuid::Uuid;
 
-#[derive(PartialEq, Eq, Clone, Copy, Debug, SmartDefault)]
+use telio::crypto::{PublicKey, SecretKey};
+
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Serialize, SmartDefault)]
 #[repr(transparent)]
 pub struct Percentage(u8);
 
@@ -17,7 +19,7 @@ impl std::ops::Mul<std::time::Duration> for Percentage {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Deserialize, SmartDefault)]
+#[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize, SmartDefault)]
 #[serde(default)]
 pub struct MqttConfig {
     /// Starting backoff time for mqtt retry, has to be at least one. (in seconds)
@@ -50,9 +52,21 @@ fn reconnect_after_expiry_default() -> Percentage {
     Percentage(90)
 }
 
-#[derive(PartialEq, Eq, Deserialize, Debug)]
+#[derive(Deserialize, Debug, Default)]
+pub struct ClientConfig {
+    pub hw_identifier: String,
+    pub auth_token: String,
+    pub private_key: SecretKey,
+    pub public_key: PublicKey,
+    pub machine_identifier: String,
+}
+
+#[derive(PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct TeliodDaemonConfig {
-    #[serde(deserialize_with = "deserialize_log_level")]
+    #[serde(
+        deserialize_with = "deserialize_log_level",
+        serialize_with = "serialize_log_level"
+    )]
     pub log_level: LevelFilter,
     pub log_file_path: String,
 
@@ -66,6 +80,10 @@ pub struct TeliodDaemonConfig {
 
     #[serde(default)]
     pub mqtt: MqttConfig,
+
+    pub private_key: Option<SecretKey>,
+    pub machine_identifier: Option<String>,
+    pub hw_identifier: Option<String>,
 }
 
 fn deserialize_percent<'de, D>(deserializer: D) -> Result<Percentage, D::Error>
@@ -79,6 +97,22 @@ where
         ));
     }
     Ok(Percentage(value))
+}
+
+fn serialize_log_level<S>(level: &LevelFilter, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let level_str = match level {
+        &LevelFilter::ERROR => "error",
+        &LevelFilter::WARN => "warn",
+        &LevelFilter::INFO => "info",
+        &LevelFilter::DEBUG => "debug",
+        &LevelFilter::TRACE => "trace",
+        &LevelFilter::OFF => "off",
+    };
+
+    serializer.serialize_str(level_str)
 }
 
 fn deserialize_log_level<'de, D>(deserializer: D) -> Result<LevelFilter, D::Error>
@@ -133,6 +167,9 @@ mod tests {
                 reconnect_after_expiry: Percentage(90),
                 certificate_file_path: None,
             },
+            hw_identifier: None,
+            machine_identifier: None,
+            private_key: None,
         };
 
         {
