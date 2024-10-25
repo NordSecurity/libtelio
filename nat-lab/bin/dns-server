@@ -1,5 +1,6 @@
 #!/bin/env python3
 
+import logging
 from twisted.internet import defer, reactor
 from twisted.names import dns, server
 
@@ -30,22 +31,23 @@ KNOWN = {
 
 class DNSResolver:
     def _reply(self, name, type, record):
-        print(f"Resolving name: {name} => {record}")
+        logging.info(f"Resolving name: {name} => {record}")
         if record is None:
             return [], [], []
         answer = dns.RRHeader(name=name, type=type, payload=record)
         return [answer], [], []
 
     def query(self, query, timeout=None):
-        print(f"query: {query}")
+        logging.info(f"query: {query}")
         record = KNOWN[query.type][query.name.name]
         return defer.succeed(self._reply(query.name.name, query.type, record))
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     factory = server.DNSServerFactory(clients=[DNSResolver()])
     protocol = dns.DNSDatagramProtocol(controller=factory)
     reactor.listenUDP(53, protocol, interface='::')
     reactor.listenTCP(53, factory, interface='::')
-    print(f"DNS server starting with known hostnames: {KNOWN}")
+    logging.info(f"DNS server starting with known hostnames: {KNOWN}")
     reactor.run()

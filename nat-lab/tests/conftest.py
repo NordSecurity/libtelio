@@ -245,21 +245,54 @@ def pytest_runtest_setup():
 
 
 # pylint: disable=unused-argument
+def pytest_runtest_call(item):
+    start_tcpdump([f"nat-lab-dns-server-{i}-1" for i in range(1, 3)])
+
+
+# pylint: disable=unused-argument
+def pytest_runtest_makereport(item, call):
+    if call.when == "call":
+        stop_tcpdump([f"nat-lab-dns-server-{i}-1" for i in range(1, 3)])
+
+
+# pylint: disable=unused-argument
 def pytest_sessionfinish(session, exitstatus):
     if os.environ.get("NATLAB_SAVE_LOGS") is None:
         return
 
     if not session.config.option.collectonly:
-        num_containers = 3
+        collect_nordderper_logs()
+        collect_dns_server_logs()
 
-        for i in range(1, num_containers + 1):
-            container_name = f"nat-lab-derp-{i:02d}-1"
-            destination_path = f"logs/derp_{i:02d}_relay.log"
 
-            docker_cp_command = f"docker cp {container_name}:/etc/nordderper/relay.log {destination_path}"
+def collect_nordderper_logs():
+    num_containers = 3
 
-            try:
-                subprocess.run(docker_cp_command, shell=True, check=True)
-                print(f"Log file copied successfully from {container_name}")
-            except subprocess.CalledProcessError:
-                print(f"Error copying log file from {container_name}")
+    for i in range(1, num_containers + 1):
+        container_name = f"nat-lab-derp-{i:02d}-1"
+        destination_path = f"logs/derp_{i:02d}_relay.log"
+
+        copy_file_from_container(
+            container_name, "/etc/nordderper/relay.log", destination_path
+        )
+
+
+def collect_dns_server_logs():
+    num_containers = 2
+
+    for i in range(1, num_containers + 1):
+        container_name = f"nat-lab-dns-server-{i}-1"
+        destination_path = f"logs/dns_server_{i}.log"
+
+        copy_file_from_container(container_name, "/dns-server.log", destination_path)
+
+
+def copy_file_from_container(container_name, src_path, dst_path):
+    docker_cp_command = f"docker cp {container_name}:{src_path} {dst_path}"
+    try:
+        subprocess.run(docker_cp_command, shell=True, check=True)
+        print(
+            f"Log file {src_path} copied successfully from {container_name} to {dst_path}"
+        )
+    except subprocess.CalledProcessError:
+        print(f"Error copying log file {src_path} from {container_name} to {dst_path}")
