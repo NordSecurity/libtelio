@@ -68,13 +68,19 @@ where
         event: &tracing::Event<'_>,
     ) -> std::fmt::Result {
         let tid = std::thread::current().id();
+        write!(writer, "{tid:?} ",)?;
+
         let meta = event.metadata();
-        write!(
-            writer,
-            "{tid:?} {:?}:{} ",
-            meta.module_path().unwrap_or("<unknown module>"),
-            meta.line().unwrap_or(0),
-        )?;
+        // When module path and line are None, it is most likely forwarded `log` crate log, which
+        // probably has it's own info - thus there is no point with prefixing it with "unknown"
+        if meta.module_path().is_some() || meta.line().is_some() {
+            write!(
+                writer,
+                "{:?}:{} ",
+                meta.module_path().unwrap_or("<unknown module>"),
+                meta.line().unwrap_or(0),
+            )?;
+        }
 
         ctx.format_fields(writer.by_ref(), event)?;
 

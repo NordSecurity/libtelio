@@ -11,6 +11,7 @@ use telio_wg::AdapterType;
 use tracing::{error, trace};
 
 use telio_sockets::protector::make_external_protector;
+use tracing_log::LogTracer;
 use uuid::Uuid;
 
 use std::{
@@ -70,6 +71,7 @@ where
 /// - `logger`: Callback to handle logging events.
 pub fn set_global_logger(log_level: TelioLogLevel, logger: Box<dyn TelioLoggerCb>) {
     let tracing_subscriber = logging::build_subscriber(log_level, logger);
+    let _ = LogTracer::init();
     if tracing::subscriber::set_global_default(tracing_subscriber).is_err() {
         telio_log_warn!("Could not set logger, because logger had already been set by previous libtelio instance");
     }

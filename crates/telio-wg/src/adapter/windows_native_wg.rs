@@ -86,14 +86,16 @@ impl WindowsNativeWg {
                     if let Ok(mut watcher) = watcher.lock() {
                         if let Err(monitoring_err) = watcher.start_monitoring() {
                             return Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
-                                "Failed to start watcher with err {}",
-                                monitoring_err
+                                "Failed to start watcher with err {}, last os error: {}",
+                                monitoring_err,
+                                IOError::last_os_error()
                             ))));
                         }
                     } else {
-                        return Err(AdapterError::WindowsNativeWg(Error::Fail(
-                            "error obtaining lock".into(),
-                        )));
+                        return Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+                            "error obtaining lock, last os error: {}",
+                            IOError::last_os_error()
+                        ))));
                     }
 
                     // Try to create a new adapter
@@ -107,20 +109,23 @@ impl WindowsNativeWg {
                                 watcher.configure(wgnt.adapter.clone(), luid);
                                 Ok(wgnt)
                             } else {
-                                Err(AdapterError::WindowsNativeWg(Error::Fail(
-                                    "error obtaining lock".into(),
-                                )))
+                                Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+                                    "error obtaining lock, last os error: {}",
+                                    IOError::last_os_error(),
+                                ))))
                             }
                         }
                         Err((e, _)) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
-                            "Failed to create adapter: {:?}",
-                            e
+                            "Failed to create adapter: {:?}, last os error: {}",
+                            e,
+                            IOError::last_os_error(),
                         )))),
                     }
                 }
                 Err(e) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
-                    "Failed to load wireguard dll: {:?}",
-                    e
+                    "Failed to load wireguard dll: {:?}, last os error: {}",
+                    e,
+                    IOError::last_os_error(),
                 )))),
             }
         }
@@ -145,9 +150,10 @@ impl WindowsNativeWg {
         let wg_dev = Self::create(pool, name, dll_path)?;
         telio_log_info!("Adapter '{}' created successfully", name);
         if !service::wait_for_service("WireGuard", service::DEFAULT_SERVICE_WAIT_TIMEOUT) {
-            return Err(AdapterError::WindowsNativeWg(Error::Fail(
-                "WireGuard service not running".to_string(),
-            )));
+            return Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+                "WireGuard service not running, last error: {}",
+                IOError::last_os_error()
+            ))));
         }
         if !wg_dev
             .adapter
