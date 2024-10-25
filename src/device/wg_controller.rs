@@ -81,6 +81,12 @@ pub async fn consolidate_wg_state(
     )
     .await?;
     consolidate_wg_fwmark(requested_state, &*entities.wireguard_interface).await?;
+    consolidate_endpoint_invalidation(
+        &*entities.wireguard_interface,
+        entities.meshnet.left().map(|m| &*m.proxy),
+        entities.cross_ping_check(),
+    )
+    .await?;
     consolidate_wg_peers(
         requested_state,
         &*entities.wireguard_interface,
@@ -107,6 +113,13 @@ pub async fn consolidate_wg_state(
     )
     .boxed()
     .await?;
+    consolidate_endpoint_invalidation(
+        &*entities.wireguard_interface,
+        entities.meshnet.left().map(|m| &*m.proxy),
+        entities.cross_ping_check(),
+    )
+    .await?;
+
     let starcast_pub_key = if let Some(starcast_vpeer) = entities.starcast_vpeer() {
         Some(starcast_vpeer.get_peer().await?.public_key)
     } else {
@@ -151,6 +164,104 @@ async fn consolidate_wg_fwmark<W: WireGuard>(
     if actual_fwmark != requested_fwmark {
         wireguard_interface.set_fwmark(requested_fwmark).await?;
     }
+    Ok(())
+}
+
+async fn consolidate_endpoint_invalidation<W: WireGuard, P: Proxy, C: CrossPingCheckTrait>(
+    wireguard_interface: &W,
+    proxy: Option<&P>,
+    cross_ping_check: Option<&Arc<C>>,
+) -> Result {
+    // For each peer, we have to notify CPC and Endpoint Providers if
+    // some endpoint failed.
+    //    Endpoint failure is considered to be one of two things:
+    //    * Endpoint has been downgraded for any reason
+    //    * Remote node has roamed to different endpoint
+    //
+    //    Endpoint is *not* considered failed if endpoint has changed in
+    //    WireGuard by writing to it.
+    //
+    // Note:  Invalidation must be done before WireGuard peer consolidation,
+    //        as we must *not* consider endpoints-to-be-invalidated as eligible
+    //        for upgrade
+    // Note2: But, on the other hand, if WireGuard Peers consolidation makes
+    //        a decision to downgrade its connection - running this endpoint
+    //        invalidation just before WG peer consolidation would delay endpoint
+    //        invalidation until the next consolidation cycle. This is undesirable,
+    //        therefore endpoint invalidation checks should be run before *and*
+    //        after WireGuard peer consolidation.
+
+    // Retreive some helper values
+    let (proxy_endpoints, cpc, checked_endpoints) = match (proxy, cross_ping_check) {
+        (Some(proxy), Some(cpc)) => (
+            proxy.get_endpoint_map().await?,
+            cpc,
+            cpc.get_validated_endpoints().await?,
+        ),
+        _ => {
+            return Ok(()); // Meshnet is disabled
+        }
+    };
+    let actual_peers = wireguard_interface.get_interface().await?.peers;
+
+    // Each peer endpoint invalidation is processed individually
+    for (public_key, actual_peer) in actual_peers {
+        let is_proxying = is_peer_proxying(&actual_peer, &proxy_endpoints);
+        let actual_endpoint = actual_peer.endpoint;
+        let changed_at = actual_peer.endpoint_changed_at;
+        let published_endpoint = checked_endpoints.get(&public_key);
+        let published_at = published_endpoint.map(|endpoint| endpoint.changed_at);
+        let mut should_invalidate_endpoints = false;
+
+        // At debug level -> log every endpoint invalidation consideration. For info - only once a
+        // decision to invalidate has been taken
+        telio_log_debug!(
+            "Considering endpoint invalidation.\
+                         Decision info: {is_proxying:?} \
+                         {actual_endpoint:?} {changed_at:?} \
+                         {published_endpoint:?} {published_at:?}"
+        );
+
+        // If endpoint has never changed in wireguard or we have no published endpoints - there is
+        // nothing to invalidate.
+        let (changed_at, published_at) = match (changed_at, published_at) {
+            (Some(changed_at), Some(published_at)) => (changed_at, published_at),
+            _ => continue,
+        };
+
+        // Any endpoint published before an actual downgrade has occured is considered failed
+        if is_proxying && (published_at < changed_at.0) {
+            let change_reason = changed_at.1;
+            telio_log_info!(
+                "Invalidating published EPs for {public_key:?} after downgrade.\
+                            Decision info: {actual_endpoint:?} {changed_at:?} {change_reason:?}\
+                            {published_endpoint:?} {published_at:?}"
+            );
+            should_invalidate_endpoints = true;
+        }
+
+        // In direct connection if we have roamed from one direct EP to another - old checked EP is
+        // considered not valid anymore.
+        // Note, that endpoint change caused by libtelio writing new endpoint into WireGuard interface
+        // is *not* considered roaming.
+        if !is_proxying && changed_at.1 == UpdateReason::Pull && (published_at < changed_at.0) {
+            telio_log_info!(
+                "Invalidating published EPs for {public_key:?} after roaming.\
+                            Decision info: {actual_endpoint:?} {changed_at:?} \
+                            {published_endpoint:?} {published_at:?}"
+            );
+            should_invalidate_endpoints = true;
+        }
+
+        if should_invalidate_endpoints {
+            if let Err(err) = cpc.notify_failed_wg_connection(public_key).await {
+                telio_log_warn!(
+                    "Failed to send connection failed report for {public_key}: {err:?}"
+                );
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -872,7 +983,6 @@ async fn build_requested_meshnet_peers_list<
                 None => &[],
             },
             &upgrade_request_endpoint,
-            cross_ping_check,
         )
         .await?;
 
@@ -951,45 +1061,17 @@ fn deduplicate_peer_ips(peers: &[telio_model::config::Peer]) -> HashMap<PublicKe
 
 // Select endpoint for peer
 #[allow(clippy::too_many_arguments)]
-async fn select_endpoint_for_peer<'a, C: CrossPingCheckTrait>(
+async fn select_endpoint_for_peer<'a>(
     public_key: &PublicKey,
     actual_peer: &Option<Peer>,
     time_since_last_rx: &Option<Duration>,
     peer_state: PeerState,
-    mut checked_endpoint: &Option<WireGuardEndpointCandidateChangeEvent>,
+    checked_endpoint: &Option<WireGuardEndpointCandidateChangeEvent>,
     proxy_endpoint: &[SocketAddr],
     upgrade_request_endpoint: &Option<SocketAddr>,
-    cross_ping_check: Option<&Arc<C>>,
 ) -> Result<(Option<SocketAddr>, Option<EndpointState>)> {
     // Retrieve some helper information
     let actual_endpoint = actual_peer.as_ref().and_then(|p| p.endpoint);
-
-    let is_actual_endpoint_newer = {
-        let changed_at = actual_peer.as_ref().and_then(|p| p.endpoint_changed_at);
-        let checked_at = checked_endpoint.as_ref().map(|e| e.changed_at);
-        match (changed_at, checked_at) {
-            (Some((wg, reason)), Some(cpc)) => {
-                telio_log_debug!(
-                    "Wg endpoints timestamps: Current: {:?} Published: {:?} Last change reason: {:?}",
-                    wg,
-                    cpc,
-                    reason
-                );
-                wg >= cpc && reason == UpdateReason::Pull
-            }
-            _ => false,
-        }
-    };
-    if is_actual_endpoint_newer {
-        checked_endpoint = &None;
-        if let Some(cpc) = cross_ping_check {
-            if let Err(err) = cpc.notify_failed_wg_connection(*public_key).await {
-                telio_log_warn!(
-                    "Failed to send connection failed report for {public_key}: {err:?}"
-                );
-            }
-        }
-    }
 
     // Use match statement to cover all possible variants
     match (upgrade_request_endpoint, peer_state, checked_endpoint) {
@@ -1653,6 +1735,23 @@ mod tests {
             stun_ep_provider
         }
 
+        fn create_any_allowed_ips() -> Vec<IpAddr> {
+            let ip1 = IpAddr::from([1, 2, 3, 4]);
+            let ip1v6 = IpAddr::V6(Ipv6Addr::from([
+                1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4,
+            ]));
+            let ip2 = IpAddr::from([5, 6, 7, 8]);
+            let ip2v6 = IpAddr::V6(Ipv6Addr::from([
+                5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8,
+            ]));
+
+            vec![ip1, ip1v6, ip2, ip2v6]
+        }
+
+        fn create_any_session_id() -> u64 {
+            rand::random()
+        }
+
         fn when_requested_meshnet_config(&mut self, input: Vec<(PublicKey, AllowedIps)>) {
             let meshnet_config = Config {
                 peers: Some(
@@ -1781,6 +1880,19 @@ mod tests {
                 self.cross_ping_check
                     .expect_notify_failed_wg_connection()
                     .once()
+                    .with(eq(pk))
+                    .return_once(|_| Ok(()));
+            }
+        }
+
+        fn then_cross_ping_check_not_notfied_about_failed_connections(
+            &mut self,
+            input: Vec<PublicKey>,
+        ) {
+            for pk in input {
+                self.cross_ping_check
+                    .expect_notify_failed_wg_connection()
+                    .times(0)
                     .with(eq(pk))
                     .return_once(|_| Ok(()));
             }
@@ -1979,6 +2091,19 @@ mod tests {
                 &self.post_quantum,
                 None,
                 &self.features,
+            )
+            .await
+            .unwrap();
+        }
+
+        async fn consolidate_endpoint_invalidation(self) {
+            let cross_ping_check = Arc::new(self.cross_ping_check);
+            let wireguard_interface = Arc::new(self.wireguard_interface);
+
+            consolidate_endpoint_invalidation(
+                wireguard_interface.as_ref(),
+                Some(&self.proxy),
+                Some(&cross_ping_check),
             )
             .await
             .unwrap();
@@ -2189,109 +2314,213 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn when_cross_check_validated_is_newer_then_upgrade() {
-        let mut f = Fixture::new();
-        f.features.ipv6 = true;
-
-        let pub_key = SecretKey::gen().public();
-        let ip1 = IpAddr::from([1, 2, 3, 4]);
-        let ip1v6 = IpAddr::V6(Ipv6Addr::from([
-            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4,
-        ]));
-        let ip2 = IpAddr::from([5, 6, 7, 8]);
-        let ip2v6 = IpAddr::V6(Ipv6Addr::from([
-            5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8,
-        ]));
-        let allowed_ips = vec![ip1, ip1v6, ip2, ip2v6];
-        let remote_wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
-        let local_wg_endpoint = SocketAddr::from(([192, 168, 0, 2], 15));
-        let session_id = rand::random();
+    async fn when_ep_is_validated_after_wg_update_produce_no_failed_notification() {
+        // No failed notification should be provided regardless
+        // whether we are proxying or in direct connection.
+        //
+        // Test for that both of these cases
         let mapped_port = 12;
         let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
+        let local_wg_endpoint = SocketAddr::from(([192, 168, 0, 2], 15));
+        let wg_endpoints = vec![proxy_endpoint, local_wg_endpoint];
 
-        let direct_keepalive_period = 1234;
-        f.requested_state.keepalive_periods.direct = direct_keepalive_period;
+        // Test all wg_endpoint cases
+        for wg_endpoint in wg_endpoints {
+            let mut f = Fixture::new();
+            f.features.ipv6 = true;
 
-        let cpc_endpoint_at = Instant::now();
-        let changed_endpoint_at = cpc_endpoint_at - Duration::from_secs(1);
+            let pub_key = SecretKey::gen().public();
+            let allowed_ips = Fixture::create_any_allowed_ips();
+            let remote_wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
+            let changed_endpoint_at = Instant::now();
+            let cpc_endpoint_at = changed_endpoint_at + Duration::from_secs(1);
 
-        f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
-        f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
-        f.when_current_peers(vec![(
-            pub_key,
-            proxy_endpoint,
-            TEST_PERSISTENT_KEEPALIVE_PERIOD,
-            allowed_ips.clone(),
-            (changed_endpoint_at, UpdateReason::Pull),
-        )]);
-        f.when_time_since_last_rx(vec![(pub_key, 1)]);
-        f.when_cross_check_validated_endpoints(vec![(
-            pub_key,
-            remote_wg_endpoint,
-            (local_wg_endpoint, session_id),
-            cpc_endpoint_at,
-        )]);
-        f.when_upgrade_requests(vec![]);
+            // Arrange proxy mappings
+            f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
 
-        f.then_add_peer(vec![(
-            pub_key,
-            remote_wg_endpoint,
-            Some(direct_keepalive_period),
-            allowed_ips.iter().copied().map(|ip| ip.into()).collect(),
-            allowed_ips,
-        )]);
-        f.session_keeper.expect_get_interval().return_const(None);
-        f.then_request_upgrade(vec![(
-            pub_key,
-            remote_wg_endpoint,
-            local_wg_endpoint,
-            session_id,
-        )]);
-        f.then_keeper_add_node(vec![(
-            pub_key,
-            ip1,
-            Some(ip1v6),
-            direct_keepalive_period,
-            None,
-        )]);
-        f.then_proxy_mute(vec![(
-            pub_key,
-            Some(Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW)),
-        )]);
+            // Arrange peers in wireguard_interface
+            f.when_current_peers(vec![(
+                pub_key,
+                wg_endpoint,
+                TEST_PERSISTENT_KEEPALIVE_PERIOD,
+                allowed_ips.clone(),
+                (changed_endpoint_at, UpdateReason::Pull),
+            )]);
 
-        f.consolidate_peers().await;
+            // Arrange a list of validated CPC endpoints
+            f.when_cross_check_validated_endpoints(vec![(
+                pub_key,
+                remote_wg_endpoint,
+                (local_wg_endpoint, Fixture::create_any_session_id()),
+                cpc_endpoint_at,
+            )]);
+
+            // Prepare assertions
+            f.then_cross_ping_check_not_notfied_about_failed_connections(vec![pub_key]);
+
+            // Act
+            f.consolidate_endpoint_invalidation().await;
+        }
     }
 
     #[tokio::test]
-    async fn when_cross_check_validated_is_old_then_keep_proxying() {
+    async fn when_ep_is_validated_before_downgrade_produce_failed_notification() {
+        // EndpointGone notification should be produced regardless whether we
+        // have pushed the endpoint into to the WG ourselves, or read it from
+        // wireguard_interface after roaming.
+        //
+        // Test for both cases
+        let update_reasons = vec![UpdateReason::Push, UpdateReason::Pull];
+
+        for update_reason in update_reasons {
+            let mut f = Fixture::new();
+            f.features.ipv6 = true;
+
+            let pub_key = SecretKey::gen().public();
+            let allowed_ips = Fixture::create_any_allowed_ips();
+            let remote_wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
+            let local_wg_endpoint = SocketAddr::from(([192, 168, 0, 2], 15));
+
+            let mapped_port = 12;
+            let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
+            let changed_endpoint_at = Instant::now();
+            let cpc_endpoint_at = changed_endpoint_at - Duration::from_secs(1);
+
+            // Arrange proxy mappings
+            f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
+
+            // Arrange peers in wireguard interface
+            f.when_current_peers(vec![(
+                pub_key,
+                proxy_endpoint,
+                TEST_PERSISTENT_KEEPALIVE_PERIOD,
+                allowed_ips.clone(),
+                (changed_endpoint_at, update_reason),
+            )]);
+
+            // Arrange CPC validated list of endpoints
+            f.when_cross_check_validated_endpoints(vec![(
+                pub_key,
+                remote_wg_endpoint,
+                (local_wg_endpoint, Fixture::create_any_session_id()),
+                cpc_endpoint_at,
+            )]);
+
+            // Prepare assertions
+            f.then_cross_ping_check_notfied_about_failed_connections(vec![pub_key]);
+
+            // Act
+            f.consolidate_endpoint_invalidation().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn when_validated_ep_is_pushed_into_wg_produce_no_failed_notification() {
+        // We had cases where endpoint change triggerd by *writing* endpoint
+        // into WG would invalidate all checked endpoints. This is incorrect.
+        //
+        // Test that this does not happen
         let mut f = Fixture::new();
         f.features.ipv6 = true;
 
         let pub_key = SecretKey::gen().public();
-        let ip1 = IpAddr::from([1, 2, 3, 4]);
-        let ip1v6 = IpAddr::V6(Ipv6Addr::from([
-            1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4,
-        ]));
-        let ip2 = IpAddr::from([5, 6, 7, 8]);
-        let ip2v6 = IpAddr::V6(Ipv6Addr::from([
-            5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8,
-        ]));
-        let allowed_ips = vec![ip1, ip1v6, ip2, ip2v6];
+        let allowed_ips = Fixture::create_any_allowed_ips();
         let remote_wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
         let local_wg_endpoint = SocketAddr::from(([192, 168, 0, 2], 15));
-        let session_id = rand::random();
+
+        let mapped_port = 12;
+        let changed_endpoint_at = Instant::now();
+        let cpc_endpoint_at = changed_endpoint_at - Duration::from_secs(1);
+
+        // Arrange proxy mappings
+        f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
+
+        // Arrange peers in wireguard interface
+        f.when_current_peers(vec![(
+            pub_key,
+            local_wg_endpoint,
+            TEST_PERSISTENT_KEEPALIVE_PERIOD,
+            allowed_ips.clone(),
+            (changed_endpoint_at, UpdateReason::Push),
+        )]);
+
+        // Arrange CPC validated list of endpoints
+        f.when_cross_check_validated_endpoints(vec![(
+            pub_key,
+            remote_wg_endpoint,
+            (local_wg_endpoint, Fixture::create_any_session_id()),
+            cpc_endpoint_at,
+        )]);
+
+        // Prepare assertions
+        f.then_cross_ping_check_not_notfied_about_failed_connections(vec![pub_key]);
+
+        // Act
+        f.consolidate_endpoint_invalidation().await;
+    }
+
+    #[tokio::test]
+    async fn when_roaming_from_direct_to_direct_produce_failed_notification() {
+        // If validated endpoint has been roamed to something else. It means
+        // that likely old endpoint will not be available for use anymore,
+        // therefore we should invalidate it.
+        //
+        // Test that this does in fact happen
+        let mut f = Fixture::new();
+        f.features.ipv6 = true;
+
+        let pub_key = SecretKey::gen().public();
+        let allowed_ips = Fixture::create_any_allowed_ips();
+        let remote_wg_endpoint = SocketAddr::from(([192, 168, 0, 1], 13));
+        let local_wg_endpoint = SocketAddr::from(([192, 168, 0, 2], 15));
+
+        let mapped_port = 12;
+        let changed_endpoint_at = Instant::now();
+        let cpc_endpoint_at = changed_endpoint_at - Duration::from_secs(1);
+
+        // Arrange proxy mappings
+        f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
+
+        // Arrange peers in wireguard interface
+        f.when_current_peers(vec![(
+            pub_key,
+            local_wg_endpoint,
+            TEST_PERSISTENT_KEEPALIVE_PERIOD,
+            allowed_ips.clone(),
+            (changed_endpoint_at, UpdateReason::Pull),
+        )]);
+
+        // Arrange CPC validated list of endpoints
+        f.when_cross_check_validated_endpoints(vec![(
+            pub_key,
+            remote_wg_endpoint,
+            (local_wg_endpoint, Fixture::create_any_session_id()),
+            cpc_endpoint_at,
+        )]);
+
+        // Prepare assertions
+        f.then_cross_ping_check_notfied_about_failed_connections(vec![pub_key]);
+
+        // Act
+        f.consolidate_endpoint_invalidation().await;
+    }
+
+    #[tokio::test]
+    async fn when_no_ep_was_validated_produce_no_failed_notification() {
+        let mut f = Fixture::new();
+        f.features.ipv6 = true;
+
+        let pub_key = SecretKey::gen().public();
+        let allowed_ips = Fixture::create_any_allowed_ips();
+
         let mapped_port = 12;
         let proxy_endpoint = SocketAddr::from(([127, 0, 0, 1], mapped_port));
+        let changed_endpoint_at = Instant::now();
 
-        let direct_keepalive_period = 1234;
-        f.requested_state.keepalive_periods.direct = direct_keepalive_period;
-
-        let cpc_endpoint_at = Instant::now();
-        // changed_endpoint >= cpc_changed_endpoint
-        let changed_endpoint_at = cpc_endpoint_at;
-
-        f.when_requested_meshnet_config(vec![(pub_key, allowed_ips.clone())]);
+        // Arrange proxy mappings
         f.when_proxy_mapping(vec![(pub_key, mapped_port)]);
+
+        // Arrange peers in wireguard interface
         f.when_current_peers(vec![(
             pub_key,
             proxy_endpoint,
@@ -2299,18 +2528,44 @@ mod tests {
             allowed_ips.clone(),
             (changed_endpoint_at, UpdateReason::Pull),
         )]);
-        f.when_time_since_last_rx(vec![(pub_key, 0)]);
-        f.when_cross_check_validated_endpoints(vec![(
-            pub_key,
-            remote_wg_endpoint,
-            (local_wg_endpoint, session_id),
-            cpc_endpoint_at,
-        )]);
-        f.when_upgrade_requests(vec![]);
-        f.session_keeper.expect_get_interval().return_const(None);
-        f.then_cross_ping_check_notfied_about_failed_connections(vec![pub_key]);
 
-        f.consolidate_peers().await;
+        // Arrange CPC validated list of endpoints
+        f.when_cross_check_validated_endpoints(vec![]);
+
+        // Prepare assertions
+        f.then_cross_ping_check_not_notfied_about_failed_connections(vec![pub_key]);
+
+        // Act
+        f.consolidate_endpoint_invalidation().await;
+    }
+
+    #[tokio::test]
+    async fn when_meshnet_disabled_produce_no_failed_notification() {
+        let mut f = Fixture::new();
+        f.features.ipv6 = true;
+
+        let pub_key = SecretKey::gen().public();
+        let allowed_ips = Fixture::create_any_allowed_ips();
+        let local_wg_endpoint = SocketAddr::from(([192, 168, 0, 2], 15));
+        let changed_endpoint_at = Instant::now();
+
+        // Arrange peers in wireguard interface
+        f.when_current_peers(vec![(
+            pub_key,
+            local_wg_endpoint,
+            TEST_PERSISTENT_KEEPALIVE_PERIOD,
+            allowed_ips.clone(),
+            (changed_endpoint_at, UpdateReason::Pull),
+        )]);
+
+        // Act
+        consolidate_endpoint_invalidation::<MockWireGuard, MockProxy, MockCrossPingCheckTrait>(
+            &f.wireguard_interface,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
