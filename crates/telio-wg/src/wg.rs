@@ -801,10 +801,20 @@ impl State {
                     }
                 };
 
+                telio_log_debug!(
+                    "node basic info changed: {}, state changed: {}, link state update: {}",
+                    !old.is_same_event(new),
+                    old_state != new_state,
+                    link_detection_update_result.should_notify
+                );
                 if !old.is_same_event(new)
                     || old_state != new_state
                     || link_detection_update_result.should_notify
                 {
+                    telio_log_debug!(
+                        "Send event with {:?}",
+                        link_detection_update_result.link_state
+                    );
                     self.send_event(
                         new_state,
                         link_detection_update_result.link_state,
