@@ -101,6 +101,36 @@ def post_copy_darwin_debug_symbols_to_distribution_dir(config, args):
                     )
 
 
+def post_qnap_build_wrap_binary_on_qpkg(config, args):
+    packages = LIBTELIO_CONFIG[config.target_os].get("packages", None)
+    if packages:
+        for _, bins in packages.items():
+            for _, bin in bins.items():
+                src_path = os.path.join(
+                    PROJECT_CONFIG.get_distribution_path(
+                        config.target_os, config.arch, "", config.debug
+                    ),
+                    bin,
+                )
+                dst_path = os.path.join(
+                    PROJECT_CONFIG.get_root_dir(),
+                    f"qnap/{config.arch}",
+                )
+                if os.path.isfile(src_path):
+                    shutil.copy2(src_path, dst_path)
+        rutils.run_command_with_output(
+            [
+                "qbuild",
+                "--root",
+                os.path.join(PROJECT_CONFIG.get_root_dir(), "qnap/"),
+                "--build-dir",
+                PROJECT_CONFIG.get_distribution_path(
+                    config.target_os, config.arch, "", config.debug
+                ),
+            ]
+        )
+
+
 """
 This local config is highly customizable as every project can have a different
 local config depending on their needs.
@@ -261,6 +291,22 @@ LIBTELIO_CONFIG = {
             NAME: {f"lib{NAME}": f"lib{NAME}.so"},
         },
     },
+    "qnap": {
+        "archs": {
+            "x86_64": {
+                "env": {
+                    "RUSTFLAGS": (
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['x86_64']}",
+                        "set",
+                    )
+                },
+            },
+        },
+        "post_build": [post_qnap_build_wrap_binary_on_qpkg],
+        "packages": {
+            "tcli": {"tcli": "tcli"},
+        },
+    },
     "macos": {
         "packages": {
             "tcli": {"tcli": "tcli"},
@@ -335,7 +381,12 @@ def main() -> None:
         target_os = "macos" if args.command == "lipo" else args.os
 
         packages = LIBTELIO_CONFIG[target_os].get("packages", None)
-        if args.debug and not args.tcli and "tcli" in packages:
+        if (
+            args.debug
+            and not args.tcli
+            and "tcli" in packages
+            and "qnap" not in args.os
+        ):
             LIBTELIO_CONFIG[target_os]["packages"].pop("tcli")
 
     if args.command == "build":
