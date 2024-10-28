@@ -1,8 +1,7 @@
+import base64
 import json
-import paho.mqtt.client as mqtt
-import queue
-import ssl
-from config import CORE_API_CA_CERTIFICATE_PATH, MQTT_BROKER_IP, CORE_API_URL
+from asyncio import sleep
+from config import CORE_API_CA_CERTIFICATE_PATH, CORE_API_URL
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from helpers import send_https_request, verify_uuid
@@ -24,6 +23,23 @@ class MachineResponse:
     traffic_routing_supported: bool
 
 
+CORE_API_CREDENTIALS = {
+    "username": "token",
+    "password": "48e9ef50178a68a716e38a9f9cd251e8be35e79a5c5f91464e92920425caa3d9",
+}
+
+BEARER_AUTHORIZATION_HEADER = (
+    f"Bearer {CORE_API_CREDENTIALS['username']}:{CORE_API_CREDENTIALS['password']}"
+)
+BASIC_AUTHENTICATION_CREDENTIALS = (
+    f"{CORE_API_CREDENTIALS['username']}:{CORE_API_CREDENTIALS['password']}"
+)
+BASIC_CREDENTIALS_BYTES = BASIC_AUTHENTICATION_CREDENTIALS.encode("utf-8")
+BASIC_AUTHORIZATION_HEADER = (
+    f"Basic {base64.b64encode(BASIC_CREDENTIALS_BYTES).decode('utf-8')}"
+)
+
+
 def verify_mqtt_payload(payload):
     payload_json = json.loads(payload)
 
@@ -35,23 +51,49 @@ def verify_mqtt_payload(payload):
         verify_uuid(machine_uuid)
 
 
-def run_mqtt_listener():
-    payload_queue: queue.Queue[str] = queue.Queue(1)
+async def run_mqtt_listener(
+    exit_stack,
+    connection,
+    mqtt_broker_host,
+    mqtt_broker_port,
+    mqtt_broker_user,
+    mqtt_broker_password,
+):
+    mqtt_process = await exit_stack.enter_async_context(
+        connection.create_process([
+            "python3",
+            "/opt/bin/mqtt-listener.py",
+            mqtt_broker_host,
+            mqtt_broker_port,
+            mqtt_broker_user,
+            mqtt_broker_password,
+        ]).run()
+    )
+    while not mqtt_process.is_executing():
+        await sleep(0.1)
+    return mqtt_process
 
-    def on_message(_client, _userdata, message):
-        payload_queue.put(f"{message.payload.decode()}")
 
-    mqttc = mqtt.Client(client_id="reciever", protocol=mqtt.MQTTv311)
-
-    mqttc.on_message = on_message
-
-    mqttc.tls_set(certfile=None, keyfile=None, cert_reqs=ssl.CERT_NONE)
-    mqttc.connect(MQTT_BROKER_IP, port=8883, keepalive=1)
-    mqttc.subscribe("meshnet", qos=0)
-
-    mqttc.loop_start()
-
-    return payload_queue, mqttc
+async def get_mqtt_broker_credentials(connection):
+    endpoint = f"{CORE_API_URL}/v1/notifications/tokens"
+    json_data = {
+        "user_hash": "user-hash",
+        "app_user_uid": "app-user-uid",
+        "platform_id": 1,
+        "protocol": "tcp",
+    }
+    payload = json.dumps(json_data)
+    response = await send_https_request(
+        connection,
+        endpoint,
+        "POST",
+        CORE_API_CA_CERTIFICATE_PATH,
+        payload,
+        authorization_header=BASIC_AUTHORIZATION_HEADER,
+    )
+    _, host, port = response["endpoint"].replace("//", "").split(":")
+    user, password = response["username"], response["password"]
+    return host, port, user, password
 
 
 async def test_nc_register():
@@ -62,7 +104,15 @@ async def test_nc_register():
             new_connection_by_tag(connection_tag)
         )
 
-        (mqtt_payload_queue, mqttc) = run_mqtt_listener()
+        mqtt_connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
+        )
+        mqtt_host, mqtt_port, user, password = await get_mqtt_broker_credentials(
+            connection
+        )
+        mqtt_process = await run_mqtt_listener(
+            exit_stack, mqtt_connection, mqtt_host, mqtt_port, user, password
+        )
 
         # Register machine - this is a minimal version which should be also supported
         request_json = {
@@ -81,6 +131,7 @@ async def test_nc_register():
             "POST",
             CORE_API_CA_CERTIFICATE_PATH,
             payload,
+            authorization_header=BEARER_AUTHORIZATION_HEADER,
         )
         response = MachineResponse(**https_process_stdout)
 
@@ -93,7 +144,12 @@ async def test_nc_register():
         assert request_json["device_type"] == response.device_type
         assert response.traffic_routing_supported is False
 
-        mqtt_payload = mqtt_payload_queue.get()
+        mqtt_payload = mqtt_process.get_stdout()
+        while "message_id" not in mqtt_payload:
+            await sleep(0.1)
+            mqtt_payload = mqtt_process.get_stdout()
+
+        assert mqtt_payload
         verify_mqtt_payload(mqtt_payload)
 
         await send_https_request(
@@ -103,6 +159,7 @@ async def test_nc_register():
             CORE_API_CA_CERTIFICATE_PATH,
             payload,
             expect_response=False,
+            authorization_header=BEARER_AUTHORIZATION_HEADER,
         )
 
         machines = await send_https_request(
@@ -110,12 +167,14 @@ async def test_nc_register():
             machines_endpoint,
             "GET",
             CORE_API_CA_CERTIFICATE_PATH,
+            authorization_header=BEARER_AUTHORIZATION_HEADER,
         )
 
         assert len(machines) == 0
 
-        mqtt_payload = mqtt_payload_queue.get()
+        mqtt_payload = mqtt_process.get_stdout()
+        while "message_id" not in mqtt_payload:
+            await sleep(0.1)
+            mqtt_payload = mqtt_process.get_stdout()
+        assert mqtt_payload
         verify_mqtt_payload(mqtt_payload)
-
-        # MQTT client cleanup
-        mqttc.loop_stop()

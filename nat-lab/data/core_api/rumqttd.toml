@@ -20,3 +20,6 @@ next_connection_delay_ms = 10
     max_payload_size = 20480
     max_inflight_count = 100
     max_inflight_size = 1024
+    [v4.2.connections.auth]
+    # Below credentials are intended only for testing purposes in nat-lab environment.
+    mqtt_broker = "9-A'.:vUM3FPTCABorsK}J4mM}/3898_"
