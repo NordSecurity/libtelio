@@ -132,6 +132,7 @@ impl State {
         ipv6_enabled: bool,
     ) -> Self {
         let meshnet_id = Self::meshnet_id();
+        telio_log_debug!("Meshnet ID: {meshnet_id}");
 
         // Analytics channel
         let analytics_channel = Chan::default();
@@ -359,9 +360,9 @@ impl State {
             "application.libtelioapp.config.current_state.internal_meshnet.fp",
         ))
         .map(|fp| {
-            Uuid::parse_str(&fp).unwrap_or_else(|_| {
+            Uuid::parse_str(&fp).unwrap_or_else(|e| {
                 telio_log_error!(
-                    "Failed to parse moose meshnet id ({:?}), generating a new one",
+                    "Failed to parse moose meshnet id ({:?}), generating a new one: {e}",
                     fp
                 );
                 Uuid::new_v4()

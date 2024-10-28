@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import os
 import pytest
 import subprocess
 from config import (
@@ -15,7 +16,7 @@ from config import (
 from contextlib import AsyncExitStack
 from helpers import connectivity_stack
 from mesh_api import API, Node
-from telio import Client
+from telio import Client, get_log_without_flush
 from typing import List, Optional
 from utils import testing, stun
 from utils.analytics import fetch_moose_events, DERP_BIT, WG_BIT, IPV4_BIT, IPV6_BIT
@@ -66,6 +67,7 @@ from utils.connection_util import (
 from utils.ping import ping
 from utils.router import IPStack, IPProto
 from utils.telio_log_notifier import TelioLogNotifier
+from utils.testing import get_current_test_log_path
 
 CONTAINER_EVENT_PATH = "/event.db"
 CONTAINER_EVENT_BACKUP_PATH = "/event_backup.db"
@@ -2019,6 +2021,20 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
             initial_beta_meshnet_id = beta_events[0].fp
 
             api.remove(beta.id)
+        if os.environ.get("NATLAB_SAVE_LOGS") is not None:
+            log_content = await get_log_without_flush(connection_beta)
+            log_dir = get_current_test_log_path()
+            os.makedirs(log_dir, exist_ok=True)
+            path = os.path.join(log_dir, "beta_before_restart.log")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(log_content)
+            events_path = os.path.join(log_dir, "beta_before_restart.db")
+            get_moose_db_file(
+                ConnectionTag.DOCKER_CONE_CLIENT_2,
+                CONTAINER_EVENT_PATH,
+                CONTAINER_EVENT_BACKUP_PATH,
+                events_path,
+            )
 
         beta = api.default_config_one_node(True, ip_stack=alpha_ip_stack)
         connection_beta = await exit_stack.enter_async_context(
