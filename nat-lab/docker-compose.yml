@@ -91,6 +91,7 @@ services:
       - "derp-03:10.0.10.3"
       - "derp-00:10.0.10.245"
       - "pmtu-probe:10.0.80.84"
+      - "mqtt.nordvpn.com:10.0.80.85"
       - "api.nordvpn.com:10.0.80.86"
     volumes:
       - ../:/libtelio

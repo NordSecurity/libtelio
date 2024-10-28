@@ -18,6 +18,8 @@ class MachineData:
 
 class CoreApiErrorCode(Enum):
     MACHINE_ALREADY_EXISTS = 101117
+    AUTHORIZATION_HEADER_NOT_PROVIDED = 100105
+    INVALID_CREDENTIALS = 100104
 
 
 peer_structure = {
@@ -49,6 +51,15 @@ derp_structure = {
     "weight": int,
 }
 
+CORE_API_CREDENTIALS = {
+    "username": "token",
+    "password": "48e9ef50178a68a716e38a9f9cd251e8be35e79a5c5f91464e92920425caa3d9",
+}
+
+BEARER_AUTHORIZATION_HEADER = (
+    f"Bearer {CORE_API_CREDENTIALS['username']}:{CORE_API_CREDENTIALS['password']}"
+)
+
 
 def validate_dict_structure(data_to_validate, expected_data_structure) -> None:
     for key, expected_type in expected_data_structure.items():
@@ -76,21 +87,23 @@ def validate_dict_structure(data_to_validate, expected_data_structure) -> None:
             raise ValueError(f"Unexpected type for key '{key}': {expected_type}")
 
 
-async def clean_up_machines(connection, server_host):
+async def clean_up_machines(connection, api_url):
     machines = await send_https_request(
         connection,
-        f"{server_host}/v1/meshnet/machines",
+        f"{api_url}/v1/meshnet/machines",
         "GET",
         CORE_API_CA_CERTIFICATE_PATH,
+        authorization_header=BEARER_AUTHORIZATION_HEADER,
     )
 
     for machine in machines:
         await send_https_request(
             connection,
-            f"{server_host}/v1/meshnet/machines/{machine['identifier']}",
+            f"{api_url}/v1/meshnet/machines/{machine['identifier']}",
             "DELETE",
             CORE_API_CA_CERTIFICATE_PATH,
             expect_response=False,
+            authorization_header=BEARER_AUTHORIZATION_HEADER,
         )
 
 
@@ -114,19 +127,14 @@ def fixture_machine_data(request):
     return request.param
 
 
-@pytest.fixture(name="server_host")
-def fixture_server_host():
-    return CORE_API_URL
-
-
 @pytest.fixture(name="registered_machines")
-async def fixture_register_machine(server_host, machine_data):
+async def fixture_register_machine(machine_data):
     async with AsyncExitStack() as exit_stack:
         connection = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
         )
 
-        await clean_up_machines(connection, server_host)
+        await clean_up_machines(connection, CORE_API_URL)
 
         registered_machines = []
 
@@ -135,10 +143,11 @@ async def fixture_register_machine(server_host, machine_data):
 
             response_data = await send_https_request(
                 connection,
-                f"{server_host}/v1/meshnet/machines",
+                f"{CORE_API_URL}/v1/meshnet/machines",
                 "POST",
                 CORE_API_CA_CERTIFICATE_PATH,
                 data=payload,
+                authorization_header=BEARER_AUTHORIZATION_HEADER,
             )
             registered_machines.append(response_data)
 
@@ -179,7 +188,7 @@ async def test_register_multiple_machines(registered_machines, machine_data):
     ]],
     indirect=True,
 )
-async def test_get_all_machines(server_host, registered_machines, machine_data):
+async def test_get_all_machines(registered_machines, machine_data):
     async with AsyncExitStack() as exit_stack:
         connection = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
@@ -187,9 +196,10 @@ async def test_get_all_machines(server_host, registered_machines, machine_data):
 
         response_data = await send_https_request(
             connection,
-            f"{server_host}/v1/meshnet/machines",
+            f"{CORE_API_URL}/v1/meshnet/machines",
             "GET",
             CORE_API_CA_CERTIFICATE_PATH,
+            authorization_header=BEARER_AUTHORIZATION_HEADER,
         )
 
         assert isinstance(response_data, list)
@@ -208,9 +218,7 @@ async def test_get_all_machines(server_host, registered_machines, machine_data):
     [[linux_vm]],
     indirect=True,
 )
-async def test_update_registered_machine_data(
-    server_host, registered_machines, machine_data
-):
+async def test_update_registered_machine_data(registered_machines, machine_data):
     async with AsyncExitStack() as exit_stack:
         connection = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
@@ -229,10 +237,11 @@ async def test_update_registered_machine_data(
 
             response_data = await send_https_request(
                 connection,
-                f"{server_host}/v1/meshnet/machines/{machine['identifier']}",
+                f"{CORE_API_URL}/v1/meshnet/machines/{machine['identifier']}",
                 "PATCH",
                 CORE_API_CA_CERTIFICATE_PATH,
                 data=payload,
+                authorization_header=BEARER_AUTHORIZATION_HEADER,
             )
 
             assert response_data["nickname"] == machine_data_to_update["nickname"]
@@ -249,9 +258,7 @@ async def test_update_registered_machine_data(
     indirect=True,
 )
 # pylint: disable=unused-argument
-async def test_delete_registered_machine(
-    server_host, registered_machines, machine_data
-):
+async def test_delete_registered_machine(registered_machines, machine_data):
     async with AsyncExitStack() as exit_stack:
         connection = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
@@ -261,17 +268,19 @@ async def test_delete_registered_machine(
 
         await send_https_request(
             connection,
-            f"{server_host}/v1/meshnet/machines/{machine['identifier']}",
+            f"{CORE_API_URL}/v1/meshnet/machines/{machine['identifier']}",
             "DELETE",
             CORE_API_CA_CERTIFICATE_PATH,
             expect_response=False,
+            authorization_header=BEARER_AUTHORIZATION_HEADER,
         )
 
         get_response_data = await send_https_request(
             connection,
-            f"{server_host}/v1/meshnet/machines",
+            f"{CORE_API_URL}/v1/meshnet/machines",
             "GET",
             CORE_API_CA_CERTIFICATE_PATH,
+            authorization_header=BEARER_AUTHORIZATION_HEADER,
         )
 
         assert len(get_response_data) == 0
@@ -287,7 +296,7 @@ async def test_delete_registered_machine(
     indirect=True,
 )
 # pylint: disable=unused-argument
-async def test_get_mesh_map(server_host, registered_machines, machine_data):
+async def test_get_mesh_map(registered_machines, machine_data):
     async with AsyncExitStack() as exit_stack:
         connection = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
@@ -297,9 +306,10 @@ async def test_get_mesh_map(server_host, registered_machines, machine_data):
 
             response_data = await send_https_request(
                 connection,
-                f"{server_host}/v1/meshnet/machines/{machine['identifier']}/map",
+                f"{CORE_API_URL}/v1/meshnet/machines/{machine['identifier']}/map",
                 "GET",
                 CORE_API_CA_CERTIFICATE_PATH,
+                authorization_header=BEARER_AUTHORIZATION_HEADER,
             )
 
             assert isinstance(response_data["peers"], list)
@@ -312,36 +322,156 @@ async def test_get_mesh_map(server_host, registered_machines, machine_data):
                 validate_dict_structure(derp_server, derp_structure)
 
 
-async def not_able_to_register_same_machine_twice(server_host):
+async def test_not_able_to_register_same_machine_twice():
     async with AsyncExitStack() as exit_stack:
         connection = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
         )
-        await clean_up_machines(connection, server_host)
+        await clean_up_machines(connection, CORE_API_URL)
 
         payload = json.dumps(linux_vm.__dict__)
 
         await send_https_request(
             connection,
-            f"{server_host}/v1/meshnet/machines",
+            f"{CORE_API_URL}/v1/meshnet/machines",
             "POST",
             CORE_API_CA_CERTIFICATE_PATH,
             data=payload,
             expect_response=False,
+            authorization_header=BEARER_AUTHORIZATION_HEADER,
         )
 
         response_data = await send_https_request(
             connection,
-            f"{server_host}/v1/meshnet/machines",
+            f"{CORE_API_URL}/v1/meshnet/machines",
             "POST",
             CORE_API_CA_CERTIFICATE_PATH,
             data=payload,
+            authorization_header=BEARER_AUTHORIZATION_HEADER,
         )
 
         assert (
-            response_data["errors"]["code"] == CoreApiErrorCode.MACHINE_ALREADY_EXISTS
+            response_data["errors"]["code"]
+            == CoreApiErrorCode.MACHINE_ALREADY_EXISTS.value
         )
         assert (
             response_data["errors"]["message"]
             == "Machine with this public key already exists"
         )
+
+
+@pytest.mark.parametrize(
+    "endpoint, method",
+    [
+        ("/v1/meshnet/machines", "POST"),
+        ("/v1/meshnet/machines", "GET"),
+        ("/v1/meshnet/machines/uid/map", "GET"),
+        ("/v1/meshnet/machines/uid", "DELETE"),
+        ("/v1/meshnet/machines/uid", "PATCH"),
+        ("/v1/notifications/tokens", "POST"),
+    ],
+)
+async def test_endpoints_requires_authorization_header(endpoint, method):
+    async with AsyncExitStack() as exit_stack:
+        connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+        url = f"{CORE_API_URL}/{endpoint}"
+        payload: dict[str, str] = {}
+        if method == "GET":
+            response_data = await send_https_request(
+                connection,
+                url,
+                method,
+                CORE_API_CA_CERTIFICATE_PATH,
+                expect_response=True,
+            )
+        else:
+            response_data = await send_https_request(
+                connection,
+                url,
+                method,
+                CORE_API_CA_CERTIFICATE_PATH,
+                data=payload,
+            )
+        assert (
+            response_data["errors"]["code"]
+            == CoreApiErrorCode.AUTHORIZATION_HEADER_NOT_PROVIDED.value
+        )
+        assert response_data["errors"]["message"] == "Authorization header not provided"
+
+
+@pytest.mark.parametrize(
+    "endpoint, method",
+    [
+        ("/v1/meshnet/machines", "POST"),
+        ("/v1/meshnet/machines", "GET"),
+        ("/v1/meshnet/machines/uid/map", "GET"),
+        ("/v1/meshnet/machines/uid", "DELETE"),
+        ("/v1/meshnet/machines/uid", "PATCH"),
+    ],
+)
+async def test_not_able_to_pass_authorization_with_invalid_bearer_token(
+    endpoint, method
+):
+    async with AsyncExitStack() as exit_stack:
+        connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+        authorization_header = "Bearer token:11111"
+        url = f"{CORE_API_URL}/{endpoint}"
+        payload: dict[str, str] = {}
+        if method == "GET":
+            response_data = await send_https_request(
+                connection,
+                url,
+                method,
+                CORE_API_CA_CERTIFICATE_PATH,
+                authorization_header=authorization_header,
+                expect_response=True,
+            )
+        else:
+            response_data = await send_https_request(
+                connection,
+                url,
+                method,
+                CORE_API_CA_CERTIFICATE_PATH,
+                authorization_header=authorization_header,
+                data=payload,
+            )
+        assert (
+            response_data["errors"]["code"]
+            == CoreApiErrorCode.INVALID_CREDENTIALS.value
+        )
+        assert response_data["errors"]["message"] == "Invalid credentials"
+
+
+@pytest.mark.parametrize(
+    "endpoint, method",
+    [
+        ("/v1/notifications/tokens", "POST"),
+    ],
+)
+async def test_not_able_to_pass_authorization_with_invalid_basic_auth_credentials(
+    endpoint, method
+):
+    async with AsyncExitStack() as exit_stack:
+        connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+        authorization_header = "Basic dG9rZW46Y0hkaw=="  # token:pwd
+        url = f"{CORE_API_URL}/{endpoint}"
+        payload: dict[str, str] = {}
+        response_data = await send_https_request(
+            connection,
+            url,
+            method,
+            CORE_API_CA_CERTIFICATE_PATH,
+            authorization_header=authorization_header,
+            data=payload,
+        )
+        assert (
+            response_data["errors"]["code"]
+            == CoreApiErrorCode.INVALID_CREDENTIALS.value
+        )
+        assert response_data["errors"]["message"] == "Invalid credentials"
