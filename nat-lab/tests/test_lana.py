@@ -88,7 +88,7 @@ DEFAULT_WAITING_TIME = 5
 DEFAULT_CHECK_INTERVAL = 2
 DEFAULT_CHECK_TIMEOUT = 60
 COLLECT_NAT_TYPE = False
-RTT_INTERVAL = 10
+RTT_INTERVAL = 3 * 60
 
 IP_STACK_TEST_CONFIGS = [
     pytest.param(
@@ -433,6 +433,10 @@ async def run_default_scenario(
     await ping_node(connection_alpha, alpha, beta)
     await ping_node(connection_beta, beta, gamma)
     await ping_node(connection_gamma, gamma, alpha)
+
+    await client_alpha.trigger_qos_collection()
+    await client_beta.trigger_qos_collection()
+    await client_gamma.trigger_qos_collection()
 
     await asyncio.sleep(DEFAULT_WAITING_TIME)
     if True in [
@@ -1345,6 +1349,9 @@ async def test_lana_with_meshnet_exit_node(
         )
         assert ip_alpha == ip_beta
 
+        await client_alpha.trigger_qos_collection()
+        await client_beta.trigger_qos_collection()
+
         await asyncio.sleep(DEFAULT_WAITING_TIME)
 
         await client_alpha.trigger_event_collection()
@@ -1530,7 +1537,6 @@ async def test_lana_with_disconnected_node(
             features = build_telio_features()
             assert features.nurse is not None
             assert features.nurse.qos is not None
-            features.nurse.qos.rtt_interval = RTT_INTERVAL * 10
             return features
 
         client_alpha, client_beta = await start_alpha_beta_in_relay(
