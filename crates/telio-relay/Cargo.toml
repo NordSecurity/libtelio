@@ -9,11 +9,9 @@ publish = false
 [dependencies]
 generic-array = "0.14.5"
 rand_core = { version = "0.6.3", default-features = false }
-rustls-pemfile = "1.0.0"
-tokio-rustls = { version = "0.24.1", default-features = false }
+tokio-rustls = { version = "0.26.0", default-features = false }
 tokio-util = "0.7.3"
 tokio-stream = { default-features = false, version = "0.1.9" }
-rustls-platform-verifier = { git = "https://github.com/tomaszklak/rustls-platform-verifier.git", rev = "2db68dd17d76eadb062176b913040341b99ef4f3" }
 
 async-trait.workspace = true
 bytes.workspace = true
@@ -24,6 +22,7 @@ libc.workspace = true
 mockall_double.workspace = true
 num_enum.workspace = true
 rand.workspace = true
+rustls-platform-verifier.workspace = true
 serde.workspace = true
 strum.workspace = true
 thiserror.workspace = true
@@ -38,7 +37,7 @@ telio-proto.workspace = true
 telio-sockets.workspace = true
 telio-task.workspace = true
 telio-utils.workspace = true
-webpki-roots = "0.25.2"
+webpki-roots = "0.26.6"
 smart-default.workspace = true
 
 [dev-dependencies]

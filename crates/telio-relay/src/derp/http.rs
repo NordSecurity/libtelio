@@ -27,7 +27,7 @@ use tokio::{
     time::timeout,
 };
 use tokio_rustls::{
-    rustls::{client::ServerName, ClientConfig, OwnedTrustAnchor, RootCertStore},
+    rustls::{pki_types::ServerName, ClientConfig, RootCertStore},
     TlsConnector,
 };
 use url::{Host, Url};
@@ -122,18 +122,9 @@ pub async fn connect_http_and_start(
         }
         _ => {
             let config = if derp_config.use_built_in_root_certificates {
-                let trust_anchors = TLS_SERVER_ROOTS.iter().map(|trust_anchor| {
-                    OwnedTrustAnchor::from_subject_spki_name_constraints(
-                        trust_anchor.subject,
-                        trust_anchor.spki,
-                        trust_anchor.name_constraints,
-                    )
-                });
-                let mut root_store = RootCertStore::empty();
-                root_store.add_trust_anchors(trust_anchors);
+                let root_store: RootCertStore = TLS_SERVER_ROOTS.iter().cloned().collect();
 
                 let config = ClientConfig::builder()
-                    .with_safe_defaults()
                     .with_root_certificates(root_store)
                     .with_no_client_auth();
 
@@ -143,7 +134,7 @@ pub async fn connect_http_and_start(
             };
 
             let server_name =
-                ServerName::try_from(hostname.as_str()).map_err(|_| Error::InvalidServerName)?;
+                ServerName::try_from(hostname).map_err(|_| Error::InvalidServerName)?;
 
             connect_and_start(
                 config.connect(server_name, stream).await?,
