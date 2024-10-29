@@ -1151,11 +1151,16 @@ impl Runtime {
                     collection_trigger_channel: collection_trigger_ch.clone(),
                     qos_trigger_channel: qos_trigger_ch.clone(),
                 };
+                let nurse_config = NurseConfig::new(nurse_features);
+                telio_log_debug!(
+                    "Nurse config heartbeat fp: {}",
+                    nurse_config.heartbeat_config.fingerprint
+                );
 
                 Some(Arc::new(
                     Nurse::start_with(
                         config.private_key.public(),
-                        NurseConfig::new(nurse_features),
+                        nurse_config,
                         nurse_io,
                         aggregator.clone(),
                         features.ipv6,

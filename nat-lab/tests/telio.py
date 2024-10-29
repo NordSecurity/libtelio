@@ -897,18 +897,7 @@ class Client:
         return await self._get_log_without_flush()
 
     async def _get_log_without_flush(self) -> str:
-        """
-        This function retrieves telio logs without flushing them. It may be needed to do that
-        if log retrieval is requested after process has already exited. In such a case there is
-        nothing to flush and attempting to do so will cause errors.
-        """
-        process = (
-            self._connection.create_process(["type", "tcli.log"])
-            if self._connection.target_os == TargetOS.Windows
-            else self._connection.create_process(["cat", "./tcli.log"])
-        )
-        await process.execute()
-        return process.get_stdout()
+        return await get_log_without_flush(self._connection)
 
     async def get_system_log(self) -> Optional[str]:
         """
@@ -1161,3 +1150,18 @@ class Client:
                     f" {container_name}:{file_path} {core_dump_destination}"
                 )
                 os.system(cmd)
+
+
+async def get_log_without_flush(connection) -> str:
+    """
+    This function retrieves telio logs without flushing them. It may be needed to do that
+    if log retrieval is requested after process has already exited. In such a case there is
+    nothing to flush and attempting to do so will cause errors.
+    """
+    process = (
+        connection.create_process(["type", "tcli.log"])
+        if connection.target_os == TargetOS.Windows
+        else connection.create_process(["cat", "./tcli.log"])
+    )
+    await process.execute()
+    return process.get_stdout()
