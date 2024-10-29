@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.0.2
+### **Chicken Salad**
+---
+* LLT-5654: Fix rpath in apple dynamic libraries
+
+<br>
+
 ### v5.0.1
 ### **Chicken Salad**
 ---
