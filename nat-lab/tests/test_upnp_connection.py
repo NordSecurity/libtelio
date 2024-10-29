@@ -14,7 +14,21 @@ from utils.bindings import (
 )
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
+from utils.process import ProcessExecError
 from utils.router import new_router, IPStack
+
+
+async def execute_upnpc_with_retry(connection, timeout=10.0):
+    start_time = asyncio.get_event_loop().time()
+    while True:
+        try:
+            return await connection.create_process(["upnpc", "-i", "-l"]).execute()
+        except ProcessExecError as e:
+            if asyncio.get_event_loop().time() - start_time >= timeout:
+                print(f"Timeout while waiting for upnpc to start: {str(e)}")
+                raise
+
+        await asyncio.sleep(1.0)
 
 
 @pytest.mark.asyncio
@@ -250,7 +264,7 @@ async def test_upnp_port_lease_duration(
             await temp_exit_stack.enter_async_context(alpha_gw_router.reset_upnpd())
 
         # this check should be done before endpoint interval triggers a new mapping (optimal > 5s)
-        upnpc_cmd = await alpha_conn.create_process(["upnpc", "-i", "-l"]).execute()
+        upnpc_cmd = await execute_upnpc_with_retry(alpha_conn)
         assert re.search("^ [0-9]+ UDP", upnpc_cmd.get_stdout(), re.MULTILINE) is None
 
         await asyncio.gather(
@@ -264,7 +278,7 @@ async def test_upnp_port_lease_duration(
             ),
         )
 
-        upnpc_cmd = await alpha_conn.create_process(["upnpc", "-i", "-l"]).execute()
+        upnpc_cmd = await execute_upnpc_with_retry(alpha_conn)
         mappings_search = re.findall(
             "^ [0-9]+ UDP", upnpc_cmd.get_stdout(), re.MULTILINE
         )
@@ -273,7 +287,7 @@ async def test_upnp_port_lease_duration(
         await asyncio.sleep(lease_duration_s)
 
         # telio-traversal shouldn't let port mappings expire
-        upnpc_cmd = await alpha_conn.create_process(["upnpc", "-i", "-l"]).execute()
+        upnpc_cmd = await execute_upnpc_with_retry(alpha_conn)
         mappings_search = re.findall(
             "^ [0-9]+ UDP", upnpc_cmd.get_stdout(), re.MULTILINE
         )
@@ -283,5 +297,5 @@ async def test_upnp_port_lease_duration(
         await asyncio.sleep(lease_duration_s)
 
         # upnpn mappings should have expired
-        upnpc_cmd = await alpha_conn.create_process(["upnpc", "-i", "-l"]).execute()
+        upnpc_cmd = await execute_upnpc_with_retry(alpha_conn)
         assert re.search("^ [0-9]+ UDP", upnpc_cmd.get_stdout(), re.MULTILINE) is None
