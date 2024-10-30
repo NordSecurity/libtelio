@@ -49,7 +49,7 @@ psutil = "*"
 types-psutil = "*"
 asyncssh = "==2.14.2"
 aiodocker = "*"
-scapy="*"
+scapy="2.5"
 paho-mqtt = "*"
 
 [dev-packages]
