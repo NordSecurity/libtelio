@@ -66,7 +66,7 @@ smart-default.workspace = true
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.19"
-rustls-platform-verifier = { git = "https://github.com/tomaszklak/rustls-platform-verifier.git", rev = "2db68dd17d76eadb062176b913040341b99ef4f3" }
+rustls-platform-verifier.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 winapi = { workspace = true, features = ["ntdef", "winerror"] }
@@ -150,6 +150,7 @@ rand = "0.8"
 regex = "1.5.5"
 rstest = "0.11.0"
 rustc-hash = "1"
+rustls-platform-verifier = "0.3.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10.6"

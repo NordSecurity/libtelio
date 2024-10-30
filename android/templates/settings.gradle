@@ -1,4 +1,2 @@
 include ':main'
 apply from: "./init.gradle";
-def verifierProjectPath = findRustlsPlatformVerifierProject()
-includeBuild("${verifierProjectPath}/android/")

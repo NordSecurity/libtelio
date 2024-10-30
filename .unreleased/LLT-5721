@@ -1,0 +1,1 @@
+Do not bundle rustls-platform-verifer classes, use AAR packet instead
