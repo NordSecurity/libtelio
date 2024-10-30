@@ -220,9 +220,22 @@ impl Authority for ForwardAuthority {
         telio_log_debug!("forwarding lookup: {} {}", name, rtype);
         let resolve = self.resolver.lookup(name.clone(), rtype).await;
 
-        if resolve.is_err() {
-            telio_log_warn!("DNS name resolution failed with {:?}", resolve);
-        }
+        // Log DNS failures
+        match resolve {
+            // Some errors are not really relevant, and happens in a wild often.
+            // For example: no IPs associated with domain especially for AAAA queries
+            //
+            // Log such errors with lower logging level
+            Err(ref e)
+                if matches!(e.kind(), ResolveErrorKind::NoRecordsFound { .. })
+                    && (rtype == RecordType::AAAA || rtype == RecordType::SOA) =>
+            {
+                telio_log_debug!("DNS name resolution failed with {:?}", e);
+            }
+
+            Err(ref e) => telio_log_warn!("DNS name resolution failed with {:?}", e),
+            Ok(_) => (),
+        };
 
         resolve
             .map(ForwardLookup)
