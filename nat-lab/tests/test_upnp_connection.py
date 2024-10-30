@@ -234,6 +234,7 @@ async def test_upnp_port_lease_duration(
         # once the endpoint interval expires, the endpoint is validated and if
         # the lease duration left is less than 25% the port mappings are renewed.
         lease_duration_s = 40
+        jitter_duration_s = 5
 
         assert alpha_setup_params.features.direct
         assert alpha_setup_params.features.direct.upnp_features
@@ -263,6 +264,8 @@ async def test_upnp_port_lease_duration(
         async with AsyncExitStack() as temp_exit_stack:
             await temp_exit_stack.enter_async_context(alpha_gw_router.reset_upnpd())
 
+        await asyncio.sleep(jitter_duration_s)
+
         # this check should be done before endpoint interval triggers a new mapping (optimal > 5s)
         upnpc_cmd = await execute_upnpc_with_retry(alpha_conn)
         assert re.search("^ [0-9]+ UDP", upnpc_cmd.get_stdout(), re.MULTILINE) is None
@@ -284,7 +287,7 @@ async def test_upnp_port_lease_duration(
         )
         assert len(mappings_search) == 2
 
-        await asyncio.sleep(lease_duration_s)
+        await asyncio.sleep(lease_duration_s + jitter_duration_s)
 
         # telio-traversal shouldn't let port mappings expire
         upnpc_cmd = await execute_upnpc_with_retry(alpha_conn)
@@ -294,8 +297,8 @@ async def test_upnp_port_lease_duration(
         assert len(mappings_search) == 2
 
         await alpha_client.stop_device()
-        await asyncio.sleep(lease_duration_s)
+        await asyncio.sleep(lease_duration_s + jitter_duration_s)
 
         # upnpn mappings should have expired
         upnpc_cmd = await execute_upnpc_with_retry(alpha_conn)
-        assert re.search("^ [0-9]+ UDP", upnpc_cmd.get_stdout(), re.MULTILINE) is None
+        assert re.search("^ [0-9]+ UDP", upnpc_cmd.get_stdout(), re.MULTILINE) is None        
