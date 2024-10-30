@@ -134,26 +134,20 @@ pub fn deserialize_meshnet_config(cfg_str: String) -> FfiResult<Config> {
 /// - `env`:    see https://developer.android.com/training/articles/perf-jni#javavm-and-jnienv
 /// - `ctx`:    see https://developer.android.com/reference/android/content/Context
 pub extern "C" fn Java_com_nordsec_telio_TelioCert_initCertStore(
-    env: *mut jni::sys::JNIEnv,
-    ctx: jni::sys::jobject,
+    env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+    ctx: jni::objects::JObject,
 ) -> u8 {
     use once_cell::sync::OnceCell;
 
     static RESULT: OnceCell<u8> = OnceCell::new();
-    *RESULT.get_or_init(|| match unsafe { jni::JNIEnv::from_raw(env) } {
-        Ok(env) => match rustls_platform_verifier::android::init_hosted(&env, ctx.into()) {
-            Err(err) => {
-                telio_log_error!("Failed to initialize certificate store {err:?}");
-                1
-            }
-            Ok(()) => {
-                telio_log_debug!("Successfully initialized certificate store");
-                0
-            }
-        },
-        Err(err) => {
+    *RESULT.get_or_init(|| {
+        if let Err(err) = rustls_platform_verifier::android::init_hosted(&env, ctx) {
             telio_log_error!("Failed to initialize certificate store {err:?}");
             1
+        } else {
+            telio_log_debug!("Successfully initialized certificate store");
+            0
         }
     })
 }
