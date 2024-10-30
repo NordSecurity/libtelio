@@ -369,7 +369,7 @@ impl State {
             })
         })
         .unwrap_or_else(|| {
-            telio_log_trace!("Could not find stored meshnet id by moose, generating a fresh one");
+            telio_log_info!("Could not find stored meshnet id by moose, generating a fresh one");
             Uuid::new_v4()
         })
     }

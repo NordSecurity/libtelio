@@ -3,6 +3,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use telio_utils::telio_log_debug;
 pub use telio_utils::{telio_log_error, telio_log_warn};
 
 #[cfg_attr(all(feature = "moose", not(docrs)), path = "event_log_moose.rs")]
@@ -146,8 +147,11 @@ pub fn init_moose(
 /// Fetches context string from moose
 pub fn fetch_context_string(path: String) -> Option<String> {
     if is_lana_initialized() {
-        moose::moose_libtelioapp_fetch_context_string(path)
+        let result = moose::moose_libtelioapp_fetch_context_string(path.clone());
+        telio_log_debug!("Lana is initialized, fetching '{path}' resulted in '{result:?}'");
+        result
     } else {
+        telio_log_debug!("Lana is not initialized");
         None
     }
 }
