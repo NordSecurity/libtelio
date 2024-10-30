@@ -218,6 +218,7 @@ impl Runtime for Analytics {
             },
 
             _ = self.rtt_interval.tick(), if self.ping_channel_tx.upgrade().is_none() => {
+                telio_log_debug!("Starting periodic ping");
                 self.perform_ping();
                 Self::next()
             },
@@ -416,72 +417,75 @@ impl Analytics {
             self.ping_cnt += 1;
         }
 
-        if !self.nodes.is_empty() {
-            let (ping_channel_tx, ping_channel_rx) = mpsc::channel(self.nodes.len());
-            self.ping_channel_rx = ping_channel_rx;
-            self.ping_channel_tx = ping_channel_tx.downgrade();
+        if self.nodes.is_empty() {
+            telio_log_debug!("No nodes to ping");
+            return;
+        }
 
-            for (_, node) in self.nodes.iter() {
-                if node.peer_state != PeerState::Connected {
-                    telio_log_debug!(
-                        "{:?} is in {:?} state, skipping analytics ping.",
-                        node.public_key,
-                        node.peer_state
-                    );
-                    continue;
-                }
+        let (ping_channel_tx, ping_channel_rx) = mpsc::channel(self.nodes.len());
+        self.ping_channel_rx = ping_channel_rx;
+        self.ping_channel_tx = ping_channel_tx.downgrade();
 
-                let (pk, ip_addresses) = (node.public_key, node.ip_addresses.clone());
-                let pinger = Arc::clone(&self.ping_backend);
-                let ping_channel_tx = ping_channel_tx.clone();
-                let curr_ip_stack = self.ip_stack.clone();
+        for (_, node) in self.nodes.iter() {
+            if node.peer_state != PeerState::Connected {
+                telio_log_debug!(
+                    "{:?} is in {:?} state, skipping analytics ping.",
+                    node.public_key,
+                    node.peer_state
+                );
+                continue;
+            }
 
-                tokio::spawn(async move {
-                    if let Some(pinger) = &*pinger {
-                        let mut dpr = DualPingResults::default();
-                        let mut ip_addresses = ip_addresses.iter().peekable();
+            let (pk, ip_addresses) = (node.public_key, node.ip_addresses.clone());
+            let pinger = Arc::clone(&self.ping_backend);
+            let ping_channel_tx = ping_channel_tx.clone();
+            let curr_ip_stack = self.ip_stack.clone();
 
-                        while let Some(ip_address) = ip_addresses.next() {
-                            let mut dpt = *ip_address;
+            tokio::spawn(async move {
+                if let Some(pinger) = &*pinger {
+                    let mut dpr = DualPingResults::default();
+                    let mut ip_addresses = ip_addresses.iter().peekable();
 
-                            // Adjust target based on local IP stack
-                            match curr_ip_stack {
-                                Some(IpStack::IPv4) | None => {
-                                    dpt.delete_address(IpStack::IPv6);
-                                }
-                                Some(IpStack::IPv6) => {
-                                    dpt.delete_address(IpStack::IPv4);
-                                }
-                                _ => {}
+                    while let Some(ip_address) = ip_addresses.next() {
+                        let mut dpt = *ip_address;
+
+                        // Adjust target based on local IP stack
+                        match curr_ip_stack {
+                            Some(IpStack::IPv4) | None => {
+                                dpt.delete_address(IpStack::IPv6);
                             }
-
-                            dpr = Box::pin(pinger.perform(dpt)).await;
-
-                            if let Some(results_v4) = &dpr.v4 {
-                                if results_v4.successful_pings != 0 {
-                                    break;
-                                }
+                            Some(IpStack::IPv6) => {
+                                dpt.delete_address(IpStack::IPv4);
                             }
-                            if let Some(results_v6) = &dpr.v6 {
-                                if results_v6.successful_pings != 0 {
-                                    break;
-                                }
-                            }
+                            _ => {}
+                        }
 
-                            if let Some(next_ip) = ip_addresses.peek() {
-                                let _ = ping_channel_tx.send((pk, dpr.clone())).await;
-                                telio_log_debug!(
-                                    "Node was not reachable through {:?}, trying {:?}.",
-                                    ip_address,
-                                    next_ip
-                                );
+                        dpr = Box::pin(pinger.perform(dpt)).await;
+
+                        if let Some(results_v4) = &dpr.v4 {
+                            if results_v4.successful_pings != 0 {
+                                break;
+                            }
+                        }
+                        if let Some(results_v6) = &dpr.v6 {
+                            if results_v6.successful_pings != 0 {
+                                break;
                             }
                         }
 
-                        let _ = ping_channel_tx.send((pk, dpr)).await;
+                        if let Some(next_ip) = ip_addresses.peek() {
+                            let _ = ping_channel_tx.send((pk, dpr.clone())).await;
+                            telio_log_debug!(
+                                "Node was not reachable through {:?}, trying {:?}.",
+                                ip_address,
+                                next_ip
+                            );
+                        }
                     }
-                });
-            }
+
+                    let _ = ping_channel_tx.send((pk, dpr)).await;
+                }
+            });
         }
     }
 
