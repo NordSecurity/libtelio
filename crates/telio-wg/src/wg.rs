@@ -707,13 +707,17 @@ impl State {
             }
         });
 
+        let event = Event {
+            state,
+            link_state,
+            peer,
+            old_peer,
+        };
+
+        telio_log_debug!("Sending new event {event:?}");
+
         self.event
-            .send(Box::new(Event {
-                state,
-                link_state,
-                peer,
-                old_peer,
-            }))
+            .send(Box::new(event))
             .await
             .map_err(|_| Error::InternalError("Failed to send node event"))
     }

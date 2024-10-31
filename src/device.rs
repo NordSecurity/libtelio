@@ -50,7 +50,7 @@ use telio_wg as wg;
 use thiserror::Error as TError;
 use tokio::{
     runtime::{Builder, Runtime as AsyncRuntime},
-    sync::Mutex,
+    sync::{broadcast::error::RecvError, Mutex},
     time::Interval,
 };
 
@@ -178,6 +178,8 @@ pub enum Error {
     StarcastError(#[from] telio_starcast::starcast_peer::Error),
     #[error(transparent)]
     TransportError(#[from] telio_starcast::transport::Error),
+    #[error("Events processing thread failed to start: {0}")]
+    EventsProcessingThreadStartError(std::io::Error),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -501,11 +503,22 @@ impl Device {
         thread_tracker.start();
 
         let (event_tx, mut event_rx) = tokio::sync::broadcast::channel(256);
-        art.spawn(async move {
-            while let Ok(event) = event_rx.recv().await {
-                event_cb(event);
-            }
-        });
+
+        let handle = std::thread::Builder::new()
+            .name("libtelio-events".to_owned())
+            .spawn(move || loop {
+                match event_rx.blocking_recv() {
+                    Ok(event) => event_cb(event),
+                    Err(RecvError::Lagged(n)) => {
+                        telio_log_warn!("Failed to receive new event, lagged: {n}")
+                    }
+                    Err(RecvError::Closed) => break,
+                }
+            });
+        if let Err(e) = handle {
+            telio_log_error!("Failed to start events thread: {e:?}");
+            return Err(Error::EventsProcessingThreadStartError(e));
+        }
 
         Ok(Device {
             features,
