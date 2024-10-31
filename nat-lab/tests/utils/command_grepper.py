@@ -34,14 +34,26 @@ class CommandGrepper:
         Checks if the expected strings are present in the output of the command.
         If only the primary string is provided, check for its presence in whole stdout.
         If secondary strings are also provided, checks, if primary and all secondaries are in one line
+
+        Returns True if string is found.
+        Returns False if string is not found and TimeoutError is caught.
+        Raises a `PorcessExecError` if command returns non zero value.
+        Raises an `Exception` if something else wrong happens.
         """
         try:
             return await asyncio.wait_for(
                 self._run_check(exp_primary, exp_secondary, True),
                 self._timeout,
             )
-        except ProcessExecError:
+        except ProcessExecError as e:
+            print(f"Process exec error: {e}")
+            raise
+        except TimeoutError as e:
+            print(f"Timeout error: {e}")
             return False
+        except Exception as e:
+            print(f"Some other exception happened: {e}")
+            raise
 
     async def check_not_exists(
         self, exp_primary: str, exp_secondary: Optional[List[str]] = None
@@ -50,14 +62,26 @@ class CommandGrepper:
         Check if the expected strings are not present in the output of the command.
         If only the primary string is provided, check for its absence in whole stdout.
         If secondary strings are also provided, checks, if primary and secondary are NOT in one line.
+
+        Returns True if string is not found.
+        Returns False if string is found and TimeoutError is caught.
+        Raises a `PorcessExecError` if command returns non zero value.
+        Raises an `Exception` if something else wrong happens.
         """
         try:
             return await asyncio.wait_for(
                 self._run_check(exp_primary, exp_secondary, exists=False),
                 self._timeout,
             )
-        except ProcessExecError:
+        except ProcessExecError as e:
+            print(f"Process exec error: {e}")
+            raise
+        except TimeoutError as e:
+            print(f"Timeout error: {e}")
             return False
+        except Exception as e:
+            print(f"Some other exception happened: {e}")
+            raise
 
     async def _run_check(
         self, exp_primary: str, exp_secondary: Optional[List[str]], exists: bool
