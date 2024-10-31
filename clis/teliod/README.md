@@ -23,6 +23,9 @@ There is a command for running the daemon:
      - `trace`
      - `off`
    - `log_file_path` - a path to the daemon's logging file (relative paths are starting in Teliod's working directory)
+   - `authentication_token` - Token from Nord VPN account to authenticate API calls
+   - `app_user_uid` - A unique number for each user of the application
+   - `interface_name` - Name of tunnel interface to connect to. Note that for macOS the name has to be in form `tun#` where `#` can be any integer number
 
 And following cli commands:
  - `teliod hello-world <NAME>` - simple command for testing purposes, logs "Hello NAME!", used to ensure daemon proper startup, should be erased in the future and replaced by some more serious one

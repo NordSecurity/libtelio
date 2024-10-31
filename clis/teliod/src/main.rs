@@ -8,21 +8,29 @@ use nix::sys::signal::Signal;
 use serde::{Deserialize, Serialize};
 use serde_json::error::Error as SerdeJsonError;
 use signal_hook_tokio::Signals;
+use std::time::Duration;
 use std::{
     fs::{self, File},
     sync::Arc,
 };
+use telio::{
+    crypto::SecretKey,
+    device::{Device, DeviceConfig, Error as DeviceError},
+    telio_model::{config::Config as MeshMap, features::Features},
+    telio_utils::select,
+    telio_wg::AdapterType,
+};
 use thiserror::Error as ThisError;
-use tokio::task::JoinError;
-use tracing::{debug, error, info, warn};
-
-use telio::{device::Device, telio_model::features::Features, telio_utils::select};
+use tokio::{sync::mpsc, task::JoinError};
+use tracing::{debug, error, info, trace, warn};
 
 mod comms;
 mod config;
+mod core_api;
 mod nc;
 
-use crate::{comms::DaemonSocket, nc::NotificationCenter};
+use crate::core_api::{get_meshmap as get_meshmap_from_server, init_with_api, Error as ApiError};
+use crate::{comms::DaemonSocket, config::DeviceIdentity, nc::NotificationCenter};
 
 #[derive(Parser, Debug)]
 #[clap()]
@@ -41,6 +49,14 @@ enum Cmd {
     Daemon { config_path: String },
     #[clap(flatten)]
     Client(ClientCmd),
+}
+
+#[derive(Debug)]
+pub enum TelioTaskCmd {
+    // Command to set the downloaded meshmap to telio instance
+    UpdateMeshmap(MeshMap),
+    // Break the recieve loop to quit the daemon and exit gracefully
+    Quit,
 }
 
 #[derive(Debug, ThisError)]
@@ -63,17 +79,27 @@ enum TeliodError {
     DaemonIsRunning,
     #[error("NotificationCenter failure: {0}")]
     NotificationCenter(#[from] nc::Error),
+    #[error(transparent)]
+    CoreApiError(#[from] ApiError),
+    #[error(transparent)]
+    DeviceError(#[from] DeviceError),
 }
 
 #[tokio::main]
+#[allow(large_futures)]
 async fn main() -> Result<(), TeliodError> {
     match Cmd::parse() {
         Cmd::Daemon { config_path } => {
             if DaemonSocket::get_ipc_socket_path()?.exists() {
                 Err(TeliodError::DaemonIsRunning)
             } else {
-                let file = File::open(config_path)?;
-                let config: TeliodDaemonConfig = serde_json::from_reader(file)?;
+                let file = File::open(&config_path)?;
+                let mut config: TeliodDaemonConfig = serde_json::from_reader(file)?;
+                let token = std::env::var("NORD_TOKEN").ok();
+                if let Some(t) = token {
+                    debug!("Overriding token from env");
+                    config.authentication_token = t;
+                }
                 daemon_event_loop(config).await
             }
         }
@@ -116,13 +142,81 @@ impl CommandListener {
 }
 
 // From async context Telio needs to be run in separate task
-fn telio_task() {
-    let _telio = Device::new(
+fn telio_task(
+    node_identity: Arc<DeviceIdentity>,
+    auth_token: Arc<String>,
+    mut rx_channel: mpsc::Receiver<TelioTaskCmd>,
+    tx_channel: mpsc::Sender<TelioTaskCmd>,
+    interface_name: &str,
+) -> Result<(), TeliodError> {
+    debug!("Initializing telio device");
+    let mut telio = Device::new(
         Features::default(),
         // TODO: replace this with some real event handling
         move |event| info!("Incoming event: {:?}", event),
         None,
-    );
+    )?;
+
+    // TODO: This is temporary to be removed later on when we have proper integration
+    // tests with core API. This is to not look for tokens in a test environment
+    // right now as the values are dummy and program will not run as it expects
+    // real tokens.
+    if !auth_token.as_str().eq("") {
+        start_telio(&mut telio, node_identity.private_key, &interface_name)?;
+        task_retrieve_meshmap(node_identity, auth_token, tx_channel);
+
+        while let Some(cmd) = rx_channel.blocking_recv() {
+            info!("Got command {:?}", cmd);
+            match cmd {
+                TelioTaskCmd::UpdateMeshmap(map) => {
+                    if let Err(e) = telio.set_config(&Some(map)) {
+                        error!("Unable to set meshmap due to {e}");
+                    }
+                }
+                TelioTaskCmd::Quit => {
+                    telio.stop();
+                    break;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn task_retrieve_meshmap(
+    device_identity: Arc<DeviceIdentity>,
+    auth_token: Arc<String>,
+    tx: mpsc::Sender<TelioTaskCmd>,
+) {
+    tokio::spawn(async move {
+        let result = get_meshmap_from_server(device_identity, auth_token).await;
+        match result {
+            Ok(meshmap) => {
+                trace!("Meshmap {:#?}", meshmap);
+                #[allow(mpsc_blocking_send)]
+                if let Err(e) = tx.send(TelioTaskCmd::UpdateMeshmap(meshmap)).await {
+                    error!("Unable to send meshmap due to {e}");
+                }
+            }
+            Err(e) => error!("Getting meshmap failed due to {e}"),
+        }
+    });
+}
+
+fn start_telio(
+    telio: &mut Device,
+    private_key: SecretKey,
+    interface_name: &str,
+) -> Result<(), DeviceError> {
+    telio.start(&DeviceConfig {
+        private_key,
+        name: Some(interface_name.to_owned()),
+        adapter: AdapterType::BoringTun,
+        ..Default::default()
+    })?;
+
+    debug!("started telio with {:?}...", AdapterType::BoringTun,);
+    Ok(())
 }
 
 async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodError> {
@@ -141,20 +235,46 @@ async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodError
     let socket = DaemonSocket::new(&DaemonSocket::get_ipc_socket_path()?)?;
     let cmd_listener = CommandListener { socket };
 
-    let nc = NotificationCenter::new(
-        &config,
-        vec![Arc::new(|am| {
-            println!("Example callback registered at the start: {am:?}")
-        })],
-    )
-    .await?;
+    let nc = NotificationCenter::new(&config).await?;
 
-    nc.add_callback(Arc::new(|am| {
-        println!("Example callback registered after nc start: {am:?}")
+    // Tx is unused here, but this channel can be used to communicate with the
+    // telio task
+    let (tx, rx) = mpsc::channel(10);
+
+    // TODO: This if condition and ::default call is temporary to be removed later
+    // on when we have proper integration tests with core API.
+    // This is to not look for tokens in a test environment right now as the values
+    // are dummy and program will not run as it expects real tokens.
+    let mut identity = DeviceIdentity::default();
+    if !config
+        .authentication_token
+        .eq("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    {
+        identity = init_with_api(&config.authentication_token, &config.interface_name).await?;
+    }
+    let tx_clone = tx.clone();
+
+    let token_ptr = Arc::new(config.authentication_token);
+    let token_clone = token_ptr.clone();
+
+    let identity_ptr = Arc::new(identity);
+    let identity_clone = identity_ptr.clone();
+
+    let telio_task_handle = tokio::task::spawn_blocking(move || {
+        telio_task(
+            identity_clone,
+            token_clone,
+            rx,
+            tx_clone,
+            &config.interface_name,
+        )
+    });
+
+    let tx_clone = tx.clone();
+    nc.add_callback(Arc::new(move |_am| {
+        task_retrieve_meshmap(identity_ptr.clone(), token_ptr.clone(), tx_clone.clone());
     }))
     .await;
-
-    let telio_task_handle = tokio::task::spawn_blocking(telio_task);
 
     let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
 
@@ -179,6 +299,9 @@ async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodError
                 match signal {
                     Some(s @ SIGHUP | s @ SIGTERM | s @ SIGINT | s @ SIGQUIT) => {
                         info!("Received signal {:?}, exiting", Signal::try_from(s));
+                        if let Err(e) = tx.send_timeout(TelioTaskCmd::Quit, Duration::from_secs(2)).await {
+                            error!("Unable to send QUIT due to {e}");
+                        };
                         break Ok(());
                     }
                     Some(s) => {
@@ -194,7 +317,7 @@ async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodError
 
     // Wait until Telio task ends
     // TODO: When it will be doing something some channel with commands etc. might be needed
-    let join_result = telio_task_handle.await;
+    let join_result = telio_task_handle.await?;
 
     if result.is_err() {
         result

@@ -113,6 +113,17 @@ impl DaemonSocket {
     }
 }
 
+impl Drop for DaemonSocket {
+    fn drop(&mut self) {
+        // Normally this should be cleaned up, but in some cases it is not
+        // The ipc path here should be valid, as the daemon socket is created
+        // based on whether the path is valid or not.
+        if let Ok(socket_path) = DaemonSocket::get_ipc_socket_path() {
+            let _ = fs::remove_file(&socket_path);
+        }
+    }
+}
+
 /// Struct for tracking a single IPC connection and keeping the stream
 /// Mostly needed for keeping the stream while the server is generating a reply.
 pub struct DaemonConnection {

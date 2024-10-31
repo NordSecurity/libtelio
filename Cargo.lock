@@ -4955,7 +4955,9 @@ name = "teliod"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "clap 3.2.25",
+ "dirs",
  "futures",
  "interprocess 2.2.1",
  "nix 0.28.0",
