@@ -16,7 +16,7 @@ class SshConnection(Connection):
         self._connection = connection
         self._target_os = target_os
 
-    def create_process(self, command: List[str]) -> "Process":
+    def create_process(self, command: List[str], kill_id=None) -> "Process":
         print(datetime.now(), "Executing", command, "on", self.target_os)
         if self._target_os == TargetOS.Windows:
             escape_argument = cmd_exe_escape.escape_argument

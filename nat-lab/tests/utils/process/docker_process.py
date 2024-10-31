@@ -1,6 +1,5 @@
 import asyncio
-import random
-import string
+import secrets
 import subprocess
 import sys
 from .process import Process, ProcessExecError, StreamCallback
@@ -26,7 +25,9 @@ class DockerProcess(Process):
         str  # Private ID added to find the process easily when it needs to be killed
     )
 
-    def __init__(self, container: DockerContainer, command: List[str]) -> None:
+    def __init__(
+        self, container: DockerContainer, command: List[str], kill_id=None
+    ) -> None:
         self._container = container
         self._command = command
         self._stdout = ""
@@ -35,9 +36,7 @@ class DockerProcess(Process):
         self._is_done = asyncio.Event()
         self._stream = None
         self._execute = None
-        self._kill_id = "".join(
-            random.choices(string.ascii_uppercase + string.digits, k=12)
-        )
+        self._kill_id = kill_id if kill_id else secrets.token_hex(8).upper()
 
     async def execute(
         self,
