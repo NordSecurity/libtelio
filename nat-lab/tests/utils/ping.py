@@ -34,17 +34,20 @@ class Ping:
         self._ip = ip
         self._connection = connection
         self._ip_proto = testing.unpack_optional(get_ip_address_type(ip))
+        kill_id = secrets.token_hex(8).upper()
 
         if connection.target_os == TargetOS.Windows:
             self._process = connection.create_process(
                 ["ping", ("-4" if self._ip_proto == IPProto.IPv4 else "-6"), "-t", ip]
             )
         elif connection.target_os == TargetOS.Mac:
-            self._process = connection.create_process(
-                [("ping" if self._ip_proto == IPProto.IPv4 else "ping6"), ip]
-            )
+            self._process = connection.create_process([
+                ("ping" if self._ip_proto == IPProto.IPv4 else "ping6"),
+                "-p",
+                kill_id,
+                ip,
+            ])
         else:
-            kill_id = secrets.token_hex(8).upper()
             self._process = connection.create_process(
                 [
                     "ping",
