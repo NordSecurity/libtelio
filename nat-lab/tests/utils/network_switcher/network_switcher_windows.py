@@ -70,7 +70,7 @@ class ConfiguredInterfaces:
 
 
 class NetworkSwitcherWindows(NetworkSwitcher):
-    _status_check_timeout: float = 10.0
+    _status_check_timeout: float = 20.0
 
     def __init__(
         self, connection: Connection, interfaces: ConfiguredInterfaces
