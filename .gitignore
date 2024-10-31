@@ -1,4 +1,5 @@
 Cargo.lock
+tcli
 tcli.log
 /.*/
 !/.cargo
@@ -10,6 +11,7 @@ tcli.log
 *.deb
 *.nix
 *.prepared*
+*.dylib
 /nat-lab/data/tcli*
 /3rd-party/boringtun
 /3rd-party/ci-helper-scripts/
