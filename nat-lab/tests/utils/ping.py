@@ -1,5 +1,6 @@
 import asyncio
 import re
+import secrets
 from contextlib import asynccontextmanager
 from ipaddress import ip_address
 from typing import AsyncIterator, Optional
@@ -43,8 +44,16 @@ class Ping:
                 [("ping" if self._ip_proto == IPProto.IPv4 else "ping6"), ip]
             )
         else:
+            kill_id = secrets.token_hex(8).upper()
             self._process = connection.create_process(
-                ["ping", ("-4" if self._ip_proto == IPProto.IPv4 else "-6"), ip]
+                [
+                    "ping",
+                    ("-4" if self._ip_proto == IPProto.IPv4 else "-6"),
+                    "-p",
+                    kill_id,
+                    ip,
+                ],
+                kill_id,
             )
         self._next_ping_event = asyncio.Event()
 
