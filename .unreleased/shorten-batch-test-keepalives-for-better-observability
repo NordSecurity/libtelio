@@ -1,0 +1,2 @@
+Current batcher test uses real-life keepalives however that makes it very difficult to observe
+any meaningful metrics when running the job, thus the keepalives are decreased to better observe batcher in action

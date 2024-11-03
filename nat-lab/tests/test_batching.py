@@ -24,7 +24,7 @@ from utils.bindings import (
 from utils.connection import DockerConnection
 from utils.connection_util import DOCKER_GW_MAP, ConnectionTag, container_id
 
-BATCHING_MISALIGN_RANGE = (0, 5)  # Seconds to sleep for peers before starting
+BATCHING_MISALIGN_RANGE = (0, 10)  # Seconds to sleep for peers before starting
 BATCHING_CAPTURE_TIME = 240  # Tied to TEST_BATCHING_TIMEOUT
 
 
@@ -39,13 +39,13 @@ def _generate_setup_parameters(
         rtt_seconds=1, no_of_pings=1, use_for_downgrade=True
     )
     features.batching = (
-        FeatureBatching(direct_connection_threshold=35) if batching else None
+        FeatureBatching(direct_connection_threshold=10) if batching else None
     )
     features.wireguard.persistent_keepalive = FeaturePersistentKeepalive(
-        direct=70,
-        proxying=70,
-        stun=70,
-        vpn=70,
+        direct=20,
+        proxying=20,
+        stun=20,
+        vpn=20,
     )
 
     return SetupParameters(
@@ -181,8 +181,10 @@ async def test_batching(
         # On gateways we are sure the traffic has left the machine, however no easy way to
         # inspect the packets(encrypted by wireguard). For packet inspection
         # client traffic can be inspected.
-        gateways = [DOCKER_GW_MAP[param.connection_tag] for param in setup_params]
-        gateway_container_names = [container_id(conn_tag) for conn_tag in gateways]
+        gateways = [DOCKER_GW_MAP[param.connection_tag]
+                    for param in setup_params]
+        gateway_container_names = [container_id(
+            conn_tag) for conn_tag in gateways]
         conns = [client.get_connection() for client in env.clients]
         node_container_names = [
             conn.container_name()
@@ -244,6 +246,7 @@ async def test_batching(
         for container, pcap_path in zip(container_names, pcap_paths):
             for filt in allow_pcap_filters:
                 filter_name = filt[0]
-                hs = generate_histogram_from_pcap(pcap_path, capture_duration, filt[1])
+                hs = generate_histogram_from_pcap(
+                    pcap_path, capture_duration, filt[1])
                 title = f"{container}-filter({filter_name})"
                 print_histogram(title, hs, max_height=12)
