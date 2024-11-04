@@ -531,6 +531,9 @@ class Client:
         is_vpn: bool = False,
         timeout: Optional[float] = None,
     ) -> None:
+        event_info = f"peer({public_key}) with states({states}), paths({paths}), is_exit={is_exit}, is_vpn={is_vpn}"
+
+        print(datetime.now(), f"[{self._node.name}]: wait for event {event_info}")
         await self.get_events().wait_for_event_peer(
             public_key,
             states,
@@ -539,6 +542,7 @@ class Client:
             is_vpn,
             timeout,
         )
+        print(datetime.now(), f"[{self._node.name}]: got event {event_info}")
 
     def get_link_state_events(self, public_key: str) -> List[Optional[LinkState]]:
         return self.get_events().get_link_state_events(public_key)
