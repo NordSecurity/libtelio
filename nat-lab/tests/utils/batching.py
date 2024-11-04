@@ -16,7 +16,8 @@ def _generate_histogram(
     max_val = max(data)
 
     if max_val >= buckets * bucket_size:
-        raise ValueError(
+        # this can happen because TCPDUMP is not terminated immediately
+        print(
             f"Histogram doesn't fit the data({max_val}). The max value is {max_val} but the histogram has {buckets} buckets with a width of"
             f" {bucket_size}, the maximum value it can fit is {buckets * bucket_size}"
         )

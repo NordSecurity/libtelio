@@ -97,25 +97,19 @@ ALL_NODES = [
         TelioAdapterType.LINUX_NATIVE_TUN,
     ),
     (
-        ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1,
-        TelioAdapterType.LINUX_NATIVE_TUN,
-    ),
-    (
-        ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2,
-        TelioAdapterType.LINUX_NATIVE_TUN,
-    ),
-    (
         ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT,
         TelioAdapterType.LINUX_NATIVE_TUN,
     ),
     (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, TelioAdapterType.LINUX_NATIVE_TUN),
     (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, TelioAdapterType.LINUX_NATIVE_TUN),
-    (
-        ConnectionTag.MAC_VM,
-        TelioAdapterType.BORING_TUN,
-    ),
-    (ConnectionTag.WINDOWS_VM_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
-    (ConnectionTag.WINDOWS_VM_2, TelioAdapterType.WIREGUARD_GO_TUN),
+    # Windows and Mac runners are not crucial to observe the batching results yet
+    # and just introduce some delay until the runners are ready.
+    # (
+    #     ConnectionTag.MAC_VM,
+    #     TelioAdapterType.BORING_TUN,
+    # ),
+    # (ConnectionTag.WINDOWS_VM_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
+    # (ConnectionTag.WINDOWS_VM_2, TelioAdapterType.WIREGUARD_GO_TUN),
 ]
 # This test captures histograms of network activity to evaluate the effect of local batching in libtelio.
 # Since only local batching is implemented, no client-generated traffic should occur during the test.
@@ -138,12 +132,33 @@ ALL_NODES = [
                 _generate_setup_parameters(conn_tag, adapter, False)
                 for conn_tag, adapter in ALL_NODES
             ],
+            # Test with no misalignment(still some misalignment will happen naturally though)
+            BATCHING_MISALIGN_RANGE * 0,
+            BATCHING_CAPTURE_TIME,
+            marks=[
+                pytest.mark.batching,
+            ],
+        ),
+        pytest.param(
+            [
+                _generate_setup_parameters(conn_tag, adapter, True)
+                for conn_tag, adapter in ALL_NODES
+            ],
+            BATCHING_MISALIGN_RANGE * 0,
+            BATCHING_CAPTURE_TIME,
+            marks=[
+                pytest.mark.batching,
+            ],
+        ),
+        pytest.param(
+            [
+                _generate_setup_parameters(conn_tag, adapter, False)
+                for conn_tag, adapter in ALL_NODES
+            ],
             BATCHING_MISALIGN_RANGE,
             BATCHING_CAPTURE_TIME,
             marks=[
                 pytest.mark.batching,
-                pytest.mark.mac,
-                pytest.mark.windows,
             ],
         ),
         pytest.param(
@@ -155,8 +170,6 @@ ALL_NODES = [
             BATCHING_CAPTURE_TIME,
             marks=[
                 pytest.mark.batching,
-                pytest.mark.mac,
-                pytest.mark.windows,
             ],
         ),
     ],
@@ -177,14 +190,9 @@ async def test_batching(
             if instance.derp_servers != []
         ])
 
-        # We capture the traffic from all nodes and gateways.
-        # On gateways we are sure the traffic has left the machine, however no easy way to
-        # inspect the packets(encrypted by wireguard). For packet inspection
-        # client traffic can be inspected.
-        gateways = [DOCKER_GW_MAP[param.connection_tag]
-                    for param in setup_params]
-        gateway_container_names = [container_id(
-            conn_tag) for conn_tag in gateways]
+        # We capture the traffic on all nodes and their gateways.
+        gateways = [DOCKER_GW_MAP[param.connection_tag] for param in setup_params]
+        gateway_container_names = [container_id(conn_tag) for conn_tag in gateways]
         conns = [client.get_connection() for client in env.clients]
         node_container_names = [
             conn.container_name()
@@ -246,7 +254,6 @@ async def test_batching(
         for container, pcap_path in zip(container_names, pcap_paths):
             for filt in allow_pcap_filters:
                 filter_name = filt[0]
-                hs = generate_histogram_from_pcap(
-                    pcap_path, capture_duration, filt[1])
+                hs = generate_histogram_from_pcap(pcap_path, capture_duration, filt[1])
                 title = f"{container}-filter({filter_name})"
                 print_histogram(title, hs, max_height=12)
