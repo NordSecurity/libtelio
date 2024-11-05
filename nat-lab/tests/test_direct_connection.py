@@ -8,6 +8,7 @@ import timeouts
 from collections import defaultdict
 from config import DERP_SERVERS
 from contextlib import AsyncExitStack, asynccontextmanager
+from datetime import datetime
 from helpers import (
     Environment,
     ping_between_all_nodes,
@@ -174,26 +175,28 @@ async def test_direct_working_paths(
     async with AsyncExitStack() as exit_stack:
         env = await setup_mesh_nodes(exit_stack, setup_params)
 
-        print("Test direct connection")
+        print(datetime.now(), "Test direct connection")
         await _check_if_true_direct_connection(env)
-
-        print("Test direct -> relay -> direct transitions")
-        relay_events = await asyncio.gather(*[
-            exit_stack.enter_async_context(
-                run_async_context(
-                    client.wait_for_event_peer(
-                        node.public_key, [NodeState.CONNECTED], [PathType.RELAY]
+        async with _disable_direct_connection(env, reflexive_ips):
+            print(datetime.now(), "Downgrade to relay connections")
+            await asyncio.gather(*[
+                await exit_stack.enter_async_context(
+                    run_async_context(
+                        client.wait_for_state_peer(
+                            node.public_key, [NodeState.CONNECTED], [PathType.RELAY]
+                        )
                     )
                 )
-            )
-            for client, node in itertools.product(env.clients, env.nodes)
-            if not client.is_node(node)
-        ])
+                for client, node in itertools.product(env.clients, env.nodes)
+                if not client.is_node(node)
+            ])
+            await ping_between_all_nodes(env)
 
-        direct_events = await asyncio.gather(*[
-            exit_stack.enter_async_context(
+        print(datetime.now(), "Reconnect to direct connections")
+        await asyncio.gather(*[
+            await exit_stack.enter_async_context(
                 run_async_context(
-                    client.wait_for_event_peer(
+                    client.wait_for_state_peer(
                         node.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
                     )
                 )
@@ -202,14 +205,10 @@ async def test_direct_working_paths(
             if not client.is_node(node)
         ])
 
-        async with _disable_direct_connection(env, reflexive_ips):
-            await asyncio.gather(*relay_events)
-            await ping_between_all_nodes(env)
-
-        await asyncio.gather(*direct_events)
+        print(datetime.now(), "Test direct connection again")
         await _check_if_true_direct_connection(env)
 
-        print("Test direct connection on short connection loss")
+        print(datetime.now(), "Test direct connection on short connection loss")
         possible_relay_events: Dict[Connection, Dict[Node, Any]] = defaultdict(dict)
         for (client, conn), node in itertools.product(
             zip(env.clients, env.connections), env.nodes
@@ -421,7 +420,11 @@ async def test_direct_working_paths_with_skip_unresponsive_peers() -> None:
     setup_params = _generate_setup_parameters([
         (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, [EndpointProvider.STUN], False),
         (ConnectionTag.DOCKER_CONE_CLIENT_1, [EndpointProvider.STUN], False),
-        (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, [EndpointProvider.STUN], False),
+        (
+            ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+            [EndpointProvider.STUN],
+            False,
+        ),
         (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, [EndpointProvider.STUN], False),
         (ConnectionTag.DOCKER_CONE_CLIENT_2, [EndpointProvider.STUN], False),
     ])
@@ -531,8 +534,16 @@ async def test_direct_working_paths_with_pausing_upnp_and_stun() -> None:
         (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, [EndpointProvider.STUN], False),
         (ConnectionTag.DOCKER_CONE_CLIENT_1, [EndpointProvider.STUN], True),
         (ConnectionTag.DOCKER_CONE_CLIENT_2, [EndpointProvider.STUN], False),
-        (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1, [EndpointProvider.STUN], True),
-        (ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2, [EndpointProvider.STUN], False),
+        (
+            ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1,
+            [EndpointProvider.STUN],
+            True,
+        ),
+        (
+            ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2,
+            [EndpointProvider.STUN],
+            False,
+        ),
         (
             ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
             [EndpointProvider.STUN],
