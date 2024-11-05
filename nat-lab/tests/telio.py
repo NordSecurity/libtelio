@@ -32,6 +32,7 @@ from utils.bindings import (
 from utils.command_grepper import CommandGrepper
 from utils.connection import Connection, DockerConnection, TargetOS
 from utils.connection_util import get_uniffi_path
+from utils.moose import MOOSE_LOGS_DIR
 from utils.output_notifier import OutputNotifier
 from utils.process import Process, ProcessExecError
 from utils.python import get_python_binary
@@ -1040,6 +1041,17 @@ class Client:
                 f.write("\n\n\n\n--- SYSTEM LOG ---\n\n")
                 f.write(system_log_content)
 
+        moose_traces = await find_files(
+            self._connection, MOOSE_LOGS_DIR, "moose_trace.log*"
+        )
+        for trace_path in moose_traces:
+            copy_file(self._connection, trace_path, log_dir)
+            file_name = os.path.basename(trace_path)
+            os.rename(
+                os.path.join(log_dir, file_name),
+                os.path.join(log_dir, f"{container_id}-{file_name}"),
+            )
+
     async def save_moose_db(self) -> None:
         """
         Check if any the moose db files exists ("*-events.db"),
@@ -1129,11 +1141,9 @@ class Client:
 
         coredump_folder, file_prefix = self.get_coredump_folder()
 
-        # find all core dump files
-        process = await self._connection.create_process(
-            ["find", coredump_folder, "-maxdepth", "1", "-name", f"{file_prefix}*"]
-        ).execute()
-        dump_files = process.get_stdout().strip().split()
+        dump_files = await find_files(
+            self._connection, coredump_folder, f"{file_prefix}*"
+        )
 
         coredump_dir = "coredumps"
         os.makedirs(coredump_dir, exist_ok=True)
@@ -1154,6 +1164,37 @@ class Client:
                     f" {container_name}:{file_path} {core_dump_destination}"
                 )
                 os.system(cmd)
+
+
+async def find_files(connection, where, name_pattern):
+    """Wrapper for 'find' command over the connection"""
+
+    try:
+        process = await connection.create_process(
+            ["find", where, "-maxdepth", "1", "-name", name_pattern]
+        ).execute()
+        return process.get_stdout().strip().split()
+    except ProcessExecError:
+        # Expected when 'where' doesn't exist
+        return []
+
+
+def copy_file(from_connection, from_path, destination_path):
+    """Copy a file from within the docker container connection to the destination path"""
+    if isinstance(from_connection, DockerConnection):
+        container_name = from_connection.container_name()
+
+        file_name = os.path.basename(from_path)
+        core_dump_destination = os.path.join(destination_path, file_name)
+
+        cmd = (
+            "docker container cp"
+            f" {container_name}:{from_path} {core_dump_destination}"
+        )
+        print(datetime.now(), cmd)
+        os.system(cmd)
+    else:
+        raise Exception(f"Copying files from {from_connection} is not supported")
 
 
 async def get_log_without_flush(connection) -> str:

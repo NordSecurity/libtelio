@@ -2,6 +2,7 @@ import datetime
 import os
 import Pyro5.api  # type: ignore
 import Pyro5.server  # type: ignore
+import shutil
 import sys
 import telio_bindings as libtelio  # type: ignore # pylint: disable=import-error
 import time
@@ -13,6 +14,7 @@ from typing import List
 
 REMOTE_LOG = "remote.log"
 TCLI_LOG = "tcli.log"
+MOOSE_LOGS_DIR = "/moose_logs"
 
 # This call will allow the remote-side of the Pyro5 connection to handle types defined in libtelio.udl
 init_serialization(libtelio)
@@ -189,6 +191,7 @@ def main():
     try:
         os.remove(TCLI_LOG)
         os.remove(REMOTE_LOG)
+        shutil.rmtree(MOOSE_LOGS_DIR)
     except FileNotFoundError:
         pass
 
