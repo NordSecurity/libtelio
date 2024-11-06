@@ -1,5 +1,6 @@
 import pytest
 from contextlib import AsyncExitStack
+from datetime import datetime
 from helpers import SetupParameters, setup_environment
 from utils.bindings import TelioAdapterType
 from utils.connection_util import ConnectionTag, new_connection_by_tag
