@@ -85,6 +85,10 @@ def main() -> int:
         print("\u001b[33m")
         print("|=======================================================|")
         print("| WARNING! Running builds requires atleast 16GBs of RAM |")
+        print("|                                                       |")
+        print(
+            "| or set env variable \033[1mNATLAB_REDUCE_PARALLEL_LINKERS=1\033[0m\u001b[33m  |"
+        )
         print("|=======================================================|")
         print("\u001b[0m")
         try:
@@ -105,6 +109,12 @@ def main() -> int:
             )
             print(
                 "| ERROR! be due to lack of RAM. Build requires atleast 16GBs of RAM |"
+            )
+            print(
+                "|                                                                   |"
+            )
+            print(
+                "|       or set env variable \033[1mNATLAB_REDUCE_PARALLEL_LINKERS=1\033[0m\u001b[31m        |"
             )
             print(
                 "|===================================================================|"
