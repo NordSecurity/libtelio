@@ -44,6 +44,8 @@ async def test_wg_adapter_cleanup(conn_tag: ConnectionTag):
             ).execute()
     except ProcessExecError:
         pass
+    except ConnectionRefusedError as e:
+        print(datetime.now(), f"First libtelio failed with {e}")
 
     # Check if libtelio left hanging wintun adapter, might now always happen, so we just leave test
     async with new_connection_by_tag(conn_tag) as conn:
