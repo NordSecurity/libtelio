@@ -16,7 +16,7 @@ from config import (
 from contextlib import AsyncExitStack
 from helpers import connectivity_stack
 from mesh_api import API, Node
-from telio import Client, get_log_without_flush
+from telio import Client, copy_file, get_log_without_flush, find_files
 from typing import List, Optional
 from utils import testing, stun
 from utils.analytics import fetch_moose_events, DERP_BIT, WG_BIT, IPV4_BIT, IPV6_BIT
@@ -64,6 +64,7 @@ from utils.connection_util import (
     new_connection_by_tag,
     add_outgoing_packets_delay,
 )
+from utils.moose import MOOSE_LOGS_DIR
 from utils.ping import ping
 from utils.router import IPStack, IPProto
 from utils.telio_log_notifier import TelioLogNotifier
@@ -2040,6 +2041,17 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
                 CONTAINER_EVENT_BACKUP_PATH,
                 events_path,
             )
+            moose_traces = await find_files(
+                connection_beta, MOOSE_LOGS_DIR, "moose_trace.log*"
+            )
+            for trace_path in moose_traces:
+                copy_file(connection_beta, trace_path, log_dir)
+                file_name = os.path.basename(trace_path)
+                new_file_name = f"beta_before_restart_{file_name}"
+                os.rename(
+                    os.path.join(log_dir, file_name),
+                    os.path.join(log_dir, new_file_name),
+                )
 
         beta = api.default_config_one_node(True, ip_stack=alpha_ip_stack)
         connection_beta = await exit_stack.enter_async_context(

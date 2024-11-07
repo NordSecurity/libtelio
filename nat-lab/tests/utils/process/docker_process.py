@@ -9,6 +9,7 @@ from aiodocker.stream import Stream
 from contextlib import asynccontextmanager
 from typing import List, Optional, AsyncIterator
 from utils.asyncio_util import run_async_context
+from utils.moose import MOOSE_LOGS_DIR
 
 
 class DockerProcess(Process):
@@ -46,7 +47,12 @@ class DockerProcess(Process):
         self._execute = await self._container.exec(
             self._command,
             stdin=True,
-            environment={"RUST_BACKTRACE": "full", "KILL_ID": self._kill_id},
+            environment={
+                "MOOSE_LOG": "Trace",
+                "MOOSE_LOG_FILE": MOOSE_LOGS_DIR,
+                "RUST_BACKTRACE": "full",
+                "KILL_ID": self._kill_id,
+            },
         )
         if self._execute is None:
             return self
