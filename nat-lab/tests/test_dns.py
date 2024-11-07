@@ -4,15 +4,22 @@ import asyncio
 import config
 import itertools
 import pytest
-import re
 import timeouts
 from config import LIBTELIO_DNS_IPV4, LIBTELIO_DNS_IPV6
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_api, setup_environment, setup_mesh_nodes
 from typing import List
 from utils.bindings import default_features, FeatureDns, TelioAdapterType
-from utils.connection_tracker import ConnectionLimits
-from utils.connection_util import ConnectionTag, generate_connection_tracker_config
+from utils.connection_tracker import (
+    ConnectionLimits,
+    ConnectionTrackerConfig,
+    FiveTuple,
+)
+from utils.connection_util import (
+    ConnectionTag,
+    generate_connection_tracker_config,
+    LAN_ADDR_MAP,
+)
 from utils.dns import query_dns, query_dns_port
 from utils.process import ProcessExecError
 from utils.router import IPStack
@@ -634,9 +641,19 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                     ip_stack=IPStack.IPv4v6,
-                    connection_tracker_config=generate_connection_tracker_config(
-                        ConnectionTag.DOCKER_CONE_CLIENT_1
-                    ),
+                    connection_tracker_config=[
+                        ConnectionTrackerConfig(
+                            key="dns-limiter",
+                            limits=ConnectionLimits(
+                                1, 1
+                            ),  # Require strictly one DNS connection
+                            target=FiveTuple(
+                                protocol="udp",
+                                src_ip=LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1],
+                                dst_port=53,
+                            ),
+                        )
+                    ],
                     derp_servers=[],
                 )
             ],
@@ -644,38 +661,10 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
         connection_alpha, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
 
-        process = await exit_stack.enter_async_context(
-            connection_alpha.create_process([
-                "tcpdump",
-                "--immediate-mode",
-                "-ni",
-                "eth0",
-                "udp",
-                "and",
-                "port",
-                "53",
-                "-l",
-            ]).run()
-        )
-        await asyncio.sleep(1)
-
         await client_alpha.enable_magic_dns([FIRST_DNS_SERVER, SECOND_DNS_SERVER])
-        await asyncio.sleep(1)
-
-        await query_dns(connection_alpha, "google.com")
-        await asyncio.sleep(1)
-
-        tcpdump_stdout = process.get_stdout()
-        tcpdump_stderr = process.get_stderr()
-        results = set(re.findall(
-            r".* IP .* > (?P<dest_ip>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,5}: .* A\?.*",
-            tcpdump_stdout,
-        ))  # fmt: skip
-
-        assert results in (
-            {FIRST_DNS_SERVER},
-            {SECOND_DNS_SERVER},
-        ), f"tcpdump stdout:\n{tcpdump_stdout}\ntcpdump stderr:\n{tcpdump_stderr}"
+        await query_dns(
+            connection_alpha, "google.com", options=["-timeout=1", "-type=a"]
+        )
 
 
 @pytest.mark.asyncio
