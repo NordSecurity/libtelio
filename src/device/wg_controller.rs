@@ -398,7 +398,7 @@ async fn consolidate_wg_peers<
                     telio_log_warn!("Peer {:?} has no ip address", key);
                 }
             }
-            (None, _) => telio_log_warn!("The session keeper is missing!"),
+            (None, _) => telio_log_debug!("The session keeper is missing!"),
             _ => (),
         }
 
@@ -455,7 +455,7 @@ async fn consolidate_wg_peers<
                 }
             }
             (Some(_), _, _) => (),
-            (None, _, _) => telio_log_warn!("The session keeper is missing!"),
+            (None, _, _) => telio_log_debug!("The session keeper is missing!"),
         }
 
         let is_actual_peer_proxying = is_peer_proxying(actual_peer, &proxy_endpoints);
