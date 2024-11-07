@@ -27,6 +27,7 @@ from env import LIBTELIO_ENV_UNIFFI_GENERATORS_TAG
 MOOSE_MAP = {
     "x86_64": "x86_64",
     "aarch64": "aarch64",
+    "arm64": "aarch64",
     "i686": "i686",
     "armv5": "armv5_eabi",
     "armv7": "armv7_eabi",
@@ -502,12 +503,34 @@ def exec_build(args):
 def call_build(config, args):
     rutils.config_local_env_vars(config, LIBTELIO_CONFIG)
 
-    rutils.cargo_build(
-        PROJECT_CONFIG,
-        config,
-        LIBTELIO_CONFIG[config.target_os].get("packages", None),
-        LIBTELIO_CONFIG[config.target_os].get("build_args", None),
-    )
+    packages = LIBTELIO_CONFIG[config.target_os].get("packages")
+    if os.environ.get("NATLAB_REDUCE_PARALLEL_LINKERS", None) == "1":
+        teliod_package = {}
+
+        if "teliod" in packages:
+            teliod_package["teliod"] = packages["teliod"]
+
+        rest_packages = {k: v for k, v in packages.items() if k != "teliod"}
+
+        rutils.cargo_build(
+            PROJECT_CONFIG,
+            config,
+            rest_packages,
+            LIBTELIO_CONFIG[config.target_os].get("build_args", None),
+        )
+        rutils.cargo_build(
+            PROJECT_CONFIG,
+            config,
+            teliod_package,
+            LIBTELIO_CONFIG[config.target_os].get("build_args", None),
+        )
+    else:
+        rutils.cargo_build(
+            PROJECT_CONFIG,
+            config,
+            packages,
+            LIBTELIO_CONFIG[config.target_os].get("build_args", None),
+        )
 
     if "post_build" in LIBTELIO_CONFIG[config.target_os]:
         for post in LIBTELIO_CONFIG[config.target_os]["post_build"]:
