@@ -325,7 +325,7 @@ async def test_vpn_dns(alpha_ip_stack: IPStack) -> None:
             "www.microsoft.com",
             ["canonical name"],
             dns_server_address,
-            "-q=CNAME",
+            ["-q=CNAME"],
         )
 
         # Turn off the module and see if it worked
