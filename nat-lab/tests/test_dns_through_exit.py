@@ -169,7 +169,7 @@ async def test_dns_through_exit(
             "google.com",
             dns_server=dns_server_address_local,
             expected_output=["Name:.*google.com.*Address"],
-            options="-timeout=5",
+            options=["-timeout=5"],
         )
         await client_alpha.disconnect_from_exit_node(exit_node.public_key)
 
