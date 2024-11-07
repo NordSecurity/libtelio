@@ -12,6 +12,7 @@ for pid in $(ps -e -o pid=); do
         cmd=$(tr -d '\000' < /proc/${pid}/cmdline || echo "N/A")
         echo "$(date) Killing ${pid} ${cmd}"
         kill "${pid}"
+        wait "${pid}" 2>/dev/null
         exit 0
     fi
 done
