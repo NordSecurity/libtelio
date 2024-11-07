@@ -119,7 +119,9 @@ IP_STACK_TEST_CONFIGS = [
 ]
 
 
-def build_telio_features(initial_heartbeat_interval: int = 300) -> Features:
+def build_telio_features(
+    initial_heartbeat_interval: int = 300, rtt_interval: int = RTT_INTERVAL
+) -> Features:
     features = default_features(
         enable_lana=(CONTAINER_EVENT_PATH, False),
         enable_direct=True,
@@ -137,7 +139,7 @@ def build_telio_features(initial_heartbeat_interval: int = 300) -> Features:
     features.nurse.initial_heartbeat_interval = initial_heartbeat_interval
     features.nurse.qos = FeatureQoS(
         rtt_types=[RttType.PING],
-        rtt_interval=RTT_INTERVAL,
+        rtt_interval=rtt_interval,
         buckets=5,
         rtt_tries=1,
     )
@@ -1532,12 +1534,9 @@ async def test_lana_with_disconnected_node(
         await clean_container(connection_alpha)
         await clean_container(connection_beta)
 
-        # In this test, we'll manually trigger the collection of QoS
-        def get_features_with_long_qos() -> Features:
-            features = build_telio_features()
-            assert features.nurse is not None
-            assert features.nurse.qos is not None
-            return features
+        features = build_telio_features()
+        assert features.nurse is not None
+        assert features.nurse.qos is not None
 
         client_alpha, client_beta = await start_alpha_beta_in_relay(
             exit_stack,
@@ -1546,8 +1545,8 @@ async def test_lana_with_disconnected_node(
             beta,
             connection_alpha,
             connection_beta,
-            get_features_with_long_qos(),
-            get_features_with_long_qos(),
+            features,
+            features,
         )
 
         await asyncio.gather(
@@ -2103,3 +2102,81 @@ async def test_lana_initial_heartbeat_no_trigger(
             assert not await wait_for_event_dump(
                 ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH, nr_events=1
             )
+
+
+@pytest.mark.moose
+@pytest.mark.asyncio
+async def test_lana_rtt_interval_controls_periodic_qos_collection():
+    async with AsyncExitStack() as exit_stack:
+        api = API()
+
+        (alpha, beta) = api.default_config_two_nodes(
+            True, True, alpha_ip_stack=IPStack.IPv4v6, beta_ip_stack=IPStack.IPv4v6
+        )
+
+        connection_alpha = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+        connection_beta = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_2)
+        )
+
+        await clean_container(connection_alpha)
+        await clean_container(connection_beta)
+
+        rtt_interval = 30
+
+        telio_features = build_telio_features(rtt_interval=rtt_interval)
+        telio_features.direct = None
+
+        client_alpha = await exit_stack.enter_async_context(
+            Client(
+                connection_alpha,
+                alpha,
+                telio_features=telio_features,
+                fingerprint=ALPHA_FINGERPRINT,
+            ).run(api.get_meshnet_config(alpha.id))
+        )
+
+        client_beta = await exit_stack.enter_async_context(
+            Client(
+                connection_beta,
+                beta,
+                telio_features=telio_features,
+                fingerprint=BETA_FINGERPRINT,
+            ).run(api.get_meshnet_config(beta.id))
+        )
+
+        await asyncio.gather(
+            client_alpha.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+        )
+
+        await client_alpha.wait_for_log("Starting periodic ping", count=2)
+        await client_beta.wait_for_log("Starting periodic ping", count=2)
+
+        await asyncio.sleep(DEFAULT_WAITING_TIME)
+
+        await client_alpha.trigger_event_collection()
+        await client_beta.trigger_event_collection()
+
+        alpha_events = await wait_for_event_dump(
+            ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH, nr_events=1
+        )
+        beta_events = await wait_for_event_dump(
+            ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=1
+        )
+        assert alpha_events
+        assert beta_events
+
+        alpha_validator = EventValidator.new_with_basic_validators(
+            ALPHA_FINGERPRINT
+        ).add_rtt_validators([IPStack.IPv4v6, IPStack.IPv4v6])
+        beta_validator = EventValidator.new_with_basic_validators(
+            BETA_FINGERPRINT
+        ).add_rtt_validators([IPStack.IPv4v6, IPStack.IPv4v6])
+
+        res = alpha_validator.validate(alpha_events[0])
+        assert res[0], res[1]
+        res = beta_validator.validate(beta_events[0])
+        assert res[0], res[1]

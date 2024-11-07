@@ -888,11 +888,13 @@ class Client:
         self.get_runtime().get_output_notifier().notify_output(what, event)
         return event
 
-    async def wait_for_log(self, what: str, case_insensitive: bool = True) -> None:
+    async def wait_for_log(
+        self, what: str, case_insensitive: bool = True, count=1
+    ) -> None:
         if case_insensitive:
             what = what.lower()
         while True:
-            if what in (await self.get_log()).lower():
+            if (await self.get_log()).lower().count(what) >= count:
                 break
             await asyncio.sleep(1)
 
