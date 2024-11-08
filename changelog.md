@@ -1,5 +1,13 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.0.3
+### **Chicken Salad**
+---
+* LLT-5675: Fix link detection fluctuation
+* LLT-5663: Fix time to connect delay for wg peers
+
+<br>
+
 ### v5.0.2
 ### **Chicken Salad**
 ---
