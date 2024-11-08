@@ -12,6 +12,11 @@ print_help() {
     exit 1
 }
 
+print_routing_info() {
+    ip route show table all
+    ip rule
+}
+
 # Arbitraty IDs
 PRIMARY_TABLE=2221
 SECONDARY_TABLE=2222
@@ -27,15 +32,21 @@ DOCKER_SECONDARY_GATEWAY="192.168.108.254"
 
 case "${1:-}" in
     enable)
+        echo "VM NAT enabled"
         ip rule add from $VM_PRIMARY_NETWORK table $PRIMARY_TABLE
         ip route add $DOCKER_NETWORK via $DOCKER_PRIMARY_GATEWAY table $PRIMARY_TABLE
 
         ip rule add from $VM_SECONDARY_NETWORK table $SECONDARY_TABLE
         ip route add $DOCKER_NETWORK via $DOCKER_SECONDARY_GATEWAY table $SECONDARY_TABLE
+
+        print_routing_info
         ;;
     disable)
+        echo "VM NAT disabled"
         ip route delete $DOCKER_NETWORK table $PRIMARY_TABLE || true
         ip route delete $DOCKER_NETWORK table $SECONDARY_TABLE || true
+
+        print_routing_info
         ;;
     *)
         echo "Unrecognized parameter '${1:-}'"
