@@ -5,14 +5,6 @@ from helpers import SetupParameters, setup_mesh_nodes
 from telio import AdapterType, LinkState
 from telio_features import TelioFeatures, LinkDetection, Wireguard, PersistentKeepalive
 from typing import List, Tuple
-from utils.bindings import (
-    default_features,
-    FeatureLinkDetection,
-    FeatureWireguard,
-    FeaturePersistentKeepalive,
-    LinkState,
-    TelioAdapterType,
-)
 from utils.connection import Connection
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
@@ -322,8 +314,8 @@ async def test_event_link_state_peer_doesnt_respond(
             beta_events = client_alpha.get_link_state_events(beta.public_key)
 
             # The connection is normal and events should be: initial down, then several up events but no more down events
-            assert alpha_events.count(LinkState.DOWN) == 1
-            assert beta_events.count(LinkState.DOWN) == 1
+            assert alpha_events.count(LinkState.Down) == 1
+            assert beta_events.count(LinkState.Down) == 1
 
             # wait enough to pass 10 second mark since our ping request, which should trigger passive-keepalive by wireguard
             await asyncio.sleep(5)
@@ -333,5 +325,5 @@ async def test_event_link_state_peer_doesnt_respond(
 
             # there should be no additional link down event
 
-            assert alpha_events.count(LinkState.DOWN) == 1
-            assert beta_events.count(LinkState.DOWN) == 1
+            assert alpha_events.count(LinkState.Down) == 1
+            assert beta_events.count(LinkState.Down) == 1
