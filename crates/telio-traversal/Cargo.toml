@@ -31,7 +31,6 @@ surge-ping.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["full"] }
 
-telio-batcher.workspace = true
 telio-crypto.workspace = true
 telio-model.workspace = true
 telio-network-monitors.workspace = true

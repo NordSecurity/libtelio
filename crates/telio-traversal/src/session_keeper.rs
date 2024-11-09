@@ -1,3 +1,4 @@
+use crate::batcher::{Batcher, BatcherTrait};
 use async_trait::async_trait;
 use socket2::Type;
 use std::future::Future;
@@ -8,7 +9,6 @@ use surge_ping::{
     Client as PingerClient, Config as PingerConfig, ConfigBuilder, PingIdentifier, PingSequence,
     SurgeError, ICMP,
 };
-use telio_batcher::batcher::Batcher;
 use telio_crypto::PublicKey;
 use telio_sockets::SocketPool;
 use telio_task::{task_exec, BoxAction, Runtime, Task};
@@ -62,7 +62,12 @@ pub struct SessionKeeper {
 }
 
 impl SessionKeeper {
-    pub fn start(sock_pool: Arc<SocketPool>) -> Result<Self> {
+    pub fn start(
+        sock_pool: Arc<SocketPool>,
+
+        // This is a way to pass mocked batcher instance when testing
+        #[cfg(test)] batcher: Box<dyn BatcherTrait<PublicKey, State>>,
+    ) -> Result<Self> {
         let (client_v4, client_v6) = (
             PingerClient::new(&Self::make_builder(ICMP::V4).build())
                 .map_err(|e| Error::PingerCreationError(ICMP::V4, e))?,
@@ -79,7 +84,12 @@ impl SessionKeeper {
                     pinger_client_v4: client_v4,
                     pinger_client_v6: client_v6,
                 },
-                batched_actions: Batcher::new(),
+                #[cfg(test)]
+                batched_actions: batcher,
+
+                #[cfg(not(test))]
+                batched_actions: Box::new(Batcher::new()),
+
                 nonbatched_actions: RepeatedActions::default(),
             }),
         })
@@ -242,11 +252,13 @@ impl SessionKeeperTrait for SessionKeeper {
         Ok(())
     }
 
+    // TODO: SK calls batched and nonbatched actions interchangibly, however call sites in general
+    // should be aware which one to call
     async fn get_interval(&self, key: &PublicKey) -> Option<u32> {
         let pk = *key;
         task_exec!(&self.task, async move |s| {
             if let Some(interval) = s.batched_actions.get_interval(&pk) {
-                Ok(Some(interval))
+                Ok(Some(interval.as_secs() as u32))
             } else {
                 Ok(s.nonbatched_actions.get_interval(&pk))
             }
@@ -262,7 +274,7 @@ struct Pingers {
 
 struct State {
     pingers: Pingers,
-    batched_actions: Batcher<PublicKey, Self>,
+    batched_actions: Box<dyn BatcherTrait<PublicKey, Self>>,
     nonbatched_actions: RepeatedActions<PublicKey, Self, Result<()>>,
 }
 #[async_trait]
@@ -284,7 +296,7 @@ impl Runtime for State {
                         Ok(())
                     }, |_| Ok(()))?;
             }
-            batched_actions = self.batched_actions.get_actions() => {
+            Ok(batched_actions) = self.batched_actions.get_actions() => {
                 for (pk, action) in batched_actions {
                     action(self).await.map_or_else(|e| {
                         telio_log_warn!("({}) Error sending batch-keepalive to {}: {:?}", Self::NAME, pk, e);
@@ -307,7 +319,9 @@ impl Runtime for State {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::batcher::{BatcherError, MockBatcherTrait};
     use std::net::{Ipv4Addr, Ipv6Addr};
+    use telio_crypto::PublicKey;
     use telio_sockets::NativeProtector;
     use telio_test::assert_elapsed;
     use tokio::time;
@@ -324,7 +338,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let sess_keep = SessionKeeper::start(socket_pool).unwrap();
+        let sess_keep = SessionKeeper::start(socket_pool, Box::new(Batcher::new())).unwrap();
 
         let pk = "REjdn4zY2TFx2AMujoNGPffo9vDiRDXpGG4jHPtx2AY="
             .parse::<PublicKey>()
@@ -390,5 +404,61 @@ mod tests {
         })
         .await
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_batcher_invocation() {
+        const PERIOD: Duration = Duration::from_secs(20);
+
+        const THRESHOLD: Duration = Duration::from_secs(10);
+        let socket_pool = Arc::new(SocketPool::new(
+            NativeProtector::new(
+                #[cfg(target_os = "macos")]
+                false,
+            )
+            .unwrap(),
+        ));
+
+        let mut batcher = Box::new(MockBatcherTrait::<telio_crypto::PublicKey, State>::new());
+
+        let pk = "REjdn4zY2TFx2AMujoNGPffo9vDiRDXpGG4jHPtx2AY="
+            .parse::<PublicKey>()
+            .unwrap();
+
+        use mockall::predicate::{always, eq};
+        batcher
+            .expect_add()
+            .once()
+            .with(eq(pk), eq(PERIOD), eq(THRESHOLD), always())
+            .return_once(|_, _, _, _| ());
+        batcher
+            .expect_remove()
+            .once()
+            .with(eq(pk))
+            .return_once(|_| ());
+
+        // it's hard to mock the exact return since it involves a complex type, however we
+        // can at least verify that the batcher's actions were queried
+        batcher
+            .expect_get_actions()
+            .times(..)
+            .returning(|| Err(BatcherError::NoActions));
+
+        let sess_keep = SessionKeeper::start(socket_pool, batcher).unwrap();
+
+        sess_keep
+            .add_node(
+                pk,
+                (Some(Ipv4Addr::LOCALHOST), Some(Ipv6Addr::LOCALHOST)),
+                PERIOD,
+                Some(THRESHOLD),
+            )
+            .await
+            .unwrap();
+
+        sess_keep.remove_node(&pk).await.unwrap();
+
+        // courtesy wait to be sure the runtime polls everything
+        sess_keep.stop().await;
     }
 }
