@@ -472,7 +472,16 @@ class Client:
 
                 print(datetime.now(), "Test cleanup: Shutting down")
                 if self._libtelio_proxy:
-                    await self.get_proxy().flush_logs()
+                    # flush_logs() is allowed to fail here:
+                    try:
+                        await self.get_proxy().flush_logs()
+                    # Since this is clean up code, catching general exceptions is fine:
+                    except Exception as e:  # pylint: disable=broad-exception-caught
+                        print(
+                            datetime.now(),
+                            f"Test cleanup: Exception while flushing logs: {e}",
+                        )
+
                     await self.get_proxy().shutdown(self._connection.target_name())
                 else:
                     print(
