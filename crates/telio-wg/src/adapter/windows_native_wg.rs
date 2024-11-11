@@ -159,19 +159,21 @@ impl WindowsNativeWg {
             ))));
         }
 
-        let mut os_error = IOError::from_raw_os_error(0);
-        for _ in 0..5 {
-            if wg_dev.adapter.up() {
-                telio_log_debug!("Adapter state set to up");
-                return Ok(wg_dev);
-            }
-            os_error = IOError::last_os_error();
-            telio_log_warn!("Failed to set adapter state to up, last error: {os_error:?}");
-            sleep(Duration::from_millis(200));
-        }
-        Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
-            "Failed to set adapter's state to up, last error: {os_error:?}",
-        ))))
+        Ok(wg_dev)
+
+        //let mut os_error = IOError::from_raw_os_error(0);
+        //for _ in 0..5 {
+        //    if wg_dev.adapter.up() {
+        //        telio_log_debug!("Adapter state set to up");
+        //        return Ok(wg_dev);
+        //    }
+        //    os_error = IOError::last_os_error();
+        //    telio_log_warn!("Failed to set adapter state to up, last error: {os_error:?}");
+        //    sleep(Duration::from_millis(200));
+        //}
+        //Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+        //    "Failed to set adapter's state to up, last error: {os_error:?}",
+        //))))
     }
 
     fn get_config_uapi(&self) -> Response {
@@ -208,21 +210,50 @@ impl Adapter for WindowsNativeWg {
     async fn send_uapi_cmd(&self, cmd: &Cmd) -> Result<Response, AdapterError> {
         match cmd {
             Get => Ok(self.get_config_uapi()),
-            Set(set_cfg) => match self.adapter.set_config_uapi(set_cfg) {
-                Ok(()) => {
-                    // Remember last successfully set configuration
-                    if let Ok(mut interface_watcher) =
-                        (self as &WindowsNativeWg).watcher.clone().lock()
-                    {
-                        interface_watcher.set_last_known_configuration(set_cfg);
+            Set(set_cfg) => {
+                // If we have any peers added -> bring the adapter up
+                if set_cfg.peers.len() > 0 && !self.adapter.is_up() {
+                    if self.adapter.up() {
+                        telio_log_info!("Adapter brought up succesfully");
+                    } else {
+                        let os_error = IOError::last_os_error();
+                        telio_log_warn!("Failed to set adapter state to up, last error: {os_error:?}");
+                        return Err(os_error.into());
                     }
-
-                    Ok(self.get_config_uapi())
                 }
-                Err(_err) => Ok(Response {
-                    errno: 1,
-                    interface: None,
-                }),
+
+                let (resp, peer_cnt) = match self.adapter.set_config_uapi(set_cfg) {
+                    Ok(()) => {
+                        // Remember last successfully set configuration
+                        if let Ok(mut interface_watcher) =
+                            (self as &WindowsNativeWg).watcher.clone().lock()
+                        {
+                            interface_watcher.set_last_known_configuration(set_cfg);
+                        }
+
+                        let resp = self.get_config_uapi();
+                        let peer_cnt = resp.interface.as_ref().map(|i| i.peers.len());
+                        (Ok(resp), peer_cnt)
+                    }
+                    Err(_err) => (Ok(Response {
+                        errno: 1,
+                        interface: None,
+                    }),
+                    None)
+                };
+
+                // If all of the peers has been removed -> bring the adapter down
+                if peer_cnt.map(|p| p == 0).unwrap_or(false) && self.adapter.is_up() {
+                    if self.adapter.down() {
+                        telio_log_info!("Adapter brought down succesfully");
+                    } else {
+                        let os_error = IOError::last_os_error();
+                        telio_log_warn!("Failed to set adapter state to down, last error: {os_error:?}");
+                        return Err(os_error.into());
+                    }
+                };
+
+                resp
             },
         }
     }
