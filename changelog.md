@@ -1,5 +1,30 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.1.0
+### **Pork Kibin**
+---
+* LLT-5710: Fix magic DNS not working under the Post-Quantum VPN
+* LLT-5770: Fix rustls crash on derp TLS connection
+* LLT-5653: Fix reset connections feature panic on MacOS
+* async-logs: Logging callback is now called only from a dedicated thread
+* LLT-5660: Fix possible PQ fetch_keys()/rekey() method hanging
+* LLT-5593: Domain names in the logs are now hashed in the same way as IPs
+* LLT-5574: Fix rustls-platform-verifer init procedure for Android
+* LLT-5675: Fix link detection fluctuation
+* LLT-5552: Add Teliod daemon skeleton
+* LLT-5108: Add allow_multicast flags from meshnet config to Starcast implementation.
+* LLT-5663: Fix time to connect delay for wg peers
+* LLT-5721: Do not bundle rustls-platform-verifer classes, use AAR packet instead
+* LLT-5554: Add Mqtt / Notification Center support in teliod
+* LLT-5553: Meshnet API support for teliod
+* LLT-4963: Make STUN and UPnP providers optimization enabled by default
+* LLT-5402: Use batcher for stun, vpn and proxied peers persistent keepalives
+* LLT-5681: Enable stack canary on non-Windows platforms
+* LLT-5183: Network monitoring mondule
+* LLT-5638: Move ep control at the begining of consolidation
+
+<br>
+
 ### 5.0.0
 ### **Chicken Salad**
 ---
