@@ -190,7 +190,7 @@ mod test {
 
     pub struct MooseStub {
         return_success: bool,
-        init_cb_result: Result<moose::TrackerState, moose::MooseError>,
+        init_cb_result: Result<moose::TrackerState, moose::InitError>,
         should_call_init_cb: Option<Arc<Barrier>>,
         init_cb_thread: Option<JoinHandle<()>>,
     }
@@ -198,7 +198,7 @@ mod test {
     impl MooseStub {
         fn new(
             return_success: bool,
-            init_cb_result: Result<moose::TrackerState, moose::MooseError>,
+            init_cb_result: Result<moose::TrackerState, moose::InitError>,
             should_call_init_cb: Option<Arc<Barrier>>,
         ) -> Self {
             Self {
@@ -222,7 +222,7 @@ mod test {
             self.init_cb_thread = Some(std::thread::spawn(move || {
                 if let Some(barrier) = should_call_init_cb {
                     barrier.wait();
-                    init_cb.after_init(&init_cb_result);
+                    init_cb.after_init(init_cb_result);
                 }
             }));
             if self.return_success {
@@ -308,7 +308,7 @@ mod test {
     fn test_init_lana_with_failing_moose_init() {
         let _wrapper = MooseStubWrapper::new(MooseStub::new(
             false,
-            Err(moose::MooseError::StorageEngine),
+            Err(moose::InitError::Internal("Not initialized".to_string())),
             Some(Arc::new(Barrier::new(1))),
         ));
 
@@ -329,7 +329,7 @@ mod test {
         let init_cb_barrier = Arc::new(Barrier::new(2));
         let _wrapper = MooseStubWrapper::new(MooseStub::new(
             true,
-            Err(moose::MooseError::NotInitiated),
+            Err(moose::InitError::Internal("Not initialized".to_string())),
             Some(init_cb_barrier.clone()),
         ));
 

@@ -87,6 +87,8 @@ pub mod moose {
         NotInitiatedError,
         #[error("Failed to log event")]
         EventLogError,
+        #[error("Internal error: {0}")]
+        Internal(String),
     }
 
     #[derive(Debug, Clone, Copy)]
@@ -148,11 +150,38 @@ pub mod moose {
     }
 
     pub trait InitCallback: Send {
-        fn after_init(&self, result: &std::result::Result<TrackerState, MooseError>);
+        fn after_init(&self, result: std::result::Result<TrackerState, InitError>);
     }
 
     pub trait ErrorCallback {
-        fn on_error(&self, error_level: MooseErrorLevel, error_code: MooseError, msg: &str);
+        fn on_error(
+            &self,
+            error: MooseError,
+            error_level: MooseErrorLevel,
+            error_code: i32,
+            msg: &str,
+        );
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct MooseSQLiteError {
+        pub error_code: i32,
+        pub message: Option<String>,
+    }
+
+    #[derive(Clone, Debug)]
+    pub enum InitError {
+        SQLiteError(MooseSQLiteError),
+        Internal(String),
+    }
+
+    impl From<InitError> for Error {
+        fn from(moose_error: InitError) -> Error {
+            match moose_error {
+                InitError::Internal(e) => Error::Internal(e),
+                _ => Error::EventLogError,
+            }
+        }
     }
 
     /// Initialize logger file with current date and time.
@@ -174,10 +203,10 @@ pub mod moose {
             Some(vec![event_path.as_str(), prod.to_string().as_str()]),
         ) {
             Ok(_) => Ok(TrackerState::Ready),
-            _ => Err(MooseError::NotInitiated),
+            _ => Err(InitError::Internal("Not initialized".to_string())),
         };
 
-        init_cb.after_init(&result);
+        init_cb.after_init(result.clone());
 
         match result {
             Ok(r) => Ok(Result::from(r)),
