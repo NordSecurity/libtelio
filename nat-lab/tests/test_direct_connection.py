@@ -177,33 +177,39 @@ async def test_direct_working_paths(
 
         print(datetime.now(), "Test direct connection")
         await _check_if_true_direct_connection(env)
-        async with _disable_direct_connection(env, reflexive_ips):
-            print(datetime.now(), "Downgrade to relay connections")
-            await asyncio.gather(*[
-                await exit_stack.enter_async_context(
-                    run_async_context(
-                        client.wait_for_state_peer(
-                            node.public_key, [NodeState.CONNECTED], [PathType.RELAY]
-                        )
-                    )
-                )
-                for client, node in itertools.product(env.clients, env.nodes)
-                if not client.is_node(node)
-            ])
-            await ping_between_all_nodes(env)
 
-        print(datetime.now(), "Reconnect to direct connections")
-        await asyncio.gather(*[
-            await exit_stack.enter_async_context(
+        print(datetime.now(), "Downgrade to relay connections")
+        # Start collection just before breaking, to not miss disconnects
+        relay_events = await asyncio.gather(*[
+            exit_stack.enter_async_context(
                 run_async_context(
-                    client.wait_for_state_peer(
-                        node.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
+                    client.wait_for_event_peer(
+                        node.public_key, [NodeState.CONNECTED], [PathType.RELAY]
                     )
                 )
             )
             for client, node in itertools.product(env.clients, env.nodes)
             if not client.is_node(node)
         ])
+        async with _disable_direct_connection(env, reflexive_ips):
+            await asyncio.gather(*relay_events)
+            await ping_between_all_nodes(env)
+
+            # Start collecting direct events, before drop of blocking
+            print(datetime.now(), "Reconnect to direct connections")
+            direct_events = await asyncio.gather(*[
+                exit_stack.enter_async_context(
+                    run_async_context(
+                        client.wait_for_event_peer(
+                            node.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
+                        )
+                    )
+                )
+                for client, node in itertools.product(env.clients, env.nodes)
+                if not client.is_node(node)
+            ])
+
+        await asyncio.gather(*direct_events)
 
         print(datetime.now(), "Test direct connection again")
         await _check_if_true_direct_connection(env)
