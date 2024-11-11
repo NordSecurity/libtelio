@@ -11,7 +11,7 @@ use telio_task::{
     task_exec, Runtime, RuntimeExt, Task, WaitResponse,
 };
 use telio_utils::interval;
-use telio_utils::{telio_log_error, telio_log_warn};
+use telio_utils::{telio_log_error, telio_log_info, telio_log_warn};
 use telio_wg::uapi::Peer;
 use tokio::{net::UdpSocket, sync::mpsc::error::SendTimeoutError, time::Interval};
 use x25519_dalek::{PublicKey as PublicKeyDalek, StaticSecret};
@@ -118,6 +118,31 @@ impl StarcastPeer {
         })
         .await??;
 
+        Ok(())
+    }
+
+    /// Configure (or reconfigure) the wireguard listen address.
+    ///
+    /// # Arguments
+    ///
+    /// * `wg_addr` - An optional address which is used as destination for WG encapsulated data
+    ///
+    /// # Returns
+    ///
+    /// A result indicating wether the configuration was successful.
+    pub async fn set_wg_address(&self, wg_addr: Option<SocketAddr>) -> Result<(), Error> {
+        task_exec!(&self.task, async move |state| {
+            if state.wg_sock_addr != wg_addr {
+                telio_log_info!(
+                    "Updating wg_listen_port from {:?} to {:?}",
+                    state.wg_sock_addr,
+                    wg_addr
+                );
+                state.wg_sock_addr = wg_addr;
+            }
+            Ok(())
+        })
+        .await?;
         Ok(())
     }
 
