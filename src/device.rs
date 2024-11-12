@@ -2452,6 +2452,7 @@ impl TaskRuntime for Runtime {
                         |e| {
                             telio_log_warn!("WireGuard controller failure: {:?}. Ignoring", e);
                         });
+                telio_log_debug!("WG consolidation triggered by tick event ended");
                 Ok(())
             },
 

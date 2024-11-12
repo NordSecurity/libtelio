@@ -579,10 +579,8 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
             .wait_for_listen_port(GET_INTERFACE_TIMEOUT_S)
             .await?;
 
-        let ext_ip = {
-            let get = self.igd_gw.get_external_ip();
-            get.await?
-        };
+        let ext_ip = self.igd_gw.get_external_ip().await?;
+
         self.ip_addr = get_my_local_endpoints(ext_ip)?;
 
         self.igd_gw
@@ -663,12 +661,15 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
             return Ok(());
         }
 
+        telio_log_debug!("Entering tokio select!");
+
         tokio::select! {
             Ok((len, addr)) = self.udp_socket.recv_from(&mut self.rx_buff) => {
                 let buff = self.rx_buff.clone();
                 let _ = self.handle_ping_rx(&buff[..len], &addr).await;
             }
             result = self.igd_gw.ensure_igd_gateway(), if !self.igd_gw.has_igd_gateway() => {
+                telio_log_debug!("XXX Ensure igd gateway ended");
                 if result.is_ok() {
                     if let Err(e) = self.create_endpoint_candidate().await {
                         telio_log_warn!("Error creating UPnP endpoint: {}", e);
@@ -679,6 +680,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
                 }
             }
             _ = &mut self.upnp_interval => {
+                telio_log_debug!("XXX Upnp interval: {:?}", self.upnp_interval);
                 self.upnp_interval =  PinnedSleep::new(self.exponential_backoff.get_backoff(), ());
 
                 match self.check_endpoint_candidate().await {

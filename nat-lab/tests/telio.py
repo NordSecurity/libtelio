@@ -900,13 +900,23 @@ class Client:
 
     async def wait_for_log(
         self, what: str, case_insensitive: bool = True, count=1
-    ) -> None:
+    ) -> int:
         if case_insensitive:
             what = what.lower()
         while True:
-            if (await self.get_log()).lower().count(what) >= count:
-                break
+            found = (await self.get_log()).lower().count(what)
+            if found >= count:
+                return found
             await asyncio.sleep(1)
+
+    async def wait_for_next_log(
+        self, what: str, case_insensitive: bool = True,
+    ) -> None:
+        start_count = await self.wait_for_log(what, case_insensitive)
+        while True:
+            count = await self.wait_for_log(what, case_insensitive)
+            if count > start_count:
+                break
 
     async def get_log(self) -> str:
         await self.flush_logs()
