@@ -295,6 +295,7 @@ def main() -> None:
     build_parser.add_argument(
         "--msvc", action="store_true", help="Use MSVC toolchain for Windows build"
     )
+    build_parser.add_argument("--libtelio", action="store_true", help="Build only libtelio")
     bindings_parser.add_argument(
         "--dockerized",
         action="store_true",
@@ -504,6 +505,8 @@ def call_build(config, args):
     rutils.config_local_env_vars(config, LIBTELIO_CONFIG)
 
     packages = LIBTELIO_CONFIG[config.target_os].get("packages")
+    if args.libtelio:
+        packages = {NAME: packages[NAME]}
     if os.environ.get("NATLAB_REDUCE_PARALLEL_LINKERS", None) == "1":
         teliod_package = {}
 
@@ -518,12 +521,13 @@ def call_build(config, args):
             rest_packages,
             LIBTELIO_CONFIG[config.target_os].get("build_args", None),
         )
-        rutils.cargo_build(
-            PROJECT_CONFIG,
-            config,
-            teliod_package,
-            LIBTELIO_CONFIG[config.target_os].get("build_args", None),
-        )
+        if teliod_package:
+            rutils.cargo_build(
+                PROJECT_CONFIG,
+                config,
+                teliod_package,
+                LIBTELIO_CONFIG[config.target_os].get("build_args", None),
+            )
     else:
         rutils.cargo_build(
             PROJECT_CONFIG,

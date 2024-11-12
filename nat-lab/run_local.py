@@ -92,13 +92,27 @@ def main() -> int:
         print("|=======================================================|")
         print("\u001b[0m")
         try:
-            run_build_command("linux", args)
-            # Run windows tests on WinVM
-            if args.windows:
-                run_build_command("windows", args)
-            # Run nat-lab natively on macOS (TODO: Add windows support)
-            if args.o == "darwin":
-                run_build_command("darwin", args)
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor() as executor:
+                futures = []
+                futures.append(executor.submit(run_build_command, "linux", args))
+                # run_build_command("linux", args)
+                # Run windows tests on WinVM
+                if args.windows:
+                    run_build_command("windows", args)
+                # Run nat-lab natively on macOS (TODO: Add windows support)
+                if args.o == "darwin":
+                    # run_build_command("darwin", args)
+                    futures.append(executor.submit(run_build_command, "darwin", args))
+
+                for future in futures:
+                    future.result()
+
+                if args.o == "darwin":
+                    subprocess.run(
+                        ["codesign", "--force", "--deep", "--sign",  "-", "./tests/uniffi/libtelio.dylib"],
+                        check=True,
+                    )
         except subprocess.CalledProcessError:
             print("\u001b[31m")
             print(
@@ -156,6 +170,7 @@ def run_build_command(operating_system, args):
             "build",
             "macos",
             "aarch64",
+            "--libtelio"
         ]
     else:
         command = [
