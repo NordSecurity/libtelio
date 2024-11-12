@@ -21,11 +21,13 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     str::FromStr,
     sync::Arc,
+    time::Duration
 };
 use telio_model::features::TtlValue;
-use tokio::sync::{RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, Semaphore};
+use tokio::{sync::{RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, Semaphore}};
 use tokio::task::JoinHandle;
 use tokio::{net::UdpSocket, sync::Mutex};
+use tokio::time;
 
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
 
@@ -85,30 +87,38 @@ impl LocalNameServer {
         let mut receiving_buffer = vec![0u8; MAX_PACKET];
         let mut sending_buffer = vec![0u8; MAX_PACKET];
         let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_QUERIES));
+        let mut timer_update_interval = time::interval(Duration::from_millis(250));
         loop {
-            let bytes_read = match socket.recv(&mut receiving_buffer).await {
-                Ok(bytes) => bytes,
-                Err(e) => {
-                    telio_log_error!("[DNS] Failed to read bytes: {:?}", e);
+            let bytes_read = tokio::select! {
+                recv_result = socket.recv(&mut receiving_buffer) => {
+                    match recv_result {
+                        Ok(bytes) => bytes,
+                        Err(e) => {
+                            telio_log_error!("[DNS] Failed to read bytes: {:?}", e);
+                            continue;
+                        }
+                    }
+                },
+                _ = timer_update_interval.tick() => {
+                    let res = peer.lock().await.update_timers(&mut sending_buffer);
+                    match res {
+                        TunnResult::WriteToNetwork(packet) => {
+                            telio_log_debug!("[DNS] update_timers packet to {:?} - {:?}", dst_address, packet);
+                            if let Err(e) = socket.send_to(packet, dst_address).await {
+                                telio_log_warn!("[DNS] Failed to send timer update packet : {:?}", e)
+                            };
+                        }
+                        TunnResult::WriteToTunnelV4(_, _) | TunnResult::WriteToTunnelV6(_, _) => {
+                            telio_log_warn!("[DNS] Unexpected packet to tunnel during update_timers operation");
+                        },
+                        TunnResult::Err(e) => {
+                            telio_log_error!("[DNS] Failed to update Tunn timers : {:?}", e);
+                        }
+                        TunnResult::Done => {},
+                    };
                     continue;
                 }
             };
-
-            loop {
-                let res = peer.lock().await.update_timers(&mut sending_buffer);
-                match res {
-                    TunnResult::WriteToNetwork(packet) => {
-                        if let Err(e) = socket.send_to(packet, dst_address).await {
-                            telio_log_warn!("[DNS] Failed to send timer update packet : {:?}", e)
-                        };
-                    }
-                    TunnResult::Err(e) => {
-                        telio_log_error!("[DNS] Failed to update Tunn timers : {:?}", e);
-                        break;
-                    }
-                    _ => break,
-                };
-            }
 
             let peer = peer.clone();
             let socket = socket.clone();
@@ -153,6 +163,8 @@ impl LocalNameServer {
                                 return;
                             }
                         };
+
+                        telio_log_debug!("[DNS] Got DNS packet {:?}", packet);
 
                         let nameserver = nameserver.clone();
                         let length = match LocalNameServer::process_packet(

@@ -108,7 +108,7 @@ impl LocalDnsResolver {
                 StaticSecret::from(dns_secret_key.into_bytes()),
                 telio_public_key,
                 None,
-                None,
+                Some(25),
                 0,
                 None,
             )?)),
