@@ -63,7 +63,7 @@ pub struct Features {
 }
 
 /// Configure keepalive batching
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
 #[serde(default)]
 pub struct FeatureBatching {
     /// Direct connection threshold when batching (in seconds) [default 0s]

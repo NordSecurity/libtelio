@@ -1109,6 +1109,7 @@ impl Runtime {
                         firewall_reset_connections,
                     },
                     features.link_detection,
+                    features.batching,
                     features.ipv6,
                 )?);
                 let wg_events = wg_events.rx;
@@ -1451,7 +1452,15 @@ impl Runtime {
                 self.requested_state.device_config.private_key.public(),
             )?);
 
-            match SessionKeeper::start(self.entities.socket_pool.clone()).map(Arc::new) {
+            match SessionKeeper::start(
+                self.entities.socket_pool.clone(),
+                self.entities
+                    .wireguard_interface
+                    .subscribe_to_network_activity()
+                    .await?,
+            )
+            .map(Arc::new)
+            {
                 Ok(session_keeper) => Some(DirectEntities {
                     local_interfaces_endpoint_provider,
                     stun_endpoint_provider,

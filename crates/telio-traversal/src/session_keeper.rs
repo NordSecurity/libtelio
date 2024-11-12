@@ -16,6 +16,12 @@ use telio_utils::{
     dual_target, repeated_actions, telio_log_debug, telio_log_warn, DualTarget, RepeatedActions,
 };
 
+use tokio::sync::watch;
+use tokio::time::Instant;
+
+use futures::future::{pending, BoxFuture};
+use futures::FutureExt;
+
 const PING_PAYLOAD_SIZE: usize = 56;
 
 /// Possible [SessionKeeper] errors.
@@ -64,10 +70,13 @@ pub struct SessionKeeper {
 impl SessionKeeper {
     pub fn start(
         sock_pool: Arc<SocketPool>,
-
-        // This is a way to pass mocked batcher instance when testing
         #[cfg(test)] batcher: Box<dyn BatcherTrait<PublicKey, State>>,
+        network_activity: Option<watch::Receiver<Instant>>,
     ) -> Result<Self> {
+        telio_log_debug!(
+            "Starting SessionKeeper with network subscriber: {}",
+            network_activity.is_some()
+        );
         let (client_v4, client_v6) = (
             PingerClient::new(&Self::make_builder(ICMP::V4).build())
                 .map_err(|e| Error::PingerCreationError(ICMP::V4, e))?,
@@ -84,13 +93,15 @@ impl SessionKeeper {
                     pinger_client_v4: client_v4,
                     pinger_client_v6: client_v6,
                 },
+
                 #[cfg(test)]
                 batched_actions: batcher,
-
                 #[cfg(not(test))]
                 batched_actions: Box::new(Batcher::new()),
 
                 nonbatched_actions: RepeatedActions::default(),
+
+                network_activity,
             }),
         })
     }
@@ -276,7 +287,9 @@ struct State {
     pingers: Pingers,
     batched_actions: Box<dyn BatcherTrait<PublicKey, Self>>,
     nonbatched_actions: RepeatedActions<PublicKey, Self, Result<()>>,
+    network_activity: Option<watch::Receiver<Instant>>,
 }
+
 #[async_trait]
 impl Runtime for State {
     const NAME: &'static str = "SessionKeeper";
@@ -286,7 +299,25 @@ impl Runtime for State {
     where
         F: Future<Output = BoxAction<Self, std::result::Result<(), Self::Err>>> + Send,
     {
+        let last_network_activity = self
+            .network_activity
+            .as_mut()
+            .map(|receiver| *receiver.borrow_and_update());
+
+        let network_change_fut: BoxFuture<
+            '_,
+            std::result::Result<(), telio_utils::sync::watch::error::RecvError>,
+        > = {
+            match self.network_activity {
+                Some(ref mut na) => na.changed().boxed(),
+                None => pending::<()>().map(|_| Ok(())).boxed(),
+            }
+        };
+
         tokio::select! {
+            _ = network_change_fut => {
+                return Ok(());
+            }
             Ok((pk, action)) = self.nonbatched_actions.select_action() => {
                 let pk = *pk;
                 action(self)
@@ -296,7 +327,7 @@ impl Runtime for State {
                         Ok(())
                     }, |_| Ok(()))?;
             }
-            Ok(batched_actions) = self.batched_actions.get_actions() => {
+            Ok(batched_actions) = self.batched_actions.get_actions(last_network_activity) => {
                 for (pk, action) in batched_actions {
                     action(self).await.map_or_else(|e| {
                         telio_log_warn!("({}) Error sending batch-keepalive to {}: {:?}", Self::NAME, pk, e);
@@ -304,6 +335,7 @@ impl Runtime for State {
                     }, |_| Ok(()))?;
                 }
             }
+
             update = update => {
                 return update(self).await;
             }
@@ -338,7 +370,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let sess_keep = SessionKeeper::start(socket_pool, Box::new(Batcher::new())).unwrap();
+        let sess_keep = SessionKeeper::start(socket_pool, Box::new(Batcher::new()), None).unwrap();
 
         let pk = "REjdn4zY2TFx2AMujoNGPffo9vDiRDXpGG4jHPtx2AY="
             .parse::<PublicKey>()
@@ -442,9 +474,9 @@ mod tests {
         batcher
             .expect_get_actions()
             .times(..)
-            .returning(|| Err(BatcherError::NoActions));
+            .returning(|_| Err(BatcherError::NoActions));
 
-        let sess_keep = SessionKeeper::start(socket_pool, batcher).unwrap();
+        let sess_keep = SessionKeeper::start(socket_pool, batcher, None).unwrap();
 
         sess_keep
             .add_node(
