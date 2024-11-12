@@ -22,6 +22,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"math/rand"
 	"runtime"
@@ -97,7 +98,15 @@ func tracef(format string, args ...interface{}) {
 	trace_logger.Printf(format, args...)
 }
 
+type DevLoggerWriter struct {}
+
+func (t DevLoggerWriter) Write(p []byte) (n int, err error) {
+	debugf(string(p[:]))
+	return len(p), nil
+}
+
 func CreateDeviceLogger() *device.Logger {
+	log.SetOutput(&DevLoggerWriter{})
 	return &device.Logger{debugf, errorf}
 }
 
@@ -197,6 +206,8 @@ func wg_go_start(ifname string, nativeTun *tun.NativeTun, watcher *interfaceWatc
 
 	infof("Setting device up")
 	dev.Up()
+
+	log.Printf("LOG LOGGER TEST")
 
 	if watcher != nil {
 		if runtime.GOOS == "windows" {
