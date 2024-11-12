@@ -42,7 +42,10 @@ def _download_moose_file(opsys: str, arch: str, file_name: str):
     if nexus_url is None:
         raise ValueError("LIBTELIO_ENV_SEC_NEXUS_URL not set")
 
-    url = f"{nexus_url}/repository/ll-gitlab-release/{MOOSE_PROJECT_ID}/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/{opsys}/{arch}/{file_name}"
+    if opsys == "qnap":
+        url = f"{nexus_url}/repository/ll-gitlab-release/{MOOSE_PROJECT_ID}/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{arch}/{file_name}"
+    else:
+        url = f"{nexus_url}/repository/ll-gitlab-release/{MOOSE_PROJECT_ID}/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/{opsys}/{arch}/{file_name}"
 
     subprocess.check_call(
         ["curl", "-f", "-u", nexus_credentials, url, "-o", output_path]
@@ -52,6 +55,8 @@ def _download_moose_file(opsys: str, arch: str, file_name: str):
 def fetch_moose_dependencies(opsys: str, arch: str):
     if opsys == "windows":
         _download_moose_file(opsys, arch, "sqlite3.dll")
+    elif opsys == "qnap":
+        _download_moose_file(opsys, arch, "libsqlite3.a")
     else:
         _download_moose_file(opsys, arch, "libsqlite3.so")
 
