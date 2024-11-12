@@ -15,7 +15,7 @@ DEFAULT_WAITING_TIME = 2
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_SHARED_CLIENT_1,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
             ),
         ),
         pytest.param(
@@ -28,7 +28,7 @@ DEFAULT_WAITING_TIME = 2
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
             ),
             marks=[
                 pytest.mark.mac,

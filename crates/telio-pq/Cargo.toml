@@ -24,7 +24,7 @@ telio-sockets.workspace = true
 telio-task.workspace = true
 telio-utils.workspace = true
 
-boringtun.workspace = true
+neptun.workspace = true
 pnet_packet.workspace = true
 mockall = { workspace = true, optional = true }
 rand.workspace = true

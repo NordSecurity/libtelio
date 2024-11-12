@@ -15,7 +15,7 @@ stun_codec = "0.1.13"
 
 async-trait.workspace = true
 base64.workspace = true
-boringtun.workspace = true
+neptun.workspace = true
 futures.workspace = true
 httparse.workspace = true
 if-addrs.workspace = true

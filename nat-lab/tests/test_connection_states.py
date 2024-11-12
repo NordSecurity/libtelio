@@ -14,7 +14,7 @@ from utils.ping import ping
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -57,7 +57,7 @@ from utils.ping import ping
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -102,6 +102,6 @@ async def test_connected_state_after_routing(
 
         # LLT-5532: To be cleaned up...
         client_beta.allow_errors([
-            "boringtun::device.*Decapsulate error error=UnexpectedPacket public_key=.*",
+            "neptun::device.*Decapsulate error error=UnexpectedPacket public_key=.*",
             "telio_wg::adapter::wireguard_go.*wg_go.*Failed to derive keypair: invalid state for keypair derivation: handshakeInitiationConsumed",
         ])

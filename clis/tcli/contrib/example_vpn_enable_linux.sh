@@ -87,7 +87,7 @@ old_public_ip=$(curl -s ifconfig.me)
 echo "External IP before enabling VPN: ${old_public_ip}"
 
 # Starting WireGuard.
-eval ${TCLID_PATH} dev start boringtun ${TUNNEL_NAME}
+eval ${TCLID_PATH} dev start neptun ${TUNNEL_NAME}
 
 # Getting VPN server IP and public key.
 recommended_servers_list=$(curl -s "https://api.nordvpn.com/v1/servers/recommendations?&filters\[servers_technologies\]\[identifier\]=wireguard_udp&limit=1" -u token:$NORD_TOKEN)

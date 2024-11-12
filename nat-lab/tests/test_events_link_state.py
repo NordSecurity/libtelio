@@ -62,7 +62,7 @@ FEATURE_ENABLED_PARAMS = [
         _generate_setup_parameter_pair(
             [
                 (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.LINUX_NATIVE_TUN),
-                (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.BORING_TUN),
+                (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
             ],
             False,
         )
@@ -71,7 +71,7 @@ FEATURE_ENABLED_PARAMS = [
         _generate_setup_parameter_pair(
             [
                 (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.LINUX_NATIVE_TUN),
-                (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.BORING_TUN),
+                (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
             ],
             True,
         )
@@ -79,8 +79,8 @@ FEATURE_ENABLED_PARAMS = [
     pytest.param(
         _generate_setup_parameter_pair(
             [
-                (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN),
-                (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.BORING_TUN),
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
+                (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
             ],
             False,
         )
@@ -88,8 +88,8 @@ FEATURE_ENABLED_PARAMS = [
     pytest.param(
         _generate_setup_parameter_pair(
             [
-                (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN),
-                (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.BORING_TUN),
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
+                (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
             ],
             True,
         )
@@ -98,7 +98,7 @@ FEATURE_ENABLED_PARAMS = [
         _generate_setup_parameter_pair(
             [
                 (ConnectionTag.WINDOWS_VM_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
-                (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN),
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
             ],
             False,
         ),
@@ -108,7 +108,7 @@ FEATURE_ENABLED_PARAMS = [
         _generate_setup_parameter_pair(
             [
                 (ConnectionTag.WINDOWS_VM_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
-                (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN),
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
             ],
             True,
         ),
@@ -120,11 +120,11 @@ FEATURE_DISABLED_PARAMS = [
     pytest.param([
         SetupParameters(
             connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-            adapter_type_override=TelioAdapterType.BORING_TUN,
+            adapter_type_override=TelioAdapterType.NEP_TUN,
         ),
         SetupParameters(
             connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-            adapter_type_override=TelioAdapterType.BORING_TUN,
+            adapter_type_override=TelioAdapterType.NEP_TUN,
         ),
     ])
 ]

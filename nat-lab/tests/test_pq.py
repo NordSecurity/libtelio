@@ -52,7 +52,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=ConnectionLimits(1, 1),
@@ -111,7 +111,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     stun_limits=ConnectionLimits(1, 1),
@@ -151,7 +151,7 @@ async def test_pq_vpn_connection(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=ConnectionLimits(1, 1),
@@ -210,7 +210,7 @@ async def test_pq_vpn_connection(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     stun_limits=ConnectionLimits(1, 1),
@@ -272,7 +272,7 @@ async def test_pq_vpn_rekey(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     nlx_1_limits=ConnectionLimits(1, 2),
@@ -323,7 +323,7 @@ async def test_pq_vpn_rekey(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     nlx_1_limits=ConnectionLimits(1, 2),

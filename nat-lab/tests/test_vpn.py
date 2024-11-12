@@ -75,7 +75,7 @@ class VpnConfig:
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=ConnectionLimits(1, 1),
@@ -130,7 +130,7 @@ class VpnConfig:
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     stun_limits=ConnectionLimits(1, 1),
@@ -233,7 +233,7 @@ async def test_vpn_connection(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     vpn_1_limits=ConnectionLimits(1, 1),
@@ -296,7 +296,7 @@ async def test_vpn_connection(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     vpn_1_limits=ConnectionLimits(1, 1),
@@ -359,7 +359,7 @@ async def test_vpn_reconnect(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 ip_stack=IPStack.IPv4,
                 features=default_features(enable_firewall_connection_reset=True),
             )
@@ -368,7 +368,7 @@ async def test_vpn_reconnect(
         # pytest.param(
         #     SetupParameters(
         #         connection_tag=ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
-        #         adapter_type_override=TelioAdapterType.BORING_TUN,
+        #         adapter_type_override=TelioAdapterType.NEP_TUN,
         #         ip_stack=IPStack.IPv6,
         #         features=default_features(enable_firewall_connection_reset=True),
         #     )
@@ -479,7 +479,7 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 ip_stack=IPStack.IPv4,
                 features=default_features(enable_firewall_connection_reset=True),
             )
@@ -487,7 +487,7 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 ip_stack=IPStack.IPv4,
                 features=default_features(enable_firewall_connection_reset=True),
             ),
@@ -497,7 +497,7 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
         # pytest.param(
         #     SetupParameters(
         #         connection_tag=ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
-        #         adapter_type_override=TelioAdapterType.BORING_TUN,
+        #         adapter_type_override=TelioAdapterType.NEP_TUN,
         #         ip_stack=IPStack.IPv6,
         #         features=default_features(enable_firewall_connection_reset=True),
         #     )
@@ -568,7 +568,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=ConnectionLimits(1, 1),
@@ -627,7 +627,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     stun_limits=ConnectionLimits(1, 1),

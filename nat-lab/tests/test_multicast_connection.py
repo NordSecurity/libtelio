@@ -24,44 +24,44 @@ def generate_setup_parameter_pair(
 MUILTICAST_TEST_PARAMS = [
     pytest.param(
         generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, TelioAdapterType.BORING_TUN),
-            (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, TelioAdapterType.BORING_TUN),
+            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, TelioAdapterType.NEP_TUN),
+            (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, TelioAdapterType.NEP_TUN),
         ]),
         "ssdp",
     ),
     pytest.param(
         generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, TelioAdapterType.BORING_TUN),
-            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2, TelioAdapterType.BORING_TUN),
+            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, TelioAdapterType.NEP_TUN),
+            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2, TelioAdapterType.NEP_TUN),
         ]),
         "mdns",
     ),
     pytest.param(
         generate_setup_parameter_pair([
             (ConnectionTag.WINDOWS_VM_1, TelioAdapterType.WIREGUARD_GO_TUN),
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN),
+            (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
         ]),
         "ssdp",
     ),
     pytest.param(
         generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN),
+            (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
             (ConnectionTag.WINDOWS_VM_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
         ]),
         "mdns",
     ),
     pytest.param(
         generate_setup_parameter_pair([
-            (ConnectionTag.MAC_VM, TelioAdapterType.BORING_TUN),
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN),
+            (ConnectionTag.MAC_VM, TelioAdapterType.NEP_TUN),
+            (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
         ]),
         "ssdp",
         marks=pytest.mark.mac,
     ),
     pytest.param(
         generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN),
-            (ConnectionTag.MAC_VM, TelioAdapterType.BORING_TUN),
+            (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
+            (ConnectionTag.MAC_VM, TelioAdapterType.NEP_TUN),
         ]),
         "mdns",
         marks=pytest.mark.mac,
@@ -105,15 +105,15 @@ async def test_multicast(setup_params: List[SetupParameters], protocol: str) -> 
 MUILTICAST_DISALLOWED_TEST_PARAMS = [
     pytest.param(
         generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, TelioAdapterType.BORING_TUN),
-            (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, TelioAdapterType.BORING_TUN),
+            (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, TelioAdapterType.NEP_TUN),
+            (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, TelioAdapterType.NEP_TUN),
         ]),
         "ssdp",
     ),
     pytest.param(
         generate_setup_parameter_pair([
-            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, TelioAdapterType.BORING_TUN),
-            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2, TelioAdapterType.BORING_TUN),
+            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, TelioAdapterType.NEP_TUN),
+            (ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2, TelioAdapterType.NEP_TUN),
         ]),
         "mdns",
     ),

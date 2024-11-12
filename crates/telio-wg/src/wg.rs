@@ -70,7 +70,7 @@ pub trait WireGuard: Send + Sync + 'static {
     async fn add_peer(&self, peer: Peer) -> Result<(), Error>;
     /// Remove Peer from adapter
     async fn del_peer(&self, key: PublicKey) -> Result<(), Error>;
-    /// Disconnect from all peers, implemented only in Boringtun
+    /// Disconnect from all peers, implemented only in NepTUN
     async fn drop_connected_sockets(&self) -> Result<(), Error>;
     /// Retrieve time since last RXed (and accepted) packet
     async fn time_since_last_rx(&self, public_key: PublicKey) -> Result<Option<Duration>, Error>;

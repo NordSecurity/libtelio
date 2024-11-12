@@ -37,7 +37,7 @@ async def execute_upnpc_with_retry(connection, timeout=10.0):
     [
         SetupParameters(
             connection_tag=ConnectionTag.DOCKER_UPNP_CLIENT_1,
-            adapter_type_override=TelioAdapterType.BORING_TUN,
+            adapter_type_override=TelioAdapterType.NEP_TUN,
             features=features_with_endpoint_providers([EndpointProvider.UPNP]),
         ),
     ],
@@ -47,7 +47,7 @@ async def execute_upnpc_with_retry(connection, timeout=10.0):
     [
         SetupParameters(
             connection_tag=ConnectionTag.DOCKER_UPNP_CLIENT_2,
-            adapter_type_override=TelioAdapterType.BORING_TUN,
+            adapter_type_override=TelioAdapterType.NEP_TUN,
             features=features_with_endpoint_providers([EndpointProvider.UPNP]),
         ),
     ],
@@ -119,7 +119,7 @@ async def test_upnp_route_removed(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 features=features_with_endpoint_providers([EndpointProvider.UPNP]),
             ),
         ),
@@ -150,7 +150,7 @@ async def test_upnp_route_removed(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 features=features_with_endpoint_providers([EndpointProvider.UPNP]),
             ),
             marks=pytest.mark.mac,
@@ -163,7 +163,7 @@ async def test_upnp_route_removed(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 features=features_with_endpoint_providers([EndpointProvider.UPNP]),
             )
         )
@@ -212,7 +212,7 @@ async def test_upnp_without_support(
     [
         SetupParameters(
             connection_tag=ConnectionTag.DOCKER_UPNP_CLIENT_1,
-            adapter_type_override=TelioAdapterType.BORING_TUN,
+            adapter_type_override=TelioAdapterType.NEP_TUN,
             features=features_with_endpoint_providers([EndpointProvider.UPNP]),
         ),
     ],
@@ -222,7 +222,7 @@ async def test_upnp_without_support(
     [
         SetupParameters(
             connection_tag=ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
-            adapter_type_override=TelioAdapterType.BORING_TUN,
+            adapter_type_override=TelioAdapterType.NEP_TUN,
             features=features_with_endpoint_providers([EndpointProvider.LOCAL]),
         ),
     ],

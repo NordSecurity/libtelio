@@ -80,7 +80,7 @@ def test_telio_features_builder_all_defaults():
         },
         "nurse": {},
         "firewall": {
-            "boringtun_reset_conns": true
+            "neptun_reset_conns": true
         },
         "direct": {},
         "link_detection": {},

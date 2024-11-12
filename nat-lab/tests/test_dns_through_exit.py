@@ -55,7 +55,7 @@ from utils.router import IPStack
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -77,7 +77,7 @@ from utils.router import IPStack
         # pytest.param(
         #     SetupParameters(
         #         connection_tag=ConnectionTag.MAC_VM,
-        #         adapter_type_override=TelioAdapterType.BORING_TUN,
+        #         adapter_type_override=TelioAdapterType.NEP_TUN,
         #         connection_tracker_config=generate_connection_tracker_config(
         #             ConnectionTag.MAC_VM,
         #             derp_1_limits=ConnectionLimits(1, 1),

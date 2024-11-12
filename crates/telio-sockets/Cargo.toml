@@ -7,7 +7,7 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-boringtun.workspace = true
+neptun.workspace = true
 futures.workspace = true
 libc.workspace = true
 tracing.workspace = true

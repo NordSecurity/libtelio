@@ -32,7 +32,7 @@ from utils.ping import ping
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -81,7 +81,7 @@ from utils.ping import ping
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -143,7 +143,7 @@ async def test_mesh_plus_vpn_one_peer(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -192,7 +192,7 @@ async def test_mesh_plus_vpn_one_peer(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -268,7 +268,7 @@ async def test_mesh_plus_vpn_both_peers(
     [
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
-            TelioAdapterType.BORING_TUN,
+            TelioAdapterType.NEP_TUN,
             "10.0.254.1",
         ),
         pytest.param(
@@ -291,7 +291,7 @@ async def test_mesh_plus_vpn_both_peers(
         ),
         pytest.param(
             ConnectionTag.MAC_VM,
-            TelioAdapterType.BORING_TUN,
+            TelioAdapterType.NEP_TUN,
             "10.0.254.7",
             marks=pytest.mark.mac,
         ),
@@ -382,7 +382,7 @@ async def test_vpn_plus_mesh(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -447,7 +447,7 @@ async def test_vpn_plus_mesh(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -544,7 +544,7 @@ async def test_vpn_plus_mesh_over_direct(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -605,7 +605,7 @@ async def test_vpn_plus_mesh_over_direct(
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     derp_1_limits=ConnectionLimits(1, 1),

@@ -3,12 +3,12 @@ use crate::{
     zone::{AuthoritativeZone, ClonableZones, ForwardZone, Records},
 };
 use async_trait::async_trait;
-use boringtun::noise::{Tunn, TunnResult};
 use hickory_server::{
     authority::MessageRequest,
     proto::{rr::LowerName, serialize::binary::BinDecodable},
     server::{Protocol, Request},
 };
+use neptun::noise::{Tunn, TunnResult};
 use pnet_packet::{
     ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
     ipv4::{checksum, Ipv4Packet, MutableIpv4Packet},

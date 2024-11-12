@@ -6,8 +6,8 @@ use std::{
 };
 
 use blake2::Digest;
-use boringtun::noise;
 use hmac::Mac;
+use neptun::noise;
 use pnet_packet::{
     ip::IpNextHeaderProtocols,
     ipv4::{self, Ipv4Flags, Ipv4Packet, MutableIpv4Packet},
@@ -48,9 +48,9 @@ pub struct KeySet {
 /// Get PQ keys from the VPN server
 /// The packet sequence is as follows
 ///
-/// 1) C -> S             : Client sends WG hansake packet                           
-/// 2) S -> C             : Server responds to handsake                              
-/// 3) C -> S (in tunnel) : Client sends a UDP PQ GET packet with keys               
+/// 1) C -> S             : Client sends WG hansake packet
+/// 2) S -> C             : Server responds to handsake
+/// 3) C -> S (in tunnel) : Client sends a UDP PQ GET packet with keys
 /// 4) S -> C (in tunnel) : Server responds with UDP packet containing the ciphertext
 ///
 /// The shared key is established which should be used as,

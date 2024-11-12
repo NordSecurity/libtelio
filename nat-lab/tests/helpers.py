@@ -248,11 +248,11 @@ async def setup_environment(
             [
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1
-                    adapter_type_override=TelioAdapterType.BORING_TUN,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
                 ),
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2
-                    adapter_type_override=TelioAdapterType.BORING_TUN,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
                 ),
             ],
         )

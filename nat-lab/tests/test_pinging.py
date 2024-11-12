@@ -102,7 +102,7 @@ def nurse_features() -> Features:
     [
         pytest.param(
             SetupParameters(
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -134,7 +134,7 @@ def nurse_features() -> Features:
     [
         pytest.param(
             SetupParameters(
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
@@ -208,7 +208,7 @@ async def test_session_keeper(
     [
         pytest.param(
             SetupParameters(
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -241,7 +241,7 @@ async def test_session_keeper(
     [
         pytest.param(
             SetupParameters(
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,

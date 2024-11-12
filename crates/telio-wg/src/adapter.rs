@@ -1,7 +1,7 @@
 #[warn(missing_docs)]
 #[cfg(any(not(windows), doc))]
 #[cfg_attr(docsrs, doc(cfg(not(windows))))]
-mod boring;
+mod neptun;
 
 #[cfg(target_os = "linux")]
 #[cfg_attr(docsrs, doc(cfg(target_os = "linux")))]
@@ -76,10 +76,10 @@ pub trait Adapter: Send + Sync {
 /// Enumeration of `Error` types for `Adapter` struct
 #[derive(Debug, TError)]
 pub enum Error {
-    /// Error types from BoringTun implementation
+    /// Error types from NepTUN implementation
     #[cfg(not(windows))]
-    #[error("BoringTun adapter error {0}")]
-    BoringTun(#[from] boringtun::device::Error),
+    #[error("NepTUN adapter error {0}")]
+    NepTUN(#[from] ::neptun::device::Error),
 
     /// Error types from Linux Native implementation
     #[cfg(target_os = "linux")]
@@ -158,8 +158,8 @@ pub enum Error {
 /// Enumeration of types for `Adapter` struct
 #[derive(Debug, Copy, Clone)]
 pub enum AdapterType {
-    /// BoringTun
-    BoringTun,
+    /// NepTUN
+    NepTUN,
     /// Linux Native
     LinuxNativeWg,
     /// Wireguard Go
@@ -176,7 +176,7 @@ impl Default for AdapterType {
             target_os = "macos",
             target_os = "linux"
         )) {
-            AdapterType::BoringTun
+            AdapterType::NepTUN
         } else {
             // TODO: Use AdapterType::WindowsNativeWg on Windows
             AdapterType::WireguardGo
@@ -189,7 +189,7 @@ impl FromStr for AdapterType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "boringtun" => Ok(AdapterType::BoringTun),
+            "neptun" => Ok(AdapterType::NepTUN),
             "wireguard-go" => Ok(AdapterType::WireguardGo),
             "linux-native" => Ok(AdapterType::LinuxNativeWg),
             "wireguard-nt" => Ok(AdapterType::WindowsNativeWg),
@@ -212,12 +212,12 @@ pub(crate) fn start(
     #![allow(unused_variables)]
 
     match adapter {
-        AdapterType::BoringTun => {
+        AdapterType::NepTUN => {
             #[cfg(windows)]
             return Err(Error::UnsupportedAdapter);
 
             #[cfg(unix)]
-            Ok(Box::new(boring::BoringTun::start(
+            Ok(Box::new(neptun::NepTUN::start(
                 name,
                 tun,
                 socket_pool,
