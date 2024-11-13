@@ -23,9 +23,10 @@ use telio_sockets::External;
 use telio_task::{io::chan::Tx, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
     exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
-    telio_log_debug, telio_log_info, telio_log_warn, PinnedSleep,
+    telio_log_debug, telio_log_info, telio_log_warn,
 };
 use telio_wg::{DynamicWg, WireGuard};
+use tokio::time::{sleep, Sleep};
 use tokio::{net::UdpSocket, pin, sync::Mutex};
 
 #[cfg(test)]
@@ -281,6 +282,7 @@ impl<Wg: WireGuard> UpnpEndpointProvider<Wg> {
         Ok(Self::start_with(
             udp_socket,
             wg,
+            Duration::from_secs(lease_duration_s.into()),
             ExponentialBackoff::new(exponential_backoff_bounds)?,
             ping_pong_handler,
             IgdGateway {
@@ -297,6 +299,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
     pub fn start_with(
         udp_socket: External<UdpSocket>,
         wg: Arc<Wg>,
+        lease_duration: Duration,
         exponential_backoff: E,
         ping_pong_handler: Arc<Mutex<PingPongHandler>>,
         igd_gw: I,
@@ -304,7 +307,6 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
     ) -> Self {
         let udp_socket = Arc::new(udp_socket);
         let rx_buff = vec![0u8; MAX_SUPPORTED_PACKET_SIZE];
-        let initial_upnp_interval = exponential_backoff.get_backoff();
         Self {
             task: Task::start(State {
                 udp_socket,
@@ -315,8 +317,9 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
                 endpoint_candidate: None,
                 pong_events_tx: None,
                 epc_event_tx: None,
+                lease_duration,
                 exponential_backoff,
-                upnp_interval: PinnedSleep::new(initial_upnp_interval, ()),
+                upnp_interval: Box::pin(sleep(lease_duration / 8)),
                 is_battery_optimization_on,
                 is_endpoint_provider_paused: false,
                 rx_buff,
@@ -405,7 +408,9 @@ impl<Wg: WireGuard> EndpointProvider for UpnpEndpointProvider<Wg> {
 
     async fn handle_endpoint_gone_notification(&self) {
         task_exec!(&self.task, async move |s| {
+            telio_log_debug!("Endpoint gone!");
             s.endpoint_candidate = None;
+            s.igd_gw.drop_igd_gateway();
             Ok(())
         })
         .await
@@ -469,8 +474,9 @@ struct State<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> {
     endpoint_candidate: Option<EndpointCandidate>,
     pong_events_tx: Option<Tx<PongEvent>>,
     epc_event_tx: Option<Tx<EndpointCandidatesChangeEvent>>,
+    lease_duration: Duration,
     exponential_backoff: E,
-    upnp_interval: PinnedSleep<()>,
+    upnp_interval: Pin<Box<Sleep>>,
     is_battery_optimization_on: bool,
     is_endpoint_provider_paused: bool,
     rx_buff: Vec<u8>,
@@ -638,6 +644,13 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
             )
             .await
     }
+
+    fn new_sleep(&self) -> Pin<Box<Sleep>> {
+        // TODO: explain this:
+        let d = self.lease_duration / 8;
+        telio_log_debug!("New sleep: {d:?}");
+        Box::pin(sleep(d))
+    }
 }
 
 #[async_trait]
@@ -651,6 +664,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
     where
         F: Future<Output = BoxAction<Self, std::result::Result<(), Self::Err>>> + Send,
     {
+        telio_log_debug!("wait_with_update start");
         pin!(updated);
 
         if self.is_endpoint_provider_paused {
@@ -664,23 +678,28 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
             return Ok(());
         }
 
+        telio_log_debug!("wait_with_update select");
         tokio::select! {
             Ok((len, addr)) = self.udp_socket.recv_from(&mut self.rx_buff) => {
+                telio_log_debug!("wait_with_update recv_from");
                 let buff = self.rx_buff.clone();
                 let _ = self.handle_ping_rx(&buff[..len], &addr).await;
             }
             result = self.igd_gw.ensure_igd_gateway(), if !self.igd_gw.has_igd_gateway() => {
+                telio_log_debug!("wait_with_update ensure_igd_gateway");
                 if result.is_ok() {
                     if let Err(e) = self.create_endpoint_candidate().await {
                         telio_log_warn!("Error creating UPnP endpoint: {}", e);
                         self.igd_gw.drop_igd_gateway();
                     }
                     self.exponential_backoff.reset();
-                    self.upnp_interval =  PinnedSleep::new(self.exponential_backoff.get_backoff(), ());
+                    self.upnp_interval = self.new_sleep();
                 }
             }
+
             _ = &mut self.upnp_interval => {
-                self.upnp_interval =  PinnedSleep::new(self.exponential_backoff.get_backoff(), ());
+                telio_log_debug!("wait_with_update upnp_interval");
+                self.upnp_interval = self.new_sleep();
 
                 match self.check_endpoint_candidate().await {
                     Ok (_) => self.exponential_backoff.reset(),
@@ -689,9 +708,11 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
             }
             // Incoming task
             update = updated => {
+                telio_log_debug!("wait_with_update incomming task");
                 return update(self).await;
             }
             else => {
+                telio_log_debug!("wait_with_update else");
                 return Ok(());
             },
         };
@@ -853,6 +874,7 @@ mod tests {
         UpnpEndpointProvider::start_with(
             udp_socket,
             Arc::new(wg),
+            Duration::ZERO, // TODO
             {
                 let mut result = MockBackoff::default();
                 let backoff_array_idx = Rc::new(RefCell::new(0));

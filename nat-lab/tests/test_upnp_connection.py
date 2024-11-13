@@ -91,6 +91,8 @@ async def test_upnp_route_removed(
                 # else was wrong, so we assert
                 await asyncio.wait_for(task, 1)
 
+        print("=========== XXXX")
+
         await asyncio.gather(
             alpha_client.wait_for_event_peer(
                 beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
@@ -100,8 +102,12 @@ async def test_upnp_route_removed(
             ),
         )
 
+        print("=========== YYYY")
+
         await ping(beta_conn.connection, alpha.ip_addresses[0])
         await ping(alpha_conn.connection, beta.ip_addresses[0])
+
+        print("=========== ZZZZ")
 
         # LLT-5532: To be cleaned up...
         alpha_client.allow_errors(
