@@ -53,3 +53,5 @@ telio-test.workspace = true
 telio-utils = { workspace = true, features = ["mockall"] }
 telio-wg = { workspace = true, features = ["mockall"] }
 rstest.workspace = true
+tracing-test = "0.2.5"
+serial_test = "3.2.0"

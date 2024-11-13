@@ -576,15 +576,25 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
     }
 
     async fn create_endpoint_candidate(&mut self) -> Result<()> {
-        telio_log_info!("Creating a new Upnp endpoint");
-
         self.create_random_endpoint_ports();
+
+        telio_log_info!(
+            "Creating a new Upnp endpoint, external wg port {}, proxy port: {}",
+            self.wg_port_mapping.external,
+            self.proxy_port_mapping.external
+        );
 
         self.proxy_port_mapping.internal = self.udp_socket.local_addr()?.port();
         self.wg_port_mapping.internal = self
             .wg
             .wait_for_listen_port(GET_INTERFACE_TIMEOUT_S)
             .await?;
+
+        telio_log_debug!(
+            "internal wg port {}, proxy port: {}",
+            self.wg_port_mapping.internal,
+            self.proxy_port_mapping.internal
+        );
 
         let ext_ip = {
             let get = self.igd_gw.get_external_ip();
@@ -732,6 +742,7 @@ mod tests {
     use lazy_static::lazy_static;
     use mockall::mock;
     use parking_lot::Mutex;
+    use serial_test::serial;
     use std::cell::RefCell;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::rc::Rc;
@@ -743,38 +754,39 @@ mod tests {
     use telio_sockets::{NativeProtector, SocketPool};
     use telio_utils::exponential_backoff::MockBackoff;
     use telio_utils::ip_stack::IpStack;
+    use telio_utils::telio_log_debug;
     use telio_wg::uapi::{Interface, Peer};
-    use telio_wg::Error as wgError;
+    use telio_wg::Error as WgError;
     use telio_wg::WireGuard;
     use tokio::sync::Mutex as TMutex;
+    use tracing_test::traced_test;
 
     type Result<T> = std::result::Result<T, Error>;
-    type Result1<T> = std::result::Result<T, wgError>;
+    type ResultWg<T> = std::result::Result<T, WgError>;
 
     mock! {
         pub Wg {}
         #[async_trait]
         impl WireGuard for Wg {
-            async fn get_interface(&self) -> Result1<Interface,>;
-            async fn get_adapter_luid(&self) -> Result1<u64>;
-            async fn wait_for_listen_port(&self, d: Duration) -> Result1<u16>;
-            async fn wait_for_proxy_listen_port(&self, d: Duration) -> Result1<u16>;
-            async fn get_wg_socket(&self, ipv6: bool) -> Result1<Option<i32>>;
-            async fn get_link_state(&self, key: PublicKey) -> Result1<Option<LinkState>>;
-            async fn set_secret_key(&self, key: SecretKey) -> Result1<()>;
-            async fn set_fwmark(&self, fwmark: u32) -> Result1<()>;
-            async fn add_peer(&self, peer: Peer) -> Result1<()>;
-            async fn del_peer(&self, key: PublicKey) -> Result1<()>;
-            async fn drop_connected_sockets(&self) -> Result1<()>;
-            async fn time_since_last_rx(&self, public_key: PublicKey) -> Result1<Option<Duration>>;
+            async fn get_interface(&self) -> ResultWg<Interface,>;
+            async fn get_adapter_luid(&self) -> ResultWg<u64>;
+            async fn wait_for_listen_port(&self, d: Duration) -> ResultWg<u16>;
+            async fn wait_for_proxy_listen_port(&self, d: Duration) -> ResultWg<u16>;
+            async fn get_wg_socket(&self, ipv6: bool) -> ResultWg<Option<i32>>;
+            async fn get_link_state(&self, key: PublicKey) -> ResultWg<Option<LinkState>>;
+            async fn set_secret_key(&self, key: SecretKey) -> ResultWg<()>;
+            async fn set_fwmark(&self, fwmark: u32) -> ResultWg<()>;
+            async fn add_peer(&self, peer: Peer) -> ResultWg<()>;
+            async fn del_peer(&self, key: PublicKey) -> ResultWg<()>;
+            async fn drop_connected_sockets(&self) -> ResultWg<()>;
+            async fn time_since_last_rx(&self, public_key: PublicKey) -> ResultWg<Option<Duration>>;
             async fn stop(self);
-            async fn reset_existing_connections(&self, exit_pubkey: PublicKey, exit_ipv4: Ipv4Addr) -> Result1<()>;
-            async fn set_ip_stack(&self, ip_stack: Option<IpStack>) -> Result1<()>;
+            async fn reset_existing_connections(&self, exit_pubkey: PublicKey, exit_ipv4: Ipv4Addr) -> ResultWg<()>;
+            async fn set_ip_stack(&self, ip_stack: Option<IpStack>) -> ResultWg<()>;
         }
     }
 
     lazy_static! {
-        static ref SEQUENTIAL_LOCK: Arc<TMutex<bool>> = Arc::new(TMutex::new(true));
         static ref IGD_IS_AVAILABLE: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
         static ref ENDPOINT: Arc<Mutex<EndpointCandidate>> =
             Arc::new(Mutex::new(EndpointCandidate {
@@ -814,7 +826,9 @@ mod tests {
     }
 
     fn has_igd_gateway() -> bool {
-        *IGD_IS_AVAILABLE.lock()
+        let ret = *IGD_IS_AVAILABLE.lock();
+        telio_log_debug!("has igd gateway: {ret}");
+        ret
     }
 
     fn drop_igd_gateway() {
@@ -822,6 +836,7 @@ mod tests {
     }
 
     pub async fn prepare_test_setup(
+        lease: Duration,
     ) -> UpnpEndpointProvider<MockWg, MockUpnpEpCommands, MockBackoff> {
         let spool = SocketPool::new(
             NativeProtector::new(
@@ -874,7 +889,7 @@ mod tests {
         UpnpEndpointProvider::start_with(
             udp_socket,
             Arc::new(wg),
-            Duration::ZERO, // TODO
+            lease,
             {
                 let mut result = MockBackoff::default();
                 let backoff_array_idx = Rc::new(RefCell::new(0));
@@ -898,11 +913,14 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
+    #[traced_test]
     async fn create_upnp_endpoint() {
-        let _quard = SEQUENTIAL_LOCK.lock().await;
-        let upnp = prepare_test_setup().await;
+        *IGD_IS_AVAILABLE.lock() = false;
 
-        tokio::time::sleep(Duration::from_millis(100 + 20)).await;
+        let upnp = prepare_test_setup(Duration::from_secs(2)).await;
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
         let epc = upnp.get_endpoint_candidate().await;
         let sock = upnp.get_internal_socket().await;
@@ -912,9 +930,11 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
+    #[traced_test]
     async fn check_igd_function_execution() {
-        let _quard = SEQUENTIAL_LOCK.lock().await;
-        let upnp = prepare_test_setup().await;
+        *IGD_IS_AVAILABLE.lock() = false;
+        let upnp = prepare_test_setup(Duration::from_secs(2)).await;
         tokio::time::sleep(Duration::from_millis(100 + 20)).await;
 
         let udp_int_port = ENDPOINT.lock().udp.port();
@@ -932,41 +952,44 @@ mod tests {
 
         // When Upnp is stopped it should set the port to 0
         let _ = upnp.stop().await;
-        assert!(ENDPOINT.lock().wg.port() == 0);
+        assert_eq!(ENDPOINT.lock().wg.port(), 0);
     }
 
     #[tokio::test]
+    #[serial]
+    #[traced_test]
     async fn test_no_igd_on_router() {
-        let _quard = SEQUENTIAL_LOCK.lock().await;
         // Avoid initial search
         *IGD_IS_AVAILABLE.lock() = true;
-        let _upnp = prepare_test_setup().await;
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        let _upnp = prepare_test_setup(Duration::from_secs(2)).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
         // When IGD is off the port should be unchanged
-        assert!(ENDPOINT.lock().wg.port() == 1000);
+        assert_eq!(ENDPOINT.lock().wg.port(), 1000);
 
         *IGD_IS_AVAILABLE.lock() = false;
-        tokio::time::sleep(Duration::from_millis(100 + 20)).await;
-        assert!(ENDPOINT.lock().wg.port() != 1000);
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert_ne!(ENDPOINT.lock().wg.port(), 1000);
     }
 
     #[tokio::test]
+    #[serial]
+    #[traced_test]
     async fn test_upnp_route_corruption_on_router() {
-        let _quard = SEQUENTIAL_LOCK.lock().await;
-        let _upnp = prepare_test_setup().await;
-        tokio::time::sleep(Duration::from_millis(100 + 20)).await;
+        *IGD_IS_AVAILABLE.lock() = false;
+        let _upnp = prepare_test_setup(Duration::from_millis(2000)).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
         // Upnp will change the static port to a random port
-        assert!(ENDPOINT.lock().wg.port() != 1000);
+        assert_ne!(ENDPOINT.lock().wg.port(), 1000);
 
         // Save current route port and corrupt it
         let old_port = ENDPOINT.lock().wg.port();
-        ENDPOINT.lock().wg.set_port(10123);
-        assert!(ENDPOINT.lock().wg.port() == 10123);
+        ENDPOINT.lock().wg.set_port(42);
+        assert_eq!(ENDPOINT.lock().wg.port(), 42);
 
         // Wait Upnp to invalidate corrupted port
-        tokio::time::sleep(Duration::from_millis(200 + 20)).await;
-        assert!(ENDPOINT.lock().wg.port() == old_port);
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert_eq!(ENDPOINT.lock().wg.port(), old_port);
     }
 }
