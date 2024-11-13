@@ -308,7 +308,7 @@ async def test_upnp_port_lease_duration(
         )
 
         assert alpha_setup_params.features.direct.endpoint_interval_secs
-        alpha_setup_params.features.direct.endpoint_interval_secs = 60
+        alpha_setup_params.features.direct.endpoint_interval_secs = 5
         assert alpha_setup_params.features.direct.endpoint_providers_optimization
         alpha_setup_params.features.direct.endpoint_providers_optimization.optimize_direct_upgrade_upnp = (
             False
@@ -336,7 +336,7 @@ async def test_upnp_port_lease_duration(
         assert re.search("^ [0-9]+ UDP", upnpc_cmd.get_stdout(), re.MULTILINE) is None
 
         # TODO: check that wait_for_log would return the same value as above, otherwise this might be a failed test
-        return
+        # return
 
         await asyncio.gather(
             alpha_client.wait_for_state_on_any_derp([RelayState.CONNECTED]),
@@ -359,10 +359,11 @@ async def test_upnp_port_lease_duration(
 
         # telio-traversal shouldn't let port mappings expire
         upnpc_cmd = await execute_upnpc_with_retry(alpha_conn)
+        out = upnpc_cmd.get_stdout()
         mappings_search = re.findall(
-            "^ [0-9]+ UDP", upnpc_cmd.get_stdout(), re.MULTILINE
+            "^ [0-9]+ UDP", out, re.MULTILINE
         )
-        assert len(mappings_search) == 2
+        assert len(mappings_search) == 2, out
 
         await alpha_client.stop_device()
         await asyncio.sleep(lease_duration_s)
