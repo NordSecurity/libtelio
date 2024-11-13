@@ -326,15 +326,6 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
         }
     }
 
-    pub async fn get_endpoint_candidate(&self) -> Option<EndpointCandidate> {
-        task_exec!(&self.task, async move |s| {
-            let _ = s.check_endpoint_candidate().await;
-            Ok(s.endpoint_candidate.clone())
-        })
-        .await
-        .unwrap_or(None)
-    }
-
     pub async fn get_internal_socket(&self) -> Option<SocketAddr> {
         task_exec!(&self.task, async move |s| {
             if s.endpoint_candidate.is_some() {
