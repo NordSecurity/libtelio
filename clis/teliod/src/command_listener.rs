@@ -1,7 +1,4 @@
-use crate::{
-    comms::DaemonConnection, daemon::TelioTaskCmd, ClientCmd, DaemonSocket, TelioStatusReport,
-    TeliodError,
-};
+use crate::{daemon::TelioTaskCmd, ClientCmd, DaemonSocket, TelioStatusReport, TeliodError};
 use serde::{Deserialize, Serialize};
 use telio::telio_task::io::chan;
 use tokio::sync::oneshot;
@@ -43,8 +40,7 @@ impl CommandListener {
     async fn process_command(
         &mut self,
         command: &ClientCmd,
-        connection: &mut DaemonConnection,
-    ) -> Result<(), TeliodError> {
+    ) -> Result<CommandResponse, TeliodError> {
         match command {
             ClientCmd::GetStatus => {
                 info!("Reporting telio status");
@@ -59,14 +55,13 @@ impl CommandListener {
                     })?;
                 // wait for a response from telio runner
                 if let Ok(report) = response_rx.await {
-                    // send the response to teliod client
-                    connection
-                        .respond(CommandResponse::StatusReport(report).serialize())
-                        .await?;
+                    return Ok(CommandResponse::StatusReport(report));
                 }
             }
         }
-        Ok(())
+        Ok(CommandResponse::Err(
+            "Command didn't return a result".to_string(),
+        ))
     }
 
     pub async fn handle_client_connection(&mut self) -> Result<ClientCmd, TeliodError> {
@@ -74,7 +69,8 @@ impl CommandListener {
         let command_str = connection.read_command().await?;
 
         if let Ok(command) = serde_json::from_str::<ClientCmd>(&command_str) {
-            self.process_command(&command, &mut connection).await?;
+            let response = self.process_command(&command).await?;
+            connection.respond(response.serialize()).await?;
             Ok(command)
         } else {
             error!("Received invalid command from client: {}", command_str);
@@ -92,10 +88,8 @@ impl CommandListener {
 mod tests {
     use super::*;
     use crate::{ClientCmd, CommandResponse, DaemonSocket};
-    use std::{
-        path::Path,
-        time::{SystemTime, UNIX_EPOCH},
-    };
+    use rand::Rng;
+    use std::path::Path;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::UnixStream,
@@ -105,13 +99,10 @@ mod tests {
 
     const TEST_SOCKET_PATH: &str = "test_socket";
 
-    // Create a "random" socket path for the test, since tests run in parallel they can deadlock
+    // Create a random socket path for the test, since tests run in parallel they can deadlock
     fn make_socket_path() -> String {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .subsec_nanos();
-        format!("{}_{}", TEST_SOCKET_PATH, nanos)
+        let mut rng = rand::thread_rng();
+        format!("{}_{}", TEST_SOCKET_PATH, rng.gen::<u16>())
     }
 
     // Helper to create a fake command listener

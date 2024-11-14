@@ -1,7 +1,6 @@
 use crate::config::generate_hw_identifier;
 use crate::DeviceIdentity;
 use base64::{prelude::*, DecodeError};
-use dirs;
 use reqwest::{header, Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

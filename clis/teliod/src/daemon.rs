@@ -2,7 +2,7 @@ use futures::stream::StreamExt;
 use nix::libc::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
 use nix::sys::signal::Signal;
 use signal_hook_tokio::Signals;
-use std::{fs, sync::Arc};
+use std::{fs, net::IpAddr, sync::Arc};
 use telio::{
     crypto::SecretKey,
     device::{Device, DeviceConfig, Error as DeviceError},
@@ -16,7 +16,8 @@ use tracing::{debug, error, info, trace};
 use crate::core_api::{get_meshmap as get_meshmap_from_server, init_with_api};
 use crate::{
     command_listener::CommandListener, comms::DaemonSocket, config::DeviceIdentity,
-    config::TeliodDaemonConfig, nc::NotificationCenter, TelioStatusReport, TeliodError,
+    config::TeliodDaemonConfig, interface_configurator::InterfaceConfigurationProvider,
+    nc::NotificationCenter, TelioStatusReport, TeliodError,
 };
 
 #[derive(Debug)]
@@ -25,11 +26,18 @@ pub enum TelioTaskCmd {
     UpdateMeshmap(MeshMap),
     // Get telio status
     GetStatus(oneshot::Sender<TelioStatusReport>),
+    // Configure the system interface
+    SetIp(IpAddr),
     // Break the receive loop to quit the daemon and exit gracefully
     Quit,
 }
 
 const EMPTY_TOKEN: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+#[derive(Debug, Default)]
+pub struct TelioTaskStates {
+    interface_ip_address: Option<IpAddr>,
+}
 
 // From async context Telio needs to be run in separate task
 fn telio_task(
@@ -38,6 +46,7 @@ fn telio_task(
     mut rx_channel: mpsc::Receiver<TelioTaskCmd>,
     tx_channel: mpsc::Sender<TelioTaskCmd>,
     interface_name: &str,
+    interface_config_provider: &InterfaceConfigurationProvider,
 ) -> Result<(), TeliodError> {
     debug!("Initializing telio device");
     let mut telio = Device::new(
@@ -47,30 +56,58 @@ fn telio_task(
         None,
     )?;
 
+    // Keep track of current meshnet states
+    let mut state = TelioTaskStates::default();
+    let sys_config = interface_config_provider.create();
+
     // TODO: This is temporary to be removed later on when we have proper integration
     // tests with core API. This is to not look for tokens in a test environment
     // right now as the values are dummy and program will not run as it expects
     // real tokens.
     if !auth_token.as_str().eq("") {
         start_telio(&mut telio, node_identity.private_key, interface_name)?;
-        task_retrieve_meshmap(node_identity, auth_token, tx_channel);
+        task_retrieve_meshmap(node_identity, auth_token, tx_channel.clone());
 
         while let Some(cmd) = rx_channel.blocking_recv() {
             info!("Got command {:?}", cmd);
             match cmd {
                 TelioTaskCmd::UpdateMeshmap(map) => {
-                    if let Err(e) = telio.set_config(&Some(map)) {
-                        error!("Unable to set meshmap due to {e}");
+                    let some_new_ip_address = map
+                        .ip_addresses
+                        .as_deref()
+                        .and_then(|addresses| addresses.first().cloned());
+                    match telio.set_config(&Some(map)) {
+                        Ok(_) => {
+                            debug!("meshnet map set successfully");
+                            // configure the interface ip address
+                            if let Some(new_ip_address) = some_new_ip_address {
+                                task_set_ip(new_ip_address, tx_channel.clone());
+                            }
+                        }
+                        Err(e) => {
+                            error!("Unable to set meshmap due to {e}");
+                        }
                     }
                 }
                 TelioTaskCmd::GetStatus(response_tx_channel) => {
                     let status_report = TelioStatusReport {
-                        is_running: telio.is_running(),
-                        nodes: telio.external_nodes()?,
+                        telio_is_running: telio.is_running(),
+                        meshnet_ip: state.interface_ip_address,
+                        external_nodes: telio.external_nodes()?,
                     };
                     debug!("Telio status: {:#?}", status_report);
                     if response_tx_channel.send(status_report).is_err() {
                         error!("Telio task failed sending status report")
+                    }
+                }
+                TelioTaskCmd::SetIp(new_ip_address) => {
+                    // update the interface only if the address is new
+                    if state
+                        .interface_ip_address
+                        .map_or(true, |ip| ip != new_ip_address)
+                    {
+                        state.interface_ip_address = Some(new_ip_address);
+                        _ = sys_config.set_ip(interface_name, &new_ip_address);
                     }
                 }
                 TelioTaskCmd::Quit => {
@@ -99,6 +136,15 @@ fn task_retrieve_meshmap(
                 }
             }
             Err(e) => error!("Getting meshmap failed due to {e}"),
+        }
+    });
+}
+
+fn task_set_ip(address: IpAddr, tx: mpsc::Sender<TelioTaskCmd>) {
+    tokio::spawn(async move {
+        #[allow(mpsc_blocking_send)]
+        if let Err(e) = tx.send(TelioTaskCmd::SetIp(address)).await {
+            error!("Unable to send command due to {e}");
         }
     });
 }
@@ -164,6 +210,7 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
             rx,
             tx_clone,
             &config.interface_name,
+            &config.interface_config_provider,
         )
     });
 
@@ -200,7 +247,7 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
             result = cmd_listener.handle_client_connection() => {
                 match result {
                     Ok(command) => {
-                        info!("Client command {:?} executed succesfully", command);
+                        info!("Client command {:?} executed successfully", command);
                     }
                     Err(err) => {
                         break Err(err);

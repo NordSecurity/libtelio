@@ -8,6 +8,8 @@ use uuid::Uuid;
 
 use telio::crypto::SecretKey;
 
+use crate::interface_configurator::InterfaceConfigurationProvider;
+
 #[derive(PartialEq, Eq, Clone, Copy, Debug, SmartDefault)]
 #[repr(transparent)]
 pub struct Percentage(u8);
@@ -87,6 +89,7 @@ pub struct TeliodDaemonConfig {
     pub log_level: LevelFilter,
     pub log_file_path: String,
     pub interface_name: String,
+    pub interface_config_provider: InterfaceConfigurationProvider,
 
     pub app_user_uid: Uuid,
 
@@ -157,6 +160,7 @@ mod tests {
             log_file_path: "test.log".to_owned(),
             app_user_uid: Uuid::from_str("2ba97921-38d7-4736-9d47-261cf3e5c223").unwrap(),
             interface_name: "utun10".to_owned(),
+            interface_config_provider: InterfaceConfigurationProvider::Manual,
             authentication_token:
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
             http_certificate_file_path: None,
@@ -174,6 +178,7 @@ mod tests {
             "log_file_path": "test.log",
             "app_user_uid": "2ba97921-38d7-4736-9d47-261cf3e5c223",
             "interface_name": "utun10",
+            "interface_config_provider": "manual",
             "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             }"#;
 
@@ -186,6 +191,7 @@ mod tests {
                 "log_file_path": "test.log",
                 "app_user_uid": "2ba97921-38d7-4736-9d47-261cf3e5c223",
                 "interface_name": "utun10",
+                "interface_config_provider": "manual",
                 "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 "mqtt": {}
             }"#;

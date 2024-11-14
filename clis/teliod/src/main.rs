@@ -1,15 +1,10 @@
 //! Main and implementation of config and commands for Teliod - simple telio daemon for Linux and OpenWRT
 
 use clap::Parser;
-use command_listener::CommandResponse;
-use config::TeliodDaemonConfig;
 use serde::{Deserialize, Serialize};
 use serde_json::error::Error as SerdeJsonError;
-use std::fs::File;
-use telio::{
-    device::Error as DeviceError,
-    telio_model::{config::Config as MeshMap, mesh::Node},
-};
+use std::{fs::File, net::IpAddr};
+use telio::{device::Error as DeviceError, telio_model::mesh::Node};
 use thiserror::Error as ThisError;
 use tokio::{
     task::JoinError,
@@ -22,10 +17,15 @@ mod comms;
 mod config;
 mod core_api;
 mod daemon;
+mod interface_configurator;
 mod nc;
 
-use crate::core_api::Error as ApiError;
-use crate::{comms::DaemonSocket, config::DeviceIdentity};
+use crate::{
+    command_listener::CommandResponse,
+    comms::DaemonSocket,
+    config::{DeviceIdentity, TeliodDaemonConfig},
+    core_api::Error as ApiError,
+};
 
 const TIMEOUT_SEC: u64 = 1;
 
@@ -46,16 +46,6 @@ enum Cmd {
     Client(ClientCmd),
 }
 
-#[derive(Debug)]
-pub enum TelioTaskCmd {
-    // Command to set the downloaded meshmap to telio instance
-    UpdateMeshmap(MeshMap),
-    // Get telio status
-    GetStatus,
-    // Break the recieve loop to quit the daemon and exit gracefully
-    Quit,
-}
-
 #[derive(Debug, ThisError)]
 enum TeliodError {
     #[error(transparent)]
@@ -74,6 +64,8 @@ enum TeliodError {
     ParsingError(#[from] SerdeJsonError),
     #[error("Command failed to execute: {0:?}")]
     CommandFailed(ClientCmd),
+    #[error("Failed executing system command: {0:?}")]
+    SystemCommandFailed(String),
     #[error("Daemon is not running")]
     DaemonIsNotRunning,
     #[error("Daemon is running")]
@@ -89,9 +81,12 @@ enum TeliodError {
 /// Libtelio and meshnet status report
 #[derive(Debug, Serialize, Deserialize, PartialEq, Default)]
 pub struct TelioStatusReport {
-    pub is_running: bool,
+    /// State of telio runner
+    pub telio_is_running: bool,
+    /// Assigned mesnet IP address
+    pub meshnet_ip: Option<IpAddr>,
     /// List of meshnet peers
-    pub nodes: Vec<Node>,
+    pub external_nodes: Vec<Node>,
 }
 
 #[tokio::main]
@@ -128,7 +123,7 @@ async fn main() -> Result<(), TeliodError> {
                         Ok(())
                     }
                     CommandResponse::StatusReport(status) => {
-                        println!("{:#?}", status);
+                        println!("{}", serde_json::to_string_pretty(&status)?);
                         Ok(())
                     }
                     CommandResponse::Err(e) => {
