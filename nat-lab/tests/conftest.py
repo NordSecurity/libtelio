@@ -1,6 +1,7 @@
 import asyncio
 import os
 import pytest
+import shutil
 import subprocess
 from helpers import SetupParameters
 from interderp_cli import InterDerpClient
@@ -232,7 +233,7 @@ async def _copy_vm_binaries_if_needed(items):
                 return
 
 
-def save_dmesg_from_host():
+def save_dmesg_from_host(prefix):
     try:
         result = subprocess.run(
             ["sudo", "dmesg", "-d", "-T"],
@@ -246,22 +247,34 @@ def save_dmesg_from_host():
 
     if result:
         with open(
-            os.path.join("logs", "dmesg.txt"), "w", encoding="utf-8"
+            os.path.join("logs", f"dmesg-{prefix}.txt"), "w", encoding="utf-8"
         ) as f:
             f.write(result)
 
 
-def save_audit_log():
+def save_audit_log(prefix):
     try:
         source_path = "/var/log/audit/audit.log"
         if os.path.exists(source_path):
-            shutil.copy2(source_path, "logs/audit.log")
+            shutil.copy2(source_path, f"logs/audit_{prefix}.log")
         else:
             print(f"The audit file {source_path} does not exist.")
     except Exception as e:  # pylint: disable=broad-exception-caught
         print(f"An error occurred when processing audit log: {e}")
 
-async def collect_kernel_logs(items):
+
+async def _save_macos_logs(conn, prefix):
+    try:
+        dmesg_proc = await conn.create_process(["dmesg"]).execute()
+        with open(
+            os.path.join("logs", f"dmesg-macos-{prefix}.txt"), "w", encoding="utf-8"
+        ) as f:
+            f.write(dmesg_proc.get_stdout())
+    except ProcessExecError as e:
+        print(f"Failed to collect dmesg logs {e}")
+
+
+async def collect_kernel_logs(items, prefix):
     if os.environ.get("NATLAB_SAVE_LOGS") is None:
         return
 
@@ -272,14 +285,23 @@ async def collect_kernel_logs(items):
     log_dir = "logs"
     os.makedirs(log_dir, exist_ok=True)
 
-    save_dmesg_from_host()
-    save_audit_log()
+    save_dmesg_from_host(prefix)
+    save_audit_log(prefix)
+
+    for item in items:
+        if any(mark.name == "mac" for mark in item.own_markers):
+            try:
+                async with mac_vm_util.new_connection() as conn:
+                    await _save_macos_logs(conn, prefix)
+            except OSError as e:
+                if is_ci:
+                    raise e
 
 
 def pytest_runtestloop(session):
     if not session.config.option.collectonly:
         asyncio.run(_copy_vm_binaries_if_needed(session.items))
-        asyncio.run(collect_kernel_logs(session.items))
+        asyncio.run(collect_kernel_logs(session.items, "before_tests"))
 
         if not asyncio.run(perform_setup_checks()):
             pytest.exit("Setup checks failed, exiting ...")
@@ -308,6 +330,7 @@ def pytest_sessionfinish(session, exitstatus):
     if not session.config.option.collectonly:
         collect_nordderper_logs()
         collect_dns_server_logs()
+        asyncio.run(collect_kernel_logs(session.items, "after_tests"))
 
 
 def collect_nordderper_logs():
