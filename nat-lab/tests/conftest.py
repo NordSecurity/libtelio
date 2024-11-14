@@ -232,9 +232,54 @@ async def _copy_vm_binaries_if_needed(items):
                 return
 
 
+def save_dmesg_from_host():
+    try:
+        result = subprocess.run(
+            ["sudo", "dmesg", "-d", "-T"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    except subprocess.CalledProcessError as e:
+        print(f"Error executing dmesg: {e}")
+        return
+
+    if result:
+        with open(
+            os.path.join("logs", "dmesg.txt"), "w", encoding="utf-8"
+        ) as f:
+            f.write(result)
+
+
+def save_audit_log():
+    try:
+        source_path = "/var/log/audit/audit.log"
+        if os.path.exists(source_path):
+            shutil.copy2(source_path, "logs/audit.log")
+        else:
+            print(f"The audit file {source_path} does not exist.")
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        print(f"An error occurred when processing audit log: {e}")
+
+async def collect_kernel_logs(items):
+    if os.environ.get("NATLAB_SAVE_LOGS") is None:
+        return
+
+    is_ci = os.environ.get("CUSTOM_ENV_GITLAB_CI") is not None and os.environ.get(
+        "CUSTOM_ENV_GITLAB_CI"
+    )
+
+    log_dir = "logs"
+    os.makedirs(log_dir, exist_ok=True)
+
+    save_dmesg_from_host()
+    save_audit_log()
+
+
 def pytest_runtestloop(session):
     if not session.config.option.collectonly:
         asyncio.run(_copy_vm_binaries_if_needed(session.items))
+        asyncio.run(collect_kernel_logs(session.items))
 
         if not asyncio.run(perform_setup_checks()):
             pytest.exit("Setup checks failed, exiting ...")
