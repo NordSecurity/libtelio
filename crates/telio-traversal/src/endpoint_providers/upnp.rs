@@ -82,13 +82,19 @@ impl Debug for IgdGateway {
     }
 }
 
+impl IgdGateway {
+    fn maybe_gw(&self) -> Result<&Gateway> {
+        match &self.gw {
+            Some(gw) => Ok(gw),
+            None => Err(Error::NoIGDGateway),
+        }
+    }
+}
+
 #[async_trait]
 impl UpnpEpCommands for IgdGateway {
     async fn check_endpoint_routes(&self, proxy_port: u16, wg_port: u16) -> Result<bool> {
-        let gw = match &self.gw {
-            Some(gw) => gw,
-            None => return Err(Error::NoIGDGateway),
-        };
+        let gw = self.maybe_gw()?;
 
         let mut i = 0;
         let mut extend_timeout: bool = false;
@@ -121,10 +127,8 @@ impl UpnpEpCommands for IgdGateway {
         proxy_port: PortMapping,
         wg_port: PortMapping,
     ) -> Result<()> {
-        let gw = match &self.gw {
-            Some(gw) => gw,
-            None => return Err(Error::NoIGDGateway),
-        };
+        let gw = self.maybe_gw()?;
+
         gw.add_port(
             PortMappingProtocol::UDP,
             proxy_port.external,
@@ -152,10 +156,8 @@ impl UpnpEpCommands for IgdGateway {
         wg_port_internal: u16,
         wg_port_external: u16,
     ) -> Result<()> {
-        let gw = match &self.gw {
-            Some(gw) => gw,
-            None => return Err(Error::NoIGDGateway),
-        };
+        let gw = self.maybe_gw()?;
+
         gw.add_port(
             PortMappingProtocol::UDP,
             proxy_port_external,
@@ -176,10 +178,8 @@ impl UpnpEpCommands for IgdGateway {
     }
 
     async fn delete_endpoint_routes(&self, proxy_port: u16, wg_port: u16) -> Result<()> {
-        let gw = match &self.gw {
-            Some(gw) => gw,
-            None => return Err(Error::NoIGDGateway),
-        };
+        let gw = self.maybe_gw()?;
+
         gw.remove_port(PortMappingProtocol::UDP, wg_port).await?;
         gw.remove_port(PortMappingProtocol::UDP, proxy_port).await?;
         Ok(())
@@ -206,10 +206,7 @@ impl UpnpEpCommands for IgdGateway {
     }
 
     async fn get_external_ip(&self) -> Result<Ipv4Addr> {
-        let gw = match &self.gw {
-            Some(gw) => gw,
-            None => return Err(Error::NoIGDGateway),
-        };
+        let gw = self.maybe_gw()?;
 
         match gw.get_external_ip().await {
             Ok(ip) => Ok(ip),
@@ -329,7 +326,8 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
         }
     }
 
-    pub async fn get_endpoint_candidate(&self) -> Option<EndpointCandidate> {
+    #[cfg(test)]
+    async fn get_endpoint_candidate(&self) -> Option<EndpointCandidate> {
         task_exec!(&self.task, async move |s| {
             let _ = s.check_endpoint_candidate().await;
             Ok(s.endpoint_candidate.clone())

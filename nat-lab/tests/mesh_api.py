@@ -449,7 +449,7 @@ def start_tcpdump(container_names: List[str]):
         return
     for container_name in container_names:
         # First make sure that no leftover processes/files will interfere
-        cmd = f"docker exec --privileged {container_name} killall tcpdump"
+        cmd = f"docker exec --privileged {container_name} killall -w tcpdump"
         os.system(cmd)
         cmd = f"docker exec --privileged {container_name} rm {PCAP_FILE_PATH}"
         os.system(cmd)
@@ -463,7 +463,7 @@ def stop_tcpdump(container_names):
     log_dir = get_current_test_log_path()
     os.makedirs(log_dir, exist_ok=True)
     for container_name in container_names:
-        cmd = f"docker exec --privileged {container_name} killall tcpdump"
+        cmd = f"docker exec --privileged {container_name} killall -w tcpdump"
         os.system(cmd)
         path = find_unique_path_for_tcpdump(log_dir, container_name)
         cmd = f"docker container cp {container_name}:{PCAP_FILE_PATH} {path}"

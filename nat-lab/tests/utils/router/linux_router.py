@@ -477,7 +477,7 @@ class LinuxRouter(Router):
 
     @asynccontextmanager
     async def reset_upnpd(self) -> AsyncIterator:
-        await self._connection.create_process(["killall", "upnpd"]).execute()
+        await self._connection.create_process(["killall", "-w", "upnpd"]).execute()
         await self._connection.create_process(["conntrack", "-F"]).execute()
         try:
             yield

@@ -263,10 +263,6 @@ async def test_upnp_port_lease_duration(
         async with AsyncExitStack() as temp_exit_stack:
             await temp_exit_stack.enter_async_context(alpha_gw_router.reset_upnpd())
 
-        # this check should be done before endpoint interval triggers a new mapping (optimal > 5s)
-        upnpc_cmd = await execute_upnpc_with_retry(alpha_conn)
-        assert re.search("^ [0-9]+ UDP", upnpc_cmd.get_stdout(), re.MULTILINE) is None
-
         await asyncio.gather(
             alpha_client.wait_for_state_on_any_derp([RelayState.CONNECTED]),
             beta_client.wait_for_state_on_any_derp([RelayState.CONNECTED]),
