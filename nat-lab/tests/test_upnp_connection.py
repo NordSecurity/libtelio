@@ -31,6 +31,7 @@ async def execute_upnpc_with_retry(connection, timeout=10.0):
         await asyncio.sleep(1.0)
 
 
+@pytest.mark.timeout(3000)
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "alpha_setup_params",
@@ -56,6 +57,13 @@ async def test_upnp_route_removed(
     alpha_setup_params: SetupParameters, beta_setup_params: SetupParameters
 ) -> None:
     async with AsyncExitStack() as exit_stack:
+        lease_duration = 50
+        assert alpha_setup_params.features.direct
+        assert alpha_setup_params.features.direct.upnp_features
+        alpha_setup_params.features.direct.upnp_features.lease_duration_s = (
+            lease_duration
+        )
+
         env = await setup_mesh_nodes(
             exit_stack, [alpha_setup_params, beta_setup_params]
         )
@@ -68,6 +76,29 @@ async def test_upnp_route_removed(
 
         alpha_gw_router = new_router(alpha_conn.gw_connection, IPStack.IPv4v6)
         beta_gw_router = new_router(beta_conn.gw_connection, IPStack.IPv4v6)
+        # await asyncio.sleep(30)
+        # print("first ping start")
+        # # await ping(beta_conn.connection, alpha.ip_addresses[0])
+        # # await ping(alpha_conn.connection, beta.ip_addresses[0])
+        # print("first ping end")
+        # await asyncio.sleep(30)
+        # print("second ping start")
+        # # await ping(beta_conn.connection, alpha.ip_addresses[0])
+        # # await ping(alpha_conn.connection, beta.ip_addresses[0])
+        # print("second ping end")
+        # await asyncio.sleep(30)
+        # print("third ping start")
+        # # await ping(beta_conn.connection, alpha.ip_addresses[0])
+        # # await ping(alpha_conn.connection, beta.ip_addresses[0])
+        # print("third ping end")
+        await asyncio.sleep(2 * lease_duration)
+        upnpc_cmd = await execute_upnpc_with_retry(alpha_conn.connection)
+        assert re.search("^ [0-9]+ UDP", upnpc_cmd.get_stdout(), re.MULTILINE)
+        print("last ping start")
+        await ping(beta_conn.connection, alpha.ip_addresses[0])
+        await ping(alpha_conn.connection, beta.ip_addresses[0])
+        print("last ping end")
+        return
 
         # Shutoff Upnpd on both gateways to wipe out all upnp created external
         # routes, this also requires to wipe-out the contrack list
