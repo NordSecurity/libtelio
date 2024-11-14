@@ -15,9 +15,6 @@ pub use ffi::types as ffi_types;
 pub mod device;
 
 /// cbindgen:ignore
-pub use telio_batcher as batcher;
-
-/// cbindgen:ignore
 pub use telio_crypto as crypto;
 
 /// cbindgen:ignore

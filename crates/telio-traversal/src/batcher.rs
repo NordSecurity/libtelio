@@ -3,15 +3,17 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::{collections::HashMap, sync::Arc};
 
-use telio_utils::telio_log_debug;
-use tokio::time::sleep_until;
+use async_trait::async_trait;
+use telio_utils::{telio_log_debug, telio_log_error};
+use tokio::time::{sleep_until, Duration};
+
+use thiserror::Error as ThisError;
 
 type Action<V, R = std::result::Result<(), ()>> =
     Arc<dyn for<'a> Fn(&'a mut V) -> BoxFuture<'a, R> + Sync + Send>;
 
 pub struct Batcher<K, V> {
     actions: HashMap<K, (BatchEntry, Action<V>)>,
-    notify_add: tokio::sync::Notify,
 }
 
 struct BatchEntry {
@@ -20,9 +22,31 @@ struct BatchEntry {
     threshold: std::time::Duration,
 }
 
+/// Possible [Batcher] errors.
+#[derive(ThisError, Debug)]
+pub enum BatcherError {
+    /// No actions in batcher
+    #[error("No actions present")]
+    NoActions,
+}
+
+#[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
+#[async_trait]
+pub trait BatcherTrait<K, V>: Send + Sync
+where
+    K: Eq + Hash + Debug + Clone + Send + Sync,
+    V: Send + Sync,
+{
+    fn add(&mut self, key: K, interval: Duration, threshold: Duration, action: Action<V>);
+    fn remove(&mut self, key: &K);
+    async fn get_actions(&mut self) -> Result<Vec<(K, Action<V>)>, BatcherError>;
+    fn get_interval(&self, key: &K) -> Option<Duration>;
+}
+
 impl<K, V> Default for Batcher<K, V>
 where
     K: Eq + Hash + Send + Sync + Debug + Clone,
+    V: Send + Sync,
 {
     fn default() -> Self {
         Self::new()
@@ -32,57 +56,60 @@ where
 impl<K, V> Batcher<K, V>
 where
     K: Eq + Hash + Send + Sync + Debug + Clone,
+    V: Send + Sync,
 {
     pub fn new() -> Self {
         Self {
             actions: HashMap::new(),
-            notify_add: tokio::sync::Notify::new(),
         }
     }
+}
 
+#[async_trait]
+impl<K, V> BatcherTrait<K, V> for Batcher<K, V>
+where
+    K: Eq + Hash + Send + Sync + Debug + Clone,
+    V: Send + Sync,
+{
     /// Batching works by sleeping until the nearest future and then trying to batch more actions
     /// based on the threshold value. Higher delay before calling the function will increase the chances of batching
     /// because the deadlines will _probably_ be in the past already.
     /// Adding a new action wakes up the batcher due to immediate trigger of the action.
-    pub async fn get_actions(&mut self) -> Vec<(K, Action<V>)> {
+    async fn get_actions(&mut self) -> Result<Vec<(K, Action<V>)>, BatcherError> {
+        if self.actions.is_empty() {
+            return Err(BatcherError::NoActions);
+        }
+
         let mut batched_actions: Vec<(K, Action<V>)> = vec![];
+        let actions = &mut self.actions;
 
-        loop {
-            if !self.actions.is_empty() {
-                let actions = &mut self.actions;
+        if let Some(closest_entry) = actions.values().min_by_key(|entry| entry.0.deadline) {
+            _ = sleep_until(closest_entry.0.deadline).await;
 
-                // TODO: This can be optimized by early breaking and precollecting items beforehand
-                if let Some(closest_entry) = actions.values().min_by_key(|entry| entry.0.deadline) {
-                    tokio::select! {
-                        _ = self.notify_add.notified() => {
-                            // Item was added, we need to immediately emit it
-                        }
-                        _ = sleep_until(closest_entry.0.deadline) => {
-                            // Closest action should now be emitted
-                        }
-                    }
+            let now = tokio::time::Instant::now();
+            // at this point in time we know we're at the earliest spot for batching, thus we can check if we have more actions to add
+            for (key, action) in actions.iter_mut() {
+                let adjusted_action_deadline = now + action.0.threshold;
 
-                    let now = tokio::time::Instant::now();
-                    // at this point in time we know we're at the earliest spot for batching, thus we can check if we have more actions to add
-                    for (key, action) in actions.iter_mut() {
-                        let adjusted_action_deadline = now + action.0.threshold;
-
-                        if action.0.deadline <= adjusted_action_deadline {
-                            action.0.deadline = now + action.0.interval;
-                            batched_actions.push((key.clone(), action.1.clone()));
-                        }
-                    }
+                if action.0.deadline <= adjusted_action_deadline {
+                    action.0.deadline = now + action.0.interval;
+                    batched_actions.push((key.clone(), action.1.clone()));
                 }
-
-                return batched_actions;
-            } else {
-                let _ = self.notify_add.notified().await;
             }
+
+            if batched_actions.is_empty() {
+                telio_log_error!("Batched jobs incorrectly. At least one job should be emitted.");
+                return Err(BatcherError::NoActions);
+            }
+            // There should be at least one action here always - the one that triggered everything
+            return Ok(batched_actions);
+        } else {
+            return Err(BatcherError::NoActions);
         }
     }
 
     /// Remove batcher action. Action is no longer eligible for batching
-    pub fn remove(&mut self, key: &K) {
+    fn remove(&mut self, key: &K) {
         telio_log_debug!("removing item from batcher with key({:?})", key);
         self.actions.remove(key);
     }
@@ -91,7 +118,7 @@ where
     /// on actions being manually invoked. Adding an action immediately triggers it
     /// thus if the call site awaits for the future then it will resolve immediately after this
     /// function call.
-    pub fn add(
+    fn add(
         &mut self,
         key: K,
         interval: std::time::Duration,
@@ -111,13 +138,10 @@ where
         };
 
         self.actions.insert(key, (entry, action));
-        self.notify_add.notify_waiters();
     }
 
-    pub fn get_interval(&self, key: &K) -> Option<u32> {
-        self.actions
-            .get(key)
-            .and_then(|(entry, _)| entry.interval.as_secs().try_into().ok())
+    fn get_interval(&self, key: &K) -> Option<Duration> {
+        self.actions.get(key).map(|(entry, _)| entry.interval)
     }
 }
 
@@ -131,7 +155,16 @@ mod tests {
 
     use std::{sync::Arc, time::Duration};
 
-    use crate::batcher::Batcher;
+    use crate::batcher::{Batcher, BatcherError, BatcherTrait};
+
+    #[tokio::test]
+    async fn no_actions() {
+        let mut batcher = Batcher::<String, TestChecker>::new();
+        assert!(matches!(
+            batcher.get_actions().await,
+            Err(BatcherError::NoActions)
+        ));
+    }
 
     #[tokio::test(start_paused = true)]
     async fn batch_one() {
@@ -153,13 +186,13 @@ mod tests {
         let mut test_checker = TestChecker { values: Vec::new() };
 
         // pick up the immediate fire
-        for ac in batcher.get_actions().await {
+        for ac in batcher.get_actions().await.unwrap() {
             ac.1(&mut test_checker).await.unwrap();
         }
         assert!(test_checker.values.len() == 1);
 
         // pick up the second event
-        for ac in batcher.get_actions().await {
+        for ac in batcher.get_actions().await.unwrap() {
             ac.1(&mut test_checker).await.unwrap();
         }
 
@@ -172,7 +205,7 @@ mod tests {
         tokio::time::advance(Duration::from_secs(550)).await;
         assert!(test_checker.values.len() == 2);
 
-        for ac in batcher.get_actions().await {
+        for ac in batcher.get_actions().await.unwrap() {
             ac.1(&mut test_checker).await.unwrap();
         }
 
@@ -216,13 +249,13 @@ mod tests {
         let mut test_checker = TestChecker { values: Vec::new() };
 
         // pick up the immediate fires
-        for ac in batcher.get_actions().await {
+        for ac in batcher.get_actions().await.unwrap() {
             ac.1(&mut test_checker).await.unwrap();
         }
         assert!(test_checker.values.len() == 2);
 
         // Do again and batching should be in action since the threshold of the second signal is bigger(50) than the delay between the packets(30)
-        for ac in batcher.get_actions().await {
+        for ac in batcher.get_actions().await.unwrap() {
             ac.1(&mut test_checker).await.unwrap();
         }
 
@@ -287,7 +320,7 @@ mod tests {
         let mut test_checker = TestChecker { values: Vec::new() };
 
         // pick up the immediate fire
-        for ac in batcher.get_actions().await {
+        for ac in batcher.get_actions().await.unwrap() {
             ac.1(&mut test_checker).await.unwrap();
         }
         assert!(
@@ -295,7 +328,7 @@ mod tests {
             "Both actions should be emitted immediately"
         );
 
-        for ac in batcher.get_actions().await {
+        for ac in batcher.get_actions().await.unwrap() {
             ac.1(&mut test_checker).await.unwrap();
         }
 
@@ -321,7 +354,7 @@ mod tests {
 
         let mut test_checker = TestChecker { values: Vec::new() };
         // pick up the immediate fire
-        for ac in batcher.get_actions().await {
+        for ac in batcher.get_actions().await.unwrap() {
             ac.1(&mut test_checker).await.unwrap();
         }
         assert!(test_checker.values.len() == 1);
@@ -342,12 +375,12 @@ mod tests {
         );
 
         // pick up the immediate fire from the second action
-        for ac in batcher.get_actions().await {
+        for ac in batcher.get_actions().await.unwrap() {
             ac.1(&mut test_checker).await.unwrap();
         }
         assert!(test_checker.values.len() == 2);
 
-        for ac in batcher.get_actions().await {
+        for ac in batcher.get_actions().await.unwrap() {
             ac.1(&mut test_checker).await.unwrap();
         }
 
@@ -358,7 +391,7 @@ mod tests {
 
         test_checker.values = vec![];
         for _ in 0..12 {
-            for ac in batcher.get_actions().await {
+            for ac in batcher.get_actions().await.unwrap() {
                 ac.1(&mut test_checker).await.unwrap();
             }
         }
@@ -391,7 +424,7 @@ mod tests {
         test_checker.values = vec![];
         tokio::time::advance(tokio::time::Duration::from_secs(500)).await;
         for _i in 0..11 {
-            for ac in batcher.get_actions().await {
+            for ac in batcher.get_actions().await.unwrap() {
                 ac.1(&mut test_checker).await.unwrap();
             }
         }
