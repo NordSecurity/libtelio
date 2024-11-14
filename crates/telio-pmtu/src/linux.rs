@@ -15,6 +15,8 @@
 //! * the kernel does some things in an unpredicted way, for example `send()` and `recv()` calls spuriously report errors when sending packets larger than the kernel's PMTU guess
 //! * the kernel can keep multiple error message
 
+#[cfg(target_env = "musl")]
+use std::mem::MaybeUninit;
 use std::{ffi::c_int, io, net::IpAddr, os::fd::AsRawFd, time::Duration};
 
 use pnet_packet::{icmp, icmpv6, Packet};
@@ -432,6 +434,7 @@ fn read_error_pmtu(sock: &impl AsRawFd, is_ipv6: bool) -> io::Result<u32> {
 
         let mut controlbuf = [0u8; 128];
 
+        #[cfg(not(target_env = "musl"))]
         let mut msghdr = libc::msghdr {
             msg_name: std::ptr::null_mut(),
             msg_namelen: 0,
@@ -441,6 +444,16 @@ fn read_error_pmtu(sock: &impl AsRawFd, is_ipv6: bool) -> io::Result<u32> {
             msg_controllen: controlbuf.len() as _,
             msg_flags: 0,
         };
+        #[cfg(target_env = "musl")]
+        let mut msghdr = MaybeUninit::<libc::msghdr>::zeroed().assume_init();
+        #[cfg(target_env = "musl")]
+        {
+            msghdr.msg_name = std::ptr::null_mut();
+            msghdr.msg_iov = &mut iovec;
+            msghdr.msg_iovlen = 1;
+            msghdr.msg_control = controlbuf.as_mut_ptr().cast();
+            msghdr.msg_controllen = controlbuf.len() as _;
+        }
 
         let mut last_value = None;
 
