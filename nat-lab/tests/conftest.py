@@ -1,6 +1,7 @@
 import asyncio
 import os
 import pytest
+import shutil
 import subprocess
 from helpers import SetupParameters
 from interderp_cli import InterDerpClient
@@ -232,9 +233,74 @@ async def _copy_vm_binaries_if_needed(items):
                 return
 
 
+def save_dmesg_from_host(suffix):
+    try:
+        result = subprocess.run(
+            ["sudo", "dmesg", "-d", "-T"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    except subprocess.CalledProcessError as e:
+        print(f"Error executing dmesg: {e}")
+        return
+
+    if result:
+        with open(
+            os.path.join("logs", f"dmesg-{suffix}.txt"), "w", encoding="utf-8"
+        ) as f:
+            f.write(result)
+
+
+def save_audit_log_from_host(suffix):
+    try:
+        source_path = "/var/log/audit/audit.log"
+        if os.path.exists(source_path):
+            shutil.copy2(source_path, f"logs/audit_{suffix}.log")
+        else:
+            print(f"The audit file {source_path} does not exist.")
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        print(f"An error occurred when processing audit log: {e}")
+
+
+async def _save_macos_logs(conn, suffix):
+    try:
+        dmesg_proc = await conn.create_process(["dmesg"]).execute()
+        with open(
+            os.path.join("logs", f"dmesg-macos-{suffix}.txt"), "w", encoding="utf-8"
+        ) as f:
+            f.write(dmesg_proc.get_stdout())
+    except ProcessExecError as e:
+        print(f"Failed to collect dmesg logs {e}")
+
+
+async def collect_kernel_logs(items, suffix):
+    is_ci = os.environ.get("CUSTOM_ENV_GITLAB_CI") is not None and os.environ.get(
+        "CUSTOM_ENV_GITLAB_CI"
+    )
+
+    log_dir = "logs"
+    os.makedirs(log_dir, exist_ok=True)
+
+    save_dmesg_from_host(suffix)
+    save_audit_log_from_host(suffix)
+
+    for item in items:
+        if any(mark.name == "mac" for mark in item.own_markers):
+            try:
+                async with mac_vm_util.new_connection() as conn:
+                    await _save_macos_logs(conn, suffix)
+            except OSError as e:
+                if is_ci:
+                    raise e
+
+
 def pytest_runtestloop(session):
     if not session.config.option.collectonly:
         asyncio.run(_copy_vm_binaries_if_needed(session.items))
+
+        if os.environ.get("NATLAB_SAVE_LOGS") is not None:
+            asyncio.run(collect_kernel_logs(session.items, "before_tests"))
 
         if not asyncio.run(perform_setup_checks()):
             pytest.exit("Setup checks failed, exiting ...")
@@ -263,6 +329,7 @@ def pytest_sessionfinish(session, exitstatus):
     if not session.config.option.collectonly:
         collect_nordderper_logs()
         collect_dns_server_logs()
+        asyncio.run(collect_kernel_logs(session.items, "after_tests"))
 
 
 def collect_nordderper_logs():

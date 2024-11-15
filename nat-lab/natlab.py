@@ -2,7 +2,6 @@
 
 import argparse
 import os
-import shutil
 import subprocess
 import sys
 from typing import List
@@ -34,67 +33,31 @@ def run_command_with_output(command, hide_output=False):
 
 
 def start():
-    try:
-        original_port_mapping = 'ports: ["58001"]'
-        disabled_port_mapping = "ports: []"
-        with open("docker-compose.yml", "r", encoding="utf-8") as file:
-            filedata = file.read()
-        if original_port_mapping not in filedata:
-            raise RuntimeError("Cannot find expected port mapping compose file")
-        if "GITLAB_CI" in os.environ:
-            filedata = filedata.replace(original_port_mapping, disabled_port_mapping)
-            with open("docker-compose.yml", "w", encoding="utf-8") as file:
-                file.write(filedata)
+    original_port_mapping = 'ports: ["58001"]'
+    disabled_port_mapping = "ports: []"
+    with open("docker-compose.yml", "r", encoding="utf-8") as file:
+        filedata = file.read()
+    if original_port_mapping not in filedata:
+        raise RuntimeError("Cannot find expected port mapping compose file")
+    if "GITLAB_CI" in os.environ:
+        filedata = filedata.replace(original_port_mapping, disabled_port_mapping)
+        with open("docker-compose.yml", "w", encoding="utf-8") as file:
+            file.write(filedata)
 
-        run_command(
-            ["docker", "compose", "--profile", "base", "build", "--no-cache"],
-            env={
-                "COMPOSE_DOCKER_CLI_BUILD": "1",
-                "DOCKER_BUILDKIT": "1",
-                "LIBTELIO_ENV_NAT_LAB_DEPS_TAG": LIBTELIO_ENV_NAT_LAB_DEPS_TAG,
-            },
-        )
-        run_command(
-            ["docker", "compose", "up", "-d", "--wait"],
-            env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"},
-        )
+    run_command(
+        ["docker", "compose", "--profile", "base", "build", "--no-cache"],
+        env={
+            "COMPOSE_DOCKER_CLI_BUILD": "1",
+            "DOCKER_BUILDKIT": "1",
+            "LIBTELIO_ENV_NAT_LAB_DEPS_TAG": LIBTELIO_ENV_NAT_LAB_DEPS_TAG,
+        },
+    )
+    run_command(
+        ["docker", "compose", "up", "-d", "--wait"],
+        env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"},
+    )
 
-        check_containers()
-    finally:
-        if os.environ.get("NATLAB_SAVE_LOGS") is not None:
-            log_dir = "logs"
-            os.makedirs(log_dir, exist_ok=True)
-            dmesg = get_dmesg_from_host()
-            if dmesg:
-                with open(
-                    os.path.join(log_dir, "dmesg.txt"), "w", encoding="utf-8"
-                ) as f:
-                    f.write(dmesg)
-            save_audit_log()
-
-
-def get_dmesg_from_host():
-    try:
-        return subprocess.run(
-            ["sudo", "dmesg", "-d", "-T"],
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout
-    except subprocess.CalledProcessError as e:
-        print(f"Error executing dmesg: {e}")
-        return None
-
-
-def save_audit_log():
-    try:
-        source_path = "/var/log/audit/audit.log"
-        if os.path.exists(source_path):
-            shutil.copy2(source_path, "logs/audit.log")
-        else:
-            print(f"The audit file {source_path} does not exist.")
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        print(f"An error occurred when processing audit log: {e}")
+    check_containers()
 
 
 def stop():
