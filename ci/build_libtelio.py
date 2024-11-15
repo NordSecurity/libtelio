@@ -516,6 +516,8 @@ def exec_build(args):
 
         moose_utils.set_cargo_dependencies()
     else:
+        if args.os == "qnap":
+            LIBTELIO_CONFIG["qnap"]["archs"][args.arch].pop("env")
         moose_utils.unset_cargo_dependencies()
 
     if args.os == "windows":
