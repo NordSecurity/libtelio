@@ -1,10 +1,15 @@
+// Batcher is an optimizer of aligning actions to be done in batches
+// with the goal to conserve resources, thus Batcher's main goals are:
+// 1) Don't break existing functionality done by usual means
+// 2) Align actions
+
 use futures::future::BoxFuture;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
-use telio_utils::{telio_log_debug, telio_log_error};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn};
 use tokio::time::{sleep_until, Duration};
 
 use thiserror::Error as ThisError;
@@ -58,6 +63,10 @@ where
     K: Eq + Hash + Send + Sync + Debug + Clone,
     V: Send + Sync,
 {
+    // It's necessary not to allow too short intervals since they can drain resources.
+    // Historically, libtelio had highest frequency action of 5seconds for direct
+    // connection keepalive, thus we cap any action to have at least that.
+    const MIN_INTERVAL: Duration = Duration::from_secs(5);
     pub fn new() -> Self {
         Self {
             actions: HashMap::new(),
@@ -115,9 +124,68 @@ where
     }
 
     /// Add batcher action. Batcher itself doesn't run the tasks and depends
-    /// on actions being manually invoked. Adding an action immediately triggers it
-    /// thus if the call site awaits for the future then it will resolve immediately after this
-    /// function call.
+    /// on actions being polled and invoked. It is a passive component on itself.
+    /// Adding an action has immediate deadline thus action is invoked as soon
+    /// as it's polled.
+    ///
+    /// Higher threshold means more opportunities to batch the action, however too high
+    /// means wasting resources since the job will be batched alongside other jobs more
+    /// frequently than necessary. For example an infrequent job with high
+    /// threshold will batch together with higher frequency job(shorter interval) with no added
+    /// value.
+    ///
+    /// A threshold of 0 makes batcher act effectively as `RepeatedActions` and will have
+    /// no opportunities to be batched. A small threshold will limit batching opportunities.
+    ///
+    /// Proving that the threshold of half the period is enough between two actions with same interval
+    /// when being added at different times can be done visually. In the scenario below
+    /// we have two actions A and B that have same interval and threshold:
+    ///
+    /// Legends:
+    ///   - `d` - next deadline
+    ///   - `D` - current deadline
+    ///   - `-` - time tick
+    ///   - `*` - jobs threshold
+    ///   - '_' - indicates that action is not yet added
+    ///
+    /// ```text
+    /// Step #1
+    /// A: D------******d------******d------******d------******d-----> time
+    /// B: __d------******d------******d------******d------******d---> time
+    /// ```
+    /// at the beginning, job A was added and thus is immediately emitted. B doesn't yet exist
+    /// as it's added a bit later. Once B is added, it's deadline is immediate and it's next
+    /// deadline is shifted after one interval. Once B is added it cannot batch A since it's
+    /// not within the threshold.
+    ///
+    /// however a nice thing happens on the next A deadline:
+    ///
+    /// ```text
+    /// Step #2
+    /// A: d------******D------******d------******d------******d-----> time
+    /// B: __d------******d------******d------******d------******d---> time
+    /// ```
+    ///
+    /// At this point A will batch action B as well, since it's `deadline-threshold` is within the reach
+    /// and the timelines suddenly align afterwards:
+    ///
+    /// ```text
+    /// Step #3
+    /// A: d------******d------******d------******d------******d-----> time
+    /// B: __d------****d------******d------******d------******d-----> time
+    /// ```
+    ///
+    /// From now on A and B will always emit together(order is not guaranteed nor maintained).
+    ///
+    /// This is however a simplified approach and is not as easy to prove exactly what happens
+    /// when:
+    /// - jobs have same interval but different threshold
+    /// - jobs have different intervals.
+    /// - jobs have different intervals and different thresholds
+    ///
+    /// Thus it's best to aim for:
+    /// - as high interval as possible
+    /// - threshold being close to half the interval
     fn add(
         &mut self,
         key: K,
@@ -131,6 +199,35 @@ where
             interval,
             threshold,
         );
+
+        let interval = {
+            if interval < Self::MIN_INTERVAL {
+                telio_log_warn!(
+                    "Interval of {:?} is too short, overriding to {:?}",
+                    interval,
+                    Self::MIN_INTERVAL
+                );
+                Self::MIN_INTERVAL
+            } else {
+                interval
+            }
+        };
+
+        let max_threshold = interval / 2;
+
+        let threshold = {
+            if threshold > max_threshold {
+                telio_log_warn!(
+                    "Threshold of {:?} is higher than maximum allowed threshold calculated: {:?}, overriding",
+                    threshold,
+                    max_threshold
+                );
+                max_threshold
+            } else {
+                threshold
+            }
+        };
+
         let entry = BatchEntry {
             deadline: tokio::time::Instant::now(),
             interval,
@@ -167,7 +264,63 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn batch_one() {
+    async fn no_threshold_expect_no_batching() {
+        let start_time = tokio::time::Instant::now();
+        let mut batcher = Batcher::<String, TestChecker>::new();
+        let mut test_checker = TestChecker { values: Vec::new() };
+
+        batcher.add(
+            "key0".to_owned(),
+            Duration::from_secs(100),
+            Duration::from_secs(0),
+            Arc::new(|s: _| {
+                Box::pin(async move {
+                    s.values
+                        .push(("key0".to_owned(), tokio::time::Instant::now()));
+                    Ok(())
+                })
+            }),
+        );
+
+        for ac in batcher.get_actions().await.unwrap() {
+            ac.1(&mut test_checker).await.unwrap();
+        }
+
+        // simulate some delay before adding a second task so they would be misaligned
+        tokio::time::advance(Duration::from_secs(20)).await;
+
+        batcher.add(
+            "key1".to_owned(),
+            Duration::from_secs(100),
+            Duration::from_secs(0),
+            Arc::new(|s: _| {
+                Box::pin(async move {
+                    s.values
+                        .push(("key1".to_owned(), tokio::time::Instant::now()));
+                    Ok(())
+                })
+            }),
+        );
+
+        // Await for few actions to resolve
+        for _ in 0..6 {
+            for ac in batcher.get_actions().await.unwrap() {
+                ac.1(&mut test_checker).await.unwrap();
+            }
+        }
+
+        // expect no batched behaviour since the thresholds were zero
+        assert!(test_checker.values[0].1.duration_since(start_time) == Duration::from_secs(0));
+        assert!(test_checker.values[1].1.duration_since(start_time) == Duration::from_secs(20));
+        assert!(test_checker.values[2].1.duration_since(start_time) == Duration::from_secs(100));
+        assert!(test_checker.values[3].1.duration_since(start_time) == Duration::from_secs(120));
+        assert!(test_checker.values[4].1.duration_since(start_time) == Duration::from_secs(200));
+        assert!(test_checker.values[5].1.duration_since(start_time) == Duration::from_secs(220));
+        assert!(test_checker.values[6].1.duration_since(start_time) == Duration::from_secs(300));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn batch_one_no_threshold_expect_no_batch() {
         let start_time = tokio::time::Instant::now();
         let mut batcher = Batcher::<String, TestChecker>::new();
         batcher.add(
@@ -282,6 +435,146 @@ mod tests {
 
         assert!(key0_entries[1] == Duration::from_secs(130));
         assert!(key1_entries[1] == Duration::from_secs(130));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn batch_two_with_threshold_check_threshold_limit_enforcement() {
+        let start_time = tokio::time::Instant::now();
+        let mut batcher = Batcher::<String, TestChecker>::new();
+        batcher.add(
+            "key0".to_owned(),
+            Duration::from_secs(30),
+            Duration::from_secs(30),
+            Arc::new(|s: _| {
+                Box::pin(async move {
+                    s.values
+                        .push(("key0".to_owned(), tokio::time::Instant::now()));
+                    Ok(())
+                })
+            }),
+        );
+
+        let mut test_checker = TestChecker { values: Vec::new() };
+
+        // pick up the immediate fire
+        for ac in batcher.get_actions().await.unwrap() {
+            ac.1(&mut test_checker).await.unwrap();
+        }
+        tokio::time::advance(Duration::from_secs(5)).await;
+
+        batcher.add(
+            "key1".to_owned(),
+            Duration::from_secs(5),
+            Duration::from_secs(0),
+            Arc::new(|s: _| {
+                Box::pin(async move {
+                    s.values
+                        .push(("key1".to_owned(), tokio::time::Instant::now()));
+                    Ok(())
+                })
+            }),
+        );
+
+        for _ in 0..8 {
+            for ac in batcher.get_actions().await.unwrap() {
+                ac.1(&mut test_checker).await.unwrap();
+            }
+        }
+
+        let key0_entries: Vec<tokio::time::Duration> = test_checker
+            .values
+            .iter()
+            .filter(|e| e.0 == "key0")
+            .map(|e| e.1.duration_since(start_time))
+            .collect();
+        let key1_entries: Vec<tokio::time::Duration> = test_checker
+            .values
+            .iter()
+            .filter(|e| e.0 == "key1")
+            .map(|e| e.1.duration_since(start_time))
+            .collect();
+
+        // At this point we expect the first job to be batched alongside the
+        // second, very frequent job at half the interval(capped)
+        assert!(key0_entries[0] == Duration::from_secs(0));
+        assert!(key0_entries[1] == Duration::from_secs(15));
+        assert!(key0_entries[2] == Duration::from_secs(30));
+
+        assert!(key1_entries[0] == Duration::from_secs(5));
+        assert!(key1_entries[1] == Duration::from_secs(10));
+        assert!(key1_entries[2] == Duration::from_secs(15));
+        assert!(key1_entries[3] == Duration::from_secs(20));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn batch_two_with_threshold_check_interval_limit_enforcement() {
+        let start_time = tokio::time::Instant::now();
+        let mut batcher = Batcher::<String, TestChecker>::new();
+        batcher.add(
+            "key0".to_owned(),
+            // Make interval and threshold too small and expect override
+            Duration::from_secs(1),
+            Duration::from_secs(0),
+            Arc::new(|s: _| {
+                Box::pin(async move {
+                    s.values
+                        .push(("key0".to_owned(), tokio::time::Instant::now()));
+                    Ok(())
+                })
+            }),
+        );
+
+        let mut test_checker = TestChecker { values: Vec::new() };
+
+        // pick up the immediate fire
+        for ac in batcher.get_actions().await.unwrap() {
+            ac.1(&mut test_checker).await.unwrap();
+        }
+        tokio::time::advance(Duration::from_secs(1)).await;
+
+        batcher.add(
+            "key1".to_owned(),
+            // Make interval too small and expect override
+            Duration::from_secs(2),
+            Duration::from_secs(0),
+            Arc::new(|s: _| {
+                Box::pin(async move {
+                    s.values
+                        .push(("key1".to_owned(), tokio::time::Instant::now()));
+                    Ok(())
+                })
+            }),
+        );
+
+        for _ in 0..8 {
+            for ac in batcher.get_actions().await.unwrap() {
+                ac.1(&mut test_checker).await.unwrap();
+            }
+        }
+
+        let key0_entries: Vec<tokio::time::Duration> = test_checker
+            .values
+            .iter()
+            .filter(|e| e.0 == "key0")
+            .map(|e| e.1.duration_since(start_time))
+            .collect();
+        let key1_entries: Vec<tokio::time::Duration> = test_checker
+            .values
+            .iter()
+            .filter(|e| e.0 == "key1")
+            .map(|e| e.1.duration_since(start_time))
+            .collect();
+
+        // Expect forcing minimal interval of 5seconds
+        assert!(key0_entries[0] == Duration::from_secs(0));
+        assert!(key0_entries[1] == Duration::from_secs(5));
+        assert!(key0_entries[2] == Duration::from_secs(10));
+        assert!(key0_entries[3] == Duration::from_secs(15));
+
+        assert!(key1_entries[0] == Duration::from_secs(1));
+        assert!(key1_entries[1] == Duration::from_secs(6));
+        assert!(key1_entries[2] == Duration::from_secs(11));
+        assert!(key1_entries[3] == Duration::from_secs(16));
     }
 
     #[tokio::test(start_paused = true)]
