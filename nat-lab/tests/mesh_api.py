@@ -436,12 +436,13 @@ class API:
             if ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
                 self.assign_ip(node.id, ipv6)
 
-        for wg_server in WG_SERVERS:
-            self.setup_vpn_servers(list(self.nodes.values()), wg_server)
-
         assert (len(node_configs) + current_node_list_len) == len(self.nodes)
 
         return tuple(list(self.nodes.values())[current_node_list_len:])
+
+    def prepare_all_vpn_servers(self):
+        for wg_server in WG_SERVERS:
+            self.setup_vpn_servers(list(self.nodes.values()), wg_server)
 
 
 def start_tcpdump(container_names: List[str]):

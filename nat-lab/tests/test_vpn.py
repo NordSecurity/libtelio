@@ -186,7 +186,7 @@ async def test_vpn_connection(
             raise ValueError(f"Unknown connection tag {vpn_conf.conn_tag}")
 
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params])
+            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
         )
 
         alpha, *_ = env.nodes
@@ -315,7 +315,7 @@ async def test_vpn_reconnect(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params])
+            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
         )
 
         alpha, *_ = env.nodes
@@ -386,7 +386,7 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
 
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [setup_params])
+            setup_environment(exit_stack, [setup_params], prepare_vpn=True)
         )
 
         alpha, *_ = env.nodes
@@ -515,7 +515,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
 
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [setup_params])
+            setup_environment(exit_stack, [setup_params], prepare_vpn=True)
         )
 
         alpha, *_ = env.nodes
@@ -646,7 +646,7 @@ async def test_vpn_connection_private_key_change(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params])
+            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
         )
 
         alpha, *_ = env.nodes

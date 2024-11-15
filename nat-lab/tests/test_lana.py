@@ -367,6 +367,8 @@ async def run_default_scenario(
         )
     )
 
+    api.prepare_all_vpn_servers()
+
     await add_5ms_delay_to_connections(
         exit_stack, [connection_alpha, connection_beta, connection_gamma]
     )

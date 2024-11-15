@@ -193,7 +193,7 @@ async def test_pmtu_without_nexthop(setup_params: SetupParameters) -> None:
 async def test_vpn_conn_with_pmtu_enabled(params: SetupParameters) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [params])
+            setup_environment(exit_stack, [params], prepare_vpn=True)
         )
 
         alpha, *_ = env.nodes

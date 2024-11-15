@@ -111,7 +111,7 @@ async def test_mesh_plus_vpn_one_peer(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await setup_mesh_nodes(
-            exit_stack, [alpha_setup_params, beta_setup_params]
+            exit_stack, [alpha_setup_params, beta_setup_params], prepare_vpn=True
         )
 
         _, beta = env.nodes
@@ -223,7 +223,7 @@ async def test_mesh_plus_vpn_both_peers(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await setup_mesh_nodes(
-            exit_stack, [alpha_setup_params, beta_setup_params]
+            exit_stack, [alpha_setup_params, beta_setup_params], prepare_vpn=True
         )
 
         alpha, beta = env.nodes
@@ -326,6 +326,8 @@ async def test_vpn_plus_mesh(
                 ),
             )
         )
+
+        api.prepare_all_vpn_servers()
 
         ip = await stun.get(connection_alpha, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
@@ -486,7 +488,7 @@ async def test_vpn_plus_mesh_over_direct(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await setup_mesh_nodes(
-            exit_stack, [alpha_setup_params, beta_setup_params]
+            exit_stack, [alpha_setup_params, beta_setup_params], prepare_vpn=True
         )
 
         alpha, beta = env.nodes
@@ -661,7 +663,9 @@ async def test_vpn_plus_mesh_over_different_connection_types(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await setup_mesh_nodes(
-            exit_stack, [alpha_setup_params, beta_setup_params, gamma_setup_params]
+            exit_stack,
+            [alpha_setup_params, beta_setup_params, gamma_setup_params],
+            prepare_vpn=True,
         )
 
         connection_alpha, connection_beta, connection_gamma = [
