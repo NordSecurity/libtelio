@@ -16,7 +16,7 @@ TELIOD_START_PARAMS = [
     CONFIG_FILE_PATH,
 ]
 
-TELIOD_HELLO_WORLD_PARAMS = [TELIOD_EXEC_PATH, "hello-world", "TestName"]
+TELIOD_STATUS_PARAMS = [TELIOD_EXEC_PATH, "get-status"]
 
 TELIOD_STOP_PARAMS = [TELIOD_EXEC_PATH, "stop"]
 
@@ -48,11 +48,11 @@ async def test_teliod() -> None:
             await connection.create_process(TELIOD_START_PARAMS).execute()
         assert err.value.stderr == "Error: DaemonIsRunning"
 
-        # Run the hello-world command
+        # Run the get-status command
         assert (
-            "Command executed successfully"
-            == (
-                await connection.create_process(TELIOD_HELLO_WORLD_PARAMS).execute()
+            "TelioStatusReport"
+            in (
+                await connection.create_process(TELIOD_STATUS_PARAMS).execute()
             ).get_stdout()
         )
 
@@ -68,5 +68,5 @@ async def test_teliod() -> None:
 
         # Run the hello-world command again - this time it should fail
         with pytest.raises(ProcessExecError) as err:
-            await connection.create_process(TELIOD_HELLO_WORLD_PARAMS).execute()
+            await connection.create_process(TELIOD_STATUS_PARAMS).execute()
         assert err.value.stderr == "Error: DaemonIsNotRunning"

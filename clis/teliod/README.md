@@ -28,4 +28,4 @@ There is a command for running the daemon:
    - `interface_name` - Name of tunnel interface to connect to. Note that for macOS the name has to be in form `tun#` where `#` can be any integer number
 
 And following cli commands:
- - `teliod hello-world <NAME>` - simple command for testing purposes, logs "Hello NAME!", used to ensure daemon proper startup, should be erased in the future and replaced by some more serious one
+ - `teliod get-status` - returns the status of teliod and a peer list
