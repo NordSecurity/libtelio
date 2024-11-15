@@ -305,6 +305,7 @@ LIBTELIO_CONFIG = {
         "post_build": [post_qnap_build_wrap_binary_on_qpkg],
         "packages": {
             "tcli": {"tcli": "tcli"},
+            "teliod": {"teliod": "teliod"},
         },
     },
     "macos": {
@@ -381,12 +382,7 @@ def main() -> None:
         target_os = "macos" if args.command == "lipo" else args.os
 
         packages = LIBTELIO_CONFIG[target_os].get("packages", None)
-        if (
-            args.debug
-            and not args.tcli
-            and "tcli" in packages
-            and "qnap" not in args.os
-        ):
+        if args.debug and not args.tcli and "tcli" in packages:
             LIBTELIO_CONFIG[target_os]["packages"].pop("tcli")
 
     if args.command == "build":
