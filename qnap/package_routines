@@ -109,8 +109,9 @@
 #PKG_MAIN_REMOVE="{
 #}"
 #
-#PKG_POST_REMOVE="{
-#}"
+PKG_POST_REMOVE="{
+    rm -rf /tmp/nordsecmeshnet
+}"
 #
 ######################################################################
 # Define any package specific initialization that shall be performed

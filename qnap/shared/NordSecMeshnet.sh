@@ -1,9 +1,14 @@
 #!/bin/sh
 CONF=/etc/config/qpkg.conf
-QPKG_NAME="Nord Security Meshnet"
+QPKG_NAME="NordSecurityMeshnet"
+
+
 QPKG_ROOT=`/sbin/getcfg $QPKG_NAME Install_Path -f ${CONF}`
 APACHE_ROOT=`/sbin/getcfg SHARE_DEF defWeb -d Qweb -f /etc/config/def_share.info`
 export QNAP_QPKG=$QPKG_NAME
+
+NORDSECMESHNET_DIR=/tmp/nordsecuritymeshnet/
+TELIOD_PID_FILE=${NORDSECMESHNET_DIR}/teliod.pid
 
 case "$1" in
   start)
@@ -12,11 +17,30 @@ case "$1" in
         echo "$QPKG_NAME is disabled."
         exit 1
     fi
-    : ADD START ACTIONS HERE
+
+    ln -s ${QPKG_ROOT}/web /home/Qhttpd/Web/NordSecurityMeshnet
+    mkdir -p -m 0755 $NORDSECMESHNET_DIR
+
+    if [ -e ${TELIOD_PID_FILE} ]; then
+        PID=$(cat ${TELIOD_PID_FILE})
+        if [ -d /proc/${PID}/ ]; then
+          echo "${QPKG_NAME} is already running."
+          exit 0
+        fi
+    fi
+
+    ${QPKG_ROOT}/teliod daemon ${QPKG_ROOT}/config.json &
+    echo $! > ${TELIOD_PID_FILE}
     ;;
 
   stop)
-    : ADD STOP ACTIONS HERE
+    if [ -e ${TELIOD_PID_FILE} ]; then
+      PID=$(cat ${TELIOD_PID_FILE})
+      kill -9 ${PID} || true
+      rm -f ${TELIOD_PID_FILE}
+    fi
+
+    rm /home/Qhttpd/Web/NordSecurityMeshnet
     ;;
 
   restart)
