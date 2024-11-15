@@ -252,7 +252,7 @@ def save_dmesg_from_host(suffix):
             f.write(result)
 
 
-def save_audit_log(suffix):
+def save_audit_log_from_host(suffix):
     try:
         source_path = "/var/log/audit/audit.log"
         if os.path.exists(source_path):
@@ -275,9 +275,6 @@ async def _save_macos_logs(conn, suffix):
 
 
 async def collect_kernel_logs(items, suffix):
-    if os.environ.get("NATLAB_SAVE_LOGS") is None:
-        return
-
     is_ci = os.environ.get("CUSTOM_ENV_GITLAB_CI") is not None and os.environ.get(
         "CUSTOM_ENV_GITLAB_CI"
     )
@@ -286,7 +283,7 @@ async def collect_kernel_logs(items, suffix):
     os.makedirs(log_dir, exist_ok=True)
 
     save_dmesg_from_host(suffix)
-    save_audit_log(suffix)
+    save_audit_log_from_host(suffix)
 
     for item in items:
         if any(mark.name == "mac" for mark in item.own_markers):
@@ -301,7 +298,9 @@ async def collect_kernel_logs(items, suffix):
 def pytest_runtestloop(session):
     if not session.config.option.collectonly:
         asyncio.run(_copy_vm_binaries_if_needed(session.items))
-        asyncio.run(collect_kernel_logs(session.items, "before_tests"))
+
+        if os.environ.get("NATLAB_SAVE_LOGS") is not None:
+            asyncio.run(collect_kernel_logs(session.items, "before_tests"))
 
         if not asyncio.run(perform_setup_checks()):
             pytest.exit("Setup checks failed, exiting ...")
