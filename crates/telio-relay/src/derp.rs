@@ -127,16 +127,21 @@ struct State {
 /// Keepalive values that help keeping Derp connection in conntrack alive,
 /// so server can send traffic after being silent for a while
 /// *derp_keepalive* is also used as an interval for retrieving remote peer states.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// PollKeepalive is a feature that is meant to replace TCP keepalives with
+/// application level keepalives (DerpPollRequest).
+/// More info on PollKeepalive can be found in RFC-LLT-0070
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DerpKeepaliveConfig {
     tcp_keepalive: u32,
     derp_keepalive: u32,
+    poll_keepalive: bool,
 }
 
 impl From<&Option<FeatureDerp>> for DerpKeepaliveConfig {
     fn from(derp: &Option<FeatureDerp>) -> Self {
         let mut tcp_keepalive = proto::DERP_TCP_KEEPALIVE_INTERVAL;
         let mut derp_keepalive = proto::DERP_KEEPALIVE_INTERVAL;
+        let mut poll_keepalive = false;
         if let Some(derp) = derp {
             if let Some(tcp_ka) = derp.tcp_keepalive {
                 tcp_keepalive = tcp_ka;
@@ -144,11 +149,13 @@ impl From<&Option<FeatureDerp>> for DerpKeepaliveConfig {
             if let Some(derp_ka) = derp.derp_keepalive {
                 derp_keepalive = derp_ka;
             }
+            poll_keepalive = derp.poll_keepalive;
         }
 
         DerpKeepaliveConfig {
             tcp_keepalive,
             derp_keepalive,
+            poll_keepalive,
         }
     }
 }
@@ -156,6 +163,7 @@ impl From<&Option<FeatureDerp>> for DerpKeepaliveConfig {
 const DEFAULT_SERVER_KEEPALIVE_CONFIG: DerpKeepaliveConfig = DerpKeepaliveConfig {
     tcp_keepalive: proto::DERP_TCP_KEEPALIVE_INTERVAL,
     derp_keepalive: proto::DERP_KEEPALIVE_INTERVAL,
+    poll_keepalive: false,
 };
 
 /// Derp configuration
@@ -726,8 +734,9 @@ impl Runtime for State {
                     },
                     // On tick send derp poll request to derp stream
                     Some((permit, _)) = wait_for_tx(&c.comms_direct.tx, poll_timer_tick) => {
-                        if config.enable_polling {
+                        if config.enable_polling || config.server_keepalives.poll_keepalive {
                             self.derp_poll_session = self.derp_poll_session.wrapping_add(1);
+                            telio_log_debug!("Sending DerpPollRequest with session {}", self.derp_poll_session);
                             Self::handle_outcoming_payload_direct(permit, PacketControl::DerpPollRequest(DerpPollRequestMsg::new(
                                 self.derp_poll_session, &config.meshnet_peers
                             ))).await;
