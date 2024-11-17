@@ -156,6 +156,9 @@ pub enum Error {
     /// Url parse error
     #[error("Url parse error: {0}")]
     UrlParseError(#[from] url::ParseError),
+    /// Internal error
+    #[error("Internal error")]
+    InternalError,
 }
 
 impl From<Error> for RelayConnectionChangeReason {
