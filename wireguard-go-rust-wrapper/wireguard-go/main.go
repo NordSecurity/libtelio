@@ -22,6 +22,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"math/rand"
 	"runtime"
@@ -97,6 +98,13 @@ func tracef(format string, args ...interface{}) {
 	trace_logger.Printf(format, args...)
 }
 
+type DevLoggerWriter struct {}
+
+func (t DevLoggerWriter) Write(p []byte) (n int, err error) {
+	debugf("[wintun-log]" + string(p[:]))
+	return len(p), nil
+}
+
 func CreateDeviceLogger() *device.Logger {
 	return &device.Logger{debugf, errorf}
 }
@@ -140,14 +148,17 @@ func logStackTraceOnPanic() {
 }
 
 //export wg_go_start_named
-func wg_go_start_named(name *C.char, log C.wg_go_log_cb) C.int32_t {
+func wg_go_start_named(name *C.char, log_cb C.wg_go_log_cb) C.int32_t {
 	defer logStackTraceOnPanic()
+
+	// Redirect golang logs to Telio early
+	log.SetOutput(&DevLoggerWriter{})
 
 	var watcher *interfaceWatcher
 	var err error
 	if loggerFunc == 0 {
-		loggerCtx = uintptr(unsafe.Pointer(log.ctx))
-		loggerFunc = uintptr(unsafe.Pointer(log.fn))
+		loggerCtx = uintptr(unsafe.Pointer(log_cb.ctx))
+		loggerFunc = uintptr(unsafe.Pointer(log_cb.fn))
 	}
 
 	ifname := C.GoString(name)
