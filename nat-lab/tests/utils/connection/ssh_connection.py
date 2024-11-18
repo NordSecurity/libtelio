@@ -33,3 +33,14 @@ class SshConnection(Connection):
 
     def target_name(self) -> str:
         return str(self._target_os)
+
+    async def download(self, remote_path, local_path):
+        """Copy file from 'remote_path' on the node connected via this connection, to local directory 'local_path'"""
+        try:
+            await asyncssh.scp(
+                (self._connection, remote_path), local_path, recurse=True
+            )
+        except asyncssh.SFTPFailure as e:
+            if "No such file or directory" in e.reason:
+                return
+            raise e

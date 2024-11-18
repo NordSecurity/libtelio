@@ -18,10 +18,13 @@ VM_UNIFFI_DIR = UNIFFI_PATH_MAC_VM
 
 @asynccontextmanager
 async def new_connection(
-    ip: str = MAC_VM_IP, copy_binaries: bool = False
+    ip: str = MAC_VM_IP,
+    copy_binaries: bool = False,
+    reenable_nat=True,
 ) -> AsyncIterator[Connection]:
-    subprocess.check_call(["sudo", "bash", "vm_nat.sh", "disable"])
-    subprocess.check_call(["sudo", "bash", "vm_nat.sh", "enable"])
+    if reenable_nat:
+        subprocess.check_call(["sudo", "bash", "vm_nat.sh", "disable"])
+        subprocess.check_call(["sudo", "bash", "vm_nat.sh", "enable"])
 
     # Speedup large file transfer: https://github.com/ronf/asyncssh/issues/374
     ssh_options = asyncssh.SSHClientConnectionOptions(

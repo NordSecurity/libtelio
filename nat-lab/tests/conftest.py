@@ -8,7 +8,7 @@ from interderp_cli import InterDerpClient
 from itertools import combinations
 from mesh_api import start_tcpdump, stop_tcpdump
 from utils.bindings import TelioAdapterType
-from utils.connection import DockerConnection
+from utils.connection import DockerConnection, SshConnection
 from utils.connection_util import (
     ConnectionTag,
     container_id,
@@ -349,6 +349,7 @@ def pytest_sessionfinish(session, exitstatus):
         collect_nordderper_logs()
         collect_dns_server_logs()
         asyncio.run(collect_kernel_logs(session.items, "after_tests"))
+        asyncio.run(collect_mac_diagnostic_reports())
 
 
 def collect_nordderper_logs():
@@ -382,3 +383,15 @@ def copy_file_from_container(container_name, src_path, dst_path):
         )
     except subprocess.CalledProcessError:
         print(f"Error copying log file {src_path} from {container_name} to {dst_path}")
+
+
+async def collect_mac_diagnostic_reports():
+    print("Collect mac diagnostic reports")
+    async with mac_vm_util.new_connection(reenable_nat=False) as connection:
+        if isinstance(connection, SshConnection):
+            await connection.download(
+                "/Library/Logs/DiagnosticReports", "logs/system_diagnostic_reports"
+            )
+            await connection.download(
+                "/root/Library/Logs/DiagnosticReports", "logs/user_diagnostic_reports"
+            )
