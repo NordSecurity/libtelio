@@ -34,8 +34,11 @@ const RECV_TIMEOUT: Duration = Duration::from_secs(4);
 
 struct TunnelSock {
     tunn: noise::Tunn,
-    sock: telio_sockets::External<UdpSocket>,
+    sock: UdpSock<telio_sockets::External<UdpSocket>>,
 }
+
+// A newtype to enfore usage of custom `recv()` call with timeout
+struct UdpSock<T>(T);
 
 pub struct KeySet {
     pub wg_keys: super::Keys,
@@ -86,13 +89,13 @@ pub async fn fetch_keys(
     }
 
     // Receive response
-    let read = tokio::time::timeout(RECV_TIMEOUT, sock.recv(&mut recvbuf)).await??;
-    telio_log_debug!("Received packet of size {read}");
+    let pkg = sock.recv(&mut recvbuf).await?;
+    telio_log_debug!("Received packet of size {}", pkg.len());
 
     let mut msgbuf = [0u8; 2048]; // 2 KiB buffer should shuffice
 
     #[allow(index_access_check)]
-    let ciphertext = match tunn.decapsulate(None, &recvbuf[..read], &mut msgbuf) {
+    let ciphertext = match tunn.decapsulate(None, pkg, &mut msgbuf) {
         noise::TunnResult::Err(err) => {
             return Err(format!("Failed to decapsulate PQ keys message: {err:?}").into())
         }
@@ -127,20 +130,17 @@ pub async fn rekey(
     let mut pkgbuf = Vec::with_capacity(1024 * 4); // 4 KiB
     push_rekey_method_udp_payload(&mut pkgbuf);
 
-    let sock = sock_pool
-        .new_internal_udp((Ipv4Addr::UNSPECIFIED, 0), None)
-        .await?;
-    sock.connect((REMOTE_IP, SERVICE_PORT)).await?;
+    let sock = UdpSock::internal(sock_pool, (REMOTE_IP, SERVICE_PORT)).await?;
 
     telio_log_debug!("Sending rekey request");
     sock.send(&pkgbuf).await?;
 
     let mut recvbuf = [0u8; 2048];
-    let read = tokio::time::timeout(RECV_TIMEOUT, sock.recv(&mut recvbuf)).await??;
-    telio_log_debug!("Received packet of size {read}");
+    let pkg = sock.recv(&mut recvbuf).await?;
+    telio_log_debug!("Received packet of size {}", pkg.len());
 
     #[allow(index_access_check)]
-    let ciphertext = parse_response_payload(&recvbuf[..read])?;
+    let ciphertext = parse_response_payload(pkg)?;
 
     // Extract the shared secret
     let pq_shared = kyber768::decapsulate(&ciphertext, pq_secret);
@@ -160,10 +160,7 @@ async fn handshake(
     secret: &telio_crypto::SecretKey,
     peers_pubkey: &telio_crypto::PublicKey,
 ) -> super::Result<TunnelSock> {
-    let sock = sock_pool
-        .new_external_udp((Ipv4Addr::UNSPECIFIED, 0), None)
-        .await?;
-    sock.connect(endpoint).await?;
+    let sock = UdpSock::external(sock_pool, endpoint).await?;
 
     let mut tunn = noise::Tunn::new(
         secret.into_bytes().into(),
@@ -187,13 +184,13 @@ async fn handshake(
     }
 
     // The response should be 92, so the buffer is sufficient
-    let read = sock.recv(&mut pkgbuf).await?;
+    let pkg = sock.recv(&mut pkgbuf).await?;
     telio_log_debug!("Handshake response received");
 
     let mut msgbuf = [0u8; 2048];
 
     #[allow(index_access_check)]
-    match tunn.decapsulate(None, &pkgbuf[..read], &mut msgbuf) {
+    match tunn.decapsulate(None, pkg, &mut msgbuf) {
         noise::TunnResult::Err(err) => {
             return Err(format!("Failed to decapsulate handshake message: {err:?}").into())
         }
@@ -389,6 +386,65 @@ fn fill_get_packet_headers(pkgbuf: &mut [u8], rng: &mut impl rand::Rng) {
     ippkg.set_source(LOCAL_IP);
     ippkg.set_destination(REMOTE_IP);
     ippkg.set_checksum(ipv4::checksum(&ippkg.to_immutable()));
+}
+
+impl UdpSock<telio_sockets::External<UdpSocket>> {
+    async fn external(
+        sock_pool: &telio_sockets::SocketPool,
+        remote: impl ToSocketAddrs,
+    ) -> super::Result<Self> {
+        let sock = sock_pool
+            .new_external_udp((Ipv4Addr::UNSPECIFIED, 0), None)
+            .await?;
+        sock.connect(remote).await?;
+        Ok(Self(sock))
+    }
+}
+
+impl UdpSock<UdpSocket> {
+    async fn internal(
+        sock_pool: &telio_sockets::SocketPool,
+        remote: impl ToSocketAddrs,
+    ) -> super::Result<Self> {
+        let sock = sock_pool
+            .new_internal_udp((Ipv4Addr::UNSPECIFIED, 0), None)
+            .await?;
+        sock.connect(remote).await?;
+        Ok(Self(sock))
+    }
+}
+
+trait UdpSockRef {
+    fn sock(&self) -> &UdpSocket;
+}
+
+impl UdpSockRef for telio_sockets::External<UdpSocket> {
+    fn sock(&self) -> &UdpSocket {
+        self
+    }
+}
+
+impl UdpSockRef for UdpSocket {
+    fn sock(&self) -> &UdpSocket {
+        self
+    }
+}
+
+impl<T> UdpSock<T>
+where
+    T: UdpSockRef,
+{
+    async fn send(&self, buf: &[u8]) -> super::Result<()> {
+        self.0.sock().send(buf).await?;
+        Ok(())
+    }
+
+    async fn recv<'a>(&self, buf: &'a mut [u8]) -> super::Result<&'a [u8]> {
+        let read = tokio::time::timeout(RECV_TIMEOUT, self.0.sock().recv(buf)).await??;
+
+        #[allow(index_access_check)]
+        Ok(&buf[..read])
+    }
 }
 
 fn random_port(rng: &mut impl rand::Rng) -> u16 {
