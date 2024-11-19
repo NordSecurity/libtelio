@@ -119,7 +119,7 @@ cc = "1.0"
 clap = { version = "3.1", features = ["derive"] }
 crypto_box = { version = "0.9.1", features = ["std"] }
 env_logger = "0.9.0"
-futures = "0.3.31"
+futures = "0.3"
 hashlink = "0.8.3"
 hex = "0.4.3"
 httparse = "1.8.0"
