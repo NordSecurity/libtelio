@@ -156,6 +156,10 @@ namespace telio {
     /// - `logger`: Callback to handle logging events.
     void set_global_logger(TelioLogLevel log_level, TelioLoggerCb logger);
 
+    /// Unset the global logger.
+    /// After this call finishes, previously registered logger will not be called.
+    void unset_global_logger();
+
     /// Get default recommended adapter type for platform.
     TelioAdapterType get_default_adapter();
 

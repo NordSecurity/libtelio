@@ -20,7 +20,7 @@ use std::{
     time::Duration,
 };
 
-use self::types::*;
+use self::{logging::LOGGER_STOPPER, types::*};
 use crate::device::{Device, DeviceConfig, Result as DevResult};
 use telio_model::{
     config::{Config, ConfigParseError},
@@ -73,6 +73,11 @@ pub fn set_global_logger(log_level: TelioLogLevel, logger: Box<dyn TelioLoggerCb
     if tracing::subscriber::set_global_default(tracing_subscriber).is_err() {
         telio_log_warn!("Could not set logger, because logger had already been set by previous libtelio instance");
     }
+}
+/// Unset the global logger.
+/// After this call finishes, previously registered logger will not be called.
+pub fn unset_global_logger() {
+    LOGGER_STOPPER.stop();
 }
 
 /// Get default recommended adapter type for platform.

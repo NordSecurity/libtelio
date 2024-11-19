@@ -4,9 +4,10 @@ use std::{
     sync::{
         atomic::AtomicUsize,
         mpsc::{sync_channel, RecvError, SyncSender},
-        Mutex,
+        Arc, Barrier, Mutex,
     },
     thread::Builder,
+    time::Instant,
 };
 
 use once_cell::sync::Lazy;
@@ -22,9 +23,53 @@ use crate::{TelioLogLevel, TelioLoggerCb};
 
 const LOG_BUFFER: usize = 1024;
 pub const START_ASYNC_LOGGER_MSG: &str = "Starting async logger thread";
+pub const ASYNC_CHANNEL_CLOSED_MSG: &str = "Async channel explicitly closed";
 
 static DROPPED_LOGS: AtomicUsize = AtomicUsize::new(0);
 static DROPPED_LOGS_LAST_CHECKED_VALUE: AtomicUsize = AtomicUsize::new(0);
+pub static LOGGER_STOPPER: LoggerStopper = LoggerStopper::new();
+
+pub struct LoggerStopper {
+    sender: parking_lot::Mutex<Option<SyncSender<LogMessage>>>,
+}
+
+impl LoggerStopper {
+    const fn new() -> Self {
+        Self {
+            sender: parking_lot::Mutex::new(None),
+        }
+    }
+
+    fn set_sender(&self, sender: SyncSender<LogMessage>) {
+        *self.sender.lock() = Some(sender);
+    }
+
+    pub fn stop(&self) {
+        match *self.sender.lock() {
+            Some(ref sender) => {
+                stop_logger_thread(sender, true);
+            }
+            None => {
+                println!("No global logger set");
+            }
+        }
+    }
+}
+
+fn stop_logger_thread(sender: &SyncSender<LogMessage>, explicit: bool) {
+    let kind = if explicit { "explicit " } else { "" };
+    let start = Instant::now();
+    let b = Arc::new(Barrier::new(2));
+    match sender.try_send(LogMessage::Quit(b.clone())) {
+        Ok(()) => {
+            b.wait();
+            println!("Waited for {kind}log flush for {:?}", start.elapsed());
+        }
+        Err(e) => {
+            eprintln!("Failed to do {kind}log flush: {e}");
+        }
+    }
+}
 
 /// Return the total number of log messages droppped since the process has started
 pub fn logs_dropped_until_now() -> usize {
@@ -44,6 +89,7 @@ pub fn build_subscriber(
     logger: Box<dyn TelioLoggerCb>,
 ) -> impl Subscriber {
     let log_sender = start_async_logger(logger, LOG_BUFFER);
+    LOGGER_STOPPER.set_sender(log_sender.clone());
     tracing_subscriber::registry()
         .with(LevelFilter::from_level(log_level.into()))
         .with(
@@ -92,9 +138,10 @@ impl FfiCallback {
     }
 }
 
+#[cfg(test)]
 impl Drop for FfiCallback {
     fn drop(&mut self) {
-        let _ = self.log_sender.try_send(LogMessage::Quit);
+        stop_logger_thread(&self.log_sender, false)
     }
 }
 
@@ -200,7 +247,7 @@ fn filter_log_message(msg: String) -> Option<String> {
 
 enum LogMessage {
     Message(TelioLogLevel, String),
-    Quit,
+    Quit(Arc<Barrier>),
 }
 
 fn start_async_logger(cb: Box<dyn TelioLoggerCb>, buffer_size: usize) -> SyncSender<LogMessage> {
@@ -214,22 +261,21 @@ fn start_async_logger(cb: Box<dyn TelioLoggerCb>, buffer_size: usize) -> SyncSen
                     Ok(LogMessage::Message(level, msg)) => {
                         let _ = cb.log(level, msg);
                     }
-                    Ok(LogMessage::Quit) => {
-                        let _ = cb.log(
-                            TelioLogLevel::Debug,
-                            "Async channel explicitly closed".to_owned(),
-                        );
-                        return;
+                    Ok(LogMessage::Quit(barrier)) => {
+                        let _ = cb.log(TelioLogLevel::Debug, ASYNC_CHANNEL_CLOSED_MSG.to_owned());
+                        barrier.wait();
+                        break;
                     }
                     Err(RecvError) => {
                         let _ = cb.log(
                             TelioLogLevel::Debug,
                             "Async channel implicitly closed".to_owned(),
                         );
-                        return;
+                        break;
                     }
                 }
             }
+            println!("Global logging thread ending");
         });
     if let Err(e) = handle {
         eprintln!("Failed to start logging thread: {e:?}");
@@ -248,6 +294,8 @@ mod test {
     use std::{
         fmt::Debug,
         sync::{Arc, Mutex},
+        thread::sleep,
+        time::Duration,
     };
 
     use crate::{TelioLogLevel, TelioLoggerCb};
@@ -291,10 +339,7 @@ mod test {
                     start + 4
                 ),
             ),
-            (
-                TelioLogLevel::Debug,
-                "Async channel explicitly closed".to_owned(),
-            ),
+            (TelioLogLevel::Debug, ASYNC_CHANNEL_CLOSED_MSG.to_owned()),
         ];
 
         let subscriber = build_subscriber(TelioLogLevel::Debug, Box::new(log));
@@ -310,9 +355,59 @@ mod test {
     }
 
     #[test]
-    fn slow_telio_cb_handling() {
-        const LOGS_TO_DROP: usize = 5;
+    fn test_trace_via_slow_telio_cb() {
+        const EXPECTED_SIZE: usize = 5;
+
         let log = SlowLog::default();
+        let logs = log.0.clone();
+
+        let start = line!() + 1;
+        let act = || {
+            trace!("first message"); // +1
+            debug!("second message"); // +2
+            info!("third\nmutiline\nmessage"); // +3
+            warn!(
+                n = 2,
+                extra = "extra info",
+                "fourth message with {}",
+                "info"
+            ); // +4
+        };
+        let mpath = module_path!();
+        let tid = std::thread::current().id();
+        let expected: [_; EXPECTED_SIZE] = [
+            (TelioLogLevel::Debug, START_ASYNC_LOGGER_MSG.to_owned()),
+            (
+                TelioLogLevel::Debug,
+                format!("{tid:?} {:?}:{} second message", mpath, start + 2),
+            ),
+            (
+                TelioLogLevel::Info,
+                format!("{tid:?} {:?}:{} third\nmutiline\nmessage", mpath, start + 3),
+            ),
+            (
+                TelioLogLevel::Warning,
+                format!(
+                    "{tid:?} {:?}:{} fourth message with info n=2 extra=\"extra info\"",
+                    mpath,
+                    start + 4
+                ),
+            ),
+            (TelioLogLevel::Debug, ASYNC_CHANNEL_CLOSED_MSG.to_owned()),
+        ];
+
+        let subscriber = build_subscriber(TelioLogLevel::Debug, Box::new(log));
+
+        tracing::subscriber::with_default(subscriber, act);
+
+        let actual = logs.lock().unwrap().clone();
+        assert_eq!(&expected[..], &actual[..]);
+    }
+
+    #[test]
+    fn blocking_telio_cb_handling() {
+        const LOGS_TO_DROP: usize = 5;
+        let log = BlockedLog::default();
         let subscriber = build_subscriber(TelioLogLevel::Debug, Box::new(log));
 
         tracing::subscriber::with_default(subscriber, || {
@@ -340,9 +435,20 @@ mod test {
     }
 
     #[derive(Default, Clone, Debug)]
-    struct SlowLog;
+    struct SlowLog(Arc<Mutex<Vec<(TelioLogLevel, String)>>>);
     impl TelioLoggerCb for SlowLog {
         fn log(&self, level: TelioLogLevel, payload: String) -> crate::FfiResult<()> {
+            sleep(Duration::from_secs(1));
+            let mut logs = self.0.lock().expect("Unable to lock");
+            logs.push((level, payload));
+            Ok(())
+        }
+    }
+
+    #[derive(Default, Clone, Debug)]
+    struct BlockedLog;
+    impl TelioLoggerCb for BlockedLog {
+        fn log(&self, _level: TelioLogLevel, _payload: String) -> crate::FfiResult<()> {
             loop {}
         }
     }
