@@ -6,20 +6,22 @@ mod test_module {
             atomic::{AtomicUsize, Ordering},
             Arc,
         },
-        thread::ThreadId,
+        thread::{sleep, ThreadId},
+        time::Duration,
     };
 
     use telio::{
         ffi_types::{FfiResult, TelioLoggerCb},
-        logging::START_ASYNC_LOGGER_MSG,
+        logging::{ASYNC_CHANNEL_CLOSED_MSG, START_ASYNC_LOGGER_MSG},
     };
 
     use super::*;
 
     #[test]
     fn test_logger() {
-        // Line number of tracing::info! location
-        const INFO_LINE: u32 = 66;
+        // Line number of tracing::info! call in this fill, down below
+        const INFO_LINE1: u32 = 77;
+        const INFO_LINE2: u32 = 78;
 
         let call_count = Arc::new(AtomicUsize::new(0));
 
@@ -34,20 +36,32 @@ mod test_module {
                 log_level: telio::ffi_types::TelioLogLevel,
                 payload: String,
             ) -> FfiResult<()> {
-                if payload == START_ASYNC_LOGGER_MSG {
+                sleep(Duration::from_secs(2)); // Slow down logger so that the internal logs queue grows
+                println!("{log_level:?} {payload:?}");
+                if payload == START_ASYNC_LOGGER_MSG || payload == ASYNC_CHANNEL_CLOSED_MSG {
                     return Ok(());
                 }
                 let tid = std::thread::current().id();
                 assert_ne!(self.log_caller_tid, tid);
                 assert!(matches!(log_level, telio::ffi_types::TelioLogLevel::Info));
-                assert_eq!(
-                    format!(
-                        r#"{:?} "logger::test_module":{INFO_LINE} test message"#,
-                        self.log_caller_tid
-                    ),
-                    payload
-                );
-                assert_eq!(0, self.call_count.fetch_add(1, Ordering::Relaxed));
+                if self.call_count.load(Ordering::Relaxed) == 0 {
+                    assert_eq!(
+                        format!(
+                            r#"{:?} "logger::test_module":{INFO_LINE1} test message"#,
+                            self.log_caller_tid
+                        ),
+                        payload
+                    );
+                } else {
+                    assert_eq!(
+                        format!(
+                            r#"{:?} "logger::test_module":{INFO_LINE2} test message"#,
+                            self.log_caller_tid
+                        ),
+                        payload
+                    );
+                }
+                self.call_count.fetch_add(1, Ordering::Relaxed);
                 Ok(())
             }
         }
@@ -57,14 +71,15 @@ mod test_module {
             log_caller_tid: std::thread::current().id(),
         };
 
-        let tracing_subscriber = telio::ffi::logging::build_subscriber(
-            telio::ffi_types::TelioLogLevel::Info,
-            Box::new(logger),
-        );
-        tracing::subscriber::set_global_default(tracing_subscriber).unwrap();
+        telio::set_global_logger(telio::ffi_types::TelioLogLevel::Info, Box::new(logger));
 
-        tracing::info!("test message");
-        while call_count.load(Ordering::Relaxed) < 1 {}
         tracing::debug!("this will be ignored since it's below info");
+        tracing::info!("test message");
+        tracing::info!("test message");
+
+        telio::unset_global_logger();
+        assert_eq!(2, call_count.load(Ordering::Relaxed));
+
+        tracing::info!("this will be ignored since it's after the unset_global_logger call");
     }
 }

@@ -205,7 +205,10 @@ def main():
             wrapper = LibtelioWrapper(daemon, logfile)
             daemon.register(wrapper, objectId=object_name)
 
-            daemon.requestLoop()
+            try:
+                daemon.requestLoop()
+            finally:
+                libtelio.unset_global_logger()
             daemon.close()
     except Exception as e:  # pylint: disable=broad-exception-caught
         print(f"libtelio_remote error: {e}")
