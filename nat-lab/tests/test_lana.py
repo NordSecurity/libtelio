@@ -4,7 +4,6 @@ import asyncio
 import base64
 import os
 import pytest
-import subprocess
 from config import (
     WG_SERVER,
     STUN_SERVER,
@@ -16,10 +15,18 @@ from config import (
 from contextlib import AsyncExitStack
 from helpers import connectivity_stack
 from mesh_api import API, Node
+from pathlib import Path
 from telio import Client, copy_file, get_log_without_flush, find_files
 from typing import List, Optional
 from utils import testing, stun
-from utils.analytics import fetch_moose_events, DERP_BIT, WG_BIT, IPV4_BIT, IPV6_BIT
+from utils.analytics import (
+    fetch_moose_events,
+    DERP_BIT,
+    Event,
+    WG_BIT,
+    IPV4_BIT,
+    IPV6_BIT,
+)
 from utils.analytics.event_validator import (
     CategoryValidator,
     ConnectivityMatrixValidator,
@@ -59,7 +66,6 @@ from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
     generate_connection_tracker_config,
     ConnectionTag,
-    container_id,
     new_connection_with_conn_tracker,
     new_connection_by_tag,
     add_outgoing_packets_delay,
@@ -156,40 +162,41 @@ async def clean_container(connection: Connection):
     ).execute()
 
 
-def get_moose_db_file(container_tag, container_path, container_backup_path, local_path):
-    subprocess.run(["rm", "-f", local_path])
-    # sqlite3 -bail -batch moose.db "BEGIN EXCLUSIVE TRANSACTION; SELECT 1; ROLLBACK;" > /dev/null
-    subprocess.run([
-        "docker",
-        "exec",
-        "--privileged",
-        container_id(container_tag),
+async def get_moose_db_file(
+    connection: Connection,
+    container_path: str,
+    container_backup_path: str,
+    local_path: str,
+) -> None:
+    Path(local_path).unlink(missing_ok=True)
+    await connection.create_process([
         "sqlite3",
         container_path,
+        "--cmd",
+        "PRAGMA busy_timeout = 30000;",
         f".backup {container_backup_path}",
-    ])
-    subprocess.run([
-        "docker",
-        "cp",
-        container_id(container_tag) + ":" + container_backup_path,
-        local_path,
-    ])
+    ]).execute(privileged=True)
+    await connection.download(container_backup_path, local_path)
 
 
-async def wait_for_event_dump(container, events_path, nr_events):
+async def wait_for_event_dump(
+    connection: Connection, events_path: str, nr_events: int
+) -> Optional[list[Event]]:
     start_time = asyncio.get_event_loop().time()
     events = []
     while asyncio.get_event_loop().time() - start_time < DEFAULT_CHECK_TIMEOUT:
-        get_moose_db_file(
-            container, CONTAINER_EVENT_PATH, CONTAINER_EVENT_BACKUP_PATH, events_path
+        await get_moose_db_file(
+            connection, CONTAINER_EVENT_PATH, CONTAINER_EVENT_BACKUP_PATH, events_path
         )
         events = fetch_moose_events(events_path)
         if len(events) == nr_events:
-            print(f"Found db from {container} with the expected {nr_events}.")
+            print(
+                f"Found db from {connection.target_name()} with the expected {nr_events} events."
+            )
             return events
         await asyncio.sleep(DEFAULT_CHECK_INTERVAL)
     print(
-        f"Failed looking db from {container}, expected {nr_events} but"
+        f"Failed looking db from {connection.target_name()}, expected {nr_events} but"
         f" {len(events)} were found."
     )
     return None
@@ -456,15 +463,15 @@ async def run_default_scenario(
     await client_gamma.trigger_event_collection()
 
     alpha_events = await wait_for_event_dump(
-        ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH, nr_events=1
+        connection_alpha, ALPHA_EVENTS_PATH, nr_events=1
     )
     assert alpha_events
     beta_events = await wait_for_event_dump(
-        ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=1
+        connection_beta, BETA_EVENTS_PATH, nr_events=1
     )
     assert beta_events
     gamma_events = await wait_for_event_dump(
-        ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1, GAMMA_EVENTS_PATH, nr_events=1
+        connection_gamma, GAMMA_EVENTS_PATH, nr_events=1
     )
     assert gamma_events
 
@@ -1361,10 +1368,10 @@ async def test_lana_with_meshnet_exit_node(
         await client_beta.trigger_event_collection()
 
         alpha_events = await wait_for_event_dump(
-            ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH, nr_events=1
+            connection_alpha, ALPHA_EVENTS_PATH, nr_events=1
         )
         beta_events = await wait_for_event_dump(
-            ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
+            connection_beta,
             BETA_EVENTS_PATH,
             nr_events=1,
         )
@@ -1574,10 +1581,10 @@ async def test_lana_with_disconnected_node(
         await client_beta.trigger_event_collection()
 
         alpha_events = await wait_for_event_dump(
-            ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH, nr_events=1
+            connection_alpha, ALPHA_EVENTS_PATH, nr_events=1
         )
         beta_events = await wait_for_event_dump(
-            ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=1
+            connection_beta, BETA_EVENTS_PATH, nr_events=1
         )
         assert alpha_events
         assert beta_events
@@ -1601,7 +1608,7 @@ async def test_lana_with_disconnected_node(
                 await relayed_state_reported.wait()
 
         beta_events = await wait_for_event_dump(
-            ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=2
+            connection_beta, BETA_EVENTS_PATH, nr_events=2
         )
         assert beta_events
 
@@ -1612,7 +1619,7 @@ async def test_lana_with_disconnected_node(
 
         await client_alpha.trigger_event_collection()
         alpha_events = await wait_for_event_dump(
-            ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH, nr_events=2
+            connection_alpha, ALPHA_EVENTS_PATH, nr_events=2
         )
         assert alpha_events
 
@@ -1926,7 +1933,7 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
 
         await client_beta.trigger_event_collection()
         beta_events = await wait_for_event_dump(
-            ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=1
+            connection_beta, BETA_EVENTS_PATH, nr_events=1
         )
         assert beta_events
 
@@ -1971,10 +1978,10 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
         await client_beta.trigger_event_collection()
 
         alpha_events = await wait_for_event_dump(
-            ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH, nr_events=1
+            connection_alpha, ALPHA_EVENTS_PATH, nr_events=1
         )
         beta_events = await wait_for_event_dump(
-            ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=2
+            connection_beta, BETA_EVENTS_PATH, nr_events=2
         )
         assert alpha_events
         assert beta_events
@@ -2021,7 +2028,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
 
             await client_beta.trigger_event_collection()
             beta_events = await wait_for_event_dump(
-                ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=1
+                connection_beta, BETA_EVENTS_PATH, nr_events=1
             )
             assert beta_events
             initial_beta_meshnet_id = beta_events[0].fp
@@ -2035,8 +2042,8 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
             with open(path, "w", encoding="utf-8") as f:
                 f.write(log_content)
             events_path = os.path.join(log_dir, "beta_before_restart.db")
-            get_moose_db_file(
-                ConnectionTag.DOCKER_CONE_CLIENT_2,
+            await get_moose_db_file(
+                connection_beta,
                 CONTAINER_EVENT_PATH,
                 CONTAINER_EVENT_BACKUP_PATH,
                 events_path,
@@ -2069,7 +2076,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
 
         await client_beta.trigger_event_collection()
         beta_events = await wait_for_event_dump(
-            ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=3
+            connection_beta, BETA_EVENTS_PATH, nr_events=3
         )
         assert beta_events
         second_beta_meshnet_id = beta_events[2].fp
@@ -2108,11 +2115,11 @@ async def test_lana_initial_heartbeat_no_trigger(
         if initial_heartbeat_interval == 5:
             await asyncio.sleep(initial_heartbeat_interval)
             assert await wait_for_event_dump(
-                ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH, nr_events=1
+                connection_alpha, ALPHA_EVENTS_PATH, nr_events=1
             )
         else:
             assert not await wait_for_event_dump(
-                ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH, nr_events=1
+                connection_alpha, ALPHA_EVENTS_PATH, nr_events=1
             )
 
 
@@ -2173,10 +2180,10 @@ async def test_lana_rtt_interval_controls_periodic_qos_collection():
         await client_beta.trigger_event_collection()
 
         alpha_events = await wait_for_event_dump(
-            ConnectionTag.DOCKER_CONE_CLIENT_1, ALPHA_EVENTS_PATH, nr_events=1
+            connection_alpha, ALPHA_EVENTS_PATH, nr_events=1
         )
         beta_events = await wait_for_event_dump(
-            ConnectionTag.DOCKER_CONE_CLIENT_2, BETA_EVENTS_PATH, nr_events=1
+            connection_beta, BETA_EVENTS_PATH, nr_events=1
         )
         assert alpha_events
         assert beta_events

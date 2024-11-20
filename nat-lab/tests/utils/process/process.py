@@ -31,6 +31,7 @@ class Process(ABC):
         self,
         stdout_callback: Optional[StreamCallback] = None,
         stderr_callback: Optional[StreamCallback] = None,
+        privileged=False,
     ) -> "Process":
         pass
 

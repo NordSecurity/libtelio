@@ -8,7 +8,7 @@ from interderp_cli import InterDerpClient
 from itertools import combinations
 from mesh_api import start_tcpdump, stop_tcpdump
 from utils.bindings import TelioAdapterType
-from utils.connection import DockerConnection, SshConnection
+from utils.connection import DockerConnection
 from utils.connection_util import (
     ConnectionTag,
     container_id,

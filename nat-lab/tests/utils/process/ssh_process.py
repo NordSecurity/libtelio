@@ -38,7 +38,10 @@ class SshProcess(Process):
         self,
         stdout_callback: Optional[StreamCallback] = None,
         stderr_callback: Optional[StreamCallback] = None,
+        privileged=False,
     ) -> "SshProcess":
+        if privileged:
+            print("'privileged' does nothing for ssh processes")
         escaped = [self._escape_argument(arg) for arg in self._command]
         command_str = " ".join(escaped)
 
