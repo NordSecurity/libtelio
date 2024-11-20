@@ -8,7 +8,7 @@ from env import LIBTELIO_ENV_MOOSE_RELEASE_TAG
 PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/..")
 
 
-def _output_dir(opsys: str, arch: str) -> str:
+def _output_dir(target_os: str, arch: str) -> str:
     return os.path.join(
         PROJECT_ROOT,
         "3rd-party",
@@ -16,19 +16,19 @@ def _output_dir(opsys: str, arch: str) -> str:
         LIBTELIO_ENV_MOOSE_RELEASE_TAG,
         "bin",
         "common",
-        opsys,
+        target_os,
         arch,
     )
 
 
-def _download_moose_file(opsys: str, arch: str, file_name: str):
+def _download_moose_file(target_os: str, arch: str, file_name: str):
     MOOSE_PROJECT_ID = 5644
 
-    output_path = os.path.join(_output_dir(opsys, arch), file_name)
+    output_path = os.path.join(_output_dir(target_os, arch), file_name)
     if os.path.isfile(output_path):
         return
 
-    print(f"Moose utils: Downloading {opsys}/{arch}/{file_name}")
+    print(f"Moose utils: Downloading {target_os}/{arch}/{file_name}")
 
     if not os.path.isdir(os.path.dirname(output_path)):
         os.makedirs(os.path.dirname(output_path))
@@ -42,23 +42,18 @@ def _download_moose_file(opsys: str, arch: str, file_name: str):
     if nexus_url is None:
         raise ValueError("LIBTELIO_ENV_SEC_NEXUS_URL not set")
 
-    if opsys == "qnap":
-        url = f"{nexus_url}/repository/ll-gitlab-release/{MOOSE_PROJECT_ID}/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{arch}/{file_name}"
-    else:
-        url = f"{nexus_url}/repository/ll-gitlab-release/{MOOSE_PROJECT_ID}/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/{opsys}/{arch}/{file_name}"
+    url = f"{nexus_url}/repository/ll-gitlab-release/{MOOSE_PROJECT_ID}/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/{target_os}/{arch}/{file_name}"
 
     subprocess.check_call(
         ["curl", "-f", "-u", nexus_credentials, url, "-o", output_path]
     )
 
 
-def fetch_moose_dependencies(opsys: str, arch: str):
-    if opsys == "windows":
-        _download_moose_file(opsys, arch, "sqlite3.dll")
-    elif opsys == "qnap":
-        _download_moose_file(opsys, arch, "libsqlite3.a")
+def fetch_moose_dependencies(target_os: str, arch: str):
+    if target_os == "windows":
+        _download_moose_file(target_os, arch, "sqlite3.dll")
     else:
-        _download_moose_file(opsys, arch, "libsqlite3.so")
+        _download_moose_file(target_os, arch, "libsqlite3.so")
 
 
 def create_msvc_import_library(arch: str):
