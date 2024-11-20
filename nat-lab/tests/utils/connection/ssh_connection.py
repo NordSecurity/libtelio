@@ -34,7 +34,7 @@ class SshConnection(Connection):
     def target_name(self) -> str:
         return str(self._target_os)
 
-    async def download(self, remote_path, local_path):
+    async def download(self, remote_path: str, local_path: str) -> None:
         """Copy file from 'remote_path' on the node connected via this connection, to local directory 'local_path'"""
         try:
             await asyncssh.scp(

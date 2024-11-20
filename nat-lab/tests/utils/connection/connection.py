@@ -33,6 +33,10 @@ class Connection(ABC):
     def target_name(self) -> str:
         pass
 
+    @abstractmethod
+    async def download(self, remote_path: str, local_path: str) -> None:
+        pass
+
     async def get_ip_address(self) -> tuple[str, str]:
         ip = "127.0.0.1"
         return (ip, ip)

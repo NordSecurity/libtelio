@@ -70,7 +70,7 @@ class Event(DataClassJsonMixin):
     )
 
 
-def fetch_moose_events(database_name):
+def fetch_moose_events(database_name) -> list[Event]:
     database_connection = sqlite3.connect(database_name)
     database_cursor = database_connection.cursor()
 

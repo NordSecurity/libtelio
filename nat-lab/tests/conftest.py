@@ -386,12 +386,19 @@ def copy_file_from_container(container_name, src_path, dst_path):
 
 
 async def collect_mac_diagnostic_reports():
+    is_ci = "GITLAB_CI" in os.environ
+    if not (is_ci or "NATLAB_COLLECT_MAC_DIAGNOSTIC_LOGS" in os.environ):
+        return
     print("Collect mac diagnostic reports")
-    async with mac_vm_util.new_connection(reenable_nat=False) as connection:
-        if isinstance(connection, SshConnection):
+    try:
+        async with mac_vm_util.new_connection(reenable_nat=False) as connection:
             await connection.download(
                 "/Library/Logs/DiagnosticReports", "logs/system_diagnostic_reports"
             )
             await connection.download(
                 "/root/Library/Logs/DiagnosticReports", "logs/user_diagnostic_reports"
             )
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        print(f"Failed to connect to the mac VM: {e}")
+        if is_ci:
+            raise e

@@ -1,8 +1,10 @@
 from .connection import Connection, TargetOS
 from aiodocker import Docker
 from aiodocker.containers import DockerContainer
+from asyncio import to_thread
 from config import LINUX_INTERFACE_NAME
 from datetime import datetime
+from subprocess import run
 from typing import List, Type
 from typing_extensions import Self
 from utils.process import Process, DockerProcess
@@ -32,6 +34,12 @@ class DockerConnection(Connection):
 
     def target_name(self) -> str:
         return self.container_name()
+
+    async def download(self, remote_path: str, local_path: str) -> None:
+        def aux():
+            run(["docker", "cp", self._name + ":" + remote_path, local_path])
+
+        await to_thread(aux)
 
     def create_process(self, command: List[str], kill_id=None) -> "Process":
         process = DockerProcess(self._container, command, kill_id)
