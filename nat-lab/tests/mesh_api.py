@@ -5,6 +5,8 @@ import pprint
 import random
 import time
 import uuid
+from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
 from config import DERP_SERVERS, LIBTELIO_IPV6_WG_SUBNET, WG_SERVERS
 from datetime import datetime
 from ipaddress import ip_address
@@ -444,10 +446,11 @@ class API:
         return tuple(list(self.nodes.values())[current_node_list_len:])
 
 
-def start_tcpdump(container_names: List[str]):
+def start_tcpdump(container_names: Iterable[str]):
     if os.environ.get("NATLAB_SAVE_LOGS") is None:
         return
-    for container_name in container_names:
+
+    def aux(container_name):
         # First make sure that no leftover processes/files will interfere
         cmd = f"docker exec --privileged {container_name} killall -w tcpdump"
         os.system(cmd)
@@ -456,22 +459,31 @@ def start_tcpdump(container_names: List[str]):
         cmd = f"docker exec -d --privileged {container_name} tcpdump -i any -U -w {PCAP_FILE_PATH}"
         os.system(cmd)
 
+    with ThreadPoolExecutor() as executor:
+        executor.map(aux, container_names)
 
-def stop_tcpdump(container_names):
+
+def stop_tcpdump(container_names, store_in=None):
     if os.environ.get("NATLAB_SAVE_LOGS") is None:
         return
     log_dir = get_current_test_log_path()
     os.makedirs(log_dir, exist_ok=True)
-    for container_name in container_names:
+
+    def aux(container_name):
         cmd = f"docker exec --privileged {container_name} killall -w tcpdump"
         os.system(cmd)
-        path = find_unique_path_for_tcpdump(log_dir, container_name)
+        path = find_unique_path_for_tcpdump(
+            store_in if store_in else log_dir, container_name
+        )
         cmd = f"docker container cp {container_name}:{PCAP_FILE_PATH} {path}"
         os.system(cmd)
 
+    with ThreadPoolExecutor() as executor:
+        executor.map(aux, container_names)
+
 
 def find_unique_path_for_tcpdump(log_dir, container_name):
-    candidate_path = f"./{log_dir}/{container_name}.pcap"
+    candidate_path = f"{log_dir}/{container_name}.pcap"
     counter = 1
     # NOTE: counter starting from '1' means that the file will either have no suffix or
     # will have a suffix starting from '2'. This is to make it clear that it's not the
