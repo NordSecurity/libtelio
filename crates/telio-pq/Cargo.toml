@@ -35,5 +35,7 @@ x25519-dalek.workspace = true
 sha2.workspace = true
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+
 base64.workspace = true
 mockall.workspace = true

@@ -1,0 +1,1 @@
+Impose a timeout on all PQ socket recv() calls
