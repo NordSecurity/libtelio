@@ -9,7 +9,13 @@ from itertools import combinations
 from mesh_api import start_tcpdump, stop_tcpdump
 from utils.bindings import TelioAdapterType
 from utils.connection import DockerConnection
-from utils.connection_util import ConnectionTag, LAN_ADDR_MAP, new_connection_raw
+from utils.connection_util import (
+    ConnectionTag,
+    container_id,
+    DOCKER_GW_MAP,
+    LAN_ADDR_MAP,
+    new_connection_raw,
+)
 from utils.process import ProcessExecError
 from utils.router import IPStack
 from utils.vm import windows_vm_util, mac_vm_util
@@ -322,11 +328,24 @@ def pytest_runtest_makereport(item, call):
 
 
 # pylint: disable=unused-argument
+def pytest_sessionstart(session):
+    if os.environ.get("NATLAB_SAVE_LOGS") is None:
+        return
+
+    if not session.config.option.collectonly:
+        start_tcpdump({container_id(gw_tag) for gw_tag in DOCKER_GW_MAP.values()})
+
+
+# pylint: disable=unused-argument
 def pytest_sessionfinish(session, exitstatus):
     if os.environ.get("NATLAB_SAVE_LOGS") is None:
         return
 
     if not session.config.option.collectonly:
+        stop_tcpdump(
+            {container_id(gw_tag) for gw_tag in DOCKER_GW_MAP.values()}, "./logs"
+        )
+
         collect_nordderper_logs()
         collect_dns_server_logs()
         asyncio.run(collect_kernel_logs(session.items, "after_tests"))
