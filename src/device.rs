@@ -88,7 +88,6 @@ use telio_model::{
     EndpointMap,
 };
 
-#[cfg(target_os = "android")]
 use telio_network_monitors::monitor::PATH_CHANGE_BROADCAST;
 
 pub use wg::{
@@ -380,6 +379,7 @@ pub struct EventListeners {
     endpoint_upgrade_event_subscriber: chan::Rx<UpgradeRequestChangeEvent>,
     stun_server_subscriber: chan::Rx<Option<StunServer>>,
     post_quantum_subscriber: chan::Rx<telio_pq::Event>,
+    path_change_subscriber: tokio::sync::broadcast::Receiver<()>,
 }
 
 pub struct EventPublishers {
@@ -448,6 +448,11 @@ struct Runtime {
     ///
     /// Some of the events are time based, so just poll the whole state from time to time
     polling_interval: Interval,
+
+    /// Network Interface subscriber
+    ///
+    /// A subscriber for network changes
+    
 
     #[cfg(test)]
     /// MockedAdapter (tests)
@@ -1232,6 +1237,8 @@ impl Runtime {
             )
         });
 
+        let path_change_subscriber = PATH_CHANGE_BROADCAST.subscribe();
+
         Ok(Runtime {
             features,
             requested_state,
@@ -1254,6 +1261,7 @@ impl Runtime {
                 endpoint_upgrade_event_subscriber: wg_upgrade_sync.rx,
                 stun_server_subscriber: stun_server_events.rx,
                 post_quantum_subscriber: post_quantum.rx,
+                path_change_subscriber: path_change_subscriber,
             },
             event_publishers: EventPublishers {
                 libtelio_event_publisher: libtelio_wide_event_publisher,
@@ -2338,6 +2346,20 @@ impl TaskRuntime for Runtime {
                         });
                 Ok(())
             },
+
+            Ok(_) = self.event_listeners.path_change_subscriber.recv() => {
+                telio_log_info!("Received path change notification.");
+                let ret = self.entities
+                    .wireguard_interface
+                    .drop_connected_sockets()
+                    .await;
+
+                if ret.is_err() {
+                    telio_log_warn!("Failed to drop connected sockets {ret:?}")
+                }
+
+                Ok(())
+            }
 
             Some(mesh_event) = self.event_listeners.wg_event_subscriber.recv() => {
                 let public_key = mesh_event.peer.public_key;
