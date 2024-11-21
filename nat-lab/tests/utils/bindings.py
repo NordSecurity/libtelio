@@ -6,7 +6,7 @@ from uniffi.telio_bindings import *  # pylint: disable=wildcard-import, unused-w
 def features_with_endpoint_providers(
     providers: Optional[list[EndpointProvider]],
 ) -> Features:
-    features = default_features(enable_direct=True)
+    features = default_features(enable_direct=True, enable_ipv6=False)
     assert features.direct
     features.direct.providers = providers
     return features

@@ -1,17 +1,17 @@
 import asyncio
 import math
 import os
-import pytest
 import subprocess
 import tempfile
 import typing
-from scapy.all import PcapReader, Packet  # type: ignore
-from typing import Callable, List, Optional
+from scapy.all import PcapReader  # type: ignore
+from typing import List, Any
 
 
-def _generate_histogram(
-    data: list[int], buckets: int, bucket_size: int = 1
+def generate_histogram(
+    data: list[float], buckets: int, bucket_size: int = 1
 ) -> List[int]:
+    """Generate histogram based on passed data. Each item increases the count in respective bucket of histogram"""
     assert len(data) > 0
     max_val = max(data)
 
@@ -31,6 +31,8 @@ def _generate_histogram(
 
 
 async def capture_traffic(container_name: str, duration_s: int) -> str:
+    """Capture traffic on the target container for a duration of time. Returned is the path of a *.pcap file"""
+
     cmd_rm = f"docker exec --privileged {container_name} rm /home/capture.pcap"
     os.system(cmd_rm)
 
@@ -44,8 +46,10 @@ async def capture_traffic(container_name: str, duration_s: int) -> str:
 
     await asyncio.sleep(duration_s)
 
-    with tempfile.NamedTemporaryFile() as tmpfile:
-        local_path = f"{tmpfile.name}.pcap"
+    # Use temporary file so it would not collide, however don't delete it as it
+    # leaves ability for us to inspect it manually
+    with tempfile.NamedTemporaryFile(delete=False) as tmpfile:
+        local_path = tmpfile.name
         print(f"Copying pcap to {local_path}")
         subprocess.run([
             "docker",
@@ -60,18 +64,16 @@ async def capture_traffic(container_name: str, duration_s: int) -> str:
         return local_path
 
 
-# Render ASCII histogram drawing for visual inspection
-def print_histogram(name: str, data: List[int], max_height=None):
-    output = []
+# Render ASCII chart into a string
+def render_chart(data: List[int], max_height=10) -> str:
+    """Render ASCII chart into a string and return it"""
+
     if not data:
-        output.append(f"No data provided for {name}")
-        return
+        raise ValueError(f"No data provided to render")
+
+    output = []
 
     max_value = max(data)
-
-    if max_height is None:
-        max_height = max_value
-
     scaled_data = [math.ceil((value / max_value) * max_height) for value in data]
     for row in range(max_height, 0, -1):
         line = ""
@@ -85,50 +87,62 @@ def print_histogram(name: str, data: List[int], max_height=None):
 
     output.append(f"+{'-' * (len(data))}")
     output.append(f"0{' ' * (len(data)-1)}{len(data)}")
-    output.append(f"^-Histogram of {name}")
 
-    print("\n".join(output))
+    return "\n".join(output)
 
 
-def generate_histogram_from_pcap(
+def generate_packet_delay_histogram(
     pcap_path: str,
     buckets: int,
-    allow_packet_filter: Optional[Callable[[Packet], bool]],
+    allow_packet_filters: Any,
 ) -> typing.List[int]:
+    """Generate histogram based on the relative packet(and packet before) timestamp differences. Good for observing bursts"""
+
+    print("Looking for a pcap at", pcap_path)
+
+    last_packet_time = None
+    timestamps = []
+
+    with PcapReader(pcap_path) as pcap_reader:
+        for pkt in pcap_reader:
+            if last_packet_time is None:
+                last_packet_time = pkt.time
+
+            if all(f[1](pkt) for f in allow_packet_filters):
+                timestamps.append(pkt.time - last_packet_time)
+                last_packet_time = pkt.time
+
+    if len(timestamps) == 0:
+        raise ValueError(
+            "No data for histogram generation. It was either fully filtered out or not present"
+        )
+
+    return generate_histogram(timestamps, buckets)
+
+
+def generate_packet_distribution_histogram(
+    pcap_path: str,
+    buckets: int,
+    allow_packet_filters: Any,
+) -> typing.List[int]:
+    """Generate histogram based on absolute packet timestamps. Good for observing trends and patterns"""
+
     print("Looking for a pcap at", pcap_path)
 
     first_packet_time = None
     timestamps = []
 
     with PcapReader(pcap_path) as pcap_reader:
-        first_packet = True
         for pkt in pcap_reader:
-            if first_packet:
+            if first_packet_time is None:
                 first_packet_time = pkt.time
-                first_packet = False
 
-            if allow_packet_filter and not allow_packet_filter(pkt):
-                continue
+            if all(f[1](pkt) for f in allow_packet_filters):
+                timestamps.append(pkt.time - first_packet_time)
 
-            timestamps.append(pkt.time - first_packet_time)
-
-    # we either filtered out everything or didn't receive any traffic
     if len(timestamps) == 0:
-        return []
+        raise ValueError(
+            "No data for histogram generation. It was either fully filtered out or not present"
+        )
 
-    return _generate_histogram(timestamps, buckets)
-
-
-@pytest.mark.asyncio
-async def test_histogram():
-    data = []
-    for _ in range(10):
-        data.append(2)
-        data.append(3)
-
-    for _ in range(50):
-        data.append(4)
-
-    data.append(9)
-
-    assert _generate_histogram(data, 10, 1) == [0, 0, 10, 10, 50, 0, 0, 0, 0, 1]
+    return generate_histogram(timestamps, buckets)

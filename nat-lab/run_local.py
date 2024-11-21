@@ -58,6 +58,9 @@ def main() -> int:
     parser.add_argument(
         "--linux-native", action="store_true", help="Run tests with 'linux_native' mark"
     )
+    parser.add_argument(
+        "--utils", action="store_true", help="Run tests with 'utils' mark"
+    )
     parser.add_argument("--nobuild", action="store_true", help="Don't build TCLI")
     parser.add_argument("--notests", action="store_true", help="Don't run tests")
     parser.add_argument(
