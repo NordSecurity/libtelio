@@ -440,3 +440,41 @@ async def test_derp_server_list_exhaustion(setup_params: List[SetupParameters]) 
 
         # Ping peer to check if connection truly works
         await ping(alpha_connection, beta.ip_addresses[0])
+
+
+@pytest.mark.parametrize(
+    "setup_params",
+    [
+        [
+            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1),
+            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2, derp_servers=[DERP_PRIMARY, DERP_SECONDARY, DERP_TERTIARY]),
+        ],
+        [
+            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1),
+            SetupParameters(connection_tag=ConnectionTag.WINDOWS_VM_1 , derp_servers=[DERP_PRIMARY, DERP_SECONDARY, DERP_TERTIARY]),
+        ],
+    ],
+)
+@pytest.mark.asyncio
+async def test_derp_reasonable_amount_of_logs(setup_params):
+    async with AsyncExitStack() as exit_stack:
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+        _, beta = env.nodes
+        alpha_connection, _ = [conn.connection for conn in env.connections]
+        _, beta_client = env.clients
+
+        await ping(alpha_connection, beta.ip_addresses[0])
+
+        # an iptables rule is placed in order to reject connections and
+        # send a TCP reset to the client BETA
+        await exit_stack.enter_async_context(
+            beta_client.get_router().break_tcp_conn_to_host(DERP1_IP)
+        )
+        await exit_stack.enter_async_context(
+            beta_client.get_router().break_tcp_conn_to_host(DERP2_IP)
+        )
+        await exit_stack.enter_async_context(
+            beta_client.get_router().break_tcp_conn_to_host(DERP3_IP)
+        )
+        
+        await asyncio.sleep(120.0)
