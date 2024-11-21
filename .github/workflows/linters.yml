@@ -108,7 +108,7 @@ jobs:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - run: pip3 install --no-deps -r requirements.txt
         - run: pipenv install --system
-        - run: autoflake --check .
+        - run: autoflake --quiet --check .
           working-directory: nat-lab
   python-lint:
       needs: uniffi-bindings
