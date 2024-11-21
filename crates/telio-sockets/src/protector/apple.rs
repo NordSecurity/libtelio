@@ -245,6 +245,9 @@ impl Protector for NativeProtector {
             socks.notify.notify_waiters();
         }
     }
+
+    /// This is a no-op on apple platforms.
+    fn set_fwmark(&self, _fwmark: u32) {}
 }
 
 #[derive(Debug)]
