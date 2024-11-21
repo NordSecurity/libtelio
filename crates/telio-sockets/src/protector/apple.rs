@@ -1,9 +1,12 @@
 use debug_panic::debug_panic;
+use once_cell::sync::Lazy;
 use parking_lot::{Mutex, RwLock};
-use telio_network_monitors::{monitor::LOCAL_ADDRS_CACHE, monitor::PATH_CHANGE_BROADCAST};
 
 use std::{
+    cell::RefCell,
+    ffi::{c_long, c_void, CStr},
     io, os,
+    rc::Rc,
     sync::{Arc, Weak},
 };
 
@@ -20,12 +23,42 @@ use system_configuration::{
     dynamic_store::{self, SCDynamicStore},
     sys::schema_definitions,
 };
-use tokio::{self, sync::Notify, task::JoinHandle};
+use tokio::{
+    self,
+    sync::{broadcast::Sender, Notify},
+    task::JoinHandle,
+};
 
 use crate::native::{interface_index_from_name, NativeSocket};
 use crate::Protector;
+use network_framework_sys::{
+    nw_interface_get_name, nw_interface_t, nw_path_monitor_create, nw_path_monitor_set_queue,
+    nw_path_monitor_start, nw_path_monitor_t, nw_path_t,
+};
 use nix::sys::socket::{getsockname, AddressFamily, SockaddrLike, SockaddrStorage};
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_info, telio_log_warn};
+
+extern "C" {
+    // Obj-c signature:
+    // void nw_path_monitor_set_update_handler(nw_path_monitor_t monitor, nw_path_monitor_update_handler_t update_handler);
+    // typedef void (^nw_path_monitor_update_handler_t)(nw_path_t path);
+    pub fn nw_path_monitor_set_update_handler(
+        monitor: nw_path_monitor_t,
+        update_handler: *const c_void,
+    );
+    // Obj-c signature:
+    // void nw_path_enumerate_interfaces(nw_path_t path, nw_path_enumerate_interfaces_block_t enumerate_block);
+    // typedef bool (^nw_path_enumerate_interfaces_block_t)(nw_interface_t interface);
+    pub fn nw_path_enumerate_interfaces(path: nw_path_t, enumerate_block: *const c_void);
+}
+
+pub const DISPATCH_QUEUE_PRIORITY_HIGH: c_long = 2;
+pub const DISPATCH_QUEUE_PRIORITY_DEFAULT: c_long = 0;
+pub const DISPATCH_QUEUE_PRIORITY_LOW: c_long = -2;
+pub const DISPATCH_QUEUE_PRIORITY_BACKGROUND: c_long = -1 << 15;
+
+static INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER: Mutex<Vec<String>> = Mutex::new(Vec::new());
+static PROTECTOR_PATH_CHANGE_BROADCAST: Lazy<Sender<()>> = Lazy::new(|| Sender::new(1));
 
 #[cfg(any(target_os = "ios", target_os = "tvos"))]
 use objc::{class, msg_send, runtime::Object, sel, sel_impl};
@@ -304,7 +337,7 @@ fn spawn_monitors(
     spawn_dynamic_store_loop(Arc::downgrade(&sockets));
     let nw_path_monitor_monitor_handle = tokio::spawn({
         let sockets = sockets.clone();
-        let mut notify = PATH_CHANGE_BROADCAST.subscribe();
+        let mut notify = PROTECTOR_PATH_CHANGE_BROADCAST.subscribe();
         async move {
             loop {
                 match notify.recv().await {
@@ -376,11 +409,8 @@ fn get_primary_interface_names() -> Vec<String> {
         }
     }
 
-    let mut interface_names_in_os_preference_order: Vec<String> = LOCAL_ADDRS_CACHE
-        .lock()
-        .iter()
-        .map(|interface| interface.name.clone())
-        .collect();
+    let mut interface_names_in_os_preference_order: Vec<String> =
+        INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER.lock().clone();
     telio_log_info!(
         "Discovered these primary IPv4 interfaces for use in socket binding: {:?} (OS pereference order: {interface_names_in_os_preference_order:?})",
         primary_ipv4_interface_names
@@ -448,25 +478,80 @@ fn spawn_dynamic_store_loop(sockets: Weak<Mutex<Sockets>>) {
     });
 }
 
+pub fn setup_network_path_monitor() {
+    let update_handler = block::ConcreteBlock::new(|path: nw_path_t| {
+        let names = Rc::new(RefCell::new(vec![]));
+        let names_copy = names.clone();
+
+        let enumerate_callback =
+            block::ConcreteBlock::new(move |interface: nw_interface_t| -> bool {
+                let c_name = unsafe { nw_interface_get_name(interface) };
+                if !c_name.is_null() {
+                    let name = unsafe { CStr::from_ptr(c_name) };
+                    if let Ok(name) = name.to_str() {
+                        names_copy.borrow_mut().push(name.to_owned());
+                    }
+                }
+                true
+            })
+            .copy();
+
+        unsafe {
+            nw_path_enumerate_interfaces(
+                path,
+                &*enumerate_callback as *const block::Block<_, _> as *const c_void,
+            )
+        };
+
+        *INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER.lock() = names.borrow().clone();
+        if let Err(e) = PROTECTOR_PATH_CHANGE_BROADCAST.send(()) {
+            telio_log_warn!(
+                "Failed to notify about changed path, error: {e}, path: {:?}",
+                names.borrow()
+            );
+        }
+
+        telio_log_info!(
+            "Path change notification sent, current network path in os preference order: {:?}",
+            names.borrow()
+        );
+    })
+    .copy();
+    unsafe {
+        let monitor = nw_path_monitor_create();
+        if monitor.is_null() {
+            telio_log_warn!("Failed to start network path monitor");
+            return;
+        }
+
+        let queue = dispatch::ffi::dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0);
+        if queue.is_null() {
+            telio_log_warn!("Failed to get global background queue");
+            return;
+        }
+        nw_path_monitor_set_queue(monitor, std::mem::transmute(queue));
+
+        nw_path_monitor_set_update_handler(
+            monitor,
+            &*update_handler as *const block::Block<_, _> as *const c_void,
+        );
+        nw_path_monitor_start(monitor);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use socket2::{Domain, Protocol, Socket, Type};
-    use telio_network_monitors::{
-        apple::setup_network_monitor, local_interfaces::SystemGetIfAddrs, monitor::NetworkMonitor,
-    };
 
     use crate::native::AsNativeSocket;
 
     use super::*;
 
-    #[tokio::test]
-    async fn test_ipv6_sk_bind() {
-        setup_network_monitor();
-
+    #[test]
+    fn test_ipv6_sk_bind() {
         let socket2_socket = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP));
 
         let socket_fd = socket2_socket.as_ref().unwrap().as_native_socket();
-        let _network_monitor = NetworkMonitor::new(SystemGetIfAddrs).await.unwrap();
 
         if let Err(e) = bind(get_primary_interface(0).unwrap() as u32, socket_fd) {
             panic!("Test failed with error : {}", e)
