@@ -91,6 +91,9 @@ use telio_model::{
 #[cfg(target_os = "android")]
 use telio_network_monitors::monitor::PATH_CHANGE_BROADCAST;
 
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+static NETWORK_PATH_MONITOR_START: std::sync::Once = std::sync::Once::new();
+
 pub use wg::{
     uapi::Event as WGEvent, uapi::Interface, AdapterType, DynamicWg, Error as AdapterError,
     FirewallCb, Tun, WireGuard,
@@ -475,6 +478,10 @@ impl Device {
                 telio_log_error!("Failed to initialize lana")
             }
         }
+
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+        NETWORK_PATH_MONITOR_START
+            .call_once(telio_sockets::protector::platform::setup_network_path_monitor);
 
         let thread_tracker = Arc::new(parking_lot::Mutex::new(ThreadTracker::default()));
 
