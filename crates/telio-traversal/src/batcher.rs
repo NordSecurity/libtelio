@@ -19,6 +19,8 @@ type Action<V, R = std::result::Result<(), ()>> =
 
 pub struct Batcher<K, V> {
     actions: HashMap<K, (BatchEntry, Action<V>)>,
+    last_trigger_checkpoint: Instant,
+    options: BatchingOptions,
 }
 
 struct BatchEntry {
@@ -51,13 +53,18 @@ where
     fn get_interval(&self, key: &K) -> Option<Duration>;
 }
 
-impl<K, V> Default for Batcher<K, V>
-where
-    K: Eq + Hash + Send + Sync + Debug + Clone,
-    V: Send + Sync,
-{
+#[derive(Copy, Clone, Debug)]
+pub struct BatchingOptions {
+    pub trigger_effective_duration: Duration,
+    pub trigger_cooldown_duration: Duration,
+}
+
+impl Default for BatchingOptions {
     fn default() -> Self {
-        Self::new()
+        Self {
+            trigger_effective_duration: Duration::from_secs(10),
+            trigger_cooldown_duration: Duration::from_secs(60),
+        }
     }
 }
 
@@ -71,24 +78,26 @@ where
     // connection keepalive, thus we cap any action to have at least that.
     const MIN_INTERVAL: Duration = Duration::from_secs(5);
 
-    // When traffic triggered, it should only be valid for a certain amount of time.
-    // Based on https://developer.android.com/develop/connectivity/network-ops/network-access-optimization
-    // the value is hardcoded and not up for a configuration at this point though it might be
-    // useful in the future.
-    const TRIGGER_EFFECTIVE_DURATION: Duration = Duration::from_secs(10);
+    pub fn new(options: BatchingOptions) -> Self {
+        telio_log_debug!("Options for batcher: {:?}", options);
 
-    pub fn new() -> Self {
         Self {
             actions: HashMap::new(),
+            options,
+            last_trigger_checkpoint: Instant::now(),
         }
     }
 
-    pub fn get_remaining_trigger_duration(latest_network_activity: Instant) -> Option<Duration> {
-        if latest_network_activity.elapsed() < Self::TRIGGER_EFFECTIVE_DURATION {
-            Some(Self::TRIGGER_EFFECTIVE_DURATION - latest_network_activity.elapsed())
-        } else {
-            None
+    pub fn is_trigger_outstanding(&self, latest_network_activity: Instant) -> bool {
+        if self.last_trigger_checkpoint.elapsed() <= self.options.trigger_cooldown_duration {
+            telio_log_debug!(
+                "Batcher trigger in cooldown: {}",
+                self.last_trigger_checkpoint.elapsed().as_secs()
+            );
+            return false;
         }
+
+        latest_network_activity.elapsed() < self.options.trigger_effective_duration
     }
 }
 
@@ -108,15 +117,13 @@ where
 
         fn collect_batch_jobs<K: Clone, V>(
             actions: &mut HashMap<K, (BatchEntry, Action<V>)>,
-            duration: Option<Duration>,
         ) -> Vec<(K, Action<V>)> {
             let now = Instant::now();
 
             let mut batched_actions: Vec<(K, Action<V>)> = vec![];
 
             for (key, action) in actions.iter_mut() {
-                let adjusted_deadline =
-                    now + action.0.threshold + duration.unwrap_or(Duration::from_secs(0));
+                let adjusted_deadline = now + action.0.threshold;
 
                 if action.0.deadline <= adjusted_deadline {
                     action.0.deadline = now + action.0.interval;
@@ -127,19 +134,23 @@ where
             batched_actions
         }
 
-        let early_batch_remaining_duration =
-            last_network_activity.and_then(Self::get_remaining_trigger_duration);
-
         if let Some(closest_deadline) = self
             .actions
             .values()
             .min_by_key(|entry| entry.0.deadline)
             .map(|v| v.0.deadline)
         {
-            if let Some(duration) = early_batch_remaining_duration {
-                let batched_actions = collect_batch_jobs(&mut self.actions, Some(duration));
+            let early_batch = last_network_activity.map(|na| self.is_trigger_outstanding(na));
+
+            if let Some(true) = early_batch {
+                let batched_actions = collect_batch_jobs(&mut self.actions);
 
                 if !batched_actions.is_empty() {
+                    // TODO(LLT-5807): if there's an eligible trigger, maybe it's worth just
+                    // emitting all the actions there are. Given a big enough cooldown it should
+                    // pose no harm at the cost of near perfect alignment in one go. This should be
+                    // experimented with.
+                    self.last_trigger_checkpoint = Instant::now();
                     return Ok(batched_actions);
                 }
             }
@@ -147,12 +158,13 @@ where
             // we failed to early batch any actions, so lets wait until the closest one resolves
             _ = sleep_until(closest_deadline).await;
 
-            let batched_actions = collect_batch_jobs(&mut self.actions, None);
+            let batched_actions = collect_batch_jobs(&mut self.actions);
 
             if batched_actions.is_empty() {
                 telio_log_error!("Batcher resolves with empty list of jobs");
                 return Err(BatcherError::NoActions);
             }
+            self.last_trigger_checkpoint = Instant::now();
             return Ok(batched_actions);
         } else {
             return Err(BatcherError::NoActions);
@@ -280,7 +292,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::batcher::{Batcher, BatcherError, BatcherTrait};
+    use crate::batcher::{Batcher, BatcherError, BatcherTrait, BatchingOptions};
     use std::sync::Arc;
     use tokio::sync::{watch, Mutex};
     use tokio::time::*;
@@ -323,23 +335,20 @@ mod tests {
             emit_packet_every: Duration,
             test_duration: Duration,
             delay_to_add_second_peer: Duration,
+            left_batching_options: BatchingOptions,
+            right_batching_options: BatchingOptions,
         }
 
         #[derive(Debug)]
         struct TestHelperResult {
-            left_peer_avg_interval: f64,
-            right_peer_avg_interval: f64,
-            left_peer_avg_interval_1st_half: f64,
-            left_peer_avg_interval_2nd_half: f64,
-            right_peer_avg_interval_1st_half: f64,
-            right_peer_avg_interval_2nd_half: f64,
-
-            avg_aligned_interval: f64,
-            avg_aligned_interval_1st_half: f64,
-            avg_aligned_interval_2nd_half: f64,
+            left_peer_avg_interval: Duration,
+            right_peer_avg_interval: Duration,
+            avg_aligned_interval: Duration,
         }
 
-        async fn test_helper(params: TestHelperStruct) -> TestHelperResult {
+        // testing is split into two parts and results are stored separately. This allows for
+        // flexibility when asserting results more accurately and expectedly
+        async fn test_helper(params: TestHelperStruct) -> (TestHelperResult, TestHelperResult) {
             let (left_send, left_recv) = watch::channel(Instant::now());
             let (right_send, right_recv) = watch::channel(Instant::now());
 
@@ -350,11 +359,43 @@ mod tests {
                 latency: params.latency,
             });
 
-            let mut batcher_left = Batcher::<String, Arc<Mutex<TestChecker>>>::new();
-            let mut batcher_right = Batcher::<String, Arc<Mutex<TestChecker>>>::new();
+            let mut batcher_left =
+                Batcher::<String, Arc<Mutex<TestChecker>>>::new(params.left_batching_options);
+            let mut batcher_right =
+                Batcher::<String, Arc<Mutex<TestChecker>>>::new(params.right_batching_options);
 
             let test_checker_left = Arc::new(Mutex::new(TestChecker { values: Vec::new() }));
             let test_checker_right = Arc::new(Mutex::new(TestChecker { values: Vec::new() }));
+
+            let first_half_left_values = Arc::new(Mutex::new(vec![]));
+            let first_half_right_values = Arc::new(Mutex::new(vec![]));
+
+            // at half the testcase, save the values and erase existing ones to remove the bias
+            // when calculating test metrics
+            //
+            {
+                let test_duration = params.test_duration.clone();
+                let test_checker_left = test_checker_left.clone();
+                let test_checker_right = test_checker_right.clone();
+                let first_half_left_values = first_half_left_values.clone();
+                let first_half_right_values = first_half_right_values.clone();
+
+                tokio::spawn(async move {
+                    sleep(test_duration / 2).await;
+
+                    let mut left = test_checker_left.lock().await;
+                    let mut right = test_checker_right.lock().await;
+
+                    let mut l = first_half_left_values.lock().await;
+                    let mut r = first_half_right_values.lock().await;
+
+                    *l = (*left.values).to_vec();
+                    *r = (*right.values).to_vec();
+
+                    left.values.clear();
+                    right.values.clear()
+                });
+            }
 
             // simulate emission of some organic traffic
             {
@@ -470,7 +511,6 @@ mod tests {
                 });
             }
 
-            // begin the actual test
             spawn_batcher_poller(
                 params.trigger_enabled,
                 left_recv,
@@ -490,89 +530,117 @@ mod tests {
 
             sleep(params.test_duration).await;
 
-            let left_values = test_checker_left
+            let first_half_left_values = first_half_left_values
                 .lock()
                 .await
-                .values
                 .iter()
-                .map(|v| v.1.elapsed().as_secs() as i64)
-                .collect::<Vec<i64>>();
-            let right_values = test_checker_right
+                .map(|v| v.1.elapsed())
+                .collect::<Vec<_>>();
+            let first_half_right_values = first_half_right_values
                 .lock()
                 .await
-                .values
                 .iter()
-                .map(|v| v.1.elapsed().as_secs() as i64)
-                .collect::<Vec<i64>>();
+                .map(|v| v.1.elapsed())
+                .collect::<Vec<_>>();
 
-            // Produces an average diff between data points. It compares points by finding
-            // the closest value and compares against it. Produces an average of differences. The closer
-            // to 0 the more similar the datasets
-            fn average_alignment(left: &[i64], right: &[i64]) -> f64 {
+            let second_half_left_values = test_checker_left
+                .lock()
+                .await
+                .values
+                .iter()
+                .map(|v| v.1.elapsed())
+                .collect::<Vec<_>>();
+            let second_half_right_values = test_checker_right
+                .lock()
+                .await
+                .values
+                .iter()
+                .map(|v| v.1.elapsed())
+                .collect::<Vec<_>>();
+
+            fn average_alignment(left: &[Duration], right: &[Duration]) -> Duration {
                 if left.is_empty() || right.is_empty() {
                     panic!("no data present");
                 }
 
-                fn find_closest_value(v: i64, data: &[i64]) -> i64 {
+                fn find_closest_value(v: Duration, data: &[Duration]) -> Duration {
                     data.iter()
-                        .min_by_key(|&&ts| (ts - v).abs())
+                        .min_by_key(|&&ts| (ts.as_millis().abs_diff(v.as_millis())))
                         .copied()
                         .unwrap_or(v)
                 }
 
-                let mut total_diff = 0.0;
+                let mut total_diff = 0;
                 let mut count = 0;
 
                 for &t1 in left {
                     let closest_t2 = find_closest_value(t1, right);
-                    total_diff += (t1 - closest_t2).abs() as f64;
+                    total_diff += t1.as_millis().abs_diff(closest_t2.as_millis());
                     count += 1;
                 }
 
-                total_diff / count as f64
+                Duration::from_millis((total_diff / count) as u64)
             }
 
-            fn average_difference(numbers: &[i64]) -> f64 {
+            fn average_difference(numbers: &[Duration]) -> Duration {
                 if numbers.len() < 2 {
                     panic!("not enough elements");
                 }
 
-                let total_diff: i64 = numbers.windows(2).map(|w| w[0] - w[1]).sum();
+                let total_diff: u128 = numbers
+                    .windows(2)
+                    .map(|w| (w[0].as_millis().abs_diff(w[1].as_millis() as u128)))
+                    .sum();
 
-                let count = (numbers.len() - 1) as f64;
-                total_diff as f64 / count
+                let count = numbers.len() - 1;
+                Duration::from_millis((total_diff / count as u128) as u64)
             }
 
-            let (first_half_a, second_half_a) =
-                left_values.as_slice().split_at(left_values.len() / 2);
-            let (first_half_b, second_half_b) =
-                right_values.as_slice().split_at(right_values.len() / 2);
-
-            TestHelperResult {
-                left_peer_avg_interval: average_difference(left_values.as_slice()),
-                right_peer_avg_interval: average_difference(right_values.as_slice()),
-
-                left_peer_avg_interval_1st_half: average_difference(first_half_a),
-                left_peer_avg_interval_2nd_half: average_difference(second_half_a),
-
-                right_peer_avg_interval_1st_half: average_difference(first_half_b),
-                right_peer_avg_interval_2nd_half: average_difference(second_half_b),
+            let res_first_half = TestHelperResult {
+                left_peer_avg_interval: average_difference(first_half_left_values.as_slice()),
+                right_peer_avg_interval: average_difference(first_half_right_values.as_slice()),
 
                 avg_aligned_interval: average_alignment(
-                    left_values.as_slice(),
-                    right_values.as_slice(),
+                    first_half_left_values.as_slice(),
+                    first_half_right_values.as_slice(),
                 ),
-                avg_aligned_interval_1st_half: average_alignment(first_half_a, first_half_b),
-                avg_aligned_interval_2nd_half: average_alignment(second_half_a, second_half_b),
-            }
+            };
+
+            let res_second_half = TestHelperResult {
+                left_peer_avg_interval: average_difference(second_half_left_values.as_slice()),
+                right_peer_avg_interval: average_difference(second_half_right_values.as_slice()),
+
+                avg_aligned_interval: average_alignment(
+                    second_half_left_values.as_slice(),
+                    second_half_right_values.as_slice(),
+                ),
+            };
+
+            return (res_first_half, res_second_half);
         }
 
-        // actual tests
+        fn durations_close_enough(d1: Duration, d2: Duration, tolerance: Duration) -> bool {
+            let diff = if d1 > d2 { d1 - d2 } else { d2 - d1 };
+            diff <= tolerance
+        }
+
+        fn within_1s(d1: Duration, d2: Duration) -> bool {
+            durations_close_enough(d1, d2, Duration::from_secs(1))
+        }
+
+        fn within_1ms(d1: Duration, d2: Duration) -> bool {
+            durations_close_enough(d1, d2, Duration::from_millis(1))
+        }
+
+        // actual testcases
         {
-            // due to traffic being triggered every second for the duration of the testacase, we do
-            // not expect any batching to happen and periods to be effectively shortened by
-            // half due to threshold
-            let res = test_helper(TestHelperStruct {
+            // due to traffic being triggered every second for the duration of the testcase, we do
+            // not expect effective batching to happen. This is because trigger doesn't differentiate the
+            // traffic and thus constant activity just means attempts to batch all the time which
+            // just means that intervals will be shortened to `T - threshold` but no alignment
+            // between peers happens. The trigger cooldown is also high enough that it doesn't
+            // interfere with average interval
+            let (res_first_half, res_second_half) = test_helper(TestHelperStruct {
                 trigger_enabled: true,
                 latency: Duration::from_millis(333),
                 start_emit_traffic_at: Instant::now(),
@@ -580,63 +648,160 @@ mod tests {
                 emit_packet_every: Duration::from_secs(1),
                 delay_to_add_second_peer: Duration::from_secs(17),
                 test_duration: Duration::from_secs(3600),
+                left_batching_options: BatchingOptions {
+                    trigger_cooldown_duration: Duration::from_secs(600),
+                    trigger_effective_duration: Duration::from_secs(10),
+                },
+                right_batching_options: BatchingOptions {
+                    trigger_cooldown_duration: Duration::from_secs(600),
+                    trigger_effective_duration: Duration::from_secs(10),
+                },
             })
             .await;
 
-            assert!((16.0..17.0).contains(&res.avg_aligned_interval)); // delay until second peer is added
-            assert!((41.0..42.0).contains(&res.left_peer_avg_interval));
-            assert!((41.0..42.0).contains(&res.right_peer_avg_interval));
+            assert!(within_1s(
+                res_first_half.left_peer_avg_interval,
+                Duration::from_secs(100)
+            ));
+            assert!(within_1s(
+                res_first_half.right_peer_avg_interval,
+                Duration::from_secs(100)
+            ));
+
+            assert!(within_1s(
+                res_second_half.left_peer_avg_interval,
+                Duration::from_secs(100)
+            ));
+            assert!(within_1s(
+                res_second_half.right_peer_avg_interval,
+                Duration::from_secs(100)
+            ));
+
+            // 17seconds in the test we add a secod peer and expect this amount of misalignment
+            // between the peers
+            assert!(within_1s(
+                res_first_half.avg_aligned_interval,
+                Duration::from_secs(17)
+            ));
+            assert!(within_1s(
+                res_second_half.avg_aligned_interval,
+                Duration::from_secs(20)
+            ));
         }
 
         {
-            // organic traffic starts and stops in the middle of the test and lasts for a bit. This
-            // should have minimal effect on batching since it should already have the actions
-            // batched
-            let res = test_helper(TestHelperStruct {
-                trigger_enabled: true,
-                latency: Duration::from_millis(333),
-                start_emit_traffic_at: Instant::now() + Duration::from_secs(1800),
-                stop_emit_traffic_at: Instant::now() + Duration::from_secs(1800),
-                emit_packet_every: Duration::from_secs(1),
-                delay_to_add_second_peer: Duration::from_secs(17),
-                test_duration: Duration::from_secs(3600),
-            })
-            .await;
-
-            assert!((1.0..2.0).contains(&res.avg_aligned_interval));
-            assert!((99.0..=100.0).contains(&res.left_peer_avg_interval));
-            assert!((99.0..=100.0).contains(&res.right_peer_avg_interval));
-        }
-
-        {
-            // organic traffic starts at the beginning until almost half the testcase duration. First half should
-            // have no batching since it's constant triggering and batcher simply tries to batch
-            // jobs within threshold and emit. However in the second half of it, once the organic
-            // traffic stops, batcher's triggering mechanism should make the alignment between the peers
-            let res = test_helper(TestHelperStruct {
+            // due to traffic being triggered every second for the duration of the testcase, we do
+            // not expect effective batching to happen. This is because trigger doesn't differentiate the
+            // traffic and thus constant activity just means attempts to batch all the time which
+            // just means that intervals will be shortened to `T - threshold` but no alignment
+            // between peers happens. The trigger cooldown is short enough to showcase that it just
+            // reduces the action intervals but doesn't achieve alignment
+            let (res_first_half, res_second_half) = test_helper(TestHelperStruct {
                 trigger_enabled: true,
                 latency: Duration::from_millis(333),
                 start_emit_traffic_at: Instant::now(),
-                stop_emit_traffic_at: Instant::now() + Duration::from_secs(1400),
+                stop_emit_traffic_at: Instant::now() + Duration::from_secs(3600),
                 emit_packet_every: Duration::from_secs(1),
                 delay_to_add_second_peer: Duration::from_secs(17),
                 test_duration: Duration::from_secs(3600),
+                left_batching_options: BatchingOptions {
+                    trigger_cooldown_duration: Duration::from_secs(30),
+                    trigger_effective_duration: Duration::from_secs(10),
+                },
+                right_batching_options: BatchingOptions {
+                    trigger_cooldown_duration: Duration::from_secs(30),
+                    trigger_effective_duration: Duration::from_secs(10),
+                },
             })
             .await;
 
-            assert!((41.0..42.0).contains(&res.left_peer_avg_interval_1st_half));
-            assert!((41.0..42.0).contains(&res.right_peer_avg_interval_1st_half));
-            assert!((89.0..90.0).contains(&res.left_peer_avg_interval_2nd_half));
-            assert!((88.0..89.0).contains(&res.right_peer_avg_interval_2nd_half));
+            assert!(within_1s(
+                res_first_half.left_peer_avg_interval,
+                Duration::from_secs(50)
+            ));
+            assert!(within_1s(
+                res_first_half.right_peer_avg_interval,
+                Duration::from_secs(50)
+            ));
 
-            assert!((16.0..17.0).contains(&res.avg_aligned_interval_1st_half));
-            assert!((3.0..4.0).contains(&res.avg_aligned_interval_2nd_half));
+            assert!(within_1s(
+                res_second_half.left_peer_avg_interval,
+                Duration::from_secs(50)
+            ));
+            assert!(within_1s(
+                res_second_half.right_peer_avg_interval,
+                Duration::from_secs(50)
+            ));
+
+            // 17seconds in the test we add a secod peer and expect this amount of misalignment
+            // between the peers
+            assert!(within_1s(
+                res_first_half.avg_aligned_interval,
+                Duration::from_secs(17)
+            ));
+            assert!(within_1s(
+                res_second_half.avg_aligned_interval,
+                Duration::from_secs(18)
+            ));
+        }
+
+        {
+            // Start emitting traffic in the middle of the testcase. It should have no effect since
+            // batcher already aligned both peers and triggering more often has no effect on that except
+            // on local interval shortening(side effect or triggering)
+            let (res_first_half, res_second_half) = test_helper(TestHelperStruct {
+                trigger_enabled: true,
+                latency: Duration::from_millis(333),
+                start_emit_traffic_at: Instant::now() + Duration::from_secs(1800),
+                stop_emit_traffic_at: Instant::now() + Duration::from_secs(3600),
+                emit_packet_every: Duration::from_secs(1),
+                delay_to_add_second_peer: Duration::from_secs(17),
+                test_duration: Duration::from_secs(3600),
+                left_batching_options: BatchingOptions {
+                    trigger_cooldown_duration: Duration::from_secs(30),
+                    trigger_effective_duration: Duration::from_secs(10),
+                },
+                right_batching_options: BatchingOptions {
+                    trigger_cooldown_duration: Duration::from_secs(30),
+                    trigger_effective_duration: Duration::from_secs(10),
+                },
+            })
+            .await;
+
+            assert!(within_1s(
+                res_first_half.left_peer_avg_interval,
+                Duration::from_secs(100)
+            ));
+            assert!(within_1s(
+                res_first_half.right_peer_avg_interval,
+                Duration::from_secs(100)
+            ));
+
+            assert!(within_1s(
+                res_first_half.avg_aligned_interval,
+                Duration::from_secs(1)
+            ));
+
+            assert!(within_1s(
+                res_second_half.left_peer_avg_interval,
+                Duration::from_secs(50)
+            ));
+
+            assert!(within_1s(
+                res_second_half.right_peer_avg_interval,
+                Duration::from_secs(50)
+            ));
+
+            assert!(within_1ms(
+                res_second_half.avg_aligned_interval,
+                Duration::from_millis(333),
+            ));
         }
     }
-
+    //
     #[tokio::test]
     async fn no_actions() {
-        let mut batcher = Batcher::<String, TestChecker>::new();
+        let mut batcher = Batcher::<String, TestChecker>::new(BatchingOptions::default());
         assert!(matches!(
             batcher.get_actions(None).await,
             Err(BatcherError::NoActions)
@@ -646,7 +811,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn no_threshold_expect_no_batching() {
         let start_time = tokio::time::Instant::now();
-        let mut batcher = Batcher::<String, TestChecker>::new();
+        let mut batcher = Batcher::<String, TestChecker>::new(BatchingOptions::default());
         let mut test_checker = TestChecker { values: Vec::new() };
 
         batcher.add(
@@ -702,7 +867,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn batch_one_no_threshold_expect_no_batch() {
         let start_time = tokio::time::Instant::now();
-        let mut batcher = Batcher::<String, TestChecker>::new();
+        let mut batcher = Batcher::<String, TestChecker>::new(BatchingOptions::default());
         batcher.add(
             "key".to_owned(),
             Duration::from_secs(100),
@@ -749,7 +914,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn batch_two_with_threshold_and_delay() {
         let start_time = tokio::time::Instant::now();
-        let mut batcher = Batcher::<String, TestChecker>::new();
+        let mut batcher = Batcher::<String, TestChecker>::new(BatchingOptions::default());
         batcher.add(
             "key0".to_owned(),
             Duration::from_secs(100),
@@ -820,7 +985,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn batch_two_with_threshold_check_threshold_limit_enforcement() {
         let start_time = tokio::time::Instant::now();
-        let mut batcher = Batcher::<String, TestChecker>::new();
+        let mut batcher = Batcher::<String, TestChecker>::new(BatchingOptions::default());
         batcher.add(
             "key0".to_owned(),
             Duration::from_secs(30),
@@ -889,7 +1054,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn batch_two_with_threshold_check_interval_limit_enforcement() {
         let start_time = tokio::time::Instant::now();
-        let mut batcher = Batcher::<String, TestChecker>::new();
+        let mut batcher = Batcher::<String, TestChecker>::new(BatchingOptions::default());
         batcher.add(
             "key0".to_owned(),
             // Make interval and threshold too small and expect override
@@ -960,7 +1125,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn batch_two_no_threshold_delayed_check() {
         let _start_time = tokio::time::Instant::now();
-        let mut batcher = Batcher::<String, TestChecker>::new();
+        let mut batcher = Batcher::<String, TestChecker>::new(BatchingOptions::default());
         batcher.add(
             "key0".to_owned(),
             Duration::from_secs(100),
@@ -1011,7 +1176,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn batch_two_no_threshold_nodelay_check() {
         let start_time = Instant::now();
-        let mut batcher = Batcher::<String, TestChecker>::new();
+        let mut batcher = Batcher::<String, TestChecker>::new(BatchingOptions::default());
         batcher.add(
             "key0".to_owned(),
             Duration::from_secs(100),

@@ -1454,6 +1454,7 @@ impl Runtime {
 
             match SessionKeeper::start(
                 self.entities.socket_pool.clone(),
+                self.features.batching.unwrap_or_default(),
                 self.entities
                     .wireguard_interface
                     .subscribe_to_network_activity()

@@ -67,8 +67,17 @@ pub struct Features {
 #[serde(default)]
 pub struct FeatureBatching {
     /// Direct connection threshold when batching (in seconds) [default 0s]
+    /// Reused for Proxy, STUN, VPN peers as well
     #[default(0)]
     pub direct_connection_threshold: u32,
+
+    /// Trigger effective duration [default 10s]
+    #[default(10)]
+    pub trigger_effective_duration: u32,
+
+    /// Trigger cooldown duration [default 60s]
+    #[default(60)]
+    pub trigger_cooldown_duration: u32,
 }
 
 /// Configurable features for Wireguard peers
@@ -550,7 +559,9 @@ mod tests {
             },
             "multicast": true,
             "batching": {
-                "direct_connection_threshold": 60
+                "direct_connection_threshold": 60,
+                "trigger_effective_duration": 10,
+                "trigger_cooldown_duration": 60
             }
         }
         "#,
@@ -637,6 +648,8 @@ mod tests {
                     multicast: true,
                     batching: Some(FeatureBatching {
                         direct_connection_threshold: 60,
+                        trigger_effective_duration: 10,
+                        trigger_cooldown_duration: 60,
                     }),
                 }
             );

@@ -39,7 +39,13 @@ def _generate_setup_parameters(
         rtt_seconds=1, no_of_pings=1, use_for_downgrade=True
     )
     features.batching = (
-        FeatureBatching(direct_connection_threshold=35) if batching else None
+        FeatureBatching(
+            direct_connection_threshold=35,
+            trigger_effective_duration=10,
+            trigger_cooldown_duration=60,
+        )
+        if batching
+        else None
     )
     features.wireguard.persistent_keepalive = FeaturePersistentKeepalive(
         direct=70,

@@ -1,4 +1,4 @@
-use crate::batcher::{Batcher, BatcherTrait};
+use crate::batcher::{Batcher, BatcherTrait, BatchingOptions};
 use async_trait::async_trait;
 use socket2::Type;
 use std::future::Future;
@@ -10,12 +10,12 @@ use surge_ping::{
     SurgeError, ICMP,
 };
 use telio_crypto::PublicKey;
+use telio_model::features::FeatureBatching;
 use telio_sockets::SocketPool;
 use telio_task::{task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
     dual_target, repeated_actions, telio_log_debug, telio_log_warn, DualTarget, RepeatedActions,
 };
-
 use tokio::sync::watch;
 use tokio::time::Instant;
 
@@ -70,8 +70,10 @@ pub struct SessionKeeper {
 impl SessionKeeper {
     pub fn start(
         sock_pool: Arc<SocketPool>,
-        #[cfg(test)] batcher: Box<dyn BatcherTrait<PublicKey, State>>,
+        batching_feature: FeatureBatching,
         network_activity: Option<watch::Receiver<Instant>>,
+
+        #[cfg(test)] batcher: Box<dyn BatcherTrait<PublicKey, State>>,
     ) -> Result<Self> {
         telio_log_debug!(
             "Starting SessionKeeper with network subscriber: {}",
@@ -96,8 +98,9 @@ impl SessionKeeper {
 
                 #[cfg(test)]
                 batched_actions: batcher,
+
                 #[cfg(not(test))]
-                batched_actions: Box::new(Batcher::new()),
+                batched_actions: Box::new(Batcher::new(batching_feature.into())),
 
                 nonbatched_actions: RepeatedActions::default(),
 
@@ -278,6 +281,16 @@ impl SessionKeeperTrait for SessionKeeper {
         .unwrap_or(None)
     }
 }
+
+impl From<FeatureBatching> for BatchingOptions {
+    fn from(f: FeatureBatching) -> Self {
+        Self {
+            trigger_effective_duration: Duration::from_secs(f.trigger_effective_duration.into()),
+            trigger_cooldown_duration: Duration::from_secs(f.trigger_cooldown_duration.into()),
+        }
+    }
+}
+
 struct Pingers {
     pinger_client_v4: PingerClient,
     pinger_client_v6: PingerClient,
@@ -370,7 +383,13 @@ mod tests {
             )
             .unwrap(),
         ));
-        let sess_keep = SessionKeeper::start(socket_pool, Box::new(Batcher::new()), None).unwrap();
+        let sess_keep = SessionKeeper::start(
+            socket_pool,
+            FeatureBatching::default(),
+            None,
+            Box::new(Batcher::new(FeatureBatching::default().into())),
+        )
+        .unwrap();
 
         let pk = "REjdn4zY2TFx2AMujoNGPffo9vDiRDXpGG4jHPtx2AY="
             .parse::<PublicKey>()
@@ -476,7 +495,13 @@ mod tests {
             .times(..)
             .returning(|_| Err(BatcherError::NoActions));
 
-        let sess_keep = SessionKeeper::start(socket_pool, batcher, None).unwrap();
+        let sess_keep = SessionKeeper::start(
+            socket_pool,
+            FeatureBatching::default().into(),
+            None,
+            batcher,
+        )
+        .unwrap();
 
         sess_keep
             .add_node(
