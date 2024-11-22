@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.1.1
+### **Pork Kibin**
+---
+* LLT-5789: Impose a timeout on all PQ socket recv() calls
+
+<br>
+
 ### 5.0.0
 ### **Chicken Salad**
 ---
