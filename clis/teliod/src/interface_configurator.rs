@@ -9,20 +9,20 @@ pub trait InterfaceConfigurator {
     fn set_ip(&self, _adapter_name: &str, _ip_address: &IpAddr) -> Result<(), TeliodError> {
         Ok(())
     }
+}
 
-    /// Helper function to execute a system command
-    fn execute(&self, command: &mut Command) -> Result<(), TeliodError> {
-        let output = command
-            .output()
-            .map_err(|e| TeliodError::SystemCommandFailed(e.to_string()))?;
+/// Helper function to execute a system command
+fn execute(command: &mut Command) -> Result<(), TeliodError> {
+    let output = command
+        .output()
+        .map_err(|e| TeliodError::SystemCommandFailed(e.to_string()))?;
 
-        if output.status.success() {
-            Ok(())
-        } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            error!("Error executing command {:?}: {:?}", command, stderr);
-            Err(TeliodError::SystemCommandFailed(stderr.into()))
-        }
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        error!("Error executing command {:?}: {:?}", command, stderr);
+        Err(TeliodError::SystemCommandFailed(stderr.into()))
     }
 }
 
@@ -72,7 +72,7 @@ impl InterfaceConfigurator for IfconfigProvider {
 
         match std::env::consts::OS {
             "macos" => {
-                self.execute(Command::new("ifconfig").args([
+                execute(Command::new("ifconfig").args([
                     adapter_name,
                     ip_type,
                     &cidr_string,
@@ -80,9 +80,9 @@ impl InterfaceConfigurator for IfconfigProvider {
                 ]))?;
 
                 if ip_address.is_ipv4() {
-                    self.execute(Command::new("route").args(["add", "100.64/10", &ip_string]))?;
+                    execute(Command::new("route").args(["add", "100.64/10", &ip_string]))?;
                 } else {
-                    self.execute(Command::new("route").args([
+                    execute(Command::new("route").args([
                         "add",
                         "-inet6",
                         "fd74:656c:696f::/64",
@@ -91,12 +91,12 @@ impl InterfaceConfigurator for IfconfigProvider {
                 }
             }
             _ => {
-                self.execute(Command::new("ifconfig").args([adapter_name, ip_type, &cidr_string]))?;
+                execute(Command::new("ifconfig").args([adapter_name, ip_type, &cidr_string]))?;
             }
         }
 
-        self.execute(Command::new("ifconfig").args([adapter_name, "mtu", "1420"]))?;
-        self.execute(Command::new("ifconfig").args([adapter_name, "up"]))
+        execute(Command::new("ifconfig").args([adapter_name, "mtu", "1420"]))?;
+        execute(Command::new("ifconfig").args([adapter_name, "up"]))
     }
 }
 
@@ -113,8 +113,8 @@ impl InterfaceConfigurator for IprouteProvider {
             adapter_name, cidr_string
         );
 
-        self.execute(Command::new("ip").args(["addr", "add", &cidr_string, "dev", adapter_name]))?;
-        self.execute(Command::new("ip").args(["link", "set", "dev", adapter_name, "mtu", "1420"]))?;
-        self.execute(Command::new("ip").args(["link", "set", "dev", adapter_name, "up"]))
+        execute(Command::new("ip").args(["addr", "add", &cidr_string, "dev", adapter_name]))?;
+        execute(Command::new("ip").args(["link", "set", "dev", adapter_name, "mtu", "1420"]))?;
+        execute(Command::new("ip").args(["link", "set", "dev", adapter_name, "up"]))
     }
 }
