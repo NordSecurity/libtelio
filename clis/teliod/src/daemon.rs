@@ -15,9 +15,12 @@ use tracing::{debug, error, info, trace};
 
 use crate::core_api::{get_meshmap as get_meshmap_from_server, init_with_api};
 use crate::{
-    command_listener::CommandListener, comms::DaemonSocket, config::DeviceIdentity,
-    config::TeliodDaemonConfig, interface_configurator::InterfaceConfigurationProvider,
-    nc::NotificationCenter, TelioStatusReport, TeliodError,
+    command_listener::CommandListener,
+    comms::DaemonSocket,
+    config::DeviceIdentity,
+    config::{InterfaceConfig, TeliodDaemonConfig},
+    nc::NotificationCenter,
+    TelioStatusReport, TeliodError,
 };
 
 #[derive(Debug)]
@@ -45,8 +48,7 @@ fn telio_task(
     auth_token: Arc<String>,
     mut rx_channel: mpsc::Receiver<TelioTaskCmd>,
     tx_channel: mpsc::Sender<TelioTaskCmd>,
-    interface_name: &str,
-    interface_config_provider: &InterfaceConfigurationProvider,
+    interface_config: &InterfaceConfig,
 ) -> Result<(), TeliodError> {
     debug!("Initializing telio device");
     let mut telio = Device::new(
@@ -58,14 +60,18 @@ fn telio_task(
 
     // Keep track of current meshnet states
     let mut state = TelioTaskStates::default();
-    let sys_config = interface_config_provider.create();
+    let sys_config = interface_config.config_provider.create();
 
     // TODO: This is temporary to be removed later on when we have proper integration
     // tests with core API. This is to not look for tokens in a test environment
     // right now as the values are dummy and program will not run as it expects
     // real tokens.
     if !auth_token.as_str().eq("") {
-        start_telio(&mut telio, node_identity.private_key, interface_name)?;
+        start_telio(
+            &mut telio,
+            node_identity.private_key,
+            &interface_config.name,
+        )?;
         task_retrieve_meshmap(node_identity, auth_token, tx_channel.clone());
 
         while let Some(cmd) = rx_channel.blocking_recv() {
@@ -107,7 +113,7 @@ fn telio_task(
                         .map_or(true, |ip| ip != new_ip_address)
                     {
                         state.interface_ip_address = Some(new_ip_address);
-                        _ = sys_config.set_ip(interface_name, &new_ip_address);
+                        _ = sys_config.set_ip(&interface_config.name, &new_ip_address);
                     }
                 }
                 TelioTaskCmd::Quit => {
@@ -193,7 +199,7 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
     // are dummy and program will not run as it expects real tokens.
     let mut identity = DeviceIdentity::default();
     if !config.authentication_token.eq(EMPTY_TOKEN) {
-        identity = init_with_api(&config.authentication_token, &config.interface_name).await?;
+        identity = init_with_api(&config.authentication_token, &config.interface.name).await?;
     }
     let tx_clone = tx.clone();
 
@@ -204,14 +210,7 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
     let identity_clone = identity_ptr.clone();
 
     let mut telio_task_handle = tokio::task::spawn_blocking(move || {
-        telio_task(
-            identity_clone,
-            token_clone,
-            rx,
-            tx_clone,
-            &config.interface_name,
-            &config.interface_config_provider,
-        )
+        telio_task(identity_clone, token_clone, rx, tx_clone, &config.interface)
     });
 
     let tx_clone = tx.clone();
