@@ -1,5 +1,6 @@
 import asyncio
 import asyncssh
+import time
 from .process import Process, ProcessExecError, StreamCallback
 from contextlib import asynccontextmanager
 from typing import List, Optional, Callable, AsyncIterator
@@ -9,6 +10,7 @@ from utils.asyncio_util import run_async_context
 class SshProcess(Process):
     _ssh_connection: asyncssh.SSHClientConnection
     _command: List[str]
+    _target_os: str
     _stdout: str
     _stderr: str
     _stdin_ready: asyncio.Event
@@ -20,10 +22,12 @@ class SshProcess(Process):
     def __init__(
         self,
         ssh_connection: asyncssh.SSHClientConnection,
+        target_os: str,
         command: List[str],
         escape_argument: Callable[[str], str],
     ) -> None:
         self._ssh_connection = ssh_connection
+        self._target_os = target_os
         self._command = command
         self._stdout = ""
         self._stderr = ""
@@ -39,37 +43,42 @@ class SshProcess(Process):
         stdout_callback: Optional[StreamCallback] = None,
         stderr_callback: Optional[StreamCallback] = None,
     ) -> "SshProcess":
-        escaped = [self._escape_argument(arg) for arg in self._command]
-        command_str = " ".join(escaped)
-
-        self._process = await self._ssh_connection.create_process(command_str)
-        self._running = True
-        self._stdin = self._process.stdin
-        self._stdin_ready.set()
-
+        start = time.time()
         try:
-            await asyncio.gather(
-                self._stdout_loop(self._process.stdout, stdout_callback),
-                self._stderr_loop(self._process.stderr, stderr_callback),
-            )
-        except:
-            if self._process and self._process.returncode is None:
-                self._process.kill()
-                self._process.close()
-                await self._process.wait_closed()
-            raise
+            escaped = [self._escape_argument(arg) for arg in self._command]
+            command_str = " ".join(escaped)
+
+            self._process = await self._ssh_connection.create_process(command_str)
+            self._running = True
+            self._stdin = self._process.stdin
+            self._stdin_ready.set()
+
+            try:
+                await asyncio.gather(
+                    self._stdout_loop(self._process.stdout, stdout_callback),
+                    self._stderr_loop(self._process.stderr, stderr_callback),
+                )
+            except:
+                if self._process and self._process.returncode is None:
+                    self._process.kill()
+                    self._process.close()
+                    await self._process.wait_closed()
+                raise
+            finally:
+                self._running = False
+
+            completed_process: asyncssh.SSHCompletedProcess = await self._process.wait()
+
+            # 0 success
+            if completed_process.returncode and completed_process.returncode != 0:
+                raise ProcessExecError(
+                    completed_process.returncode, self._command, self._stdout, self._stderr
+                )
+
+            return self
         finally:
-            self._running = False
-
-        completed_process: asyncssh.SSHCompletedProcess = await self._process.wait()
-
-        # 0 success
-        if completed_process.returncode and completed_process.returncode != 0:
-            raise ProcessExecError(
-                completed_process.returncode, self._command, self._stdout, self._stderr
-            )
-
-        return self
+            d = time.time() - start
+            print(datetime.now(), "Executing", self._command, "on", self._target_os, f"took {d}s")
 
     @asynccontextmanager
     async def run(

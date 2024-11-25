@@ -25,7 +25,7 @@ class SshConnection(Connection):
         else:
             assert False, f"not supported target_os '{self._target_os}'"
 
-        return SshProcess(self._connection, command, escape_argument)
+        return SshProcess(self._connection, self.target_os, command, escape_argument)
 
     async def get_ip_address(self) -> tuple[str, str]:
         ip = self._connection._host  # pylint: disable=protected-access

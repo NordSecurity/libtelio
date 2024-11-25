@@ -34,7 +34,7 @@ class DockerConnection(Connection):
         return self.container_name()
 
     def create_process(self, command: List[str], kill_id=None) -> "Process":
-        process = DockerProcess(self._container, command, kill_id)
+        process = DockerProcess(self._container, self._name, command, kill_id)
         print(
             datetime.now(),
             "Executing",

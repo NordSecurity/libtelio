@@ -2,7 +2,9 @@ import asyncio
 import secrets
 import subprocess
 import sys
+import time
 from .process import Process, ProcessExecError, StreamCallback
+from datetime import datetime
 from aiodocker.containers import DockerContainer
 from aiodocker.execs import Exec
 from aiodocker.stream import Stream
@@ -14,6 +16,7 @@ from utils.moose import MOOSE_LOGS_DIR
 
 class DockerProcess(Process):
     _container: DockerContainer
+    _name: str
     _command: List[str]
     _stdout: str
     _stderr: str
@@ -27,9 +30,10 @@ class DockerProcess(Process):
     )
 
     def __init__(
-        self, container: DockerContainer, command: List[str], kill_id=None
+        self, container: DockerContainer, name: str, command: List[str], kill_id=None
     ) -> None:
         self._container = container
+        self._name = name
         self._command = command
         self._stdout = ""
         self._stderr = ""
@@ -44,51 +48,57 @@ class DockerProcess(Process):
         stdout_callback: Optional[StreamCallback] = None,
         stderr_callback: Optional[StreamCallback] = None,
     ) -> "DockerProcess":
-        self._execute = await self._container.exec(
-            self._command,
-            stdin=True,
-            environment={
-                "MOOSE_LOG": "Trace",
-                "MOOSE_LOG_FILE": MOOSE_LOGS_DIR,
-                "RUST_BACKTRACE": "full",
-                "KILL_ID": self._kill_id,
-            },
-        )
-        if self._execute is None:
-            return self
-        async with self._execute.start() as exe_stream:
-            self._stream = exe_stream
-            self._stdin_ready.set()
-            try:
-                await self._read_loop(exe_stream, stdout_callback, stderr_callback)
-            except:
-                if self._execute:
-                    inspect = await self._execute.inspect()
-                    while inspect["Pid"] == 0 and inspect["ExitCode"] is None:
+        start = time.time()
+        try:
+            self._execute = await self._container.exec(
+                self._command,
+                stdin=True,
+                environment={
+                    "MOOSE_LOG": "Trace",
+                    "MOOSE_LOG_FILE": MOOSE_LOGS_DIR,
+                    "RUST_BACKTRACE": "full",
+                    "KILL_ID": self._kill_id,
+                },
+            )
+            if self._execute is None:
+                return self
+            async with self._execute.start() as exe_stream:
+                self._stream = exe_stream
+                self._stdin_ready.set()
+                try:
+                    await self._read_loop(exe_stream, stdout_callback, stderr_callback)
+                except:
+                    if self._execute:
                         inspect = await self._execute.inspect()
-                        await asyncio.sleep(0.01)
-                    if inspect["ExitCode"] is None:
-                        subprocess.run([
-                            "docker",
-                            "exec",
-                            "--privileged",
-                            self._container.id,
-                            "/opt/bin/kill_process_by_natlab_id",
-                            self._kill_id,
-                        ])
-                raise
-            finally:
-                self._stream = None
+                        while inspect["Pid"] == 0 and inspect["ExitCode"] is None:
+                            inspect = await self._execute.inspect()
+                            await asyncio.sleep(0.01)
+                        if inspect["ExitCode"] is None:
+                            subprocess.run([
+                                "docker",
+                                "exec",
+                                "--privileged",
+                                self._container.id,
+                                "/opt/bin/kill_process_by_natlab_id",
+                                self._kill_id,
+                            ])
+                    raise
+                finally:
+                    self._stream = None
 
-        inspect = await self._execute.inspect()
-        exit_code = inspect["ExitCode"]
+            inspect = await self._execute.inspect()
+            exit_code = inspect["ExitCode"]
 
-        # 0 success
-        # suppress 137 linux sigkill, since we kill those processes
-        if exit_code and exit_code not in [0, 137]:
-            raise ProcessExecError(exit_code, self._command, self._stdout, self._stderr)
+            # 0 success
+            # suppress 137 linux sigkill, since we kill those processes
+            if exit_code and exit_code not in [0, 137]:
+                raise ProcessExecError(exit_code, self._command, self._stdout, self._stderr)
 
-        return self
+            return self
+        finally:
+            d = time.time() - start
+            print(datetime.now(), "Executing", self._command, "on", self._name, f"took {d}s")
+            
 
     @asynccontextmanager
     async def run(
