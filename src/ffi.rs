@@ -356,7 +356,7 @@ impl Telio {
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
                 dev.start(&DeviceConfig {
-                    private_key,
+                    private_key: private_key.clone(),
                     adapter: adapter.into(),
                     fwmark: None,
                     name: None,
@@ -386,7 +386,7 @@ impl Telio {
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
                 dev.start(&DeviceConfig {
-                    private_key,
+                    private_key: private_key.clone(),
                     adapter: adapter.into(),
                     fwmark: None,
                     name: Some(name.clone()),
@@ -428,7 +428,7 @@ impl Telio {
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
                 dev.start(&DeviceConfig {
-                    private_key,
+                    private_key: private_key.clone(),
                     adapter: adapter.into(),
                     fwmark: None,
                     name: None,

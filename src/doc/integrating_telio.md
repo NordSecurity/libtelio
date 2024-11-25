@@ -595,9 +595,9 @@ let sk = generate_secret_key();
 let adapter = get_default_adapter();
 
 let telio = Telio::new(Default::default(), Box::new(EventHandler)).unwrap();
-telio.start(sk, adapter).unwrap();
+telio.start(sk.clone(), adapter).unwrap();
 
-let mesh_pk = generate_public_key(sk);
+let mesh_pk = generate_public_key(sk.clone());
 // Register mesh_pk with api if needed
 let json_config = "<json config recieved from api>".to_owned();
 let config = deserialize_meshnet_config(json_config).unwrap();

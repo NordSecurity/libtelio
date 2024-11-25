@@ -69,7 +69,7 @@ fn telio_task(
     if !auth_token.as_str().eq("") {
         start_telio(
             &mut telio,
-            node_identity.private_key,
+            node_identity.private_key.clone(),
             &interface_config.name,
         )?;
         task_retrieve_meshmap(node_identity, auth_token, tx_channel.clone());

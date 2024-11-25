@@ -772,7 +772,7 @@ impl Cli {
     ) -> Result<(), Error> {
         if !self.telio.is_running() {
             let device_config = DeviceConfig {
-                private_key,
+                private_key: private_key.clone(),
                 name: Some(name),
                 adapter: adapter_type,
                 ..Default::default()

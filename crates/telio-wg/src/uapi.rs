@@ -166,7 +166,7 @@ impl From<&Peer> for set::Peer {
                     cidr_mask: ip.prefix_len(),
                 })
                 .collect(),
-            preshared_key: item.preshared_key.map(|psk| psk.0 .0),
+            preshared_key: item.preshared_key.clone().map(|psk| psk.0 .0),
             ..Default::default()
         }
     }

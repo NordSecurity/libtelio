@@ -86,7 +86,7 @@ pub async fn init_with_api(
         Some(identity) => identity,
         None => {
             let private_key = SecretKey::gen();
-            let hw_identifier = generate_hw_identifier(private_key);
+            let hw_identifier = generate_hw_identifier(private_key.clone());
 
             let machine_identifier =
                 match fetch_identifier_with_exp_backoff(auth_token, private_key.public()).await {

@@ -21,7 +21,7 @@ pub struct Entity {
 
 impl crate::PostQuantum for Entity {
     fn keys(&self) -> Option<crate::Keys> {
-        self.peer.as_ref().and_then(|p| p.keys)
+        self.peer.as_ref().and_then(|p| p.keys.clone())
     }
 
     fn is_rotating_keys(&self) -> bool {

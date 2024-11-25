@@ -502,10 +502,10 @@ mod tests {
         let server_key1 = SecretKey::new([1_u8; KEY_SIZE]).public();
         let secret_key2 = SecretKey::new([2_u8; KEY_SIZE]);
         let server_key2 = SecretKey::new([3_u8; KEY_SIZE]).public();
-        write_client_key(&mut buf1, secret_key1, server_key1, None)
+        write_client_key(&mut buf1, secret_key1.clone(), server_key1.clone(), None)
             .await
             .unwrap();
-        write_client_key(&mut buf2, secret_key1, server_key1, None)
+        write_client_key(&mut buf2, secret_key1.clone(), server_key1.clone(), None)
             .await
             .unwrap();
         write_client_key(&mut buf3, secret_key2, server_key2, None)
