@@ -112,7 +112,7 @@ class LibtelioWrapper:
         )
 
     @serialize_error
-    def create_tun(self) -> int:
+    def create_tun(self, tun_name: bytes) -> int:
         # Constants for TUN/TAP interface creation (from Linux's if_tun.h)
         TUNSETIFF = 0x400454CA
         IFF_TUN = 0x0001
@@ -120,7 +120,7 @@ class LibtelioWrapper:
 
         tun_fd = os.open("/dev/net/tun", os.O_RDWR)
         # '16sH' means we need to pass 16-byte string (interface name) and 2-byte short (flags)
-        ifr = struct.pack("16sH", b"tun11", IFF_TUN | IFF_NO_PI)
+        ifr = struct.pack("16sH", tun_name, IFF_TUN | IFF_NO_PI)
         fcntl.ioctl(tun_fd, TUNSETIFF, ifr)
 
         return tun_fd

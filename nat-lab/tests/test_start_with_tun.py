@@ -35,6 +35,6 @@ async def test_start_with_tun() -> None:
         alpha_client, _ = env.clients
 
         await alpha_client.stop_device()
-        tun = await alpha_client.create_tun()
+        tun = await alpha_client.create_tun(b"tun11")
         await alpha_client.start_with_tun(tun)
         await ping_between_all_nodes(env)
