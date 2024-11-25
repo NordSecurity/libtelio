@@ -4,11 +4,9 @@ use std::net::IpAddr;
 use std::process::Command;
 use tracing::{error, info};
 
-pub trait InterfaceConfigurator {
+pub trait ConfigureInterface {
     /// Configure the IP address and routes for a given interface
-    fn set_ip(&self, _adapter_name: &str, _ip_address: &IpAddr) -> Result<(), TeliodError> {
-        Ok(())
-    }
+    fn set_ip(&self, _adapter_name: &str, _ip_address: &IpAddr) -> Result<(), TeliodError>;
 }
 
 /// Helper function to execute a system command
@@ -34,27 +32,34 @@ pub enum InterfaceConfigurationProvider {
     Iproute,
 }
 
+// TODO(tomasz-grz): Try using enum_dispatch instead of dynamic dyspatch
 impl InterfaceConfigurationProvider {
-    /// Create a concrete instance of a configuration provider
-    pub fn create(&self) -> Box<dyn InterfaceConfigurator> {
+    /// Create a dynamic instance of a configuration provider
+    pub fn create(&self) -> Box<dyn ConfigureInterface> {
         info!("Creating interface config provider for {:?}", self);
         match self {
-            Self::Manual => Box::new(ManualconfigProvider),
-            Self::Ifconfig => Box::new(IfconfigProvider),
-            Self::Iproute => Box::new(IprouteProvider),
+            Self::Manual => Box::new(Manual),
+            Self::Ifconfig => Box::new(Ifconfig),
+            Self::Iproute => Box::new(Iproute),
         }
     }
 }
 
-/// Emmpty implementation for manual configuration
-pub struct ManualconfigProvider;
+/// Empty implementation for manual configuration
+#[derive(Debug, PartialEq, Eq)]
+pub struct Manual;
 
-impl InterfaceConfigurator for ManualconfigProvider {}
+impl ConfigureInterface for Manual {
+    fn set_ip(&self, _adapter_name: &str, _ip_address: &IpAddr) -> Result<(), TeliodError> {
+        Ok(()) // No-op implementation
+    }
+}
 
 /// Implementation using `ifconfig`
-pub struct IfconfigProvider;
+#[derive(Debug, PartialEq, Eq)]
+pub struct Ifconfig;
 
-impl InterfaceConfigurator for IfconfigProvider {
+impl ConfigureInterface for Ifconfig {
     fn set_ip(&self, adapter_name: &str, ip_address: &IpAddr) -> Result<(), TeliodError> {
         let ip_string = ip_address.to_string();
         let cidr_suffix = if ip_address.is_ipv4() { "/10" } else { "/64" };
@@ -101,9 +106,10 @@ impl InterfaceConfigurator for IfconfigProvider {
 }
 
 /// Implementation using `iproute2`
-pub struct IprouteProvider;
+#[derive(Debug, PartialEq, Eq)]
+pub struct Iproute;
 
-impl InterfaceConfigurator for IprouteProvider {
+impl ConfigureInterface for Iproute {
     fn set_ip(&self, adapter_name: &str, ip_address: &IpAddr) -> Result<(), TeliodError> {
         let cidr_suffix = if ip_address.is_ipv4() { "/10" } else { "/64" };
         let cidr_string = format!("{}{}", ip_address, cidr_suffix);
