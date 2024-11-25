@@ -21,6 +21,7 @@ use telio_crypto::PublicKey;
 use telio_proto::{Session, WGPort};
 use telio_sockets::External;
 use telio_task::{io::chan::Tx, task_exec, BoxAction, Runtime, Task};
+use telio_utils::interval;
 use telio_utils::{
     exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
     telio_log_debug, telio_log_info, telio_log_warn, PinnedSleep,
@@ -61,6 +62,7 @@ pub trait UpnpEpCommands: Send + Default + 'static {
     async fn get_external_ip(&self) -> Result<Ipv4Addr>;
     async fn ensure_igd_gateway(&mut self) -> Result<()>;
     fn lease_needs_renew(&self) -> bool;
+    fn should_renew_lease_after(&self) -> Option<Duration>;
     fn has_igd_gateway(&self) -> bool;
     fn drop_igd_gateway(&mut self);
 }
@@ -72,12 +74,12 @@ pub struct IgdGateway {
     search: Option<GatewaySearch>,
     gw: Option<Gateway>,
     lease_duration: Duration,
-    needs_lease_renew_after: parking_lot::Mutex<Option<Instant>>,
+    needs_lease_renew_at: parking_lot::Mutex<Option<Instant>>,
 }
 
 impl Debug for IgdGateway {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let needs_lease_renew_after = *self.needs_lease_renew_after.lock();
+        let needs_lease_renew_after = *self.needs_lease_renew_at.lock();
         f.debug_struct("IgdGateway")
             .field("search", &self.search.is_some())
             .field("gw", &self.gw)
@@ -167,7 +169,7 @@ impl UpnpEpCommands for IgdGateway {
         )
         .await?;
 
-        *self.needs_lease_renew_after.lock() = Some(should_renew_after);
+        *self.needs_lease_renew_at.lock() = Some(should_renew_after);
 
         Ok(())
     }
@@ -210,9 +212,16 @@ impl UpnpEpCommands for IgdGateway {
     }
 
     fn lease_needs_renew(&self) -> bool {
-        match *self.needs_lease_renew_after.lock() {
+        match *self.needs_lease_renew_at.lock() {
             Some(t) => Instant::now() > t,
             None => false,
+        }
+    }
+
+    fn should_renew_lease_after(&self) -> Option<Duration> {
+        match *self.needs_lease_renew_at.lock() {
+            Some(t) => Some(t.saturating_duration_since(Instant::now())),
+            None => None,
         }
     }
 
@@ -286,7 +295,7 @@ impl<Wg: WireGuard> UpnpEndpointProvider<Wg> {
                 search: Default::default(),
                 gw: Default::default(),
                 lease_duration,
-                needs_lease_renew_after: parking_lot::Mutex::new(None),
+                needs_lease_renew_at: parking_lot::Mutex::new(None),
             },
             is_battery_optimization_on,
         ))
@@ -654,14 +663,16 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
         pin!(updated);
 
         if !self.igd_gw.lease_needs_renew() && self.is_endpoint_provider_paused {
-            telio_log_debug!("Skipping getting endpoint via UPNP endpoint provider(ModulePaused)");
+            let d = self.igd_gw.should_renew_lease_after();
+            telio_log_debug!("Skipping getting endpoint via UPNP endpoint provider(ModulePaused), lease renw after {d:?}");
+            let mut renew_interval = interval(d.unwrap_or(Duration::MAX));
             tokio::select! {
-                _ = pending() => {},
+                _ = renew_interval.tick() => {},
+                _ = pending() => {return Ok(())},
                 update = &mut updated => {
                     return update(self).await;
                 }
             }
-            return Ok(());
         }
 
         tokio::select! {
