@@ -43,6 +43,7 @@ class DockerProcess(Process):
         self,
         stdout_callback: Optional[StreamCallback] = None,
         stderr_callback: Optional[StreamCallback] = None,
+        privileged=False,
     ) -> "DockerProcess":
         self._execute = await self._container.exec(
             self._command,
@@ -53,6 +54,7 @@ class DockerProcess(Process):
                 "RUST_BACKTRACE": "full",
                 "KILL_ID": self._kill_id,
             },
+            privileged=privileged,
         )
         if self._execute is None:
             return self
