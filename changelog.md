@@ -4,6 +4,7 @@
 ### **Pork Kibin**
 ---
 * LLT-5801: Make sure apple socket protector respects nw_path_monitor interface preference order
+* Sec: Update rustls to 0.23.18 which fixes RUSTSEC-2024-0399
 
 <br>
 
