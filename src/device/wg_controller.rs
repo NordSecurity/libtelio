@@ -138,13 +138,15 @@ async fn consolidate_wg_private_key<W: WireGuard>(
     let private_key = if let Some(pq) = post_quantum_vpn.keys() {
         pq.wg_secret
     } else {
-        requested_state.device_config.private_key
+        requested_state.device_config.private_key.clone()
     };
 
     let actual_private_key = wireguard_interface.get_interface().await?.private_key;
 
-    if actual_private_key != Some(private_key) {
-        wireguard_interface.set_secret_key(private_key).await?;
+    if actual_private_key != Some(private_key.clone()) {
+        wireguard_interface
+            .set_secret_key(private_key.clone())
+            .await?;
         let dns = dns.lock().await;
 
         if let Some(resolver) = dns.resolver.as_ref() {
@@ -1297,14 +1299,14 @@ mod tests {
 
         wg_mock.expect_get_interface().returning(move || {
             Ok(Interface {
-                private_key: Some(secret_key_a),
+                private_key: Some(secret_key_a.clone()),
                 ..Default::default()
             })
         });
 
         wg_mock
             .expect_set_secret_key()
-            .with(predicate::eq(secret_key_b))
+            .with(predicate::eq(secret_key_b.clone()))
             .returning(|_| Ok(()));
 
         pq_mock.expect_keys().returning(|| None);
@@ -1329,11 +1331,11 @@ mod tests {
         let dns_mock: Mutex<DNS<MockDnsResolver>> = Mutex::default();
 
         let secret_key_a = SecretKey::gen();
-        let secret_key_a_cpy = secret_key_a;
+        let secret_key_a_cpy = secret_key_a.clone();
 
         wg_mock.expect_get_interface().returning(move || {
             Ok(Interface {
-                private_key: Some(secret_key_a_cpy),
+                private_key: Some(secret_key_a_cpy.clone()),
                 ..Default::default()
             })
         });

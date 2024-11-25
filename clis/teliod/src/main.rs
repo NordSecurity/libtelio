@@ -162,7 +162,11 @@ fn telio_task(
     // right now as the values are dummy and program will not run as it expects
     // real tokens.
     if !auth_token.as_str().eq("") {
-        start_telio(&mut telio, node_identity.private_key, &interface_name)?;
+        start_telio(
+            &mut telio,
+            node_identity.private_key.clone(),
+            &interface_name,
+        )?;
         task_retrieve_meshmap(node_identity, auth_token, tx_channel);
 
         while let Some(cmd) = rx_channel.blocking_recv() {

@@ -258,7 +258,7 @@ mod uniffi_libtelio {
         #[case(SecretKey::gen())]
         #[case(SecretKey::gen())]
         fn test_secret_key_conversion(#[case] key: SecretKey) {
-            let serialized = SecretKey::from_custom(key);
+            let serialized = SecretKey::from_custom(key.clone());
             let deserialized = SecretKey::into_custom(serialized).unwrap();
 
             assert_eq!(deserialized, key);

@@ -1,0 +1,1 @@
+LLT-5457 - clear memory for sensitive key material on destructor

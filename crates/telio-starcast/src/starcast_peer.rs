@@ -170,7 +170,7 @@ impl State {
 
         self.tunnel = Some(
             Tunn::new(
-                StaticSecret::from(self.secret_key.into_bytes()),
+                StaticSecret::from(self.secret_key.clone().into_bytes()),
                 PublicKeyDalek::from(config.public_key.0),
                 None,
                 None,
@@ -184,7 +184,7 @@ impl State {
     }
 
     fn get_peer(&self) -> Result<Peer, Error> {
-        let static_secret = &StaticSecret::from(self.secret_key.into_bytes());
+        let static_secret = &StaticSecret::from(self.secret_key.clone().into_bytes());
 
         Ok(Peer {
             public_key: PublicKey(PublicKeyDalek::from(static_secret).to_bytes()),

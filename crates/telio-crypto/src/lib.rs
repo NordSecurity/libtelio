@@ -29,13 +29,24 @@ use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 use telio_utils::Hidden;
+use zeroize::ZeroizeOnDrop;
 
 /// Secret, Public and Wireguard Preshared key size in bytes
 pub const KEY_SIZE: usize = 32;
 
 /// Secret key type
 #[derive(
-    Default, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone, Serialize, Deserialize,
+    Default,
+    Debug,
+    PartialOrd,
+    Ord,
+    PartialEq,
+    Eq,
+    Hash,
+    Clone,
+    Serialize,
+    Deserialize,
+    ZeroizeOnDrop,
 )]
 pub struct SecretKey(Hidden<[u8; KEY_SIZE]>);
 
@@ -97,7 +108,7 @@ pub fn smaller_key_in_meshnet_canonical_order<'a>(
 }
 
 /// Preshared key type
-#[derive(Default, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone)]
+#[derive(Default, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Clone, ZeroizeOnDrop)]
 pub struct PresharedKey(pub Hidden<[u8; KEY_SIZE]>);
 
 /// Error returned when parsing fails for SecretKey or PublicKey.

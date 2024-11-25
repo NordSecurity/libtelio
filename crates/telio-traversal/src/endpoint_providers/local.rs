@@ -300,7 +300,7 @@ mod tests {
         Arc<Mutex<PingPongHandler>>,
     ) {
         let secret_key = SecretKey::gen();
-        let ping_pong_handler = Arc::new(Mutex::new(PingPongHandler::new(secret_key)));
+        let ping_pong_handler = Arc::new(Mutex::new(PingPongHandler::new(secret_key.clone())));
         (
             State {
                 endpoint_candidates_change_publisher: None,
@@ -360,7 +360,7 @@ mod tests {
         let (provider_socket, provider_addr) = create_localhost_socket(&socket_pool).await;
         let (peer_socket, peer_addr) = create_localhost_socket(&socket_pool).await;
 
-        let ping_pong_handler = Arc::new(Mutex::new(PingPongHandler::new(secret_key)));
+        let ping_pong_handler = Arc::new(Mutex::new(PingPongHandler::new(secret_key.clone())));
         let local_provider = LocalInterfacesEndpointProvider::new_with(
             provider_socket,
             Arc::new(wg_mock),
@@ -628,18 +628,22 @@ mod tests {
         let ping = PingerMsg::ping(WGPort(wg_port), 2, 3);
         let local_sk = SecretKey::gen();
         let encrypt_transform = |b: &[u8]| {
-            Ok(
-                encrypt_request(b, &mut rand::thread_rng(), &local_sk, &remote_sk.public())
-                    .unwrap(),
+            Ok(encrypt_request(
+                b,
+                &mut rand::thread_rng(),
+                &local_sk.clone(),
+                &remote_sk.public(),
             )
+            .unwrap())
         };
         let encrypted_buf = ping.clone().encode_and_encrypt(encrypt_transform).unwrap();
 
+        let sk_copy = local_sk.clone();
         tokio::spawn(async move {
             ping_pong_handler
                 .lock()
                 .await
-                .configure(hashmap! { 456 => local_sk.public() });
+                .configure(hashmap! { 456 => sk_copy.public() });
             state.handle_rx_packet(&encrypted_buf, &provider_addr).await
         });
 

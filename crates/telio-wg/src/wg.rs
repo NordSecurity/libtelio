@@ -864,7 +864,7 @@ impl State {
         });
 
         set::Device {
-            private_key: to.private_key.map(|key| key.into_bytes()),
+            private_key: to.private_key.clone().map(|key| key.into_bytes()),
             listen_port: Self::update_calculate_set_listen_port(
                 self.interface.listen_port,
                 to.listen_port,
@@ -1306,7 +1306,7 @@ pub mod tests {
 
         let sks = SecretKey::gen();
         let ifa = Interface {
-            private_key: Some(sks),
+            private_key: Some(sks.clone()),
             ..Default::default()
         };
         adapter.expect_send_uapi_cmd_generic_call(1).await;

@@ -624,7 +624,7 @@ impl Device {
     /// is only valid to call this method only on device instance which is currently
     /// not running. E.g. either before start()'ing or after stop()'ing it.
     pub fn set_private_key(&self, private_key: &SecretKey) -> Result {
-        let private_key = *private_key; //Going into async context, therefore just copy for lifetimes
+        let private_key = private_key.clone(); //Going into async context, therefore just copy for lifetimes
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
                 Ok(rt.set_private_key(&private_key).boxed().await)
@@ -1144,7 +1144,7 @@ impl Runtime {
         }
 
         wireguard_interface
-            .set_secret_key(config.private_key)
+            .set_secret_key(config.private_key.clone())
             .await?;
 
         #[cfg(test)]
@@ -1330,7 +1330,7 @@ impl Runtime {
             use telio_model::features::EndpointProvider::*;
 
             let ping_pong_tracker = Arc::new(Mutex::new(PingPongHandler::new(
-                self.requested_state.device_config.private_key,
+                self.requested_state.device_config.private_key.clone(),
             )));
             let mut endpoint_providers: Vec<Arc<dyn EndpointProvider>> = Vec::new();
 
@@ -1578,7 +1578,7 @@ impl Runtime {
             m_entities
                 .derp
                 .configure(m_entities.derp.get_config().await.map(|c| DerpConfig {
-                    secret_key: *private_key,
+                    secret_key: private_key.clone(),
                     ..c
                 }))
                 .await;
@@ -1596,10 +1596,10 @@ impl Runtime {
             .set_local_key(private_key.public())
             .await;
 
-        self.requested_state.device_config.private_key = *private_key;
+        self.requested_state.device_config.private_key = private_key.clone();
 
         if let Some(nurse) = &self.entities.nurse {
-            nurse.set_private_key(*private_key).await;
+            nurse.set_private_key(private_key.clone()).await;
         }
 
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
@@ -1609,7 +1609,7 @@ impl Runtime {
     }
 
     async fn get_private_key(&self) -> Result<SecretKey> {
-        Ok(self.requested_state.device_config.private_key)
+        Ok(self.requested_state.device_config.private_key.clone())
     }
 
     async fn get_adapter_luid(&mut self) -> Result<u64> {
@@ -2023,7 +2023,7 @@ impl Runtime {
         if postquantum {
             self.entities.postquantum_wg.start(
                 exit_node.endpoint.ok_or(Error::EndpointNotProvided)?,
-                self.requested_state.device_config.private_key,
+                self.requested_state.device_config.private_key.clone(),
                 exit_node.public_key,
             );
         }
@@ -2812,7 +2812,7 @@ mod tests {
         let rt = Runtime::start(
             sender,
             &DeviceConfig {
-                private_key,
+                private_key: private_key.clone(),
                 ..Default::default()
             },
             features,
@@ -2857,7 +2857,7 @@ mod tests {
         let mut rt = Runtime::start(
             sender,
             &DeviceConfig {
-                private_key,
+                private_key: private_key.clone(),
                 ..Default::default()
             },
             features,
@@ -2934,7 +2934,7 @@ mod tests {
         let mut rt = Runtime::start(
             sender,
             &DeviceConfig {
-                private_key,
+                private_key: private_key.clone(),
                 ..Default::default()
             },
             features,
@@ -3022,7 +3022,7 @@ mod tests {
         let mut rt = Runtime::start(
             sender,
             &DeviceConfig {
-                private_key,
+                private_key: private_key.clone(),
                 ..Default::default()
             },
             features,
@@ -3120,7 +3120,7 @@ mod tests {
         let mut rt = Runtime::start(
             sender,
             &DeviceConfig {
-                private_key,
+                private_key: private_key.clone(),
                 ..Default::default()
             },
             features,
@@ -3200,7 +3200,7 @@ mod tests {
         let mut rt = Runtime::start(
             sender,
             &DeviceConfig {
-                private_key,
+                private_key: private_key.clone(),
                 ..Default::default()
             },
             features,
@@ -3292,7 +3292,7 @@ mod tests {
         let mut rt = Runtime::start(
             sender,
             &DeviceConfig {
-                private_key,
+                private_key: private_key.clone(),
                 ..Default::default()
             },
             features,
@@ -3365,7 +3365,7 @@ mod tests {
         let mut rt = Runtime::start(
             sender,
             &DeviceConfig {
-                private_key,
+                private_key: private_key.clone(),
                 ..Default::default()
             },
             features,
@@ -3461,7 +3461,7 @@ mod tests {
         let mut rt = Runtime::start(
             sender,
             &DeviceConfig {
-                private_key,
+                private_key: private_key.clone(),
                 ..Default::default()
             },
             features,
@@ -3586,7 +3586,7 @@ mod tests {
         let mut rt = Runtime::start(
             sender,
             &DeviceConfig {
-                private_key: pk,
+                private_key: pk.clone(),
                 ..Default::default()
             },
             Default::default(),
@@ -3631,7 +3631,7 @@ mod tests {
         let mut rt = Runtime::start(
             sender,
             &DeviceConfig {
-                private_key,
+                private_key: private_key.clone(),
                 ..Default::default()
             },
             features,

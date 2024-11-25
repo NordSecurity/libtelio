@@ -542,7 +542,8 @@ impl State {
             msg.packet_type()
         );
         match msg.encode() {
-            Ok(buf) => match DerpRelay::encrypt_if_needed(config.secret_key, pk, rng, &buf) {
+            Ok(buf) => match DerpRelay::encrypt_if_needed(config.secret_key.clone(), pk, rng, &buf)
+            {
                 Ok(cipher_text) => {
                     let _ = permit.send((pk, cipher_text));
                 }
@@ -581,7 +582,7 @@ impl State {
         config: &Config,
     ) {
         if config.meshnet_peers.contains(&pk) {
-            match DerpRelay::decrypt_if_needed(config.secret_key, pk, &buf) {
+            match DerpRelay::decrypt_if_needed(config.secret_key.clone(), pk, &buf) {
                 Ok(plain_text) => match PacketRelayed::decode(&plain_text) {
                     Ok(msg) => {
                         telio_log_trace!(
@@ -995,7 +996,7 @@ mod tests {
         } = McChan::default();
 
         let config = Config {
-            secret_key: test_conf.private_key,
+            secret_key: test_conf.private_key.clone(),
             servers: SortedServers::new(vec![Server {
                 hostname: "de1047.nordvpn.com".into(),
                 relay_port: 8765,

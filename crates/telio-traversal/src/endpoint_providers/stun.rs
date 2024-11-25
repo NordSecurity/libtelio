@@ -1562,7 +1562,7 @@ mod tests {
 
         let ping = PingerMsg::ping(wg_port, session_id, 6969);
         let local_sk = SecretKey::gen();
-        let remote_sk = env.local_sk;
+        let remote_sk = env.local_sk.clone();
         let transform = |b: &[u8]| {
             Ok(
                 encrypt_request(b, &mut rand::thread_rng(), &local_sk, &remote_sk.public())
@@ -2122,7 +2122,7 @@ mod tests {
         } = Chan::default();
 
         let secret_key = SecretKey::gen();
-        let ping_pong_handler = Arc::new(Mutex::new(PingPongHandler::new(secret_key)));
+        let ping_pong_handler = Arc::new(Mutex::new(PingPongHandler::new(secret_key.clone())));
 
         let backoff_array = backoff_array.unwrap_or([10000, 10000, 10000, 10000, 10000, 10000]);
 
