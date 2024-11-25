@@ -101,7 +101,7 @@ class LibtelioProxy:
 
     @move_to_async_thread
     def create_tun(self) -> int:
-        return self._handle_remote_error(lambda r: r.crete_tun())
+        return self._handle_remote_error(lambda r: r.create_tun())
 
     @move_to_async_thread
     def start_with_tun(self, private_key, adapter, tun: int):
