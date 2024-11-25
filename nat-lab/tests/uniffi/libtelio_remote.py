@@ -111,7 +111,6 @@ class LibtelioWrapper:
             private_key, libtelio.TelioAdapterType(adapter), name
         )
 
-    # TODO pass name
     @serialize_error
     def create_tun(self) -> int:
         # Constants for TUN/TAP interface creation (from Linux's if_tun.h)
