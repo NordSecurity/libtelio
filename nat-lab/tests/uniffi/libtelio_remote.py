@@ -120,7 +120,7 @@ class LibtelioWrapper:
 
         tun_fd = os.open("/dev/net/tun", os.O_RDWR)
         # '16sH' means we need to pass 16-byte string (interface name) and 2-byte short (flags)
-        ifr = struct.pack("16sH", b"tun0", IFF_TUN | IFF_NO_PI)
+        ifr = struct.pack("16sH", b"tun11", IFF_TUN | IFF_NO_PI)
         fcntl.ioctl(tun_fd, TUNSETIFF, ifr)
 
         return tun_fd
