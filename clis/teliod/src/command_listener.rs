@@ -23,6 +23,23 @@ impl CommandResponse {
     }
 }
 
+/// Helper to handle generic responses
+async fn handle_response<F, T>(
+    response_rx: oneshot::Receiver<T>,
+    process_response: F,
+) -> Result<CommandResponse, TeliodError>
+where
+    F: FnOnce(T) -> Result<CommandResponse, TeliodError>,
+{
+    match response_rx.await {
+        Ok(response) => process_response(response),
+        Err(e) => {
+            error!("Error receiving response: {}", e);
+            Err(TeliodError::InvalidResponse(e.to_string()))
+        }
+    }
+}
+
 pub struct CommandListener {
     socket: DaemonSocket,
     /// Channel to send commands to telio task
@@ -54,14 +71,12 @@ impl CommandListener {
                         TeliodError::CommandFailed(ClientCmd::GetStatus)
                     })?;
                 // wait for a response from telio runner
-                if let Ok(report) = response_rx.await {
-                    return Ok(CommandResponse::StatusReport(report));
-                }
+                handle_response(response_rx, |report| {
+                    Ok(CommandResponse::StatusReport(report))
+                })
+                .await
             }
         }
-        Ok(CommandResponse::Err(
-            "Command didn't return a result".to_string(),
-        ))
     }
 
     pub async fn handle_client_connection(&mut self) -> Result<ClientCmd, TeliodError> {
