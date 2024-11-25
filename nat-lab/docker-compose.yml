@@ -414,6 +414,10 @@ services:
     hostname: derp-01
     image: nat-lab:base
     entrypoint: /opt/bin/derp-server
+    sysctls:
+      - net.ipv4.tcp_fin_timeout=10
+      - net.ipv4.tcp_tw_reuse=1
+      - net.netfilter.nf_conntrack_tcp_timeout_fin_wait=15
     cap_drop:
       - ALL
     security_opt:
