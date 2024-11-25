@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.1.2
+### **Pork Kibin**
+---
+* LLT-5801: Make sure apple socket protector respects nw_path_monitor interface preference order
+
+<br>
+
 ### v5.1.1
 ### **Pork Kibin**
 ---

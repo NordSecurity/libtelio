@@ -4402,7 +4402,7 @@ dependencies = [
 
 [[package]]
 name = "telio"
-version = "5.1.1"
+version = "5.1.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4773,11 +4773,14 @@ dependencies = [
 name = "telio-sockets"
 version = "0.1.0"
 dependencies = [
+ "block",
  "boringtun",
  "debug_panic",
+ "dispatch",
  "futures",
  "libc",
  "mockall",
+ "network-framework-sys",
  "nix 0.28.0",
  "objc",
  "objc-foundation",
@@ -4786,7 +4789,6 @@ dependencies = [
  "rstest",
  "socket2",
  "system-configuration 0.5.1 (git+https://github.com/NordSecurity/system-configuration-rs.git)",
- "telio-network-monitors",
  "telio-utils",
  "thiserror",
  "tokio",
