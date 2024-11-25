@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use telio::crypto::SecretKey;
 
-use crate::interface_configurator::InterfaceConfigurationProvider;
+use crate::configure_interface::InterfaceConfigurationProvider;
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, SmartDefault)]
 #[repr(transparent)]

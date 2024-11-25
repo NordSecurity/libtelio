@@ -15,9 +15,9 @@ use tracing::{debug, error};
 mod command_listener;
 mod comms;
 mod config;
+mod configure_interface;
 mod core_api;
 mod daemon;
-mod interface_configurator;
 mod nc;
 
 use crate::{
