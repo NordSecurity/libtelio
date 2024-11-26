@@ -513,28 +513,23 @@ async fn consolidate_wg_peers<
                 .await?;
             }
 
-            // If the batcher is disabled we still have to enable session keeper for the direct connections
-            if features.batching.is_none() {
-                if let Some(sk) = session_keeper {
-                    let target =
-                        build_ping_endpoint(&requested_peer.peer.ip_addresses, features.ipv6);
-                    if target.0.is_some() || target.1.is_some() {
-                        sk.add_node(
-                            requested_peer.peer.public_key,
-                            target,
-                            Duration::from_secs(
-                                requested_peer
-                                    .peer
-                                    .persistent_keepalive_interval
-                                    .unwrap_or(requested_state.keepalive_periods.direct)
-                                    .into(),
-                            ),
-                            None,
-                        )
-                        .await?;
-                    } else {
-                        telio_log_warn!("Peer {:?} has no ip address", key);
-                    }
+            if let Some(sk) = session_keeper {
+                let target = build_ping_endpoint(&requested_peer.peer.ip_addresses, features.ipv6);
+
+                if target.0.is_some() || target.1.is_some() {
+                    sk.add_node(
+                        requested_peer.peer.public_key,
+                        target,
+                        Duration::from_secs(
+                            requested_peer
+                                .peer
+                                .persistent_keepalive_interval
+                                .unwrap_or(requested_state.keepalive_periods.direct)
+                                .into(),
+                        ),
+                        batcher_threshold,
+                    )
+                    .await?;
                 }
             }
         }
@@ -2230,13 +2225,33 @@ mod tests {
             allowed_ips.iter().copied().map(|ip| ip.into()).collect(),
             allowed_ips,
         )]);
+
+        let default_batcher_threshold = Duration::from_secs(
+            f.features
+                .batching
+                .unwrap()
+                .direct_connection_threshold
+                .into(),
+        );
+
+        // first for proxied
         f.then_keeper_add_node(vec![(
             pub_key,
             ip1,
             Some(ip1v6),
             direct_keepalive_period,
-            Some(Duration::from_secs(0)),
+            Some(default_batcher_threshold),
         )]);
+
+        // second for direct(should be triggered immediately)
+        f.then_keeper_add_node(vec![(
+            pub_key,
+            ip1,
+            Some(ip1v6),
+            direct_keepalive_period,
+            Some(default_batcher_threshold),
+        )]);
+
         f.session_keeper
             .expect_get_interval()
             .return_const(Some(direct_keepalive_period));
