@@ -8,12 +8,14 @@ import timeouts
 from config import LIBTELIO_DNS_IPV4, LIBTELIO_DNS_IPV6
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_api, setup_environment, setup_mesh_nodes
-from typing import List
+from typing import List, Optional
 from utils.bindings import default_features, FeatureDns, TelioAdapterType
 from utils.connection_tracker import (
-    ConnectionLimits,
-    ConnectionTrackerConfig,
+    ConntrackerEvent,
+    ConnTrackerViolation,
+    ConnTrackerEventsValidator,
     FiveTuple,
+    EventType as ConnTrackerEventType,
 )
 from utils.connection_util import (
     ConnectionTag,
@@ -84,14 +86,14 @@ async def test_dns(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                     connection_tracker_config=generate_connection_tracker_config(
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        derp_1_limits=ConnectionLimits(1, 1),
+                        derp_1_limits=(1, 1),
                     ),
                 ),
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                     connection_tracker_config=generate_connection_tracker_config(
                         ConnectionTag.DOCKER_CONE_CLIENT_2,
-                        derp_1_limits=ConnectionLimits(1, 1),
+                        derp_1_limits=(1, 1),
                     ),
                 ),
             ],
@@ -181,7 +183,7 @@ async def test_dns_port(alpha_ip_stack: IPStack) -> None:
                     ip_stack=alpha_ip_stack,
                     connection_tracker_config=generate_connection_tracker_config(
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        derp_1_limits=ConnectionLimits(1, 1),
+                        derp_1_limits=(1, 1),
                     ),
                 ),
                 SetupParameters(
@@ -189,7 +191,7 @@ async def test_dns_port(alpha_ip_stack: IPStack) -> None:
                     ip_stack=IPStack.IPv4v6,
                     connection_tracker_config=generate_connection_tracker_config(
                         ConnectionTag.DOCKER_CONE_CLIENT_2,
-                        derp_1_limits=ConnectionLimits(1, 1),
+                        derp_1_limits=(1, 1),
                     ),
                 ),
             ],
@@ -301,7 +303,7 @@ async def test_vpn_dns(alpha_ip_stack: IPStack) -> None:
                         ip_stack=alpha_ip_stack,
                         connection_tracker_config=generate_connection_tracker_config(
                             ConnectionTag.DOCKER_CONE_CLIENT_1,
-                            vpn_1_limits=ConnectionLimits(1, 1),
+                            vpn_1_limits=(1, 1),
                         ),
                         is_meshnet=False,
                     )
@@ -454,7 +456,7 @@ async def test_dns_stability(alpha_ip_stack: IPStack) -> None:
                     adapter_type_override=TelioAdapterType.NEP_TUN,
                     connection_tracker_config=generate_connection_tracker_config(
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        derp_1_limits=ConnectionLimits(1, 1),
+                        derp_1_limits=(1, 1),
                     ),
                 ),
                 SetupParameters(
@@ -462,7 +464,7 @@ async def test_dns_stability(alpha_ip_stack: IPStack) -> None:
                     ip_stack=IPStack.IPv4v6,
                     connection_tracker_config=generate_connection_tracker_config(
                         ConnectionTag.DOCKER_CONE_CLIENT_2,
-                        derp_1_limits=ConnectionLimits(1, 1),
+                        derp_1_limits=(1, 1),
                     ),
                 ),
             ],
@@ -594,7 +596,7 @@ async def test_dns_update(alpha_ip_stack: IPStack) -> None:
                         ip_stack=alpha_ip_stack,
                         connection_tracker_config=generate_connection_tracker_config(
                             ConnectionTag.DOCKER_CONE_CLIENT_1,
-                            vpn_1_limits=ConnectionLimits(1, 1),
+                            vpn_1_limits=(1, 1),
                         ),
                         is_meshnet=False,
                     )
@@ -635,25 +637,59 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
     async with AsyncExitStack() as exit_stack:
         FIRST_DNS_SERVER = "10.0.80.83"
         SECOND_DNS_SERVER = "10.0.80.82"
+
+        # Define conntracker validator which allows exactly one connection to either
+        # FIRST or SECOND dns servers.
+        class SingleConnectionToAnyNatlabDNS(ConnTrackerEventsValidator):
+            def __init__(self):
+                pass
+
+            def find_conntracker_violations(
+                self, events: List[ConntrackerEvent]
+            ) -> Optional[ConnTrackerViolation]:
+                new_connection_events = list(
+                    filter(lambda e: e.event_type == ConnTrackerEventType.NEW, events)
+                )
+                if len(new_connection_events) != 1:
+                    return ConnTrackerViolation(
+                        recoverable=True,
+                        reason=f"Only single connection to DNS server expected. Got {events}",
+                    )
+                allowed_five_tuples = [
+                    FiveTuple(
+                        protocol="udp",
+                        src_ip=LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1],
+                        dst_ip=FIRST_DNS_SERVER,
+                        dst_port=53,
+                    ),
+                    FiveTuple(
+                        protocol="udp",
+                        src_ip=LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1],
+                        dst_ip=SECOND_DNS_SERVER,
+                        dst_port=53,
+                    ),
+                ]
+
+                if not any(
+                    map(
+                        lambda ft: ft.partial_eq(new_connection_events[0].five_tuple),
+                        allowed_five_tuples,
+                    )
+                ):
+                    return ConnTrackerViolation(
+                        recoverable=False,
+                        reason=f"Only DNS connection was expected, got: {events}",
+                    )
+
+                return None
+
         env = await setup_mesh_nodes(
             exit_stack,
             [
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                     ip_stack=IPStack.IPv4v6,
-                    connection_tracker_config=[
-                        ConnectionTrackerConfig(
-                            key="dns-limiter",
-                            limits=ConnectionLimits(
-                                1, 1
-                            ),  # Require strictly one DNS connection
-                            target=FiveTuple(
-                                protocol="udp",
-                                src_ip=LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1],
-                                dst_port=53,
-                            ),
-                        )
-                    ],
+                    connection_tracker_config=[SingleConnectionToAnyNatlabDNS()],
                     derp_servers=[],
                 )
             ],
@@ -698,7 +734,7 @@ async def test_dns_nickname() -> None:
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                     connection_tracker_config=generate_connection_tracker_config(
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        derp_1_limits=ConnectionLimits(1, 1),
+                        derp_1_limits=(1, 1),
                     ),
                     features=default_features(enable_nicknames=True),
                 ),
@@ -706,7 +742,7 @@ async def test_dns_nickname() -> None:
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                     connection_tracker_config=generate_connection_tracker_config(
                         ConnectionTag.DOCKER_CONE_CLIENT_2,
-                        derp_1_limits=ConnectionLimits(1, 1),
+                        derp_1_limits=(1, 1),
                     ),
                     features=default_features(enable_nicknames=True),
                 ),
@@ -743,7 +779,7 @@ async def test_dns_change_nickname() -> None:
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                     connection_tracker_config=generate_connection_tracker_config(
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        derp_1_limits=ConnectionLimits(1, 1),
+                        derp_1_limits=(1, 1),
                     ),
                     features=default_features(enable_nicknames=True),
                 ),
@@ -751,7 +787,7 @@ async def test_dns_change_nickname() -> None:
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                     connection_tracker_config=generate_connection_tracker_config(
                         ConnectionTag.DOCKER_CONE_CLIENT_2,
-                        derp_1_limits=ConnectionLimits(1, 1),
+                        derp_1_limits=(1, 1),
                     ),
                     features=default_features(enable_nicknames=True),
                 ),
@@ -829,7 +865,7 @@ async def test_dns_wildcarded_records() -> None:
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                     connection_tracker_config=generate_connection_tracker_config(
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        derp_1_limits=ConnectionLimits(1, 1),
+                        derp_1_limits=(1, 1),
                     ),
                     features=default_features(enable_nicknames=True),
                 ),
@@ -837,7 +873,7 @@ async def test_dns_wildcarded_records() -> None:
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                     connection_tracker_config=generate_connection_tracker_config(
                         ConnectionTag.DOCKER_CONE_CLIENT_2,
-                        derp_1_limits=ConnectionLimits(1, 1),
+                        derp_1_limits=(1, 1),
                     ),
                     features=default_features(enable_nicknames=True),
                 ),
@@ -882,7 +918,7 @@ async def test_dns_ttl_value() -> None:
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                     connection_tracker_config=generate_connection_tracker_config(
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        derp_1_limits=ConnectionLimits(1, 1),
+                        derp_1_limits=(1, 1),
                     ),
                     features=features_without_exit_dns,
                 ),
@@ -890,7 +926,7 @@ async def test_dns_ttl_value() -> None:
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                     connection_tracker_config=generate_connection_tracker_config(
                         ConnectionTag.DOCKER_CONE_CLIENT_2,
-                        derp_1_limits=ConnectionLimits(1, 1),
+                        derp_1_limits=(1, 1),
                     ),
                 ),
             ],
@@ -968,7 +1004,7 @@ async def test_dns_no_error_return_code() -> None:
                     ip_stack=IPStack.IPv4v6,
                     connection_tracker_config=generate_connection_tracker_config(
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        derp_1_limits=ConnectionLimits(1, 1),
+                        derp_1_limits=(1, 1),
                     ),
                 )
             ],

@@ -1,6 +1,5 @@
 import asyncio
 import config
-import copy
 import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_connections
@@ -15,9 +14,8 @@ from utils.bindings import (
 )
 from utils.connection import Connection
 from utils.connection_tracker import (
-    ConnectionLimits,
-    ConnectionTrackerConfig,
     ConnectionTracker,
+    TCPStateSequence as ConnTrackerTCPStateSequence,
     FiveTuple,
     TcpState,
 )
@@ -50,6 +48,16 @@ async def _connect_vpn(
     assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
 
+async def ensure_interface_router_property_expectations(client_conn: Connection):
+    process = await client_conn.create_process([
+        get_python_binary(client_conn),
+        f"{config.LIBTELIO_BINARY_PATH_MAC_VM}/list_interfaces_with_router_property.py",
+    ]).execute()
+    interfaces_with_router_prop = process.get_stdout().splitlines()
+    assert len(interfaces_with_router_prop) == 1
+    assert VAGRANT_LIBVIRT_MANAGEMENT_IP in interfaces_with_router_prop[0]
+
+
 class VpnConfig:
     # pinging the client is not a requirement and requires routing setup which might not be present
     def __init__(
@@ -76,10 +84,6 @@ class VpnConfig:
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    stun_limits=ConnectionLimits(1, 1),
-                ),
                 is_meshnet=False,
             ),
             "10.0.254.1",
@@ -88,10 +92,6 @@ class VpnConfig:
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    stun_limits=ConnectionLimits(1, 1),
-                ),
                 is_meshnet=False,
             ),
             "10.0.254.1",
@@ -101,10 +101,6 @@ class VpnConfig:
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
-                    stun_limits=ConnectionLimits(1, 1),
-                ),
                 is_meshnet=False,
             ),
             "10.0.254.7",
@@ -116,10 +112,6 @@ class VpnConfig:
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
-                    stun_limits=ConnectionLimits(1, 1),
-                ),
                 is_meshnet=False,
             ),
             "10.0.254.7",
@@ -131,10 +123,6 @@ class VpnConfig:
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.MAC_VM,
-                    stun_limits=ConnectionLimits(1, 1),
-                ),
                 is_meshnet=False,
             ),
             "10.0.254.7",
@@ -160,31 +148,23 @@ async def test_vpn_connection(
     vpn_conf: VpnConfig,
     public_ip: str,
 ) -> None:
-    def find_cfg_by_key(
-        params: SetupParameters, key: str
-    ) -> Optional[ConnectionTrackerConfig]:
-        if params.connection_tracker_config is not None:
-            for cfg in params.connection_tracker_config:
-                if cfg.get_key() == key:
-                    return cfg
-        return None
-
     async with AsyncExitStack() as exit_stack:
-        alpha_setup_params = copy.deepcopy(alpha_setup_params)
-
-        if vpn_conf.conn_tag == ConnectionTag.DOCKER_VPN_1:
-            cfg = find_cfg_by_key(alpha_setup_params, "vpn_1")
-            assert cfg is not None
-            cfg.limits = ConnectionLimits(1, 1)
-
-        elif vpn_conf.conn_tag == ConnectionTag.DOCKER_NLX_1:
-            cfg = find_cfg_by_key(alpha_setup_params, "nlx_1")
-            assert cfg is not None
-            cfg.limits = ConnectionLimits(1, 1)
-
-        else:
-            raise ValueError(f"Unknown connection tag {vpn_conf.conn_tag}")
-
+        alpha_setup_params.connection_tracker_config = (
+            generate_connection_tracker_config(
+                alpha_setup_params.connection_tag,
+                stun_limits=(1, 1),
+                nlx_1_limits=(
+                    (1, 1)
+                    if vpn_conf.conn_tag == ConnectionTag.DOCKER_NLX_1
+                    else (0, 0)
+                ),
+                vpn_1_limits=(
+                    (1, 1)
+                    if vpn_conf.conn_tag == ConnectionTag.DOCKER_VPN_1
+                    else (0, 0)
+                ),
+            )
+        )
         env = await exit_stack.enter_async_context(
             setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
         )
@@ -194,13 +174,7 @@ async def test_vpn_connection(
         client_alpha, *_ = env.clients
 
         if alpha_setup_params.connection_tag == ConnectionTag.MAC_VM:
-            process = await client_conn.create_process([
-                get_python_binary(client_conn),
-                f"{config.LIBTELIO_BINARY_PATH_MAC_VM}/list_interfaces_with_router_property.py",
-            ]).execute()
-            interfaces_with_router_prop = process.get_stdout().splitlines()
-            assert len(interfaces_with_router_prop) == 1
-            assert VAGRANT_LIBVIRT_MANAGEMENT_IP in interfaces_with_router_prop[0]
+            await ensure_interface_router_property_expectations(client_conn)
 
         ip = await stun.get(client_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
@@ -236,9 +210,9 @@ async def test_vpn_connection(
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    vpn_1_limits=ConnectionLimits(1, 1),
-                    vpn_2_limits=ConnectionLimits(1, 1),
-                    stun_limits=ConnectionLimits(1, 2),
+                    vpn_1_limits=(1, 1),
+                    vpn_2_limits=(1, 1),
+                    stun_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -250,9 +224,9 @@ async def test_vpn_connection(
                 adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    vpn_1_limits=ConnectionLimits(1, 1),
-                    vpn_2_limits=ConnectionLimits(1, 1),
-                    stun_limits=ConnectionLimits(1, 2),
+                    vpn_1_limits=(1, 1),
+                    vpn_2_limits=(1, 1),
+                    stun_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -265,9 +239,9 @@ async def test_vpn_connection(
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
-                    vpn_1_limits=ConnectionLimits(1, 1),
-                    vpn_2_limits=ConnectionLimits(1, 1),
-                    stun_limits=ConnectionLimits(1, 2),
+                    vpn_1_limits=(1, 1),
+                    vpn_2_limits=(1, 1),
+                    stun_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -282,9 +256,9 @@ async def test_vpn_connection(
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
-                    vpn_1_limits=ConnectionLimits(1, 1),
-                    vpn_2_limits=ConnectionLimits(1, 1),
-                    stun_limits=ConnectionLimits(1, 2),
+                    vpn_1_limits=(1, 1),
+                    vpn_2_limits=(1, 1),
+                    stun_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -299,9 +273,9 @@ async def test_vpn_connection(
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
-                    vpn_1_limits=ConnectionLimits(1, 1),
-                    vpn_2_limits=ConnectionLimits(1, 1),
-                    stun_limits=ConnectionLimits(1, 2),
+                    vpn_1_limits=(1, 1),
+                    vpn_2_limits=(1, 1),
+                    stun_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -406,23 +380,16 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
             config.WG_SERVER,
         )
 
-        close_event_1 = asyncio.Event()
-        close_event_2 = asyncio.Event()
-
         async with ConnectionTracker(
             connection,
             [
-                ConnectionTrackerConfig(
-                    "nc",
-                    ConnectionLimits(),
+                ConnTrackerTCPStateSequence(
+                    "telio-kill-connection",
                     FiveTuple(protocol="tcp", dst_ip=serv_ip, dst_port=80),
+                    [TcpState.CLOSE],
                 )
             ],
-            True,
         ).run() as conntrack:
-            conntrack.notify_on_tcp_state(TcpState.CLOSE, close_event_1)
-            conntrack.notify_on_tcp_state(TcpState.CLOSE, close_event_2)
-
             ip_proto = (
                 IPProto.IPv6 if setup_params.ip_stack == IPStack.IPv6 else IPProto.IPv4
             )
@@ -467,8 +434,7 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
             # under normal circumstances -> conntrack should show FIN_WAIT -> CLOSE_WAIT
             # But our connection killing mechanism will reset connection resulting in CLOSE output.
             # Wait for close on both clients
-            await close_event_1.wait()
-            await close_event_2.wait()
+            await conntrack.wait()
 
 
 @pytest.mark.asyncio
@@ -571,8 +537,8 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    stun_limits=ConnectionLimits(1, 1),
-                    vpn_1_limits=ConnectionLimits(1, 1),
+                    stun_limits=(1, 1),
+                    vpn_1_limits=(1, 1),
                 ),
                 is_meshnet=False,
             ),
@@ -584,8 +550,8 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
                 adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    stun_limits=ConnectionLimits(1, 1),
-                    vpn_1_limits=ConnectionLimits(1, 1),
+                    stun_limits=(1, 1),
+                    vpn_1_limits=(1, 1),
                 ),
                 is_meshnet=False,
             ),
@@ -598,8 +564,8 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
-                    stun_limits=ConnectionLimits(1, 1),
-                    vpn_1_limits=ConnectionLimits(1, 1),
+                    stun_limits=(1, 1),
+                    vpn_1_limits=(1, 1),
                 ),
                 is_meshnet=False,
             ),
@@ -614,8 +580,8 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
-                    stun_limits=ConnectionLimits(1, 1),
-                    vpn_1_limits=ConnectionLimits(1, 1),
+                    stun_limits=(1, 1),
+                    vpn_1_limits=(1, 1),
                 ),
                 is_meshnet=False,
             ),
@@ -630,8 +596,8 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
-                    stun_limits=ConnectionLimits(1, 1),
-                    vpn_1_limits=ConnectionLimits(1, 1),
+                    stun_limits=(1, 1),
+                    vpn_1_limits=(1, 1),
                 ),
                 is_meshnet=False,
             ),

@@ -21,7 +21,7 @@ from utils.bindings import (
     TelioAdapterType,
 )
 from utils.connection import Connection
-from utils.connection_tracker import ConnectionTrackerConfig
+from utils.connection_tracker import ConnTrackerEventsValidator
 from utils.connection_util import (
     ConnectionManager,
     ConnectionTag,
@@ -57,7 +57,7 @@ class SetupParameters:
     ip_stack: IPStack = field(default=IPStack.IPv4v6)
     is_local: bool = field(default=False)
     connection_tag: ConnectionTag = field(default=ConnectionTag.DOCKER_CONE_CLIENT_1)
-    connection_tracker_config: Optional[List[ConnectionTrackerConfig]] = field(
+    connection_tracker_config: Optional[List[ConnTrackerEventsValidator]] = field(
         default=None
     )
     adapter_type_override: Optional[TelioAdapterType] = None
@@ -133,7 +133,8 @@ async def setup_connections(
     exit_stack: AsyncExitStack,
     connection_parameters: List[
         Union[
-            ConnectionTag, Tuple[ConnectionTag, Optional[List[ConnectionTrackerConfig]]]
+            ConnectionTag,
+            Tuple[ConnectionTag, Optional[List[ConnTrackerEventsValidator]]],
         ]
     ],
 ) -> List[ConnectionManager]:
@@ -322,8 +323,10 @@ async def setup_environment(
         print(datetime.now(), "Checking connection limits")
         for conn_manager in connection_managers:
             if conn_manager.tracker:
-                limits = await conn_manager.tracker.get_out_of_limits()
-                assert limits is None, f"conntracker reported out of limits {limits}"
+                violations = await conn_manager.tracker.find_conntracker_violations()
+                assert (
+                    violations is None
+                ), f"conntracker reported out of limits {violations}"
     finally:
         stop_tcpdump([server["container"] for server in WG_SERVERS])
 

@@ -5,7 +5,6 @@ from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
 from typing import List, Tuple
 from utils.bindings import TelioAdapterType
-from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.dns import query_dns
 from utils.router import IPStack
@@ -58,7 +57,7 @@ from utils.router import IPStack
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
             ),
         ),
@@ -68,7 +67,7 @@ from utils.router import IPStack
                 adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
             ),
             marks=pytest.mark.linux_native,
@@ -80,7 +79,7 @@ from utils.router import IPStack
         #         adapter_type_override=TelioAdapterType.NEP_TUN,
         #         connection_tracker_config=generate_connection_tracker_config(
         #             ConnectionTag.MAC_VM,
-        #             derp_1_limits=ConnectionLimits(1, 1),
+        #             derp_1_limits=(1, 1),
         #         ),
         #     ),
         #     marks=pytest.mark.mac,
@@ -95,7 +94,7 @@ from utils.router import IPStack
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
             )
         )

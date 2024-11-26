@@ -6,10 +6,10 @@ from enum import Enum, auto
 from typing import AsyncIterator, Dict, Tuple, Optional, List, Union
 from utils.connection import Connection, TargetOS, DockerConnection
 from utils.connection_tracker import (
+    ConnTrackerEventsValidator,
     ConnectionTracker,
-    ConnectionTrackerConfig,
+    ConnectionCountLimit,
     FiveTuple,
-    ConnectionLimits,
 )
 from utils.network_switcher import (
     NetworkSwitcher,
@@ -244,7 +244,7 @@ async def create_network_switcher(
 @asynccontextmanager
 async def new_connection_manager_by_tag(
     tag: ConnectionTag,
-    conn_tracker_config: Optional[List[ConnectionTrackerConfig]] = None,
+    conn_tracker_config: Optional[List[ConnTrackerEventsValidator]] = None,
 ) -> AsyncIterator[ConnectionManager]:
     async with new_connection_raw(tag) as connection:
         network_switcher = await create_network_switcher(tag, connection)
@@ -275,7 +275,7 @@ async def new_connection_manager_by_tag(
 @asynccontextmanager
 async def new_connection_with_conn_tracker(
     tag: ConnectionTag,
-    conn_tracker_config: Optional[List[ConnectionTrackerConfig]],
+    conn_tracker_config: Optional[List[ConnTrackerEventsValidator]],
 ) -> AsyncIterator[Tuple[Connection, ConnectionTracker]]:
     async with new_connection_manager_by_tag(tag, conn_tracker_config) as conn_manager:
         yield (conn_manager.connection, conn_manager.tracker)
@@ -290,7 +290,7 @@ async def new_connection_by_tag(tag: ConnectionTag) -> AsyncIterator[Connection]
 @asynccontextmanager
 async def new_connection_with_node_tracker(
     tag: ConnectionTag,
-    conn_tracker_config: Optional[List[ConnectionTrackerConfig]],
+    conn_tracker_config: Optional[List[ConnTrackerEventsValidator]],
 ) -> AsyncIterator[Tuple[Connection, ConnectionTracker]]:
     if tag in DOCKER_SERVICE_IDS:
         async with new_connection_raw(tag) as connection:
@@ -327,21 +327,21 @@ def convert_port_to_integer(port: Union[str, int, None]) -> int:
 
 def generate_connection_tracker_config(
     connection_tag,
-    nlx_1_limits: ConnectionLimits = ConnectionLimits(0, 0),
-    vpn_1_limits: ConnectionLimits = ConnectionLimits(0, 0),
-    vpn_2_limits: ConnectionLimits = ConnectionLimits(0, 0),
-    stun_limits: ConnectionLimits = ConnectionLimits(0, 0),
-    stun6_limits: ConnectionLimits = ConnectionLimits(0, 0),
-    ping_limits: ConnectionLimits = ConnectionLimits(0, 0),
-    ping6_limits: ConnectionLimits = ConnectionLimits(0, 0),
-    derp_0_limits: ConnectionLimits = ConnectionLimits(0, 0),
-    derp_1_limits: ConnectionLimits = ConnectionLimits(0, 0),
-    derp_2_limits: ConnectionLimits = ConnectionLimits(0, 0),
-    derp_3_limits: ConnectionLimits = ConnectionLimits(0, 0),
-) -> List[ConnectionTrackerConfig]:
+    nlx_1_limits: tuple[Optional[int], Optional[int]] = (0, 0),
+    vpn_1_limits: tuple[Optional[int], Optional[int]] = (0, 0),
+    vpn_2_limits: tuple[Optional[int], Optional[int]] = (0, 0),
+    stun_limits: tuple[Optional[int], Optional[int]] = (0, 0),
+    stun6_limits: tuple[Optional[int], Optional[int]] = (0, 0),
+    ping_limits: tuple[Optional[int], Optional[int]] = (0, 0),
+    ping6_limits: tuple[Optional[int], Optional[int]] = (0, 0),
+    derp_0_limits: tuple[Optional[int], Optional[int]] = (0, 0),
+    derp_1_limits: tuple[Optional[int], Optional[int]] = (0, 0),
+    derp_2_limits: tuple[Optional[int], Optional[int]] = (0, 0),
+    derp_3_limits: tuple[Optional[int], Optional[int]] = (0, 0),
+) -> List[ConnTrackerEventsValidator]:
     lan_addr = LAN_ADDR_MAP[connection_tag]
     ctc_list = [
-        ConnectionTrackerConfig(
+        ConnectionCountLimit.create_with_tuple(
             "nlx_1",
             nlx_1_limits,
             FiveTuple(
@@ -351,7 +351,7 @@ def generate_connection_tracker_config(
                 dst_port=convert_port_to_integer(config.NLX_SERVER.get("port")),
             ),
         ),
-        ConnectionTrackerConfig(
+        ConnectionCountLimit.create_with_tuple(
             "vpn_1",
             vpn_1_limits,
             FiveTuple(
@@ -361,7 +361,7 @@ def generate_connection_tracker_config(
                 dst_port=convert_port_to_integer(config.WG_SERVER.get("port")),
             ),
         ),
-        ConnectionTrackerConfig(
+        ConnectionCountLimit.create_with_tuple(
             "vpn_2",
             vpn_2_limits,
             FiveTuple(
@@ -371,7 +371,7 @@ def generate_connection_tracker_config(
                 dst_port=convert_port_to_integer(config.WG_SERVER_2.get("port")),
             ),
         ),
-        ConnectionTrackerConfig(
+        ConnectionCountLimit.create_with_tuple(
             "stun",
             stun_limits,
             FiveTuple(
@@ -381,9 +381,13 @@ def generate_connection_tracker_config(
                 dst_port=3478,
             ),
         ),
-        ConnectionTrackerConfig("ping", ping_limits, FiveTuple(protocol="icmp")),
-        ConnectionTrackerConfig("ping6", ping6_limits, FiveTuple(protocol="icmpv6")),
-        ConnectionTrackerConfig(
+        ConnectionCountLimit.create_with_tuple(
+            "ping", ping_limits, FiveTuple(protocol="icmp")
+        ),
+        ConnectionCountLimit.create_with_tuple(
+            "ping6", ping6_limits, FiveTuple(protocol="icmpv6")
+        ),
+        ConnectionCountLimit.create_with_tuple(
             "derp_0",
             derp_0_limits,
             FiveTuple(
@@ -393,7 +397,7 @@ def generate_connection_tracker_config(
                 dst_port=8765,
             ),
         ),
-        ConnectionTrackerConfig(
+        ConnectionCountLimit.create_with_tuple(
             "derp_1",
             derp_1_limits,
             FiveTuple(
@@ -403,7 +407,7 @@ def generate_connection_tracker_config(
                 dst_port=8765,
             ),
         ),
-        ConnectionTrackerConfig(
+        ConnectionCountLimit.create_with_tuple(
             "derp_2",
             derp_2_limits,
             FiveTuple(
@@ -413,7 +417,7 @@ def generate_connection_tracker_config(
                 dst_port=8765,
             ),
         ),
-        ConnectionTrackerConfig(
+        ConnectionCountLimit.create_with_tuple(
             "derp_3",
             derp_3_limits,
             FiveTuple(
@@ -428,7 +432,7 @@ def generate_connection_tracker_config(
     # Add IPv6 configs
     if connection_tag in LAN_ADDR_MAP_V6:
         ctc_list.append(
-            ConnectionTrackerConfig(
+            ConnectionCountLimit.create_with_tuple(
                 "stun6",
                 stun6_limits,
                 FiveTuple(

@@ -10,9 +10,8 @@ from typing import Tuple, Optional
 from utils import testing, stun
 from utils.bindings import TelioAdapterType
 from utils.connection_tracker import (
-    ConnectionLimits,
-    ConnectionTrackerConfig,
     FiveTuple,
+    TCPStateSequence,
     TcpState,
     ConnectionTracker,
 )
@@ -40,14 +39,14 @@ def get_ips_and_stack(alpha: Node, beta: Node) -> Tuple[IPProto, str, str]:
 def _setup_params(
     connection_tag: ConnectionTag,
     adapter_type_override: Optional[TelioAdapterType] = None,
-    stun_limits: ConnectionLimits = ConnectionLimits(0, 0),
+    stun_limits=(0, 0),
 ) -> SetupParameters:
     return SetupParameters(
         connection_tag=connection_tag,
         adapter_type_override=adapter_type_override,
         connection_tracker_config=generate_connection_tracker_config(
             connection_tag,
-            derp_1_limits=ConnectionLimits(1, 1),
+            derp_1_limits=(1, 1),
             stun_limits=stun_limits,
         ),
     )
@@ -259,11 +258,11 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
                 _setup_params(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     TelioAdapterType.NEP_TUN,
-                    stun_limits=ConnectionLimits(1, 1),
+                    stun_limits=(1, 1),
                 ),
                 _setup_params(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    stun_limits=ConnectionLimits(1, 5),
+                    stun_limits=(1, 5),
                 ),
             ],
         )
@@ -544,23 +543,16 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
             conn.connection for conn in env.connections
         ]
 
-        last_ack_event = asyncio.Event()
-        time_wait_event = asyncio.Event()
-
         async with ConnectionTracker(
             connection_beta,
             [
-                ConnectionTrackerConfig(
-                    "nc",
-                    ConnectionLimits(),
+                TCPStateSequence(
+                    "telio-firewall-server-side-kill",
                     FiveTuple(protocol="tcp", dst_ip=CLIENT_ALPHA_IP, dst_port=PORT),
+                    [TcpState.LAST_ACK, TcpState.TIME_WAIT],
                 )
             ],
-            True,
         ).run() as conntrack:
-            conntrack.notify_on_tcp_state(TcpState.LAST_ACK, last_ack_event)
-            conntrack.notify_on_tcp_state(TcpState.TIME_WAIT, time_wait_event)
-
             async with NetCatServer(
                 connection_alpha,
                 PORT,
@@ -583,8 +575,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
             # kill server and check what is happening in conntrack events
             # if everything is correct -> conntrack should show LAST_ACK -> TIME_WAIT
             # if something goes wrong, it will be stuck at LAST_ACK state
-            await last_ack_event.wait()
-            await time_wait_event.wait()
+            await conntrack.wait()
 
 
 @pytest.mark.asyncio
@@ -653,22 +644,16 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
             conn.connection for conn in env.connections
         ]
 
-        last_ack_event = asyncio.Event()
-        time_wait_event = asyncio.Event()
-
         async with ConnectionTracker(
             connection_beta,
             [
-                ConnectionTrackerConfig(
+                TCPStateSequence(
                     "nc",
-                    ConnectionLimits(),
                     FiveTuple(protocol="tcp", dst_ip=CLIENT_ALPHA_IP, dst_port=PORT),
+                    [TcpState.LAST_ACK, TcpState.TIME_WAIT],
                 )
             ],
-            True,
         ).run() as conntrack:
-            conntrack.notify_on_tcp_state(TcpState.LAST_ACK, last_ack_event)
-            conntrack.notify_on_tcp_state(TcpState.TIME_WAIT, time_wait_event)
             async with NetCatServer(
                 connection_alpha,
                 PORT,
@@ -692,5 +677,4 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
                 # kill client and check what is happening in conntrack events
                 # if everything is correct -> conntrack should show LAST_ACK -> TIME_WAIT
                 # if something goes wrong, it will be stuck at LAST_ACK state
-                await last_ack_event.wait()
-                await time_wait_event.wait()
+                await conntrack.wait()

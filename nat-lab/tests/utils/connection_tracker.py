@@ -14,6 +14,13 @@ from utils.process import Process
 
 @dataclass
 class FiveTuple:
+    """
+    Represents a connection identified by its protocol, source and destination
+
+    Any part of the tuple may be skipped in matching the connection, hence it allows
+    for some primitive host or destination matching
+    """
+
     protocol: Optional[str] = None
     src_ip: Optional[str] = None
     dst_ip: Optional[str] = None
@@ -27,6 +34,11 @@ class FiveTuple:
             and (self.dst_ip is None or self.dst_ip == comparison.dst_ip)
             and (self.src_port is None or self.src_port == comparison.src_port)
             and (self.dst_port is None or self.dst_port == comparison.dst_port)
+        )
+
+    def __hash__(self):
+        return hash(
+            (self.protocol, self.src_ip, self.dst_ip, self.src_port, self.dst_port)
         )
 
 
@@ -52,6 +64,48 @@ class TcpState(Enum):
     LISTEN = "LISTEN"
 
 
+@dataclass()
+class ConnTrackerViolation:
+    """
+    Represents whether it is possible, the result will become valid in the future
+    For example if connection count is currently lower than minimal results, it is
+    possible that program under test will create one, and result will become valid.
+    On the other hand - if we are already over limit - we will never be able to recover.
+
+    This is useful when waiting for valid conntracker state. Conntracker will stop waiting
+    once at least one validator returns non-recoverable invalid result.
+    """
+
+    recoverable: bool
+
+    """
+    This field is designated for debugging efforts, and should specify human-readable details about
+    validation result, especially if validation failed.
+    """
+    reason: str
+
+
+def merge_results(
+    results: list[Optional[ConnTrackerViolation]],
+) -> Optional[ConnTrackerViolation]:
+    violations = list(filter(lambda r: r is not None, results))
+    if len(violations) == 0:
+        return None
+
+    if len(violations) == 1:
+        return violations[0]
+
+    # Need to merge all violations into single validation result
+    reason = (
+        f"There are {len(violations)} violations of conntracker events expectations:\n"
+    )
+    reason += "\n  ".join([v.reason for v in violations if v])
+
+    recoverable = all(v is None or v.recoverable is True for v in violations)
+
+    return ConnTrackerViolation(recoverable, reason)
+
+
 @dataclass
 class ConntrackerEvent:
     """Event reported by conntrack"""
@@ -61,20 +115,146 @@ class ConntrackerEvent:
     tcp_state: Optional[TcpState] = None
 
 
-@dataclass
-class ConnectionLimits:
-    min: Optional[int] = None
-    max: Optional[int] = None
+class ConnTrackerEventsValidator:
+    """
+    Generic class for representing conntracker events validator
+    """
+
+    def find_conntracker_violations(
+        self, _: List[ConntrackerEvent]
+    ) -> Optional[ConnTrackerViolation]:
+        raise NotImplementedError("Not implemented error")
 
 
-@dataclass
-class ConnectionTrackerConfig:
-    key: str
-    limits: ConnectionLimits
-    target: FiveTuple
+class ConnectionCountLimit(ConnTrackerEventsValidator):
+    """
+    Connection validator which checks whether number of connections matching provided Five Tuple (note that five tuple many
+    specify only subset of elements, e.g. skipping source or destination) is within range.
+    """
 
-    def get_key(self) -> str:
-        return self.key
+    @classmethod
+    def create_with_tuple(
+        cls, key: str, limits: tuple[Optional[int], Optional[int]], target: FiveTuple
+    ):
+        return cls(key, target, limits[0], limits[1])
+
+    def __init__(
+        self,
+        key: str,
+        target: FiveTuple,
+        min_limit: Optional[int] = None,
+        max_limit: Optional[int] = None,
+    ):
+        if max_limit is not None and min_limit is not None and max_limit < min_limit:
+            raise ValueError(
+                f"Max limit {max_limit} is smaller then min limit {min_limit}"
+            )
+
+        self.key = key
+        self.min_limit = min_limit
+        self.max_limit = max_limit
+        self.target = target
+
+    def find_conntracker_violations(
+        self, events: List[ConntrackerEvent]
+    ) -> Optional[ConnTrackerViolation]:
+        # We would like to return all connections, which are out of limits
+        # Instead of just first one which happens to be in the list.
+
+        # Count connections matching our five tuple
+        count = len([
+            event
+            for event in events
+            if event.event_type == EventType.NEW
+            and self.target.partial_eq(event.five_tuple)
+        ])
+
+        if self.max_limit is not None and count > self.max_limit:
+            return ConnTrackerViolation(
+                recoverable=False,
+                reason=f"In {self.key} there has been {count} connections to {FiveTuple} which is more then max limit of {self.max_limit}",
+            )
+        if self.min_limit is not None and count < self.min_limit:
+            return ConnTrackerViolation(
+                recoverable=True,
+                reason=f"In {self.key} there has been {count} connections to {FiveTuple} which is less then min limit of {self.min_limit}",
+            )
+
+        return None
+
+
+class TCPStateSequence(ConnTrackerEventsValidator):
+    """
+    Conntracker events validator which ensures all connections matching FiveTuple has gone through specific sequence of TCP state transitions
+
+    Note this validator allows for various TCP states on connections, but full sequence of states must *end* in specified sequence.
+    """
+
+    def __init__(self, key: str, five_tuple: FiveTuple, sequence: List[TcpState]):
+        if five_tuple.protocol is None or five_tuple.protocol != "tcp":
+            raise ValueError(
+                'TcpStateSequence validator is only available for "tcp" protocol five tuples'
+            )
+
+        if len(sequence) == 0:
+            raise ValueError(
+                "TcpStateSequence validator is noop when requested sequence is empty"
+            )
+
+        self.key = key
+        self.five_tuple = five_tuple
+        self.sequence = sequence
+
+    def find_conntracker_violations(
+        self, events: List[ConntrackerEvent]
+    ) -> Optional[ConnTrackerViolation]:
+        # First we need to build a list of distinct connections matching FiveTuple
+
+        # There is this quirk, that conntracker events are distributed over time
+        # which means, that same FiveTuple can represent multiple connections which
+        # are non-overlapping in time. We need to handle it.
+        #
+        # Ultimately we are building two dimensional list here, where first level
+        # is representing distinct connections, and second level ConnTrackerEvent's
+        # belonging to each connection. So later we can analyze sequences of events
+        # more easily.
+        # We can exploit the fact that those connections reusing the same FiveTuple
+        # cannot overlap in time and events list is sorted by time. For this reason
+        # connection cache is introduced which maps FiveTuple to index in two dimensional
+        # array, and gets cleared every time NEW type event appears in the list of events
+        connections: Dict[FiveTuple, List[List[ConntrackerEvent]]] = {}
+        for event in filter(lambda e: self.five_tuple.partial_eq(e.five_tuple), events):
+            # Every new connection (identified by EventType NEW) gets its own slot
+            ft = event.five_tuple
+            if event.event_type == EventType.NEW:
+                connections[ft] = (
+                    [[]] if ft not in connections else (connections[ft] + [[]])
+                )
+
+            # append event
+            connections[ft][-1].append(event)
+
+        # Flatten one level, as we have five_tuple -> connection -> events, and
+        # Sequence validation requires connection -> events
+        sequences = [
+            event for connection in connections.values() for event in connection
+        ]
+
+        # Verify whether all conections end up with expected sequence of TCP states
+        violations: list[Optional[ConnTrackerViolation]] = []
+        for connection in sequences:
+            state_sequence = list(map(lambda c: c.tcp_state, connection))[
+                -len(self.sequence) :
+            ]
+            if state_sequence != self.sequence:
+                violations.append(
+                    ConnTrackerViolation(
+                        recoverable=True,
+                        reason=f"In {self.key} connection {connection[0].five_tuple} has mismatching TCP state sequence. Expected: {self.sequence}, have: {state_sequence}",
+                    )
+                )
+
+        return merge_results(violations)
 
 
 def parse_input(input_string) -> ConntrackerEvent:
@@ -123,25 +303,22 @@ class ConnectionTracker:
     def __init__(
         self,
         connection: Connection,
-        configuration: Optional[List[ConnectionTrackerConfig]] = None,
-        process_update_events: bool = False,
+        validators: Optional[List[ConnTrackerEventsValidator]] = None,
     ):
-        args = ["conntrack", "-E", "-e", "NEW"]
-        if process_update_events:
-            args.extend(["-e", "UPDATES"])
+        args = ["conntrack", "-E"]
         self._process: Process = connection.create_process(args)
         self._connection: Connection = connection
-        self._process_update_events = process_update_events
-        self._config: Optional[List[ConnectionTrackerConfig]] = configuration
+        self._validators: Optional[List[ConnTrackerEventsValidator]] = validators
         self._events: List[ConntrackerEvent] = []
         self._tcp_state_events: Dict[TcpState, List[asyncio.Event]] = defaultdict(list)
         self._sync_event: asyncio.Event = asyncio.Event()
         self._sync_connection: FiveTuple = FiveTuple(
             protocol="icmp", dst_ip="127.0.0.2"
         )
+        self._new_report_event = asyncio.Event()
 
     async def on_stdout(self, stdout: str) -> None:
-        if not self._config:
+        if not self._validators:
             return
 
         for line in stdout.splitlines():
@@ -156,23 +333,13 @@ class ConnectionTracker:
                 # always skip events from sync_connection
                 continue
 
-            # skip if we are only interested in new events
-            if not self._process_update_events and event.event_type != EventType.NEW:
-                continue
-
-            matching_configs = [
-                cfg for cfg in self._config if cfg.target.partial_eq(connection)
-            ]
-            if not matching_configs:
-                continue
-
             self._events.append(event)
-            self._check_tcp_state_for_events(event)
+            self._new_report_event.set()
 
     async def execute(self) -> None:
         if platform.system() == "Darwin":
             return None
-        if not self._config:
+        if not self._validators:
             return None
 
         await self._process.execute(stdout_callback=self.on_stdout)
@@ -181,62 +348,38 @@ class ConnectionTracker:
         """Register an Event to be notified when a specific TCP state is reported"""
         self._tcp_state_events[state].append(event)
 
-    async def get_out_of_limits(self) -> Optional[Dict[str, int]]:
+    async def find_conntracker_violations(self) -> Optional[ConnTrackerViolation]:
         if platform.system() == "Darwin":
             return None
-        if not self._config:
+        if not self._validators:
             return None
 
         await self._synchronize()
 
-        out_of_limit_connections: Dict[str, int] = {}
+        for v in self._validators:
+            print(v)
+            v.find_conntracker_violations(self._events)
 
-        for cfg in self._config:
-            count = len([
-                event
-                for event in self._events
-                if cfg.target.partial_eq(event.five_tuple)
-            ])
-            if cfg.limits.max is not None:
-                if count > cfg.limits.max:
-                    out_of_limit_connections[cfg.key] = count
-                    print(
-                        datetime.now(),
-                        "ConnectionTracker for",
-                        cfg.target.src_ip,
-                        cfg.key,
-                        "is over the limit:",
-                        count,
-                        ">",
-                        cfg.limits.max,
-                    )
-                    continue
-            if cfg.limits.min is not None:
-                if count < cfg.limits.min:
-                    out_of_limit_connections[cfg.key] = count
-                    print(
-                        datetime.now(),
-                        "ConnectionTracker for",
-                        cfg.target.src_ip,
-                        cfg.key,
-                        "is under the limit:",
-                        count,
-                        "<",
-                        cfg.limits.min,
-                    )
-                    continue
+        return merge_results(
+            [v.find_conntracker_violations(self._events) for v in self._validators]
+        )
 
-        return out_of_limit_connections if bool(out_of_limit_connections) else None
+    async def wait(self):
+        """Waits until there are no conntracker event violations. If unrecoverable event occures throws"""
+        # The implementation is polling, which is probably not super efficient, but at least simple :)
+        while True:
+            await self._new_report_event.wait()
+            self._new_report_event.clear()
 
-    def _check_tcp_state_for_events(self, conntracker_event: ConntrackerEvent) -> None:
-        if tcp_state := conntracker_event.tcp_state:
-            try:
-                self._tcp_state_events[tcp_state].pop(0).set()
-            except IndexError:
-                pass
+            violation = await self.find_conntracker_violations()
+            if violation is None:
+                break
+
+            if not violation.recoverable:
+                raise Exception(violation)
 
     async def _synchronize(self) -> None:
-        if not self._config:
+        if not self._validators:
             return None
 
         print(datetime.now(), "ConnectionTracker waiting for _sync_event")

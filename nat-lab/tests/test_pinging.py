@@ -15,7 +15,7 @@ from utils.bindings import (
     NodeState,
 )
 from utils.connection import Connection
-from utils.connection_tracker import ConnectionTracker, ConnectionLimits
+from utils.connection_tracker import ConnectionTracker
 from utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_with_node_tracker,
@@ -49,22 +49,22 @@ async def build_conntracker(
     # Set connection tracker expectations according to IP stack parameter
     connection = connectivity_stack(primary_ip_stack, secondary_ip_stack)
 
-    ping_limits = ConnectionLimits(0, 0)
-    ping6_limits = ConnectionLimits(0, 0)
+    ping_limits = (0, 0)
+    ping6_limits = (0, 0)
 
     if connection == IPStack.IPv4:
-        ping_limits = ConnectionLimits(1, 2)
+        ping_limits = (1, 2)
     elif connection == IPStack.IPv6:
-        ping6_limits = ConnectionLimits(1, 2)
+        ping6_limits = (1, 2)
     elif connection == IPStack.IPv4v6:
         # Session keeper prioritizes IPv6, and only when IPv6 is not available, it uses IPv4
         if not for_session_keeper:
-            ping_limits = ConnectionLimits(1, 2)
-        ping6_limits = ConnectionLimits(1, 2)
+            ping_limits = (1, 2)
+        ping6_limits = (1, 2)
 
     conntrack_config = generate_connection_tracker_config(
         tag,
-        derp_1_limits=ConnectionLimits(1, 1),
+        derp_1_limits=(1, 1),
         ping_limits=ping_limits,
         ping6_limits=ping6_limits,
     )
@@ -106,7 +106,7 @@ def nurse_features() -> Features:
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
                 features=stun_features(),
             )
@@ -117,7 +117,7 @@ def nurse_features() -> Features:
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
                 features=stun_features(),
             ),
@@ -138,7 +138,7 @@ def nurse_features() -> Features:
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
                 ip_stack=IPStack.IPv4v6,
                 features=stun_features(),
@@ -180,8 +180,8 @@ async def test_session_keeper(
 
         async def wait_for_conntracker() -> None:
             while True:
-                alpha_limits = await alpha_conntrack.get_out_of_limits()
-                beta_limits = await beta_conntrack.get_out_of_limits()
+                alpha_limits = await alpha_conntrack.find_conntracker_violations()
+                beta_limits = await beta_conntrack.find_conntracker_violations()
                 print(datetime.now(), "Conntracker state: ", alpha_limits, beta_limits)
                 if alpha_limits is None and beta_limits is None:
                     return
@@ -212,7 +212,7 @@ async def test_session_keeper(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
                 features=nurse_features(),
                 fingerprint="alpha_fingerprint",
@@ -224,7 +224,7 @@ async def test_session_keeper(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
                 features=nurse_features(),
                 fingerprint="alpha_fingerprint",
@@ -245,7 +245,7 @@ async def test_session_keeper(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
                 ip_stack=IPStack.IPv4v6,
                 features=default_features(enable_ipv6=True),
@@ -278,7 +278,7 @@ async def test_qos(
 
         async def wait_for_conntracker() -> None:
             while True:
-                alpha_limits = await alpha_conntrack.get_out_of_limits()
+                alpha_limits = await alpha_conntrack.find_conntracker_violations()
                 print("wait_for_conntracker(): ", alpha_limits)
                 if alpha_limits is None:
                     return
