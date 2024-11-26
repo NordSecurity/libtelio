@@ -59,7 +59,13 @@ def _generate_setup_parameters(
         features.direct.providers = providers
         features.wireguard.persistent_keepalive.direct = 10
         features.batching = (
-            FeatureBatching(direct_connection_threshold=5) if batching else None
+            FeatureBatching(
+                direct_connection_threshold=5,
+                trigger_cooldown_duration=60,
+                trigger_effective_duration=10,
+            )
+            if batching
+            else None
         )
         return features
 

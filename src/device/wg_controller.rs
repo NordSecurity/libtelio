@@ -2147,9 +2147,7 @@ mod tests {
     #[tokio::test]
     async fn when_fresh_start_and_batching_enabled_then_proxy_enpoint_is_added_with_batching() {
         let mut f = Fixture::new();
-        f.features.batching = Some(FeatureBatching {
-            direct_connection_threshold: 5,
-        });
+        f.features.batching = Some(FeatureBatching::default());
 
         let pub_key = SecretKey::gen().public();
         let ip1 = IpAddr::from([1, 2, 3, 4]);
@@ -2183,7 +2181,7 @@ mod tests {
             ip1,
             Some(ip1v6),
             proxying_keepalive_time,
-            Some(Duration::from_secs(5)),
+            Some(Duration::from_secs(0)),
         )]);
 
         f.consolidate_peers().await;
@@ -2832,9 +2830,7 @@ mod tests {
     #[tokio::test]
     async fn when_vpn_peer_is_added_with_batching() {
         let mut f = Fixture::new();
-        f.features.batching = Some(FeatureBatching {
-            direct_connection_threshold: 5,
-        });
+        f.features.batching = Some(FeatureBatching::default());
 
         let public_key = SecretKey::gen().public();
         let allowed_ips = vec![
@@ -2885,7 +2881,7 @@ mod tests {
             IpAddr::from(VPN_INTERNAL_IPV4),
             Some(IpAddr::from(VPN_INTERNAL_IPV6)),
             vpn_persistent_keepalive,
-            Some(Duration::from_secs(5)),
+            Some(Duration::from_secs(0)),
         )]);
 
         f.consolidate_peers().await;
@@ -2978,9 +2974,7 @@ mod tests {
     #[tokio::test]
     async fn when_stun_peer_is_added_with_batching() {
         let mut f = Fixture::new();
-        f.features.batching = Some(FeatureBatching {
-            direct_connection_threshold: 5,
-        });
+        f.features.batching = Some(FeatureBatching::default());
 
         let public_key = SecretKey::gen().public();
 
@@ -3027,7 +3021,7 @@ mod tests {
             IpAddr::from([100, 64, 0, 4]),
             Some(IpAddr::from([0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 4])),
             stun_persistent_keepalive,
-            Some(Duration::from_secs(5)),
+            Some(Duration::from_secs(0)),
         )]);
 
         f.consolidate_peers().await;

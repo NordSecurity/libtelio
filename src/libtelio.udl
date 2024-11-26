@@ -564,6 +564,12 @@ dictionary Features {
 dictionary FeatureBatching {
     /// direct connection threshold for batching
     u32 direct_connection_threshold;
+
+    /// effective trigger period
+    u32 trigger_effective_duration;
+
+    //// cooldown after trigger was used
+    u32 trigger_cooldown_duration;
 };
 
 /// Configurable features for Wireguard peers
