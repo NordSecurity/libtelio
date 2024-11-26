@@ -26,22 +26,59 @@ pub mod encryption;
 use std::{cmp::Ordering, convert::TryInto, fmt};
 
 use rand::prelude::*;
+use serde::{Deserialize, Serialize};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
+use telio_utils::Hidden;
 
 /// Secret, Public and Wireguard Preshared key size in bytes
 pub const KEY_SIZE: usize = 32;
 
 /// Secret key type
 #[derive(
-    Default, PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone, DeserializeFromStr, SerializeDisplay,
+    Default, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone, Serialize, Deserialize,
 )]
-pub struct SecretKey([u8; KEY_SIZE]);
+pub struct SecretKey(Hidden<[u8; KEY_SIZE]>);
 
 /// Public key type
 #[derive(
     Default, PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone, DeserializeFromStr, SerializeDisplay,
 )]
 pub struct PublicKey(pub [u8; KEY_SIZE]);
+
+impl fmt::Display for PublicKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut buf = [0u8; 44];
+        base64::encode_config_slice(self.0, base64::STANDARD, &mut buf);
+        match std::str::from_utf8(&buf) {
+            Ok(buf) => f.write_str(buf),
+            Err(_) => Err(fmt::Error),
+        }
+    }
+}
+
+impl fmt::Debug for PublicKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let buf = base64::encode(self.0);
+        f.write_str(&format!(
+            "\"{:.*}...{}\"",
+            4,
+            &buf,
+            &buf.get((buf.len()) - 4..).ok_or(fmt::Error)?
+        ))
+    }
+}
+impl fmt::LowerHex for PublicKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut buf = [0u8; 64]; // 2 * KEY_SIZE
+        match hex::encode_to_slice(self.0, &mut buf) {
+            Ok(_) => match std::str::from_utf8(&buf) {
+                Ok(buf) => f.write_str(buf),
+                Err(_) => Err(fmt::Error),
+            },
+            Err(_) => Err(fmt::Error),
+        }
+    }
+}
 
 /// Canonical way to order keys as defined in RFC LLT-0051
 pub fn meshnet_canonical_key_order(lhs: &PublicKey, rhs: &PublicKey) -> Ordering {
@@ -60,10 +97,8 @@ pub fn smaller_key_in_meshnet_canonical_order<'a>(
 }
 
 /// Preshared key type
-#[derive(
-    Default, PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone, DeserializeFromStr, SerializeDisplay,
-)]
-pub struct PresharedKey(pub [u8; KEY_SIZE]);
+#[derive(Default, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone)]
+pub struct PresharedKey(pub Hidden<[u8; KEY_SIZE]>);
 
 /// Error returned when parsing fails for SecretKey or PublicKey.
 #[derive(Debug, thiserror::Error)]
@@ -88,7 +123,7 @@ impl SecretKey {
         bytes[31] &= 127;
         bytes[31] |= 64;
 
-        Self(bytes)
+        Self(Hidden(bytes))
     }
 
     /// Generates a new random SecretKey.
@@ -106,8 +141,8 @@ impl SecretKey {
 
     /// Generates a new random SecretKey with provided RNG
     pub fn gen_with(rng: &mut (impl RngCore + CryptoRng)) -> Self {
-        let mut key = SecretKey([0u8; KEY_SIZE]);
-        rng.fill_bytes(&mut key.0);
+        let mut key = SecretKey(Hidden([0u8; KEY_SIZE]));
+        rng.fill_bytes(&mut key.0 .0);
         // Key clamping
         if let Some(first) = key.first_mut() {
             *first &= 248;
@@ -131,7 +166,7 @@ impl SecretKey {
     /// assert_ne!(pub_key_a, pub_key_b);
     /// ```
     pub fn public(&self) -> PublicKey {
-        crypto_box::SecretKey::from(self.0).public_key().into()
+        crypto_box::SecretKey::from(self.0 .0).public_key().into()
     }
 
     /// Return key represented as bytes
@@ -141,7 +176,7 @@ impl SecretKey {
 
     /// Convert secret key to raw bytes
     pub fn into_bytes(self) -> [u8; 32] {
-        self.0
+        self.0 .0
     }
 }
 
@@ -155,31 +190,31 @@ impl PublicKey {
 impl PresharedKey {
     /// Create new key from bytes
     pub const fn new(bytes: [u8; 32]) -> Self {
-        Self(bytes)
+        Self(Hidden(bytes))
     }
 }
 
 impl From<crypto_box::SecretKey> for SecretKey {
     fn from(sk: crypto_box::SecretKey) -> Self {
-        Self(sk.to_bytes())
+        Self(sk.to_bytes().into())
     }
 }
 
 impl From<&crypto_box::SecretKey> for SecretKey {
     fn from(sk: &crypto_box::SecretKey) -> Self {
-        Self(sk.to_bytes())
+        Self(sk.to_bytes().into())
     }
 }
 
 impl From<&SecretKey> for crypto_box::SecretKey {
     fn from(sk: &SecretKey) -> Self {
-        Self::from(sk.0)
+        Self::from(sk.0 .0)
     }
 }
 
 impl From<SecretKey> for crypto_box::SecretKey {
     fn from(sk: SecretKey) -> Self {
-        Self::from(sk.0)
+        Self::from(sk.0 .0)
     }
 }
 
@@ -225,19 +260,19 @@ macro_rules! gen_common {
             type Target = [u8];
 
             fn deref(&self) -> &Self::Target {
-                &self.0
+                &self.0.as_ref()
             }
         }
 
         impl std::convert::AsRef<[u8]> for $t {
             fn as_ref(&self) -> &[u8] {
-                &self.0
+                &self.0.as_ref()
             }
         }
 
         impl std::ops::DerefMut for $t {
             fn deref_mut(&mut self) -> &mut Self::Target {
-                &mut self.0
+                self.0.as_mut()
             }
         }
 
@@ -245,7 +280,8 @@ macro_rules! gen_common {
             type Error = std::array::TryFromSliceError;
 
             fn try_from(slice: &[u8]) -> Result<Self, Self::Error> {
-                Ok(Self(slice.try_into()?))
+                let slice : [u8;32] = slice.try_into()?;
+                Ok(Self(slice.into()))
             }
         }
 
@@ -253,7 +289,8 @@ macro_rules! gen_common {
             type Error = Vec<u8>;
 
             fn try_from(v: Vec<u8>) -> Result<Self, Self::Error> {
-                Ok(Self(v.try_into()?))
+                let slice : [u8;32] = v.try_into()?;
+                Ok(Self(slice.into()))
             }
         }
 
@@ -273,39 +310,6 @@ macro_rules! gen_common {
             }
         }
 
-        impl fmt::Display for $t {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                let mut buf = [0u8; 44];
-                base64::encode_config_slice(&self.0, base64::STANDARD, &mut buf);
-                match std::str::from_utf8(&buf) {
-                    Ok(buf) =>  f.write_str(&buf),
-                    Err(_) => Err(fmt::Error)
-                }
-            }
-        }
-
-        impl fmt::LowerHex for $t {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                let mut buf = [0u8; 64]; // 2 * KEY_SIZE
-                match hex::encode_to_slice(&self.0, &mut buf) {
-                    Ok(_) => {
-                        match std::str::from_utf8(&buf) {
-                            Ok(buf) => f.write_str(&buf),
-                            Err(_) => Err(fmt::Error)
-                        }
-                    },
-                    Err(_) => Err(fmt::Error)
-                }
-            }
-        }
-
-        impl fmt::Debug for $t {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                let buf = base64::encode(&self.0);
-                f.write_str(&format!("\"{:.*}...{}\"", 4, &buf, &buf.get((buf.len())-4..).ok_or(fmt::Error)?))
-            }
-        }
-
     };
     ($t:ty, $($tt:ty),+) => {
         gen_common!($t);
@@ -321,7 +325,6 @@ mod tests {
     const SK: SecretKey = SecretKey::new([0xBAu8; 32]);
     const SK_HEX: &str = "b8babababababababababababababababababababababababababababababa7a";
     const SK_B64: &str = "uLq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uno=";
-    const SK_B64_SHORT: &str = "\"uLq6...uno=\"";
     const PK: PublicKey = PublicKey([
         124, 138, 97, 25, 210, 221, 193, 169, 240, 19, 235, 72, 147, 68, 8, 93, 67, 1, 26, 73, 54,
         36, 116, 129, 248, 12, 124, 44, 238, 225, 78, 53,
@@ -329,6 +332,7 @@ mod tests {
     const PK_HEX: &str = "7c8a6119d2ddc1a9f013eb489344085d43011a4936247481f80c7c2ceee14e35";
     const PK_B64: &str = "fIphGdLdwanwE+tIk0QIXUMBGkk2JHSB+Ax8LO7hTjU=";
     const PK_B64_SHORT: &str = "\"fIph...TjU=\"";
+    const PSK: PresharedKey = PresharedKey::new([0xBAu8; 32]);
 
     #[test]
     fn secret_key_is_clammped() {
@@ -342,10 +346,14 @@ mod tests {
     }
 
     #[test]
+    #[cfg(debug_assertions)]
+    fn secrets_printing_in_debug_mode() {
+        assert_eq!("SecretKey([184, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 122])", &format!("{SK:?}"));
+        assert_eq!("PresharedKey([186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186])", &format!("{PSK:?}"));
+    }
+
+    #[test]
     fn convert_to_base64() {
-        assert_eq!(SK_B64, &format!("{}", SK));
-        assert_eq!(PK_B64, &format!("{}", PK));
-        assert_eq!(SK_B64_SHORT, &format!("{:?}", SK));
         assert_eq!(PK_B64_SHORT, &format!("{:?}", PK));
     }
 
@@ -357,7 +365,6 @@ mod tests {
 
     #[test]
     fn convert_to_hex() {
-        assert_eq!(SK_HEX, &format!("{:x}", SK));
         assert_eq!(PK_HEX, &format!("{:x}", PK));
     }
 

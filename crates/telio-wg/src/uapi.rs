@@ -91,7 +91,7 @@ impl From<get::Peer> for Peer {
             preshared_key: if item.preshared_key == [0; 32] {
                 None
             } else {
-                Some(PresharedKey(item.preshared_key))
+                Some(PresharedKey(item.preshared_key.into()))
             },
         }
     }
@@ -110,7 +110,7 @@ impl From<set::Peer> for Peer {
                 .map(|ip| IpNet::new(ip.ipaddr, ip.cidr_mask))
                 .collect::<Result<Vec<IpNet>, _>>()
                 .unwrap_or_default(),
-            preshared_key: item.preshared_key.map(PresharedKey),
+            preshared_key: item.preshared_key.map(|k| PresharedKey(k.into())),
             ..Default::default()
         }
     }
@@ -166,7 +166,7 @@ impl From<&Peer> for set::Peer {
                     cidr_mask: ip.prefix_len(),
                 })
                 .collect(),
-            preshared_key: item.preshared_key.map(|psk| psk.0),
+            preshared_key: item.preshared_key.map(|psk| psk.0 .0),
             ..Default::default()
         }
     }
