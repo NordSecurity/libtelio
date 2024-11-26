@@ -783,7 +783,7 @@ impl Cli {
             #[cfg(target_os = "linux")]
             self.telio.set_fwmark(FWMARK_VALUE)?;
 
-            cli_res!(res; (i "started telio with {:?}:{}...", adapter_type, private_key));
+            cli_res!(res; (i "started telio with {:?}:{:?}...", adapter_type, private_key));
         }
         Ok(())
     }

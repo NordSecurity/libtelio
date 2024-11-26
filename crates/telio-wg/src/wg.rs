@@ -1101,6 +1101,7 @@ pub mod tests {
     use rand::{Rng, RngCore, SeedableRng};
     use telio_crypto::PresharedKey;
     use telio_sockets::NativeProtector;
+    use telio_utils::Hidden;
     use tokio::{runtime::Handle, sync::Mutex, task, time::sleep};
 
     use telio_task::io::{Chan, McChan};
@@ -1139,7 +1140,7 @@ pub mod tests {
                 time_since_last_rx: Some(Duration::from_millis(rng.gen())),
                 tx_bytes: Some(rng.gen()),
                 time_since_last_handshake: Some(Duration::from_millis(rng.gen())),
-                preshared_key: Some(PresharedKey(rng.gen())),
+                preshared_key: Some(PresharedKey(Hidden(rng.gen()))),
             };
             peers.insert(key, peer);
         }
