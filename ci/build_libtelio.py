@@ -292,19 +292,8 @@ LIBTELIO_CONFIG = {
         },
     },
     "qnap": {
-        "archs": {
-            "x86_64": {
-                "env": {
-                    "RUSTFLAGS": (
-                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/qnap/{MOOSE_MAP['x86_64']}",
-                        "set",
-                    )
-                },
-            },
-        },
         "post_build": [post_qnap_build_wrap_binary_on_qpkg],
         "packages": {
-            "tcli": {"tcli": "tcli"},
             "teliod": {"teliod": "teliod"},
         },
     },
@@ -515,10 +504,6 @@ def exec_build(args):
             moose_utils.fetch_moose_dependencies(args.os, MOOSE_MAP[args.arch])
 
         moose_utils.set_cargo_dependencies()
-    else:
-        if args.os == "qnap":
-            LIBTELIO_CONFIG["qnap"]["archs"][args.arch].pop("env")
-        moose_utils.unset_cargo_dependencies()
 
     if args.os == "windows":
         if args.msvc:
