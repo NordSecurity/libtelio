@@ -65,9 +65,9 @@ impl FeaturesDefaultsBuilder {
         self
     }
 
-    /// Enable firewall connection resets when boringtun is enabled
+    /// Enable firewall connection resets when NepTUN is enabled
     pub fn enable_firewall_connection_reset(self: Arc<Self>) -> Arc<Self> {
-        self.config.lock().firewall.boringtun_reset_conns = true;
+        self.config.lock().firewall.neptun_reset_conns = true;
         self
     }
 

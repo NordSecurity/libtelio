@@ -1,7 +1,7 @@
 use crate::{bind_tun, LocalNameServer, NameServer, Records};
 use async_trait::async_trait;
-use boringtun::noise::Tunn;
 use ipnet::IpNet;
+use neptun::noise::Tunn;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::{net::SocketAddr, sync::Arc};
 use telio_crypto::{PublicKey, SecretKey};

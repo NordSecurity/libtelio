@@ -1,4 +1,4 @@
-use boringtun::noise::Tunn;
+use neptun::noise::Tunn;
 use std::{
     fmt,
     fs::{remove_file, write},

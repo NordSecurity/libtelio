@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use boringtun::device::{tun::TunSocket, DeviceConfig, DeviceHandle};
 use futures::future::BoxFuture;
+use neptun::device::{tun::TunSocket, DeviceConfig, DeviceHandle};
 use slog::{o, Drain};
 use slog_stdlog::StdLog;
 use std::net::{IpAddr, Ipv4Addr};
@@ -13,19 +13,19 @@ use tokio::sync::RwLock;
 use super::{Adapter, Error as AdapterError, Tun as NativeTun};
 use crate::uapi::{self, Cmd, Response};
 
-pub use boringtun::device::Error;
 use libc::socket;
+pub use neptun::device::Error;
 use telio_sockets::SocketPool;
 
 #[cfg(not(any(test, feature = "test-adapter")))]
 pub type FirewallCb = Option<Arc<dyn Fn(&[u8; 32], &[u8]) -> bool + Send + Sync>>;
 
-pub struct BoringTun {
+pub struct NepTUN {
     device: RwLock<DeviceHandle>,
     reset_conns_cb: super::FirewallResetConnsCb,
 }
 
-impl BoringTun {
+impl NepTUN {
     #[cfg(not(any(test, feature = "test-adapter")))]
     pub fn start(
         name: &str,
@@ -36,7 +36,7 @@ impl BoringTun {
         firewall_reset_connections_callback: super::FirewallResetConnsCb,
     ) -> Result<Self, AdapterError> {
         let config = DeviceConfig {
-            // Apple's Boringtun device runs most efficiently on a single perf-core
+            // Apple's NepTUN device runs most efficiently on a single perf-core
             n_threads: {
                 if cfg!(target_os = "android") {
                     // A large set of supported android devices
@@ -72,7 +72,7 @@ impl BoringTun {
             None => DeviceHandle::new(name, config)?,
         };
 
-        Ok(BoringTun {
+        Ok(NepTUN {
             device: RwLock::new(device),
             reset_conns_cb: firewall_reset_connections_callback,
         })
@@ -84,7 +84,7 @@ impl BoringTun {
 }
 
 #[async_trait]
-impl Adapter for BoringTun {
+impl Adapter for NepTUN {
     async fn send_uapi_cmd(&self, cmd: &Cmd) -> Result<Response, AdapterError> {
         let res = self.send_uapi_cmd_str(&cmd.to_string()).await;
         Ok(uapi::response_from_str(&res)?)

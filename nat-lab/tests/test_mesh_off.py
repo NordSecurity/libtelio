@@ -151,8 +151,8 @@ async def test_mesh_state_after_disconnecting_node() -> None:
 
         # LLT-5532: To be cleaned up...
         client_alpha.allow_errors(
-            ["boringtun::noise::timers.*CONNECTION_EXPIRED\\(REKEY_ATTEMPT_TIME\\)"]
+            ["neptun::noise::timers.*CONNECTION_EXPIRED\\(REKEY_ATTEMPT_TIME\\)"]
         )
         client_beta.allow_errors(
-            ["boringtun::noise::timers.*CONNECTION_EXPIRED\\(REKEY_ATTEMPT_TIME\\)"]
+            ["neptun::noise::timers.*CONNECTION_EXPIRED\\(REKEY_ATTEMPT_TIME\\)"]
         )

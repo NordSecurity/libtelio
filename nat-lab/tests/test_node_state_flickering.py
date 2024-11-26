@@ -25,7 +25,7 @@ from utils.connection_util import generate_connection_tracker_config, Connection
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -68,7 +68,7 @@ from utils.connection_util import generate_connection_tracker_config, Connection
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -118,7 +118,7 @@ async def test_node_state_flickering_relay(
 CFG = [
     (TelioAdapterType.WINDOWS_NATIVE_TUN, [pytest.mark.windows]),
     (TelioAdapterType.WIREGUARD_GO_TUN, [pytest.mark.windows]),
-    (TelioAdapterType.BORING_TUN, []),
+    (TelioAdapterType.NEP_TUN, []),
     (TelioAdapterType.LINUX_NATIVE_TUN, []),
 ]
 

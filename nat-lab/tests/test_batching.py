@@ -112,7 +112,7 @@ ALL_NODES = [
     (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, TelioAdapterType.LINUX_NATIVE_TUN),
     (
         ConnectionTag.MAC_VM,
-        TelioAdapterType.BORING_TUN,
+        TelioAdapterType.NEP_TUN,
     ),
     (ConnectionTag.WINDOWS_VM_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
     (ConnectionTag.WINDOWS_VM_2, TelioAdapterType.WIREGUARD_GO_TUN),

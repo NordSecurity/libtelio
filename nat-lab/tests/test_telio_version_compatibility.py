@@ -35,7 +35,7 @@ UHP_conn_client_types = [
         STUN_PROVIDER,
         ConnectionTag.DOCKER_CONE_CLIENT_1,
         ConnectionTag.DOCKER_CONE_CLIENT_2,
-        TelioAdapterType.BORING_TUN,
+        TelioAdapterType.NEP_TUN,
     ),
 ]
 

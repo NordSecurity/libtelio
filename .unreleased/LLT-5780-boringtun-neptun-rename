@@ -1,0 +1,1 @@
+Use neptun instead of boringtun. Rename boringtun_reset_conns feature flag to neptun_reset_conns. boringtun_reset_conns stays as an alias for backwards compatibility and will be removed in the next major release.

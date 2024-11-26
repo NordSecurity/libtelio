@@ -198,7 +198,7 @@ enum LoginCmd {
 enum DevCmd {
     Start {
         /// Select adapter type to run
-        #[clap(possible_values = &["boringtun", "wireguard-go", "wireguard-nt", "linux-native", ""], default_value ="")]
+        #[clap(possible_values = &["neptun", "wireguard-go", "wireguard-nt", "linux-native", ""], default_value ="")]
         adapter: String,
         /// Name of device
         #[clap(default_value = DEFAULT_TUNNEL_NAME)]
@@ -254,7 +254,7 @@ enum MeshCmd {
     /// Turn mesnet on
     On {
         name: String,
-        #[clap(possible_values = &["boringtun", "wireguard-go", "wireguard-nt", "linux-native", ""], default_value ="")]
+        #[clap(possible_values = &["neptun", "wireguard-go", "wireguard-nt", "linux-native", ""], default_value ="")]
         adapter: String,
     },
     /// Set own meshnet ip address for the adapter
@@ -572,7 +572,7 @@ impl Cli {
                         // TODO: Use "wireguard-nt" as default later
                         "wireguard-go"
                     } else {
-                        "boringtun"
+                        "neptun"
                     };
                     cli_res!(res; (j self.exec_dev(DevCmd::Start {
                         adapter: adapter.to_owned(),

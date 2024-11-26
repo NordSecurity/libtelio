@@ -39,7 +39,7 @@ from utils.router import IPProto, IPStack
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                 ip_stack=IPStack.IPv4v6,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -86,7 +86,7 @@ from utils.router import IPProto, IPStack
             SetupParameters(
                 connection_tag=ConnectionTag.MAC_VM,
                 ip_stack=IPStack.IPv4v6,
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
                     derp_1_limits=ConnectionLimits(1, 1),
@@ -200,7 +200,7 @@ async def test_mesh_exit_through_peer(
 @pytest.mark.parametrize(
     "alpha_connection_tag,adapter_type",
     [
-        pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN),
+        pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
         pytest.param(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
             TelioAdapterType.LINUX_NATIVE_TUN,
@@ -221,7 +221,7 @@ async def test_mesh_exit_through_peer(
             ],
         ),
         pytest.param(
-            ConnectionTag.MAC_VM, TelioAdapterType.BORING_TUN, marks=pytest.mark.mac
+            ConnectionTag.MAC_VM, TelioAdapterType.NEP_TUN, marks=pytest.mark.mac
         ),
     ],
 )

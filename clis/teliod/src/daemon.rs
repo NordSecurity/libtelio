@@ -111,11 +111,11 @@ fn start_telio(
     telio.start(&DeviceConfig {
         private_key,
         name: Some(interface_name.to_owned()),
-        adapter: AdapterType::BoringTun,
+        adapter: AdapterType::NepTUN,
         ..Default::default()
     })?;
 
-    debug!("started telio with {:?}...", AdapterType::BoringTun,);
+    debug!("started telio with {:?}...", AdapterType::NepTUN,);
     Ok(())
 }
 

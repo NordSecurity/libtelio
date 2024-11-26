@@ -66,7 +66,7 @@ def _generate_setup_parameters(
     return [
         SetupParameters(
             connection_tag=conn_tag,
-            adapter_type_override=TelioAdapterType.BORING_TUN,
+            adapter_type_override=TelioAdapterType.NEP_TUN,
             features=features(endpoint_providers, batching),
             fingerprint=f"{conn_tag}",
         )
@@ -369,8 +369,8 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
 
         # This is expected. Clients can still receive messages from
         # the previous sessions.
-        alpha_client.allow_errors(["boringtun::device.*Decapsulate error"])
-        beta_client.allow_errors(["boringtun::device.*Decapsulate error"])
+        alpha_client.allow_errors(["neptun::device.*Decapsulate error"])
+        beta_client.allow_errors(["neptun::device.*Decapsulate error"])
 
         # LLT-5532: To be cleaned up...
         alpha_client.allow_errors(
@@ -479,7 +479,7 @@ async def test_direct_working_paths_with_skip_unresponsive_peers() -> None:
 
         # This is expected. Alpha client can still receive messages from
         # the previous session from beta after the restart.
-        alpha_client.allow_errors(["boringtun::device.*Decapsulate error"])
+        alpha_client.allow_errors(["neptun::device.*Decapsulate error"])
 
 
 @pytest.mark.asyncio

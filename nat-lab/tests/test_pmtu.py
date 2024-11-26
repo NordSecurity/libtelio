@@ -163,7 +163,7 @@ async def test_pmtu_without_nexthop(setup_params: SetupParameters) -> None:
     [
         pytest.param(
             SetupParameters(
-                adapter_type_override=TelioAdapterType.BORING_TUN,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     vpn_1_limits=ConnectionLimits(1, 1),

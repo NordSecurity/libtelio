@@ -13,7 +13,6 @@ tcli.log
 *.prepared*
 *.dylib
 /nat-lab/data/tcli*
-/3rd-party/boringtun
 /3rd-party/ci-helper-scripts/
 /3rd-party/libmoose
 /3rd-party/nordderper
@@ -38,8 +37,6 @@ target/
 /target-natlab/
 /target-windows/
 /windows-local-dev-out/
-/patches/boringtun/*~
-/patches/wireguard-go/*~
 /nat-lab/*.log
 /nat-lab/.vagrant
 /nat-lab/bin/wireguard-go

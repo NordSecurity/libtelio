@@ -315,13 +315,13 @@ class Client:
         # If the passed adapter_type is None, use the default for the given OS
         # At the time of writing this comment, that means:
         #   Windows -> WireguardGo
-        #   All other platforms -> BoringTun
+        #   All other platforms -> NepTUN
         if adapter_type is not None:
             self._adapter_type = adapter_type
         elif isinstance(self.get_router(), WindowsRouter):
             self._adapter_type = TelioAdapterType.WIREGUARD_GO_TUN
         else:
-            self._adapter_type = TelioAdapterType.BORING_TUN
+            self._adapter_type = TelioAdapterType.NEP_TUN
         self._telio_features = telio_features
         self._quit = False
         self._start_time = datetime.now()

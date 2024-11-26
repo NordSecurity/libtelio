@@ -44,6 +44,8 @@ pub enum TelioError {
 /// Possible adapters.
 pub enum TelioAdapterType {
     /// Userland rust implementation.
+    NepTUN,
+    /// Userland rust implementation. (Deprecated alias for NepTUN).
     BoringTun,
     /// Linux in-kernel WireGuard implementation
     LinuxNativeTun,
@@ -114,11 +116,20 @@ impl From<&DevError> for TelioError {
 }
 
 map_enum! {
-    AdapterType <=> TelioAdapterType,
-    BoringTun = BoringTun,
+    AdapterType -> TelioAdapterType,
+    NepTUN = BoringTun,
     WireguardGo = WireguardGoTun,
     LinuxNativeWg = LinuxNativeTun,
     WindowsNativeWg = WindowsNativeTun
+}
+
+map_enum! {
+    TelioAdapterType -> AdapterType,
+    NepTUN = NepTUN,
+    BoringTun = NepTUN,
+    WireguardGoTun = WireguardGo,
+    LinuxNativeTun = LinuxNativeWg,
+    WindowsNativeTun = WindowsNativeWg
 }
 
 // Deprecated slog crate had 6 levels

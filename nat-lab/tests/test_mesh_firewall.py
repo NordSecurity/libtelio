@@ -96,7 +96,7 @@ async def test_mesh_firewall_successful_passthrough(
             exit_stack,
             [
                 _setup_params(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN
+                    ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN
                 ),
                 _setup_params(ConnectionTag.DOCKER_CONE_CLIENT_2),
             ],
@@ -199,7 +199,7 @@ async def test_mesh_firewall_reject_packet(
             exit_stack,
             [
                 _setup_params(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN
+                    ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN
                 ),
                 _setup_params(ConnectionTag.DOCKER_CONE_CLIENT_2),
             ],
@@ -258,7 +258,7 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
             [
                 _setup_params(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    TelioAdapterType.BORING_TUN,
+                    TelioAdapterType.NEP_TUN,
                     stun_limits=ConnectionLimits(1, 1),
                 ),
                 _setup_params(
@@ -426,7 +426,7 @@ async def test_mesh_firewall_file_share_port(
             exit_stack,
             [
                 _setup_params(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.BORING_TUN
+                    ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN
                 ),
                 _setup_params(ConnectionTag.DOCKER_CONE_CLIENT_2),
             ],
@@ -512,9 +512,9 @@ async def test_mesh_firewall_file_share_port(
 @pytest.mark.parametrize(
     "alpha_adapter_type, beta_adapter_type",
     [
-        (TelioAdapterType.BORING_TUN, TelioAdapterType.BORING_TUN),
-        (TelioAdapterType.BORING_TUN, TelioAdapterType.LINUX_NATIVE_TUN),
-        (TelioAdapterType.LINUX_NATIVE_TUN, TelioAdapterType.BORING_TUN),
+        (TelioAdapterType.NEP_TUN, TelioAdapterType.NEP_TUN),
+        (TelioAdapterType.NEP_TUN, TelioAdapterType.LINUX_NATIVE_TUN),
+        (TelioAdapterType.LINUX_NATIVE_TUN, TelioAdapterType.NEP_TUN),
     ],
 )
 async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_side(
@@ -621,9 +621,9 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
 @pytest.mark.parametrize(
     "alpha_adapter_type, beta_adapter_type",
     [
-        (TelioAdapterType.BORING_TUN, TelioAdapterType.BORING_TUN),
-        (TelioAdapterType.BORING_TUN, TelioAdapterType.LINUX_NATIVE_TUN),
-        (TelioAdapterType.LINUX_NATIVE_TUN, TelioAdapterType.BORING_TUN),
+        (TelioAdapterType.NEP_TUN, TelioAdapterType.NEP_TUN),
+        (TelioAdapterType.NEP_TUN, TelioAdapterType.LINUX_NATIVE_TUN),
+        (TelioAdapterType.LINUX_NATIVE_TUN, TelioAdapterType.NEP_TUN),
     ],
 )
 async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_side(

@@ -43,7 +43,7 @@ pub struct Features {
     pub ipv6: bool,
     /// Nicknames support
     pub nicknames: bool,
-    /// Flag to turn on connection reset upon VPN server change for boringtun adapter
+    /// Flag to turn on connection reset upon VPN server change for NepTUN adapter
     pub firewall: FeatureFirewall,
     /// If and for how long to flush events when stopping telio. Setting to Some(0) means waiting until all events have been flushed, regardless of how long it takes
     pub flush_events_on_stop_timeout_seconds: Option<u64>,
@@ -340,6 +340,9 @@ impl Default for FeatureValidateKeys {
 pub struct FeatureFirewall {
     /// Turns on connection resets upon VPN server change
     #[serde(default)]
+    pub neptun_reset_conns: bool,
+    /// Turns on connection resets upon VPN server change (Deprecated alias for neptun_reset_conns)
+    #[serde(default)]
     pub boringtun_reset_conns: bool,
 }
 
@@ -527,6 +530,7 @@ mod tests {
             "ipv6": true,
             "nicknames": true,
             "firewall": {
+                "neptun_reset_conns": true,
                 "boringtun_reset_conns": true
             },
             "flush_events_on_stop_timeout_seconds": 15,
@@ -613,6 +617,7 @@ mod tests {
                     ipv6: true,
                     nicknames: true,
                     firewall: FeatureFirewall {
+                        neptun_reset_conns: true,
                         boringtun_reset_conns: true,
                     },
                     flush_events_on_stop_timeout_seconds: Some(15),

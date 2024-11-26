@@ -15,7 +15,7 @@ use tokio::{
 };
 
 #[cfg(unix)]
-use boringtun::device::MakeExternalBoringtun;
+use neptun::device::MakeExternalNeptun;
 use telio_utils::{telio_log_debug, telio_log_warn};
 
 use crate::{
@@ -221,7 +221,7 @@ impl SocketPool {
 }
 
 #[cfg(unix)]
-impl MakeExternalBoringtun for SocketPool {
+impl MakeExternalNeptun for SocketPool {
     fn make_external(&self, socket: NativeSocket) {
         let _ = self.protect.make_external(socket);
     }

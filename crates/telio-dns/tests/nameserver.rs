@@ -1,5 +1,5 @@
-use boringtun::noise::{Tunn, TunnResult};
 use dns_parser::{self, Builder, QueryClass, QueryType};
+use neptun::noise::{Tunn, TunnResult};
 use pnet_packet::{
     icmp::{echo_request::IcmpCodes, IcmpTypes, MutableIcmpPacket},
     icmpv6::{echo_request::Icmpv6Codes, Icmpv6Types, MutableIcmpv6Packet},

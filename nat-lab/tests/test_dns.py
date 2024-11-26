@@ -443,7 +443,7 @@ async def test_dns_stability(alpha_ip_stack: IPStack) -> None:
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                     ip_stack=alpha_ip_stack,
-                    adapter_type_override=TelioAdapterType.BORING_TUN,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
                     connection_tracker_config=generate_connection_tracker_config(
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
                         derp_1_limits=ConnectionLimits(1, 1),

@@ -1,8 +1,8 @@
 //! File containing code for the starcast peer.
 
 use async_trait::async_trait;
-use boringtun::noise::{Tunn, TunnResult};
 use ipnet::IpNet;
+use neptun::noise::{Tunn, TunnResult};
 use std::{net::SocketAddr, time::Duration};
 use telio_crypto::{PublicKey, SecretKey};
 use telio_proto::DataMsg;
