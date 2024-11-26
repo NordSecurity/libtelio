@@ -1,6 +1,7 @@
 import asyncio
 import os
 import pytest
+import random
 import shutil
 import subprocess
 from helpers import SetupParameters
@@ -65,6 +66,60 @@ def event_loop():
         finally:
             asyncio.events.set_event_loop(None)
             loop.close()
+
+
+async def win_ports(vm_tag):
+    async def on_output(output: str) -> None:
+        print(f"win_ports_{vm_tag}: {output}")
+
+    start_port = random.randint(5000, 55000)
+    num_ports = random.randint(2000, 5000)
+    print(f"Setting up ports for {vm_tag}: start={start_port}, num={num_ports}")
+
+    async with new_connection_raw(vm_tag) as connection:
+        await connection.create_process([
+            "netsh",
+            "int",
+            "ipv4",
+            "set",
+            "dynamic",
+            "tcp",
+            "start=" + str(start_port),
+            "num=" + str(num_ports),
+        ]).execute(on_output, on_output)
+
+
+@pytest.fixture(autouse=True)
+@pytest.mark.windows
+def setup_windows_ports(request):
+    test_name = request.node.name
+
+    def execute_setup(vm_tag):
+        try:
+            asyncio.run(win_ports(vm_tag))
+        except ProcessExecError as e:
+            print(f"win_ports_{vm_tag} process execution failed: {e}")
+
+    if "[WINDOWS_VM_" in test_name:
+        # Extract all VM numbers (WINDOWS_VM_1 and/or WINDOWS_VM_2)
+        vm_names = [
+            param
+            for param in test_name.split("[")[1].split("]")[0].split("-")
+            if param.startswith("WINDOWS_VM_")
+        ]
+
+        for vm_name in vm_names:
+            execute_setup(ConnectionTag[vm_name])
+    else:
+        items = request.session.items
+        for item in items:
+            for mark in item.own_markers:
+                if mark.name != "windows":
+                    continue
+                for tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
+                    execute_setup(tag)
+
+                return
 
 
 # Keep in mind that Windows can consider the filesize too big if parameters are not stripped
