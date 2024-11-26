@@ -112,7 +112,7 @@ class LibtelioWrapper:
         )
 
     @serialize_error
-    def create_tun(self, tun_name) -> int:
+    def create_tun(self, tun_name: bytes) -> int:
         # Constants for TUN/TAP interface creation (from Linux's if_tun.h)
         TUNSETIFF = 0x400454CA
         IFF_TUN = 0x0001
