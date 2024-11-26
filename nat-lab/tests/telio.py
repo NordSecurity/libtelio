@@ -514,7 +514,7 @@ class Client:
         if isinstance(self.get_router(), LinuxRouter):
             await self.get_proxy().set_fwmark(int(LINUX_FWMARK_VALUE))
 
-    async def create_tun(self, tun_name: bytes) -> int:
+    async def create_tun(self, tun_name) -> int:
         return await self.get_proxy().create_tun(tun_name)
 
     async def start_with_tun(self, tun: int):
