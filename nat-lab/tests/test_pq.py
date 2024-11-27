@@ -339,7 +339,7 @@ async def test_dns_with_pq(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params])
+            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
         )
 
         client_conn, *_ = [conn.connection for conn in env.connections]
