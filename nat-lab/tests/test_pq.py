@@ -15,6 +15,8 @@ from utils.connection_util import (
 from utils.dns import query_dns
 from utils.ping import ping
 
+EMPTY_PRESHARED_KEY_SLOT = "(none)"
+
 
 async def _connect_vpn_pq(
     client_conn: Connection,
@@ -35,14 +37,18 @@ async def _connect_vpn_pq(
     assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
 
-async def inspect_preshared_key(nlx_conn: Connection) -> str:
+async def read_preshared_key_slot(nlx_conn: Connection) -> str:
     output = await nlx_conn.create_process(
         ["nlx", "show", "nordlynx0", "dump"]
     ).execute()
     last = output.get_stdout().splitlines()[-1]
-    preshared = last.split()[1]
+    return last.split()[1]
 
-    assert preshared != "(none)", "Preshared key is not assigned"
+
+async def inspect_preshared_key(nlx_conn: Connection) -> str:
+    preshared = await read_preshared_key_slot(nlx_conn)
+
+    assert preshared != EMPTY_PRESHARED_KEY_SLOT, "Preshared key is not assigned"
     return preshared
 
 
@@ -372,3 +378,109 @@ async def test_dns_with_pq(
 
         # Expect this to work as well after the secret key change
         await query_dns(client_conn, "google.com")
+
+
+@pytest.mark.parametrize(
+    "setup",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    vpn_1_limits=ConnectionLimits(1, None),
+                    nlx_1_limits=ConnectionLimits(1, 2),
+                ),
+                is_meshnet=False,
+            ),
+        ),
+    ],
+)
+async def test_pq_vpn_silent_pq_upgrader(
+    setup: SetupParameters,
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        setup.features.post_quantum_vpn.handshake_retry_interval_s = 1
+
+        env = await exit_stack.enter_async_context(
+            setup_environment(exit_stack, [setup])
+        )
+
+        client_conn, *_ = [conn.connection for conn in env.connections]
+        client, *_ = env.clients
+
+        wg_server = config.WG_SERVER  # use non PQ server
+        try:
+            await client.connect_to_vpn(
+                str(wg_server["ipv4"]),
+                int(wg_server["port"]),
+                str(wg_server["public_key"]),
+                pq=True,
+                timeout=4,
+            )
+            raise Exception("This shouldn't connect succesfully")
+        except TimeoutError:
+            pass
+
+        await client.get_router().delete_vpn_route()
+
+        # now connect to a good behaving PQ server
+        await _connect_vpn_pq(client_conn, client)
+        await ping(client_conn, config.PHOTO_ALBUM_IP)
+
+
+@pytest.mark.parametrize(
+    "alpha_setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    nlx_1_limits=ConnectionLimits(1, 2),
+                ),
+                is_meshnet=False,
+            ),
+        ),
+    ],
+)
+async def test_pq_vpn_upgrade_from_non_pq(
+    alpha_setup_params: SetupParameters,
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        alpha_setup_params.features.post_quantum_vpn.handshake_retry_interval_s = 1
+
+        env = await exit_stack.enter_async_context(
+            setup_environment(exit_stack, [alpha_setup_params])
+        )
+
+        client_conn, *_ = [conn.connection for conn in env.connections]
+        client, *_ = env.clients
+
+        nlx_conn = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_NLX_1)
+        )
+
+        wg_server = config.NLX_SERVER
+
+        # non-PQ connection
+        await client.connect_to_vpn(
+            str(wg_server["ipv4"]),
+            int(wg_server["port"]),
+            str(wg_server["public_key"]),
+            pq=False,
+        )
+        await ping(client_conn, config.PHOTO_ALBUM_IP)
+
+        preshared = await read_preshared_key_slot(nlx_conn)
+        assert preshared == EMPTY_PRESHARED_KEY_SLOT
+
+        # upgrade to PQ
+        await client.disconnect_from_vpn(str(wg_server["public_key"]))
+        await _connect_vpn_pq(client_conn, client)
+        await ping(client_conn, config.PHOTO_ALBUM_IP)
+
+        preshared = await read_preshared_key_slot(nlx_conn)
+        assert preshared != EMPTY_PRESHARED_KEY_SLOT
