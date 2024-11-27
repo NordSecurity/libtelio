@@ -259,7 +259,7 @@ async def _copy_vm_binaries(tag: ConnectionTag):
         try:
             print(f"copying for {tag}")
             async with windows_vm_util.new_connection(
-                LAN_ADDR_MAP[tag], copy_binaries=True
+                LAN_ADDR_MAP[tag], copy_binaries=True, reenable_nat=True
             ):
                 pass
         except OSError as e:
@@ -268,7 +268,9 @@ async def _copy_vm_binaries(tag: ConnectionTag):
             print(e)
     elif tag is ConnectionTag.MAC_VM:
         try:
-            async with mac_vm_util.new_connection(copy_binaries=True):
+            async with mac_vm_util.new_connection(
+                copy_binaries=True, reenable_nat=True
+            ):
                 pass
         except OSError as e:
             if is_ci:
@@ -446,7 +448,7 @@ async def collect_mac_diagnostic_reports():
         return
     print("Collect mac diagnostic reports")
     try:
-        async with mac_vm_util.new_connection(reenable_nat=False) as connection:
+        async with mac_vm_util.new_connection() as connection:
             await connection.download(
                 "/Library/Logs/DiagnosticReports", "logs/system_diagnostic_reports"
             )
