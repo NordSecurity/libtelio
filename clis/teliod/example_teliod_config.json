@@ -3,5 +3,8 @@
     "log_file_path": "example_log_file.log",
     "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "app_user_uid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-    "interface_name": "utun10"
+    "interface": {
+      "name": "utun10",
+      "config_provider": "manual"
+    }
 }

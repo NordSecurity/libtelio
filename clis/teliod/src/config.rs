@@ -8,6 +8,8 @@ use uuid::Uuid;
 
 use telio::crypto::SecretKey;
 
+use crate::configure_interface::InterfaceConfigurationProvider;
+
 #[derive(PartialEq, Eq, Clone, Copy, Debug, SmartDefault)]
 #[repr(transparent)]
 pub struct Percentage(u8);
@@ -86,7 +88,7 @@ pub struct TeliodDaemonConfig {
     #[serde(deserialize_with = "deserialize_log_level")]
     pub log_level: LevelFilter,
     pub log_file_path: String,
-    pub interface_name: String,
+    pub interface: InterfaceConfig,
 
     pub app_user_uid: Uuid,
 
@@ -136,6 +138,12 @@ fn deserialize_authentication_token<'de, D: Deserializer<'de>>(
     }
 }
 
+#[derive(PartialEq, Eq, Deserialize, Debug)]
+pub struct InterfaceConfig {
+    pub name: String,
+    pub config_provider: InterfaceConfigurationProvider,
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -156,7 +164,10 @@ mod tests {
             log_level: LevelFilter::INFO,
             log_file_path: "test.log".to_owned(),
             app_user_uid: Uuid::from_str("2ba97921-38d7-4736-9d47-261cf3e5c223").unwrap(),
-            interface_name: "utun10".to_owned(),
+            interface: InterfaceConfig {
+                name: "utun10".to_owned(),
+                config_provider: InterfaceConfigurationProvider::Manual,
+            },
             authentication_token:
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
             http_certificate_file_path: None,
@@ -173,7 +184,10 @@ mod tests {
             "log_level": "Info",
             "log_file_path": "test.log",
             "app_user_uid": "2ba97921-38d7-4736-9d47-261cf3e5c223",
-            "interface_name": "utun10",
+            "interface": {
+                "name": "utun10",
+                "config_provider": "manual"
+            },
             "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             }"#;
 
@@ -185,7 +199,10 @@ mod tests {
                 "log_level": "Info",
                 "log_file_path": "test.log",
                 "app_user_uid": "2ba97921-38d7-4736-9d47-261cf3e5c223",
-                "interface_name": "utun10",
+                "interface": {
+                    "name": "utun10",
+                    "config_provider": "manual"
+                },
                 "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 "mqtt": {}
             }"#;
