@@ -20,7 +20,7 @@ VM_UNIFFI_DIR = UNIFFI_PATH_MAC_VM
 async def new_connection(
     ip: str = MAC_VM_IP,
     copy_binaries: bool = False,
-    reenable_nat=True,
+    reenable_nat=False,
 ) -> AsyncIterator[Connection]:
     if reenable_nat:
         subprocess.check_call(["sudo", "bash", "vm_nat.sh", "disable"])

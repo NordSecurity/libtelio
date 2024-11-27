@@ -22,7 +22,7 @@ VM_SYSTEM32 = "C:\\Windows\\System32"
 async def new_connection(
     ip: str = WINDOWS_1_VM_IP,
     copy_binaries: bool = False,
-    reenable_nat=True,
+    reenable_nat=False,
 ) -> AsyncIterator[Connection]:
     if reenable_nat:
         subprocess.check_call(["sudo", "bash", "vm_nat.sh", "disable"])
