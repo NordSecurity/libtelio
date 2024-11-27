@@ -27,29 +27,33 @@ impl ConnKeyRotation {
         let request_retry = Duration::from_secs(features.handshake_retry_interval_s as _);
 
         let task = async move {
-            let mut interval = telio_utils::interval(request_retry);
+            let mut retry_interval = telio_utils::interval(request_retry);
 
             let proto::KeySet {
                 mut wg_keys,
                 pq_secret,
             } = loop {
-                interval.tick().await;
+                retry_interval.tick().await;
 
                 // Dylint is unhappy about the `fetch_keys` future size
                 // and asks for using `Box::pin` to move it on the heap
-                match Box::pin(super::proto::fetch_keys(
+                let fetch_keys = Box::pin(super::proto::fetch_keys(
                     &socket_pool,
                     addr,
                     &wg_secret,
                     &peer,
-                ))
-                .await
-                {
-                    Ok(keys) => {
+                ));
+
+                match tokio::time::timeout(request_retry, fetch_keys).await {
+                    Ok(Ok(keys)) => {
                         telio_log_debug!("PQ keys fetched");
                         break keys;
                     }
-                    Err(err) => telio_log_warn!("Failed to fetch PQ keys: {err}"),
+                    Ok(Err(err)) => telio_log_warn!("Failed to fetch PQ keys: {err}"),
+                    Err(_timeout) => telio_log_warn!(
+                        "Failed to fetch PQ keys: TIMEOUT({}s)",
+                        request_retry.as_secs()
+                    ),
                 }
             };
 
@@ -68,8 +72,10 @@ impl ConnKeyRotation {
 
                 // Dylint is unhappy about the `rekey` future size
                 // and asks for using `Box::pin` to move it on the heap
-                match Box::pin(super::proto::rekey(&socket_pool, &pq_secret)).await {
-                    Ok(key) => {
+                let rekey = Box::pin(super::proto::rekey(&socket_pool, &pq_secret));
+
+                match tokio::time::timeout(request_retry, rekey).await {
+                    Ok(Ok(key)) => {
                         telio_log_debug!("Successful PQ REKEY");
                         wg_keys.pq_shared = key;
 
@@ -79,11 +85,16 @@ impl ConnKeyRotation {
                         #[allow(mpsc_blocking_send)]
                         let _ = chan.send(super::Event::Rekey(wg_keys)).await;
                     }
-                    Err(err) => {
+                    Ok(Err(err)) => {
                         telio_log_warn!("Failed to perform PQ rekey: {err}");
-                        if matches!(err, super::Error::Timeout) {
-                            interval.reset_immediately();
-                        }
+                        interval.reset_after(request_retry);
+                    }
+                    Err(_timeout) => {
+                        telio_log_warn!(
+                            "Failed to perform PQ rekey: TIMEOUT({}s)",
+                            request_retry.as_secs()
+                        );
+                        interval.reset_immediately();
                     }
                 }
             }

@@ -37,9 +37,6 @@ pub enum Error {
     /// Generic unrecoverable error
     #[error("Generic: {0}")]
     Generic(String),
-    /// Socket recv() call timeout
-    #[error("Timeout on recv()")]
-    Timeout,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -53,12 +50,6 @@ impl From<String> for Error {
 impl From<&str> for Error {
     fn from(value: &str) -> Self {
         Self::Generic(value.to_string())
-    }
-}
-
-impl From<tokio::time::error::Elapsed> for Error {
-    fn from(_: tokio::time::error::Elapsed) -> Self {
-        Self::Timeout
     }
 }
 
