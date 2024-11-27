@@ -19,6 +19,7 @@ case "$1" in
     fi
 
     ln -s ${QPKG_ROOT}/web /home/Qhttpd/Web/NordSecurityMeshnet
+    ln -s ${QPKG_ROOT}/teliod.cgi /home/httpd/cgi-bin/qpkg/teliod.cgi
     mkdir -p -m 0755 $NORDSECMESHNET_DIR
 
     if [ -e ${TELIOD_PID_FILE} ]; then
@@ -29,7 +30,7 @@ case "$1" in
         fi
     fi
 
-    ${QPKG_ROOT}/teliod daemon ${QPKG_ROOT}/config.json &
+    ${QPKG_ROOT}/teliod daemon ${QPKG_ROOT}/teliod.cfg &
     echo $! > ${TELIOD_PID_FILE}
     ;;
 
@@ -39,8 +40,7 @@ case "$1" in
       kill -9 ${PID} || true
       rm -f ${TELIOD_PID_FILE}
     fi
-
-    rm /home/Qhttpd/Web/NordSecurityMeshnet
+    rm -f /run/teliod.sock
     ;;
 
   restart)
