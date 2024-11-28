@@ -28,7 +28,7 @@ impl AeadCore for ChaChaBox {
 impl ChaChaBox {
     /// Create a ChaCha20 crypto box for given remote public key and local private key
     pub fn new(public_key: &PublicKey, secret_key: &SecretKey) -> Self {
-        let scalar_sk = Scalar::from_bytes_mod_order(clamp_integer(secret_key.0));
+        let scalar_sk = Scalar::from_bytes_mod_order(clamp_integer(secret_key.0 .0));
         let shared_secret = Zeroizing::new(scalar_sk * MontgomeryPoint(public_key.0));
 
         // Use HChaCha20 to create a uniformly random key from the shared secret

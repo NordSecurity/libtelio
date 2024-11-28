@@ -122,3 +122,9 @@ jobs:
         components: rust-docs
 
     - run: cargo +nightly-2024-04-17 doc --no-deps --workspace --document-private-items
+
+  test-release:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - run: cargo test --release -- --ignored

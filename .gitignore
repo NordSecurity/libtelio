@@ -1,5 +1,4 @@
 Cargo.lock
-tcli
 tcli.log
 /.*/
 !/.cargo
