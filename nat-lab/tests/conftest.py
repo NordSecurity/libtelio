@@ -4,6 +4,7 @@ import pytest
 import random
 import shutil
 import subprocess
+from datetime import datetime
 from helpers import SetupParameters
 from interderp_cli import InterDerpClient
 from itertools import combinations
@@ -68,58 +69,88 @@ def event_loop():
             loop.close()
 
 
-async def win_ports(vm_tag):
+async def os_ephemeral_ports(vm_tag):
     async def on_output(output: str) -> None:
-        print(f"win_ports_{vm_tag}: {output}")
+        print(datetime.now(), f"os_ephemeral_ports_{vm_tag}: {output}")
 
     start_port = random.randint(5000, 55000)
     num_ports = random.randint(2000, 5000)
-    print(f"Setting up ports for {vm_tag}: start={start_port}, num={num_ports}")
+    print(
+        datetime.now(),
+        f"Setting up ports for {vm_tag}: start={start_port}, num={num_ports}",
+    )
 
-    async with new_connection_raw(vm_tag) as connection:
-        await connection.create_process([
+    if vm_tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
+        cmd = [
             "netsh",
             "int",
             "ipv4",
             "set",
             "dynamic",
             "tcp",
-            "start=" + str(start_port),
-            "num=" + str(num_ports),
-        ]).execute(on_output, on_output)
+            f"start={start_port}",
+            f"num={num_ports}",
+        ]
+    elif vm_tag is ConnectionTag.MAC_VM:
+        cmd = [
+            "sysctl",
+            "-w",
+            f"net.inet.ip.portrange.first={start_port}",
+            f"net.inet.ip.portrange.last={start_port + num_ports}",
+        ]
+    else:
+        # Linux
+        cmd = [
+            "sysctl",
+            "-w",
+            f"net.ipv4.ip_local_port_range={start_port} {start_port + num_ports}",
+        ]
+
+    async with new_connection_raw(vm_tag) as connection:
+        await connection.create_process(cmd).execute(on_output, on_output)
 
 
 @pytest.fixture(autouse=True)
-@pytest.mark.windows
-def setup_windows_ports(request):
-    test_name = request.node.name
-
+def setup_ephemeral_ports(request):
     def execute_setup(vm_tag):
         try:
-            asyncio.run(win_ports(vm_tag))
+            asyncio.run(os_ephemeral_ports(vm_tag))
         except ProcessExecError as e:
-            print(f"win_ports_{vm_tag} process execution failed: {e}")
+            print(
+                datetime.now(),
+                f"os_ephemeral_ports_{vm_tag} process execution failed: {e}",
+            )
 
-    if "[WINDOWS_VM_" in test_name:
-        # Extract all VM numbers (WINDOWS_VM_1 and/or WINDOWS_VM_2)
-        vm_names = [
-            param
+    connection_tags = set()
+
+    # Setup for all Docker clients
+    connection_tags.update([
+        tag
+        for tag in ConnectionTag.__members__.values()
+        if tag.name.startswith("DOCKER_") and "CLIENT" in tag.name
+    ])
+
+    # Handle test name (params) to search for VM tags
+    test_name = request.node.name
+    if "_VM_" in test_name:
+        # Extract all connection tags from test name
+        connection_tags.update([
+            ConnectionTag[param]
             for param in test_name.split("[")[1].split("]")[0].split("-")
-            if param.startswith("WINDOWS_VM_")
-        ]
+            if param in ConnectionTag.__members__
+        ])
 
-        for vm_name in vm_names:
-            execute_setup(ConnectionTag[vm_name])
-    else:
-        items = request.session.items
-        for item in items:
-            for mark in item.own_markers:
-                if mark.name != "windows":
-                    continue
-                for tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
-                    execute_setup(tag)
+    # Handle test markers to search for VMs tags
+    for mark in request.node.own_markers:
+        if mark.name == "windows":
+            connection_tags.update(
+                [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]
+            )
+        elif mark.name == "mac":
+            connection_tags.add(ConnectionTag.MAC_VM)
 
-                return
+    for tag in connection_tags:
+        execute_setup(tag)
 
 
 # Keep in mind that Windows can consider the filesize too big if parameters are not stripped
