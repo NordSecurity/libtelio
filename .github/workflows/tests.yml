@@ -127,7 +127,4 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-      - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
-        with:
-          command: test
-          args: --release -- --ignored
+      - run: cargo test --release -- --ignored
