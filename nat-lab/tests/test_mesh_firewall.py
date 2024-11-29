@@ -264,12 +264,10 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     TelioAdapterType.NEP_TUN,
                     stun_limits=ConnectionLimits(1, 1),
-                    features=default_features(enable_firewall=("10.0.0.0/8", False)),
                 ),
                 _setup_params(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
                     stun_limits=ConnectionLimits(1, 5),
-                    features=default_features(enable_firewall=("10.0.0.0/8", False)),
                 ),
             ],
         )

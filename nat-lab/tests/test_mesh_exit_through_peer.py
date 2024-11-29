@@ -7,7 +7,6 @@ from mesh_api import API
 from telio import Client
 from utils import testing, stun
 from utils.bindings import (
-    default_features,
     PathType,
     NodeState,
     RelayState,
@@ -113,7 +112,6 @@ from utils.router import IPProto, IPStack
                     derp_1_limits=ConnectionLimits(1, 1),
                     stun_limits=ConnectionLimits(1, 2),
                 ),
-                features=default_features(enable_firewall=("10.0.0.0/8", False)),
             )
         )
     ],

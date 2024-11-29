@@ -8,6 +8,7 @@ publish = false
 
 [features]
 test_utils = [] # For use in benchmarks to avoid duplication of the 'setup' code needed to create buffers with valid packets
+use_custom_ip = []
 
 [dependencies]
 enum-map = "2.7.3"

@@ -62,9 +62,7 @@ pub use telio_firewall;
 pub use uniffi_libtelio::*;
 #[allow(clippy::panic, clippy::unwrap_used, clippy::expect_used, unwrap_check)]
 mod uniffi_libtelio {
-    use std::net::{IpAddr, SocketAddr};
-
-    use ipnet::Ipv4Net;
+    use std::net::IpAddr;
 
     use super::crypto::{PublicKey, SecretKey};
     use super::*;
@@ -151,19 +149,6 @@ mod uniffi_libtelio {
             Ok(val.parse().map_err(|_| TelioError::UnknownError {
                 inner: "Invalid IP address".to_owned(),
             })?)
-        }
-
-        fn from_custom(obj: Self) -> Self::Builtin {
-            obj.to_string()
-        }
-    }
-
-    impl UniffiCustomTypeConverter for Ipv4Net {
-        type Builtin = String;
-
-        fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
-            val.parse()
-                .map_err(|_| anyhow::anyhow!("Invalid IP address".to_owned()))
         }
 
         fn from_custom(obj: Self) -> Self::Builtin {

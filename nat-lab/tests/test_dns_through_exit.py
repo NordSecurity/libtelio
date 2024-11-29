@@ -4,7 +4,7 @@ import pytest
 from contextlib import AsyncExitStack
 from helpers import setup_api, setup_mesh_nodes, SetupParameters
 from typing import List, Tuple
-from utils.bindings import default_features, TelioAdapterType
+from utils.bindings import TelioAdapterType
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
 from utils.dns import query_dns
@@ -97,7 +97,6 @@ from utils.router import IPStack
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
                     derp_1_limits=ConnectionLimits(1, 1),
                 ),
-                features=default_features(enable_firewall=("10.0.0.0/8", False)),
             )
         )
     ],

@@ -9,7 +9,6 @@ from telio import Client
 from utils import stun
 from utils.bindings import (
     features_with_endpoint_providers,
-    default_features,
     EndpointProvider,
     PathType,
     TelioNode,
@@ -437,7 +436,6 @@ async def test_event_content_vpn_connection(
                     derp_1_limits=ConnectionLimits(1, 1),
                     stun_limits=ConnectionLimits(1, 2),
                 ),
-                features=default_features(enable_firewall=("10.0.0.0/8", False)),
             )
         )
     ],

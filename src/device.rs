@@ -1030,7 +1030,10 @@ impl Runtime {
         features: Features,
         protect: Option<Arc<dyn Protector>>,
     ) -> Result<Self> {
-        let firewall = Arc::new(StatefullFirewall::new(features.ipv6, features.firewall));
+        let neptun_reset_conns =
+            features.firewall.neptun_reset_conns || features.firewall.boringtun_reset_conns;
+
+        let firewall = Arc::new(StatefullFirewall::new(features.ipv6, neptun_reset_conns));
 
         let firewall_filter_inbound_packets = {
             let fw = firewall.clone();
@@ -1040,7 +1043,7 @@ impl Runtime {
             let fw = firewall.clone();
             move |peer: &[u8; 32], packet: &[u8]| fw.process_outbound_packet(peer, packet)
         };
-        let firewall_reset_connections = if features.firewall.neptun_reset_conns {
+        let firewall_reset_connections = if neptun_reset_conns {
             let fw = firewall.clone();
             let cb = move |exit_pubkey: &PublicKey,
                            exit_ipv4: Ipv4Addr,
