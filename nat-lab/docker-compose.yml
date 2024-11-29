@@ -46,6 +46,7 @@ services:
   # as their route to the open internet
   cone-client-01: &common-client
     hostname: cone-client-01
+    privileged: true
     image: nat-lab:base
     entrypoint: /opt/bin/client
     devices:
