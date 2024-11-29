@@ -248,6 +248,7 @@ where
             threshold,
         );
 
+        return;
         let interval = {
             if interval < Self::MIN_INTERVAL {
                 telio_log_warn!(
