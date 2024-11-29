@@ -370,6 +370,8 @@ services:
       upnp-net-01:
         ipv4_address: 192.168.105.254
         priority: 900
+    volumes:
+      - ./data/upnpd/upnpd.conf:/etc/upnpd.conf
   upnp-gw-02:
     hostname: upnp-gw-02
     <<: *common-gw
