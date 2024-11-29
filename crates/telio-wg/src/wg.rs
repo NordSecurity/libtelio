@@ -656,25 +656,25 @@ impl State {
         // but will properly resume work after that. In order to determine a non-recoverable failure
         // such as a malicious removal, we need to count the successive failed calls.
         // If a certain threshold is reached, cleanup the network config and notify the app about connection loss.
-        if 0 == ret.errno {
-            self.uapi_fail_counter = 0;
-        } else {
-            self.uapi_fail_counter += 1;
-        }
+        //if 0 == ret.errno {
+        //    self.uapi_fail_counter = 0;
+        //} else {
+        //    self.uapi_fail_counter += 1;
+        //}
 
-        if self.uapi_fail_counter >= MAX_UAPI_FAIL_COUNT && ret.interface.is_none() {
-            if let Some(libtelio_event) = &self.libtelio_event {
-                let err_event = LibtelioEvent::builder::<LibtelioError>()
-                    .set(EventMsg::from("Interface gone"))
-                    .set(ErrorCode::Unknown)
-                    .set(ErrorLevel::Critical)
-                    .build();
-                if let Some(err_event) = err_event {
-                    let _ = libtelio_event.send(Box::new(err_event));
-                }
-            }
-            return Err(Error::InternalError("Interface gone"));
-        }
+        //if self.uapi_fail_counter >= MAX_UAPI_FAIL_COUNT && ret.interface.is_none() {
+        //    if let Some(libtelio_event) = &self.libtelio_event {
+        //        let err_event = LibtelioEvent::builder::<LibtelioError>()
+        //            .set(EventMsg::from("Interface gone"))
+        //            .set(ErrorCode::Unknown)
+        //            .set(ErrorLevel::Critical)
+        //            .build();
+        //        if let Some(err_event) = err_event {
+        //            let _ = libtelio_event.send(Box::new(err_event));
+        //        }
+        //    }
+        //    return Err(Error::InternalError("Interface gone"));
+        //}
 
         Ok(ret)
     }

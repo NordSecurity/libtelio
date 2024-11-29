@@ -9,14 +9,17 @@ async def query_dns(
     host_name: str,
     expected_output: Optional[List[str]] = None,
     dns_server: Optional[str] = None,
-    options: Optional[str] = None,
+    options: Optional[List[str]] = None,
 ) -> None:
-    response = await connection.create_process([
-        "nslookup",
-        options if options else "-timeout=1",
-        host_name,
-        dns_server if dns_server else LIBTELIO_DNS_IPV4,
-    ]).execute()
+    args = ["nslookup"]
+    if options:
+        args += options
+    else:
+        args.append("-timeout=1")
+    args.append(host_name)
+    args.append(dns_server if dns_server else LIBTELIO_DNS_IPV4)
+
+    response = await connection.create_process(args).execute()
     dns_output = response.get_stdout()
     if expected_output:
         for expected_str in expected_output:
