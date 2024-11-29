@@ -8,7 +8,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     time::Duration,
 };
-use telio_utils::{telio_log_warn, LruCache};
+use telio_utils::{telio_log_debug, telio_log_warn, LruCache};
 
 #[derive(Debug, PartialEq, thiserror::Error)]
 pub enum Error {
@@ -95,6 +95,11 @@ impl StarcastNat {
     ) -> Result<IpAddr, Error> {
         let mut ip_packet = P::new(packet).ok_or(Error::PacketTooShort)?;
         if ip_packet.get_next_level_protocol() != IpNextHeaderProtocols::Udp {
+            telio_log_debug!(
+                "Unexpected incoming packet of type {:?}, packet = {:?}",
+                ip_packet.get_next_level_protocol(),
+                ip_packet.packet()
+            );
             return Err(Error::UnexpectedTransportProtocol);
         }
 
@@ -148,6 +153,11 @@ impl StarcastNat {
     ) -> Result<IpAddr, Error> {
         let mut ip_packet = P::new(packet).ok_or(Error::PacketTooShort)?;
         if ip_packet.get_next_level_protocol() != IpNextHeaderProtocols::Udp {
+            telio_log_debug!(
+                "Unexpected outgoing packet of type {:?}, packet = {:?}",
+                ip_packet.get_next_level_protocol(),
+                ip_packet.packet()
+            );
             return Err(Error::UnexpectedTransportProtocol);
         }
 
