@@ -8,6 +8,7 @@ class CommandGrepper:
     _connection: Connection
     _check_cmd: List[str]
     _timeout: Optional[float]
+    _last_stdout: Optional[str]
 
     def __init__(
         self,
@@ -26,6 +27,7 @@ class CommandGrepper:
         self._connection = connection
         self._check_cmd = check_cmd
         self._timeout = timeout
+        self._last_stdout = None
 
     async def check_exists(
         self, exp_primary: str, exp_secondary: Optional[List[str]] = None
@@ -49,7 +51,7 @@ class CommandGrepper:
             print(f"Process exec error: {e}")
             raise
         except TimeoutError as e:
-            print(f"Timeout error: {e}")
+            print(f"Timeout error: {e}, last stdout: {self._last_stdout}")
             return False
         except Exception as e:
             print(f"Some other exception happened: {e}")
@@ -74,13 +76,15 @@ class CommandGrepper:
                 self._timeout,
             )
         except ProcessExecError as e:
-            print(f"Process exec error: {e}")
+            print(f"Process exec error: {e}, last stdout: {self._last_stdout}")
             raise
         except TimeoutError as e:
-            print(f"Timeout error: {e}")
+            print(f"Timeout error: {e}, last stdout: {self._last_stdout}")
             return False
         except Exception as e:
-            print(f"Some other exception happened: {e}")
+            print(
+                f"Some other exception happened: {e}, last stdout: {self._last_stdout}"
+            )
             raise
 
     async def _run_check(
@@ -88,15 +92,14 @@ class CommandGrepper:
     ) -> bool:
         while True:
             process = await self._connection.create_process(self._check_cmd).execute()
+            self._last_stdout = process.get_stdout()
 
             if exists:
-                if self._check_if_exists(
-                    process.get_stdout(), exp_primary, exp_secondary
-                ):
+                if self._check_if_exists(self._last_stdout, exp_primary, exp_secondary):
                     return True
             else:
                 if self._check_if_not_exists(
-                    process.get_stdout(), exp_primary, exp_secondary
+                    self._last_stdout, exp_primary, exp_secondary
                 ):
                     return True
 
