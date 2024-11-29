@@ -196,6 +196,8 @@ impl SessionKeeperTrait for SessionKeeper {
         interval: Duration,
         threshold: Option<Duration>,
     ) -> Result<()> {
+        telio_log_debug!("Add {}", public_key);
+
         let dual_target = DualTarget::new(target).map_err(Error::DualTargetError)?;
         match threshold {
             Some(t) => task_exec!(&self.task, async move |s| {
