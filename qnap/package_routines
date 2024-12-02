@@ -113,6 +113,7 @@ PKG_POST_REMOVE="{
     rm -rf /tmp/nordsecmeshnet
     rm -f /home/Qhttpd/Web/NordSecurityMeshnet
     rm -f /home/httpd/cgi-bin/qpkg/teliod.cgi
+    rm -f /var/log/teliod.log
 }"
 #
 ######################################################################

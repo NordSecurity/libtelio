@@ -9,6 +9,8 @@ export QNAP_QPKG=$QPKG_NAME
 
 NORDSECMESHNET_DIR=/tmp/nordsecuritymeshnet/
 TELIOD_PID_FILE=${NORDSECMESHNET_DIR}/teliod.pid
+TELIOD_CFG_FILE=${QPKG_ROOT}/teliod.cfg
+TELIOD_LOG_FILE="/var/log/teliod.log"
 
 case "$1" in
   start)
@@ -30,7 +32,7 @@ case "$1" in
         fi
     fi
 
-    ${QPKG_ROOT}/teliod daemon ${QPKG_ROOT}/teliod.cfg &
+    ${QPKG_ROOT}/teliod daemon $TELIOD_CFG_FILE > $TELIOD_LOG_FILE 2>&1 &
     echo $! > ${TELIOD_PID_FILE}
     ;;
 

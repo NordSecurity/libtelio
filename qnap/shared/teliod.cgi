@@ -19,7 +19,7 @@ QPKG_DIR="/share/CACHEDEV1_DATA/.qpkg/NordSecurityMeshnet"
 APP_TMP_DIR="/tmp/nordsecuritymeshnet"
 APP_CMD="$QPKG_DIR/teliod"
 CONFIG_FILE="$QPKG_DIR/teliod.cfg"
-LOG_FILE="$APP_TMP_DIR/teliod.log"
+LOG_FILE="/var/log/teliod.log"
 PID_FILE="$APP_TMP_DIR/teliod.pid"
 
 is_application_running() {
