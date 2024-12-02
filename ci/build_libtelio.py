@@ -504,6 +504,8 @@ def exec_build(args):
             moose_utils.fetch_moose_dependencies(args.os, MOOSE_MAP[args.arch])
 
         moose_utils.set_cargo_dependencies()
+    else:
+        moose_utils.unset_cargo_dependencies()
 
     if args.os == "windows":
         if args.msvc:
