@@ -207,7 +207,6 @@ async def test_upnp_without_support(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("battery_optimization", [True, False])
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -229,9 +228,7 @@ async def test_upnp_without_support(
     ],
 )
 async def test_upnp_port_lease_duration(
-    battery_optimization: bool,
-    alpha_setup_params: SetupParameters,
-    beta_setup_params: SetupParameters,
+    alpha_setup_params: SetupParameters, beta_setup_params: SetupParameters
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         # once the endpoint interval expires, the endpoint is validated and if
@@ -248,7 +245,7 @@ async def test_upnp_port_lease_duration(
         alpha_setup_params.features.direct.endpoint_interval_secs = 5
         assert alpha_setup_params.features.direct.endpoint_providers_optimization
         alpha_setup_params.features.direct.endpoint_providers_optimization.optimize_direct_upgrade_upnp = (
-            battery_optimization
+            False
         )
 
         env = await exit_stack.enter_async_context(

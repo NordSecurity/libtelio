@@ -1394,13 +1394,11 @@ impl Runtime {
                         .as_ref()
                         .unwrap_or(&Default::default())
                         .optimize_direct_upgrade_upnp,
-                    Duration::from_secs(
-                        direct
-                            .upnp_features
-                            .as_ref()
-                            .unwrap_or(&Default::default())
-                            .lease_duration_s as u64,
-                    ),
+                    direct
+                        .upnp_features
+                        .as_ref()
+                        .unwrap_or(&Default::default())
+                        .lease_duration_s,
                 )?);
                 endpoint_providers.push(ep.clone());
                 Some(ep)
