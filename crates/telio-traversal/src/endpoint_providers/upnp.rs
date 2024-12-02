@@ -35,8 +35,8 @@ use mockall::automock;
 
 const MAX_SUPPORTED_PACKET_SIZE: usize = 1500;
 const GET_INTERFACE_TIMEOUT_S: Duration = Duration::from_secs(2);
-
 const EPHEMERAL_PORT_RANGE: std::ops::RangeInclusive<u16> = 49152..=65535;
+const FAR_FUTURE: Duration = Duration::from_secs(86400 * 365 * 30); // See: https://github.com/tokio-rs/tokio/blob/bce9780dd3127cd937923d975e356299226a39aa/tokio/src/time/instant.rs#L57-L63
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -662,7 +662,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
         if !self.igd_gw.lease_needs_renew() && self.is_endpoint_provider_paused {
             let d = self.igd_gw.should_renew_lease_after();
             telio_log_debug!("Skipping getting endpoint via UPNP endpoint provider(ModulePaused), lease renw after {d:?}");
-            let mut renew_interval = interval(d.unwrap_or(Duration::MAX));
+            let mut renew_interval = interval(d.unwrap_or(FAR_FUTURE));
             tokio::select! {
                 _ = renew_interval.tick() => {},
                 _ = pending() => {return Ok(())},
