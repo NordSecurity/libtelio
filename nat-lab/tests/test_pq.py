@@ -4,7 +4,7 @@ from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment
 from telio import Client
 from utils import stun
-from utils.bindings import TelioAdapterType
+from utils.bindings import TelioAdapterType, NodeState, PathType
 from utils.connection import Connection
 from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
@@ -29,6 +29,7 @@ async def _connect_vpn_pq(
         int(wg_server["port"]),
         str(wg_server["public_key"]),
         pq=True,
+        timeout=10,
     )
 
     await ping(client_conn, config.PHOTO_ALBUM_IP)
@@ -411,18 +412,44 @@ async def test_pq_vpn_silent_pq_upgrader(
         client, *_ = env.clients
 
         wg_server = config.WG_SERVER  # use non PQ server
+
+        ip = str(wg_server["ipv4"])
+        pubkey = str(wg_server["public_key"])
+        port = int(wg_server["port"])
+
+        await client.restart_interface()
+        await client.get_router().create_vpn_route()
+        client.get_runtime().allowed_pub_keys.add(pubkey)
+
+        await client.get_proxy().connect_to_exit_node_pq(
+            public_key=pubkey,
+            allowed_ips=None,
+            endpoint=f"{ip}:{port}",
+        )
+
+        await client.wait_for_state_peer(
+            pubkey,
+            [NodeState.CONNECTING],
+            list(PathType),
+            is_exit=True,
+            is_vpn=True,
+            timeout=1,
+        )
+
         try:
-            await client.connect_to_vpn(
-                str(wg_server["ipv4"]),
-                int(wg_server["port"]),
-                str(wg_server["public_key"]),
-                pq=True,
-                timeout=4,
+            await client.wait_for_state_peer(
+                pubkey,
+                [NodeState.CONNECTED],
+                list(PathType),
+                is_exit=True,
+                is_vpn=True,
+                timeout=3,
             )
             raise Exception("This shouldn't connect succesfully")
         except TimeoutError:
             pass
 
+        await client.disconnect_from_vpn(pubkey, timeout=4)
         await client.get_router().delete_vpn_route()
 
         # now connect to a good behaving PQ server
