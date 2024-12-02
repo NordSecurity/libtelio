@@ -81,6 +81,7 @@ use telio_utils::{
 
 use telio_model::{
     config::{Config, Peer, PeerBase, Server as DerpServer},
+    constants::{VPN_EXTERNAL_IPV4, VPN_INTERNAL_IPV4},
     event::{Event, Set},
     features::{FeaturePersistentKeepalive, Features, PathType},
     mesh::{ExitNode, LinkState, Node},
@@ -1990,7 +1991,7 @@ impl Runtime {
 
         if res.is_err() {
             // Stop PQ task
-            self.entities.postquantum_wg.stop();
+            self.entities.postquantum_wg.stop().await;
         }
 
         res
@@ -2009,14 +2010,17 @@ impl Runtime {
         let exit_node = exit_node.clone();
 
         // Stop post quantum key rotation task if it's running
-        self.entities.postquantum_wg.stop();
+        self.entities.postquantum_wg.stop().await;
 
         if postquantum {
-            self.entities.postquantum_wg.start(
-                exit_node.endpoint.ok_or(Error::EndpointNotProvided)?,
-                self.requested_state.device_config.private_key.clone(),
-                exit_node.public_key,
-            );
+            self.entities
+                .postquantum_wg
+                .start(
+                    exit_node.endpoint.ok_or(Error::EndpointNotProvided)?,
+                    self.requested_state.device_config.private_key.clone(),
+                    exit_node.public_key,
+                )
+                .await;
         }
 
         // dns socket for macos should only be bound to tunnel interface when connected to exit,
@@ -2125,7 +2129,7 @@ impl Runtime {
             .await?;
         }
 
-        self.entities.postquantum_wg.stop();
+        self.entities.postquantum_wg.stop().await;
 
         if let Some(pmtud) = &mut self.entities.pmtu_detection {
             pmtud.stop().await;
@@ -2230,25 +2234,11 @@ impl Runtime {
             (None, Some(exit_node)) => {
                 // Exit node
                 Some(Node {
-                    identifier: exit_node.identifier.clone(),
-                    public_key: exit_node.public_key,
-                    nickname: None,
                     state: state.unwrap_or_else(|| peer.state()),
                     link_state,
-                    is_exit: true,
-                    is_vpn: exit_node.endpoint.is_some(),
-                    ip_addresses: vec![
-                        IpAddr::V4(Ipv4Addr::new(10, 5, 0, 1)),
-                        IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1)),
-                    ],
                     allowed_ips: peer.allowed_ips.clone(),
-                    endpoint,
-                    hostname: None,
-                    allow_incoming_connections: false,
-                    allow_peer_send_files: false,
                     path: path_type,
-                    allow_multicast: false,
-                    peer_allows_multicast: false,
+                    ..node_from_exit_node(exit_node)
                 })
             }
             _ => None,
@@ -2426,6 +2416,32 @@ impl TaskRuntime for Runtime {
             Some(pq_event) = self.event_listeners.post_quantum_subscriber.recv() => {
                 telio_log_debug!("WG consolidation triggered by PQ event");
 
+                match (&pq_event, &self.requested_state.exit_node, &self.requested_state.last_exit_node) {
+                    (telio_pq::Event::Connecting(pubkey), Some(exit), _) if exit.public_key == *pubkey  => {
+                        let body = Node {
+                            state: PeerState::Connecting,
+                            link_state: Some(LinkState::Down),
+                            ..node_from_exit_node(exit)
+                        };
+
+                        let _ = self.event_publishers.libtelio_event_publisher.send(
+                            Box::new(Event::Node { body  })
+                        );
+                    },
+                    (telio_pq::Event::Disconnected(pubkey), _, Some(last_exit)) if last_exit.public_key == *pubkey  => {
+                        let body = Node {
+                            state: PeerState::Disconnected,
+                            link_state: Some(LinkState::Down),
+                            ..node_from_exit_node(last_exit)
+                        };
+
+                        let _ = self.event_publishers.libtelio_event_publisher.send(
+                            Box::new(Event::Node { body  })
+                        );
+                    },
+                    _ => (),
+                }
+
                 self.entities.postquantum_wg.on_event(pq_event);
 
                 if let Err(err) = wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
@@ -2539,6 +2555,26 @@ fn set_tunnel_interface(socket_pool: &Arc<SocketPool>, config: &DeviceConfig) {
     }
     if let Some(tunnel_if_index) = tunnel_if_index {
         socket_pool.set_tunnel_interface(tunnel_if_index)
+    }
+}
+
+fn node_from_exit_node(exit_node: &ExitNode) -> Node {
+    Node {
+        identifier: exit_node.identifier.clone(),
+        public_key: exit_node.public_key,
+        nickname: None,
+        is_exit: true,
+        is_vpn: exit_node.endpoint.is_some(),
+        ip_addresses: vec![IpAddr::V4(VPN_EXTERNAL_IPV4), IpAddr::V4(VPN_INTERNAL_IPV4)],
+        allowed_ips: exit_node.allowed_ips.clone().unwrap_or_default(),
+        endpoint: exit_node.endpoint,
+        hostname: None,
+        allow_incoming_connections: false,
+        allow_peer_send_files: false,
+        path: PathType::Direct,
+        allow_multicast: false,
+        peer_allows_multicast: false,
+        ..Default::default()
     }
 }
 
