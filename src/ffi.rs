@@ -33,7 +33,8 @@ use nat_detect::NatType;
 
 // debug tools
 use telio_utils::{
-    commit_sha, telio_log_debug, telio_log_error, telio_log_info, telio_log_warn, version_tag,
+    backtrace::log_current_backtrace, commit_sha, telio_log_debug, telio_log_error, telio_log_info,
+    telio_log_warn, version_tag,
 };
 
 const DEFAULT_PANIC_MSG: &str = "libtelio panicked";
@@ -211,7 +212,9 @@ impl Telio {
             let events = panic_event_dispatcher;
             panic::set_hook(Box::new(move |info| {
                 // We need it on the logs as well ...
-                error!("{}", info);
+                telio_log_error!("{}", info);
+
+                log_current_backtrace();
 
                 let err = {
                     let message = {
