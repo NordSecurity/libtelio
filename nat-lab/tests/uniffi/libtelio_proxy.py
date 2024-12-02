@@ -100,6 +100,20 @@ class LibtelioProxy:
         )
 
     @move_to_async_thread
+    def create_tun(self, tun_name: bytes) -> int:
+        return self._handle_remote_error(lambda r: r.create_tun(tun_name))
+
+    @move_to_async_thread
+    def delete_tun(self, tun_fd: int):
+        return self._handle_remote_error(lambda r: r.delete_tun(tun_fd))
+
+    @move_to_async_thread
+    def start_with_tun(self, private_key, adapter, tun: int):
+        self._handle_remote_error(
+            lambda r: r.start_with_tun(private_key, adapter.value, tun)
+        )
+
+    @move_to_async_thread
     def set_fwmark(self, fwmark: int):
         self._handle_remote_error(lambda r: r.set_fwmark(fwmark))
 
